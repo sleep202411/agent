@@ -10764,6 +10764,8 @@
     "errorGeneric": "Generation request failed. Please try again later."
   },
   "ipGenerationAdmin": {
+    "logoUploaded": "Logo uploaded",
+    "logoUploadFailed": "Failed to upload logo",
     "title": "Audience Generation Templates",
     "subtitle": "Configure photo and video generation templates available to viewers in the IP Room",
     "addTemplate": "Add Template",

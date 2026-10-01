@@ -133,6 +133,10 @@
     "./discovery-assistant": {
       "types": "./dist/discovery-assistant.d.ts",
       "default": "./dist/discovery-assistant.js"
+    },
+    "./media-upload": {
+      "types": "./dist/media-upload.d.ts",
+      "default": "./dist/media-upload.js"
     }
   },
   "scripts": {

@@ -31,6 +31,8 @@
  * the SaToken cookie rides along.
  */
 
+import type { UploadKind } from "@repo/shared/media-upload";
+
 import { defaultLocale, locales, type Locale } from "@/src/i18n/config";
 
 // ─── Header helpers (mirror src/lib/api/api-client + ips/_hooks/shared) ──
@@ -90,7 +92,7 @@ interface ConfirmResponse {
 
 export interface UploadFileOptions {
   /** Closed media upload kind (apps/server media/dto UploadKindSchema). */
-  kind: string;
+  kind: UploadKind;
   /** Override the declared mime (e.g. browser quirks like `audio/x-wav`
    *  normalized to the server allowlist's canonical type). Defaults to
    *  `file.type`. */
@@ -121,7 +123,7 @@ export type UploadFileStage = "signing" | "uploading" | "confirming";
 
 export interface UploadFileCheckpoint {
   storageKey: string;
-  kind: string;
+  kind: UploadKind;
   contentType: string;
   scope?: { crewId?: string };
 }
@@ -139,7 +141,7 @@ export interface UploadFileResult {
 
 async function requestSignedUrl(
   body: {
-    kind: string;
+    kind: UploadKind;
     contentType: string;
     fileName: string;
     sizeBytes: number;
@@ -286,7 +288,7 @@ class CrewUploadReservationExpiredError extends Error {}
 
 async function confirmUpload(
   storageKey: string,
-  kind: string,
+  kind: UploadKind,
   contentType: string,
   scope?: { crewId?: string },
   signal?: AbortSignal

@@ -9,6 +9,29 @@ NestJS 后端，负责 AI 智能体、剧本拆解 Pipeline、AI 图像/视频�
 npx turbo dev --filter=server
 ```
 
+## Full type checking
+
+`npm run check-types -w server` covers every root in `tsconfig.spec.json`,
+including production source, tests, seeds and scripts. It checks production
+source and groups of 80 remaining roots in separate sequential compiler
+processes, each capped at 4 GiB. Imports are still checked in full; script
+globals and ambient augmentations are present in every group. No diagnostics
+are suppressed. This bounds retained Prisma/test instantiations on developer
+machines and CI. CI also runs workspace type checks sequentially. The runner fails on the first failing group and prints its
+name; rerun the full command after fixing errors.
+
+`npm run test:typecheck-runner -w server` verifies complete root coverage,
+ambient declarations and failure propagation from the final group.
+
+## GPS database regressions
+
+Run `npm run test:integration:gps -w server` from the repository root with
+`CONTENT_GPS_TEST_DATABASE_URL` pointing to a disposable UTF-8 PostgreSQL database
+named `gps_test` on `127.0.0.1:55441`. The runner rejects missing or non-fixture
+URLs and runs all seven suites serially because they create/drop shared fixture
+tables. CI provisions this database separately from the migrated product-test
+DB. Do not run these fixtures concurrently or against a production database.
+
 ## Prisma Migration 策略
 
 本仓库以 `apps/server/prisma/migrations/*/migration.sql` 作为数据库变更的

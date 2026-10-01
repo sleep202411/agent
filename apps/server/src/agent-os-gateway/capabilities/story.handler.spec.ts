@@ -1530,6 +1530,7 @@ describe('StoryAgentCapabilityHandler', () => {
       nodeId: 'opening',
       interaction: {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'interaction.dodge',
         label: { 'zh-CN': '向右闪避' },
         trigger: { kind: 'swipe', direction: 'right' },
@@ -1586,6 +1587,7 @@ describe('StoryAgentCapabilityHandler', () => {
     opening.interactions = [
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'interaction.tap',
         label: { 'en-US': 'Continue' },
         trigger: { kind: 'tap' },
@@ -1616,6 +1618,7 @@ describe('StoryAgentCapabilityHandler', () => {
     outside.interactions = [
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'interaction.escape',
         label: { 'en-US': 'Escape' },
         trigger: { kind: 'tap' },

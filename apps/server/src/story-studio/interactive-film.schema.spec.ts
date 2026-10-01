@@ -272,6 +272,7 @@ describe('interactive film draft contract', () => {
     validClip.interactions = [
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'inspect-gate',
         label: { 'en-US': 'Inspect gate' },
         trigger: { kind: 'tap' },
@@ -282,6 +283,7 @@ describe('interactive film draft contract', () => {
       },
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'rewind-gate',
         label: { 'en-US': 'Look again' },
         trigger: {
@@ -299,6 +301,7 @@ describe('interactive film draft contract', () => {
       },
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'enter-gate',
         label: { 'en-US': 'Enter' },
         trigger: { kind: 'swipe', direction: 'right' },
@@ -341,6 +344,7 @@ describe('interactive film draft contract', () => {
     invalidClip.interactions = [
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'outside-frame',
         label: { 'en-US': 'Outside frame' },
         trigger: { kind: 'tap' },
@@ -379,6 +383,7 @@ describe('interactive film draft contract', () => {
     clip.interactions = [
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'charge-gate',
         label: { 'en-US': 'Hold' },
         trigger: {
@@ -429,6 +434,7 @@ describe('interactive film draft contract', () => {
       clip.interactions = [
         {
           kind: 'hotspot',
+          timing: 'window',
           interactionId: 'dodge-gate',
           label: { 'en-US': 'Dodge' },
           trigger: { kind: 'swipe', direction: 'right' },
@@ -545,7 +551,7 @@ describe('interactive film stats contract', () => {
     const opening = draft.graph.nodes[0];
     if (opening?.exit.kind === 'choice') {
       opening.exit.choices[1] = {
-        ...opening.exit.choices[1]!,
+        ...opening.exit.choices[1],
         target: { kind: 'ending', endingId: 'ending.brave' },
       };
     }

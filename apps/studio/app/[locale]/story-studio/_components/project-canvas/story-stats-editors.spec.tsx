@@ -329,6 +329,10 @@ describe("StoryStateVariablesPanel", () => {
       );
       input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "勇气" }));
     });
+    // Finishing composition updates the local draft; blur commits it.
+    expect(variables[0]?.name["zh-CN"]).toBe("金币");
+    expect(input.value).toBe("勇气");
+    await act(async () => input.blur());
     expect(variables[0]?.name["zh-CN"]).toBe("勇气");
     expect(input.value).toBe("勇气");
   });

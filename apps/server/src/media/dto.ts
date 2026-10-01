@@ -23,22 +23,8 @@ import {
 } from '@repo/shared';
 import { z } from 'zod';
 
-export const UploadKindSchema = z.enum([
-  'episode_video',
-  'episode_source_video',
-  'episode_cover',
-  'ip_banner',
-  'news_cover',
-  'ai_reference_image',
-  'agent_attachment_image',
-  'agent_attachment_document',
-  'ai_reference_video',
-  'content_review_video',
-  'ai_reference_audio',
-  'story_music_audio',
-  'crew_asset_file',
-]);
-export type UploadKind = z.infer<typeof UploadKindSchema>;
+import { UploadKindSchema } from '@repo/shared/media-upload';
+export { UploadKindSchema, type UploadKind } from '@repo/shared/media-upload';
 
 export const CreateUploadUrlSchema = z.object({
   kind: UploadKindSchema,

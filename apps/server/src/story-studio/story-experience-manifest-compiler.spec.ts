@@ -202,6 +202,7 @@ describe('Story Runtime Manifest v2 compiler', () => {
     value.nodes[0].interactions = [
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'charge',
         label: { 'en-US': 'Charge' },
         trigger: {
@@ -223,6 +224,7 @@ describe('Story Runtime Manifest v2 compiler', () => {
       },
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'dodge',
         label: { 'en-US': 'Dodge' },
         trigger: { kind: 'swipe', direction: 'right' },
@@ -303,6 +305,7 @@ describe('Story Runtime Manifest v2 compiler', () => {
     value.nodes[0].interactions = [
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'continue',
         label: { 'en-US': 'Continue' },
         trigger: { kind: 'tap' },
@@ -313,6 +316,7 @@ describe('Story Runtime Manifest v2 compiler', () => {
       },
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'rewind',
         label: { 'en-US': 'Rewind' },
         trigger: {
@@ -330,6 +334,7 @@ describe('Story Runtime Manifest v2 compiler', () => {
       },
       {
         kind: 'hotspot',
+        timing: 'window',
         interactionId: 'branch',
         label: { 'en-US': 'Branch' },
         trigger: { kind: 'swipe', direction: 'right' },

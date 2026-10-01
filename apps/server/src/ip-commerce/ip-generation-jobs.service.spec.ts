@@ -26,9 +26,7 @@ describe('IpGenerationJobsService', () => {
 
   const mockUser: AuthUser = {
     userId: 'user-00000000-0000-4000-8000-000000000001',
-    roles: [],
     levelIds: [],
-    orgRoles: [],
   };
 
   const sampleIpId = 'a0000000-0000-4000-8000-000000000001';
@@ -325,7 +323,7 @@ describe('IpGenerationJobsService', () => {
     expect(submittedBody.documentId).toBeUndefined();
     expect(submittedBody.documentBlockId).toBeUndefined();
     expect(submittedBody.sourceSurface).toBe('ip_audience_generation');
-    expect(submittedBody.input.prompt).toContain(
+    expect(submittedBody.input?.prompt).toContain(
       'Anime portrait of smiling highly detailed',
     );
 

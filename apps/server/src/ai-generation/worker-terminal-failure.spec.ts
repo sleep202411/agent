@@ -14,7 +14,10 @@ it.each(['cancelled', 'completed', 'failed'])(
     const emit = jest.fn();
     const alertJobFailure = jest.fn();
     const worker = Object.assign(
-      Object.create(AiGenerationWorkerService.prototype) as object,
+      // The test invokes the inherited private method without constructing live providers.
+      Object.create(AiGenerationWorkerService.prototype) as {
+        markFailed: (job: object, error: object) => Promise<void>;
+      },
       {
         store: { update, failIfActive },
         providerCapacity: { release },
@@ -24,7 +27,7 @@ it.each(['cancelled', 'completed', 'failed'])(
         alertJobFailure,
         logger: { warn: jest.fn() },
       },
-    ) as { markFailed: (job: object, error: object) => Promise<void> };
+    );
     await worker.markFailed(
       { id: 'job', status: 'in_progress', attempt: 1, logs: [] },
       {

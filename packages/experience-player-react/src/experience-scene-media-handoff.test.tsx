@@ -292,7 +292,7 @@ describe("ExperiencePlayer scene media handoff", () => {
     { orientation: "portrait" as const, width: 1162, height: 981 },
     { orientation: "landscape" as const, width: 390, height: 844 },
   ])(
-    "keeps $orientation choices outside cropped media and follows the selected route",
+    "keeps $orientation choices outside fitted media and follows the selected route",
     async ({ orientation, width, height }) => {
       vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
         x: 0,
@@ -374,16 +374,17 @@ describe("ExperiencePlayer scene media handoff", () => {
         await vi.advanceTimersByTimeAsync(STILL_MS);
       });
       const option = [...container.querySelectorAll("button")].find(
-        (button) => button.textContent === "Next scene"
+        (button) => button.querySelector("span:last-child")?.textContent === "Next scene"
       );
       if (!option) throw new Error("Choice missing after media ended");
       const media = container.querySelector<HTMLElement>("[data-experience-media-stage]")!;
       expect(media.style.transform).toContain(
         orientation === "landscape" ? "rotate(90deg)" : "translate(-50%, -50%)"
       );
-      expect(Number.parseFloat(media.style.height)).toBeGreaterThan(
-        orientation === "portrait" ? height : width
-      );
+      // The whole authored frame fits the viewport, including when rotated.
+      expect(Number.parseFloat(media.style.height)).toBe(orientation === "portrait" ? 981 : 390);
+      expect(Number.parseFloat(media.style.width)).toBe(orientation === "portrait" ? 552 : 693);
+      expect(option.textContent).toBe("1Next scene");
       expect(option.closest("[data-experience-media-stage]")).toBeNull();
       expect(option.closest("[data-experience-viewport-overlay]")).not.toBeNull();
       await act(async () => {

@@ -159,14 +159,11 @@ describe('compileStoryBuild', () => {
       for (const nodeId of ['opening', 'left', 'right']) {
         const scene = result.runtime?.graph.nodes.find(
           (node) => 'sceneId' in node && node.sceneId === nodeId,
-        ) as {
-          renderers: Array<{
-            config: { sequence: Array<{ assetId: string }> };
-          }>;
-        };
-        expect(scene.renderers[0].config.sequence[0].assetId).toBe(
-          `video:clip-${nodeId}-a`,
         );
+        if (!scene || scene.kind !== 'scene') throw new Error('Expected scene');
+        expect(scene.renderers[0].config).toMatchObject({
+          sequence: [{ assetId: `video:clip-${nodeId}-a` }],
+        });
         expect(
           result.runtime?.assets.find(
             (asset) => asset.assetId === `video:clip-${nodeId}-a`,
@@ -344,6 +341,7 @@ describe('compileStoryBuild', () => {
 
   it('keeps a connected preview playable when a shot URL cannot enter the runtime', () => {
     const bad = videoSegment('opening');
+    if (!bad.asset) throw new Error('Expected video asset fixture');
     bad.asset = { ...bad.asset, url: 'http://cdn.example/opening-a.mp4' };
     const result = compileStoryBuild(
       input({
