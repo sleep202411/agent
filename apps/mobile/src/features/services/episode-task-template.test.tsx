@@ -85,10 +85,16 @@ const plan = {
 };
 const button = (name: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent === name)!;
-const render = () =>
+const render = (initialEpisodeId?: string) =>
   act(async () =>
     root.render(
-      <EpisodeTaskTemplate crewId="crew" userId="user" generation={1} onClose={h.close} />
+      <EpisodeTaskTemplate
+        initialEpisodeId={initialEpisodeId}
+        crewId="crew"
+        userId="user"
+        generation={1}
+        onClose={h.close}
+      />
     )
   );
 const choose = () => act(async () => button("Episode 1").click());
@@ -224,4 +230,16 @@ it("requires fields for every task and retains their values in retries", async (
   expect(host.querySelectorAll("input")[0]!.disabled).toBe(true);
   await act(async () => button("episodeTaskTemplate.confirm").click());
   expect(h.apply.mock.calls[0]).toEqual(h.apply.mock.calls[1]);
+});
+
+it("opens the setup episode for review without initializing automatically", async () => {
+  await render("episode");
+  expect(h.preview).toHaveBeenCalledWith("crew", "episode", expect.any(AbortSignal));
+  expect(h.apply).not.toHaveBeenCalled();
+  expect(button("episodeTaskTemplate.confirm")).toBeDefined();
+});
+it("does not substitute another episode after a setup selection disappears", async () => {
+  await render("missing");
+  expect(h.preview).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("selected episode is no longer available");
 });

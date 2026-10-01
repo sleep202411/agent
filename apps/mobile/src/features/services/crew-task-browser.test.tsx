@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CrewTaskBrowser } from "./crew-task-browser";
+vi.mock("./crew-setup", () => ({
+  CrewSetup: ({ onTasks }: { onTasks: () => void }) => (
+    <button onClick={onTasks}>setup assignments</button>
+  ),
+}));
 vi.mock("./trust-appeals", () => ({
   TrustAppeals: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close appeals</button>
@@ -400,4 +405,11 @@ it("opens both native chat channels and blocks stale-account navigation", async 
   h.generation = 2;
   await act(async () => button("thread.teamChat").click());
   expect(h.push).toHaveBeenCalledTimes(2);
+});
+
+it("opens guided Crew setup from existing task tools and returns for assignments", async () => {
+  await act(async () => button("crewSetup.title").click());
+  expect(button("setup assignments")).toBeDefined();
+  await act(async () => button("setup assignments").click());
+  expect(button("pick")).toBeDefined();
 });

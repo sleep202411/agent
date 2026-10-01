@@ -37,7 +37,9 @@ export function PositionCreate(props: {
   userId: string;
   generation: number;
   onClose: () => void;
+  closeLabel?: string;
   editing?: EditablePosition;
+  initialPosition?: (typeof PRESET_POSITIONS)[number]["value"];
 }) {
   const initial = props.editing ? positionDraft(props.editing) : undefined;
   const t = useTranslations(),
@@ -45,7 +47,7 @@ export function PositionCreate(props: {
     op = useAuthFormOperation(props.crewId, true);
   const [access, setAccess] = useState<Awaited<ReturnType<typeof fetchPositionCreateAccess>>>(),
     [error, setError] = useState<string>();
-  const [role, setRole] = useState(initial?.positionType ?? "director"),
+  const [role, setRole] = useState(initial?.positionType ?? props.initialPosition ?? "director"),
     [description, setDescription] = useState(initial?.description ?? ""),
     [count, setCount] = useState(String(initial?.targetCount ?? 1)),
     [skills, setSkills] = useState(initial?.requiredSkills.join(", ") ?? ""),
@@ -350,7 +352,7 @@ export function PositionCreate(props: {
         </>
       )}
       {op.busy && <ActivityIndicator />}
-      {action(t("nativeApplications.back"), props.onClose)}
+      {action(props.closeLabel ?? t("nativeApplications.back"), props.onClose)}
     </ScrollView>
   );
 }

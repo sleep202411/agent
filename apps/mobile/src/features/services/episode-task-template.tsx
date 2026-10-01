@@ -24,13 +24,14 @@ type Props = {
   userId: string;
   generation: number;
   onClose: () => void;
+  initialEpisodeId?: string;
   onStage?: (episode: PlanningOption, plan: EpisodeTaskPlan) => void;
 };
 export function EpisodeTaskTemplate(props: Props) {
   if (props.generation !== getAuthGeneration()) return null;
   return <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />;
 }
-function Session({ crewId, userId, generation, onClose, onStage }: Props) {
+function Session({ crewId, userId, generation, onClose, onStage, initialEpisodeId }: Props) {
   const active = useScreenActive();
   const t = useTranslations();
   const [revision, setRevision] = useState(0),
@@ -52,15 +53,22 @@ function Session({ crewId, userId, generation, onClose, onStage }: Props) {
           return;
         }
         const episodes = await fetchTaskPlanningOptions(crewId, "episode", controller.signal);
-        if (!controller.signal.aborted && generation === getAuthGeneration())
+        if (!controller.signal.aborted && generation === getAuthGeneration()) {
+          if (initialEpisodeId) {
+            const target = episodes.find((episode) => episode.id === initialEpisodeId);
+            if (!target)
+              throw new Error("The selected episode is no longer available. Refresh setup.");
+            setSelected(target);
+          }
           setSnapshot({ revision, episodes });
+        }
       } catch (cause) {
         if (!controller.signal.aborted && generation === getAuthGeneration())
           setSnapshot({ revision, error: cause instanceof Error ? cause.message : String(cause) });
       }
     })();
     return () => controller.abort();
-  }, [crewId, userId, generation, revision]);
+  }, [crewId, userId, generation, revision, initialEpisodeId]);
   if (selected)
     return (
       <Preview

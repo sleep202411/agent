@@ -66,7 +66,7 @@ const member = {
 const button = (text: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent === text);
 const click = (text: string) => act(async () => button(text)!.click());
-const render = () =>
+const render = (initialPosition?: "screenwriter" | "director") =>
   act(async () =>
     root.render(
       <CrewMemberPositions
@@ -76,6 +76,7 @@ const render = () =>
         member={member}
         name="Artist"
         onClose={h.close}
+        initialPosition={initialPosition}
       />
     )
   );
@@ -151,4 +152,21 @@ it("ignores stale-account writes", async () => {
   h.generation = 2;
   await click("assetOrganization.confirm");
   expect(h.save).not.toHaveBeenCalled();
+});
+
+it("adds a setup role after existing positions and still requires confirmation", async () => {
+  await render("screenwriter");
+  expect(h.save).not.toHaveBeenCalled();
+  await click("assetOrganization.save");
+  expect(h.save).not.toHaveBeenCalled();
+  await click("assetOrganization.confirm");
+  expect(h.save).toHaveBeenCalledWith("crew", "1", 1, member, [
+    { categoryKey: "director", title: null },
+    { categoryKey: "screenwriter", title: null },
+  ]);
+});
+it("does not duplicate an existing setup role", async () => {
+  await render("director");
+  expect(button("assetOrganization.save")!.disabled).toBe(true);
+  expect(host.querySelectorAll("input")).toHaveLength(1);
 });

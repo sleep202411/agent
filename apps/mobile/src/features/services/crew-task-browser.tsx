@@ -1,3 +1,4 @@
+import { CrewSetup } from "./crew-setup";
 import { useRouter } from "expo-router";
 import { toHref } from "@/lib/navigation";
 import { TrustAppeals } from "./trust-appeals";
@@ -43,6 +44,7 @@ export function CrewTaskBrowser({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [showSetup, setShowSetup] = useState(false);
   const [showAppeals, setShowAppeals] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [showDocument, setShowDocument] = useState(false);
@@ -66,6 +68,16 @@ export function CrewTaskBrowser({
   const [taskId, setTaskId] = useState<string | undefined>(initialTaskId);
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (showSetup)
+    return (
+      <CrewSetup
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setShowSetup(false)}
+        onTasks={() => setShowSetup(false)}
+      />
+    );
   if (showAppeals)
     return (
       <TrustAppeals
@@ -268,6 +280,15 @@ export function CrewTaskBrowser({
     );
   return (
     <View style={{ flex: 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowSetup(true);
+        }}
+      >
+        <ThemedText>{t("crewSetup.title")}</ThemedText>
+      </Pressable>
       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
         {(["team", "community"] as const).map((channel) => (
           <Pressable

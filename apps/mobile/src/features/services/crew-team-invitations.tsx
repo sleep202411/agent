@@ -18,7 +18,13 @@ import {
   type TeamInvitationAttempt,
   type TeamInvitationInput,
 } from "./crew-team-invitations-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+  initialPosition?: (typeof PRESET_POSITIONS)[number]["value"];
+};
 export function CrewTeamInvitations(props: Props) {
   return props.generation === getAuthGeneration() ? (
     <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
@@ -38,7 +44,7 @@ function Session(props: Props) {
     [clearArmed, setClearArmed] = useState(false),
     [revokeArmed, setRevokeArmed] = useState<string>();
   const [account, setAccount] = useState(""),
-    [position, setPosition] = useState<string>(),
+    [position, setPosition] = useState<string | undefined>(props.initialPosition),
     [choosing, setChoosing] = useState(false),
     [policies, setPolicies] = useState<("admin" | "finance")[]>([]),
     [days, setDays] = useState("7");
