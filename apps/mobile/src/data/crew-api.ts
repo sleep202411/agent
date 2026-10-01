@@ -129,15 +129,11 @@ export async function fetchCrewFeed(): Promise<CrewSummary[]> {
 
 /** A user's publicly LISTED crews (visitor profile tab; @Public by-user route). */
 export async function fetchCrewsByUser(userId: string): Promise<CrewSummary[]> {
-  try {
-    const res = await api.get<{ items?: CrewDto[] } | CrewDto[]>(`/crews/by-user/${userId}`, {
-      ...AURORA,
-    });
-    const list = Array.isArray(res) ? res : (res.items ?? []);
-    return list.map(mapSummary);
-  } catch {
-    return [];
-  }
+  const res = await api.get<{ items?: CrewDto[] } | CrewDto[]>(`/crews/by-user/${userId}`, {
+    ...AURORA,
+  });
+  const list = Array.isArray(res) ? res : (res.items ?? []);
+  return list.map(mapSummary);
 }
 
 export async function fetchCrewById(id: string): Promise<CrewDetail | undefined> {

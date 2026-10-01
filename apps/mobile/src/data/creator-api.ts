@@ -138,16 +138,12 @@ export async function fetchCreators(limit = 50, offset = 0): Promise<CreatorsPag
 }
 
 export async function fetchCreatorById(id: string): Promise<CreatorSummary | undefined> {
-  try {
-    const envelope = await api.post<CreatorDetailEnvelope>("/user/other/user/info", {
-      params: { UserId: id },
-      raw: true,
-      service: "content",
-    });
-    return mapCreator({ info: envelope.info, level: envelope.level });
-  } catch {
-    return undefined;
-  }
+  const envelope = await api.post<CreatorDetailEnvelope>("/user/other/user/info", {
+    params: { UserId: id },
+    raw: true,
+    service: "content",
+  });
+  return mapCreator({ info: envelope.info, level: envelope.level });
 }
 
 /** Web's server-side name search; page offsets count transport rows, not mapped cards. */

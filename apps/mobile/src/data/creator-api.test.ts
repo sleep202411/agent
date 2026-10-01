@@ -104,3 +104,8 @@ it("stops search pagination on a genuinely empty transport page", async () => {
   mocks.post.mockResolvedValue({ data: [], sum: 300 });
   expect((await searchCreators("A", 50, 100)).nextOffset).toBe(100);
 });
+
+it("preserves profile lookup failures instead of reporting a missing creator", async () => {
+  mocks.post.mockRejectedValue(new Error("Creator service offline"));
+  await expect(fetchCreatorById("artist")).rejects.toThrow("Creator service offline");
+});

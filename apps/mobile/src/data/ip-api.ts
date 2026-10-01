@@ -380,15 +380,11 @@ export async function fetchIpCatalogPage({
 
 /** A creator's published, publicly-listed IPs (Nest `creators/:id/ips`, @Public). */
 export async function fetchCreatorIps(creatorId: string, limit = 12): Promise<IpSummary[]> {
-  try {
-    const res = await api.get<ListResponse>(`/ip-commerce/creators/${creatorId}/ips`, {
-      ...AURORA,
-      params: { locale: locale(), limit },
-    });
-    return (res.items ?? []).map((dto) => mapSummary(dto));
-  } catch {
-    return [];
-  }
+  const res = await api.get<ListResponse>(`/ip-commerce/creators/${creatorId}/ips`, {
+    ...AURORA,
+    params: { locale: locale(), limit },
+  });
+  return (res.items ?? []).map((dto) => mapSummary(dto));
 }
 
 // Legacy default-avatar PNG baked into the user OSS bucket — treat as "no

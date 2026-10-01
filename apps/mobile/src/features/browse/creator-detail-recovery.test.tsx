@@ -1,0 +1,116 @@
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import CreatorDetail from "@/app/creator/[id]";
+const h = vi.hoisted(() => ({
+  id: "a",
+  profile: vi.fn(),
+  services: vi.fn(),
+  works: vi.fn(),
+  crews: vi.fn(),
+}));
+vi.mock("expo-router", () => ({
+  router: { push: vi.fn() },
+  Stack: { Screen: () => null },
+  useLocalSearchParams: () => ({ id: h.id }),
+}));
+vi.mock("expo-image", () => ({ Image: () => null }));
+vi.mock("expo-symbols", () => ({ SymbolView: () => null }));
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+vi.mock("@/data/browse-service", () => ({
+  getCreatorById: h.profile,
+  getCreatorServices: h.services,
+  getCreatorIps: h.works,
+  getCrewsByUser: h.crews,
+}));
+vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
+vi.mock("@/i18n", () => ({ useTranslations: () => (k: string) => k, useLocale: () => "en-US" }));
+vi.mock("@/components/themed-text", () => ({
+  ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+}));
+vi.mock("@/components/themed-view", () => ({
+  ThemedView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("@/components/ip-grid", () => ({ IpGrid: () => <span>public IPs</span> }));
+vi.mock("@/components/ui", () => ({
+  EmptyState: ({ title }: { title: string }) => <span>{title}</span>,
+  PosterImage: () => null,
+  SectionHeader: () => null,
+  Tag: () => null,
+}));
+vi.mock("@/features/profile/creator-personal-works", () => ({ CreatorPersonalWorks: () => null }));
+vi.mock("@/features/profile/creator-experience", () => ({ CreatorExperience: () => null }));
+vi.mock("@/features/profile/creator-education", () => ({ CreatorEducation: () => null }));
+vi.mock("react-native", () => ({
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ActivityIndicator: () => <span>loading</span>,
+  StyleSheet: { create: (v: unknown) => v },
+  Platform: { select: (v: Record<string, unknown>) => v.web ?? v.default },
+  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
+    <button onClick={onPress}>{children}</button>
+  ),
+}));
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+let host: HTMLDivElement, root: Root;
+const render = () => act(async () => root.render(<CreatorDetail />));
+const retry = () =>
+  act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "common.retry")!.click()
+  );
+beforeEach(() => {
+  vi.resetAllMocks();
+  h.id = "a";
+  h.profile.mockResolvedValue({ id: "a", name: "Alice", levels: [] });
+  h.services.mockResolvedValue([]);
+  h.works.mockResolvedValue([{ id: "ip" }]);
+  h.crews.mockResolvedValue([]);
+  host = document.createElement("div");
+  root = createRoot(host);
+});
+afterEach(() => {
+  act(() => root.unmount());
+});
+it("shows a failed lookup as an error and retries the same creator", async () => {
+  h.profile.mockRejectedValueOnce(new Error("Profile offline"));
+  await render();
+  expect(host.textContent).toContain("Profile offline");
+  expect(host.textContent).not.toContain("notFound");
+  await retry();
+  expect(host.textContent).toContain("Alice");
+  expect(h.profile).toHaveBeenLastCalledWith("a");
+});
+it("retains successful sections and does not mislabel a service failure as empty", async () => {
+  h.services.mockRejectedValueOnce(new Error("Services offline"));
+  await render();
+  expect(host.textContent).toContain("Alice");
+  expect(host.textContent).toContain("public IPs");
+  expect(host.textContent).toContain("Services offline");
+  expect(host.textContent).not.toContain("servicesEmpty");
+  await retry();
+  expect(host.textContent).not.toContain("Services offline");
+  expect(host.textContent).toContain("servicesEmpty");
+});
+it("keeps genuine missing profiles distinct from transport failures", async () => {
+  h.profile.mockResolvedValue(undefined);
+  await render();
+  expect(host.textContent).toContain("notFoundTitle");
+});
+it("ignores a late profile after navigation to another creator", async () => {
+  let finish!: (v: unknown) => void;
+  h.profile.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  h.id = "b";
+  h.profile.mockResolvedValue({ id: "b", name: "Bob", levels: [] });
+  await render();
+  await act(async () => finish({ id: "a", name: "Stale Alice", levels: [] }));
+  expect(host.textContent).toContain("Bob");
+  expect(host.textContent).not.toContain("Stale Alice");
+});

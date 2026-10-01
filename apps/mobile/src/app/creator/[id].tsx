@@ -43,6 +43,10 @@ export default function CreatorDetailScreen() {
   const [works, setWorks] = useState<IpSummary[]>([]);
   const [crews, setCrews] = useState<CrewSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [revision, setRevision] = useState(0);
+  const [errors, setErrors] = useState<
+    Partial<Record<"profile" | "services" | "works" | "crews", string>>
+  >({});
 
   useEffect(() => {
     let alive = true;
@@ -55,6 +59,18 @@ export default function CreatorDetailScreen() {
         getCrewsByUser(id),
       ]);
       if (!alive) return;
+      const nextErrors: typeof errors = {};
+      for (const [key, result] of [
+        ["profile", creatorResult],
+        ["services", servicesResult],
+        ["works", worksResult],
+        ["crews", crewsResult],
+      ] as const) {
+        if (result.status === "rejected")
+          nextErrors[key] =
+            result.reason instanceof Error ? result.reason.message : String(result.reason);
+      }
+      setErrors(nextErrors);
       setCreator(creatorResult.status === "fulfilled" ? creatorResult.value : undefined);
       setServices(servicesResult.status === "fulfilled" ? servicesResult.value : []);
       setWorks(worksResult.status === "fulfilled" ? worksResult.value : []);
@@ -65,7 +81,7 @@ export default function CreatorDetailScreen() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, revision]);
 
   if (loading) {
     return (
@@ -78,11 +94,20 @@ export default function CreatorDetailScreen() {
   if (!creator) {
     return (
       <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
-        <EmptyState
-          title={t("creatorDetail.notFoundTitle")}
-          detail={t("creatorDetail.notFoundDetail")}
-          symbol={{ ios: "person.crop.circle", android: "person", web: "person" }}
-        />
+        {errors.profile ? (
+          <>
+            <ThemedText accessibilityRole="alert">{errors.profile}</ThemedText>
+            <Pressable accessibilityRole="button" onPress={() => setRevision((n) => n + 1)}>
+              <ThemedText>{t("common.retry")}</ThemedText>
+            </Pressable>
+          </>
+        ) : (
+          <EmptyState
+            title={t("creatorDetail.notFoundTitle")}
+            detail={t("creatorDetail.notFoundDetail")}
+            symbol={{ ios: "person.crop.circle", android: "person", web: "person" }}
+          />
+        )}
       </ThemedView>
     );
   }
@@ -145,6 +170,26 @@ export default function CreatorDetailScreen() {
         </View>
 
         <View style={styles.body}>
+          {Object.keys(errors).length > 0 && (
+            <View style={styles.section}>
+              {(
+                [
+                  ["services", "creatorDetail.servicesTitle"],
+                  ["works", "creatorDetail.worksTitle"],
+                  ["crews", "creatorDetail.crewsTitle"],
+                ] as const
+              ).map(([key, label]) =>
+                errors[key] ? (
+                  <ThemedText key={key} accessibilityRole="alert">
+                    {t(label)}: {errors[key]}
+                  </ThemedText>
+                ) : null
+              )}
+              <Pressable accessibilityRole="button" onPress={() => setRevision((n) => n + 1)}>
+                <ThemedText>{t("common.retry")}</ThemedText>
+              </Pressable>
+            </View>
+          )}
           <View style={styles.section}>
             <SectionHeader title={t("creatorDetail.aboutTitle")} />
             <ThemedText type="small" themeColor="textSecondary" style={styles.paragraph}>
@@ -205,11 +250,11 @@ export default function CreatorDetailScreen() {
                   />
                 ))}
               </View>
-            ) : (
+            ) : !errors.services ? (
               <ThemedText type="small" themeColor="textSecondary">
                 {t("creatorDetail.servicesEmpty")}
               </ThemedText>
-            )}
+            ) : null}
           </View>
         </View>
       </ScrollView>

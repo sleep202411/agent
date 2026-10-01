@@ -162,20 +162,16 @@ export async function fetchCreatorServices(
   limit = 12,
   params: { creatorId?: string } = {}
 ): Promise<CreatorServiceSummary[]> {
-  try {
-    const res = await api.get<CreatorServiceListResponse>("/creator-services", {
-      service: "aurora",
-      params: { limit, creatorId: params.creatorId },
-    });
-    const seen = new Set<string>();
-    return (res.items ?? []).map(mapService).filter((service): service is CreatorServiceSummary => {
-      if (!service || seen.has(service.id)) return false;
-      seen.add(service.id);
-      return true;
-    });
-  } catch {
-    return [];
-  }
+  const res = await api.get<CreatorServiceListResponse>("/creator-services", {
+    service: "aurora",
+    params: { limit, creatorId: params.creatorId },
+  });
+  const seen = new Set<string>();
+  return (res.items ?? []).map(mapService).filter((service): service is CreatorServiceSummary => {
+    if (!service || seen.has(service.id)) return false;
+    seen.add(service.id);
+    return true;
+  });
 }
 
 export async function fetchCreatorServiceById(
