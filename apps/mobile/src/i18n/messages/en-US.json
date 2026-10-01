@@ -3038,5 +3038,11 @@
   "textAdventure.reviewing": "Under review",
   "textAdventure.published": "Published",
   "textAdventure.offlineStatus": "Offline",
-  "textAdventure.saveFirst": "Save your changes before submitting or playing."
+  "textAdventure.saveFirst": "Save your changes before submitting or playing.",
+  "textGames.title": "Text Adventures",
+  "textGames.subtitle": "Explore published stories and choose your next adventure.",
+  "textGames.empty": "No published adventures yet.",
+  "textGames.play": "Play adventure",
+  "textGames.backToCatalogue": "Back to adventures",
+  "textGames.backToDetails": "Back to details"
 }

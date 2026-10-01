@@ -1,3 +1,4 @@
+import { toHref } from "@/lib/navigation";
 import { Stack, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
@@ -73,6 +74,9 @@ export default function GamesScreen() {
   const header = (
     <View style={styles.headerStack}>
       <ScreenHeader title={t("games.title")} />
+      <Pressable accessibilityRole="button" onPress={() => router.push(toHref("/text-games"))}>
+        <ThemedText>{t("textGames.title")}</ThemedText>
+      </Pressable>
       <ThemedText type="small" themeColor="textSecondary">
         {t("games.subtitle")}
       </ThemedText>
