@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ProjectGenerationPanel } from "./project-panel";
+vi.mock("./skill-management-panel", () => ({ SkillManagementPanel: () => null }));
 const h = vi.hoisted(() => ({
   get: vi.fn(),
   list: vi.fn(),

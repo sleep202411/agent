@@ -14,8 +14,9 @@ export const skillSelection = z
     return new Set([...included, ...excluded]).size === included.length + excluded.length;
   }, "Skill selections must be unique and cannot be both included and excluded.");
 export type SkillSelection = z.infer<typeof skillSelection>;
-const installation = z.object({
+export const skillInstallation = z.object({
   id: z.string().uuid(),
+  skillId: z.string().uuid().optional(),
   name: z.string().optional(),
   slug: z.string().optional(),
   pinnedVersionId: z.string().uuid(),
@@ -40,7 +41,7 @@ const installations = z.object({
   ownerKind: z.enum(["platform", "story"]),
   projectId: z.string().uuid(),
   projectRevision: z.number().int().nonnegative(),
-  installations: z.array(installation),
+  installations: z.array(skillInstallation),
 });
 export type ProjectSkills = z.infer<typeof installations>;
 export function skillRows(

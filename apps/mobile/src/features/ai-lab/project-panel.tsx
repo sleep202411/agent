@@ -1,3 +1,4 @@
+import { SkillManagementPanel } from "./skill-management-panel";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -48,7 +49,8 @@ export function ProjectGenerationPanel({
     [loading, setLoading] = useState(!!initial.selected),
     [error, setError] = useState(initial.error),
     [epoch, setEpoch] = useState(0),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [manageSkills, setManageSkills] = useState(false);
   const reportBusy = useCallback(
     (value: boolean) => {
       setBusy(value);
@@ -160,7 +162,19 @@ export function ProjectGenerationPanel({
           </ScrollView>
         ) : null}
       </View>
-      {canRender ? (
+      {current && !manageSkills
+        ? button(t("aiLab.manageSkills"), () => setManageSkills(true))
+        : null}
+      {canRender && current && manageSkills ? (
+        <SkillManagementPanel
+          key={`${current.kind}:${current.id}`}
+          userId={userId}
+          generation={generation}
+          project={current}
+          onBack={() => setManageSkills(false)}
+          onBusyChange={reportBusy}
+        />
+      ) : canRender ? (
         <GenerationPanel
           key={current ? `${current.kind}:${current.id}:${current.canGenerate}` : "workspace"}
           userId={userId}
