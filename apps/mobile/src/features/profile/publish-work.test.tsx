@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import ProfileEditScreen from "@/app/publish-work";
 const h = vi.hoisted(() => ({
+  records: new Map<string, string>(),
+  storageFailure: false,
   workId: undefined as string | undefined,
   find: vi.fn(),
   update: vi.fn(),
@@ -17,6 +19,18 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   back: vi.fn(),
   t: (key: string) => key,
+}));
+vi.mock("@/lib/durable-record", () => ({
+  durableRecord: (namespace: string, userId: string, entry: string) => {
+    const key = JSON.stringify([namespace, userId, entry]);
+    return {
+      read: () => h.records.get(key) ?? null,
+      write: (value: string) => {
+        if (h.storageFailure) throw new Error("Disk full");
+        h.records.set(key, value);
+      },
+    };
+  },
 }));
 vi.mock("./publish-work-api", () => ({
   getWorkTags: h.get,
@@ -104,6 +118,8 @@ const user = {
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   vi.resetAllMocks();
+  h.records.clear();
+  h.storageFailure = false;
   h.workId = undefined;
   h.focused = true;
   h.generation = 1;
@@ -229,4 +245,74 @@ it("does not expose editing for an unavailable foreign work", async () => {
   expect(host.querySelector("input")).toBeNull();
   expect(h.create).not.toHaveBeenCalled();
   expect(h.update).not.toHaveBeenCalled();
+});
+
+it("restores the created work ID after remount and rechecks ownership before uploading", async () => {
+  await fill();
+  await act(async () => click("publishWork.next"));
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  h.find.mockResolvedValue({
+    id: "12",
+    title: "Film",
+    introduction: "Story",
+    isPrivate: false,
+    hasVideo: false,
+  });
+  await render();
+  expect(h.find.mock.calls[0][0]).toBe("12");
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => click("publishWork.video"));
+  expect(h.upload.mock.calls[0][0]).toBe("12");
+  expect(h.create).toHaveBeenCalledTimes(1);
+  await act(async () => click("publishWork.done"));
+  expect([...h.records.values()].every((raw) => JSON.parse(raw).draft === null)).toBe(true);
+});
+it("blocks duplicate creation after a lost response, including after remount", async () => {
+  h.create.mockRejectedValue(new Error("Lost response"));
+  await fill();
+  await act(async () => click("publishWork.next"));
+  await act(async () => click("publishWork.next"));
+  expect(h.create).toHaveBeenCalledTimes(1);
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  expect(input("publishWork.name").value).toBe("Film");
+  expect(input("publishWork.name").disabled).toBe(true);
+  expect(host.textContent).toContain("publishWork.creationUnknown");
+  await act(async () => click("publishWork.next"));
+  expect(h.create).toHaveBeenCalledTimes(1);
+});
+it("does not create when recovery state cannot be saved", async () => {
+  await fill();
+  h.storageFailure = true;
+  await act(async () => click("publishWork.next"));
+  expect(h.create).not.toHaveBeenCalled();
+  expect(input("publishWork.name").disabled).toBe(false);
+  expect(host.textContent).toContain("Disk full");
+});
+
+it("restores an interrupted metadata update without creating another record", async () => {
+  h.workId = "42";
+  h.find.mockResolvedValue({
+    id: "42",
+    title: "Existing",
+    introduction: "Old story",
+    hasVideo: true,
+    isPrivate: true,
+  });
+  h.update
+    .mockRejectedValueOnce(new Error("Lost update response"))
+    .mockResolvedValueOnce(undefined);
+  await render();
+  await act(async () => change("publishWork.name", "Edited title"));
+  await act(async () => click("publishWork.next"));
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  expect(input("publishWork.name").value).toBe("Edited title");
+  expect(input("publishWork.name").disabled).toBe(true);
+  await act(async () => click("publishWork.next"));
+  expect(h.update.mock.calls[0].slice(0, 3)).toEqual(h.update.mock.calls[1].slice(0, 3));
+  expect(h.create).not.toHaveBeenCalled();
 });

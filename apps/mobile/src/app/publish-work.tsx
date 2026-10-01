@@ -1,3 +1,5 @@
+import { workDraft, type WorkDraft } from "@/features/profile/work-draft";
+import { inquiryKey } from "@/features/services/inquiry-api";
 import { findMyWork, type MyWork } from "@/data/mine-api";
 import { Stack, useIsFocused, useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -45,14 +47,26 @@ export default function PublishWorkScreen() {
   );
 }
 function OwnedWorkForm({ workId }: { workId?: string }) {
-  const t = useTranslations();
+  const t = useTranslations(),
+    auth = useAuth();
+  const [store] = useState(() =>
+    workDraft(String(auth.user?.userId ?? auth.user?.id ?? ""), auth.generation, workId)
+  );
+  const [recovery] = useState(() => {
+    try {
+      return { draft: store.read(), error: undefined };
+    } catch (cause) {
+      return { draft: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+  const resolvedId = workId ?? recovery.draft?.workId;
   const [work, setWork] = useState<MyWork>();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (!workId) return;
+    if (!resolvedId || recovery.error) return;
     const controller = new AbortController();
-    void findMyWork(workId, controller.signal)
+    void findMyWork(resolvedId, controller.signal)
       .then((value) => {
         if (!controller.signal.aborted) setWork(value);
       })
@@ -60,9 +74,10 @@ function OwnedWorkForm({ workId }: { workId?: string }) {
         if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
-  }, [workId, attempt]);
-  if (!workId) return <PublishForm />;
-  if (work) return <PublishForm initial={work} />;
+  }, [resolvedId, recovery.error, attempt]);
+  if (recovery.error) return <ThemedText accessibilityRole="alert">{recovery.error}</ThemedText>;
+  if (!resolvedId) return <PublishForm store={store} recovered={recovery.draft} />;
+  if (work) return <PublishForm initial={work} store={store} recovered={recovery.draft} />;
   if (failed)
     return (
       <View style={{ padding: 16 }}>
@@ -80,16 +95,24 @@ function OwnedWorkForm({ workId }: { workId?: string }) {
     );
   return <ActivityIndicator />;
 }
-function PublishForm({ initial }: { initial?: MyWork }) {
+function PublishForm({
+  initial,
+  store,
+  recovered,
+}: {
+  initial?: MyWork;
+  store: ReturnType<typeof workDraft>;
+  recovered: WorkDraft | null;
+}) {
   const auth = useAuth(),
     theme = useTheme(),
     t = useTranslations(),
     router = useRouter(),
     focused = useIsFocused();
   const op = useAuthFormOperation("publish-work", focused);
-  const [title, setTitle] = useState(initial?.title ?? ""),
-    [description, setDescription] = useState(initial?.introduction ?? ""),
-    [selected, setSelected] = useState<number[]>([]);
+  const [title, setTitle] = useState(recovered?.title ?? initial?.title ?? ""),
+    [description, setDescription] = useState(recovered?.description ?? initial?.introduction ?? ""),
+    [selected, setSelected] = useState<number[]>(recovered?.tagIds ?? []);
   const [tags, setTags] = useState<WorkTag[]>(),
     [tagError, setTagError] = useState(false),
     [attempt, setAttempt] = useState(0);
@@ -97,7 +120,11 @@ function PublishForm({ initial }: { initial?: MyWork }) {
     [video, setVideo] = useState(initial?.hasVideo ?? false),
     [cover, setCover] = useState(!!initial?.coverUrl),
     [error, setError] = useState<string>();
-  const [basic, setBasic] = useState(true);
+  const [basic, setBasic] = useState(recovered?.phase !== "uploading");
+  const [pending, setPending] = useState<WorkDraft | null>(recovered);
+  const pendingRef = useRef<WorkDraft | null>(recovered);
+  const creationUnknown = pending?.phase === "creating";
+  const frozen = !!pending || op.busy;
   const scope = useRef<AbortController | null>(null);
   useLayoutEffect(() => {
     const controller = new AbortController();
@@ -125,11 +152,34 @@ function PublishForm({ initial }: { initial?: MyWork }) {
     void op.run(
       async () => {
         setError(undefined);
-        if (initial) {
-          await updateWork(initial.id, title, description, request.signal);
-          return initial.id;
+        if (pendingRef.current?.phase === "creating")
+          throw new Error(t("publishWork.creationUnknown"));
+        const draft =
+          pendingRef.current ??
+          store.start({
+            key: inquiryKey(),
+            phase: initial ? "updating" : "creating",
+            ...(initial ? { workId: initial.id } : {}),
+            title,
+            description,
+            tagIds: selected,
+          });
+        pendingRef.current = draft;
+        setPending(draft);
+        let workId: string;
+        if (draft.workId) {
+          await updateWork(draft.workId, draft.title, draft.description, request.signal);
+          workId = draft.workId;
+        } else {
+          workId = await createWork(
+            { title: draft.title, description: draft.description, tagIds: draft.tagIds },
+            request.signal
+          );
         }
-        return createWork({ title, description, tagIds: selected }, request.signal);
+        const saved = store.confirm(draft.key, workId);
+        pendingRef.current = saved;
+        setPending(saved);
+        return workId;
       },
       (value) => {
         setId(value);
@@ -183,7 +233,7 @@ function PublishForm({ initial }: { initial?: MyWork }) {
             accessibilityLabel={t("publishWork.name")}
             value={title}
             onChangeText={setTitle}
-            editable={!op.busy}
+            editable={!frozen}
             maxLength={80}
             style={fieldStyle}
           />
@@ -192,7 +242,7 @@ function PublishForm({ initial }: { initial?: MyWork }) {
             accessibilityLabel={t("publishWork.description")}
             value={description}
             onChangeText={setDescription}
-            editable={!op.busy}
+            editable={!frozen}
             multiline
             maxLength={500}
             style={fieldStyle}
@@ -219,7 +269,7 @@ function PublishForm({ initial }: { initial?: MyWork }) {
                       key={tag.id}
                       accessibilityRole="checkbox"
                       accessibilityState={{ checked: selected.includes(tag.id) }}
-                      disabled={op.busy || (!selected.includes(tag.id) && selected.length >= 5)}
+                      disabled={frozen || (!selected.includes(tag.id) && selected.length >= 5)}
                       onPress={() =>
                         setSelected((current) =>
                           current.includes(tag.id)
@@ -245,7 +295,11 @@ function PublishForm({ initial }: { initial?: MyWork }) {
           <Pressable
             accessibilityRole="button"
             disabled={
-              op.busy || !title.trim() || !description.trim() || (!initial && !selected.length)
+              op.busy ||
+              creationUnknown ||
+              !title.trim() ||
+              !description.trim() ||
+              (!initial && !selected.length)
             }
             onPress={next}
           >
@@ -272,11 +326,21 @@ function PublishForm({ initial }: { initial?: MyWork }) {
           <Pressable
             accessibilityRole="button"
             disabled={op.busy || !video}
-            onPress={() => router.back()}
+            onPress={() => {
+              try {
+                if (pendingRef.current) store.clear(pendingRef.current.key);
+                router.back();
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : String(cause));
+              }
+            }}
           >
             <ThemedText>{t("publishWork.done")}</ThemedText>
           </Pressable>
         </>
+      )}
+      {creationUnknown && !op.busy && (
+        <ThemedText accessibilityRole="alert">{t("publishWork.creationUnknown")}</ThemedText>
       )}
       {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {op.busy && <ActivityIndicator />}
