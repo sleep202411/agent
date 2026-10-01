@@ -157,18 +157,13 @@ export default function MineScreen() {
       }));
     }
     if (tab === "ips") {
-      // Only published IPs open the public plaza detail; everything else is
-      // not publicly resolvable yet, so explain instead of 404-ing.
+      // Published IPs retain playback; drafts open their authenticated editor.
       return currentIps?.map((ip) => ({
         id: ip.id,
         title: ip.title,
         coverUrl: ip.coverUrl,
-        ...(ip.published
-          ? { href: `/ip/${ip.id}` }
-          : {
-              badge: t("mine.reviewPending"),
-              alert: { title: t("mine.ipPendingTitle"), message: t("mine.ipPendingBody") },
-            }),
+        editHref: `/ip-studio/${ip.id}`,
+        href: ip.published ? `/ip/${ip.id}` : `/ip-studio/${ip.id}`,
       }));
     }
     return currentCrews?.map((crew) => ({
@@ -541,9 +536,20 @@ export default function MineScreen() {
               disabled={!onPress}
               onPress={onPress}
               onLongPress={item.editHref ? () => router.push(toHref(item.editHref!)) : undefined}
-              accessibilityHint={item.editHref ? t("publishWork.editHint") : undefined}
+              accessibilityHint={
+                item.editHref
+                  ? t(tab === "ips" ? "ipAuthor.editHint" : "publishWork.editHint")
+                  : undefined
+              }
               accessibilityActions={
-                item.editHref ? [{ name: "edit", label: t("publishWork.edit") }] : undefined
+                item.editHref
+                  ? [
+                      {
+                        name: "edit",
+                        label: t(tab === "ips" ? "ipAuthor.heading" : "publishWork.edit"),
+                      },
+                    ]
+                  : undefined
               }
               onAccessibilityAction={(event) => {
                 if (event.nativeEvent.actionName === "edit" && item.editHref)
