@@ -367,3 +367,21 @@ it("opens a notification's initial task through the normal authorized detail com
     })
   );
 });
+it("opens the native member panel for member notification destinations", async () => {
+  await act(async () =>
+    root.render(
+      <CrewTaskBrowser
+        key="members-link"
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialSection="members"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(button("close members")).toBeTruthy();
+  expect(h.detail).not.toHaveBeenCalled();
+  await act(async () => button("close members").click());
+  expect(button("close members")).toBeUndefined();
+});

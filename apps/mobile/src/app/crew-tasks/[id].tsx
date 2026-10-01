@@ -9,7 +9,12 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
 export default function CrewTasksScreen() {
-  const { id, task } = useLocalSearchParams<{ id: string; task?: string }>();
+  const { id, task, section } = useLocalSearchParams<{
+    id: string;
+    task?: string;
+    section?: string;
+  }>();
+  const initialSection = section === "members" && !task ? "members" : undefined;
   const initialTaskId = z.string().uuid().safeParse(task).success ? task : undefined;
   const auth = useAuth(),
     gate = useAuthGate(),
@@ -40,8 +45,9 @@ export default function CrewTasksScreen() {
         </Pressable>
       ) : active && userId && typeof id === "string" && id.trim() && id.length <= 64 ? (
         <CrewTaskBrowser
-          key={`${id}:${initialTaskId ?? ""}:${auth.generation}`}
+          key={`${id}:${initialTaskId ?? ""}:${initialSection ?? ""}:${auth.generation}`}
           initialTaskId={initialTaskId}
+          initialSection={initialSection}
           crewId={id}
           userId={userId}
           generation={auth.generation}

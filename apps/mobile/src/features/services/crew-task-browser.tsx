@@ -31,8 +31,10 @@ export function CrewTaskBrowser({
   generation,
   onClose,
   initialTaskId,
+  initialSection,
 }: {
   initialTaskId?: string;
+  initialSection?: "members";
   crewId: string;
   userId: string;
   generation: number;
@@ -44,7 +46,7 @@ export function CrewTaskBrowser({
   const [showDocument, setShowDocument] = useState(false);
   const [showProjectProperties, setShowProjectProperties] = useState(false);
   const [showResources, setShowResources] = useState(false);
-  const [showMembers, setShowMembers] = useState(false);
+  const [showMembers, setShowMembers] = useState(initialSection === "members");
   const [managingEpisodes, setManagingEpisodes] = useState(false);
   const [creatingEpisode, setCreatingEpisode] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);

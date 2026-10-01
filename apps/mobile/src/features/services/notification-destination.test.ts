@@ -47,3 +47,35 @@ it("resolves Studio using the build region and locale, not the API origin", () =
     url: "https://studio.fizzspace.cn/zh-HK/project/project-id",
   });
 });
+it.each(["cn", "global"] as const)("uses native Studio invitation acceptance in %s", (region) => {
+  const token = "a".repeat(32),
+    origin = region === "cn" ? "https://studio.fizzspace.cn" : "https://studio.fizzdragon.com";
+  expect(notificationDestination(notification(`/zh-HK/invite/${token}`), region, "zh-HK")).toEqual({
+    kind: "native",
+    path: `/studio-invite?link=${encodeURIComponent(`${origin}/invite/${token}`)}`,
+  });
+  expect(
+    notificationDestination(
+      notification(`/invite/${token}?redirect=https://evil.test`),
+      region,
+      "en-US"
+    )
+  ).toBeNull();
+});
+it("maps exact income, members and Crew-list destinations without losing subview parameters", () => {
+  expect(
+    notificationDestination(notification(`/crews/${crew}/workspace?tab=income`), "global", "en-US")
+  ).toEqual({ kind: "native", path: `/crew-finance/${crew}` });
+  expect(
+    notificationDestination(notification(`/crews/${crew}/workspace?tab=members`), "global", "en-US")
+  ).toEqual({ kind: "native", path: `/crew-tasks/${crew}?section=members` });
+  expect(notificationDestination(notification("/crews"), "global", "en-US")).toEqual({
+    kind: "native",
+    path: "/crews",
+  });
+  const path = `/crews/${crew}/workspace?tab=members&agreement=agreement-id`;
+  expect(notificationDestination(notification(path), "global", "en-US")).toEqual({
+    kind: "web",
+    path,
+  });
+});
