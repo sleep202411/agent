@@ -7,7 +7,7 @@ import type { AppLocale } from "@/config";
 
 import { fetchCrewById, fetchCrewFeed, fetchCrewFeedPage, fetchCrewsByUser } from "./crew-api";
 import { fetchCreatorServiceById, fetchCreatorServices } from "./creator-service-api";
-import { fetchCreatorById, fetchCreators, type CreatorsPage } from "./creator-api";
+import { fetchCreatorById, fetchCreators, searchCreators, type CreatorsPage } from "./creator-api";
 import { fetchCreatorIps, fetchIpCatalogPage, fetchIpDetail, fetchIpDiscovery } from "./ip-api";
 import {
   fetchNewsFeed,
@@ -75,8 +75,12 @@ export async function getCrewFeedPage(params?: {
   return fetchCrewFeedPage(params);
 }
 
-export async function getCreators(limit?: number, offset?: number): Promise<CreatorsPage> {
-  return fetchCreators(limit, offset);
+export async function getCreators(
+  limit?: number,
+  offset?: number,
+  query?: string
+): Promise<CreatorsPage> {
+  return query?.trim() ? searchCreators(query, limit, offset) : fetchCreators(limit, offset);
 }
 
 export async function getCreatorById(id: string): Promise<CreatorSummary | undefined> {

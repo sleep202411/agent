@@ -1,11 +1,12 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { fetchCreators } from "@/data/creator-api";
+import { fetchCreators, searchCreators } from "@/data/creator-api";
 import CreatorsScreen from "@/app/(tabs)/creators";
 
 const h = vi.hoisted(() => ({
   feed: vi.fn(),
+  search: vi.fn(),
   tags: vi.fn(),
   locale: "en-US",
   t: (key: string) => key,
@@ -25,11 +26,22 @@ vi.mock("@/data/browse-refresh", () => ({ useBrowseVersion: () => 0 }));
 vi.mock("@/lib/navigation", () => ({ toHref: (v: string) => v }));
 vi.mock("@/lib/avatar", () => ({ dicebearAvatarUrl: () => "" }));
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
-vi.mock("@/config", () => ({ webBaseUrl: "http://localhost" }));
-vi.mock("@/lib/api-client", () => ({ api: { get: h.feed } }));
+vi.mock("@/config", () => ({
+  webBaseUrl: "http://localhost",
+  appEnv: {
+    assets: {
+      staticBaseUrl: "https://example.com",
+      userBaseUrl: "https://example.com",
+      bannerBaseUrl: "https://example.com",
+    },
+  },
+  resolveAssetUrl: (p: string) => p,
+}));
+vi.mock("@/lib/api-client", () => ({ api: { get: h.feed, post: h.search } }));
 vi.mock("@/data/browse-service", () => ({
   getCrewFeedPage: h.feed,
-  getCreators: (limit?: number, offset?: number) => fetchCreators(limit, offset),
+  getCreators: (limit?: number, offset?: number, query?: string) =>
+    query ? searchCreators(query, limit, offset) : fetchCreators(limit, offset),
   getNewsFeed: h.feed,
   getNewsTags: h.tags,
   NEWS_PAGE_SIZE: 2,
@@ -43,7 +55,26 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (v: unknown) => v },
   Platform: { OS: "web", select: (v: Record<string, unknown>) => v.web ?? v.default },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Pressable: () => null,
+  TextInput: ({
+    value,
+    onChangeText,
+    onSubmitEditing,
+  }: {
+    value: string;
+    onChangeText: (v: string) => void;
+    onSubmitEditing: () => void;
+  }) => (
+    <input
+      value={value}
+      onChange={(e) => onChangeText(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onSubmitEditing();
+      }}
+    />
+  ),
+  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
+    <button onClick={onPress}>{children}</button>
+  ),
   RefreshControl: ({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) => (
     <button onClick={onRefresh} data-refresh={refreshing}>
       refresh
@@ -92,11 +123,17 @@ const click = (label: string) =>
 
 beforeEach(() => {
   h.feed.mockReset();
+  h.search.mockReset();
+  h.search.mockResolvedValue({ data: [{ id: "artist", nickName: "Artist" }], sum: 51 });
   h.feed.mockResolvedValue(page("a", "b"));
   host = document.createElement("div");
+  document.body.append(host);
   root = createRoot(host);
 });
-afterEach(() => act(() => root.unmount()));
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+});
 it("retains the loaded directory when the transport rejects a refresh", async () => {
   await act(async () => root.render(<CreatorsScreen />));
   h.feed.mockRejectedValueOnce(new Error("offline"));
@@ -120,4 +157,45 @@ it("still treats a successful empty page as the end of the directory", async () 
   await act(async () => list.onEndReached());
   expect(h.feed).toHaveBeenCalledTimes(2);
   expect(list.data.map((x) => x.id)).toEqual(["a", "b"]);
+});
+
+const searchFor = async (query: string) => {
+  await act(async () => {
+    const el = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, query);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => click("creators.searchAction"));
+};
+it("searches the server and paginates by page size rather than mapped card count", async () => {
+  await act(async () => root.render(<CreatorsScreen />));
+  await searchFor(" Artist ");
+  expect(h.search.mock.calls[0][1].params).toEqual({ key: "Artist", page: 1, pageSize: 50 });
+  expect(list.data.map((x) => x.id)).toEqual(["artist"]);
+  await act(async () => list.onEndReached());
+  expect(h.search.mock.calls[1][1].params.page).toBe(2);
+});
+it("discards a previous query's late result and clearing returns to public directory", async () => {
+  let finish!: (v: unknown) => void;
+  h.search.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await act(async () => root.render(<CreatorsScreen />));
+  await searchFor("old");
+  await searchFor("new");
+  await act(async () => finish({ data: [{ id: "stale" }], sum: 1 }));
+  expect(list.data.map((x) => x.id)).toEqual(["artist"]);
+  await searchFor("");
+  expect(list.data.map((x) => x.id)).toEqual(["a", "b"]);
+});
+it("retries a failed search without showing unrelated directory rows", async () => {
+  h.search.mockRejectedValueOnce(new Error("Search unavailable"));
+  await act(async () => root.render(<CreatorsScreen />));
+  await searchFor("Artist");
+  await act(async () => click("creators.searchAction"));
+  expect(h.search).toHaveBeenCalledTimes(2);
+  expect(list.data.map((x) => x.id)).toEqual(["artist"]);
 });

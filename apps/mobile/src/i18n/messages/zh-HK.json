@@ -3054,5 +3054,7 @@
   "profileEdit.availabilityHint": "選擇是否在創作者市場開放接單，儲存後生效。",
   "profileEdit.availabilityUnknown": "未設定，點擊設定",
   "profileEdit.available": "可接單",
-  "profileEdit.unavailable": "暫不接單"
+  "profileEdit.unavailable": "暫不接單",
+  "creators.search": "搜尋創作者姓名",
+  "creators.searchAction": "搜尋"
 }

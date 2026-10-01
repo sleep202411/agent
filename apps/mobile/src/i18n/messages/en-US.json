@@ -3054,5 +3054,7 @@
   "profileEdit.availabilityHint": "Choose whether you are open to work in the creator marketplace. Changes apply when you save.",
   "profileEdit.availabilityUnknown": "Not specified — tap to set",
   "profileEdit.available": "Available for work",
-  "profileEdit.unavailable": "Not available for work"
+  "profileEdit.unavailable": "Not available for work",
+  "creators.search": "Search creators by name",
+  "creators.searchAction": "Search"
 }

@@ -43,6 +43,7 @@ vi.mock("react-native", () => ({
   Platform: { OS: "web", select: (v: Record<string, unknown>) => v.web ?? v.default },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Pressable: () => null,
+  TextInput: () => null,
   RefreshControl: ({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) => (
     <button onClick={onRefresh} data-refresh={refreshing}>
       refresh
