@@ -96,3 +96,13 @@ it("supports real short Crew IDs and opens an exact native agreement", () => {
     )
   ).toEqual({ kind: "native", path: `/crew-agreements/${shortCrew}?agreement=${task}` });
 });
+it("opens recipient invitations separately from invitation management", () => {
+  expect(
+    notificationDestination(notification(`/crew-invitations/${task}`), "global", "en-US")
+  ).toEqual({ kind: "native", path: `/crew-invitation-response/${task}` });
+  const path = `/crew-invitations/${task}?extra=1`;
+  expect(notificationDestination(notification(path), "global", "en-US")).toEqual({
+    kind: "web",
+    path,
+  });
+});

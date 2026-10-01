@@ -21,6 +21,15 @@ export function notificationDestination(
   }
   if (target.surface === "web" && /^\/crews\/?$/.test(url.pathname) && !url.search && !url.hash)
     return { kind: "native" as const, path: "/crews" };
+  const invitation = /^\/crew-invitations\/([^/]+)\/?$/.exec(url.pathname);
+  if (
+    target.surface === "web" &&
+    invitation &&
+    uuid.safeParse(invitation[1]).success &&
+    !url.search &&
+    !url.hash
+  )
+    return { kind: "native" as const, path: `/crew-invitation-response/${invitation[1]}` };
   const match = /^\/crews\/([^/]+)\/workspace\/?$/.exec(url.pathname);
   if (
     target.surface === "web" &&
