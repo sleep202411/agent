@@ -1119,11 +1119,14 @@ function prepareBuildSegment(
       );
     }
   }
-  if (!selectStoryBuildReadSource(asset, variant)) {
+  // story_build_ready_guard admits a frozen variant only through its own
+  // active placement; the asset-level read fallback would pass here and then
+  // fail the whole Build at the database.
+  if (!pickActiveBuildPlacement(variant.placements)) {
     diagnostics.push(
       buildDiagnostic(
         'STORY_BUILD_VIDEO_STORAGE_UNAVAILABLE',
-        `${label} has no readable immutable storage placement.`,
+        `${label} has no stored file the published work can play. Regenerate or re-upload this shot.`,
         'asset',
         asset.id,
       ),
