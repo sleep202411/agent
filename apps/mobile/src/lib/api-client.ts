@@ -99,7 +99,9 @@ function appendQuery(url: string, params: ApiRequestConfig["params"]) {
 function shouldUseWebProxy(path: string) {
   return (
     Platform.OS === "web" &&
-    appEnv.appVariant !== "production" &&
+    // Only development exports include Expo API routes. Preview is static,
+    // just like production, and must use its configured regional services.
+    appEnv.appVariant === "development" &&
     !path.startsWith("http") &&
     !path.startsWith("//")
   );
@@ -136,14 +138,18 @@ function stringifyForm(form: NonNullable<ApiRequestConfig["form"]>) {
   return params.toString();
 }
 
-async function parseResponseBody(response: Response): Promise<{ body: unknown; rawBody: string }> {
+async function parseResponseBody(response: Response): Promise<{
+  body: unknown;
+  rawBody: string;
+  invalidJson: boolean;
+}> {
   const rawBody = await response.text();
-  if (!rawBody.trim()) return { body: null, rawBody };
+  if (!rawBody.trim()) return { body: null, rawBody, invalidJson: false };
 
   try {
-    return { body: JSON.parse(rawBody), rawBody };
+    return { body: JSON.parse(rawBody), rawBody, invalidJson: false };
   } catch {
-    return { body: rawBody, rawBody };
+    return { body: rawBody, rawBody, invalidJson: true };
   }
 }
 
@@ -300,6 +306,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
           },
           rawBody: "",
           binary: true,
+          invalidJson: false,
         };
       }
       const parsed = await withCancellation(parseResponseBody(response), controller.signal);
@@ -360,6 +367,14 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   }
 
   if (result.binary) return body as T;
+  // A hosting fallback/login/error document can arrive with HTTP 200. Never
+  // let its text masquerade as an empty catalog or a successful mutation.
+  if (result.invalidJson)
+    throw new ApiRequestError(
+      "INVALID_RESPONSE",
+      "The server returned an invalid JSON response. Please retry.",
+      response.status
+    );
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     if (responseType === "binary")
       throw new ApiRequestError("INVALID_DOWNLOAD", "Expected a file response", response.status);

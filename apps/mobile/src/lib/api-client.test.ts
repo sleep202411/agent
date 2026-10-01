@@ -320,3 +320,39 @@ it("keeps binary body reads inside the cancellation window", async () => {
   await checked;
   expect(fetchMock).toHaveBeenCalledOnce();
 });
+
+it.each(["<html><body>App fallback</body></html>", "{broken", "OK"])(
+  "rejects non-JSON success payloads without treating them as empty data: %s",
+  async (payload) => {
+    fetchMock.mockImplementation(
+      async () => new Response(payload, { status: 200, headers: { "content-type": "text/html" } })
+    );
+    await expect(api.get("/ip-commerce/ips", { service: "aurora" })).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      status: 200,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(api.post("/user/save", { data: { name: "Alice" } })).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  }
+);
+it.each(["literal", 42, false, null, []])(
+  "preserves valid top-level JSON including primitives: %j",
+  async (value) => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(value)));
+    await expect(api.get("/user/test")).resolves.toEqual(value);
+  }
+);
+it("preserves successful empty responses and structured upstream errors", async () => {
+  fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+  await expect(api.delete("/user/item")).resolves.toBeNull();
+  fetchMock.mockResolvedValueOnce(
+    new Response(JSON.stringify({ code: 409, message: "The version changed" }), { status: 409 })
+  );
+  await expect(api.post("/user/save")).rejects.toMatchObject({
+    status: 409,
+    message: "The version changed",
+  });
+});
