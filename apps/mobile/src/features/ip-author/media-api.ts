@@ -45,19 +45,21 @@ export const mediaCheckpoint = z
   .object({
     clientKey: uuidSchema,
     ipId: uuidSchema,
+    episodeId: uuidSchema.optional(),
     slot: mediaSlot,
     fileName: z.string().min(1),
     expectedVersion: z.number().int().nonnegative(),
     confirmation: z.object({
       storageKey: z.string().min(1),
-      kind: z.enum(["ip_banner", "episode_video"]),
+      kind: z.enum(["ip_banner", "episode_video", "episode_cover"]),
       contentType: z.string(),
     }),
     mediaAssetId: uuidSchema.optional(),
   })
   .refine(
     (value) =>
-      value.confirmation.kind === policies[value.slot].kind &&
+      value.confirmation.kind ===
+        (value.episodeId && value.slot === "cover" ? "episode_cover" : policies[value.slot].kind) &&
       policies[value.slot].types.includes(value.confirmation.contentType),
     "Upload checkpoint does not match its media slot."
   );
@@ -74,7 +76,7 @@ export function mediaUploadRecord(ipId: string, userId: string, generation: numb
     const raw = storage.read();
     if (!raw || raw === "null") return null;
     const value = mediaCheckpoint.parse(JSON.parse(raw));
-    if (value.ipId !== ipId) throw new Error("IP upload identity mismatch.");
+    if (value.ipId !== ipId || value.episodeId) throw new Error("IP upload identity mismatch.");
     return value;
   };
   return {
@@ -83,7 +85,11 @@ export function mediaUploadRecord(ipId: string, userId: string, generation: numb
       current(generation);
       const next = mediaCheckpoint.parse(input),
         previous = read();
-      if (next.ipId !== ipId || (previous && previous.clientKey !== next.clientKey))
+      if (
+        next.episodeId ||
+        next.ipId !== ipId ||
+        (previous && previous.clientKey !== next.clientKey)
+      )
         throw new Error("Another IP upload is pending.");
       storage.write(JSON.stringify(next));
     },
@@ -113,12 +119,17 @@ export async function pickIpMedia(
   expectedVersion: number,
   generation: number,
   signal: AbortSignal,
-  save: (value: MediaCheckpoint) => void
+  save: (value: MediaCheckpoint) => void,
+  episodeId?: string
 ) {
   uuidSchema.parse(ipId);
+  if (episodeId) uuidSchema.parse(episodeId);
   mediaSlot.parse(slot);
   current(generation, signal);
-  const policy = policies[slot];
+  const policy =
+    episodeId && slot === "cover"
+      ? { ...policies.cover, kind: "episode_cover", maxBytes: 10 * 1024 ** 2 }
+      : policies[slot];
   const picked = await DocumentPicker.getDocumentAsync({
     type: policy.types,
     multiple: false,
@@ -187,6 +198,7 @@ export async function pickIpMedia(
   const checkpoint = mediaCheckpoint.parse({
     clientKey: uuid.v4(),
     ipId,
+    ...(episodeId ? { episodeId } : {}),
     slot,
     fileName: file.name,
     expectedVersion,
@@ -195,7 +207,7 @@ export async function pickIpMedia(
   save(checkpoint);
   return checkpoint;
 }
-export async function finishIpMedia(
+export async function confirmIpMedia(
   input: MediaCheckpoint,
   generation: number,
   signal: AbortSignal,
@@ -224,13 +236,26 @@ export async function finishIpMedia(
       service: "aurora",
       signal,
       retry: false,
-      params: { kind: policy.mediaKind, purpose: checkpoint.slot },
+      params: {
+        kind: policy.mediaKind,
+        purpose: checkpoint.episodeId ? `episode_${checkpoint.slot}` : checkpoint.slot,
+      },
       data: { mediaAssetId: checkpoint.mediaAssetId },
     })
   ).asset;
   current(generation, signal);
   if (associated.id !== checkpoint.mediaAssetId || associated.kind !== policy.mediaKind)
     throw new Error("Associated media receipt mismatch.");
+  return checkpoint;
+}
+export async function finishIpMedia(
+  input: MediaCheckpoint,
+  generation: number,
+  signal: AbortSignal,
+  save: (value: MediaCheckpoint) => void
+) {
+  if (input.episodeId) throw new Error("Episode media must be attached to its original episode.");
+  const checkpoint = await confirmIpMedia(input, generation, signal, save);
   const latest = await fetchIpMedia(checkpoint.ipId, generation, signal);
   const field = checkpoint.slot === "cover" ? "coverAsset" : "trailerAsset";
   if (latest[field]?.id === checkpoint.mediaAssetId) return latest;

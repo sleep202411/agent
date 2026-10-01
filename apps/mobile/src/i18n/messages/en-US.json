@@ -3208,5 +3208,17 @@
   "ipEpisodeCreate.discard": "Discard draft",
   "ipEpisodeCreate.discardConfirm": "Discard this draft and cancel its unfinished upload?",
   "ipEpisodeCreate.confirmDiscard": "Confirm",
-  "ipEpisodeCreate.saved": "Episode created."
+  "ipEpisodeCreate.saved": "Episode created.",
+  "ipEpisodeMedia.heading": "Episode media",
+  "ipEpisodeMedia.coverHint": "JPEG, PNG or WebP, up to 10 MiB.",
+  "ipEpisodeMedia.source": "Source video",
+  "ipEpisodeMedia.sourceHint": "MP4, MOV or WebM, up to 35 GiB. Keep this screen open during upload. Reselect the original file after an interruption to resume.",
+  "ipEpisodeMedia.replaceSource": "Replace source video",
+  "ipEpisodeMedia.removeCover": "Remove cover",
+  "ipEpisodeMedia.removeConfirm": "Remove this episode’s cover? The source video stays attached.",
+  "ipEpisodeMedia.applyRemoval": "Remove cover from refreshed episode",
+  "ipEpisodeMedia.cancelUpload": "Cancel unfinished upload",
+  "ipEpisodeMedia.cancelConfirm": "Cancel this unfinished upload? The episode’s current video stays attached.",
+  "ipEpisodeMedia.pending": "This media change is pending. Resume the upload or retry the saved request.",
+  "ipEpisodeMedia.durationHint": "The replacement video’s duration is read automatically. If unavailable, the old duration is cleared; you can enter it in episode details."
 }

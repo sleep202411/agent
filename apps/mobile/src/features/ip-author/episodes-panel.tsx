@@ -20,7 +20,12 @@ import {
   type EpisodeCommand,
   type EpisodeSnapshot,
 } from "./episodes-api";
-type Props = { ipId: string; userId: string; generation: number };
+type Props = {
+  ipId: string;
+  userId: string;
+  generation: number;
+  onOpenMedia?: (episodeId: string) => void;
+};
 export function IpEpisodesPanel(props: Props) {
   const active = useScreenActive();
   return active && getAuthGeneration() === props.generation ? (
@@ -57,7 +62,7 @@ type Draft = {
   version: number;
   sourceLocale: EpisodeSnapshot["sourceLocale"];
 };
-function Session({ ipId, userId, generation }: Props) {
+function Session({ ipId, userId, generation, onOpenMedia }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(ipId, true);
@@ -234,6 +239,13 @@ function Session({ ipId, userId, generation }: Props) {
                 ))}
               <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                 <Button label={t("ipEpisodes.edit")} onPress={() => edit(item)} disabled={frozen} />
+                {onOpenMedia && (
+                  <Button
+                    label={t("ipEpisodeMedia.heading")}
+                    onPress={() => onOpenMedia(item.id)}
+                    disabled={frozen}
+                  />
+                )}
                 <Button
                   label={t("ipEpisodes.delete")}
                   onPress={() => {

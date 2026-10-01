@@ -13,6 +13,7 @@ import { ApiRequestError } from "@/lib/api-client";
 import { fetchAuthorEpisodes, type EpisodeSnapshot } from "./episodes-api";
 import { createEpisodeUploadCheckpoint, uploadEpisodeVideo } from "./episode-upload";
 import { episodeVideoSource } from "./episode-video-source";
+import { probeEpisodeVideoDuration } from "./episode-video-duration";
 import {
   associateEpisodeVideo,
   cancelEpisodeVideo,
@@ -111,8 +112,6 @@ function Session({ ipId, userId, generation }: Props) {
     if (!draft) return;
     run(
       async (signal) => {
-        await fetchAuthorEpisodes(ipId, generation, signal);
-        ensure(signal);
         const selected = await getDocumentAsync({
           type: ["video/mp4", "video/quicktime", "video/webm"],
           multiple: false,
@@ -122,8 +121,14 @@ function Session({ ipId, userId, generation }: Props) {
         ensure(signal);
         if (selected.canceled) return;
         const source = episodeVideoSource(selected.assets[0]);
+        const duration =
+          draft.duration.trim() || draft.checkpoint
+            ? draft.duration
+            : String((await probeEpisodeVideoDuration(selected.assets[0], signal)) ?? "");
+        ensure(signal);
         let next = {
           ...draft,
+          duration,
           checkpoint:
             draft.checkpoint ??
             createEpisodeUploadCheckpoint(draft.clientKey, ipId, userId, source),

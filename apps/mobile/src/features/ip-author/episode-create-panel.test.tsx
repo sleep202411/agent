@@ -5,6 +5,7 @@ import { IpEpisodeCreatePanel } from "./episode-create-panel";
 vi.mock("@/config", () => ({
   appEnv: { siteRegion: "global", api: { auroraBaseUrl: "https://api.test" } },
 }));
+vi.mock("./episode-video-duration", () => ({ probeEpisodeVideoDuration: async () => null }));
 const h = vi.hoisted(() => ({
   active: true,
   generation: 1,

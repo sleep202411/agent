@@ -48,6 +48,9 @@ export default function IpEpisodesScreen() {
           ipId={id}
           userId={userId}
           generation={auth.generation}
+          onOpenMedia={(episodeId) =>
+            router.push(`/ip-studio/${id}/episode-media?episodeId=${episodeId}`)
+          }
         />
       ) : (
         <ThemedText>{t("ipAuthor.invalid")}</ThemedText>

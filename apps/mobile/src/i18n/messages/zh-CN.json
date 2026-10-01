@@ -3208,5 +3208,17 @@
   "ipEpisodeCreate.discard": "丢弃草稿",
   "ipEpisodeCreate.discardConfirm": "丢弃此草稿并取消未完成的上传？",
   "ipEpisodeCreate.confirmDiscard": "确认",
-  "ipEpisodeCreate.saved": "剧集已创建。"
+  "ipEpisodeCreate.saved": "剧集已创建。",
+  "ipEpisodeMedia.heading": "剧集媒体",
+  "ipEpisodeMedia.coverHint": "支持 JPEG、PNG 或 WebP，最大 10 MiB。",
+  "ipEpisodeMedia.source": "源视频",
+  "ipEpisodeMedia.sourceHint": "支持 MP4、MOV 或 WebM，最大 35 GiB。上传时请保持此页面打开。中断后重新选择原文件即可续传。",
+  "ipEpisodeMedia.replaceSource": "替换源视频",
+  "ipEpisodeMedia.removeCover": "移除封面",
+  "ipEpisodeMedia.removeConfirm": "移除此剧集的封面？源视频将保持关联。",
+  "ipEpisodeMedia.applyRemoval": "移除刷新后剧集的封面",
+  "ipEpisodeMedia.cancelUpload": "取消未完成的上传",
+  "ipEpisodeMedia.cancelConfirm": "取消此未完成的上传？剧集当前的视频将保持关联。",
+  "ipEpisodeMedia.pending": "此媒体变更尚未完成。请继续上传或重试已保存的请求。",
+  "ipEpisodeMedia.durationHint": "系统会自动读取新视频的时长。无法读取时会清除旧时长；您可以在剧集详情中填写。"
 }

@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   active: true,
   generation: 1,
   get: vi.fn(),
+  openMedia: vi.fn(),
   put: vi.fn(),
   post: vi.fn(),
   del: vi.fn(),
@@ -105,7 +106,11 @@ const snapshot = { id, version: 1, sourceLocale: "en-US", episodes: [episode] };
 let root: Root, host: HTMLDivElement;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const mount = () =>
-  act(async () => root.render(<IpEpisodesPanel ipId={id} userId="alice" generation={1} />));
+  act(async () =>
+    root.render(
+      <IpEpisodesPanel ipId={id} userId="alice" generation={1} onOpenMedia={h.openMedia} />
+    )
+  );
 const click = (label: string) =>
   act(async () => {
     [...host.querySelectorAll("button")].find((b) => b.textContent === label)!.click();
@@ -225,4 +230,10 @@ it("validates duration and saves the selected visibility and free-preview fields
     status: "hidden",
   });
   expect(host.textContent).toContain("ipEpisodes.saved");
+});
+
+it("opens media management for the selected existing episode", async () => {
+  await mount();
+  await click("ipEpisodeMedia.heading");
+  expect(h.openMedia).toHaveBeenCalledWith(episodeId);
 });
