@@ -7,7 +7,18 @@ const h = vi.hoisted(() => ({
   generation: 1,
   status: "readyToPlay",
   source: vi.fn(),
-  player: { pause: vi.fn(), currentTime: 0, staysActiveInBackground: true, status: "readyToPlay" },
+  player: {
+    pause: vi.fn(),
+    play: vi.fn(),
+    addListener: vi.fn(() => ({ remove: vi.fn() })),
+    playing: false,
+    currentTime: 0,
+    seekBy(offset: number) {
+      this.currentTime += offset;
+    },
+    staysActiveInBackground: true,
+    status: "readyToPlay",
+  },
 }));
 vi.mock("./api/content-review-api", () => ({ getContentReviewPlayback: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -70,6 +81,8 @@ beforeEach(() => {
   h.generation = 1;
   h.status = "readyToPlay";
   h.player.currentTime = 0;
+  h.player.playing = false;
+  h.player.addListener.mockImplementation(() => ({ remove: vi.fn() }));
   vi.mocked(getContentReviewPlayback).mockResolvedValue({
     assetId: "a",
     variantKey: "original",
@@ -115,4 +128,25 @@ it("removes expired playback and reauthorizes instead of reusing an expired URL"
   expect(getContentReviewPlayback).toHaveBeenCalledTimes(2);
   expect(host.textContent).toContain("Permission revoked");
   expect(host.textContent).not.toContain("video");
+});
+
+it("preserves position and playing intent across access renewal but resets for another report", async () => {
+  await render();
+  h.player.currentTime = 37;
+  h.player.playing = true;
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "contentReviewHistory.reloadVideo")!
+      .click()
+  );
+  expect(h.player.currentTime).toBe(37);
+  expect(h.player.play).toHaveBeenCalledTimes(1);
+  h.player.currentTime = 51;
+  await act(async () =>
+    root.render(
+      <ContentReviewPlayback workspaceId="w" generation={1} record={{ ...record, id: "other" }} />
+    )
+  );
+  expect(h.player.currentTime).toBe(0);
+  expect(h.player.play).toHaveBeenCalledTimes(1);
 });

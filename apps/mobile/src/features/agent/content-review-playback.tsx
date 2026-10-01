@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useEvent } from "expo";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -7,7 +7,16 @@ import { useTranslations } from "@/i18n";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { getContentReviewPlayback, type ContentReviewDetail } from "./api/content-review-api";
 import { parseReviewTimeOffset, formatReviewTimecode } from "./content-review-time";
-export function ContentReviewPlayback({
+type Props = { workspaceId: string; generation: number; record: ContentReviewDetail };
+export function ContentReviewPlayback(props: Props) {
+  return (
+    <Playback
+      key={`${props.workspaceId}:${props.generation}:${props.record.id}:${props.record.mediaAssetId}`}
+      {...props}
+    />
+  );
+}
+function Playback({
   workspaceId,
   generation,
   record,
@@ -18,6 +27,7 @@ export function ContentReviewPlayback({
 }) {
   const t = useTranslations();
   const [revision, setRevision] = useState(0);
+  const checkpoint = useRef({ seconds: 0, playing: false });
   const key = JSON.stringify([workspaceId, generation, record.id, revision]);
   const [snapshot, setSnapshot] = useState<{ key: string; url?: string; error?: string }>();
   useEffect(() => {
@@ -48,7 +58,7 @@ export function ContentReviewPlayback({
     <View style={{ gap: 8 }}>
       {!data && <ActivityIndicator />}
       {data?.error && <ThemedText accessibilityRole="alert">{data.error}</ThemedText>}
-      {data?.url && <Player key={key} url={data.url} record={record} />}
+      {data?.url && <Player key={key} url={data.url} record={record} checkpoint={checkpoint} />}
       <Pressable
         accessibilityRole="button"
         onPress={() => setRevision((v) => v + 1)}
@@ -59,23 +69,52 @@ export function ContentReviewPlayback({
     </View>
   );
 }
-function Player({ url, record }: { url: string; record: ContentReviewDetail }) {
+function Player({
+  url,
+  record,
+  checkpoint,
+}: {
+  url: string;
+  record: ContentReviewDetail;
+  checkpoint: RefObject<{ seconds: number; playing: boolean }>;
+}) {
   const t = useTranslations();
   const player = useVideoPlayer({ uri: url, useCaching: false }, (instance) => {
     instance.staysActiveInBackground = false;
+    instance.timeUpdateEventInterval = 0.25;
   });
   const { status } = useEvent(player, "statusChange", { status: player.status });
   const [error, setError] = useState<string>();
-  useEffect(
-    () => () => {
+  const restored = useRef(false);
+  useEffect(() => {
+    if (status !== "readyToPlay" || restored.current) return;
+    restored.current = true;
+    const target = Math.min(record.durationSeconds, Math.max(0, checkpoint.current.seconds));
+    const resume = checkpoint.current.playing;
+    player.seekBy(target - player.currentTime);
+    if (resume) player.play();
+  }, [status, player, record.durationSeconds, checkpoint]);
+  useLayoutEffect(() => {
+    const time = player.addListener("timeUpdate", ({ currentTime }) => {
+      if (restored.current && Number.isFinite(currentTime))
+        checkpoint.current.seconds = currentTime;
+    });
+    const playing = player.addListener("playingChange", ({ isPlaying }) => {
+      if (restored.current) checkpoint.current.playing = isPlaying;
+    });
+    return () => {
+      time.remove();
+      playing.remove();
       try {
+        if (restored.current && Number.isFinite(player.currentTime)) {
+          checkpoint.current = { seconds: player.currentTime, playing: player.playing };
+        }
         player.pause();
       } catch {
-        /* Player already released. */
+        /* Keep the event checkpoint if the native player is already released. */
       }
-    },
-    [player]
-  );
+    };
+  }, [player, checkpoint]);
   const timed = [
     ...record.details.map((finding, index) => ({
       id: `finding-${index}`,
