@@ -1,8 +1,10 @@
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ThemedText } from "@/components/themed-text";
+import { toHref } from "@/lib/navigation";
 import { IpGridCard } from "@/components/ip-grid";
 import { ThemedView } from "@/components/themed-view";
 import { ChipRail, EmptyState, ListFooter, ScreenHeader, Skeleton } from "@/components/ui";
@@ -216,6 +218,13 @@ export default function AllIpsScreen() {
   const header = (
     <View style={styles.headerStack}>
       <ScreenHeader title={t("ips.title")} />
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push(toHref("/content-gps"))}
+        style={{ minHeight: 44, paddingVertical: 12 }}
+      >
+        <ThemedText>{t("contentGpsDiscovery.title")}</ThemedText>
+      </Pressable>
       {refreshError ? (
         <EmptyState
           title={t("ips.loadErrorTitle")}
