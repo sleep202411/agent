@@ -423,6 +423,15 @@ export default function MineScreen() {
               </View>
             </Pressable>
 
+            {tab === "ips" && (
+              <Pressable
+                accessibilityRole="button"
+                style={{ padding: 16 }}
+                onPress={() => router.push(toHref("/ip-studio/create"))}
+              >
+                <ThemedText type="smallBold">{t("ipCreate.heading")}</ThemedText>
+              </Pressable>
+            )}
             {tab === "works" && (
               <Pressable
                 accessibilityRole="button"

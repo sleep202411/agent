@@ -3149,5 +3149,17 @@
   "ipAuthor.saved": "資料已儲存。",
   "ipAuthor.pending": "此次儲存尚待確認。重試會先核對已儲存的結果，再決定是否重新傳送。",
   "ipAuthor.invalid": "無效的 IP。",
-  "ipAuthor.editHint": "長按編輯 IP 資料。"
+  "ipAuthor.editHint": "長按編輯 IP 資料。",
+  "ipCreate.heading": "建立 IP",
+  "ipCreate.analyze": "分析文件",
+  "ipCreate.documentHint": "可選：PDF、DOCX、DOC、TXT 或 MD，最大 10 MiB。建議僅填入空白的標題和簡介。",
+  "ipCreate.channel": "頻道",
+  "ipCreate.ip": "IP",
+  "ipCreate.community": "社區",
+  "ipCreate.noGenres": "暫無可用類型，請重新整理後再試。",
+  "ipCreate.region": "地區",
+  "ipCreate.unspecified": "未指定",
+  "ipCreate.pending": "建立結果待確認。重試將使用同一請求，不會重複建立 IP。",
+  "ipCreate.submit": "建立草稿",
+  "ipCreate.clearAnalysis": "清除文件建議"
 }

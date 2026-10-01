@@ -3149,5 +3149,17 @@
   "ipAuthor.saved": "Details saved.",
   "ipAuthor.pending": "This save is awaiting confirmation. Retry checks the saved result before resending.",
   "ipAuthor.invalid": "Invalid IP.",
-  "ipAuthor.editHint": "Long press to edit IP details."
+  "ipAuthor.editHint": "Long press to edit IP details.",
+  "ipCreate.heading": "Create IP",
+  "ipCreate.analyze": "Analyze a document",
+  "ipCreate.documentHint": "Optional: PDF, DOCX, DOC, TXT or MD, up to 10 MiB. Suggestions fill only empty title and summary fields.",
+  "ipCreate.channel": "Channel",
+  "ipCreate.ip": "IP",
+  "ipCreate.community": "Community",
+  "ipCreate.noGenres": "No genres available. Refresh to try again.",
+  "ipCreate.region": "Region",
+  "ipCreate.unspecified": "Unspecified",
+  "ipCreate.pending": "Creation is awaiting confirmation. Retry resends the same request and will not create a duplicate IP.",
+  "ipCreate.submit": "Create draft",
+  "ipCreate.clearAnalysis": "Clear document suggestions"
 }

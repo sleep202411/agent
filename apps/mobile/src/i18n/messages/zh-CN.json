@@ -3149,5 +3149,17 @@
   "ipAuthor.saved": "资料已保存。",
   "ipAuthor.pending": "此次保存尚待确认。重试会先核对已保存的结果，再决定是否重新发送。",
   "ipAuthor.invalid": "无效的 IP。",
-  "ipAuthor.editHint": "长按编辑 IP 资料。"
+  "ipAuthor.editHint": "长按编辑 IP 资料。",
+  "ipCreate.heading": "创建 IP",
+  "ipCreate.analyze": "分析文档",
+  "ipCreate.documentHint": "可选：PDF、DOCX、DOC、TXT 或 MD，最大 10 MiB。建议仅填入空白的标题和简介。",
+  "ipCreate.channel": "频道",
+  "ipCreate.ip": "IP",
+  "ipCreate.community": "社区",
+  "ipCreate.noGenres": "暂无可用类型，请刷新重试。",
+  "ipCreate.region": "地区",
+  "ipCreate.unspecified": "未指定",
+  "ipCreate.pending": "创建结果待确认。重试将使用同一请求，不会重复创建 IP。",
+  "ipCreate.submit": "创建草稿",
+  "ipCreate.clearAnalysis": "清除文档建议"
 }
