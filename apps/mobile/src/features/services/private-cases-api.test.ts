@@ -54,6 +54,7 @@ const history = {
 const command = {
   clientKey: id(4),
   expectedVersion: 2,
+  attachmentIds: [],
   action: "message" as const,
   message: "Please review",
 };
@@ -143,4 +144,15 @@ it("retains an appeal action after the case is reopened by its first attempt", a
     requestKey: command.clientKey,
     expectedVersion: 2,
   });
+});
+
+it("sends only explicitly selected attachments and keeps them in the durable retry", async () => {
+  const input = { ...command, attachmentIds: [id(8)] };
+  const box = caseOutbox(id(1), "a", 1);
+  box.save(input);
+  await writePrivateCase(id(1), "a", 1, box.read()!, signal());
+  expect(h.post.mock.calls[0]![1].data.attachmentIds).toEqual([id(8)]);
+  await expect(
+    writePrivateCase(id(1), "a", 1, { ...input, attachmentIds: Array(21).fill(id(8)) }, signal())
+  ).rejects.toThrow();
 });

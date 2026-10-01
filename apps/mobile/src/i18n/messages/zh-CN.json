@@ -3103,5 +3103,16 @@
   "privateCases.evidence": "证据与附件",
   "privateCases.evidenceRefs": "证据引用：",
   "privateCases.appeal": "申诉此处理结果",
-  "privateCases.message": "案件留言"
+  "privateCases.message": "案件留言",
+  "caseEvidence.privacy": "上传后文件仍为私密，勾选并随留言提交后才对案件参与者及授权运营人员开放。",
+  "caseEvidence.limits": "PDF、PNG 或 JPEG，每个不超过 10 MB。每条留言最多选择 20 个文件。",
+  "caseEvidence.retry": "重试上传",
+  "caseEvidence.confirm": "确认已存储文件",
+  "caseEvidence.release": "释放本地文件",
+  "caseEvidence.recovery": "离开页面会释放本地文件数据。刷新可确认已上传文件；未完成的上传需重新选择。此操作不会删除已存储证据。",
+  "caseEvidence.shared": "已共享至案件",
+  "caseEvidence.private": "仅自己可见",
+  "caseEvidence.unconfirmed": "待确认",
+  "caseEvidence.open": "打开证据",
+  "caseEvidence.select": "随此留言共享"
 }

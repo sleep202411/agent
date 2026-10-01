@@ -30,8 +30,22 @@ vi.mock("@/i18n", () => ({
 vi.mock("expo-modules-core", () => ({
   uuid: { v4: () => "00000000-0000-4000-8000-000000000004" },
 }));
-vi.mock("@/components/authed-web-view", () => ({
-  AuthedWebView: ({ path }: { path: string }) => <div>web:{path}</div>,
+vi.mock("./case-evidence", () => ({
+  CaseEvidence: ({
+    caseId,
+    selected,
+    onSelect,
+    disabled,
+  }: {
+    caseId: string;
+    selected: string[];
+    onSelect: (ids: string[]) => void;
+    disabled: boolean;
+  }) => (
+    <button disabled={disabled} onClick={() => onSelect(["00000000-0000-4000-8000-000000000007"])}>
+      evidence:{caseId}:{selected.length}
+    </button>
+  ),
 }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -160,13 +174,12 @@ it("restores a pending message and retries the exact version/key after a lost re
   expect(host.textContent).toContain("feedbackHistory.saved");
   expect(h.post.mock.calls[0]![1].data).toEqual(h.post.mock.calls[1]![1].data);
 });
-it("hands evidence to the exact authenticated case page and refreshes on return", async () => {
+it("uses native evidence selection in the case and hides it after account changes", async () => {
   await mount();
   await click("Private case");
-  await click("privateCases.evidence");
-  expect(host.textContent).toContain(`web:/crews/cases/${id(1)}`);
-  await click("privateCases.backDetail");
-  expect(host.textContent).toContain("Existing discussion");
+  expect(host.textContent).toContain(`evidence:${id(1)}:0`);
+  await click(`evidence:${id(1)}:0`);
+  expect(host.textContent).toContain(`evidence:${id(1)}:1`);
   h.generation = 2;
   await mount();
   expect(host.textContent).toBe("");

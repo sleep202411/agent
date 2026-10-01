@@ -3103,5 +3103,16 @@
   "privateCases.evidence": "Evidence and attachments",
   "privateCases.evidenceRefs": "Evidence references:",
   "privateCases.appeal": "Appeal this resolution",
-  "privateCases.message": "Case message"
+  "privateCases.message": "Case message",
+  "caseEvidence.privacy": "Uploads are private until selected and submitted with a message. Shared evidence is visible to case participants and authorized operations staff.",
+  "caseEvidence.limits": "PDF, PNG or JPEG; up to 10 MB each. Select up to 20 files per message.",
+  "caseEvidence.retry": "Retry file upload",
+  "caseEvidence.confirm": "Confirm stored file",
+  "caseEvidence.release": "Release local file",
+  "caseEvidence.recovery": "Leaving this screen releases local file bytes. Refresh to confirm a stored upload; incomplete uploads must be selected again. This does not delete stored evidence.",
+  "caseEvidence.shared": "Shared with case",
+  "caseEvidence.private": "Private to you",
+  "caseEvidence.unconfirmed": "Unconfirmed",
+  "caseEvidence.open": "Open evidence",
+  "caseEvidence.select": "Share with this message"
 }

@@ -104,6 +104,7 @@ export const caseCommand = z.object({
   clientKey: id,
   expectedVersion: z.number().int().positive().max(2147483646),
   action: z.enum(["message", "appeal"]),
+  attachmentIds: z.array(id).max(20).default([]),
   message: z.string().trim().min(1).max(4000),
 });
 export type CaseCommand = z.infer<typeof caseCommand>;
@@ -138,6 +139,7 @@ export async function writePrivateCase(
         action: request.action,
         message: request.message,
         submissionIds: [],
+        ...(request.attachmentIds.length ? { attachmentIds: request.attachmentIds } : {}),
       },
     })
   );

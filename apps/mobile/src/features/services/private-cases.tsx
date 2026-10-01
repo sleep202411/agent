@@ -7,7 +7,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
-import { AuthedWebView } from "@/components/authed-web-view";
+import { CaseEvidence } from "./case-evidence";
 import { ApiRequestError } from "@/lib/api-client";
 import {
   fetchPrivateCases,
@@ -136,8 +136,7 @@ function Detail({ caseId, userId, generation }: Props & { caseId: string }) {
     [cursor, setCursor] = useState<number | null>(null),
     [revision, setRevision] = useState(0),
     [loading, setLoading] = useState(true),
-    [error, setError] = useState(""),
-    [web, setWeb] = useState(false);
+    [error, setError] = useState("");
   useEffect(() => {
     const c = new AbortController();
     void fetchPrivateCase(caseId, userId, generation, cursor, c.signal)
@@ -172,19 +171,6 @@ function Detail({ caseId, userId, generation }: Props & { caseId: string }) {
     setCursor(null);
     setRevision((v) => v + 1);
   };
-  if (web)
-    return (
-      <View style={{ flex: 1 }}>
-        <Action
-          label={t("privateCases.backDetail")}
-          onPress={() => {
-            setWeb(false);
-            refresh();
-          }}
-        />
-        <AuthedWebView path={`/crews/cases/${caseId}`} title={t("privateCases.evidence")} />
-      </View>
-    );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <Action label={t("thread.refresh")} onPress={refresh} disabled={loading} />
@@ -199,7 +185,6 @@ function Detail({ caseId, userId, generation }: Props & { caseId: string }) {
           <ThemedText>
             {row.openedByUserId} → {row.respondentUserId}
           </ThemedText>
-          <Action label={t("privateCases.evidence")} onPress={() => setWeb(true)} />
           {row.events.map((e) => (
             <View key={e.id} style={{ gap: 4 }}>
               <ThemedText>
@@ -263,6 +248,8 @@ function Discussion({
     [error, setError] = useState(initial.error),
     [saved, setSaved] = useState(false),
     [definitive, setDefinitive] = useState(false);
+  const [selected, setSelected] = useState(initial.pending?.attachmentIds ?? []);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const [version] = useState(row.version);
   const [action] = useState<CaseCommand["action"]>(
     initial.pending?.action ?? (row.status === "resolved" ? "appeal" : "message")
@@ -283,6 +270,7 @@ function Discussion({
           expectedVersion: version,
           action,
           message,
+          attachmentIds: selected,
         };
         outbox.save(request);
         setPending(request);
@@ -308,6 +296,14 @@ function Discussion({
   const locked = op.busy || !!pending || saved || !!initial.error;
   return (
     <View style={{ gap: 8 }}>
+      <CaseEvidence
+        caseId={row.id}
+        generation={generation}
+        disabled={locked}
+        selected={selected}
+        onSelect={setSelected}
+        onBusy={setUploadBusy}
+      />
       <ThemedText>
         {t(action === "appeal" ? "privateCases.appeal" : "privateCases.message")}
       </ThemedText>
@@ -334,7 +330,11 @@ function Discussion({
           <Action
             label={t(pending ? "feedbackHistory.retry" : "feedbackHistory.submit")}
             disabled={
-              op.busy || !!initial.error || !message.trim() || (!pending && version !== row.version)
+              op.busy ||
+              uploadBusy ||
+              !!initial.error ||
+              !message.trim() ||
+              (!pending && version !== row.version)
             }
             onPress={send}
           />
