@@ -3064,5 +3064,7 @@
   "creatorCertificates.validUntil": "有效期至",
   "creatorCertificates.openOriginal": "開啟原圖",
   "creatorCertificates.imageUnavailable": "證書圖片暫不可用。",
-  "creatorCertificates.close": "關閉"
+  "creatorCertificates.close": "關閉",
+  "creatorCertificates.save": "儲存或分享圖片",
+  "creatorCertificates.saving": "正在準備圖片…"
 }

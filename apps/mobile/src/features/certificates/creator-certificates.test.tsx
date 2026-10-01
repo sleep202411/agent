@@ -2,12 +2,21 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { CreatorCertificates } from "./creator-certificates";
-const h = vi.hoisted(() => ({ list: vi.fn(), open: vi.fn(), active: true, id: "a" }));
+const h = vi.hoisted(() => ({
+  list: vi.fn(),
+  download: vi.fn(),
+  save: vi.fn(),
+  open: vi.fn(),
+  active: true,
+  id: "a",
+}));
 vi.mock("./creator-certificates-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./creator-certificates-api")>()),
   listCreatorCertificates: h.list,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
+vi.mock("./download-certificate", () => ({ downloadCertificate: h.download }));
+vi.mock("./save-certificate", () => ({ saveCertificate: h.save }));
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: h.open }));
 vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
@@ -100,4 +109,24 @@ it("keeps metadata but hides unsafe original image actions", async () => {
   await click("Producer");
   expect(host.textContent).toContain("creatorCertificates.imageUnavailable");
   expect(host.textContent).not.toContain("creatorCertificates.openOriginal");
+});
+
+it("cancels an unfinished download when closing preview", async () => {
+  let finish!: (v: unknown) => void;
+  h.download.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await click("Producer");
+  await click("creatorCertificates.save");
+  const signal = h.download.mock.calls[0][2];
+  await click("creatorCertificates.close");
+  expect(signal.aborted).toBe(true);
+  await act(async () =>
+    finish({ bytes: new Uint8Array(), filename: "cert.png", mimeType: "image/png" })
+  );
+  expect(h.save.mock.calls[0][1]()).toBe(false);
 });

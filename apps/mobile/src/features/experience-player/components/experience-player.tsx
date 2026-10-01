@@ -814,9 +814,11 @@ function RendererPanel({
     );
     return (
       <View style={styles.choiceOverlay} pointerEvents="box-none">
-        <ThemedText type="smallBold" style={styles.choicePrompt}>
-          {localize(config.prompt, locale, defaultLocale)}
-        </ThemedText>
+        {config.prompt && (
+          <ThemedText type="smallBold" style={styles.choicePrompt}>
+            {localize(config.prompt, locale, defaultLocale)}
+          </ThemedText>
+        )}
         {choices.length === 0 ? (
           <ThemedText type="small" style={styles.lightMuted}>
             {copy.noVisibleChoices}

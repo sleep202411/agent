@@ -12,6 +12,8 @@ import {
   publicCertificateImage,
   type CreatorCertificate,
 } from "./creator-certificates-api";
+import { downloadCertificate } from "./download-certificate";
+import { saveCertificate } from "./save-certificate";
 export function CreatorCertificates({ creatorId }: { creatorId: string }) {
   const active = useScreenActive();
   return active ? <CertificateList key={creatorId} creatorId={creatorId} /> : null;
@@ -26,9 +28,20 @@ function CertificateList({ creatorId }: { creatorId: string }) {
     [selected, setSelected] = useState<CreatorCertificate>();
   const [openError, setOpenError] = useState<string>();
   const openSequence = useRef(0);
+  const download = useRef<AbortController | undefined>(undefined);
+  const [saving, setSaving] = useState(false);
+  const closePreview = () => {
+    openSequence.current += 1;
+    download.current?.abort();
+    download.current = undefined;
+    setSaving(false);
+    setSelected(undefined);
+  };
   useEffect(
     () => () => {
       openSequence.current += 1;
+      download.current?.abort();
+      download.current = undefined;
     },
     []
   );
@@ -98,15 +111,7 @@ function CertificateList({ creatorId }: { creatorId: string }) {
           </Pressable>
         ))
       )}
-      <Modal
-        visible={!!selected}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          openSequence.current += 1;
-          setSelected(undefined);
-        }}
-      >
+      <Modal visible={!!selected} transparent animationType="fade" onRequestClose={closePreview}>
         <View
           style={{
             flex: 1,
@@ -119,13 +124,7 @@ function CertificateList({ creatorId }: { creatorId: string }) {
             style={{ maxHeight: "90%", backgroundColor: theme.background, borderRadius: 8 }}
             contentContainerStyle={{ padding: 16, gap: 12 }}
           >
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                openSequence.current += 1;
-                setSelected(undefined);
-              }}
-            >
+            <Pressable accessibilityRole="button" onPress={closePreview}>
               <ThemedText>{t("creatorCertificates.close")}</ThemedText>
             </Pressable>
             {selected && (
@@ -162,6 +161,33 @@ function CertificateList({ creatorId }: { creatorId: string }) {
                       }}
                     >
                       <ThemedText>{t("creatorCertificates.openOriginal")}</ThemedText>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={saving}
+                      onPress={() => {
+                        if (download.current) return;
+                        const c = new AbortController();
+                        download.current = c;
+                        setSaving(true);
+                        setOpenError(undefined);
+                        void downloadCertificate(image, selected.certNo, c.signal)
+                          .then((file) => saveCertificate(file, () => !c.signal.aborted))
+                          .catch((e) => {
+                            if (!c.signal.aborted)
+                              setOpenError(e instanceof Error ? e.message : String(e));
+                          })
+                          .finally(() => {
+                            if (download.current === c) {
+                              download.current = undefined;
+                              setSaving(false);
+                            }
+                          });
+                      }}
+                    >
+                      <ThemedText>
+                        {t(saving ? "creatorCertificates.saving" : "creatorCertificates.save")}
+                      </ThemedText>
                     </Pressable>
                   </>
                 ) : (

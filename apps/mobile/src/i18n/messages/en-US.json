@@ -3064,5 +3064,7 @@
   "creatorCertificates.validUntil": "Valid until",
   "creatorCertificates.openOriginal": "Open original image",
   "creatorCertificates.imageUnavailable": "Certificate image unavailable.",
-  "creatorCertificates.close": "Close"
+  "creatorCertificates.close": "Close",
+  "creatorCertificates.save": "Save or share image",
+  "creatorCertificates.saving": "Preparing image…"
 }
