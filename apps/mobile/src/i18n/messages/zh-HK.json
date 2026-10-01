@@ -4103,5 +4103,9 @@
   "contentGpsDiscovery.includeUnknown": "包含並標註未知時長",
   "contentGpsDiscovery.durationPolicyInclude": "按單集時長篩選；未知時長將保留並標註。",
   "contentGpsDiscovery.unsupportedConditions": "暫不支援整部影片時長和情緒篩選。請重設這些條件或進一步說明。",
-  "contentGpsDiscovery.invalidLink": "此連結包含無效搜尋條件。請修正篩選條件或重設。重複的單值條件或無效 IP 選擇需要重設。"
+  "contentGpsDiscovery.invalidLink": "此連結包含無效搜尋條件。請修正篩選條件或重設。重複的單值條件或無效 IP 選擇需要重設。",
+  "ipBookmark.target": "收藏對象",
+  "ipBookmark.wholeIp": "整個 IP",
+  "ipBookmark.episode": "收藏單集",
+  "ipBookmark.unavailable": "該單集已不可用，請選擇其他對象。"
 }

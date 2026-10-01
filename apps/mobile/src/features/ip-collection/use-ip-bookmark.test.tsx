@@ -1,7 +1,7 @@
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useGpsBookmark } from "./use-gps-bookmark";
+import { useIpBookmark } from "./use-ip-bookmark";
 const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), generation: 1 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -9,21 +9,23 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
 const id = "11111111-1111-4111-8111-111111111111";
 const saved = { targetType: "ip", status: "active", ip: { id }, episode: null };
-let value: ReturnType<typeof useGpsBookmark>;
+let value: ReturnType<typeof useIpBookmark>;
 function Probe({
   viewer = "user",
   generation = 1,
   locale = "en-US",
   selected = id,
   enabled = true,
+  episode = null,
 }: {
   viewer?: string | null;
   generation?: number;
   locale?: string;
   selected?: string | null;
   enabled?: boolean;
+  episode?: string | null;
 }) {
-  const state = useGpsBookmark(generation, viewer, locale, selected, enabled);
+  const state = useIpBookmark(generation, viewer, locale, selected, enabled, episode);
   useEffect(() => {
     value = state;
   });
@@ -192,4 +194,43 @@ it("backgrounding during a write hides state and requires a fresh read on return
   await render();
   expect(value.saved).toBe(true);
   expect(h.get).toHaveBeenCalledTimes(2);
+});
+
+it("bookmarks an episode independently of its parent IP and other episodes", async () => {
+  const ep = "22222222-2222-4222-8222-222222222222";
+  h.get.mockResolvedValue({
+    items: [saved, { ...saved, targetType: "episode", episode: { id: "other" } }],
+  });
+  await render({ episode: ep });
+  expect(value.saved).toBe(false);
+  h.get.mockResolvedValue({
+    items: [saved, { ...saved, targetType: "episode", episode: { id: ep } }],
+  });
+  await toggle();
+  expect(value.saved).toBe(true);
+  expect(h.post).toHaveBeenLastCalledWith(
+    "/ip-commerce/me/collection",
+    expect.objectContaining({ data: { targetType: "episode", ipId: id, episodeId: ep } })
+  );
+  h.get.mockResolvedValue({ items: [saved] });
+  await toggle();
+  expect(value.saved).toBe(false);
+  expect(h.post).toHaveBeenLastCalledWith(
+    "/ip-commerce/me/collection/remove",
+    expect.objectContaining({ data: { targetType: "episode", ipId: id, episodeId: ep } })
+  );
+  await render();
+  expect(value.saved).toBe(true);
+});
+it("a changed episode hides old state and ignores a late bookmark read", async () => {
+  const d = deferred<unknown>();
+  h.get.mockReturnValueOnce(d.promise);
+  await render({ episode: "first" });
+  const signal = h.get.mock.calls[0]![1].signal;
+  await render({ episode: "second" });
+  expect(signal.aborted).toBe(true);
+  await act(async () =>
+    d.resolve({ items: [{ ...saved, targetType: "episode", episodeId: "first" }] })
+  );
+  expect(value.saved).toBe(false);
 });

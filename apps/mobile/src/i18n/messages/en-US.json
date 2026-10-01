@@ -4103,5 +4103,9 @@
   "contentGpsDiscovery.includeUnknown": "Include and label unknown durations",
   "contentGpsDiscovery.durationPolicyInclude": "Individual episode duration; unknown durations remain labelled.",
   "contentGpsDiscovery.unsupportedConditions": "Film duration and mood filters are not supported. Reset these conditions or clarify your request.",
-  "contentGpsDiscovery.invalidLink": "This link contains invalid search conditions. Correct the filters or reset them. Repeated single-value conditions or an invalid IP selection require a reset."
+  "contentGpsDiscovery.invalidLink": "This link contains invalid search conditions. Correct the filters or reset them. Repeated single-value conditions or an invalid IP selection require a reset.",
+  "ipBookmark.target": "Bookmark target",
+  "ipBookmark.wholeIp": "Whole IP",
+  "ipBookmark.episode": "Bookmark episode",
+  "ipBookmark.unavailable": "This episode is no longer available. Choose another target."
 }

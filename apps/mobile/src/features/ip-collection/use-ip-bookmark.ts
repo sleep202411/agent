@@ -28,14 +28,15 @@ type Session = {
   saved: boolean;
 };
 /** A failed write is uncertain: always read before permitting another mutation. */
-export function useGpsBookmark(
+export function useIpBookmark(
   generation: number,
   viewerId: string | null,
   locale: string,
   ipId: string | null,
-  enabled: boolean
+  enabled: boolean,
+  episodeId: string | null = null
 ) {
-  const key = JSON.stringify([generation, viewerId, locale, ipId, enabled]);
+  const key = JSON.stringify([generation, viewerId, locale, ipId, episodeId, enabled]);
   const owner = useRef<Session | null>(null);
   const [state, setState] = useState<State>();
   const current = (s: Session) =>
@@ -62,11 +63,11 @@ export function useGpsBookmark(
       if (!current(s)) return;
       s.saved = data.items.some(
         (item) =>
-          item.targetType === "ip" &&
           item.status === "active" &&
-          !item.episodeId &&
-          !item.episode &&
-          (item.ipId ?? item.ip?.id) === ipId
+          (item.ipId ?? item.ip?.id) === ipId &&
+          (episodeId
+            ? item.targetType === "episode" && (item.episodeId ?? item.episode?.id) === episodeId
+            : item.targetType === "ip" && !item.episodeId && !item.episode)
       );
       s.known = true;
     } catch (e) {
@@ -109,7 +110,7 @@ export function useGpsBookmark(
         credentials: "include",
         retry: false,
         signal: s.controller.signal,
-        data: { targetType: "ip", ipId },
+        data: episodeId ? { targetType: "episode", ipId, episodeId } : { targetType: "ip", ipId },
       });
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);

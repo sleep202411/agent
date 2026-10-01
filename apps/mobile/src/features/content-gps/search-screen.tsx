@@ -1,4 +1,4 @@
-import { useGpsBookmark } from "./use-gps-bookmark";
+import { useIpBookmark } from "@/features/ip-collection/use-ip-bookmark";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Image } from "expo-image";
@@ -238,7 +238,7 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
     active && auth.status !== "hydrating" && valid,
     options
   );
-  const bookmark = useGpsBookmark(
+  const bookmark = useIpBookmark(
     auth.generation,
     viewerId,
     locale,
@@ -481,7 +481,7 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
                     <Card selected item={state.page.selected} select={() => {}} />
                     <Action
                       label={label(
-                        bookmark.busy ? "saving" : bookmark.saved ? "removeBookmark" : "bookmark"
+                        bookmark.busy ? "loading" : bookmark.saved ? "removeBookmark" : "bookmark"
                       )}
                       disabled={!active || Boolean(viewerId && (bookmark.busy || !bookmark.known))}
                       onPress={() => {

@@ -4103,5 +4103,9 @@
   "contentGpsDiscovery.includeUnknown": "包含并标注未知时长",
   "contentGpsDiscovery.durationPolicyInclude": "按单集时长筛选；未知时长将保留并标注。",
   "contentGpsDiscovery.unsupportedConditions": "暂不支持整部影片时长和情绪筛选。请重置这些条件或进一步说明。",
-  "contentGpsDiscovery.invalidLink": "此链接包含无效搜索条件。请修正筛选条件或重置。重复的单值条件或无效 IP 选择需要重置。"
+  "contentGpsDiscovery.invalidLink": "此链接包含无效搜索条件。请修正筛选条件或重置。重复的单值条件或无效 IP 选择需要重置。",
+  "ipBookmark.target": "收藏对象",
+  "ipBookmark.wholeIp": "整个 IP",
+  "ipBookmark.episode": "收藏单集",
+  "ipBookmark.unavailable": "该单集已不可用，请选择其他对象。"
 }

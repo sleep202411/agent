@@ -1,3 +1,4 @@
+import { BookmarkControl } from "@/features/ip-collection/bookmark-control";
 import { IpTags } from "@/features/browse/ip-tags";
 import { EpisodeFeedback } from "@/components/episode-feedback";
 import { IpKnowledgeChat } from "@/components/ip-knowledge-chat";
@@ -632,6 +633,12 @@ export default function IpDetailScreen() {
               />
             </View>
           </View>
+
+          <BookmarkControl
+            key={ip.id}
+            ipId={ip.id}
+            episodes={ip.episodes.map((episode) => ({ id: episode.id, title: epLabel(episode) }))}
+          />
 
           <ThemedText type="small" themeColor="textSecondary">
             {t("ipDetail.likeFanNotice")}
