@@ -38,7 +38,6 @@ import { EpisodeTemplatePreview } from "./episode-template-preview";
 import { assetFolderLabel } from "./workbench-asset-folder";
 import { WorkbenchCanvasImport } from "./workbench-canvas-import";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
-import type { WorkbenchTaskBatch } from "./workbench-task-batch";
 import { TaskQuickCreate } from "./task-quick-create";
 import { CREW_TASK_KIND_MESSAGE_KEYS } from "@/app/(site)/crews/_hooks/types";
 
@@ -166,14 +165,6 @@ function TaskCreationSession({
   const pendingBatches = batches.filter((batch) => !batch.created);
   const pendingCount =
     pending.length + pendingBatches.reduce((total, batch) => total + batch.items.length, 0);
-  function stageBatch(batch: WorkbenchTaskBatch) {
-    if (lock.current) return;
-    setBatches((current) =>
-      current.some((item) => item.key === batch.key && item.attempted)
-        ? current
-        : [...current.filter((item) => item.key !== batch.key), batch]
-    );
-  }
   const stagedProgress = assetTaskProgress([
     ...pending.map((draft) => ({
       id: `draft:${draft.id}`,
@@ -455,7 +446,7 @@ function TaskCreationSession({
               </p>
             ) : null}
             {canManage && batches.some((batch) => !batch.created) ? (
-              <details className="rounded-lg bg-white/5 p-3 text-xs">
+              <details open className="rounded-lg bg-white/5 p-3 text-xs">
                 <summary className="cursor-pointer">
                   {t("recoverTemplates", { count: pendingBatches.length })}
                 </summary>
@@ -721,13 +712,7 @@ function TaskCreationSession({
                   </DialogTitle>
                 </DialogHeader>
                 <DialogBody>
-                  <WorkbenchCanvasImport
-                    crewId={crewId}
-                    onStage={(batch) => {
-                      stageBatch(batch);
-                      setProductionOpen(false);
-                    }}
-                  />
+                  <WorkbenchCanvasImport crewId={crewId} />
                 </DialogBody>
               </DialogContent>
             </Dialog>
@@ -960,7 +945,6 @@ function TaskCreationSession({
           crewId={crewId}
           episodeId={templateEpisodeId}
           onClose={() => setTemplateEpisodeId(null)}
-          onStage={stageBatch}
         />
       ) : null}
       {canManage && active ? (

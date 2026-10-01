@@ -22,7 +22,6 @@ import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
 } from '../../story-studio/interactive-film.schema';
-import { exportPlotTreeFromDraft } from '../../story-studio/story-plot-tree-export';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 
 export const ApplyCanvasTaskImportSchema = z
@@ -278,11 +277,30 @@ export class CrewCanvasTaskImportService {
     const content = InteractiveStoryDraftContentSchema.safeParse(draft.content);
     if (!content.success)
       throw new BadRequestException('The story draft is invalid.');
-    const exported = exportPlotTreeFromDraft(
-      projectId,
-      project.title,
-      content.data,
-    );
+    // Task planning includes unfinished and disconnected clips. Playback export
+    // has stricter routing/endings requirements and must not gate production work.
+    const ids = content.data.graph.nodes.map((node) => node.nodeId);
+    if (new Set(ids).size !== ids.length)
+      throw new BadRequestException('Story nodes must have unique IDs.');
+    const plotTree = {
+      title: project.title,
+      startNodeId: content.data.graph.entryNodeId,
+      nodes: content.data.graph.nodes.flatMap((node) =>
+        node.kind === 'clip'
+          ? [
+              {
+                id: node.nodeId,
+                type: 'scene' as const,
+                content: {
+                  title: node.name?.trim() || node.clipKey,
+                  description: node.description ?? '',
+                },
+                transitions: [],
+              },
+            ]
+          : [],
+      ),
+    };
     const imported = await this.prisma.crewTask.findMany({
       where: {
         crewId,
@@ -323,7 +341,7 @@ export class CrewCanvasTaskImportService {
       existingSourceNodeIds,
       sourceRevision: draft.revision,
       sourceHash: draft.contentHash,
-      plotTree: exported.plotTree,
+      plotTree,
     };
   }
 }

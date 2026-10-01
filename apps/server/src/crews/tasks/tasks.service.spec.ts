@@ -550,9 +550,10 @@ describe('CrewTasksService', () => {
 
   it('limits the center to authorized Crews and applies assignment and cursor filters', async () => {
     const t = build();
+    t.prisma.crewTask.groupBy.mockResolvedValue([]);
     t.prisma.crewMember.findMany.mockResolvedValue([
-      { crewId: 'allowed' },
-      { crewId: 'denied' },
+      { crewId: 'allowed', crew: { name: 'Allowed' } },
+      { crewId: 'denied', crew: { name: 'Denied' } },
     ]);
     t.roles.resolve
       .mockResolvedValueOnce({ permissions: ['tasks.view'] })
@@ -560,6 +561,8 @@ describe('CrewTasksService', () => {
     t.prisma.crewTask.findMany.mockResolvedValue([
       {
         id: 'page-end',
+        crew: { id: 'allowed', name: 'Allowed' },
+        assignees: [],
         workflowState: { semantic: 'open', name: 'Planning', systemKey: null },
       },
       { id: 'next', workflowState: { semantic: 'open' } },
@@ -571,7 +574,7 @@ describe('CrewTasksService', () => {
       cursor: TASK_ID,
       query: 'review',
     });
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       items: [
         {
           id: 'page-end',
@@ -607,12 +610,17 @@ describe('CrewTasksService', () => {
 
   it('omits a concurrently deleted Crew but propagates authorization failures', async () => {
     const t = build();
-    t.prisma.crewMember.findMany.mockResolvedValue([{ crewId: 'deleted' }]);
+    t.prisma.crewTask.groupBy.mockResolvedValue([]);
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      { crewId: 'deleted', crew: { name: 'Deleted' } },
+    ]);
     t.roles.resolve.mockRejectedValueOnce(
       new NotFoundException('Crew not found'),
     );
     const query = { scope: 'all' as const, status: 'all' as const, limit: 30 };
-    await expect(t.service.listCenter(ASSIGNEE_ID, query)).resolves.toEqual({
+    await expect(
+      t.service.listCenter(ASSIGNEE_ID, query),
+    ).resolves.toMatchObject({
       items: [],
       nextCursor: null,
     });
@@ -625,7 +633,10 @@ describe('CrewTasksService', () => {
 
   it('does not query tasks when no Crew grants task access', async () => {
     const t = build();
-    t.prisma.crewMember.findMany.mockResolvedValue([{ crewId: 'denied' }]);
+    t.prisma.crewTask.groupBy.mockResolvedValue([]);
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      { crewId: 'denied', crew: { name: 'Denied' } },
+    ]);
     t.roles.resolve.mockResolvedValue({ permissions: [] });
     await expect(
       t.service.listCenter(ASSIGNEE_ID, {
@@ -633,7 +644,119 @@ describe('CrewTasksService', () => {
         status: 'all',
         limit: 30,
       }),
-    ).resolves.toEqual({ items: [], nextCursor: null });
+    ).resolves.toMatchObject({ items: [], nextCursor: null });
+    expect(t.prisma.crewTask.findMany).not.toHaveBeenCalled();
+  });
+
+  it('restricts Producer view to authorized crews and counts the full filtered scope', async () => {
+    const t = build();
+    t.prisma.crewTask.groupBy.mockResolvedValue([]);
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      { crewId: 'producer', crew: { name: 'Production' } },
+      { crewId: 'viewer', crew: { name: 'Other' } },
+    ]);
+    t.roles.resolve
+      .mockResolvedValueOnce({ permissions: ['tasks.view', 'tasks.review'] })
+      .mockResolvedValueOnce({ permissions: ['tasks.view'] });
+    t.prisma.crewTask.groupBy.mockResolvedValue([{ taskKind: 'edit' }]);
+    t.prisma.crewTask.findMany.mockResolvedValue([
+      {
+        id: TASK_ID,
+        title: 'Review cut',
+        taskKind: 'edit',
+        assignees: [],
+        crew: { id: 'producer', name: 'Production' },
+        dueAt: null,
+        workflowState: {
+          semantic: 'submitted',
+          name: 'Review',
+          systemKey: 'submitted',
+        },
+      },
+    ]);
+    t.prisma.crewTask.count.mockResolvedValueOnce(8).mockResolvedValueOnce(12);
+    const result = await t.service.listCenter(ASSIGNEE_ID, {
+      scope: 'managed',
+      status: 'submitted',
+      taskKind: 'edit',
+      limit: 1,
+    });
+    expect(result.crews).toEqual([{ id: 'producer', name: 'Production' }]);
+    expect(result.stats).toEqual({ dueSoon: 8, pendingReviews: 12 });
+    expect(result.items[0]).toMatchObject({
+      canReview: true,
+      canSubmit: false,
+    });
+    expect(
+      (
+        t.prisma.crewTask.findMany.mock.calls as Array<[{ where: unknown }]>
+      )[0][0].where,
+    ).toMatchObject({
+      crewId: { in: ['producer'] },
+      taskKind: 'edit',
+      workflowState: { semantic: 'submitted' },
+    });
+    expect(
+      (t.prisma.crewTask.count.mock.calls as Array<[{ where: unknown }]>)[1][0]
+        .where,
+    ).not.toHaveProperty('id');
+  });
+  it('offers submission only with submit permission and assignment or management authority', async () => {
+    const t = build();
+    t.prisma.crewTask.groupBy.mockResolvedValue([]);
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      { crewId: CREW_ID, crew: { name: 'Film' } },
+    ]);
+    t.roles.resolve.mockResolvedValue({
+      permissions: ['tasks.view', 'tasks.submit_assigned'],
+    });
+    t.prisma.crewTask.findMany.mockResolvedValue([
+      {
+        id: 'assigned',
+        crew: { id: CREW_ID },
+        assignees: [{ userId: ASSIGNEE_ID }],
+        workflowState: { semantic: 'in_progress' },
+      },
+      {
+        id: 'other',
+        crew: { id: CREW_ID },
+        assignees: [],
+        workflowState: { semantic: 'in_progress' },
+      },
+      {
+        id: 'closed',
+        crew: { id: CREW_ID },
+        assignees: [{ userId: ASSIGNEE_ID }],
+        workflowState: { semantic: 'approved' },
+      },
+    ]);
+    const result = await t.service.listCenter(ASSIGNEE_ID, {
+      scope: 'all',
+      status: 'all',
+      limit: 30,
+    });
+    expect(result.items.map((task) => task.canSubmit)).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    expect(result.items.every((task) => !task.canReview)).toBe(true);
+  });
+  it('does not expand authorization through a requested crew filter', async () => {
+    const t = build();
+    t.prisma.crewTask.groupBy.mockResolvedValue([]);
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      { crewId: CREW_ID, crew: { name: 'Film' } },
+    ]);
+    t.roles.resolve.mockResolvedValue({ permissions: ['tasks.view'] });
+    const result = await t.service.listCenter(ASSIGNEE_ID, {
+      scope: 'mine',
+      status: 'overdue',
+      crewId: 'other',
+      limit: 30,
+    });
+    expect(result.items).toEqual([]);
+    expect(result.stats).toEqual({ dueSoon: 0, pendingReviews: 0 });
     expect(t.prisma.crewTask.findMany).not.toHaveBeenCalled();
   });
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CrewTaskKind } from '@prisma/client';
 
 export const CrewTaskViewLayoutSchema = z.enum(['list', 'board']);
 export const CrewTaskCompletedModeSchema = z.enum(['all', 'recent', 'hidden']);
@@ -430,8 +431,19 @@ export type BatchUpdateCrewTasksInput = z.infer<
 >;
 
 export const CrewTaskCenterQuerySchema = z.object({
-  scope: z.enum(['all', 'mine']).default('all'),
-  status: z.enum(['active', 'all']).default('active'),
+  scope: z.enum(['all', 'mine', 'managed']).default('all'),
+  status: z
+    .enum([
+      'active',
+      'all',
+      'submitted',
+      'revision_requested',
+      'overdue',
+      'approved',
+    ])
+    .default('active'),
+  crewId: z.string().uuid().optional(),
+  taskKind: z.nativeEnum(CrewTaskKind).optional(),
   query: z.string().trim().max(180).optional(),
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),

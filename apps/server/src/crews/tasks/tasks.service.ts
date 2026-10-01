@@ -1613,72 +1613,139 @@ export class CrewTasksService {
   async listCenter(userId: string, query: CrewTaskCenterQuery) {
     const memberships = await this.prisma.crewMember.findMany({
       where: { userId, status: 'active', crew: { deletedAt: null } },
-      select: { crewId: true },
+      select: { crewId: true, crew: { select: { name: true } } },
     });
-    const crewIds: string[] = [];
+    const accessByCrew = new Map<string, string[]>();
     for (const { crewId } of memberships) {
       try {
         const access = await this.authorization.resolve(crewId, userId);
-        if (access?.permissions.includes('tasks.view')) crewIds.push(crewId);
+        if (
+          access?.permissions.includes('tasks.view') &&
+          (query.scope !== 'managed' ||
+            access.permissions.some(
+              (p) => p === 'tasks.manage' || p === 'tasks.review',
+            ))
+        )
+          accessByCrew.set(crewId, access.permissions);
       } catch (error) {
-        // A Crew can be deleted after the membership scan. Omit that Crew;
-        // unavailable authorization infrastructure must still fail the read.
         if (!(error instanceof NotFoundException)) throw error;
       }
     }
-    if (!crewIds.length) return { items: [], nextCursor: null };
-    const rows = await this.prisma.crewTask.findMany({
-      where: {
+    const crews = memberships
+      .filter((m) => accessByCrew.has(m.crewId))
+      .map((m) => ({ id: m.crewId, name: m.crew.name }));
+    const crewIds = [...accessByCrew.keys()].filter(
+      (id) => !query.crewId || id === query.crewId,
+    );
+    if (!crewIds.length)
+      return {
+        items: [],
+        nextCursor: null,
+        crews,
+        stats: { dueSoon: 0, pendingReviews: 0 },
+        categories: [],
+      };
+    const now = new Date();
+    const base: Prisma.CrewTaskWhereInput = {
+      deletedAt: null,
+      crewId: { in: crewIds },
+      crew: {
         deletedAt: null,
-        crewId: { in: crewIds },
-        crew: {
-          deletedAt: null,
-          members: { some: { userId, status: 'active' } },
-        },
-        ...(query.scope === 'mine' ? { assignees: { some: { userId } } } : {}),
-        ...(query.status === 'active'
-          ? {
-              workflowState: {
-                semantic: {
-                  notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
-                },
-              },
-            }
-          : {}),
-        ...(query.query
-          ? { title: { contains: query.query, mode: 'insensitive' as const } }
-          : {}),
-        ...(query.cursor ? { id: { lt: query.cursor } } : {}),
+        members: { some: { userId, status: 'active' } },
       },
-      orderBy: { id: 'desc' },
-      take: query.limit + 1,
-      select: {
-        id: true,
-        title: true,
-        number: true,
-        workflowState: {
-          select: { semantic: true, name: true, systemKey: true },
-        },
-        priority: true,
-        dueAt: true,
-        crew: { select: { id: true, name: true } },
-      },
+      ...(query.scope === 'mine' ? { assignees: { some: { userId } } } : {}),
+      ...(query.query
+        ? { title: { contains: query.query, mode: 'insensitive' } }
+        : {}),
+    };
+    const categories = await this.prisma.crewTask.groupBy({
+      where: base,
+      by: ['taskKind'],
     });
-    const more = rows.length > query.limit;
-    const evaluatedAt = new Date();
+    const filtered = {
+      ...base,
+      ...(query.taskKind ? { taskKind: query.taskKind } : {}),
+    };
+    const active = {
+      notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+    };
+    const statusWhere: Prisma.CrewTaskWhereInput =
+      query.status === 'all'
+        ? {}
+        : query.status === 'overdue'
+          ? { workflowState: { semantic: active }, dueAt: { lt: now } }
+          : {
+              workflowState: {
+                semantic: query.status === 'active' ? active : query.status,
+              },
+            };
+    const [rows, dueSoon, pendingReviews] = await Promise.all([
+      this.prisma.crewTask.findMany({
+        where: {
+          ...filtered,
+          ...statusWhere,
+          ...(query.cursor ? { id: { lt: query.cursor } } : {}),
+        },
+        orderBy: { id: 'desc' },
+        take: query.limit + 1,
+        select: {
+          id: true,
+          title: true,
+          number: true,
+          taskKind: true,
+          workflowState: {
+            select: { semantic: true, name: true, systemKey: true },
+          },
+          priority: true,
+          dueAt: true,
+          crew: { select: { id: true, name: true } },
+          assignees: { where: { userId }, select: { userId: true } },
+        },
+      }),
+      this.prisma.crewTask.count({
+        where: {
+          ...filtered,
+          workflowState: { semantic: active },
+          dueAt: {
+            gte: now,
+            lt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          },
+        },
+      }),
+      this.prisma.crewTask.count({
+        where: {
+          ...filtered,
+          workflowState: { semantic: CrewTaskStatus.submitted },
+        },
+      }),
+    ]);
     const items = rows
       .slice(0, query.limit)
-      .map(({ workflowState, ...task }) => ({
-        ...task,
-        workflowState,
-        status: workflowState.semantic,
-        deadlineRisk: taskDeadlineRisk(
-          workflowState.semantic,
-          task.dueAt,
-          evaluatedAt,
-        ),
-      }));
-    return { items, nextCursor: more ? items.at(-1)!.id : null };
+      .map(({ workflowState, assignees, ...task }) => {
+        const permissions = accessByCrew.get(task.crew.id) ?? [];
+        const status = workflowState.semantic;
+        return {
+          ...task,
+          workflowState,
+          status,
+          canSubmit:
+            ACCEPTING_TASK_STATUSES.has(status) &&
+            permissions.includes('tasks.submit_assigned') &&
+            (assignees.length > 0 || permissions.includes('tasks.manage')),
+          canReview:
+            status === 'submitted' && permissions.includes('tasks.review'),
+          deadlineRisk: taskDeadlineRisk(status, task.dueAt, now),
+        };
+      });
+    return {
+      items,
+      nextCursor: rows.length > query.limit ? items.at(-1)!.id : null,
+      crews,
+      categories: categories.flatMap((row) =>
+        row.taskKind ? [row.taskKind] : [],
+      ),
+      stats: { dueSoon, pendingReviews },
+    };
   }
 
   private async assertTaskListCursor(

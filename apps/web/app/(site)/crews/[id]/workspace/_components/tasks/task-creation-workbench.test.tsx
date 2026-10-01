@@ -8,20 +8,8 @@ vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
   displayNameOf: (id: string) => id,
 }));
 vi.mock("./workbench-canvas-import", () => ({
-  WorkbenchCanvasImport: ({ onStage }: { onStage: (batch: unknown) => void }) => (
-    <button
-      onClick={() =>
-        onStage({
-          key: "canvas:project",
-          title: "Canvas Batch",
-          path: "/crews/crew/canvas-task-import/story-projects/project/apply",
-          body: { sourceRevision: 3, sourceHash: "hash" },
-          items: [{ title: "Scene One" }, { title: "Scene Two" }],
-        })
-      }
-    >
-      Stage Canvas
-    </button>
+  WorkbenchCanvasImport: ({ onStage }: { onStage?: unknown }) => (
+    <div data-direct-import={onStage === undefined}>Import to Tasks</div>
   ),
 }));
 vi.mock("./workbench-asset-upload", () => ({ WorkbenchAssetUpload: () => <div data-upload /> }));
@@ -338,10 +326,9 @@ it("discards only staged drafts without sending a create request", async () => {
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("stages batches without writing and retries the exact reviewed command", async () => {
+it("recovers saved batches and retries the exact reviewed command", async () => {
+  seedBatch();
   await render();
-  await click("Production");
-  await click("Stage Canvas");
   expect(host.textContent).toContain("Canvas Batch");
   expect(state.post).not.toHaveBeenCalled();
   state.post.mockRejectedValueOnce(new Error("Connection lost"));
@@ -353,10 +340,9 @@ it("stages batches without writing and retries the exact reviewed command", asyn
 });
 
 it("keeps confirmed individual tasks out of batch retries and refreshes all affected crew views", async () => {
+  seedBatch();
   await render();
   await stage();
-  await click("Production");
-  await click("Stage Canvas");
   state.post.mockRejectedValueOnce(new Error("Connection lost"));
   await click("Create All Tasks");
   expect(state.create).toHaveBeenCalledTimes(1);
@@ -487,9 +473,8 @@ it("opens all accessible asset search separately from collapsed progress", async
   );
 });
 it("restores a reviewed batch without altering its idempotent command", async () => {
+  seedBatch();
   await render();
-  await click("Production");
-  await click("Stage Canvas");
   state.post.mockRejectedValueOnce(new Error("Connection lost"));
   await click("Create All Tasks");
   await remount();
@@ -731,4 +716,29 @@ it("lets an assigned non-manager find a saved task for delivery without creation
       button.getAttribute("aria-label")?.startsWith("Create Task")
     )
   ).toBe(false);
+});
+
+function seedBatch() {
+  window.localStorage.setItem(
+    "fizz:workbench:v1:user:crew",
+    JSON.stringify({
+      version: 1,
+      drafts: [],
+      batches: [
+        {
+          key: "canvas:project",
+          title: "Canvas Batch",
+          path: "/crews/crew/canvas-task-import/story-projects/project/apply",
+          body: { sourceRevision: 3, sourceHash: "hash" },
+          items: [{ title: "Scene One" }, { title: "Scene Two" }],
+        },
+      ],
+    })
+  );
+}
+it("imports new canvas tasks directly instead of staging another browser draft", async () => {
+  await render();
+  await click("Production");
+  expect(host.querySelector('[data-direct-import="true"]')).not.toBeNull();
+  expect(button("Create All Tasks")).toBeUndefined();
 });
