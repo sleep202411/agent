@@ -1,3 +1,5 @@
+import { proposalOutbox } from "./proposal-outbox";
+import { getAuthGeneration } from "@/auth/auth-store";
 import { useRef, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { SERVICE_TIERS } from "@repo/shared/creator-service";
@@ -106,22 +108,49 @@ export function ConversationProposal({
     </View>
   );
 }
-export function ConversationProposalEditor({ conversation, userId, refresh }: Props) {
+export function ConversationProposalEditor(props: Props) {
+  if (!canSendProposal(props.conversation, props.userId)) return null;
+  return (
+    <ProposalEditor
+      key={`${props.conversation.id}:${props.userId}:${getAuthGeneration()}`}
+      {...props}
+    />
+  );
+}
+function ProposalEditor({ conversation, userId, refresh }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(conversation.id, useScreenActive());
-  const [open, setOpen] = useState(false),
-    [error, setError] = useState<string>();
-  const [tier, setTier] = useState<(typeof SERVICE_TIERS)[number]>("basic");
-  const [currency, setCurrency] = useState(appEnv.siteRegion === "cn" ? "CNY" : "USD");
-  const [fields, setFields] = useState({
-    price: "",
-    deliveryDays: "",
-    revisions: "0",
-    scope: "",
-    note: "",
+  const [outbox] = useState(() => proposalOutbox(conversation.id, userId, getAuthGeneration()));
+  const [initial] = useState(() => {
+    try {
+      return { saved: outbox.read(), error: undefined };
+    } catch (cause) {
+      return { saved: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
   });
-  const intent = useRef<ReturnType<typeof proposalInputSchema.parse> | undefined>(undefined);
+  const [open, setOpen] = useState(!!initial.saved || !!initial.error),
+    [error, setError] = useState<string | undefined>(initial.error);
+  const [tier, setTier] = useState<(typeof SERVICE_TIERS)[number]>(
+    initial.saved?.packageTier ?? "basic"
+  );
+  const [currency, setCurrency] = useState(
+    initial.saved?.currency ?? (appEnv.siteRegion === "cn" ? "CNY" : "USD")
+  );
+  const [fields, setFields] = useState(
+    initial.saved
+      ? {
+          price: String(initial.saved.price),
+          deliveryDays: String(initial.saved.deliveryDays),
+          revisions: String(initial.saved.revisions),
+          scope: initial.saved.scope.join("\n"),
+          note: initial.saved.note,
+        }
+      : { price: "", deliveryDays: "", revisions: "0", scope: "", note: "" }
+  );
+  const intent = useRef<ReturnType<typeof proposalInputSchema.parse> | undefined>(
+    initial.saved ?? undefined
+  );
   const parsed = proposalInputSchema.safeParse({
     ...fields,
     packageTier: tier,
@@ -135,8 +164,8 @@ export function ConversationProposalEditor({ conversation, userId, refresh }: Pr
       .map((line) => line.trim())
       .filter(Boolean),
   });
-  const [attempted, setAttempted] = useState(false);
-  const frozen = op.busy || attempted;
+  const [attempted, setAttempted] = useState(!!initial.saved);
+  const frozen = !!initial.error || op.busy || attempted;
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
@@ -172,7 +201,7 @@ export function ConversationProposalEditor({ conversation, userId, refresh }: Pr
         ))}
       </ScrollView>
       <ScrollView horizontal>
-        {(appEnv.siteRegion === "cn" ? ["CNY"] : ALL_CURRENCIES).map((value) => (
+        {(appEnv.siteRegion === "cn" ? (["CNY"] as const) : ALL_CURRENCIES).map((value) => (
           <Pressable
             key={value}
             accessibilityRole="radio"
@@ -209,15 +238,19 @@ export function ConversationProposalEditor({ conversation, userId, refresh }: Pr
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       <Pressable
         accessibilityRole="button"
-        disabled={op.busy || !parsed.success}
+        disabled={!!initial.error || op.busy || !parsed.success}
         onPress={() => {
-          if (!parsed.success) return;
+          if (initial.error || !parsed.success) return;
           if (!intent.current) intent.current = { ...parsed.data, clientKey: inquiryKey() };
           const submitted = intent.current;
           setAttempted(true);
           void op.run(
-            () => sendProposal(conversation, userId, submitted),
             () => {
+              outbox.save(submitted);
+              return sendProposal(conversation, userId, submitted);
+            },
+            () => {
+              outbox.clear(submitted.clientKey);
               intent.current = undefined;
               setAttempted(false);
               setOpen(false);
