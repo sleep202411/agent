@@ -65,6 +65,7 @@ export default function RootLayout() {
                 <Stack.Screen name="work/[id]" options={detailHeader} />
                 <Stack.Screen name="about" />
                 <Stack.Screen name="certificate-verify" />
+                <Stack.Screen name="earnings" />
                 <Stack.Screen name="account-security" />
                 <Stack.Screen name="bind-invite" />
                 <Stack.Screen name="referrals" />
