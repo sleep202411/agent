@@ -29,6 +29,13 @@ export default function GenerationScreen() {
       >
         <ThemedText type="small">{t("castingAccept.title")}</ThemedText>
       </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push("/likeness-authorizations")}
+        style={{ paddingHorizontal: 16, paddingVertical: 8 }}
+      >
+        <ThemedText type="small">{t("likenessGrants.title")}</ThemedText>
+      </Pressable>
       {auth.status === "hydrating" ? (
         <ActivityIndicator />
       ) : auth.status !== "authenticated" ? (

@@ -3691,5 +3691,22 @@
   "crewOpening.unavailable": "This job is no longer publicly available.",
   "crewOpening.failed": "Could not load this job.",
   "crewOpening.full": "Position filled",
-  "crewOpening.member": "Already a Crew member"
+  "crewOpening.member": "Already a Crew member",
+  "likenessGrants.title": "Likeness authorizations",
+  "likenessGrants.hint": "Choose a workspace and your own likeness to review project authorizations. Withdrawal stops future use; it does not take down existing outputs.",
+  "likenessGrants.noWorkspaces": "No accessible workspaces.",
+  "likenessGrants.empty": "No real-person likenesses in this workspace.",
+  "likenessGrants.pending": "The withdrawal result is unknown. It will not be sent again automatically.",
+  "likenessGrants.check": "Check original authorization",
+  "likenessGrants.originalWithdrawn": "The original authorization is withdrawn. A later authorization, if any, remains unchanged.",
+  "likenessGrants.unresolved": "The original withdrawal is not yet confirmed. Refresh and review the authorization history.",
+  "likenessGrants.clearHint": "Clear only this local pending record after reviewing the history. This does not withdraw, restore or change any server authorization.",
+  "likenessGrants.noGrants": "No project authorizations.",
+  "likenessGrants.active": "Active",
+  "likenessGrants.revoked": "Withdrawn",
+  "likenessGrants.withdraw": "Withdraw authorization",
+  "likenessGrants.confirmHint": "Withdraw this project’s permission to use your likeness? Future generation is blocked. Existing outputs require a separate takedown.",
+  "likenessGrants.confirm": "Confirm withdrawal",
+  "likenessGrants.withdrawn": "Authorization withdrawn.",
+  "likenessGrants.refresh": "Refresh"
 }

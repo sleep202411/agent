@@ -3691,5 +3691,22 @@
   "crewOpening.unavailable": "此崗位已不再公開。",
   "crewOpening.failed": "無法載入此崗位。",
   "crewOpening.full": "崗位已滿",
-  "crewOpening.member": "已是劇組成員"
+  "crewOpening.member": "已是劇組成員",
+  "likenessGrants.title": "肖像授權",
+  "likenessGrants.hint": "選擇工作區和本人的肖像，查看項目授權。撤回將阻止後續使用，不會下架已有作品。",
+  "likenessGrants.noWorkspaces": "沒有可存取的工作區。",
+  "likenessGrants.empty": "此工作區沒有真人肖像。",
+  "likenessGrants.pending": "撤回結果未知，不會自動再次傳送。",
+  "likenessGrants.check": "核對原授權",
+  "likenessGrants.originalWithdrawn": "原授權已撤回。後續新增的授權（如有）保持不變。",
+  "likenessGrants.unresolved": "尚未確認原撤回結果，請重新整理並核對授權歷史。",
+  "likenessGrants.clearHint": "核對歷史後，僅清除此本地待確認記錄。此操作不會撤回、恢復或更改伺服器上的授權。",
+  "likenessGrants.noGrants": "沒有項目授權。",
+  "likenessGrants.active": "有效",
+  "likenessGrants.revoked": "已撤回",
+  "likenessGrants.withdraw": "撤回授權",
+  "likenessGrants.confirmHint": "撤回此項目使用您肖像的權限？將阻止後續生成，已有作品需單獨申請下架。",
+  "likenessGrants.confirm": "確認撤回",
+  "likenessGrants.withdrawn": "授權已撤回。",
+  "likenessGrants.refresh": "重新整理"
 }

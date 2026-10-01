@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
 import { Image } from "expo-image";
@@ -76,6 +77,7 @@ function Session({
   userId: string;
   generation: number;
 }) {
+  const router = useRouter();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation("casting-accept", true);
@@ -179,7 +181,11 @@ function Session({
       <View style={{ padding: 16, gap: 12 }}>
         <ThemedText>{t("castingAccept.done")}</ThemedText>
         <ThemedText type="small">{t("castingAccept.noMembership")}</ThemedText>
-        <Button label={t("castingAccept.manage")} onPress={openLibrary} disabled={op.busy} />
+        <Button
+          label={t("likenessGrants.title")}
+          onPress={() => router.push("/likeness-authorizations")}
+          disabled={op.busy}
+        />
       </View>
     );
   return (
@@ -200,7 +206,11 @@ function Session({
           <ThemedText type="small">
             {pending.projectName} · {pending.characterName}
           </ThemedText>
-          <Button label={t("castingAccept.manage")} onPress={openLibrary} disabled={op.busy} />
+          <Button
+            label={t("likenessGrants.title")}
+            onPress={() => router.push("/likeness-authorizations")}
+            disabled={op.busy}
+          />
           <Button label={t("casting.clear")} onPress={() => setClear(true)} disabled={op.busy} />
           {clear ? (
             <>

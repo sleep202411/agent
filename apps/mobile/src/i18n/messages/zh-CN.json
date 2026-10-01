@@ -3691,5 +3691,22 @@
   "crewOpening.unavailable": "此岗位已不再公开。",
   "crewOpening.failed": "无法加载此岗位。",
   "crewOpening.full": "岗位已满",
-  "crewOpening.member": "已是剧组成员"
+  "crewOpening.member": "已是剧组成员",
+  "likenessGrants.title": "肖像授权",
+  "likenessGrants.hint": "选择工作区和本人的肖像，查看项目授权。撤回将阻止后续使用，不会下架已有作品。",
+  "likenessGrants.noWorkspaces": "没有可访问的工作区。",
+  "likenessGrants.empty": "此工作区没有真人肖像。",
+  "likenessGrants.pending": "撤回结果未知，不会自动再次发送。",
+  "likenessGrants.check": "核对原授权",
+  "likenessGrants.originalWithdrawn": "原授权已撤回。后续新增的授权（如有）保持不变。",
+  "likenessGrants.unresolved": "尚未确认原撤回结果，请刷新并核对授权历史。",
+  "likenessGrants.clearHint": "核对历史后，仅清除此本地待确认记录。此操作不会撤回、恢复或更改服务器上的授权。",
+  "likenessGrants.noGrants": "没有项目授权。",
+  "likenessGrants.active": "有效",
+  "likenessGrants.revoked": "已撤回",
+  "likenessGrants.withdraw": "撤回授权",
+  "likenessGrants.confirmHint": "撤回此项目使用您肖像的权限？将阻止后续生成，已有作品需单独申请下架。",
+  "likenessGrants.confirm": "确认撤回",
+  "likenessGrants.withdrawn": "授权已撤回。",
+  "likenessGrants.refresh": "刷新"
 }
