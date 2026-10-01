@@ -204,8 +204,8 @@ function PackageCard({ pkg, locale }: { pkg: CreatorServicePackage; locale: stri
       </View>
       {pkg.scope.length ? (
         <View style={styles.scopeList}>
-          {pkg.scope.slice(0, 6).map((item) => (
-            <ThemedText key={item} type="code" themeColor="textSecondary">
+          {pkg.scope.map((item, index) => (
+            <ThemedText key={index} type="code" themeColor="textSecondary">
               {`• ${item}`}
             </ThemedText>
           ))}
