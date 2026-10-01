@@ -2531,5 +2531,6 @@
   "taskCompensation.share": "分润比例（%）",
   "taskCompensation.help": "可选任务条款。留空表示未设置，0 表示明确为零。最多两位小数；填写不会触发付款或结算。",
   "thread.pendingAttachments": "待发送附件",
-  "taskCreate.deadlinePast": "请选择尚未过去的截止时间。"
+  "taskCreate.deadlinePast": "请选择尚未过去的截止时间。",
+  "assetUpload.confirmRecovery": "文件已上传。请重试确认，然后将其添加到此文件夹。"
 }

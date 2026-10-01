@@ -112,3 +112,33 @@ it("rejects actual oversized bytes before reserving storage", async () => {
   ).rejects.toThrow("allowed upload size");
   expect(api.post).not.toHaveBeenCalled();
 });
+
+it("persists confirmation after PUT and before the confirmation request", async () => {
+  const beforeConfirm = vi.fn(() => {
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  await uploadMobileMediaFile(file, {
+    kind: "crew_asset_file",
+    scope: { crewId: "crew" },
+    beforeConfirm,
+  });
+  expect(beforeConfirm).toHaveBeenCalledWith({
+    storageKey: "issued-key",
+    kind: "crew_asset_file",
+    contentType: "application/pdf",
+    scope: { crewId: "crew" },
+  });
+});
+it("does not confirm if saving recovery data fails", async () => {
+  await expect(
+    uploadMobileMediaFile(file, {
+      kind: "crew_asset_file",
+      scope: { crewId: "crew" },
+      beforeConfirm: () => {
+        throw new Error("Disk full");
+      },
+    })
+  ).rejects.toThrow("Disk full");
+  expect(api.post).toHaveBeenCalledTimes(1);
+});

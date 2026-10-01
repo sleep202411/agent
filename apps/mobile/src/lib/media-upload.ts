@@ -25,11 +25,25 @@ export interface MobileUploadFile {
   size?: number;
 }
 
+export interface MediaConfirmation {
+  storageKey: string;
+  kind: string;
+  contentType: string;
+  scope?: { crewId: string };
+}
+
+export async function confirmMobileMediaUpload(data: MediaConfirmation, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const confirmed = await api.post<ConfirmResponse>("/media/confirm", { ...AURORA, data, signal });
+  return { mediaAssetId: confirmed.mediaAssetId, url: confirmed.url };
+}
+
 export interface MobileUploadOptions {
   kind: string;
   maxBytes?: number;
   signal?: AbortSignal;
   scope?: { crewId?: string };
+  beforeConfirm?: (confirmation: MediaConfirmation) => void;
   onProgress?: (percent: number) => void;
 }
 
@@ -96,20 +110,13 @@ export async function uploadMobileMediaFile(
 
   options.signal?.throwIfAborted();
 
-  // 3. Confirm upload
-  const confirmed = await api.post<ConfirmResponse>("/media/confirm", {
-    ...AURORA,
-    data: {
-      storageKey: signed.storageKey,
-      ...(scope ? { scope } : {}),
-      kind: options.kind,
-      contentType,
-    },
-    signal: options.signal,
-  });
-
-  return {
-    mediaAssetId: confirmed.mediaAssetId,
-    url: confirmed.url,
+  // Save recovery state after the bytes are accepted, before the confirmation write.
+  const confirmation: MediaConfirmation = {
+    storageKey: signed.storageKey,
+    ...(scope ? { scope } : {}),
+    kind: options.kind,
+    contentType,
   };
+  options.beforeConfirm?.(confirmation);
+  return confirmMobileMediaUpload(confirmation, options.signal);
 }

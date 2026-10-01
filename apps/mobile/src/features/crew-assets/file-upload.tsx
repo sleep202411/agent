@@ -1,3 +1,4 @@
+import { uploadConfirmation, type UploadConfirmation } from "./upload-confirmation";
 import { uploadReceipt } from "./upload-receipt";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView } from "react-native";
@@ -30,14 +31,24 @@ function Form(props: Props) {
   const [receipt] = useState(() =>
     uploadReceipt(props.crewId, props.userId, props.generation, props.parentId)
   );
+  const [confirmation] = useState(() =>
+    uploadConfirmation(props.crewId, props.userId, props.generation, props.parentId)
+  );
   const [initial] = useState(() => {
     try {
-      return { saved: receipt.read(), error: undefined };
+      return { saved: receipt.read(), pending: confirmation.read(), error: undefined };
     } catch (cause) {
-      return { saved: null, error: cause instanceof Error ? cause.message : String(cause) };
+      return {
+        saved: null,
+        pending: null,
+        error: cause instanceof Error ? cause.message : String(cause),
+      };
     }
   });
-  const [file, setFile] = useState<CrewUpload | undefined>(initial.saved?.file);
+  const [file, setFile] = useState<CrewUpload | undefined>(
+    initial.pending ? undefined : initial.saved?.file
+  );
+  const [pending, setPending] = useState<UploadConfirmation | null>(initial.pending);
   const restored = initial.error === undefined;
   const [attempted, setAttempted] = useState(initial.saved?.attempted ?? false),
     [error, setError] = useState<string | undefined>(initial.error);
@@ -53,11 +64,11 @@ function Form(props: Props) {
   }, [props.generation]);
   const report = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const pick = () => {
-    if (!restored || op.busy || file || props.generation !== getAuthGeneration()) return;
+    if (!restored || op.busy || file || pending || props.generation !== getAuthGeneration()) return;
     void op.run(
       async () => {
         setError(undefined);
-        if (receipt.read())
+        if (receipt.read() || confirmation.read())
           throw new Error("Another upload is pending. Reopen this folder before continuing.");
         const c = new AbortController();
         controller.current = c;
@@ -68,16 +79,54 @@ function Form(props: Props) {
           props.parentId
         );
         c.signal.throwIfAborted();
-        const result = await pickAndUploadCrewFile(props.crewId, c.signal);
+        let confirmationKey: string | undefined;
+        const result = await pickAndUploadCrewFile(props.crewId, c.signal, (request, name) => {
+          confirmation.save({ request, name });
+          confirmationKey = request.storageKey;
+          setPending(confirmation.read());
+        });
         if (props.generation !== getAuthGeneration()) throw new Error("Upload session expired.");
+        if (result) finishConfirmation(result, confirmationKey);
         return result;
       },
       (result) => {
-        if (result) {
-          setFile(result);
-          receipt.save({ file: result, attempted: false });
-        }
+        if (result) setFile(result);
       },
+      report
+    );
+  };
+  // Keep the confirmation until its media receipt is durable. A crash between
+  // those two writes recovers the same media and preserves any attachment attempt.
+  const finishConfirmation = (result: CrewUpload, storageKey?: string) => {
+    const saved = confirmation.read();
+    if (saved && saved.request.storageKey !== storageKey)
+      throw new Error("Another upload confirmation is pending.");
+    const existing = receipt.read();
+    const attempted = existing?.attempted ?? false;
+    receipt.save({ file: result, attempted });
+    if (saved) confirmation.clear(saved.request.storageKey);
+    setPending(null);
+    setAttempted(attempted);
+  };
+  const recover = () => {
+    if (!restored || op.busy || !pending || props.generation !== getAuthGeneration()) return;
+    void op.run(
+      async () => {
+        setError(undefined);
+        const c = new AbortController();
+        controller.current = c;
+        await validateAssetDestination(
+          props.crewId,
+          props.userId,
+          props.generation,
+          props.parentId
+        );
+        c.signal.throwIfAborted();
+        const result = await confirmation.recover(c.signal, pending.request.storageKey);
+        finishConfirmation(result, pending.request.storageKey);
+        return result;
+      },
+      setFile,
       report
     );
   };
@@ -125,8 +174,13 @@ function Form(props: Props) {
         {t("assetOrganization.destination")}: {props.destination}
       </ThemedText>
       <ThemedText>{t("assetUpload.help")}</ThemedText>
-      {!file && (
+      {!file && !pending && (
         <Button label={t("thread.uploadFile")} disabled={!restored || op.busy} onPress={pick} />
+      )}
+      {pending && <ThemedText>{pending.name}</ThemedText>}
+      {pending && <ThemedText>{t("assetUpload.confirmRecovery")}</ThemedText>}
+      {pending && (
+        <Button label={t("inbox.retry")} disabled={!restored || op.busy} onPress={recover} />
       )}
       {file && <ThemedText>{file.name}</ThemedText>}
       {file && (

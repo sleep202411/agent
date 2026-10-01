@@ -4,6 +4,10 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { AssetFileUpload } from "./file-upload";
 const h = vi.hoisted(() => ({
   generation: 1,
+  confirmationRead: vi.fn(),
+  confirmationSave: vi.fn(),
+  confirmationClear: vi.fn(),
+  recover: vi.fn(),
   receiptRead: vi.fn(),
   receiptSave: vi.fn(),
   receiptClear: vi.fn(),
@@ -13,6 +17,14 @@ const h = vi.hoisted(() => ({
   destination: vi.fn(),
   close: vi.fn(),
   listeners: new Set<() => void>(),
+}));
+vi.mock("./upload-confirmation", () => ({
+  uploadConfirmation: () => ({
+    read: h.confirmationRead,
+    save: h.confirmationSave,
+    clear: h.confirmationClear,
+    recover: h.recover,
+  }),
 }));
 vi.mock("./upload-receipt", () => ({
   uploadReceipt: () => ({ read: h.receiptRead, save: h.receiptSave, clear: h.receiptClear }),
@@ -84,6 +96,8 @@ const render = () =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.receiptRead.mockReturnValue(null);
+  h.confirmationRead.mockReturnValue(null);
+  h.recover.mockResolvedValue(file);
   h.generation = 1;
   h.listeners.clear();
   h.pick.mockResolvedValue(file);
@@ -229,4 +243,64 @@ it("does not discard when another view already attempted attachment", async () =
   await click("assetUpload.discard");
   expect(h.discard).not.toHaveBeenCalled();
   expect(host.textContent).toContain("may already be attached");
+});
+
+it("recovers confirmation before attachment without picking or uploading again", async () => {
+  h.confirmationRead.mockReturnValue({ name: "Art.png", request: { storageKey: "original-key" } });
+  await render();
+  expect(button("thread.uploadFile")).toBeUndefined();
+  expect(button("assetUpload.attach")).toBeUndefined();
+  await click("inbox.retry");
+  expect(h.pick).not.toHaveBeenCalled();
+  expect(h.recover).toHaveBeenCalledTimes(1);
+  expect(h.attach).not.toHaveBeenCalled();
+  expect(h.receiptSave).toHaveBeenCalledWith({ file, attempted: false });
+  expect(h.confirmationClear).toHaveBeenCalledWith("original-key");
+  expect(h.receiptSave.mock.invocationCallOrder[0]).toBeLessThan(
+    h.confirmationClear.mock.invocationCallOrder[0]
+  );
+  expect(button("assetUpload.attach")).toBeDefined();
+});
+it("retains recovery on failure and preserves a prior attachment attempt", async () => {
+  h.confirmationRead.mockReturnValue({ name: "Art.png", request: { storageKey: "original-key" } });
+  h.receiptRead.mockReturnValue({ file, attempted: true });
+  h.recover.mockRejectedValueOnce(new Error("Lost confirmation"));
+  await render();
+  await click("inbox.retry");
+  expect(h.confirmationClear).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Lost confirmation");
+  await click("inbox.retry");
+  expect(h.receiptSave).toHaveBeenCalledWith({ file, attempted: true });
+  expect(button("assetUpload.discard")).toBeUndefined();
+});
+
+it("retains a newly uploaded file's confirmation when the response is lost", async () => {
+  const request = {
+    storageKey: "new-key",
+    kind: "crew_asset_file",
+    contentType: "image/png",
+    scope: { crewId: "crew" },
+  };
+  h.confirmationSave.mockImplementation((pending) => h.confirmationRead.mockReturnValue(pending));
+  h.pick.mockImplementation(async (_crew, _signal, beforeConfirm) => {
+    beforeConfirm(request, "Art.png");
+    throw new Error("Confirmation response lost");
+  });
+  await render();
+  await click("thread.uploadFile");
+  expect(button("thread.uploadFile")).toBeUndefined();
+  expect(h.receiptSave).not.toHaveBeenCalled();
+  await click("inbox.retry");
+  expect(h.recover).toHaveBeenCalledWith(expect.any(AbortSignal), "new-key");
+  expect(h.pick).toHaveBeenCalledTimes(1);
+  expect(button("assetUpload.attach")).toBeDefined();
+});
+it("does not confirm a recovered upload when folder access was revoked", async () => {
+  h.confirmationRead.mockReturnValue({ name: "Art.png", request: { storageKey: "original-key" } });
+  h.destination.mockRejectedValue(new Error("Permission revoked"));
+  await render();
+  await click("inbox.retry");
+  expect(h.recover).not.toHaveBeenCalled();
+  expect(h.confirmationClear).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Permission revoked");
 });
