@@ -9,6 +9,12 @@ const state = vi.hoisted(() => ({
   fetch: vi.fn(),
   progressive: vi.fn(),
 }));
+vi.mock("./adaptive-playback-support", () => ({
+  supportsAdaptivePlayback: () =>
+    state.platform !== "web" ||
+    (typeof document !== "undefined" &&
+      !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl")),
+}));
 vi.mock("react-native", () => ({
   Platform: {
     get OS() {

@@ -1,4 +1,4 @@
-import { Platform } from "react-native";
+import { supportsAdaptivePlayback } from "./adaptive-playback-support";
 import { StoryBuildAssetPlaybackResponseSchema } from "@repo/shared/story-playback";
 import { appEnv } from "@/config";
 import { absolutizeExperienceMediaUri } from "./experience-media";
@@ -6,13 +6,6 @@ import { resolvePlaybackUri } from "./experience-media-cache";
 
 const BUILD_CONTENT =
   /\/story-projects\/[^/]+\/builds\/[^/]+\/assets\/[^/]+\/variants\/[^/]+\/content$/;
-
-/** Expo forwards the source to the platform player; negotiate only when it can play HLS. */
-export function supportsAdaptivePlayback(): boolean {
-  if (Platform.OS !== "web") return true;
-  if (typeof document === "undefined") return false;
-  return !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl");
-}
 
 export function adaptivePlaybackEndpoint(source: string): string | null {
   if (appEnv.appRegion !== "cn" || !supportsAdaptivePlayback()) return null;

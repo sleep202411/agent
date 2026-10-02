@@ -1,7 +1,7 @@
 import { ExperienceStillSegment } from "./experience-still-segment";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { useVideoPlayer, VideoView } from "./experience-video-platform";
 import type { VideoContentFit, VideoSource } from "expo-video";
 
 import {
