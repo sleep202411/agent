@@ -1,3 +1,4 @@
+import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useState } from "react";
 import { Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { SERVICE_TIERS } from "@repo/shared/creator-service";
@@ -45,6 +46,19 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(service.id, useScreenActive());
+  const clearDraft = useClearServiceEditorDraft("packages");
+  const [draftVersion, setDraftVersion] = useServiceEditorState(
+    "packages:version",
+    service.version
+  );
+  const saved = () => {
+    clearDraft();
+    refresh();
+  };
+  const discardAndReload = () => {
+    clearDraft();
+    refresh();
+  };
   const initial = (): Row[] =>
     SERVICE_TIERS.map((tier) => {
       const p = service.packages.find((item) => item.tier === tier);
@@ -60,11 +74,11 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
         scope: p?.scope.join("\n") ?? "",
       };
     });
-  const [rows, setRows] = useState(initial),
-    [open, setOpen] = useState(false),
+  const [rows, setRows] = useServiceEditorState("packages:rows", initial),
+    [open, setOpen] = useServiceEditorState("packages:open", false),
     [error, setError] = useState<string>();
   const parsed = packagesSchema.safeParse({
-    expectedVersion: service.version,
+    expectedVersion: draftVersion,
     packages: rows
       .filter((p) => p.enabled)
       .map((p) => ({
@@ -167,18 +181,19 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
           if (!parsed.success || emptyListed) return;
           void op.run(
             () => saveServicePackages(service.id, service.status, parsed.data),
-            refresh,
+            saved,
             (cause) => setError(cause instanceof Error ? cause.message : String(cause))
           );
         },
         !parsed.success || emptyListed
       )}
       {button(t("myServices.cancel"), () => {
+        setDraftVersion(service.version);
         setRows(initial());
         setError(undefined);
         setOpen(false);
       })}
-      {error && button(t("serviceEdit.reload"), refresh)}
+      {error && button(t("serviceEdit.reload"), discardAndReload)}
     </View>
   );
 }

@@ -1,3 +1,4 @@
+import { ServiceEditorDrafts } from "@/features/services/service-editor-drafts";
 import { ServiceIntentProvider } from "@/features/services/service-intent";
 import { ServicePackagesEditor } from "@/features/services/service-packages-editor";
 import { ServiceQuestionsEditor } from "@/features/services/service-questions-editor";
@@ -22,9 +23,14 @@ import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-
 
 export default function CreatorServiceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const auth = useAuth();
   return (
     <ServiceIntentProvider key={id}>
-      <ServiceDetailContent id={id} />
+      <ServiceEditorDrafts
+        key={JSON.stringify([id, auth.generation, auth.status, auth.user?.userId ?? auth.user?.id])}
+      >
+        <ServiceDetailContent id={id} />
+      </ServiceEditorDrafts>
     </ServiceIntentProvider>
   );
 }

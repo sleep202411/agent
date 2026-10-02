@@ -1,3 +1,4 @@
+import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { SERVICE_CATEGORIES } from "@repo/shared/creator-service";
@@ -34,11 +35,21 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
   const t = useTranslations(),
     theme = useTheme();
   const op = useAuthFormOperation(service.id, useScreenActive());
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState(service.title),
-    [summary, setSummary] = useState(service.summary),
-    [category, setCategory] = useState(service.category),
-    [tags, setTags] = useState(service.tags.join("\n"));
+  const clearDraft = useClearServiceEditorDraft("details");
+  const [draftVersion, setDraftVersion] = useServiceEditorState("details:version", service.version);
+  const saved = () => {
+    clearDraft();
+    refresh();
+  };
+  const discardAndReload = () => {
+    clearDraft();
+    refresh();
+  };
+  const [open, setOpen] = useServiceEditorState("details:open", false);
+  const [title, setTitle] = useServiceEditorState("details:title", service.title),
+    [summary, setSummary] = useServiceEditorState("details:summary", service.summary),
+    [category, setCategory] = useServiceEditorState("details:category", service.category),
+    [tags, setTags] = useServiceEditorState("details:tags", service.tags.join("\n"));
   const [error, setError] = useState<string>();
   const parsed = serviceDetailsSchema.safeParse({
     title,
@@ -48,9 +59,10 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
       .split("\n")
       .map((v) => v.trim())
       .filter(Boolean),
-    expectedVersion: service.version,
+    expectedVersion: draftVersion,
   });
   const reset = () => {
+    setDraftVersion(service.version);
     setTitle(service.title);
     setSummary(service.summary);
     setCategory(service.category);
@@ -124,7 +136,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
           if (!parsed.success) return;
           void op.run(
             () => saveServiceDetails(service.id, parsed.data),
-            refresh,
+            saved,
             (cause) => setError(cause instanceof Error ? cause.message : String(cause))
           );
         }}
@@ -135,7 +147,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
         <ThemedText>{t("myServices.cancel")}</ThemedText>
       </Pressable>
       {error && (
-        <Pressable accessibilityRole="button" disabled={op.busy} onPress={refresh}>
+        <Pressable accessibilityRole="button" disabled={op.busy} onPress={discardAndReload}>
           <ThemedText>{t("serviceEdit.reload")}</ThemedText>
         </Pressable>
       )}
