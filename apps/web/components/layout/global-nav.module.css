@@ -654,7 +654,7 @@
   text-transform: uppercase;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1535px) {
   .fd-secret-wordmark {
     position: fixed;
     left: 20px;
@@ -678,7 +678,7 @@
   }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1536px) {
   .fd-secret-header {
     inset-inline: 24px;
     top: 20px;
@@ -745,7 +745,7 @@
   }
 }
 
-@media (min-width: 1280px) {
+@media (min-width: 1536px) {
   .fd-secret-header {
     inset-inline: 24px;
   }
@@ -787,7 +787,7 @@
   }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1536px) {
   .fd-secret-header .fd-secret-nav-shell,
   .fd-secret-header .fd-secret-nav-content {
     height: 56px;
