@@ -19,6 +19,7 @@ export class BrowserVideoController {
   private loopValue = false;
   private listeners = new Map<keyof Events, Set<(event: never) => void>>();
   private sequence = 0;
+  private playIntent = 0;
 
   get loop() {
     return this.loopValue;
@@ -40,14 +41,16 @@ export class BrowserVideoController {
     return this.media ? !this.media.paused : false;
   }
   pause() {
+    this.playIntent++;
     this.media?.pause();
   }
   play() {
     const media = this.media;
     const sequence = this.sequence;
+    const intent = ++this.playIntent;
     if (media)
       void media.play().catch((error: unknown) => {
-        if (this.media === media && this.sequence === sequence)
+        if (this.media === media && this.sequence === sequence && this.playIntent === intent)
           this.emit("statusChange", {
             status: "error",
             error: { message: error instanceof Error ? error.message : "Video playback failed" },

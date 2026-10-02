@@ -93,3 +93,40 @@ it("uses native browser HLS when available and releases the video on detach", as
   expect(video.hasAttribute("src")).toBe(false);
   expect(video.pause).toHaveBeenCalled();
 });
+
+it("does not report an interrupted play request as a stream failure after pause", async () => {
+  let rejectPlay!: (error: Error) => void;
+  vi.mocked(video.play).mockImplementation(
+    () =>
+      new Promise<void>((_resolve, reject) => {
+        rejectPlay = reject;
+      })
+  );
+  const error = vi.fn();
+  player.addListener("statusChange", error);
+  player.play();
+  player.pause();
+  rejectPlay(new DOMException("The play request was interrupted by a call to pause", "AbortError"));
+  await Promise.resolve();
+  expect(error).not.toHaveBeenCalled();
+});
+
+it("ignores an older play rejection but still reports a current failure", async () => {
+  const rejects: ((error: Error) => void)[] = [];
+  vi.mocked(video.play).mockImplementation(
+    () =>
+      new Promise<void>((_resolve, reject) => {
+        rejects.push(reject);
+      })
+  );
+  const error = vi.fn();
+  player.addListener("statusChange", error);
+  player.play();
+  player.play();
+  rejects[0](new Error("Old play interrupted"));
+  await Promise.resolve();
+  expect(error).not.toHaveBeenCalled();
+  rejects[1](new Error("Playback blocked"));
+  await Promise.resolve();
+  expect(error).toHaveBeenCalledWith({ status: "error", error: { message: "Playback blocked" } });
+});
