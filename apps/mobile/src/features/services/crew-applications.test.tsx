@@ -1,7 +1,19 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { ApiRequestError } from "@/lib/api-client";
 import { CrewApplications } from "./crew-applications";
+vi.mock("@/lib/api-client", () => ({
+  ApiRequestError: class extends Error {
+    constructor(
+      public code: string,
+      message: string,
+      public status: number
+    ) {
+      super(message);
+    }
+  },
+}));
 vi.mock("./user-displays", () => ({ useUserDisplays: () => undefined }));
 vi.mock("./application-review", () => ({
   ApplicationReview: ({ initialApplicationId }: { initialApplicationId?: string }) => (
@@ -377,4 +389,37 @@ it("aborts the previous scope and ignores its late list response", async () => {
   expect(signal.aborted).toBe(true);
   await act(async () => resolve({ items: [app], nextCursor: null }));
   expect(host.textContent).not.toContain("Crew · Director");
+});
+
+for (const status of [0, 429, 503]) {
+  it(`retains applications and retries the failed cursor after temporary ${status}`, async () => {
+    h.list
+      .mockResolvedValueOnce({ items: [app], nextCursor: "app" })
+      .mockRejectedValueOnce(new ApiRequestError("TEMPORARY", "Please try again", status))
+      .mockResolvedValueOnce({
+        items: [{ ...app, id: "older", crewName: "Older Crew" }],
+        nextCursor: null,
+      });
+    await render();
+    await click("crewTerms.more");
+    expect(host.textContent).toContain("Please try again");
+    expect(host.textContent).toContain("Director");
+    expect(button("crewTerms.more")).toBeUndefined();
+    await click("common.retry");
+    expect(h.list.mock.calls.map((call) => call[1])).toEqual([null, "app", "app"]);
+    expect(host.textContent).toContain("Older Crew");
+    expect(host.textContent).not.toContain("Please try again");
+  });
+}
+it("clears applications after access loss and refreshes from page one", async () => {
+  h.list
+    .mockResolvedValueOnce({ items: [app], nextCursor: "app" })
+    .mockRejectedValueOnce(new ApiRequestError("FORBIDDEN", "Access revoked", 403))
+    .mockResolvedValueOnce({ items: [], nextCursor: null });
+  await render();
+  await click("crewTerms.more");
+  expect(host.textContent).not.toContain("Director");
+  expect(button("common.retry")).toBeUndefined();
+  await click("crewTerms.refresh");
+  expect(h.list.mock.calls.map((call) => call[1])).toEqual([null, "app", null]);
 });

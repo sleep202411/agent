@@ -3,6 +3,7 @@ import { ApplicationReview } from "./application-review";
 import { ApplicationAmendments } from "./application-amendments";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { ApiRequestError } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -158,6 +159,8 @@ function ApplicationPage(
 ) {
   const t = useTranslations();
   const [cursor, setCursor] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [retryable, setRetryable] = useState(false);
   const [page, setPage] = useState<Awaited<ReturnType<typeof fetchMyApplications>>>();
   const [error, setError] = useState<string>(),
     [loading, setLoading] = useState(true);
@@ -195,7 +198,11 @@ function ApplicationPage(
       })
       .catch((cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration()) {
-          setPage(undefined);
+          const temporary =
+            cause instanceof ApiRequestError &&
+            (cause.status === 0 || cause.status === 429 || cause.status >= 500);
+          setRetryable(temporary);
+          if (!temporary) setPage(undefined);
           setError(cause instanceof Error ? cause.message : String(cause));
         }
       })
@@ -206,7 +213,7 @@ function ApplicationPage(
         }
       });
     return () => c.abort();
-  }, [props.userId, props.generation, cursor, props.scope]);
+  }, [props.userId, props.generation, cursor, props.scope, retry]);
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewTerms.myApplications")}</ThemedText>
@@ -257,7 +264,21 @@ function ApplicationPage(
         />
       ))}
       {filtered?.length === 0 && <ThemedText>{t("crewTerms.empty")}</ThemedText>}
-      {page?.nextCursor && (
+      {error && retryable && (
+        <Action
+          label={t("common.retry")}
+          disabled={loading}
+          onPress={() => {
+            if (pending.current) return;
+            pending.current = true;
+            setLoading(true);
+            setError(undefined);
+            setRetryable(false);
+            setRetry((n) => n + 1);
+          }}
+        />
+      )}
+      {!error && page?.nextCursor && (
         <Action
           disabled={loading}
           label={t("crewTerms.more")}
