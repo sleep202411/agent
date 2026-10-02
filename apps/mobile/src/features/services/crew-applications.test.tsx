@@ -21,8 +21,10 @@ vi.mock("./application-review", () => ({
   ),
 }));
 vi.mock("./application-amendments", () => ({
-  ApplicationAmendments: ({ onClose }: { onClose: () => void }) => (
-    <button onClick={onClose}>Amendments</button>
+  ApplicationAmendments: ({ onClose, taskId }: { onClose: () => void; taskId: string }) => (
+    <button data-task-id={taskId} onClick={onClose}>
+      Amendments
+    </button>
   ),
 }));
 vi.mock("./application-interview", () => ({ ApplicationInterview: () => <span>Interview</span> }));
@@ -35,7 +37,9 @@ const h = vi.hoisted(() => ({
   thread: vi.fn(),
   confirm: vi.fn(),
   web: vi.fn(),
+  push: vi.fn(),
 }));
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("./application-terms-api", () => ({
   fetchMyApplications: h.list,
   fetchApplicationTerms: h.terms,
@@ -449,4 +453,34 @@ it("preserves the received applications tab across foreground refresh", async ()
   h.active = true;
   await render();
   expect(h.list).toHaveBeenLastCalledWith("creator", null, expect.any(AbortSignal), "received");
+});
+
+it("opens amendments using the refreshed task instead of the inbox snapshot", async () => {
+  const taskId = "00000000-0000-4000-8000-000000000003";
+  h.thread.mockResolvedValue({ ...app, status: "approved", taskId });
+  await open();
+  await click("crewAmendments.title");
+  expect(button("Amendments").dataset.taskId).toBe(taskId);
+});
+it("hides amendments when the refreshed thread no longer has a task", async () => {
+  h.list.mockResolvedValue({
+    items: [{ ...app, taskId: "00000000-0000-4000-8000-000000000002" }],
+    nextCursor: null,
+  });
+  h.thread.mockResolvedValue({ ...app, status: "approved", taskId: null });
+  await open();
+  expect(button("crewAmendments.title")).toBeUndefined();
+});
+
+it("opens the current approved task directly", async () => {
+  const taskId = "00000000-0000-4000-8000-000000000003";
+  h.thread.mockResolvedValue({ ...app, status: "approved", taskId });
+  await open();
+  await click("crewFinance.openTask");
+  expect(h.push).toHaveBeenCalledWith(`/crew-tasks/crew?task=${taskId}`);
+});
+it("does not expose a task route before approval", async () => {
+  h.thread.mockResolvedValue({ ...app, taskId: "00000000-0000-4000-8000-000000000003" });
+  await open();
+  expect(button("crewFinance.openTask")).toBeUndefined();
 });

@@ -1,3 +1,5 @@
+import { useRouter } from "expo-router";
+import { toHref } from "@/lib/navigation";
 import { useUserDisplays } from "./user-displays";
 import { ApplicationReview } from "./application-review";
 import { ApplicationAmendments } from "./application-amendments";
@@ -299,19 +301,19 @@ function ApplicationPage(
 }
 function TermsReview(props: Props & { application: Application; onClose: () => void }) {
   const [interview, setInterview] = useState(false);
-  const [amendments, setAmendments] = useState(false);
+  const [amendments, setAmendments] = useState<ApplicationThread>();
   const [before, setBefore] = useState<number | null>(null),
     [revision, setRevision] = useState(0);
   if (amendments)
     return (
       <ApplicationAmendments
         {...props}
-        crewId={props.application.crewId}
-        applicationId={props.application.id}
-        applicantId={props.application.applicantId}
-        taskId={props.application.taskId!}
+        crewId={amendments.crewId}
+        applicationId={amendments.id}
+        applicantId={amendments.applicantId}
+        taskId={amendments.taskId!}
         onClose={() => {
-          setAmendments(false);
+          setAmendments(undefined);
           setBefore(null);
           setRevision((n) => n + 1);
         }}
@@ -330,7 +332,7 @@ function TermsReview(props: Props & { application: Application; onClose: () => v
     <TermsPage
       key={`${revision}:${before}`}
       {...props}
-      onAmendments={() => setAmendments(true)}
+      onAmendments={setAmendments}
       onInterview={() => setInterview(true)}
       before={before}
       onMore={setBefore}
@@ -346,7 +348,7 @@ function TermsPage(
     application: Application;
     onClose: () => void;
     onInterview: () => void;
-    onAmendments: () => void;
+    onAmendments: (thread: ApplicationThread) => void;
     before: number | null;
     onMore: (before: number) => void;
     onRefresh: () => void;
@@ -354,6 +356,7 @@ function TermsPage(
 ) {
   const t = useTranslations(),
     op = useAuthFormOperation(props.application.id, true);
+  const router = useRouter();
   const theme = useTheme();
   const [thread, setThread] = useState<ApplicationThread>();
   const [page, setPage] = useState<Awaited<ReturnType<typeof fetchApplicationTerms>>>(),
@@ -387,8 +390,26 @@ function TermsPage(
         {props.application.crewName} · {props.application.positionType}
       </ThemedText>
       <Action disabled={op.busy} label={t("crewInterview.title")} onPress={props.onInterview} />
-      {thread?.status === "approved" && props.application.taskId && (
-        <Action disabled={op.busy} label={t("crewAmendments.title")} onPress={props.onAmendments} />
+      {thread?.status === "approved" && thread.taskId && (
+        <>
+          <Action
+            disabled={op.busy}
+            label={t("crewFinance.openTask")}
+            onPress={() => {
+              if (props.generation !== getAuthGeneration()) return;
+              router.push(
+                toHref(
+                  `/crew-tasks/${encodeURIComponent(thread.crewId)}?task=${encodeURIComponent(thread.taskId!)}`
+                )
+              );
+            }}
+          />
+          <Action
+            disabled={op.busy}
+            label={t("crewAmendments.title")}
+            onPress={() => props.onAmendments(thread)}
+          />
+        </>
       )}
       {thread?.taskTitle && <ThemedText>{thread.taskTitle}</ThemedText>}
       {thread?.dueAt && (
