@@ -1,3 +1,4 @@
+import { TaskDeliveryManagement } from "./task-delivery-management";
 import { TaskCompensationSummary } from "./task-compensation-summary";
 import { TaskDelete } from "./task-delete";
 import { TaskClosure } from "./task-closure";
@@ -249,6 +250,12 @@ function TaskContent({
             onRefresh={() => setRevision((v) => v + 1)}
           />
           <TaskRelations task={data} onOpenTask={onOpenTask} />
+          <TaskDeliveryManagement
+            task={data}
+            generation={generation}
+            userId={userId}
+            onRefresh={() => setRevision((v) => v + 1)}
+          />
           <TaskDelivery
             key={`delivery:${revision}`}
             taskId={taskId}

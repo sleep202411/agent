@@ -4422,5 +4422,8 @@
   "scriptEditor.quote": "引用",
   "scriptEditor.undo": "撤销",
   "scriptEditor.redo": "重做",
-  "scriptEditor.frameError": "编辑器已停止。请重试以重新打开已保存的草稿。"
+  "scriptEditor.frameError": "编辑器已停止。请重试以重新打开已保存的草稿。",
+  "taskDelivery.manage": "修改交付要求",
+  "taskDelivery.moreCategories": "更多分类",
+  "taskDelivery.saveTemplate": "保存交付要求"
 }
