@@ -1,3 +1,4 @@
+import { ChannelSubmissions } from "@/features/ip-community/channel-submissions";
 import { IpProductionStage } from "@/features/ip-community/ip-production-stage";
 import { IpReportSheet } from "@/features/ip-community/ip-report-sheet";
 import { useIpModeration } from "@/features/ip-community/use-ip-moderation";
@@ -525,6 +526,7 @@ function IpDetailSession() {
             {t("ipDetail.likeFanNotice")}
           </ThemedText>
           <IpFanCommunity ipId={ip.id} />
+          <ChannelSubmissions ipId={ip.id} />
 
           {(() => {
             const pubItems = (ip.publishers ?? []).filter((p) => p.logoUrl?.trim()).slice(0, 4);
