@@ -28,7 +28,10 @@ vi.mock("../api/story-timeline-upload", () => ({
 vi.mock("@/lib/durable-record", () => ({ durableRecord: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
-vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/i18n", () => ({
+  useTranslations: () => (key: string) =>
+    key === "timeline.exportOmitted" ? "{count} clips omitted" : key,
+}));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
@@ -181,4 +184,18 @@ it("keeps saved state after sharing fails", async () => {
   expect(
     [...host.querySelectorAll("button")].some((b) => b.textContent === "timeline.exportSave")
   ).toBe(false);
+});
+
+it("keeps a visible omission count after saving partial output", async () => {
+  const partial = {
+    ...sequence,
+    clips: [...sequence.clips, { ...sequence.clips[0]!, id: "unreadable", rank: 1 }],
+  };
+  await act(async () =>
+    root.render(<TimelineExportPanel scope={scope} userId="user" sequence={partial} />)
+  );
+  await click("timeline.exportSave");
+  expect(host.textContent).toContain("1 clips omitted");
+  expect(host.textContent).toContain("timeline.exportSaved");
+  expect(h.upload).toHaveBeenCalledOnce();
 });

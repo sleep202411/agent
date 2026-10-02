@@ -44,6 +44,9 @@ export function createNativeTimelineEncoder() {
       signal.throwIfAborted();
       if (!native) throw Error("Native timeline encoding is not included in this app build.");
       if (disposed) throw Error("Timeline encoder is closed.");
+      const captured = shots.map((shot) => ({ ...shot }));
+      if (!captured.length || new Set(captured.map((s) => s.id)).size !== captured.length)
+        throw Error("Export requires distinct video clips.");
       const id = uuid.v4();
       jobs.add(id);
       const subscription = native.addListener("progress", (value) => {
@@ -62,7 +65,7 @@ export function createNativeTimelineEncoder() {
       try {
         const pending = native.render(
           id,
-          shots.map((shot) => ({ ...shot }))
+          captured.map((shot) => ({ ...shot }))
         );
         signal.addEventListener("abort", cancel, { once: true });
         if (signal.aborted) cancel();
@@ -84,7 +87,10 @@ export function createNativeTimelineEncoder() {
         }
         if (
           new Set(parsed.completedClipIds).size !== parsed.completedClipIds.length ||
-          parsed.completedClipIds.some((clipId) => !shots.some((s) => s.id === clipId))
+          parsed.completedClipIds.some((clipId) => !captured.some((s) => s.id === clipId)) ||
+          captured
+            .filter((s) => parsed.completedClipIds.includes(s.id))
+            .some((s, index) => s.id !== parsed.completedClipIds[index])
         ) {
           release(parsed.artifact.uri);
           throw Error("Native export receipt does not match this timeline.");

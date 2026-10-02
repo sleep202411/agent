@@ -26,11 +26,12 @@ public final class FizzTimelineExportModule: Module {
           else { throw self.failure("Cannot create timeline tracks.") }
           var cursor = CMTime.zero
           var ids: [String] = []
+          var requestedIDs = Set<String>()
           var instructions: [AVMutableVideoCompositionInstruction] = []
           var canvas: CGSize?
           for shot in shots {
             try self.check(id)
-            guard let clipID = shot["id"] as? String, !clipID.isEmpty, !ids.contains(clipID),
+            guard let clipID = shot["id"] as? String, !clipID.isEmpty, !requestedIDs.contains(clipID),
                   let source = shot["url"] as? String, let url = URL(string: source),
                   url.scheme == "https", url.host != nil, url.user == nil, url.password == nil,
                   let milliseconds = shot["durationMs"] as? NSNumber,
@@ -38,29 +39,54 @@ public final class FizzTimelineExportModule: Module {
                   milliseconds.doubleValue <= 9_007_199_254_740_991,
                   milliseconds.doubleValue.rounded() == milliseconds.doubleValue
             else { throw self.failure("Invalid timeline clip.") }
-            let asset = AVURLAsset(url: url)
-            let tracks = try await asset.loadTracks(withMediaType: .video)
-            guard let sourceVideo = tracks.first else { throw self.failure("A timeline clip has no video track.") }
-            let duration = try await asset.load(.duration)
-            guard duration.isNumeric, duration.seconds > 0 else { throw self.failure("Invalid source duration.") }
-            let length = CMTimeMinimum(duration, CMTime(seconds: milliseconds.doubleValue / 1000, preferredTimescale: 600))
+            requestedIDs.insert(clipID)
+            // Read each source before mutating the composition. A failed source
+            // must not leave video/audio ranges or canvas dimensions behind.
+            let sourceVideo: AVAssetTrack
+            let sourceAudio: AVAssetTrack?
+            let audioRange: CMTimeRange?
+            let length: CMTime
+            let bounds: CGRect
+            let transform: CGAffineTransform
+            do {
+              let asset = AVURLAsset(url: url)
+              let tracks = try await asset.loadTracks(withMediaType: .video)
+              guard let track = tracks.first else { throw self.failure("A timeline clip has no video track.") }
+              sourceVideo = track
+              let duration = try await asset.load(.duration)
+              guard duration.isNumeric, duration.seconds > 0 else { throw self.failure("Invalid source duration.") }
+              length = CMTimeMinimum(duration, CMTime(seconds: milliseconds.doubleValue / 1000, preferredTimescale: 600))
+              let size = try await track.load(.naturalSize)
+              transform = try await track.load(.preferredTransform)
+              bounds = CGRect(origin: .zero, size: size).applying(transform)
+              guard bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 else { throw self.failure("Invalid video dimensions.") }
+              sourceAudio = try await asset.loadTracks(withMediaType: .audio).first
+              if let sourceAudio {
+                let available = try await sourceAudio.load(.timeRange)
+                let intersection = CMTimeRangeGetIntersection(CMTimeRange(start: .zero, duration: length), available)
+                audioRange = intersection.duration.isNumeric && intersection.duration.seconds > 0 ? intersection : nil
+              } else { audioRange = nil }
+            } catch {
+              // Cancellation and ownership changes are never partial success.
+              try self.check(id)
+              continue
+            }
             let sourceRange = CMTimeRange(start: .zero, duration: length)
-            let size = try await sourceVideo.load(.naturalSize)
-            let transform = try await sourceVideo.load(.preferredTransform)
-            let bounds = CGRect(origin: .zero, size: size).applying(transform)
-            guard bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 else { throw self.failure("Invalid video dimensions.") }
+            try self.check(id)
+            var insertedVideo = false
+            do {
+              try video.insertTimeRange(sourceRange, of: sourceVideo, at: cursor)
+              insertedVideo = true
+              if let sourceAudio, let audioRange {
+                try audio.insertTimeRange(audioRange, of: sourceAudio, at: CMTimeAdd(cursor, audioRange.start))
+              }
+            } catch {
+              if insertedVideo { composition.removeTimeRange(CMTimeRange(start: cursor, duration: length)) }
+              try self.check(id)
+              continue
+            }
             if canvas == nil {
               canvas = CGSize(width: max(2, floor(bounds.width / 2) * 2), height: max(2, floor(bounds.height / 2) * 2))
-            }
-            try self.check(id)
-            try video.insertTimeRange(sourceRange, of: sourceVideo, at: cursor)
-            let sourceAudio = try await asset.loadTracks(withMediaType: .audio)
-            if let track = sourceAudio.first {
-              let available = try await track.load(.timeRange)
-              let range = CMTimeRangeGetIntersection(sourceRange, available)
-              if range.duration.isNumeric && range.duration.seconds > 0 {
-                try audio.insertTimeRange(range, of: track, at: CMTimeAdd(cursor, range.start))
-              }
             }
             try self.check(id)
             let target = canvas!
@@ -79,6 +105,7 @@ public final class FizzTimelineExportModule: Module {
             cursor = CMTimeAdd(cursor, length)
           }
           try self.check(id)
+          guard !ids.isEmpty, canvas != nil else { throw self.failure("No timeline clips could be exported.") }
           let videoComposition = AVMutableVideoComposition()
           videoComposition.renderSize = canvas!
           videoComposition.frameDuration = CMTime(value: 1, timescale: 30)

@@ -86,3 +86,31 @@ it("releases owned output once and refuses use after disposal", async () => {
     "closed"
   );
 });
+
+it("accepts ordered partial output against the original snapshot", async () => {
+  const input = [...shots, { ...shots[0]!, id: "two" }, { ...shots[0]!, id: "three" }];
+  h.render.mockImplementation(async () => {
+    input.reverse();
+    return { artifact, completedClipIds: ["one", "three"] };
+  });
+  const result = await createNativeTimelineEncoder().render(
+    input,
+    new AbortController().signal,
+    vi.fn()
+  );
+  expect(result.completedClipIds).toEqual(["one", "three"]);
+});
+it.each([{ ids: ["two", "one"] }, { ids: ["one", "one"] }, { ids: [] }])(
+  "rejects invalid partial receipt $ids",
+  async ({ ids }) => {
+    h.render.mockResolvedValue({ artifact, completedClipIds: ids });
+    await expect(
+      createNativeTimelineEncoder().render(
+        [...shots, { ...shots[0]!, id: "two" }],
+        new AbortController().signal,
+        vi.fn()
+      )
+    ).rejects.toThrow();
+    expect(h.release).toHaveBeenCalledWith(artifact.uri);
+  }
+);
