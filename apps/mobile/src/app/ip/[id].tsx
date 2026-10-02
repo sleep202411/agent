@@ -1,3 +1,4 @@
+import { useIpModeration } from "@/features/ip-community/use-ip-moderation";
 import { useIpEngagement } from "@/features/ip-community/use-ip-engagement";
 import { IpFanCommunity } from "@/features/ip-community/ip-fan-community";
 import { IpContributingStudios } from "@/features/studios/ip-contributing-studios";
@@ -27,11 +28,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 
 import { useAuth, useAuthGate } from "@/auth";
 import { ShareSheet } from "@/components/ip-share-sheet";
-import {
-  MoreActionsButton,
-  ReportReasonSheet,
-  showContentActionsMenu,
-} from "@/components/report-actions";
+import { MoreActionsButton, ReportReasonSheet } from "@/components/report-actions";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader } from "@/components/ui";
@@ -39,14 +36,10 @@ import { webBaseUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { promptInsufficientPaywall } from "@/features/paywall";
 import { useScreenActive } from "@/hooks/use-app-active";
-import { invalidateBrowse } from "@/data/browse-refresh";
 import {
-  blockIpContent,
   isInsufficientBalanceError,
   isMemberOnlyError,
   purchaseIpContent,
-  reportIpContent,
-  type IpReportReason,
 } from "@/data/browse-service";
 import type { IpEngagementSnapshot, IpEpisode, Person } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
@@ -137,8 +130,6 @@ function IpDetailSession() {
   const unlockBusyRef = useRef(false);
   const [unlocking, setUnlocking] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reporting, setReporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
   const applyEngagement = useCallback(
@@ -162,6 +153,8 @@ function IpDetailSession() {
   const engagement = useIpEngagement(ip, active && !accessBusy, applyEngagement, refresh, (error) =>
     Alert.alert(t("ipDetail.likeFailed"), error instanceof Error ? error.message : undefined)
   );
+
+  const moderation = useIpModeration(id, active, () => router.back());
 
   const retryAccess = () => {
     if (!accessBusy && !unlocking) void refresh(true);
@@ -328,68 +321,6 @@ function IpDetailSession() {
     startUnlock(plan, episode, access?.balance ?? null);
   };
 
-  const showActions = () => {
-    showContentActionsMenu({
-      t,
-      blockLabel: t("ipDetail.blockAction"),
-      onReport: () => setReportOpen(true),
-      onBlock: confirmBlock,
-    });
-  };
-
-  const submitBlock = async () => {
-    try {
-      await blockIpContent(ip.id);
-      // Lists are filtered server-side for this viewer; nudge browse screens
-      // to refetch, then leave the page.
-      invalidateBrowse();
-      Alert.alert(t("ipDetail.blockSuccessTitle"), t("ipDetail.blockSuccessBody"), [
-        { text: t("report.close"), onPress: () => router.back() },
-      ]);
-    } catch (error) {
-      // A 401 means the session expired mid-call (the global handler already
-      // cleared it) — tell the user to sign back in, not "try again later".
-      if (error instanceof ApiRequestError && error.status === 401) {
-        authGate.openLogin({ onAuthenticated: confirmBlock });
-        return;
-      }
-      Alert.alert(t("ipDetail.blockFailed"));
-    }
-  };
-
-  const confirmBlock = () => {
-    Alert.alert(t("ipDetail.blockConfirmTitle"), t("ipDetail.blockConfirmBody"), [
-      { text: t("report.cancel"), style: "cancel" },
-      {
-        text: t("ipDetail.blockConfirmAction"),
-        style: "destructive",
-        onPress: () => void submitBlock(),
-      },
-    ]);
-  };
-
-  const submitReport = async (reason: IpReportReason) => {
-    setReporting(true);
-    try {
-      await reportIpContent(ip.id, reason);
-      setReportOpen(false);
-      Alert.alert(t("report.successTitle"), t("report.successBody"));
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) {
-        setReportOpen(false);
-        authGate.openLogin({ onAuthenticated: () => setReportOpen(true) });
-        return;
-      }
-      Alert.alert(t("report.failed"));
-    } finally {
-      setReporting(false);
-    }
-  };
-
-  const openActions = () => {
-    authGate.requireAuth({ onAuthenticated: showActions });
-  };
-
   // The web uses locale-prefixed routes (e.g. /en-US/ips/<id>) against the
   // region's public origin. Share QR and community-point checkout both use it.
   const webIpUrl = `${webBaseUrl}/${locale}/ips/${ip.id}`;
@@ -457,7 +388,10 @@ function IpDetailSession() {
                     />
                   </Pressable>
                   <View style={styles.headerButton}>
-                    <MoreActionsButton label={t("report.moreActions")} onPress={openActions} />
+                    <MoreActionsButton
+                      label={t("report.moreActions")}
+                      onPress={moderation.openActions}
+                    />
                   </View>
                 </View>
               ),
@@ -465,10 +399,10 @@ function IpDetailSession() {
       />
 
       <ReportReasonSheet
-        visible={reportOpen}
-        submitting={reporting}
-        onSelect={(reason) => void submitReport(reason)}
-        onClose={() => setReportOpen(false)}
+        visible={moderation.reportOpen}
+        submitting={moderation.busy}
+        onSelect={moderation.submitReport}
+        onClose={moderation.closeReport}
       />
       <ScrollView
         ref={scrollRef}
