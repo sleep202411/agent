@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { ApiRequestError } from "@/lib/api-client";
 import { IpProfileEditor } from "./profile-editor";
 const h = vi.hoisted(() => ({
   active: true,
@@ -177,9 +178,58 @@ it("hides stale editable fields after a version conflict and requires a fresh sn
   expect(host.textContent).toContain("updated elsewhere");
   await click("thread.refresh");
   expect(host.querySelector<HTMLInputElement>('input[aria-label="ipAuthor.title"]')?.value).toBe(
-    "Other change"
+    "Updated"
   );
+  expect(host.textContent).toContain("Other change");
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="ipAuthor.title"]')?.readOnly).toBe(
+    true
+  );
+  await click("ipAuthor.keepDraft");
+  expect(h.put).not.toHaveBeenCalled();
+  h.put.mockResolvedValue({ ip: { ...ip, title: "Updated", version: 4 } });
+  await click("ipAuthor.save");
+  expect(h.put.mock.calls[0]?.[1].data.expectedVersion).toBe(3);
+  expect(host.textContent).toContain("ipAuthor.saved");
 });
+it.each([400, 422])("preserves editable rejected drafts across refresh for %s", async (status) => {
+  h.put.mockRejectedValue(new ApiRequestError("INVALID", "Please revise", status));
+  await mount();
+  await type("ipAuthor.title", "My draft");
+  await click("ipAuthor.save");
+  const input = () => host.querySelector<HTMLInputElement>('input[aria-label="ipAuthor.title"]');
+  expect(input()?.value).toBe("My draft");
+  expect(input()?.readOnly).toBe(false);
+  await click("thread.refresh");
+  expect(input()?.value).toBe("My draft");
+  expect(h.put).toHaveBeenCalledTimes(1);
+  await type("ipAuthor.title", "Revised draft");
+  h.put.mockResolvedValue({ ip: { ...ip, title: "Revised draft", version: 2 } });
+  await click("ipAuthor.save");
+  expect(host.textContent).toContain("ipAuthor.saved");
+  await click("thread.refresh");
+  expect(input()?.value).toBe("Source");
+});
+it.each([401, 403, 404])(
+  "hides inaccessible fields for %s and only restores after fresh access",
+  async (status) => {
+    h.put.mockRejectedValue(new ApiRequestError("DENIED", "Access denied", status));
+    await mount();
+    await type("ipAuthor.title", "Private draft");
+    await click("ipAuthor.save");
+    expect(host.querySelectorAll("input")).toHaveLength(0);
+    h.get.mockRejectedValue(new ApiRequestError("DENIED", "Access denied", status));
+    await click("thread.refresh");
+    expect(host.querySelectorAll("input")).toHaveLength(0);
+    h.get.mockImplementation(async (path: string) =>
+      path.endsWith("taxonomy") ? { items: [] } : { ip }
+    );
+    await click("thread.refresh");
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="ipAuthor.title"]')?.value).toBe(
+      "Private draft"
+    );
+    expect(h.put).toHaveBeenCalledTimes(1);
+  }
+);
 it("hides private source content when the screen becomes inactive", async () => {
   await mount();
   h.active = false;

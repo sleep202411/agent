@@ -4472,5 +4472,8 @@
   "plotImport.details": "Show technical details",
   "plotImport.hideDetails": "Hide technical details",
   "applicationReview.portfolio": "Open portfolio",
-  "applicationReview.invalidPortfolio": "The portfolio link must be a valid HTTP or HTTPS address without embedded credentials."
+  "applicationReview.invalidPortfolio": "The portfolio link must be a valid HTTP or HTTPS address without embedded credentials.",
+  "ipAuthor.conflictReview": "Review the current saved version",
+  "ipAuthor.conflictHelp": "This IP changed after your draft. Compare the saved values below with your draft before continuing. Keeping your draft uses the current source language and version; saving will replace these saved fields.",
+  "ipAuthor.keepDraft": "Keep my draft for editing"
 }

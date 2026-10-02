@@ -1,5 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { fetchIpProfile, profileOutbox, saveIpProfile, type ProfileCommand } from "./profile-api";
+import {
+  fetchIpProfile,
+  profileRecovery,
+  profileOutbox,
+  saveIpProfile,
+  type ProfileCommand,
+} from "./profile-api";
 const h = vi.hoisted(() => ({
   get: vi.fn(),
   put: vi.fn(),
@@ -120,4 +126,23 @@ it("keeps incomplete legacy profiles editable and normalizes blank descriptions 
   h.put.mockResolvedValue({ ip: { ...ip, title: "Edited", version: 2 } });
   await saveIpProfile(id, 1, { ...command, description: "  " }, new AbortController().signal);
   expect(h.put.mock.calls[0]?.[1].data.description).toBeNull();
+});
+
+it("isolates editable recovery by account and IP and rejects stale sessions or foreign drafts", () => {
+  const record = profileRecovery(id, "alice", 1);
+  record.save(command);
+  expect(profileRecovery(id, "alice", 1).read()).toMatchObject({
+    title: command.title,
+    clientKey: command.clientKey,
+  });
+  expect(profileRecovery(id, "bob", 1).read()).toBeNull();
+  expect(profileRecovery("33333333-3333-4333-8333-333333333333", "alice", 1).read()).toBeNull();
+  expect(() =>
+    record.save({ ...command, clientKey: "44444444-4444-4444-8444-444444444444" })
+  ).toThrow("Another IP draft");
+  record.save({ ...command, expectedVersion: 3 });
+  expect(record.read()?.expectedVersion).toBe(3);
+  h.generation = 2;
+  expect(() => record.read()).toThrow("session expired");
+  expect(() => record.clear(command.clientKey)).toThrow("session expired");
 });

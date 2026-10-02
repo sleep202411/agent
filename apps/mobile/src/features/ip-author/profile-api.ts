@@ -46,6 +46,35 @@ export function profileOutbox(ipId: string, userId: string, generation: number) 
     durableRecord("ip-profile-update", userId, z.string().uuid().parse(ipId))
   );
 }
+/** Editable recovery is separate from an immutable request with an unknown outcome. */
+export function profileRecovery(ipId: string, userId: string, generation: number) {
+  const storage = durableRecord("ip-profile-recovery", userId, z.string().uuid().parse(ipId));
+  const check = () => {
+    if (generation !== getAuthGeneration()) throw new Error("IP editing session expired.");
+  };
+  const read = () => {
+    check();
+    const raw = storage.read();
+    return raw === null ? null : profileCommand.nullable().parse(JSON.parse(raw));
+  };
+  return {
+    read,
+    save(command: ProfileCommand) {
+      check();
+      const previous = read();
+      if (previous && previous.clientKey !== command.clientKey)
+        throw new Error("Another IP draft needs review. Reopen this IP.");
+      storage.write(JSON.stringify(profileCommand.parse(command)));
+    },
+    clear(clientKey: string) {
+      check();
+      const previous = read();
+      if (previous && previous.clientKey !== clientKey)
+        throw new Error("Another IP draft needs review. Reopen this IP.");
+      storage.write("null");
+    },
+  };
+}
 export async function fetchIpProfile(
   ipId: string,
   generation: number,

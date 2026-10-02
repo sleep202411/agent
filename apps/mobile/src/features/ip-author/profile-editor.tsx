@@ -15,6 +15,7 @@ import {
   profileMatches,
   profileCommand,
   profileOutbox,
+  profileRecovery,
   saveIpProfile,
   type IpProfile,
   type ProfileCommand,
@@ -59,11 +60,12 @@ function Editor({ ipId, userId, generation, refresh }: Props & { refresh: () => 
     theme = useTheme(),
     op = useAuthFormOperation(ipId, true);
   const [outbox] = useState(() => profileOutbox(ipId, userId, generation));
+  const [recovery] = useState(() => profileRecovery(ipId, userId, generation));
   const [initial] = useState(() => {
     try {
-      return { pending: outbox.read(), error: "" };
+      return { pending: outbox.read(), recovered: recovery.read(), error: "" };
     } catch (e) {
-      return { pending: null, error: String(e) };
+      return { pending: null, recovered: null, error: String(e) };
     }
   });
   const [pending, setPending] = useState<ProfileCommand | null>(initial.pending ?? null);
@@ -82,7 +84,10 @@ function Editor({ ipId, userId, generation, refresh }: Props & { refresh: () => 
         if (c.signal.aborted) return;
         setProfile(ip);
         setGenres(options);
-        setDraft(initial.pending ?? { ...ip, clientKey: uuid.v4(), expectedVersion: ip.version });
+        setDraft(
+          initial.pending ??
+            initial.recovered ?? { ...ip, clientKey: uuid.v4(), expectedVersion: ip.version }
+        );
       })
       .catch((e) => {
         if (!c.signal.aborted) setError(String(e.message ?? e));
@@ -92,10 +97,15 @@ function Editor({ ipId, userId, generation, refresh }: Props & { refresh: () => 
       });
     return () => c.abort();
   }, [ipId, generation, initial]);
-  const frozen = op.busy || !!pending || !!initial.error;
+  const needsReview =
+    !!profile &&
+    !!draft &&
+    !pending &&
+    (draft.expectedVersion !== profile.version || draft.sourceLocale !== profile.sourceLocale);
+  const frozen = op.busy || !!pending || !!initial.error || needsReview;
   const submit = () => {
     const c = controller.current;
-    if (!draft || !c || c.signal.aborted) return;
+    if (!draft || !c || c.signal.aborted || needsReview) return;
     void op.run(
       async () => {
         const command = profileCommand.parse(pending ?? draft);
@@ -106,13 +116,18 @@ function Editor({ ipId, userId, generation, refresh }: Props & { refresh: () => 
         try {
           const result = await saveIpProfile(ipId, generation, command, c.signal);
           outbox.clear(command.clientKey);
+          recovery.clear(command.clientKey);
           return result;
         } catch (e) {
           if (e instanceof ApiRequestError && [400, 401, 403, 404, 409, 422].includes(e.status)) {
+            if ([401, 403, 404, 409].includes(e.status)) {
+              setProfile(undefined);
+              setDraft(undefined);
+            }
+            // Persist before clearing the request: a rejected write still contains useful edits.
+            recovery.save(command);
             outbox.clear(command.clientKey);
             setPending(null);
-            setProfile(undefined);
-            setDraft(undefined);
           }
           throw e;
         }
@@ -141,6 +156,46 @@ function Editor({ ipId, userId, generation, refresh }: Props & { refresh: () => 
       <Button label={t("thread.refresh")} disabled={op.busy || loading} onPress={refresh} />
       {profile && draft ? (
         <>
+          {needsReview && (
+            <View
+              style={{
+                gap: 8,
+                padding: 12,
+                backgroundColor: theme.backgroundElement,
+                borderRadius: 8,
+              }}
+            >
+              <ThemedText type="smallBold">{t("ipAuthor.conflictReview")}</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("ipAuthor.conflictHelp")}
+              </ThemedText>
+              <ThemedText selectable>{profile.title}</ThemedText>
+              <ThemedText selectable>{profile.summary}</ThemedText>
+              {!!profile.description && <ThemedText selectable>{profile.description}</ThemedText>}
+              <ThemedText>
+                {profile.sourceLocale} · {t(`ipAuthor.${profile.listingVisibility}`)} ·{" "}
+                {t(`ipAuthor.${profile.ageRating}`)} · {profile.genreCodes.join(", ")}
+              </ThemedText>
+              <Button
+                label={t("ipAuthor.keepDraft")}
+                disabled={op.busy || !!initial.error}
+                onPress={() => {
+                  try {
+                    const next = {
+                      ...draft,
+                      expectedVersion: profile.version,
+                      sourceLocale: profile.sourceLocale,
+                    };
+                    recovery.save(next);
+                    setDraft(next);
+                    setError("");
+                  } catch (e) {
+                    setError(String(e instanceof Error ? e.message : e));
+                  }
+                }}
+              />
+            </View>
+          )}
           <ThemedText>
             {t("ipAuthor.source")}: {profile.sourceLocale}
           </ThemedText>
@@ -242,6 +297,7 @@ function Editor({ ipId, userId, generation, refresh }: Props & { refresh: () => 
             disabled={
               op.busy ||
               !!initial.error ||
+              needsReview ||
               !profileCommand.safeParse(draft).success ||
               (!pending && profileMatches(profile, draft))
             }
