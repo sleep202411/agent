@@ -217,7 +217,7 @@ it("recovers an interrupted upload and requires explicit clip selection", async 
 });
 it("does not upload for viewers", async () => {
   await render(false);
-  expect(button("timeline.uploadImage").disabled).toBe(true);
+  expect(button("timeline.uploadMedia").disabled).toBe(true);
 });
 it("cancels the active upload when leaving the picker", async () => {
   let signal: AbortSignal | undefined;
@@ -226,7 +226,7 @@ it("cancels the active upload when leaving the picker", async () => {
     return new Promise(() => {});
   });
   await render();
-  await click("timeline.uploadImage");
+  await click("timeline.uploadMedia");
   expect(signal?.aborted).toBe(false);
   await act(async () => root.render(null));
   expect(signal?.aborted).toBe(true);

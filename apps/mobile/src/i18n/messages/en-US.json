@@ -4352,10 +4352,10 @@
   "timeline.noProjectMedia": "No ready project images or videos.",
   "timeline.useMedia": "Use this media",
   "timeline.previewMedia": "Preview video",
-  "timeline.uploadImage": "Upload image",
-  "timeline.uploadImageHelp": "JPEG, PNG or WebP, up to 30 MiB. Upload to the project, then select it for this clip.",
-  "timeline.uploadRecovery": "Finish uploaded image",
+  "timeline.uploadRecovery": "Finish uploaded media",
   "timeline.retryUpload": "Retry upload confirmation",
   "timeline.clearUpload": "Clear upload recovery",
-  "timeline.clearUploadHelp": "This clears local recovery only. An image already uploaded may remain in the project."
+  "timeline.clearUploadHelp": "This clears local recovery only. Media already uploaded may remain in the project.",
+  "timeline.uploadMedia": "Upload image or video",
+  "timeline.uploadMediaHelp": "JPEG, PNG or WebP up to 30 MiB; MP4 or MOV up to 2 GiB. Select the uploaded media for this clip. Interrupted file transfers must restart; completed uploads can retry confirmation."
 }

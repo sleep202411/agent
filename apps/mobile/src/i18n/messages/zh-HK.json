@@ -4352,10 +4352,10 @@
   "timeline.noProjectMedia": "暫無就緒的專案圖片或影片。",
   "timeline.useMedia": "使用此媒體",
   "timeline.previewMedia": "預覽影片",
-  "timeline.uploadImage": "上傳圖片",
-  "timeline.uploadImageHelp": "支援 JPEG、PNG 或 WebP，最大 30 MiB。上傳至項目後，選擇用於此鏡頭。",
-  "timeline.uploadRecovery": "完成已上傳圖片",
+  "timeline.uploadRecovery": "完成已上傳媒體",
   "timeline.retryUpload": "重試上傳確認",
   "timeline.clearUpload": "清除上傳恢復記錄",
-  "timeline.clearUploadHelp": "這只會清除本地恢復記錄。已上傳的圖片可能仍保留在項目中。"
+  "timeline.clearUploadHelp": "這只會清除本地恢復記錄。已上傳的媒體可能仍保留在項目中。",
+  "timeline.uploadMedia": "上傳圖片或影片",
+  "timeline.uploadMediaHelp": "JPEG、PNG 或 WebP 最大 30 MiB；MP4 或 MOV 最大 2 GiB。上傳後選擇用於此鏡頭。檔案傳輸中斷後需要重新上傳；傳輸完成後可重試確認。"
 }

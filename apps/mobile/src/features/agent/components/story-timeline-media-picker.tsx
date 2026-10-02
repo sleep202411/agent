@@ -146,7 +146,7 @@ export function TimelineMediaPicker({
     <View style={{ gap: 12 }}>
       <ThemedText type="smallBold">{t("timeline.replaceMedia")}</ThemedText>
       <ThemedText>{t("timeline.replaceHelp")}</ThemedText>
-      {loading && <ActivityIndicator />}
+      {(loading || op.busy) && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {pending ? (
         <>
@@ -184,10 +184,10 @@ export function TimelineMediaPicker({
             style={{ paddingVertical: 12, opacity: !canEdit || loading || op.busy ? 0.5 : 1 }}
           >
             <ThemedText type="smallBold" style={{ color: theme.brand }}>
-              {t(uploadPending ? "timeline.retryUpload" : "timeline.uploadImage")}
+              {t(uploadPending ? "timeline.retryUpload" : "timeline.uploadMedia")}
             </ThemedText>
           </Pressable>
-          <ThemedText type="small">{t("timeline.uploadImageHelp")}</ThemedText>
+          <ThemedText type="small">{t("timeline.uploadMediaHelp")}</ThemedText>
           {uploadPending &&
             button(t("timeline.clearUpload"), () =>
               Alert.alert(t("timeline.clearUpload"), t("timeline.clearUploadHelp"), [

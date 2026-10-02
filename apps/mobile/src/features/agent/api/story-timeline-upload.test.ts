@@ -6,7 +6,9 @@ const h = vi.hoisted(() => ({
   confirm: vi.fn(),
   put: vi.fn(),
   generation: 1,
+  video: vi.fn(),
 }));
+vi.mock("./story-timeline-video-upload", () => ({ uploadTimelineVideo: h.video }));
 vi.mock("expo-document-picker", () => ({ getDocumentAsync: h.pick }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/media-upload", () => ({
@@ -153,7 +155,7 @@ it.each(["size", "mime"])("rejects invalid image %s before upload", async (field
       {
         uri: "file:///image.png",
         name: "image.png",
-        mimeType: field === "mime" ? "video/mp4" : "image/png",
+        mimeType: field === "mime" ? "video/webm" : "image/png",
         size: field === "size" ? 31 * 1024 * 1024 : 4,
       },
     ],
@@ -180,3 +182,35 @@ it.each(["abort", "account"])(
     expect(JSON.parse(raw!).intent.confirmation).toEqual(confirmation);
   }
 );
+
+it("uploads video with file-backed transfer and recovers confirmation using its original kind", async () => {
+  const videoConfirmation = {
+    ...confirmation,
+    kind: "ai_reference_video",
+    contentType: "video/mp4",
+  };
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [
+      {
+        uri: "file:///video.mp4",
+        name: "video.mp4",
+        mimeType: "video/mp4",
+        size: 1024 * 1024 * 1024,
+      },
+    ],
+  });
+  h.video.mockImplementation(async (_f, _s, _signal, save) => {
+    save(videoConfirmation);
+    throw Error("Lost video confirmation");
+  });
+  const store = timelineUpload(scope, "user", storage);
+  await expect(store.pick(signal())).rejects.toThrow("Lost video confirmation");
+  expect(h.upload).not.toHaveBeenCalled();
+  h.put.mockResolvedValue({
+    asset: { ...candidate.asset, kind: "video", contentType: "video/mp4" },
+  });
+  await store.resume(signal());
+  expect(h.confirm).toHaveBeenCalledWith(videoConfirmation, expect.any(AbortSignal));
+  expect(store.read()).toBeNull();
+});
