@@ -1,7 +1,7 @@
 import { CrewLinkedResources } from "@/features/services/crew-linked-resources";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuthGate } from "@/auth";
+import { useAuth, useAuthGate } from "@/auth";
 import { MoreActionsButton, ReportReasonSheet } from "@/components/report-actions";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -23,6 +23,8 @@ import { Spacing } from "@/constants/theme";
 import { invalidateBrowse } from "@/data/browse-refresh";
 import { blockCrew, getCrewById, reportCrew, type IpReportReason } from "@/data/browse-service";
 import type { CrewDetail, CrewRoleOpening, CrewStatus, Person } from "@/data/types";
+import { getAuthGeneration } from "@/auth/auth-store";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { type MessageKey, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
@@ -52,6 +54,15 @@ const EMPLOYMENT_LABELS: Record<string, MessageKey> = {
   project_based: "crewDetail.employmentProjectBased",
 };
 
+function CrewReadState({ children }: { children?: ReactNode }) {
+  return (
+    <>
+      <Stack.Screen options={{ headerRight: () => null }} />
+      {children}
+    </>
+  );
+}
+
 export default function CrewDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -59,74 +70,83 @@ export default function CrewDetailScreen() {
   const t = useTranslations();
   const router = useRouter();
   const authGate = useAuthGate();
-  const [crew, setCrew] = useState<CrewDetail>();
-  const [loadError, setLoadError] = useState<string>();
+  const auth = useAuth();
+  const active = useScreenActive();
   const [revision, setRevision] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const scope = useMemo(
+    () => ({ id, generation: auth.generation, status: auth.status, active, revision, t }),
+    [id, auth.generation, auth.status, active, revision, t]
+  );
+  const [read, setRead] = useState<{ scope: typeof scope; crew?: CrewDetail; error?: string }>();
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
   const { applying, submit: apply } = useCrewApplication(id);
 
   useEffect(() => {
-    let alive = true;
+    if (!scope.active || scope.status === "hydrating") return;
     const controller = new AbortController();
-    async function load() {
-      setLoading(true);
-      setCrew(undefined);
-      setLoadError(undefined);
-      try {
-        const data = await getCrewById(id, controller.signal);
-        if (alive) setCrew(data);
-      } catch (error) {
-        if (alive)
-          setLoadError(
-            error instanceof Error && error.message.trim()
-              ? error.message
-              : t("crews.loadErrorFallback")
-          );
-      } finally {
-        if (alive) setLoading(false);
+    const current = () => !controller.signal.aborted && scope.generation === getAuthGeneration();
+    void getCrewById(scope.id, controller.signal).then(
+      (crew) => {
+        if (current()) setRead({ scope, crew });
+      },
+      (error) => {
+        if (current())
+          setRead({
+            scope,
+            error:
+              error instanceof Error && error.message.trim()
+                ? error.message
+                : scope.t("crews.loadErrorFallback"),
+          });
       }
-    }
-    void load();
-    return () => {
-      alive = false;
-      controller.abort();
-    };
-  }, [id, revision, t]);
+    );
+    return () => controller.abort();
+  }, [scope]);
 
-  if (loading) {
+  // Hide stale recruitment/access data immediately while a return or account change is read.
+  // Keep the component mounted so pending application requests remain serialized.
+  if (!active || auth.status === "hydrating") return <CrewReadState />;
+  const crew = read?.scope === scope ? read.crew : undefined;
+  const loadError = read?.scope === scope ? read.error : undefined;
+  if (read?.scope !== scope) {
     return (
-      <ThemedView style={styles.fullCenter}>
-        <ActivityIndicator color={theme.textSecondary} />
-      </ThemedView>
+      <CrewReadState>
+        <ThemedView style={styles.fullCenter}>
+          <ActivityIndicator color={theme.textSecondary} />
+        </ThemedView>
+      </CrewReadState>
     );
   }
 
   if (loadError) {
     return (
-      <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
-        <EmptyState title={t("crews.loadErrorTitle")} detail={loadError} />
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setRevision((value) => value + 1)}
-          style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: Spacing.four }}
-        >
-          <ThemedText>{t("common.retry")}</ThemedText>
-        </Pressable>
-      </ThemedView>
+      <CrewReadState>
+        <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
+          <EmptyState title={t("crews.loadErrorTitle")} detail={loadError} />
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setRevision((value) => value + 1)}
+            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: Spacing.four }}
+          >
+            <ThemedText>{t("common.retry")}</ThemedText>
+          </Pressable>
+        </ThemedView>
+      </CrewReadState>
     );
   }
 
   if (!crew) {
     return (
-      <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
-        <EmptyState
-          title={t("crewDetail.notFoundTitle")}
-          detail={t("crewDetail.notFoundDetail")}
-          symbol={{ ios: "person.2", android: "group", web: "group" }}
-        />
-      </ThemedView>
+      <CrewReadState>
+        <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
+          <EmptyState
+            title={t("crewDetail.notFoundTitle")}
+            detail={t("crewDetail.notFoundDetail")}
+            symbol={{ ios: "person.2", android: "group", web: "group" }}
+          />
+        </ThemedView>
+      </CrewReadState>
     );
   }
 
