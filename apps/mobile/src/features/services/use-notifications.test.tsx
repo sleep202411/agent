@@ -26,6 +26,7 @@ const click = (n: number) => act(async () => host.querySelectorAll("button")[n]!
 const item = { id: "one", body: "First" };
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.useFakeTimers();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -33,6 +34,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.useRealTimers();
 });
 it("loads only authenticated scopes, advances cursors and deduplicates items", async () => {
   await render();
@@ -134,4 +136,71 @@ it("does not restore stale rows while revalidating a return visit", async () => 
   await act(async () => finish({ items: [], nextCursor: null }));
   expect(host.textContent).not.toContain("First");
   expect(h.load).toHaveBeenCalledTimes(2);
+});
+
+it("revalidates all loaded pages without clearing rows mid-refresh", async () => {
+  h.load
+    .mockResolvedValueOnce({ items: [item], nextCursor: "old" })
+    .mockResolvedValueOnce({ items: [{ id: "two", body: "Second" }], nextCursor: null });
+  await render("1");
+  await click(0);
+  let finish!: (value: unknown) => void;
+  h.load
+    .mockResolvedValueOnce({ items: [{ ...item, body: "Updated" }], nextCursor: "new" })
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          finish = r;
+        })
+    );
+  await act(async () => vi.advanceTimersByTime(60000));
+  expect(host.textContent).toContain("FirstSecond");
+  expect(h.load.mock.calls[3][1]).toBe("new");
+  await act(async () =>
+    finish({ items: [{ id: "two", body: "Current second" }], nextCursor: null })
+  );
+  expect(host.textContent).toContain("UpdatedCurrent second");
+  expect(host.textContent).not.toContain("First");
+  await render();
+  await act(async () => vi.advanceTimersByTime(60000));
+  expect(h.load).toHaveBeenCalledTimes(4);
+});
+it("retains rows on failed background refresh and retries from the first page even at the end", async () => {
+  h.load
+    .mockResolvedValueOnce({ items: [item], nextCursor: null })
+    .mockRejectedValueOnce(Error("Offline"))
+    .mockResolvedValueOnce({ items: [], nextCursor: null });
+  await render("1");
+  await act(async () => vi.advanceTimersByTime(60000));
+  expect(host.textContent).toContain("FirstOffline");
+  await act(async () => vi.advanceTimersByTime(60000));
+  expect(h.load).toHaveBeenCalledTimes(2);
+  await click(1);
+  expect(h.load.mock.calls[2][1]).toBeNull();
+  expect(host.textContent).not.toContain("First");
+  expect(host.textContent).not.toContain("Offline");
+});
+it("clears revoked content during background refresh and rejects a late old scope", async () => {
+  h.load
+    .mockResolvedValueOnce({ items: [item], nextCursor: null })
+    .mockRejectedValueOnce(Object.assign(Error("Denied"), { status: 403 }));
+  await render("1");
+  await act(async () => vi.advanceTimersByTime(60000));
+  expect(host.textContent).not.toContain("First");
+  expect(host.textContent).toContain("Denied");
+  let finish!: (value: unknown) => void;
+  h.load
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          finish = r;
+        })
+    )
+    .mockResolvedValueOnce({ items: [], nextCursor: null });
+  await click(1);
+  const signal = h.load.mock.calls[2][3];
+  await render("2");
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ items: [item], nextCursor: null }));
+  expect(host.textContent).not.toContain("First");
 });

@@ -13,6 +13,8 @@ type Session = {
   more: boolean;
   busy: boolean;
   failed: boolean;
+  refreshFailed: boolean;
+  pages: number;
   items: NotificationItem[];
 };
 type Snapshot = {
@@ -62,6 +64,8 @@ export function useNotifications(owner: string | undefined, contextType: Notific
         session.cursor = result.nextCursor;
         session.more = !!result.nextCursor;
         session.failed = false;
+        session.refreshFailed = false;
+        session.pages += 1;
       } catch (cause) {
         if (session.abort.signal.aborted) return;
         session.failed = true;
@@ -71,6 +75,68 @@ export function useNotifications(owner: string | undefined, contextType: Notific
           session.items = [];
           session.cursor = null;
           session.seen.clear();
+          session.more = true;
+        }
+        error = cause instanceof Error ? cause.message : "Unable to load notifications";
+      } finally {
+        session.busy = false;
+        if (!session.abort.signal.aborted)
+          setSnapshot({
+            key: session.key,
+            items: session.items,
+            loading: false,
+            error,
+            more: session.more,
+          });
+      }
+    },
+    [contextType, owner]
+  );
+  const revalidate = useCallback(
+    async (session: Session) => {
+      if (session.busy || session.abort.signal.aborted) return;
+      session.busy = true;
+      let error: string | undefined;
+      try {
+        let cursor: string | null = null;
+        const seen = new Set<string>();
+        const items = new Map<string, NotificationItem>();
+        let pages = 0;
+        do {
+          const result = await fetchNotifications(
+            contextType,
+            cursor,
+            Number(owner),
+            session.abort.signal
+          );
+          if (session.abort.signal.aborted) return;
+          if (result.nextCursor && seen.has(result.nextCursor))
+            throw new Error("Notification pagination did not advance");
+          if (result.nextCursor) seen.add(result.nextCursor);
+          for (const item of result.items) items.set(item.id, item);
+          cursor = result.nextCursor;
+          pages += 1;
+        } while (cursor && pages < Math.max(1, session.pages));
+        // Replace atomically after every loaded page is current. A background
+        // check must not empty the list or leave old and new cursors mixed.
+        session.items = [...items.values()];
+        session.cursor = cursor;
+        session.seen = seen;
+        session.pages = pages;
+        session.more = !!cursor;
+        session.failed = false;
+        session.refreshFailed = false;
+      } catch (cause) {
+        if (session.abort.signal.aborted) return;
+        session.failed = true;
+        session.refreshFailed = true;
+        const status =
+          cause && typeof cause === "object" && "status" in cause ? cause.status : undefined;
+        if (status === 401 || status === 403) {
+          session.items = [];
+          session.cursor = null;
+          session.seen.clear();
+          session.pages = 0;
           session.more = true;
         }
         error = cause instanceof Error ? cause.message : "Unable to load notifications";
@@ -98,27 +164,34 @@ export function useNotifications(owner: string | undefined, contextType: Notific
       more: true,
       busy: false,
       failed: false,
+      refreshFailed: false,
+      pages: 0,
       items: [],
     };
     current.current = session;
     void load(session);
+    const timer = setInterval(() => {
+      if (!session.failed) void revalidate(session);
+    }, 60_000);
     return () => {
+      clearInterval(timer);
       session.abort.abort();
       current.current = undefined;
     };
-  }, [key, owner, revision, load]);
+  }, [key, owner, revision, load, revalidate]);
   const more = (retry: boolean) => {
     const session = current.current;
     if (
       !session ||
       session.key !== key ||
       session.busy ||
-      !session.more ||
+      (!session.more && !session.refreshFailed) ||
       (session.failed && !retry)
     )
       return;
     setSnapshot({ key, items: session.items, loading: true, more: true });
-    void load(session);
+    if (session.refreshFailed) void revalidate(session);
+    else void load(session);
   };
   const visible = owner && snapshot?.key === key ? snapshot : undefined;
   return {
