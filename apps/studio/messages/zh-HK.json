@@ -262,6 +262,7 @@
     }
   },
   "generation": {
+    "copyPromptFailed": "無法複製。請選取提示詞文字手動複製。",
     "downloadFailed": "無法下載此檔案",
     "openOriginal": "開啟原始檔案",
     "previewLoadFailed": "影片載入失敗，請檢查網絡後重試。",
