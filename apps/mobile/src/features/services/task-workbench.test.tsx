@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskWorkbench } from "./task-workbench";
 import type { TaskDraftInput, TaskDraftReview } from "./task-draft-session";
+vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("./crew-film-picker", () => ({ CrewFilmPicker: () => null }));
 vi.mock("./task-draft-storage", () => ({
   taskDraftStorage: () => ({ read: () => null, write: () => {} }),

@@ -1,3 +1,4 @@
+import { TaskDraftAssignees } from "./task-draft-assignees";
 import { TaskCompensationSummary } from "./task-compensation-summary";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -251,10 +252,11 @@ function Session(props: Props) {
                   {row.review.context.map((value, i) => (
                     <ThemedText key={`context:${i}`}>{value}</ThemedText>
                   ))}
-                  <ThemedText>
-                    {t("taskCreate.assignees")}:{" "}
-                    {row.review.assignees.join(", ") || t("thread.taskUnset")}
-                  </ThemedText>
+                  <TaskDraftAssignees
+                    owner={String(props.generation)}
+                    userIds={row.input.assignees.map((assignee) => assignee.userId)}
+                    labels={row.review.assignees}
+                  />
                   {row.review.customFields.map((value, i) => (
                     <ThemedText key={`field:${i}`}>{value}</ThemedText>
                   ))}
