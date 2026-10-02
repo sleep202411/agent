@@ -1,4 +1,5 @@
 "use client";
+import { SectionCanvasBoundary } from "@/app/[locale]/project/_components/project-section-boundary";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 
 import {
@@ -18,10 +19,7 @@ import { agentOsWorkbenchModeFromStudioMode } from "@repo/shared";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ProjectProvider } from "@/app/[locale]/project/_components/project-context";
-import {
-  CanvasConnectionProvider,
-  useCanvasConnection,
-} from "@/app/[locale]/project/_components/canvas-connection-context";
+import { useCanvasConnection } from "@/app/[locale]/project/_components/canvas-connection-context";
 import {
   PROJECT_PANEL_CLOSE_DURATION_MS,
   PROJECT_PANEL_OPEN_DURATION_MS,
@@ -347,43 +345,6 @@ function PersistentModeLayer({
     >
       <Editor />
     </div>
-  );
-}
-
-function SectionCanvasBoundary({
-  projectId,
-  canEdit,
-  children,
-}: {
-  projectId: string;
-  canEdit: boolean;
-  children: React.ReactNode;
-}) {
-  const t = useTranslations("project.sections");
-  const { activeSection, status, error } = useProjectSections();
-  if (status === "loading") {
-    return (
-      <div className="grid min-w-0 flex-1 place-items-center text-sm text-white/45">
-        {t("loading")}
-      </div>
-    );
-  }
-  if (status === "error" || !activeSection) {
-    return (
-      <div className="grid min-w-0 flex-1 place-items-center px-6 text-center text-sm text-white/55">
-        {error?.message || t("invalid")}
-      </div>
-    );
-  }
-  return (
-    <CanvasConnectionProvider
-      key={activeSection.canvasDocumentId}
-      owner={{ kind: "platform_project", projectId }}
-      documentId={activeSection.canvasDocumentId}
-      canEdit={canEdit}
-    >
-      {children}
-    </CanvasConnectionProvider>
   );
 }
 
