@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   focused: true,
   generation: 1,
   authenticated: true,
+  login: vi.fn(),
   refresh: vi.fn(),
   post: vi.fn(),
   get: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("@/auth", () => ({
   useLoginGateOnFocus: vi.fn(),
+  useAuthGate: () => ({ requireAuth: h.login }),
   useAuth: () => ({
     status: h.authenticated ? "authenticated" : "anonymous",
     generation: h.generation,
@@ -358,3 +360,17 @@ it.each(["success", "not-owned", "changed-account", "storage-failure"])(
     }
   }
 );
+
+it("offers sign-in again after the guest dismisses the automatic login sheet", async () => {
+  h.authenticated = false;
+  await render();
+  expect(host.textContent).not.toContain("loading");
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.get).not.toHaveBeenCalled();
+  await act(async () => click("login.signIn"));
+  expect(h.login).toHaveBeenCalledTimes(1);
+  expect(h.create).not.toHaveBeenCalled();
+  h.authenticated = true;
+  await render();
+  expect(input("publishWork.name")).toBeTruthy();
+});

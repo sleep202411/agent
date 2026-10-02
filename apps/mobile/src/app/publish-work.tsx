@@ -4,7 +4,7 @@ import { findMyWork, type MyWork } from "@/data/mine-api";
 import { Stack, useIsFocused, useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
-import { useAuth, useLoginGateOnFocus } from "@/auth";
+import { useAuth, useAuthGate, useLoginGateOnFocus } from "@/auth";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -22,6 +22,7 @@ import { refreshPersonalWorks } from "@/features/profile/work-refresh";
 import { WorkCreationRecovery } from "@/features/profile/work-creation-recovery";
 export default function PublishWorkScreen() {
   const auth = useAuth(),
+    gate = useAuthGate(),
     theme = useTheme(),
     t = useTranslations();
   useLoginGateOnFocus();
@@ -41,8 +42,16 @@ export default function PublishWorkScreen() {
           key={JSON.stringify([auth.generation, workId])}
           workId={typeof workId === "string" ? workId : undefined}
         />
-      ) : (
+      ) : auth.status === "hydrating" ? (
         <ActivityIndicator />
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 16 }}
+          onPress={() => gate.requireAuth()}
+        >
+          <ThemedText>{t("login.signIn")}</ThemedText>
+        </Pressable>
       )}
     </View>
   );
