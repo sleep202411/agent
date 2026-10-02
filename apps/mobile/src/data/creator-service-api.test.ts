@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { api, ApiRequestError } from "@/lib/api-client";
-import { fetchCreatorServiceById } from "./creator-service-api";
+import { fetchCreatorServiceById, fetchCreatorServicesPage } from "./creator-service-api";
 vi.mock("@/lib/api-client", () => ({
   api: { get: vi.fn() },
   ApiRequestError: class extends Error {
@@ -71,4 +71,33 @@ it("uses the detail package list after all packages are removed, not stale card 
   const result = await fetchCreatorServiceById("service");
   expect(result?.packages).toEqual([]);
   expect(result?.packageCount).toBe(0);
+});
+
+it("loads public creator services with the official cursor and listed status", async () => {
+  const signal = new AbortController().signal;
+  vi.mocked(api.get).mockResolvedValue({
+    items: [{ id: "one", creatorId: "creator", title: "Film" }],
+    nextCursor: "next",
+  });
+  const page = await fetchCreatorServicesPage("creator", "previous", signal);
+  expect(page.items[0]?.id).toBe("one");
+  expect(page.nextCursor).toBe("next");
+  expect(api.get).toHaveBeenLastCalledWith("/creator-services", {
+    service: "aurora",
+    params: { creatorId: "creator", status: "listed", limit: 12, cursor: "previous" },
+    signal,
+    retry: false,
+  });
+});
+it.each([
+  { items: [], nextCursor: "previous" },
+  { items: [], nextCursor: 12 },
+  { nextCursor: null },
+  { items: [{ id: "one", creatorId: "other", title: "Wrong creator" }] },
+  { items: [{ id: "one", creatorId: "creator" }] },
+])("rejects malformed or unrelated service pages", async (value) => {
+  vi.mocked(api.get).mockResolvedValue(value);
+  await expect(fetchCreatorServicesPage("creator", "previous")).rejects.toThrow(
+    "Invalid service page"
+  );
 });

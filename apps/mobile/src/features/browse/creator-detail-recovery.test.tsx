@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import CreatorDetail from "@/app/creator/[id]";
 const h = vi.hoisted(() => ({
+  t: (k: string) => k,
   id: "a",
   section: undefined as string | string[] | undefined,
   scrollTo: vi.fn(),
@@ -28,12 +29,18 @@ vi.mock("react-native-safe-area-context", () => ({
 }));
 vi.mock("@/data/browse-service", () => ({
   getCreatorById: h.profile,
-  getCreatorServices: h.services,
   getCreatorIps: h.works,
   getCrewsByUser: h.crews,
 }));
+vi.mock("@/data/creator-service-api", () => ({
+  InvalidCreatorServicesPageError: class extends Error {},
+  fetchCreatorServicesPage: async (...args: unknown[]) => {
+    const value = await h.services(...args);
+    return Array.isArray(value) ? { items: value, nextCursor: null } : value;
+  },
+}));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("@/i18n", () => ({ useTranslations: () => (k: string) => k, useLocale: () => "en-US" }));
+vi.mock("@/i18n", () => ({ useTranslations: () => h.t, useLocale: () => "en-US" }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
@@ -218,4 +225,65 @@ it("returns to services after a touch-triggered retry remounts the profile", asy
     services({ nativeEvent: { layout: { y: 900 } } });
   });
   expect(h.scrollTo).toHaveBeenLastCalledWith({ y: 1044, animated: false });
+});
+
+it("loads more services once and preserves cards/cursor after failure", async () => {
+  const service = (id: string) => ({
+    id,
+    creatorId: "a",
+    title: id,
+    summary: "",
+    category: "other",
+    tags: [],
+    startingPrice: 10,
+    currency: "USD",
+    startingDeliveryDays: 2,
+    packageCount: 1,
+  });
+  h.services
+    .mockResolvedValueOnce({ items: [service("first")], nextCursor: "next" })
+    .mockRejectedValueOnce(Error("Next page offline"))
+    .mockResolvedValueOnce({ items: [service("second")], nextCursor: null });
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "myServices.loadMore")!
+      .click()
+  );
+  expect(host.textContent).toContain("first");
+  expect(host.textContent).toContain("Next page offline");
+  await retry();
+  expect(h.services).toHaveBeenLastCalledWith("a", "next", expect.any(AbortSignal));
+  expect(host.textContent).toContain("first");
+  expect(host.textContent).toContain("second");
+  expect(host.textContent).not.toContain("myServices.loadMore");
+});
+
+it("serializes more requests and ignores their late result after switching creator", async () => {
+  h.services.mockResolvedValueOnce({ items: [], nextCursor: "next" });
+  await render();
+  let finish!: (value: unknown) => void;
+  h.services.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await act(async () => {
+    const button = [...host.querySelectorAll("button")].find(
+      (b) => b.textContent === "myServices.loadMore"
+    )!;
+    button.click();
+    button.click();
+  });
+  expect(h.services).toHaveBeenCalledTimes(2);
+  const signal = h.services.mock.calls[1][2] as AbortSignal;
+  h.id = "b";
+  h.profile.mockResolvedValue({ id: "b", name: "Bob", levels: [] });
+  h.services.mockResolvedValue([]);
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ items: [], nextCursor: "stale" }));
+  expect(host.textContent).toContain("Bob");
+  expect(host.textContent).not.toContain("myServices.loadMore");
 });

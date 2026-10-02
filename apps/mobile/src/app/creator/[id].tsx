@@ -10,12 +10,7 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
-import {
-  getCreatorById,
-  getCreatorIps,
-  getCreatorServices,
-  getCrewsByUser,
-} from "@/data/browse-service";
+import { getCreatorById, getCreatorIps, getCrewsByUser } from "@/data/browse-service";
 import type {
   CreatorServiceSummary,
   CreatorSummary,
@@ -28,6 +23,10 @@ import { type MessageKey, useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
 import { toHref } from "@/lib/navigation";
 
+import {
+  fetchCreatorServicesPage,
+  InvalidCreatorServicesPageError,
+} from "@/data/creator-service-api";
 import { CreatorPersonalWorks } from "@/features/profile/creator-personal-works";
 import { CreatorExperience } from "@/features/profile/creator-experience";
 import { CreatorCertificates } from "@/features/certificates/creator-certificates";
@@ -74,8 +73,45 @@ function CreatorDetailContent({
   const stopFollowing = () => {
     anchor.current.following = false;
   };
+  const requestError = (cause: unknown) =>
+    cause instanceof InvalidCreatorServicesPageError
+      ? t("contentGpsDiscovery.responseMismatch")
+      : cause instanceof Error
+        ? cause.message
+        : String(cause);
   const [creator, setCreator] = useState<CreatorSummary>();
   const [services, setServices] = useState<CreatorServiceSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [moreBusy, setMoreBusy] = useState(false);
+  const [moreError, setMoreError] = useState<string>();
+  const moreRequest = useRef<AbortController | null>(null);
+  const seenCursors = useRef(new Set<string>());
+  async function loadMore() {
+    if (!nextCursor || moreRequest.current) return;
+    const controller = new AbortController();
+    moreRequest.current = controller;
+    setMoreBusy(true);
+    setMoreError(undefined);
+    try {
+      const page = await fetchCreatorServicesPage(id, nextCursor, controller.signal);
+      if (controller.signal.aborted) return;
+      if (page.nextCursor && seenCursors.current.has(page.nextCursor))
+        throw Error(t("contentGpsDiscovery.responseMismatch"));
+      seenCursors.current.add(nextCursor);
+      setServices((current) => [
+        ...current,
+        ...page.items.filter((item) => !current.some((existing) => existing.id === item.id)),
+      ]);
+      setNextCursor(page.nextCursor);
+    } catch (cause) {
+      if (!controller.signal.aborted) setMoreError(requestError(cause));
+    } finally {
+      if (moreRequest.current === controller) {
+        moreRequest.current = null;
+        setMoreBusy(false);
+      }
+    }
+  }
   const [works, setWorks] = useState<IpSummary[]>([]);
   const [crews, setCrews] = useState<CrewSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,6 +127,13 @@ function CreatorDetailContent({
 
   useEffect(() => {
     let alive = true;
+    const controller = new AbortController();
+    moreRequest.current?.abort();
+    moreRequest.current = null;
+    setNextCursor(null);
+    setMoreBusy(false);
+    setMoreError(undefined);
+    seenCursors.current.clear();
     setLoading(true);
     setErrors({});
     setSectionLoading({ services: true, works: true, crews: true });
@@ -110,7 +153,12 @@ function CreatorDetailContent({
           if (key === "profile") setCreator(undefined);
           setErrors((current) => ({
             ...current,
-            [key]: cause instanceof Error ? cause.message : String(cause),
+            [key]:
+              cause instanceof InvalidCreatorServicesPageError
+                ? t("contentGpsDiscovery.responseMismatch")
+                : cause instanceof Error
+                  ? cause.message
+                  : String(cause),
           }));
         }
       } finally {
@@ -121,13 +169,23 @@ function CreatorDetailContent({
       }
     }
     void load("profile", () => getCreatorById(id), setCreator);
-    void load("services", () => getCreatorServices(12, { creatorId: id }), setServices);
+    void load(
+      "services",
+      () => fetchCreatorServicesPage(id, undefined, controller.signal),
+      (page) => {
+        setServices(page.items);
+        setNextCursor(page.nextCursor);
+      }
+    );
     void load("works", () => getCreatorIps(id), setWorks);
     void load("crews", () => getCrewsByUser(id), setCrews);
     return () => {
       alive = false;
+      controller.abort();
+      moreRequest.current?.abort();
+      moreRequest.current = null;
     };
-  }, [id, revision]);
+  }, [id, revision, t]);
 
   if (loading) {
     return (
@@ -356,6 +414,21 @@ function CreatorDetailContent({
                 {t("creatorDetail.servicesEmpty")}
               </ThemedText>
             ) : null}
+            {moreError && <ThemedText accessibilityRole="alert">{moreError}</ThemedText>}
+            {nextCursor && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={moreBusy}
+                onPress={() => void loadMore()}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                {moreBusy ? (
+                  <ActivityIndicator />
+                ) : (
+                  <ThemedText>{t(moreError ? "common.retry" : "myServices.loadMore")}</ThemedText>
+                )}
+              </Pressable>
+            )}
           </View>
         </View>
       </ScrollView>

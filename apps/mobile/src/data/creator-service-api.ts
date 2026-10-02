@@ -174,6 +174,41 @@ export async function fetchCreatorServices(
   });
 }
 
+export class InvalidCreatorServicesPageError extends Error {
+  constructor() {
+    super("Invalid service page; please retry.");
+  }
+}
+
+export async function fetchCreatorServicesPage(
+  creatorId: string,
+  cursor?: string,
+  signal?: AbortSignal
+) {
+  const res = await api.get<CreatorServiceListResponse>("/creator-services", {
+    service: "aurora",
+    params: { creatorId, status: "listed", limit: 12, cursor },
+    signal,
+    retry: false,
+  });
+  if (
+    !res ||
+    !Array.isArray(res.items) ||
+    (res.nextCursor != null &&
+      (typeof res.nextCursor !== "string" || !res.nextCursor || res.nextCursor === cursor))
+  )
+    throw new InvalidCreatorServicesPageError();
+  const items = res.items.map((item) =>
+    item && typeof item === "object" ? mapService(item) : undefined
+  );
+  if (
+    items.some((item) => !item || item.creatorId !== creatorId) ||
+    new Set(items.map((item) => item?.id)).size !== items.length
+  )
+    throw new InvalidCreatorServicesPageError();
+  return { items: items as CreatorServiceSummary[], nextCursor: res.nextCursor ?? null };
+}
+
 export async function fetchCreatorServiceById(
   id: string,
   signal?: AbortSignal
