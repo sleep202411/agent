@@ -3832,6 +3832,7 @@
           "loading": "Loading the storyboard…",
           "open": "Edit storyboard",
           "openError": "The storyboard could not be opened.",
+          "loadError": "Could not load storyboard",
           "linkTask": "Link task",
           "createTask": "Create task",
           "linkedTask": "Linked task",
