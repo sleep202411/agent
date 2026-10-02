@@ -250,6 +250,7 @@ function Editor(props: Props & { nodeId?: string; initialParentId: string | null
     node?: OrganizationNode;
     folders?: OrganizationFolder[];
     rootUpload?: boolean;
+    canView?: boolean;
     error?: string;
   }>();
   useEffect(() => {
@@ -272,7 +273,13 @@ function Editor(props: Props & { nodeId?: string; initialParentId: string | null
       );
       const context = await fetchCrewAssetContext(props.crewId, c.signal);
       if (!c.signal.aborted && props.generation === getAuthGeneration())
-        setResult({ revision, node, folders, rootUpload: context.capabilities.upload });
+        setResult({
+          revision,
+          node,
+          folders,
+          rootUpload: context.capabilities.upload,
+          canView: context.capabilities.view,
+        });
     })().catch((e) => {
       if (!c.signal.aborted && props.generation === getAuthGeneration())
         setResult({ revision, error: e instanceof Error ? e.message : String(e) });
@@ -280,7 +287,7 @@ function Editor(props: Props & { nodeId?: string; initialParentId: string | null
     return () => c.abort();
   }, [props.crewId, props.userId, props.generation, props.nodeId, revision]);
   const visible = result?.revision === revision ? result : undefined;
-  if (visible?.folders)
+  if (visible?.folders && visible.canView)
     return (
       <Form
         key={revision}
@@ -295,6 +302,9 @@ function Editor(props: Props & { nodeId?: string; initialParentId: string | null
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       {!visible && <ActivityIndicator />}
       {visible?.error && <ThemedText accessibilityRole="alert">{visible.error}</ThemedText>}
+      {visible?.canView === false && (
+        <ThemedText accessibilityRole="alert">{t("studioMedia.accessDenied")}</ThemedText>
+      )}
       <Button label={t("thread.refresh")} onPress={() => setRevision((v) => v + 1)} />
       <Button label={t("crewTasks.back")} onPress={props.onClose} />
     </ScrollView>
