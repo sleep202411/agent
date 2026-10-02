@@ -1,38 +1,57 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { IconArrowLeft, IconHammer, IconSparkles } from "@tabler/icons-react";
+import { IconArrowLeft, IconSparkles } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useProject } from "../../../_hooks/use-project";
 import { useFirstSectionCanvas } from "../../../_hooks/use-document";
-import { type ViewMode } from "../_data/view-modes";
+import { ApiRequestError } from "@/src/lib/api";
 import { StoryboardCanvas } from "./canvas/storyboard-canvas";
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const t = useTranslations("fizzStudio");
   const locale = useLocale() as Locale;
-  // Canvas is the only view for now; the storyboard table + timeline (and the
-  // view switcher that selects them) will be reintroduced in the UI/UX rework.
-  const [mode] = useState<ViewMode>("canvas");
+  const common = useTranslations("common");
+  const project = useProject(projectId);
+  const document = useFirstSectionCanvas(projectId);
+  const storyboard = document.data;
+  const error = project.error ?? document.error;
+  const unavailable = [project.error, document.error].some(
+    (error) => error instanceof ApiRequestError && [401, 403, 404, 410].includes(error.status)
+  );
+  const failed = project.isError || document.isError;
+  const retrying = project.isFetching || document.isFetching;
+  const retry = () => {
+    if (project.isError) void project.refetch();
+    if (document.isError) void document.refetch();
+  };
 
-  const { isError: projectError } = useProject(projectId);
-  const {
-    data: storyboard,
-    isLoading: loadingDoc,
-    isError: docError,
-  } = useFirstSectionCanvas(projectId);
-
-  if (projectError || docError) {
+  if (unavailable || (failed && (!storyboard || !project.data))) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#0f0f10] px-6 text-center text-white">
         <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-white/[0.04]">
           <IconSparkles className="size-6 text-white/30" />
         </div>
-        <p className="text-sm font-medium text-white/60">{t("projectNotFound")}</p>
-        <p className="mt-1 text-xs text-white/30">{t("projectNotFoundHint")}</p>
+        <p role="alert" className="max-w-md text-sm font-medium text-white/60">
+          {unavailable
+            ? t("projectNotFound")
+            : error instanceof Error
+              ? error.message
+              : common("loadFailed")}
+        </p>
+        {unavailable ? (
+          <p className="mt-1 text-xs text-white/40">{t("projectNotFoundHint")}</p>
+        ) : null}
+        <button
+          type="button"
+          disabled={retrying}
+          onClick={retry}
+          className="mt-5 h-8 rounded-full bg-white/10 px-4 text-sm font-medium text-white/80 transition-colors hover:bg-white/15 disabled:opacity-50"
+        >
+          {common("retry")}
+        </button>
         <Link
           href={localizePath("/fizzstudio", locale)}
           className="mt-5 inline-flex h-8 items-center gap-1.5 rounded-full bg-white/8 px-4 text-sm font-medium text-white/70 transition-colors hover:bg-white/12 hover:text-white"
@@ -62,31 +81,29 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
       {/* Editor body — the active view renders the same storyboard data */}
       <main className="flex flex-1 flex-col">
-        {loadingDoc || !storyboard ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-white/40">
-            {t("loading") ?? "Loading…"}
+        {failed ? (
+          <div className="flex items-center justify-between gap-4 px-6 py-3 text-sm">
+            <p role="alert" className="text-white/60">
+              {error instanceof Error ? error.message : common("loadFailed")}
+            </p>
+            <button
+              type="button"
+              disabled={retrying}
+              onClick={retry}
+              className="shrink-0 rounded-full bg-white/10 px-4 py-2 disabled:opacity-50"
+            >
+              {common("retry")}
+            </button>
           </div>
-        ) : mode === "canvas" ? (
-          <StoryboardCanvas key={storyboard.id} doc={storyboard} />
+        ) : null}
+        {document.isLoading || project.isLoading || !storyboard || !project.data ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-white/40">
+            {t("loading")}
+          </div>
         ) : (
-          <ComingSoonView label={t(mode === "timeline" ? "viewTimeline" : "viewStoryboard")} />
+          <StoryboardCanvas key={storyboard.id} doc={storyboard} />
         )}
       </main>
-    </div>
-  );
-}
-
-// ─── Coming-soon views (storyboard table / timeline) ──────────────────────────
-
-function ComingSoonView({ label }: { label: string }) {
-  const t = useTranslations("fizzStudio");
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 py-24 text-center">
-      <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-white/[0.04]">
-        <IconHammer className="size-6 text-white/30" />
-      </div>
-      <p className="text-sm font-medium text-white/55">{label}</p>
-      <p className="mt-1 max-w-xs text-xs text-white/30">{t("viewComingSoon")}</p>
     </div>
   );
 }
