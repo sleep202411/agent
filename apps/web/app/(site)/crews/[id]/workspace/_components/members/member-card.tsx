@@ -27,7 +27,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
@@ -87,6 +87,7 @@ function MemberCardSession({
   onAskRemove,
   onAskTransfer,
 }: MemberCardProps) {
+  const locale = useLocale();
   const t = useTranslations("workspace");
   const translatePosition = useTranslatePositionValue();
   const updateMember = useUpdateMember(crewId);
@@ -223,7 +224,7 @@ function MemberCardSession({
       {/* Actions */}
       <div className="flex min-w-0 items-center justify-end gap-1.5 pl-[54px] md:pl-0">
         <Link
-          href={`/creators/${encodeUserId(member.userId)}`}
+          href={`/${locale}/creators/${encodeUserId(member.userId)}`}
           className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-[#aeb3bc] transition-colors hover:bg-white/[0.055] hover:text-white"
         >
           {t("memberViewProfile")}

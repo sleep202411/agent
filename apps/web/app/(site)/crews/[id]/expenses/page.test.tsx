@@ -11,7 +11,10 @@ vi.mock("next/link", () => ({ default: "a" }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: state.account } }),
 }));
-vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/src/i18n/i18n", () => ({
+  useLocale: () => "en-US",
+  useTranslations: () => (key: string) => key,
+}));
 vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { get: vi.fn(), post: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 it("retains failed drafts, submits saved identity and resets private edits on account change", async () => {

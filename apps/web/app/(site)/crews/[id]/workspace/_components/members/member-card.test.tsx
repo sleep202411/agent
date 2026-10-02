@@ -19,6 +19,7 @@ vi.mock("next/link", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/src/lib/user-id-codec", () => ({ encodeUserId: (id: string) => `encoded-${id}` }));
 vi.mock("@/src/i18n/i18n", () => ({
+  useLocale: () => "en-US",
   useTranslations: () => (key: string, vars?: Record<string, string | number>) => {
     const copy: Record<string, string> = {
       memberRoleOwner: "Owner",

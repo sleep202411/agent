@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 import { parseCrewMoney, formatCrewMoneyInput } from "@/src/lib/crew-money";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ export default function ExpensePage() {
   return user ? <ExpenseForm key={`${user.id}:${id}`} crewId={id} userId={user.id} /> : null;
 }
 function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
+  const locale = useLocale();
   const t = useTranslations("crewExpenses");
   const [draft, setDraft] = useState<Draft>(() => ({
     id: crypto.randomUUID(),
@@ -215,7 +216,9 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
   }
   return (
     <main className="mx-auto max-w-4xl space-y-6 px-4 py-8">
-      <Link href={`/crews/${encodeURIComponent(crewId)}/workspace?tab=income`}>{t("back")}</Link>
+      <Link href={`/${locale}/crews/${encodeURIComponent(crewId)}/workspace?tab=income`}>
+        {t("back")}
+      </Link>
       <h1 className="text-2xl font-semibold">{t("title")}</h1>
       <p className="text-sm text-muted-foreground">{t("note")}</p>
       <section className="space-y-3">

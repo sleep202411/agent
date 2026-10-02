@@ -294,7 +294,7 @@ function IncomeSession({
         <CrewComputeFinance crewId={crewId} crewName={crewName} />
         <Link
           className="mb-3 inline-block text-sm"
-          href={`/crews/${encodeURIComponent(crewId)}/expenses`}
+          href={`/${locale}/crews/${encodeURIComponent(crewId)}/expenses`}
         >
           {expenses("title")}
         </Link>
