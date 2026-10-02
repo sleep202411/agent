@@ -22,6 +22,12 @@ export function useInbox(owner: string | undefined, contextType: InboxFilter) {
   const key = JSON.stringify([owner, contextType, revision]);
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
+  const [snapshotScope, setSnapshotScope] = useState(key);
+  // A return visit must await its own read, even when the account/filter matches.
+  if (snapshotScope !== key) {
+    setSnapshotScope(key);
+    setSnapshot(undefined);
+  }
   const load = useCallback(
     async (session: Session) => {
       if (session.busy || !session.more || session.abort.signal.aborted) return;
