@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { IconId, IconPhoto, IconPhotoUp, IconTrash, IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useProjectContext } from "./project-context";
 import { useProjectUIStore } from "../_stores/project-ui-store";
@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
+import { useAuth } from "@/app/_components/auth-provider";
+import { ApiRequestError } from "@/lib/api";
 import { getProject, updateProject, type ProjectRef } from "@/lib/collab/projects-api";
 
 /**
@@ -24,6 +26,71 @@ export function ProjectOverviewPanel({
 }: {
   onNameCommitted: (name: string) => void;
 }) {
+  const { projectId } = useProjectContext();
+  const { user } = useAuth();
+  const t = useTranslations("project.overview");
+  const common = useTranslations("common");
+  const close = useProjectUIStore((state) => state.closeOverview);
+  const queryClient = useQueryClient();
+  const queryKey = ["platform-project-overview", user?.id ?? null, projectId];
+  const query = useQuery({
+    queryKey,
+    queryFn: ({ signal }) => getProject(projectId, signal),
+    enabled: Boolean(user),
+    retry: false,
+  });
+  const unavailable =
+    query.error instanceof ApiRequestError && [401, 403, 404, 410].includes(query.error.status);
+  const recovery = query.isError ? (
+    <div className="space-y-3 text-sm">
+      <p role="alert" className="text-white/60">
+        {errorMessage(query.error, t("loadFailed"))}
+      </p>
+      <Button size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>
+        {common("retry")}
+      </Button>
+    </div>
+  ) : null;
+  if (!user || !query.data || unavailable)
+    return (
+      <>
+        <DrawerPanel.Header
+          title={t("title")}
+          icon={<IconId className="size-4" stroke={1.7} />}
+          closeLabel={common("close")}
+          onClose={close}
+        />
+        <DrawerPanel.Body className="gap-5 px-4 pb-4">
+          {recovery ?? (
+            <p role="status" className="text-sm text-white/50">
+              {common("loading")}
+            </p>
+          )}
+        </DrawerPanel.Body>
+      </>
+    );
+  return (
+    <ProjectOverviewEditor
+      key={`${user.id}:${projectId}`}
+      project={query.data}
+      recovery={recovery}
+      onNameCommitted={onNameCommitted}
+      onProjectUpdated={(next) => queryClient.setQueryData(queryKey, next)}
+    />
+  );
+}
+
+function ProjectOverviewEditor({
+  project,
+  recovery,
+  onProjectUpdated,
+  onNameCommitted,
+}: {
+  project: ProjectRef;
+  recovery: ReactNode;
+  onProjectUpdated: (next: ProjectRef) => void;
+  onNameCommitted: (name: string) => void;
+}) {
   const t = useTranslations("project.overview");
   const tProject = useTranslations("project");
   const tCommon = useTranslations("common");
@@ -31,36 +98,17 @@ export function ProjectOverviewPanel({
   const close = useProjectUIStore((state) => state.closeOverview);
   const queryClient = useQueryClient();
 
-  const [project, setProject] = useState<ProjectRef | null>(null);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description ?? "");
   const [nameBusy, setNameBusy] = useState(false);
   const [coverBusy, setCoverBusy] = useState(false);
   const [descriptionBusy, setDescriptionBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    getProject(projectId)
-      .then((loaded) => {
-        if (cancelled) return;
-        setProject(loaded);
-        setName(loaded.name);
-        setDescription(loaded.description ?? "");
-      })
-      .catch((reason) => {
-        if (!cancelled) toast.error(errorMessage(reason, t("loadFailed")));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, t]);
-
   /** Project reads and the home "recent projects" rail share the derived
    *  thumbnail, so a cover change must retire both caches. */
   const applyUpdate = (next: ProjectRef) => {
-    setProject(next);
-    setDescription(next.description ?? "");
+    onProjectUpdated(next);
     void queryClient.invalidateQueries({ queryKey: ["home-recent-projects"] });
   };
 
@@ -122,7 +170,9 @@ export function ProjectOverviewPanel({
     if (descriptionBusy || !project) return;
     setDescriptionBusy(true);
     try {
-      applyUpdate(await updateProject(projectId, { description: description.trim() || null }));
+      const next = await updateProject(projectId, { description: description.trim() || null });
+      setDescription(next.description ?? "");
+      applyUpdate(next);
       toast.success(t("descriptionSaved"));
     } catch (reason) {
       toast.error(errorMessage(reason, t("descriptionSaveFailed")));
@@ -142,6 +192,7 @@ export function ProjectOverviewPanel({
         onClose={close}
       />
       <DrawerPanel.Body className="gap-5 px-4 pb-4">
+        {recovery}
         <section className="space-y-2.5">
           <h3 className="text-xs font-semibold tracking-wide text-white/40 uppercase">
             {t("coverTitle")}
