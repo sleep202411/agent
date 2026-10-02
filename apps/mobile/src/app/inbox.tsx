@@ -89,7 +89,7 @@ export default function InboxScreen() {
           <FlatList
             data={inbox.items}
             keyExtractor={(item) => item.id}
-            onEndReached={inbox.loadMore}
+            onEndReached={inbox.loadMoreOnScroll}
             onRefresh={inbox.refresh}
             refreshing={inbox.loading}
             renderItem={({ item }) => (
@@ -124,7 +124,9 @@ export default function InboxScreen() {
               </Pressable>
             )}
             ListEmptyComponent={
-              !inbox.loading && !inbox.error ? <ThemedText>{t("inbox.empty")}</ThemedText> : null
+              !inbox.loading && !inbox.error ? (
+                <ThemedText>{t(inbox.hasMore ? "inbox.searchingMore" : "inbox.empty")}</ThemedText>
+              ) : null
             }
             ListFooterComponent={
               <View>
@@ -136,6 +138,15 @@ export default function InboxScreen() {
                       <ThemedText>{t("inbox.retry")}</ThemedText>
                     </Pressable>
                   </>
+                )}
+                {inbox.hasMore && !inbox.loading && !inbox.error && (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={inbox.loadMore}
+                    style={{ padding: 12 }}
+                  >
+                    <ThemedText>{t("inbox.loadMore")}</ThemedText>
+                  </Pressable>
                 )}
               </View>
             }

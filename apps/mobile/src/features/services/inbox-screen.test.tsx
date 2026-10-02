@@ -116,3 +116,13 @@ it("defers guest authentication to intent and never passes an authenticated scop
   await click("inbox.signIn");
   expect(h.gate).toHaveBeenCalledOnce();
 });
+
+it("does not claim the inbox is empty while a cursor remains", async () => {
+  const loadMore = vi.fn();
+  h.useInbox.mockReturnValue({ items: [], loading: false, hasMore: true, loadMore });
+  await render();
+  expect(host.textContent).toContain("inbox.searchingMore");
+  expect(host.textContent).not.toContain("inbox.empty");
+  await click("inbox.loadMore");
+  expect(loadMore).toHaveBeenCalledOnce();
+});

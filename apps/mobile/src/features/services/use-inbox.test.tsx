@@ -18,6 +18,7 @@ function Probe({ owner, role }: { owner?: string; role: InboxFilter }) {
       {state.loading && <em>Loading</em>}
       <button onClick={state.loadMore}>more</button>
       <button onClick={state.retry}>retry</button>
+      <button onClick={state.loadMoreOnScroll}>scroll</button>
     </div>
   );
 }
@@ -136,4 +137,39 @@ it("revalidates return visits without showing the previous visit's rows", async 
   await act(async () => finish({ items: [], nextCursor: null }));
   expect(host.textContent).not.toContain("Loading");
   expect(h.load).toHaveBeenCalledTimes(2);
+});
+
+it("walks empty cursor pages until a visible conversation is found", async () => {
+  h.load
+    .mockResolvedValueOnce({ items: [], nextCursor: "a" })
+    .mockResolvedValueOnce({ items: [], nextCursor: "b" })
+    .mockResolvedValueOnce({ items: [item], nextCursor: null });
+  await render("1", "crew");
+  expect(h.load.mock.calls.map((call) => call[1])).toEqual([null, "a", "b"]);
+  expect(host.textContent).toContain("First");
+});
+it("caps automatic empty-page traversal but allows explicit continuation", async () => {
+  let page = 0;
+  h.load.mockImplementation(async () => ({ items: [], nextCursor: String(++page) }));
+  await render("1");
+  expect(h.load).toHaveBeenCalledTimes(9);
+  await click(2);
+  expect(h.load).toHaveBeenCalledTimes(9);
+  h.load.mockResolvedValueOnce({ items: [item], nextCursor: null });
+  await click(0);
+  expect(h.load.mock.calls[9][1]).toBe("9");
+  expect(host.textContent).toContain("First");
+});
+it("retries the interrupted empty-page cursor without replaying earlier pages", async () => {
+  h.load
+    .mockResolvedValueOnce({ items: [], nextCursor: "next" })
+    .mockRejectedValueOnce(Error("Offline"))
+    .mockResolvedValueOnce({ items: [item], nextCursor: null });
+  await render("1");
+  expect(host.textContent).toContain("Offline");
+  await click(2);
+  expect(h.load).toHaveBeenCalledTimes(2);
+  await click(1);
+  expect(h.load.mock.calls[2][1]).toBe("next");
+  expect(host.textContent).toContain("First");
 });

@@ -4540,5 +4540,7 @@
   "notifications.events.payout.voided.body": "The {amount} payout for {grossAmount} was voided; the reserved amount is available again.",
   "notifications.performedBy": "By {name}",
   "notifications.unreadCount": "{count} unread",
-  "notifications.retryUnreadCount": "Retry unread count"
+  "notifications.retryUnreadCount": "Retry unread count",
+  "inbox.searchingMore": "Looking for more conversations…",
+  "inbox.loadMore": "Load more"
 }

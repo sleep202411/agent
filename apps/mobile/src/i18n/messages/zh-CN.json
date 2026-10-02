@@ -4540,5 +4540,7 @@
   "notifications.events.payout.voided.body": "{grossAmount} 对应的 {amount} 已作废，金额已重新可用。",
   "notifications.performedBy": "操作人：{name}",
   "notifications.unreadCount": "{count} 条未读",
-  "notifications.retryUnreadCount": "重试未读数量"
+  "notifications.retryUnreadCount": "重试未读数量",
+  "inbox.searchingMore": "正在查找更多会话……",
+  "inbox.loadMore": "加载更多"
 }
