@@ -9,6 +9,7 @@ import type { FeedJob } from "@/app/[locale]/(studio)/_components/generation/use
 import {
   FailedTile,
   FeedEmptyState,
+  FeedHistoryError,
   FeedLoadingState,
   PendingTile,
   VideoGrid,
@@ -82,9 +83,15 @@ export function VideoStudio() {
         </div>
 
         <div className="mt-4">
+          {feed.historyError ? (
+            <FeedHistoryError
+              error={feed.historyError}
+              onRetry={() => void feed.refreshHistory()}
+            />
+          ) : null}
           {feed.historyLoading && feed.jobs.length === 0 ? (
             <FeedLoadingState />
-          ) : feed.jobs.length === 0 ? (
+          ) : !feed.historyError && feed.jobs.length === 0 ? (
             <FeedEmptyState
               message={t("feed.startCreatingWith")}
               hint={t("video.emptyHint")}

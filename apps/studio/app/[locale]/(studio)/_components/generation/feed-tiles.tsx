@@ -322,6 +322,19 @@ export function VideoResultTile({
   );
 }
 
+/** Reading history must never be confused with retrying a paid generation. */
+export function FeedHistoryError({ error, onRetry }: { error: string; onRetry: () => void }) {
+  const t = useTranslations("common");
+  return (
+    <div role="alert" className="mb-4 text-sm text-destructive">
+      <p>{error}</p>
+      <button type="button" onClick={onRetry} className="mt-2 underline">
+        {t("retry")}
+      </button>
+    </div>
+  );
+}
+
 export function FeedLoadingState() {
   return (
     <div className="flex min-h-[240px] items-center justify-center">

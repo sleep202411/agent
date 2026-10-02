@@ -10,6 +10,7 @@ import {
   aspectRatioFromInput,
   FailedTile,
   FeedEmptyState,
+  FeedHistoryError,
   FeedLoadingState,
   ImageResultTile,
   Masonry,
@@ -92,9 +93,15 @@ export function ImageStudio({
         </div>
 
         <div className="mt-4">
+          {feed.historyError ? (
+            <FeedHistoryError
+              error={feed.historyError}
+              onRetry={() => void feed.refreshHistory()}
+            />
+          ) : null}
           {feed.historyLoading && feed.jobs.length === 0 ? (
             <FeedLoadingState />
-          ) : feed.jobs.length === 0 ? (
+          ) : !feed.historyError && feed.jobs.length === 0 ? (
             <FeedEmptyState
               message={t("feed.startCreatingWith")}
               hint={t("image.emptyHint")}
