@@ -944,6 +944,19 @@ describe("ExperiencePlayer paused state", () => {
     let resumes: number;
     let suspends: number;
     let resumeRefusal: Error | null;
+    /** The contexts the player made, as the test browser keeps them. */
+    let contexts: { state: AudioContextState }[];
+    const audio = () => contexts.at(-1)!;
+    /** Resumes waiting on their sound device, which starts when the test says. */
+    let waitingOnDevice: Array<() => void>;
+    const startDevice = async () => {
+      const waiting = waitingOnDevice;
+      waitingOnDevice = [];
+      await act(async () => {
+        waiting.forEach((start) => start());
+      });
+      await settle();
+    };
 
     beforeEach(() => {
       frames = [];
@@ -951,6 +964,8 @@ describe("ExperiencePlayer paused state", () => {
       resumes = 0;
       suspends = 0;
       resumeRefusal = null;
+      contexts = [];
+      waitingOnDevice = [];
       vi.spyOn(performance, "now").mockImplementation(() => nowMs);
       vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
         frames.push(() => callback(nowMs));
@@ -967,18 +982,27 @@ describe("ExperiencePlayer paused state", () => {
         connect() {},
         disconnect() {},
       });
+      // As Chromium has it: a resume runs the context only once its device has
+      // started, and reads "suspended" until then; a suspend takes effect at once.
       vi.stubGlobal(
         "AudioContext",
         class {
-          state = "suspended";
+          state: AudioContextState = "suspended";
           destination = {};
           currentTime = 0;
           createGain = gainNode;
+          constructor() {
+            contexts.push(this);
+          }
           resume = () => {
             resumes += 1;
             if (resumeRefusal) return Promise.reject(resumeRefusal);
-            this.state = "running";
-            return Promise.resolve();
+            return new Promise<void>((resolve) =>
+              waitingOnDevice.push(() => {
+                this.state = "running";
+                resolve();
+              })
+            );
           };
           suspend = () => {
             suspends += 1;
@@ -1025,7 +1049,8 @@ describe("ExperiencePlayer paused state", () => {
       expect(container.textContent).not.toContain("after");
     });
 
-    it("is suspended with a pause, and resumed inside the tap that ends it", async () => {
+    /** Two clips back to back, with a sound graph. */
+    const soundFilm = () => {
       const runtime = twoClipFilm();
       runtime.compatibility.requiredCapabilities.push("audio.core");
       runtime.audio = {
@@ -1034,41 +1059,60 @@ describe("ExperiencePlayer paused state", () => {
         snapshots: [],
         duckingRules: [],
       };
-      await startFilm(runtime, ["/a.mp4"]);
-      expect(resumes).toBe(1);
+      return runtime;
+    };
+
+    it("is suspended with a pause, and resumed inside the tap that ends it", async () => {
+      await startFilm(soundFilm(), ["/a.mp4"]);
+      await startDevice();
+      expect(audio().state).toBe("running");
 
       await press(toggle());
-      expect(suspends).toBe(1);
+      expect(audio().state).toBe("suspended");
 
+      const before = resumes;
       let resumedInsideTap = 0;
       await act(async () => {
         pausedFrame()!.click();
-        resumedInsideTap = resumes;
+        resumedInsideTap = resumes - before;
       });
-      await settle();
-      expect(resumedInsideTap).toBe(2);
+      await startDevice();
+      expect(resumedInsideTap).toBe(1);
+      expect(audio().state).toBe("running");
       expect(pausedFor()).toBeNull();
     });
 
+    it("stays suspended when the story pauses again while its device is still starting", async () => {
+      // A Low Power Mode device: the tap's own play is refused again, in the
+      // very tap whose resume has yet to start the sound device.
+      refuseWith = domException("NotAllowedError");
+      await startFilm(soundFilm(), ["/a.mp4"]);
+      expectRefusedPause();
+      // Start's own resume, as late: the refusal paused the story first.
+      await startDevice();
+      expect(audio().state).toBe("suspended");
+
+      await press(pausedFrame());
+      expectRefusedPause();
+      await startDevice();
+
+      // The resume settled after the pause had asked for the context to hold:
+      // the cues stay frozen behind the paused frame.
+      expect(audio().state).toBe("suspended");
+    });
+
     it("is suspended with the story when a clip is stopped from outside", async () => {
-      const runtime = twoClipFilm();
-      runtime.compatibility.requiredCapabilities.push("audio.core");
-      runtime.audio = {
-        buses: [{ busId: "master", role: "master", defaultGain: 1, defaultMuted: false }],
-        cues: [],
-        snapshots: [],
-        duckingRules: [],
-      };
-      await startFilm(runtime, ["/a.mp4"]);
+      await startFilm(soundFilm(), ["/a.mp4"]);
+      await startDevice();
       await fire("/a.mp4", "onPlaying");
-      expect(resumes).toBe(1);
+      expect(audio().state).toBe("running");
       expect(suspends).toBe(0);
 
       Object.defineProperty(element("/a.mp4"), "paused", { value: true, configurable: true });
       await fire("/a.mp4", "onPause");
 
       expect(pausedFor()).toBe("user");
-      expect(suspends).toBe(1);
+      expect(audio().state).toBe("suspended");
     });
 
     it("comes back after an access flow, which suspends it for the dialog", async () => {
@@ -1081,25 +1125,30 @@ describe("ExperiencePlayer paused state", () => {
       const runtime = timedFilm(textScene("scene.after", "after", { access: requirement }), [
         "commerce.community-points",
       ]);
+      let heldForTheDialog: AudioContextState | null = null;
       await startFilm(runtime, [], {
         access: {
           canAccess: () => owned,
           requestAccess: async () => {
+            heldForTheDialog = audio().state;
             owned = true;
             return true;
           },
           formatPrice: (amount) => `${amount} points`,
         },
       });
-      expect(resumes).toBe(1);
+      await startDevice();
+      expect(audio().state).toBe("running");
 
       nowMs = DURATION_MS;
       await runFrames();
       await settle();
+      await startDevice();
 
       expect(container.textContent).toContain("after");
+      expect(heldForTheDialog).toBe("suspended");
       // Resumed when the flow ended — not left suspended for the rest of the film.
-      expect(resumes).toBe(2);
+      expect(audio().state).toBe("running");
       expect(pausedFor()).toBeNull();
     });
   });
@@ -1412,6 +1461,26 @@ describe("ExperiencePlayer paused state", () => {
       expect(pausedFor()).toBeNull();
     });
 
+    it("move the story on when they resume a clip in its last frames", async () => {
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      await fire("/a.mp4", "onPlaying");
+      await press(toggle());
+      // Paused 80 ms from the end of a 5 s clip: Vidstack would start it over.
+      const clip = element("/a.mp4");
+      Object.defineProperty(clip, "paused", { value: true, configurable: true });
+      Object.defineProperty(clip, "currentTime", { value: 4.92, configurable: true });
+
+      const plays = await playsDuring(() => pausedFrame()!.click());
+
+      // Not played, and not sought to its end — which Chromium never reports
+      // as ended — but ended: the next scene's clip is on the element.
+      expect(plays.map((entry) => entry.element)).not.toContain(clip);
+      expect(container.querySelector('[data-video-source="/b.mp4"]')).not.toBeNull();
+      await fire("/b.mp4", "onCanPlay");
+      expect(play.mock.contexts).toContain(element("/b.mp4"));
+      expect(pausedFor()).toBeNull();
+    });
+
     it("turn with the frame on an upright phone, where no host chrome reaches", async () => {
       Object.defineProperty(window, "matchMedia", {
         configurable: true,
@@ -1578,18 +1647,52 @@ describe("ExperiencePlayer paused state", () => {
     });
   });
 
+  /**
+   * A mouse click as Chrome, Edge, and Firefox off the Mac make it: the press
+   * focuses the button unless the page prevents that, then the click lands.
+   */
+  const click = async (target: HTMLElement | null | undefined) => {
+    if (!target) throw new Error("There is nothing to click.");
+    await act(async () => {
+      const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+      target.dispatchEvent(down);
+      if (!down.defaultPrevented) target.focus();
+      target.click();
+    });
+    await settle();
+  };
+
   it("gives focus back, on resume, to what the pause took it from", async () => {
     await startFilm(beatFilm(), []);
     const article = container.querySelector<HTMLElement>('[data-experience-renderer="core.text"]')!;
     // The text scene takes focus as it opens.
     expect(document.activeElement).toBe(article);
 
-    await press(toggle());
+    // The toggle takes no focus from a pointer, so the pause still finds it on the text.
+    await click(toggle());
+    expect(pausedFor()).toBe("user");
     // `inert` takes focus off the story as it pauses; jsdom leaves that to the test.
     article.blur();
+    await click(pausedFrame());
+
+    expect(pausedFor()).toBeNull();
+    expect(document.activeElement).toBe(article);
+    // So Space scrolls the text again, rather than pausing the film.
+    expect((await keySpace(article)).defaultPrevented).toBe(false);
+    expect(pausedFor()).toBeNull();
+  });
+
+  it("hands the focus the paused frame held to the toggle, rather than dropping it", async () => {
+    refuseWith = domException("NotAllowedError");
+    await startFilm(twoClipFilm(), ["/a.mp4"]);
+    expect(document.activeElement).toBe(pausedFrame());
+    refuseWith = null;
+
+    // Enter on the focused frame: a click, for a button.
     await press(pausedFrame());
 
-    expect(document.activeElement).toBe(article);
+    expect(pausedFor()).toBeNull();
+    expect(document.activeElement).toBe(toggle());
   });
 
   // ── The page and the OS ───────────────────────────────────────────────────
@@ -1627,6 +1730,94 @@ describe("ExperiencePlayer paused state", () => {
 
       expect(pausedFor()).toBe("hidden");
     });
+
+    it("holds a clip that a purchase opens behind a page put away at a beat with nothing to lose", async () => {
+      // A decision beat: a choice alone, with no footage, clock or sound.
+      const decide = {
+        kind: "scene",
+        sceneId: "scene.decide",
+        clock: { kind: "none" },
+        renderers: [
+          {
+            instanceId: "choice.d",
+            rendererId: "core.choice",
+            layer: 100,
+            bindings: {},
+            config: {
+              decisionId: "decision.d",
+              initiallyOpen: true,
+              choices: [{ choiceId: "next", label: localized("Paid way on") }],
+            },
+          },
+        ],
+        anchors: [],
+        gestures: [],
+        timeline: { cues: [] },
+        eventBindings: [
+          {
+            bindingId: "choice.next",
+            on: { type: "renderer.outcome", sourceId: "choice.d", qualifierId: "choice-selected" },
+            routes: [
+              {
+                routeId: "next",
+                access: {
+                  key: "route:next",
+                  communityPointPrice: 20,
+                  title: localized("Paid way on"),
+                },
+                actions: [goto("scene.b")],
+              },
+            ],
+          },
+        ],
+      } as unknown as Node;
+      const runtime = film({
+        assets: [videoAsset("asset.a", "/a.mp4"), videoAsset("asset.b", "/b.mp4")],
+        capabilities: ["core.choice", "commerce.community-points"],
+        nodes: [
+          videoScene("scene.a", "asset.a", [goto("scene.decide")]),
+          decide,
+          videoScene("scene.b", "asset.b", [finish]),
+        ],
+      });
+      let owned = false;
+      let settlePurchase!: (allowed: boolean) => void;
+      await startFilm(runtime, ["/a.mp4"], {
+        access: {
+          canAccess: () => owned,
+          requestAccess: () =>
+            new Promise<boolean>((resolve) => {
+              settlePurchase = resolve;
+            }),
+          formatPrice: (amount) => `${amount} points`,
+        },
+      });
+      await fire("/a.mp4", "onEnd");
+      const option = [...container.querySelectorAll("button span")]
+        .find((item) => item.textContent === "Paid way on")
+        ?.closest("button");
+      if (!option) throw new Error("The decision never opened.");
+      await press(option);
+
+      // Put away while the purchase settles: the beat has nothing to lose.
+      await setPageVisibility("hidden");
+      expect(pausedFor()).toBeNull();
+      owned = true;
+      play.mockClear();
+      await act(async () => {
+        settlePurchase(true);
+      });
+      await settle();
+      await fire("/b.mp4", "onCanPlay");
+
+      // The clip it opens does not play behind the page, and waits for the viewer.
+      expect(play.mock.contexts).not.toContain(element("/b.mp4"));
+      expect(pausedFor()).toBe("hidden");
+      await setPageVisibility("visible");
+      await press(pausedFrame());
+      expect(play.mock.contexts).toContain(element("/b.mp4"));
+      expect(pausedFor()).toBeNull();
+    });
   });
 
   describe("Space", () => {
@@ -1659,6 +1850,8 @@ describe("ExperiencePlayer paused state", () => {
 
       expect((await keySpace(article)).defaultPrevented).toBe(false);
       expect(pausedFor()).toBeNull();
+      // The toggle does not offer a shortcut the text takes for itself.
+      expect(toggle()?.hasAttribute("aria-keyshortcuts")).toBe(false);
     });
 
     it("is not taken with a modifier, on repeat, while composing, or from outside the player", async () => {

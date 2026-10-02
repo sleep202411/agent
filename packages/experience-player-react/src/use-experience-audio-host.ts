@@ -62,6 +62,8 @@ class ExperienceAudioHost {
   readonly #buffers = new Map<string, Promise<AudioBuffer>>();
   readonly #active = new Map<string, ActivePlayback>();
   #queue: Promise<void> = Promise.resolve();
+  // What the story last asked of the context: held (suspended) or running.
+  #held = true;
   #disposed = false;
   readonly #downloads = new AbortController();
 
@@ -77,14 +79,28 @@ class ExperienceAudioHost {
     this.#createBusGraph();
   }
 
-  async unlock(): Promise<void> {
-    if (this.#disposed || this.#context.state === "running") return;
-    await this.#context.resume();
+  unlock(): Promise<void> {
+    this.#held = false;
+    return this.#follow();
   }
 
-  async suspend(): Promise<void> {
-    if (this.#disposed || this.#context.state !== "running") return;
-    await this.#context.suspend();
+  suspend(): Promise<void> {
+    this.#held = true;
+    return this.#follow();
+  }
+
+  /**
+   * Asks the context for what the story wants, at once — a resume has to be
+   * asked for inside the viewer's tap — and once more when that settles, if
+   * the story has changed its mind meanwhile. Never decided by `state`: a
+   * context whose device is still starting reads "suspended", and a pause that
+   * skipped it then would leave the cues running behind a frozen picture.
+   */
+  async #follow(): Promise<void> {
+    if (this.#disposed || this.#context.state === "closed") return;
+    const held = this.#held;
+    await (held ? this.#context.suspend() : this.#context.resume());
+    if (this.#held !== held) await this.#follow();
   }
 
   enqueue(effects: readonly AudioEffect[]): void {

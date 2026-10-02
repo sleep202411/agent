@@ -61,21 +61,26 @@ export function StoryProjectPlaytest({
   });
   const playSessionReporter = useMemo(() => createNoopPlaySessionReporter(), []);
   // The player keeps its frame controls clear of this header through
-  // `--experience-chrome-inset-top`: how far down the header reaches over the
-  // column the controls sit in, which is the refresh button's. The state HUD
-  // beside it grows with the story's state, so the wider gap before the refresh
-  // button keeps it out of that column instead of letting it push them down.
+  // `--experience-chrome-inset-top`: how far down the header's chrome reaches.
+  // The frame's top-right corner, where the controls sit, can fall under any of
+  // it — the refresh button when the picture spans the page, the state HUD
+  // when it is pillarboxed, the title on a narrow page — so the controls drop
+  // below all of it, measured again as the page or the HUD changes size. The
+  // header's own boxes take no taps: only its chrome stands over the film.
   const [chromeInsetTop, setChromeInsetTop] = useState<number | null>(null);
-  const measureChromeInset = useCallback((refresh: HTMLButtonElement | null) => {
-    const main = refresh?.closest("main");
-    if (!refresh || !main) return;
-    const update = () =>
-      setChromeInsetTop(
-        Math.ceil(refresh.getBoundingClientRect().bottom - main.getBoundingClientRect().top)
+  const measureChromeInset = useCallback((header: HTMLElement | null) => {
+    const main = header?.closest("main");
+    if (!header || !main) return;
+    const update = () => {
+      const bottom = Math.max(
+        ...Array.from(header.children, (chrome) => chrome.getBoundingClientRect().bottom)
       );
+      setChromeInsetTop(Math.ceil(bottom - main.getBoundingClientRect().top));
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(main);
+    observer.observe(header);
     return () => observer.disconnect();
   }, []);
 
@@ -172,7 +177,10 @@ export function StoryProjectPlaytest({
         />
       </div>
 
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-50 flex items-start justify-between gap-3 p-3 sm:p-4">
+      <header
+        ref={measureChromeInset}
+        className="pointer-events-none absolute inset-x-0 top-0 z-50 flex items-start justify-between gap-3 p-3 sm:p-4"
+      >
         <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-2xl bg-black/58 p-1.5 shadow-[0_14px_50px_rgb(0_0_0/0.38)] backdrop-blur-2xl">
           <Link
             href={`/story-studio/projects/${projectId}/canvas`}
@@ -187,7 +195,7 @@ export function StoryProjectPlaytest({
           </div>
         </div>
 
-        <div className="pointer-events-auto flex items-start gap-5">
+        <div className="pointer-events-none flex items-start gap-5">
           {stateRows.length > 0 ? (
             <StoryPlaytestStateHud
               values={sessionValues}
@@ -196,10 +204,10 @@ export function StoryProjectPlaytest({
             />
           ) : null}
           <Button
-            ref={measureChromeInset}
             type="button"
             size="icon"
             variant="secondary"
+            className="pointer-events-auto"
             aria-label={t("refresh")}
             title={t("refresh")}
             onClick={() => void runtimeQuery.refetch()}

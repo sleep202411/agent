@@ -142,19 +142,29 @@ describe("WorldModelExperienceRenderer", () => {
     expect(travel.current!.resume).toHaveBeenCalledOnce();
   });
 
-  it("keeps a hold or a release that does not take away from the failure dialog", async () => {
+  it("keeps a hold that fails away from the failure dialog: the stream only runs on", async () => {
     await render(false);
     await reach("running");
     travel.current!.pause.mockRejectedValueOnce(new Error("Travel cannot pause right now."));
 
     await render(true);
-    await reach("paused");
-    travel.current!.resume.mockRejectedValueOnce(new Error("Travel cannot resume right now."));
-    await render(false);
 
     expect(travel.current!.pause).toHaveBeenCalledOnce();
-    expect(travel.current!.resume).toHaveBeenCalledOnce();
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("says, as the provider does, that a release failed, rather than leave the stream stopped", async () => {
+    await render(false);
+    await reach("running");
+    await render(true);
+    await reach("paused");
+    const refused = new Error("Travel cannot resume right now.");
+    travel.current!.resume.mockRejectedValueOnce(refused);
+
+    await render(false);
+
+    expect(travel.current!.resume).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledExactlyOnceWith(refused);
   });
 
   it("takes no movement keys while the story is paused", async () => {
@@ -164,6 +174,24 @@ describe("WorldModelExperienceRenderer", () => {
     expect(travel.current!.move).not.toHaveBeenCalled();
 
     await render(false);
+    await key("w");
+    expect(travel.current!.move).toHaveBeenCalledExactlyOnceWith({ movement: "forward" });
+  });
+
+  it("takes no movement keys until the stream runs again after the story resumes", async () => {
+    await render(false);
+    await reach("running");
+    await render(true);
+    await reach("paused");
+
+    // The story runs again; the stream's resume is still on its way.
+    await render(false);
+    expect(travel.current!.resume).toHaveBeenCalledOnce();
+    await key("w");
+    expect(travel.current!.move).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+
+    await reach("running");
     await key("w");
     expect(travel.current!.move).toHaveBeenCalledExactlyOnceWith({ movement: "forward" });
   });

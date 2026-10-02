@@ -400,10 +400,14 @@ function ActiveExperienceRuntimePlayer({
   // with the sound and the presentation it restores.
   const resumeStoryRef = useRef<(source: "gesture" | "system") => void>(() => undefined);
   // Focus a pause takes from the story — the story layer turns inert — and the
-  // resume gives back, and the paused frame a refusal moves focus to.
+  // resume gives back; the paused frame a refusal moves focus to; and whether
+  // that frame had focus as the resume took it away, which the toggle takes
+  // over when there is nothing to give back.
   const storyLayerRef = useRef<HTMLDivElement | null>(null);
   const focusBeforePauseRef = useRef<HTMLElement | null>(null);
   const pausedFrameRef = useRef<HTMLButtonElement | null>(null);
+  const pausedFrameFocusedRef = useRef(false);
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
   // Story time for everything that moves the story without media (see
   // ExperienceStoryClock). It stands still whenever the story is held — before
   // Start, through a pause or an access flow, after the end — so nothing
@@ -736,11 +740,16 @@ function ActiveExperienceRuntimePlayer({
   const hasWorldModelRenderer = rendererSlots.some(
     ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID
   );
+  const hasTextRenderer = rendererSlots.some(
+    ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID
+  );
   // What the frame's controls offer. The toggle shows wherever the scene has
   // time to stop — footage, a fixed clock, a world stream, sound — and while
   // the story is paused; a silent text or decision beat has nothing to pause.
   // Space toggles the film wherever the toggle shows, save over a world stream,
-  // which takes Space for a move of its own.
+  // which takes Space for a move of its own. A text scene keeps Space for its
+  // own scrolling while it has focus, which it takes as it opens, so the toggle
+  // does not offer Space as its shortcut there.
   const sceneHasTime =
     hasVideoRenderer ||
     scene?.clock.kind === "fixed" ||
@@ -762,12 +771,13 @@ function ActiveExperienceRuntimePlayer({
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, [pauseStory]);
-  // Start settles after its tap, and the page can be put away in between.
-  useEffect(() => {
-    if (started && document.visibilityState === "hidden" && sceneHasTimeRef.current) {
-      pauseStory("hidden");
-    }
-  }, [pauseStory, started]);
+  // Nor does a scene with time open behind a page already put away and play
+  // there: Start settles after its tap, and a purchase made at a beat with
+  // nothing to lose settles after the page may have gone. Checked as each scene
+  // opens, before any of its clips is offered to play.
+  useLayoutEffect(() => {
+    if (started && sceneHasTime && document.visibilityState === "hidden") pauseStory("hidden");
+  }, [pauseStory, sceneEpoch, sceneHasTime, started]);
   // Start plays the entry clip inside the click, so it waits until that clip is
   // on an element. Before then Start would press play on nothing — and the
   // negotiation and buffering this covers are exactly the wait it shows.
@@ -979,10 +989,12 @@ function ActiveExperienceRuntimePlayer({
   // left alone: playing it again would start it over — the clip under a
   // declined paid choice, replayed. Film scenes carry exactly one
   // clock-driving video, so gating every registered handle is equivalent to
-  // gating the clock.
+  // gating the clock. Decided by the holds as of now, which a pause made in
+  // this commit's layout effects (a scene opening behind a hidden page) is
+  // already part of.
   useEffect(() => {
     if (!started) return;
-    if (holds.mediaHeld) {
+    if (holdsNow().mediaHeld) {
       playbackHandlesRef.current.forEach((handle) => handle.pause());
       return;
     }
@@ -991,7 +1003,7 @@ function ActiveExperienceRuntimePlayer({
     playbackHandlesRef.current.forEach((handle, instanceId) => {
       if (!handle.ended()) playHandle(instanceId, handle);
     });
-  }, [holds.mediaHeld, playHandle, started]);
+  }, [holds.mediaHeld, holdsNow, playHandle, started]);
 
   // The OS media controls — the lock screen, headphones, Control Center — play
   // and pause the story, never just the clip under it, and cannot seek it. Each
@@ -1074,6 +1086,9 @@ function ActiveExperienceRuntimePlayer({
       const current = viewerPauseRef.current;
       const next = nextExperienceViewerPause(current, { type: "resume", source }, holdsNow());
       if (next === current) return;
+      // The paused frame goes with the pause; focus on it would fall to the page.
+      pausedFrameFocusedRef.current =
+        pausedFrameRef.current !== null && document.activeElement === pausedFrameRef.current;
       // A refusal is what muted the clip, on its way to failing: the tap that
       // recovers it may play it with sound. Sound the viewer left off stays off.
       if (current === "refused" && soundBlocked) enableSound();
@@ -1130,7 +1145,11 @@ function ActiveExperienceRuntimePlayer({
   // Focus follows the pause. A refusal asks for one tap, so the paused frame
   // takes focus — unless the viewer is busy elsewhere on the page, in a host
   // composer or dialog. A resume gives focus back where the pause took it from,
-  // if that is still on the page and nothing else has taken it since.
+  // if that is still on the page and nothing else has taken it since; with
+  // nothing to give back, focus the paused frame held moves to the toggle that
+  // stands for it, rather than falling to the page. The frame's controls never
+  // take focus from a pointer, so a pause made with one still finds it where
+  // the viewer had it.
   useEffect(() => {
     if (viewerPause === "refused") {
       if (focusIsFree(shellRef.current)) pausedFrameRef.current?.focus({ preventScroll: true });
@@ -1138,10 +1157,12 @@ function ActiveExperienceRuntimePlayer({
     }
     if (viewerPause !== null) return;
     const target = focusBeforePauseRef.current;
+    const pausedFrameFocused = pausedFrameFocusedRef.current;
     focusBeforePauseRef.current = null;
-    if (holds.running && target?.isConnected && focusIsFree(shellRef.current)) {
-      target.focus({ preventScroll: true });
-    }
+    pausedFrameFocusedRef.current = false;
+    if (!holds.running || !focusIsFree(shellRef.current)) return;
+    if (target?.isConnected) target.focus({ preventScroll: true });
+    else if (pausedFrameFocused) toggleRef.current?.focus({ preventScroll: true });
   }, [holds.running, viewerPause]);
 
   const begin = () => {
@@ -1274,11 +1295,12 @@ function ActiveExperienceRuntimePlayer({
           ) : null}
           {holds.pauseUi ? (
             <ExperienceFrameControls
+              toggleRef={toggleRef}
               copy={copy}
               paused={viewerPause !== null}
               toggleVisible={toggleVisible}
               unmuteVisible={soundBlocked && hasVideoRenderer && viewerPause === null}
-              keyShortcut={spaceToggles}
+              keyShortcut={spaceToggles && !hasTextRenderer}
               onToggle={togglePause}
               onUnmute={enableSound}
             />

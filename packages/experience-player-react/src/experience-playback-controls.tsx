@@ -1,6 +1,13 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, type CSSProperties, type Ref } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type MouseEvent,
+  type Ref,
+} from "react";
 import { EXPERIENCE_RENDERER_MAX_LAYER } from "@repo/shared/experience-runtime";
 import { IconPlayerPauseFilled, IconPlayerPlayFilled, IconVolumeOff } from "@tabler/icons-react";
 import { classNames } from "./class-names";
@@ -17,8 +24,19 @@ const CLUSTER_TOP =
   "max(0px, calc(var(--experience-chrome-inset-top, 0px) - var(--experience-frame-inset-top, 0px)))";
 
 /**
- * The film frame's own controls, at its top-right: `[unmute?][pause/resume]`,
- * the toggle last so it never moves as the unmute pill comes and goes. The
+ * A pointer press on the frame's controls leaves focus where it was — on the
+ * story, a text scene's article say — so a pause made with one still finds it
+ * there to give back on resume. Keyboard focus reaches them as ever.
+ */
+function keepFocus(event: MouseEvent<HTMLButtonElement>) {
+  event.preventDefault();
+}
+
+/**
+ * The film frame's own controls, at its top-right: the pause/resume toggle,
+ * and the unmute pill under it when sound was refused. A column, right-aligned,
+ * so the toggle never moves as the pill comes and goes and the cluster keeps to
+ * the frame's right edge, out of whatever host chrome sits further left. The
  * bottom band belongs to the choices, and the top-left meets the host's menus.
  *
  * They sit in the frame, so they turn with it when it is drawn sideways — on an
@@ -33,6 +51,7 @@ const CLUSTER_TOP =
  * picture; the cluster drops by what the first leaves of the second.
  */
 export function ExperienceFrameControls({
+  toggleRef,
   copy,
   paused,
   toggleVisible,
@@ -41,6 +60,7 @@ export function ExperienceFrameControls({
   onToggle,
   onUnmute,
 }: {
+  toggleRef?: Ref<HTMLButtonElement>;
   copy: ExperiencePlayerCopy;
   /** The viewer has the story paused. */
   paused: boolean;
@@ -74,25 +94,12 @@ export function ExperienceFrameControls({
       <div
         ref={clusterRef}
         data-experience-frame-controls=""
-        className="pointer-events-none absolute right-0 flex items-center gap-[clamp(6px,1.2cqmin,12px)] p-[clamp(10px,2.4cqmin,24px)] data-[experience-gesture-covered]:invisible"
+        className="pointer-events-none absolute right-0 flex flex-col items-end gap-[clamp(6px,1.2cqmin,12px)] p-[clamp(10px,2.4cqmin,24px)] data-[experience-gesture-covered]:invisible"
         style={{ top: CLUSTER_TOP, zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 2 }}
       >
-        {unmuteVisible ? (
-          <button
-            type="button"
-            className={classNames(
-              FROSTED_CONTROL,
-              "inline-flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold active:scale-[0.98]"
-            )}
-            onClick={onUnmute}
-          >
-            <GlassRim />
-            <IconVolumeOff className="size-4" aria-hidden="true" />
-            {copy.video.unmute}
-          </button>
-        ) : null}
         {toggleVisible ? (
           <button
+            ref={toggleRef}
             type="button"
             className={classNames(
               FROSTED_CONTROL,
@@ -101,6 +108,7 @@ export function ExperienceFrameControls({
             aria-label={label}
             title={label}
             aria-keyshortcuts={keyShortcut ? "Space" : undefined}
+            onMouseDown={keepFocus}
             onClick={onToggle}
           >
             <GlassRim />
@@ -109,6 +117,21 @@ export function ExperienceFrameControls({
             ) : (
               <IconPlayerPauseFilled className="size-5" aria-hidden="true" />
             )}
+          </button>
+        ) : null}
+        {unmuteVisible ? (
+          <button
+            type="button"
+            className={classNames(
+              FROSTED_CONTROL,
+              "inline-flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold active:scale-[0.98]"
+            )}
+            onMouseDown={keepFocus}
+            onClick={onUnmute}
+          >
+            <GlassRim />
+            <IconVolumeOff className="size-4" aria-hidden="true" />
+            {copy.video.unmute}
           </button>
         ) : null}
       </div>

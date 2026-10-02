@@ -7,7 +7,22 @@ import { StoryProjectPlaytest } from "./story-project-playtest";
 
 const state = vi.hoisted(() => ({
   getPreview: vi.fn(),
+  /** A runtime the schema takes, when a test needs one; otherwise the real schema decides. */
+  manifest: null as unknown,
 }));
+
+vi.mock("@repo/shared/experience-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/shared/experience-runtime")>();
+  return {
+    ...actual,
+    ExperienceRuntimeManifestSchema: {
+      safeParse: (value: unknown) =>
+        state.manifest
+          ? { success: true, data: state.manifest }
+          : actual.ExperienceRuntimeManifestSchema.safeParse(value),
+    },
+  };
+});
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -49,6 +64,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  state.manifest = null;
   client.clear();
   vi.clearAllMocks();
   vi.restoreAllMocks();
@@ -94,12 +110,31 @@ it("keeps the same hooks when the playtest arrives after the loading render", as
   expect(host.querySelector('[data-testid="player"]')).not.toBeNull();
 });
 
-it("keeps the player's frame controls clear of its header, down to the refresh button", async () => {
-  // The refresh button ends 52px down the page; everything else is the page.
+it("keeps the player's frame controls below all of its header's chrome, which alone takes taps", async () => {
+  // A story with three state rows: the HUD beside the refresh button ends
+  // 124px down the page, the refresh button 52px, the title panel 68px.
+  state.manifest = {
+    buildId: "build-1",
+    metadata: { title: { "zh-CN": "Story" } },
+    localization: { defaultLocale: "zh-CN", locales: ["zh-CN"] },
+    stateDefinitions: ["courage", "trust", "doubt"].map((key) => ({ key })),
+  };
+  const chromeBottom = (element: HTMLElement): number => {
+    if (element.tagName === "MAIN") return 900;
+    if (element.tagName === "ASIDE") return 124;
+    if (element.getAttribute("aria-label") === "refresh") return 52;
+    if (element.parentElement?.tagName === "HEADER") {
+      // A header group is as tall as what it holds, as `items-start` lays it out.
+      return element.querySelector('[aria-label="refresh"]')
+        ? Math.max(...Array.from(element.children, (child) => chromeBottom(child as HTMLElement)))
+        : 68;
+    }
+    return 0;
+  };
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement
   ) {
-    const bottom = this.getAttribute("aria-label") === "refresh" ? 52 : 900;
+    const bottom = chromeBottom(this);
     return {
       x: 0,
       y: 0,
@@ -124,6 +159,24 @@ it("keeps the player's frame controls clear of its header, down to the refresh b
     await new Promise((resolve) => setTimeout(resolve, 30));
   });
 
-  const main = host.querySelector("main");
-  expect(main?.style.getPropertyValue("--experience-chrome-inset-top")).toBe("52px");
+  const main = host.querySelector("main")!;
+  const header = main.querySelector("header")!;
+  const hud = header.querySelector("aside");
+  const refresh = header.querySelector<HTMLElement>('[aria-label="refresh"]')!;
+  expect(hud).not.toBeNull();
+  // The frame's top-right falls under the HUD when the picture is pillarboxed,
+  // and the unmute pill reaches under it when it is not: the controls start
+  // below every piece of the header.
+  const inset = Number.parseFloat(main.style.getPropertyValue("--experience-chrome-inset-top"));
+  expect(inset).toBe(124);
+  for (const chrome of [hud!, refresh, ...Array.from(header.children)]) {
+    expect(inset).toBeGreaterThanOrEqual(chromeBottom(chrome as HTMLElement));
+  }
+  // The groups' own boxes take no taps — the space under the refresh button,
+  // beside a taller HUD, belongs to the film — and the chrome in them does.
+  for (const group of Array.from(header.children)) {
+    if (group.contains(refresh)) expect(group.className).toContain("pointer-events-none");
+  }
+  expect(refresh.className).toContain("pointer-events-auto");
+  expect(hud!.className).toContain("pointer-events-auto");
 });

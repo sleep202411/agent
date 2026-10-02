@@ -25,7 +25,8 @@ export interface ExperienceMediaPlaybackHandle {
   /**
    * Plays the element now, synchronously, for the user activation that calls
    * this: WebKit lets an element play later only once a `play()` ran inside one.
-   * Null when there is nothing to play — no element, or a clip at its end.
+   * Null when there is nothing to play — no element, or a clip at its end or a
+   * breath from it, which a play would start over (see waitsAtEnd).
    */
   playInGesture(): Promise<void> | null;
   play(): Promise<void>;
@@ -137,7 +138,9 @@ function mediaReadinessAbort(): Error {
  * is played from: what the element loads (`uri` — a negotiated HLS master, or
  * the declared file), how it is delivered, and the manifest URI it stands in for.
  * `resumeAt` marks a clip loaded again after its element lost the file (see
- * `onError`): the position it picks up at, which its `uri` carries too.
+ * `onError`): the position it picks up at, which its `uri` carries too, and
+ * `reloadedAfter` the failure that sent it to load again — which is its own
+ * failure too if loading it again fails.
  */
 interface MediaClip {
   readonly identity: string;
@@ -149,13 +152,15 @@ interface MediaClip {
   readonly durationSeconds?: number;
   readonly loop: boolean;
   readonly resumeAt?: number;
+  readonly reloadedAfter?: string;
 }
 
-/** A clip to load again, and where it was when its element lost the file. */
+/** A clip to load again, where it was when its element lost the file, and how it lost it. */
 interface MediaReload {
   readonly identity: string;
   readonly src: string;
   readonly seconds: number;
+  readonly message: string;
 }
 
 /** `MediaError.MEDIA_ERR_NETWORK`: the element lost its way to the file after it started loading. */
@@ -306,6 +311,10 @@ export function ExperienceMediaPlayer({
   // cannot restart a negotiation that already failed.
   const onPlaybackErrorRef = useRef(onPlaybackError);
   onPlaybackErrorRef.current = onPlaybackError;
+  // Read through a ref by the handle, which ends a clip waiting at its end
+  // without re-registering on every host render.
+  const onEndRef = useRef(onEnd);
+  onEndRef.current = onEnd;
   useEffect(() => {
     if (!delivery || playback) return;
     let cancelled = false;
@@ -330,10 +339,9 @@ export function ExperienceMediaPlayer({
   if (reload !== null && reload.identity !== playbackIdentity) setReload(null);
   const clip = useMemo<MediaClip | null>(() => {
     if (!playback) return null;
-    const resumeAt =
-      reload?.identity === playbackIdentity && reload.src === playback.src
-        ? reload.seconds
-        : undefined;
+    const reloaded =
+      reload?.identity === playbackIdentity && reload.src === playback.src ? reload : null;
+    const resumeAt = reloaded?.seconds;
     // A media fragment both starts the element where the clip was and makes the
     // source a new one, which is what loads it again: the request it sends is
     // the manifest URI itself.
@@ -348,6 +356,7 @@ export function ExperienceMediaPlayer({
       durationSeconds,
       loop,
       resumeAt,
+      reloadedAfter: reloaded?.message,
     };
   }, [clipStartTime, durationSeconds, loop, playback, playbackIdentity, poster, reload]);
   const playerRef = useRef<MediaPlayerInstance>(null);
@@ -361,6 +370,7 @@ export function ExperienceMediaPlayer({
   const [rendered, setRendered] = useState<MediaClip | null>(clip);
   const [stillFrameHeld, setStillFrameHeld] = useState(false);
   const renderedDuration = rendered?.durationSeconds;
+  const renderedLoop = rendered?.loop ?? false;
   const renderedIdentity = rendered?.identity ?? null;
   const renderedUri = rendered?.uri ?? null;
   const readinessKey = rendered ? `${rendered.identity}\u0000${rendered.uri}` : null;
@@ -384,6 +394,14 @@ export function ExperienceMediaPlayer({
   const intentRef = useRef<"play" | "pause">("pause");
   // Whether the clip on the element has played. A pause before that is the load.
   const reachedPlayingRef = useRef(false);
+  // The load whose clip has ended, by its readiness key: the story has been
+  // told, once, and playing it again would start it over. Kept per load here,
+  // never read off Vidstack's state, which goes on saying "ended" for a while
+  // after a cut has put the next clip on the element.
+  const endedKeyRef = useRef<string | null>(null);
+  // A failed load of a clip loaded again (see `sourceFailedRef` below), as of
+  // the latest render.
+  const sourceFailedRef = useRef<() => void>(() => undefined);
   // Vidstack pauses a playing element as the player disconnects, and that pause
   // can arrive before the passive cleanup withdraws the handle. It is the
   // player's own, so the intent drops here, in the layout cleanup, ahead of it.
@@ -436,6 +454,7 @@ export function ExperienceMediaPlayer({
     // A clip new to the element has not played, and waits for the host to play it.
     intentRef.current = "pause";
     reachedPlayingRef.current = false;
+    endedKeyRef.current = null;
     const readiness = readinessRef.current;
     if (!readiness || readinessKey === null) return;
     readiness.reset(readinessKey);
@@ -446,6 +465,19 @@ export function ExperienceMediaPlayer({
     const player = playerRef.current;
     if (player) synchronizePlayerContract(player, renderedDuration, muted);
   }, [muted, renderedDuration]);
+  // Vidstack sources a file through a `<source>` child, and a load of it that
+  // fails says so on that child: the element only gives up and waits, with
+  // nothing to tell. Heard in the capture phase, since the child's `error` does
+  // not bubble.
+  useEffect(() => {
+    const media = providerAttached ? providerMedia(playerRef.current) : null;
+    if (!media) return;
+    const onSourceError = (event: Event) => {
+      if (event.target !== media) sourceFailedRef.current();
+    };
+    media.addEventListener("error", onSourceError, true);
+    return () => media.removeEventListener("error", onSourceError, true);
+  }, [providerAttached]);
   useEffect(() => {
     const player = playerRef.current;
     if (!player || !providerAttached || !onPlaybackHandle || readinessKey === null) return;
@@ -463,13 +495,31 @@ export function ExperienceMediaPlayer({
     if (renderedIdentity !== playbackIdentity) return;
     let disposed = false;
     let playVersion = 0;
+    // A loop ends at every turn and plays on, so it never counts as ended.
+    const clipEnded = (media: HTMLMediaElement) =>
+      !renderedLoop && (media.ended || endedKeyRef.current === readinessKey);
+    // A play that finds the clip a breath from its end ends it instead: the
+    // story hears the end it waits for, once, and the element stays on the
+    // frame it shows. Nothing is sought — a paused element taken to its end
+    // need not say it ended, and the story would wait on that frame for good.
+    const finishAtEnd = (media: HTMLMediaElement): boolean => {
+      if (!waitsAtEnd(media, renderedDuration, renderedLoop)) return false;
+      intentRef.current = "pause";
+      if (failedRef.current !== readinessKey && endedKeyRef.current !== readinessKey) {
+        endedKeyRef.current = readinessKey;
+        onEndRef.current();
+      }
+      return true;
+    };
     onPlaybackHandle({
       playbackIdentity: renderedIdentity,
+      // Only unlocks: a clip a breath from its end is left as it is, since a
+      // play would start it over, and the play that follows — if the story has
+      // one — ends it.
       playInGesture: () => {
         const media = providerMedia(player);
-        if (disposed || !media || clipEnded(player, media) || finishAtEnd(player, media)) {
-          return null;
-        }
+        if (disposed || !media || clipEnded(media)) return null;
+        if (waitsAtEnd(media, renderedDuration, renderedLoop)) return null;
         intentRef.current = "play";
         return media.play();
       },
@@ -480,7 +530,13 @@ export function ExperienceMediaPlayer({
         };
         if (!disposed) intentRef.current = "play";
         return playWithSoundFallback(
-          soundFallbackTarget(player, readinessRef.current!, readinessKey, assertActive),
+          soundFallbackTarget(
+            player,
+            readinessRef.current!,
+            readinessKey,
+            assertActive,
+            finishAtEnd
+          ),
           mutedRef,
           onSoundBlocked
         );
@@ -492,7 +548,10 @@ export function ExperienceMediaPlayer({
         pauseMediaPlayer(player);
       },
       seek: (seconds) => {
-        if (!disposed) seekMediaPlayer(player, seconds);
+        if (disposed) return;
+        // Sought back from its end, the clip has an end ahead of it again.
+        endedKeyRef.current = null;
+        seekMediaPlayer(player, seconds);
       },
       setMuted: (nextMuted) => {
         if (disposed) return;
@@ -501,7 +560,7 @@ export function ExperienceMediaPlayer({
       },
       ended: () => {
         const media = providerMedia(player);
-        return media !== null && clipEnded(player, media);
+        return media !== null && clipEnded(media);
       },
       element: () => (disposed ? null : providerMedia(player)),
     });
@@ -518,7 +577,9 @@ export function ExperienceMediaPlayer({
     playbackIdentity,
     providerAttached,
     readinessKey,
+    renderedDuration,
     renderedIdentity,
+    renderedLoop,
     renderedUri,
   ]);
   if (rendered === null || readinessKey === null) {
@@ -577,16 +638,22 @@ export function ExperienceMediaPlayer({
   // never cached, so asking for the same clip again signs it afresh. It is
   // loaded once more, from where it was, and plays as the host has it play. A
   // reload that fails before it ever played is the failure, as the element
-  // reports it, and so is one that would land on the very position it left.
-  const reloadRendered = (): boolean => {
+  // first reported it, and so is one that would land on the very position it left.
+  const reloadRendered = (message: string): boolean => {
     if (!current || failedRef.current === readinessKey) return false;
     if (rendered.playback.delivery !== "progressive") return false;
     if (rendered.resumeAt !== undefined && !reachedPlayingRef.current) return false;
     const media = providerMedia(playerRef.current);
     const seconds = Math.floor(Math.max(0, media?.currentTime ?? 0) * 1_000) / 1_000;
     if (seconds === rendered.resumeAt) return false;
-    setReload({ identity: rendered.identity, src: rendered.playback.src, seconds });
+    setReload({ identity: rendered.identity, src: rendered.playback.src, seconds, message });
     return true;
+  };
+  // A reload's own load failing is told only by its `<source>` (see the
+  // listener above); it is the failure the clip was loaded again after.
+  sourceFailedRef.current = () => {
+    if (rendered.reloadedAfter === undefined || reachedPlayingRef.current) return;
+    failRendered(rendered.reloadedAfter);
   };
   return (
     <MediaPlayer
@@ -651,17 +718,22 @@ export function ExperienceMediaPlayer({
       // not reached its end: the system (a call, headphones out) or the OS
       // controls stopped it, and the story stops with it. Vidstack also
       // announces a pause of its own as a clip ends, so only an element that is
-      // really paused short of its end counts.
+      // really paused short of its end counts — and not one that failed: the
+      // browser stops an element that lost its file, and the failure is
+      // answered on its own (see `onError`).
       onPause={() => {
-        const player = playerRef.current;
-        const media = providerMedia(player);
+        const media = providerMedia(playerRef.current);
         if (!live() || intentRef.current !== "play" || !reachedPlayingRef.current) return;
-        if (!player || !media || !media.paused || clipEnded(player, media)) return;
+        if (!media || !media.paused || media.ended || media.error) return;
         intentRef.current = "pause";
         onPlaybackInterrupted?.();
       }}
+      // Once per load: a clip the player has already ended (see finishAtEnd)
+      // is not ended twice. A loop ends at every turn, and is told each time.
       onEnd={() => {
-        if (live()) onEnd();
+        if (!live() || endedKeyRef.current === readinessKey) return;
+        if (!rendered.loop) endedKeyRef.current = readinessKey;
+        onEnd();
       }}
       onTimeUpdate={(detail) => {
         if (!live()) return;
@@ -679,7 +751,7 @@ export function ExperienceMediaPlayer({
       // `reloadRendered`). hls.js fatal errors arrive here too — all but its
       // media errors, which `onHlsError` takes.
       onError={(detail) => {
-        if (detail.code === MEDIA_ERR_NETWORK && reloadRendered()) return;
+        if (detail.code === MEDIA_ERR_NETWORK && reloadRendered(detail.message)) return;
         failRendered(detail.message);
       }}
       // Vidstack answers every fatal hls.js media error with
@@ -865,13 +937,14 @@ function soundFallbackTarget(
   player: MediaPlayerInstance,
   readiness: ExperienceMediaReadinessGate,
   readinessKey: string,
-  assertActive: () => void
+  assertActive: () => void,
+  finishAtEnd: (media: HTMLMediaElement) => boolean
 ): ExperienceSoundFallbackTarget {
   return {
     play: async () => {
       assertActive();
       try {
-        await playMediaPlayerWhenReady(player, readiness, readinessKey, assertActive);
+        await playMediaPlayerWhenReady(player, readiness, readinessKey, assertActive, finishAtEnd);
       } catch (error) {
         assertActive();
         throw error;
@@ -982,27 +1055,23 @@ export async function playWithSoundFallback(
  * paused forever. The source-scoped latch is therefore authoritative even when
  * the provider already exists.
  *
- * A clip waiting within a breath of its end is ended rather than played (see
- * finishAtEnd), so a resume in its last frames does not start it over.
+ * A clip waiting within a breath of its end is ended rather than played, by
+ * `finishAtEnd` — which says whether it did — so a resume in its last frames
+ * does not start it over (see waitsAtEnd).
  */
 export async function playMediaPlayerWhenReady(
   player: MediaPlayerInstance,
   readiness: ExperienceMediaReadinessGate,
   readinessKey: string,
-  assertActive?: () => void
+  assertActive?: () => void,
+  finishAtEnd?: (media: HTMLMediaElement) => boolean
 ): Promise<void> {
   await readiness.wait(readinessKey);
   assertActive?.();
   const readyMedia = providerMedia(player);
   if (!readyMedia) return player.play();
-  if (finishAtEnd(player, readyMedia)) return;
+  if (finishAtEnd?.(readyMedia)) return;
   return readyMedia.play();
-}
-
-/** Whether the clip has played to its end, by the element's account or by
- *  Vidstack's: a seek into its last second ends a clip for Vidstack too. */
-function clipEnded(player: MediaPlayerInstance, media: HTMLMediaElement): boolean {
-  return media.ended || player.state.ended;
 }
 
 /**
@@ -1013,22 +1082,26 @@ function clipEnded(player: MediaPlayerInstance, media: HTMLMediaElement): boolea
 const CLIP_END_MARGIN_SECONDS = 0.15;
 
 /**
- * Takes a paused clip that is about to be played within a breath of its end to
- * its end instead, and says whether it did.
+ * Whether a paused clip waits within a breath of its end, where a play would
+ * start it over — and the scene clock with it.
  *
- * Vidstack's `play` handler starts a clip over when it is played that close to
- * its end, judging by the position it last heard of — and WebKit dispatches
- * `play` before the `seeking` of a seek made just ahead of it, so stepping back
- * first cannot save the clip. A resume in its last frames would rewind it, and
- * the scene clock with it. Taken to its end, the clip ends the way playing on
- * would have: a few frames early, with the same `end` the story waits for.
+ * Vidstack's `play` handler starts a clip over when it is played within 0.1 s
+ * of the end it was declared with, judging by the position it last heard of;
+ * and WebKit dispatches `play` before the `seeking` of a seek made just ahead of
+ * it, so stepping back first cannot save the clip. Measured on the element, by
+ * the declared end when there is one: that is the end Vidstack measures to,
+ * and a file often runs a little past it (its audio track does). A loop has no
+ * end to wait at: starting over is what it does next.
  */
-function finishAtEnd(player: MediaPlayerInstance, media: HTMLMediaElement): boolean {
-  const { currentTime, duration, ended, seekableEnd } = player.state;
-  if (ended || !media.paused || !(duration > 0) || !Number.isFinite(duration)) return false;
-  if (duration - currentTime >= CLIP_END_MARGIN_SECONDS) return false;
-  media.currentTime = seekableEnd;
-  return true;
+function waitsAtEnd(
+  media: HTMLMediaElement,
+  declaredDuration: number | undefined,
+  loop: boolean
+): boolean {
+  if (loop || !media.paused) return false;
+  const end = declaredDuration ?? media.duration;
+  if (!(end > 0) || !Number.isFinite(end)) return false;
+  return end - media.currentTime < CLIP_END_MARGIN_SECONDS;
 }
 
 function pauseMediaPlayer(player: MediaPlayerInstance): void {

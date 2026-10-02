@@ -104,22 +104,27 @@ export function WorldModelExperienceRenderer({
   }, [snapshot.error, snapshot.phase]);
 
   // The stream holds with the story: the viewer's pause, a page put away, an
-  // access flow. These calls are the player's, not the viewer's, so a failed
-  // one never raises the failure dialog: the stream stays where it was, and the
-  // viewer's next pause and resume asks again. A stream that has really failed
-  // says so through its own snapshot, above.
+  // access flow. A hold that fails is no failure of the story — the stream only
+  // runs on under the paused frame — so it raises no dialog. A release that
+  // fails leaves the stream stopped under a running story, which nothing would
+  // ever start again: that is said as the provider says it (a refusal to play
+  // without a tap pauses the story for one instead).
   useEffect(() => {
     const controller = controllerRef.current;
     if (!controller) return;
     if (paused && snapshot.phase === "running") void controller.pause().catch(() => undefined);
     else if (!paused && snapshot.phase === "paused") {
-      void controller.resume().catch(() => undefined);
+      void controller.resume().catch((error) => onErrorRef.current(error));
     }
   }, [paused, snapshot.phase]);
 
-  // Movement keys are the story's input, which holds while it is paused.
+  const running = snapshot.phase === "running";
+
+  // Movement keys are the story's input, which holds while it is paused — and
+  // while the stream is not running, as the movement buttons do: a resume is
+  // still on its way just after the story resumes.
   useEffect(() => {
-    if (!active || paused) return;
+    if (!active || paused || !running) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
       const movement =
@@ -144,9 +149,8 @@ export function WorldModelExperienceRenderer({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [active, paused, runControllerAction]);
+  }, [active, paused, runControllerAction, running]);
 
-  const running = snapshot.phase === "running";
   const streamPaused = snapshot.phase === "paused";
   const loading = snapshot.phase === "idle" || snapshot.phase === "starting";
 

@@ -276,6 +276,7 @@ describe("ExperienceMediaPlayer cut cover", () => {
       uri: string;
       identity: string;
       clipStartTime?: number;
+      durationSeconds?: number;
       loop?: boolean;
       poster?: string;
     },
@@ -303,6 +304,7 @@ describe("ExperienceMediaPlayer cut cover", () => {
             muted={false}
             loop={clip.loop ?? false}
             clipStartTime={clip.clipStartTime}
+            durationSeconds={clip.durationSeconds}
             onEnd={options.onEnd ?? (() => {})}
             onTimeUpdate={options.onTimeUpdate ?? (() => {})}
             onPlaybackError={options.onPlaybackError ?? (() => {})}
@@ -461,10 +463,63 @@ describe("ExperienceMediaPlayer cut cover", () => {
     expect(play).not.toHaveBeenCalled();
   });
 
-  it("counts a clip Vidstack has ended as ended", async () => {
+  it("counts a clip whose end the story was told of as ended, and tells it once", async () => {
+    const onEnd = vi.fn();
+    await renderClip({ uri: "/a.mp4", identity: "renderer:0:sequence:a" }, { onEnd });
+    const handle = registeredHandles().at(-1)!;
+    expect(handle.ended()).toBe(false);
+
+    await emit((callbacks) => callbacks.onEnd?.());
+    await emit((callbacks) => callbacks.onEnd?.());
+
+    expect(handle.ended()).toBe(true);
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it("tells the end again of a clip the story seeks back into after it ended", async () => {
+    const onEnd = vi.fn();
+    await renderClip({ uri: "/a.mp4", identity: "renderer:0:sequence:a" }, { onEnd });
+    const handle = registeredHandles().at(-1)!;
+    await emit((callbacks) => callbacks.onEnd?.());
+
+    // A `seek` interaction: the story takes the clip back, and plays it on.
+    handle.seek(1.5);
+    expect(handle.ended()).toBe(false);
+    await emit((callbacks) => callbacks.onEnd?.());
+
+    expect(onEnd).toHaveBeenCalledTimes(2);
+  });
+
+  it("plays the next clip on the element, held at the cut, whatever Vidstack still says of the last", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     await showClip("a");
-    playerState.current = { currentTime: 5, duration: 5, ended: true, seekableEnd: 5 };
+    await emit((callbacks) => callbacks.onEnd?.());
     expect(registeredHandles().at(-1)!.ended()).toBe(true);
+
+    // The cut: Vidstack's state is shared by the clips on the one element, and
+    // it says "ended" — of the last clip — until the next one plays.
+    await showClip("b");
+    playerState.current = { currentTime: 20, duration: 20, ended: true, seekableEnd: 20 };
+    const next = registeredHandles().at(-1)!;
+    expect(next.playbackIdentity).toBe("renderer:0:sequence:b");
+
+    expect(next.ended()).toBe(false);
+    expect(next.playInGesture()).not.toBeNull();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-ready="/b.mp4"]')!.click();
+    });
+    await next.play();
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+
+  it("never counts a loop as ended: it plays on at every turn", async () => {
+    const onEnd = vi.fn();
+    await renderClip({ uri: "/a.mp4", identity: "renderer:0:loop:a", loop: true }, { onEnd });
+    await emit((callbacks) => callbacks.onEnd?.());
+    await emit((callbacks) => callbacks.onEnd?.());
+
+    expect(registeredHandles().at(-1)!.ended()).toBe(false);
+    expect(onEnd).toHaveBeenCalledTimes(2);
   });
 
   it("names the element a handle plays, and none once the handle is withdrawn", async () => {
@@ -512,51 +567,91 @@ describe("ExperienceMediaPlayer cut cover", () => {
     );
   });
 
-  /** The element, paused `remaining` seconds from the end of a `duration` clip. */
-  const pauseNearEnd = (duration: number, remaining: number) => {
+  /**
+   * A clip declared `declared` seconds long whose file runs `file` seconds, its
+   * element paused at `at`: a viewer's pause, or a gate holding it.
+   */
+  const pausedAt = async (
+    at: number,
+    { declared, file = declared, loop }: { declared: number; file?: number; loop?: boolean },
+    onEnd = vi.fn()
+  ) => {
+    await renderClip(
+      { uri: "/a.mp4", identity: "renderer:0:sequence:a", durationSeconds: declared, loop },
+      { onEnd }
+    );
     const element = video();
     Object.defineProperty(element, "paused", { value: true, configurable: true });
-    playerState.current = {
-      currentTime: duration - remaining,
-      duration,
-      ended: false,
-      seekableEnd: duration,
-    };
-    return element;
-  };
-
-  it("ends a clip resumed in its last frames instead of letting Vidstack start it over", async () => {
-    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
-    await showClip("a");
-    const handle = registeredHandles().at(-1)!;
-    const element = pauseNearEnd(5.5, 0.08);
-
-    // Vidstack restarts a clip played within 0.1 s of its end, judging by the
-    // position it last heard of — which WebKit updates only after `play`. So the
-    // clip is not played at all: it is taken to its end, which ends it.
-    expect(handle.playInGesture()).toBeNull();
-    expect(play).not.toHaveBeenCalled();
-    expect(element.currentTime).toBe(5.5);
-
-    element.currentTime = 5.42;
+    Object.defineProperty(element, "duration", { value: file, configurable: true });
+    Object.defineProperty(element, "currentTime", {
+      value: at,
+      configurable: true,
+      writable: true,
+    });
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[data-ready="/a.mp4"]')!.click();
     });
+    return { element, handle: registeredHandles().at(-1)!, onEnd };
+  };
+
+  it("ends a clip resumed in its last frames, where Vidstack would start it over", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const { element, handle, onEnd } = await pausedAt(5.42, { declared: 5.5 });
+
+    // Vidstack restarts a clip played within 0.1 s of its end, judging by the
+    // position it last heard of — which WebKit updates only after `play`. So a
+    // tap only unlocking the clip leaves it as it is: nothing played, nothing sought.
+    expect(handle.playInGesture()).toBeNull();
+    expect(play).not.toHaveBeenCalled();
+    expect(element.currentTime).toBe(5.42);
+    expect(onEnd).not.toHaveBeenCalled();
+
+    // The play that follows ends it: the story hears the end it waits for, at
+    // once — no seek to the end, which a paused element in Chromium never
+    // reports as `ended`.
     await handle.play();
     expect(play).not.toHaveBeenCalled();
-    expect(element.currentTime).toBe(5.5);
+    expect(element.currentTime).toBe(5.42);
+    expect(onEnd).toHaveBeenCalledOnce();
+    expect(handle.ended()).toBe(true);
+
+    // Played again, or reaching its end after all, it does not end twice.
+    await handle.play();
+    await emit((callbacks) => callbacks.onEnd?.());
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it("ends a clip whose file runs past the end it was declared with", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    // The probe declares the video stream; the audio track runs on past it.
+    // Vidstack measures to the declared end, and so does the player.
+    const { handle, onEnd } = await pausedAt(5.901, { declared: 6, file: 6.05 });
+
+    await handle.play();
+
+    expect(play).not.toHaveBeenCalled();
+    expect(onEnd).toHaveBeenCalledOnce();
   });
 
   it("plays a clip on from anywhere short of its last frames", async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
-    await showClip("a");
-    const handle = registeredHandles().at(-1)!;
-    const element = pauseNearEnd(5.5, 0.4);
-    element.currentTime = 5.1;
+    const { element, handle, onEnd } = await pausedAt(5.1, { declared: 5.5 });
 
     await handle.playInGesture();
-    expect(play).toHaveBeenCalledOnce();
+    await handle.play();
+    expect(play).toHaveBeenCalledTimes(2);
     expect(element.currentTime).toBe(5.1);
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
+  it("plays a loop on from its last frames: starting over is what it does next", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const { handle, onEnd } = await pausedAt(5.45, { declared: 5.5, loop: true });
+
+    expect(handle.playInGesture()).not.toBeNull();
+    await handle.play();
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(onEnd).not.toHaveBeenCalled();
   });
 
   /** A clip the host has played, which the element has started presenting. */
@@ -1335,6 +1430,46 @@ describe("ExperienceMediaPlayer cut cover", () => {
 
     expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith("MEDIA_ELEMENT_ERROR: network");
     expect(mountedClip()).toBe(`${CONTENT_A}#t=3`);
+  });
+
+  it("shows the failure as the element first reported it when loading the clip again fails", async () => {
+    const onPlaybackError = vi.fn();
+    await renderClip({ uri: CONTENT_A, identity: "renderer:0:sequence:a" }, { onPlaybackError });
+    await signalPlaying(CONTENT_A);
+    setPosition(2.043);
+    await loseTheFile();
+    expect(mountedClip()).toBe(`${CONTENT_A}#t=2.043`);
+
+    // Vidstack loads a file through a `<source>`, and a load that fails — a
+    // signature still refused, a request dropped — says so on that child
+    // alone: the element only gives up and waits, with nothing to tell.
+    const source = document.createElement("source");
+    video().append(source);
+    await act(async () => {
+      source.dispatchEvent(new Event("error"));
+    });
+
+    expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith("MEDIA_ELEMENT_ERROR: network");
+  });
+
+  it("does not take the pause a browser makes as the element loses its file for an interruption", async () => {
+    const onPlaybackInterrupted = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    await playingClip("a", { onPlaybackInterrupted });
+    const element = video();
+    setPosition(1.649);
+    Object.defineProperty(element, "error", { value: { code: 2 }, configurable: true });
+    Object.defineProperty(element, "paused", { value: true, configurable: true });
+
+    // Chrome: the expired signed URL fails the next range request — `error`,
+    // and in the same task a native `pause`.
+    await emit((callbacks) => {
+      callbacks.onError?.({ message: "MEDIA_ELEMENT_ERROR: network", code: 2 });
+      callbacks.onPause?.();
+    });
+
+    expect(onPlaybackInterrupted).not.toHaveBeenCalled();
+    expect(mountedClip()).toBe("/a.mp4#t=1.649");
   });
 
   it("does not reload a clip onto the very position its reload failed at", async () => {
