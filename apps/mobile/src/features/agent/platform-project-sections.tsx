@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   BackHandler,
@@ -41,8 +41,9 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
     theme = useTheme(),
     active = useScreenActive();
   const [revision, setRevision] = useState(0);
+  const scope = useMemo(() => ({ revision, active }), [revision, active]);
   const [loaded, setLoaded] = useState<{
-    revision: number;
+    scope: typeof scope;
     data?: PlatformSections;
     error?: string;
   }>();
@@ -66,19 +67,19 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
     if (!active) pending.current?.abort();
   }, [active]);
   useEffect(() => {
-    if (!active) return;
+    if (!active || busy) return;
     const c = new AbortController();
     void fetchPlatformSections(projectId, workspaceId, generation, c.signal).then(
       (data) => {
-        if (!c.signal.aborted && !lock.current) setLoaded({ revision, data });
+        if (!c.signal.aborted && !lock.current) setLoaded({ scope, data });
       },
       (e) => {
         if (!c.signal.aborted && !lock.current)
-          setLoaded({ revision, error: e instanceof Error ? e.message : String(e) });
+          setLoaded({ scope, error: e instanceof Error ? e.message : String(e) });
       }
     );
     return () => c.abort();
-  }, [projectId, workspaceId, generation, revision, active]);
+  }, [projectId, workspaceId, generation, scope, active, busy]);
   useEffect(() => {
     if (!active) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -90,11 +91,26 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
     });
     return () => sub.remove();
   }, [active, review, onClose]);
-  const visible = loaded?.revision === revision ? loaded : undefined;
+  const visible = loaded?.scope === scope ? loaded : undefined;
   const data = visible?.data;
+  const changed = !!(
+    review &&
+    data &&
+    (review.snapshot.projectVersion !== data.projectVersion ||
+      JSON.stringify(review.snapshot.sections) !== JSON.stringify(data.sections))
+  );
+  const targetExists =
+    !review ||
+    !("id" in review.change) ||
+    !!data?.sections.some((s) => s.id === (review.change as { id: string }).id);
   const locked = busy || uncertainAt !== undefined;
+  const canConfirm =
+    !!data?.canEdit &&
+    !changed &&
+    targetExists &&
+    !(review?.change.kind === "archive" && data.sections.length === 1);
   async function submit(command: Review) {
-    if (locked || lock.current || !current() || !active) return;
+    if (locked || lock.current || !current() || !active || !canConfirm) return;
     lock.current = true;
     setBusy(true);
     setError(undefined);
@@ -108,7 +124,7 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
         c.signal
       );
       if (current()) {
-        setLoaded({ revision, data: result });
+        setLoaded({ scope, data: result });
         setReview(undefined);
       }
     } catch (e) {
@@ -153,20 +169,34 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
       {(error || visible?.error) && (
         <ThemedText accessibilityRole="alert">{error ?? visible?.error}</ThemedText>
       )}
-      {uncertainAt !== undefined && (
+      {(uncertainAt !== undefined || changed) && (
         <>
-          <ThemedText>{t("studioProjects.uncertain")}</ThemedText>
-          {data && revision > uncertainAt && (
-            <Action
-              label={t("studioProjects.reviewed")}
-              onPress={() => {
-                setUncertainAt(undefined);
-                setError(undefined);
-              }}
-            />
+          <ThemedText>{t("studioChapters.reviewChanges")}</ThemedText>
+          {data && (
+            <View style={{ gap: 4 }}>
+              {data.sections.map((section) => (
+                <ThemedText key={section.id} type="small">
+                  {section.title}
+                </ThemedText>
+              ))}
+            </View>
           )}
+          {data?.canEdit &&
+            targetExists &&
+            (uncertainAt === undefined || revision > uncertainAt) && (
+              <Action
+                label={t("studioProjects.reviewed")}
+                onPress={() => {
+                  if (review) setReview({ ...review, snapshot: data });
+                  setUncertainAt(undefined);
+                  setError(undefined);
+                }}
+              />
+            )}
         </>
       )}
+      {data && !data.canEdit && <ThemedText>{t("studioChapters.readOnly")}</ThemedText>}
+      {review && data && !targetExists && <ThemedText>{t("studioChapters.missing")}</ThemedText>}
       {review ? (
         <>
           {review.change.kind === "archive" ? (
@@ -198,7 +228,9 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
           <Action
             label={t("studioChapters.confirm")}
             disabled={
-              locked || (review.change.kind !== "archive" && !sectionTitle.safeParse(title).success)
+              !canConfirm ||
+              locked ||
+              (review.change.kind !== "archive" && !sectionTitle.safeParse(title).success)
             }
             onPress={() =>
               void submit({
@@ -292,10 +324,9 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
         </>
       )}
       <Action
-        label={t("studioProjects.reload")}
+        label={t("studioChapters.refresh")}
         disabled={busy}
         onPress={() => {
-          setReview(undefined);
           setError(undefined);
           setRevision((v) => v + 1);
         }}

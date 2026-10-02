@@ -138,7 +138,7 @@ it("requires confirmation to archive and disables archiving the final chapter", 
     expect.any(AbortSignal)
   );
   h.list.mockResolvedValue({ ...data, sections: [rows[0]] });
-  await click("studioProjects.reload");
+  await click("studioChapters.refresh");
   expect(button("studioChapters.archive").disabled).toBe(true);
 });
 it("moves chapters with the complete ordered ID set", async () => {
@@ -170,10 +170,11 @@ it("retains failed edits and blocks retries until reload and explicit review", a
   await click("studioChapters.confirm");
   expect(host.querySelector("input")!.value).toBe("Draft");
   expect(button("studioChapters.confirm").disabled).toBe(true);
-  await click("studioProjects.reload");
-  expect(button("studioChapters.create").disabled).toBe(true);
+  await click("studioChapters.refresh");
+  expect(host.querySelector("input")!.value).toBe("Draft");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
   await click("studioProjects.reviewed");
-  expect(button("studioChapters.create").disabled).toBe(false);
+  expect(button("studioChapters.confirm").disabled).toBe(false);
   expect(h.write).toHaveBeenCalledTimes(1);
 });
 it("preserves edits across backgrounding and clears on account change", async () => {
@@ -189,4 +190,70 @@ it("preserves edits across backgrounding and clears on account change", async ()
   h.generation++;
   await render();
   expect(host.textContent).toBe("");
+});
+
+it("keeps the draft but blocks confirmation while refreshing and after an access downgrade", async () => {
+  await render();
+  await click("studioChapters.rename");
+  await input("My retained title");
+  let resolve!: (value: typeof data) => void;
+  h.list.mockReturnValue(
+    new Promise((r) => {
+      resolve = r;
+    })
+  );
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")!.value).toBe("My retained title");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  await act(async () => resolve({ ...data, canEdit: false }));
+  expect(host.textContent).toContain("studioChapters.readOnly");
+  await click("studioChapters.confirm");
+  expect(h.write).not.toHaveBeenCalled();
+  h.list.mockResolvedValue(data);
+  await click("studioChapters.refresh");
+  expect(host.querySelector("input")!.value).toBe("My retained title");
+  expect(button("studioChapters.confirm").disabled).toBe(false);
+});
+it("requires review of changed chapters before rebasing a retained draft", async () => {
+  await render();
+  await click("studioChapters.rename");
+  await input("My retained title");
+  const fresh = {
+    ...data,
+    projectVersion: 8,
+    sections: [{ ...rows[0], title: "Remote edit", version: 2 }, rows[1]],
+  };
+  h.list.mockResolvedValue(fresh);
+  await click("studioChapters.refresh");
+  expect(host.querySelector("input")!.value).toBe("My retained title");
+  expect(host.textContent).toContain("Remote edit");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  await click("studioProjects.reviewed");
+  expect(h.write).not.toHaveBeenCalled();
+  await click("studioChapters.confirm");
+  expect(h.write).toHaveBeenCalledWith(
+    fresh,
+    { kind: "rename", id: rows[0].id, title: "My retained title" },
+    1,
+    expect.any(AbortSignal)
+  );
+});
+it("retains drafts on failed refresh and does not revive a removed chapter", async () => {
+  await render();
+  await click("studioChapters.rename");
+  await input("My retained title");
+  h.list.mockRejectedValue(new Error("Access unavailable"));
+  await click("studioChapters.refresh");
+  expect(host.textContent).toContain("Access unavailable");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  expect(host.querySelector("input")!.value).toBe("My retained title");
+  h.list.mockResolvedValue({ ...data, projectVersion: 8, sections: [rows[1]] });
+  await click("studioChapters.refresh");
+  expect(host.textContent).toContain("studioChapters.missing");
+  expect(button("studioProjects.reviewed")).toBeUndefined();
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  expect(host.querySelector("input")!.value).toBe("My retained title");
 });
