@@ -36,7 +36,10 @@ beforeEach(() => {
   vi.stubGlobal("fetch", state.fetch);
   state.progressive.mockResolvedValue("file:///cached.mp4");
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 it("negotiates ready HLS with explicit native content type and preserves query context", async () => {
   state.fetch.mockResolvedValue(
     response({
@@ -142,4 +145,23 @@ it("re-negotiates after a failed stream rather than remembering a stale HLS URL"
   const signal = new AbortController().signal;
   expect((await resolveExperienceVideoSource(source, signal)).uri).toContain("old.m3u8");
   expect((await resolveExperienceVideoSource(source, signal)).uri).toContain("new.m3u8");
+});
+
+it("negotiates HLS in a browser whose media element supports it", async () => {
+  state.platform = "web";
+  vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockReturnValue("probably");
+  state.fetch.mockResolvedValue(
+    response({
+      code: 200,
+      data: { url: "https://cdn.test/master.m3u8", contentType: "application/vnd.apple.mpegurl" },
+    })
+  );
+  const result = await resolveExperienceVideoSource(source, new AbortController().signal);
+  expect(result.contentType).toBe("hls");
+  expect(state.progressive).not.toHaveBeenCalled();
+});
+it("does not access browser media APIs during server rendering", () => {
+  state.platform = "web";
+  vi.stubGlobal("document", undefined);
+  expect(adaptivePlaybackEndpoint(source)).toBeNull();
 });

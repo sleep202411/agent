@@ -7,9 +7,15 @@ import { resolvePlaybackUri } from "./experience-media-cache";
 const BUILD_CONTENT =
   /\/story-projects\/[^/]+\/builds\/[^/]+\/assets\/[^/]+\/variants\/[^/]+\/content$/;
 
-/** Native AVPlayer/ExoPlayer support HLS; the Expo browser player needs a separate adapter. */
+/** Expo forwards the source to the platform player; negotiate only when it can play HLS. */
+export function supportsAdaptivePlayback(): boolean {
+  if (Platform.OS !== "web") return true;
+  if (typeof document === "undefined") return false;
+  return !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl");
+}
+
 export function adaptivePlaybackEndpoint(source: string): string | null {
-  if (appEnv.appRegion !== "cn" || Platform.OS === "web") return null;
+  if (appEnv.appRegion !== "cn" || !supportsAdaptivePlayback()) return null;
   const absolute = absolutizeExperienceMediaUri(source);
   if (!absolute) return null;
   try {
