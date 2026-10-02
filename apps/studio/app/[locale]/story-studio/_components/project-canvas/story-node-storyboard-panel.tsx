@@ -13,7 +13,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { StoryboardTaskPicker } from "./storyboard-task-picker";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useAuth } from "@/app/_components/auth-provider";
 import { toast } from "sonner";
 import { useRouter } from "@/i18n/navigation";
 import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
@@ -55,15 +56,28 @@ function clipCover(
  * Editors can upload a new clip or replace an existing one here; the timeline
  * editor remains the place for ordering, prompts, and generation.
  */
-export function StoryNodeStoryboardPanel({
-  projectId,
-  nodeId,
-  canEdit = false,
-}: {
+interface StoryNodeStoryboardPanelProps {
   projectId: string;
   nodeId: string;
   canEdit?: boolean;
-}) {
+}
+
+export function StoryNodeStoryboardPanel(props: StoryNodeStoryboardPanelProps) {
+  const { user } = useAuth();
+  const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
+  return (
+    <StoryboardPanelSession
+      key={JSON.stringify([user?.id, props.projectId, chapterId, props.nodeId])}
+      {...props}
+    />
+  );
+}
+
+function StoryboardPanelSession({
+  projectId,
+  nodeId,
+  canEdit = false,
+}: StoryNodeStoryboardPanelProps) {
   const t = useTranslations("storyStudio.canvas.inspector.storyboard");
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -74,6 +88,15 @@ export function StoryNodeStoryboardPanel({
   const pickerKey = JSON.stringify([projectId, nodeId]);
   const pickerOpen = pickerTarget === pickerKey;
   const [creatingTask, setCreatingTask] = useState(false);
+  const alive = useRef(true);
+  const openingRef = useRef(false);
+  const creatingRef = useRef(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const storyboardQuery = useQuery({
     queryKey: storyProductionKeys.storyboard(projectId, chapterId),
@@ -99,36 +122,42 @@ export function StoryNodeStoryboardPanel({
   )}&node=${encodeURIComponent(nodeId)}`;
 
   const openEditor = async () => {
-    if (opening || !chapterId) return;
+    if (!alive.current || openingRef.current || !chapterId) return;
+    openingRef.current = true;
     setOpening(true);
     try {
       // A newborn Plot node may still be inside the canvas autosave window.
       // Crossing this barrier guarantees its canonical empty timeline exists
       // before the editor reads the shared Storyboard query.
       if (draftBarrier) await draftBarrier(async () => undefined);
+      if (!alive.current) return;
       await queryClient.invalidateQueries({
         queryKey: storyProductionKeys.storyboard(projectId, chapterId),
       });
-      router.push(editorHref);
+      if (alive.current) router.push(editorHref);
     } catch (error) {
-      toast.error(storyApiErrorMessage(error, t("openError")));
-      setOpening(false);
+      if (alive.current) toast.error(storyApiErrorMessage(error, t("openError")));
+    } finally {
+      openingRef.current = false;
+      if (alive.current) setOpening(false);
     }
   };
 
   const handleCreateTask = async () => {
-    if (creatingTask) return;
+    if (!alive.current || !canEdit || creatingRef.current) return;
+    creatingRef.current = true;
     setCreatingTask(true);
     try {
       await createStoryboardChild(projectId, nodeId, {});
       await queryClient.invalidateQueries({
         queryKey: ["storyboard-children", projectId],
       });
-      toast.success(t("createTask"));
+      if (alive.current) toast.success(t("createTask"));
     } catch (error) {
-      toast.error(storyApiErrorMessage(error, "Failed to create task"));
+      if (alive.current) toast.error(storyApiErrorMessage(error, "Failed to create task"));
     } finally {
-      setCreatingTask(false);
+      creatingRef.current = false;
+      if (alive.current) setCreatingTask(false);
     }
   };
 
