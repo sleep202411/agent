@@ -1067,3 +1067,35 @@ it("does not mistake an image output for playable audio", async () => {
   expect(host.textContent).toContain("aiLab.audioNoOutput");
   expect(host.textContent).not.toContain("Audio playback:");
 });
+
+it("clears recovered catalog errors on explicit refresh without a paid request", async () => {
+  const get = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, ...args) => {
+    if (path === "/ai/models") throw new Error("Catalog temporarily unavailable");
+    return get(path, ...args);
+  });
+  await mount();
+  expect(host.textContent).toContain("Catalog temporarily unavailable");
+  h.get.mockImplementation(get);
+  await click("common.retry");
+  expect(host.textContent).not.toContain("Catalog temporarily unavailable");
+  expect(button("Image preset")).toBeDefined();
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("recovers history reads without treating them as generation retries", async () => {
+  const get = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, ...args) => {
+    if (path === "/ai/jobs") throw new Error("History temporarily unavailable");
+    return get(path, ...args);
+  });
+  await mount();
+  await click("aiLab.history");
+  expect(host.textContent).toContain("History temporarily unavailable");
+  expect(host.textContent).not.toContain("aiLab.empty");
+  h.get.mockImplementation(get);
+  jobs = [job];
+  await click("common.retry");
+  expect(host.textContent).not.toContain("History temporarily unavailable");
+  expect(host.textContent).toContain("Lake");
+  expect(h.post).not.toHaveBeenCalled();
+});

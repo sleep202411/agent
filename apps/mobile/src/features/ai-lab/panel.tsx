@@ -577,6 +577,10 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       fail(e);
     }
   }
+  function refresh() {
+    setError("");
+    setEpoch((value) => value + 1);
+  }
   const inputStyle = {
     color: theme.text,
     backgroundColor: theme.backgroundElement,
@@ -587,7 +591,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     return (
       <View style={{ padding: 16 }}>
         <ThemedText>{error}</ThemedText>
-        <Button label={t("common.retry")} onPress={() => setEpoch((x) => x + 1)} />
+        <Button label={t("common.retry")} onPress={refresh} />
       </View>
     );
   return (
@@ -595,11 +599,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
         <Button label={t("aiLab.create")} onPress={() => setTab("create")} />
         <Button label={t("aiLab.history")} onPress={() => setTab("history")} />
-        <Button
-          label={t("common.retry")}
-          disabled={op.busy}
-          onPress={() => setEpoch((x) => x + 1)}
-        />
+        <Button label={t("common.retry")} disabled={op.busy} onPress={refresh} />
       </View>
       {loading ? <ActivityIndicator /> : null}
       {error ? <ThemedText>{error}</ThemedText> : null}
