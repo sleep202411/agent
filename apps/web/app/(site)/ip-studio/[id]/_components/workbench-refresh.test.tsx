@@ -2,14 +2,23 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IpStudioWorkbench } from "./ip-studio-workbench";
+import { ApiRequestError } from "@/src/lib/api";
 import type { IpCreatorIp } from "@/src/lib/ip-commerce/api";
 
 const state = vi.hoisted(() => ({
+  account: "owner" as string | null,
+  login: vi.fn(),
   ip: null as IpCreatorIp | null,
   error: null as Error | null,
   fetching: false,
   retry: vi.fn(),
   save: vi.fn(),
+}));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: state.account ? { id: state.account } : null, isLoading: false }),
+}));
+vi.mock("@/components/auth/auth-dialog-provider", () => ({
+  useAuthDialog: () => ({ open: state.login }),
 }));
 vi.mock("@/src/lib/ip-commerce/hooks", () => ({
   useMyIpCommerceIp: () => ({
@@ -37,6 +46,8 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  state.account = "owner";
+  state.login.mockReset();
   state.ip = {
     id: "ip",
     version: 10,
@@ -108,8 +119,42 @@ it("offers retry without an editor when the initial read fails", async () => {
   state.ip = null;
   state.error = new Error("Unavailable");
   render();
-  expect(host.textContent).toContain("notFoundTitle");
+  expect(host.textContent).toContain("Unavailable");
   expect(input()).toBeNull();
   await act(async () => button("retry").click());
   expect(state.retry).toHaveBeenCalledOnce();
+});
+
+it.each([401, 403, 404])("removes the cached editor when access is denied (%s)", (status) => {
+  render();
+  act(() => button("editBasics").click());
+  expect(input()).not.toBeNull();
+  state.error = new ApiRequestError(`HTTP_${status}`, "IP access is unavailable", status);
+  render();
+  expect(host.textContent).toContain("IP access is unavailable");
+  expect(input()).toBeNull();
+  expect(button("editBasics")).toBeUndefined();
+  expect(button("profileEdit.save")).toBeUndefined();
+  state.fetching = true;
+  render();
+  expect(button("loading").disabled).toBe(true);
+});
+
+it("offers sign-in instead of retrying a disabled guest query", () => {
+  state.account = null;
+  state.ip = null;
+  render();
+  expect(host.textContent).toContain("signInRequired");
+  expect(button("retry")).toBeUndefined();
+  act(() => button("signIn").click());
+  expect(state.login).toHaveBeenCalledOnce();
+});
+
+it("resets an open editor when the account changes", () => {
+  render();
+  act(() => button("editBasics").click());
+  expect(input()).not.toBeNull();
+  state.account = "another-editor";
+  render();
+  expect(input()).toBeNull();
 });

@@ -1028,6 +1028,8 @@
     "createDraft": "建立草稿"
   },
   "newIpWorkbench": {
+    "signInRequired": "登入後管理此 IP。",
+    "signIn": "登入",
     "backToProfile": "返回個人中心",
     "eyebrow": "IP 工作台",
     "emptySummary": "尚未填寫簡介。",

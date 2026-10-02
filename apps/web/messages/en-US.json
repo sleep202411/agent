@@ -1028,6 +1028,8 @@
     "createDraft": "Create Draft"
   },
   "newIpWorkbench": {
+    "signInRequired": "Sign in to manage this IP.",
+    "signIn": "Sign In",
     "backToProfile": "Back to profile",
     "eyebrow": "IP Workspace",
     "emptySummary": "No short description yet.",
