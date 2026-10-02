@@ -3086,7 +3086,7 @@ export class BillingService {
     const prepared = admitted.prepared;
 
     const adapter = this.providerRegistry.get(prepared.refund.provider);
-    if (!adapter.createRefund) {
+    if (!adapter.capabilities.refund || !adapter.createRefund) {
       await this.markRefundFailedAfterProviderError(
         prepared.refund.id,
         'BILLING_REFUND_PROVIDER_UNSUPPORTED',
@@ -5401,7 +5401,16 @@ export class BillingService {
     );
     const refundableAmount = order.amountMinor - activeRefundAmount;
 
-    if (order.provider !== PaymentProvider.airwallex) {
+    // Offline/internal orders have no payment adapter or provider refund path.
+    const adapter =
+      order.provider === PaymentProvider.manual ||
+      order.provider === PaymentProvider.internal
+        ? null
+        : this.providerRegistry.get(order.provider);
+    const providerSupported =
+      adapter?.capabilities.refund === true &&
+      typeof adapter.createRefund === 'function';
+    if (!providerSupported) {
       blockers.push({
         code: 'BILLING_REFUND_PROVIDER_UNSUPPORTED',
         msg: `Refunds for provider "${order.provider}" are not implemented yet.`,
@@ -5497,7 +5506,7 @@ export class BillingService {
       policy: {
         userSelfServiceAllowed: false,
         adminOnly: true,
-        providerSupported: order.provider === PaymentProvider.airwallex,
+        providerSupported,
         automaticRefundAllowed: blockers.length === 0,
         calculationMode:
           input.percentBps !== undefined
