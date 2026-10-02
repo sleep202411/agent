@@ -8097,6 +8097,9 @@
     "proposalNotePlaceholder": "Anything the buyer should read before they accept?"
   },
   "orders": {
+    "signInRequired": "Sign in to view this order.",
+    "signIn": "Sign In",
+    "unavailable": "This order is unavailable.",
     "backToInbox": "Back to inbox",
     "pane": {
       "summary": "Summary",

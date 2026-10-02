@@ -23,6 +23,8 @@ import { ZERO_DECIMAL_CURRENCIES } from "@repo/shared/crew";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
+import { Button } from "@/components/ui/button";
+import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { cn } from "@/lib/utils";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
@@ -38,39 +40,76 @@ export default function OrderDetailPage() {
   const locale = useLocale() as Locale;
   const params = useParams<{ id: string }>();
   const id = params?.id ?? "";
-  const { user } = useCurrentUser();
-  const { data: order, isLoading } = useOrder(id);
+  const { user, isLoading: userLoading } = useCurrentUser();
+  const { data: order, isLoading, isError, error, refetch, isFetching } = useOrder(id);
+  const auth = useAuthDialog();
+  const common = useTranslations("common");
   const [pane, setPane] = useState<Pane>("summary");
+  const back = (
+    <Link
+      href={localizePath("/messages", locale)}
+      className="inline-flex items-center gap-2 rounded-md text-sm text-muted-foreground hover:text-foreground"
+    >
+      <IconArrowLeft className="size-4" aria-hidden="true" />
+      {t("backToInbox")}
+    </Link>
+  );
+  const loading = userLoading || (!!user && isLoading);
+  const unavailable = !order || (order.buyerId !== user?.id && order.creatorId !== user?.id);
 
-  if (isLoading || !order) {
+  if (loading || !user || isError || unavailable) {
     return (
-      <div className="flex h-[calc(100dvh-64px)] items-center justify-center">
-        <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
+      <div className="mx-auto flex min-h-80 max-w-2xl flex-col gap-6 px-5 py-6">
+        <div>{back}</div>
+        <div className="space-y-4 py-8">
+          {loading ? (
+            <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+              <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />
+              {common("loading")}
+            </p>
+          ) : !user ? (
+            <>
+              <p className="text-sm text-muted-foreground">{t("signInRequired")}</p>
+              <Button size="sm" onClick={() => auth.open()}>
+                {t("signIn")}
+              </Button>
+            </>
+          ) : (
+            <>
+              <p role="alert" className="break-words text-sm text-muted-foreground">
+                {isError ? error?.message || common("loadFailed") : t("unavailable")}
+              </p>
+              {isError && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isFetching}
+                  onClick={() => void refetch()}
+                >
+                  {isFetching ? common("loading") : common("retry")}
+                </Button>
+              )}
+            </>
+          )}
+        </div>
       </div>
     );
   }
 
-  if (!user) return null;
   const role = order.buyerId === user.id ? "buyer" : "creator";
 
   return (
-    <div className="grid h-[calc(100dvh-64px)] grid-cols-1 bg-background text-foreground lg:grid-cols-[minmax(360px,520px)_1fr]">
-      {/* Mobile-only tab switcher */}
-      <div className="flex shrink-0 items-center justify-center gap-1 border-b border-border px-3 py-2 lg:hidden">
-        <Link
-          href={localizePath("/messages", locale)}
-          className="mr-auto rounded-md p-1 text-muted-foreground hover:bg-secondary"
-          aria-label={t("backToInbox")}
-        >
-          <IconArrowLeft className="size-4" />
-        </Link>
+    <div className="grid h-[calc(100dvh-64px)] grid-cols-1 grid-rows-[auto_minmax(0,1fr)] bg-background text-foreground lg:grid-cols-[minmax(360px,520px)_1fr]">
+      {/* Return navigation stays available at every width. */}
+      <div className="flex shrink-0 items-center justify-center gap-1 border-b border-border px-5 py-3 lg:col-span-2">
+        <div className="mr-auto">{back}</div>
         {(["summary", "chat"] as Pane[]).map((p) => (
           <button
             key={p}
             type="button"
             onClick={() => setPane(p)}
             className={cn(
-              "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+              "rounded-md px-3 py-1 text-xs font-medium transition-colors lg:hidden",
               pane === p ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
             )}
           >
