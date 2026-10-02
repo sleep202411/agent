@@ -1,5 +1,5 @@
 "use client";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { IconCheck, IconClipboardCheck } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ export function TaskReviewForm(props: Props) {
   );
 }
 function ReviewSession({ task, onReviewed }: Props) {
+  const instructionsId = useId();
   const submissionId = task.submissions[0]?.id;
   const t = useTranslations("crewTasks");
   const review = useReviewCrewTask(task.crewId);
@@ -128,12 +129,14 @@ function ReviewSession({ task, onReviewed }: Props) {
   };
 
   return (
-    <section className="mt-6 rounded-xl border border-amber-400/20 bg-amber-400/[0.035] p-4">
+    <section className="mt-6 rounded-lg bg-white/5 p-4">
       <div className="mb-3 flex items-center gap-2">
-        <IconClipboardCheck className="size-4 text-amber-300" />
-        <h3 className="text-[12px] font-semibold text-[#e2e3e6]">{t("reviewSubmission")}</h3>
+        <IconClipboardCheck className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold text-foreground">{t("reviewSubmission")}</h3>
       </div>
       <Textarea
+        aria-label={t("reviewNotePlaceholder")}
+        aria-describedby={instructionsId}
         disabled={saving}
         value={reviewNote}
         onChange={(event) => setReviewNote(event.target.value)}
@@ -141,7 +144,13 @@ function ReviewSession({ task, onReviewed }: Props) {
         maxLength={5000}
         className="min-h-24 border-white/[0.09] bg-[#090a0d]"
       />
-      <p className={cn("mt-2 text-[9px] text-[#686e79]", revisionLimitReached && "text-amber-300")}>
+      <p
+        id={instructionsId}
+        className={cn(
+          "mt-2 text-xs leading-relaxed text-muted-foreground",
+          revisionLimitReached && "text-amber-300"
+        )}
+      >
         {revisionLimitReached ? t("revisionLimitReached") : t("revisionInstructionsRequired")}
       </p>
       <div className="mt-3 space-y-2 text-sm">
