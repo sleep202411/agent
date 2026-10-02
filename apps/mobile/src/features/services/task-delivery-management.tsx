@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useTranslations } from "@/i18n";
+import { fetchTaskCommitments } from "./task-commitment-api";
 import { fetchTaskCommentAccess } from "./task-comment-api";
 import {
   fetchTaskDeliveryTemplate,
@@ -22,6 +23,7 @@ export function TaskDeliveryManagement(props: Props) {
 }
 function Manager({ task, generation, userId, onRefresh }: Props) {
   const t = useTranslations();
+  const [locked, setLocked] = useState(false);
   const [allowed, setAllowed] = useState(false),
     [expanded, setExpanded] = useState(false);
   const [rows, setRows] = useState<DeliveryCategory[]>([]),
@@ -34,22 +36,26 @@ function Manager({ task, generation, userId, onRefresh }: Props) {
   const active = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    void fetchTaskCommentAccess(task.crewId, userId, controller.signal).then(
-      (a) => {
-        if (!controller.signal.aborted && generation === getAuthGeneration())
-          setAllowed(a.canManage);
-      },
-      (e) => {
+    void fetchTaskCommentAccess(task.crewId, userId, controller.signal)
+      .then(async (a) => {
+        if (controller.signal.aborted || generation !== getAuthGeneration() || !a.canManage) return;
+        const commitments = await fetchTaskCommitments(task.id, controller.signal);
+        if (!controller.signal.aborted && generation === getAuthGeneration()) {
+          const hasAccepted = commitments.some((record) => record.acceptedAt !== null);
+          setLocked(hasAccepted);
+          setAllowed(!hasAccepted);
+        }
+      })
+      .catch((e) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
           setError(String(e instanceof Error ? e.message : e));
-      }
-    );
+      });
     return () => {
       controller.abort();
       active.current?.abort();
       active.current = null;
     };
-  }, [task.crewId, userId, generation]);
+  }, [task.crewId, task.id, userId, generation]);
   async function load(more = false) {
     if (active.current || generation !== getAuthGeneration()) return;
     const controller = new AbortController();
@@ -124,6 +130,7 @@ function Manager({ task, generation, userId, onRefresh }: Props) {
   const selected = choice === undefined ? template?.definition : choice?.definition;
   return (
     <View style={{ gap: 8 }}>
+      {locked && <ThemedText>{t("taskDelivery.requirementsLocked")}</ThemedText>}
       {error && (
         <>
           <ThemedText accessibilityRole="alert">{error}</ThemedText>

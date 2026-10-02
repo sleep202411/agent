@@ -5,12 +5,14 @@ import { TaskDeliveryManagement } from "./task-delivery-management";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({
   access: vi.fn(),
+  commitments: vi.fn(),
   catalog: vi.fn(),
   template: vi.fn(),
   save: vi.fn(),
   refresh: vi.fn(),
   generation: 1,
 }));
+vi.mock("./task-commitment-api", () => ({ fetchTaskCommitments: h.commitments }));
 vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
 vi.mock("./task-delivery-management-api", () => ({
   fetchDeliveryCatalog: h.catalog,
@@ -73,6 +75,7 @@ const click = async (text: string) =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.commitments.mockResolvedValue([]);
   h.access.mockResolvedValue({ canManage: true });
   h.catalog.mockResolvedValue({ items: [row], nextCursor: null });
   h.template.mockResolvedValue(null);
@@ -131,4 +134,33 @@ it("loads further pages without discarding the draft selection", async () => {
   expect(h.catalog).toHaveBeenLastCalledWith("crew", expect.any(AbortSignal), "next");
   await click("taskDelivery.saveTemplate");
   expect(h.save.mock.calls[0][2]).toEqual({ id: "category", version: 3 });
+});
+
+it.each(["accepted", "withdrawn", "at_risk"])(
+  "locks the template for historical accepted commitments: %s",
+  async (status) => {
+    h.commitments.mockResolvedValue([
+      {
+        status,
+        acceptedAt: "2026-09-29T00:00:00Z",
+        currentAssignment: false,
+        releasedAt: "2026-09-30T00:00:00Z",
+      },
+    ]);
+    await render();
+    expect(host.textContent).toContain("taskDelivery.requirementsLocked");
+    expect(host.textContent).not.toContain("taskDelivery.manage");
+    expect(h.catalog).not.toHaveBeenCalled();
+  }
+);
+it("fails closed when commitment history cannot be loaded", async () => {
+  h.commitments.mockRejectedValue(Error("Commitment history unavailable"));
+  await render();
+  expect(host.textContent).toContain("Commitment history unavailable");
+  expect(host.textContent).not.toContain("taskDelivery.manage");
+});
+it("allows an unaccepted withdrawal without implying an accepted commitment", async () => {
+  h.commitments.mockResolvedValue([{ status: "withdrawn", acceptedAt: null }]);
+  await render();
+  expect(host.textContent).toContain("taskDelivery.manage");
 });

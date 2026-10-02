@@ -4425,5 +4425,6 @@
   "scriptEditor.frameError": "编辑器已停止。请重试以重新打开已保存的草稿。",
   "taskDelivery.manage": "修改交付要求",
   "taskDelivery.moreCategories": "更多分类",
-  "taskDelivery.saveTemplate": "保存交付要求"
+  "taskDelivery.saveTemplate": "保存交付要求",
+  "taskDelivery.requirementsLocked": "任务已被接受，交付要求已锁定。请保留此任务约定的模板。"
 }
