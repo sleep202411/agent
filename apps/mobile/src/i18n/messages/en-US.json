@@ -4570,5 +4570,9 @@
   "report.submitting": "Submitting…",
   "report.successBlocked": "Report submitted and IP hidden.",
   "report.acceptedBlockPending": "Your report was submitted. Blocking did not finish. Retry blocking without sending another report.",
-  "report.retryBlock": "Retry blocking"
+  "report.retryBlock": "Retry blocking",
+  "ipDetail.sharePosterFailed": "The poster could not load. Tap Share to try again.",
+  "ipDetail.copyLink": "Copy link",
+  "ipDetail.linkCopied": "Link copied",
+  "ipDetail.copyLinkFailed": "Couldn't copy the link. Please try again."
 }

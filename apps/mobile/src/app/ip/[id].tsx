@@ -693,7 +693,7 @@ function IpDetailSession() {
       {/* Last child so the in-tree overlay paints above the page content (and,
           being in this stack screen's tree, above the native tab bar). */}
       <ShareSheet
-        visible={shareOpen}
+        visible={active && shareOpen}
         ip={ip}
         creatorName={creatorName}
         creatorAvatar={creatorAvatar}

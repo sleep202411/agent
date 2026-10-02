@@ -4570,5 +4570,9 @@
   "report.submitting": "提交中…",
   "report.successBlocked": "舉報已提交，IP 已屏蔽。",
   "report.acceptedBlockPending": "舉報已提交，屏蔽尚未完成。可重試屏蔽，不會重複提交舉報。",
-  "report.retryBlock": "重試屏蔽"
+  "report.retryBlock": "重試屏蔽",
+  "ipDetail.sharePosterFailed": "封面未能載入。點擊分享重試。",
+  "ipDetail.copyLink": "複製連結",
+  "ipDetail.linkCopied": "連結已複製",
+  "ipDetail.copyLinkFailed": "未能複製連結，請重試。"
 }
