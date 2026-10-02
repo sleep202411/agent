@@ -15,6 +15,7 @@ import {
   readNotification,
   readAllNotifications,
   type NotificationFilter,
+  type NotificationItem,
 } from "./notification-api";
 import { useInboxRealtime } from "./use-inbox-realtime";
 import { useNotifications } from "./use-notifications";
@@ -35,32 +36,53 @@ function Feed({ generation, userId }: Props) {
   const list = useNotifications(webPath ? undefined : String(generation), filter);
   const liveUnavailable = useInboxRealtime(userId, generation, !webPath, list.refresh);
   const operation = useRef<AbortController | null>(null);
+  const alive = useRef(true);
+  const finishReadOnNavigation = useRef(false);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>();
-  useEffect(
-    () => () => {
-      operation.current?.abort();
-    },
-    []
-  );
-  async function mark(id?: string) {
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      if (!finishReadOnNavigation.current) operation.current?.abort();
+    };
+  }, []);
+  async function mark(id?: string, navigating = false) {
     if (operation.current || generation !== getAuthGeneration()) return;
     const controller = new AbortController();
     operation.current = controller;
+    finishReadOnNavigation.current = navigating;
     setBusy(true);
     setError(undefined);
     try {
       if (id) await readNotification(id, generation, controller.signal);
       else await readAllNotifications(generation, controller.signal);
     } catch (cause) {
-      if (!controller.signal.aborted && generation === getAuthGeneration())
+      if (alive.current && !controller.signal.aborted && generation === getAuthGeneration())
         setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      if (!controller.signal.aborted && generation === getAuthGeneration()) {
+      if (alive.current && !controller.signal.aborted && generation === getAuthGeneration()) {
         setBusy(false);
         list.refresh();
       }
       if (operation.current === controller) operation.current = null;
+    }
+  }
+  async function openNotification(item: NotificationItem) {
+    if (operation.current || !alive.current || generation !== getAuthGeneration()) return;
+    const destination = notificationDestination(item, appEnv.appRegion, locale);
+    if (!destination) return;
+    // Opening is itself the read intent, as on Web. Let this idempotent write
+    // finish after navigation; a slow/failed receipt must not block the target.
+    if (!item.readAt) void mark(item.id, true);
+    if (!alive.current || generation !== getAuthGeneration()) return;
+    try {
+      if (destination.kind === "native") router.push(toHref(destination.path));
+      else if (destination.kind === "web") setWebPath(destination.path);
+      else await Linking.openURL(destination.url);
+    } catch (cause) {
+      if (alive.current && generation === getAuthGeneration())
+        setError(cause instanceof Error ? cause.message : String(cause));
     }
   }
   if (webPath)
@@ -131,17 +153,7 @@ function Feed({ generation, userId }: Props) {
                 accessibilityRole="button"
                 disabled={busy || !!list.error}
                 style={{ padding: 10 }}
-                onPress={() => {
-                  if (generation !== getAuthGeneration()) return;
-                  const destination = notificationDestination(item, appEnv.appRegion, locale);
-                  if (destination?.kind === "native") router.push(toHref(destination.path));
-                  else if (destination?.kind === "web") setWebPath(destination.path);
-                  else if (destination?.kind === "studio")
-                    void Linking.openURL(destination.url).catch((cause) => {
-                      if (generation === getAuthGeneration())
-                        setError(cause instanceof Error ? cause.message : String(cause));
-                    });
-                }}
+                onPress={() => void openNotification(item)}
               >
                 <ThemedText>{label("view")}</ThemedText>
               </Pressable>
