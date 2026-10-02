@@ -4272,5 +4272,11 @@
   "crewLinks.none": "尚未关联",
   "crewLinks.loading": "加载中…",
   "crewLinks.more": "加载更多",
-  "crewLinks.retry": "重试"
+  "crewLinks.retry": "重试",
+  "crewTaskContext.creator": "主创成员",
+  "crewTaskContext.select": "选择剧组成员",
+  "crewTaskContext.import": "导入",
+  "crewTaskContext.introduction": "剧组介绍",
+  "crewTaskContext.load": "从剧组设置导入",
+  "crewTaskContext.empty": "请先在剧组设置中填写介绍。"
 }

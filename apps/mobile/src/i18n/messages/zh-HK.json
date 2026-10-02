@@ -4272,5 +4272,11 @@
   "crewLinks.none": "尚未關聯",
   "crewLinks.loading": "載入中…",
   "crewLinks.more": "載入更多",
-  "crewLinks.retry": "重試"
+  "crewLinks.retry": "重試",
+  "crewTaskContext.creator": "主創成員",
+  "crewTaskContext.select": "選擇劇組成員",
+  "crewTaskContext.import": "匯入",
+  "crewTaskContext.introduction": "劇組介紹",
+  "crewTaskContext.load": "從劇組設定匯入",
+  "crewTaskContext.empty": "請先在劇組設定中填寫介紹。"
 }

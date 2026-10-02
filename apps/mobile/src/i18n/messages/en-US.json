@@ -4272,5 +4272,11 @@
   "crewLinks.none": "Not linked",
   "crewLinks.loading": "Loading…",
   "crewLinks.more": "Load more",
-  "crewLinks.retry": "Retry"
+  "crewLinks.retry": "Retry",
+  "crewTaskContext.creator": "Featured creator",
+  "crewTaskContext.select": "Select a Crew member",
+  "crewTaskContext.import": "Import",
+  "crewTaskContext.introduction": "Crew introduction",
+  "crewTaskContext.load": "Load from Crew settings",
+  "crewTaskContext.empty": "Add a Crew introduction in Crew settings first."
 }

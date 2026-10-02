@@ -1,3 +1,4 @@
+import { TaskCrewContext } from "./task-crew-context";
 import { assertTaskCreationDeadline, TaskCreationDeadlineError } from "./task-creation-deadline";
 import { TaskCompensationFields } from "./task-compensation-fields";
 import { compensationText, parseCompensation } from "./task-compensation";
@@ -221,6 +222,14 @@ function Editor({
         multiline
         editable={!locked}
         style={{ color: theme.text, padding: 12 }}
+      />
+      <TaskCrewContext
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        description={description}
+        onChange={setDescription}
+        disabled={locked}
       />
       <ThemedText>{t("taskSchedule.priority")}</ThemedText>
       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
