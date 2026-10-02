@@ -2,7 +2,11 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { IconChevronDown, IconChevronRight, IconPlayerPlay } from "@tabler/icons-react";
-import type { StoryPlaybackClip, StoryPlaybackTakedown } from "@repo/shared/story-playback";
+import type {
+  StoryPlaybackClip,
+  StoryPlaybackClipState,
+  StoryPlaybackTakedown,
+} from "@repo/shared/story-playback";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
 import {
@@ -12,6 +16,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   formatBytes,
   formatClockTime,
@@ -30,6 +41,21 @@ import { HlsPreviewPlayer } from "./hls-preview-player";
 import { PlaybackPill } from "./playback-pill";
 
 type Occurrence = StoryPlaybackClip["occurrences"][number];
+type StateFilter = "all" | StoryPlaybackClipState;
+
+// A work can hold a hundred or more clips; rendering every row at once makes the
+// page sluggish, so the table pages and the toolbar narrows it to one state.
+const PAGE_SIZE = 20;
+const STATE_FILTER_ORDER: StoryPlaybackClipState[] = [
+  "failed",
+  "retrying",
+  "processing",
+  "queued",
+  "not_queued",
+  "ready",
+  "blocked",
+  "excluded",
+];
 
 export function PlaybackClipTable({
   clips,
@@ -41,6 +67,16 @@ export function PlaybackClipTable({
   generatedAt: string;
 }) {
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [stateFilter, setStateFilter] = useState<StateFilter>("all");
+  const stateCounts = useMemo(() => {
+    const counts = new Map<StoryPlaybackClipState, number>();
+    for (const clip of clips) counts.set(clip.hls.state, (counts.get(clip.hls.state) ?? 0) + 1);
+    return counts;
+  }, [clips]);
+  const visibleClips = useMemo(
+    () => (stateFilter === "all" ? clips : clips.filter((clip) => clip.hls.state === stateFilter)),
+    [clips, stateFilter]
+  );
   const preview = clips.find((clip) => clip.assetId === previewId) ?? null;
   const previewUrl = preview?.hls.playback?.url ?? null;
   if (previewId !== null && previewUrl === null) setPreviewId(null);
@@ -204,12 +240,36 @@ export function PlaybackClipTable({
 
   return (
     <>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[12px] text-slate-500">
+          {stateFilter === "all"
+            ? `共 ${clips.length} 个片段`
+            : `${visibleClips.length} / ${clips.length} 个片段`}
+        </p>
+        <Select value={stateFilter} onValueChange={(value) => setStateFilter(value as StateFilter)}>
+          <SelectTrigger className="h-9 w-full sm:w-[160px]" aria-label="HLS 状态筛选">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部状态（{clips.length}）</SelectItem>
+            {STATE_FILTER_ORDER.filter(
+              (state) => stateCounts.has(state) || state === stateFilter
+            ).map((state) => (
+              <SelectItem key={state} value={state}>
+                {PLAYBACK_STATE_LABELS[state]}（{stateCounts.get(state) ?? 0}）
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <DataTable
+        key={stateFilter}
         columns={columns}
-        data={clips}
+        data={visibleClips}
         minWidth={1360}
+        pageSize={PAGE_SIZE}
         getRowId={(clip) => clip.assetId}
-        emptyLabel="该版本没有视频片段"
+        emptyLabel={stateFilter === "all" ? "该版本没有视频片段" : "没有该状态的片段"}
         renderExpanded={(clip) => <ClipDetails clip={clip} />}
       />
       <Dialog
