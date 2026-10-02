@@ -17,13 +17,13 @@ export interface WorkspaceTab {
 }
 
 export const WORKSPACE_TABS = [
+  { id: "overview", labelKey: "tabOverview", membersOnly: false },
   { id: "tasks", labelKey: "tabTasks", membersOnly: true },
   { id: "roles", labelKey: "tabRecruitment", membersOnly: false },
   { id: "income", labelKey: "tabIncome", membersOnly: true },
   { id: "chat", labelKey: "tabChat", membersOnly: true },
   { id: "assets", labelKey: "tabAssets", membersOnly: true },
   { id: "members", labelKey: "tabMembers", membersOnly: false },
-  { id: "overview", labelKey: "tabOverview", membersOnly: false },
 ] as const satisfies readonly WorkspaceTab[];
 
 /** Tab a bare `/crews/{id}/workspace` opens on. */

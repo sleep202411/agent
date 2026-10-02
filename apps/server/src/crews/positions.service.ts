@@ -142,11 +142,85 @@ export class PositionsService {
     };
   }
 
-  async listPublic(query: ListPublicPositionsQuery) {
+  async saved(positionId: string, userId: string) {
+    return {
+      saved: Boolean(
+        await this.prisma.crewSavedPosition.findUnique({
+          where: { userId_positionId: { userId, positionId } },
+        }),
+      ),
+    };
+  }
+  async save(positionId: string, userId: string, saved: boolean) {
+    if (!saved) {
+      await this.prisma.crewSavedPosition.deleteMany({
+        where: { userId, positionId },
+      });
+      return { saved: false };
+    }
+    const position = await this.prisma.crewPosition.findFirst({
+      where: {
+        id: positionId,
+        deletedAt: null,
+        status: { not: 'frozen' },
+        moderationStatus: 'ok',
+        recruitmentVisibility: 'public',
+        crew: {
+          deletedAt: null,
+          listingStatus: 'listed',
+          moderationStatus: 'ok',
+        },
+      },
+      select: { id: true, crewId: true },
+    });
+    if (!position) throw new NotFoundException('Position not found');
+    if (
+      await this.prisma.ipUserContentBlock.findFirst({
+        where: {
+          userId,
+          targetType: 'crew',
+          targetId: position.crewId,
+          unblockedAt: null,
+        },
+      })
+    )
+      throw new NotFoundException('Position not found');
+    await this.prisma.crewSavedPosition.createMany({
+      data: [{ userId, positionId }],
+      skipDuplicates: true,
+    });
+    return { saved: true };
+  }
+
+  async listPublic(query: ListPublicPositionsQuery, userId?: string) {
+    const blockedCrews = userId
+      ? await this.prisma.ipUserContentBlock.findMany({
+          where: { userId, targetType: 'crew', unblockedAt: null },
+          select: { targetId: true },
+        })
+      : [];
     const limit = query.limit;
     const today = new Date(new Date().toISOString().slice(0, 10));
     const baseWhere = {
+      ...(query.positionType ? { positionType: query.positionType } : {}),
+      ...(query.salaryMinMinor !== undefined ||
+      query.salaryMaxMinor !== undefined
+        ? {
+            salaryNegotiable: false,
+            salaryCurrency: query.salaryCurrency,
+            salaryPeriod: query.salaryPeriod,
+            ...(query.salaryMinMinor !== undefined
+              ? { salaryMaxAmount: { gte: BigInt(query.salaryMinMinor) } }
+              : {}),
+            ...(query.salaryMaxMinor !== undefined
+              ? { salaryMinAmount: { lte: BigInt(query.salaryMaxMinor) } }
+              : {}),
+          }
+        : {}),
       recruitmentVisibility: 'public',
+      ...(query.saved === 'true'
+        ? { savedBy: { some: { userId: userId ?? '' } } }
+        : {}),
       ...(query.crewId ? { crewId: query.crewId } : {}),
       ...(query.skill ? { requiredSkills: { has: query.skill } } : {}),
       ...(query.q
@@ -192,6 +266,10 @@ export class PositionsService {
       // lands on a 404 crew-detail page (crews.detail rejects
       // non-member viewers for unlisted crews).
       crew: {
+        ...(query.genre ? { genres: { has: query.genre } } : {}),
+        ...(blockedCrews.length
+          ? { id: { notIn: blockedCrews.map((row) => row.targetId) } }
+          : {}),
         deletedAt: null,
         listingStatus: 'listed',
         moderationStatus: 'ok',

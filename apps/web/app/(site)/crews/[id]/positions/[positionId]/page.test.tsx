@@ -37,10 +37,13 @@ vi.mock("../../../_hooks/use-position-label", () => ({
 vi.mock("../../../_components/crew-section-navigation", () => ({
   CrewSectionNavigation: () => null,
 }));
-vi.mock("../../../_components/apply-position-dialog", () => ({
-  ApplyPositionDialog: ({ open, positionId }: { open: boolean; positionId: string }) =>
-    open ? <div data-application={positionId} /> : null,
+vi.mock("../../../_components/apply-to-opening", () => ({
+  ApplyToOpening: ({ positionId, label }: { positionId: string; label: string }) => (
+    <button data-application={positionId}>{label}</button>
+  ),
 }));
+vi.mock("../../../_components/save-opening", () => ({ SaveOpening: () => null }));
+vi.mock("../../../_components/join-fan-community", () => ({ JoinFanCommunity: () => null }));
 let root: Root, host: HTMLDivElement;
 const selected = {
   id: "selected",

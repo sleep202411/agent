@@ -3,6 +3,7 @@ import {
   ConflictException,
   Controller,
   Get,
+  Header,
   Injectable,
   NotFoundException,
   Param,
@@ -82,6 +83,59 @@ export class IpCrewOriginService {
     }
     return { crew };
   }
+  async publicCrewIps(crewId: string, user?: AuthUser) {
+    const crew = await this.prisma.crew.findFirst({
+      where: {
+        id: crewId,
+        deletedAt: null,
+        moderationStatus: 'ok',
+        OR: [
+          { listingStatus: 'listed' },
+          ...(user
+            ? [
+                {
+                  members: {
+                    some: { userId: user.userId, status: 'active' as const },
+                  },
+                },
+              ]
+            : []),
+        ],
+      },
+      select: { id: true },
+    });
+    if (!crew) throw new NotFoundException('Crew not found');
+    if (
+      user &&
+      (await this.prisma.ipUserContentBlock.findFirst({
+        where: {
+          userId: user.userId,
+          targetType: 'crew',
+          targetId: crewId,
+          unblockedAt: null,
+        },
+        select: { id: true },
+      }))
+    )
+      throw new NotFoundException('Crew not found');
+    const origins = await this.prisma.ipCrewOrigin.findMany({
+      where: { crewId, ip: { listingVisibility: 'public' } },
+      orderBy: { linkedAt: 'asc' },
+      select: { ipId: true },
+    });
+    const items: { id: string }[] = [];
+    for (const origin of origins) {
+      try {
+        await this.ips.ensurePublicEngagementTarget(user, origin.ipId);
+      } catch (error) {
+        if (error instanceof NotFoundException) continue;
+        throw error;
+      }
+      items.push({ id: origin.ipId });
+    }
+    return { items };
+  }
+
   async save(ipId: string, user: AuthUser, input: z.infer<typeof Save>) {
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ip:acl:${ipId}`})::bigint) /* ip-origin-save */`;
@@ -103,6 +157,15 @@ export class IpCrewOriginService {
           'This IP was updated elsewhere. Refresh and try again.',
         );
       if (input.crewId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:ip-link:${input.crewId}`},0))`;
+        const other = await tx.ipCrewOrigin.findFirst({
+          where: { crewId: input.crewId, ipId: { not: ipId } },
+          select: { ipId: true },
+        });
+        if (other)
+          throw new ConflictException(
+            'This Crew already has a linked IP. Unlink it before linking another.',
+          );
         await tx.$executeRaw`INSERT INTO ip_crew_origins (ip_id,crew_id,linked_by_id) VALUES (${ipId}::uuid,${input.crewId},${user.userId}) ON CONFLICT (ip_id) DO UPDATE SET crew_id=EXCLUDED.crew_id,linked_by_id=EXCLUDED.linked_by_id,linked_at=now()`;
       } else
         await tx.$executeRaw`DELETE FROM ip_crew_origins WHERE ip_id=${ipId}::uuid`;
@@ -121,6 +184,16 @@ export class IpCrewOriginService {
 @Controller('ip-commerce')
 export class IpCrewOriginController {
   constructor(private readonly origins: IpCrewOriginService) {}
+  @Public()
+  @Get('crews/:crewId/ips')
+  @Header('Cache-Control', 'private, no-store')
+  async crewIps(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user?: AuthUser,
+  ) {
+    return { code: 200, data: await this.origins.publicCrewIps(crewId, user) };
+  }
+
   @Public()
   @Get('ips/:ipId/crew')
   async publicOrigin(

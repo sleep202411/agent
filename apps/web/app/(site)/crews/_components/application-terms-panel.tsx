@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { CREW_CURRENCY } from "@/src/lib/crew-money";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,9 @@ export function ApplicationTermsPanel(props: {
   applicantId: string;
   status: string;
   taskLinked?: boolean;
+  acceptOffer?: boolean;
+  taskTitle?: string;
+  dueAt?: string | null;
   reviewer?: boolean;
   onReady?: (ready: boolean) => void;
 }) {
@@ -34,18 +37,19 @@ function TermsSession({
   applicantId,
   status,
   taskLinked,
+  acceptOffer,
+  taskTitle,
+  dueAt,
   reviewer,
   onReady,
   userId,
 }: Parameters<typeof ApplicationTermsPanel>[0] & { userId: string }) {
   const t = useTranslations("crewTerms");
+  const locale = useLocale();
   const query = useApplicationTerms(applicationId);
   const client = useQueryClient();
   const latest = query.data?.items.find((item) => item.version === query.data?.currentVersion);
-  const ready =
-    query.isSuccess &&
-    !query.isError &&
-    ((!taskLinked && query.data.currentVersion === 0) || Boolean(latest?.confirmedAt));
+  const ready = query.isSuccess && !query.isError && Boolean(latest?.confirmedAt);
   const [draftVersion, setDraftVersion] = useState<number | null>(null);
   const [scope, setScope] = useState("");
   const [fee, setFee] = useState("");
@@ -89,7 +93,7 @@ function TermsSession({
     setError("");
     try {
       await crewApi.post(
-        `/applications/${encodeURIComponent(applicationId)}/terms${confirm ? "/confirm" : ""}`,
+        `/applications/${encodeURIComponent(applicationId)}${confirm && acceptOffer ? "/accept-offer" : `/terms${confirm ? "/confirm" : ""}`}`,
         {
           body: confirm
             ? { version: latest!.version }
@@ -107,6 +111,13 @@ function TermsSession({
       await client.invalidateQueries({
         queryKey: ["crew-application-terms", applicationId, userId],
       });
+      if (confirm && acceptOffer) {
+        await Promise.all([
+          client.invalidateQueries({ queryKey: ["recruitment-thread", userId, applicationId] }),
+          client.invalidateQueries({ queryKey: ["my-crew-applications", userId] }),
+          client.invalidateQueries({ queryKey: ["crew"] }),
+        ]);
+      }
     } catch (err) {
       if (alive.current) setError(err instanceof Error ? err.message : t("failed"));
       // Do not silently rebase a proposal or consent onto a newer version.
@@ -116,8 +127,18 @@ function TermsSession({
     }
   }
   return (
-    <section className="space-y-3 px-4 py-3" aria-label={t("title")}>
-      <h3 className="text-sm font-semibold">{t("title")}</h3>
+    <section
+      className={
+        acceptOffer && latest && !query.isError
+          ? "space-y-5 overflow-hidden rounded-xl border border-sky-400/30 bg-gradient-to-br from-sky-950/50 to-violet-950/30 p-5 shadow-[0_0_22px_rgba(0,191,255,0.07)] sm:p-6"
+          : "space-y-3 px-4 py-3"
+      }
+      aria-label={t("title")}
+    >
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-sky-400">{t("title")}</h3>
+      {taskTitle && latest && !query.isError && (
+        <h4 className="text-xl font-semibold">{taskTitle}</h4>
+      )}
       {query.isPending && <p>{t("loading")}</p>}
       {query.isError && <p role="alert">{query.error.message}</p>}
       {(query.isError || error) && (
@@ -136,27 +157,54 @@ function TermsSession({
           {!latest ? (
             <p className="text-sm text-muted-foreground">{t("none")}</p>
           ) : (
-            <div className="space-y-2 text-sm">
+            <div className="space-y-5 text-sm">
               <p>
                 {t("version", { version: latest.version })} ·{" "}
                 {t(latest.confirmedAt ? "confirmed" : "awaiting")}
               </p>
               <p className="whitespace-pre-wrap">{latest.scope}</p>
-              <p>
-                {latest.currency} {exactMajorUnits(latest.feeAmount)} / {t(latest.feePeriod)}
-              </p>
-              <p>
-                {t("share")}: {exactMajorUnits(String(latest.revenueShareBp))}%
-              </p>
+              <dl className="grid grid-cols-1 gap-5 border-y border-sky-400/20 py-5 sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {t("fee")}
+                  </dt>
+                  <dd className="mt-2 text-lg font-semibold">
+                    {latest.currency} {exactMajorUnits(latest.feeAmount)}
+                    <span className="block text-xs font-normal text-muted-foreground">
+                      {t(latest.feePeriod)}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {t("share")}
+                  </dt>
+                  <dd className="mt-2 text-lg font-semibold text-sky-400">
+                    {exactMajorUnits(String(latest.revenueShareBp))}%
+                  </dd>
+                </div>
+                {dueAt && (
+                  <div>
+                    <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                      {t("taskDeadline")}
+                    </dt>
+                    <dd className="mt-2 text-lg font-semibold">
+                      {new Date(dueAt).toLocaleDateString(locale)}
+                    </dd>
+                  </div>
+                )}
+              </dl>
               {latest.shareBasis && <p className="whitespace-pre-wrap">{latest.shareBasis}</p>}
-              {status === "pending" && userId === applicantId && !latest.confirmedAt && (
-                <Button type="button" disabled={busy} onClick={() => void write(true)}>
-                  {t("confirm", { version: latest.version })}
-                </Button>
-              )}
+              {status === "pending" &&
+                userId === applicantId &&
+                (!latest.confirmedAt || acceptOffer) && (
+                  <Button type="button" disabled={busy} onClick={() => void write(true)}>
+                    {acceptOffer ? t("acceptOffer") : t("confirm", { version: latest.version })}
+                  </Button>
+                )}
             </div>
           )}
-          {(taskLinked || query.data.currentVersion > 0) && status === "pending" && !ready && (
+          {status === "pending" && !ready && (
             <p className="text-sm text-muted-foreground">{t("blocked")}</p>
           )}
           {reviewer && userId !== applicantId && status === "pending" && (

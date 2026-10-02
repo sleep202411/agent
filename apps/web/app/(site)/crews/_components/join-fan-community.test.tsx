@@ -3,7 +3,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { JoinFanCommunity } from "./join-fan-community";
 import { crewApi } from "../_hooks/api";
-const state = vi.hoisted(() => ({ id: "alice" as string | null, push: vi.fn(), open: vi.fn() }));
+const state = vi.hoisted(() => ({
+  ip: "ip" as string | null,
+  id: "alice" as string | null,
+  push: vi.fn(),
+  open: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: state.push }) }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: state.id ? { id: state.id } : null }),
@@ -15,12 +20,16 @@ vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
+vi.mock("../_hooks/use-crew-linked-ips", () => ({
+  useCrewLinkedIps: () => ({ data: state.ip ? [{ id: state.ip }] : [], isError: false }),
+}));
 vi.mock("../_hooks/api", () => ({ crewApi: { put: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   state.id = "alice";
+  state.ip = "ip";
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -61,10 +70,16 @@ it("prevents duplicate requests and suppresses navigation after an account chang
 it("retains a specific failure and allows retry into the community room", async () => {
   vi.mocked(crewApi.put)
     .mockRejectedValueOnce(new Error("Crew not found"))
-    .mockResolvedValueOnce({ conversationId: "fan-room" });
+    .mockResolvedValueOnce({ code: 200, data: { conversationId: "fan-room" } });
   render();
   await act(async () => container.querySelector("button")!.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Crew not found");
   await act(async () => container.querySelector("button")!.click());
   expect(state.push).toHaveBeenCalledWith("/en-US/messages/fan-room");
+});
+
+it("hides Follow when no IP is linked", () => {
+  state.ip = null;
+  render();
+  expect(container.querySelector("button")).toBeNull();
 });

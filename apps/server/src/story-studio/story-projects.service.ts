@@ -450,8 +450,17 @@ export class StoryProjectsService {
     const cursor = query.cursor
       ? decodeCursor<ProjectCursor>(query.cursor, isProjectCursor)
       : null;
+    const linked = query.linkedIpId
+      ? await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT a.game_id AS id FROM
+      (SELECT DISTINCT ON (game_id) * FROM ip_game_association_revisions ORDER BY game_id, version DESC) a
+      JOIN story_experience_game_releases r ON r.id=a.release_id AND r.story_project_id=a.game_id AND r.game_id=a.game_id::text
+      WHERE a.ip_id=${query.linkedIpId}::uuid AND a.active AND r.status='confirmed' AND r.media_authorization_revoked_at IS NULL
+    `)
+      : null;
     const rows = await this.prisma.storyProject.findMany({
       where: {
+        ...(linked ? { id: { in: linked.map((row) => row.id) } } : {}),
         status: query.status,
         workspaceId: query.workspaceId,
         ...(membership.accessScope === 'project_only'

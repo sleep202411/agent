@@ -1880,6 +1880,7 @@
     }
   },
   "crew": {
+    "viewDetails": "查看詳情",
     "navigationLabel": "劇組導覽",
     "creationRequirements": {
       "title": "劇組建立要求",
@@ -4596,8 +4597,8 @@
     "recruitmentPrivate": "私密 — 僅限受邀者",
     "createJobSalaryAmountError": "請輸入 0 至 100,000,000 之間的有效報酬金額，或留空。",
     "useTaskBrief": "使用任務說明",
-    "publicBriefHelp": "發佈前請確認公開工作說明，包含交付內容、要求和驗收標準，最多1,000字。",
-    "publicBriefTooLong": "請將公開說明縮短至1,000字以內，完整任務說明不受影響。"
+    "publicBriefHelp": "發佈前請確認公開工作說明，包含交付內容、要求和驗收標準，最多10,000字。",
+    "publicBriefTooLong": "請將公開說明縮短至10,000字以內，完整任務說明不受影響。"
   },
   "crewAssets": {
     "title": "劇組資產中心",
@@ -5544,6 +5545,7 @@
     }
   },
   "crewTasks": {
+    "briefTooLong": "任務說明不能超過 10,000 個字元。",
     "deletion": {
       "label": "刪除任務",
       "description": "刪除此任務？子任務將移至其父任務下，此任務將不再阻塞其他任務。財務記錄將保留。",
@@ -10455,7 +10457,9 @@
     "more": "載入更多",
     "noAgreement": "暫無有效的已批准協議。請先完成招募，再分配此成員。",
     "agreedFee": "約定費用",
-    "useFee": "使用約定費用"
+    "useFee": "使用約定費用",
+    "acceptOffer": "接受邀約並加入劇組",
+    "taskDeadline": "任務截止日期"
   },
   "crewPositionInvites": {
     "title": "應聘邀請",
@@ -11252,10 +11256,57 @@
     "invitedRole": "邀請崗位：{role}"
   },
   "crewOpening": {
+    "ownOpening": "你發佈的工作",
     "back": "返回職位廣場",
     "unavailable": "該職位已不可用。",
     "description": "工作說明",
     "skills": "所需技能",
-    "deadline": "申請截止日期"
+    "deadline": "申請截止日期",
+    "save": "收藏工作",
+    "saved": "已收藏",
+    "savedJobs": "收藏的工作",
+    "retry": "重試"
+  },
+  "crewLinks": {
+    "title": "關聯項目",
+    "ip": "關聯 IP",
+    "workspace": "關聯工作空間",
+    "films": "關聯互動電影遊戲",
+    "openIp": "查看 IP {number}",
+    "none": "尚未關聯",
+    "loading": "載入中…",
+    "more": "載入更多",
+    "retry": "重試"
+  },
+  "crewTaskContext": {
+    "creator": "主創成員",
+    "select": "選擇劇組成員",
+    "import": "匯入",
+    "introduction": "劇組介紹",
+    "load": "從劇組設定匯入",
+    "empty": "請先在劇組設定中填寫介紹。"
+  },
+  "crewOpeningFilters": {
+    "salary": "報酬範圍（{currency}）",
+    "min": "最低",
+    "max": "最高",
+    "period": "計酬週期",
+    "apply": "篩選報酬",
+    "invalid": "請輸入有效範圍，最低金額不能高於最高金額。",
+    "category": "工作類別",
+    "genre": "劇組類型",
+    "all": "全部",
+    "clear": "清除篩選",
+    "genres": {
+      "animation": "動畫",
+      "live_action": "真人影視",
+      "documentary": "紀錄片",
+      "shortform": "短片",
+      "mv": "音樂影片",
+      "commercial": "廣告",
+      "experimental": "實驗影像",
+      "vlog": "影片日誌"
+    },
+    "filters": "篩選"
   }
 }

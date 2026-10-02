@@ -220,7 +220,7 @@ const ExpectedCompensationSchema = z
 
 const PositionBaseSchema = z.object({
   positionType: presetPosition,
-  description: z.string().trim().min(1).max(1000),
+  description: z.string().trim().min(1).max(10000),
   targetCount: z.number().int().min(1).max(99),
   workMode: z.enum(WORK_MODES).default('remote'),
   location: z.string().trim().min(1).max(128).nullable().optional(),
@@ -296,21 +296,57 @@ function commaSeparatedEnum<const T extends readonly [string, ...string[]]>(
     });
 }
 
-export const ListPublicPositionsQuerySchema = z.object({
-  q: z.string().trim().min(1).max(120).optional(),
-  crewId: z.string().trim().min(1).max(100).optional(),
-  skill: z.string().trim().min(1).max(80).optional(),
-  limit: z.coerce.number().int().min(1).max(60).default(36),
-  cursor: z
-    .string()
-    .trim()
-    .regex(/^[A-Za-z0-9_-]{1,64}$/, 'cursor is invalid')
-    .optional(),
-  employment: commaSeparatedEnum(EMPLOYMENT_TYPES, 'employment'),
-  seniority: commaSeparatedEnum(EXPERIENCE_LEVELS, 'seniority'),
-  workMode: commaSeparatedEnum(WORK_MODES, 'workMode'),
-  sort: z.enum(['newest', 'oldest']).default('newest'),
-});
+export const ListPublicPositionsQuerySchema = z
+  .object({
+    positionType: presetPosition.optional(),
+    genre: z.enum(CREW_GENRES).optional(),
+    salaryMinMinor: z
+      .string()
+      .regex(/^(0|[1-9][0-9]{0,15})$/)
+      .optional(),
+    salaryMaxMinor: z
+      .string()
+      .regex(/^(0|[1-9][0-9]{0,15})$/)
+      .optional(),
+    salaryCurrency: z.enum(['USD', 'CNY']).optional(),
+    salaryPeriod: z.enum(SALARY_PERIODS).optional(),
+    saved: z.enum(['true', 'false']).optional(),
+    q: z.string().trim().min(1).max(120).optional(),
+    crewId: z.string().trim().min(1).max(100).optional(),
+    skill: z.string().trim().min(1).max(80).optional(),
+    limit: z.coerce.number().int().min(1).max(60).default(36),
+    cursor: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_-]{1,64}$/, 'cursor is invalid')
+      .optional(),
+    employment: commaSeparatedEnum(EMPLOYMENT_TYPES, 'employment'),
+    seniority: commaSeparatedEnum(EXPERIENCE_LEVELS, 'seniority'),
+    workMode: commaSeparatedEnum(WORK_MODES, 'workMode'),
+    sort: z.enum(['newest', 'oldest']).default('newest'),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      (value.salaryMinMinor !== undefined ||
+        value.salaryMaxMinor !== undefined) &&
+      (!value.salaryCurrency || !value.salaryPeriod)
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Salary filters require a currency and pay period.',
+        path: ['salaryCurrency'],
+      });
+    if (
+      value.salaryMinMinor !== undefined &&
+      value.salaryMaxMinor !== undefined &&
+      BigInt(value.salaryMinMinor) > BigInt(value.salaryMaxMinor)
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Minimum salary must not exceed maximum salary.',
+        path: ['salaryMaxMinor'],
+      });
+  });
 export type ListPublicPositionsQuery = z.infer<
   typeof ListPublicPositionsQuerySchema
 >;

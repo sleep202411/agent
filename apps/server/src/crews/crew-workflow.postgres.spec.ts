@@ -83,6 +83,22 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
     let workerMemberId: string;
     const notifications = { send: jest.fn().mockResolvedValue(undefined) };
 
+    async function confirmFixtureOffer(applicationId: string) {
+      const app = await db.crewApplication.findUniqueOrThrow({
+        where: { id: applicationId },
+      });
+      const terms = new CrewApplicationTermsService(db as never, authorization);
+      await terms.propose(applicationId, owner, {
+        expectedVersion: 0,
+        scope: 'Fixture work',
+        feeAmount: '0',
+        currency: crewCurrency(),
+        feePeriod: 'project',
+        revenueShareBp: 0,
+        shareBasis: null,
+      });
+      await terms.confirm(applicationId, app.applicantId, 1);
+    }
     beforeAll(() => {
       const target = postgresFixtureUrl(url!);
       if (
@@ -226,6 +242,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       const application = await db.crewApplication.create({
         data: { id: randomUUID(), crewId, positionId, applicantId: worker },
       });
+      await confirmFixtureOffer(application.id);
       await applications.approve(application.id, owner);
       workerMemberId = (await authorization.requireMembership(crewId, worker))
         .memberId;
@@ -497,16 +514,22 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
     });
 
     describe('Overdue task reminders', () => {
-      const createOverdue = async () =>
-        tasks.create(
+      const createOverdue = async () => {
+        const task = await tasks.create(
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
             title: 'Overdue reminder fixture',
-            dueAt: new Date(Date.now() - 86400000).toISOString(),
             assignees: [{ userId: worker, currency: crewCurrency() }],
           }),
         );
+        // Model work that became overdue; creation correctly rejects past deadlines.
+        await db.crewTask.update({
+          where: { id: task.id },
+          data: { dueAt: new Date(Date.now() - 86400000) },
+        });
+        return task;
+      };
       const makeWorker = (sender = new NotificationService(db as never)) =>
         new CrewTaskOverdueWorker(db as never, sender, authorization);
       const notices = () =>
@@ -702,7 +725,6 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
             owner,
             CreateCrewTaskSchema.parse({
               title: `Deadline ${status}`,
-              dueAt: past,
               assignees: [{ userId: worker, currency: crewCurrency() }],
             }),
           );
@@ -711,7 +733,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           });
           await db.crewTask.update({
             where: { id: task.id },
-            data: { workflowStateId: state.id },
+            data: { workflowStateId: state.id, dueAt: new Date(past) },
           });
           if (['submitted', 'approved', 'cancelled'].includes(status))
             noRisk.push(task.id);
@@ -722,9 +744,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           owner,
           CreateCrewTaskSchema.parse({
             title: 'Unassigned overdue',
-            dueAt: past,
           }),
         );
+        await db.crewTask.update({
+          where: { id: unassigned.id },
+          data: { dueAt: new Date(past) },
+        });
         const future = await tasks.create(
           crewId,
           owner,
@@ -3094,6 +3119,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           },
         });
         appId = (await applications.apply(crewId, opening.id, worker, {})).id;
+        await confirmFixtureOffer(appId);
       });
       it('requires applicant confirmation and resolves an interview before approval', async () => {
         expect((await interviews.list(appId, worker)).state).toBe(
@@ -3256,6 +3282,50 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       });
     });
 
+    it('persists saved jobs per account and excludes unpublished jobs from saved discovery', async () => {
+      const positions = new PositionsService(db as never, authorization);
+      await db.crew.update({
+        where: { id: crewId },
+        data: { listingStatus: 'listed' },
+      });
+      const id = randomUUID();
+      await db.crewPosition.create({
+        data: {
+          id,
+          crewId,
+          positionType: 'editor',
+          description: 'Saved opening',
+          targetCount: 1,
+        },
+      });
+      await Promise.all([
+        positions.save(id, worker, true),
+        positions.save(id, worker, true),
+      ]);
+      expect(await positions.saved(id, worker)).toEqual({ saved: true });
+      expect(await positions.saved(id, finance)).toEqual({ saved: false });
+      const query = ListPublicPositionsQuerySchema.parse({
+        saved: 'true',
+        crewId,
+      });
+      expect(
+        (await positions.listPublic(query, worker)).items.map(
+          (row) => row.position.id,
+        ),
+      ).toEqual([id]);
+      expect((await positions.listPublic(query, finance)).items).toEqual([]);
+      await db.crew.update({
+        where: { id: crewId },
+        data: { listingStatus: 'unlisted' },
+      });
+      expect((await positions.listPublic(query, worker)).items).toEqual([]);
+      await expect(positions.save(id, finance, true)).rejects.toThrow(
+        'Position not found',
+      );
+      expect(await positions.save(id, worker, false)).toEqual({ saved: false });
+      expect(await positions.save(id, worker, false)).toEqual({ saved: false });
+    });
+
     describe('Versioned recruitment terms', () => {
       let terms: CrewApplicationTermsService;
       let appId: string;
@@ -3289,6 +3359,69 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           {},
         );
         appId = application.id;
+      });
+      it('does not admit applicants without final terms, even for a non-task position', async () => {
+        await expect(applications.approve(appId, owner)).rejects.toThrow(
+          'accepted final offer',
+        );
+        expect(
+          (await db.crewApplication.findUniqueOrThrow({ where: { id: appId } }))
+            .status,
+        ).toBe('pending');
+        expect(
+          (await db.crewPosition.findUniqueOrThrow({ where: { id: extraId } }))
+            .recruitedCount,
+        ).toBe(0);
+      });
+      it('accepts an offer and joins atomically, with retry recovery and no duplicate seat', async () => {
+        await terms.propose(appId, owner, offer());
+        await expect(applications.acceptOffer(appId, owner, 1)).rejects.toThrow(
+          'Only the applicant',
+        );
+        await expect(
+          applications.acceptOffer(appId, worker, 2),
+        ).rejects.toThrow('Terms changed');
+        const results = await Promise.all([
+          applications.acceptOffer(appId, worker, 1),
+          applications.acceptOffer(appId, worker, 1),
+        ]);
+        expect(results.every((result) => result.status === 'approved')).toBe(
+          true,
+        );
+        expect((await applications.acceptOffer(appId, worker, 1)).status).toBe(
+          'approved',
+        );
+        expect(
+          (await db.crewPosition.findUniqueOrThrow({ where: { id: extraId } }))
+            .recruitedCount,
+        ).toBe(1);
+        expect(
+          (await terms.list(appId, worker)).items[0].confirmedAt,
+        ).toBeTruthy();
+      });
+      it('rolls back offer confirmation when the vacancy is unavailable', async () => {
+        await terms.propose(appId, owner, offer());
+        await db.crewPosition.update({
+          where: { id: extraId },
+          data: { status: 'frozen' },
+        });
+        await expect(
+          applications.acceptOffer(appId, worker, 1),
+        ).rejects.toThrow('no longer accepting');
+        expect(
+          (await db.crewApplication.findUniqueOrThrow({ where: { id: appId } }))
+            .status,
+        ).toBe('pending');
+        expect(
+          (await terms.list(appId, worker)).items[0].confirmedAt,
+        ).toBeNull();
+      });
+      it('loads a private thread only for its applicant or an authorized reviewer', async () => {
+        expect((await applications.getThread(appId, worker)).id).toBe(appId);
+        expect((await applications.getThread(appId, owner)).id).toBe(appId);
+        await expect(
+          applications.getThread(appId, 'unrelated-viewer'),
+        ).rejects.toThrow();
       });
       it('blocks approval until the applicant confirms and keeps the exact accepted version', async () => {
         const proposed = await terms.propose(appId, owner, offer());
@@ -3501,6 +3634,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         worker,
         {},
       );
+      await confirmFixtureOffer(application.id);
       const results = await Promise.allSettled([
         applications.approve(application.id, owner),
         applications.approve(application.id, owner),
@@ -3553,6 +3687,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         worker,
         {},
       );
+      await confirmFixtureOffer(application.id);
       await db.crewMember.update({
         where: { id: workerMemberId },
         data: { status: 'suspended', suspendedAt: new Date() },
@@ -3623,6 +3758,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           {},
           'candidate-session',
         );
+        await confirmFixtureOffer(application.id);
         lookup.mockResolvedValue({
           ok: true,
           json: () =>
@@ -3920,11 +4056,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       expect(
         await db.$queryRaw`SELECT user_id FROM crew_likes WHERE crew_id = ${crewId} AND user_id = ${fan}`,
       ).toEqual([]);
-      expect(await crews.joinFanCommunity(crewId, fan, true)).toEqual(first);
-      expect(await crews.joinFanCommunity(crewId, fan, true)).toEqual(first);
+      await expect(crews.joinFanCommunity(crewId, fan, true)).rejects.toThrow(
+        'Link an IP',
+      );
       expect(
         await db.$queryRaw`SELECT user_id FROM crew_likes WHERE crew_id = ${crewId} AND user_id = ${fan}`,
-      ).toEqual([{ user_id: fan }]);
+      ).toEqual([]);
       expect(await crews.joinFanCommunity(crewId, fan)).toEqual(first);
       expect(
         await db.crewMember.count({ where: { crewId, userId: fan } }),
@@ -4005,6 +4142,16 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       });
       expect(imported.items).toHaveLength(1);
       const fileId = imported.items[0].id;
+      // Active production members now inherit Studio viewing. Explicitly revoke
+      // that grant to exercise delivery via the independently shared Crew asset.
+      await db.crewMemberPermissionOverride.create({
+        data: {
+          memberId: workerMemberId,
+          permissionKey: 'studio.view',
+          effect: 'deny',
+          changedByUserId: owner,
+        },
+      });
       await expect(
         studioAssets.listStudioMediaOptions(crewId, worker, {}),
       ).rejects.toThrow();
@@ -4723,6 +4870,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           applicantId: randomUUID(),
         },
       });
+      await confirmFixtureOffer(replacement.id);
       await applications.approve(replacement.id, owner);
       await members.remove(crewId, workerMemberId, owner);
       expect(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
@@ -40,6 +40,7 @@ interface Props {
   applicantId: string;
   reviewer?: boolean;
   conversation?: boolean;
+  offer?: ReactNode;
   onReady?: (ready: boolean) => void;
   onUpdated?: () => void;
 }
@@ -58,6 +59,7 @@ function InterviewSession({
   applicantId,
   reviewer,
   conversation = false,
+  offer,
   userId,
   onReady,
   onUpdated,
@@ -286,6 +288,7 @@ function InterviewSession({
                 </li>
               ))}
           </ol>
+          {offer}
           {query.hasNextPage && (
             <Button
               type="button"

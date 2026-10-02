@@ -3,30 +3,39 @@
 /**
  * Plaza "Positions" view — flat list across all crews.
  *
- * Two-column discovery layout:
+ * Three-column discovery layout:
  *   left   server-backed multi-select filters for employment type,
  *          seniority and work mode
- *   right  responsive job cards with one deliberate application CTA
+ *   middle selectable jobs; right selected job details and application CTA
  *
  * Filtering, sorting and cursor pagination are server-owned. The client keeps
  * loaded pages only for rendering, so large recruitment marketplaces do not
  * silently disappear after an arbitrary first-page cap.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { IconBriefcase, IconCoin, IconMapPin, IconUserCircle } from "@tabler/icons-react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
+import { OpeningDetails } from "./opening-details";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { env } from "@/src/env";
 import { Button } from "@/components/ui/button";
+import { exactMinorUnits } from "../_hooks/use-application-terms";
+import { CREW_CURRENCY } from "@/src/lib/crew-money";
+import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import type { CrewDTO, CrewPositionDTO, CurrencyCode } from "@/app/(site)/crews/_hooks/use-crew";
 import {
   CURRENCY_SYMBOLS,
+  PRESET_POSITIONS,
+  CREW_GENRES,
+  SALARY_PERIODS,
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
   WORK_MODES,
@@ -57,9 +66,30 @@ export function PositionsTab() {
   const locale = useLocale() as Locale;
 
   // Multi-select per facet; empty set = no constraint.
+  const { user } = useCurrentUser();
+  const auth = useAuthDialog();
+  const filterT = useTranslations("crewOpeningFilters");
+  const positionLabel = useTranslatePositionValue();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const detailsRef = useRef<HTMLElement>(null);
+  const [category, setCategory] = useState("");
+  const [genre, setGenre] = useState("");
+  const [salaryMin, setSalaryMin] = useState("");
+  const [salaryMax, setSalaryMax] = useState("");
+  const [salaryPeriod, setSalaryPeriod] = useState("project");
+  const [budget, setBudget] = useState<{
+    salaryMinMinor?: string;
+    salaryMaxMinor?: string;
+    salaryCurrency?: string;
+    salaryPeriod?: string;
+  }>({});
+  const [salaryError, setSalaryError] = useState("");
+  const [savedOnly, setSavedOnly] = useState(false);
+  const openingT = useTranslations("crewOpening");
   const [employment, setEmployment] = useState<Set<EmploymentType>>(new Set());
   const [seniority, setSeniority] = useState<Set<ExperienceLevel>>(new Set());
   const [workMode, setWorkMode] = useState<Set<WorkMode>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sort, setSort] = useState<SortMode>("newest");
 
   const employmentQuery = useMemo(() => [...employment].sort().join(","), [employment]);
@@ -70,15 +100,26 @@ export function PositionsTab() {
       "crew",
       "positions",
       "public",
+      user?.id ?? null,
+      savedOnly,
+      category,
+      genre,
+      budget,
       employmentQuery,
       seniorityQuery,
       workModeQuery,
       sort,
     ] as const,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<PublicPositionsResult>("/positions", {
+        signal,
+        cache: "no-store",
         query: {
           limit: 36,
+          positionType: category || undefined,
+          genre: genre || undefined,
+          ...budget,
+          saved: savedOnly ? "true" : undefined,
           cursor: pageParam,
           employment: employmentQuery,
           seniority: seniorityQuery,
@@ -91,15 +132,140 @@ export function PositionsTab() {
     staleTime: 60_000,
   });
   const all = useMemo(
-    () => positions.data?.pages.flatMap((page) => page.items) ?? [],
-    [positions.data]
+    () => (positions.isError ? [] : (positions.data?.pages.flatMap((page) => page.items) ?? [])),
+    [positions.data, positions.isError]
   );
-  const total = positions.data?.pages[0]?.total ?? 0;
+  const selected = all.find(({ position }) => position.id === selectedId) ?? all[0];
+  const total = positions.isError ? 0 : (positions.data?.pages[0]?.total ?? 0);
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
+    <div className="grid grid-cols-1 gap-0 overflow-hidden rounded-xl bg-[#111111] lg:grid-cols-[210px_300px_minmax(0,1fr)] xl:grid-cols-[240px_340px_minmax(0,1fr)]">
       {/* ─── Sidebar ───────────────────────────────────── */}
-      <aside className="space-y-5">
+      <div className="border-b border-white/10 p-3 lg:hidden">
+        <Button
+          variant="outline"
+          aria-expanded={filtersOpen}
+          aria-controls="opening-filters"
+          onClick={() => setFiltersOpen((value) => !value)}
+        >
+          {filterT("filters")}
+        </Button>
+      </div>
+      <aside
+        id="opening-filters"
+        className={`${filtersOpen ? "block" : "hidden"} space-y-5 border-r border-white/10 p-4 lg:block`}
+      >
+        <Button
+          variant={savedOnly ? "solid" : "outline"}
+          aria-pressed={savedOnly}
+          onClick={() => {
+            if (!user) auth.open();
+            else setSavedOnly((value) => !value);
+          }}
+        >
+          {openingT("savedJobs")}
+        </Button>
+        <form
+          className="space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const min = salaryMin.trim() ? exactMinorUnits(salaryMin.trim()) : undefined;
+            const max = salaryMax.trim() ? exactMinorUnits(salaryMax.trim()) : undefined;
+            if (
+              min === null ||
+              max === null ||
+              (min !== undefined && max !== undefined && BigInt(min) > BigInt(max))
+            ) {
+              setSalaryError(filterT("invalid"));
+              return;
+            }
+            setSalaryError("");
+            setBudget({
+              salaryMinMinor: min,
+              salaryMaxMinor: max,
+              salaryCurrency: CREW_CURRENCY,
+              salaryPeriod,
+            });
+          }}
+        >
+          <h3 className="text-sm font-semibold">
+            {filterT("salary", { currency: CREW_CURRENCY })}
+          </h3>
+          <div className="flex gap-2">
+            <Input
+              inputMode="decimal"
+              aria-label={filterT("min")}
+              placeholder={filterT("min")}
+              value={salaryMin}
+              onChange={(event) => setSalaryMin(event.target.value)}
+            />
+            <Input
+              inputMode="decimal"
+              aria-label={filterT("max")}
+              placeholder={filterT("max")}
+              value={salaryMax}
+              onChange={(event) => setSalaryMax(event.target.value)}
+            />
+          </div>
+          <NativeSelect
+            aria-label={filterT("period")}
+            value={salaryPeriod}
+            onChange={setSalaryPeriod}
+          >
+            {SALARY_PERIODS.map((period) => (
+              <option key={period} value={period}>
+                {tw(`salaryPeriod${capitalize(period)}`)}
+              </option>
+            ))}
+          </NativeSelect>
+          <Button type="submit" variant="outline">
+            {filterT("apply")}
+          </Button>
+          {salaryError && (
+            <p role="alert" className="text-sm text-destructive">
+              {salaryError}
+            </p>
+          )}
+        </form>
+        <label className="block space-y-2 text-sm font-semibold">
+          {filterT("category")}
+          <NativeSelect value={category} onChange={setCategory}>
+            <option value="">{filterT("all")}</option>
+            {PRESET_POSITIONS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {positionLabel(item.value)}
+              </option>
+            ))}
+          </NativeSelect>
+        </label>
+        <label className="block space-y-2 text-sm font-semibold">
+          {filterT("genre")}
+          <NativeSelect value={genre} onChange={setGenre}>
+            <option value="">{filterT("all")}</option>
+            {CREW_GENRES.map((value) => (
+              <option key={value} value={value}>
+                {filterT(`genres.${value}`)}
+              </option>
+            ))}
+          </NativeSelect>
+        </label>
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setCategory("");
+            setGenre("");
+            setSalaryMin("");
+            setSalaryMax("");
+            setBudget({});
+            setSalaryError("");
+            setEmployment(new Set());
+            setSeniority(new Set());
+            setWorkMode(new Set());
+            setSavedOnly(false);
+          }}
+        >
+          {filterT("clear")}
+        </Button>
         <FilterSection
           label={t("filterEmployment")}
           options={EMPLOYMENT_TYPES.map((v) => ({
@@ -130,8 +296,8 @@ export function PositionsTab() {
       </aside>
 
       {/* ─── Main column ───────────────────────────────── */}
-      <section className="space-y-4">
-        <header className="flex items-center justify-between gap-3">
+      <section className="min-w-0 space-y-4 border-r border-white/10 py-4">
+        <header className="flex flex-wrap items-center justify-between gap-3 px-4">
           <h2 className="text-base font-semibold text-foreground">
             {t("showingJobsCount", { count: total })}
           </h2>
@@ -143,16 +309,36 @@ export function PositionsTab() {
         ) : all.length === 0 && !positions.isError ? (
           <EmptyState
             message={
-              employment.size || seniority.size || workMode.size
+              employment.size ||
+              seniority.size ||
+              workMode.size ||
+              category ||
+              genre ||
+              Object.keys(budget).length
                 ? t("noFilterMatches")
                 : t("noOpenPositions")
             }
           />
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+            <div className="flex flex-col">
               {all.map(({ position, crew }) => (
-                <PositionCard key={position.id} crew={crew} position={position} locale={locale} />
+                <PositionCard
+                  key={position.id}
+                  crew={crew}
+                  position={position}
+                  locale={locale}
+                  selected={selected?.position.id === position.id}
+                  onSelect={() => {
+                    setSelectedId(position.id);
+                    if (window.matchMedia("(max-width: 1023px)").matches) {
+                      requestAnimationFrame(() => {
+                        detailsRef.current?.focus({ preventScroll: true });
+                        detailsRef.current?.scrollIntoView({ block: "start" });
+                      });
+                    }
+                  }}
+                />
               ))}
             </div>
             {positions.hasNextPage && !positions.isError ? (
@@ -193,6 +379,22 @@ export function PositionsTab() {
           </div>
         )}
       </section>
+      <section
+        ref={detailsRef}
+        tabIndex={-1}
+        aria-live="polite"
+        aria-label={t("viewDetails")}
+        className="min-w-0 scroll-mt-24 outline-none"
+      >
+        {selected ? (
+          <OpeningDetails
+            key={selected.position.id}
+            id={selected.crew.id}
+            positionId={selected.position.id}
+            embedded
+          />
+        ) : null}
+      </section>
     </div>
   );
 }
@@ -203,26 +405,25 @@ function PositionCard({
   crew,
   position,
   locale,
+  selected,
+  onSelect,
 }: {
   crew: PositionWithCrew["crew"];
   position: PositionWithCrew["position"];
   locale: Locale;
+  selected: boolean;
+  onSelect: () => void;
 }) {
   const t = useTranslations("workspace");
   const tCrew = useTranslations("crew");
   const translatePosition = useTranslatePositionValue();
   const crewHref = localizePath(`/crews/${crew.id}`, locale);
-  const openingHref = localizePath(`/crews/${crew.id}/positions/${position.id}`, locale);
+
   const logoUrl = crew.logo
     ? crew.logo.startsWith("http")
       ? crew.logo
       : `${env.BANNER_BASE_URL.replace(/\/+$/, "")}/${crew.logo.replace(/^\/+/, "")}`
     : "";
-
-  const isFull = position.status === "full" || position.recruitedCount >= position.targetCount;
-  const isFrozen = position.status === "frozen";
-  const canApply = !isFull && !isFrozen;
-  const ctaLabel = isFrozen ? tCrew("ctaPaused") : isFull ? tCrew("ctaFull") : tCrew("ctaApply");
 
   // Three chips: employment type, experience, work mode — mirrors the
   // Milao reference. Salary stays as its own emphasis line because the
@@ -238,7 +439,9 @@ function PositionCard({
   const salary = formatSalaryShort(position, t);
 
   return (
-    <article className="group flex flex-col gap-3 rounded-xl border border-border bg-card p-3.5 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
+    <article
+      className={`flex flex-col gap-3 border-b border-white/10 border-l-2 p-4 transition-colors ${selected ? "border-l-primary bg-white/5" : "border-l-transparent hover:bg-white/[0.025]"}`}
+    >
       {/* Identity row: crew logo + crew name */}
       <Link href={crewHref} className="flex items-center gap-2.5">
         <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
@@ -262,7 +465,14 @@ function PositionCard({
 
       {/* Title */}
       <h3 className="text-sm font-semibold text-foreground">
-        {translatePosition(position.positionType)}
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-pressed={selected}
+          className="w-full text-left focus-visible:outline-primary"
+        >
+          {translatePosition(position.positionType)}
+        </button>
       </h3>
 
       {/* Description (2-line clamp) */}
@@ -296,19 +506,16 @@ function PositionCard({
         </div>
       ) : null}
 
-      {/* Open this specific role before starting its application. */}
-      <div className="mt-auto pt-0.5">
-        <Button
-          asChild={canApply}
-          variant="solid"
-          color="primary"
-          size="sm"
-          disabled={!canApply}
-          className="h-8 w-full px-2 text-xs"
-        >
-          {canApply ? <Link href={openingHref}>{ctaLabel}</Link> : <span>{ctaLabel}</span>}
-        </Button>
-      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className="w-full justify-start text-xs"
+      >
+        {tCrew("viewDetails")}
+      </Button>
     </article>
   );
 }

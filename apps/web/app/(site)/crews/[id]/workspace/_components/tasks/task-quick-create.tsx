@@ -46,6 +46,7 @@ import {
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { TaskCrewContext } from "./task-crew-context";
 import { TaskSelect } from "./task-select";
 
 interface TaskQuickCreateProps {
@@ -291,6 +292,10 @@ export function TaskQuickCreate({
       return;
     }
     if (!resolvedWorkflowStateId) return;
+    if (description.trim().length > 10000) {
+      toast.error(t("briefTooLong"));
+      return;
+    }
     if (dueDate && new Date(`${dueDate}T23:59:59.999`).getTime() < Date.now()) {
       toast.error(projectT("workbench.pastDeadline"));
       return;
@@ -385,7 +390,7 @@ export function TaskQuickCreate({
         showCloseButton={false}
         overlayClassName="bg-black/60 supports-backdrop-filter:backdrop-blur-none"
         className={cn(
-          "top-[13vh] max-h-[calc(100dvh-2rem)] translate-y-0 gap-0 overflow-visible rounded-[22px] border-[0.5px] border-[#34343a] bg-[#17171a] p-0 text-[#e8e9ec] ring-0 shadow-[0_4px_40px_rgba(0,0,0,.48),0_3px_20px_rgba(0,0,0,.38),0_2px_8px_rgba(0,0,0,.32)] sm:max-w-[750px]",
+          "top-[5vh] flex max-h-[90dvh] translate-y-0 flex-col gap-0 overflow-hidden rounded-xl border-[0.5px] border-[#34343a] bg-[#17171a] p-0 text-[#e8e9ec] ring-0 shadow-[0_4px_40px_rgba(0,0,0,.48),0_3px_20px_rgba(0,0,0,.38),0_2px_8px_rgba(0,0,0,.32)] sm:max-w-[896px]",
           expanded && "sm:max-w-[960px]"
         )}
         onOpenAutoFocus={(event) => {
@@ -398,7 +403,7 @@ export function TaskQuickCreate({
         </DialogTitle>
         <DialogDescription className="sr-only">{t("newIssueDescription")}</DialogDescription>
 
-        <div className="flex h-[48.5px] items-start px-3 pt-3 text-[13px] font-[450] text-[#e5e6e9]">
+        <div className="flex min-h-16 shrink-0 items-center border-b border-white/10 px-5 py-4 text-[13px] font-[450] text-[#e5e6e9]">
           <span className="inline-flex h-6 max-w-40 items-center gap-1.5 rounded-full bg-[#252529] py-0 pr-2 pl-[5px] text-[12px] font-medium leading-3 text-[#a4a4ac]">
             <IconCube className="size-3.5 shrink-0 text-[#e52227]" stroke={1.8} />
             <span className="truncate">{projectLabel}</span>
@@ -426,7 +431,7 @@ export function TaskQuickCreate({
         </div>
 
         {onPublishTask && !onStage ? (
-          <label className="mx-[18px] mb-3 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+          <label className="mx-5 mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
               checked={publishOpening && !assigneeUserId}
@@ -437,7 +442,63 @@ export function TaskQuickCreate({
             {assigneeUserId ? <span>{projectT("workbench.unassignedOnly")}</span> : null}
           </label>
         ) : null}
-        <div className="min-w-0 space-y-3 px-[18px] pt-[8.5px]">
+        <div className="min-h-0 min-w-0 space-y-6 overflow-y-auto px-5 py-6 sm:px-8">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <SelectChip
+              icon={<IconCategory className="size-3.5" />}
+              value={taskKind}
+              label={taskKind ? t(CREW_TASK_KIND_MESSAGE_KEYS[taskKind]) : t("taskKindLabel")}
+              ariaLabel={t("taskKindLabel")}
+              onChange={(value) => {
+                draftRevision.current += 1;
+                const next = value as CrewTaskKind | "";
+                setTaskKind(next);
+                if (!next || title.trim()) return;
+                const template = (templates.data?.items ?? []).find((item) => item.kind === next);
+                if (template?.title) setTitle(template.title);
+              }}
+              options={[
+                { value: "", label: t("taskKindUnset") },
+                ...CREW_TASK_KINDS.map((kind) => ({
+                  value: kind,
+                  label: t(CREW_TASK_KIND_MESSAGE_KEYS[kind]),
+                })),
+              ]}
+            />
+            <SelectChip
+              icon={<IconUserCircle className="size-3.5" />}
+              value={assigneeUserId}
+              label={
+                assigneeUserId ? displayNameOf(assigneeUserId, displays) : t("chooseAssignees")
+              }
+              ariaLabel={t("chooseAssignees")}
+              onChange={(value) => {
+                draftRevision.current += 1;
+                setAssigneeUserId(value);
+              }}
+              options={[
+                { value: "", label: t("unassigned") },
+                ...members.map((member) => ({
+                  value: member.userId,
+                  label: displayNameOf(member.userId, displays),
+                })),
+              ]}
+            />
+            <SelectChip
+              icon={<IconFlag3 className="size-3.5" />}
+              value={priority}
+              label={priority === "normal" ? t("priorityLabel") : t(`priority.${priority}`)}
+              ariaLabel={t("priorityLabel")}
+              onChange={(value) => {
+                draftRevision.current += 1;
+                setPriority(value as CrewTaskPriority);
+              }}
+              options={(["urgent", "high", "normal", "low"] as const).map((value) => ({
+                value,
+                label: t(`priority.${value}`),
+              }))}
+            />
+          </div>
           <label className="block space-y-2">
             <span className="text-sm font-medium">{t("taskTitle")}</span>
             <textarea
@@ -476,8 +537,8 @@ export function TaskQuickCreate({
                 placeholder={t("descriptionPlaceholder")}
                 aria-label={t("taskBrief")}
                 className={cn(
-                  "block min-h-36 w-full resize-y rounded-md border border-white/15 bg-[#0b0c0f] p-3 text-sm leading-6 text-[#d5d5da] outline-none focus:border-primary",
-                  expanded && "h-[140px]"
+                  "block min-h-52 w-full resize-y rounded-lg border-2 border-dashed border-white/15 bg-[#0b0c0f] p-3 text-sm leading-6 text-[#d5d5da] outline-none focus:border-primary",
+                  expanded && "min-h-64"
                 )}
               />
             </label>
@@ -503,155 +564,106 @@ export function TaskQuickCreate({
             </div>
           </div>
 
-          <div className="-mx-1.5 mt-1.5 flex min-w-0 flex-col gap-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <SelectChip
-                icon={<StateRing color={activeState?.color} />}
-                value={resolvedWorkflowStateId}
-                label={activeState ? workflowStateLabel(activeState, projectT) : t("planningState")}
-                ariaLabel={t("planningState")}
-                onChange={setWorkflowStateId}
-                options={project.workflowStates
-                  .filter((state) => !state.archived)
-                  .map((state) => ({
-                    value: state.id,
-                    label: workflowStateLabel(state, projectT),
-                  }))}
-              />
-              <SelectChip
-                icon={<IconCategory className="size-3.5" />}
-                value={taskKind}
-                label={taskKind ? t(CREW_TASK_KIND_MESSAGE_KEYS[taskKind]) : t("taskKindLabel")}
-                ariaLabel={t("taskKindLabel")}
-                onChange={(value) => {
-                  draftRevision.current += 1;
-                  const next = value as CrewTaskKind | "";
-                  setTaskKind(next);
-                  if (!next || title.trim()) return;
-                  const template = (templates.data?.items ?? []).find((item) => item.kind === next);
-                  if (template?.title) setTitle(template.title);
-                }}
-                options={[
-                  { value: "", label: t("taskKindUnset") },
-                  ...CREW_TASK_KINDS.map((kind) => ({
-                    value: kind,
-                    label: t(CREW_TASK_KIND_MESSAGE_KEYS[kind]),
-                  })),
-                ]}
-              />
-              <SelectChip
-                icon={<IconFlag3 className="size-3.5" />}
-                value={priority}
-                label={priority === "normal" ? t("priorityLabel") : t(`priority.${priority}`)}
-                ariaLabel={t("priorityLabel")}
-                onChange={(value) => {
-                  draftRevision.current += 1;
-                  setPriority(value as CrewTaskPriority);
-                }}
-                options={(["urgent", "high", "normal", "low"] as const).map((value) => ({
-                  value,
-                  label: t(`priority.${value}`),
+          <TaskCrewContext
+            key={`${crewId}:${open}`}
+            crewId={crewId}
+            members={members.map((member) => ({
+              id: member.userId,
+              name: displayNameOf(member.userId, displays),
+            }))}
+            onImport={(text) => {
+              draftRevision.current += 1;
+              setDescription((current) => [current.trim(), text].filter(Boolean).join("\n\n"));
+              setDraft(null);
+            }}
+          />
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <SelectChip
+              icon={<StateRing color={activeState?.color} />}
+              value={resolvedWorkflowStateId}
+              label={activeState ? workflowStateLabel(activeState, projectT) : t("planningState")}
+              ariaLabel={t("planningState")}
+              onChange={setWorkflowStateId}
+              options={project.workflowStates
+                .filter((state) => !state.archived)
+                .map((state) => ({
+                  value: state.id,
+                  label: workflowStateLabel(state, projectT),
                 }))}
-              />
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <SelectChip
-                icon={<IconUserCircle className="size-3.5" />}
-                value={assigneeUserId}
-                label={
-                  assigneeUserId ? displayNameOf(assigneeUserId, displays) : t("chooseAssignees")
-                }
-                ariaLabel={t("chooseAssignees")}
-                onChange={(value) => {
-                  draftRevision.current += 1;
-                  setAssigneeUserId(value);
-                }}
-                options={[
-                  { value: "", label: t("unassigned") },
-                  ...members.map((member) => ({
-                    value: member.userId,
-                    label: displayNameOf(member.userId, displays),
+            />
+            <SelectChip
+              icon={<IconMovie className="size-3.5" />}
+              value={episodeId ?? ""}
+              label={
+                episodeId
+                  ? (episodes.data?.find((episode) => episode.id === episodeId)?.title ??
+                    t("episode"))
+                  : t("noEpisode")
+              }
+              ariaLabel={t("episode")}
+              onChange={(value) => setEpisodeId(value || null)}
+              options={[
+                { value: "", label: t("noEpisode") },
+                ...(episodes.data ?? [])
+                  .filter((episode) => episode.status !== "cancelled")
+                  .map((episode) => ({
+                    value: episode.id,
+                    label: `${t("episodeNumber", { number: episode.number })} · ${episode.title}`,
                   })),
-                ]}
-              />
-              <span className="inline-flex h-6 min-w-0 max-w-[min(190px,100%)] shrink-0 items-center gap-1.5 rounded-full bg-[#252529] py-0 pr-2 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac]">
-                <IconCube className="size-3.5 shrink-0 text-[#e52227]" stroke={1.8} />
-                <span className="truncate">{projectLabel}</span>
-              </span>
-              <SelectChip
-                icon={<IconMovie className="size-3.5" />}
-                value={episodeId ?? ""}
-                label={
-                  episodeId
-                    ? (episodes.data?.find((episode) => episode.id === episodeId)?.title ??
-                      t("episode"))
-                    : t("noEpisode")
-                }
-                ariaLabel={t("episode")}
-                onChange={(value) => setEpisodeId(value || null)}
-                options={[
-                  { value: "", label: t("noEpisode") },
-                  ...(episodes.data ?? [])
-                    .filter((episode) => episode.status !== "cancelled")
-                    .map((episode) => ({
-                      value: episode.id,
-                      label: `${t("episodeNumber", { number: episode.number })} · ${episode.title}`,
-                    })),
-                ]}
-              />
-              <LabelChip
-                labels={project.labels}
-                selectedIds={labelIds}
-                onChange={setLabelIds}
-                label={
-                  selectedLabels.length > 0
-                    ? selectedLabels.map((item) => item.name).join(", ")
-                    : t("labels")
-                }
-              />
-              {(
-                [
-                  { key: "rewardUsd", value: rewardUsd, set: setRewardUsd, max: 1_000_000_000 },
-                  { key: "profitShare", value: profitShare, set: setProfitShare, max: 100 },
-                ] as const
-              ).map((field) => (
-                <label
-                  key={field.key}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#252529] px-2 text-xs text-[#a4a4ac]"
-                >
-                  {field.key === "rewardUsd" ? (
-                    <IconCoin className="size-3.5" />
-                  ) : (
-                    <IconPercentage className="size-3.5" />
-                  )}
-                  {projectT(`workbench.${field.key}`)}
-                  <input
-                    type="number"
-                    min={0}
-                    max={field.max}
-                    step="0.01"
-                    value={field.value}
-                    aria-label={projectT(`workbench.${field.key}`)}
-                    className="w-20 bg-transparent px-1 outline-none"
-                    onChange={(event) => {
-                      draftRevision.current += 1;
-                      field.set(event.target.value);
-                    }}
-                  />
-                </label>
-              ))}
-              <DateChip
-                value={dueDate}
-                onChange={(value) => {
-                  draftRevision.current += 1;
-                  setDueDate(value);
-                }}
-              />
-            </div>
+              ]}
+            />
+            <LabelChip
+              labels={project.labels}
+              selectedIds={labelIds}
+              onChange={setLabelIds}
+              label={
+                selectedLabels.length > 0
+                  ? selectedLabels.map((item) => item.name).join(", ")
+                  : t("labels")
+              }
+            />
+            {(
+              [
+                { key: "rewardUsd", value: rewardUsd, set: setRewardUsd, max: 1_000_000_000 },
+                { key: "profitShare", value: profitShare, set: setProfitShare, max: 100 },
+              ] as const
+            ).map((field) => (
+              <label
+                key={field.key}
+                className="flex min-h-14 min-w-0 flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 py-3 text-xs text-[#a4a4ac]"
+              >
+                {field.key === "rewardUsd" ? (
+                  <IconCoin className="size-3.5" />
+                ) : (
+                  <IconPercentage className="size-3.5" />
+                )}
+                {projectT(`workbench.${field.key}`)}
+                <input
+                  type="number"
+                  min={0}
+                  max={field.max}
+                  step="0.01"
+                  value={field.value}
+                  aria-label={projectT(`workbench.${field.key}`)}
+                  className="min-w-0 w-full bg-transparent px-1 text-base text-white outline-none"
+                  onChange={(event) => {
+                    draftRevision.current += 1;
+                    field.set(event.target.value);
+                  }}
+                />
+              </label>
+            ))}
+            <DateChip
+              value={dueDate}
+              onChange={(value) => {
+                draftRevision.current += 1;
+                setDueDate(value);
+              }}
+            />
           </div>
         </div>
 
-        <footer className="mt-[11.5px] flex h-[52.5px] items-center justify-end px-3">
+        <footer className="flex min-h-20 shrink-0 items-center justify-end border-t border-white/10 px-5 py-4 sm:px-8">
           {!onStage ? (
             <button
               type="button"
@@ -680,7 +692,7 @@ export function TaskQuickCreate({
             type="button"
             disabled={!resolvedWorkflowStateId || draftTask.isPending || create.isPending}
             onClick={() => void submit()}
-            className="ml-4 inline-flex h-7 min-w-[92.625px] items-center justify-center rounded-full bg-[#E52227] px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-[#c91c21] disabled:cursor-not-allowed disabled:bg-[#34343a] disabled:text-[#777780]"
+            className="ml-5 inline-flex h-11 min-w-32 items-center justify-center rounded-lg bg-[#E52227] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#c91c21] disabled:cursor-not-allowed disabled:bg-[#34343a] disabled:text-[#777780]"
           >
             {create.isPending
               ? t("creating")
@@ -712,15 +724,20 @@ function SelectChip({
   options: Array<{ value: string; label: string }>;
 }) {
   return (
-    <TaskSelect
-      value={value}
-      onValueChange={onChange}
-      options={options}
-      ariaLabel={ariaLabel}
-      prefix={<span className="shrink-0">{icon}</span>}
-      displayValue={<span className="truncate">{label}</span>}
-      className="h-6 w-auto min-w-0 max-w-[min(190px,100%)] shrink-0 rounded-full border-0 bg-[#252529] py-0 pr-1.5 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd] dark:bg-[#252529] dark:hover:bg-[#2d2d32]"
-    />
+    <div className="min-w-0 space-y-2">
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#92929c]">
+        {icon}
+        {ariaLabel}
+      </p>
+      <TaskSelect
+        value={value}
+        onValueChange={onChange}
+        options={options}
+        ariaLabel={ariaLabel}
+        displayValue={<span className="truncate">{label}</span>}
+        className="h-12 w-full min-w-0 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-[#e8e9ec] hover:bg-white/5 dark:bg-[#101012]"
+      />
+    </div>
   );
 }
 
@@ -741,7 +758,7 @@ function LabelChip({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-6 min-w-0 max-w-[min(150px,100%)] shrink-0 items-center gap-1.5 rounded-full bg-[#252529] py-0 pr-2 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
+          className="inline-flex h-12 min-w-0 w-full items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
           aria-label={t("labels")}
         >
           <IconTag className="size-3.5 shrink-0" stroke={1.8} />
@@ -794,7 +811,7 @@ function DateChip({ value, onChange }: { value: string; onChange: (value: string
         <button
           type="button"
           aria-label={t("due")}
-          className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#252529] px-2 text-xs text-[#a4a4ac]"
+          className="inline-flex h-12 w-full items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-[#a4a4ac]"
         >
           <IconCalendar className="size-3.5" />
           {date && !Number.isNaN(date.getTime())

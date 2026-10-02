@@ -27,9 +27,10 @@
 import { isCrewCursorError } from "../../_hooks/api";
 import { Button } from "@/components/ui/button";
 import { JoinFanCommunity } from "@/app/(site)/crews/_components/join-fan-community";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   IconArrowLeft,
   IconBriefcase,
@@ -54,7 +55,7 @@ import {
 import { useCrewPermissions } from "@/app/(site)/crews/_hooks/use-crew-permissions";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
-import { ApplyPositionDialog } from "@/app/(site)/crews/_components/apply-position-dialog";
+
 import { PositionCard } from "@/app/(site)/crews/[id]/workspace/_components/positions/position-card";
 import type { LookupUserDTO } from "@repo/shared/users";
 
@@ -110,7 +111,7 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
 
   // Apply dialog state lifted to parent so each position card just
   // calls a setter — keeps card focused on rendering.
-  const [applyTarget, setApplyTarget] = useState<CrewPositionDTO | null>(null);
+  const router = useRouter();
 
   // Hero background: featured showcase work first, otherwise null so
   // the Hero falls back to the "logo + gradient" empty-state. No
@@ -246,7 +247,9 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
                           // Only the "primary" CTA (open + outsider)
                           // routes to Apply; everything else is an
                           // informational no-op.
-                          if (cta.tone === "primary") setApplyTarget(p);
+                          router.push(
+                            `/${locale}/crews/${encodeURIComponent(id)}/positions/${encodeURIComponent(p.id)}`
+                          );
                         }}
                       />
                     );
@@ -270,17 +273,6 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
           </aside>
         </div>
       </div>
-
-      <ApplyPositionDialog
-        open={applyTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setApplyTarget(null);
-        }}
-        crewId={id}
-        positionId={applyTarget?.id ?? ""}
-        positionLabel={applyTarget ? applyTarget.positionType : ""}
-        crewName={crew.name}
-      />
     </div>
   );
 }
@@ -458,20 +450,26 @@ function Hero({
   tCrew: ReturnType<typeof useTranslations>;
 }) {
   return (
-    <div className="relative h-64 overflow-hidden md:h-80">
+    <div
+      className={
+        heroVisual ? "relative h-64 overflow-hidden md:h-80" : "relative overflow-hidden pt-6"
+      }
+    >
       {heroVisual ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={heroVisual} alt={crew.name} className="size-full object-cover" />
-      ) : (
-        // No-showcase fallback: a quiet branded gradient. The previous
-        // version centered an enlarged + dimmed logo here, but it
-        // ended up looking like a half-finished placeholder rather
-        // than intentional design. Clean gradient lets the name +
-        // description (overlaid below) carry the visual weight.
-        <div className="size-full bg-gradient-to-br from-primary/15 via-secondary/40 to-background" />
+      ) : null}
+      {heroVisual && (
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10" />
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/10" />
-      <div className="absolute inset-x-0 bottom-0 mx-auto max-w-[1800px] px-6 pb-6">
+
+      <div
+        className={
+          heroVisual
+            ? "absolute inset-x-0 bottom-0 mx-auto max-w-[1800px] px-6 pb-6"
+            : "mx-auto max-w-[1800px] px-6 pb-6"
+        }
+      >
         <Link
           href={plazaHref}
           className="mb-3 inline-flex items-center gap-1 text-sm text-white/80 transition-colors hover:text-white"

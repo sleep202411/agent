@@ -15,6 +15,7 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
+import { z } from 'zod';
 import type { Request } from 'express';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
@@ -50,6 +51,11 @@ export class ApplicationsController {
     );
   }
 
+  @Get('applications/:applicationId')
+  thread(@Param('applicationId') id: string, @CurrentUser() user: AuthUser) {
+    return this.svc.getThread(parseIdParam(id, 'applicationId'), user.userId);
+  }
+
   @Get('me/crew-applications')
   mine(
     @CurrentUser() user: AuthUser,
@@ -83,6 +89,29 @@ export class ApplicationsController {
       parseIdParam(crewIdRaw, 'crewId'),
       parseIdParam(applicationIdRaw, 'applicationId'),
       user.userId,
+    );
+  }
+
+  @Post('applications/:applicationId/accept-offer')
+  @HttpCode(HttpStatus.OK)
+  acceptOffer(
+    @Param('applicationId') id: string,
+    @CurrentUser() user: AuthUser,
+    @Body(
+      new ZodValidationPipe(
+        z
+          .object({ version: z.number().int().positive().max(2147483647) })
+          .strict(),
+      ),
+    )
+    body: { version: number },
+    @Req() request: Request,
+  ) {
+    return this.svc.acceptOffer(
+      parseIdParam(id, 'applicationId'),
+      user.userId,
+      body.version,
+      request.headers.cookie,
     );
   }
 

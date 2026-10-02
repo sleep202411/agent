@@ -1,5 +1,6 @@
 "use client";
 
+import { CrewLinkedResources } from "./crew-linked-resources";
 import { CrewVisitReadMarker } from "./crew-visit-read-marker";
 
 /**
@@ -715,6 +716,7 @@ function OverviewTab({
 
   return (
     <div className="space-y-6">
+      <CrewLinkedResources crewId={crewId} />
       {/* KPI tiles — same borderless cards. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiTile labelKey="wsMembers" value={memberCount} t={t} />

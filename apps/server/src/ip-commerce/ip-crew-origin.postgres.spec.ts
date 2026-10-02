@@ -442,6 +442,60 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
       ),
     ).rejects.toThrow('updated elsewhere');
   });
+  it('exposes only public linked IPs and respects Crew blocks and visibility', async () => {
+    await origins.save(ipId, { userId: owner }, { crewId, expectedVersion: 0 });
+    expect(await origins.publicCrewIps(crewId)).toEqual({
+      items: [{ id: ipId }],
+    });
+    await db.ip.update({
+      where: { id: ipId },
+      data: { listingVisibility: 'unlisted' },
+    });
+    expect(await origins.publicCrewIps(crewId)).toEqual({ items: [] });
+    await db.ip.update({
+      where: { id: ipId },
+      data: { listingVisibility: 'public', status: 'draft' },
+    });
+    expect(await origins.publicCrewIps(crewId)).toEqual({ items: [] });
+    await db.ip.update({ where: { id: ipId }, data: { status: 'published' } });
+    await db.crew.update({
+      where: { id: crewId },
+      data: { listingStatus: 'unlisted' },
+    });
+    await expect(origins.publicCrewIps(crewId)).rejects.toThrow(
+      'Crew not found',
+    );
+    expect(await origins.publicCrewIps(crewId, { userId: owner })).toEqual({
+      items: [{ id: ipId }],
+    });
+    await db.ipUserContentBlock.create({
+      data: { userId: owner, targetType: 'crew', targetId: crewId },
+    });
+    await expect(
+      origins.publicCrewIps(crewId, { userId: owner }),
+    ).rejects.toThrow('Crew not found');
+  });
+  it('does not attach a second IP to the same Crew or increment its version on failure', async () => {
+    await origins.save(ipId, { userId: owner }, { crewId, expectedVersion: 0 });
+    const second = await db.ip.create({ data: { createdById: owner } });
+    try {
+      await expect(
+        origins.save(
+          second.id,
+          { userId: owner },
+          { crewId, expectedVersion: 0 },
+        ),
+      ).rejects.toThrow('already has a linked IP');
+      expect(
+        (await db.ip.findUniqueOrThrow({ where: { id: second.id } })).version,
+      ).toBe(0);
+      expect(
+        await db.ipCrewOrigin.findUnique({ where: { ipId: second.id } }),
+      ).toBeNull();
+    } finally {
+      await db.ip.delete({ where: { id: second.id } });
+    }
+  });
   it('likes and joins once without granting production membership or creating a Crew like', async () => {
     await origins.save(ipId, { userId: owner }, { crewId, expectedVersion: 0 });
     const fan = { userId: `fan-${randomUUID()}` };

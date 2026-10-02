@@ -10,7 +10,10 @@ vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: h.
 vi.mock("../_hooks/api", () => ({
   crewApi: { get: (...a: unknown[]) => h.get(...a), post: (...a: unknown[]) => h.post(...a) },
 }));
-vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/src/i18n/i18n", () => ({
+  useLocale: () => "en-US",
+  useTranslations: () => (key: string) => key,
+}));
 const term = {
   version: 2,
   scope: "Two scenes",

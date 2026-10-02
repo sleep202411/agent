@@ -2,7 +2,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import MyApplicationsPage from "./page";
+import { RecruitmentInbox as MyApplicationsPage } from "../../messages/_components/recruitment-inbox";
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 const h = vi.hoisted(() => ({ user: "alice", get: vi.fn(), login: vi.fn() }));
 vi.mock("@/components/auth/auth-dialog-provider", () => ({
   useAuthDialog: () => ({ open: h.login }),
@@ -10,7 +11,18 @@ vi.mock("@/components/auth/auth-dialog-provider", () => ({
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: h.user ? { id: h.user } : null, isLoading: false }),
 }));
-vi.mock("../_hooks/api", () => ({ crewApi: { get: (...a: unknown[]) => h.get(...a) } }));
+vi.mock("../_hooks/api", () => ({
+  crewApi: {
+    get: (...a: unknown[]) =>
+      typeof a[0] === "string" && a[0].startsWith("/applications/")
+        ? h
+            .get(...a)
+            .then((result: { items: ReturnType<typeof row>[] }) =>
+              result.items?.find((item) => item.id === (a[0] as string).split("/").pop())
+            )
+        : h.get(...a),
+  },
+}));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
@@ -63,6 +75,9 @@ async function render() {
 it("opens private terms from applicant-owned history and loads the next bounded page", async () => {
   await render();
   await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
   expect(host.textContent).toContain("Terms for first");
   h.get.mockResolvedValue({ items: [row("second")], nextCursor: null });
   await act(async () =>
@@ -78,6 +93,9 @@ it("opens private terms from applicant-owned history and loads the next bounded 
 it("clears selected private terms and history on account switch", async () => {
   await render();
   await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
   h.user = "bob";
   h.get.mockResolvedValue({ items: [], nextCursor: null });
   await render();
@@ -94,7 +112,9 @@ it("does not request applicant history when signed out", async () => {
 });
 
 vi.mock("../_components/application-interview-panel", () => ({
-  ApplicationInterviewPanel: () => <div>Interview controls</div>,
+  ApplicationInterviewPanel: ({ offer }: { offer: React.ReactNode }) => (
+    <div>Interview controls{offer}</div>
+  ),
 }));
 
 vi.mock("../_components/position-invitations-panel", () => ({
@@ -115,6 +135,9 @@ vi.mock("../_components/application-review-dialog", () => ({
 it("switches to owner inbox without retaining the selected applicant conversation", async () => {
   await render();
   await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
   expect(host.textContent).toContain("Terms for first");
   h.get.mockResolvedValue({
     items: [{ ...row("received"), applicantId: "creator" }],
@@ -132,6 +155,9 @@ it("switches to owner inbox without retaining the selected applicant conversatio
     expect.objectContaining({ query: { limit: 20, cursor: undefined, scope: "received" } })
   );
   await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
   expect(host.textContent).toContain("Terms for received");
   expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "review")).toBe(
     true
@@ -141,10 +167,13 @@ it("switches to owner inbox without retaining the selected applicant conversatio
 it("hides selected private panels after a failed inbox refresh and restores access on retry", async () => {
   await render();
   await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
   expect(host.textContent).toContain("Terms for first");
   h.get.mockRejectedValue(new Error("Application access revoked"));
   await act(async () => {
-    await qc.refetchQueries({ queryKey: ["my-crew-applications", "alice", "sent"] });
+    await qc.refetchQueries();
     await new Promise((r) => setTimeout(r, 30));
   });
   expect(host.textContent).not.toContain("Terms for first");
@@ -159,6 +188,7 @@ it("hides selected private panels after a failed inbox refresh and restores acce
     Array.from(host.querySelectorAll("button"))
       .find((b) => b.textContent === "refresh")!
       .click();
+    await qc.refetchQueries();
     await new Promise((r) => setTimeout(r, 30));
   });
   expect(host.textContent).toContain("Terms for first");

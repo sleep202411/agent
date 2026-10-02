@@ -346,3 +346,47 @@ describe('position discovery search', () => {
     ).toBe(false);
   });
 });
+
+describe('Salary discovery units', () => {
+  it('requires explicit currency and pay period and rejects reversed bounds', () => {
+    expect(
+      ListPublicPositionsQuerySchema.safeParse({ salaryMinMinor: '100' })
+        .success,
+    ).toBe(false);
+    expect(
+      ListPublicPositionsQuerySchema.safeParse({
+        salaryMinMinor: '200',
+        salaryMaxMinor: '100',
+        salaryCurrency: 'USD',
+        salaryPeriod: 'project',
+      }).success,
+    ).toBe(false);
+  });
+  it('matches overlapping ranges only within the selected currency and pay period', async () => {
+    const t = build();
+    t.crewPosition.findMany.mockResolvedValue([]);
+    t.crewPosition.count.mockResolvedValue(0);
+    await t.service.listPublic(
+      ListPublicPositionsQuerySchema.parse({
+        salaryMinMinor: '10000',
+        salaryMaxMinor: '20000',
+        salaryCurrency: 'USD',
+        salaryPeriod: 'project',
+        positionType: 'editor',
+        genre: 'commercial',
+      }),
+    );
+    const call = t.crewPosition.findMany.mock.calls[0]?.[0] as {
+      where: unknown;
+    };
+    expect(call.where).toMatchObject({
+      salaryMinAmount: { lte: 20000n },
+      salaryMaxAmount: { gte: 10000n },
+      salaryCurrency: 'USD',
+      salaryPeriod: 'project',
+      salaryNegotiable: false,
+      positionType: 'editor',
+      crew: { genres: { has: 'commercial' } },
+    });
+  });
+});
