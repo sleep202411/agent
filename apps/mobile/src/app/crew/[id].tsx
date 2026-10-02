@@ -1,7 +1,7 @@
 import { CrewLinkedResources } from "@/features/services/crew-linked-resources";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -23,7 +23,7 @@ import { CrewRolePicker } from "@/features/browse/crew-role-picker";
 import { useCrewModeration } from "@/features/browse/use-crew-moderation";
 import { useCrewApplication } from "@/features/browse/use-crew-application";
 import { crewPositionLabel } from "@/lib/crew-position-label";
-import { showCrewActionsMenu } from "@/features/browse/crew-actions-menu";
+import { CrewActionsMenu, type CrewAction } from "@/features/browse/crew-actions-menu";
 import { toHref } from "@/lib/navigation";
 
 function crewStatusTag(
@@ -74,7 +74,6 @@ export default function CrewDetailScreen() {
   const [rolePicker, setRolePicker] = useState<{ crewId: string; generation: number }>();
   const moderation = useCrewModeration(id, auth.generation, active);
   const [actionsIntent, setActionsIntent] = useState<{ crewId: string; generation: number }>();
-  const handledActions = useRef<typeof actionsIntent>(undefined);
   const [reportScope, setReportScope] = useState<typeof moderation.scope>();
   const { applying, submit: apply } = useCrewApplication(id);
 
@@ -101,21 +100,26 @@ export default function CrewDetailScreen() {
   }, [scope]);
 
   const crew = read?.scope === scope ? read.crew : undefined;
-  const showActions = () => {
-    if (!crew) return;
-    showCrewActionsMenu({
-      t,
-      onApplications: () => router.push(toHref("/crew-applications")),
-      onAgreements: () => router.push(toHref(`/crew-agreements/${encodeURIComponent(crew.id)}`)),
-      onReviews: () => router.push(toHref(`/crew-reviews/${encodeURIComponent(crew.id)}`)),
-      onInvitations: () => router.push(toHref(`/crew-invitations/${encodeURIComponent(crew.id)}`)),
-      onFinance: () => router.push(toHref(`/crew-finance/${encodeURIComponent(crew.id)}`)),
-      onTasks: () => router.push(toHref(`/crew-tasks/${encodeURIComponent(crew.id)}`)),
-      onReport: () => {
-        if (moderation.isCurrent()) setReportScope(moderation.scope);
-      },
-      onBlock: confirmBlock,
-    });
+  const selectAction = (action: CrewAction) => {
+    if (!crew || !moderation.isCurrent()) return;
+    setActionsIntent(undefined);
+    if (action === "report") {
+      setReportScope(moderation.scope);
+      return;
+    }
+    if (action === "block") {
+      confirmBlock();
+      return;
+    }
+    const paths = {
+      applications: "/crew-applications",
+      agreements: `/crew-agreements/${encodeURIComponent(crew.id)}`,
+      reviews: `/crew-reviews/${encodeURIComponent(crew.id)}`,
+      invitations: `/crew-invitations/${encodeURIComponent(crew.id)}`,
+      finance: `/crew-finance/${encodeURIComponent(crew.id)}`,
+      tasks: `/crew-tasks/${encodeURIComponent(crew.id)}`,
+    };
+    router.push(toHref(paths[action]));
   };
 
   const moderationError = (title: string, error: unknown) => {
@@ -171,21 +175,6 @@ export default function CrewDetailScreen() {
       onAuthenticated: () => setActionsIntent({ crewId: id, generation: getAuthGeneration() }),
     });
   };
-
-  const showReadyActions = useEffectEvent(showActions);
-  useEffect(() => {
-    if (
-      !actionsIntent ||
-      handledActions.current === actionsIntent ||
-      !active ||
-      read?.scope !== scope ||
-      !read.crew
-    )
-      return;
-    handledActions.current = actionsIntent;
-    if (actionsIntent.crewId === id && actionsIntent.generation === auth.generation)
-      showReadyActions();
-  }, [actionsIntent, active, read, scope, id, auth.generation]);
 
   // Hide stale recruitment/access data immediately while a return or account change is read.
   // Keep the component mounted so pending application requests remain serialized.
@@ -289,6 +278,16 @@ export default function CrewDetailScreen() {
           setRolePicker(undefined);
           void submitApply(positionId);
         }}
+      />
+      <CrewActionsMenu
+        visible={
+          auth.status === "authenticated" &&
+          actionsIntent?.crewId === id &&
+          actionsIntent.generation === auth.generation
+        }
+        busy={moderation.submitting}
+        onSelect={selectAction}
+        onClose={() => setActionsIntent(undefined)}
       />
       <ReportReasonSheet
         visible={reportScope === moderation.scope}
