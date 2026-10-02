@@ -1,4 +1,8 @@
-import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
+import {
+  useServiceEditorState,
+  useClearServiceEditorDraft,
+  useServiceReceipt,
+} from "./service-editor-drafts";
 import { useServiceIntent } from "./service-intent";
 import { inquiryOutbox } from "./inquiry-outbox";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -25,6 +29,7 @@ export function ServiceContact({
     t = useTranslations();
   const [open, setOpen] = useState(false);
   const intentControl = useServiceIntent();
+  const receipt = useServiceReceipt("contact");
   const isOpen = intentControl ? intentControl.kind === "contact" : open;
   const active = useRef(false);
   useLayoutEffect(() => {
@@ -33,7 +38,10 @@ export function ServiceContact({
       active.current = false;
     };
   }, []);
-  if (status !== "listed" || String(auth.user?.userId ?? auth.user?.id ?? "") === creatorId)
+  if (
+    (status !== "listed" && !receipt.id) ||
+    String(auth.user?.userId ?? auth.user?.id ?? "") === creatorId
+  )
     return null;
   return isOpen && auth.status === "authenticated" ? (
     <Composer
@@ -77,12 +85,14 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
       return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
     }
   });
+  const receipt = useServiceReceipt("contact");
   const clearDraft = useClearServiceEditorDraft("contact");
   useServiceEditorState("contact:open", true);
   const [locked, setLocked] = useState(!!initial.pending);
   const [body, setBody] = useServiceEditorState("contact:body", initial.pending?.body ?? ""),
     [error, setError] = useState<string | undefined>(initial.error),
-    [conversation, setConversation] = useState<string>();
+    [localResult, setConversation] = useState<string>();
+  const conversation = receipt.id ?? localResult;
   const intent = useRef<{ body: string; clientKey: string } | undefined>(
     initial.pending ?? undefined
   );
@@ -102,10 +112,11 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
           intent.current.clientKey
         );
         outbox.clear(intent.current.clientKey);
+        clearDraft();
+        receipt.save(id);
         return id;
       },
       (id) => {
-        clearDraft();
         setConversation(id);
       },
       (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
@@ -159,6 +170,7 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
         disabled={op.busy}
         onPress={() => {
           clearDraft();
+          receipt.clear();
           close();
         }}
       >

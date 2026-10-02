@@ -2,16 +2,55 @@ import {
   createContext,
   useContext,
   useState,
+  useSyncExternalStore,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
 } from "react";
 
+function createReceipts() {
+  const values = new Map<string, string>();
+  const listeners = new Set<() => void>();
+  return {
+    get: (key: string) => values.get(key),
+    set: (key: string, value: string | undefined) => {
+      if (value === undefined) values.delete(key);
+      else values.set(key, value);
+      listeners.forEach((listener) => listener());
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+const Receipts = createContext<ReturnType<typeof createReceipts> | undefined>(undefined);
+const noSubscribe = () => () => {};
+export function useServiceReceipt(panel: string) {
+  const store = useContext(Receipts);
+  const id = useSyncExternalStore(
+    store?.subscribe ?? noSubscribe,
+    () => store?.get(panel),
+    () => undefined
+  );
+  return {
+    id,
+    save: (value: string) => store?.set(panel, value),
+    clear: () => store?.set(panel, undefined),
+  };
+}
 const Drafts = createContext<Map<string, unknown> | undefined>(undefined);
 /** Route/account-scoped memory survives a service reload, but never a different session. */
 export function ServiceEditorDrafts({ children }: { children: ReactNode }) {
   const [store] = useState(() => new Map<string, unknown>());
-  return <Drafts.Provider value={store}>{children}</Drafts.Provider>;
+  const [receipts] = useState(createReceipts);
+  return (
+    <Receipts.Provider value={receipts}>
+      <Drafts.Provider value={store}>{children}</Drafts.Provider>
+    </Receipts.Provider>
+  );
 }
 export function useServiceEditorState<T>(
   key: string,

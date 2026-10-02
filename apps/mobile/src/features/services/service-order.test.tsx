@@ -373,3 +373,49 @@ it("requires choosing a remaining package when the selected tier was removed", a
     expect.objectContaining({ packageTier: "premium", expectedServiceVersion: 4 })
   );
 });
+
+it.each([false, true])(
+  "retains a confirmed result when its original form unmounts (return before reply: %s)",
+  async (returnFirst) => {
+    let finish!: (id: string) => void;
+    h.send.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const draw = (shown: boolean, scope = "buyer", status = "listed") =>
+      act(async () =>
+        root.render(
+          <ServiceEditorDrafts key={scope}>
+            <ServiceIntentProvider>
+              {shown && (
+                <ServiceOrder
+                  service={{
+                    ...service,
+                    status,
+                    packages: status === "paused" ? [] : service.packages,
+                  }}
+                />
+              )}
+            </ServiceIntentProvider>
+          </ServiceEditorDrafts>
+        )
+      );
+    await draw(true);
+    await act(async () => click("serviceOrder.title"));
+    await act(async () => type("Keep the confirmed result"));
+    await act(async () => click("serviceOrder.submit"));
+    await draw(false);
+    if (returnFirst) await draw(true);
+    await act(async () => finish("confirmed"));
+    await draw(true, "buyer", "paused");
+    expect(host.textContent).toContain("serviceOrder.sent");
+    expect(host.querySelector("input")).toBeNull();
+    expect(h.send).toHaveBeenCalledOnce();
+    await act(async () => click("serviceOrder.open"));
+    expect(h.push).toHaveBeenCalledWith("/order/confirmed");
+    await draw(true, "other-account");
+    expect(host.textContent).not.toContain("serviceOrder.sent");
+  }
+);

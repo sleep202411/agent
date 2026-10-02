@@ -1,4 +1,8 @@
-import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
+import {
+  useServiceEditorState,
+  useClearServiceEditorDraft,
+  useServiceReceipt,
+} from "./service-editor-drafts";
 import { useServiceIntent } from "./service-intent";
 import { orderOutbox } from "./order-outbox";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -29,6 +33,7 @@ function ScopedServiceOrder({ service }: { service: CreatorServiceDetail }) {
     t = useTranslations();
   const [open, setOpen] = useState(false);
   const intentControl = useServiceIntent();
+  const receipt = useServiceReceipt("order");
   const isOpen = intentControl ? intentControl.kind === "order" : open;
   const [hasPending, setHasPending] = useState(() => {
     if (auth.status !== "authenticated") return false;
@@ -52,6 +57,7 @@ function ScopedServiceOrder({ service }: { service: CreatorServiceDetail }) {
   if (
     String(auth.user?.userId ?? auth.user?.id ?? "") === service.creatorId ||
     (!hasPending &&
+      !receipt.id &&
       (service.status !== "listed" ||
         !Number.isSafeInteger(service.version) ||
         !service.packages.length))
@@ -120,6 +126,7 @@ function RequestForm({
       return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
     }
   });
+  const receipt = useServiceReceipt("order");
   const clearDraft = useClearServiceEditorDraft("order");
   useServiceEditorState("order:open", true);
   const [reviewedVersion, setReviewedVersion] = useServiceEditorState(
@@ -129,7 +136,7 @@ function RequestForm({
   const offer = initial.pending?.offer ?? service;
   const [tier, setTier] = useServiceEditorState(
       "order:tier",
-      initial.pending?.payload.packageTier ?? service.packages[0]!.tier
+      initial.pending?.payload.packageTier ?? service.packages[0]?.tier ?? ""
     ),
     [answers, setAnswers] = useServiceEditorState<Record<string, string>>(
       "order:answers",
@@ -139,8 +146,9 @@ function RequestForm({
     ),
     [note, setNote] = useServiceEditorState("order:note", initial.pending?.payload.note ?? ""),
     [error, setError] = useState<string | undefined>(initial.error),
-    [order, setOrder] = useState<string>(),
+    [localResult, setOrder] = useState<string>(),
     [locked, setLocked] = useState(!!initial.pending);
+  const order = receipt.id ?? localResult;
   const intent = useRef(initial.pending ?? undefined);
   const needsReview = !locked && reviewedVersion !== service.version;
   const valid =
@@ -164,10 +172,11 @@ function RequestForm({
         setLocked(true);
         const id = await submitServiceOrder(intent.current.payload);
         outbox.clear(intent.current.clientKey);
+        clearDraft();
+        receipt.save(id);
         return id;
       },
       (id) => {
-        clearDraft();
         setOrder(id);
       },
       (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
@@ -273,6 +282,7 @@ function RequestForm({
         disabled={op.busy}
         onPress={() => {
           clearDraft();
+          receipt.clear();
           close();
         }}
       >

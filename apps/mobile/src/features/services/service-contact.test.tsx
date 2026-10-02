@@ -260,3 +260,41 @@ it("retains an unsent inquiry through reload but clears cancelled, sent and fore
   await act(async () => click("serviceContact.title"));
   expect(host.querySelector("input")?.value).toBe("");
 });
+
+it.each([false, true])(
+  "retains a confirmed result when its original form unmounts (return before reply: %s)",
+  async (returnFirst) => {
+    let finish!: (id: string) => void;
+    h.send.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const draw = (shown: boolean, scope = "buyer", status = "listed") =>
+      act(async () =>
+        root.render(
+          <ServiceEditorDrafts key={scope}>
+            <ServiceIntentProvider>
+              {shown && <ServiceContact serviceId="service" creatorId="creator" status={status} />}
+            </ServiceIntentProvider>
+          </ServiceEditorDrafts>
+        )
+      );
+    await draw(true);
+    await act(async () => click("serviceContact.title"));
+    await act(async () => type("Keep the confirmed result"));
+    await act(async () => click("serviceContact.send"));
+    await draw(false);
+    if (returnFirst) await draw(true);
+    await act(async () => finish("confirmed"));
+    await draw(true, "buyer", "paused");
+    expect(host.textContent).toContain("serviceContact.sent");
+    expect(host.querySelector("input")).toBeNull();
+    expect(h.send).toHaveBeenCalledOnce();
+    await act(async () => click("serviceContact.open"));
+    expect(h.push).toHaveBeenCalledWith("/conversation/confirmed");
+    await draw(true, "other-account");
+    expect(host.textContent).not.toContain("serviceContact.sent");
+  }
+);
