@@ -17,6 +17,7 @@ import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
 import type { CreatorServicePackage } from "@/data/types";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
@@ -40,7 +41,10 @@ function ServiceDetailContent({ id }: { id: string }) {
   const locale = useLocale();
   const t = useTranslations();
   const auth = useAuth();
-  const { service, loading, error, retry } = useServiceDetail(id, auth.generation);
+  const active = useScreenActive();
+  const { service, loading, error, retry } = useServiceDetail(id, auth.generation, active);
+
+  if (!active) return null;
 
   if (error)
     return (
