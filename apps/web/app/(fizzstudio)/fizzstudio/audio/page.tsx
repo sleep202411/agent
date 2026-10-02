@@ -1,5 +1,11 @@
-import { ImageStudioPage } from "../_components/image-studio-page";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { getStudioHref } from "@/src/lib/region/cell";
+import { defaultLocale, locales } from "@/src/i18n/config";
 
-export default function Page() {
-  return <ImageStudioPage modality="audio" />;
+// Audio has one complete composer/feed in Studio, including playback and recovery.
+export default async function AudioPage() {
+  const requested = (await headers()).get("x-locale");
+  const locale = locales.find((value) => value === requested) ?? defaultLocale;
+  redirect(`${getStudioHref(locale)}/audio`);
 }

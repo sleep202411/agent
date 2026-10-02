@@ -171,6 +171,11 @@ for implementation and review:
   visible control must have a useful, understandable purpose. Remove redundant
   controls, dead ends and unfinished placeholder copy; preserve useful recovery
   actions and user-created drafts/data. Do not invent unsupported functionality.
+- **Repair useful UI rather than hiding failures.** Trace non-working controls
+  through their route, state and API contracts; fix and exercise the complete
+  flow. Remove a control only when it is redundant or intentionally outside
+  the agreed product scope. Missing integrations must be reported explicitly,
+  not disguised as completed repairs by hiding the affected UI.
 - **Separate evidence from assumptions.** Report exactly what was exercised,
   what used fixtures and what still needs real accounts, devices or services.
   Passing tests does not establish whole-product usability or Pax's acceptance.

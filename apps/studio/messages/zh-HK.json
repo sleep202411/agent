@@ -363,7 +363,11 @@
     "audio": {
       "metaTitle": "音訊 · FizzStudio",
       "title": "音訊",
-      "subtitle": "為分鏡設計人聲、配樂和音效。"
+      "subtitle": "為分鏡設計人聲、配樂和音效。",
+      "feedSubheading": "此工作空間的音訊生成記錄",
+      "emptyTitle": "暫無音訊任務",
+      "emptyHint": "選擇可用模型，描述需要生成的音訊。",
+      "noOutput": "任務已完成，但未返回可播放的音訊。"
     },
     "contentReview": {
       "metaTitle": "AI內容審核 · FizzStudio",

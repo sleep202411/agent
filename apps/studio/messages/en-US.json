@@ -363,7 +363,11 @@
     "audio": {
       "metaTitle": "Audio · FizzStudio",
       "title": "Audio",
-      "subtitle": "Design voice, music, and sound cues for your scenes."
+      "subtitle": "Design voice, music, and sound cues for your scenes.",
+      "feedSubheading": "Your audio generations in this workspace",
+      "emptyTitle": "No audio jobs yet",
+      "emptyHint": "Choose an available model and describe the audio to create.",
+      "noOutput": "The job completed without a playable audio output."
     },
     "contentReview": {
       "metaTitle": "AI Content Review · FizzStudio",

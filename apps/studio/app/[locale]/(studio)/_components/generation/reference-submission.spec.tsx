@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FizzAiModel } from "@/lib/canvas-authoring/generation-api";
 import type { ReferenceUpload } from "./use-reference-uploads";
 import { useComposerDraftStore } from "./use-composer-draft";
-import { useImageGeneration } from "./use-image-generation";
+import { useImageGeneration, useAudioGeneration } from "./use-image-generation";
 import { useVideoGeneration } from "./use-video-generation";
 
 const state = vi.hoisted(() => ({
@@ -20,7 +20,7 @@ vi.mock("@/app/_components/auth-provider", () => ({
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/lib/canvas-authoring/use-ai-catalog", () => ({
   useAiCatalog: () => ({ data: undefined }),
-  usableModelsByModality: (_catalog: unknown, kind: "image" | "video") => [model(kind)],
+  usableModelsByModality: (_catalog: unknown, kind: "image" | "video" | "audio") => [model(kind)],
 }));
 vi.mock("./use-generation-feed", () => ({ useGenerationFeed: () => ({ submit: state.submit }) }));
 vi.mock("@/app/_components/credits-badge", () => ({
@@ -39,11 +39,36 @@ const field = (kind: string) => ({
   maxItems: 9,
   "x-ui": { control: `${kind}_upload`, kind, group: "references" },
 });
-function model(type: "image" | "video"): FizzAiModel {
+function model(type: "image" | "video" | "audio"): FizzAiModel {
   return {
     id: "test-model",
     type,
-    generationModes: [type === "image" ? "image_to_image" : "multimodal_to_video"],
+    billing_policy:
+      type === "audio"
+        ? {
+            productPricing: {
+              mode: "per_character",
+              version: "test",
+              currency: "COMPUTE_POINTS",
+              defaultOutputCount: 1,
+              minOutputCount: 1,
+              maxOutputCount: 1,
+              pointsPerCharacter: 0.003,
+              minCharacters: 1,
+              maxCharacters: 3000,
+              defaultCharacters: 200,
+              minimumPoints: 1,
+              roundTo: 1,
+            },
+          }
+        : undefined,
+    generationModes: [
+      type === "image"
+        ? "image_to_image"
+        : type === "audio"
+          ? "audio_to_audio"
+          : "multimodal_to_video",
+    ],
     input_schema: {
       properties: {
         prompt: { type: "string" },
@@ -72,11 +97,16 @@ function upload(kind: "image" | "video" | "audio", index: number): ReferenceUplo
   };
 }
 
-describe.each(["image", "video"] as const)("%s composer reference submission", (kind) => {
+describe.each(["image", "video", "audio"] as const)("%s composer reference submission", (kind) => {
   let root: Root;
   let container: HTMLDivElement;
   let controller: ReturnType<typeof useImageGeneration> | ReturnType<typeof useVideoGeneration>;
-  const useController = kind === "image" ? useImageGeneration : useVideoGeneration;
+  const useController =
+    kind === "image"
+      ? useImageGeneration
+      : kind === "audio"
+        ? useAudioGeneration
+        : useVideoGeneration;
   function Harness() {
     controller = useController();
     return null;
@@ -87,14 +117,14 @@ describe.each(["image", "video"] as const)("%s composer reference submission", (
     state.userId = "owner";
     state.workspaceId = "workspace";
     state.submit.mockReset().mockResolvedValue({ ok: true });
-    state.items = [upload("image", 2)];
+    state.items = [upload(kind === "audio" ? "audio" : "image", 2)];
     if (kind === "video") state.items.push(upload("video", 1), upload("audio", 1));
     container = document.createElement("div");
     root = createRoot(container);
     await act(async () => root.render(<Harness />));
     await act(async () => {
       controller.onSelectModel(model(kind));
-      controller.setPrompt("Use @Image2");
+      controller.setPrompt(kind === "audio" ? "Use @Audio2" : "Use @Image2");
     });
   });
   afterEach(async () => {
@@ -138,6 +168,14 @@ describe.each(["image", "video"] as const)("%s composer reference submission", (
     }
   );
 
+  if (kind === "audio")
+    it("estimates speech from the entered text length", async () => {
+      await act(async () => controller.setPrompt("a".repeat(1000)));
+      expect(controller.cost).toBe(3);
+      await act(async () => controller.setPrompt("Short speech"));
+      expect(controller.cost).toBe(1);
+    });
+
   it("retains errors for active retry but suppresses errors after departure", async () => {
     state.submit.mockRejectedValueOnce(new Error("retry me"));
     await act(async () => {
@@ -172,19 +210,20 @@ describe.each(["image", "video"] as const)("%s composer reference submission", (
       expect(await controller.submit()).toEqual({ ok: true });
     });
     const request = state.submit.mock.calls[0][0];
-    expect(request.input.referenceImages).toHaveLength(1);
+    const referenceField = kind === "audio" ? "referenceAudios" : "referenceImages";
+    expect(request.input[referenceField]).toHaveLength(1);
     if (kind === "video") {
       expect(request.input.referenceVideos).toHaveLength(1);
       expect(request.input.referenceAudios).toHaveLength(1);
     }
     expect(request.referenceBindings).toHaveLength(state.items.length);
     expect(request.referenceBindings[0]).toMatchObject({
-      refId: "image-2",
-      assetId: "image-2",
-      label: "Image2",
+      refId: `${kind === "audio" ? "audio" : "image"}-2`,
+      assetId: `${kind === "audio" ? "audio" : "image"}-2`,
+      label: kind === "audio" ? "Audio2" : "Image2",
     });
-    expect(request.input.referenceImages[0].url).toBe(request.referenceBindings[0].url);
-    expect(request.input.referenceImages[0].url).toBe(
+    expect(request.input[referenceField][0].url).toBe(request.referenceBindings[0].url);
+    expect(request.input[referenceField][0].url).toBe(
       new URL(state.items[0].url!, window.location.origin).href
     );
     expect(controller.canSubmit).toBe(true);
@@ -192,7 +231,11 @@ describe.each(["image", "video"] as const)("%s composer reference submission", (
   it("reports an unresolved reference without sending a partial request or staying busy", async () => {
     state.items = [
       ...state.items,
-      { ...upload("image", 3), mediaAssetId: undefined, url: "blob:expired" },
+      {
+        ...upload(kind === "audio" ? "audio" : "image", 3),
+        mediaAssetId: undefined,
+        url: "blob:expired",
+      },
     ];
     await act(async () => root.render(<Harness />));
     await act(async () => {

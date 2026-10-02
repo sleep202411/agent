@@ -329,7 +329,7 @@ export function StudioSidebar() {
   const toolItems: SidebarItem[] = [
     { label: t("nav.image"), href: "/images", icon: IconPhoto },
     { label: t("nav.video"), href: "/video", icon: IconVideo },
-    { label: t("nav.audio"), href: "/audio", icon: IconAudioWaveform, disabled: true },
+    { label: t("nav.audio"), href: "/audio", icon: IconAudioWaveform },
     {
       label: t("nav.contentReview"),
       href: "/content-review",

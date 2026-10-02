@@ -83,7 +83,7 @@ export function StudioComposer({
   docked = true,
   submitOnEnter = false,
 }: {
-  modality: "image" | "video";
+  modality: "image" | "video" | "audio";
   catalog: FizzAiCatalog | undefined;
   prompt: string;
   onPromptChange: (value: string) => void;
