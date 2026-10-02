@@ -14,7 +14,7 @@ import {
   IconUser,
   IconUserCircle,
 } from "@tabler/icons-react";
-import { encodeUserId } from "@repo/shared";
+import { APP_DOWNLOADS_BY_SITE, encodeUserId } from "@repo/shared";
 import { toast } from "sonner";
 import { useAuth } from "./auth-provider";
 import { formatEntitlementPlanName, useMyEntitlement } from "./entitlement-context";
@@ -63,7 +63,6 @@ export function AccountMenu({
   const entitlement = useMyEntitlement();
   const { data: computeCredits } = useComputeWalletBalance(Boolean(user));
   const [menuOpen, setMenuOpen] = useState(false);
-  const comingSoon = (label: string) => toast.info(t("comingSoon", { label }));
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const openSubscription = () => {
     setMenuOpen(false);
@@ -299,13 +298,25 @@ export function AccountMenu({
                     {label}
                   </a>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => comingSoon(label)}
-                    className="mx-auto text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    {label}
-                  </button>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger className="mx-auto gap-1 text-xs font-medium text-muted-foreground">
+                      {label}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {APP_DOWNLOADS_BY_SITE[siteRegion].map((download) => (
+                        <DropdownMenuItem key={download.platform} asChild>
+                          <a
+                            href={download.href}
+                            download={download.download}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {t(download.labelKey)}
+                          </a>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                 )}
               </span>
             ))}

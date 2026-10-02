@@ -60,7 +60,10 @@
     "comingSoon": "{label} · Coming soon",
     "terms": "Terms",
     "privacy": "Privacy",
-    "app": "App"
+    "app": "App",
+    "appDownloadAndroid": "Download for Android",
+    "appDownloadIos": "App Store",
+    "appDownloadGooglePlay": "Google Play"
   },
   "home": {
     "untitledProject": "Untitled project",
