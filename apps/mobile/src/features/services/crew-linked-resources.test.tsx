@@ -81,12 +81,16 @@ it("guests read linked IPs without private workspace requests", async () => {
   expect(h.ips).toHaveBeenCalledTimes(1);
   expect(h.workspace).not.toHaveBeenCalled();
   expect(h.films).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("crewLinks.filmsSignIn");
+  expect(host.textContent).not.toContain("crewLinks.none");
 });
-it("does not list workspace films when the IP link is ambiguous", async () => {
+it("explains multiple IP links without claiming no films are linked", async () => {
   h.ips.mockResolvedValue([{ id: "a" }, { id: "b" }]);
   await render();
   await click("crewLinks.title");
   expect(h.films).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("crewLinks.filmsMultipleIps");
+  expect(host.textContent).not.toContain("crewLinks.none");
 });
 it("clears resources and aborts pending reads when backgrounded", async () => {
   await render();
@@ -164,4 +168,45 @@ it("does not restore a late film page after the section closes", async () => {
   expect(signal.aborted).toBe(true);
   await act(async () => finish({ items: [{ id: "late", title: "Late film" }], nextCursor: null }));
   expect(host.textContent).not.toContain("Late film");
+});
+
+it.each(["ips", "workspace"] as const)(
+  "does not show empty films while %s is loading",
+  async (kind) => {
+    let finish!: (data: any) => void;
+    h[kind].mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    await render();
+    await click("crewLinks.title");
+    expect(host.textContent).toContain("loading");
+    expect(host.textContent).not.toContain("crewLinks.none");
+    expect(h.films).not.toHaveBeenCalled();
+    await act(async () => finish(kind === "ips" ? [{ id: "ip" }] : { id: "ws", name: "Studio" }));
+    expect(host.textContent).toContain("Film");
+  }
+);
+it.each(["ips", "workspace"] as const)(
+  "explains unavailable films after %s fails, and refresh recovers",
+  async (kind) => {
+    h[kind].mockRejectedValueOnce(new Error("Access temporarily unavailable"));
+    await render();
+    await click("crewLinks.title");
+    expect(host.textContent).toContain("Access temporarily unavailable");
+    expect(host.textContent).toContain("crewLinks.filmsUnavailable");
+    expect(host.textContent).not.toContain("crewLinks.none");
+    expect(h.films).not.toHaveBeenCalled();
+    await click("thread.refresh");
+    expect(host.textContent).toContain("Film");
+    expect(host.textContent).not.toContain("crewLinks.filmsUnavailable");
+  }
+);
+it("shows not linked only after the film list is confirmed empty", async () => {
+  h.films.mockResolvedValueOnce({ items: [], nextCursor: null });
+  await render();
+  await click("crewLinks.title");
+  expect(host.textContent?.match(/crewLinks.none/g)).toHaveLength(1);
+  expect(host.textContent).not.toContain("crewLinks.filmsUnavailable");
 });

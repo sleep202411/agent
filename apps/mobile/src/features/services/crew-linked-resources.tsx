@@ -123,7 +123,15 @@ function Resources({
         <ThemedText>{t("crewLinks.none")}</ThemedText>
       )}
       <ThemedText type="smallBold">{t("crewLinks.films")}</ThemedText>
-      {workspace?.data && ips?.data?.length === 1 ? (
+      {!signedIn ? (
+        <ThemedText>{t("crewLinks.filmsSignIn")}</ThemedText>
+      ) : !workspace || !ips ? (
+        <ActivityIndicator />
+      ) : "error" in workspace || "error" in ips ? (
+        <ThemedText>{t("crewLinks.filmsUnavailable")}</ThemedText>
+      ) : workspace.data && ips.data.length > 1 ? (
+        <ThemedText>{t("crewLinks.filmsMultipleIps")}</ThemedText>
+      ) : workspace.data && ips.data.length === 1 ? (
         <Films
           key={`${workspace.data.id}:${ips.data[0]!.id}:${revision}`}
           workspaceId={workspace.data.id}
