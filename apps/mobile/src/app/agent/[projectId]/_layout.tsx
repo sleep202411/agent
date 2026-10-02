@@ -1,6 +1,9 @@
 import { IconLayoutGrid, IconMessageCircle, IconScript } from "@tabler/icons-react-native";
 import { Tabs, useLocalSearchParams } from "expo-router";
-import { StyleSheet } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { useAuth, useAuthGate } from "@/auth";
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StoryChapterProvider } from "@/features/agent/context/story-chapter-context";
@@ -93,13 +96,36 @@ function StoryProjectTabs({ projectId }: { projectId: string }) {
 export default function StoryProjectLayout() {
   const { projectId: projectIdParam } = useLocalSearchParams<{ projectId: string }>();
   const projectId = projectIdParam?.trim() ?? "";
+  const auth = useAuth();
+  const { requireAuth } = useAuthGate();
+  const t = useTranslations();
+
+  if (auth.status !== "authenticated") {
+    return (
+      <ThemedView style={{ flex: 1 }}>
+        <View style={{ padding: 16 }}>
+          {auth.status === "hydrating" ? (
+            <ActivityIndicator />
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              style={{ padding: 12 }}
+              onPress={() => requireAuth()}
+            >
+              <ThemedText>{t("login.signIn")}</ThemedText>
+            </Pressable>
+          )}
+        </View>
+      </ThemedView>
+    );
+  }
 
   if (!isAgentOsId(projectId)) {
     return <StoryProjectTabs projectId={projectId} />;
   }
 
   return (
-    <StoryChapterProvider key={projectId} projectId={projectId}>
+    <StoryChapterProvider key={`${projectId}:${auth.generation}`} projectId={projectId}>
       <StoryProjectTabs projectId={projectId} />
     </StoryChapterProvider>
   );
