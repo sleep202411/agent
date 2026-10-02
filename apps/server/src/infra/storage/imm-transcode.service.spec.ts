@@ -295,9 +295,17 @@ describe('ImmTranscodeService', () => {
         });
       const result = await configure().finalizeHls(ASSET_ID);
       expect(oss.list).toHaveBeenCalledTimes(2);
-      expect((oss.list.mock.calls[1] as [unknown])[0]).toEqual(
-        expect.objectContaining({ marker: `${PREFIX}480p-0.ts` }),
-      );
+      // The first page sends no marker key at all: an undefined value breaks
+      // the V4 signature (SignatureDoesNotMatch).
+      expect((oss.list.mock.calls[0] as [unknown])[0]).toStrictEqual({
+        prefix: PREFIX,
+        'max-keys': 1000,
+      });
+      expect((oss.list.mock.calls[1] as [unknown])[0]).toStrictEqual({
+        prefix: PREFIX,
+        'max-keys': 1000,
+        marker: `${PREFIX}480p-0.ts`,
+      });
       expect(result.totalBytes).toBe(12n);
       expect(result.renditions[0]).toMatchObject({ width: null, height: null });
     });

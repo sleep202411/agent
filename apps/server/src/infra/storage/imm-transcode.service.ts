@@ -408,10 +408,7 @@ export class ImmTranscodeService {
     let totalBytes = 0n;
     let marker: string | undefined;
     do {
-      const page = await this.oss.list(
-        { prefix, 'max-keys': OSS_PAGE_SIZE, marker },
-        { timeout: OSS_OP_TIMEOUT_MS },
-      );
+      const page = await this.listPage(prefix, marker);
       for (const object of page.objects ?? []) {
         listed.add(object.name);
         totalBytes += BigInt(object.size ?? 0);
@@ -446,10 +443,7 @@ export class ImmTranscodeService {
     const prefix = this.hlsPrefix(assetId);
     let marker: string | undefined;
     do {
-      const listed = await this.oss.list(
-        { prefix, 'max-keys': OSS_PAGE_SIZE, marker },
-        { timeout: OSS_OP_TIMEOUT_MS },
-      );
+      const listed = await this.listPage(prefix, marker);
       for (const obj of listed.objects ?? []) {
         const key = obj.name;
         const isTs = key.endsWith('.ts');
@@ -503,10 +497,7 @@ export class ImmTranscodeService {
     const prefix = this.hlsPrefix(assetId);
     let deleted = 0;
     for (;;) {
-      const page = await this.oss.list(
-        { prefix, 'max-keys': OSS_PAGE_SIZE },
-        { timeout: OSS_OP_TIMEOUT_MS },
-      );
+      const page = await this.listPage(prefix);
       const names = (page.objects ?? []).map((object) => object.name);
       if (names.length === 0) return { deleted, complete: true };
       const foreign = names.find((name) => !name.startsWith(prefix));
@@ -556,6 +547,22 @@ export class ImmTranscodeService {
         },
       },
     };
+  }
+
+  /**
+   * One page of a prefix listing. The marker is omitted, never passed as
+   * `undefined`: under V4 signing ali-oss signs the undefined query value but
+   * leaves it out of the URL, and OSS answers SignatureDoesNotMatch.
+   */
+  private listPage(prefix: string, marker?: string) {
+    return this.oss!.list(
+      {
+        prefix,
+        'max-keys': OSS_PAGE_SIZE,
+        ...(marker === undefined ? {} : { marker }),
+      },
+      { timeout: OSS_OP_TIMEOUT_MS },
+    );
   }
 
   private async getText(key: string): Promise<string> {
