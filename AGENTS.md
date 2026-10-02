@@ -153,6 +153,35 @@ through i18n. Translations land in the same PR.
 - Commit message style: `<type>(<scope>): <short>` body free-form. See
   `git log --oneline` for examples.
 
+### Product ownership and self-review — Pax's direction (2026-10-02)
+
+Pax's product direction, explicitly adopted by the user, is authoritative
+for implementation and review:
+
+- **Use the product as its user.** Walk complete journeys as a Crew owner,
+  project creator, applicant and contributor. Check the next action, context,
+  permissions and outcome across pages, not only each component in isolation.
+- **Own the review before handoff.** Run feasible local browser walkthroughs
+  and inspect the rendered UI. Include empty/loading/error states, editing,
+  saved drafts, navigation, return visits and interrupted work. Fix confirmed
+  problems before asking Pax to review; missing external services do not
+  excuse skipping independent checks.
+- **Keep the experience clean and coherent.** Match the surrounding platform's
+  typography, spacing, colors, navigation and interaction patterns. Every
+  visible control must have a useful, understandable purpose. Remove redundant
+  controls, dead ends and unfinished placeholder copy; preserve useful recovery
+  actions and user-created drafts/data. Do not invent unsupported functionality.
+- **Separate evidence from assumptions.** Report exactly what was exercised,
+  what used fixtures and what still needs real accounts, devices or services.
+  Passing tests does not establish whole-product usability or Pax's acceptance.
+  Do not declare development exhausted or wholly externally blocked while
+  independent implementation or validation remains possible.
+- **Keep scope and issues clear.** Distinguish agreed missing functionality,
+  external acceptance and proposed features requiring product decisions.
+  Reconcile issues against current evidence; use one concise bullet-point
+  description per issue and add zero comments. Remove completed items from
+  remaining-work lists; close only when the issue's acceptance is satisfied.
+
 ### Engineering standards (the bar for non-trivial work)
 
 - **Build for the target state — no hedged half-measures.** Don't ship
