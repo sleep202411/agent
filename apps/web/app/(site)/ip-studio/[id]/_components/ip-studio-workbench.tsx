@@ -108,6 +108,9 @@ import {
 import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
+import { ApiRequestError } from "@/src/lib/api";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { ChannelBadge } from "@/components/channel-badge";
 
 interface IpStudioWorkbenchProps {
@@ -155,33 +158,72 @@ const EPISODE_HERO_URL = encodeURI(
 );
 
 export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
+  const { user, isLoading } = useCurrentUser();
+  return (
+    <IpStudioSession
+      key={`${ipId}:${user?.id ?? "guest"}`}
+      ipId={ipId}
+      signedIn={!!user}
+      userLoading={isLoading}
+    />
+  );
+}
+
+function IpStudioSession({
+  ipId,
+  signedIn,
+  userLoading,
+}: IpStudioWorkbenchProps & { signedIn: boolean; userLoading: boolean }) {
   const locale = useLocale() as Locale;
   const t = useTranslations("newIpWorkbench");
+  const common = useTranslations("common");
+  const auth = useAuthDialog();
   const [activeTab, setActiveTab] = useState<StudioTabKey>("overview");
   const [profileEditOpen, setProfileEditOpen] = useState(false);
   const { data, isLoading, isFetching, error, refetch } = useMyIpCommerceIp(ipId, { locale });
   const submitReview = useSubmitIpCommerceIpForReview();
 
-  if (isLoading) {
+  if (userLoading || isLoading) {
     return (
       <main className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-background text-foreground">
-        <IconLoader2 className="size-6 animate-spin text-muted-foreground" />
+        <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+          <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />
+          {common("loading")}
+        </p>
       </main>
     );
   }
 
-  if (!data?.ip) {
+  const accessLost = error instanceof ApiRequestError && [401, 403, 404].includes(error.status);
+  if (!signedIn || !data?.ip || accessLost) {
     return (
       <main className="min-h-[calc(100vh-4rem)] bg-background px-5 py-10 text-foreground">
-        <div className="mx-auto flex max-w-xl flex-col items-start gap-5 rounded-2xl border border-border bg-card p-6">
+        <div className="mx-auto flex max-w-xl flex-col items-start gap-5">
           <BackToProfile locale={locale} label={t("backToProfile")} />
           <div>
-            <h1 className="text-2xl font-semibold">{t("notFoundTitle")}</h1>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{t("notFoundBody")}</p>
+            <h1 className="text-xl font-semibold">{t("eyebrow")}</h1>
+            <p
+              role={error ? "alert" : undefined}
+              className="mt-2 break-words text-sm leading-6 text-muted-foreground"
+            >
+              {!signedIn ? t("signInRequired") : errorMessage(error) || t("notFoundBody")}
+            </p>
           </div>
-          <Button type="button" onClick={() => void refetch()}>
-            {t("retry")}
-          </Button>
+          {!signedIn ? (
+            <Button size="sm" onClick={() => auth.open()}>
+              {t("signIn")}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
+              {isFetching ? common("loading") : t("retry")}
+            </Button>
+          )}
         </div>
       </main>
     );
