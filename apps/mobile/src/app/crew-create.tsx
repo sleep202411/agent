@@ -39,6 +39,7 @@ export default function CrewCreateScreen() {
           userId={userId}
           generation={auth.generation}
           onClose={() => router.back()}
+          onCertification={() => router.push(toHref("/certification-application?level=13"))}
           onCreated={(id) => router.replace(toHref(`/crew-tasks/${id}?section=setup`))}
         />
       ) : null}

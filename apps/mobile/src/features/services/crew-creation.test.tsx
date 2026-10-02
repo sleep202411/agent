@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   canvas: vi.fn(),
   created: vi.fn(),
   close: vi.fn(),
+  certification: vi.fn(),
   mine: vi.fn(),
   activity: undefined as undefined | ((active: boolean) => void),
 }));
@@ -123,7 +124,13 @@ const saved = (receipt = false) => ({
 const render = () =>
   act(async () =>
     root.render(
-      <CrewCreation userId="user" generation={1} onCreated={h.created} onClose={h.close} />
+      <CrewCreation
+        userId="user"
+        generation={1}
+        onCreated={h.created}
+        onClose={h.close}
+        onCertification={h.certification}
+      />
     )
   );
 const find = (key: string) =>
@@ -225,6 +232,8 @@ it("hides creation controls when eligibility is denied or fails", async () => {
   h.load.mockResolvedValue({ eligible: false, workspaces: [] });
   await render();
   expect(host.textContent).toContain("crewCreate.eligibility");
+  await click("levelApplication.title");
+  expect(h.certification).toHaveBeenCalledOnce();
   expect(find("crewCreate.review")).toBeUndefined();
   h.load.mockRejectedValue(new Error("Permission lookup failed"));
   await click("thread.refresh");

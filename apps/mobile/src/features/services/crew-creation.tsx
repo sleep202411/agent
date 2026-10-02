@@ -35,6 +35,7 @@ type Props = {
   generation: number;
   onClose: () => void;
   onCreated: (id: string) => void;
+  onCertification?: () => void;
 };
 const DEFAULT_LOGO = "https://static.fizzspace.cn/static/pc/crew_icon_default.png";
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -262,6 +263,9 @@ function Session(props: Props) {
       ) : !eligibility.eligible ? (
         <>
           <ThemedText>{t("crewCreate.eligibility")}</ThemedText>
+          {props.onCertification ? (
+            <Button label={t("levelApplication.title")} onPress={props.onCertification} />
+          ) : null}
           <ThemedText>{t("crewCreate.instructions")}</ThemedText>
           <Button
             label="business@fizzdragon.com"
