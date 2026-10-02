@@ -29,7 +29,7 @@ export interface ExperiencePlayerCopy {
    * sees this.
    */
   emptySequence: string;
-  /** Shown while every reachable clip is fetched, before playback can begin. */
+  /** Start button label while the entry clip is being prepared. */
   loadingMedia: string;
   noVisibleChoices: string;
   continue: string;

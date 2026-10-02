@@ -137,6 +137,10 @@
     "./media-upload": {
       "types": "./dist/media-upload.d.ts",
       "default": "./dist/media-upload.js"
+    },
+    "./story-playback": {
+      "types": "./dist/story-playback.d.ts",
+      "default": "./dist/story-playback.js"
     }
   },
   "scripts": {

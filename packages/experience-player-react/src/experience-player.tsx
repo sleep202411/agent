@@ -68,10 +68,23 @@ import {
 } from "./experience-theme-loader";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 import { createExperienceRuntime } from "./experience-runtime-host";
+import { buildMediaEndpoint } from "./experience-build-media-uri";
+import {
+  ExperienceFrameRotationContext,
+  shouldRotateFrame,
+  useLandscapePresentation,
+} from "./experience-landscape-presentation";
 import {
   ExperienceMediaPlayer,
+  isRoutinePlaybackInterruption,
   type ExperienceMediaPlaybackHandle,
 } from "./experience-media-player";
+import { warmExperienceMedia } from "./experience-media-warm";
+import {
+  ExperiencePlaybackDelivery,
+  ExperiencePlaybackDeliveryContext,
+  type ExperienceDeclaredSource,
+} from "./experience-playback-delivery";
 import { resolveExperiencePlaybackRejection } from "./experience-playback-rejection";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
 import { useExperienceAudioHost } from "./use-experience-audio-host";
@@ -116,8 +129,15 @@ export interface ExperiencePlayerProps {
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
   /** Authoring hosts may observe session state without changing playback. */
   onStateChange?: (state: ExperienceRuntimeState) => void;
+  /** Keep the instance stable: the runtime is created with it, so a new one starts a new run. */
   playSessionReporter?: PlaySessionReporter;
   endingExtra?: (sessionId: string | null) => ReactNode;
+  /**
+   * Negotiate `/playback` for build clips and play HLS when the server offers
+   * it. Enable only where the server transcodes (web on the cn cell). Read once
+   * per mounted player.
+   */
+  adaptivePlayback?: boolean;
 }
 
 const PRIMARY_BUTTON =
@@ -141,8 +161,14 @@ export function ExperiencePlayer({
   onStateChange,
   playSessionReporter,
   endingExtra,
+  adaptivePlayback,
 }: ExperiencePlayerProps) {
   const sessionReporter = usePlaySessionReporter(playSessionReporter);
+  // Outlives "play again" (the runtime below is re-keyed per run), so a replay
+  // starts from the answers and warmed openings the first run already has.
+  const [delivery] = useState(
+    () => new ExperiencePlaybackDelivery({ adaptive: adaptivePlayback === true })
+  );
   const hydrationSeedId = useId();
   const [restartEpoch, setRestartEpoch] = useState(0);
   const generatedSessionSeedRef = useRef<string | null>(null);
@@ -199,33 +225,37 @@ export function ExperiencePlayer({
   }
 
   return (
-    <ActiveExperienceRuntimePlayer
-      key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
-      access={access}
-      previewAccess={previewAccess}
-      accessCheckpoint={restartEpoch === 0 ? accessCheckpoint : undefined}
-      onAccessCheckpoint={onAccessCheckpoint}
-      onStateChange={onStateChange}
-      manifest={prepared.manifest}
-      controller={prepared.controller}
-      locale={locale}
-      copy={copy}
-      coverUrl={coverUrl}
-      frameProfile={frameProfile}
-      loadTheme={loadTheme}
-      renderWorldModel={renderWorldModel}
-      endingExtra={endingExtra}
-      onRestart={() => {
-        setRandomSeed(globalThis.crypto.randomUUID());
-        setRestartEpoch((value) => value + 1);
-      }}
-    />
+    <ExperiencePlaybackDeliveryContext.Provider value={delivery}>
+      <ActiveExperienceRuntimePlayer
+        key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
+        access={access}
+        previewAccess={previewAccess}
+        accessCheckpoint={restartEpoch === 0 ? accessCheckpoint : undefined}
+        onAccessCheckpoint={onAccessCheckpoint}
+        onStateChange={onStateChange}
+        manifest={prepared.manifest}
+        controller={prepared.controller}
+        delivery={delivery}
+        locale={locale}
+        copy={copy}
+        coverUrl={coverUrl}
+        frameProfile={frameProfile}
+        loadTheme={loadTheme}
+        renderWorldModel={renderWorldModel}
+        endingExtra={endingExtra}
+        onRestart={() => {
+          setRandomSeed(globalThis.crypto.randomUUID());
+          setRestartEpoch((value) => value + 1);
+        }}
+      />
+    </ExperiencePlaybackDeliveryContext.Provider>
   );
 }
 
 function ActiveExperienceRuntimePlayer({
   manifest,
   controller,
+  delivery,
   locale,
   copy,
   coverUrl,
@@ -248,6 +278,7 @@ function ActiveExperienceRuntimePlayer({
   previewAccess: boolean;
   manifest: ExperienceRuntimeManifest;
   controller: ExperienceRuntimeController;
+  delivery: ExperiencePlaybackDelivery;
   locale: string;
   copy: ExperiencePlayerCopy;
   coverUrl?: string;
@@ -297,6 +328,10 @@ function ActiveExperienceRuntimePlayer({
   // events belong to the scene that emitted them.
   const parkedGestureEventsRef = useRef<ExperienceRuntimeEvent[]>([]);
   const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
+  // The renderers whose media is on an element and playable — the render-time
+  // mirror of `playbackHandlesRef`, which is what lets Start wait for the entry
+  // clip instead of pressing play on nothing.
+  const [stagedHandleIds, setStagedHandleIds] = useState<ReadonlySet<string>>(() => new Set());
   const playbackEnabledRef = useRef(false);
   // True while a timeline-control press-hold window is open, unresolved, and
   // not held — the host must keep the scene media paused so playback position
@@ -309,7 +344,14 @@ function ActiveExperienceRuntimePlayer({
       previewAccess || Boolean(access?.canAccess(requirement)),
     [access, previewAccess]
   );
-  useNextScenePreload(manifest, runtimeState.currentSceneId, orientation, canAccess);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const {
+    phone,
+    portrait,
+    locked: landscapeLocked,
+    enter: enterLandscape,
+    exit: exitLandscape,
+  } = useLandscapePresentation();
   // The cover is the only art that exists before any clip has played, so it is
   // what the loading and title screen should stand on — otherwise the viewer
   // waits on a black rectangle. Absent cover simply falls back to that.
@@ -416,6 +458,9 @@ function ActiveExperienceRuntimePlayer({
                 // The player owns the protected first-frame backdrop; the host
                 // owns one confirmation with price, balance and failure handling.
                 setNodeGate(lockedNode ?? null);
+                // That confirmation renders outside the player, and a fullscreen
+                // player hides everything outside it — give the screen back first.
+                exitLandscape();
                 allowed = await access.requestAccess(error.requirement);
               }
               if (!aliveRef.current) return false;
@@ -458,7 +503,7 @@ function ActiveExperienceRuntimePlayer({
       };
       return attempt();
     },
-    [access, applyResult, controller, manifest, onAccessCheckpoint, suspendAudio]
+    [access, applyResult, controller, exitLandscape, manifest, onAccessCheckpoint, suspendAudio]
   );
 
   useEffect(() => {
@@ -510,6 +555,37 @@ function ActiveExperienceRuntimePlayer({
   const hasVideoRenderer = rendererSlots.some(
     ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID
   );
+  // Start plays the entry clip inside the click, so it waits until that clip is
+  // on an element. Before then Start would press play on nothing — and the
+  // negotiation and buffering this covers are exactly the wait it shows.
+  const entryMediaPending =
+    !started &&
+    rendererSlots.some(
+      ({ renderer }) => playsMediaOnStart(renderer) && !stagedHandleIds.has(renderer.instanceId)
+    );
+  // A landscape film is turned for a phone: by the browser where it lets the
+  // player take the screen, otherwise by drawing the frame sideways while the
+  // phone is upright. Reading scenes keep their responsive stage either way.
+  const landscapeFilm = experienceProfile === "cinematic" && orientation === "landscape";
+  const frameRotated = shouldRotateFrame({
+    landscapeFilm: stageProfile === "cinematic" && orientation === "landscape",
+    phone,
+    portrait,
+    locked: landscapeLocked,
+  });
+  useEffect(() => {
+    if (endingId) exitLandscape();
+  }, [endingId, exitLandscape]);
+  useMediaLookAhead({
+    manifest,
+    sceneId: runtimeState.currentSceneId,
+    orientation,
+    canAccess,
+    delivery,
+    // Nothing warms behind the title card: the entry clip buffers on its own
+    // element, and the bandwidth belongs to it until the viewer commits.
+    enabled: started && !endingId && !runtimeError,
+  });
 
   const emitOutcome = useCallback(
     (
@@ -657,6 +733,13 @@ function ActiveExperienceRuntimePlayer({
 
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
+      setStagedHandleIds((current) => {
+        if (current.has(instanceId) === (handle !== null)) return current;
+        const next = new Set(current);
+        if (handle) next.add(instanceId);
+        else next.delete(instanceId);
+        return next;
+      });
       if (!handle) {
         playbackHandlesRef.current.delete(instanceId);
         return;
@@ -686,7 +769,7 @@ function ActiveExperienceRuntimePlayer({
   );
 
   const begin = async () => {
-    if (started || starting || !theme) return;
+    if (started || starting || !theme || entryMediaPending) return;
     const playbackHandles = [...playbackHandlesRef.current.values()];
     // WebKit grants later play() calls to the element that was played inside
     // this click. The awaited play() below sits after `await run()`, and a
@@ -694,6 +777,10 @@ function ActiveExperienceRuntimePlayer({
     // here: that pause is delivered as its own task and lands after the real
     // play() has started.
     for (const handle of playbackHandles) handle.activate();
+    // Fullscreen and the orientation lock need this click's activation too.
+    // Not awaited: the film starts alongside, and a refusal only means the
+    // frame is drawn sideways instead (see shouldRotateFrame).
+    if (phone && landscapeFilm) enterLandscape(shellRef.current);
     setStarting(true);
     try {
       const playbacks: Promise<void>[] = [];
@@ -713,7 +800,11 @@ function ActiveExperienceRuntimePlayer({
       const failure = results.find(
         (result): result is PromiseRejectedResult => result.status === "rejected"
       );
-      if (failure) throw failure.reason;
+      // An interrupted play() is a recovery or a clip failing on its own, never
+      // the cause: a recovered element plays again by itself, and a failed clip
+      // reports its verbatim error through onPlaybackError. Same rule as
+      // registerPlaybackHandle.
+      if (failure && !isRoutinePlaybackInterruption(failure.reason)) throw failure.reason;
       playbackEnabledRef.current = true;
       setStarted(true);
     } catch (error) {
@@ -752,9 +843,11 @@ function ActiveExperienceRuntimePlayer({
 
   return (
     <PlayerFrame
+      shellRef={shellRef}
       orientation={orientation}
       experienceProfile={experienceProfile}
       stageProfile={stageProfile}
+      rotated={frameRotated}
       copy={copy}
       style={theme ? themeStyle(theme) : undefined}
       stage={
@@ -781,6 +874,30 @@ function ActiveExperienceRuntimePlayer({
               onRuntimeError={setRuntimeError}
               onTimelineHoldGateChange={setTimelineHoldGate}
             />
+          ) : null}
+          {/* Choices belong to the picture: they sit in the film frame, turn
+              with it when it is drawn sideways, and scale with it. */}
+          {!endingId && !runtimeError && !nodeGate
+            ? rendererSlots
+                .filter(
+                  ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID
+                )
+                .map(renderSlot)
+            : null}
+          {soundBlocked && started && !endingId && !runtimeError && hasVideoRenderer ? (
+            // Renderer overlays stack on the manifest's own `renderer.layer` as a
+            // raw zIndex — a choice overlay compiles to 100 — so a Tailwind z-* on
+            // this button puts it BEHIND the overlay it most needs to sit next to.
+            // Stack above the widest band any manifest may declare instead.
+            <div
+              className="absolute top-0 right-0 p-[clamp(10px,2.4cqmin,24px)]"
+              style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 1 }}
+            >
+              <button type="button" className={SECONDARY_BUTTON} onClick={enableSound}>
+                <IconVolumeOff className="size-4" aria-hidden="true" />
+                {copy.video.unmute}
+              </button>
+            </div>
           ) : null}
         </>
       }
@@ -825,27 +942,6 @@ function ActiveExperienceRuntimePlayer({
           style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 2 }}
         />
       ) : null}
-      {!endingId && !runtimeError && !nodeGate
-        ? rendererSlots
-            .filter(({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID)
-            .map(renderSlot)
-        : null}
-
-      {soundBlocked && started && !endingId && !runtimeError && hasVideoRenderer ? (
-        // Renderer overlays stack on the manifest's own `renderer.layer` as a raw
-        // zIndex — a choice overlay compiles to 100 — so a Tailwind z-* on
-        // this button puts it BEHIND the overlay it most needs to sit next to.
-        // Stack above the widest band any manifest may declare instead.
-        <div
-          className="pointer-events-auto absolute top-0 right-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6"
-          style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 1 }}
-        >
-          <button type="button" className={SECONDARY_BUTTON} onClick={enableSound}>
-            <IconVolumeOff className="size-4" aria-hidden="true" />
-            {copy.video.unmute}
-          </button>
-        </div>
-      ) : null}
 
       {!started && !runtimeError && !nodeGate ? (
         <div
@@ -889,11 +985,11 @@ function ActiveExperienceRuntimePlayer({
             <button
               type="button"
               className={`${PRIMARY_BUTTON} mt-6`}
-              disabled={!theme || starting}
+              disabled={!theme || starting || entryMediaPending}
               onClick={() => void begin()}
             >
               <IconPlayerPlay className="size-4 fill-current" />
-              {starting ? copy.starting : copy.start}
+              {starting ? copy.starting : entryMediaPending ? copy.loadingMedia : copy.start}
             </button>
           </div>
         </div>
@@ -1222,6 +1318,17 @@ function initialCoreVideoPlaybackState(rendererInstanceId: string): CoreVideoPla
 function isEmptyVideoSequence(renderer: ExperienceRendererInstance): boolean {
   const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
   return parsed.success && parsed.data.sequence.length === 0;
+}
+
+/**
+ * Whether Start plays media on this renderer: an autoplaying video renderer
+ * with footage, which registers a playback handle once its first clip is on
+ * an element. A placeholder for footage not attached yet has nothing to wait for.
+ */
+function playsMediaOnStart(renderer: ExperienceRendererInstance): boolean {
+  if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) return false;
+  const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
+  return parsed.success && parsed.data.autoplay && parsed.data.sequence.length > 0;
 }
 
 /**
@@ -1639,24 +1746,31 @@ function CoreChoiceRenderer({
         type: "runtime.visibility",
       })
   );
+  // Sized off the film frame, never the window: the stage is a size container,
+  // so `cq*` units here are fractions of the picture the choices sit on. A phone
+  // held sideways and a desktop monitor show the same composition, scaled.
+  // `cqmin` is the frame's short side — its height for a landscape film — so a
+  // portrait film keeps the same proportions; every clamp keeps the text legible
+  // and the tap target at least 40px.
   return (
     <div
       role="group"
       aria-labelledby={promptText ? promptId : undefined}
-      className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-linear-to-t from-black/80 via-black/45 to-transparent px-5 pt-28 pb-8 sm:pb-12"
+      data-experience-choice-overlay=""
+      className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-linear-to-t from-black/80 via-black/45 to-transparent px-[clamp(12px,3cqw,40px)] pt-[clamp(40px,16cqmin,180px)] pb-[clamp(14px,6cqmin,56px)]"
       style={{ zIndex: renderer.layer }}
     >
-      <div className="pointer-events-auto w-full max-w-5xl">
+      <div className="pointer-events-auto w-full max-w-[86cqw]">
         {promptText ? (
           <p
             id={promptId}
-            className="mb-3 text-center text-[13px] leading-5 font-medium tracking-[0.04em] text-balance text-white/70"
+            className="mb-[0.9em] text-center text-[length:clamp(12px,2.4cqmin,20px)] leading-[1.45] font-medium tracking-[0.04em] text-balance text-white/70"
           >
             {promptText}
           </p>
         ) : null}
         {choices.length > 0 ? (
-          <div className="flex flex-row items-stretch justify-center gap-3">
+          <div className="flex flex-row items-stretch justify-center gap-[clamp(8px,1.6cqw,20px)]">
             {choices.map((choice, index) => {
               const requirement = manifest.graph.nodes
                 .flatMap((node) => node.eventBindings)
@@ -1685,7 +1799,9 @@ function CoreChoiceRenderer({
                   type="button"
                   onClick={() => onSelect(choice.choiceId)}
                   className={classNames(
-                    "group flex min-h-12 min-w-0 max-w-sm flex-1 basis-0 items-center gap-3 rounded-2xl border px-3.5 text-left text-[15px] leading-5 font-medium text-white",
+                    // Inner proportions are in `em` of the label, so the badge,
+                    // the price and the corners scale with the clamped text.
+                    "group flex min-h-[clamp(40px,9cqmin,76px)] min-w-0 max-w-[57cqmin] flex-1 basis-0 items-center gap-[0.8em] rounded-[1.05em] border px-[clamp(10px,2cqw,28px)] py-[0.45em] text-left text-[length:clamp(13px,2.8cqmin,24px)] leading-[1.3] font-medium text-white",
                     "bg-white/10 shadow-[0_10px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl",
                     "transition-[background-color,border-color,transform] duration-200",
                     "hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none active:scale-[0.99]",
@@ -1709,7 +1825,7 @@ function CoreChoiceRenderer({
                       : undefined
                   }
                 >
-                  <span className="grid size-6 shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 text-[11px] font-semibold text-white/60 tabular-nums group-hover:border-white/30 group-hover:text-white">
+                  <span className="grid size-[2.2em] shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 text-[0.73em] leading-none font-semibold text-white/60 tabular-nums group-hover:border-white/30 group-hover:text-white">
                     {index + 1}
                   </span>
                   <span className="min-w-0 flex-1 wrap-anywhere">
@@ -1717,10 +1833,10 @@ function CoreChoiceRenderer({
                   </span>
                   {price ? (
                     <span
-                      className="flex max-w-[42%] shrink-0 items-center gap-1 text-xs leading-4 font-medium tabular-nums"
+                      className="flex max-w-[42%] shrink-0 items-center gap-[0.3em] text-[0.8em] leading-[1.3] font-medium tabular-nums"
                       style={{ color: "var(--brand-yellow, #ffd84d)" }}
                     >
-                      <IconLock className="size-3.5" stroke={1.8} aria-hidden />
+                      <IconLock className="size-[1.15em] shrink-0" stroke={1.8} aria-hidden />
                       {price}
                     </span>
                   ) : null}
@@ -1729,7 +1845,10 @@ function CoreChoiceRenderer({
             })}
           </div>
         ) : (
-          <p role="alert" className="text-center text-xs text-white/52">
+          <p
+            role="alert"
+            className="text-center text-[length:clamp(11px,2cqmin,16px)] text-white/52"
+          >
             {copy.noVisibleChoices}
           </p>
         )}
@@ -1745,45 +1864,58 @@ const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
 };
 
 /**
- * The cinematic shell preserves the authored aspect ratio and fits inside the
- * viewport, so the whole frame stays visible and the stage fills whichever
- * side it can. Landscape work still rotates on portrait screens. The narrative
- * shell is responsive instead, so long-form text owns the available reading
+ * Two layers. The film frame — media, spatial cues, choices, the unmute control
+ * — sits in a landscape viewport that turns as one unit when the frame is drawn
+ * sideways (see shouldRotateFrame), so a phone held sideways sees the picture
+ * and everything on it the same way up. System UI that is not part of the
+ * picture — title card, access gates, ending, errors — sits in the viewport
+ * overlay above it and never turns.
+ *
+ * The cinematic stage keeps the authored aspect ratio and fits inside that
+ * landscape viewport (letterboxed), so the whole frame stays visible and fills
+ * whichever side it can. It is also the size container the frame's own UI is
+ * measured against (`container-name: experience-frame`). The narrative stage
+ * is responsive instead, so long-form text owns the available reading
  * viewport. Renderer selection remains entirely manifest-driven in both
- * profiles. Choices and player controls belong to the visible viewport,
- * outside the rotated media coordinate space.
+ * profiles; only the shell's measured box decides the fit, never the window.
  */
 function PlayerFrame({
+  shellRef,
   orientation,
   experienceProfile,
   stageProfile,
+  rotated,
   copy,
   style,
   stage,
   children,
 }: {
+  shellRef: React.RefObject<HTMLDivElement | null>;
   orientation: ExperienceOrientation;
   experienceProfile: ExperienceProfile;
   stageProfile: ExperienceProfile;
+  /** Draw the frame sideways — decided by the device, see shouldRotateFrame. */
+  rotated: boolean;
   copy: ExperiencePlayerCopy;
   style?: CSSProperties;
   stage: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const shellRef = useRef<HTMLDivElement | null>(null);
   const shellSize = useShellSize(shellRef);
   const aspect = STAGE_ASPECT[orientation];
-  const rotated =
-    stageProfile === "cinematic" &&
-    orientation === "landscape" &&
-    shellSize !== null &&
-    shellSize.height > shellSize.width;
+  // Turned only once the shell has been measured, so the frame never spends a
+  // paint rotated at the wrong size.
+  const turned = rotated && shellSize !== null;
+  let viewportStyle: CSSProperties = { width: "100%", height: "100%" };
   let stageStyle: CSSProperties = { width: "100%", height: "100%" };
-  if (stageProfile === "cinematic" && shellSize) {
-    const availWidth = rotated ? shellSize.height : shellSize.width;
-    const availHeight = rotated ? shellSize.width : shellSize.height;
-    const width = Math.min(availWidth, availHeight * aspect);
-    stageStyle = { width: Math.round(width), height: Math.round(width / aspect) };
+  if (shellSize) {
+    const viewportWidth = turned ? shellSize.height : shellSize.width;
+    const viewportHeight = turned ? shellSize.width : shellSize.height;
+    viewportStyle = { width: viewportWidth, height: viewportHeight };
+    if (stageProfile === "cinematic") {
+      const width = Math.min(viewportWidth, viewportHeight * aspect);
+      stageStyle = { width: Math.round(width), height: Math.round(width / aspect) };
+    }
   }
   return (
     <div
@@ -1797,14 +1929,28 @@ function PlayerFrame({
       className="relative isolate h-full min-h-[inherit] w-full bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
     >
       <div
-        data-experience-media-stage=""
+        data-experience-landscape-viewport=""
+        data-experience-frame-rotated={turned ? "" : undefined}
         className="absolute left-1/2 top-1/2 isolate z-0"
         style={{
-          ...stageStyle,
-          transform: rotated ? "translate(-50%, -50%) rotate(90deg)" : "translate(-50%, -50%)",
+          ...viewportStyle,
+          transform: turned ? "translate(-50%, -50%) rotate(90deg)" : "translate(-50%, -50%)",
         }}
       >
-        {stage}
+        <div
+          data-experience-media-stage=""
+          className="absolute left-1/2 top-1/2 isolate"
+          style={{
+            ...stageStyle,
+            transform: "translate(-50%, -50%)",
+            containerType: "size",
+            containerName: "experience-frame",
+          }}
+        >
+          <ExperienceFrameRotationContext.Provider value={turned}>
+            {stage}
+          </ExperienceFrameRotationContext.Provider>
+        </div>
       </div>
       <div
         data-experience-viewport-overlay=""
@@ -1975,80 +2121,121 @@ function localize(value: ExperienceLocalizedText, locale: string, defaultLocale:
 }
 
 /**
- * Warms the clips reachable from the current scene without delaying playback.
+ * Warms what the viewer can reach next, one opening at a time, while the
+ * current clip plays.
  *
- * An interactive film has multiple possible "next" clips. Loading the entire
- * story before Start creates a delay proportional to the size of the graph and
- * downloads branches the viewer may never enter. One-hop preloading keeps the
- * current decision's targets warm while the current clip is playing. A failed
- * warm-up never blocks the experience; the real media element remains the
- * authority and reports an error only if that scene is actually entered.
+ * An interactive film has several possible "next" clips, and loading them all
+ * — or loading any before Start — spends the viewer's bandwidth on branches
+ * they may never enter while the clip they did choose competes for it. So the
+ * look-ahead runs only after Start, walks the plan strictly in order, fetches
+ * only each clip's opening (see warmExperienceMedia), and skips anything
+ * already on stage or already warm. A new scene replaces the plan and aborts
+ * whatever was in flight. A failed warm-up is noted and passed over: the stage's
+ * own element stays the authority, and reports an error only if that clip is
+ * actually played.
  */
-function useNextScenePreload(
-  manifest: ExperienceRuntimeManifest,
-  sceneId: string,
-  orientation: ExperienceOrientation,
-  canAccess: (requirement: ExperienceAccessRequirement) => boolean
-): void {
-  const uris = useMemo(
-    () => resolveNextSceneVideoUris(manifest, sceneId, orientation, canAccess),
+function useMediaLookAhead({
+  manifest,
+  sceneId,
+  orientation,
+  canAccess,
+  delivery,
+  enabled,
+}: {
+  manifest: ExperienceRuntimeManifest;
+  sceneId: string;
+  orientation: ExperienceOrientation;
+  canAccess: (requirement: ExperienceAccessRequirement) => boolean;
+  delivery: ExperiencePlaybackDelivery;
+  enabled: boolean;
+}): void {
+  const plan = useMemo(
+    () => resolveLookAheadVideoMedia(manifest, sceneId, orientation, canAccess),
     [canAccess, manifest, orientation, sceneId]
   );
   useEffect(() => {
-    if (uris.length === 0) return;
-    const elements: HTMLVideoElement[] = [];
-    uris.forEach((uri) => {
-      const element = document.createElement("video");
-      element.preload = "auto";
-      element.muted = true;
-      element.playsInline = true;
-      element.src = uri;
-      element.load();
-      elements.push(element);
-    });
-    return () => {
-      elements.forEach((element) => {
-        element.removeAttribute("src");
-        element.load();
-      });
-    };
-  }, [uris]);
+    if (!enabled || plan.length === 0) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    void (async () => {
+      for (const media of plan) {
+        if (signal.aborted) return;
+        if (delivery.hasStagedOrWarmed(media.src)) {
+          debugTrace(`look-ahead skipped ${media.src}`);
+          continue;
+        }
+        try {
+          await warmExperienceMedia(media, delivery, signal);
+          delivery.markWarmed(media.src);
+          debugTrace(`look-ahead warmed ${media.src}`);
+        } catch {
+          if (signal.aborted) {
+            debugTrace(`look-ahead aborted ${media.src}`);
+            return;
+          }
+          debugTrace(`look-ahead failed ${media.src}`);
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [delivery, enabled, plan]);
 }
 
-export function resolveNextSceneVideoUris(
+/**
+ * The clips worth warming from a scene, in the order they are likely needed:
+ * the rest of the current scene's sequences first, then the opening clip of
+ * every scene one `scene.goto` away. Routes and scenes the viewer cannot
+ * access are skipped, as is a goto back into the current scene. Stills are not
+ * media to warm, and each URI appears once. Routers and conditions are not
+ * evaluated — the compiler emits plain gotos, and a wrong guess only costs one
+ * opening.
+ */
+export function resolveLookAheadVideoMedia(
   manifest: ExperienceRuntimeManifest,
   sceneId: string,
   orientation: ExperienceOrientation,
   canAccess: (requirement: ExperienceAccessRequirement) => boolean = () => false
-): string[] {
+): ExperienceDeclaredSource[] {
   const current = findGraphNode(manifest, sceneId);
   if (!current || current.kind !== "scene") return [];
-  const targetSceneIds = new Set(
-    current.eventBindings.flatMap((binding) =>
-      binding.routes
-        .filter((route) => !route.access || canAccess(route.access))
-        .flatMap((route) =>
-          route.actions.flatMap((action) =>
-            action.kind === "scene.goto" && action.sceneId !== sceneId ? [action.sceneId] : []
-          )
-        )
-    )
-  );
-  const wanted = new Set<string>();
-  targetSceneIds.forEach((targetSceneId) => {
-    const target = findGraphNode(manifest, targetSceneId);
-    if (!target || target.kind !== "scene" || (target.access && !canAccess(target.access))) return;
-    target.renderers.forEach((renderer) => {
-      if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) return;
-      const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
-      if (!parsed.success) return;
-      parsed.data.sequence.forEach((clip) => {
-        const media = resolveVideoMedia(manifest.assets, clip.assetId, orientation);
-        if (media) wanted.add(media.variant.uri);
+  const plan: ExperienceDeclaredSource[] = [];
+  const planned = new Set<string>();
+  const add = (assetId: string) => {
+    const media = resolveVideoMedia(manifest.assets, assetId, orientation);
+    if (!media) return;
+    const type = media.variant.mediaType ?? null;
+    if (type?.toLowerCase().startsWith("image/") || planned.has(media.variant.uri)) return;
+    planned.add(media.variant.uri);
+    plan.push({ src: media.variant.uri, type });
+  };
+  videoSequences(current).forEach((sequence) => sequence.forEach((clip) => add(clip.assetId)));
+  current.eventBindings.forEach((binding) =>
+    binding.routes.forEach((route) => {
+      if (route.access && !canAccess(route.access)) return;
+      route.actions.forEach((action) => {
+        if (action.kind !== "scene.goto" || action.sceneId === sceneId) return;
+        const target = findGraphNode(manifest, action.sceneId);
+        if (!target || target.kind !== "scene") return;
+        if (target.access && !canAccess(target.access)) return;
+        videoSequences(target).forEach((sequence) => {
+          const opening = sequence[0];
+          if (opening) add(opening.assetId);
+        });
       });
-    });
+    })
+  );
+  return plan;
+}
+
+/** Each `core.video` renderer's sequence in a scene, in renderer order. */
+function videoSequences(
+  scene: Extract<ExperienceGraphNode, { kind: "scene" }>
+): ExperienceCoreVideoRendererConfig["sequence"][] {
+  return scene.renderers.flatMap((renderer) => {
+    if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) return [];
+    const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
+    return parsed.success ? [parsed.data.sequence] : [];
   });
-  return [...wanted];
 }
 
 export function resolveLockedScenePreview(
@@ -2067,13 +2254,7 @@ export function resolveLockedScenePreview(
   const videoUri = resolveVideoMedia(manifest.assets, first.assetId, orientation)?.variant.uri;
   // Frozen public media has a separate image-only endpoint. Never fetch the
   // protected video to produce an anonymous preview in the browser.
-  const posterUri =
-    videoUri &&
-    /\/story-projects\/[^/]+\/builds\/[^/]+\/assets\/[^/]+\/variants\/[^/]+\/content$/.test(
-      videoUri
-    )
-      ? videoUri.replace(/\/content$/, "/poster")
-      : undefined;
+  const posterUri = videoUri ? (buildMediaEndpoint(videoUri, "poster") ?? undefined) : undefined;
   return { videoUri, posterUri };
 }
 

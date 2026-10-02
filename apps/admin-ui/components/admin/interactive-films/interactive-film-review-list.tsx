@@ -29,8 +29,14 @@ import type {
 } from "@/lib/interactive-film-admin-contract";
 import { cn } from "@/lib/utils";
 import {
+  HlsDistributionCell,
+  HlsDistributionError,
+  useHlsDistribution,
+} from "./playback/hls-distribution-cell";
+import {
   formatInteractiveFilmDate,
   InteractiveFilmErrorBanner,
+  InteractiveFilmMetric,
   InteractiveFilmStatusPill,
 } from "./shared";
 
@@ -45,6 +51,7 @@ export function InteractiveFilmReviewList({
   page,
   pageSize,
   loadError,
+  hlsEnabled,
 }: {
   siteLabel: string;
   databaseLabel: string;
@@ -56,12 +63,20 @@ export function InteractiveFilmReviewList({
   page: number;
   pageSize: number;
   loadError: string | null;
+  /** HLS distribution exists only on the cn site; the column reads it client-side. */
+  hlsEnabled: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const [refreshing, startRefresh] = useTransition();
   const [searchInput, setSearchInput] = useState(q);
   const [syncedQuery, setSyncedQuery] = useState(q);
+  const {
+    games: hlsGames,
+    generatedAt: hlsGeneratedAt,
+    loading: hlsLoading,
+    error: hlsError,
+  } = useHlsDistribution(hlsEnabled ? items : null);
 
   if (q !== syncedQuery) {
     setSyncedQuery(q);
@@ -92,8 +107,20 @@ export function InteractiveFilmReviewList({
   }, [pushFilters, q, searchInput]);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const columns = useMemo<ColumnDef<AdminInteractiveFilmSummary, unknown>[]>(
-    () => [
+  const columns = useMemo<ColumnDef<AdminInteractiveFilmSummary, unknown>[]>(() => {
+    const hlsColumn: ColumnDef<AdminInteractiveFilmSummary, unknown> = {
+      id: "hls",
+      header: "HLS",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <HlsDistributionCell
+          game={hlsGames.get(row.original.gameId)}
+          generatedAt={hlsGeneratedAt}
+          loading={hlsLoading}
+        />
+      ),
+    };
+    return [
       {
         accessorKey: "title",
         header: "作品",
@@ -149,6 +176,7 @@ export function InteractiveFilmReviewList({
         header: "状态",
         cell: ({ row }) => <InteractiveFilmStatusPill status={row.original.status} />,
       },
+      ...(hlsEnabled ? [hlsColumn] : []),
       {
         accessorKey: "updatedAt",
         header: "更新时间",
@@ -172,9 +200,8 @@ export function InteractiveFilmReviewList({
           </Button>
         ),
       },
-    ],
-    []
-  );
+    ];
+  }, [hlsEnabled, hlsGames, hlsGeneratedAt, hlsLoading]);
 
   return (
     <div className="space-y-4">
@@ -231,11 +258,13 @@ export function InteractiveFilmReviewList({
         </Select>
       </div>
 
+      {hlsError ? <HlsDistributionError message={hlsError} /> : null}
+
       <DataTable
         columns={columns}
         data={items}
         loading={refreshing}
-        minWidth={960}
+        minWidth={hlsEnabled ? 1080 : 960}
         getRowId={(row) => row.gameId}
         emptyLabel={q || status !== "all" ? "没有匹配的影游作品" : "暂无影游作品"}
       />
@@ -267,41 +296,6 @@ export function InteractiveFilmReviewList({
           </div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function InteractiveFilmMetric({
-  label,
-  value,
-  tone = "default",
-}: {
-  label: string;
-  value: number | undefined;
-  tone?: "default" | "warn" | "success" | "risk";
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-lg border px-3 py-2",
-        tone === "default" && "border-slate-200 bg-slate-50",
-        tone === "warn" && "border-amber-200 bg-amber-50",
-        tone === "success" && "border-emerald-200 bg-emerald-50",
-        tone === "risk" && "border-red-200 bg-red-50"
-      )}
-    >
-      <p
-        className={cn(
-          "text-[11px] font-medium",
-          tone === "default" && "text-slate-500",
-          tone === "warn" && "text-amber-700",
-          tone === "success" && "text-emerald-700",
-          tone === "risk" && "text-red-600"
-        )}
-      >
-        {label}
-      </p>
-      <p className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{value ?? "—"}</p>
     </div>
   );
 }

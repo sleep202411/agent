@@ -40,17 +40,35 @@ export function adminAuthHeaders(sessionToken?: string): HeadersInit | null {
   return null;
 }
 
+type AdminEnvelopePayload<T> = {
+  code?: number;
+  msg?: string;
+  message?: string;
+  /** Nest `ZodValidationPipe` 400s: `{ message: "Validation failed", issues }`. */
+  issues?: { path: string; message: string }[];
+  data?: T;
+};
+
 export async function parseAdminEnvelope<T>(response: Response): Promise<T> {
-  const payload = (await response.json().catch(() => null)) as {
-    code?: number;
-    msg?: string;
-    message?: string;
-    data?: T;
-  } | null;
+  const payload = (await response.json().catch(() => null)) as AdminEnvelopePayload<T> | null;
   if (!response.ok || !payload || payload.code !== 200) {
-    throw new Error(payload?.msg ?? payload?.message ?? `后台服务请求失败：${response.status}`);
+    throw new Error(adminEnvelopeErrorMessage(payload, response.status));
   }
   return payload.data as T;
+}
+
+function adminEnvelopeErrorMessage(
+  payload: AdminEnvelopePayload<unknown> | null,
+  status: number
+): string {
+  if (payload?.msg != null) return payload.msg;
+  if (payload?.message == null) return `后台服务请求失败：${status}`;
+  // "Validation failed" alone hides which field was rejected; keep every issue.
+  const issues = Array.isArray(payload.issues) ? payload.issues : [];
+  if (!issues.length) return payload.message;
+  return `${payload.message}（${issues
+    .map((issue) => `${issue.path || "(root)"}: ${issue.message}`)
+    .join("；")}）`;
 }
 
 export function cookieHeader(sessionToken?: string): HeadersInit {

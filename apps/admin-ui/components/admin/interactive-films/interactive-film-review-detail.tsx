@@ -30,6 +30,8 @@ import {
   type AdminInteractiveFilmDetail,
   type InteractiveFilmAdminAction,
 } from "@/lib/interactive-film-admin-contract";
+import type { InteractiveFilmPlaybackLoadResult } from "@/lib/interactive-film-playback-view";
+import { InteractiveFilmPlaybackSection } from "./playback/playback-section";
 import {
   formatInteractiveFilmDate,
   InteractiveFilmErrorBanner,
@@ -47,12 +49,15 @@ export function InteractiveFilmReviewDetail({
   gameId,
   initialGame,
   initialError,
+  playback,
 }: {
   siteLabel: string;
   databaseLabel: string;
   gameId: string;
   initialGame: AdminInteractiveFilmDetail | null;
   initialError: string | null;
+  /** HLS distribution read; `null` off the cn site, where the section does not exist. */
+  playback: InteractiveFilmPlaybackLoadResult | null;
 }) {
   const router = useRouter();
   const [game, setGame] = useState(initialGame);
@@ -121,6 +126,9 @@ export function InteractiveFilmReviewDetail({
           }
         />
         <InteractiveFilmErrorBanner message={error ?? "无法加载该影游作品。"} />
+        {playback ? (
+          <InteractiveFilmPlaybackSection gameId={gameId} title={null} playback={playback} />
+        ) : null}
       </div>
     );
   }
@@ -307,6 +315,10 @@ export function InteractiveFilmReviewDetail({
           </ReviewSection>
         </aside>
       </div>
+
+      {playback ? (
+        <InteractiveFilmPlaybackSection gameId={gameId} title={title} playback={playback} />
+      ) : null}
 
       <Dialog
         open={rejectOpen}

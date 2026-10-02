@@ -31,7 +31,13 @@ function harness(kind: 'cdn' | 'takedown') {
   const worker =
     kind === 'cdn'
       ? new CdnPurgeWorkerService(prisma as never, {} as never, {} as never)
-      : new MediaTakedownWorkerService(prisma as never, {} as never);
+      : new MediaTakedownWorkerService(
+          prisma as never,
+          {} as never,
+          {} as never,
+          {} as never,
+          {} as never,
+        );
   const internal = worker as unknown as {
     purgeOne(row: Row): Promise<void>;
     runOne(row: Row): Promise<void>;

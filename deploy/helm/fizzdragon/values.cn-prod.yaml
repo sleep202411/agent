@@ -248,6 +248,19 @@ server:
     MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: null
     MEDIA_PUBLIC_BASE_URL_AZURE_BLOB: null
     AXON_PIXEL_ID: null
+    # OSS video → HLS. IMM transcodes uploaded episode videos and, through the
+    # cn-only adaptiveStoryPlayback reconcile, free published story clips into
+    # ABR HLS under hls/{assetId}/. Takedowns and lifecycle GC delete that
+    # prefix, then refresh media.fizzspace.cn by URL (`aliyun` mode also
+    # executes purge_cdn actions). The server has no defaults for these and
+    # refuses to boot on this cell without them. acct5 owns the IMM project,
+    # the bucket and the CDN domain, so both clients reuse OSS_ACCESS_KEY_* from
+    # fizzdragon-secrets (that RAM user needs cdn:RefreshObjectCaches). Set
+    # IMM_ENDPOINT / ALIYUN_CDN_ENDPOINT only if pods cannot reach the public
+    # API hosts.
+    IMM_PROJECT_NAME: fizzdragon-cn
+    IMM_REGION: cn-hangzhou
+    MEDIA_CDN_PURGE_MODE: aliyun
     # BytePlus ModelArk ASSETS plane — same intl BytePlus account as .com (verified
     # same inference key). AK/SK live in the out-of-band fizzdragon-server-secrets
     # (added via kubectl, NOT Key Vault — azure.enabled=false here). ACR expiry +

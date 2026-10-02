@@ -72,6 +72,7 @@ import {
 } from '../infra/storage/crew-asset-storage-policy';
 import { ensureOriginalMediaPlacement } from '../infra/storage/media-asset-placement';
 import { MediaProcessingService } from './media-processing.service';
+import { hlsStreamJobKey } from './hls-output';
 import {
   IMMUTABLE_STORAGE_CACHE_CONTROL,
   OutputStorageService,
@@ -153,8 +154,9 @@ function mediaFileTooLargeError(uploadKind: UploadKind, maxBytes: number) {
 }
 
 /** Video upload kinds that generic confirm must not transcode. Reference
- *  videos are generation-only inputs; story clips are enqueued later by the
- *  story domain after checksum/ffprobe verification and workspace claim. */
+ *  videos are generation inputs, never streamed — and story clips upload as
+ *  reference videos: they get HLS only from the story-playback reconcile, once
+ *  a published free work that plays them is live in the player catalogue. */
 const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>([
   'ai_reference_video',
   'content_review_video',
@@ -399,7 +401,7 @@ export class MediaUploadService {
         assetId,
         jobType: MediaProcessingJobType.hls_stream,
         priority: 50,
-        idempotencyKey: `hls-stream:${assetId}`,
+        idempotencyKey: hlsStreamJobKey(assetId),
       });
     } catch (err) {
       this.logger.warn(
