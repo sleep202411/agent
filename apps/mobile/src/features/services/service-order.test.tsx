@@ -1,3 +1,4 @@
+import { ServiceIntentProvider } from "./service-intent";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -221,4 +222,56 @@ it("allows an original pending order to be recovered when the service is paused"
   await act(async () => click("serviceOrder.title"));
   await act(async () => click("serviceOrder.submit"));
   expect(h.send).toHaveBeenCalledWith(payload);
+});
+
+it("resumes the guest action after login replaces the service controls", async () => {
+  h.authenticated = false;
+  let complete!: () => void;
+  h.gate.mockImplementation(({ onAuthenticated }: { onAuthenticated: () => void }) => {
+    complete = onAuthenticated;
+  });
+  const page = (ready: boolean) =>
+    act(async () =>
+      root.render(
+        <ServiceIntentProvider>
+          {ready ? <ServiceOrder service={service} /> : <span>reloading service</span>}
+        </ServiceIntentProvider>
+      )
+    );
+  await page(true);
+  await act(async () => click("serviceOrder.title"));
+  h.authenticated = true;
+  h.generation = 2;
+  await page(false);
+  await act(async () => complete());
+  await page(true);
+  expect(host.querySelector("input")).not.toBeNull();
+  expect(h.send).not.toHaveBeenCalled();
+  h.generation = 3;
+  await page(true);
+  expect(host.querySelector("input")).toBeNull();
+});
+
+it("does not resume an old guest action on a different service page", async () => {
+  h.authenticated = false;
+  let complete!: () => void;
+  h.gate.mockImplementation(({ onAuthenticated }: { onAuthenticated: () => void }) => {
+    complete = onAuthenticated;
+  });
+  const page = (id: string) =>
+    act(async () =>
+      root.render(
+        <ServiceIntentProvider key={id}>
+          <ServiceOrder service={{ ...service, id }} />
+        </ServiceIntentProvider>
+      )
+    );
+  await page("first");
+  await act(async () => click("serviceOrder.title"));
+  h.authenticated = true;
+  h.generation = 2;
+  await page("second");
+  await act(async () => complete());
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.send).not.toHaveBeenCalled();
 });

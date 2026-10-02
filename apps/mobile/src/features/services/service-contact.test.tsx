@@ -1,3 +1,4 @@
+import { ServiceIntentProvider } from "./service-intent";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -189,4 +190,36 @@ it("allows editing after a storage failure that prevented sending", async () => 
   await act(async () => type("Updated before any send"));
   await act(async () => click("serviceContact.send"));
   expect(h.send).toHaveBeenCalledWith("service", "Updated before any send", "stable-key");
+});
+
+it("resumes the guest action after login replaces the service controls", async () => {
+  h.authenticated = false;
+  let complete!: () => void;
+  h.gate.mockImplementation(({ onAuthenticated }: { onAuthenticated: () => void }) => {
+    complete = onAuthenticated;
+  });
+  const page = (ready: boolean) =>
+    act(async () =>
+      root.render(
+        <ServiceIntentProvider>
+          {ready ? (
+            <ServiceContact serviceId="service" creatorId="creator" status="listed" />
+          ) : (
+            <span>reloading service</span>
+          )}
+        </ServiceIntentProvider>
+      )
+    );
+  await page(true);
+  await act(async () => click("serviceContact.title"));
+  h.authenticated = true;
+  h.generation = 2;
+  await page(false);
+  await act(async () => complete());
+  await page(true);
+  expect(host.querySelector("input")).not.toBeNull();
+  expect(h.send).not.toHaveBeenCalled();
+  h.generation = 3;
+  await page(true);
+  expect(host.querySelector("input")).toBeNull();
 });

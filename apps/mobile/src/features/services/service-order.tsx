@@ -1,3 +1,4 @@
+import { useServiceIntent } from "./service-intent";
 import { orderOutbox } from "./order-outbox";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useIsFocused, useRouter } from "expo-router";
@@ -26,6 +27,8 @@ function ScopedServiceOrder({ service }: { service: CreatorServiceDetail }) {
     gate = useAuthGate(),
     t = useTranslations();
   const [open, setOpen] = useState(false);
+  const intentControl = useServiceIntent();
+  const isOpen = intentControl ? intentControl.kind === "order" : open;
   const [hasPending, setHasPending] = useState(() => {
     if (auth.status !== "authenticated") return false;
     try {
@@ -53,13 +56,14 @@ function ScopedServiceOrder({ service }: { service: CreatorServiceDetail }) {
         !service.packages.length))
   )
     return null;
-  return open && auth.status === "authenticated" ? (
+  return isOpen && auth.status === "authenticated" ? (
     <RequestForm
       key={JSON.stringify([service.id, service.version, auth.generation])}
       service={service}
       onPending={() => setHasPending(true)}
       close={() => {
         setOpen(false);
+        intentControl?.close();
         try {
           setHasPending(
             !!orderOutbox(
@@ -77,11 +81,13 @@ function ScopedServiceOrder({ service }: { service: CreatorServiceDetail }) {
     <Pressable
       accessibilityRole="button"
       onPress={() =>
-        gate.requireAuth({
-          onAuthenticated: () => {
-            if (active.current) setOpen(true);
-          },
-        })
+        intentControl
+          ? intentControl.request("order")
+          : gate.requireAuth({
+              onAuthenticated: () => {
+                if (active.current) setOpen(true);
+              },
+            })
       }
     >
       <ThemedText type="smallBold">{t("serviceOrder.title")}</ThemedText>

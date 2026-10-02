@@ -1,3 +1,4 @@
+import { useServiceIntent } from "./service-intent";
 import { inquiryOutbox } from "./inquiry-outbox";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useIsFocused, useRouter } from "expo-router";
@@ -22,6 +23,8 @@ export function ServiceContact({
     gate = useAuthGate(),
     t = useTranslations();
   const [open, setOpen] = useState(false);
+  const intentControl = useServiceIntent();
+  const isOpen = intentControl ? intentControl.kind === "contact" : open;
   const active = useRef(false);
   useLayoutEffect(() => {
     active.current = true;
@@ -31,21 +34,26 @@ export function ServiceContact({
   }, []);
   if (status !== "listed" || String(auth.user?.userId ?? auth.user?.id ?? "") === creatorId)
     return null;
-  return open && auth.status === "authenticated" ? (
+  return isOpen && auth.status === "authenticated" ? (
     <Composer
       key={JSON.stringify([serviceId, auth.generation])}
       serviceId={serviceId}
-      close={() => setOpen(false)}
+      close={() => {
+        setOpen(false);
+        intentControl?.close();
+      }}
     />
   ) : (
     <Pressable
       accessibilityRole="button"
       onPress={() =>
-        gate.requireAuth({
-          onAuthenticated: () => {
-            if (active.current) setOpen(true);
-          },
-        })
+        intentControl
+          ? intentControl.request("contact")
+          : gate.requireAuth({
+              onAuthenticated: () => {
+                if (active.current) setOpen(true);
+              },
+            })
       }
     >
       <ThemedText type="smallBold">{t("serviceContact.title")}</ThemedText>

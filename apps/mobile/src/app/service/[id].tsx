@@ -1,3 +1,4 @@
+import { ServiceIntentProvider } from "@/features/services/service-intent";
 import { ServicePackagesEditor } from "@/features/services/service-packages-editor";
 import { ServiceQuestionsEditor } from "@/features/services/service-questions-editor";
 import { ServiceDetailsEditor } from "@/features/services/service-details-editor";
@@ -21,6 +22,13 @@ import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-
 
 export default function CreatorServiceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  return (
+    <ServiceIntentProvider key={id}>
+      <ServiceDetailContent id={id} />
+    </ServiceIntentProvider>
+  );
+}
+function ServiceDetailContent({ id }: { id: string }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const locale = useLocale();
