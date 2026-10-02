@@ -4241,5 +4241,15 @@
   "levelApplication.rejected": "Rejected",
   "levelApplication.cancelled": "Cancelled",
   "levelApplication.close": "Close",
-  "levelApplication.search": "Search associations"
+  "levelApplication.search": "Search associations",
+  "discoveryMap.title": "Map",
+  "discoveryMap.show": "Show map",
+  "discoveryMap.hide": "Hide map",
+  "discoveryMap.loading": "Loading map",
+  "discoveryMap.error": "The map could not load. You can still browse the results below.",
+  "discoveryMap.retry": "Retry map",
+  "discoveryMap.zoomIn": "Zoom in",
+  "discoveryMap.zoomOut": "Zoom out",
+  "discoveryMap.matches": "{count} matching results",
+  "discoveryMap.other": "{count} other results"
 }

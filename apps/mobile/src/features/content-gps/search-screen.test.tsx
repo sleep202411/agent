@@ -3,7 +3,37 @@ import { renderToString } from "react-dom/server";
 import { hydrateRoot, createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 import { GpsSearchScreen } from "./search-screen";
+vi.mock("../discovery-map/environment", () => ({
+  readDiscoveryMapConfig: () =>
+    h.maps
+      ? {
+          documentUrl: "https://maps.example.test/map.html",
+          provider: { provider: "google", key: "fixture", mapId: "fixture" },
+        }
+      : null,
+}));
+vi.mock("../discovery-map/map-panel", () => ({
+  MapPanel: ({
+    onViewport,
+    onSelect,
+  }: {
+    onViewport(value: object): void;
+    onSelect(id: string): void;
+  }) => (
+    <div>
+      <button
+        onClick={() =>
+          onViewport({ coordinateSystem: "WGS84", west: 100, east: 120, south: 0, north: 20 })
+        }
+      >
+        Move map
+      </button>
+      <button onClick={() => onSelect("ip")}>Select marker</button>
+    </div>
+  ),
+}));
 const h = vi.hoisted(() => ({
+  maps: false,
   params: {} as Record<string, string>,
   search: vi.fn(),
   get: vi.fn(),
@@ -84,6 +114,7 @@ vi.mock("react-native", () => ({
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
   h.params = {};
+  h.maps = false;
   vi.resetAllMocks();
   h.get.mockResolvedValue({ items: [] });
   h.search.mockReturnValue({
@@ -208,6 +239,40 @@ it("loads public genre labels when Copilot is opened so proposals can name their
       "/ip-commerce/taxonomy",
       expect.objectContaining({ params: { type: "genre", locale: "en-US" }, credentials: "omit" })
     );
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("keeps the map collapsed, scopes search on movement and opens selected IPs", async () => {
+  h.maps = true;
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const click = (label: string) =>
+    act(async () =>
+      Array.from(host.querySelectorAll("button"))
+        .find((b) => b.textContent === label)!
+        .click()
+    );
+  try {
+    await act(async () => root.render(<GpsSearchScreen />));
+    expect(host.textContent).not.toContain("Move map");
+    expect(h.search.mock.lastCall![4].viewport).toBeUndefined();
+    await click("discoveryMap.show");
+    await click("Move map");
+    expect(h.search.mock.lastCall![4].viewport).toEqual({
+      coordinateSystem: "WGS84",
+      west: 100,
+      east: 120,
+      south: 0,
+      north: 20,
+    });
+    await click("Select marker");
+    expect(h.push).toHaveBeenCalledWith("/ip/ip");
+    await click("discoveryMap.hide");
+    expect(h.search.mock.lastCall![4].viewport).toBeUndefined();
   } finally {
     await act(async () => root.unmount());
     host.remove();

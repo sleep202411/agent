@@ -4241,5 +4241,15 @@
   "levelApplication.rejected": "已拒绝",
   "levelApplication.cancelled": "已取消",
   "levelApplication.close": "关闭",
-  "levelApplication.search": "搜索关联项"
+  "levelApplication.search": "搜索关联项",
+  "discoveryMap.title": "地图",
+  "discoveryMap.show": "显示地图",
+  "discoveryMap.hide": "收起地图",
+  "discoveryMap.loading": "正在加载地图",
+  "discoveryMap.error": "地图无法加载。你仍可浏览下方结果。",
+  "discoveryMap.retry": "重试地图",
+  "discoveryMap.zoomIn": "放大",
+  "discoveryMap.zoomOut": "缩小",
+  "discoveryMap.matches": "{count} 个匹配结果",
+  "discoveryMap.other": "{count} 个其他结果"
 }

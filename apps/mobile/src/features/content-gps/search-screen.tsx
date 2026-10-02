@@ -1,3 +1,7 @@
+import { MapPanel } from "../discovery-map/map-panel";
+import { readDiscoveryMapConfig } from "../discovery-map/environment";
+import { gpsMapFeatures } from "../discovery-map/features";
+import type { GpsViewport } from "../discovery-map/content-gps-map-types";
 import { gpsPlaybackPath } from "./playback-entry";
 import { DiscoveryAssistantPanel } from "@/features/discovery-assistant/discovery-assistant-panel";
 import { useIpBookmark } from "@/features/ip-collection/use-ip-bookmark";
@@ -222,6 +226,15 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
     t = useTranslations(),
     theme = useTheme(),
     router = useRouter();
+  const mapConfig = useMemo(() => readDiscoveryMapConfig(), []);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [viewport, setViewport] = useState<GpsViewport>(() => ({
+    coordinateSystem: isChinaRegion ? "GCJ02" : "WGS84",
+    west: -180,
+    east: 180,
+    south: -80,
+    north: 80,
+  }));
   const normalized = useMemo(() => normalizeGpsDraft(initial.draft, locale), [initial, locale]);
   const fallback = useMemo(() => normalizeGpsDraft(EMPTY_GPS_DRAFT, locale), [locale]);
   const query = normalized.success ? normalized.data : fallback.data!;
@@ -233,11 +246,12 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
     [placeSearch, setPlaceSearch] = useState("");
   const options = useMemo(
     () => ({
+      viewport: mapOpen ? viewport : undefined,
       selectedIpId: initial.selected,
       placeSearch,
       coordinateSystem: isChinaRegion ? ("GCJ02" as const) : ("WGS84" as const),
     }),
-    [initial.selected, placeSearch]
+    [initial.selected, placeSearch, mapOpen, viewport]
   );
   const viewerId =
     auth.status === "authenticated" ? String(auth.user?.userId ?? auth.user?.id ?? "") : null;
@@ -247,6 +261,18 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
     locale,
     active && auth.status !== "hydrating" && valid,
     options
+  );
+  const mapFeatures = useMemo(
+    () =>
+      mapOpen && state.page
+        ? gpsMapFeatures(state.page, (count, matched) =>
+            t(matched ? "discoveryMap.matches" : "discoveryMap.other").replace(
+              "{count}",
+              String(count)
+            )
+          )
+        : [],
+    [state.page, t, mapOpen]
   );
   const bookmark = useIpBookmark(
     auth.generation,
@@ -313,6 +339,28 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
             <ThemedText>{label("description")}</ThemedText>
+            {mapConfig && (
+              <View style={{ gap: 8 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: mapOpen }}
+                  onPress={() => setMapOpen(!mapOpen)}
+                  style={{ minHeight: 44, paddingVertical: 12 }}
+                >
+                  <ThemedText>{t(mapOpen ? "discoveryMap.hide" : "discoveryMap.show")}</ThemedText>
+                </Pressable>
+                {mapOpen && active && valid && auth.status !== "hydrating" && (
+                  <MapPanel
+                    key={`${auth.generation}:${locale}`}
+                    config={mapConfig}
+                    viewport={viewport}
+                    features={mapFeatures}
+                    onViewport={setViewport}
+                    onSelect={(id) => router.push(toHref(`/ip/${encodeURIComponent(id)}`))}
+                  />
+                )}
+              </View>
+            )}
             <View style={{ flexDirection: "row", gap: 16, flexWrap: "wrap" }}>
               <Action label={label("catalogue")} onPress={() => router.push(toHref("/ips"))} />
               <Action

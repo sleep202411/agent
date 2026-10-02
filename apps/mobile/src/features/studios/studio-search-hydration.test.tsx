@@ -1,12 +1,47 @@
 import { act, type ReactNode } from "react";
 import { renderToString } from "react-dom/server";
-import { hydrateRoot } from "react-dom/client";
+import { hydrateRoot, createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 import { StudioSearchScreen } from "./studio-search-screen";
-const h = vi.hoisted(() => ({ params: {} as Record<string, string>, search: vi.fn() }));
+vi.mock("@/config", () => ({ isChinaRegion: false }));
+vi.mock("../discovery-map/environment", () => ({
+  readDiscoveryMapConfig: () =>
+    h.maps
+      ? {
+          documentUrl: "https://maps.example.test/map.html",
+          provider: { provider: "google", key: "fixture", mapId: "fixture" },
+        }
+      : null,
+}));
+vi.mock("../discovery-map/map-panel", () => ({
+  MapPanel: ({
+    onViewport,
+    onSelect,
+  }: {
+    onViewport(value: object): void;
+    onSelect(id: string): void;
+  }) => (
+    <div>
+      <button
+        onClick={() =>
+          onViewport({ coordinateSystem: "WGS84", west: 100, east: 120, south: 0, north: 20 })
+        }
+      >
+        Move map
+      </button>
+      <button onClick={() => onSelect("creator")}>Select marker</button>
+    </div>
+  ),
+}));
+const h = vi.hoisted(() => ({
+  maps: false,
+  push: vi.fn(),
+  params: {} as Record<string, string>,
+  search: vi.fn(),
+}));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ setParams: vi.fn() }),
+  useRouter: () => ({ setParams: vi.fn(), push: h.push }),
   useLocalSearchParams: () => h.params,
 }));
 vi.mock("@/auth", () => ({
@@ -76,6 +111,7 @@ vi.mock("react-native", () => ({
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
+  h.maps = false;
   h.params = {};
   vi.resetAllMocks();
   h.search.mockReturnValue({
@@ -119,3 +155,36 @@ it.each([false, true])(
     }
   }
 );
+
+it("scopes Studio maps only when open and opens the selected creator", async () => {
+  h.maps = true;
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const click = (label: string) =>
+    act(async () =>
+      Array.from(host.querySelectorAll("button"))
+        .find((b) => b.textContent === label)!
+        .click()
+    );
+  try {
+    await act(async () => root.render(<StudioSearchScreen />));
+    expect(h.search.mock.lastCall![5]).toBeNull();
+    await click("discoveryMap.show");
+    await click("Move map");
+    expect(h.search.mock.lastCall![5]).toEqual({
+      coordinateSystem: "WGS84",
+      west: 100,
+      east: 120,
+      south: 0,
+      north: 20,
+    });
+    await click("Select marker");
+    expect(h.push).toHaveBeenCalledWith("/creator/creator");
+    await click("discoveryMap.hide");
+    expect(h.search.mock.lastCall![5]).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

@@ -481,6 +481,16 @@ module.exports = ({ config }) => {
     extra: {
       ...config.extra,
       appEnv,
+      discoveryMap: {
+        enabled: readOptionalEnv("FD_DISCOVERY_MAP_ENABLED") || "false",
+        documentUrl: readOptionalEnv("FD_DISCOVERY_MAP_DOCUMENT_URL"),
+        provider: appRegion === "cn" ? "gaode" : "google",
+        key: readOptionalEnv(
+          appRegion === "cn" ? "FD_DISCOVERY_MAP_GAODE_KEY" : "FD_DISCOVERY_MAP_GOOGLE_KEY"
+        ),
+        mapId: readOptionalEnv("FD_DISCOVERY_MAP_GOOGLE_MAP_ID"),
+        securityProxyPath: readOptionalEnv("FD_DISCOVERY_MAP_GAODE_PROXY_PATH"),
+      },
       paywall: {
         revenueCatAppleApiKey: readRevenueCatAppleKey(appRegion),
         revenueCatGoogleApiKey: readOptionalEnv("EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY") || "",

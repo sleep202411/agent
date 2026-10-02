@@ -15,7 +15,7 @@ const feature = z
     entityId: z.string().min(1).max(100).nullable(),
   })
   .strict();
-const config = z.union([
+export const mapProviderConfigSchema = z.union([
   z
     .object({
       provider: z.literal("google"),
@@ -37,7 +37,13 @@ const envelope = z.object({
   sequence: z.number().int().nonnegative().safe(),
 });
 const command = z.discriminatedUnion("type", [
-  envelope.extend({ type: z.literal("initialize"), config, viewport: z.unknown() }).strict(),
+  envelope
+    .extend({
+      type: z.literal("initialize"),
+      config: mapProviderConfigSchema,
+      viewport: z.unknown(),
+    })
+    .strict(),
   envelope.extend({ type: z.literal("features"), features: z.array(feature).max(500) }).strict(),
   envelope
     .extend({ type: z.literal("zoom"), delta: z.union([z.literal(-1), z.literal(1)]) })
@@ -78,6 +84,41 @@ export function readMapCommand(raw: unknown, channel: string): MapCommand | null
     )
       return null;
     return { ...parsed.data, viewport: viewport.data };
+  } catch {
+    return null;
+  }
+}
+
+const eventEnvelope = z.object({ version: z.literal(1), channel: z.string().min(20).max(100) });
+const eventSchema = z.discriminatedUnion("type", [
+  eventEnvelope.extend({ type: z.literal("ready") }).strict(),
+  eventEnvelope.extend({ type: z.literal("loaded") }).strict(),
+  eventEnvelope.extend({ type: z.literal("viewport"), viewport: z.unknown() }).strict(),
+  eventEnvelope
+    .extend({
+      type: z.literal("activate"),
+      id: z.string().min(1).max(500),
+      sequence: z.number().int().nonnegative().safe(),
+    })
+    .strict(),
+  eventEnvelope
+    .extend({
+      type: z.literal("error"),
+      reason: z.enum(["configuration", "load", "authentication", "coordinates", "conflict"]),
+    })
+    .strict(),
+]);
+export function readMapEvent(raw: unknown, channel: string): MapEvent | null {
+  try {
+    if (typeof raw === "string") {
+      if (raw.length > 10000) return null;
+      raw = JSON.parse(raw);
+    }
+    const result = eventSchema.safeParse(raw);
+    if (!result.success || result.data.channel !== channel) return null;
+    if (result.data.type !== "viewport") return result.data;
+    const viewport = ContentGpsSearchRequestSchema.shape.map.safeParse(result.data.viewport);
+    return viewport.success ? { ...result.data, viewport: viewport.data } : null;
   } catch {
     return null;
   }

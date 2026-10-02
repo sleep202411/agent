@@ -4241,5 +4241,15 @@
   "levelApplication.rejected": "已拒絕",
   "levelApplication.cancelled": "已取消",
   "levelApplication.close": "關閉",
-  "levelApplication.search": "搜尋關聯項"
+  "levelApplication.search": "搜尋關聯項",
+  "discoveryMap.title": "地圖",
+  "discoveryMap.show": "顯示地圖",
+  "discoveryMap.hide": "收起地圖",
+  "discoveryMap.loading": "正在載入地圖",
+  "discoveryMap.error": "地圖無法載入。你仍可瀏覽下方結果。",
+  "discoveryMap.retry": "重試地圖",
+  "discoveryMap.zoomIn": "放大",
+  "discoveryMap.zoomOut": "縮小",
+  "discoveryMap.matches": "{count} 個符合結果",
+  "discoveryMap.other": "{count} 個其他結果"
 }

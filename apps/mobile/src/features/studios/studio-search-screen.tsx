@@ -1,3 +1,8 @@
+import { MapPanel } from "../discovery-map/map-panel";
+import { readDiscoveryMapConfig } from "../discovery-map/environment";
+import { studioMapFeatures } from "../discovery-map/features";
+import type { GpsViewport } from "../discovery-map/content-gps-map-types";
+import { isChinaRegion } from "@/config";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
@@ -202,6 +207,15 @@ function StudioSearchContent({ initial }: { initial: ReturnType<typeof readStudi
     t = useTranslations(),
     locale = useLocale(),
     theme = useTheme();
+  const mapConfig = useMemo(() => readDiscoveryMapConfig(), []);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [viewport, setViewport] = useState<GpsViewport>(() => ({
+    coordinateSystem: isChinaRegion ? "GCJ02" : "WGS84",
+    west: -180,
+    east: 180,
+    south: -80,
+    north: 80,
+  }));
   const normalized = useMemo(() => parseStudioDraft(initial.draft), [initial]);
   const query = normalized.success ? normalized.data : emptyStudioQuery;
   const validLink = normalized.success && !initial.invalid;
@@ -216,7 +230,20 @@ function StudioSearchContent({ initial }: { initial: ReturnType<typeof readStudi
     query,
     locale,
     active && auth.status !== "hydrating" && validLink,
-    initial.selected
+    initial.selected,
+    mapOpen ? viewport : null
+  );
+  const mapFeatures = useMemo(
+    () =>
+      mapOpen && state.page
+        ? studioMapFeatures(state.page, (count, matched) =>
+            t(matched ? "discoveryMap.matches" : "discoveryMap.other").replace(
+              "{count}",
+              String(count)
+            )
+          )
+        : [],
+    [state.page, t, mapOpen]
   );
   const parsed = parseStudioDraft(draft),
     dirty = JSON.stringify(draft) !== JSON.stringify(initial.draft);
@@ -255,6 +282,28 @@ function StudioSearchContent({ initial }: { initial: ReturnType<typeof readStudi
         ListHeaderComponent={
           <View style={{ gap: 12, paddingBottom: 12 }}>
             <ThemedText>{t("studioDiscovery.description")}</ThemedText>
+            {mapConfig && (
+              <View style={{ gap: 8 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: mapOpen }}
+                  onPress={() => setMapOpen(!mapOpen)}
+                  style={{ minHeight: 44, paddingVertical: 12 }}
+                >
+                  <ThemedText>{t(mapOpen ? "discoveryMap.hide" : "discoveryMap.show")}</ThemedText>
+                </Pressable>
+                {mapOpen && active && validLink && auth.status !== "hydrating" && (
+                  <MapPanel
+                    key={`${auth.generation}:${locale}`}
+                    config={mapConfig}
+                    viewport={viewport}
+                    features={mapFeatures}
+                    onViewport={setViewport}
+                    onSelect={(id) => router.push(toHref(`/creator/${encodeURIComponent(id)}`))}
+                  />
+                )}
+              </View>
+            )}
             <DiscoveryAssistantPanel
               key={`${auth.generation}:${locale}`}
               scope={{
