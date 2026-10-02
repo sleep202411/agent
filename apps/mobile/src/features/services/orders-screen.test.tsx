@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   gate: vi.fn(),
   useOrders: vi.fn(),
   authenticated: true,
+  active: true,
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
@@ -18,6 +19,7 @@ vi.mock("@/auth", () => ({
   useAuth: () => ({ status: h.authenticated ? "authenticated" : "anonymous", generation: 7 }),
   useAuthGate: () => ({ requireAuth: h.gate }),
 }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s, useLocale: () => "en-US" }));
 vi.mock("@/features/services/use-orders", () => ({ useOrders: h.useOrders }));
@@ -62,6 +64,7 @@ const click = (label: string) =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.authenticated = true;
+  h.active = true;
   h.useOrders.mockReturnValue({
     items: [],
     loading: false,
@@ -109,4 +112,17 @@ it("defers guest authentication to intent and never passes an authenticated scop
   expect(h.useOrders).toHaveBeenLastCalledWith(undefined, "both", "");
   await click("orders.signIn");
   expect(h.gate).toHaveBeenCalledOnce();
+});
+
+it("suspends private order loading in the background and restores the selected filters on return", async () => {
+  await render();
+  await click("orders.role.creator");
+  await click("orders.status.delivered");
+  expect(h.useOrders).toHaveBeenLastCalledWith("7", "creator", "delivered");
+  h.active = false;
+  await render();
+  expect(h.useOrders).toHaveBeenLastCalledWith(undefined, "creator", "delivered");
+  h.active = true;
+  await render();
+  expect(h.useOrders).toHaveBeenLastCalledWith("7", "creator", "delivered");
 });
