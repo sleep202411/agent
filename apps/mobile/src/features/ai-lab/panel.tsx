@@ -1,3 +1,4 @@
+import { resultDetails, resultCreatedAt } from "./result-details";
 import { setStringAsync } from "expo-clipboard";
 import { saveOutput } from "./save-output";
 import {
@@ -20,7 +21,7 @@ import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useScreenActive } from "@/hooks/use-app-active";
-import { useTranslations } from "@/i18n";
+import { useTranslations, useLocale } from "@/i18n";
 import { ConversationAudio } from "@/features/services/conversation-audio";
 import { ConversationVideo } from "@/features/services/conversation-video";
 import { ApiRequestError } from "@/lib/api-client";
@@ -116,6 +117,7 @@ export function GenerationPanel(props: PanelProps) {
   ) : null;
 }
 function Session({ userId, generation, workspace, project, onBusyChange }: PanelProps) {
+  const locale = useLocale();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation("ai-lab", true);
@@ -1079,7 +1081,18 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
           ))}
           {selected ? (
             <View style={{ gap: 8 }}>
-              <ThemedText type="smallBold">{selected.modelId}</ThemedText>
+              <ThemedText type="smallBold">
+                {data?.catalog.models.find((model) => model.id === selected.modelId)?.name ??
+                  selected.modelId}
+              </ThemedText>
+              {resultCreatedAt(selected.createdAt, locale) ? (
+                <ThemedText type="small">
+                  {t("aiLab.resultCreated")}: {resultCreatedAt(selected.createdAt, locale)}
+                </ThemedText>
+              ) : null}
+              <ThemedText type="small" selectable>
+                {selected.prompt}
+              </ThemedText>
               {selected.prompt ? (
                 <Button
                   label={t(
@@ -1112,6 +1125,11 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
               ) : null}
               {selected.outputs.map((result) => (
                 <View key={result.id}>
+                  {resultDetails(result, locale).map(([label, value]) => (
+                    <ThemedText key={label} type="small">
+                      {t(label)}: {value}
+                    </ThemedText>
+                  ))}
                   {result.type === "image" ? (
                     <Image
                       source={{ uri: result.url }}

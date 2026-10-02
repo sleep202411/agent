@@ -1124,3 +1124,33 @@ for (const outcome of [true, false, "rejected"] as const) {
     expect(h.post).not.toHaveBeenCalled();
   });
 }
+
+it("shows selected result metadata using its catalog model name without submitting a job", async () => {
+  const completed = {
+    ...job,
+    status: "completed",
+    createdAt: "2026-10-02T12:00:00Z",
+    outputs: [
+      {
+        id: "image",
+        type: "image",
+        url: "https://example.test/image.png",
+        width: 1440,
+        height: 1080,
+      },
+    ],
+  };
+  jobs = [completed];
+  const get = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, options) =>
+    path === `/ai/jobs/${job.id}` ? completed : get(path, options)
+  );
+  await mount();
+  await click("aiLab.history");
+  await click("Image model · aiLab.status.completed");
+  expect(host.textContent).toContain("aiLab.resultResolution: 1440 × 1080");
+  expect(host.textContent).toContain("aiLab.resultRatio: 4:3");
+  expect(host.textContent).toContain("aiLab.resultCreated:");
+  expect(host.textContent).not.toContain("aiLab.resultDuration:");
+  expect(h.post).not.toHaveBeenCalled();
+});
