@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
+  storyboard: vi.fn(),
+  children: vi.fn(),
 }));
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/app/_components/auth-provider", () => ({
@@ -28,13 +30,10 @@ vi.mock("@/lib/story-projects-api", () => ({
 }));
 vi.mock("@/lib/story-production-api", () => ({
   storyProductionKeys: { storyboard: (...args: unknown[]) => ["storyboard", ...args] },
-  getStoryStoryboard: async () => [],
+  getStoryStoryboard: (...args: unknown[]) => h.storyboard(...args),
 }));
 vi.mock("@/lib/collab/storyboard-children-api", () => ({
-  listStoryboardChildren: async () => [
-    { nodeId: "node", taskId: null },
-    { nodeId: "other", taskId: null },
-  ],
+  listStoryboardChildren: (...args: unknown[]) => h.children(...args),
   createStoryboardChild: (...args: unknown[]) => h.create(...args),
 }));
 vi.mock("./storyboard-task-picker", () => ({ StoryboardTaskPicker: () => null }));
@@ -55,6 +54,11 @@ beforeEach(() => {
   h.chapter = "chapter";
   h.barrier.mockResolvedValue(undefined);
   h.create.mockResolvedValue({});
+  h.storyboard.mockResolvedValue([]);
+  h.children.mockResolvedValue([
+    { nodeId: "node", taskId: null },
+    { nodeId: "other", taskId: null },
+  ]);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -146,4 +150,60 @@ it("refreshes a completed task creation without showing stale feedback on anothe
   await act(async () => pending.resolve());
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["storyboard-children", "project"] });
   expect(h.success).not.toHaveBeenCalled();
+});
+
+it("does not describe a pending task read as no task", async () => {
+  h.children.mockReturnValue(new Promise(() => {}));
+  await render();
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("loading");
+  expect(host.textContent).not.toContain("noTaskYet");
+  expect(create()).toBeUndefined();
+});
+
+it("retries each failed read independently without showing empty success states", async () => {
+  h.storyboard.mockRejectedValue(new Error("Storyboard unavailable"));
+  h.children.mockRejectedValue(new Error("Task links unavailable"));
+  await render();
+  expect(host.textContent).not.toContain("summary");
+  expect(host.textContent).not.toContain("noTaskYet");
+  const alerts = [...host.querySelectorAll('[role="alert"]')];
+  expect(alerts.map((a) => a.textContent)).toEqual([
+    "Storyboard unavailableretryTasks",
+    "Task links unavailableretryTasks",
+  ]);
+  h.storyboard.mockResolvedValue([]);
+  await act(async () => (alerts[0].querySelector("button") as HTMLButtonElement).click());
+  await render();
+  expect(host.textContent).toContain("summary");
+  expect(h.children).toHaveBeenCalledTimes(1);
+  h.children.mockResolvedValue([{ nodeId: "node", taskId: null }]);
+  await act(async () => (host.querySelector('[role="alert"] button') as HTMLButtonElement).click());
+  await render();
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(create().disabled).toBe(false);
+});
+
+it("keeps task controls usable when only storyboard loading fails", async () => {
+  h.storyboard.mockRejectedValue(new Error("Storyboard unavailable"));
+  await render();
+  expect(create().disabled).toBe(false);
+  await act(async () => create().click());
+  expect(h.create).toHaveBeenCalledWith("project", "node", {});
+});
+
+it("removes cached task details after access is denied and restores them on retry", async () => {
+  h.children.mockResolvedValue([{ nodeId: "node", taskId: "task", title: "Private task" }]);
+  await render();
+  expect(host.textContent).toContain("Private task");
+  h.children.mockRejectedValue(new Error("Task access denied"));
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["storyboard-children", "project"] });
+  });
+  await render();
+  expect(host.textContent).not.toContain("Private task");
+  expect(host.textContent).not.toContain("noTaskYet");
+  h.children.mockResolvedValue([{ nodeId: "node", taskId: "task", title: "Private task" }]);
+  await act(async () => (host.querySelector('[role="alert"] button') as HTMLButtonElement).click());
+  await render();
+  expect(host.textContent).toContain("Private task");
 });

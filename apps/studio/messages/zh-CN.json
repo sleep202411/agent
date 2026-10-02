@@ -3832,6 +3832,7 @@
           "loading": "分镜加载中…",
           "open": "编辑分镜",
           "openError": "无法打开分镜。",
+          "loadError": "无法加载分镜",
           "linkTask": "关联任务",
           "createTask": "创建任务",
           "linkedTask": "已关联任务",

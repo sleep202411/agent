@@ -3832,6 +3832,7 @@
           "loading": "分鏡載入中…",
           "open": "編輯分鏡",
           "openError": "無法打開分鏡。",
+          "loadError": "無法載入分鏡",
           "linkTask": "關聯任務",
           "createTask": "建立任務",
           "linkedTask": "已關聯任務",
