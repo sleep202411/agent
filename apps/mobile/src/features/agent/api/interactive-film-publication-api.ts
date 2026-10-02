@@ -8,6 +8,7 @@ import {
   type ExperienceReleaseRequest,
 } from "@repo/shared/experience-runtime";
 
+import { getAuthGeneration } from "@/auth/auth-store";
 import { api, ApiRequestError } from "@/lib/api-client";
 
 const STUDIO = { service: "studio" as const };
@@ -96,19 +97,28 @@ export async function submitInteractiveFilmRelease(
   release: ExperienceReleaseRequest,
   signal?: AbortSignal
 ): Promise<InteractiveFilmPublication> {
+  const generation = getAuthGeneration();
+  const current = () => {
+    signal?.throwIfAborted();
+    if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
+  };
+  current();
   await api.post("/api/user/interactive-film/releases", {
     ...STUDIO,
     data: release,
     signal,
     timeout: 2 * 60_000,
   });
+  current();
   await api.post(`/api/user/interactive-film/${encodeURIComponent(projectId)}/status`, {
     ...STUDIO,
     data: { action: "submit" },
     signal,
     timeout: 60_000,
   });
+  current();
   const publication = await getInteractiveFilmPublication(projectId, signal);
+  current();
   if (!publication) throw new Error("Java did not return the submitted interactive film.");
   return publication;
 }
@@ -117,13 +127,18 @@ export async function offlineInteractiveFilm(
   projectId: string,
   signal?: AbortSignal
 ): Promise<InteractiveFilmPublication> {
+  const generation = getAuthGeneration();
+  signal?.throwIfAborted();
   await api.post(`/api/user/interactive-film/${encodeURIComponent(projectId)}/status`, {
     ...STUDIO,
     data: { action: "offline" },
     signal,
     timeout: 60_000,
   });
+  signal?.throwIfAborted();
+  if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
   const publication = await getInteractiveFilmPublication(projectId, signal);
+  if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
   if (!publication) throw new Error("Java did not return the offline interactive film.");
   return publication;
 }

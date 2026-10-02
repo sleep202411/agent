@@ -6,7 +6,9 @@ import {
   IconCloudUpload,
   IconLoader2,
 } from "@tabler/icons-react-native";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@/auth";
+import { getAuthGeneration } from "@/auth/auth-store";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   offlineInteractiveFilm,
@@ -101,6 +103,16 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     setPublication,
   } = useStoryChapterContext();
 
+  const { generation } = useAuth();
+  const life = useRef<AbortController | null>(null);
+  const locked = useRef(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    life.current = controller;
+    return () => controller.abort();
+  }, [projectId, generation]);
+  const current = () =>
+    !!life.current && !life.current.signal.aborted && generation === getAuthGeneration();
   const [submitting, setSubmitting] = useState(false);
   const [offlining, setOfflining] = useState(false);
 
@@ -153,24 +165,34 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
         text: t("agent.publish.confirm"),
         onPress: () => {
           void (async () => {
-            if (draftRevision == null || !videoSnapshotHash) return;
+            if (!current() || locked.current || draftRevision == null || !videoSnapshotHash) return;
+            locked.current = true;
+            const signal = life.current!.signal;
             setSubmitting(true);
             try {
-              const release = await prepareInteractiveFilmRelease(projectId, {
-                expectedDraftRevision: draftRevision,
-                expectedVideoSnapshotHash: videoSnapshotHash,
-              });
-              const next = await submitInteractiveFilmRelease(projectId, release);
+              const release = await prepareInteractiveFilmRelease(
+                projectId,
+                {
+                  expectedDraftRevision: draftRevision,
+                  expectedVideoSnapshotHash: videoSnapshotHash,
+                },
+                signal
+              );
+              if (!current() || signal.aborted) return;
+              const next = await submitInteractiveFilmRelease(projectId, release, signal);
+              if (!current() || signal.aborted) return;
               setPublication(next);
               Alert.alert(t("agent.publish.successTitle"), t("agent.publish.success"));
             } catch (error) {
+              if (!current()) return;
               const message =
                 error instanceof Error && error.message.trim()
                   ? error.message
                   : t("agent.publish.failed");
               Alert.alert(t("agent.publish.action"), message);
             } finally {
-              setSubmitting(false);
+              locked.current = false;
+              if (current()) setSubmitting(false);
             }
           })();
         },
@@ -187,19 +209,25 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
         style: "destructive",
         onPress: () => {
           void (async () => {
+            if (!current() || locked.current) return;
+            locked.current = true;
+            const signal = life.current!.signal;
             setOfflining(true);
             try {
-              const next = await offlineInteractiveFilm(projectId);
+              const next = await offlineInteractiveFilm(projectId, signal);
+              if (!current() || signal.aborted) return;
               setPublication(next);
               Alert.alert(t("agent.publish.offline.action"), t("agent.publish.offline.success"));
             } catch (error) {
+              if (!current()) return;
               const message =
                 error instanceof Error && error.message.trim()
                   ? error.message
                   : t("agent.publish.offline.failed");
               Alert.alert(t("agent.publish.offline.action"), message);
             } finally {
-              setOfflining(false);
+              locked.current = false;
+              if (current()) setOfflining(false);
             }
           })();
         },
