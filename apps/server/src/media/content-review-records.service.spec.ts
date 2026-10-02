@@ -145,7 +145,7 @@ describe('ContentReviewRecordsService', () => {
           chargeId: CHARGE,
           findingCount: 1,
           createdByUserId: USER,
-        }),
+        }) as unknown,
       }),
     );
   });

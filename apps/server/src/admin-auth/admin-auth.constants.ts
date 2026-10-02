@@ -3,6 +3,10 @@ export const ADMIN_SESSION_COOKIE = 'fd_admin_session';
 export const ADMIN_PERMISSION_KEYS = {
   AdminManage: 'admin.manage',
   AuditRead: 'audit.read',
+  NewsRead: 'news.read',
+  NewsWrite: 'news.write',
+  CoursesRead: 'courses.read',
+  CoursesWrite: 'courses.write',
   IpRead: 'ip.read',
   IpPublish: 'ip.publish',
   IpModerate: 'ip.moderate',
@@ -32,6 +36,16 @@ export type AdminRoleKey =
   (typeof ADMIN_ROLE_KEYS)[keyof typeof ADMIN_ROLE_KEYS];
 
 export const ADMIN_PERMISSION_CATALOG = [
+  { key: ADMIN_PERMISSION_KEYS.NewsRead, description: 'Read news and tags' },
+  {
+    key: ADMIN_PERMISSION_KEYS.NewsWrite,
+    description: 'Create, edit, publish and delete news and tags',
+  },
+  { key: ADMIN_PERMISSION_KEYS.CoursesRead, description: 'Read courses' },
+  {
+    key: ADMIN_PERMISSION_KEYS.CoursesWrite,
+    description: 'Create, edit, publish, upload and delete courses',
+  },
   {
     key: ADMIN_PERMISSION_KEYS.CrewComputeReview,
     description:
@@ -136,6 +150,10 @@ export const ADMIN_ROLE_CATALOG: Array<{
     description: '拥有内容、账单、媒体和审计权限，不管理后台账号',
     permissions: [
       ADMIN_PERMISSION_KEYS.AuditRead,
+      ADMIN_PERMISSION_KEYS.NewsRead,
+      ADMIN_PERMISSION_KEYS.NewsWrite,
+      ADMIN_PERMISSION_KEYS.CoursesRead,
+      ADMIN_PERMISSION_KEYS.CoursesWrite,
       ADMIN_PERMISSION_KEYS.IpRead,
       ADMIN_PERMISSION_KEYS.IpPublish,
       ADMIN_PERMISSION_KEYS.IpModerate,
@@ -158,6 +176,10 @@ export const ADMIN_ROLE_CATALOG: Array<{
     name: '运营',
     description: '处理内容审核、媒体资产、工作区和订单查询',
     permissions: [
+      ADMIN_PERMISSION_KEYS.NewsRead,
+      ADMIN_PERMISSION_KEYS.NewsWrite,
+      ADMIN_PERMISSION_KEYS.CoursesRead,
+      ADMIN_PERMISSION_KEYS.CoursesWrite,
       ADMIN_PERMISSION_KEYS.IpRead,
       ADMIN_PERMISSION_KEYS.IpModerate,
       ADMIN_PERMISSION_KEYS.BillingRead,

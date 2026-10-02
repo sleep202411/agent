@@ -1193,7 +1193,7 @@ function StoryProjectCanvasInner({
     () => storyboardCoverageByNode(storyboardQuery.data ?? []),
     [storyboardQuery.data]
   );
-  const coverageStore = useRef(new StoryboardCoverageStore()).current;
+  const [coverageStore] = useState(() => new StoryboardCoverageStore());
   useLayoutEffect(() => {
     coverageStore.replace(storyboardCoverage);
   }, [coverageStore, storyboardCoverage]);
@@ -1241,22 +1241,8 @@ function StoryProjectCanvasInner({
     hasDraftConflict: Boolean(conflict),
     hasLayoutConflict: Boolean(layoutConflict),
   });
-  const canEdit = editPolicy.canEditContent;
-  const canMutateCanvasLayout = editPolicy.canEditLayout;
-  const updateEnding = (endingId: string, patch: Pick<StoryBibleEnding, "title">) => {
-    applyGraphMutation(
-      (current) => {
-        const ending = (current.storyBible.endings ?? []).find(
-          (candidate) => candidate.endingId === endingId
-        );
-        return ending ? putStoryEnding(current, { ...ending, ...patch }) : current;
-      },
-      { mergeKey: `ending:${endingId}:${Object.keys(patch).join(",")}:${authoringLocale}` }
-    );
-  };
-  const deleteEnding = (endingId: string) => {
-    applyGraphMutation((current) => removeStoryEnding(current, endingId));
-  };
+  const canEdit = Boolean(editPolicy.canEditContent);
+  const canMutateCanvasLayout = Boolean(editPolicy.canEditLayout);
   const choicePickerNodes = useMemo(
     () =>
       content
@@ -1275,73 +1261,6 @@ function StoryProjectCanvasInner({
   const choiceStateVariables = content?.storyBible.stateVariables ?? NO_STORY_VARIABLES;
   const choiceEndings = content ? endingsInUse(content) : NO_STORY_ENDINGS;
   const choiceRuntimeRef = useRef<StoryCanvasChoiceContextValue>(null!);
-  choiceRuntimeRef.current = {
-    setCommunityPointPrice: async (nodeId, price) => {
-      if (!mutationBarrier.permits("content")) throw new Error(t("communityPrice.unavailable"));
-      const current = latestContentRef.current;
-      if (!current) throw new Error(t("communityPrice.unavailable"));
-      const next = updateStoryCommunityPointPrice(current, nodeId, price);
-      if (next !== current) {
-        const applied = applyGraphMutation(() => next, {
-          mergeKey: `community-price:${nodeId}`,
-        });
-        if (!applied) throw new Error(t("communityPrice.unavailable"));
-      }
-      await withSavedDraftSnapshot(async () => undefined);
-    },
-    canEditContent: canEdit,
-    canCreateOption: canMutateCanvasLayout,
-    start: (sourceNodeId) => {
-      applyGraphMutation((current) => {
-        const source = current.graph.nodes.find((node) => node.nodeId === sourceNodeId);
-        const number = source?.exit.kind === "choice" ? source.exit.choices.length + 1 : 1;
-        return addChoiceOption(current, sourceNodeId, null, authoringLocale, {
-          label: t("interactionCard.defaultOption", { number }),
-        }).content;
-      });
-    },
-    updatePrompt: (sourceNodeId, prompt) => {
-      applyGraphMutation(
-        (current) => updateChoiceExitPrompt(current, sourceNodeId, authoringLocale, prompt),
-        { mergeKey: `choice-prompt:${sourceNodeId}:${authoringLocale}` }
-      );
-    },
-    updateChoice: (sourceNodeId, choiceId, label) => {
-      applyGraphMutation(
-        (current) =>
-          updateChoiceOptionLabel(current, sourceNodeId, choiceId, authoringLocale, label),
-        { mergeKey: `choice:${sourceNodeId}:${choiceId}:label:${authoringLocale}` }
-      );
-    },
-    moveChoice: (sourceNodeId, choiceId, direction) => {
-      applyGraphMutation((current) => moveChoiceOption(current, sourceNodeId, choiceId, direction));
-    },
-    removeChoice: (sourceNodeId, choiceId) => {
-      applyGraphMutation((current) => removeChoiceOption(current, sourceNodeId, choiceId));
-    },
-    stateVariables: choiceStateVariables,
-    endings: choiceEndings,
-    nodes: choicePickerNodes,
-    locale: authoringLocale,
-    patchChoice: (sourceNodeId, choiceId, patch) => {
-      applyGraphMutation((current) => updateChoiceStats(current, sourceNodeId, choiceId, patch), {
-        mergeKey: `choice-stats:${sourceNodeId}:${choiceId}`,
-      });
-    },
-    createEndingForChoice: (sourceNodeId, choiceId) => {
-      applyGraphMutation((current) =>
-        createStoryEndingForChoice(
-          current,
-          sourceNodeId,
-          choiceId,
-          authoringLocale,
-          t("stats.untitledEnding")
-        )
-      );
-    },
-    updateEnding,
-    deleteEnding,
-  };
   // The facade stays stable across storyboard refetches. Methods read the ref,
   // so an upload does not rebuild every visible card.
   const choiceContext = useMemo<StoryCanvasChoiceContextValue>(
@@ -2064,40 +1983,6 @@ function StoryProjectCanvasInner({
     pastes: number;
   } | null>(null);
   const pasteStorySelectionRef = useRef<() => void>(() => {});
-  useLayoutEffect(() => {
-    pasteStorySelectionRef.current = () => {
-      const clipboard = storyClipboardRef.current;
-      const current = latestContentRef.current;
-      if (!clipboard || clipboard.sources.length === 0 || !current) return;
-      if (!mutationBarrier.permits("content")) return;
-      const offset = 48 * (clipboard.pastes + 1);
-      try {
-        const duplicated = duplicateStoryNodes(current, clipboard.sources);
-        if (duplicated.created.length === 0) return;
-        for (const created of duplicated.created) {
-          const position = clipboard.positions.get(created.canvasId);
-          if (!position) continue;
-          pendingNodePositionsRef.current.set(created.nodeId, {
-            x: position.x + offset,
-            y: position.y + offset,
-          });
-        }
-        pendingCopiedNodeIdsRef.current = duplicated.created.map((created) => created.nodeId);
-        if (!commitContent(duplicated.content)) {
-          pendingCopiedNodeIdsRef.current = null;
-          for (const created of duplicated.created) {
-            pendingNodePositionsRef.current.delete(created.nodeId);
-          }
-          return;
-        }
-        clipboard.pastes += 1;
-        persistLayoutWithPendingPositions(duplicated.content);
-        setGraphError(null);
-      } catch {
-        setGraphError(t("graphError.generic"));
-      }
-    };
-  });
 
   useEffect(() => {
     if (!canMutateCanvasLayout) return;
@@ -2195,6 +2080,93 @@ function StoryProjectCanvasInner({
     }
   };
 
+  const updateEnding = (endingId: string, patch: Pick<StoryBibleEnding, "title">) => {
+    applyGraphMutation(
+      (current) => {
+        const ending = (current.storyBible.endings ?? []).find(
+          (candidate) => candidate.endingId === endingId
+        );
+        return ending ? putStoryEnding(current, { ...ending, ...patch }) : current;
+      },
+      { mergeKey: `ending:${endingId}:${Object.keys(patch).join(",")}:${authoringLocale}` }
+    );
+  };
+  const deleteEnding = (endingId: string) => {
+    applyGraphMutation((current) => removeStoryEnding(current, endingId));
+  };
+
+  useLayoutEffect(() => {
+    choiceRuntimeRef.current = {
+      setCommunityPointPrice: async (nodeId, price) => {
+        if (!mutationBarrier.permits("content")) throw new Error(t("communityPrice.unavailable"));
+        const current = latestContentRef.current;
+        if (!current) throw new Error(t("communityPrice.unavailable"));
+        const next = updateStoryCommunityPointPrice(current, nodeId, price);
+        if (next !== current) {
+          const applied = applyGraphMutation(() => next, {
+            mergeKey: `community-price:${nodeId}`,
+          });
+          if (!applied) throw new Error(t("communityPrice.unavailable"));
+        }
+        await withSavedDraftSnapshot(async () => undefined);
+      },
+      canEditContent: canEdit,
+      canCreateOption: canMutateCanvasLayout,
+      start: (sourceNodeId) => {
+        applyGraphMutation((current) => {
+          const source = current.graph.nodes.find((node) => node.nodeId === sourceNodeId);
+          const number = source?.exit.kind === "choice" ? source.exit.choices.length + 1 : 1;
+          return addChoiceOption(current, sourceNodeId, null, authoringLocale, {
+            label: t("interactionCard.defaultOption", { number }),
+          }).content;
+        });
+      },
+      updatePrompt: (sourceNodeId, prompt) => {
+        applyGraphMutation(
+          (current) => updateChoiceExitPrompt(current, sourceNodeId, authoringLocale, prompt),
+          { mergeKey: `choice-prompt:${sourceNodeId}:${authoringLocale}` }
+        );
+      },
+      updateChoice: (sourceNodeId, choiceId, label) => {
+        applyGraphMutation(
+          (current) =>
+            updateChoiceOptionLabel(current, sourceNodeId, choiceId, authoringLocale, label),
+          { mergeKey: `choice:${sourceNodeId}:${choiceId}:label:${authoringLocale}` }
+        );
+      },
+      moveChoice: (sourceNodeId, choiceId, direction) => {
+        applyGraphMutation((current) =>
+          moveChoiceOption(current, sourceNodeId, choiceId, direction)
+        );
+      },
+      removeChoice: (sourceNodeId, choiceId) => {
+        applyGraphMutation((current) => removeChoiceOption(current, sourceNodeId, choiceId));
+      },
+      stateVariables: choiceStateVariables,
+      endings: choiceEndings,
+      nodes: choicePickerNodes,
+      locale: authoringLocale,
+      patchChoice: (sourceNodeId, choiceId, patch) => {
+        applyGraphMutation((current) => updateChoiceStats(current, sourceNodeId, choiceId, patch), {
+          mergeKey: `choice-stats:${sourceNodeId}:${choiceId}`,
+        });
+      },
+      createEndingForChoice: (sourceNodeId, choiceId) => {
+        applyGraphMutation((current) =>
+          createStoryEndingForChoice(
+            current,
+            sourceNodeId,
+            choiceId,
+            authoringLocale,
+            t("stats.untitledEnding")
+          )
+        );
+      },
+      updateEnding,
+      deleteEnding,
+    };
+  });
+
   // Newborn cards live only in pendingNodePositionsRef until some later drag
   // persists the layout; an authoritative layout echo arriving before that
   // (realtime, revision adoption) doesn't know the node and snaps it back to
@@ -2209,6 +2181,41 @@ function StoryProjectCanvasInner({
     };
     void persistLayoutRef.current(nextLayout);
   };
+
+  useLayoutEffect(() => {
+    pasteStorySelectionRef.current = () => {
+      const clipboard = storyClipboardRef.current;
+      const current = latestContentRef.current;
+      if (!clipboard || clipboard.sources.length === 0 || !current) return;
+      if (!mutationBarrier.permits("content")) return;
+      const offset = 48 * (clipboard.pastes + 1);
+      try {
+        const duplicated = duplicateStoryNodes(current, clipboard.sources);
+        if (duplicated.created.length === 0) return;
+        for (const created of duplicated.created) {
+          const position = clipboard.positions.get(created.canvasId);
+          if (!position) continue;
+          pendingNodePositionsRef.current.set(created.nodeId, {
+            x: position.x + offset,
+            y: position.y + offset,
+          });
+        }
+        pendingCopiedNodeIdsRef.current = duplicated.created.map((created) => created.nodeId);
+        if (!commitContent(duplicated.content)) {
+          pendingCopiedNodeIdsRef.current = null;
+          for (const created of duplicated.created) {
+            pendingNodePositionsRef.current.delete(created.nodeId);
+          }
+          return;
+        }
+        clipboard.pastes += 1;
+        persistLayoutWithPendingPositions(duplicated.content);
+        setGraphError(null);
+      } catch {
+        setGraphError(t("graphError.generic"));
+      }
+    };
+  });
 
   const createStoryElement = (kind: StoryNodeCreationKind, position: StoryCanvasPosition) => {
     if (!content || !mutationBarrier.permits("layout")) return;

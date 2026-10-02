@@ -59,7 +59,7 @@ export function StoryProjectPlaytest({
     },
     retry: false,
   });
-  const playSessionReporter = useMemo(createNoopPlaySessionReporter, []);
+  const playSessionReporter = useMemo(() => createNoopPlaySessionReporter(), []);
 
   const loading = runtimeQuery.isLoading;
   const loadError = runtimeQuery.error;

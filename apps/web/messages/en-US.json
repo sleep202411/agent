@@ -10459,7 +10459,9 @@
     "agreedFee": "Agreed fee",
     "useFee": "Use agreed fee",
     "acceptOffer": "Accept offer & join Crew",
-    "taskDeadline": "Task deadline"
+    "taskDeadline": "Task deadline",
+    "createOffer": "Create Offer",
+    "reviseOffer": "Revise Offer"
   },
   "crewPositionInvites": {
     "title": "Invitations to apply",
@@ -10908,9 +10910,9 @@
     "allMessages": "Message center",
     "invitations": "Invitations to apply",
     "direction": "Application inbox",
-    "sent": "My applications",
-    "received": "Applications to my tasks",
-    "search": "Search loaded conversations",
+    "sent": "My Applications",
+    "received": "Applications to My Tasks",
+    "search": "Search Conversations",
     "back": "Back to conversations",
     "review": "Review application",
     "offer": "Task & offer",
@@ -10918,7 +10920,11 @@
     "openTask": "Open task & delivery",
     "select": "Select an application to discuss the task and offer.",
     "conversation": "Conversation",
-    "send": "Send message"
+    "send": "Send message",
+    "searchHint": "Searches the conversations loaded in this list.",
+    "details": "Application Details",
+    "message": "Message",
+    "messagePlaceholder": "Type a message…"
   },
   "contentGpsOwner": {
     "title": "IP locations",
@@ -11116,7 +11122,26 @@
     "excludeUnknown": "Exclude unknown durations",
     "includeUnknown": "Include and label unknown durations",
     "durationPolicyInclude": "Individual episode duration; unknown durations remain labelled.",
-    "unsupportedConditions": "Film duration and mood filters are not supported. Reset these conditions or clarify your request."
+    "unsupportedConditions": "Film duration and mood filters are not supported. Reset these conditions or clarify your request.",
+    "studiosTitle": "Contributing studios",
+    "studiosDescription": "Public credits for this IP. Studio locations are independent of story locations.",
+    "studiosEmpty": "No public contributing studios with listed services.",
+    "studioBasedIn": "Based in {city}",
+    "studioRemote": "Remote services",
+    "studioServices": "Services ({count})",
+    "studioDiscovery": "View studio on discovery map",
+    "studiosLogin": "Sign in to see more studios",
+    "contributorRoles": {
+      "owner": "Owner",
+      "producer": "Producer",
+      "director": "Director",
+      "writer": "Writer",
+      "artist": "Artist",
+      "editor": "Editor",
+      "performer": "Performer",
+      "other": "Contributor"
+    },
+    "studiosMore": "More studios"
   },
   "contentGpsSuggestions": {
     "title": "AI location suggestions",

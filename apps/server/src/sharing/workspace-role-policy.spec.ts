@@ -34,6 +34,7 @@ it('reports the existing editor role and never upgrades on acceptance', async ()
       .mockResolvedValue([
         { status: 'pending', expires_at: new Date('2099-01-01') },
       ]),
+    crew: { findFirst: jest.fn().mockResolvedValue(null) },
     workspaceMember: {
       findFirst: jest.fn().mockResolvedValue(member),
       update: jest.fn(),
@@ -65,6 +66,7 @@ it.each(['admin', 'editor', 'viewer'])(
   'rejects role changes from a non-owner %s before writing',
   async (role) => {
     const db = {
+      crew: { findFirst: jest.fn().mockResolvedValue(null) },
       workspaceMember: {
         findFirst: jest.fn().mockResolvedValue({
           role,
@@ -98,12 +100,14 @@ it('allows the owner to update an existing member role', async () => {
     accessScope: 'workspace',
   };
   const tx = {
+    crew: { findFirst: jest.fn().mockResolvedValue(null) },
     workspaceMember: {
       update: jest.fn().mockResolvedValue({ ...member, role: 'admin' }),
     },
   };
   const permissions = { requireWorkspaceRole: jest.fn() };
   const db = {
+    crew: { findFirst: jest.fn().mockResolvedValue(null) },
     workspaceMember: { findFirst: jest.fn().mockResolvedValue(member) },
     $transaction: (fn: (t: typeof tx) => Promise<unknown>) => fn(tx),
   };

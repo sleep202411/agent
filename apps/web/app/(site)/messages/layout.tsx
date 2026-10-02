@@ -1,5 +1,6 @@
 "use client";
 
+import { CrewSectionNavigation } from "../crews/_components/crew-section-navigation";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { IconBell, IconMessageCircle } from "@tabler/icons-react";
@@ -38,6 +39,11 @@ export default function MessagesLayout({ children }: { children: React.ReactNode
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-4rem)] min-h-[360px] w-full max-w-[1800px] flex-col">
+      {params.get("tab") === "recruitment" && (
+        <div className="shrink-0 px-4 pt-4 sm:px-6">
+          <CrewSectionNavigation active="applications" showDashboard={false} sticky={false} />
+        </div>
+      )}
       <header className="shrink-0 px-4 pt-6 sm:px-6">
         <h1 className="text-xl font-semibold text-foreground">{t("centerTitle")}</h1>
         <nav

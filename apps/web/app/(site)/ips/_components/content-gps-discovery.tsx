@@ -48,6 +48,7 @@ import {
   type GpsMapFactory,
   type GpsViewport,
 } from "../_data/content-gps-map-types";
+import { IpContributingStudios } from "./ip-contributing-studios";
 import { ContentGpsMap } from "./content-gps-map";
 import { DiscoveryAssistant } from "./discovery-assistant";
 import { ContentGpsEraFilter } from "./content-gps-era-filter";
@@ -553,6 +554,11 @@ export function ContentGpsResults({
             ) : data?.selected ? (
               <>
                 <SelectedResult item={data.selected} />
+                <IpContributingStudios
+                  key={`${data.selected.id}:${viewerId ?? "guest"}:${locale}`}
+                  ipId={data.selected.id}
+                  viewerId={viewerId}
+                />
                 <Button
                   disabled={
                     Boolean(viewerId) &&

@@ -1,6 +1,6 @@
 import { CoursesListPage } from "@/components/admin/courses/courses-list-page";
 import { fetchAdminCoursesList } from "@/lib/admin-courses";
-import { getAdminSession } from "@/lib/admin-session";
+import { requireContentPagePermission } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +16,8 @@ export default async function CoursesPage({
   const published = sp.published === "true" || sp.published === "false" ? sp.published : "all";
   const page = Math.max(1, Number(sp.page) || 1);
 
-  const [session, list] = await Promise.all([
-    getAdminSession(),
+  const session = await requireContentPagePermission("courses.read");
+  const [list] = await Promise.all([
     fetchAdminCoursesList({
       q: q || undefined,
       published,

@@ -219,9 +219,9 @@ export function IpGenerationPanel({ ipId }: { ipId: string }) {
       );
 
       setJobId(runRes.jobId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setGenerating(false);
-      setGenError(err?.message || t("errorGeneric"));
+      setGenError(err instanceof Error ? err.message : t("errorGeneric"));
     }
   };
 

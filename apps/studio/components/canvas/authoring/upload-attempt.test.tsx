@@ -1,21 +1,38 @@
-import React, { act } from "react";
+import React, { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { useMediaAuthoringCanvas } from "./use-media-authoring-canvas";
 import { uploadFileViaSignedUrl as upload } from "./upload-attempt.test-mocks";
-let result: any, root: any, host: HTMLDivElement, graph: any, resolve: any, reject: any;
+import type { CanvasGraphStore } from "@/lib/canvas-core/canvas-graph-context";
+let result: ReturnType<typeof useMediaAuthoringCanvas>;
+let root: ReturnType<typeof createRoot>, host: HTMLDivElement;
+const makeGraph = () => ({
+  nodes: [],
+  edges: [],
+  addLocalNode: vi.fn(),
+  promoteLocalNode: vi.fn(),
+  addAssets: vi.fn(),
+  getNodes: () => [],
+  getEdges: () => [],
+  getNode: () => null,
+});
+let graph: ReturnType<typeof makeGraph>;
+let resolve: (value: unknown) => void, reject: (reason: Error) => void;
 function Harness({ scope = "a" }: { scope?: string }) {
-  result = useMediaAuthoringCanvas({
-    graph,
+  const value = useMediaAuthoringCanvas({
+    graph: graph as unknown as CanvasGraphStore,
     canEdit: true,
     ready: false,
     scopeKey: scope,
     uploadKinds: ["image"],
   });
+  useLayoutEffect(() => {
+    result = value;
+  });
   return null;
 }
 beforeEach(() => {
-  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   upload.mockReset();
   upload.mockImplementation(
     () =>
@@ -33,16 +50,7 @@ beforeEach(() => {
       static revokeObjectURL() {}
     }
   );
-  graph = {
-    nodes: [],
-    edges: [],
-    addLocalNode: vi.fn(),
-    promoteLocalNode: vi.fn(),
-    addAssets: vi.fn(),
-    getNodes: () => [],
-    getEdges: () => [],
-    getNode: () => null,
-  };
+  graph = makeGraph();
   host = document.createElement("div");
   root = createRoot(host);
   act(() => root.render(<Harness />));
@@ -55,7 +63,7 @@ function start() {
   act(() =>
     result.onPickFiles({
       target: { files: [new File(["x"], "x.png", { type: "image/png" })], value: "x" },
-    })
+    } as unknown as Parameters<typeof result.onPickFiles>[0])
   );
   return graph.addLocalNode.mock.calls[0][0].id;
 }
@@ -64,7 +72,7 @@ it("deleted upload cannot publish assets after transport has settled", async () 
   const id = start();
   await act(async () => {
     resolve(uploaded);
-    result.onNodesDelete([{ id }]);
+    result.onNodesDelete([{ id, position: { x: 0, y: 0 }, data: {} }]);
   });
   expect(graph.addAssets).not.toHaveBeenCalled();
   expect(graph.promoteLocalNode).not.toHaveBeenCalled();

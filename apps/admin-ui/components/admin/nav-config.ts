@@ -111,11 +111,14 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     icon: IconPhoto,
     permission: "media.read",
   },
-  // TODO: gate behind "news.read" once the permission is registered in the role
-  // system. Left ungated for now so the new module is visible while it's built.
-  { key: "/news", href: "/news", label: "新闻资讯", icon: IconNews },
-  // TODO: gate behind a courses.read permission once registered.
-  { key: "/courses", href: "/courses", label: "课程管理", icon: IconBook2 },
+  { key: "/news", href: "/news", label: "新闻资讯", icon: IconNews, permission: "news.read" },
+  {
+    key: "/courses",
+    href: "/courses",
+    label: "课程管理",
+    icon: IconBook2,
+    permission: "courses.read",
+  },
   {
     key: "/certificates",
     href: "/certificates",

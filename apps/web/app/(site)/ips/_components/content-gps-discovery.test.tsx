@@ -441,3 +441,6 @@ it("keeps an oversized unsent prompt editable instead of discarding it", async (
     vi.mocked(api.post).mock.calls.some(([url]) => url === "/aurora/content-gps/discovery/requests")
   ).toBe(false);
 });
+
+// Relationship transport has its own selection/revocation suite. Keep these collection assertions scoped to their workflow.
+vi.mock("./ip-contributing-studios", () => ({ IpContributingStudios: () => null }));

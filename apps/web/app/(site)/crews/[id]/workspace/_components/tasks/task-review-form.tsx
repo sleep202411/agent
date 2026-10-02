@@ -57,15 +57,17 @@ function ReviewSession({ task, onReviewed }: Props) {
   const latestSubmission = task.submissions[0];
   const videoAssets =
     latestSubmission?.assets?.filter((a) => a.contentType?.startsWith("video/")) ?? [];
-  const clipId = (task as any).metadata?.clipId;
+  const clipId = task.storyboardClipId;
   const showPrimaryPicker = Boolean(clipId && videoAssets.length >= 1);
 
   const defaultAssetId = (() => {
     if (!videoAssets.length) return undefined;
-    const answers = (latestSubmission?.professionalDelivery as any)?.answers ?? {};
+    const answers =
+      (latestSubmission?.professionalDelivery as { answers?: Record<string, unknown> } | null)
+        ?.answers ?? {};
     const assetIdForSlot = (slot: string): string | undefined => {
       const v = answers[slot];
-      if (Array.isArray(v)) return v[0];
+      if (Array.isArray(v)) return typeof v[0] === "string" ? v[0] : undefined;
       return typeof v === "string" ? v : undefined;
     };
     const preferredId =

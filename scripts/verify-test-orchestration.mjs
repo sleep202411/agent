@@ -9,6 +9,9 @@ const require = createRequire(import.meta.url);
 const turbo = process.argv[2] ?? require.resolve("turbo/bin/turbo");
 const config = JSON.parse(readFileSync(new URL("../turbo.json", import.meta.url), "utf8"));
 const flags = [
+  "FD_TEMPLATE_TEST_DATABASE_URL",
+  "IP_FEEDBACK_SQL_TEST",
+  "AI_ACTOR_TEST_DATABASE_URL",
   "IP_FEEDBACK_POSTGRES_TEST",
   "IP_ORIGIN_POSTGRES_TEST",
   "IP_COMMENTS_POSTGRES_TEST",

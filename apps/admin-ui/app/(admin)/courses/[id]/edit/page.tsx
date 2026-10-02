@@ -1,12 +1,13 @@
 import { CourseEditor } from "@/components/admin/courses/course-editor";
 import { fetchAdminCourseDetail } from "@/lib/admin-courses";
-import { getAdminSession } from "@/lib/admin-session";
+import { requireContentPagePermission } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
 export default async function CourseEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [session, detail] = await Promise.all([getAdminSession(), fetchAdminCourseDetail(id)]);
+  const session = await requireContentPagePermission("courses.write");
+  const [detail] = await Promise.all([fetchAdminCourseDetail(id)]);
 
   return (
     <CourseEditor

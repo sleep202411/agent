@@ -11,7 +11,7 @@ import {
   saveAdminCourse,
   type AdminCourseSaveInput,
 } from "@/lib/admin-courses";
-import { getAdminSession } from "@/lib/admin-session";
+import { contentPermissionResponse } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
@@ -56,8 +56,8 @@ function toSaveInput(body: SaveBody): AdminCourseSaveInput {
 }
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getAdminSession();
-  if (!session) return Response.json({ error: "未登录" }, { status: 401 });
+  const denied = await contentPermissionResponse("courses.read");
+  if (denied) return denied;
   const { id } = await params;
   const result = await fetchAdminCourseDetail(id);
   if (result.error || !result.data) {
@@ -67,8 +67,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getAdminSession();
-  if (!session) return Response.json({ error: "未登录" }, { status: 401 });
+  const denied = await contentPermissionResponse("courses.write");
+  if (denied) return denied;
   const { id } = await params;
   try {
     const body = (await request.json()) as SaveBody;
@@ -86,8 +86,8 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getAdminSession();
-  if (!session) return Response.json({ error: "未登录" }, { status: 401 });
+  const denied = await contentPermissionResponse("courses.write");
+  if (denied) return denied;
   const { id } = await params;
   try {
     await deleteAdminCourse(id);

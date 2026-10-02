@@ -35,8 +35,9 @@ export function StoryCanvasTextInput({
   const lastCommitted = useRef(value);
   const textRef = useRef(value);
   const onValueChangeRef = useRef(onValueChange);
-  textRef.current = text;
-  onValueChangeRef.current = onValueChange;
+  useLayoutEffect(() => {
+    onValueChangeRef.current = onValueChange;
+  }, [onValueChange]);
   useLayoutEffect(() => {
     if (!focused.current && !composing.current) {
       setText(value);

@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { IconBrandDiscord, IconBrandWechat, IconBrandWhatsapp } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
@@ -74,6 +75,8 @@ const COLUMNS: FooterCol[] = [
 ];
 
 export function SiteFooter() {
+  const pathname = usePathname();
+  const compact = /\/crews(?:\/|$)/.test(pathname ?? "");
   const t = useTranslations("footer");
   const locale = useLocale() as Locale;
   // Region check is build-time, baked into the bundle from
@@ -97,7 +100,7 @@ export function SiteFooter() {
   );
 
   return (
-    <footer className="mt-20 border-t border-border">
+    <footer className={`${compact ? "mt-6" : "mt-20"} border-t border-border`}>
       <div className="mx-auto max-w-screen-2xl px-6 py-12">
         <div className="flex flex-col gap-10 lg:flex-row">
           <div className="flex shrink-0 flex-col lg:w-64 items-start">

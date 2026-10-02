@@ -48,6 +48,7 @@ function candidateSql(
   after: string | null,
   viewerId: string | null,
   onlyCreatorId: string | null = null,
+  creatorIds?: string[],
 ) {
   const q = input.query;
   const city = (
@@ -65,6 +66,7 @@ function candidateSql(
         count(*) FILTER (WHERE ${serviceMatch})::int AS matching_service_count
       FROM creator_services s WHERE s.status::text = 'listed' AND s.deleted_at IS NULL
         ${onlyCreatorId ? Prisma.sql`AND s.creator_id = ${onlyCreatorId}` : Prisma.empty}
+        ${creatorIds ? Prisma.sql`AND s.creator_id IN (${Prisma.join(creatorIds)})` : Prisma.empty}
         ${after ? Prisma.sql`AND s.creator_id COLLATE "C" > ${after}` : Prisma.empty}
         AND NOT EXISTS (SELECT 1 FROM ip_user_content_blocks b WHERE b.user_id = ${viewerId}
           AND b.target_type::text = 'creator' AND b.target_id = s.creator_id AND b.unblocked_at IS NULL)
@@ -111,6 +113,47 @@ export class CreatorDiscoveryService {
       serviceCount: entry.candidate.serviceCount,
       matchingServiceCount: entry.candidate.matchingServiceCount,
     };
+  }
+
+  /** Same discovery gates and location projection, in the caller's snapshot. */
+  async publicProfiles(
+    ids: string[],
+    tx: Prisma.TransactionClient,
+    user?: AuthUser,
+  ) {
+    if (!ids.length) return [];
+    if (ids.length > BATCH)
+      throw new BadRequestException('Studio batch exceeds 500 IDs.');
+    const input = CreatorDiscoveryRequestSchema.parse({
+      requestId: randomUUID(),
+      query: {
+        basedIn: null,
+        serves: null,
+        remoteOnly: false,
+        availableForWork: false,
+        category: null,
+        text: '',
+      },
+    });
+    const candidates = await tx.$queryRaw<Candidate[]>(
+      candidateSql(input, null, user?.userId ?? null, null, ids),
+    );
+    const identities = new Map(
+      (
+        await this.directory.publicCreatorBatch(candidates.map((c) => c.id))
+      ).map((row) => [row.id, row]),
+    );
+    const results: z.infer<typeof CreatorDiscoveryCardSchema>[] = [];
+    for (const candidate of candidates) {
+      const identity = identities.get(candidate.id);
+      if (identity)
+        results.push(
+          CreatorDiscoveryCardSchema.parse(
+            await this.project({ candidate, identity, matched: true }),
+          ),
+        );
+    }
+    return results;
   }
 
   async profile(creatorId: string, user?: AuthUser) {

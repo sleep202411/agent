@@ -2,14 +2,16 @@ import { expect, it } from "vitest";
 import robots from "./robots";
 // Only prefix rules are used here; model RFC 9309 group selection and longest match.
 function allowed(agent: string, path: string) {
-  const groups = robots().rules as any[];
-  const names = (g: any) => (Array.isArray(g.userAgent) ? g.userAgent : [g.userAgent]);
+  const raw = robots().rules;
+  const groups = Array.isArray(raw) ? raw : [raw];
+  const names = (g: (typeof groups)[number]) =>
+    Array.isArray(g.userAgent) ? g.userAgent : [g.userAgent];
   const exact = groups.filter((g) =>
-    names(g).some((n: string) => n.toLowerCase() === agent.toLowerCase())
+    names(g).some((n) => typeof n === "string" && n.toLowerCase() === agent.toLowerCase())
   );
   const selected = exact.length ? exact : groups.filter((g) => names(g).includes("*"));
   const rules = selected.flatMap((g) =>
-    ["allow", "disallow"].flatMap((kind) =>
+    (["allow", "disallow"] as const).flatMap((kind) =>
       (Array.isArray(g[kind]) ? g[kind] : g[kind] ? [g[kind]] : [])
         .filter((s: string) => path.startsWith(s))
         .map((s: string) => ({ kind, length: s.length }))

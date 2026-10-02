@@ -10459,7 +10459,9 @@
     "agreedFee": "約定費用",
     "useFee": "使用約定費用",
     "acceptOffer": "接受邀約並加入劇組",
-    "taskDeadline": "任務截止日期"
+    "taskDeadline": "任務截止日期",
+    "createOffer": "建立報價",
+    "reviseOffer": "修改報價"
   },
   "crewPositionInvites": {
     "title": "應聘邀請",
@@ -10910,7 +10912,7 @@
     "direction": "申請收件匣",
     "sent": "我的申請",
     "received": "收到的任務申請",
-    "search": "搜尋已載入的對話",
+    "search": "搜尋對話",
     "back": "返回對話列表",
     "review": "審核申請",
     "offer": "任務與邀約",
@@ -10918,7 +10920,11 @@
     "openTask": "開啟任務與交付",
     "select": "選擇一份申請，溝通任務和合作條款。",
     "conversation": "對話",
-    "send": "傳送訊息"
+    "send": "傳送訊息",
+    "searchHint": "搜尋目前列表中已載入的對話。",
+    "details": "申請詳情",
+    "message": "訊息",
+    "messagePlaceholder": "輸入訊息…"
   },
   "contentGpsOwner": {
     "title": "IP地點",
@@ -11116,7 +11122,26 @@
     "excludeUnknown": "排除未知時長",
     "includeUnknown": "包含並標註未知時長",
     "durationPolicyInclude": "按單集時長篩選；未知時長將保留並標註。",
-    "unsupportedConditions": "暫不支援整部影片時長和情緒篩選。請重設這些條件或進一步說明。"
+    "unsupportedConditions": "暫不支援整部影片時長和情緒篩選。請重設這些條件或進一步說明。",
+    "studiosTitle": "參與工作室",
+    "studiosDescription": "此 IP 的公開署名。工作室所在地與故事地點相互獨立。",
+    "studiosEmpty": "暫無提供公開服務的參與工作室。",
+    "studioBasedIn": "所在地：{city}",
+    "studioRemote": "提供遠端服務",
+    "studioServices": "服務（{count}）",
+    "studioDiscovery": "在工作室地圖查看",
+    "studiosLogin": "登入查看更多工作室",
+    "contributorRoles": {
+      "owner": "擁有者",
+      "producer": "製片人",
+      "director": "導演",
+      "writer": "編劇",
+      "artist": "美術",
+      "editor": "剪輯",
+      "performer": "演員",
+      "other": "貢獻者"
+    },
+    "studiosMore": "更多工作室"
   },
   "contentGpsSuggestions": {
     "title": "AI 地點建議",

@@ -146,7 +146,11 @@ export default function CrewsPage() {
 
   return (
     <div
-      className={view === "mine" && selectedCrew ? "bg-background" : "min-h-screen bg-background"}
+      className={
+        view === "mine" && selectedCrew
+          ? "bg-background"
+          : "min-h-[calc(100dvh-8rem)] bg-background"
+      }
     >
       <CreateCrewDialog open={createOpen} onOpenChange={setCreateOpen} />
       <KycGateDialog
@@ -156,7 +160,7 @@ export default function CrewsPage() {
       />
 
       <div
-        className={`mx-auto max-w-[1800px] px-4 pt-8 sm:px-6 ${view === "mine" && selectedCrew ? "pb-4" : "pb-24"}`}
+        className={`mx-auto max-w-[1800px] px-4 pt-8 sm:px-6 ${view === "mine" && selectedCrew ? "pb-4" : "pb-6"}`}
       >
         <div className="min-w-0">
           <CrewSectionNavigation active={view} onViewChange={setView}>

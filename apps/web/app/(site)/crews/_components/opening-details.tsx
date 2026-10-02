@@ -89,13 +89,18 @@ export function OpeningDetails({
             {salary && <p className="font-medium">{salary}</p>}
           </header>
           <div className="flex flex-wrap gap-3">
-            {" "}
-            <ApplyToOpening
-              crewId={id}
-              positionId={position.id}
-              disabled={Boolean(full) || viewer.isOwner}
-              label={viewer.isOwner ? t("ownOpening") : full ? crewT("ctaFull") : crewT("ctaApply")}
-            />
+            {viewer.isOwner ? (
+              <span className="inline-flex items-center rounded-md bg-secondary px-3 py-2 text-sm text-muted-foreground">
+                {t("ownOpening")}
+              </span>
+            ) : (
+              <ApplyToOpening
+                crewId={id}
+                positionId={position.id}
+                disabled={Boolean(full)}
+                label={full ? crewT("ctaFull") : crewT("ctaApply")}
+              />
+            )}
             <SaveOpening positionId={position.id} />
           </div>
           <section className="space-y-2">

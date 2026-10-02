@@ -325,7 +325,11 @@ describe('CrewAssetsService', () => {
       sort: 'name',
       query: 'nested',
     });
-    const call = t.prisma.crewAssetNode.findMany.mock.calls.at(-1)![0];
+    const call = (
+      t.prisma.crewAssetNode.findMany.mock.calls as [
+        { where: Record<string, unknown> },
+      ][]
+    ).at(-1)![0];
     expect(call.where).toMatchObject({
       crewId: CREW_ID,
       status: 'active',

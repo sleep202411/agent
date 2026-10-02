@@ -1,11 +1,12 @@
 import { NewsEditor } from "@/components/admin/news/news-editor";
 import { fetchAdminNewsTags } from "@/lib/admin-news";
-import { getAdminSession } from "@/lib/admin-session";
+import { requireContentPagePermission } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewsCreatePage() {
-  const [session, tags] = await Promise.all([getAdminSession(), fetchAdminNewsTags()]);
+  const session = await requireContentPagePermission("news.write");
+  const [tags] = await Promise.all([fetchAdminNewsTags()]);
 
   return (
     <NewsEditor

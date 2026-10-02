@@ -120,3 +120,18 @@ it('does not allow the controller role to be assigned through account-management
       .success,
   ).toBe(true);
 });
+
+it('grants content operations explicitly without granting the finance-only controller content access', () => {
+  for (const permission of [
+    'news.read',
+    'news.write',
+    'courses.read',
+    'courses.write',
+  ]) {
+    expect(
+      ADMIN_ROLE_CATALOG.filter((role) => role.permissions.includes(permission))
+        .map((role) => role.key)
+        .sort(),
+    ).toEqual(['admin', 'operations', 'super_admin']);
+  }
+});

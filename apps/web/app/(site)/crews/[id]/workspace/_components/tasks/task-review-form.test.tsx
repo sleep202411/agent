@@ -23,7 +23,12 @@ const container = document.createElement("div");
 document.body.appendChild(container);
 let root = createRoot(container);
 const onReviewed = vi.fn();
-async function render(id = "task", crewId = "crew", submissionId = "submission-1") {
+async function render(
+  id = "task",
+  crewId = "crew",
+  submissionId = "submission-1",
+  extra: Partial<CrewTaskDTO> = {}
+) {
   await act(async () =>
     root.render(
       <TaskReviewForm
@@ -36,6 +41,7 @@ async function render(id = "task", crewId = "crew", submissionId = "submission-1
             submissions: [{ id: submissionId }],
             revisionLimit: 2,
             revisionRoundsUsed: 0,
+            ...extra,
           } as CrewTaskDTO
         }
         onReviewed={onReviewed}
@@ -209,4 +215,20 @@ it("retains the deadline after failure but clears it for a different submission"
   expect(container.querySelector("input")!.value).toBe("2099-05-02T10:30");
   await render("task", "crew", "submission-2");
   expect(container.querySelector("input")!.value).toBe("");
+});
+
+it("shows the primary video selector from the public storyboard clip field", async () => {
+  await render("task", "crew", "submission-1", {
+    storyboardClipId: "clip-1",
+    submissions: [
+      {
+        id: "submission-1",
+        assets: [{ id: "video-1", name: "Final video", contentType: "video/mp4" }],
+      },
+    ] as CrewTaskDTO["submissions"],
+  });
+  expect(container.querySelector('[aria-label="clipPrimaryAsset"]')).not.toBeNull();
+  expect(container.textContent).toContain("Final video");
+  await render();
+  expect(container.querySelector('[aria-label="clipPrimaryAsset"]')).toBeNull();
 });

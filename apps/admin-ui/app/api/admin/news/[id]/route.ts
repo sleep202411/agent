@@ -1,14 +1,14 @@
 import { NextRequest } from "next/server";
 import { deleteAdminNews, updateAdminNews, type AdminNewsSaveInput } from "@/lib/admin-news";
-import { getAdminSession } from "@/lib/admin-session";
+import { contentPermissionResponse } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
 // Update — PUT /api/admin/news/{id} (matches the deployed @PutMapping; the Java
 // doc text says POST, the controller code is the source of truth).
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await getAdminSession();
-  if (!session) return Response.json({ error: "未登录" }, { status: 401 });
+  const denied = await contentPermissionResponse("news.write");
+  if (denied) return denied;
   const { id } = await params;
   try {
     const input = (await request.json()) as AdminNewsSaveInput;
@@ -26,8 +26,8 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getAdminSession();
-  if (!session) return Response.json({ error: "未登录" }, { status: 401 });
+  const denied = await contentPermissionResponse("news.write");
+  if (denied) return denied;
   const { id } = await params;
   try {
     await deleteAdminNews(id);

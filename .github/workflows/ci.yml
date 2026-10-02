@@ -34,6 +34,28 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      postgres-actors:
+        image: postgres:17
+        env:
+          POSTGRES_USER: fizzdragon
+          POSTGRES_PASSWORD: fizzdragon
+          POSTGRES_DB: ai_actor_review
+        ports:
+          - 55193:5432
+        options: >-
+          --health-cmd "pg_isready -U fizzdragon -d ai_actor_review"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis-rate-limit:
+        image: redis:7
+        ports:
+          - 56385:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
       redis:
         image: redis:7
         ports:
@@ -74,6 +96,14 @@ jobs:
         run: docker exec "${{ job.services.postgres.id }}" createdb -U fizzdragon fizzdragon_legacy_agent_test
 
       - name: Apply product database migrations
+        run: npm run db:deploy -w server
+
+      - name: Create dedicated concurrency fixture database
+        run: docker exec "${{ job.services.postgres-gps.id }}" createdb -U fizzdragon fd_audit
+
+      - name: Migrate dedicated AI Actor fixture
+        env:
+          DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55193/ai_actor_review
         run: npm run db:deploy -w server
 
       - uses: azure/setup-helm@v5
@@ -122,6 +152,14 @@ jobs:
         env:
           CONTENT_GPS_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/gps_test?sslmode=disable
         run: npm run test:integration:gps -w server
+
+      - name: Actor, rate-limit, publication and feedback regressions
+        env:
+          AI_ACTOR_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55193/ai_actor_review
+          REDIS_RATE_LIMIT_INTEGRATION_URL: redis://127.0.0.1:56385/15
+          FD_TEMPLATE_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/fd_audit
+          IP_FEEDBACK_SQL_TEST: "1"
+        run: npm run test:integration:audit -w server
 
       - name: Multipart upload integration
         env:

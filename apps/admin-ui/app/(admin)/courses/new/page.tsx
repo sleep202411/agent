@@ -1,13 +1,12 @@
 import { redirect } from "next/navigation";
 import { createAdminCourseDraft } from "@/lib/admin-courses";
-import { getAdminSession } from "@/lib/admin-session";
+import { requireContentPagePermission } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
 /** Creates a Java draft then redirects into the editor. */
 export default async function NewCoursePage() {
-  const session = await getAdminSession();
-  if (!session) redirect("/login");
+  await requireContentPagePermission("courses.write");
 
   let id: string;
   try {

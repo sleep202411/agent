@@ -39,7 +39,7 @@ export function RecruitmentInbox() {
   const { open: openAuthDialog } = useAuthDialog();
   if (isLoading || !user)
     return (
-      <main className="h-full min-h-0 overflow-y-auto px-4 py-4">
+      <main className="flex h-full min-h-0 flex-col overflow-hidden px-4 py-4">
         {isLoading ? (
           <p role="status">{t("loading")}</p>
         ) : (
@@ -69,7 +69,7 @@ function MyApplications({
   const c = useTranslations("crewCommunications");
   const positionLabel = useTranslatePositionValue();
   const locale = useLocale();
-  const crewT = useTranslations("crew");
+  const crewT = useTranslations("workspace");
   const [scope, setScope] = useState<"sent" | "received">("sent");
   const [selected, setSelected] = useState<string | null>(requestedApplication);
   const [search, setSearch] = useState("");
@@ -117,11 +117,11 @@ function MyApplications({
   );
   const reviewer = Boolean(application && application.applicantId !== userId);
   return (
-    <main className="h-full min-h-0 overflow-y-auto px-4 py-4">
+    <main className="flex h-full min-h-0 flex-col overflow-hidden px-4 py-4">
       <div className="mb-4">
         <PositionInvitationsPanel hideWhenEmpty />
       </div>
-      <div className="grid min-h-[600px] grid-cols-1 overflow-hidden rounded-xl border border-white/10 bg-[#101012] lg:h-[calc(100dvh-240px)] lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="grid h-full min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-xl border border-white/10 bg-background  lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_280px]">
         <aside
           className={cn(
             "flex min-h-0 flex-col border-r border-white/10",
@@ -155,7 +155,11 @@ function MyApplications({
               onChange={(event) => setSearch(event.target.value)}
               aria-label={c("search")}
               placeholder={c("search")}
+              aria-describedby="recruitment-search-hint"
             />
+            <p id="recruitment-search-hint" className="text-xs text-muted-foreground">
+              {c("searchHint")}
+            </p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {query.isPending && <p className="p-3">{t("loading")}</p>}
@@ -216,7 +220,7 @@ function MyApplications({
         </aside>
         <section
           className={cn(
-            "min-h-0 min-w-0 overflow-y-auto",
+            "min-h-0 min-w-0 overflow-hidden",
             !application && "hidden lg:flex lg:items-center lg:justify-center"
           )}
         >
@@ -228,8 +232,8 @@ function MyApplications({
           ) : selected && detail.isPending ? (
             <p className="p-6">{t("loading")}</p>
           ) : application ? (
-            <div key={application.id}>
-              <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#101012] p-4">
+            <div key={application.id} className="flex h-full min-h-0 flex-col">
+              <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-background p-4">
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
@@ -252,25 +256,50 @@ function MyApplications({
                     </p>
                   </div>
                 </div>
-                {reviewer && (
+                {reviewer && application.status === "pending" && (
                   <Button size="sm" onClick={() => setReviewing(true)}>
                     {c("review")}
                   </Button>
                 )}
               </header>
-              <div className="space-y-2 px-4 py-3 text-sm">
-                <Link
-                  className="text-primary underline"
-                  href={`/${locale}/creators/${encodeUserId(application.applicantId)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {crewT("reviewDialogViewProfile")}
-                </Link>
-                {application.message && (
-                  <p className="whitespace-pre-wrap text-muted-foreground">{application.message}</p>
-                )}
-              </div>
+              <details className="shrink-0 border-b border-border p-4 xl:hidden">
+                <summary className="cursor-pointer text-sm">{c("details")}</summary>
+                <div className="max-h-48 overflow-y-auto">
+                  {" "}
+                  <div className="space-y-2 px-4 py-3 text-sm">
+                    <Link
+                      className="text-primary underline"
+                      href={`/${locale}/creators/${encodeUserId(application.applicantId)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {crewT("reviewDialogViewProfile")}
+                    </Link>
+                    {application.message && (
+                      <p className="whitespace-pre-wrap text-muted-foreground">
+                        {application.message}
+                      </p>
+                    )}
+                  </div>
+                  {application.status === "approved" ? (
+                    <ApplicationAmendmentsPanel
+                      applicationId={application.id}
+                      applicantId={application.applicantId}
+                      crewId={application.crewId}
+                      taskId={application.taskId}
+                      status={application.status}
+                    />
+                  ) : null}
+                  {application.taskId && application.status === "approved" ? (
+                    <Link
+                      className="m-4 inline-block rounded-full bg-primary px-4 py-2 text-sm text-white"
+                      href={`/${locale}/crews/${encodeURIComponent(application.crewId)}/workspace?tab=tasks&task=${encodeURIComponent(application.taskId)}`}
+                    >
+                      {c("openTask")}
+                    </Link>
+                  ) : null}
+                </div>
+              </details>
               <ApplicationInterviewPanel
                 applicationId={application.id}
                 applicantId={application.applicantId}
@@ -289,23 +318,6 @@ function MyApplications({
                   />
                 }
               />
-              {application.status === "approved" ? (
-                <ApplicationAmendmentsPanel
-                  applicationId={application.id}
-                  applicantId={application.applicantId}
-                  crewId={application.crewId}
-                  taskId={application.taskId}
-                  status={application.status}
-                />
-              ) : null}
-              {application.taskId && application.status === "approved" ? (
-                <Link
-                  className="m-4 inline-block rounded-full bg-primary px-4 py-2 text-sm text-white"
-                  href={`/${locale}/crews/${encodeURIComponent(application.crewId)}/workspace?tab=tasks&task=${encodeURIComponent(application.taskId)}`}
-                >
-                  {c("openTask")}
-                </Link>
-              ) : null}
               {reviewer && reviewing ? (
                 <ApplicationReviewDialog
                   crewId={application.crewId}
@@ -325,6 +337,53 @@ function MyApplications({
             </div>
           )}
         </section>
+        {application && (
+          <aside
+            className="min-h-0 space-y-5 overflow-y-auto border-l border-border p-4 max-xl:hidden"
+            aria-label={c("details")}
+          >
+            <h2 className="text-sm font-semibold">{c("details")}</h2>
+            <p className="text-sm font-medium">
+              {application.taskTitle ?? positionLabel(application.positionType)}
+            </p>
+            <Link
+              className="text-sm underline"
+              href={`/${locale}/crews/${encodeURIComponent(application.crewId)}`}
+            >
+              {application.crewName}
+            </Link>
+            <div className="space-y-2 px-4 py-3 text-sm">
+              <Link
+                className="text-primary underline"
+                href={`/${locale}/creators/${encodeUserId(application.applicantId)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {crewT("reviewDialogViewProfile")}
+              </Link>
+              {application.message && (
+                <p className="whitespace-pre-wrap text-muted-foreground">{application.message}</p>
+              )}
+            </div>
+            {application.status === "approved" ? (
+              <ApplicationAmendmentsPanel
+                applicationId={application.id}
+                applicantId={application.applicantId}
+                crewId={application.crewId}
+                taskId={application.taskId}
+                status={application.status}
+              />
+            ) : null}
+            {application.taskId && application.status === "approved" ? (
+              <Link
+                className="m-4 inline-block rounded-full bg-primary px-4 py-2 text-sm text-white"
+                href={`/${locale}/crews/${encodeURIComponent(application.crewId)}/workspace?tab=tasks&task=${encodeURIComponent(application.taskId)}`}
+              >
+                {c("openTask")}
+              </Link>
+            ) : null}
+          </aside>
+        )}
       </div>
     </main>
   );

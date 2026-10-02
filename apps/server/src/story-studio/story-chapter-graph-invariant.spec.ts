@@ -27,7 +27,7 @@ function draft(
           routes: [
             {
               target: ids[index + 1]
-                ? { kind: 'node' as const, nodeId: ids[index + 1]! }
+                ? { kind: 'node' as const, nodeId: ids[index + 1] }
                 : null,
             },
           ],
