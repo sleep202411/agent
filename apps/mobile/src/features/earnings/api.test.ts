@@ -18,6 +18,7 @@ it("preserves integer precision and reads authenticated totals without a client 
     service: "aurora",
     signal,
     retry: false,
+    cache: "no-store",
     params: { locale: "en-US", days: "all", limit: 10 },
   });
   expect(formatEarnings(page.lifetimeEarned, "en-US")).toBe("900,719,925,474,099,312,345");

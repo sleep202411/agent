@@ -65,7 +65,11 @@ export function useEarnings(
         session.failed = true;
         const status =
           cause && typeof cause === "object" && "status" in cause ? cause.status : undefined;
-        if (status === 401 || status === 403) {
+        if (
+          status === 401 ||
+          status === 403 ||
+          (status === 400 && /cursor/i.test(cause instanceof Error ? cause.message : ""))
+        ) {
           session.items = [];
           session.summary = undefined;
           session.cursor = null;

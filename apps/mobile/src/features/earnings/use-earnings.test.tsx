@@ -142,3 +142,41 @@ it("revalidates rows and totals when returning to a previously active screen", a
   await act(async () => finish({ entries: [{ ...item, workTitle: "Fresh" }], nextCursor: null }));
   expect(host.textContent).toContain("Fresh");
 });
+
+it("restarts an expired cursor on Retry instead of repeatedly sending it", async () => {
+  h.load
+    .mockResolvedValueOnce({ entries: [item], lifetimeEarned: "987654321", nextCursor: "expired" })
+    .mockRejectedValueOnce(Object.assign(new Error("Invalid earnings cursor"), { status: 400 }))
+    .mockResolvedValueOnce({
+      entries: [{ ...item, workTitle: "Fresh ledger" }],
+      lifetimeEarned: "42",
+      nextCursor: "fresh",
+    })
+    .mockResolvedValueOnce({ entries: [{ id: "two", workTitle: "Next entry" }], nextCursor: null });
+  await render("1");
+  await click(0);
+  expect(host.textContent).toContain("Invalid earnings cursor");
+  expect(host.textContent).not.toContain("First");
+  expect(host.textContent).not.toContain("987654321");
+  await click(0);
+  expect(h.load).toHaveBeenCalledTimes(2);
+  await click(1);
+  expect(h.load.mock.calls[2][3]).toBeNull();
+  expect(host.textContent).toContain("Fresh ledger");
+  expect(host.textContent).not.toContain("Invalid earnings cursor");
+  await click(0);
+  expect(h.load.mock.calls[3][3]).toBe("fresh");
+  expect(host.textContent).toContain("Next entry");
+});
+it("does not discard loaded earnings for unrelated validation errors", async () => {
+  h.load
+    .mockResolvedValueOnce({ entries: [item], lifetimeEarned: "987654321", nextCursor: "next" })
+    .mockRejectedValueOnce(Object.assign(new Error("Invalid filter"), { status: 400 }))
+    .mockResolvedValueOnce({ entries: [], nextCursor: null });
+  await render("1");
+  await click(0);
+  expect(host.textContent).toContain("First");
+  expect(host.textContent).toContain("Invalid filter");
+  await click(1);
+  expect(h.load.mock.calls[2][3]).toBe("next");
+});

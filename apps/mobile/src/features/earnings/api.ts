@@ -42,6 +42,7 @@ export async function fetchEarnings(
       service: "aurora",
       signal,
       retry: false,
+      cache: "no-store",
       params: {
         locale,
         days,
