@@ -6,6 +6,8 @@ vi.mock("@/lib/api-client", () => ({ ApiRequestError: class extends Error {} }))
 const h = vi.hoisted(() => ({
   read: vi.fn(),
   apply: vi.fn(),
+  gate: vi.fn(),
+  alert: vi.fn(),
   application: undefined as any,
   header: undefined as any,
   generation: 1,
@@ -26,13 +28,15 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({ generation: h.generation, status: h.status }),
-  useAuthGate: () => ({}),
+  useAuthGate: () => ({ requireAuth: h.gate }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 beforeEach(() => {
   h.read.mockReset();
   h.apply.mockReset();
+  h.alert.mockReset();
+  h.gate.mockReset().mockImplementation(({ onAuthenticated }) => onAuthenticated());
   h.active = true;
   h.status = "authenticated";
   h.generation = 1;
@@ -75,6 +79,8 @@ vi.mock("@/components/ui", () => ({
   Tag: () => null,
 }));
 vi.mock("react-native", () => ({
+  Alert: { alert: h.alert },
+  Modal: ({ visible, children }: any) => (visible ? <div data-modal>{children}</div> : null),
   Platform: { OS: "web", select: (options: any) => options.web ?? options.default },
   StyleSheet: { create: (x: any) => x },
   View: ({ children }: any) => <div>{children}</div>,
@@ -191,6 +197,67 @@ it("keeps a pending application serialized while recruitment is refreshed on ret
     });
     expect(success).toHaveBeenCalledTimes(1);
     expect(h.application.applying).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("offers every opening and submits the selected one beyond Android's alert limit", async () => {
+  h.read.mockResolvedValue({
+    ...crew("Film Crew"),
+    roles: Array.from({ length: 8 }, (_, i) => ({ id: `role${i}`, title: `Role ${i}`, count: 1 })),
+  });
+  h.apply.mockResolvedValue(undefined);
+  const host = document.createElement("div"),
+    root = createRoot(host);
+  try {
+    await act(async () => root.render(<CrewDetail />));
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((b) => b.textContent === "crewDetail.applyButton")!
+        .click()
+    );
+    const modal = host.querySelector("[data-modal]")!;
+    expect(modal.querySelectorAll("button").length).toBeGreaterThanOrEqual(9);
+    await act(async () =>
+      [...modal.querySelectorAll("button")].find((b) => b.textContent === "Role 7")!.click()
+    );
+    expect(h.apply).toHaveBeenCalledExactlyOnceWith("crew", "role7");
+    expect(host.querySelector("[data-modal]")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+it("uses refreshed openings after login and allows cancelling without an application", async () => {
+  let resume!: () => void;
+  h.gate.mockImplementation(({ onAuthenticated }) => {
+    resume = onAuthenticated;
+  });
+  h.read
+    .mockResolvedValueOnce({ ...crew("Crew"), roles: [{ id: "old", title: "Old job", count: 1 }] })
+    .mockResolvedValueOnce({ ...crew("Crew"), roles: [{ id: "new", title: "New job", count: 1 }] });
+  const host = document.createElement("div"),
+    root = createRoot(host);
+  try {
+    await act(async () => root.render(<CrewDetail />));
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((b) => b.textContent === "crewDetail.applyButton")!
+        .click()
+    );
+    h.generation++;
+    await act(async () => {
+      root.render(<CrewDetail />);
+      resume();
+    });
+    const modal = host.querySelector("[data-modal]")!;
+    expect(modal.textContent).toContain("New job");
+    expect(modal.textContent).not.toContain("Old job");
+    await act(async () =>
+      [...modal.querySelectorAll("button")].find((b) => b.textContent === "report.cancel")!.click()
+    );
+    expect(h.apply).not.toHaveBeenCalled();
+    expect(host.querySelector("[data-modal]")).toBeNull();
   } finally {
     await act(async () => root.unmount());
   }

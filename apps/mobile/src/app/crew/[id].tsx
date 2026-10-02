@@ -2,16 +2,7 @@ import { CrewLinkedResources } from "@/features/services/crew-linked-resources";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  ActionSheetIOS,
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth, useAuthGate } from "@/auth";
@@ -28,6 +19,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { type MessageKey, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
+import { CrewRolePicker } from "@/features/browse/crew-role-picker";
 import { useCrewApplication } from "@/features/browse/use-crew-application";
 import { crewPositionLabel } from "@/lib/crew-position-label";
 import { showCrewActionsMenu } from "@/features/browse/crew-actions-menu";
@@ -78,6 +70,7 @@ export default function CrewDetailScreen() {
     [id, auth.generation, auth.status, active, revision, t]
   );
   const [read, setRead] = useState<{ scope: typeof scope; crew?: CrewDetail; error?: string }>();
+  const [rolePicker, setRolePicker] = useState<{ crewId: string; generation: number }>();
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
   const { applying, submit: apply } = useCrewApplication(id);
@@ -244,44 +237,9 @@ export default function CrewDetailScreen() {
     return parts.join(" · ");
   };
 
-  // Recruiting CTA: one open position applies directly (after a confirm),
-  // multiple → pick which position first.
   const handleApply = () => {
     authGate.requireAuth({
-      onAuthenticated: () => {
-        const roles = crew.roles;
-        if (roles.length === 0) return;
-        if (roles.length === 1) {
-          Alert.alert(t("crewDetail.applyConfirmTitle"), roleTitle(roles[0]), [
-            { text: t("report.cancel"), style: "cancel" },
-            {
-              text: t("crewDetail.applyConfirmAction"),
-              onPress: () => void submitApply(roles[0].id),
-            },
-          ]);
-          return;
-        }
-        if (Platform.OS === "ios") {
-          ActionSheetIOS.showActionSheetWithOptions(
-            {
-              title: t("crewDetail.applyPickTitle"),
-              options: [t("report.cancel"), ...roles.map(roleTitle)],
-              cancelButtonIndex: 0,
-            },
-            (index) => {
-              if (index > 0) void submitApply(roles[index - 1].id);
-            }
-          );
-          return;
-        }
-        Alert.alert(t("crewDetail.applyPickTitle"), undefined, [
-          ...roles.map((role) => ({
-            text: roleTitle(role),
-            onPress: () => void submitApply(role.id),
-          })),
-          { text: t("report.cancel"), style: "cancel" as const },
-        ]);
-      },
+      onAuthenticated: () => setRolePicker({ crewId: id, generation: getAuthGeneration() }),
     });
   };
 
@@ -292,6 +250,20 @@ export default function CrewDetailScreen() {
           headerRight: () => (
             <MoreActionsButton label={t("report.moreActions")} onPress={openActions} />
           ),
+        }}
+      />
+      <CrewRolePicker
+        visible={
+          rolePicker?.crewId === crew.id &&
+          rolePicker.generation === auth.generation &&
+          crew.roles.length > 0
+        }
+        roles={crew.roles}
+        onClose={() => setRolePicker(undefined)}
+        onSelect={(positionId) => {
+          if (auth.generation !== getAuthGeneration() || applying) return;
+          setRolePicker(undefined);
+          void submitApply(positionId);
         }}
       />
       <ReportReasonSheet
