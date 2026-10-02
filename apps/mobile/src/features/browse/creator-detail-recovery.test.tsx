@@ -117,3 +117,45 @@ it("ignores a late profile after navigation to another creator", async () => {
   expect(host.textContent).toContain("Bob");
   expect(host.textContent).not.toContain("Stale Alice");
 });
+
+it("shows the profile while a secondary section is still loading", async () => {
+  let finish!: (v: unknown) => void;
+  h.services.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  expect(host.textContent).toContain("Alice");
+  expect(host.textContent).toContain("public IPs");
+  expect(host.textContent).not.toContain("servicesEmpty");
+  await act(async () => finish([]));
+  expect(host.textContent).toContain("servicesEmpty");
+});
+it("exposes profile retry without waiting for a stalled secondary lookup", async () => {
+  h.profile.mockRejectedValueOnce(Error("Profile offline"));
+  h.services.mockImplementationOnce(() => new Promise(() => {}));
+  await render();
+  expect(host.textContent).toContain("Profile offline");
+  await retry();
+  expect(host.textContent).toContain("Alice");
+});
+
+it("does not attach a previous creator's late section error to the new profile", async () => {
+  let fail!: (error: Error) => void;
+  h.services.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      })
+  );
+  await render();
+  expect(host.textContent).toContain("Alice");
+  h.id = "b";
+  h.profile.mockResolvedValue({ id: "b", name: "Bob", levels: [] });
+  await render();
+  await act(async () => fail(Error("Alice services failed")));
+  expect(host.textContent).toContain("Bob");
+  expect(host.textContent).not.toContain("Alice");
+});

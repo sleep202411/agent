@@ -35,6 +35,10 @@ import { CreatorEducation } from "@/features/profile/creator-education";
 
 export default function CreatorDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  return <CreatorDetailContent key={id} id={id} />;
+}
+
+function CreatorDetailContent({ id }: { id: string }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const t = useTranslations();
@@ -44,6 +48,11 @@ export default function CreatorDetailScreen() {
   const [works, setWorks] = useState<IpSummary[]>([]);
   const [crews, setCrews] = useState<CrewSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sectionLoading, setSectionLoading] = useState({
+    services: true,
+    works: true,
+    crews: true,
+  });
   const [revision, setRevision] = useState(0);
   const [errors, setErrors] = useState<
     Partial<Record<"profile" | "services" | "works" | "crews", string>>
@@ -51,34 +60,39 @@ export default function CreatorDetailScreen() {
 
   useEffect(() => {
     let alive = true;
-    async function load() {
-      setLoading(true);
-      const [creatorResult, servicesResult, worksResult, crewsResult] = await Promise.allSettled([
-        getCreatorById(id),
-        getCreatorServices(12, { creatorId: id }),
-        getCreatorIps(id),
-        getCrewsByUser(id),
-      ]);
-      if (!alive) return;
-      const nextErrors: typeof errors = {};
-      for (const [key, result] of [
-        ["profile", creatorResult],
-        ["services", servicesResult],
-        ["works", worksResult],
-        ["crews", crewsResult],
-      ] as const) {
-        if (result.status === "rejected")
-          nextErrors[key] =
-            result.reason instanceof Error ? result.reason.message : String(result.reason);
+    setLoading(true);
+    setErrors({});
+    setSectionLoading({ services: true, works: true, crews: true });
+    setServices([]);
+    setWorks([]);
+    setCrews([]);
+    async function load<T>(
+      key: "profile" | "services" | "works" | "crews",
+      request: () => Promise<T>,
+      receive: (value: T) => void
+    ) {
+      try {
+        const value = await request();
+        if (alive) receive(value);
+      } catch (cause) {
+        if (alive) {
+          if (key === "profile") setCreator(undefined);
+          setErrors((current) => ({
+            ...current,
+            [key]: cause instanceof Error ? cause.message : String(cause),
+          }));
+        }
+      } finally {
+        if (alive) {
+          if (key === "profile") setLoading(false);
+          else setSectionLoading((current) => ({ ...current, [key]: false }));
+        }
       }
-      setErrors(nextErrors);
-      setCreator(creatorResult.status === "fulfilled" ? creatorResult.value : undefined);
-      setServices(servicesResult.status === "fulfilled" ? servicesResult.value : []);
-      setWorks(worksResult.status === "fulfilled" ? worksResult.value : []);
-      setCrews(crewsResult.status === "fulfilled" ? crewsResult.value : []);
-      setLoading(false);
     }
-    void load();
+    void load("profile", () => getCreatorById(id), setCreator);
+    void load("services", () => getCreatorServices(12, { creatorId: id }), setServices);
+    void load("works", () => getCreatorIps(id), setWorks);
+    void load("crews", () => getCrewsByUser(id), setCrews);
     return () => {
       alive = false;
     };
@@ -214,14 +228,30 @@ export default function CreatorDetailScreen() {
             </View>
           ) : null}
 
-          {works.length ? (
+          {sectionLoading.works ? (
+            <View style={styles.section}>
+              <SectionHeader title={t("creatorDetail.worksTitle")} />
+              <ActivityIndicator
+                accessibilityLabel={t("creatorDetail.worksTitle")}
+                color={theme.textSecondary}
+              />
+            </View>
+          ) : works.length ? (
             <View style={styles.section}>
               <SectionHeader title={t("creatorDetail.worksTitle")} trailing={`${works.length}`} />
               <IpGrid ips={works} />
             </View>
           ) : null}
 
-          {crews.length ? (
+          {sectionLoading.crews ? (
+            <View style={styles.section}>
+              <SectionHeader title={t("creatorDetail.crewsTitle")} />
+              <ActivityIndicator
+                accessibilityLabel={t("creatorDetail.crewsTitle")}
+                color={theme.textSecondary}
+              />
+            </View>
+          ) : crews.length ? (
             <View style={styles.section}>
               <SectionHeader title={t("creatorDetail.crewsTitle")} trailing={`${crews.length}`} />
               <View style={styles.serviceList}>
@@ -239,9 +269,16 @@ export default function CreatorDetailScreen() {
           <View style={styles.section}>
             <SectionHeader
               title={t("creatorDetail.servicesTitle")}
-              trailing={`${services.length}`}
+              trailing={
+                sectionLoading.services || errors.services ? undefined : `${services.length}`
+              }
             />
-            {services.length ? (
+            {sectionLoading.services ? (
+              <ActivityIndicator
+                accessibilityLabel={t("creatorDetail.servicesTitle")}
+                color={theme.textSecondary}
+              />
+            ) : services.length ? (
               <View style={styles.serviceList}>
                 {services.map((service) => (
                   <CreatorServiceRow
