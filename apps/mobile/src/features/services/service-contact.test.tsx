@@ -1,3 +1,4 @@
+import { ServiceEditorDrafts } from "./service-editor-drafts";
 import { ServiceIntentProvider } from "./service-intent";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -222,4 +223,40 @@ it("resumes the guest action after login replaces the service controls", async (
   h.generation = 3;
   await page(true);
   expect(host.querySelector("input")).toBeNull();
+});
+
+it("retains an unsent inquiry through reload but clears cancelled, sent and foreign-account drafts", async () => {
+  const draw = (shown: boolean, scope = "buyer", status = "listed") =>
+    act(async () =>
+      root.render(
+        <ServiceEditorDrafts key={scope}>
+          <ServiceIntentProvider>
+            {shown && <ServiceContact serviceId="service" creatorId="creator" status={status} />}
+          </ServiceIntentProvider>
+        </ServiceEditorDrafts>
+      )
+    );
+  await draw(true);
+  await act(async () => click("serviceContact.title"));
+  await act(async () => type("Keep my project inquiry"));
+  await draw(false);
+  await draw(true, "buyer", "paused");
+  expect(host.querySelector("input")).toBeNull();
+  await draw(true);
+  expect(host.querySelector("input")?.value).toBe("Keep my project inquiry");
+  expect(h.send).not.toHaveBeenCalled();
+  await act(async () => click("experienceEdit.cancel"));
+  await act(async () => click("serviceContact.title"));
+  expect(host.querySelector("input")?.value).toBe("");
+  await act(async () => type("Send this inquiry"));
+  h.send.mockResolvedValue("conversation");
+  await act(async () => click("serviceContact.send"));
+  expect(h.send).toHaveBeenCalledExactlyOnceWith("service", "Send this inquiry", "stable-key");
+  await act(async () => click("experienceEdit.cancel"));
+  await act(async () => click("serviceContact.title"));
+  expect(host.querySelector("input")?.value).toBe("");
+  await act(async () => type("Private draft"));
+  await draw(true, "different-account");
+  await act(async () => click("serviceContact.title"));
+  expect(host.querySelector("input")?.value).toBe("");
 });

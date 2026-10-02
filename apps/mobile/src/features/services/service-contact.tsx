@@ -1,3 +1,4 @@
+import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useServiceIntent } from "./service-intent";
 import { inquiryOutbox } from "./inquiry-outbox";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -76,8 +77,10 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
       return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
     }
   });
+  const clearDraft = useClearServiceEditorDraft("contact");
+  useServiceEditorState("contact:open", true);
   const [locked, setLocked] = useState(!!initial.pending);
-  const [body, setBody] = useState(initial.pending?.body ?? ""),
+  const [body, setBody] = useServiceEditorState("contact:body", initial.pending?.body ?? ""),
     [error, setError] = useState<string | undefined>(initial.error),
     [conversation, setConversation] = useState<string>();
   const intent = useRef<{ body: string; clientKey: string } | undefined>(
@@ -101,7 +104,10 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
         outbox.clear(intent.current.clientKey);
         return id;
       },
-      setConversation,
+      (id) => {
+        clearDraft();
+        setConversation(id);
+      },
       (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
     );
   };
@@ -148,7 +154,14 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
       )}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {op.busy && <ActivityIndicator />}
-      <Pressable accessibilityRole="button" disabled={op.busy} onPress={close}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={op.busy}
+        onPress={() => {
+          clearDraft();
+          close();
+        }}
+      >
         <ThemedText>{t("experienceEdit.cancel")}</ThemedText>
       </Pressable>
     </View>
