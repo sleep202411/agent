@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/app/_components/auth-provider";
+import { Button } from "@/components/ui/button";
 import { CanvasVideo } from "@/components/media/canvas-video";
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -82,9 +83,11 @@ export function AssetSelectDialog({
   maxSelection?: number;
 }) {
   const t = useTranslations("storyboard");
+  const common = useTranslations("common");
   const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   const { addAssets, canEdit } = useCanvasGraphContext();
-  const { assets, filtered, filter, setFilter, isLoading } = useProjectAssets(projectId);
+  const { assets, filtered, filter, setFilter, isLoading, error, isRetrying, retry } =
+    useProjectAssets(projectId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const uploadRun = useRef<AbortController | null>(null);
@@ -193,6 +196,10 @@ export function AssetSelectDialog({
     [acceptedKindSet, addAssets, canEdit, open, setFilter, t, workspaceId]
   );
 
+  const selectableIds = new Set(
+    assets.filter((asset) => acceptedKindSet.has(asset.kind)).map((asset) => asset.id)
+  );
+  const validSelectedIds = selectedIds.filter((id) => selectableIds.has(id));
   const chooseAsset = (assetId: string) => {
     const asset = assets.find((candidate) => candidate.id === assetId);
     if (!asset || !acceptedKindSet.has(asset.kind)) return;
@@ -201,17 +208,18 @@ export function AssetSelectDialog({
       closeDialog();
       return;
     }
-    setSelectedIds((current) =>
-      current.includes(assetId)
-        ? current.filter((id) => id !== assetId)
-        : current.length < maxSelection
-          ? [...current, assetId]
-          : current
-    );
+    setSelectedIds((current) => {
+      const valid = current.filter((id) => selectableIds.has(id));
+      return valid.includes(assetId)
+        ? valid.filter((id) => id !== assetId)
+        : valid.length < maxSelection
+          ? [...valid, assetId]
+          : valid;
+    });
   };
 
   const confirmSelection = () => {
-    for (const selectedId of selectedIds) {
+    for (const selectedId of validSelectedIds) {
       const asset = assets.find((candidate) => candidate.id === selectedId);
       if (asset && acceptedKindSet.has(asset.kind)) {
         onSelect(projectAssetToMentionItem(asset, assets));
@@ -303,6 +311,22 @@ export function AssetSelectDialog({
             />
           </label>
 
+          {error && (
+            <div
+              role="alert"
+              className="flex shrink-0 items-center gap-3 text-sm text-muted-foreground"
+            >
+              <p className="min-w-0 flex-1 break-words">{error.message}</p>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={isRetrying}
+                onClick={() => void retry()}
+              >
+                {common("retry")}
+              </Button>
+            </div>
+          )}
           {/* Asset grid */}
           {isLoading ? (
             <div className="flex flex-1 items-center justify-center">
@@ -367,11 +391,11 @@ export function AssetSelectDialog({
           {maxSelection > 1 ? (
             <div className="flex shrink-0 items-center justify-between border-t border-border pt-3">
               <span className="text-xs text-muted-foreground">
-                {t("assetDialog.selected", { count: selectedIds.length, max: maxSelection })}
+                {t("assetDialog.selected", { count: validSelectedIds.length, max: maxSelection })}
               </span>
               <button
                 type="button"
-                disabled={selectedIds.length === 0}
+                disabled={validSelectedIds.length === 0}
                 onClick={confirmSelection}
                 className="h-9 rounded-xl bg-primary px-4 text-xs font-medium text-primary-foreground disabled:opacity-40"
               >

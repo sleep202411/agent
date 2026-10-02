@@ -22,7 +22,18 @@ vi.mock("@/app/_components/auth-provider", () => ({
 }));
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/lib/canvas-core/canvas-graph-context", () => ({
-  useCanvasGraphContext: () => ({ assets: [] }),
+  useCanvasGraphContext: () => ({
+    assets: [
+      {
+        id: "local",
+        kind: "image",
+        source: "uploaded",
+        url: "/local.png",
+        name: "Local canvas image",
+        createdAt: 0,
+      },
+    ],
+  }),
 }));
 vi.mock("./asset-library-thumb", () => ({ AssetThumb: () => null }));
 vi.mock("@/lib/collab/project-crew-assets-api", () => ({
@@ -85,8 +96,20 @@ afterEach(async () => {
   vi.resetAllMocks();
 });
 function Inventory() {
-  const { assets } = useProjectAssets("project");
-  return <div>{assets.map((asset) => asset.name).join(",")}</div>;
+  const { assets, error, retry, isRetrying } = useProjectAssets("project");
+  return (
+    <div>
+      {assets.map((asset) => asset.name).join(",")}
+      {error && (
+        <>
+          <p role="alert">{error.message}</p>
+          <button disabled={isRetrying} onClick={() => void retry()}>
+            retry
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 async function render(inventory = false) {
   await act(async () =>
@@ -205,3 +228,72 @@ it.each([401, 403, 404, 410])(
     expect(host.textContent).toContain("errorTitle");
   }
 );
+
+it.each(["context", "listing"])(
+  "recovers an initial %s read failure without reopening the library",
+  async (target) => {
+    const read =
+      target === "context"
+        ? vi.mocked(getProjectCrewAssetContext)
+        : vi.mocked(listProjectCrewAssets);
+    read.mockRejectedValueOnce(new Error("Asset service unavailable"));
+    await render();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      "Asset service unavailable"
+    );
+    const retry = [...host.querySelectorAll("button")].find((b) => b.textContent === "retry")!;
+    await act(async () => retry.click());
+    expect(host.textContent).toContain("Old folder");
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  }
+);
+
+it.each([401, 403, 404, 410])(
+  "removes denied inventory while preserving local canvas assets (%s)",
+  async (status) => {
+    await render(true);
+    expect(host.textContent).toContain("Old file");
+    vi.mocked(listAllProjectCrewAssets).mockRejectedValueOnce(
+      new ApiRequestError("ACCESS_UNAVAILABLE", "Crew access revoked", status)
+    );
+    await act(async () => {
+      await client.invalidateQueries({
+        queryKey: ["project-crew-assets", "project", "all-folders"],
+      });
+    });
+    expect(host.textContent).not.toContain("Old file");
+    expect(host.textContent).toContain("Local canvas image");
+    expect(host.textContent).toContain("Crew access revoked");
+    await act(async () => host.querySelector("button")!.click());
+    expect(host.textContent).toContain("Old file");
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  }
+);
+
+it("removes flat Crew inventory when context refresh fails and recovers through context retry", async () => {
+  await render(true);
+  vi.mocked(getProjectCrewAssetContext).mockRejectedValueOnce(
+    new ApiRequestError("FORBIDDEN", "Project access revoked", 403)
+  );
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["project-crew-assets", "project", "context"] });
+  });
+  expect(host.textContent).not.toContain("Old file");
+  expect(host.textContent).toContain("Local canvas image");
+  expect(host.textContent).toContain("Project access revoked");
+  await act(async () => host.querySelector("button")!.click());
+  expect(host.textContent).toContain("Old file");
+});
+
+it("allows leaving a folder whose access was revoked", async () => {
+  await render();
+  vi.mocked(listProjectCrewAssets).mockRejectedValueOnce(
+    new ApiRequestError("FORBIDDEN", "Folder access revoked", 403)
+  );
+  await act(async () => host.querySelector("button")!.click());
+  expect(host.textContent).toContain("Folder access revoked");
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "back")!.click()
+  );
+  expect(host.textContent).toContain("Old folder");
+});
