@@ -670,7 +670,7 @@ function TaskCreationSession({
                                   onPublishTask ? (
                                     <button
                                       type="button"
-                                      className="relative z-10 mt-2 text-xs underline"
+                                      className="relative z-10 mt-2 inline-flex h-8 items-center justify-center rounded-md border border-white/15 px-3 text-xs font-medium text-white transition-colors hover:bg-white/10"
                                       onClick={() => onPublishTask(draft.taskId!)}
                                     >
                                       {t("publishJob")}
@@ -678,7 +678,7 @@ function TaskCreationSession({
                                   ) : null}
                                   {draft.taskId ? (
                                     <button
-                                      className="relative z-10 mt-2 text-sm underline"
+                                      className="relative z-10 mt-2 inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-white transition-colors hover:bg-primary/85"
                                       onClick={() => onSelectTask(draft.taskId!)}
                                     >
                                       {canSubmitAssigned &&

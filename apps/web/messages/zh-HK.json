@@ -5253,7 +5253,8 @@
       "recoverTemplates": "已儲存的範本草稿（{count}）",
       "templateDraftHelp": "這些預覽僅儲存在此瀏覽器中。請在下方建立任務，或捨棄預覽。新的匯入會直接儲存到任務列表。",
       "savedTasks": "任務",
-      "openDelivery": "查看任務並提交交付"
+      "openDelivery": "查看任務並提交交付",
+      "saveThenRecruit": "儲存任務並繼續填寫招聘資訊。"
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",
@@ -5807,7 +5808,8 @@
     "subtitledVideo": "有字幕影片",
     "cleanVideo": "無字幕影片",
     "subtitleFile": "字幕檔案",
-    "sourceFiles": "原素材"
+    "sourceFiles": "原素材",
+    "episodeUnavailable": "該集不可用。請選擇可用集數或「不關聯集數」。"
   },
   "crewInvitations": {
     "signIn": "登入",

@@ -5253,7 +5253,8 @@
       "recoverTemplates": "Saved template drafts ({count})",
       "templateDraftHelp": "These previews are saved only in this browser. Create their tasks below, or discard them. New imports save directly to Tasks.",
       "savedTasks": "Tasks",
-      "openDelivery": "Open task & submit delivery"
+      "openDelivery": "Open task & submit delivery",
+      "saveThenRecruit": "Save this task and continue to the job form."
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
@@ -5807,7 +5808,8 @@
     "subtitledVideo": "Video with subtitles",
     "cleanVideo": "Video without subtitles",
     "subtitleFile": "Subtitle file",
-    "sourceFiles": "Source files"
+    "sourceFiles": "Source files",
+    "episodeUnavailable": "This episode is unavailable. Choose an available episode or No episode."
   },
   "crewInvitations": {
     "signIn": "Sign in",

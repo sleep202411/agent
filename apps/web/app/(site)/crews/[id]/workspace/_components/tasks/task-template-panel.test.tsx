@@ -52,7 +52,8 @@ it("renders JSON null and an empty catalog without an error or unusable save con
     )
   );
   await render();
-  expect(container.textContent).toContain("No professional template");
+  expect(container.textContent).toContain("Professional delivery template");
+  expect(container.textContent).not.toContain("No professional template");
   expect(container.querySelector('[role="alert"]')).toBeNull();
   expect(container.querySelector('[role="combobox"]')).toBeNull();
   expect(container.textContent).not.toContain("Save template");
@@ -83,7 +84,8 @@ it("does not report a failed read as no template, preserves the reason and retri
     await new Promise((resolve) => setTimeout(resolve, 30));
   });
   expect(container.querySelector('[role="alert"]')).toBeNull();
-  expect(container.textContent).toContain("No professional template");
+  expect(container.textContent).toContain("Professional delivery template");
+  expect(container.textContent).not.toContain("No professional template");
 });
 it.each(["en-US", "zh-CN", "zh-HK"])(
   "interpolates deadline hours with the real %s translations",
