@@ -814,6 +814,7 @@
   "studioProjects.cover": "Cover",
   "studioProjects.uploadCover": "Upload Cover",
   "studioProjects.removeCover": "Remove Cover",
+  "studioProjects.refreshRequired": "Refresh project details to continue. Your draft is preserved.",
   "studioProjects.refreshDetails": "Refresh Project Details",
   "studioProjects.coverEmpty": "No cover image. Studio will use the first canvas image when available.",
   "studioProjects.coverFailed": "The cover could not be loaded.",

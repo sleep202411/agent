@@ -56,6 +56,7 @@ function Session({ workspace, generation, onClose }: Props) {
   const [form, setForm] = useState<{ project?: PlatformProject }>();
   const [name, setName] = useState(""),
     [description, setDescription] = useState("");
+  const [detailRecovery, setDetailRecovery] = useState(false);
   const [detailReview, setDetailReview] = useState<PlatformProject>();
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false),
@@ -65,6 +66,7 @@ function Session({ workspace, generation, onClose }: Props) {
     alive = useRef(true),
     pending = useRef<AbortController | null>(null);
   const current = () => alive.current && generation === getAuthGeneration();
+  if (!active && detailReview) setDetailReview(undefined);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -96,6 +98,7 @@ function Session({ workspace, generation, onClose }: Props) {
         if (form) {
           setForm(undefined);
           setDetailReview(undefined);
+          setDetailRecovery(false);
         } else onClose();
       }
       return true;
@@ -103,7 +106,7 @@ function Session({ workspace, generation, onClose }: Props) {
     return () => sub.remove();
   }, [active, collaboration, form, onClose]);
   const visible = loaded?.revision === revision ? loaded : undefined;
-  const locked = busy || uncertainAt !== undefined || !!detailReview;
+  const locked = busy || uncertainAt !== undefined || detailRecovery;
   const editable = form?.project
     ? canEditPlatformProject(form.project)
     : canCreateStudioProject(workspace);
@@ -113,6 +116,7 @@ function Session({ workspace, generation, onClose }: Props) {
     setDescription(project?.description ?? "");
     setConfirmation("");
     setDetailReview(undefined);
+    setDetailRecovery(false);
     setError(undefined);
     setForm({ project });
   }
@@ -172,13 +176,15 @@ function Session({ workspace, generation, onClose }: Props) {
     pending.current = c;
     try {
       if (action === "refresh") {
+        setDetailReview(undefined);
+        setDetailRecovery(true);
         const project = await readPlatformProject(
           form.project.id,
           workspace.id,
           generation,
           c.signal
         );
-        if (current()) setDetailReview(project);
+        if (current() && !c.signal.aborted) setDetailReview(project);
       } else {
         const assetId =
           action === "remove"
@@ -261,6 +267,9 @@ function Session({ workspace, generation, onClose }: Props) {
           )}
         </>
       )}
+      {form && detailRecovery && !detailReview && !busy && !error && (
+        <ThemedText type="small">{t("studioProjects.refreshRequired")}</ThemedText>
+      )}
       {form && detailReview && (
         <View style={{ gap: 8 }}>
           <ThemedText type="smallBold">{detailReview.name}</ThemedText>
@@ -270,8 +279,10 @@ function Session({ workspace, generation, onClose }: Props) {
             label={t("studioProjects.reviewed")}
             disabled={busy}
             onPress={() => {
+              if (!active || !current() || lock.current) return;
               setForm({ project: detailReview });
               setDetailReview(undefined);
+              setDetailRecovery(false);
               setUncertainAt(undefined);
               setConfirmation("");
             }}
@@ -356,6 +367,7 @@ function Session({ workspace, generation, onClose }: Props) {
             onPress={() => {
               setForm(undefined);
               setDetailReview(undefined);
+              setDetailRecovery(false);
             }}
           />
         </>
@@ -446,6 +458,7 @@ function Session({ workspace, generation, onClose }: Props) {
           onPress={() => {
             setForm(undefined);
             setDetailReview(undefined);
+            setDetailRecovery(false);
             setRevision((v) => v + 1);
           }}
         />

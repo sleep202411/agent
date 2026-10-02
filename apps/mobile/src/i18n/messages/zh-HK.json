@@ -814,6 +814,7 @@
   "studioProjects.cover": "封面",
   "studioProjects.uploadCover": "上傳封面",
   "studioProjects.removeCover": "移除封面",
+  "studioProjects.refreshRequired": "請重新整理項目詳情後繼續。你的草稿已保留。",
   "studioProjects.refreshDetails": "重新整理項目詳情",
   "studioProjects.coverEmpty": "暫無封面。Studio 將在有可用圖片時使用畫布中的第一張圖片。",
   "studioProjects.coverFailed": "無法載入封面。",

@@ -297,3 +297,41 @@ it("refreshes uncertain cover writes without discarding drafts or automatically 
   expect(h.cover).toHaveBeenCalledTimes(1);
   expect(h.update).not.toHaveBeenCalled();
 });
+
+it("invalidates a prior detail review when another refresh fails without losing the draft", async () => {
+  h.read
+    .mockResolvedValueOnce({ ...row, version: row.version + 1 })
+    .mockRejectedValueOnce(new Error("Access unavailable"));
+  await render();
+  await click("studioProjects.details");
+  await input(1, "Retained description");
+  await click("studioProjects.refreshDetails");
+  expect(button("studioProjects.reviewed")).toBeDefined();
+  await click("studioProjects.refreshDetails");
+  expect(host.textContent).toContain("Access unavailable");
+  expect(button("studioProjects.reviewed")).toBeUndefined();
+  expect(button("studioProjects.save")!.disabled).toBe(true);
+  expect(button("studioProjects.uploadCover")!.disabled).toBe(true);
+  expect(host.querySelectorAll("input")[1].value).toBe("Retained description");
+  h.read.mockResolvedValue({ ...row, version: row.version + 2 });
+  await click("studioProjects.refreshDetails");
+  await click("studioProjects.reviewed");
+  expect(button("studioProjects.save")!.disabled).toBe(false);
+  expect(h.update).not.toHaveBeenCalled();
+});
+it("requires another refresh after leaving an unaccepted review in the background", async () => {
+  h.read.mockResolvedValue(row);
+  await render();
+  await click("studioProjects.details");
+  await input(0, "Retained title");
+  await click("studioProjects.refreshDetails");
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(button("studioProjects.reviewed")).toBeUndefined();
+  expect(button("studioProjects.save")!.disabled).toBe(true);
+  expect(host.querySelector("input")!.value).toBe("Retained title");
+  await click("studioProjects.discard");
+  expect(button("studioProjects.create")!.disabled).toBe(false);
+});
