@@ -84,7 +84,7 @@ const commandSchema = z.discriminatedUnion("action", [
 ]);
 export type TimelineGenerationCommand = z.input<typeof commandSchema>;
 export type TimelineGenerationScope = TimelineScope & { sequenceId: string; clipId: string };
-const receiptSchema = z
+export const timelineGenerationReceiptSchema = z
   .object({
     id,
     projectId: id,
@@ -127,7 +127,7 @@ const receiptSchema = z
     mediaVersions: z.array(z.object({ id, mediaAssetId: id }).passthrough()),
   })
   .passthrough();
-export type TimelineGeneration = z.infer<typeof receiptSchema>;
+export type TimelineGeneration = z.infer<typeof timelineGenerationReceiptSchema>;
 function current(scope: TimelineGenerationScope, signal?: AbortSignal) {
   signal?.throwIfAborted();
   if (scope.generation !== getAuthGeneration()) throw Error("Timeline generation session expired.");
@@ -138,7 +138,7 @@ function path(scope: TimelineGenerationScope) {
 }
 function receipt(scope: TimelineGenerationScope, raw: unknown, generationId?: string) {
   current(scope);
-  const value = receiptSchema.parse(raw);
+  const value = timelineGenerationReceiptSchema.parse(raw);
   const url = `/aurora${path(scope)}/${value.id}`;
   if (
     value.projectId !== scope.projectId ||
