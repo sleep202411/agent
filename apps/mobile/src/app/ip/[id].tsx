@@ -1,3 +1,4 @@
+import { IpProductionStage } from "@/features/ip-community/ip-production-stage";
 import { IpReportSheet } from "@/features/ip-community/ip-report-sheet";
 import { useIpModeration } from "@/features/ip-community/use-ip-moderation";
 import { useIpEngagement } from "@/features/ip-community/use-ip-engagement";
@@ -460,6 +461,7 @@ function IpDetailSession() {
             <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
               {ip.title}
             </ThemedText>
+            <IpProductionStage ipId={ip.id} />
             <View style={styles.metaRow}>
               {ip.rating != null ? (
                 <View style={styles.ratingRow}>
