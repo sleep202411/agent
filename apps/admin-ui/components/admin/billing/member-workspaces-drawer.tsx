@@ -5,7 +5,13 @@
 
 import { useEffect, useState } from "react";
 import { useAdminSessionRequests } from "../admin-session-boundary";
-import { IconCrown, IconExternalLink, IconUsers, IconWallet } from "@tabler/icons-react";
+import {
+  IconCrown,
+  IconExternalLink,
+  IconRefresh,
+  IconUsers,
+  IconWallet,
+} from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ErrorBanner, formatDate, formatInteger, requestEnvelope, toErrorMessage } from "./shared";
@@ -39,7 +45,11 @@ const ROLE_LABEL: Record<AdminWorkspaceMemberRole, string> = {
   viewer: "只读",
 };
 
-export function MemberWorkspacesDrawer({
+export function MemberWorkspacesDrawer(props: Parameters<typeof MemberWorkspacesSession>[0]) {
+  return <MemberWorkspacesSession key={props.member?.userId ?? "closed"} {...props} />;
+}
+
+function MemberWorkspacesSession({
   member,
   canWrite,
   onClose,
@@ -49,6 +59,7 @@ export function MemberWorkspacesDrawer({
   onClose: () => void;
 }) {
   const requests = useAdminSessionRequests();
+  const [reload, setReload] = useState(0);
   const [rows, setRows] = useState<AdminWorkspaceRow[]>([]);
   const [owners, setOwners] = useState<Record<string, LegacyIdentity>>({});
   const [loading, setLoading] = useState(false);
@@ -112,7 +123,7 @@ export function MemberWorkspacesDrawer({
     return () => {
       operation.cancel();
     };
-  }, [userId, requests]);
+  }, [userId, requests, reload]);
 
   function applyBalance(workspaceId: string, availableBalance: string) {
     setGranting((current) =>
@@ -146,7 +157,19 @@ export function MemberWorkspacesDrawer({
               </section>
             ) : null}
 
-            {error ? <ErrorBanner message={error} /> : null}
+            {error ? (
+              <div className="space-y-2">
+                <ErrorBanner message={error} />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loading}
+                  onClick={() => setReload((value) => value + 1)}
+                >
+                  <IconRefresh className="size-4" /> Retry
+                </Button>
+              </div>
+            ) : null}
 
             <section className="space-y-2">
               <header className="flex items-center justify-between">
@@ -160,7 +183,7 @@ export function MemberWorkspacesDrawer({
 
               {loading ? (
                 <p className="py-6 text-center text-[13px] text-slate-400">加载中…</p>
-              ) : rows.length === 0 ? (
+              ) : rows.length === 0 && !error ? (
                 <p className="py-6 text-center text-[13px] text-slate-400">
                   该用户没有任何工作区。
                 </p>

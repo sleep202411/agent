@@ -10,9 +10,18 @@ const s = vi.hoisted(() => ({
     { id: "b", name: "B" },
   ],
   refresh: vi.fn(async () => {}),
+  error: null as Error | null,
+  pending: false,
+  retry: vi.fn(),
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: s.items }),
+  useQuery: () => ({
+    data: s.items,
+    error: s.error,
+    isPending: s.pending,
+    isFetching: false,
+    refetch: s.retry,
+  }),
   useQueryClient: () => ({ invalidateQueries: s.refresh }),
 }));
 vi.mock("next-intl", () => ({ useLocale: () => "en-US", useTranslations: () => (k: string) => k }));
@@ -86,3 +95,32 @@ it.each([
     host.remove();
   }
 });
+
+it.each([false, true])(
+  "shows a read error and retries without discarding cached projects (cached=%s)",
+  async (cached) => {
+    const original = s.items;
+    s.items = cached ? original : [];
+    s.error = new Error("Project service unavailable");
+    s.retry.mockClear();
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    try {
+      await act(async () => root.render(createElement(ProjectsList)));
+      expect(host.querySelector('[role="alert"]')?.textContent).toBe("Project service unavailable");
+      expect(host.querySelectorAll("article").length).toBe(cached ? 2 : 0);
+      const retry = [...host.querySelectorAll("button")].find((b) => b.textContent === "retry")!;
+      await act(async () => retry.click());
+      expect(s.retry).toHaveBeenCalledTimes(1);
+      s.error = null;
+      s.items = original;
+      await act(async () => root.render(createElement(ProjectsList)));
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+      expect(host.querySelectorAll("article").length).toBe(2);
+    } finally {
+      await act(async () => root.unmount());
+      s.items = original;
+      s.error = null;
+    }
+  }
+);
