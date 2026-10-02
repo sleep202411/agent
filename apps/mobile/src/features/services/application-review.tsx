@@ -20,6 +20,7 @@ import {
   type ReviewStatus,
 } from "./application-review-api";
 type Props = {
+  active?: boolean;
   initialApplicationId?: string;
   crewId: string;
   userId: string;
@@ -32,6 +33,7 @@ export function ApplicationReview(props: Props) {
     [status, setStatus] = useState<ReviewStatus>("pending"),
     [cursor, setCursor] = useState<string | null>(null),
     [revision, setRevision] = useState(0);
+  if (props.active === false || props.generation !== getAuthGeneration()) return null;
   if (selected)
     return (
       <Review

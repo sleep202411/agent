@@ -25,6 +25,7 @@ vi.mock("./application-interview", () => ({
 }));
 const h = vi.hoisted(() => ({
   generation: 1,
+  active: true,
   push: vi.fn(),
   openUrl: vi.fn(),
   displays: new Map<string, { nickname: string }>(),
@@ -126,6 +127,7 @@ const render = async () => {
   await act(async () =>
     root.render(
       <ApplicationReview
+        active={h.active}
         crewId="crew"
         userId="manager"
         generation={1}
@@ -142,6 +144,7 @@ const open = async () => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
   h.displays.clear();
   app.portfolioUrl = null;
   app.taskId = null;
@@ -344,4 +347,25 @@ it("omits task-only actions for an approved Crew membership without a task", asy
   await click("applicationReview.confirm");
   expect(button("crewFinance.openTask")).toBeUndefined();
   expect(button("crewAmendments.title")).toBeUndefined();
+});
+
+it("preserves selected review across inactivity and reloads its private details", async () => {
+  await open();
+  h.active = false;
+  await render();
+  expect(host.textContent).toBe("");
+  const previous = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (...args) =>
+    args[0] === "/applications/app" ? { ...app, message: "Updated application" } : previous(...args)
+  );
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Updated application");
+  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications")).toHaveLength(1);
+});
+it("hides the selected review if its session becomes stale", async () => {
+  await open();
+  h.generation = 2;
+  await render();
+  expect(host.textContent).toBe("");
 });
