@@ -43,6 +43,7 @@ export default async function InteractiveFilmReviewsPage({
       page={page}
       pageSize={PAGE_SIZE}
       loadError={result.error}
+      hlsEnabled={session.site.key === "cn"}
     />
   );
 }

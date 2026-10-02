@@ -17,6 +17,7 @@ import {
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVariantStatus,
+  MediaObjectPlacementRole,
   MediaObjectPlacementStatus,
   MediaStorageProvider,
   Prisma,
@@ -30,14 +31,24 @@ import {
   EXPERIENCE_RUNTIME_SCHEMA_VERSION,
   ExperienceRuntimeManifestSchema,
 } from '@repo/shared/experience-runtime';
+import type { StoryBuildAssetPlayback } from '@repo/shared/story-playback';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
+import {
+  HLS_VARIANT_KEY,
+  ORIGINAL_VARIANT_KEY,
+} from '../infra/storage/media-asset-placement';
 import { resolveMediaPublicVariantUrl } from '../infra/storage/media-asset-url-resolver.service';
 import {
   MediaStorageAccessService,
   type MediaStorageReadRef,
 } from '../infra/storage/media-storage-access.service';
+import { storyHlsPlayback } from '../media/hls-output';
 import { requireModerationApproval } from '../media/media-moderation-policy';
+import {
+  isPlayableStoryBuild,
+  storyManifestAccess,
+} from './story-build-access';
 import { canonicalJsonHash } from './canonical-json';
 import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
@@ -140,7 +151,10 @@ const BUILD_DELIVERY_ASSET_INCLUDE =
         },
       },
     },
-    asset: { include: { placements: true } },
+    // Asset-level (variant-less) placements only, like the URL resolver:
+    // variant-scoped rows (the HLS master and its replicas, a poster) must
+    // never become the read source of a frozen original.
+    asset: { include: { placements: { where: { variantId: null } } } },
     variant: { include: { placements: true } },
   });
 type BuildDeliveryAssetRow = Prisma.StoryBuildAssetGetPayload<{
@@ -555,52 +569,15 @@ export class StoryBuildService {
     variantId: string,
     posterOnly = false,
   ): Promise<{ url: string; expiresAt: string | null; stream?: boolean }> {
-    const frozen = await this.prisma.storyBuildAsset.findFirst({
-      where: { storyProjectId: projectId, buildId, assetId, variantId },
-      include: BUILD_DELIVERY_ASSET_INCLUDE,
-    });
-    if (
-      !frozen ||
-      frozen.build.status !== StoryBuildStatus.ready ||
-      frozen.build.runtimeSchemaVersion !== EXPERIENCE_RUNTIME_SCHEMA_VERSION
-    ) {
-      throw buildAssetNotFound();
-    }
-    const scope = StoryBuildScopeSchema.safeParse(frozen.build.scope);
-    const authorizedAsWholeWork =
-      frozen.build.kind === StoryBuildKind.production &&
-      scope.success &&
-      scope.data.kind === 'full' &&
-      ((frozen.build.experiencePublication?.mediaAuthorizedAt != null &&
-        frozen.build.experiencePublication.mediaAuthorizationRevokedAt ===
-          null) ||
-        (frozen.build.experienceDraftRelease != null &&
-          frozen.build.experienceDraftRelease.status !==
-            StoryExperiencePublicationStatus.rejected));
-    // A chapter Build is a subgraph and never carries a Build publication, so
-    // its anonymous grant comes from the game release that listed it. Same
-    // rule, different release kind: a durable row authorized the media before
-    // Java could serve the manifest, and only a definitive rejection revokes.
-    const authorizedAsChapter = frozen.build.gameReleaseChapters.some(
-      (chapter) =>
-        chapter.release.mediaAuthorizationRevokedAt === null &&
-        chapter.release.status !== StoryExperiencePublicationStatus.rejected,
+    const { frozen, publiclyAuthorized } = await this.loadDeliverableBuildAsset(
+      user,
+      projectId,
+      buildId,
+      assetId,
+      variantId,
     );
-    const publiclyAuthorized = authorizedAsWholeWork || authorizedAsChapter;
-    if (!publiclyAuthorized) {
-      if (!user) {
-        throw new UnauthorizedException({
-          code: 'STORY_BUILD_ASSET_AUTH_REQUIRED',
-          message: 'Authentication is required for unpublished Build media.',
-        });
-      }
-      await this.permissions.requireProject(
-        user.userId,
-        projectId,
-        'story.read',
-      );
-    }
-    const paidContent = hasStoryCommunityAccess(frozen.build.runtimeJson);
+    const paidContent =
+      storyManifestAccess(frozen.build.runtimeJson) === 'paid';
     if (
       posterOnly &&
       (frozen.asset.kind !== MediaAssetKind.video ||
@@ -635,22 +612,7 @@ export class StoryBuildService {
           variantId,
         );
     }
-    const unavailable = currentMediaDiagnostics(
-      [frozen],
-      requireModerationApproval(),
-    ).find((diagnostic) => diagnostic.severity === 'error');
-    if (unavailable) {
-      if (unavailable.code === 'STORY_BUILD_ASSET_MODERATION_PENDING') {
-        throw new ForbiddenException({
-          code: unavailable.code,
-          message: unavailable.message,
-        });
-      }
-      throw new GoneException({
-        code: unavailable.code,
-        message: unavailable.message,
-      });
-    }
+    throwIfBuildMediaUnavailable(frozen);
     const source = selectStoryBuildReadSource(frozen.asset, frozen.variant);
     if (!source) {
       throw new GoneException({
@@ -694,6 +656,114 @@ export class StoryBuildService {
       expiresAt: signed.expiresAt,
       ...(paidContent ? { stream: true } : {}),
     };
+  }
+
+  /**
+   * Adaptive playback a client may switch to for one frozen clip, or null to
+   * keep progressive `/content`. Offered only where the HLS URL is safe to hand
+   * out unsigned: a publicly authorized, FREE Build (a manifest that no longer
+   * parses is not free), its original video variant, and a ready HLS output.
+   * Paid Builds return null before any entitlement work — their media stays on
+   * the entitlement-checked `/content` stream.
+   */
+  async resolveBuildAssetPlayback(
+    user: AuthUser | undefined,
+    projectId: string,
+    buildId: string,
+    assetId: string,
+    variantId: string,
+  ): Promise<StoryBuildAssetPlayback | null> {
+    const { frozen, publiclyAuthorized } = await this.loadDeliverableBuildAsset(
+      user,
+      projectId,
+      buildId,
+      assetId,
+      variantId,
+    );
+    if (!publiclyAuthorized) return null;
+    if (storyManifestAccess(frozen.build.runtimeJson) !== 'free') return null;
+    throwIfBuildMediaUnavailable(frozen);
+    if (
+      frozen.asset.kind !== MediaAssetKind.video ||
+      frozen.variant.variantKey !== ORIGINAL_VARIANT_KEY
+    ) {
+      return null;
+    }
+    const hls = await this.prisma.mediaAssetVariant.findFirst({
+      where: {
+        assetId,
+        variantKey: HLS_VARIANT_KEY,
+        status: MediaAssetVariantStatus.ready,
+        deletedAt: null,
+      },
+      include: {
+        placements: {
+          where: {
+            role: MediaObjectPlacementRole.primary,
+            status: MediaObjectPlacementStatus.active,
+            deletedAt: null,
+          },
+        },
+      },
+    });
+    return storyHlsPlayback(frozen.asset, hls);
+  }
+
+  /**
+   * The gate every Build media read shares: the frozen row of a ready,
+   * current-schema Build, then the publication check — anonymous delivery
+   * needs a durable publication or release grant; anything else requires a
+   * signed-in project reader (401 anonymous, `story.read` otherwise).
+   */
+  private async loadDeliverableBuildAsset(
+    user: AuthUser | undefined,
+    projectId: string,
+    buildId: string,
+    assetId: string,
+    variantId: string,
+  ): Promise<{ frozen: BuildDeliveryAssetRow; publiclyAuthorized: boolean }> {
+    const frozen = await this.prisma.storyBuildAsset.findFirst({
+      where: { storyProjectId: projectId, buildId, assetId, variantId },
+      include: BUILD_DELIVERY_ASSET_INCLUDE,
+    });
+    if (!frozen || !isPlayableStoryBuild(frozen.build)) {
+      throw buildAssetNotFound();
+    }
+    const scope = StoryBuildScopeSchema.safeParse(frozen.build.scope);
+    const authorizedAsWholeWork =
+      frozen.build.kind === StoryBuildKind.production &&
+      scope.success &&
+      scope.data.kind === 'full' &&
+      ((frozen.build.experiencePublication?.mediaAuthorizedAt != null &&
+        frozen.build.experiencePublication.mediaAuthorizationRevokedAt ===
+          null) ||
+        (frozen.build.experienceDraftRelease != null &&
+          frozen.build.experienceDraftRelease.status !==
+            StoryExperiencePublicationStatus.rejected));
+    // A chapter Build is a subgraph and never carries a Build publication, so
+    // its anonymous grant comes from the game release that listed it. Same
+    // rule, different release kind: a durable row authorized the media before
+    // Java could serve the manifest, and only a definitive rejection revokes.
+    const authorizedAsChapter = frozen.build.gameReleaseChapters.some(
+      (chapter) =>
+        chapter.release.mediaAuthorizationRevokedAt === null &&
+        chapter.release.status !== StoryExperiencePublicationStatus.rejected,
+    );
+    const publiclyAuthorized = authorizedAsWholeWork || authorizedAsChapter;
+    if (!publiclyAuthorized) {
+      if (!user) {
+        throw new UnauthorizedException({
+          code: 'STORY_BUILD_ASSET_AUTH_REQUIRED',
+          message: 'Authentication is required for unpublished Build media.',
+        });
+      }
+      await this.permissions.requireProject(
+        user.userId,
+        projectId,
+        'story.read',
+      );
+    }
+    return { frozen, publiclyAuthorized };
   }
 
   async readBuildAssetPoster(
@@ -1817,16 +1887,24 @@ function positiveInt(value: string | undefined, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function hasStoryCommunityAccess(runtimeJson: unknown): boolean {
-  const parsed = ExperienceRuntimeManifestSchema.safeParse(runtimeJson);
-  return (
-    parsed.success &&
-    parsed.data.graph.nodes.some(
-      (node) =>
-        node.access ||
-        node.eventBindings.some((binding) =>
-          binding.routes.some((route) => route.access),
-        ),
-    )
-  );
+/**
+ * 403 for media awaiting the approval policy, 410 for blocked, deleted or no
+ * longer exact media — the same answer every Build media read gives.
+ */
+function throwIfBuildMediaUnavailable(frozen: CurrentBuildMediaRow): void {
+  const unavailable = currentMediaDiagnostics(
+    [frozen],
+    requireModerationApproval(),
+  ).find((diagnostic) => diagnostic.severity === 'error');
+  if (!unavailable) return;
+  if (unavailable.code === 'STORY_BUILD_ASSET_MODERATION_PENDING') {
+    throw new ForbiddenException({
+      code: unavailable.code,
+      message: unavailable.message,
+    });
+  }
+  throw new GoneException({
+    code: unavailable.code,
+    message: unavailable.message,
+  });
 }

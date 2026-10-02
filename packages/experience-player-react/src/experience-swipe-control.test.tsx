@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
+import { ExperienceFrameRotationContext } from "./experience-landscape-presentation";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
 
 type Props = ComponentProps<typeof ExperienceSpatialLayer>;
@@ -69,34 +70,60 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(sceneTimeMs = 0) {
+function render(sceneTimeMs = 0, rotated = false) {
   act(() =>
     root.render(
-      <ExperienceSpatialLayer
-        manifest={
-          {
-            assets: [],
-            inputActions: [],
-            localization: { defaultLocale: "en-US" },
-          } as unknown as Props["manifest"]
-        }
-        scene={scene}
-        runtimeState={{} as Props["runtimeState"]}
-        sceneTimeMs={sceneTimeMs}
-        locale="en-US"
-        orientation="landscape"
-        onEvents={onEvents}
-        onRuntimeError={vi.fn()}
-      />
+      <ExperienceFrameRotationContext.Provider value={rotated}>
+        <ExperienceSpatialLayer
+          manifest={
+            {
+              assets: [],
+              inputActions: [],
+              localization: { defaultLocale: "en-US" },
+            } as unknown as Props["manifest"]
+          }
+          scene={scene}
+          runtimeState={{} as Props["runtimeState"]}
+          sceneTimeMs={sceneTimeMs}
+          locale="en-US"
+          orientation="landscape"
+          onEvents={onEvents}
+          onRuntimeError={vi.fn()}
+        />
+      </ExperienceFrameRotationContext.Provider>
     )
   );
 }
 
-function pointer(type: string, id: number, x = 0) {
-  const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x });
+function pointer(type: string, id: number, x = 0, y = 0) {
+  const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y });
   Object.defineProperty(event, "pointerId", { value: id });
   act(() => container.querySelector("button")!.dispatchEvent(event));
 }
+
+it("reads a swipe in the picture's axes when the frame is drawn sideways", () => {
+  render(0, true);
+  // On a frame turned clockwise, the picture's right runs down the screen.
+  pointer("pointerdown", 1, 0, 0);
+  pointer("pointerup", 1, 0, 50);
+  expect(onEvents).toHaveBeenCalledWith([
+    expect.objectContaining({
+      type: "gesture.completed",
+      payload: expect.objectContaining({ direction: "right" }),
+    }),
+  ]);
+});
+
+it("reads the same screen movement as down on an upright frame", () => {
+  pointer("pointerdown", 1, 0, 0);
+  pointer("pointerup", 1, 0, 50);
+  expect(onEvents).toHaveBeenCalledWith([
+    expect.objectContaining({
+      type: "gesture.cancelled",
+      payload: expect.objectContaining({ direction: "down" }),
+    }),
+  ]);
+});
 
 it("shows a swipe cue with the action label", () => {
   expect(container.querySelector("svg")).not.toBeNull();

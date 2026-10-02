@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { GoneException, UnauthorizedException } from '@nestjs/common';
 import {
   MediaAssetKind,
   MediaAssetModerationStatus,
@@ -394,5 +394,295 @@ describe('release-candidate media delivery', () => {
         delete process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS;
       else process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS = previous;
     }
+  });
+});
+
+describe('adaptive playback (/playback)', () => {
+  const MASTER = `https://media.fizzspace.cn/hls/${ASSET_ID}/master.m3u8`;
+  const MP4_KEY = 'aliyun-bailian/2026/08/15/2259/clip.mp4';
+  let previousBase: string | undefined;
+  beforeAll(() => {
+    previousBase = process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS;
+    process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS = 'https://media.fizzspace.cn';
+  });
+  afterAll(() => {
+    if (previousBase === undefined)
+      delete process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS;
+    else process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS = previousBase;
+  });
+
+  function runtimeManifest(communityPointPrice?: number) {
+    return compileStoryExperienceManifest({
+      release: InteractiveFilmReleaseSchema.parse({
+        schemaVersion: 2,
+        channel: 'production',
+        gameId: PROJECT_ID,
+        releaseId: BUILD_ID,
+        contentVersion: BUILD_ID,
+        entryNodeId: 'scene',
+        defaultLocale: 'en-US',
+        locales: ['en-US'],
+        media: [
+          {
+            assetId: ASSET_ID,
+            kind: 'video',
+            orientationPolicy: 'single-master',
+            variants: {
+              landscape: {
+                sourceAssetId: ASSET_ID,
+                sha256: CHECKSUM,
+                src: `/aurora/story-projects/${PROJECT_ID}/builds/${BUILD_ID}/assets/${ASSET_ID}/variants/${VARIANT_ID}/content`,
+                width: 1920,
+                height: 1080,
+                durationSeconds: 7,
+              },
+            },
+          },
+        ],
+        nodes: [
+          {
+            nodeId: 'scene',
+            ...(communityPointPrice ? { communityPointPrice } : {}),
+            presentation: {
+              kind: 'video',
+              fit: 'cover',
+              sequence: [
+                {
+                  clipId: 'clip',
+                  assetId: ASSET_ID,
+                  endBehavior: { behavior: 'advance' },
+                },
+              ],
+            },
+            exit: { kind: 'auto', nextNodeId: null },
+          },
+        ],
+      }),
+      metadata: { title: 'Playback' },
+      experienceProfile: 'cinematic',
+      mediaIdentities: [
+        {
+          runtimeAssetId: ASSET_ID,
+          variantId: VARIANT_ID,
+          mediaType: 'video/mp4',
+        },
+      ],
+    }).manifest;
+  }
+
+  /** A published chapter clip on .cn OSS whose original is the frozen variant. */
+  function publishedOssClip(
+    options: {
+      runtimeJson?: unknown;
+      releases?: Parameters<typeof frozenChapterAsset>[0];
+    } = {},
+  ) {
+    const frozen = frozenChapterAsset(
+      options.releases ?? [
+        { release: { status: 'confirmed', mediaAuthorizationRevokedAt: null } },
+      ],
+    );
+    Object.assign(frozen.build, {
+      runtimeJson:
+        'runtimeJson' in options ? options.runtimeJson : runtimeManifest(),
+    });
+    frozen.asset.storageProvider = MediaStorageProvider.aliyun_oss;
+    frozen.asset.bucket = 'fizzdragon-ai-outputs';
+    frozen.asset.region = 'cn-hangzhou';
+    frozen.asset.objectKey = MP4_KEY;
+    frozen.asset.externalUrl = null;
+    return frozen;
+  }
+
+  const READY_HLS = {
+    id: 'hls-variant',
+    assetId: ASSET_ID,
+    variantKey: 'hls',
+    status: MediaAssetVariantStatus.ready,
+    contentType: 'application/vnd.apple.mpegurl',
+    deletedAt: null,
+    placements: [
+      {
+        id: 'hls-master',
+        variantId: 'hls-variant',
+        role: 'primary',
+        status: 'active',
+        priority: 0,
+        storageProvider: MediaStorageProvider.aliyun_oss,
+        bucket: 'fizzdragon-ai-outputs',
+        region: 'cn-hangzhou',
+        objectKey: `hls/${ASSET_ID}/master.m3u8`,
+        externalUrl: null,
+        publicBaseUrl: null,
+        deletedAt: null,
+      },
+    ],
+  };
+
+  function playbackService(frozen: unknown, hls: unknown = READY_HLS) {
+    const findFirst = jest.fn().mockResolvedValue(frozen);
+    const hlsLookup = jest.fn().mockResolvedValue(hls);
+    const permissions = {
+      requireProject: jest.fn().mockResolvedValue({
+        project: { workspaceId: '019f60f4-b101-70d4-8000-000000000003' },
+      }),
+    };
+    const communityAccess = { requireAssetAccess: jest.fn() };
+    const storage = { createReadUrl: jest.fn() };
+    const service = new StoryBuildService(
+      {
+        storyBuildAsset: { findFirst },
+        mediaAssetVariant: { findFirst: hlsLookup },
+      } as never,
+      permissions as never,
+      storage as never,
+      { assertHumanWriteAllowed: jest.fn() } as never,
+      communityAccess as never,
+    );
+    const playback = (user?: { userId: string }) =>
+      service.resolveBuildAssetPlayback(
+        user as never,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      );
+    return {
+      service,
+      playback,
+      findFirst,
+      hlsLookup,
+      permissions,
+      communityAccess,
+      storage,
+    };
+  }
+
+  it('offers the ready HLS master of a published free OSS clip', async () => {
+    const h = playbackService(publishedOssClip());
+
+    await expect(h.playback()).resolves.toEqual({
+      url: MASTER,
+      contentType: 'application/vnd.apple.mpegurl',
+    });
+    expect(h.hlsLookup).toHaveBeenCalledWith({
+      where: {
+        assetId: ASSET_ID,
+        variantKey: 'hls',
+        status: MediaAssetVariantStatus.ready,
+        deletedAt: null,
+      },
+      include: {
+        placements: {
+          where: { role: 'primary', status: 'active', deletedAt: null },
+        },
+      },
+    });
+  });
+
+  it('keeps /content progressive even when an HLS output exists', async () => {
+    const frozen = publishedOssClip();
+    Object.assign(frozen.asset, { variants: [READY_HLS] });
+    const h = playbackService(frozen);
+
+    await expect(
+      h.service.issueBuildAssetReadUrl(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).resolves.toEqual({
+      url: `https://media.fizzspace.cn/${MP4_KEY}`,
+      expiresAt: null,
+    });
+  });
+
+  it('reads /content only from variant-less asset placements', async () => {
+    const h = playbackService(publishedOssClip());
+
+    await h.service.issueBuildAssetReadUrl(
+      undefined,
+      PROJECT_ID,
+      BUILD_ID,
+      ASSET_ID,
+      VARIANT_ID,
+    );
+
+    const [query] = h.findFirst.mock.calls[0] as [
+      { include: { asset: unknown } },
+    ];
+    expect(query.include.asset).toEqual({
+      include: { placements: { where: { variantId: null } } },
+    });
+  });
+
+  it('returns null for a paid Build without any entitlement or reader check', async () => {
+    const h = playbackService(
+      publishedOssClip({ runtimeJson: runtimeManifest(3) }),
+    );
+
+    await expect(h.playback({ userId: 'viewer' })).resolves.toBeNull();
+    expect(h.communityAccess.requireAssetAccess).not.toHaveBeenCalled();
+    expect(h.permissions.requireProject).not.toHaveBeenCalled();
+    expect(h.hlsLookup).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on a manifest that no longer parses', async () => {
+    const h = playbackService(publishedOssClip({ runtimeJson: undefined }));
+
+    await expect(h.playback()).resolves.toBeNull();
+    expect(h.hlsLookup).not.toHaveBeenCalled();
+  });
+
+  it('returns null for an unpublished Build, even for a project reader', async () => {
+    const h = playbackService(publishedOssClip({ releases: [] }));
+
+    await expect(h.playback({ userId: 'reader' })).resolves.toBeNull();
+    expect(h.permissions.requireProject).toHaveBeenCalledWith(
+      'reader',
+      PROJECT_ID,
+      'story.read',
+    );
+    expect(h.hlsLookup).not.toHaveBeenCalled();
+  });
+
+  it('answers 401 for an unpublished Build with an anonymous viewer', async () => {
+    const h = playbackService(publishedOssClip({ releases: [] }));
+
+    await expect(h.playback()).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('answers 410 for a moderation-blocked clip, like /content', async () => {
+    const frozen = publishedOssClip();
+    Object.assign(frozen.asset, {
+      moderationStatus: MediaAssetModerationStatus.blocked,
+    });
+    const h = playbackService(frozen);
+
+    await expect(h.playback()).rejects.toBeInstanceOf(GoneException);
+    expect(h.hlsLookup).not.toHaveBeenCalled();
+  });
+
+  it('returns null for a frozen variant other than the original', async () => {
+    const frozen = publishedOssClip();
+    frozen.variant.variantKey = 'rendition-720p';
+    const h = playbackService(frozen);
+
+    await expect(h.playback()).resolves.toBeNull();
+    expect(h.hlsLookup).not.toHaveBeenCalled();
+  });
+
+  it('returns null without a ready HLS output or its master placement', async () => {
+    await expect(
+      playbackService(publishedOssClip(), null).playback(),
+    ).resolves.toBeNull();
+    await expect(
+      playbackService(publishedOssClip(), {
+        ...READY_HLS,
+        placements: [],
+      }).playback(),
+    ).resolves.toBeNull();
   });
 });

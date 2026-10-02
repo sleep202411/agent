@@ -6,7 +6,7 @@ import {
 } from "@repo/shared/experience-runtime";
 import {
   ExperiencePlayer,
-  resolveNextSceneVideoUris,
+  resolveLookAheadVideoMedia,
   resolveLockedScenePreview,
 } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
@@ -488,130 +488,168 @@ describe("ExperiencePlayer core.text", () => {
     expect(html).not.toContain("fal:happy-oyster");
   });
 
-  it("preloads only the video branches directly reachable from the current scene", () => {
-    const base = runtimeFixture({ completion: "passive", rendererKind: "video" });
-    const currentScene = base.graph.nodes[0];
-    const runtime = {
-      ...base,
-      assets: [
-        ...base.assets,
-        {
-          assetId: "video.next",
-          kind: "video",
-          orientationPolicy: "single-master",
-          variants: [
-            {
-              variantId: "video.next.landscape",
-              sourceAssetId: "video.next.source",
-              sha256: HASH,
-              uri: "/next.mp4",
-              mediaType: "video/mp4",
-              orientation: "landscape",
-              width: 1920,
-              height: 1080,
-              durationMs: 5_000,
-            },
-          ],
-        },
-        {
-          assetId: "video.unrelated",
-          kind: "video",
-          orientationPolicy: "single-master",
-          variants: [
-            {
-              variantId: "video.unrelated.landscape",
-              sourceAssetId: "video.unrelated.source",
-              sha256: HASH,
-              uri: "/unrelated.mp4",
-              mediaType: "video/mp4",
-              orientation: "landscape",
-              width: 1920,
-              height: 1080,
-              durationMs: 5_000,
-            },
-          ],
-        },
-      ],
-      graph: {
-        ...base.graph,
-        nodes: [
-          {
-            ...currentScene,
-            eventBindings: [
-              {
-                bindingId: "scene.next",
-                on: {
-                  type: "renderer.outcome",
-                  sourceId: "video.primary",
-                  qualifierId: "media-ended",
-                },
-                routes: [
-                  {
-                    routeId: "next",
-                    actions: [
-                      { kind: "scene.goto", sceneId: "scene.next" },
-                      // A retry of the current clip is already warm and must not
-                      // create a second detached media element.
-                      { kind: "scene.goto", sceneId: "scene.text" },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            ...currentScene,
-            sceneId: "scene.next",
-            renderers: [
-              {
-                instanceId: "video.next",
-                rendererId: "core.video",
-                layer: 0,
-                config: {
-                  fit: "cover",
-                  sequence: [
-                    {
-                      clipId: "clip.next",
-                      assetId: "video.next",
-                      endBehavior: { behavior: "advance" },
-                    },
-                  ],
-                  autoplay: true,
-                },
-                bindings: {},
-              },
-            ],
-            eventBindings: [],
-          },
-          {
-            ...currentScene,
-            sceneId: "scene.unrelated",
-            renderers: [
-              {
-                instanceId: "video.unrelated",
-                rendererId: "core.video",
-                layer: 0,
-                config: {
-                  fit: "cover",
-                  sequence: [
-                    {
-                      clipId: "clip.unrelated",
-                      assetId: "video.unrelated",
-                      endBehavior: { behavior: "advance" },
-                    },
-                  ],
-                  autoplay: true,
-                },
-                bindings: {},
-              },
-            ],
-            eventBindings: [],
-          },
-        ],
-      },
-    } as unknown as ExperienceRuntimeManifest;
+  it("offers a disabled Loading control until the entry clip is on an element", () => {
+    const html = renderToStaticMarkup(
+      <ExperiencePlayer
+        runtime={runtimeFixture({ completion: "passive", rendererKind: "video" })}
+        locale="en-US"
+        copy={copy}
+        randomSeed="core-video-entry-start-gate-test"
+      />
+    );
 
-    expect(resolveNextSceneVideoUris(runtime, "scene.text", "landscape")).toEqual(["/next.mp4"]);
+    // No handle is registered during a server render, so Start waits — and
+    // says why — instead of offering to play nothing.
+    const start = /<button[^>]*>(?:(?!<\/button>)[\s\S])*<\/button>/.exec(
+      html.slice(html.indexOf(copy.interactiveFilm))
+    )?.[0];
+    expect(start).toContain('disabled=""');
+    expect(start).toContain(">Loading</button>");
+    expect(html).not.toContain(">Start<");
+  });
+
+  it("keeps Start for an entry with no media to wait for", () => {
+    const html = renderToStaticMarkup(
+      <ExperiencePlayer
+        runtime={runtimeFixture({ experienceProfile: "narrative", completion: "continue" })}
+        locale="en-US"
+        copy={copy}
+        randomSeed="core-text-entry-start-test"
+      />
+    );
+
+    expect(html).toContain(">Start<");
+    expect(html).not.toContain(">Loading<");
+  });
+});
+
+describe("resolveLookAheadVideoMedia", () => {
+  const video = (assetId: string, uri: string, mediaType = "video/mp4") => ({
+    assetId,
+    kind: "video",
+    orientationPolicy: "single-master",
+    variants: [
+      {
+        variantId: `${assetId}.landscape`,
+        sourceAssetId: `${assetId}.source`,
+        sha256: HASH,
+        uri,
+        mediaType,
+        orientation: "landscape",
+        width: 1920,
+        height: 1080,
+        durationMs: 5_000,
+      },
+    ],
+  });
+  const scene = (
+    sceneId: string,
+    assetIds: string[],
+    extra: { access?: unknown; eventBindings?: unknown[] } = {}
+  ) => ({
+    kind: "scene",
+    sceneId,
+    clock: { kind: "none" },
+    renderers: [
+      {
+        instanceId: `${sceneId}.video`,
+        rendererId: "core.video",
+        layer: 0,
+        config: {
+          fit: "cover",
+          sequence: assetIds.map((assetId, index) => ({
+            clipId: `${sceneId}.clip-${index}`,
+            assetId,
+            endBehavior: { behavior: "advance" },
+          })),
+          autoplay: true,
+        },
+        bindings: {},
+      },
+    ],
+    anchors: [],
+    gestures: [],
+    timeline: { cues: [] },
+    eventBindings: extra.eventBindings ?? [],
+    ...(extra.access ? { access: extra.access } : {}),
+  });
+  const paid = { key: "node:locked", communityPointPrice: 20, title: { "en-US": "Locked" } };
+  const goto = (sceneId: string) => ({ kind: "scene.goto", sceneId });
+  const runtime = {
+    ...runtimeFixture({ completion: "passive", rendererKind: "video" }),
+    assets: [
+      video("current.a", "/current-a.mp4"),
+      video("current.still", "/current-still.png", "image/png"),
+      video("current.b", "/current-b.mp4"),
+      video("next.a", "/next-a.mp4"),
+      video("next.b", "/next-b.mp4"),
+      video("still.a", "/still-opening.png", "image/png"),
+      video("paid.route", "/paid-route.mp4"),
+      video("locked.node", "/locked-node.mp4"),
+      video("unrelated", "/unrelated.mp4"),
+    ],
+    graph: {
+      entrySceneId: "scene.current",
+      nodes: [
+        scene("scene.current", ["current.a", "current.still", "current.b", "current.a"], {
+          eventBindings: [
+            {
+              bindingId: "current.ended",
+              on: {
+                type: "renderer.outcome",
+                sourceId: "scene.current.video",
+                qualifierId: "media-ended",
+              },
+              routes: [
+                // A retry of the current scene is already on stage.
+                { routeId: "next", actions: [goto("scene.next"), goto("scene.current")] },
+                { routeId: "paid", access: paid, actions: [goto("scene.paid")] },
+              ],
+            },
+            {
+              bindingId: "current.choice",
+              on: { type: "renderer.outcome", sourceId: "choice", qualifierId: "choice-selected" },
+              routes: [
+                { routeId: "locked", actions: [goto("scene.locked")] },
+                { routeId: "still", actions: [goto("scene.still")] },
+                { routeId: "again", actions: [goto("scene.next")] },
+              ],
+            },
+          ],
+        }),
+        scene("scene.next", ["next.a", "next.b"]),
+        scene("scene.still", ["still.a", "next.b"]),
+        scene("scene.paid", ["paid.route"]),
+        scene("scene.locked", ["locked.node"], { access: paid }),
+        scene("scene.unrelated", ["unrelated"]),
+      ],
+    },
+  } as unknown as ExperienceRuntimeManifest;
+
+  it("plans the rest of the current scene, then each reachable scene's opening clip", () => {
+    expect(resolveLookAheadVideoMedia(runtime, "scene.current", "landscape")).toEqual([
+      { src: "/current-a.mp4", type: "video/mp4" },
+      { src: "/current-b.mp4", type: "video/mp4" },
+      { src: "/next-a.mp4", type: "video/mp4" },
+    ]);
+  });
+
+  it("includes routes and scenes the viewer has unlocked, in route order", () => {
+    expect(
+      resolveLookAheadVideoMedia(runtime, "scene.current", "landscape", () => true).map(
+        (media) => media.src
+      )
+    ).toEqual([
+      "/current-a.mp4",
+      "/current-b.mp4",
+      "/next-a.mp4",
+      "/paid-route.mp4",
+      "/locked-node.mp4",
+    ]);
+  });
+
+  it("plans nothing from a node that is not a scene", () => {
+    expect(resolveLookAheadVideoMedia(runtime, "scene.missing", "landscape")).toEqual([]);
   });
 });
 

@@ -17,7 +17,13 @@ const cases = [
   {
     name: 'takedown',
     create: (db: unknown) =>
-      new MediaTakedownWorkerService(db as never, undefined as never),
+      new MediaTakedownWorkerService(
+        db as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+      ),
   },
   {
     name: 'processing',

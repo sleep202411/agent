@@ -102,6 +102,7 @@ import { VideoPosterService } from './video-poster.service';
     MediaAccessService,
     MediaModerationAdminService,
     MediaProcessingService,
+    CdnPurgeProvider,
   ],
 })
 export class MediaModule {}

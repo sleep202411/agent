@@ -11,6 +11,7 @@ import {
 import type { ExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
 import { useTranslations } from "@/src/i18n/i18n";
 import { createHttpPlaySessionReporter } from "@/src/lib/play-session-reporter.http";
+import { hasFeature } from "@/src/lib/region/features";
 
 export function ExperienceRuntimePlayer({
   runtime,
@@ -96,6 +97,7 @@ export function ExperienceRuntimePlayer({
         randomSeed={randomSeed}
         copy={copy}
         coverUrl={coverUrl}
+        adaptivePlayback={hasFeature("adaptiveStoryPlayback")}
         playSessionReporter={playSessionReporter}
         endingExtra={(sessionId) =>
           sessionId ? <PlaySessionReportView sessionId={sessionId} /> : null

@@ -21,6 +21,9 @@ export const FEATURES = {
   imageGeneration: { cells: ['com', 'global'] },
   azureBlobUpload: { cells: ['com', 'global'] },
   javaUploadBridge: { cells: ['cn'] },
+  // IMM-transcoded HLS for published free interactive films: the playback
+  // reconcile loop, its admin endpoints and their boot-time config assertion.
+  adaptiveStoryPlayback: { cells: ['cn'] },
 } as const satisfies Record<string, FeatureRule>;
 
 export type FeatureName = keyof typeof FEATURES;

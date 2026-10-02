@@ -12,6 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import type { StoryBuildAssetPlaybackResponse } from '@repo/shared/story-playback';
 import { streamStoryPrivateMedia } from './story-private-media';
 import { CurrentUser, Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
@@ -112,6 +113,33 @@ export class StoryBuildController {
     if (access.stream)
       return streamStoryPrivateMedia(access.url, response, range);
     return response.redirect(HttpStatus.FOUND, access.url);
+  }
+
+  /**
+   * HLS-capable players ask here before choosing a provider for a frozen clip.
+   * `/content` never changes shape, so clients that only play progressive
+   * files keep working; `data: null` means keep playing `/content`. Same
+   * public/optional-viewer contract and error codes as `/content`.
+   */
+  @Get(
+    ':projectId/builds/:buildId/assets/:assetId/variants/:variantId/playback',
+  )
+  @Public()
+  async buildAssetPlayback(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param(new ZodValidationPipe(StoryBuildAssetParamsSchema))
+    params: StoryBuildAssetParams,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const data = await this.builds.resolveBuildAssetPlayback(
+      user,
+      params.projectId,
+      params.buildId,
+      params.assetId,
+      params.variantId,
+    );
+    response.setHeader('cache-control', 'private, no-store');
+    return { code: 200, data } satisfies StoryBuildAssetPlaybackResponse;
   }
 
   @Get(':projectId/builds/:buildId/assets/:assetId/variants/:variantId/poster')

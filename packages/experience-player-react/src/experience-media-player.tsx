@@ -6,10 +6,19 @@ import {
   MediaProvider,
   Poster,
   type MediaPlayerInstance,
+  type MediaProviderInstance,
   type PlayerSrc,
 } from "@vidstack/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type Hls from "hls.js";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { classNames } from "./class-names";
+import {
+  ExperiencePlaybackDeliveryContext,
+  configureExperienceMediaProvider,
+  experiencePrefersNativeHls,
+  type ExperienceDeclaredSource,
+  type ExperiencePlaybackSource,
+} from "./experience-playback-delivery";
 import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
 import { EXPERIENCE_VIDEO_LOADERS, normalizeVideoSource } from "./experience-video-source";
 
@@ -113,19 +122,62 @@ function mediaReadinessAbort(): Error {
  * The clip the element is sourced from. Held in state, one render behind the
  * props, because `source` is the load-bearing field: writing it blanks the
  * element, so the outgoing frame has to be copied off the element before the
- * write lands. `poster`, `clipStartTime` and `durationSeconds` travel with it so
- * the element is never described by one clip and sourced from another, and the
- * `uri` travels with it because that — not `identity`, and not the `source`
- * object, which is rebuilt whenever any of these change — is what says the
- * element is about to be blanked.
+ * write lands. `poster`, `clipStartTime`, `durationSeconds` and `loop` travel
+ * with it so the element is never described by one clip and sourced from
+ * another, and the `uri` travels with it because that — not `identity`, and not
+ * the `source` object, which is rebuilt whenever any of these change — is what
+ * says the element is about to be blanked. `playback` is the answer the clip
+ * is played from: what the element loads (`uri` — a negotiated HLS master, or
+ * the declared file), how it is delivered, and the manifest URI it stands in for.
  */
 interface MediaClip {
   readonly identity: string;
   readonly uri: string;
+  readonly playback: ExperiencePlaybackSource;
   readonly source: PlayerSrc;
   readonly poster?: string;
   readonly clipStartTime?: number;
   readonly durationSeconds?: number;
+  readonly loop: boolean;
+}
+
+/** A declared clip played as it is, for players outside any delivery. */
+function declaredPlayback(declared: ExperienceDeclaredSource): ExperiencePlaybackSource {
+  return {
+    src: declared.src,
+    type: declared.type,
+    delivery: "progressive",
+    declaredSrc: declared.src,
+  };
+}
+
+/**
+ * Hands the media element back to the provider after its loader changed.
+ *
+ * Vidstack (1.15) runs a loader only when it is given the media element, which
+ * its React outlet does once, when the element is created. hls.js and native
+ * playback both render a `<video>`, so a cut between an HLS clip and a
+ * progressive one — a film whose clips are not all transcoded yet, or a
+ * QuickTime upload next to an MP4 — changes the loader on the same element: the
+ * old provider is torn down and nothing builds the new one, leaving the element
+ * empty. Loading again runs the new loader on that same element, so the
+ * audible-playback grant WebKit tied to it survives the cut.
+ */
+function reloadProvider(provider: MediaProviderInstance | null): void {
+  const media = provider?.el?.querySelector<HTMLMediaElement>("video, audio");
+  if (provider && media) provider.load(media);
+}
+
+/** `onProviderChange` for a player outside any delivery. */
+function configureStandaloneProvider(
+  provider: Parameters<typeof configureExperienceMediaProvider>[0]
+): void {
+  configureExperienceMediaProvider(provider, null);
+}
+
+function negotiationErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return String(error);
 }
 
 /**
@@ -151,6 +203,12 @@ interface MediaClip {
  * as long as it needs, and a hold reads as a held shot where a hole reads as a
  * bug. A frame that cannot be copied leaves the cut uncovered, which is the
  * backdrop flash this replaced and never worse than it.
+ *
+ * Under a delivery (see ExperiencePlaybackDelivery) the declared clip may first
+ * have to be negotiated into what the element actually loads. Until that answer
+ * is in, the element keeps the clip it has — paused on the outgoing frame, with
+ * no handle offered for it and nothing it reports passed on — so a pending cut
+ * is one more held beat, never a blank or the wrong clip played.
  */
 export function ExperienceMediaPlayer({
   source,
@@ -193,31 +251,94 @@ export function ExperienceMediaPlayer({
   copy: ExperiencePlayerVideoCopy;
 }) {
   const { src, type } = source;
-  const clip = useMemo<MediaClip>(
-    () => ({
-      identity: playbackIdentity,
-      uri: src,
-      source: normalizeVideoSource({ src, type }),
-      poster,
-      clipStartTime,
-      durationSeconds,
-    }),
-    [clipStartTime, durationSeconds, playbackIdentity, poster, src, type]
+  const delivery = useContext(ExperiencePlaybackDeliveryContext);
+  const declared = useMemo<ExperienceDeclaredSource>(
+    () => ({ src, type: type ?? null }),
+    [src, type]
+  );
+  const asDeclared = useMemo(() => declaredPlayback(declared), [declared]);
+  // The answer the element is sourced from, pinned for as long as the props
+  // name that clip. The delivery may evict or forget it (a fatal stream error
+  // does); that changes what the next player to load the clip is told, never
+  // what this one is playing — asking again is a restart's job, not a retry
+  // hidden behind the error the viewer is looking at.
+  const [pinned, setPinned] = useState<ExperiencePlaybackSource | null>(
+    () => delivery?.peek(declared) ?? null
+  );
+  const playback =
+    pinned?.declaredSrc === src ? pinned : delivery ? delivery.peek(declared) : asDeclared;
+  // Read through a ref so a host re-render — which hands over a new callback —
+  // cannot restart a negotiation that already failed.
+  const onPlaybackErrorRef = useRef(onPlaybackError);
+  onPlaybackErrorRef.current = onPlaybackError;
+  useEffect(() => {
+    if (!delivery || playback) return;
+    let cancelled = false;
+    delivery.resolve(declared).then(
+      (resolved) => {
+        if (!cancelled) setPinned(resolved);
+      },
+      (error: unknown) => {
+        // Verbatim: a refused clip (403/410) names its own reason, and a broken
+        // answer names the field it broke on. Nothing falls back to /content.
+        if (!cancelled) onPlaybackErrorRef.current(negotiationErrorMessage(error));
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [declared, delivery, playback]);
+  const clip = useMemo<MediaClip | null>(
+    () =>
+      playback
+        ? {
+            identity: playbackIdentity,
+            uri: playback.src,
+            playback,
+            source: normalizeVideoSource(playback),
+            poster,
+            clipStartTime,
+            durationSeconds,
+            loop,
+          }
+        : null,
+    [clipStartTime, durationSeconds, loop, playback, playbackIdentity, poster]
   );
   const playerRef = useRef<MediaPlayerInstance>(null);
+  const providerRef = useRef<MediaProviderInstance>(null);
   const stillFrameRef = useRef<HTMLCanvasElement>(null);
   // Live mute authority for the element. `muted` is the host's declared intent;
   // the autoplay fallback below can mute AHEAD of it, and a late `canplay` must
   // not undo that with a prop value React has not re-rendered yet — Chrome
   // pauses a video that is unmuted without user activation.
   const mutedRef = useRef(muted);
-  const [rendered, setRendered] = useState(clip);
+  const [rendered, setRendered] = useState<MediaClip | null>(clip);
   const [stillFrameHeld, setStillFrameHeld] = useState(false);
-  const { durationSeconds: renderedDuration } = rendered;
-  const readinessKey = `${rendered.identity}\u0000${rendered.uri}`;
+  const renderedDuration = rendered?.durationSeconds;
+  const renderedIdentity = rendered?.identity ?? null;
+  const renderedUri = rendered?.uri ?? null;
+  const readinessKey = rendered ? `${rendered.identity}\u0000${rendered.uri}` : null;
   const readinessRef = useRef<ExperienceMediaReadinessGate | null>(null);
-  if (!readinessRef.current) readinessRef.current = new ExperienceMediaReadinessGate(readinessKey);
+  // Opened lazily: a clip still being negotiated on first mount has no key yet.
+  if (!readinessRef.current && readinessKey !== null) {
+    readinessRef.current = new ExperienceMediaReadinessGate(readinessKey);
+  }
+  // The source hls.js has already spent its one recovery on (see `onHlsError`),
+  // and the source that has failed for good (see `failRendered`). Both count
+  // per load: a clip that comes back to the element is loaded afresh.
+  const hlsRecoveryRef = useRef<string | null>(null);
+  const failedRef = useRef<string | null>(null);
   useLayoutEffect(() => {
+    if (clip === null) {
+      // Nothing to source yet: the element keeps the clip it has, and with it
+      // the frame on screen, until the incoming clip's answer arrives. On a cut
+      // that frame is held, not played on: the outgoing clip would go on
+      // sounding under the viewer's choice, towards an end no longer its own.
+      if (rendered !== null && rendered.identity !== playbackIdentity) {
+        providerMedia(playerRef.current)?.pause();
+      }
+      return;
+    }
     if (rendered === clip) return;
     // A layout effect because of what is still true at this point: the DOM holds
     // the outgoing source, so there is a frame to copy — and the state written
@@ -229,15 +350,25 @@ export function ExperienceMediaPlayer({
     // `clipStartTime` — the tail wait loop — seeks instead, and a seeking element
     // goes on showing the frame it already has; covering that would be a freeze,
     // because a seek inside a buffered source need not report `playing` again.
-    if (clip.uri !== rendered.uri) {
+    if (rendered !== null && clip.uri !== rendered.uri) {
       const capture = captureStillFrame(stillFrameRef.current, providerVideo(playerRef.current));
       setStillFrameHeld((held) => holdsStillFrame(capture, held));
     }
+    setPinned(clip.playback);
     setRendered(clip);
-  }, [clip, rendered]);
+  }, [clip, playbackIdentity, rendered]);
+  // A layout effect, so the clip is staged before the passive effects of the
+  // commit that brought it: the host plans its look-ahead in one of those, and
+  // must already find this clip taken. Keyed on the declared clip, so one still
+  // being negotiated counts — it lands on this element once answered.
   useLayoutEffect(() => {
+    delivery?.markStaged(src);
+  }, [delivery, src]);
+  useLayoutEffect(() => {
+    hlsRecoveryRef.current = null;
+    failedRef.current = null;
     const readiness = readinessRef.current;
-    if (!readiness) return;
+    if (!readiness || readinessKey === null) return;
     readiness.reset(readinessKey);
     return () => readiness.cancel(readinessKey);
   }, [readinessKey]);
@@ -248,21 +379,23 @@ export function ExperienceMediaPlayer({
   }, [muted, renderedDuration]);
   useEffect(() => {
     const player = playerRef.current;
-    if (!player || !onPlaybackHandle) return;
+    if (!player || !onPlaybackHandle || readinessKey === null) return;
     // Keyed on the clip the element is SOURCED from, not the prop: the host
     // answers a registration by playing it, and a handle offered while the
     // element still holds the outgoing source would play the clip the viewer
-    // just left.
+    // just left. That includes the wait for a negotiation: until the incoming
+    // clip is on the element there is no handle at all.
     //
     // Keyed on the source as well as the identity, because a source is what a
     // write to `src` stops: rotating the device re-resolves the same clip to its
     // other orientation, and without a fresh registration nothing would start
     // the newly loaded source — leaving a still frame over a stalled element
     // with no `playing` coming to take it down.
+    if (renderedIdentity !== playbackIdentity) return;
     let disposed = false;
     let playVersion = 0;
     onPlaybackHandle({
-      playbackIdentity: rendered.identity,
+      playbackIdentity: renderedIdentity,
       activate: () => {
         const media = providerMedia(playerRef.current);
         if (!media) return;
@@ -302,7 +435,63 @@ export function ExperienceMediaPlayer({
       playVersion++;
       onPlaybackHandle(null);
     };
-  }, [onPlaybackHandle, onSoundBlocked, readinessKey, rendered.identity, rendered.uri]);
+  }, [
+    onPlaybackHandle,
+    onSoundBlocked,
+    playbackIdentity,
+    readinessKey,
+    renderedIdentity,
+    renderedUri,
+  ]);
+  if (rendered === null || readinessKey === null) {
+    // First mount of a clip whose answer is still out: there is no element to
+    // keep yet, so the poster holds the frame and no handle is offered — the
+    // host's Start waits for one.
+    return (
+      <div
+        data-experience-video-pending=""
+        aria-busy="true"
+        aria-label={title}
+        className="relative size-full bg-black"
+      >
+        {poster ? (
+          <img
+            src={poster}
+            alt=""
+            draggable={false}
+            className={classNames(
+              "pointer-events-none absolute inset-0 size-full select-none",
+              fit === "cover" ? "object-cover" : "object-contain"
+            )}
+          />
+        ) : null}
+      </div>
+    );
+  }
+  // Whether the element holds the clip the props describe. Not while a cut
+  // waits on its negotiation: the element still holds the outgoing clip, but
+  // every callback below already belongs to the incoming one, which must hear
+  // nothing of the outgoing clip's time, end, size or failure.
+  const current = rendered.identity === playbackIdentity;
+  // Whether what the element reports still belongs to the story. Not once its
+  // clip has failed: the element can play on through what it had buffered, to
+  // an end the story must not take behind the error. Asked when the event
+  // arrives, because a failure lands between renders.
+  const live = () => current && failedRef.current !== readinessKey;
+  // The clip on the element failed for good, which only its first failure
+  // says: what the dying element reports after it would bury the cause. Its
+  // answer is retired — a restart asks the server again instead of replaying
+  // the master that just failed — a play waiting on it gives up, and if it is
+  // the current clip, the element stops and the host is told.
+  const failRendered = (message: string) => {
+    if (failedRef.current === readinessKey) return;
+    failedRef.current = readinessKey;
+    if (rendered.playback.delivery === "hls") delivery?.forget(rendered.playback.declaredSrc);
+    readinessRef.current?.fail(readinessKey, new Error(message));
+    if (!current) return;
+    providerMedia(playerRef.current)?.pause();
+    onPlaybackError(message);
+  };
   return (
     <MediaPlayer
       ref={playerRef}
@@ -314,12 +503,17 @@ export function ExperienceMediaPlayer({
       controls={false}
       autoPlay={autoPlay}
       muted={muted}
-      loop={loop}
+      loop={rendered.loop}
       duration={renderedDuration}
       clipStartTime={rendered.clipStartTime ?? 0}
       playsInline
-      preload="metadata"
+      // The entry clip buffers behind the title card, so Start begins on media
+      // that is already there; every later clip was opened by the look-ahead.
+      preload="auto"
       load="eager"
+      preferNativeHLS={experiencePrefersNativeHls()}
+      onProviderChange={delivery ? delivery.configureProvider : configureStandaloneProvider}
+      onProviderLoaderChange={() => reloadProvider(providerRef.current)}
       poster={rendered.poster}
       posterLoad="eager"
       keyTarget="player"
@@ -328,7 +522,7 @@ export function ExperienceMediaPlayer({
         readinessRef.current?.markReady(readinessKey);
         const player = playerRef.current;
         if (player) synchronizePlayerContract(player, renderedDuration, mutedRef.current);
-        reportDecodedContentSize(playerRef.current, onContentSize);
+        if (live()) reportDecodedContentSize(playerRef.current, onContentSize);
       }}
       // Takes the still frame down, and the reason none of this is on a timer.
       // `playing` is the earliest event that means the element is presenting the
@@ -336,18 +530,42 @@ export function ExperienceMediaPlayer({
       // `time-update` is dispatched off seeks and while paused too, so either one
       // can uncover a cut that has not been composited yet.
       onPlaying={() => setStillFrameHeld(false)}
-      onEnd={onEnd}
+      onEnd={() => {
+        if (live()) onEnd();
+      }}
       onTimeUpdate={(detail) => {
+        if (!live()) return;
         reportDecodedContentSize(playerRef.current, onContentSize);
         emitValidTimeUpdate(onTimeUpdate, detail.currentTime);
       }}
       // The element's own decode/source failure. Always fatal, never routine:
       // `MediaErrorDetail` is not a DOM exception and carries no `name` to
-      // classify, so it goes straight to the host.
-      onError={(detail) => {
-        const error = new Error(detail.message);
-        readinessRef.current?.fail(readinessKey, error);
-        onPlaybackError(detail.message);
+      // classify, so it goes straight to the host. hls.js fatal errors arrive
+      // here too — all but its media errors, which `onHlsError` takes.
+      onError={(detail) => failRendered(detail.message)}
+      // Vidstack answers every fatal hls.js media error with
+      // `recoverMediaError()` and never reports it, so a stream this browser
+      // cannot play would stall with no error shown. This runs just before that
+      // recovery, so it decides: each load of a source gets one, codecs the
+      // browser cannot decode get none, nor does a clip that has already
+      // failed, and otherwise hls.js lets go of the element — leaving the
+      // recovery nothing to re-attach — and the failure is reported as hls.js
+      // wrote it.
+      onHlsError={(detail) => {
+        const provider = playerRef.current?.provider;
+        const hls = provider?.type === "hls" ? provider.instance : null;
+        if (!current || !hls || !detail.fatal) return;
+        const { ErrorTypes, ErrorDetails } = hls.constructor as typeof Hls;
+        if (detail.type !== ErrorTypes.MEDIA_ERROR) return;
+        const undecodable =
+          detail.details === ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR ||
+          detail.details === ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR;
+        if (!undecodable && live() && hlsRecoveryRef.current !== readinessKey) {
+          hlsRecoveryRef.current = readinessKey;
+          return;
+        }
+        hls.detachMedia();
+        failRendered(detail.error.message || detail.details);
       }}
       // `play-fail` re-delivers the rejected `play()` DOM exception, so the
       // WHOLE error is handed to the classifier. Reducing it to `.message`
@@ -359,19 +577,20 @@ export function ExperienceMediaPlayer({
       // decode/source failures are untouched — they are neither of those, and
       // `onError` above reports them anyway.
       onPlayFail={(detail) => {
-        if (!isSurfacedPlaybackEvent(detail)) return;
+        if (!live() || !isSurfacedPlaybackEvent(detail)) return;
         onPlaybackError(detail.message);
       }}
       // Same taxonomy, one level down: this detail wraps the rejection in
       // `{ muted, error }`, so the classifier has to be handed `detail.error`.
       onAutoPlayFail={(detail) => {
-        if (!isSurfacedPlaybackEvent(detail.error)) return;
+        if (!live() || !isSurfacedPlaybackEvent(detail.error)) return;
         onPlaybackError(detail.error.message);
       }}
       className="group/experience-video relative flex size-full overflow-hidden bg-black outline-none data-[fullscreen]:fixed data-[fullscreen]:inset-0 data-[fullscreen]:z-[9999] data-[fullscreen]:h-screen data-[fullscreen]:w-screen"
       data-experience-video-player=""
     >
       <MediaProvider
+        ref={providerRef}
         loaders={EXPERIENCE_VIDEO_LOADERS}
         className="absolute inset-0 flex size-full items-center overflow-hidden bg-black"
         mediaProps={{

@@ -39,6 +39,10 @@ export const FEATURES = {
   // cn alternatives — Java upload bridge for object storage while we
   // negotiate Alibaba OSS access.
   javaUploadBridge: { cells: ["cn"] },
+  // Interactive-film clips negotiate `/playback` and play the server's HLS
+  // (Aliyun IMM) where it has one. Only the cn server transcodes; keep aligned
+  // with apps/server/src/common/region/features.ts.
+  adaptiveStoryPlayback: { cells: ["cn"] },
 
   // Compliance — country-gated within com.
   gdprCookieBanner: {

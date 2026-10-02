@@ -98,6 +98,10 @@ describe('MediaProcessingWorkerService', () => {
       submitHlsTask: jest.fn().mockResolvedValue('imm-task-1'),
       getTaskStatus: jest.fn(),
       finalizeHls: jest.fn(),
+      applyHlsCacheControl: jest.fn().mockResolvedValue(undefined),
+      deleteHlsOutput: jest
+        .fn()
+        .mockResolvedValue({ deleted: 3, complete: true }),
       masterObjectKey: (id: string) => `hls/${id}/master.m3u8`,
       ...overrides,
     };
@@ -116,6 +120,10 @@ describe('MediaProcessingWorkerService', () => {
       generate: jest.fn().mockResolvedValue({ variantId: 'poster-1' }),
     };
     const tx = {
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue([{ moderation_status: asset.moderationStatus }]),
+      mediaModerationAction: { findFirst: jest.fn().mockResolvedValue(null) },
       mediaProcessingJob: { upsert: jest.fn().mockResolvedValue({}) },
       mediaAssetVariant: {
         upsert: jest.fn().mockResolvedValue({
@@ -144,6 +152,8 @@ describe('MediaProcessingWorkerService', () => {
       mediaAsset: {
         findFirst: jest.fn().mockResolvedValue(asset),
       },
+      mediaAssetVariant: { findUnique: jest.fn().mockResolvedValue(null) },
+      mediaModerationAction: { findFirst: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn(
         (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
       ),
@@ -267,6 +277,7 @@ describe('MediaProcessingWorkerService', () => {
 
   describe('hls_stream', () => {
     const ASSET_ID = '01900000-0000-7000-8000-000000000011';
+    const SUBMITTED_AT = new Date(Date.now() - 4 * 60_000).toISOString();
     function hlsJob(output: Record<string, unknown> = {}) {
       return processingJob({
         jobType: MediaProcessingJobType.hls_stream,
@@ -277,9 +288,55 @@ describe('MediaProcessingWorkerService', () => {
     function running(output: Record<string, unknown>) {
       return {
         immTaskId: 'imm-task-1',
-        submittedAt: new Date().toISOString(),
+        submittedAt: SUBMITTED_AT,
         ...output,
       };
+    }
+    function rendition(overrides: Record<string, unknown> = {}) {
+      return {
+        name: '1080p',
+        playlistKey: `hls/${ASSET_ID}/1080p.m3u8`,
+        width: 1920,
+        height: 1080,
+        segmentCount: 39,
+        durationSeconds: 229.84,
+        maxSegmentSeconds: 6,
+        ...overrides,
+      };
+    }
+    function finalized(overrides: Record<string, unknown> = {}) {
+      return {
+        masterObjectKey: `hls/${ASSET_ID}/master.m3u8`,
+        objectKeys: [
+          `hls/${ASSET_ID}/master.m3u8`,
+          `hls/${ASSET_ID}/1080p.m3u8`,
+          `hls/${ASSET_ID}/1080p-0.ts`,
+        ],
+        renditions: [rendition()],
+        totalBytes: 123_456n,
+        missingKeys: [],
+        ...overrides,
+      };
+    }
+    function succeeded(finalize: ReturnType<typeof finalized>) {
+      const imm = immMock();
+      imm.getTaskStatus.mockResolvedValue({
+        state: 'succeeded',
+        raw: 'Succeeded',
+      });
+      imm.finalizeHls.mockResolvedValue(finalize);
+      return imm;
+    }
+    function jobWrite(
+      prisma: ReturnType<typeof setup>['prisma'],
+      status: MediaProcessingJobStatus,
+    ): Record<string, unknown> | undefined {
+      const call = (
+        prisma.mediaProcessingJob.updateMany.mock.calls as Array<
+          [{ data: Record<string, unknown> }]
+        >
+      ).find(([arg]) => arg.data.status === status);
+      return call?.[0].data;
     }
 
     it('phase 1: submits the IMM task and re-queues for poll without burning an attempt', async () => {
@@ -296,25 +353,82 @@ describe('MediaProcessingWorkerService', () => {
         'fizzdragon-ai-outputs',
         'media/cn/episode-video/34/x.mp4',
       );
-      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
+      const write = jobWrite(prisma, MediaProcessingJobStatus.pending);
+      expect(write).toEqual(
         expect.objectContaining({
-          data: expect.objectContaining({
-            status: MediaProcessingJobStatus.pending,
-            nextAttemptAt: expect.any(Date),
-            output: expect.objectContaining({
-              immTaskId: 'imm-task-1',
-              pollErrors: 0,
-            }),
+          nextAttemptAt: expect.any(Date),
+          output: expect.objectContaining({
+            immTaskId: 'imm-task-1',
+            pollErrors: 0,
           }),
         }),
       );
-      expect(prisma.mediaProcessingJob.updateMany).not.toHaveBeenCalledWith(
+      expect(write).not.toHaveProperty('attempt');
+      expect(jobWrite(prisma, MediaProcessingJobStatus.completed)).toBe(
+        undefined,
+      );
+    });
+
+    it('phase 1: refuses a moderation-blocked asset as cancelled, never calling IMM', async () => {
+      const imm = immMock();
+      const { service, prisma } = setup(hlsJob({}), {
+        asset: videoAsset({
+          moderationStatus: MediaAssetModerationStatus.blocked,
+        }),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(imm.submitHlsTask).not.toHaveBeenCalled();
+      expect(jobWrite(prisma, MediaProcessingJobStatus.cancelled)).toEqual(
         expect.objectContaining({
-          data: expect.objectContaining({
-            status: MediaProcessingJobStatus.completed,
-          }),
+          attempt: 1,
+          errorMessage:
+            'Media asset is moderation-blocked; HLS transcode refused.',
+          nextAttemptAt: null,
+          deadAt: null,
+          lockedAt: null,
         }),
       );
+    });
+
+    it('phase 1: waits for an unfinished or settling takedown without consuming an attempt', async () => {
+      const imm = immMock();
+      const { service, prisma } = setup(hlsJob({}), {
+        asset: videoAsset(),
+        imm,
+      });
+      prisma.mediaModerationAction.findFirst.mockResolvedValue({
+        id: 'takedown-1',
+      });
+
+      await service.drainOnce();
+
+      expect(imm.submitHlsTask).not.toHaveBeenCalled();
+      const where = (
+        prisma.mediaModerationAction.findFirst.mock.calls[0] as [
+          { where: Record<string, unknown> },
+        ]
+      )[0].where;
+      expect(where).toEqual(
+        expect.objectContaining({
+          assetId: ASSET_ID,
+          actionType: 'delete_object',
+          metadata: { path: ['scope'], equals: 'hls_prefix' },
+        }),
+      );
+      const write = jobWrite(prisma, MediaProcessingJobStatus.pending);
+      expect(write).toEqual(
+        expect.objectContaining({
+          output: { deferredByTakedown: 'takedown-1' },
+          nextAttemptAt: expect.any(Date),
+        }),
+      );
+      expect(write).not.toHaveProperty('attempt');
+      const delay = (write!.nextAttemptAt as Date).getTime() - Date.now();
+      expect(delay).toBeGreaterThan(55_000);
+      expect(delay).toBeLessThanOrEqual(60_000);
     });
 
     it('phase 2: a running task re-queues and resets pollErrors', async () => {
@@ -339,22 +453,124 @@ describe('MediaProcessingWorkerService', () => {
       );
     });
 
-    it('phase 3: a multi-segment success publishes a ready stream variant and completes', async () => {
+    it('phase 2: an in-flight poll is never cut short by a block', async () => {
       const imm = immMock();
-      imm.getTaskStatus.mockResolvedValue({
-        state: 'succeeded',
-        raw: 'Succeeded',
+      imm.getTaskStatus.mockResolvedValue({ state: 'running', raw: 'Running' });
+      const { service, prisma } = setup(hlsJob(running({})), {
+        asset: videoAsset({
+          moderationStatus: MediaAssetModerationStatus.blocked,
+        }),
+        imm,
       });
-      imm.finalizeHls.mockResolvedValue({
-        masterObjectKey: `hls/${ASSET_ID}/master.m3u8`,
-        segmentCount: 31,
-        objectKeys: [
-          `hls/${ASSET_ID}/master.m3u8`,
-          `hls/${ASSET_ID}/480p.m3u8`,
-          `hls/${ASSET_ID}/480p-0.ts`,
-        ],
-      });
+
+      await service.drainOnce();
+
+      expect(imm.getTaskStatus).toHaveBeenCalled();
+      expect(jobWrite(prisma, MediaProcessingJobStatus.cancelled)).toBe(
+        undefined,
+      );
+      expect(jobWrite(prisma, MediaProcessingJobStatus.pending)).toBeDefined();
+    });
+
+    it('phase 3: publishes the measured output and keeps submittedAt in the completion', async () => {
+      const imm = succeeded(finalized());
       const { service, prisma, tx } = setup(hlsJob(running({})), {
+        asset: videoAsset(),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(imm.applyHlsCacheControl).toHaveBeenCalledWith(ASSET_ID);
+      expect(tx.$queryRaw).toHaveBeenCalled();
+      expect(tx.mediaAssetVariant.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            variantKey: 'hls',
+            kind: MediaAssetVariantKind.stream,
+            status: MediaAssetVariantStatus.ready,
+            sizeBytes: 123_456n,
+            width: 1920,
+            height: 1080,
+            durationMs: 229_840,
+            metadata: expect.objectContaining({
+              immTaskId: 'imm-task-1',
+              submittedAt: SUBMITTED_AT,
+              totalBytes: '123456',
+              renditions: [
+                {
+                  name: '1080p',
+                  width: 1920,
+                  height: 1080,
+                  segmentCount: 39,
+                  durationSeconds: 229.84,
+                },
+              ],
+            }),
+          }),
+        }),
+      );
+      expect(jobWrite(prisma, MediaProcessingJobStatus.completed)).toEqual(
+        expect.objectContaining({
+          output: expect.objectContaining({
+            immTaskId: 'imm-task-1',
+            submittedAt: SUBMITTED_AT,
+            renditions: ['1080p'],
+            totalBytes: '123456',
+          }),
+        }),
+      );
+    });
+
+    it('phase 3: a single 5 s segment is a valid output and publishes', async () => {
+      const imm = succeeded(
+        finalized({
+          renditions: [
+            rendition({
+              name: '480p',
+              width: 854,
+              height: 480,
+              segmentCount: 1,
+              durationSeconds: 5,
+              maxSegmentSeconds: 5,
+            }),
+          ],
+          totalBytes: 512_000n,
+        }),
+      );
+      const { service, prisma, tx } = setup(hlsJob(running({})), {
+        asset: videoAsset({ durationSeconds: 5 }),
+        imm,
+      });
+
+      await service.drainOnce();
+
+      expect(tx.mediaAssetVariant.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            status: MediaAssetVariantStatus.ready,
+            sizeBytes: 512_000n,
+            width: 854,
+            height: 480,
+            durationMs: 5_000,
+          }),
+        }),
+      );
+      expect(
+        jobWrite(prisma, MediaProcessingJobStatus.completed),
+      ).toBeDefined();
+    });
+
+    it('phase 3: records the tallest tier whatever order the master lists it in', async () => {
+      const imm = succeeded(
+        finalized({
+          renditions: [
+            rendition({ name: '480p', width: 854, height: 480 }),
+            rendition({ name: '1080p', width: 1920, height: 1080 }),
+          ],
+        }),
+      );
+      const { service, tx } = setup(hlsJob(running({})), {
         asset: videoAsset(),
         imm,
       });
@@ -363,42 +579,25 @@ describe('MediaProcessingWorkerService', () => {
 
       expect(tx.mediaAssetVariant.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          create: expect.objectContaining({
-            variantKey: 'hls',
-            kind: MediaAssetVariantKind.stream,
-            status: MediaAssetVariantStatus.ready,
-          }),
-        }),
-      );
-      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            status: MediaProcessingJobStatus.completed,
-            output: expect.objectContaining({ segmentCount: 31 }),
-          }),
+          create: expect.objectContaining({ width: 1920, height: 1080 }),
         }),
       );
     });
 
     it('phase 3: registers EVERY produced HLS object (renditions + segments) as replica placements so takedown covers them', async () => {
-      const imm = immMock();
-      imm.getTaskStatus.mockResolvedValue({
-        state: 'succeeded',
-        raw: 'Succeeded',
-      });
-      imm.finalizeHls.mockResolvedValue({
-        masterObjectKey: `hls/${ASSET_ID}/master.m3u8`,
-        segmentCount: 2,
-        objectKeys: [
-          `hls/${ASSET_ID}/master.m3u8`,
-          `hls/${ASSET_ID}/720p.m3u8`,
-          `hls/${ASSET_ID}/720p-0.ts`,
-          `hls/${ASSET_ID}/720p-1.ts`,
-          `hls/${ASSET_ID}/480p.m3u8`,
-          `hls/${ASSET_ID}/480p-0.ts`,
-          `hls/${ASSET_ID}/480p-1.ts`,
-        ],
-      });
+      const imm = succeeded(
+        finalized({
+          objectKeys: [
+            `hls/${ASSET_ID}/master.m3u8`,
+            `hls/${ASSET_ID}/720p.m3u8`,
+            `hls/${ASSET_ID}/720p-0.ts`,
+            `hls/${ASSET_ID}/720p-1.ts`,
+            `hls/${ASSET_ID}/480p.m3u8`,
+            `hls/${ASSET_ID}/480p-0.ts`,
+            `hls/${ASSET_ID}/480p-1.ts`,
+          ],
+        }),
+      );
       const { service, prisma, tx } = setup(hlsJob(running({})), {
         asset: videoAsset(),
         imm,
@@ -426,64 +625,193 @@ describe('MediaProcessingWorkerService', () => {
       expect(createManyArg.data.every((row) => row.role === 'replica')).toBe(
         true,
       );
-      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
+      expect(jobWrite(prisma, MediaProcessingJobStatus.completed)).toEqual(
         expect.objectContaining({
-          data: expect.objectContaining({
-            status: MediaProcessingJobStatus.completed,
-            output: expect.objectContaining({
-              outputPlacements: { created: 6, reactivated: 0, retired: 0 },
-            }),
+          output: expect.objectContaining({
+            outputPlacements: { created: 6, reactivated: 0, retired: 0 },
           }),
         }),
       );
     });
 
-    it('a degenerate (<=1 segment) result marks the variant failed and keeps the mp4', async () => {
-      const imm = immMock();
-      imm.getTaskStatus.mockResolvedValue({
-        state: 'succeeded',
-        raw: 'Succeeded',
-      });
-      imm.finalizeHls.mockResolvedValue({
-        masterObjectKey: `hls/${ASSET_ID}/master.m3u8`,
-        segmentCount: 1,
-        objectKeys: [
-          `hls/${ASSET_ID}/master.m3u8`,
-          `hls/${ASSET_ID}/480p.m3u8`,
-          `hls/${ASSET_ID}/480p-0.ts`,
-        ],
-      });
+    it('phase 3: a block that landed during the transcode cancels without publishing', async () => {
+      const imm = succeeded(finalized());
       const { service, prisma, tx } = setup(hlsJob(running({})), {
         asset: videoAsset(),
         imm,
       });
+      tx.$queryRaw.mockResolvedValue([
+        { moderation_status: MediaAssetModerationStatus.blocked },
+      ]);
 
       await service.drainOnce();
 
-      expect(tx.mediaAssetVariant.upsert).toHaveBeenCalledWith(
+      expect(tx.mediaAssetVariant.upsert).not.toHaveBeenCalled();
+      expect(tx.mediaObjectPlacement.createMany).not.toHaveBeenCalled();
+      expect(imm.deleteHlsOutput).not.toHaveBeenCalled();
+      expect(jobWrite(prisma, MediaProcessingJobStatus.cancelled)).toEqual(
         expect.objectContaining({
-          create: expect.objectContaining({
-            variantKey: 'hls',
-            status: MediaAssetVariantStatus.failed,
-          }),
+          errorMessage:
+            'Asset was moderation-blocked during transcoding; HLS output not published.',
         }),
       );
-      expect(tx.mediaObjectPlacement.updateMany).toHaveBeenCalled();
-      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
+      expect(jobWrite(prisma, MediaProcessingJobStatus.completed)).toBe(
+        undefined,
+      );
+    });
+
+    it('phase 3: an HLS takedown still emptying the prefix cancels without publishing', async () => {
+      const imm = succeeded(finalized());
+      const { service, prisma, tx } = setup(hlsJob(running({})), {
+        asset: videoAsset(),
+        imm,
+      });
+      tx.mediaModerationAction.findFirst.mockResolvedValue({
+        id: 'takedown-9',
+      });
+
+      await service.drainOnce();
+
+      expect(tx.mediaAssetVariant.upsert).not.toHaveBeenCalled();
+      expect(jobWrite(prisma, MediaProcessingJobStatus.cancelled)).toEqual(
         expect.objectContaining({
-          data: expect.objectContaining({
-            status: MediaProcessingJobStatus.completed,
-            output: expect.objectContaining({ skipped: 'degenerate_output' }),
-          }),
+          errorMessage: expect.stringContaining('takedown-9'),
         }),
       );
     });
 
-    it('an IMM failed status dead-letters permanently (keeps mp4)', async () => {
+    describe('degenerate output', () => {
+      it.each([
+        ['no rendition', { renditions: [] }, 'renditions=none'],
+        [
+          'a rendition without segments',
+          {
+            renditions: [
+              rendition(),
+              rendition({
+                name: '480p',
+                segmentCount: 0,
+                durationSeconds: 0,
+                maxSegmentSeconds: 0,
+              }),
+            ],
+          },
+          'segments=[39,0]',
+        ],
+        [
+          'a referenced object missing from the bucket',
+          { missingKeys: [`hls/${ASSET_ID}/1080p-7.ts`] },
+          `missing=[hls/${ASSET_ID}/1080p-7.ts]`,
+        ],
+        [
+          'one segment for the whole video',
+          {
+            renditions: [
+              rendition({ segmentCount: 1, maxSegmentSeconds: 229.84 }),
+            ],
+          },
+          'maxSegmentSeconds=229.84',
+        ],
+        [
+          'an output far shorter than its source',
+          {
+            renditions: [
+              rendition({
+                segmentCount: 1,
+                durationSeconds: 4,
+                maxSegmentSeconds: 4,
+              }),
+            ],
+          },
+          'durationSeconds=4 (source 230)',
+        ],
+      ])(
+        '%s ends dead and discards the never-published output',
+        async (_label, overrides, detail) => {
+          const imm = succeeded(finalized(overrides));
+          const { service, prisma, tx } = setup(hlsJob(running({})), {
+            asset: videoAsset(),
+            imm,
+          });
+
+          await service.drainOnce();
+
+          expect(tx.mediaAssetVariant.upsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+              update: expect.objectContaining({
+                status: MediaAssetVariantStatus.failed,
+              }),
+            }),
+          );
+          expect(imm.applyHlsCacheControl).not.toHaveBeenCalled();
+          expect(imm.deleteHlsOutput).toHaveBeenCalledWith(
+            ASSET_ID,
+            'fizzdragon-ai-outputs',
+            expect.any(Number),
+          );
+          const dead = jobWrite(prisma, MediaProcessingJobStatus.dead);
+          expect(dead).toEqual(
+            expect.objectContaining({ deadAt: expect.any(Date) }),
+          );
+          expect(dead?.errorMessage).toEqual(
+            expect.stringContaining(
+              'IMM output rejected as degenerate (task=imm-task-1): ',
+            ),
+          );
+          expect(dead?.errorMessage).toEqual(expect.stringContaining(detail));
+        },
+      );
+
+      it('keeps a previously published output and its key ledger in place (only a takedown may remove them)', async () => {
+        const imm = succeeded(finalized({ renditions: [] }));
+        const { service, prisma, tx } = setup(hlsJob(running({})), {
+          asset: videoAsset(),
+          imm,
+        });
+        prisma.mediaAssetVariant.findUnique.mockResolvedValue({
+          status: MediaAssetVariantStatus.ready,
+          deletedAt: null,
+        });
+
+        await service.drainOnce();
+
+        expect(imm.deleteHlsOutput).not.toHaveBeenCalled();
+        expect(tx.mediaAssetVariant.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            update: expect.objectContaining({
+              status: MediaAssetVariantStatus.failed,
+            }),
+          }),
+        );
+        // The placements name every published key a later takedown refreshes.
+        expect(tx.mediaObjectPlacement.updateMany).not.toHaveBeenCalled();
+        expect(jobWrite(prisma, MediaProcessingJobStatus.dead)).toBeDefined();
+      });
+
+      it('appends a cleanup failure to the error verbatim', async () => {
+        const imm = succeeded(finalized({ renditions: [] }));
+        imm.deleteHlsOutput.mockRejectedValue(new Error('AccessDenied'));
+        const { service, prisma } = setup(hlsJob(running({})), {
+          asset: videoAsset(),
+          imm,
+        });
+
+        await service.drainOnce();
+
+        expect(
+          jobWrite(prisma, MediaProcessingJobStatus.dead)?.errorMessage,
+        ).toEqual(
+          expect.stringMatching(/; output cleanup failed: AccessDenied$/),
+        );
+      });
+    });
+
+    it("an IMM failed status dead-letters with IMM's code and discards the unpublished output", async () => {
       const imm = immMock();
       imm.getTaskStatus.mockResolvedValue({
         state: 'failed',
         raw: 'Failed',
+        errorCode: 'InvalidParameter.Video',
         errorMessage: 'bad input',
       });
       const { service, prisma } = setup(hlsJob(running({})), {
@@ -493,12 +821,12 @@ describe('MediaProcessingWorkerService', () => {
 
       await service.drainOnce();
 
-      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
+      expect(imm.deleteHlsOutput).toHaveBeenCalled();
+      expect(jobWrite(prisma, MediaProcessingJobStatus.dead)).toEqual(
         expect.objectContaining({
-          data: expect.objectContaining({
-            status: MediaProcessingJobStatus.dead,
-            deadAt: expect.any(Date),
-          }),
+          deadAt: expect.any(Date),
+          errorMessage:
+            'IMM transcode failed (task=imm-task-1): InvalidParameter.Video: bad input',
         }),
       );
     });

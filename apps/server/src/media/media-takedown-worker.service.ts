@@ -5,6 +5,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import {
+  MediaAssetVariantStatus,
   MediaModerationActionStatus,
   MediaModerationActionType,
   MediaStorageProvider,
@@ -12,11 +13,25 @@ import {
   type MediaModerationAction,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { ImmTranscodeService } from '../infra/storage/imm-transcode.service';
+import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
 import type {
   OutputStorageService,
   StorageObjectRef,
 } from '../infra/storage/storage.types';
+import {
+  ALIYUN_CDN_REFRESH_MAX_URLS,
+  CdnPurgeProvider,
+} from './cdn-purge.provider';
+import {
+  HLS_PREFIX_SCOPE,
+  hlsStreamJobKey,
+  parseHlsPrefixTakedownMetadata,
+  retireHlsOutput,
+  transcodeMayStillWrite,
+  type HlsPrefixTakedownMetadata,
+} from './hls-output';
 import {
   MEDIA_ACTION_MAX_ATTEMPTS,
   MEDIA_ACTION_POD_ID,
@@ -30,6 +45,19 @@ import {
 const DEFAULT_INTERVAL_MS = 15_000;
 const DEFAULT_BATCH_SIZE = 25;
 const LOCK_TTL_MS = 2 * 60_000;
+/** OSS work one HLS prefix pass may do before yielding (stays under the lease). */
+const HLS_PASS_BUDGET_MS = 60_000;
+/** CDN refresh chunks may start this long after the OSS budget ends. */
+const HLS_CDN_GRACE_MS = 15_000;
+/** Re-claim delay when a pass ran out of budget mid-work. */
+const HLS_CONTINUE_DELAY_MS = 5_000;
+/** Re-check delay while an IMM task may still write into the prefix. */
+const HLS_TRANSCODE_WAIT_MS = 60_000;
+/** HLS prefix takedowns retry forever; their backoff stops growing here. */
+const HLS_MAX_BACKOFF_MS = 30 * 60_000;
+
+/** The pass lost its lease (another pod, or a superseding decision). */
+class LeaseLostError extends Error {}
 
 /**
  * Executes the physical half of a moderation takedown: making the stored
@@ -49,6 +77,10 @@ const LOCK_TTL_MS = 2 * 60_000;
  * is a no-op success, and a restore reads the row's recorded original location
  * (`metadata.quarantine`) so an Azure-relocated object goes back where it came
  * from. This makes both block→restore races and crash-mid-action retries safe.
+ *
+ * It also owns `delete_object` actions of scope `hls_prefix`: the durable
+ * removal of an asset's IMM HLS output (`hls/{assetId}/`) after a moderation
+ * block or the story-playback lifecycle GC — see {@link runHlsPrefixTakedown}.
  */
 @Injectable()
 export class MediaTakedownWorkerService
@@ -62,6 +94,9 @@ export class MediaTakedownWorkerService
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageRegistry: StorageProviderRegistry,
+    private readonly imm: ImmTranscodeService,
+    private readonly cdnPurge: CdnPurgeProvider,
+    private readonly urls: MediaAssetUrlResolverService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -114,7 +149,12 @@ export class MediaTakedownWorkerService
     const now = new Date();
     const lockCutoff = new Date(now.getTime() - LOCK_TTL_MS);
     const eligibility = {
-      actionType: MediaModerationActionType.restrict_visibility,
+      actionType: {
+        in: [
+          MediaModerationActionType.restrict_visibility,
+          MediaModerationActionType.delete_object,
+        ],
+      },
       status: {
         in: [
           MediaModerationActionStatus.pending,
@@ -152,6 +192,16 @@ export class MediaTakedownWorkerService
 
   private async runOne(row: MediaModerationAction): Promise<void> {
     try {
+      if (row.actionType === MediaModerationActionType.delete_object) {
+        const meta = parseHlsPrefixTakedownMetadata(row.metadata);
+        if (!meta) {
+          // No other delete_object producer exists; nothing safe to act on.
+          await this.complete(row, { outcome: { skipped: 'unknown_scope' } });
+          return;
+        }
+        await this.runHlsPrefixTakedown(row, meta);
+        return;
+      }
       const direction = directionOf(row.metadata);
       if (!direction) {
         // Inert: no direction recorded — nothing the worker can act on.
@@ -185,8 +235,193 @@ export class MediaTakedownWorkerService
         await this.runRestore(row, target, storage);
       }
     } catch (err) {
+      if (err instanceof LeaseLostError) return;
       await this.fail(row, errorText(err));
     }
+  }
+
+  /**
+   * One pass of an HLS prefix takedown. The action is "done" only when the
+   * prefix was emptied by a pass that started after the last IMM task that
+   * could write into it had stopped; until then every pass deletes again.
+   * Each pass:
+   * 1. reads the asset's transcode job (BEFORE deleting, so a write that lands
+   *    during this pass is still caught by a later one);
+   * 2. deletes the prefix within a {@link HLS_PASS_BUDGET_MS} budget;
+   * 3. refreshes the published keys on the CDN in chunks of 100, persisting
+   *    progress after each chunk (a retry never re-refreshes a finished chunk);
+   * 4. waits while the transcode may still write — and, once it has stopped,
+   *    refreshes every key once more, since anything it wrote after the first
+   *    refresh may have been fetched into the CDN;
+   * 5. completes, retiring the variant (never a `ready` one) and the asset's
+   *    terminal job rows in the same transaction.
+   * Failures retry forever with a capped backoff (see {@link fail}).
+   */
+  private async runHlsPrefixTakedown(
+    row: MediaModerationAction,
+    initial: HlsPrefixTakedownMetadata,
+  ): Promise<void> {
+    let meta = initial;
+    const asset = await this.prisma.mediaAsset.findUnique({
+      where: { id: row.assetId },
+      select: { id: true, bucket: true, objectKey: true },
+    });
+    if (!asset) {
+      await this.complete(row, { outcome: { skipped: 'target_missing' } });
+      return;
+    }
+    if (
+      meta.prefix !== `hls/${asset.id}/` ||
+      meta.bucket !== asset.bucket ||
+      asset.objectKey?.startsWith('hls/')
+    ) {
+      await this.fail(
+        row,
+        `HLS prefix takedown metadata does not match the asset (prefix ${meta.prefix}, bucket ${meta.bucket}; asset bucket ${asset.bucket ?? 'none'}, objectKey ${asset.objectKey ?? 'none'}).`,
+      );
+      return;
+    }
+
+    const job = await this.prisma.mediaProcessingJob.findUnique({
+      where: { idempotencyKey: hlsStreamJobKey(asset.id) },
+      select: { id: true, status: true, output: true },
+    });
+    const mayStillWrite = transcodeMayStillWrite(job, Date.now());
+    if (!mayStillWrite && meta.waitingForJobId) {
+      // The transcode this action waited for has stopped. Whatever it wrote
+      // after the earlier refresh could have been pulled onto CDN edges.
+      meta = await this.persist(row, {
+        waitingForJobId: null,
+        refreshedChunks: 0,
+        cdnRefreshedAt: null,
+      });
+    }
+
+    const budgetEnd = Date.now() + HLS_PASS_BUDGET_MS;
+    const deletion = await this.imm.deleteHlsOutput(
+      asset.id,
+      meta.bucket,
+      budgetEnd,
+    );
+    meta = await this.persist(row, {
+      passes: (meta.passes ?? 0) + 1,
+      deletedObjects: (meta.deletedObjects ?? 0) + deletion.deleted,
+    });
+    if (!deletion.complete) {
+      await this.defer(row, HLS_CONTINUE_DELAY_MS);
+      return;
+    }
+
+    const chunks = chunk(meta.refreshKeys, ALIYUN_CDN_REFRESH_MAX_URLS);
+    if (chunks.length > 0 && !meta.cdnRefreshedAt) {
+      for (
+        let index = meta.refreshedChunks ?? 0;
+        index < chunks.length;
+        index++
+      ) {
+        if (Date.now() > budgetEnd + HLS_CDN_GRACE_MS) {
+          await this.defer(row, HLS_CONTINUE_DELAY_MS);
+          return;
+        }
+        const taskId = await this.cdnPurge.refreshFiles(
+          chunks[index].map((objectKey) =>
+            this.urls.resolvePlacement({
+              storageProvider: MediaStorageProvider.aliyun_oss,
+              bucket: meta.bucket,
+              region: meta.region,
+              objectKey,
+              externalUrl: null,
+            }),
+          ),
+        );
+        meta = await this.persist(row, {
+          refreshedChunks: index + 1,
+          cdnRefreshTaskIds: [...(meta.cdnRefreshTaskIds ?? []), taskId],
+        });
+      }
+      meta = await this.persist(row, {
+        cdnRefreshedAt: new Date().toISOString(),
+      });
+    }
+
+    if (mayStillWrite && job) {
+      if (meta.waitingForJobId !== job.id) {
+        meta = await this.persist(row, { waitingForJobId: job.id });
+      }
+      await this.defer(row, HLS_TRANSCODE_WAIT_MS);
+      return;
+    }
+
+    await this.complete(row, {
+      outcome: {
+        deletedObjects: meta.deletedObjects ?? 0,
+        cdnRefreshTaskIds: meta.cdnRefreshTaskIds ?? [],
+        passes: meta.passes ?? 0,
+      },
+      retireHlsVariantId: row.variantId,
+    });
+  }
+
+  /**
+   * Merge progress into the action's metadata under the claim lease. Keeps the
+   * in-memory row in sync (later merges and the terminal write build on it).
+   * A lost lease aborts the pass: the row belongs to someone else now.
+   */
+  private async persist(
+    row: MediaModerationAction,
+    patch: Partial<HlsPrefixTakedownMetadata>,
+  ): Promise<HlsPrefixTakedownMetadata> {
+    const metadata = mergeJson(row.metadata, patch);
+    const res = await this.prisma.mediaModerationAction.updateMany({
+      where: this.leaseWhere(row),
+      data: { metadata },
+    });
+    if (res.count === 0) throw new LeaseLostError();
+    row.metadata = metadata as Prisma.JsonValue;
+    const parsed = parseHlsPrefixTakedownMetadata(row.metadata);
+    if (!parsed) {
+      throw new Error('HLS prefix takedown metadata became unreadable.');
+    }
+    return parsed;
+  }
+
+  /**
+   * Release the action for another pass after `delayMs` without consuming an
+   * attempt: waiting is progress, not failure.
+   */
+  private async defer(
+    row: MediaModerationAction,
+    delayMs: number,
+  ): Promise<void> {
+    const res = await this.prisma.mediaModerationAction.updateMany({
+      where: this.leaseWhere(row),
+      data: {
+        status: MediaModerationActionStatus.pending,
+        errorMessage: null,
+        lastAttemptAt: new Date(),
+        nextAttemptAt: new Date(Date.now() + delayMs),
+        lockedAt: null,
+        lockedBy: null,
+      },
+    });
+    if (res.count === 0) throw new LeaseLostError();
+  }
+
+  /** This pod still holds the claim and no decision superseded the action. */
+  private leaseWhere(
+    row: MediaModerationAction,
+  ): Prisma.MediaModerationActionWhereInput {
+    return {
+      id: row.id,
+      lockedBy: MEDIA_ACTION_POD_ID,
+      lockedAt: row.lockedAt,
+      status: {
+        in: [
+          MediaModerationActionStatus.pending,
+          MediaModerationActionStatus.failed,
+        ],
+      },
+    };
   }
 
   private async runRestrict(
@@ -321,22 +556,15 @@ export class MediaTakedownWorkerService
       objectKey?: string;
       metadataPatch?: Record<string, unknown>;
       outcome: Record<string, unknown>;
+      /** HLS takedown: retire this variant (never from `ready`) in the same
+       *  transaction — a newer publish that made it ready is left alone. */
+      retireHlsVariantId?: string | null;
     },
   ): Promise<void> {
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
       const res = await tx.mediaModerationAction.updateMany({
-        where: {
-          id: row.id,
-          lockedBy: MEDIA_ACTION_POD_ID,
-          lockedAt: row.lockedAt,
-          status: {
-            in: [
-              MediaModerationActionStatus.pending,
-              MediaModerationActionStatus.failed,
-            ],
-          },
-        },
+        where: this.leaseWhere(row),
         data: {
           status: MediaModerationActionStatus.completed,
           attempt: row.attempt + 1,
@@ -352,6 +580,18 @@ export class MediaTakedownWorkerService
         },
       });
       if (res.count === 0) return; // superseded — do not touch target state
+      if (opts.retireHlsVariantId) {
+        await retireHlsOutput(tx, {
+          assetId: row.assetId,
+          variantId: opts.retireHlsVariantId,
+          fromStatuses: [
+            MediaAssetVariantStatus.blocked,
+            MediaAssetVariantStatus.deleted,
+            MediaAssetVariantStatus.failed,
+          ],
+          now,
+        });
+      }
       if (opts.target && opts.metadataPatch) {
         const metadata = mergeJson(opts.target.metadata, opts.metadataPatch);
         const data = {
@@ -371,35 +611,34 @@ export class MediaTakedownWorkerService
     });
   }
 
+  /**
+   * Record a failed attempt. Restrict actions dead-letter after
+   * {@link MEDIA_ACTION_MAX_ATTEMPTS}. An HLS prefix takedown never does: a
+   * blocked or expired output must not stay on the CDN because an outage
+   * outlasted a retry budget, so it keeps retrying with its backoff capped at
+   * {@link HLS_MAX_BACKOFF_MS} while the error stays visible.
+   */
   private async fail(
     row: MediaModerationAction,
     message: string,
   ): Promise<void> {
     const now = new Date();
     const nextAttempt = row.attempt + 1;
-    const isDead = nextAttempt >= MEDIA_ACTION_MAX_ATTEMPTS;
+    const hlsPrefix = isHlsPrefixTakedown(row);
+    const isDead = !hlsPrefix && nextAttempt >= MEDIA_ACTION_MAX_ATTEMPTS;
+    const backoff = hlsPrefix
+      ? Math.min(mediaActionBackoffMs(row.attempt), HLS_MAX_BACKOFF_MS)
+      : mediaActionBackoffMs(row.attempt);
     // Guarded like complete(): never resurrect a cancelled/stolen row.
     await this.prisma.mediaModerationAction.updateMany({
-      where: {
-        id: row.id,
-        lockedBy: MEDIA_ACTION_POD_ID,
-        lockedAt: row.lockedAt,
-        status: {
-          in: [
-            MediaModerationActionStatus.pending,
-            MediaModerationActionStatus.failed,
-          ],
-        },
-      },
+      where: this.leaseWhere(row),
       data: {
         status: MediaModerationActionStatus.failed,
         attempt: nextAttempt,
         errorMessage: message.slice(0, 4000),
         lastAttemptAt: now,
         failedAt: now,
-        nextAttemptAt: isDead
-          ? null
-          : new Date(Date.now() + mediaActionBackoffMs(row.attempt)),
+        nextAttemptAt: isDead ? null : new Date(Date.now() + backoff),
         lockedAt: null,
         lockedBy: null,
         deadAt: isDead ? now : null,
@@ -423,6 +662,22 @@ interface TargetState {
   metadata: Prisma.JsonValue;
   restricted: boolean;
   quarantine: QuarantineRef | null;
+}
+
+function isHlsPrefixTakedown(row: MediaModerationAction): boolean {
+  return (
+    row.actionType === MediaModerationActionType.delete_object &&
+    isJsonObject(row.metadata) &&
+    row.metadata.scope === HLS_PREFIX_SCOPE
+  );
+}
+
+function chunk<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function directionOf(
