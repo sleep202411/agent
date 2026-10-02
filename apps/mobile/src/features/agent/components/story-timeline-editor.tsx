@@ -1,3 +1,5 @@
+import { TimelineMediaPicker } from "./story-timeline-media-picker";
+import { timelineMediaPending } from "../api/story-timeline-media";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -92,6 +94,8 @@ export function TimelineEditor({
   const t = useTranslations(),
     theme = useTheme();
   const store = useMemo(() => timelinePending(scope, userId), [scope, userId]);
+  const mediaStore = useMemo(() => timelineMediaPending(scope, userId), [scope, userId]);
+  const [mediaTarget, setMediaTarget] = useState<{ sequenceId: string; clipId: string }>();
   const op = useAuthFormOperation(`${scope.projectId}:${scope.chapterId}`, true);
   const [rows, setRows] = useState<TimelineSequence[]>([]),
     [draft, setDraft] = useState<TimelineInput>(),
@@ -106,6 +110,9 @@ export function TimelineEditor({
     void Promise.resolve()
       .then(async () => {
         const saved = store.read();
+        const media = mediaStore.read();
+        if (!controller.signal.aborted && media)
+          setMediaTarget({ sequenceId: media.sequenceId, clipId: media.clipId });
         if (!controller.signal.aborted && saved) {
           setPending(saved);
           setSelected(saved.sequenceId);
@@ -126,8 +133,8 @@ export function TimelineEditor({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [scope, store, revision]);
-  const locked = loading || op.busy || !!pending || !canEdit;
+  }, [scope, store, mediaStore, revision]);
+  const locked = loading || op.busy || !!pending || !!mediaTarget || !canEdit;
   const confirmDiscard = (next: () => void) => {
     if (!dirty) return next();
     Alert.alert(t("timeline.discardTitle"), t("timeline.discardHelp"), [
@@ -259,7 +266,7 @@ export function TimelineEditor({
         {!loading && !rows.length && !pending && <ThemedText>{t("timeline.empty")}</ThemedText>}
         <Action
           label={t("timeline.refresh")}
-          disabled={op.busy || !!pending || loading}
+          disabled={op.busy || !!pending || !!mediaTarget || loading}
           onPress={() =>
             confirmDiscard(() => {
               setDraft(undefined);
@@ -275,7 +282,7 @@ export function TimelineEditor({
           <Action
             key={row.id}
             label={row.title || row.plotNodeId}
-            disabled={op.busy || !!pending}
+            disabled={op.busy || !!pending || !!mediaTarget}
             onPress={() =>
               confirmDiscard(() => {
                 setSelected(row.id);
@@ -285,7 +292,25 @@ export function TimelineEditor({
             }
           />
         ))}
-        {draft && (
+        {mediaTarget && (
+          <TimelineMediaPicker
+            scope={scope}
+            userId={userId}
+            sequenceId={mediaTarget.sequenceId}
+            clip={draft?.clips.find((c) => c.id === mediaTarget.clipId)}
+            canEdit={canEdit}
+            onDone={() => {
+              setMediaTarget(undefined);
+              setDraft(undefined);
+              setSelected("");
+              setDirty(false);
+              setLoading(true);
+              setError(undefined);
+              setRevision((n) => n + 1);
+            }}
+          />
+        )}
+        {draft && !mediaTarget && (
           <>
             <ThemedText>
               {t("timeline.durationMs")}: {draft.durationMs}
@@ -351,6 +376,11 @@ export function TimelineEditor({
                     ),
                   true
                 )}
+                <Action
+                  label={t("timeline.replaceMedia")}
+                  disabled={locked || dirty || !clip.id}
+                  onPress={() => setMediaTarget({ sequenceId: selected, clipId: clip.id! })}
+                />
                 <Action
                   label={t("timeline.toggleKind")}
                   disabled={locked}

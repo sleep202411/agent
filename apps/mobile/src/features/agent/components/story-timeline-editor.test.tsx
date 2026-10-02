@@ -11,6 +11,12 @@ const h = vi.hoisted(() => ({
   close: vi.fn(),
   generation: 1,
 }));
+vi.mock("../api/story-timeline-media", () => ({
+  timelineMediaPending: () => ({ read: () => null }),
+}));
+vi.mock("./story-timeline-media-picker", () => ({
+  TimelineMediaPicker: () => <span>Media picker</span>,
+}));
 vi.mock("../api/story-timeline-api", async (original) => ({
   ...(await original<object>()),
   fetchTimelines: h.fetch,

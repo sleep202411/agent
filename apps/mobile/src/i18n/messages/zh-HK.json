@@ -4346,5 +4346,10 @@
   "timeline.pendingHelp": "有一項儲存待驗證。請先重試同一請求，再繼續編輯。",
   "timeline.retry": "重試已儲存的請求",
   "timeline.clear": "清除本機待處理請求",
-  "timeline.clearHelp": "這不會撤銷伺服器上的儲存。請先核實伺服器狀態或明確的拒絕結果，清除後重新載入再編輯。"
+  "timeline.clearHelp": "這不會撤銷伺服器上的儲存。請先核實伺服器狀態或明確的拒絕結果，清除後重新載入再編輯。",
+  "timeline.replaceMedia": "替換片段媒體",
+  "timeline.replaceHelp": "請先儲存時間線修改。選擇專案媒體，替換影片可能會更新片段時長。",
+  "timeline.noProjectMedia": "暫無就緒的專案圖片或影片。",
+  "timeline.useMedia": "使用此媒體",
+  "timeline.previewMedia": "預覽影片"
 }

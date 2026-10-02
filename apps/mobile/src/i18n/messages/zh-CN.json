@@ -4346,5 +4346,10 @@
   "timeline.pendingHelp": "有一项保存待验证。请先重试同一请求，再继续编辑。",
   "timeline.retry": "重试已保存的请求",
   "timeline.clear": "清除本地待处理请求",
-  "timeline.clearHelp": "这不会撤销服务器上的保存。请先核实服务器状态或明确的拒绝结果，清除后重新加载再编辑。"
+  "timeline.clearHelp": "这不会撤销服务器上的保存。请先核实服务器状态或明确的拒绝结果，清除后重新加载再编辑。",
+  "timeline.replaceMedia": "替换片段媒体",
+  "timeline.replaceHelp": "请先保存时间线修改。选择项目媒体，替换视频可能会更新片段时长。",
+  "timeline.noProjectMedia": "暂无就绪的项目图片或视频。",
+  "timeline.useMedia": "使用此媒体",
+  "timeline.previewMedia": "预览视频"
 }

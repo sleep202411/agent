@@ -4346,5 +4346,10 @@
   "timeline.pendingHelp": "A save is awaiting verification. Retry the same request before editing.",
   "timeline.retry": "Retry saved request",
   "timeline.clear": "Clear local pending request",
-  "timeline.clearHelp": "This does not undo a server save. Clear only after reviewing the server state or a definitive rejection. Reload before editing again."
+  "timeline.clearHelp": "This does not undo a server save. Clear only after reviewing the server state or a definitive rejection. Reload before editing again.",
+  "timeline.replaceMedia": "Replace clip media",
+  "timeline.replaceHelp": "Save timeline edits first. Choose project media; video replacement may update clip timing.",
+  "timeline.noProjectMedia": "No ready project images or videos.",
+  "timeline.useMedia": "Use this media",
+  "timeline.previewMedia": "Preview video"
 }

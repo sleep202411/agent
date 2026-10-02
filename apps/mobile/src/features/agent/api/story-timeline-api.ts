@@ -7,7 +7,7 @@ import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 
 const id = z.string().uuid();
-const clipSchema = z
+export const timelineClipSchema = z
   .object({
     id,
     stableKey: z.string(),
@@ -35,7 +35,7 @@ const sequenceSchema = z
     durationMs: z.number().int().nonnegative(),
     version: z.number().int().nonnegative(),
     status: z.literal("current"),
-    clips: z.array(clipSchema),
+    clips: z.array(timelineClipSchema),
   })
   .passthrough();
 export type TimelineSequence = z.infer<typeof sequenceSchema>;
