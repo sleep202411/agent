@@ -1,3 +1,4 @@
+import { IpFanCommunity } from "@/features/ip-community/ip-fan-community";
 import { IpContributingStudios } from "@/features/studios/ip-contributing-studios";
 import { resolvePlan, type UnlockPlan } from "@/features/content-gps/episode-access";
 import { usePlaybackDetail } from "@/features/content-gps/use-playback-detail";
@@ -609,6 +610,7 @@ function IpDetailSession() {
           <ThemedText type="small" themeColor="textSecondary">
             {t("ipDetail.likeFanNotice")}
           </ThemedText>
+          <IpFanCommunity ipId={ip.id} />
 
           {(() => {
             const pubItems = (ip.publishers ?? []).filter((p) => p.logoUrl?.trim()).slice(0, 4);
