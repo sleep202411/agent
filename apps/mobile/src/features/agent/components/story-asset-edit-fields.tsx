@@ -1,7 +1,7 @@
 import { AssetCandidatePicker } from "./story-asset-candidate-picker";
 import { useState } from "react";
 import { Alert, Pressable, TextInput, View } from "react-native";
-import { Image } from "expo-image";
+import { StoryAssetMediaVersions } from "./story-asset-media-versions";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -131,28 +131,11 @@ export function StoryAssetEditFields({
           () => setPurpose("turnaround"),
           !name.trim() || !prompt.trim()
         )}
-      <ThemedText type="smallBold">{t("assetEdit.versions")}</ThemedText>
-      {asset.mediaVersions.map((version) => {
-        const url = version.thumbnailUrl || version.previewUrl;
-        return (
-          <View key={version.id} style={{ gap: 4 }}>
-            {version.mediaKind === "image" && url && /^https:\/\//i.test(url) && (
-              <Image
-                source={{ uri: url }}
-                style={{ height: 140, width: "100%" }}
-                contentFit="contain"
-              />
-            )}
-            {button(
-              `${asset.selectedMediaVersion?.id === version.id ? "✓ " : ""}${t("assetEdit.select")} ${version.versionNumber}`,
-              () => patch(version.id),
-              !name.trim() || !prompt.trim()
-            )}
-          </View>
-        );
-      })}
-      {asset.selectedMediaVersion &&
-        button(t("assetEdit.clearSelection"), () => patch(null), !name.trim() || !prompt.trim())}
+      <StoryAssetMediaVersions
+        asset={asset}
+        locked={locked || !name.trim() || !prompt.trim()}
+        onSelect={patch}
+      />
       {button(t("assetEdit.archive"), () =>
         Alert.alert(t("assetEdit.archive"), t("assetEdit.archiveHelp"), [
           { text: t("common.cancel"), style: "cancel" },

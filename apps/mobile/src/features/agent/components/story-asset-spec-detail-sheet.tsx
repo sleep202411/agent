@@ -1,3 +1,4 @@
+import { StoryAssetMediaVersions } from "./story-asset-media-versions";
 import { StoryAssetEditFields } from "./story-asset-edit-fields";
 import type { AssetCommand } from "../api/story-asset-mutations";
 import { useMemo, useState, type ReactNode } from "react";
@@ -116,6 +117,7 @@ export function StoryAssetSpecDetailSheet({
               />
             ) : (
               <>
+                {!editing && <StoryAssetMediaVersions asset={asset} />}
                 {!editing &&
                   generation &&
                   (["primary", ...(asset.kind === "character" ? ["turnaround"] : [])] as const).map(

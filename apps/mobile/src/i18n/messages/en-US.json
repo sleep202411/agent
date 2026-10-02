@@ -4403,5 +4403,10 @@
   "assetEdit.generation": "Asset generation",
   "assetEdit.generate": "Generate",
   "assetEdit.refreshGeneration": "Refresh generation",
-  "assetEdit.reloadAsset": "Reload asset to use the attached result"
+  "assetEdit.reloadAsset": "Reload asset to use the attached result",
+  "assetEdit.primaryVersions": "Primary image versions",
+  "assetEdit.turnaroundVersions": "Three-view versions",
+  "assetEdit.noVersions": "No versions yet.",
+  "assetEdit.latestTurnaround": "The newest three-view result is the current reference.",
+  "assetEdit.version": "Version"
 }

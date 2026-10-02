@@ -14,6 +14,7 @@ export type StoryProductionSpecStatus = "current" | "archived";
 export type StoryProductionStatus = "missing" | "current";
 
 export type StoryCreativeMediaVersion = {
+  purpose?: "primary" | "turnaround";
   id: string;
   versionNumber: number;
   mediaAssetId: string;

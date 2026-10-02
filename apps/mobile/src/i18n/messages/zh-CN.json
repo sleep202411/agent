@@ -4403,5 +4403,10 @@
   "assetEdit.generation": "资产生成",
   "assetEdit.generate": "生成",
   "assetEdit.refreshGeneration": "刷新生成状态",
-  "assetEdit.reloadAsset": "重新加载资产以使用已生成的结果"
+  "assetEdit.reloadAsset": "重新加载资产以使用已生成的结果",
+  "assetEdit.primaryVersions": "主图版本",
+  "assetEdit.turnaroundVersions": "三视图版本",
+  "assetEdit.noVersions": "暂无版本。",
+  "assetEdit.latestTurnaround": "最新的三视图结果为当前参考图。",
+  "assetEdit.version": "版本"
 }
