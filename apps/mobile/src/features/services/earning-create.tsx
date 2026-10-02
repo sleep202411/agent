@@ -20,10 +20,19 @@ import {
 import { formatFinanceMoney } from "./crew-finance-api";
 type Props = { crewId: string; userId: string; generation: number; onSaved: () => void };
 export function EarningCreate(props: Props) {
+  return (
+    <EarningCreateAccess
+      key={JSON.stringify([props.crewId, props.userId, props.generation])}
+      {...props}
+    />
+  );
+}
+function EarningCreateAccess(props: Props) {
   const t = useTranslations();
   const [allowed, setAllowed] = useState(false),
     [open, setOpen] = useState(false),
     [error, setError] = useState<string>();
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     void fetchEarningCreateAccess(props.crewId, props.userId, controller.signal).then(
@@ -37,10 +46,24 @@ export function EarningCreate(props: Props) {
       }
     );
     return () => controller.abort();
-  }, [props.crewId, props.userId, props.generation]);
+  }, [props.crewId, props.userId, props.generation, revision]);
   return (
     <>
-      {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
+      {error && (
+        <View>
+          <ThemedText accessibilityRole="alert">{error}</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            style={{ padding: 12 }}
+            onPress={() => {
+              setError(undefined);
+              setRevision((value) => value + 1);
+            }}
+          >
+            <ThemedText>{t("earningCreate.retry")}</ThemedText>
+          </Pressable>
+        </View>
+      )}
       {allowed && (
         <Pressable
           accessibilityRole="button"

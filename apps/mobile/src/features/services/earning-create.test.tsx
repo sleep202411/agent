@@ -196,3 +196,34 @@ it("allows editing before submitting without writing", async () => {
   expect(host.textContent).toContain("USD 2.50");
   expect(h.decide).not.toHaveBeenCalled();
 });
+
+it("retries a failed access lookup before allowing creation", async () => {
+  h.access.mockRejectedValueOnce(new Error("Offline"));
+  await render();
+  expect(button("earningCreate.add")).toBeUndefined();
+  await click("earningCreate.retry");
+  expect(h.access).toHaveBeenCalledTimes(2);
+  expect(host.textContent).not.toContain("Offline");
+  await click("earningCreate.add");
+  expect(button("earningCreate.review")).toBeDefined();
+});
+it("closes the old form and waits for the new Crew's permission", async () => {
+  await fill();
+  let resolve!: (allowed: boolean) => void;
+  h.access.mockImplementationOnce(
+    () =>
+      new Promise<boolean>((r) => {
+        resolve = r;
+      })
+  );
+  await act(async () =>
+    root.render(
+      <EarningCreate crewId="other-crew" userId="manager" generation={1} onSaved={h.saved} />
+    )
+  );
+  expect(host.querySelector("input")).toBeNull();
+  expect(button("earningCreate.add")).toBeUndefined();
+  await act(async () => resolve(false));
+  expect(button("earningCreate.add")).toBeUndefined();
+  expect(h.decide).not.toHaveBeenCalled();
+});
