@@ -149,3 +149,59 @@ it("sends the reason captured from the native form", async () => {
     1
   );
 });
+
+it("retries a failed permission lookup without submitting a decision", async () => {
+  h.access.mockRejectedValueOnce(new Error("Permission lookup failed"));
+  await render();
+  expect(host.textContent).toContain("Permission lookup failed");
+  expect(button("crewFinance.decision_approve")).toBeUndefined();
+  await click("common.retry");
+  expect(host.textContent).not.toContain("Permission lookup failed");
+  expect(button("crewFinance.decision_approve")).toBeDefined();
+  expect(h.access).toHaveBeenCalledTimes(2);
+  expect(h.decide).not.toHaveBeenCalled();
+});
+it("drops the old confirmation and permission when the earning changes", async () => {
+  await render();
+  await click("crewFinance.decision_approve");
+  let resolve!: (value: { approve: boolean; reverse: boolean }) => void;
+  h.access.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  await render({ ...record, crewId: "other-crew" });
+  expect(button("crewFinance.confirmDecision")).toBeUndefined();
+  expect(button("crewFinance.decision_approve")).toBeUndefined();
+  await act(async () => resolve({ approve: false, reverse: false }));
+  expect(button("crewFinance.decision_approve")).toBeUndefined();
+  expect(h.decide).not.toHaveBeenCalled();
+});
+it("requires a new confirmation after a record version update", async () => {
+  await render();
+  await click("crewFinance.decision_approve");
+  await render({ ...record, version: 3 });
+  expect(button("crewFinance.confirmDecision")).toBeUndefined();
+  expect(button("crewFinance.decision_approve")).toBeDefined();
+  expect(h.decide).not.toHaveBeenCalled();
+});
+it("ignores a late permission response from the previous account", async () => {
+  let resolve!: (value: { approve: boolean; reverse: boolean }) => void;
+  h.access.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  await render();
+  h.access.mockResolvedValue({ approve: false, reverse: false });
+  await act(async () =>
+    root.render(
+      <EarningDecision record={record} userId="viewer" generation={1} onSaved={h.saved} />
+    )
+  );
+  await act(async () => resolve({ approve: true, reverse: true }));
+  expect(button("crewFinance.decision_approve")).toBeUndefined();
+  expect(h.decide).not.toHaveBeenCalled();
+});
