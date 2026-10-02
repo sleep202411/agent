@@ -2048,7 +2048,7 @@
   "applicationReview.confirm": "确认决定",
   "applicationReview.approveHelp": "批准可能将创作者加入剧组，并生效已约定的任务分配和报酬。请确认已审阅申请和最终条款。",
   "applicationReview.rejectHelp": "拒绝此申请？创作者不会通过此申请加入剧组。",
-  "applicationReview.requirements": "任务招聘需申请人确认最终条款。批准前请完成或取消待处理的面试。",
+  "applicationReview.requirements": "招聘需申请人确认当前最终条款。批准前请完成或取消待处理的面试。",
   "applicationReview.recheck": "尚未确认审核结果。请刷新并检查申请状态，再进行其他操作。",
   "reviewerInterview.open": "管理面试",
   "reviewerInterview.time": "面试时间",

@@ -2048,7 +2048,7 @@
   "applicationReview.confirm": "確認決定",
   "applicationReview.approveHelp": "批准可能將創作者加入劇組，並生效已約定的任務分配和報酬。請確認已審閱申請和最終條款。",
   "applicationReview.rejectHelp": "拒絕此申請？創作者不會透過此申請加入劇組。",
-  "applicationReview.requirements": "任務招聘需申請人確認最終條款。批准前請完成或取消待處理的面試。",
+  "applicationReview.requirements": "招聘需申請人確認目前的最終條款。批准前請完成或取消待處理的面試。",
   "applicationReview.recheck": "尚未確認審核結果。請重新整理並檢查申請狀態，再進行其他操作。",
   "reviewerInterview.open": "管理面試",
   "reviewerInterview.time": "面試時間",

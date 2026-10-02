@@ -100,6 +100,26 @@ const app = {
   reviewedAt: null,
   reviewerId: null,
 };
+const confirmedTerms = {
+  currentVersion: 1,
+  items: [
+    {
+      id: "00000000-0000-4000-8000-000000000001",
+      applicationId: "app",
+      version: 1,
+      scope: "Film",
+      feeAmount: "100",
+      currency: "USD",
+      feePeriod: "project",
+      revenueShareBp: 0,
+      shareBasis: null,
+      proposedByUserId: "manager",
+      createdAt: app.createdAt,
+      confirmedAt: app.createdAt,
+    },
+  ],
+  nextBeforeVersion: null,
+};
 const result = {
   ...app,
   status: "approved",
@@ -152,7 +172,7 @@ beforeEach(() => {
     path === "/crews/crew/applications"
       ? { items: [app], nextCursor: null }
       : path.endsWith("/terms")
-        ? { currentVersion: 0, items: [], nextBeforeVersion: null }
+        ? confirmedTerms
         : path.endsWith("/interview")
           ? interview
           : app
@@ -368,4 +388,22 @@ it("hides the selected review if its session becomes stale", async () => {
   h.generation = 2;
   await render();
   expect(host.textContent).toBe("");
+});
+
+it("keeps approval disabled without terms while retaining rejection and proposal actions", async () => {
+  const previous = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (...args) =>
+    String(args[0]).endsWith("/terms")
+      ? { currentVersion: 0, items: [], nextBeforeVersion: null }
+      : previous(...args)
+  );
+  await open();
+  expect(button("applicationReview.approve").disabled).toBe(true);
+  expect(button("applicationReview.reject").disabled).toBe(false);
+  expect(button("termsProposal.open").disabled).toBe(false);
+  await click("applicationReview.approve");
+  expect(h.post).not.toHaveBeenCalled();
+  h.get.mockImplementation(previous);
+  await click("crewTerms.refresh");
+  expect(button("applicationReview.approve").disabled).toBe(false);
 });

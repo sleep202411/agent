@@ -70,7 +70,7 @@ it("reads fresh detail before terms and interview", async () => {
     "/applications/app",
     expect.objectContaining({ cache: "no-store" })
   );
-  expect(canApproveReview(review, "manager")).toBe(true);
+  expect(canApproveReview(review, "manager")).toBe(false);
   expect(canApproveReview(review, "creator")).toBe(false);
 });
 it("does not read private related data after foreign detail", async () => {
@@ -144,3 +144,30 @@ it("rejects malformed task links before loading related private data", async () 
   await expect(fetchReviewApplication("crew", "app", 1, signal())).rejects.toThrow();
   expect(h.terms).not.toHaveBeenCalled();
 });
+
+it.each([null, "00000000-0000-4000-8000-000000000001"])(
+  "requires confirmed terms for recruitment with task %s",
+  async (taskId) => {
+    vi.mocked(api.get).mockResolvedValue({ ...app, taskId });
+    expect(
+      canApproveReview(await fetchReviewApplication("crew", "app", 1, signal()), "manager")
+    ).toBe(false);
+    h.terms.mockResolvedValue({
+      currentVersion: 2,
+      items: [
+        { version: 1, confirmedAt: app.createdAt },
+        { version: 2, confirmedAt: null },
+      ],
+    });
+    expect(
+      canApproveReview(await fetchReviewApplication("crew", "app", 1, signal()), "manager")
+    ).toBe(false);
+    h.terms.mockResolvedValue({
+      currentVersion: 2,
+      items: [{ version: 2, confirmedAt: app.createdAt }],
+    });
+    expect(
+      canApproveReview(await fetchReviewApplication("crew", "app", 1, signal()), "manager")
+    ).toBe(true);
+  }
+);

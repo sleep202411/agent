@@ -2048,7 +2048,7 @@
   "applicationReview.confirm": "Confirm Decision",
   "applicationReview.approveHelp": "Approval may add this creator to the Crew and activate agreed task assignments and compensation. Confirm that you have reviewed their application and final terms.",
   "applicationReview.rejectHelp": "Reject this application? The creator will not be admitted through this application.",
-  "applicationReview.requirements": "Confirmed final terms are required for task recruitment. Resolve pending interviews before approval.",
+  "applicationReview.requirements": "Recruitment requires the applicant to confirm the current final terms. Complete or cancel pending interviews before approval.",
   "applicationReview.recheck": "The decision was not confirmed. Refresh and check the application status before another action.",
   "reviewerInterview.open": "Manage Interview",
   "reviewerInterview.time": "Interview Time",

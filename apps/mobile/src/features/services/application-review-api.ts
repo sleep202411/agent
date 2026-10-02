@@ -94,7 +94,8 @@ export function canApproveReview(
     review.app.applicantId !== userId &&
     review.interview.applicationStatus === "pending" &&
     !["proposed", "confirmed"].includes(review.interview.state) &&
-    (review.terms.currentVersion === 0 || !!latest?.confirmedAt)
+    review.terms.currentVersion > 0 &&
+    !!latest?.confirmedAt
   );
 }
 export async function decideReviewApplication(
