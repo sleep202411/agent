@@ -21,6 +21,7 @@ import { AddCrewMemberDialog } from "./add-member-dialog";
 import { CreateCrewJobDialog } from "./create-crew-job-dialog";
 import { EpisodeTemplatePreview } from "../[id]/workspace/_components/tasks/episode-template-preview";
 import { CrewTasksTab } from "../[id]/workspace/_components/tasks/crew-tasks-tab";
+import { CrewSectionNavigation } from "./crew-section-navigation";
 
 export function CrewSetup({ crewId }: { crewId: string }) {
   const { user } = useCurrentUser();
@@ -41,6 +42,7 @@ function SetupSession({ crewId }: { crewId: string }) {
   const [step, setStep] = useState(1);
   const [invite, setInvite] = useState<PresetPositionValue | null>(null);
   const [publish, setPublish] = useState<{ role?: string; taskId?: string } | null>(null);
+  const [recruitRole, setRecruitRole] = useState("");
   const [episode, setEpisode] = useState<string | null>(null);
   const [error, setError] = useState("");
   const lock = useRef(false);
@@ -59,6 +61,9 @@ function SetupSession({ crewId }: { crewId: string }) {
     !roster.isFetching &&
     !roster.hasNextPage;
   const canManage = permissions.can("members.manage") && permissions.can("tasks.manage");
+  const unfilledRoles = PRESET_POSITIONS.filter(
+    (role) => !members.some((member) => member.positions.some((p) => p.categoryKey === role.value))
+  );
   async function addRole(role: PresetPositionValue, memberId: string) {
     const member = members.find((m) => m.id === memberId);
     if (
@@ -98,7 +103,8 @@ function SetupSession({ crewId }: { crewId: string }) {
     void invitations.refetch();
   };
   return (
-    <main className="mx-auto max-w-screen-xl space-y-6 px-4 py-8 sm:px-6">
+    <main className="mx-auto max-w-screen-xl space-y-4 px-4 pb-4 pt-8 sm:px-6">
+      <CrewSectionNavigation active="mine" showDashboard={false} />
       <header className="space-y-3">
         <h1 className="text-2xl font-semibold">{t("title")}</h1>
         <p>{detail.data?.name}</p>
@@ -205,18 +211,20 @@ function SetupSession({ crewId }: { crewId: string }) {
               {episodes.isError ? (
                 <p role="alert">{episodes.error.message}</p>
               ) : (
-                episodes.data?.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-wrap items-center gap-3 rounded-xl bg-muted/30 p-4"
-                  >
-                    <span className="flex-1">{item.title}</span>
-                    <span>{t("taskCount", { count: item.taskProgress.total })}</span>
-                    <Button disabled={episodes.isFetching} onClick={() => setEpisode(item.id)}>
-                      {t("initialize")}
-                    </Button>
-                  </div>
-                ))
+                episodes.data
+                  ?.filter((item) => item.status !== "cancelled")
+                  .map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex flex-wrap items-center gap-3 rounded-xl bg-muted/30 p-4"
+                    >
+                      <span className="flex-1">{item.title}</span>
+                      <span>{t("taskCount", { count: item.taskProgress.total })}</span>
+                      <Button disabled={episodes.isFetching} onClick={() => setEpisode(item.id)}>
+                        {t("initialize")}
+                      </Button>
+                    </div>
+                  ))
               )}
               <div className="flex flex-wrap gap-3">
                 <Button variant="outline" onClick={() => setStep(1)}>
@@ -226,11 +234,7 @@ function SetupSession({ crewId }: { crewId: string }) {
                   {t("refresh")}
                 </Button>
                 <Button
-                  disabled={
-                    episodes.isError ||
-                    episodes.isFetching ||
-                    !episodes.data?.some((item) => item.taskProgress.total > 0)
-                  }
+                  disabled={episodes.isError || episodes.isFetching || !episodes.data}
                   onClick={() => setStep(3)}
                 >
                   {t("toAssignments")}
@@ -242,22 +246,26 @@ function SetupSession({ crewId }: { crewId: string }) {
             <section className="space-y-5">
               <h2 className="font-semibold">{t("step3")}</h2>
               <p className="text-sm text-muted-foreground">{t("assignHint")}</p>
-              {permissions.can("openings.manage") && (
-                <div className="flex flex-wrap gap-2">
-                  {PRESET_POSITIONS.filter(
-                    (role) =>
-                      !members.some((member) =>
-                        member.positions.some((p) => p.categoryKey === role.value)
-                      )
-                  ).map((role) => (
-                    <Button
-                      key={role.value}
-                      variant="outline"
-                      onClick={() => setPublish({ role: role.value })}
-                    >
-                      {t("publish", { role: roleT(role.value) })}
-                    </Button>
-                  ))}
+              {permissions.can("openings.manage") && unfilledRoles.length > 0 && (
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="grid w-full gap-2 text-xs font-medium sm:w-64">
+                    {t("recruitRoleLabel")}
+                    <NativeSelect value={recruitRole} onChange={setRecruitRole}>
+                      <NativeSelectOption value="">{t("chooseRole")}</NativeSelectOption>
+                      {unfilledRoles.map((role) => (
+                        <NativeSelectOption key={role.value} value={role.value}>
+                          {roleT(role.value)}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                  <Button
+                    variant="outline"
+                    disabled={!unfilledRoles.some((role) => role.value === recruitRole)}
+                    onClick={() => setPublish({ role: recruitRole })}
+                  >
+                    {t("recruitRoleAction")}
+                  </Button>
                 </div>
               )}
               <div className="h-[75dvh] min-h-96">
