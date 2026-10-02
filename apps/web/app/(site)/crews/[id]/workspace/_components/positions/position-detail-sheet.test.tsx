@@ -25,7 +25,10 @@ const state = vi.hoisted(() => ({
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: state.account } }),
 }));
-vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/src/i18n/i18n", () => ({
+  useLocale: () => "en-US",
+  useTranslations: () => (key: string) => key,
+}));
 vi.mock("@/app/(site)/crews/_hooks/use-position-label", () => ({
   useTranslatePositionValue: () => (key: string) => key,
 }));

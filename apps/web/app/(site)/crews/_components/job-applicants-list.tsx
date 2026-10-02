@@ -14,7 +14,7 @@ import { IconCheck, IconLoader2, IconX } from "@tabler/icons-react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import Link from "next/link";
 import { useMemo } from "react";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import {
@@ -52,6 +52,7 @@ const STATUS_CHIP: Record<CrewApplicationStatus, { labelKey: string; className: 
 };
 
 export function JobApplicantsList({ crewId, positionId, canManage }: JobApplicantsListProps) {
+  const locale = useLocale();
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const inbox = useCrewApplications(crewId, canManage, { positionId });
@@ -145,7 +146,7 @@ export function JobApplicantsList({ crewId, positionId, canManage }: JobApplican
                     viewer's OWN page with no dynamic segment, so a
                     `/profile/<id>` URL would 404. */}
                   <Link
-                    href={`/creators/${encodeUserId(a.applicantId)}`}
+                    href={`/${locale}/creators/${encodeUserId(a.applicantId)}`}
                     className="text-primary hover:underline"
                   >
                     {t("applicantProfile")}

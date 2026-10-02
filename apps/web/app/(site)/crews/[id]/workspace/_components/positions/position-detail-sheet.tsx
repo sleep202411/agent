@@ -31,7 +31,7 @@ import {
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -671,6 +671,7 @@ function ApplicantRow({
   canReview: boolean;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const locale = useLocale();
   const approve = useApproveApplication(crewId);
   const reject = useRejectApplication(crewId);
   const alive = useRef(false);
@@ -744,7 +745,7 @@ function ApplicantRow({
                 works). /profile is the viewer's own page with no
                 dynamic segment. */}
             <Link
-              href={`/creators/${encodeUserId(applicant.applicantId)}`}
+              href={`/${locale}/creators/${encodeUserId(applicant.applicantId)}`}
               className="text-primary hover:underline"
             >
               {t("applicantProfile")}

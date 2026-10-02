@@ -37,7 +37,7 @@ import { type ReactNode, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { IconChevronRight, IconAlertTriangle, IconLock, IconRefresh } from "@tabler/icons-react";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import {
   useCrewDetail,
@@ -85,6 +85,7 @@ export function CrewWorkspace({
   embedded?: boolean;
   communityOnly?: boolean;
 }) {
+  const locale = useLocale();
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const tCrew = useTranslations("crew");
@@ -247,7 +248,7 @@ export function CrewWorkspace({
           {tc("retry")}
         </Button>
         <Button asChild size="sm" variant="ghost" color="muted">
-          <Link href="/crews">{tCrew("backToHall")}</Link>
+          <Link href={`/${locale}/crews`}>{tCrew("backToHall")}</Link>
         </Button>
       </WorkspaceState>
     );
@@ -261,7 +262,7 @@ export function CrewWorkspace({
         description={t("workspaceNotFoundBody")}
       >
         <Button asChild size="sm" variant="solid" color="primary">
-          <Link href="/crews">{tCrew("backToHall")}</Link>
+          <Link href={`/${locale}/crews`}>{tCrew("backToHall")}</Link>
         </Button>
       </WorkspaceState>
     );
@@ -282,10 +283,10 @@ export function CrewWorkspace({
         description={t("workspaceAccessDeniedBody")}
       >
         <Button asChild size="sm" variant="solid" color="primary">
-          <Link href={`/crews/${encodeURIComponent(id)}`}>{t("viewPublicCrew")}</Link>
+          <Link href={`/${locale}/crews/${encodeURIComponent(id)}`}>{t("viewPublicCrew")}</Link>
         </Button>
         <Button asChild size="sm" variant="ghost" color="muted">
-          <Link href="/crews">{tCrew("backToHall")}</Link>
+          <Link href={`/${locale}/crews`}>{tCrew("backToHall")}</Link>
         </Button>
       </WorkspaceState>
     );
@@ -317,7 +318,7 @@ export function CrewWorkspace({
           {tc("retry")}
         </Button>
         <Button asChild size="sm" variant="ghost" color="muted">
-          <Link href="/crews">{tCrew("backToHall")}</Link>
+          <Link href={`/${locale}/crews`}>{tCrew("backToHall")}</Link>
         </Button>
       </WorkspaceState>
     );

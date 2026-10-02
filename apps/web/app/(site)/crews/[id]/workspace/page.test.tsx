@@ -27,6 +27,7 @@ import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const nav = vi.hoisted(() => ({
+  locale: "en-US",
   search: new URLSearchParams(),
   replaced: [] as string[],
 }));
@@ -101,7 +102,7 @@ vi.mock("@/src/i18n/i18n", async () => {
         (acc, [name, value]) => acc.replaceAll(`{${name}}`, String(value)),
         messages[ns]?.[key] ?? key
       ),
-    useLocale: () => "en-US",
+    useLocale: () => nav.locale,
   };
 });
 
@@ -351,6 +352,7 @@ function click(el: HTMLElement) {
 
 beforeEach(() => {
   document.body.innerHTML = "";
+  nav.locale = "en-US";
   nav.search = new URLSearchParams();
   nav.replaced = [];
   state.viewer = MEMBER;
@@ -683,3 +685,20 @@ it("still removes cached workspace content when access is denied during refresh"
   expect(pane()).toBeNull();
   expect(document.body.textContent).toContain("This workspace is for crew members");
 });
+
+it.each(["en-US", "zh-CN", "zh-HK"])(
+  "preserves %s on denied-workspace recovery links",
+  (locale) => {
+    nav.locale = locale;
+    state.viewer = OUTSIDER;
+    state.membersError = new CrewApiError(403, { message: "Membership required" });
+    render();
+    const links = Array.from(document.querySelectorAll("a"));
+    expect(
+      links.find((link) => link.textContent === "Back to Crew Hall")?.getAttribute("href")
+    ).toBe(`/${locale}/crews`);
+    expect(
+      links.find((link) => link.textContent === "View public crew page")?.getAttribute("href")
+    ).toBe(`/${locale}/crews/crew_1`);
+  }
+);
