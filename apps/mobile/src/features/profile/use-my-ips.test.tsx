@@ -131,3 +131,20 @@ it("stops cursor cycles without appending another page", async () => {
   expect(host.textContent).toContain("Invalid owned IP cursor");
   expect(host.textContent).not.toContain("two");
 });
+
+it("requires fresh owned IPs after a return visit", async () => {
+  let finish!: (value: unknown) => void;
+  h.load.mockResolvedValueOnce(page()).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render("alice:1");
+  await render();
+  await render("alice:1");
+  expect(host.querySelectorAll("span")).toHaveLength(0);
+  expect(host.textContent).toContain("loading");
+  await act(async () => finish(page("fresh", null)));
+  expect(host.textContent).toContain("fresh");
+});

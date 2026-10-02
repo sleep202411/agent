@@ -202,3 +202,20 @@ it("aborts paging on map movement and ignores late results from the previous vie
   expect(host.textContent).not.toContain("Studio old");
   expect(host.textContent).not.toContain("Studio 1");
 });
+
+it("clears previous results while revalidating after returning", async () => {
+  let finish!: (value: unknown) => void;
+  await render();
+  expect(host.querySelectorAll("span").length).toBeGreaterThan(0);
+  await render({ enabled: false });
+  h.load.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  expect(host.querySelectorAll("span")).toHaveLength(0);
+  await act(async () => finish(page("fresh", null)));
+  expect(host.textContent).toContain("fresh");
+});

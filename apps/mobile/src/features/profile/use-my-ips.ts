@@ -24,6 +24,12 @@ export function useMyIps(owner?: string) {
   const key = owner ? JSON.stringify([owner, locale, version, revision]) : undefined;
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
+  const [snapshotScope, setSnapshotScope] = useState(key);
+  // Do not restore data from an earlier visit before its replacement request completes.
+  if (snapshotScope !== key) {
+    setSnapshotScope(key);
+    setSnapshot(undefined);
+  }
   const load = useCallback(
     async (session: Session) => {
       if (session.busy || !session.hasMore || session.controller.signal.aborted) return;

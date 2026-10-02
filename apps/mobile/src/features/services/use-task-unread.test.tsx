@@ -5,6 +5,7 @@ import { useTaskUnread } from "./use-task-unread";
 const h = vi.hoisted(() => ({ load: vi.fn(), generation: 1 }));
 vi.mock("./task-unread-api", () => ({ fetchTaskUnread: h.load }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
 function Probe({ active = true, generation = 1 }: { active?: boolean; generation?: number }) {
   const data = useTaskUnread(active, generation);
@@ -84,4 +85,20 @@ it("ignores a previous account's response and prevents overlapping polling", asy
   await act(async () => resolve({ oldTask: 99 }));
   expect(host.textContent).toContain('"newTask":1');
   expect(host.textContent).not.toContain("oldTask");
+});
+
+it("does not restore old unread badges before the return request completes", async () => {
+  let finish!: (value: unknown) => void;
+  await render();
+  await render(false);
+  h.load.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  expect(host.textContent).not.toContain('"task":3');
+  await act(async () => finish({ task: 0 }));
+  expect(host.textContent).toContain('"task":0');
 });

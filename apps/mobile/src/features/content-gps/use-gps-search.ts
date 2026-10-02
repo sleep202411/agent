@@ -46,6 +46,12 @@ export function useGpsSearch(
     revision,
     enabled,
   ]);
+  const [snapshotScope, setSnapshotScope] = useState(key);
+  // Do not restore data from an earlier visit before its replacement request completes.
+  if (snapshotScope !== key) {
+    setSnapshotScope(key);
+    setSnapshot(undefined);
+  }
   const owner = useRef<Session | null>(null);
   const { generation, viewerId } = scope;
   const load = useCallback(

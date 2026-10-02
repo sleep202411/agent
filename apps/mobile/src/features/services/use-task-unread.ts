@@ -9,6 +9,12 @@ export function useTaskUnread(active: boolean, generation: number) {
     counts: Record<string, number>;
     error?: string;
   }>();
+  const [snapshotScope, setSnapshotScope] = useState(key);
+  // Do not restore data from an earlier visit before its replacement request completes.
+  if (snapshotScope !== key) {
+    setSnapshotScope(key);
+    setSnapshot(undefined);
+  }
   useEffect(() => {
     if (!active || generation !== getAuthGeneration()) return;
     const controller = new AbortController();
