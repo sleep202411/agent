@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { IconDownload, IconFileImport } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,12 @@ export function StoryPlotImportDialog({
   const readVersion = useRef(0);
   const submitted = useRef(false);
   const dragDepth = useRef(0);
+  useEffect(
+    () => () => {
+      readVersion.current++;
+    },
+    []
+  );
   const templateLocale = ["en-US", "zh-CN", "zh-HK"].includes(locale) ? locale : "en-US";
 
   const changeOpen = (next: boolean) => {
@@ -234,13 +240,16 @@ export function StoryPlotImportDialog({
               submitted.current = true;
               setImporting(true);
               const plot = selection.plot;
+              const version = readVersion.current;
               const mode: StoryPlotImportMode = hasNodes && replace ? "replace" : "append";
               void Promise.resolve()
                 .then(() => onImport(plot, mode))
                 .then(() => {
+                  if (version !== readVersion.current) return;
                   changeOpen(false);
                 })
                 .catch((cause: unknown) => {
+                  if (version !== readVersion.current) return;
                   submitted.current = false;
                   setImporting(false);
                   showError(cause);
