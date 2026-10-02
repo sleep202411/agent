@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Mainland-China release path:
-#   full git archive -> cn-hangzhou build ECS -> CN ACR -> ACK Helm release.
+#   full git archive -> private OSS relay (build-relay.fizzspace.cn) -> cn-hangzhou
+#   build ECS -> CN ACR -> ACK Helm release.
 # Helm owns the whole release, so a chart/config change requires the explicit
 # --allow-chart-update acknowledgement even for a one-service image release.
 set -euo pipefail
@@ -89,7 +90,9 @@ fi
 TMP_DIR=""
 ECS_IP=""
 MANIFEST_FILE=""
+RELAY_KEY=""
 cleanup() {
+  [ -z "$RELAY_KEY" ] || node "$ROOT/deploy/cn-source-relay.cjs" delete "$RELAY_KEY" >/dev/null 2>&1 || true
   [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
   [ -z "$MANIFEST_FILE" ] || rm -f "$MANIFEST_FILE"
   rm -f /tmp/cn-git-archive.tar /tmp/cn-src.tar.gz /tmp/cn-build-services.log
@@ -131,23 +134,15 @@ if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   # archived file, producing thousands of irrelevant warnings on Linux tar.
   COPYFILE_DISABLE=1 tar --no-xattrs -czf /tmp/cn-src.tar.gz -C "$TMP_DIR" .
   archive_sha="$(shasum -a 256 /tmp/cn-src.tar.gz | awk '{print $1}')"
-  chunk_dir="$TMP_DIR/chunks"
-  mkdir -p "$chunk_dir"
-  (cd "$chunk_dir" && split -b 32m /tmp/cn-src.tar.gz part-)
-  "${SSH[@]}" "root@$ECS_IP" 'rm -rf /root/src-chunks && mkdir -p /root/src-chunks'
-  for chunk in "$chunk_dir"/part-*; do
-    name="$(basename "$chunk")"
-    wanted="$(stat -f%z "$chunk" 2>/dev/null || stat -c%s "$chunk")"
-    got=""
-    for attempt in $(seq 1 6); do
-      "${SCP[@]}" "$chunk" "root@$ECS_IP:/root/src-chunks/$name" >/dev/null 2>&1 || true
-      got="$("${SSH[@]}" "root@$ECS_IP" "stat -c%s /root/src-chunks/$name 2>/dev/null" 2>/dev/null || true)"
-      [ "$got" = "$wanted" ] && break
-      echo "  $name attempt $attempt: ${got:-0}/$wanted"
-    done
-    [ "$got" = "$wanted" ] || { echo "FATAL: failed to transfer $name" >&2; exit 1; }
-  done
-  "${SSH[@]}" "root@$ECS_IP" 'cat /root/src-chunks/part-* > /root/src.tar.gz && rm -rf /root/src-chunks'
+  # Direct scp from outside China crawls (single-digit KB/s on bad days); the
+  # private relay bucket is reached over OSS acceleration and read in-region.
+  RELAY_KEY="src/${TAG}-$(openssl rand -hex 8).tar.gz"
+  relay_url="$(node "$ROOT/deploy/cn-source-relay.cjs" put /tmp/cn-src.tar.gz "$RELAY_KEY")"
+  printf '%s\n' "$relay_url" | "${SSH[@]}" "root@$ECS_IP" \
+    'set -e; read -r url; rm -f /root/src.tar.gz; curl -fsS --retry 3 --max-time 900 -o /root/src.tar.gz "$url"'
+  unset relay_url
+  node "$ROOT/deploy/cn-source-relay.cjs" delete "$RELAY_KEY"
+  RELAY_KEY=""
   remote_sha="$("${SSH[@]}" "root@$ECS_IP" 'sha256sum /root/src.tar.gz | awk '\''{print $1}'\''' 2>/dev/null)"
   [ "$remote_sha" = "$archive_sha" ] || { echo "FATAL: source archive checksum mismatch" >&2; exit 1; }
 
