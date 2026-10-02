@@ -357,6 +357,16 @@ module.exports = ({ config }) => {
                   }))
                 ),
               },
+              {
+                action: "VIEW",
+                autoVerify: true,
+                category: ["BROWSABLE", "DEFAULT"],
+                data: ["", "/en-US", "/zh-CN", "/zh-HK"].map((locale) => ({
+                  scheme: "https",
+                  host: siteHost,
+                  pathPrefix: `${locale}/crew-invite/`,
+                })),
+              },
             ]
           : []),
       ],

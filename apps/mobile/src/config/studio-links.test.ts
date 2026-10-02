@@ -58,6 +58,16 @@ it.each(["global", "cn"])(
         }))
       ),
     });
+    expect(config.android.intentFilters[4]).toEqual({
+      action: "VIEW",
+      autoVerify: true,
+      category: ["BROWSABLE", "DEFAULT"],
+      data: ["", "/en-US", "/zh-CN", "/zh-HK"].map((locale) => ({
+        scheme: "https",
+        host: siteHost,
+        pathPrefix: `${locale}/crew-invite/`,
+      })),
+    });
     for (const variant of ["development", "preview"]) {
       vi.stubEnv("APP_VARIANT", variant);
       const dev = configure({ config: {} });

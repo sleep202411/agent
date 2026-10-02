@@ -238,6 +238,13 @@ function CrewHeader() {
       >
         <ThemedText type="smallBold">{t("crewCreate.createDialogTitle")}</ThemedText>
       </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ paddingVertical: 8 }}
+        onPress={() => router.push(toHref("/crew-invite"))}
+      >
+        <ThemedText type="small">{t("crewJoin.title")}</ThemedText>
+      </Pressable>
     </View>
   );
 }
