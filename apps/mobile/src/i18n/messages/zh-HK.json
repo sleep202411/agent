@@ -3499,6 +3499,7 @@
   "aiLab.create": "建立",
   "aiLab.history": "歷史",
   "aiLab.image": "圖像",
+  "aiLab.audio": "音訊",
   "aiLab.video": "影片",
   "aiLab.unavailable": "此模型或選項不適用於目前會員。",
   "aiLab.pending": "一項提交待確認，請先恢復再開始新的生成。",

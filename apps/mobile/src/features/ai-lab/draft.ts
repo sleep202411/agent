@@ -5,7 +5,7 @@ import { durableRecord } from "@/lib/durable-record";
 import { referenceCheckpoint } from "./reference-image";
 import { generationSession } from "./jobs-api";
 const draftSchema = z.object({
-  mode: z.enum(["image", "video"]),
+  mode: z.enum(["image", "video", "audio"]),
   presetId: z.string(),
   modelId: z.string(),
   schemaVersion: z.string(),

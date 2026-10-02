@@ -278,7 +278,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
   function choose(presetId: string, modelId?: string) {
     const p = data?.catalog.presets.find((p) => p.id === presetId),
       m = data?.catalog.models.find((m) => m.id === (modelId ?? p?.modelIds[0]));
-    if (!p || !m || m.type === "audio") return;
+    if (!p || !m) return;
     try {
       save({
         mode: m.type,
@@ -640,10 +640,10 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       {tab === "create" ? (
         <>
           <View style={{ flexDirection: "row" }}>
-            {(["image", "video"] as const).map((value) => (
+            {(["image", "video", "audio"] as const).map((value) => (
               <Button
                 key={value}
-                label={t(value === "image" ? "aiLab.image" : "aiLab.video")}
+                label={t(`aiLab.${value}`)}
                 disabled={
                   op.busy ||
                   !!pending ||
@@ -1093,6 +1093,9 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                     <View style={{ height: 220 }}>
                       <ConversationVideo url={result.url} onRetry={() => setSelected(undefined)} />
                     </View>
+                  ) : null}
+                  {result.type === "audio" && /^https?:\/\//i.test(result.url) ? (
+                    <ConversationAudio url={result.url} />
                   ) : null}
                   <Button
                     label={t("aiLab.openResult")}

@@ -122,7 +122,7 @@ export function generationOutbox(
   );
 }
 export async function listGenerationJobs(
-  type: "image" | "video",
+  type: "image" | "video" | "audio",
   generation: number,
   signal: AbortSignal,
   workspaceId?: GenerationStorageScope

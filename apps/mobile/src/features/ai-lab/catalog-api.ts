@@ -90,11 +90,7 @@ export async function loadGenerationCatalog(
     .object({ entitlement: z.object({ rank: z.number().nonnegative() }) })
     .parse(entitlement).entitlement.rank;
   return {
-    catalog: {
-      ...value,
-      models: value.models.filter((m) => m.type !== "audio"),
-      presets: value.presets.filter((p) => p.type !== "audio"),
-    },
+    catalog: value,
     rank,
   };
 }

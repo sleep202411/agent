@@ -34,9 +34,10 @@ beforeEach(() => {
         }
   );
 });
-it("fetches fresh account/site catalog and entitlement, excludes hidden audio", async () => {
+it("fetches fresh account/site catalog and entitlement, includes official audio", async () => {
   const v = await loadGenerationCatalog(1, new AbortController().signal);
-  expect(v.catalog.models).toHaveLength(1);
+  expect(v.catalog.models).toHaveLength(2);
+  expect(v.catalog.models[1].type).toBe("audio");
   expect(v.rank).toBe(10);
   await loadGenerationCatalog(1, new AbortController().signal);
   expect(h.get).toHaveBeenCalledTimes(4);

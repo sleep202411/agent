@@ -3,7 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { GenerationPanel } from "./panel";
 import { ApiRequestError } from "@/lib/api-client";
-vi.mock("@/features/services/conversation-audio", () => ({ ConversationAudio: () => null }));
+vi.mock("@/features/services/conversation-audio", () => ({
+  ConversationAudio: ({ url }: { url: string }) => <span>Audio playback: {url}</span>,
+}));
 vi.mock("./reference-audio-metadata", () => ({ probeReferenceAudio: h.probe }));
 vi.mock("expo-image", () => ({ Image: () => null }));
 const h = vi.hoisted(() => ({
@@ -941,4 +943,84 @@ it("reviews changed Skills before charging, persists overrides and recovers the 
   await click("aiLab.recover");
   expect(h.post).toHaveBeenCalledTimes(1);
   expect(host.textContent).not.toContain("aiLab.recover");
+});
+
+function useAudioCatalog() {
+  const previous = h.get.getMockImplementation()!;
+  const audioJob = {
+    ...job,
+    type: "audio",
+    modelId: "audio-model",
+    status: "completed",
+    outputs: [{ id: "sound", type: "audio", url: "https://example.test/sound.mp3" }],
+  };
+  h.get.mockImplementation(async (path, options) => {
+    if (path === "/ai/models")
+      return {
+        ...catalog,
+        models: [
+          ...catalog.models,
+          { ...model, id: "audio-model", name: "Audio model", type: "audio" },
+        ],
+        presets: [
+          ...catalog.presets,
+          {
+            ...catalog.presets[0],
+            id: "audio-preset",
+            label: "Audio preset",
+            type: "audio",
+            modelIds: ["audio-model"],
+          },
+        ],
+      };
+    if (path === `/ai/jobs/${job.id}`) return audioJob;
+    return previous(path, options);
+  });
+  return audioJob;
+}
+it("restores the audio composer and confirms generation before playing its result", async () => {
+  const audioJob = useAudioCatalog();
+  h.post.mockImplementation(async () => {
+    jobs = [audioJob];
+    return { request_id: job.id, status: "in_queue" };
+  });
+  await mount();
+  await click("aiLab.audio");
+  await change("Prompt", "Quiet piano");
+  await act(async () => root.render(null));
+  await mount();
+  expect(input("Prompt").value).toBe("Quiet piano");
+  expect(h.get).toHaveBeenCalledWith(
+    "/ai/jobs",
+    expect.objectContaining({ params: expect.objectContaining({ type: "audio" }) })
+  );
+  await click("aiLab.generate");
+  expect(h.post).not.toHaveBeenCalled();
+  await click("aiLab.confirm");
+  expect(h.post.mock.calls[0][1].data).toMatchObject({
+    modelId: "audio-model",
+    presetId: "audio-preset",
+    input: { prompt: "Quiet piano" },
+  });
+  await click("Audio model · aiLab.status.completed");
+  expect(host.textContent).toContain("Audio playback: https://example.test/sound.mp3");
+  await click("aiLab.openResult");
+  expect(h.open).toHaveBeenCalledWith("https://example.test/sound.mp3");
+});
+it("recovers a lost audio submission after reopening without sending another paid request", async () => {
+  const audioJob = useAudioCatalog();
+  await mount();
+  await click("aiLab.audio");
+  await change("Prompt", "Quiet piano");
+  h.post.mockRejectedValueOnce(Error("Response lost"));
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  jobs = [{ ...audioJob, idempotencyKey: h.post.mock.calls[0][1].data.idempotencyKey }];
+  await act(async () => root.render(null));
+  await mount();
+  await click("aiLab.recover");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(host.textContent).not.toContain("aiLab.pending");
+  await click("Audio model · aiLab.status.completed");
+  expect(host.textContent).toContain("Audio playback: https://example.test/sound.mp3");
 });

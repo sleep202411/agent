@@ -3499,6 +3499,7 @@
   "aiLab.create": "Create",
   "aiLab.history": "History",
   "aiLab.image": "Image",
+  "aiLab.audio": "Audio",
   "aiLab.video": "Video",
   "aiLab.unavailable": "This model or option is unavailable for your membership.",
   "aiLab.pending": "A submission needs confirmation. Recover it before starting another generation.",

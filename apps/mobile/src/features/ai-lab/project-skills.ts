@@ -46,7 +46,7 @@ const installations = z.object({
 export type ProjectSkills = z.infer<typeof installations>;
 export function skillRows(
   data: ProjectSkills,
-  mode: "image" | "video",
+  mode: "image" | "video" | "audio",
   selection?: SkillSelection
 ) {
   const scope = `${mode}_generation`;
@@ -89,7 +89,7 @@ export function toggleSkill(selection: SkillSelection | undefined, id: string, e
 }
 export function unavailableSkillIds(
   data: ProjectSkills,
-  mode: "image" | "video",
+  mode: "image" | "video" | "audio",
   selection?: SkillSelection
 ) {
   const compatible = new Set(skillRows(data, mode).map((i) => i.id));
