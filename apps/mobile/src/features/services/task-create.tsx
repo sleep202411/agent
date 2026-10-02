@@ -130,9 +130,11 @@ function Editor({
     }
   );
   const [workflow, setWorkflow] = useState<TaskWorkflow | null>(
-    editor?.workflow ?? defaults.workflow
+    editor ? editor.workflow : defaults.workflow
   );
-  const [parent, setParent] = useState<TaskOption | null>(editor?.parent ?? initialParent ?? null);
+  const [parent, setParent] = useState<TaskOption | null>(
+    editor ? editor.parent : (initialParent ?? null)
+  );
   const [blockers, setBlockers] = useState<TaskOption[]>(editor?.blockers ?? []);
   const [title, setTitle] = useState(initial?.title ?? ""),
     [description, setDescription] = useState(initial?.description ?? "");

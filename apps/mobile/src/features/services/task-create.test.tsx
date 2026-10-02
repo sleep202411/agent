@@ -726,3 +726,80 @@ it("keeps an expired form editable and rejects a deadline that passes while the 
     clock.mockRestore();
   }
 });
+
+it("preserves explicitly cleared draft context and resets context for a new task", async () => {
+  const workflow = {
+    id: "33333333-3333-4333-8333-333333333333",
+    crewId: "crew",
+    name: "Default workflow",
+    semantic: "open" as const,
+    archived: false,
+  };
+  h.defaults.mockResolvedValue({ cycle: null, workflow });
+  const stage = vi.fn();
+  await act(async () =>
+    root.render(
+      <TaskCreate
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialParent={{
+          id: "22222222-2222-4222-8222-222222222222",
+          number: 2,
+          title: "Old parent",
+        }}
+        initialDraft={{
+          id: 7,
+          kind: "task",
+          state: "staged",
+          input: {
+            title: "Existing draft",
+            description: "Brief",
+            priority: "normal",
+            startAt: null,
+            dueAt: null,
+            parentId: null,
+            blockedByTaskIds: [],
+            assignees: [],
+          },
+          review: {
+            context: [],
+            assignees: [],
+            customFields: [],
+            editor: {
+              planning: { cycle: null, episode: null, labels: [] },
+              workflow: null,
+              parent: null,
+              blockers: [],
+              assignees: [],
+            },
+          },
+        }}
+        onStage={stage}
+        onCreated={h.refresh}
+        onClose={h.refresh}
+      />
+    )
+  );
+  expect(host.textContent).not.toContain("Old parent");
+  await act(async () => button("taskWorkbench.saveDraft")!.click());
+  expect(stage.mock.calls[0][0].workflowStateId).toBeUndefined();
+  expect(stage.mock.calls[0][0].parentId).toBeNull();
+  await render();
+  expect(host.querySelector("input")!.value).toBe("");
+  expect(host.textContent).toContain("Default workflow");
+  h.update.mockResolvedValue({ id: "new" });
+  await act(async () => type(0, "Fresh task"));
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({
+      title: "Fresh task",
+      description: "",
+      workflowStateId: workflow.id,
+      parentId: null,
+      blockedByTaskIds: [],
+      assignees: [],
+    })
+  );
+});
