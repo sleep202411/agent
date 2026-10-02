@@ -8097,6 +8097,9 @@
     "proposalNotePlaceholder": "想在買家接受前說點什麼？"
   },
   "orders": {
+    "signInRequired": "登入後查看此訂單。",
+    "signIn": "登入",
+    "unavailable": "此訂單無法使用。",
     "backToInbox": "返回收件匣",
     "pane": {
       "summary": "概覽",
