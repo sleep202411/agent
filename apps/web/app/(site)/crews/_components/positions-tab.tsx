@@ -139,7 +139,7 @@ export function PositionsTab() {
   const total = positions.isError ? 0 : (positions.data?.pages[0]?.total ?? 0);
 
   return (
-    <div className="grid grid-cols-1 gap-0 overflow-hidden rounded-xl bg-background lg:grid-cols-[210px_300px_minmax(0,1fr)] xl:grid-cols-[240px_340px_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-0 overflow-hidden rounded-xl bg-background lg:grid-cols-[230px_330px_minmax(0,1fr)] xl:grid-cols-[280px_400px_minmax(0,1fr)] 2xl:grid-cols-[320px_460px_minmax(0,1fr)]">
       {/* ─── Sidebar ───────────────────────────────────── */}
       <div className="border-b border-white/10 p-3 lg:hidden">
         <Button
