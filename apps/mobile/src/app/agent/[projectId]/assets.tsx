@@ -1,3 +1,4 @@
+import { StoryTimelineEntry } from "@/features/agent/components/story-timeline-editor";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -123,6 +124,7 @@ export default function AgentAssetsScreen() {
           },
         ]}
       >
+        <StoryTimelineEntry />
         <View style={styles.header}>
           <ThemedText style={styles.pageTitle}>{t("agent.assets.title")}</ThemedText>
           <ThemedText style={styles.pageHint}>
