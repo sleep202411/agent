@@ -173,7 +173,7 @@ export function ProjectProvider({
   );
 
   const value = useMemo<ProjectContextValue>(() => {
-    const canEdit = role == null ? true : role !== "viewer";
+    const canEdit = role === "owner" || role === "admin" || role === "editor";
     const canManage = role === "owner" || role === "admin";
     return {
       projectId,

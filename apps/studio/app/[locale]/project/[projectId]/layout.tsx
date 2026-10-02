@@ -1,4 +1,5 @@
 "use client";
+import { ProjectAccessBoundary } from "@/app/[locale]/project/_components/project-access-boundary";
 import { SectionCanvasBoundary } from "@/app/[locale]/project/_components/project-section-boundary";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 
@@ -39,7 +40,7 @@ import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
 import { FizzAgentOrbButton } from "@/components/fizz-agent";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { MODE_ORDER, getMode } from "@/app/[locale]/project/_modes/registry";
-import { getProject, renameProject, type ProjectRole } from "@/lib/collab/projects-api";
+import { renameProject, type ProjectRef } from "@/lib/collab/projects-api";
 import { useProjectPromptHandoff } from "@/app/[locale]/project/_components/use-project-prompt-handoff";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 
@@ -50,13 +51,22 @@ export default function ProjectLayout({
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = use(params);
+  return (
+    <ProjectAccessBoundary projectId={projectId}>
+      {(project) => <ProjectSession project={project} />}
+    </ProjectAccessBoundary>
+  );
+}
+
+function ProjectSession({ project }: { project: ProjectRef }) {
+  const projectId = project.id;
   const t = useTranslations("project");
   const routeParams = useParams();
   const activeMode = typeof routeParams.mode === "string" ? routeParams.mode : "canvas";
 
-  const [name, setName] = useState("");
-  const [role, setRole] = useState<ProjectRole | null>(null);
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [name, setName] = useState(project.name);
+  const role = project.role ?? null;
+  const workspaceId = project.workspaceId;
   const [shareOpen, setShareOpen] = useState(false);
   const setShellInset = useCallback(() => {}, []);
 
@@ -73,26 +83,8 @@ export default function ProjectLayout({
   const skillsOpen = useProjectUIStore((s) => s.skillsOpen);
   const selectedShotId = useProjectUIStore((s) => s.selectedShotId);
 
-  const dirtyRef = useRef(false);
-  const committedRef = useRef("");
-  useEffect(() => {
-    let cancelled = false;
-    getProject(projectId)
-      .then((project) => {
-        if (cancelled) return;
-        setRole(project.role ?? null);
-        setWorkspaceId(project.workspaceId);
-        if (dirtyRef.current) return;
-        committedRef.current = project.name;
-        setName(project.name);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  const canEdit = role == null ? true : role !== "viewer";
+  const committedRef = useRef(project.name);
+  const canEdit = role === "owner" || role === "admin" || role === "editor";
   const canManage = role === "owner" || role === "admin";
   const isCanvasMode = activeMode === "canvas";
   const nodesEnabled = (isCanvasMode || activeMode === "storyboard") && canEdit;
@@ -140,7 +132,6 @@ export default function ProjectLayout({
   /** The overview panel saves the name through its own PATCH; mirror the
    *  committed value so the header's inline input stays in sync. */
   const commitNameFromPanel = (next: string) => {
-    dirtyRef.current = false;
     committedRef.current = next;
     setName(next);
   };
@@ -160,7 +151,6 @@ export default function ProjectLayout({
         readOnly={!canEdit}
         onChange={(event) => {
           if (!canEdit) return;
-          dirtyRef.current = true;
           setName(event.target.value);
         }}
         onBlur={(event) => commitName(event.target.value)}
