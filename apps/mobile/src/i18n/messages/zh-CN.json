@@ -4435,5 +4435,6 @@
   "timeline.exportResume": "继续导出上传",
   "timeline.exportSave": "导出并保存视频",
   "timeline.exportCancel": "取消导出",
-  "timeline.exportNoVideos": "此时间线没有可导出的视频。"
+  "timeline.exportNoVideos": "此时间线没有可导出的视频。",
+  "timeline.exportDownload": "下载 / 分享视频"
 }

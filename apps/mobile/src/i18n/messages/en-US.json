@@ -4435,5 +4435,6 @@
   "timeline.exportResume": "Resume export upload",
   "timeline.exportSave": "Export and save video",
   "timeline.exportCancel": "Cancel export",
-  "timeline.exportNoVideos": "This timeline has no exportable video."
+  "timeline.exportNoVideos": "This timeline has no exportable video.",
+  "timeline.exportDownload": "Download / share video"
 }

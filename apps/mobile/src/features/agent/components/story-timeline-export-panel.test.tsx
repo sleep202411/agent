@@ -6,6 +6,7 @@ import type { TimelineSequence } from "../api/story-timeline-api";
 const h = vi.hoisted(() => ({
   active: true,
   generation: 1,
+  share: vi.fn(),
   render: vi.fn(),
   release: vi.fn(),
   dispose: vi.fn(),
@@ -14,7 +15,12 @@ const h = vi.hoisted(() => ({
   resume: vi.fn(),
 }));
 vi.mock("../lib/story-timeline-encoder", () => ({
-  createTimelineEncoder: () => ({ render: h.render, release: h.release, dispose: h.dispose }),
+  createTimelineEncoder: () => ({
+    share: h.share,
+    render: h.render,
+    release: h.release,
+    dispose: h.dispose,
+  }),
 }));
 vi.mock("../api/story-timeline-upload", () => ({
   timelineUpload: () => ({ upload: h.upload, read: h.read, resume: h.resume }),
@@ -143,4 +149,36 @@ it("cancels and disposes when the screen loses focus", async () => {
   expect(h.render.mock.calls[0][1].aborted).toBe(true);
   expect(h.dispose).toHaveBeenCalledOnce();
   expect(h.upload).not.toHaveBeenCalled();
+});
+
+it("downloads without uploading and reuses the artifact when saving", async () => {
+  await mount();
+  await click("timeline.exportDownload");
+  expect(h.share).toHaveBeenCalledWith(
+    result.artifact,
+    "timeline-sequence.mp4",
+    expect.any(Function)
+  );
+  expect(h.upload).not.toHaveBeenCalled();
+  await click("timeline.exportSave");
+  expect(h.render).toHaveBeenCalledOnce();
+  expect(h.upload).toHaveBeenCalledOnce();
+});
+it("does not resume an unrelated pending upload when downloading the current snapshot", async () => {
+  h.read.mockReturnValue({ clientKey: "pending" });
+  await mount();
+  await click("timeline.exportDownload");
+  expect(h.resume).not.toHaveBeenCalled();
+  expect(h.share).toHaveBeenCalledOnce();
+});
+it("keeps saved state after sharing fails", async () => {
+  await mount();
+  await click("timeline.exportSave");
+  h.share.mockRejectedValue(Error("Share unavailable"));
+  await click("timeline.exportDownload");
+  expect(host.textContent).toContain("Share unavailable");
+  expect(host.textContent).toContain("timeline.exportSaved");
+  expect(
+    [...host.querySelectorAll("button")].some((b) => b.textContent === "timeline.exportSave")
+  ).toBe(false);
 });

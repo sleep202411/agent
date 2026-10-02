@@ -39,6 +39,7 @@ function ExportPanel({ scope, userId, sequence }: Props) {
   const [stage, setStage] = useState("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | undefined>(recovery.error);
+  const [saved, setSaved] = useState(false);
   const [pending, setPending] = useState(recovery.pending);
   const clips = timelinePlaybackClips(sequence);
   const shots = clips
@@ -57,7 +58,7 @@ function ExportPanel({ scope, userId, sequence }: Props) {
       owned.encoder.dispose();
     };
   }, [recovery]);
-  const save = async () => {
+  const save = async (downloadOnly = false) => {
     const owned = resource.current;
     if (!owned || owned.operation || getAuthGeneration() !== scope.generation) return;
     const operation = new AbortController();
@@ -69,7 +70,7 @@ function ExportPanel({ scope, userId, sequence }: Props) {
       getAuthGeneration() === scope.generation;
     setError(undefined);
     try {
-      if (owned.upload.read()) {
+      if (!downloadOnly && owned.upload.read()) {
         setStage("uploading");
         await owned.upload.resume(operation.signal);
       } else {
@@ -87,6 +88,12 @@ function ExportPanel({ scope, userId, sequence }: Props) {
           owned.result = result;
           setOmitted(clips.length - result.completedClipIds.length);
         }
+        if (downloadOnly) {
+          setStage("sharing");
+          await owned.encoder.share(owned.result.artifact, `timeline-${sequence.id}.mp4`, current);
+          if (current()) setStage("idle");
+          return;
+        }
         setStage("uploading");
         await owned.upload.upload(
           { ...owned.result.artifact, type: "video/mp4", name: `timeline-${sequence.id}.mp4` },
@@ -95,6 +102,7 @@ function ExportPanel({ scope, userId, sequence }: Props) {
       }
       if (current()) {
         setStage("saved");
+        setSaved(true);
         setPending(false);
       }
     } catch (e) {
@@ -121,7 +129,8 @@ function ExportPanel({ scope, userId, sequence }: Props) {
       }
     }
   };
-  const busy = stage === "rendering" || stage === "uploading" || stage === "cancelling";
+  const busy =
+    stage === "rendering" || stage === "uploading" || stage === "cancelling" || stage === "sharing";
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("timeline.exportTitle")}</ThemedText>
@@ -134,9 +143,9 @@ function ExportPanel({ scope, userId, sequence }: Props) {
         </ThemedText>
       )}
       {stage === "uploading" && <ThemedText>{t("timeline.exportUploading")}</ThemedText>}
-      {stage === "saved" && <ThemedText>{t("timeline.exportSaved")}</ThemedText>}
+      {saved && <ThemedText>{t("timeline.exportSaved")}</ThemedText>}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      {stage !== "saved" && (
+      {!saved && (
         <Pressable
           accessibilityRole="button"
           disabled={busy || (!pending && !shots.length)}
@@ -148,7 +157,15 @@ function ExportPanel({ scope, userId, sequence }: Props) {
           </ThemedText>
         </Pressable>
       )}
-      {busy && (
+      <Pressable
+        accessibilityRole="button"
+        disabled={busy || !shots.length}
+        style={{ paddingVertical: 12, opacity: busy || !shots.length ? 0.5 : 1 }}
+        onPress={() => void save(true)}
+      >
+        <ThemedText type="smallBold">{t("timeline.exportDownload")}</ThemedText>
+      </Pressable>
+      {busy && stage !== "sharing" && (
         <Pressable
           accessibilityRole="button"
           style={{ paddingVertical: 12 }}
