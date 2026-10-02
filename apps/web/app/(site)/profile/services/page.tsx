@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { IconLoader2 } from "@tabler/icons-react";
@@ -20,7 +21,8 @@ export default function ProfileServicesPage() {
   const router = useRouter();
   const locale = useLocale() as Locale;
   const t = useTranslations("creatorCenter");
-  const { data: creator, isLoading, error } = useCreatorDetail(user?.id ?? "");
+  const tc = useTranslations("common");
+  const { data: creator, isLoading, error, isFetching, refetch } = useCreatorDetail(user?.id ?? "");
 
   useEffect(() => {
     if (!isFetched || user) return;
@@ -46,7 +48,19 @@ export default function ProfileServicesPage() {
       <h1 className="text-2xl font-semibold">{t("cta.manageServices")}</h1>
       <CreatorLocationEditor />
       {error ? (
-        <p role="alert">{error.message}</p>
+        <div className="space-y-3">
+          <p role="alert" className="break-words text-sm text-red-400">
+            {error.message}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {tc("retry")}
+          </Button>
+        </div>
       ) : creator ? (
         <ServicesTab key={user.id} creator={creator} isOwner />
       ) : (

@@ -8,6 +8,9 @@ const state = vi.hoisted(() => ({
   open: vi.fn(),
   replace: vi.fn(),
   lookup: vi.fn(),
+  error: null as Error | null,
+  fetching: false,
+  refetch: vi.fn(),
 }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: state.user, isFetched: true }),
@@ -23,7 +26,12 @@ vi.mock("@/src/i18n/i18n", () => ({
 vi.mock("@/app/(site)/creators/_hooks/use-creator", () => ({
   useCreatorDetail: (id: string) => {
     state.lookup(id);
-    return { data: id ? { id } : undefined };
+    return {
+      data: id ? { id } : undefined,
+      error: state.error,
+      isFetching: state.fetching,
+      refetch: state.refetch,
+    };
   },
 }));
 vi.mock("@/app/(site)/creators/_components/center/tabs/services-tab", () => ({
@@ -32,10 +40,16 @@ vi.mock("@/app/(site)/creators/_components/center/tabs/services-tab", () => ({
   ),
 }));
 
+vi.mock("@/app/(site)/creators/_components/creator-location-editor", () => ({
+  CreatorLocationEditor: () => <div>Location editor</div>,
+}));
+
 let root: Root, container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   state.user = { id: "owner-one" };
+  state.error = null;
+  state.fetching = false;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -70,4 +84,26 @@ it("switches service management to the newly authenticated account", async () =>
   await render();
   expect(container.textContent).not.toContain("owner-one");
   expect(container.querySelector('[data-owner="true"]')?.textContent).toBe("owner-two");
+});
+
+it("retries a failed creator read without exposing owner controls until recovery", async () => {
+  state.error = new Error("Profile service unavailable");
+  await render();
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+    "Profile service unavailable"
+  );
+  expect(container.querySelector("[data-owner]")).toBeNull();
+  const retry = Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === "retry"
+  )!;
+  await act(async () => retry.click());
+  expect(state.refetch).toHaveBeenCalledOnce();
+  state.fetching = true;
+  await render();
+  expect(retry.disabled).toBe(true);
+  state.fetching = false;
+  state.error = null;
+  await render();
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector('[data-owner="true"]')?.textContent).toBe("owner-one");
 });
