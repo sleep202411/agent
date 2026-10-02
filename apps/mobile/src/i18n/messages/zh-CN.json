@@ -4387,5 +4387,12 @@
   "assetEdit.clearSelection": "清除已选版本",
   "assetEdit.archive": "归档资产",
   "assetEdit.archiveHelp": "归档此资产及其分镜绑定？",
-  "assetEdit.pending": "资产修改尚未确认。请重试已保存的请求，再进行其他修改。"
+  "assetEdit.pending": "资产修改尚未确认。请重试已保存的请求，再进行其他修改。",
+  "assetEdit.candidates": "项目图片",
+  "assetEdit.uploadImage": "上传图片",
+  "assetEdit.noCandidates": "暂无可用的项目图片。",
+  "assetEdit.useImage": "使用图片",
+  "assetEdit.replaceImage": "替换图片",
+  "assetEdit.turnaround": "添加三视图",
+  "assetEdit.uploadHelp": "支持 JPEG、PNG 或 WebP，最大 30 MiB。上传后选择图片使用。传输中断需重新上传；上传完成后可重试确认。"
 }

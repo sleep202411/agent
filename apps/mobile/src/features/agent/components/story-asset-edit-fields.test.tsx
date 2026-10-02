@@ -4,6 +4,11 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryAssetEditFields } from "./story-asset-edit-fields";
 import { Alert } from "react-native";
 import type { StoryAssetSpec } from "../api/story-production-api";
+vi.mock("./story-asset-candidate-picker", () => ({
+  AssetCandidatePicker: ({ onSelect }: { onSelect: (id: string) => void }) => (
+    <button onClick={() => onSelect("00000000-0000-4000-8000-000000000005")}>candidate</button>
+  ),
+}));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
 vi.mock("@/lib/durable-record", () => ({ durableRecord: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => 1 }));
@@ -122,4 +127,17 @@ it("blocks all edits while recovery is pending or permission is absent", async (
   expect(submit).not.toHaveBeenCalled();
   expect(Alert.alert).not.toHaveBeenCalled();
   expect([...host.querySelectorAll("input")].every((i) => i.disabled)).toBe(true);
+});
+
+it("imports selected candidates using the saved asset version", async () => {
+  await render();
+  await click("assetEdit.replaceImage");
+  expect(submit).not.toHaveBeenCalled();
+  await click("candidate");
+  expect(submit.mock.calls[0][0].input).toMatchObject({
+    expectedVersion: 2,
+    sourceMediaAssetId: id(5),
+    sourceMediaPurpose: "primary",
+    name: "Asset",
+  });
 });

@@ -4387,5 +4387,12 @@
   "assetEdit.clearSelection": "清除已選版本",
   "assetEdit.archive": "封存資產",
   "assetEdit.archiveHelp": "封存此資產及其分鏡綁定？",
-  "assetEdit.pending": "資產修改尚未確認。請重試已儲存的請求，再進行其他修改。"
+  "assetEdit.pending": "資產修改尚未確認。請重試已儲存的請求，再進行其他修改。",
+  "assetEdit.candidates": "專案圖片",
+  "assetEdit.uploadImage": "上傳圖片",
+  "assetEdit.noCandidates": "暫無可用的專案圖片。",
+  "assetEdit.useImage": "使用圖片",
+  "assetEdit.replaceImage": "替換圖片",
+  "assetEdit.turnaround": "新增三視圖",
+  "assetEdit.uploadHelp": "支援 JPEG、PNG 或 WebP，最大 30 MiB。上傳後選擇圖片使用。傳輸中斷需重新上傳；上傳完成後可重試確認。"
 }

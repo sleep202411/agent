@@ -214,3 +214,16 @@ it("uploads video with file-backed transfer and recovers confirmation using its 
   expect(h.confirm).toHaveBeenCalledWith(videoConfirmation, expect.any(AbortSignal));
   expect(store.read()).toBeNull();
 });
+
+it("restricts asset uploads to images even if a picker returns a video", async () => {
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file:///video.mp4", name: "video.mp4", mimeType: "video/mp4", size: 4 }],
+  });
+  await expect(timelineUpload(scope, "user", storage).pick(signal(), true)).rejects.toThrow(
+    "Select an image"
+  );
+  expect(h.pick.mock.calls[0][0].type).toEqual(["image/jpeg", "image/png", "image/webp"]);
+  expect(h.video).not.toHaveBeenCalled();
+  expect(h.upload).not.toHaveBeenCalled();
+});

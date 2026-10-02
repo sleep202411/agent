@@ -4387,5 +4387,12 @@
   "assetEdit.clearSelection": "Clear selected version",
   "assetEdit.archive": "Archive asset",
   "assetEdit.archiveHelp": "Archive this asset and its storyboard bindings?",
-  "assetEdit.pending": "An asset change is awaiting confirmation. Retry the saved request before making another change."
+  "assetEdit.pending": "An asset change is awaiting confirmation. Retry the saved request before making another change.",
+  "assetEdit.candidates": "Project images",
+  "assetEdit.uploadImage": "Upload image",
+  "assetEdit.noCandidates": "No available project images.",
+  "assetEdit.useImage": "Use image",
+  "assetEdit.replaceImage": "Replace image",
+  "assetEdit.turnaround": "Add three-view image",
+  "assetEdit.uploadHelp": "JPEG, PNG or WebP up to 30 MiB. Select an uploaded image to use it. Interrupted transfers must restart; completed uploads can retry confirmation."
 }

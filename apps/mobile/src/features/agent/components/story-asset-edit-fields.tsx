@@ -1,3 +1,4 @@
+import { AssetCandidatePicker } from "./story-asset-candidate-picker";
 import { useState } from "react";
 import { Alert, Pressable, TextInput, View } from "react-native";
 import { Image } from "expo-image";
@@ -22,18 +23,23 @@ export function StoryAssetEditFields({
     [prompt, setPrompt] = useState(asset.imagePrompt ?? ""),
     [description, setDescription] = useState(asset.description ?? ""),
     [error, setError] = useState<string>();
-  const patch = (selectedMediaVersionId?: string | null) => {
+  const [purpose, setPurpose] = useState<"primary" | "turnaround">();
+  const patch = (selectedMediaVersionId?: string | null, sourceMediaAssetId?: string) => {
     try {
       const input = assetPatchInput.parse({
         expectedVersion: asset.version,
         name,
         imagePrompt: prompt,
         description: description.trim() || null,
+        ...(sourceMediaAssetId
+          ? { sourceMediaAssetId, sourceMediaPurpose: purpose ?? "primary" }
+          : {}),
         ...(selectedMediaVersionId !== undefined ? { selectedMediaVersionId } : {}),
       });
       setError(undefined);
       submit({ action: "patch", assetId: asset.id, clientKey: uuid.v4(), input });
     } catch (e) {
+      setPurpose(undefined);
       setError(e instanceof Error ? e.message : String(e));
     }
   };
@@ -49,6 +55,16 @@ export function StoryAssetEditFields({
       </ThemedText>
     </Pressable>
   );
+  if (purpose)
+    return (
+      <AssetCandidatePicker
+        projectId={asset.projectId}
+        chapterId={asset.chapterId}
+        locked={locked}
+        onSelect={(id) => patch(undefined, id)}
+        onClose={() => setPurpose(undefined)}
+      />
+    );
   return (
     <View style={{ gap: 12 }}>
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
@@ -78,6 +94,17 @@ export function StoryAssetEditFields({
         </View>
       ))}
       {button(t("assetEdit.save"), () => patch(), !name.trim() || !prompt.trim())}
+      {button(
+        t("assetEdit.replaceImage"),
+        () => setPurpose("primary"),
+        !name.trim() || !prompt.trim()
+      )}
+      {asset.kind === "character" &&
+        button(
+          t("assetEdit.turnaround"),
+          () => setPurpose("turnaround"),
+          !name.trim() || !prompt.trim()
+        )}
       <ThemedText type="smallBold">{t("assetEdit.versions")}</ThemedText>
       {asset.mediaVersions.map((version) => {
         const url = version.thumbnailUrl || version.previewUrl;

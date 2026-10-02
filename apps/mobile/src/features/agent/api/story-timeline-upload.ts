@@ -89,11 +89,11 @@ export function timelineUpload(
       if (!saved) throw Error("No upload is pending.");
       return register(saved, await confirmMobileMediaUpload(saved.confirmation, signal), signal);
     },
-    pick: async (signal: AbortSignal) => {
+    pick: async (signal: AbortSignal, imagesOnly = false) => {
       current(signal);
       if (pending.read()) throw Error("Finish the pending upload before selecting another file.");
       const picked = await DocumentPicker.getDocumentAsync({
-        type: [...mime],
+        type: imagesOnly ? mime.filter((value) => value.startsWith("image/")) : [...mime],
         multiple: false,
         copyToCacheDirectory: true,
         base64: false,
@@ -103,6 +103,7 @@ export function timelineUpload(
       if (picked.assets.length !== 1) throw Error("Select one image or video at a time.");
       const asset = picked.assets[0]!;
       const type = z.enum(mime).parse((asset.file?.type || asset.mimeType || "").toLowerCase());
+      if (imagesOnly && !type.startsWith("image/")) throw Error("Select an image.");
       const name = asset.name.trim(),
         size = asset.file?.size ?? asset.size;
       if (!name || !asset.uri) throw Error("Selected media is unavailable.");
