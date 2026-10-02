@@ -4379,5 +4379,13 @@
   "timeline.materialization.waiting_for_job": "等待生成",
   "timeline.materialization.pending": "正在掛載結果",
   "timeline.materialization.completed": "結果已掛載",
-  "timeline.materialization.failed": "結果掛載失敗"
+  "timeline.materialization.failed": "結果掛載失敗",
+  "assetEdit.name": "名稱",
+  "assetEdit.save": "儲存修改",
+  "assetEdit.versions": "媒體版本",
+  "assetEdit.select": "選擇版本",
+  "assetEdit.clearSelection": "清除已選版本",
+  "assetEdit.archive": "封存資產",
+  "assetEdit.archiveHelp": "封存此資產及其分鏡綁定？",
+  "assetEdit.pending": "資產修改尚未確認。請重試已儲存的請求，再進行其他修改。"
 }

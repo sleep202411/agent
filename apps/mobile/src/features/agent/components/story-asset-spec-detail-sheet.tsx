@@ -1,3 +1,5 @@
+import { StoryAssetEditFields } from "./story-asset-edit-fields";
+import type { AssetCommand } from "../api/story-asset-mutations";
 import type { ReactNode } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,15 +15,19 @@ function statusLabelKey(status: StoryAssetSpec["status"]) {
   return "agent.assets.status.current" as const;
 }
 
-/** Read-only asset detail sheet — mirrors H5 detail inspection without edit/generate. */
+/** Existing asset detail sheet, with permission-gated editing actions. */
 export function StoryAssetSpecDetailSheet({
   asset,
   visible,
   onClose,
+  editing,
+  recovery,
 }: {
   asset: StoryAssetSpec | null;
   visible: boolean;
   onClose: () => void;
+  recovery?: ReactNode;
+  editing?: { locked: boolean; submit: (command: AssetCommand) => void };
 }) {
   const t = useTranslations();
   const theme = useTheme();
@@ -56,16 +62,28 @@ export function StoryAssetSpecDetailSheet({
             <Field label={t("agent.assets.detail.status")}>
               <ThemedText type="small">{t(statusLabelKey(asset.status))}</ThemedText>
             </Field>
-            <Field label={t("agent.assets.detail.description")}>
-              <ThemedText type="small" themeColor="textSecondary">
-                {asset.description?.trim() || "—"}
-              </ThemedText>
-            </Field>
-            <Field label={t("agent.assets.detail.imagePrompt")}>
-              <ThemedText type="small" themeColor="textSecondary">
-                {prompt}
-              </ThemedText>
-            </Field>
+            {!editing && (
+              <>
+                <Field label={t("agent.assets.detail.description")}>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {asset.description?.trim() || "—"}
+                  </ThemedText>
+                </Field>
+                <Field label={t("agent.assets.detail.imagePrompt")}>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {prompt}
+                  </ThemedText>
+                </Field>
+              </>
+            )}
+            {recovery}
+            {editing && (
+              <StoryAssetEditFields
+                key={`${asset.id}:${asset.version}`}
+                asset={asset}
+                {...editing}
+              />
+            )}
           </ScrollView>
 
           <Pressable

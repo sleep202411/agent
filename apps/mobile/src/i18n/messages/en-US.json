@@ -4379,5 +4379,13 @@
   "timeline.materialization.waiting_for_job": "Waiting for generation",
   "timeline.materialization.pending": "Attaching result",
   "timeline.materialization.completed": "Result attached",
-  "timeline.materialization.failed": "Result attachment failed"
+  "timeline.materialization.failed": "Result attachment failed",
+  "assetEdit.name": "Name",
+  "assetEdit.save": "Save changes",
+  "assetEdit.versions": "Media versions",
+  "assetEdit.select": "Select version",
+  "assetEdit.clearSelection": "Clear selected version",
+  "assetEdit.archive": "Archive asset",
+  "assetEdit.archiveHelp": "Archive this asset and its storyboard bindings?",
+  "assetEdit.pending": "An asset change is awaiting confirmation. Retry the saved request before making another change."
 }

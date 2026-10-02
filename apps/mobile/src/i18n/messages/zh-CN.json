@@ -4379,5 +4379,13 @@
   "timeline.materialization.waiting_for_job": "等待生成",
   "timeline.materialization.pending": "正在挂载结果",
   "timeline.materialization.completed": "结果已挂载",
-  "timeline.materialization.failed": "结果挂载失败"
+  "timeline.materialization.failed": "结果挂载失败",
+  "assetEdit.name": "名称",
+  "assetEdit.save": "保存修改",
+  "assetEdit.versions": "媒体版本",
+  "assetEdit.select": "选择版本",
+  "assetEdit.clearSelection": "清除已选版本",
+  "assetEdit.archive": "归档资产",
+  "assetEdit.archiveHelp": "归档此资产及其分镜绑定？",
+  "assetEdit.pending": "资产修改尚未确认。请重试已保存的请求，再进行其他修改。"
 }
