@@ -2550,6 +2550,8 @@
   "canvasImport.createFilm": "建立影遊",
   "canvasImport.openFilm": "開啟影遊",
   "canvasImport.checkCreation": "建立結果尚未確認，請重新整理影遊列表核對後再建立。",
+  "taskCompensation.rewardSummary": "報酬",
+  "taskCompensation.shareSummary": "收益分成",
   "taskCompensation.reward": "報酬（美元）",
   "taskCompensation.share": "分潤比例（%）",
   "taskCompensation.help": "可選任務條款。留空表示未設定，0 表示明確為零。最多兩位小數；填寫不會觸發付款或結算。",

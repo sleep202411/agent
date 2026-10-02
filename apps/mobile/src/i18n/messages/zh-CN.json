@@ -2550,6 +2550,8 @@
   "canvasImport.createFilm": "创建影游",
   "canvasImport.openFilm": "打开影游",
   "canvasImport.checkCreation": "创建结果尚未确认，请刷新影游列表核对后再创建。",
+  "taskCompensation.rewardSummary": "报酬",
+  "taskCompensation.shareSummary": "收益分成",
   "taskCompensation.reward": "报酬（美元）",
   "taskCompensation.share": "分润比例（%）",
   "taskCompensation.help": "可选任务条款。留空表示未设置，0 表示明确为零。最多两位小数；填写不会触发付款或结算。",

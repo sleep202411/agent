@@ -2550,6 +2550,8 @@
   "canvasImport.createFilm": "Create interactive film",
   "canvasImport.openFilm": "Open film",
   "canvasImport.checkCreation": "Creation could not be confirmed. Refresh the film list and check before creating again.",
+  "taskCompensation.rewardSummary": "Reward",
+  "taskCompensation.shareSummary": "Profit share",
   "taskCompensation.reward": "Reward (USD)",
   "taskCompensation.share": "Profit share (%)",
   "taskCompensation.help": "Optional task terms. Blank means unset; 0 is explicit. Up to two decimal places. These terms do not initiate payment or settlement.",

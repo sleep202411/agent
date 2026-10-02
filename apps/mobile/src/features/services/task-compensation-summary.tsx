@@ -13,7 +13,7 @@ export function TaskCompensationSummary({
     <View style={{ gap: 4 }}>
       {rewardUsdMinor !== undefined && (
         <ThemedText>
-          {t("taskCompensation.reward")}:{" "}
+          {t("taskCompensation.rewardSummary")}:{" "}
           {rewardUsdMinor === null
             ? t("taskPlanning.unset")
             : `USD ${(rewardUsdMinor / 100).toFixed(2)}`}
@@ -21,7 +21,7 @@ export function TaskCompensationSummary({
       )}
       {profitShareBps !== undefined && (
         <ThemedText>
-          {t("taskCompensation.share")}:{" "}
+          {t("taskCompensation.shareSummary")}:{" "}
           {profitShareBps === null
             ? t("taskPlanning.unset")
             : `${(profitShareBps / 100).toFixed(2)}%`}
