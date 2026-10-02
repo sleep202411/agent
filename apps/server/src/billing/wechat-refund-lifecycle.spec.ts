@@ -128,7 +128,9 @@ describe('WeChat refund lifecycle', () => {
       .fn()
       .mockRejectedValue(new WechatRefundUnconfirmedException());
     Object.assign(service, {
-      providerRegistry: { get: () => ({ createRefund }) },
+      providerRegistry: {
+        get: () => ({ capabilities: { refund: true }, createRefund }),
+      },
     });
     const prepareAdminRefundTx = jest.fn(() =>
       Promise.resolve({
