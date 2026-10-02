@@ -9,6 +9,10 @@ const state = vi.hoisted(() => ({
   viewer: "owner",
   denied: false,
   failed: false,
+  episodesEmpty: false,
+  episodesFailed: false,
+  episodesFetching: false,
+  episodeStatus: "planned",
   update: vi.fn(),
   refetch: vi.fn(),
 }));
@@ -53,7 +57,19 @@ vi.mock("../_hooks/use-crew-permissions", () => ({
 }));
 vi.mock("../_hooks/use-production", () => ({
   useCrewEpisodes: () => ({
-    data: [{ id: "episode", title: "Episode one", taskProgress: { total: state.tasks } }],
+    data: state.episodesEmpty
+      ? []
+      : [
+          {
+            id: "episode",
+            title: "Episode one",
+            status: state.episodeStatus,
+            taskProgress: { total: state.tasks },
+          },
+        ],
+    isError: state.episodesFailed,
+    isFetching: state.episodesFetching,
+    error: state.episodesFailed ? new Error("Episodes unavailable") : null,
     refetch: state.refetch,
   }),
 }));
@@ -110,6 +126,10 @@ beforeEach(() => {
   state.viewer = "owner";
   state.denied = false;
   state.failed = false;
+  state.episodesEmpty = false;
+  state.episodesFailed = false;
+  state.episodesFetching = false;
+  state.episodeStatus = "planned";
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -134,13 +154,49 @@ it("guides role confirmation, explicit template initialization, then assignments
   expect(
     [...host.querySelectorAll("button")].find((b) => b.textContent === en.crewSetup.toAssignments)!
       .disabled
-  ).toBe(true);
+  ).toBe(false);
   await click(en.crewSetup.initialize);
   await click("Confirm template");
   await click(en.crewSetup.toAssignments);
   expect(host.textContent).toContain("Task assignments");
-  await click("Recruit: Director");
+  const recruit = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === en.crewSetup.recruitRoleAction
+  )!;
+  expect(recruit.disabled).toBe(true);
+  const role = host.querySelector("select") as HTMLSelectElement;
+  await act(async () => {
+    role.value = "director";
+    role.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await click(en.crewSetup.recruitRoleAction);
   expect(host.textContent).toContain("Opening director");
+});
+it.each(["empty", "uninitialized", "cancelled"])(
+  "lets an owner plan their own tasks with %s episodes and retains Production navigation",
+  async (kind) => {
+    state.episodesEmpty = kind === "empty";
+    state.episodeStatus = kind === "cancelled" ? "cancelled" : "planned";
+    await render();
+    expect(host.querySelector('a[href="/en-US/messages?tab=recruitment"]')).not.toBeNull();
+    expect(host.querySelector('a[href="/en-US/crews/tasks"]')).not.toBeNull();
+    await click(en.crewSetup.confirmMembers);
+    if (kind !== "uninitialized") expect(host.textContent).not.toContain("Episode one");
+    await click(en.crewSetup.toAssignments);
+    expect(host.textContent).toContain("Task assignments");
+    expect(state.update).not.toHaveBeenCalled();
+  }
+);
+it.each(["failed", "refreshing"])("does not advance with %s episode data", async (kind) => {
+  state.episodesFailed = kind === "failed";
+  state.episodesFetching = kind === "refreshing";
+  await render();
+  await click(en.crewSetup.confirmMembers);
+  const next = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === en.crewSetup.toAssignments
+  )!;
+  expect(next.disabled).toBe(true);
+  await act(async () => next.click());
+  expect(host.textContent).not.toContain("Task assignments");
 });
 it("adds a production role with the current membership version and never changes access policies", async () => {
   await render();

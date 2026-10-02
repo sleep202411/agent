@@ -11,8 +11,17 @@ const query = vi.hoisted(() => ({
   error: new Error("Service unavailable"),
   refetch: vi.fn(),
 }));
-vi.mock("next/navigation", () => ({ useParams: () => ({ id: "crew" }) }));
-vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ id: "crew" }),
+  useRouter: () => ({ replace: vi.fn() }),
+}));
+vi.mock("@/src/i18n/i18n", () => ({
+  useTranslations: () => (key: string) => key,
+  useLocale: () => "en-US",
+}));
+vi.mock("../_hooks/use-crew-linked-ips", () => ({
+  useCrewLinkedIps: () => ({ data: [], isError: false, isPending: false }),
+}));
 vi.mock("../_hooks/use-crew", () => ({ useCrewDetail: () => query }));
 vi.mock("./_components/crew-detail-new", () => ({
   CrewDetail: () => <input defaultValue="application draft" />,
