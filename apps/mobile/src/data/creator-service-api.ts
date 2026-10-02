@@ -133,7 +133,7 @@ function mapDetail(dto: CreatorServiceDetailDto): CreatorServiceDetail | undefin
     startingPrice: cheapest?.price ?? summary.startingPrice,
     currency: cheapest?.currency ?? summary.currency,
     startingDeliveryDays: cheapest?.deliveryDays ?? summary.startingDeliveryDays,
-    packageCount: packages.length || summary.packageCount,
+    packageCount: packages.length,
     requirementQuestions: z
       .array(
         z.object({

@@ -476,6 +476,7 @@
   "serviceDetail.notFoundDetail": "This service may be unpublished or unavailable.",
   "serviceDetail.overviewTitle": "Overview",
   "serviceDetail.packagesTitle": "Packages",
+  "serviceDetail.noPackages": "This service doesn't have any published packages yet.",
   "serviceDetail.questionsTitle": "Requirements",
   "serviceDetail.unlimitedRevisions": "Unlimited",
   "serviceDetail.days": "days",

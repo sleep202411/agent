@@ -110,9 +110,11 @@ function ServiceDetailContent({ id }: { id: string }) {
               <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
                 {service.title}
               </ThemedText>
-              <ThemedText type="smallBold" style={{ color: theme.brand }}>
-                {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
-              </ThemedText>
+              {service.packages.length > 0 && (
+                <ThemedText type="smallBold" style={{ color: theme.brand }}>
+                  {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
+                </ThemedText>
+              )}
             </View>
           </View>
         ) : (
@@ -124,9 +126,11 @@ function ServiceDetailContent({ id }: { id: string }) {
             <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
               {service.title}
             </ThemedText>
-            <ThemedText type="smallBold" style={{ color: theme.brand }}>
-              {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
-            </ThemedText>
+            {service.packages.length > 0 && (
+              <ThemedText type="smallBold" style={{ color: theme.brand }}>
+                {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
+              </ThemedText>
+            )}
           </View>
         )}
 
@@ -163,6 +167,11 @@ function ServiceDetailContent({ id }: { id: string }) {
           <ServiceOrder key={`${service.id}-${service.version}`} service={service} />
           <View style={styles.section}>
             <SectionHeader title={t("serviceDetail.packagesTitle")} />
+            {service.packages.length === 0 && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("serviceDetail.noPackages")}
+              </ThemedText>
+            )}
             <View style={styles.packageList}>
               {service.packages.map((pkg) => (
                 <PackageCard key={pkg.id} pkg={pkg} locale={locale} />

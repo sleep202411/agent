@@ -65,3 +65,10 @@ it("rejects malformed question identities rather than inventing or silently remo
     await expect(fetchCreatorServiceById("service")).rejects.toThrow();
   }
 });
+
+it("uses the detail package list after all packages are removed, not stale card metadata", async () => {
+  vi.mocked(api.get).mockResolvedValue({ ...detail, packages: [], packageCount: 2 });
+  const result = await fetchCreatorServiceById("service");
+  expect(result?.packages).toEqual([]);
+  expect(result?.packageCount).toBe(0);
+});

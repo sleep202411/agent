@@ -494,6 +494,7 @@
   "serviceDetail.notFoundDetail": "该服务可能已下架或暂不可用。",
   "serviceDetail.overviewTitle": "服务概览",
   "serviceDetail.packagesTitle": "服务档位",
+  "serviceDetail.noPackages": "该服务尚未发布任何套餐。",
   "serviceDetail.questionsTitle": "需求问题",
   "serviceDetail.unlimitedRevisions": "不限",
   "serviceDetail.days": "天",

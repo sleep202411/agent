@@ -480,6 +480,7 @@
   "serviceDetail.notFoundDetail": "此服務可能已下架或暫不可用。",
   "serviceDetail.overviewTitle": "服務概覽",
   "serviceDetail.packagesTitle": "服務檔位",
+  "serviceDetail.noPackages": "該服務尚未發布任何套餐。",
   "serviceDetail.questionsTitle": "需求問題",
   "serviceDetail.unlimitedRevisions": "不限",
   "serviceDetail.days": "天",
