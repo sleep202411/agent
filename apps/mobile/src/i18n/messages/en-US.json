@@ -4366,5 +4366,18 @@
   "timeline.showPreview": "Preview saved timeline",
   "timeline.seekSeconds": "Time in seconds",
   "timeline.seek": "Go to time",
-  "timeline.seekError": "Enter a time within this timeline."
+  "timeline.seekError": "Enter a time within this timeline.",
+  "timeline.generation": "Clip generation",
+  "timeline.generationCharge": "Starting or retrying generation may charge the project payer. This action has no pre-submit price quote. Continue?",
+  "timeline.confirmGeneration": "Confirm generation",
+  "timeline.noModels": "No usable models available.",
+  "timeline.generate": "Generate clip",
+  "timeline.cancelGeneration": "Cancel generation",
+  "timeline.retryGeneration": "Retry generation",
+  "timeline.retryAttachment": "Retry result attachment",
+  "aiLab.status.created": "Created",
+  "timeline.materialization.waiting_for_job": "Waiting for generation",
+  "timeline.materialization.pending": "Attaching result",
+  "timeline.materialization.completed": "Result attached",
+  "timeline.materialization.failed": "Result attachment failed"
 }

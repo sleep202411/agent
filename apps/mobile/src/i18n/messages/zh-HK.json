@@ -4366,5 +4366,18 @@
   "timeline.showPreview": "預覽已儲存時間線",
   "timeline.seekSeconds": "時間（秒）",
   "timeline.seek": "跳轉至時間",
-  "timeline.seekError": "請輸入時間線範圍內的時間。"
+  "timeline.seekError": "請輸入時間線範圍內的時間。",
+  "timeline.generation": "鏡頭生成",
+  "timeline.generationCharge": "啟動或重試生成可能扣除項目付款方的積分。此操作不提供提交前報價。是否繼續？",
+  "timeline.confirmGeneration": "確認生成",
+  "timeline.noModels": "沒有可用模型。",
+  "timeline.generate": "生成鏡頭",
+  "timeline.cancelGeneration": "取消生成",
+  "timeline.retryGeneration": "重試生成",
+  "timeline.retryAttachment": "重試掛載結果",
+  "aiLab.status.created": "已建立",
+  "timeline.materialization.waiting_for_job": "等待生成",
+  "timeline.materialization.pending": "正在掛載結果",
+  "timeline.materialization.completed": "結果已掛載",
+  "timeline.materialization.failed": "結果掛載失敗"
 }

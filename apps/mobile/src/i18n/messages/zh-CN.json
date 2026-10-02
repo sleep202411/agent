@@ -4366,5 +4366,18 @@
   "timeline.showPreview": "预览已保存时间线",
   "timeline.seekSeconds": "时间（秒）",
   "timeline.seek": "跳转到时间",
-  "timeline.seekError": "请输入时间线范围内的时间。"
+  "timeline.seekError": "请输入时间线范围内的时间。",
+  "timeline.generation": "镜头生成",
+  "timeline.generationCharge": "启动或重试生成可能扣除项目付款方的积分。此操作不提供提交前报价。是否继续？",
+  "timeline.confirmGeneration": "确认生成",
+  "timeline.noModels": "没有可用模型。",
+  "timeline.generate": "生成镜头",
+  "timeline.cancelGeneration": "取消生成",
+  "timeline.retryGeneration": "重试生成",
+  "timeline.retryAttachment": "重试挂载结果",
+  "aiLab.status.created": "已创建",
+  "timeline.materialization.waiting_for_job": "等待生成",
+  "timeline.materialization.pending": "正在挂载结果",
+  "timeline.materialization.completed": "结果已挂载",
+  "timeline.materialization.failed": "结果挂载失败"
 }

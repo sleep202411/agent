@@ -1,3 +1,4 @@
+import { TimelineGenerationPanel } from "./story-timeline-generation-panel";
 import { TimelinePreview } from "./story-timeline-preview";
 import { TimelineMediaPicker } from "./story-timeline-media-picker";
 import { timelineMediaPending } from "../api/story-timeline-media";
@@ -75,6 +76,7 @@ export function StoryTimelineEntry() {
           scope={scope}
           userId={String(auth.user?.userId ?? auth.user?.id ?? "")}
           canEdit={chapter.capabilities.includes("story.edit")}
+          canGenerate={chapter.capabilities.includes("story.generate")}
           onClose={() => setOpen(false)}
         />
       )}
@@ -85,17 +87,20 @@ export function TimelineEditor({
   scope,
   userId,
   canEdit,
+  canGenerate = false,
   onClose,
 }: {
   scope: TimelineScope;
   userId: string;
   canEdit: boolean;
+  canGenerate?: boolean;
   onClose: () => void;
 }) {
   const t = useTranslations(),
     theme = useTheme();
   const store = useMemo(() => timelinePending(scope, userId), [scope, userId]);
   const mediaStore = useMemo(() => timelineMediaPending(scope, userId), [scope, userId]);
+  const [generationTarget, setGenerationTarget] = useState<string>();
   const [preview, setPreview] = useState(false);
   const [mediaTarget, setMediaTarget] = useState<{ sequenceId: string; clipId: string }>();
   const op = useAuthFormOperation(`${scope.projectId}:${scope.chapterId}`, true);
@@ -136,7 +141,7 @@ export function TimelineEditor({
       });
     return () => controller.abort();
   }, [scope, store, mediaStore, revision]);
-  const locked = loading || op.busy || !!pending || !!mediaTarget || !canEdit;
+  const locked = loading || op.busy || !!pending || !!mediaTarget || !!generationTarget || !canEdit;
   const confirmDiscard = (next: () => void) => {
     if (!dirty) return next();
     Alert.alert(t("timeline.discardTitle"), t("timeline.discardHelp"), [
@@ -268,7 +273,7 @@ export function TimelineEditor({
         {!loading && !rows.length && !pending && <ThemedText>{t("timeline.empty")}</ThemedText>}
         <Action
           label={t("timeline.refresh")}
-          disabled={op.busy || !!pending || !!mediaTarget || loading}
+          disabled={op.busy || !!pending || !!mediaTarget || !!generationTarget || loading}
           onPress={() =>
             confirmDiscard(() => {
               setDraft(undefined);
@@ -284,7 +289,7 @@ export function TimelineEditor({
           <Action
             key={row.id}
             label={row.title || row.plotNodeId}
-            disabled={op.busy || !!pending || !!mediaTarget}
+            disabled={op.busy || !!pending || !!mediaTarget || !!generationTarget}
             onPress={() =>
               confirmDiscard(() => {
                 setSelected(row.id);
@@ -312,7 +317,36 @@ export function TimelineEditor({
             }}
           />
         )}
-        {draft && !mediaTarget && (
+        {generationTarget && (
+          <TimelineGenerationPanel
+            key={`${selected}:${generationTarget}`}
+            scope={{ ...scope, sequenceId: selected, clipId: generationTarget }}
+            userId={userId}
+            canGenerate={canGenerate}
+            version={draft?.clips.find((c) => c.id === generationTarget)?.expectedVersion ?? 0}
+            kind={draft?.clips.find((c) => c.id === generationTarget)?.kind ?? "image"}
+            latestId={(() => {
+              const latest = rows
+                .find((r) => r.id === selected)
+                ?.clips.find((c) => c.id === generationTarget)?.latestGeneration;
+              return latest &&
+                typeof latest === "object" &&
+                "id" in latest &&
+                typeof latest.id === "string"
+                ? latest.id
+                : undefined;
+            })()}
+            onClose={() => {
+              setGenerationTarget(undefined);
+              setDraft(undefined);
+              setSelected("");
+              setDirty(false);
+              setLoading(true);
+              setRevision((n) => n + 1);
+            }}
+          />
+        )}
+        {draft && !mediaTarget && !generationTarget && (
           <>
             {!dirty && !pending && !op.busy && rows.find((row) => row.id === selected) && (
               <>
@@ -337,6 +371,11 @@ export function TimelineEditor({
                   backgroundColor: theme.backgroundElement,
                 }}
               >
+                <Action
+                  label={t("timeline.generation")}
+                  disabled={dirty || !!pending || op.busy || !clip.id}
+                  onPress={() => setGenerationTarget(clip.id)}
+                />
                 <ThemedText>
                   {index + 1} · {clip.kind} · {clip.startMs} ms
                 </ThemedText>
