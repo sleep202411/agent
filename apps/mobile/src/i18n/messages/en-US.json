@@ -4582,5 +4582,6 @@
   "ipGeneration.savedAttempt": "This request is saved. Stopping tracking does not cancel the server job.",
   "ipGeneration.awaitingReceipt": "No receipt is available yet. Check again later; no new generation was submitted.",
   "ipGeneration.savingOutput": "Saving output…",
-  "ipGeneration.saveFailed": "Could not save the output. Please try again."
+  "ipGeneration.saveFailed": "Could not save the output. Please try again.",
+  "ipGeneration.referenceInvalid": "Select one JPEG, PNG or WebP reference image (up to 30 MiB)."
 }

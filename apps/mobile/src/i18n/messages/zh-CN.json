@@ -4582,5 +4582,6 @@
   "ipGeneration.savedAttempt": "请求已保存。暂停查看不会取消服务器上的任务。",
   "ipGeneration.awaitingReceipt": "暂未找到回执，请稍后再检查；未提交新的生成任务。",
   "ipGeneration.savingOutput": "正在保存结果…",
-  "ipGeneration.saveFailed": "无法保存结果，请重试。"
+  "ipGeneration.saveFailed": "无法保存结果，请重试。",
+  "ipGeneration.referenceInvalid": "请选择一张 JPEG、PNG 或 WebP 参考图片（不超过 30 MiB）。"
 }

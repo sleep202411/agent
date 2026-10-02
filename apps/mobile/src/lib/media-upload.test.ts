@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api } from "./api-client";
-import { uploadMobileMediaFile } from "./media-upload";
+import { confirmMobileMediaUpload, uploadMobileMediaFile } from "./media-upload";
 vi.mock("./api-client", () => ({ api: { post: vi.fn() } }));
 const auth = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => auth.generation }));
@@ -64,7 +64,7 @@ it("signs actual bytes and echoes Crew scope through confirmation without leakin
 it("supports an omitted picker size and MIME without inventing an image type", async () => {
   await uploadMobileMediaFile(
     { ...file, type: "", size: undefined },
-    { kind: "ip_audience_reference" }
+    { kind: "ai_reference_image" }
   );
   expect(vi.mocked(api.post).mock.calls[0][1]?.data).toMatchObject({
     sizeBytes: 4,
@@ -81,7 +81,7 @@ it.each(["unreadable", "empty"])("does not sign an %s local file", async (mode) 
   fetchMock
     .mockReset()
     .mockResolvedValue({ ok: mode !== "unreadable", status: 404, blob: async () => new Blob([]) });
-  await expect(uploadMobileMediaFile(file, { kind: "ip_audience_reference" })).rejects.toThrow();
+  await expect(uploadMobileMediaFile(file, { kind: "ai_reference_image" })).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
 it("does not confirm a failed storage PUT", async () => {
@@ -89,9 +89,7 @@ it("does not confirm a failed storage PUT", async () => {
     .mockReset()
     .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
     .mockResolvedValueOnce({ ok: false, status: 503 });
-  await expect(uploadMobileMediaFile(file, { kind: "ip_audience_reference" })).rejects.toThrow(
-    "503"
-  );
+  await expect(uploadMobileMediaFile(file, { kind: "ai_reference_image" })).rejects.toThrow("503");
   expect(api.post).toHaveBeenCalledTimes(1);
 });
 it("stops after local reading if cancellation happened during blob resolution", async () => {
@@ -104,7 +102,7 @@ it("stops after local reading if cancellation happened during blob resolution", 
     },
   });
   await expect(
-    uploadMobileMediaFile(file, { kind: "ip_audience_reference", signal: controller.signal })
+    uploadMobileMediaFile(file, { kind: "ai_reference_image", signal: controller.signal })
   ).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
@@ -287,4 +285,20 @@ it.each([
     "scope"
   );
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it("rejects an unsupported upload kind before file access or transport", async () => {
+  // Exercise untyped callers and stale persisted data against the server's shared enum.
+  await expect(
+    uploadMobileMediaFile(file, { kind: "ip_audience_reference" as never })
+  ).rejects.toThrow();
+  await expect(
+    confirmMobileMediaUpload({
+      storageKey: "old",
+      contentType: "image/png",
+      kind: "ip_audience_reference" as never,
+    })
+  ).rejects.toThrow();
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(api.post).not.toHaveBeenCalled();
 });

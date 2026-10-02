@@ -5,6 +5,8 @@ import { IpGenerationPanel } from "./ip-generation-panel";
 const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
+  guest: false,
+  login: vi.fn(),
   records: new Map<string, string>(),
   get: vi.fn(),
   post: vi.fn(),
@@ -25,8 +27,11 @@ vi.mock("@/lib/durable-record", () => ({
   },
 }));
 vi.mock("@/auth", () => ({
-  useAuth: () => ({ generation: h.generation, user: { id: String(h.generation) } }),
-  useAuthGate: () => ({ requireAuth: vi.fn() }),
+  useAuth: () => ({
+    generation: h.generation,
+    user: h.guest ? null : { id: String(h.generation) },
+  }),
+  useAuthGate: () => ({ requireAuth: h.login }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post } }));
@@ -90,6 +95,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.generation = 1;
   h.active = true;
+  h.guest = false;
+  h.login.mockReset();
   h.records.clear();
   for (const mock of [h.get, h.post, h.pick, h.upload, h.alert, h.save]) mock.mockReset();
   h.get.mockResolvedValue({ templates: [template] });
@@ -149,7 +156,7 @@ it("does not poll a job returned after switching IP", async () => {
 
 it("does not show an old upload failure in the new session", async () => {
   let reject!: (error: Error) => void;
-  h.pick.mockResolvedValue({ canceled: false, assets: [{ uri: "file://old" }] });
+  h.pick.mockResolvedValue({ canceled: false, assets: [{ uri: "file://old", name: "old.png" }] });
   h.upload.mockReturnValue(
     new Promise((_, fail) => {
       reject = fail;
@@ -386,4 +393,85 @@ it.each(["background", "account", "ip"])("invalidates saving after %s changes", 
     await render();
     expect(host.textContent).toContain("ipGeneration.downloadButton");
   }
+});
+
+it("requests login before opening a guest's photo picker", async () => {
+  h.guest = true;
+  await render();
+  await click("ipGeneration.uploadButton");
+  expect(h.login).toHaveBeenCalledOnce();
+  expect(h.pick).not.toHaveBeenCalled();
+  expect(h.upload).not.toHaveBeenCalled();
+});
+it("uses the official reference-image contract and retains the server reason for retry", async () => {
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file://photo", name: "portrait.PNG" }],
+  });
+  h.upload
+    .mockRejectedValueOnce(new Error("Image verification temporarily unavailable"))
+    .mockResolvedValueOnce({ mediaAssetId: "reference", url: "https://example.test/photo.png" });
+  await render();
+  await click("ipGeneration.uploadButton");
+  expect(host.textContent).toContain("Image verification temporarily unavailable");
+  await click("ipGeneration.uploadButton");
+  expect(h.upload).toHaveBeenLastCalledWith(
+    expect.objectContaining({ type: "image/png", name: "portrait.PNG" }),
+    { kind: "ai_reference_image", maxBytes: 30 * 1024 ** 2, signal: expect.any(AbortSignal) }
+  );
+  expect(host.textContent).not.toContain("Image verification temporarily unavailable");
+  await click("ipGeneration.generateButton");
+  expect(h.post).toHaveBeenCalledWith(
+    expect.stringContaining("/run"),
+    expect.objectContaining({
+      data: expect.objectContaining({ referenceImageAssetId: "reference" }),
+    })
+  );
+});
+it("rejects unsupported reference formats before requesting storage", async () => {
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file://photo", name: "photo.gif", mimeType: "image/gif" }],
+  });
+  await render();
+  await click("ipGeneration.uploadButton");
+  expect(host.textContent).toContain("ipGeneration.referenceInvalid");
+  expect(h.upload).not.toHaveBeenCalled();
+});
+it("serializes native pickers and permits the picker to temporarily background the app", async () => {
+  const pick = deferred<{ canceled: boolean; assets: { uri: string; name: string }[] }>();
+  h.pick.mockReturnValue(pick.promise);
+  h.upload.mockResolvedValue({ mediaAssetId: "reference", url: "https://example.test/photo.png" });
+  await render();
+  await click("ipGeneration.uploadButton");
+  await click("ipGeneration.uploading");
+  expect(h.pick).toHaveBeenCalledOnce();
+  h.active = false;
+  await render();
+  await act(async () =>
+    pick.resolve({ canceled: false, assets: [{ uri: "file://photo", name: "photo.png" }] })
+  );
+  expect(h.upload).toHaveBeenCalledOnce();
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("uploaded-image");
+});
+it("cancels a previous template's upload and ignores its late receipt", async () => {
+  h.get.mockResolvedValue({
+    templates: [template, { ...template, id: "new", name: "New template" }],
+  });
+  const upload = deferred<{ mediaAssetId: string; url: string }>();
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file://photo", name: "photo.png" }],
+  });
+  h.upload.mockReturnValue(upload.promise);
+  await render();
+  await click("ipGeneration.uploadButton");
+  const signal = h.upload.mock.calls[0][1].signal;
+  await click("New template");
+  expect(signal.aborted).toBe(true);
+  await act(async () => upload.resolve({ mediaAssetId: "old", url: "https://example.test/old" }));
+  expect(host.textContent).not.toContain("uploaded-image");
+  expect(host.textContent).toContain("ipGeneration.uploadButton");
 });

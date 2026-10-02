@@ -1,3 +1,4 @@
+import type { UploadKind } from "@repo/shared/media-upload";
 import * as DocumentPicker from "expo-document-picker";
 import { z } from "zod";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -12,7 +13,10 @@ const policies = {
   poster: { kind: "episode_cover", maxBytes: 20 * 1024 * 1024, mime: images },
   still: { kind: "ai_reference_image", maxBytes: 30 * 1024 * 1024, mime: images },
   music: { kind: "story_music_audio", maxBytes: 50 * 1024 * 1024, mime: music },
-};
+} satisfies Record<
+  TextAdventureUploadTarget,
+  { kind: UploadKind; maxBytes: number; mime: string[] }
+>;
 export function textAdventureUploadFile(
   target: TextAdventureUploadTarget,
   asset: DocumentPicker.DocumentPickerAsset

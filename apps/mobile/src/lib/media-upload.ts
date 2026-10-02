@@ -1,3 +1,4 @@
+import { UploadKindSchema, type UploadKind } from "@repo/shared/media-upload";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "./api-client";
 
@@ -28,13 +29,14 @@ export interface MobileUploadFile {
 
 export interface MediaConfirmation {
   storageKey: string;
-  kind: string;
+  kind: UploadKind;
   contentType: string;
   scope?: { crewId?: string; storyProjectId?: string };
 }
 
 export async function confirmMobileMediaUpload(data: MediaConfirmation, signal?: AbortSignal) {
   const generation = getAuthGeneration();
+  UploadKindSchema.parse(data.kind);
   signal?.throwIfAborted();
   const confirmed = await api.post<ConfirmResponse>("/media/confirm", { ...AURORA, data, signal });
   signal?.throwIfAborted();
@@ -43,7 +45,7 @@ export async function confirmMobileMediaUpload(data: MediaConfirmation, signal?:
 }
 
 export interface MobileUploadOptions {
-  kind: string;
+  kind: UploadKind;
   maxBytes?: number;
   signal?: AbortSignal;
   scope?: { crewId?: string; storyProjectId?: string };
@@ -56,6 +58,7 @@ export async function uploadMobileMediaFile(
   options: MobileUploadOptions
 ): Promise<{ mediaAssetId: string; url: string }> {
   const generation = getAuthGeneration();
+  UploadKindSchema.parse(options.kind);
   const assertCurrent = () => {
     options.signal?.throwIfAborted();
     if (generation !== getAuthGeneration()) throw new Error("Upload account changed");

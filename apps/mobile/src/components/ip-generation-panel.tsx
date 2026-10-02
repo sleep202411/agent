@@ -3,15 +3,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useAudienceGeneration } from "@/features/ip-community/use-audience-generation";
 import { useIpGenerationPreview } from "./use-ip-generation-preview";
 import { useCallback, useEffect, useLayoutEffect, useState, useRef } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
@@ -71,6 +63,15 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   const [refAssetId, setRefAssetId] = useState<string | null>(null);
   const [refAssetUrl, setRefAssetUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const upload = useRef<AbortController | null>(null);
+  useEffect(() => () => upload.current?.abort(), []);
+  const cancelUpload = () => {
+    upload.current?.abort();
+    upload.current = null;
+    setUploading(false);
+    setUploadError(null);
+  };
 
   const { costPreview, previewLoading, previewError, previewErrorMessage, retryPreview } =
     useIpGenerationPreview({
@@ -150,45 +151,72 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
     };
   }, [ipId, isCurrent, catalogAttempt]);
 
-  // Pick & upload reference photo
+  // Native pickers can temporarily background the app. Keep this operation
+  // tied to its account, IP and selection; cancellation happens on navigation
+  // unmount or an explicit template/reference change, not picker AppState.
   const handlePickPhoto = async () => {
+    if (!isCurrent() || !active || upload.current || job.attempt) return;
+    if (!user) {
+      requireAuth();
+      return;
+    }
+    const token = new AbortController();
+    upload.current = token;
+    const current = () => isCurrent() && upload.current === token && !token.signal.aborted;
+    setUploading(true);
+    setUploadError(null);
     try {
       const picked = await DocumentPicker.getDocumentAsync({
-        type: ["image/*"],
+        type: ["image/jpeg", "image/png", "image/webp"],
+        multiple: false,
         copyToCacheDirectory: true,
+        base64: false,
       });
-
-      if (!isCurrent() || picked.canceled || !picked.assets?.length) return;
-      const asset = picked.assets[0];
-
-      setUploading(true);
+      if (!current() || picked.canceled) return;
+      const asset = picked.assets?.[0];
+      if (picked.assets?.length !== 1 || !asset?.uri || !asset.name?.trim())
+        throw new Error(t("ipGeneration.referenceInvalid"));
+      const reported = asset.file?.type || asset.mimeType;
+      const extensions: Record<string, string> = {
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        png: "image/png",
+        webp: "image/webp",
+      };
+      const type =
+        reported && reported !== "application/octet-stream"
+          ? reported.toLowerCase()
+          : extensions[asset.name.split(".").pop()?.toLowerCase() ?? ""];
+      if (!type || !["image/jpeg", "image/png", "image/webp"].includes(type))
+        throw new Error(t("ipGeneration.referenceInvalid"));
       const res = await uploadMobileMediaFile(
-        {
-          uri: asset.uri,
-          name: asset.name || "reference.jpg",
-          type: asset.mimeType || "image/jpeg",
-          size: asset.size,
-        },
-        { kind: "ip_audience_reference" }
+        { uri: asset.uri, name: asset.name, type, size: asset.size },
+        { kind: "ai_reference_image", maxBytes: 30 * 1024 ** 2, signal: token.signal }
       );
-
-      if (!isCurrent()) return;
+      if (!current()) return;
       setRefAssetId(res.mediaAssetId);
       setRefAssetUrl(res.url);
-    } catch {
-      if (isCurrent()) Alert.alert(t("ipGeneration.uploadFailed"));
+    } catch (error) {
+      if (current())
+        setUploadError(
+          error instanceof Error && error.message ? error.message : t("ipGeneration.uploadFailed")
+        );
     } finally {
-      if (isCurrent()) setUploading(false);
+      if (current()) {
+        upload.current = null;
+        setUploading(false);
+      }
     }
   };
 
   const handleRemovePhoto = () => {
+    cancelUpload();
     setRefAssetId(null);
     setRefAssetUrl(null);
   };
 
   const handleStartGeneration = () => {
-    if (!isCurrent()) return;
+    if (!isCurrent() || !active || upload.current) return;
     if (!user) {
       requireAuth();
       return;
@@ -280,7 +308,10 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
                   <Pressable
                     key={tpl.id}
                     onPress={() => {
-                      setSelectedTemplate(tpl);
+                      if (selectedTemplate?.id !== tpl.id) {
+                        cancelUpload();
+                        setSelectedTemplate(tpl);
+                      }
                     }}
                     style={[
                       styles.templateCard,
@@ -320,6 +351,14 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
                 </ThemedText>
               ) : null}
 
+              {uploadError && (
+                <ThemedText
+                  accessibilityRole="alert"
+                  style={[styles.errorText, { color: theme.brand }]}
+                >
+                  {uploadError}
+                </ThemedText>
+              )}
               {refAssetUrl ? (
                 <View style={styles.thumbnailWrapper}>
                   <Image source={{ uri: refAssetUrl }} style={styles.thumbnail} />
@@ -528,6 +567,8 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
         <Pressable
           onPress={handleStartGeneration}
           disabled={
+            uploading ||
+            !active ||
             !selectedTemplate ||
             (selectedTemplate.requireReferenceImage && !refAssetId) ||
             !costPreview
@@ -537,6 +578,8 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
             {
               backgroundColor: theme.brand,
               opacity:
+                uploading ||
+                !active ||
                 !selectedTemplate ||
                 (selectedTemplate.requireReferenceImage && !refAssetId) ||
                 !costPreview
