@@ -1,5 +1,5 @@
 import { conversationOutbox } from "./conversation-outbox";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -40,6 +40,8 @@ import { TaskPicker } from "./task-picker";
 import { taskLabel } from "./task-options";
 import { ConversationFile } from "./conversation-file";
 import { AuthedWebView } from "@/components/authed-web-view";
+
+type VisibleMessage = NativeMessage & { visibilityScope: object };
 
 type ConversationProps = { id: string; userId: string; generation: number };
 export function NativeConversation(props: ConversationProps) {
@@ -136,7 +138,7 @@ function ConversationSession({
   const [pendingAttachmentCount, setPendingAttachmentCount] = useState(
     initial.pending?.attachments?.length ?? 0
   );
-  const [visibleId, setVisibleId] = useState<string>(),
+  const [visible, setVisible] = useState<{ scope: object; id: string }>(),
     [readError, setReadError] = useState<string>(),
     [readRetry, setReadRetry] = useState(0);
   const [viewConfig] = useState({ itemVisiblePercentThreshold: 80, minimumViewTime: 500 });
@@ -146,8 +148,37 @@ function ConversationSession({
   const crewChannel = history.detail?.crewChannel;
   const requiresWeb =
     contextType === "crew" && crewChannel !== "team" && crewChannel !== "community";
+  const visibilityScope = useMemo(
+    () => ({ active, web, requiresWeb, selectedTask, selectedAsset }),
+    [active, web, requiresWeb, selectedTask, selectedAsset]
+  );
+  const visibleMessages = useMemo(
+    () => [...history.messages].reverse().map((message) => ({ ...message, visibilityScope })),
+    [history.messages, visibilityScope]
+  );
+  const onViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken<VisibleMessage>[] }) => {
+      const newest = [...viewableItems]
+        .filter((value) => value.isViewable && value.index !== null)
+        .sort((a, b) => a.index! - b.index!)[0];
+      if (newest) setVisible({ scope: newest.item.visibilityScope, id: newest.item.id });
+    },
+    []
+  );
+  const visibleId = visible?.scope === visibilityScope ? visible.id : undefined;
   useEffect(() => {
-    if (!active || !visibleId || !detailId || web || requiresWeb || selectedTask || selectedAsset)
+    if (
+      !active ||
+      !visibleId ||
+      !detailId ||
+      history.loading ||
+      history.error ||
+      !history.messages.some((message) => message.id === visibleId) ||
+      web ||
+      requiresWeb ||
+      selectedTask ||
+      selectedAsset
+    )
       return;
     const controller = new AbortController();
     void markConversationRead(id, visibleId, controller.signal).then(
@@ -160,7 +191,20 @@ function ConversationSession({
       }
     );
     return () => controller.abort();
-  }, [id, visibleId, active, detailId, requiresWeb, web, readRetry, selectedTask, selectedAsset]);
+  }, [
+    id,
+    visibleId,
+    active,
+    detailId,
+    history.loading,
+    history.error,
+    history.messages,
+    requiresWeb,
+    web,
+    readRetry,
+    selectedTask,
+    selectedAsset,
+  ]);
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
@@ -293,22 +337,13 @@ function ConversationSession({
       </View>
       {unavailable && <ThemedText>{t("inbox.liveUnavailable")}</ThemedText>}
       <FlatList
-        data={[...history.messages].reverse()}
+        data={visibleMessages}
         inverted
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 12 }}
         keyboardShouldPersistTaps="handled"
         viewabilityConfig={viewConfig}
-        onViewableItemsChanged={({
-          viewableItems,
-        }: {
-          viewableItems: ViewToken<NativeMessage>[];
-        }) => {
-          const newest = [...viewableItems]
-            .filter((v) => v.isViewable && v.index !== null)
-            .sort((a, b) => a.index! - b.index!)[0];
-          if (newest) setVisibleId(newest.item.id);
-        }}
+        onViewableItemsChanged={onViewableItemsChanged}
         onEndReached={history.loadOlder}
         ListEmptyComponent={!history.loading ? <ThemedText>{t("thread.empty")}</ThemedText> : null}
         ListFooterComponent={

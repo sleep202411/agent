@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   push: vi.fn(),
   detail: undefined as Detail | undefined,
   messages: [] as NativeMessage[],
+  viewCallbacks: [] as unknown[],
   view: undefined as undefined | ((args: unknown) => void),
 }));
 vi.mock("@/features/crew-assets/organization", () => ({
@@ -151,7 +152,18 @@ vi.mock("react-native", () => ({
     onViewableItemsChanged: typeof h.view;
     ListFooterComponent: ReactNode;
   }) => {
-    h.view = onViewableItemsChanged;
+    h.viewCallbacks.push(onViewableItemsChanged);
+    h.view = (args) => {
+      const value = args as {
+        viewableItems: { item: NativeMessage; index: number; isViewable: boolean }[];
+      };
+      onViewableItemsChanged?.({
+        viewableItems: value.viewableItems.map((token) => ({
+          ...token,
+          item: data.find((item) => item.id === token.item.id) ?? token.item,
+        })),
+      });
+    };
     return (
       <div>
         {data.map((item) => (
@@ -203,6 +215,7 @@ beforeEach(() => {
   h.outboxRead.mockReturnValue(null);
   h.generation = 1;
   h.active = true;
+  h.viewCallbacks.length = 0;
   h.detail = detail;
   h.messages = [message];
   h.discard.mockResolvedValue(undefined);
@@ -624,4 +637,29 @@ it("opens a crew attachment's exact asset and returns to the conversation", asyn
   h.detail = { ...detail, contextType: "order" };
   await render();
   expect(host.textContent).not.toContain("thread.openInCrewAssets");
+});
+
+it("requires a new visibility observation after return and keeps the unsent draft", async () => {
+  await render();
+  await act(async () => type("Keep my draft"));
+  expect(new Set(h.viewCallbacks).size).toBe(1);
+  const previousView = h.view!;
+  await act(async () =>
+    previousView({ viewableItems: [{ item: message, index: 0, isViewable: true }] })
+  );
+  expect(h.read).toHaveBeenCalledTimes(1);
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")!.value).toBe("Keep my draft");
+  expect(h.read).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    previousView({ viewableItems: [{ item: message, index: 0, isViewable: true }] })
+  );
+  expect(h.read).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    h.view!({ viewableItems: [{ item: message, index: 0, isViewable: true }] })
+  );
+  expect(h.read).toHaveBeenCalledTimes(2);
 });
