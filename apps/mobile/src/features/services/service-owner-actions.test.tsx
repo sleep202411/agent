@@ -106,7 +106,8 @@ it("ignores old-account completions and explains irreversible archive", async ()
   await act(async () => finish());
   expect(h.refresh).not.toHaveBeenCalled();
   await render("archived");
-  expect(host.textContent).toBe("");
+  expect(host.textContent).toBe("myServices.status.archived");
+  expect(host.querySelectorAll("button")).toHaveLength(0);
 });
 it("shows server failures without claiming success", async () => {
   h.change.mockRejectedValue(new Error("A package is required"));
@@ -115,4 +116,26 @@ it("shows server failures without claiming success", async () => {
   await act(async () => click("myServices.confirm"));
   expect(host.textContent).toContain("A package is required");
   expect(h.refresh).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["draft", ["publish", "archive"]],
+  ["listed", ["pause", "archive"]],
+  ["paused", ["resume", "archive"]],
+  ["archived", []],
+] as const)("shows owner status %s and only its allowed actions", async (status, actions) => {
+  await render(status);
+  expect(host.textContent).toContain(`myServices.status.${status}`);
+  expect(Array.from(host.querySelectorAll("button"), (button) => button.textContent)).toEqual(
+    actions.map((action) => `myServices.action.${action}`)
+  );
+});
+it("clears an obsolete confirmation when the authoritative status changes", async () => {
+  await render("listed");
+  await act(async () => click("myServices.action.pause"));
+  expect(host.textContent).toContain("myServices.confirm");
+  await render("paused");
+  expect(host.textContent).not.toContain("myServices.confirm");
+  expect(host.textContent).toContain("myServices.status.paused");
+  expect(h.change).not.toHaveBeenCalled();
 });

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CREATOR_SERVICE_STATUSES } from "@repo/shared/creator-service";
 import { Pressable, View } from "react-native";
 import { useAuth } from "@/auth";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
@@ -27,9 +28,13 @@ function Actions({ id, status, refresh }: { id: string; status: string; refresh:
   const [action, setAction] = useState<ServiceAction>();
   const [error, setError] = useState<string>();
   const actions = serviceActions(status);
-  if (!actions.length) return null;
+  const knownStatus = CREATOR_SERVICE_STATUSES.find((value) => value === status);
+  if (!knownStatus) return null;
   return (
     <View style={{ gap: 12 }}>
+      <ThemedText type="small" themeColor="textSecondary">
+        {t(`myServices.status.${knownStatus}`)}
+      </ThemedText>
       {actions.map((value) => (
         <Pressable
           key={value}
