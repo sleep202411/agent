@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AssetSelectDialog } from "./asset-select-dialog";
 const mock = vi.hoisted(() => ({
+  assets: [] as Array<{ id: string; kind: "image"; url: string; name: string }>,
   upload: vi.fn(),
   probe: vi.fn(),
   add: vi.fn(),
@@ -25,13 +26,13 @@ vi.mock("@/lib/canvas-core/canvas-graph-context", () => ({
 }));
 vi.mock("@/lib/canvas-authoring/use-project-assets", () => ({
   useProjectAssets: () => ({
-    assets: [],
-    filtered: [],
+    assets: mock.assets,
+    filtered: mock.assets,
     filter: "all",
     setFilter: mock.filter,
     isLoading: false,
   }),
-  projectAssetToMentionItem: vi.fn(),
+  projectAssetToMentionItem: (asset: { id: string }) => ({ id: asset.id, label: asset.id }),
 }));
 vi.mock("@/components/canvas/authoring/use-media-authoring-canvas", () => ({
   canvasAcceptedFileTypes: () => "video/mp4",
@@ -153,4 +154,31 @@ it("retains successful files when another file fails and releases the failed pro
   expect(mock.add).toHaveBeenCalledTimes(1);
   expect(mock.probe.mock.calls[0][2].aborted).toBe(true);
   expect(mock.filter).toHaveBeenCalledWith("uploaded");
+});
+
+it("clears unavailable selections and lets the user replace them", async () => {
+  const select = vi.fn();
+  const display = () =>
+    root.render(
+      <AssetSelectDialog
+        open
+        projectId="project"
+        onClose={() => {}}
+        onSelect={select}
+        maxSelection={2}
+      />
+    );
+  mock.assets = [{ id: "crew", kind: "image", url: "/crew.png", name: "Crew image" }];
+  await act(async () => display());
+  await act(async () => host.querySelector<HTMLImageElement>('img[alt="Crew image"]')!.click());
+  const confirm = () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "assetDialog.confirm")!;
+  expect(confirm().disabled).toBe(false);
+  mock.assets = [{ id: "local", kind: "image", url: "/local.png", name: "Local image" }];
+  await act(async () => display());
+  expect(confirm().disabled).toBe(true);
+  await act(async () => host.querySelector<HTMLImageElement>('img[alt="Local image"]')!.click());
+  await act(async () => confirm().click());
+  expect(select).toHaveBeenCalledExactlyOnceWith({ id: "local", label: "local" });
+  mock.assets = [];
 });

@@ -1,5 +1,7 @@
 "use client";
 
+import { ApiRequestError } from "@/lib/api";
+import { useTranslations } from "next-intl";
 import { useAuth } from "@/app/_components/auth-provider";
 
 import { useMemo, useState } from "react";
@@ -73,7 +75,11 @@ export function useProjectAssets(projectId: string): {
   filter: AssetFilter;
   setFilter: (f: AssetFilter) => void;
   isLoading: boolean;
+  error: Error | null;
+  isRetrying: boolean;
+  retry: () => Promise<unknown>;
 } {
+  const t = useTranslations("canvasNodes.asset.crew");
   const { assets: canvasAssets } = useCanvasGraphContext();
   const [filter, setFilter] = useState<AssetFilter>("all");
 
@@ -92,11 +98,23 @@ export function useProjectAssets(projectId: string): {
   const crewList = useQuery({
     queryKey: ["project-crew-assets", projectId, "all-folders", user?.id, context.data?.crew?.id],
     queryFn: async ({ signal }) => ({ items: await listAllProjectCrewAssets(projectId, signal) }),
-    enabled: Boolean(projectId && user?.id && context.data?.crew),
+    enabled: Boolean(
+      projectId &&
+      user?.id &&
+      context.data?.crew &&
+      context.data.assetContext?.capabilities.view !== false &&
+      !context.isError
+    ),
     staleTime: 30_000,
     retry: false,
   });
 
+  const permissionDenied = context.data?.assetContext?.capabilities.view === false;
+  const crewAccessLost =
+    crewList.error instanceof ApiRequestError &&
+    [401, 403, 404, 410].includes(crewList.error.status);
+  const canUseCrewAssets =
+    !!user?.id && !!context.data?.crew && !context.isError && !permissionDenied && !crewAccessLost;
   const assets = useMemo(() => {
     const fromCanvas: ProjectAsset[] = canvasAssets
       .map((asset) => ({
@@ -118,7 +136,7 @@ export function useProjectAssets(projectId: string): {
       .sort((a, b) => b.createdAt - a.createdAt);
 
     const fromCrew: ProjectAsset[] = [];
-    for (const node of crewList.data?.items ?? []) {
+    for (const node of canUseCrewAssets ? (crewList.data?.items ?? []) : []) {
       if (node.kind !== "file" || !node.media) continue;
       const media = node.media;
       if (media.kind !== "image" && media.kind !== "video" && media.kind !== "audio") continue;
@@ -139,7 +157,7 @@ export function useProjectAssets(projectId: string): {
     }
 
     return [...fromCanvas, ...fromCrew];
-  }, [canvasAssets, crewList.data]);
+  }, [canvasAssets, crewList.data, canUseCrewAssets]);
 
   const filtered = useMemo(
     () => assets.filter((asset) => matchesFilter(asset, filter)),
@@ -147,10 +165,20 @@ export function useProjectAssets(projectId: string): {
   );
 
   const isLoading =
-    Boolean(projectId) &&
-    (context.isPending || (Boolean(context.data?.crew) && crewList.isPending));
+    Boolean(projectId && user?.id) &&
+    (context.isPending ||
+      (Boolean(context.data?.crew) && !permissionDenied && !context.isError && crewList.isPending));
 
-  return { assets, filtered, filter, setFilter, isLoading };
+  return {
+    assets,
+    filtered,
+    filter,
+    setFilter,
+    isLoading,
+    error: context.error ?? (permissionDenied ? new Error(t("errorBody")) : crewList.error),
+    isRetrying: context.isFetching || crewList.isFetching,
+    retry: () => (context.isError || permissionDenied ? context.refetch() : crewList.refetch()),
+  };
 }
 
 /** Map a ProjectAsset back to CanvasAsset for thumbs / drag that expect the graph shape. */

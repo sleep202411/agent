@@ -13,6 +13,7 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
+import { Button } from "@/components/ui/button";
 import { DrawerPanel } from "@/components/ui/drawer-panel";
 import type { CanvasAsset } from "@/lib/canvas-core/types";
 import {
@@ -169,9 +170,11 @@ function CrewLibraryContents({
   context: UseQueryResult<ProjectCrewAssetContext, Error>;
 }) {
   const t = useTranslations("canvasNodes.asset.crew");
+  const common = useTranslations("common");
   const deferredQuery = useDeferredValue(query.trim());
   const [path, setPath] = useState<FolderCrumb[]>([]);
   const parentId = path.at(-1)?.id;
+  const permissionDenied = context.data?.assetContext?.capabilities.view === false;
   const listing = useInfiniteQuery({
     queryKey: [
       "project-crew-assets",
@@ -181,7 +184,7 @@ function CrewLibraryContents({
       userId,
       context.data?.crew?.id,
     ],
-    enabled: Boolean(context.data?.crew && userId),
+    enabled: Boolean(context.data?.crew && userId && !context.isError && !permissionDenied),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       listProjectCrewAssets(
@@ -201,7 +204,10 @@ function CrewLibraryContents({
     [listing.data]
   );
 
-  if (context.isPending || (Boolean(context.data?.crew) && listing.isPending)) {
+  if (
+    context.isPending ||
+    (Boolean(context.data?.crew) && !context.isError && !permissionDenied && listing.isPending)
+  ) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <IconLoader2 className="size-5 animate-spin text-white/35" stroke={1.5} />
@@ -212,6 +218,7 @@ function CrewLibraryContents({
     listing.error instanceof ApiRequestError && [401, 403, 404, 410].includes(listing.error.status);
   if (
     context.isError ||
+    permissionDenied ||
     (Boolean(context.data?.crew) && listing.isError && (items.length === 0 || accessUnavailable))
   ) {
     const error = context.error ?? listing.error;
@@ -219,9 +226,30 @@ function CrewLibraryContents({
       <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
         <IconPhoto className="size-7 text-white/20" stroke={1.4} />
         <p className="mt-3 text-sm font-medium text-white/70">{t("errorTitle")}</p>
-        <p className="mt-1.5 text-xs text-white/38">
+        <p role="alert" className="mt-1.5 break-words text-xs text-muted-foreground">
           {error instanceof Error ? error.message : t("errorBody")}
         </p>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          {path.length > 0 && !context.isError && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setPath((current) => current.slice(0, -1))}
+            >
+              {t("back")}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={context.isFetching || listing.isFetching}
+            onClick={() =>
+              void (context.isError || permissionDenied ? context.refetch() : listing.refetch())
+            }
+          >
+            {common("retry")}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -253,6 +281,26 @@ function CrewLibraryContents({
         </span>
       </div>
 
+      {listing.isError && (
+        <div
+          role="alert"
+          className="flex items-center gap-3 px-4 py-2 text-xs text-muted-foreground"
+        >
+          <p className="min-w-0 flex-1 break-words">{listing.error.message || t("errorBody")}</p>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={listing.isFetching}
+            onClick={() =>
+              void (listing.isFetchNextPageError
+                ? listing.fetchNextPage({ cancelRefetch: false })
+                : listing.refetch())
+            }
+          >
+            {common("retry")}
+          </Button>
+        </div>
+      )}
       {items.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
           <IconFolder className="size-7 text-white/20" stroke={1.4} />
