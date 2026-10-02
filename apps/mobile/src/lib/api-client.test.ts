@@ -356,3 +356,35 @@ it("preserves successful empty responses and structured upstream errors", async 
     message: "The version changed",
   });
 });
+
+it.each([202, "202"])(
+  "unwraps an Aurora HTTP 202 generation receipt with code %s",
+  async (code) => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ code, data: { id: "generation" } }), { status: 202 })
+    );
+    await expect(
+      api.post("/story-projects/p/chapters/c/storyboard/sequences/s/clips/k/generations", {
+        service: "aurora",
+        data: { expectedVersion: 1 },
+        retry: false,
+      })
+    ).resolves.toEqual({ id: "generation" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  }
+);
+it.each([
+  { service: "content" as const, status: 202, success: true },
+  { service: "studio" as const, status: 202, success: true },
+  { service: "aurora" as const, status: 200, success: true },
+  { service: "aurora" as const, status: 202, success: false },
+])("rejects nonmatching or unsuccessful 202 envelopes %j", async ({ service, status, success }) => {
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify({ code: 202, success, message: "Rejected", data: { id: "bad" } }), {
+      status,
+    })
+  );
+  await expect(api.post("/test", { service, retry: false })).rejects.toMatchObject({
+    message: "Rejected",
+  });
+});

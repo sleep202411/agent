@@ -169,10 +169,14 @@ function isAbortError(error: unknown) {
   );
 }
 
-function isSuccessEnvelope(body: Record<string, unknown>) {
+function isSuccessEnvelope(body: Record<string, unknown>, accepted = false) {
   return (
     (!("success" in body) || body.success === true) &&
-    (!("code" in body) || body.code === 200 || body.code === "200" || body.code === "SUCCESS")
+    (!("code" in body) ||
+      body.code === 200 ||
+      body.code === "200" ||
+      body.code === "SUCCESS" ||
+      (accepted && (body.code === 202 || body.code === "202")))
   );
 }
 
@@ -384,7 +388,13 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   const envelope = body as Record<string, unknown>;
   const hasEnvelope = "success" in envelope || "code" in envelope;
 
-  if (hasEnvelope && !isSuccessEnvelope(envelope)) {
+  if (
+    hasEnvelope &&
+    !isSuccessEnvelope(
+      envelope,
+      resolveService(path, service ?? "auto") === "aurora" && response.status === 202
+    )
+  ) {
     const unauthorized = isUnauthorizedEnvelope(envelope);
     if (unauthorized) notifyCurrentUnauthorized();
 
