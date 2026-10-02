@@ -4305,5 +4305,22 @@
   "openings.genre.mv": "音乐视频",
   "openings.genre.commercial": "广告",
   "openings.genre.experimental": "实验",
-  "openings.genre.vlog": "视频日志"
+  "openings.genre.vlog": "视频日志",
+  "contentGpsDiscovery.studiosTitle": "参与工作室",
+  "contentGpsDiscovery.studiosDescription": "此 IP 的公开署名。工作室所在地与故事地点相互独立。",
+  "contentGpsDiscovery.studiosEmpty": "暂无提供公开服务的参与工作室。",
+  "contentGpsDiscovery.studioBasedIn": "所在地：{city}",
+  "contentGpsDiscovery.studioRemote": "提供远程服务",
+  "contentGpsDiscovery.studioServices": "服务（{count}）",
+  "contentGpsDiscovery.studioDiscovery": "在工作室地图查看",
+  "contentGpsDiscovery.studiosLogin": "登录查看更多工作室",
+  "contentGpsDiscovery.contributorRoles.owner": "所有者",
+  "contentGpsDiscovery.contributorRoles.producer": "制片人",
+  "contentGpsDiscovery.contributorRoles.director": "导演",
+  "contentGpsDiscovery.contributorRoles.writer": "编剧",
+  "contentGpsDiscovery.contributorRoles.artist": "美术",
+  "contentGpsDiscovery.contributorRoles.editor": "剪辑",
+  "contentGpsDiscovery.contributorRoles.performer": "演员",
+  "contentGpsDiscovery.contributorRoles.other": "贡献者",
+  "contentGpsDiscovery.studiosMore": "更多工作室"
 }

@@ -4305,5 +4305,22 @@
   "openings.genre.mv": "音樂影片",
   "openings.genre.commercial": "廣告",
   "openings.genre.experimental": "實驗",
-  "openings.genre.vlog": "影片日誌"
+  "openings.genre.vlog": "影片日誌",
+  "contentGpsDiscovery.studiosTitle": "參與工作室",
+  "contentGpsDiscovery.studiosDescription": "此 IP 的公開署名。工作室所在地與故事地點相互獨立。",
+  "contentGpsDiscovery.studiosEmpty": "暫無提供公開服務的參與工作室。",
+  "contentGpsDiscovery.studioBasedIn": "所在地：{city}",
+  "contentGpsDiscovery.studioRemote": "提供遠端服務",
+  "contentGpsDiscovery.studioServices": "服務（{count}）",
+  "contentGpsDiscovery.studioDiscovery": "在工作室地圖查看",
+  "contentGpsDiscovery.studiosLogin": "登入查看更多工作室",
+  "contentGpsDiscovery.contributorRoles.owner": "擁有者",
+  "contentGpsDiscovery.contributorRoles.producer": "製片人",
+  "contentGpsDiscovery.contributorRoles.director": "導演",
+  "contentGpsDiscovery.contributorRoles.writer": "編劇",
+  "contentGpsDiscovery.contributorRoles.artist": "美術",
+  "contentGpsDiscovery.contributorRoles.editor": "剪輯",
+  "contentGpsDiscovery.contributorRoles.performer": "演員",
+  "contentGpsDiscovery.contributorRoles.other": "貢獻者",
+  "contentGpsDiscovery.studiosMore": "更多工作室"
 }

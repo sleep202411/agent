@@ -1,3 +1,4 @@
+import { IpContributingStudios } from "@/features/studios/ip-contributing-studios";
 import { resolvePlaybackEntry } from "@/features/content-gps/playback-entry";
 import { BookmarkControl } from "@/features/ip-collection/bookmark-control";
 import { IpTags } from "@/features/browse/ip-tags";
@@ -795,6 +796,8 @@ function IpDetailSession() {
               ))}
             </View>
           </View>
+
+          <IpContributingStudios ipId={ip.id} />
 
           <View style={styles.section}>
             <SectionHeader title={t("ipDetail.rightsTitle")} />

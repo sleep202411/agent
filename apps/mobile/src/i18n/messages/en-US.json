@@ -4305,5 +4305,22 @@
   "openings.genre.mv": "Music video",
   "openings.genre.commercial": "Commercial",
   "openings.genre.experimental": "Experimental",
-  "openings.genre.vlog": "Vlog"
+  "openings.genre.vlog": "Vlog",
+  "contentGpsDiscovery.studiosTitle": "Contributing studios",
+  "contentGpsDiscovery.studiosDescription": "Public credits for this IP. Studio locations are independent of story locations.",
+  "contentGpsDiscovery.studiosEmpty": "No public contributing studios with listed services.",
+  "contentGpsDiscovery.studioBasedIn": "Based in {city}",
+  "contentGpsDiscovery.studioRemote": "Remote services",
+  "contentGpsDiscovery.studioServices": "Services ({count})",
+  "contentGpsDiscovery.studioDiscovery": "View studio on discovery map",
+  "contentGpsDiscovery.studiosLogin": "Sign in to see more studios",
+  "contentGpsDiscovery.contributorRoles.owner": "Owner",
+  "contentGpsDiscovery.contributorRoles.producer": "Producer",
+  "contentGpsDiscovery.contributorRoles.director": "Director",
+  "contentGpsDiscovery.contributorRoles.writer": "Writer",
+  "contentGpsDiscovery.contributorRoles.artist": "Artist",
+  "contentGpsDiscovery.contributorRoles.editor": "Editor",
+  "contentGpsDiscovery.contributorRoles.performer": "Performer",
+  "contentGpsDiscovery.contributorRoles.other": "Contributor",
+  "contentGpsDiscovery.studiosMore": "More studios"
 }
