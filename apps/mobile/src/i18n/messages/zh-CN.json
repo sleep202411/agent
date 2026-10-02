@@ -1302,6 +1302,7 @@
   "inbox.activity.order.cancelled": "订单已取消。",
   "inbox.activity.crew.member.joined": "有成员加入。",
   "inbox.activity.crew.member.left": "有成员离开。",
+  "myServices.loadMore": "加载更多",
   "myServices.title": "我的服务",
   "myServices.signIn": "登录以管理您的服务",
   "myServices.all": "全部",

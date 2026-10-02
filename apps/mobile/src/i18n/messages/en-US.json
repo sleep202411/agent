@@ -1302,6 +1302,7 @@
   "inbox.activity.order.cancelled": "Order cancelled.",
   "inbox.activity.crew.member.joined": "A member joined.",
   "inbox.activity.crew.member.left": "A member left.",
+  "myServices.loadMore": "Load more",
   "myServices.title": "My Services",
   "myServices.signIn": "Sign in to manage your services",
   "myServices.all": "All",

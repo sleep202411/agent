@@ -110,7 +110,7 @@ it("does not restore stale rows while revalidating a return visit", async () => 
   expect(h.load).toHaveBeenCalledTimes(2);
 });
 
-it.each([401, 403])(
+it.each([401, 403, 404])(
   "clears loaded services after %s and retries from the first page",
   async (status) => {
     h.load

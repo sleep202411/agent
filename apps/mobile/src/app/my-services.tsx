@@ -83,7 +83,7 @@ export default function MyServicesScreen() {
             }
             data={list.items}
             keyExtractor={(item) => item.id}
-            onEndReached={list.loadMore}
+            onEndReached={list.items.length ? list.loadMore : undefined}
             onRefresh={list.refresh}
             refreshing={list.loading}
             renderItem={({ item }) => (
@@ -102,11 +102,22 @@ export default function MyServicesScreen() {
               </Pressable>
             )}
             ListEmptyComponent={
-              !list.loading && !list.error ? <ThemedText>{t("myServices.empty")}</ThemedText> : null
+              !list.loading && !list.error && !list.hasMore ? (
+                <ThemedText>{t("myServices.empty")}</ThemedText>
+              ) : null
             }
             ListFooterComponent={
               <View>
                 {list.loading && <ActivityIndicator />}
+                {list.hasMore && !list.loading && !list.error && (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={list.loadMore}
+                    style={{ paddingVertical: 12 }}
+                  >
+                    <ThemedText>{t("myServices.loadMore")}</ThemedText>
+                  </Pressable>
+                )}
                 {list.error && (
                   <>
                     <ThemedText accessibilityRole="alert">{list.error}</ThemedText>
