@@ -49,7 +49,7 @@ export function ProjectsList() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const queryKey = ["legacy-projects", "my", user?.id ?? "anon"];
-  const { data } = useQuery({
+  const { data, error, isPending, isFetching, refetch } = useQuery({
     queryKey,
     queryFn: listMyLegacyProjects,
     enabled: !!user,
@@ -61,9 +61,9 @@ export function ProjectsList() {
   const [deleting, setDeleting] = useState<LegacyProject | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (!user || !data?.length) return null;
+  if (!user || (!isPending && !error && !data?.length)) return null;
 
-  const items = data;
+  const items = data ?? [];
   const ownerName = user.nickName?.trim() || user.email || user.phone || "Me";
   // Legacy projects live in apps/web; the domain follows the deployment cell.
   const webBase = getWebBaseUrl(siteRegion);
@@ -107,6 +107,26 @@ export function ProjectsList() {
         title={t("projects.historyTitle")}
         subtitle={t("projects.historySubtitle")}
       />
+      {isPending ? (
+        <p role="status" className="mt-4 text-sm text-muted-foreground">
+          {tc("loading")}
+        </p>
+      ) : null}
+      {error ? (
+        <div className="mt-4 flex items-center justify-between gap-4 rounded-xl bg-muted p-4">
+          <p role="alert" className="min-w-0 break-words text-sm text-muted-foreground">
+            {error instanceof Error && error.message ? error.message : tp("loadFailed")}
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {tc("retry")}
+          </Button>
+        </div>
+      ) : null}
       <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
         {items.map((project) => (
           <ProjectCard

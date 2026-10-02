@@ -109,10 +109,10 @@ const workspace = {
   heldBalance: "0",
 } as AdminWorkspaceRow;
 const directory = () => <MemberDirectoryPanel canReadWorkspaces={false} canWriteBilling={false} />;
-const drawer = (id = "alice") => (
+const drawer = (id = "alice", canWrite = false) => (
   <MemberWorkspacesDrawer
     member={{ userId: id, nickName: id, email: null, phone: null }}
-    canWrite={false}
+    canWrite={canWrite}
     onClose={() => undefined}
   />
 );
@@ -185,3 +185,46 @@ it("cancels chained owner lookup when selecting another member", async () => {
   expect(container.textContent).not.toContain("Old owner");
   expect(container.textContent).not.toContain("Saved workspace");
 });
+
+it("distinguishes a failed workspace read from empty membership and retries it", async () => {
+  fetchMock.mockRejectedValueOnce(new Error("Workspace read unavailable"));
+  await render(drawer());
+  expect(container.textContent).toContain("Workspace read unavailable");
+  expect(container.textContent).not.toContain("该用户没有任何工作区");
+  fetchMock
+    .mockResolvedValueOnce(response({ items: [workspace] }))
+    .mockResolvedValueOnce(response({ items: [] }));
+  const retry = [...container.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Retry")
+  )!;
+  await act(async () => retry.click());
+  expect(container.textContent).toContain("Saved workspace");
+  expect(container.textContent).not.toContain("Workspace read unavailable");
+  expect(
+    fetchMock.mock.calls.every(([, options]) => !options.method || options.method === "GET")
+  ).toBe(true);
+});
+
+vi.mock("./workspace-grant-dialog", () => ({
+  WorkspaceGrantDialog: () => <div role="dialog">Credit adjustment</div>,
+}));
+vi.mock("./grant-membership-dialog", () => ({
+  GrantMembershipDialog: () => <div role="dialog">Membership adjustment</div>,
+}));
+it.each(["调整积分", "工作区会员"])(
+  "closes %s when selecting a different member",
+  async (label) => {
+    fetchMock
+      .mockResolvedValueOnce(response({ items: [workspace] }))
+      .mockResolvedValueOnce(response({ items: [] }));
+    await render(drawer("alice", true));
+    const button = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === label
+    )!;
+    await act(async () => button.click());
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    fetchMock.mockResolvedValueOnce(response({ items: [] }));
+    await render(drawer("bob", true));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  }
+);
