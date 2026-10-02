@@ -159,6 +159,17 @@ function Session({ workspace, generation, onClose }: Props) {
       if (current()) setBusy(false);
     }
   }
+  function applyProject(project: PlatformProject) {
+    setForm({ project });
+    setLoaded((previous) =>
+      previous?.rows
+        ? {
+            ...previous,
+            rows: previous.rows.map((row) => (row.id === project.id ? project : row)),
+          }
+        : previous
+    );
+  }
   async function cover(action: "upload" | "remove" | "refresh") {
     if (
       !form?.project ||
@@ -197,7 +208,7 @@ function Session({ workspace, generation, onClose }: Props) {
           generation,
           c.signal
         );
-        if (current()) setForm({ project });
+        if (current()) applyProject(project);
       }
     } catch (e) {
       if (current()) {
@@ -280,7 +291,7 @@ function Session({ workspace, generation, onClose }: Props) {
             disabled={busy}
             onPress={() => {
               if (!active || !current() || lock.current) return;
-              setForm({ project: detailReview });
+              applyProject(detailReview);
               setDetailReview(undefined);
               setDetailRecovery(false);
               setUncertainAt(undefined);

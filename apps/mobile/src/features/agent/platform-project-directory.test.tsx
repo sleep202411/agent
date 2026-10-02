@@ -335,3 +335,39 @@ it("requires another refresh after leaving an unaccepted review in the backgroun
   await click("studioProjects.discard");
   expect(button("studioProjects.create")!.disabled).toBe(false);
 });
+
+it("reopens the confirmed cover and version after closing details with unsaved text", async () => {
+  const confirmed = { ...row, version: row.version + 1, coverAssetId: id };
+  h.upload.mockResolvedValue(id);
+  h.cover.mockResolvedValue(confirmed);
+  await render();
+  await click("studioProjects.details");
+  await input(0, "Unsaved title");
+  await click("studioProjects.uploadCover");
+  await click("studioProjects.discard");
+  await click("studioProjects.details");
+  expect(host.querySelector("input")!.value).toBe(row.name);
+  expect(button("studioProjects.removeCover")).toBeDefined();
+  h.cover.mockResolvedValue({ ...confirmed, version: confirmed.version + 1, coverAssetId: null });
+  await click("studioProjects.removeCover");
+  expect(h.cover).toHaveBeenLastCalledWith(confirmed, null, 1, expect.any(AbortSignal));
+  await click("studioProjects.discard");
+  await click("studioProjects.details");
+  expect(button("studioProjects.removeCover")).toBeUndefined();
+});
+it("keeps accepted refreshed metadata and permissions when reopening details", async () => {
+  const fresh = { ...row, name: "Renamed on Web", role: "viewer", version: row.version + 1 };
+  h.read.mockResolvedValue(fresh);
+  await render();
+  await click("studioProjects.details");
+  await input(0, "Local title");
+  await click("studioProjects.refreshDetails");
+  await click("studioProjects.reviewed");
+  expect(host.querySelector("input")!.value).toBe("Local title");
+  await click("studioProjects.discard");
+  await click("studioProjects.details");
+  expect(host.querySelector("input")!.value).toBe("Renamed on Web");
+  expect(button("studioProjects.save")).toBeUndefined();
+  expect(button("studioProjects.uploadCover")).toBeUndefined();
+  expect(h.update).not.toHaveBeenCalled();
+});
