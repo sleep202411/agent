@@ -693,6 +693,8 @@
   "ipDetail.memberOnlyBody": "This content is for community members.",
   "ipDetail.memberOnlyWebBody": "This content is for community members. Community membership is purchased on the FizzDragon website.",
   "ipDetail.pendingUnlock": "Unlocks later",
+  "ipDetail.checkingAccess": "Checking viewing options…",
+  "ipDetail.accessChanged": "Viewing options have changed. Select the episode again to review them.",
   "ipDetail.accessCheckFailed": "Unable to check episode access. Retry to load viewing and unlock options.",
   "common.retry": "Retry",
   "agent.open": "Open assistant",

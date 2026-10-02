@@ -1,6 +1,6 @@
 import { IpContributingStudios } from "@/features/studios/ip-contributing-studios";
 import { resolvePlan, type UnlockPlan } from "@/features/content-gps/episode-access";
-import { loadPlaybackDetail } from "@/features/content-gps/load-playback-detail";
+import { usePlaybackDetail } from "@/features/content-gps/use-playback-detail";
 import { resolvePlaybackEntry } from "@/features/content-gps/playback-entry";
 import { BookmarkControl } from "@/features/ip-collection/bookmark-control";
 import { IpTags } from "@/features/browse/ip-tags";
@@ -49,7 +49,7 @@ import {
   unlikeIp,
   type IpReportReason,
 } from "@/data/browse-service";
-import type { IpAccess, IpDetail, IpEngagementSnapshot, IpEpisode, Person } from "@/data/types";
+import type { IpEngagementSnapshot, IpEpisode, Person } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
@@ -121,48 +121,28 @@ function IpDetailSession() {
   const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
   const viewedIpRef = useRef<string | null>(null);
-  const [ip, setIp] = useState<IpDetail>();
-  // Per-viewer access + community-point balance + prices (authoritative unlock state).
-  const [access, setAccess] = useState<IpAccess>();
-  const aliveRef = useRef(true);
-  const [accessError, setAccessError] = useState<string | null>(null);
-  const [accessBusy, setAccessBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const active = useScreenActive();
+  const {
+    ip,
+    setIp,
+    access,
+    accessError,
+    accessBusy,
+    loading,
+    playing,
+    setPlaying,
+    refresh,
+    aliveRef,
+    revision,
+    isCurrent,
+  } = usePlaybackDetail(id, watch, episode, active);
   const unlockBusyRef = useRef(false);
   const [unlocking, setUnlocking] = useState(false);
   const [likeBusy, setLikeBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [playing, setPlaying] = useState<{ url: string; title: string; episodeId?: string }>();
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    aliveRef.current = true;
-    async function load() {
-      setLoading(true);
-      try {
-        // Detail carries the episode list + (once entitled) the video URLs;
-        // access carries per-viewer unlock state, prices and the point balance.
-        const { detail, access: acc, accessError } = await loadPlaybackDetail(id);
-        if (!alive) return;
-        setIp(detail);
-        setAccess(acc);
-        setAccessError(accessError);
-        setPlaying(detail ? resolvePlaybackEntry(detail, acc, watch, episode) : undefined);
-      } catch {
-        if (alive) setIp(undefined);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }
-    void load();
-    return () => {
-      alive = false;
-      aliveRef.current = false;
-    };
-  }, [id, watch, episode]);
 
   const applyEngagement = useCallback(
     (ipId: string, engagement: IpEngagementSnapshot | undefined) => {
@@ -179,7 +159,7 @@ function IpDetailSession() {
           : current
       );
     },
-    [locale]
+    [locale, setIp]
   );
 
   useEffect(() => {
@@ -201,36 +181,8 @@ function IpDetailSession() {
     };
   }, [applyEngagement, ip?.id]);
 
-  // Re-pull detail + access after an unlock (media URL appears; balance drops).
-  // Returns both so the caller can auto-play the episode + read the fresh balance
-  // without waiting on a state-update tick.
-  const refreshAfterUnlock = useCallback(async (): Promise<{
-    detail: IpDetail | undefined;
-    access: IpAccess | undefined;
-  }> => {
-    const { detail, access: acc, accessError } = await loadPlaybackDetail(id);
-    if (!aliveRef.current) return { detail: undefined, access: undefined };
-    setIp(detail);
-    setAccess(acc);
-    setAccessError(accessError);
-    return { detail, access: acc };
-  }, [id]);
-
-  const retryAccess = async () => {
-    if (accessBusy || unlocking) return;
-    setAccessBusy(true);
-    setAccess(undefined);
-    setPlaying(undefined);
-    try {
-      const { detail, access: acc } = await refreshAfterUnlock();
-      if (aliveRef.current && detail) {
-        setPlaying(resolvePlaybackEntry(detail, acc, watch, episode));
-      }
-    } catch (error) {
-      if (aliveRef.current) setAccessError(error instanceof Error ? error.message : "");
-    } finally {
-      if (aliveRef.current) setAccessBusy(false);
-    }
+  const retryAccess = () => {
+    if (!accessBusy && !unlocking) void refresh(true);
   };
 
   if (loading) {
@@ -245,10 +197,25 @@ function IpDetailSession() {
     return (
       <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
         <EmptyState
-          title={t("ipDetail.notFoundTitle")}
-          detail={t("ipDetail.notFoundDetail")}
+          title={t(accessError !== null ? "ipDetail.accessCheckFailed" : "ipDetail.notFoundTitle")}
+          detail={
+            accessError ||
+            t(accessError !== null ? "ipDetail.accessCheckFailed" : "ipDetail.notFoundDetail")
+          }
           symbol={{ ios: "film", android: "movie", web: "movie" }}
         />
+        {accessError !== null && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={accessBusy}
+            onPress={retryAccess}
+            style={{ minHeight: 44, justifyContent: "center" }}
+          >
+            <ThemedText type="smallBold" style={{ color: theme.brand }}>
+              {t("common.retry")}
+            </ThemedText>
+          </Pressable>
+        )}
       </ThemedView>
     );
   }
@@ -298,7 +265,15 @@ function IpDetailSession() {
     `${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`;
 
   // Tap action for an episode, against the current access snapshot.
-  const runPurchase = async (plan: Extract<UnlockPlan, { kind: "buy" }>, episode: IpEpisode) => {
+  const runPurchase = async (
+    plan: Extract<UnlockPlan, { kind: "buy" }>,
+    episode: IpEpisode,
+    version: number
+  ) => {
+    if (!isCurrent(version)) {
+      if (isCurrent(revision.current)) Alert.alert(t("ipDetail.accessChanged"));
+      return;
+    }
     if (unlockBusyRef.current || !aliveRef.current) return;
     unlockBusyRef.current = true;
     setUnlocking(true);
@@ -310,14 +285,10 @@ function IpDetailSession() {
         priceRuleId: plan.priceRuleId,
       });
       if (!aliveRef.current) return;
-      setAccess(undefined);
-      // The purchase succeeded. A failed refresh is a read-recovery action,
-      // not a failed purchase that should be submitted again.
-      const refreshed = await refreshAfterUnlock().catch((error: unknown) => {
-        if (aliveRef.current) setAccessError(error instanceof Error ? error.message : "");
-        return undefined;
-      });
-      if (!refreshed || !aliveRef.current) return;
+      // Successful writes are followed by a read, never automatically replayed.
+      // A background completion is reconciled by the next foreground read.
+      const refreshed = await refresh();
+      if (!refreshed) return;
       const { detail, access: acc } = refreshed;
       // The just-unlocked episode's media URL now resolves — start playback.
       const fresh = detail?.episodes.find((e) => e.id === episode.id);
@@ -353,6 +324,7 @@ function IpDetailSession() {
       promptCommunityPaywall();
       return;
     }
+    const version = revision.current;
     const unit = t("ipDetail.pointsUnit");
     const lines = [`${t("ipDetail.unlockSpend")}${formatPoints(plan.points, locale)} ${unit}`];
     if (balance != null) {
@@ -362,7 +334,7 @@ function IpDetailSession() {
       plan.targetType === "ip" ? t("ipDetail.unlockAllTitle") : t("ipDetail.unlockConfirmTitle");
     Alert.alert(title, lines.join("\n"), [
       { text: t("report.cancel"), style: "cancel" },
-      { text: t("ipDetail.unlock"), onPress: () => void runPurchase(plan, episode) },
+      { text: t("ipDetail.unlock"), onPress: () => void runPurchase(plan, episode, version) },
     ]);
   };
 
@@ -686,7 +658,14 @@ function IpDetailSession() {
                   </ThemedText>
                 </View>
               ) : null}
-              {accessError !== null || ip.episodes.some((item) => !access?.episodes[item.id]) ? (
+              {accessBusy ? (
+                <View style={{ flexDirection: "row", gap: Spacing.two, alignItems: "center" }}>
+                  <ActivityIndicator color={theme.textSecondary} />
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {t("ipDetail.checkingAccess")}
+                  </ThemedText>
+                </View>
+              ) : accessError !== null || ip.episodes.some((item) => !access?.episodes[item.id]) ? (
                 <View style={{ gap: Spacing.two }}>
                   <ThemedText type="small" themeColor="textSecondary" accessibilityRole="alert">
                     {accessError || t("ipDetail.accessCheckFailed")}
@@ -701,7 +680,6 @@ function IpDetailSession() {
                       {t("common.retry")}
                     </ThemedText>
                   </Pressable>
-                  {accessBusy ? <ActivityIndicator color={theme.textSecondary} /> : null}
                 </View>
               ) : null}
               <ScrollView

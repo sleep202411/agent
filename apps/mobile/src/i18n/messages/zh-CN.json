@@ -693,6 +693,8 @@
   "ipDetail.memberOnlyBody": "该内容仅社区会员可观看。",
   "ipDetail.memberOnlyWebBody": "该内容仅社区会员可观看。社区会员请到 FizzDragon 网页端开通。",
   "ipDetail.pendingUnlock": "待解锁",
+  "ipDetail.checkingAccess": "正在检查观看选项…",
+  "ipDetail.accessChanged": "观看选项已更新。请重新选择剧集以查看。",
   "ipDetail.accessCheckFailed": "无法检查剧集观看权限。请重试以加载观看和解锁选项。",
   "common.retry": "重试",
   "agent.open": "打开创作",
