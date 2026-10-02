@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -11,10 +10,9 @@ import {
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
-import { loadStoryScriptSnapshot } from "@/features/agent/api/story-production-api";
+import { useScriptSnapshot } from "@/features/agent/hooks/use-script-snapshot";
 import { StoryScreenplayView } from "@/features/agent/components/story-screenplay-view";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
-import { scriptDocumentToMarkdown } from "@/features/agent/lib/parse-script-snapshot";
 import { STORY_HEADER_CONTENT_GAP } from "@/features/agent/lib/story-tab-bar";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
@@ -31,49 +29,13 @@ export default function AgentScriptScreen() {
     chapterId,
     loading: chapterLoading,
     error: chapterError,
+    refresh: refreshChapter,
   } = useStoryChapterContext();
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | undefined>();
-  const [markdown, setMarkdown] = useState("");
-
-  const resourceKey = `${projectId}:${chapterId}`;
-  const [previousResourceKey, setPreviousResourceKey] = useState(resourceKey);
-  if (previousResourceKey !== resourceKey) {
-    setPreviousResourceKey(resourceKey);
-    setLoading(true);
-    setError(undefined);
-  }
-
-  const loadScript = useCallback(
-    (signal?: AbortSignal) => {
-      if (!chapterId) return;
-      return loadStoryScriptSnapshot(projectId, chapterId, signal)
-        .then((result) => {
-          if (signal?.aborted) return;
-          setMarkdown(scriptDocumentToMarkdown({ contentSnapshot: result.contentSnapshot }));
-          setError(undefined);
-        })
-        .catch((err: unknown) => {
-          if (signal?.aborted) return;
-          setMarkdown("");
-          setError(err instanceof Error ? err.message : String(err));
-        })
-        .finally(() => {
-          if (signal?.aborted) return;
-          setLoading(false);
-          setRefreshing(false);
-        });
-    },
-    [chapterId, projectId]
+  const { markdown, loading, error, refresh } = useScriptSnapshot(
+    projectId,
+    chapterId,
+    !chapterLoading && !chapterError
   );
-
-  useEffect(() => {
-    if (!chapterId || chapterLoading) return;
-    const controller = new AbortController();
-    void loadScript(controller.signal);
-    return () => controller.abort();
-  }, [chapterId, chapterLoading, loadScript]);
 
   const topPad = STORY_HEADER_CONTENT_GAP;
   const busy = chapterLoading || loading;
@@ -86,14 +48,7 @@ export default function AgentScriptScreen() {
         contentInsetAdjustmentBehavior="never"
         refreshControl={
           chapterId ? (
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                void loadScript();
-              }}
-              tintColor={theme.brand}
-            />
+            <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={theme.brand} />
           ) : undefined
         }
         contentContainerStyle={[
@@ -116,9 +71,9 @@ export default function AgentScriptScreen() {
         {!busy && displayError ? (
           <View style={styles.centered}>
             <ThemedText type="small" themeColor="textSecondary" style={styles.errorText}>
-              {t("agent.script.openError")}
+              {displayError}
             </ThemedText>
-            <Pressable onPress={() => void loadScript()} hitSlop={8}>
+            <Pressable onPress={chapterError ? refreshChapter : refresh} hitSlop={8}>
               <ThemedText type="small" themeColor="textSecondary">
                 {t("common.retry")}
               </ThemedText>
