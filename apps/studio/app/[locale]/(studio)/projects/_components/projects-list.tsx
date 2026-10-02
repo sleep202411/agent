@@ -78,8 +78,8 @@ export function ProjectsList() {
       await refresh();
       setRenaming((current) => (current === renaming ? null : current));
       toast.success(tp("projectRenamed"));
-    } catch {
-      toast.error(tp("renameFailed"));
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : tp("renameFailed"));
     } finally {
       setBusy(false);
     }
@@ -93,8 +93,8 @@ export function ProjectsList() {
       await refresh();
       setDeleting((current) => (current === deleting ? null : current));
       toast.success(tp("projectDeleted"));
-    } catch {
-      toast.error(tp("deleteFailed"));
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : tp("deleteFailed"));
     } finally {
       setBusy(false);
     }

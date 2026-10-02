@@ -135,10 +135,12 @@ export function CanvasProjectsGrid() {
         ...(initialDescription ? { description: initialDescription } : {}),
       });
       router.push(`/project/${project.id}`);
-    } catch {
+    } catch (error) {
       creatingRef.current = false;
       setCreating(false);
-      toast.error(t("createCanvasFailed"));
+      toast.error(
+        error instanceof Error && error.message ? error.message : t("createCanvasFailed")
+      );
     }
   }, [router, workspaceId, initialDescription, t, ts]);
 

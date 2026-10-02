@@ -6,13 +6,13 @@ import { useAudioGeneration } from "../../_components/generation/use-image-gener
 import {
   FailedTile,
   FeedEmptyState,
+  FeedHistoryError,
   FeedLoadingState,
   PendingTile,
 } from "../../_components/generation/feed-tiles";
 
 export function AudioStudio() {
   const t = useTranslations("studioModes");
-  const tc = useTranslations("common");
   const tg = useTranslations("generation");
   const gen = useAudioGeneration();
   const { feed, model } = gen;
@@ -21,16 +21,7 @@ export function AudioStudio() {
       <section className="mt-6 space-y-4">
         <p className="text-xs text-muted-foreground">{t("audio.feedSubheading")}</p>
         {feed.historyError ? (
-          <div role="alert" className="text-sm text-destructive">
-            <p>{feed.historyError}</p>
-            <button
-              type="button"
-              onClick={() => void feed.refreshHistory()}
-              className="mt-2 underline"
-            >
-              {tc("retry")}
-            </button>
-          </div>
+          <FeedHistoryError error={feed.historyError} onRetry={() => void feed.refreshHistory()} />
         ) : null}
         {feed.historyLoading && !feed.jobs.length ? (
           <FeedLoadingState />
