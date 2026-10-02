@@ -117,3 +117,21 @@ it.each([401, 403])(
     expect(h.load.mock.calls[3][1]).toBe("next");
   }
 );
+
+it("does not restore stale rows while revalidating a return visit", async () => {
+  let finish!: (value: unknown) => void;
+  h.load.mockResolvedValueOnce({ items: [item], nextCursor: null }).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render("1");
+  expect(host.textContent).toContain("First");
+  await render();
+  await render("1");
+  expect(host.textContent).not.toContain("First");
+  await act(async () => finish({ items: [], nextCursor: null }));
+  expect(host.textContent).not.toContain("First");
+  expect(h.load).toHaveBeenCalledTimes(2);
+});

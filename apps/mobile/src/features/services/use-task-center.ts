@@ -32,6 +32,12 @@ export function useTaskCenter(active: boolean, generation: number, filters: Cent
   const key = JSON.stringify([owner, filters, revision]);
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
+  const [snapshotScope, setSnapshotScope] = useState(key);
+  // Returning to an earlier scope requires a fresh response, not its old snapshot.
+  if (snapshotScope !== key) {
+    setSnapshotScope(key);
+    setSnapshot(undefined);
+  }
   const load = useCallback(
     async (session: Session, refresh = false) => {
       if (session.busy || (!refresh && !session.more) || session.abort.signal.aborted) return;
