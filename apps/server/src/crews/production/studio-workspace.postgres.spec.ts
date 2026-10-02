@@ -351,6 +351,15 @@ const url = workspaceTestDatabase(process.env);
           crewId,
           userId: crewOnly,
           joinedVia: 'invitation',
+          // Otherwise linked Studio membership independently grants workspace
+          // access, even after the explicit Crew asset reference is removed.
+          permissionOverrides: {
+            create: {
+              permissionKey: 'studio.view',
+              effect: 'deny',
+              changedByUserId: owner,
+            },
+          },
         },
       });
       const mediaAccess = new MediaAccessService(
