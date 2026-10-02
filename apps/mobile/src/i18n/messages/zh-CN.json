@@ -3517,6 +3517,7 @@
   "aiLab.reset": "重置设置",
   "aiLab.historyLimit": "所选媒体类型的最近 80 项任务。",
   "aiLab.empty": "暂无生成任务。",
+  "aiLab.saveResult": "保存 / 分享结果",
   "aiLab.openResult": "打开结果",
   "aiLab.invalidUrl": "此结果的链接不受支持。",
   "aiLab.cancel": "取消生成",

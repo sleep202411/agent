@@ -1,3 +1,4 @@
+import { saveOutput } from "./save-output";
 import {
   loadProjectSkills,
   skillRows,
@@ -1104,6 +1105,20 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                   {result.type === "audio" && /^https?:\/\//i.test(result.url) ? (
                     <ConversationAudio url={result.url} />
                   ) : null}
+                  <Button
+                    label={t("aiLab.saveResult")}
+                    disabled={op.busy}
+                    onPress={() =>
+                      run(async () => {
+                        const signal = controller.current!.signal;
+                        await saveOutput(
+                          result,
+                          signal,
+                          () => !signal.aborted && generation === getAuthGeneration()
+                        );
+                      })
+                    }
+                  />
                   <Button
                     label={t("aiLab.openResult")}
                     onPress={() =>

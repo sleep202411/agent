@@ -3517,6 +3517,7 @@
   "aiLab.reset": "Reset settings",
   "aiLab.historyLimit": "Latest 80 jobs for the selected media type.",
   "aiLab.empty": "No generation jobs yet.",
+  "aiLab.saveResult": "Save / share result",
   "aiLab.openResult": "Open result",
   "aiLab.invalidUrl": "This result has an unsupported URL.",
   "aiLab.cancel": "Cancel generation",
