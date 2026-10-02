@@ -6608,7 +6608,7 @@
     "confirm": "Confirm",
     "overview": "Overview",
     "education": "Education",
-    "educationEmpty": "No education info yet. Click \"Edit profile\" to add your study history (one entry per line).",
+    "educationEmpty": "Add your education history.",
     "experience": "Experience",
     "experienceEmpty": "No work experience yet.",
     "addExperience": "Add experience",

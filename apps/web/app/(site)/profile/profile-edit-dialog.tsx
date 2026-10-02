@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { IconCamera, IconCheck, IconLoader2, IconPlus, IconTrash } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -38,15 +38,30 @@ const blankEducation = (): EducationEntry => ({
   endDate: "",
 });
 
-export function ProfileEditDialog({ open, onOpenChange, userInfo }: ProfileEditDialogProps) {
+export function ProfileEditDialog(props: ProfileEditDialogProps) {
+  return <ProfileEditSession key={JSON.stringify([props.open, props.userInfo?.id])} {...props} />;
+}
+
+function ProfileEditSession({ open, onOpenChange, userInfo }: ProfileEditDialogProps) {
   const t = useTranslations("profile");
   const tc = useTranslations("common");
 
-  const [nickName, setNickName] = useState("");
-  const [contact, setContact] = useState("");
-  const [description, setDescription] = useState("");
-  const [other, setOther] = useState("");
-  const [education, setEducation] = useState<EducationEntry[]>([]);
+  // Snapshot fields for this editing session. Avatar/query refreshes must not
+  // replace unsaved text; reopening or switching accounts starts a fresh draft.
+  const [nickName, setNickName] = useState(userInfo?.nickName ?? "");
+  const [contact, setContact] = useState(userInfo?.contact ?? "");
+  const [description, setDescription] = useState(userInfo?.description ?? "");
+  const [other, setOther] = useState(userInfo?.other ?? "");
+  const [education, setEducation] = useState<EducationEntry[]>(() =>
+    parseEducation(userInfo?.study)
+  );
+  const active = useRef(open);
+  useLayoutEffect(() => {
+    active.current = open;
+    return () => {
+      active.current = false;
+    };
+  }, [open]);
 
   const { mutate: updateProfile, isPending } = useUpdateUserInfo();
   const uploadAvatar = useUploadAvatar();
@@ -70,22 +85,13 @@ export function ProfileEditDialog({ open, onOpenChange, userInfo }: ProfileEditD
     }
     try {
       await uploadAvatar.mutateAsync(file);
-      toast.success(t("avatarUpdated"));
+      if (active.current) toast.success(t("avatarUpdated"));
     } catch (err) {
+      if (!active.current) return;
       const msg = err instanceof Error ? err.message : "";
       toast.error(msg || t("avatarUploadFailed"));
     }
   };
-
-  // Sync form when dialog opens
-  useEffect(() => {
-    if (!open) return;
-    setNickName(userInfo?.nickName ?? "");
-    setContact(userInfo?.contact ?? "");
-    setDescription(userInfo?.description ?? "");
-    setOther(userInfo?.other ?? "");
-    setEducation(parseEducation(userInfo?.study));
-  }, [open, userInfo]);
 
   const updateEducation = (i: number, patch: Partial<EducationEntry>) => {
     setEducation((prev) => prev.map((entry, idx) => (idx === i ? { ...entry, ...patch } : entry)));
@@ -95,6 +101,7 @@ export function ProfileEditDialog({ open, onOpenChange, userInfo }: ProfileEditD
   const removeEducation = (i: number) => setEducation((prev) => prev.filter((_, idx) => idx !== i));
 
   const handleSave = () => {
+    if (isPending || !active.current) return;
     if (!nickName.trim()) {
       toast.warning(t("nicknameRequired"));
       return;
@@ -109,11 +116,13 @@ export function ProfileEditDialog({ open, onOpenChange, userInfo }: ProfileEditD
       },
       {
         onSuccess: () => {
+          if (!active.current) return;
           toast.success(t("updateSuccess"));
           onOpenChange(false);
         },
-        onError: () => {
-          toast.error(t("updateFailed"));
+        onError: (error) => {
+          if (!active.current) return;
+          toast.error(error instanceof Error && error.message ? error.message : t("updateFailed"));
         },
       }
     );

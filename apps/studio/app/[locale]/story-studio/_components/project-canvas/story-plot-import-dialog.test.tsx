@@ -194,4 +194,32 @@ describe("plot import dialog", () => {
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(button("Import plot tree").disabled).toBe(false);
   });
+  it.each(["resolve", "reject"])(
+    "ignores a previous import's late %s after reopening",
+    async (outcome) => {
+      let resolve!: () => void;
+      let reject!: (error: Error) => void;
+      onImport.mockImplementation(
+        () =>
+          new Promise<void>((yes, no) => {
+            resolve = yes;
+            reject = no;
+          })
+      );
+      await choose(valid);
+      await act(async () => button("Import plot tree").click());
+      const close = document.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]')!;
+      await act(async () => close.click());
+      await act(async () => button("Import Plot Tree").click());
+      await choose(valid);
+      await act(async () =>
+        outcome === "resolve" ? resolve() : reject(new Error("Old import failed"))
+      );
+      await settle();
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      expect(button("Import plot tree").disabled).toBe(false);
+      expect(document.body.textContent).toContain("plot.json");
+    }
+  );
 });
