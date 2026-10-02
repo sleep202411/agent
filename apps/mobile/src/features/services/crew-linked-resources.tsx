@@ -5,6 +5,7 @@ import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTranslations } from "@/i18n";
+import { ApiRequestError } from "@/lib/api-client";
 import { toHref } from "@/lib/navigation";
 import {
   fetchLinkedFilms,
@@ -160,8 +161,11 @@ function Films({
   const [cursor, setCursor] = useState<string | null>(null),
     [revision, setRevision] = useState(0);
   const [result, setResult] = useState<Result<Awaited<ReturnType<typeof fetchLinkedFilms>>>>();
+  const [items, setItems] = useState<Awaited<ReturnType<typeof fetchLinkedFilms>>["items"]>([]);
   const records = useRef<Awaited<ReturnType<typeof fetchLinkedFilms>>["items"]>([]);
   const seen = useRef(new Set<string>());
+  const pending = useRef(true);
+  const restart = useRef(false);
   useEffect(() => {
     const c = new AbortController();
     void fetchLinkedFilms(workspaceId, ipId, cursor, generation, c.signal)
@@ -174,38 +178,51 @@ function Films({
           throw Error("Linked film pagination changed. Refresh to reload.");
         if (cursor) seen.current.add(cursor);
         records.current = [...records.current, ...data.items];
+        setItems(records.current);
         setResult({ data: { ...data, items: records.current } });
       })
       .catch((e) => {
-        if (!c.signal.aborted) setResult({ error: String(e instanceof Error ? e.message : e) });
+        if (!c.signal.aborted) {
+          if (e instanceof ApiRequestError && [401, 403, 404].includes(e.status)) {
+            records.current = [];
+            setItems([]);
+            seen.current.clear();
+            restart.current = true;
+          }
+          setResult({ error: String(e instanceof Error ? e.message : e) });
+        }
+      })
+      .finally(() => {
+        if (!c.signal.aborted) pending.current = false;
       });
     return () => c.abort();
   }, [workspaceId, ipId, cursor, generation, revision]);
   return (
     <View style={{ gap: 8 }}>
+      {items.map((film) => (
+        <Pressable
+          key={film.id}
+          accessibilityRole="button"
+          style={{ minHeight: 44, paddingVertical: 12 }}
+          onPress={() => router.push(toHref(`/agent/${encodeURIComponent(film.id)}`))}
+        >
+          <ThemedText>{film.title}</ThemedText>
+        </Pressable>
+      ))}
       {!result ? (
         <ActivityIndicator />
       ) : result.error ? (
         <ThemedText accessibilityRole="alert">{result.error}</ThemedText>
-      ) : result.data?.items.length ? (
-        result.data.items.map((film) => (
-          <Pressable
-            key={film.id}
-            accessibilityRole="button"
-            style={{ minHeight: 44, paddingVertical: 12 }}
-            onPress={() => router.push(toHref(`/agent/${encodeURIComponent(film.id)}`))}
-          >
-            <ThemedText>{film.title}</ThemedText>
-          </Pressable>
-        ))
-      ) : (
+      ) : !items.length ? (
         <ThemedText>{t("crewLinks.none")}</ThemedText>
-      )}
+      ) : null}
       {result?.data?.nextCursor ? (
         <Pressable
           accessibilityRole="button"
           style={{ minHeight: 44, paddingVertical: 12 }}
           onPress={() => {
+            if (pending.current) return;
+            pending.current = true;
             setCursor(result.data.nextCursor);
             setResult(undefined);
           }}
@@ -218,6 +235,12 @@ function Films({
           accessibilityRole="button"
           style={{ minHeight: 44, paddingVertical: 12 }}
           onPress={() => {
+            if (pending.current) return;
+            pending.current = true;
+            if (restart.current) {
+              setCursor(null);
+              restart.current = false;
+            }
             setResult(undefined);
             setRevision((v) => v + 1);
           }}

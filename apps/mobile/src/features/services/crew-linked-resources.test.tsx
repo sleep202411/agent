@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { ApiRequestError } from "@/lib/api-client";
 import { CrewLinkedResources } from "./crew-linked-resources";
 const h = vi.hoisted(() => ({
   status: "authenticated",
@@ -9,6 +10,18 @@ const h = vi.hoisted(() => ({
   ips: vi.fn(),
   workspace: vi.fn(),
   films: vi.fn(),
+  push: vi.fn(),
+}));
+vi.mock("@/lib/api-client", () => ({
+  ApiRequestError: class extends Error {
+    constructor(
+      public code: string,
+      message: string,
+      public status: number
+    ) {
+      super(message);
+    }
+  },
 }));
 vi.mock("./crew-linked-resources-api", () => ({
   fetchLinkedIps: h.ips,
@@ -21,7 +34,7 @@ vi.mock("@/auth", () => ({
 }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
-vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/lib/navigation", () => ({ toHref: (p: string) => p }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -91,4 +104,64 @@ it("keeps public IPs usable when workspace access fails", async () => {
   expect(host.textContent).toContain("crewLinks.openIp");
   expect(host.textContent).toContain("Access denied");
   expect(h.films).not.toHaveBeenCalled();
+});
+
+it("keeps loaded films usable while another page fails and retries the same page", async () => {
+  let rejectPage!: (error: Error) => void;
+  h.films
+    .mockResolvedValueOnce({ items: [{ id: "first", title: "First film" }], nextCursor: "page2" })
+    .mockReturnValueOnce(
+      new Promise((_, reject) => {
+        rejectPage = reject;
+      })
+    )
+    .mockResolvedValueOnce({ items: [{ id: "last", title: "Last film" }], nextCursor: null });
+  await render();
+  await click("crewLinks.title");
+  await click("crewLinks.more");
+  expect(host.textContent).toContain("First film");
+  expect(host.textContent).toContain("loading");
+  await click("First film");
+  expect(h.push).toHaveBeenCalledWith("/agent/first");
+  await act(async () => rejectPage(new Error("Film page offline")));
+  expect(host.textContent).toContain("First film");
+  expect(host.textContent).toContain("Film page offline");
+  await click("common.retry");
+  expect(h.films.mock.calls.map((args) => args[2])).toEqual([null, "page2", "page2"]);
+  expect(host.textContent).toContain("First film");
+  expect(host.textContent).toContain("Last film");
+  await click("Last film");
+  expect(h.push).toHaveBeenLastCalledWith("/agent/last");
+});
+it.each([401, 403, 404])("clears loaded films after access is lost (%s)", async (status) => {
+  h.films
+    .mockResolvedValueOnce({ items: [{ id: "first", title: "First film" }], nextCursor: "page2" })
+    .mockRejectedValueOnce(new ApiRequestError("UNAVAILABLE", "Access unavailable", status))
+    .mockResolvedValueOnce({
+      items: [{ id: "recovered", title: "Recovered film" }],
+      nextCursor: null,
+    });
+  await render();
+  await click("crewLinks.title");
+  await click("crewLinks.more");
+  expect(host.textContent).not.toContain("First film");
+  expect(host.textContent).toContain("Access unavailable");
+});
+it("does not restore a late film page after the section closes", async () => {
+  let finish!: (data: unknown) => void;
+  h.films
+    .mockResolvedValueOnce({ items: [{ id: "first", title: "First film" }], nextCursor: "page2" })
+    .mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+  await render();
+  await click("crewLinks.title");
+  await click("crewLinks.more");
+  const signal = h.films.mock.calls[1][4];
+  await click("crewLinks.title");
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ items: [{ id: "late", title: "Late film" }], nextCursor: null }));
+  expect(host.textContent).not.toContain("Late film");
 });
