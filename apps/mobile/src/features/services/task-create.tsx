@@ -1,3 +1,4 @@
+import { restoreTaskDraftEditor } from "./task-draft-editor-context";
 import { TaskCrewContext } from "./task-crew-context";
 import { assertTaskCreationDeadline, TaskCreationDeadlineError } from "./task-creation-deadline";
 import { TaskCompensationFields } from "./task-compensation-fields";
@@ -54,6 +55,8 @@ export function TaskCreate(props: Props) {
 function Access(props: Props) {
   const active = useScreenActive();
   const t = useTranslations();
+  const [restoredDraft, setRestoredDraft] = useState<Props["initialDraft"]>();
+  const [retry, setRetry] = useState(0);
   const [defaults, setDefaults] = useState<TaskCreationDefaults>();
   const [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>();
@@ -73,6 +76,18 @@ function Access(props: Props) {
         controller.signal
       );
       if (controller.signal.aborted || props.generation !== getAuthGeneration()) return;
+      const draft = props.initialDraft;
+      const restored = draft
+        ? {
+            ...draft,
+            review: {
+              ...draft.review,
+              editor: await restoreTaskDraftEditor(props.crewId, draft, controller.signal),
+            },
+          }
+        : undefined;
+      if (controller.signal.aborted || props.generation !== getAuthGeneration()) return;
+      setRestoredDraft(restored);
       setDefaults(context);
       setAllowed(true);
     })().then(undefined, (cause) => {
@@ -86,15 +101,28 @@ function Access(props: Props) {
     props.generation,
     props.viewId,
     props.initialWorkflow?.id,
-    props.initialDraft?.input.workflowStateId,
+    props.initialDraft,
+    retry,
   ]);
-  if (allowed && defaults) return <Editor {...props} defaults={defaults} />;
+  if (allowed && defaults)
+    return <Editor {...props} initialDraft={restoredDraft} defaults={defaults} />;
   if (!active) return null;
   return (
     <View style={{ padding: 16, gap: 12 }}>
       {allowed === undefined && !error && <ActivityIndicator />}
       {(error || allowed === false) && (
         <ThemedText accessibilityRole="alert">{error ?? t("taskCreate.managerOnly")}</ThemedText>
+      )}
+      {error && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            setError(undefined);
+            setRetry((value) => value + 1);
+          }}
+        >
+          <ThemedText>{t("inbox.retry")}</ThemedText>
+        </Pressable>
       )}
       <Pressable accessibilityRole="button" onPress={props.onClose}>
         <ThemedText>{props.closeLabel ?? t("crewTasks.back")}</ThemedText>

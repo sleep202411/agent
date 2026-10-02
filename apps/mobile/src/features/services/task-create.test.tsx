@@ -803,3 +803,54 @@ it("preserves explicitly cleared draft context and resets context for a new task
     })
   );
 });
+
+it("restores older draft selections after a failed lookup and retry", async () => {
+  const id = "44444444-4444-4444-8444-444444444444";
+  const onStage = vi.fn();
+  h.planning.mockRejectedValueOnce(Error("Options offline"));
+  await act(async () =>
+    root.render(
+      <TaskCreate
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialDraft={{
+          id: 9,
+          kind: "task",
+          state: "staged",
+          input: {
+            title: "Older draft",
+            description: "Keep context",
+            priority: "normal",
+            startAt: null,
+            dueAt: null,
+            parentId: null,
+            blockedByTaskIds: [],
+            assignees: [],
+            episodeId: id,
+            cycleId: id,
+            labelIds: [id],
+            workflowStateId: "33333333-3333-4333-8333-333333333333",
+          },
+          review: { context: [], assignees: [], customFields: [] },
+        }}
+        onStage={onStage}
+        onCreated={h.refresh}
+        onClose={h.refresh}
+      />
+    )
+  );
+  expect(host.textContent).toContain("Options offline");
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => button("inbox.retry")!.click());
+  expect(host.querySelector("input")!.value).toBe("Older draft");
+  await act(async () => button("taskWorkbench.saveDraft")!.click());
+  expect(onStage.mock.calls[0][0]).toMatchObject({
+    episodeId: id,
+    cycleId: id,
+    labelIds: [id],
+    workflowStateId: "33333333-3333-4333-8333-333333333333",
+  });
+  expect(onStage.mock.calls[0][1].editor.planning.episode.id).toBe(id);
+  expect(h.update).not.toHaveBeenCalled();
+});
