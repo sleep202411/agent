@@ -1,3 +1,5 @@
+import { router } from "expo-router";
+import { toHref } from "@/lib/navigation";
 import { CrewTeamInvitations } from "./crew-team-invitations";
 import { CrewOwnershipTransfer } from "./crew-ownership-transfer";
 import { CrewMemberAccess } from "./crew-member-access";
@@ -209,7 +211,20 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{props.title}</ThemedText>
       {canInvite && !error && (
-        <Button label={t("teamInvites.title")} disabled={busy} onPress={() => setInviting(true)} />
+        <>
+          <Button
+            label={t("teamInvites.title")}
+            disabled={busy}
+            onPress={() => setInviting(true)}
+          />
+          <Button
+            label={t("crewLinks.title")}
+            disabled={busy}
+            onPress={() =>
+              router.push(toHref(`/crew-invite-links?crewId=${encodeURIComponent(props.crewId)}`))
+            }
+          />
+        </>
       )}
       {total !== undefined && (
         <ThemedText>

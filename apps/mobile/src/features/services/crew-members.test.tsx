@@ -2,6 +2,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewMembers } from "./crew-members";
+vi.mock("expo-router", () => ({ router: { push: (v: string) => h.push(v) } }));
+vi.mock("@/lib/navigation", () => ({ toHref: (v: string) => v }));
 vi.mock("./crew-team-invitations", () => ({
   CrewTeamInvitations: () => <span>team invitation manager</span>,
 }));
@@ -16,7 +18,7 @@ vi.mock("./crew-member-access", () => ({
     <button onClick={onClose}>close access</button>
   ),
 }));
-const h = vi.hoisted(() => ({ generation: 1, read: vi.fn(), close: vi.fn() }));
+const h = vi.hoisted(() => ({ generation: 1, read: vi.fn(), close: vi.fn(), push: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
 vi.mock("./crew-member-positions", () => ({
@@ -274,4 +276,13 @@ it("opens team invitations only when member-invite access is present", async () 
   )!;
   await act(async () => invite.click());
   expect(host.textContent).toContain("team invitation manager");
+});
+
+it("opens link management only with invite permission and refreshes on return", async () => {
+  await render();
+  expect(button("crewLinks.title")).toBeUndefined();
+  h.read.mockResolvedValue({ items: [member], nextCursor: null, total: 1, canInvite: true });
+  await click("thread.refresh");
+  await click("crewLinks.title");
+  expect(h.push).toHaveBeenCalledWith("/crew-invite-links?crewId=crew");
 });
