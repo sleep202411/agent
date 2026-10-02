@@ -130,6 +130,11 @@ function IpDetailSession() {
     revision,
     isCurrent,
   } = usePlaybackDetail(id, watch, episode, active);
+  // Preserve pending feedback while playback is hidden during an access recheck.
+  const [feedbackEpisodeId, setFeedbackEpisodeId] = useState<string>();
+  if (playing?.episodeId && playing.episodeId !== feedbackEpisodeId) {
+    setFeedbackEpisodeId(playing.episodeId);
+  }
   const unlockBusyRef = useRef(false);
   const [unlocking, setUnlocking] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -455,7 +460,13 @@ function IpDetailSession() {
               {t("contentGpsDiscovery.playbackUnavailable")}
             </ThemedText>
           )}
-          {playing?.episodeId && <EpisodeFeedback ipId={ip.id} episodeId={playing.episodeId} />}
+          {feedbackEpisodeId && (
+            <EpisodeFeedback
+              ipId={ip.id}
+              episodeId={feedbackEpisodeId}
+              visible={playing?.episodeId === feedbackEpisodeId && !accessBusy}
+            />
+          )}
           <IpKnowledgeChat ipId={ip.id} ipTitle={ip.title} />
           <IpGenerationPanel ipId={ip.id} />
           <View style={styles.titleBlock}>
