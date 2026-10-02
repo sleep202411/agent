@@ -86,7 +86,9 @@
     "check-types": "tsc --noEmit",
     "test": "vitest run",
     "build:document-editor": "node scripts/build-document-editor.mjs",
-    "check:document-editor": "node scripts/build-document-editor.mjs --check"
+    "check:document-editor": "node scripts/build-document-editor.mjs --check",
+    "build:discovery-map": "node scripts/build-discovery-map.mjs",
+    "check:discovery-map": "node scripts/build-discovery-map.mjs --check"
   },
   "private": true
 }
