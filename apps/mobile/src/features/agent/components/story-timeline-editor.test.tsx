@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TimelineEditor } from "./story-timeline-editor";
+vi.mock("./story-timeline-export-panel", () => ({ TimelineExportPanel: () => null }));
 vi.mock("./story-timeline-preview", () => ({ TimelinePreview: () => <span>Saved preview</span> }));
 vi.mock("./story-timeline-generation-panel", () => ({
   TimelineGenerationPanel: () => <span>Generation panel</span>,

@@ -4426,5 +4426,14 @@
   "taskDelivery.manage": "修改交付要求",
   "taskDelivery.moreCategories": "更多分类",
   "taskDelivery.saveTemplate": "保存交付要求",
-  "taskDelivery.requirementsLocked": "任务已被接受，交付要求已锁定。请保留此任务约定的模板。"
+  "taskDelivery.requirementsLocked": "任务已被接受，交付要求已锁定。请保留此任务约定的模板。",
+  "timeline.exportTitle": "导出视频",
+  "timeline.exportOmitted": "将跳过 {count} 个片段。",
+  "timeline.exportRendering": "正在渲染 {percent}%",
+  "timeline.exportUploading": "正在上传并保存到项目资产…",
+  "timeline.exportSaved": "视频已保存到项目资产。",
+  "timeline.exportResume": "继续导出上传",
+  "timeline.exportSave": "导出并保存视频",
+  "timeline.exportCancel": "取消导出",
+  "timeline.exportNoVideos": "此时间线没有可导出的视频。"
 }

@@ -8,6 +8,7 @@ import {
   confirmMobileMediaUpload,
   uploadMobileMediaFile,
   type MediaConfirmation,
+  type MobileUploadFile,
 } from "@/lib/media-upload";
 import { uploadTimelineVideo } from "./story-timeline-video-upload";
 import { candidateSchema } from "./story-timeline-media";
@@ -80,7 +81,41 @@ export function timelineUpload(
     pending.clear(checkpoint.clientKey);
     return candidate;
   };
+  const upload = async (input: MobileUploadFile, signal: AbortSignal) => {
+    current(signal);
+    if (pending.read()) throw Error("Finish the pending upload before uploading another file.");
+    const type = z.enum(mime).parse(input.type.toLowerCase());
+    const name = input.name.trim(),
+      size = input.size;
+    if (!name || !input.uri) throw Error("Selected media is unavailable.");
+    const file = { ...input, name, type };
+    const video = type.startsWith("video/");
+    const maxBytes = (video ? 2048 : 30) * 1024 * 1024;
+    if (size !== undefined && (!Number.isSafeInteger(size) || size <= 0 || size > maxBytes))
+      throw Error(
+        `Select a non-empty ${video ? "video no larger than 2 GiB" : "image no larger than 30 MiB"}.`
+      );
+    let saved: TimelineUploadCheckpoint | undefined;
+    const beforeConfirm = (confirmation: MediaConfirmation) => {
+      current(signal);
+      saved = schema.parse({ clientKey: confirmation.storageKey, name, confirmation });
+      pending.save(saved);
+    };
+    const receipt = video
+      ? await uploadTimelineVideo(file, scope, signal, beforeConfirm)
+      : await uploadMobileMediaFile(file, {
+          kind: "ai_reference_image",
+          maxBytes,
+          signal,
+          scope: { storyProjectId: scope.projectId },
+          beforeConfirm,
+        });
+    if (!saved) throw Error("Upload recovery was not saved.");
+    return register(saved, receipt, signal);
+  };
   return {
+    /** Upload an encoder-owned file using the same durable confirmation recovery. */
+    upload,
     read: pending.read,
     clear: pending.clear,
     resume: async (signal: AbortSignal) => {
@@ -107,30 +142,7 @@ export function timelineUpload(
       const name = asset.name.trim(),
         size = asset.file?.size ?? asset.size;
       if (!name || !asset.uri) throw Error("Selected media is unavailable.");
-      const video = type.startsWith("video/");
-      const maxBytes = (video ? 2048 : 30) * 1024 * 1024;
-      if (size !== undefined && (!Number.isSafeInteger(size) || size <= 0 || size > maxBytes))
-        throw Error(
-          `Select a non-empty ${video ? "video no larger than 2 GiB" : "image no larger than 30 MiB"}.`
-        );
-      let saved: TimelineUploadCheckpoint | undefined;
-      const beforeConfirm = (confirmation: MediaConfirmation) => {
-        current(signal);
-        saved = schema.parse({ clientKey: confirmation.storageKey, name, confirmation });
-        pending.save(saved);
-      };
-      const file = { uri: asset.uri, name, type, size };
-      const receipt = video
-        ? await uploadTimelineVideo(file, scope, signal, beforeConfirm)
-        : await uploadMobileMediaFile(file, {
-            kind: "ai_reference_image",
-            maxBytes,
-            signal,
-            scope: { storyProjectId: scope.projectId },
-            beforeConfirm,
-          });
-      if (!saved) throw Error("Upload recovery was not saved.");
-      return register(saved, receipt, signal);
+      return upload({ uri: asset.uri, name, type, size }, signal);
     },
   };
 }

@@ -4426,5 +4426,14 @@
   "taskDelivery.manage": "Change delivery requirements",
   "taskDelivery.moreCategories": "More categories",
   "taskDelivery.saveTemplate": "Save delivery requirements",
-  "taskDelivery.requirementsLocked": "Delivery requirements are locked after work has been accepted. Keep the agreed template for this task."
+  "taskDelivery.requirementsLocked": "Delivery requirements are locked after work has been accepted. Keep the agreed template for this task.",
+  "timeline.exportTitle": "Export video",
+  "timeline.exportOmitted": "{count} clips will be omitted.",
+  "timeline.exportRendering": "Rendering {percent}%",
+  "timeline.exportUploading": "Uploading and saving to project assets…",
+  "timeline.exportSaved": "Video saved to project assets.",
+  "timeline.exportResume": "Resume export upload",
+  "timeline.exportSave": "Export and save video",
+  "timeline.exportCancel": "Cancel export",
+  "timeline.exportNoVideos": "This timeline has no exportable video."
 }

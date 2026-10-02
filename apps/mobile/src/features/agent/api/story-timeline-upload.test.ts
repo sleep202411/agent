@@ -227,3 +227,51 @@ it("restricts asset uploads to images even if a picker returns a video", async (
   expect(h.video).not.toHaveBeenCalled();
   expect(h.upload).not.toHaveBeenCalled();
 });
+
+it("uploads an encoded file without a picker and recovers after a lost registration reply", async () => {
+  const videoConfirmation = {
+    ...confirmation,
+    kind: "ai_reference_video",
+    contentType: "video/mp4",
+  };
+  const videoCandidate = {
+    asset: { ...candidate.asset, kind: "video", contentType: "video/mp4" },
+  };
+  h.video.mockImplementation(async (_file, _scope, _signal, save) => {
+    save(videoConfirmation);
+    return { mediaAssetId };
+  });
+  h.put.mockRejectedValueOnce(Error("Lost registration reply"));
+  const file = { uri: "file:///export.mp4", name: "timeline.mp4", type: "video/mp4", size: 1024 };
+  await expect(timelineUpload(scope, "user", storage).upload(file, signal())).rejects.toThrow(
+    "Lost registration"
+  );
+  const recovered = timelineUpload(scope, "user", storage);
+  await expect(recovered.upload(file, signal())).rejects.toThrow("pending");
+  h.put.mockResolvedValue(videoCandidate);
+  await expect(recovered.resume(signal())).resolves.toEqual(videoCandidate);
+  expect(h.video).toHaveBeenCalledOnce();
+  expect(h.video).toHaveBeenCalledWith(file, scope, expect.any(AbortSignal), expect.any(Function));
+  expect(h.pick).not.toHaveBeenCalled();
+  expect(h.upload).not.toHaveBeenCalled();
+  expect(recovered.read()).toBeNull();
+});
+
+it.each([0, -1, NaN, 2048 * 1024 * 1024 + 1])(
+  "rejects invalid encoded file size %s before transfer",
+  async (size) => {
+    await expect(
+      timelineUpload(scope, "user", storage).upload(
+        {
+          uri: "file:///export.mp4",
+          name: "timeline.mp4",
+          type: "video/mp4",
+          size,
+        },
+        signal()
+      )
+    ).rejects.toThrow();
+    expect(h.video).not.toHaveBeenCalled();
+    expect(h.put).not.toHaveBeenCalled();
+  }
+);

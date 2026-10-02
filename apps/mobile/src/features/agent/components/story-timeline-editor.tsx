@@ -1,3 +1,4 @@
+import { TimelineExportPanel } from "./story-timeline-export-panel";
 import { TimelineGenerationPanel } from "./story-timeline-generation-panel";
 import { TimelinePreview } from "./story-timeline-preview";
 import { TimelineMediaPicker } from "./story-timeline-media-picker";
@@ -355,6 +356,13 @@ export function TimelineEditor({
                   onPress={() => setPreview((v) => !v)}
                 />
                 {preview && <TimelinePreview sequence={rows.find((row) => row.id === selected)!} />}
+                {canEdit && (
+                  <TimelineExportPanel
+                    scope={scope}
+                    userId={userId}
+                    sequence={rows.find((row) => row.id === selected)!}
+                  />
+                )}
               </>
             )}
 
