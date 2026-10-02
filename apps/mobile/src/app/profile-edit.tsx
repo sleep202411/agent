@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useAuth, useLoginGateOnFocus } from "@/auth";
+import { useAuth, useAuthGate, useLoginGateOnFocus } from "@/auth";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -38,6 +38,7 @@ export default function ProfileEditScreen() {
   const auth = useAuth();
   const t = useTranslations();
   const theme = useTheme();
+  const gate = useAuthGate();
   useLoginGateOnFocus();
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
@@ -53,8 +54,16 @@ export default function ProfileEditScreen() {
       />
       {auth.status === "authenticated" ? (
         <ProfileForm key={JSON.stringify([auth.generation, auth.user?.id ?? auth.user?.userId])} />
-      ) : (
+      ) : auth.status === "hydrating" ? (
         <ActivityIndicator />
+      ) : (
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 16 }}
+          onPress={() => gate.requireAuth()}
+        >
+          <ThemedText>{t("login.signIn")}</ThemedText>
+        </Pressable>
       )}
     </View>
   );

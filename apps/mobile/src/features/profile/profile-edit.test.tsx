@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   focused: true,
   generation: 1,
   authenticated: true,
+  login: vi.fn(),
   refresh: vi.fn(),
   post: vi.fn(),
   upload: vi.fn(),
@@ -24,6 +25,7 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("@/auth", () => ({
   useLoginGateOnFocus: vi.fn(),
+  useAuthGate: () => ({ requireAuth: h.login }),
   useAuth: () => ({
     status: h.authenticated ? "authenticated" : "anonymous",
     generation: h.generation,
@@ -369,4 +371,19 @@ it("lets an unspecified creator explicitly opt into availability", async () => {
   );
   await act(async () => save());
   expect(h.post.mock.calls[0][1].data.availableForWork).toBe(true);
+});
+
+it("keeps a usable sign-in action after the guest closes the login sheet", async () => {
+  h.authenticated = false;
+  await render();
+  expect(host.textContent).not.toContain("loading");
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.post).not.toHaveBeenCalled();
+  const signIn = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "login.signIn"
+  );
+  expect(signIn).toBeDefined();
+  await act(async () => signIn!.click());
+  expect(h.login).toHaveBeenCalledTimes(1);
+  expect(h.post).not.toHaveBeenCalled();
 });
