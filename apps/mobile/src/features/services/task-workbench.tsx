@@ -1,10 +1,11 @@
+import { TaskDeadline } from "./task-deadline";
 import { TaskDraftAssignees } from "./task-draft-assignees";
 import { TaskCompensationSummary } from "./task-compensation-summary";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
-import { useTranslations } from "@/i18n";
+import { useLocale, useTranslations } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { TaskCreate } from "./task-create";
@@ -33,7 +34,16 @@ export function TaskWorkbench(props: Props) {
 function Session(props: Props) {
   const active = useScreenActive();
   const t = useTranslations(),
+    locale = useLocale(),
     theme = useTheme();
+  const date = (value: string) =>
+    new Date(value).toLocaleString(locale, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   const [session] = useState(() =>
     getTaskDraftSession(props.crewId, props.userId, props.generation)
   );
@@ -230,12 +240,15 @@ function Session(props: Props) {
                   </ThemedText>
                   {row.input.startAt && (
                     <ThemedText>
-                      {t("thread.taskStart")}: {row.input.startAt}
+                      {t("thread.taskStart")}: {date(row.input.startAt)}
                     </ThemedText>
                   )}
                   {row.input.dueAt && (
                     <ThemedText>
-                      {t("thread.taskDue")}: {row.input.dueAt}
+                      {t("thread.taskDue")}: {date(row.input.dueAt)}
+                      {row.state === "staged" && (
+                        <TaskDeadline dueAt={row.input.dueAt} status="draft" />
+                      )}
                     </ThemedText>
                   )}
                   <TaskCompensationSummary {...row.input} />

@@ -71,7 +71,10 @@ vi.mock("./task-create-api", async (original) => ({
   createTask: h.create,
 }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/i18n", () => ({
+  useTranslations: () => (key: string) => key,
+  useLocale: () => "en-US",
+}));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
