@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { z } from "zod";
+import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import { uuid } from "expo-modules-core";
 import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -79,25 +81,95 @@ function EarningCreateAccess(props: Props) {
     </>
   );
 }
+const pendingEarning = z
+  .object({
+    input: newEarning,
+    recipient: z.object({
+      crewMemberId: z.string().min(1),
+      userId: z.string().min(1),
+      label: z.string(),
+    }),
+  })
+  .strict()
+  .refine((value) => value.input.crewMemberId === value.recipient.crewMemberId);
+type PendingEarning = z.infer<typeof pendingEarning>;
 function Form(props: Props & { onClose: () => void }) {
+  const t = useTranslations();
+  const readRecovery = () => {
+    try {
+      const store = durableRecord("earning-create", props.userId, props.crewId);
+      const raw = store.read();
+      const value = raw ? JSON.parse(raw) : null;
+      return {
+        store,
+        pending: value === null ? null : pendingEarning.parse(value),
+        error: undefined,
+      };
+    } catch (cause) {
+      return {
+        store: undefined,
+        pending: null,
+        error: cause instanceof Error ? cause.message : String(cause),
+      };
+    }
+  };
+  const [recovery, setRecovery] = useState(readRecovery);
+  if (recovery.store)
+    return <EarningForm {...props} store={recovery.store} pending={recovery.pending} />;
+  const error = recovery.error;
+  return (
+    <View style={{ gap: 12 }}>
+      {error ? (
+        <>
+          <ThemedText accessibilityRole="alert">{error}</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            style={{ padding: 12 }}
+            onPress={() => setRecovery(readRecovery())}
+          >
+            <ThemedText>{t("earningCreate.retry")}</ThemedText>
+          </Pressable>
+        </>
+      ) : (
+        <ActivityIndicator />
+      )}
+      <Pressable accessibilityRole="button" style={{ padding: 12 }} onPress={props.onClose}>
+        <ThemedText>{t("crewTasks.back")}</ThemedText>
+      </Pressable>
+    </View>
+  );
+}
+function EarningForm(
+  props: Props & { onClose: () => void; store: DurableRecord; pending: PendingEarning | null }
+) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.crewId, true);
   const currency = isChinaRegion ? "CNY" : "USD";
-  const [recipient, setRecipient] = useState<{
-      crewMemberId: string;
-      userId: string;
-      label: string;
-    }>(),
+  const [recipient, setRecipient] = useState<
+      | {
+          crewMemberId: string;
+          userId: string;
+          label: string;
+        }
+      | undefined
+    >(props.pending?.recipient),
     [picking, setPicking] = useState(false);
-  const [title, setTitle] = useState(""),
-    [description, setDescription] = useState(""),
-    [amount, setAmount] = useState("");
-  const [source, setSource] = useState<NewEarning["sourceType"]>("milestone_bonus"),
-    [review, setReview] = useState(false),
+  const [title, setTitle] = useState(props.pending?.input.title ?? ""),
+    [description, setDescription] = useState(props.pending?.input.description ?? ""),
+    [amount, setAmount] = useState(() => {
+      const minor = props.pending?.input.amountMinor;
+      return minor
+        ? `${BigInt(minor) / 100n}.${String(BigInt(minor) % 100n).padStart(2, "0")}`
+        : "";
+    });
+  const [source, setSource] = useState<NewEarning["sourceType"]>(
+      props.pending?.input.sourceType ?? "milestone_bonus"
+    ),
+    [review, setReview] = useState(!!props.pending),
     [error, setError] = useState<string>();
-  const [attempted, setAttempted] = useState(false);
-  const request = useRef<NewEarning | null>(null),
+  const [attempted, setAttempted] = useState(!!props.pending);
+  const request = useRef<NewEarning | null>(props.pending?.input ?? null),
     finished = useRef(false);
   const amountMinor = earningAmountMinor(amount);
   const valid =
@@ -120,8 +192,9 @@ function Form(props: Props & { onClose: () => void }) {
       return;
     void op.run(
       async () => {
-        if (!request.current)
-          request.current = newEarning.parse({
+        const input =
+          request.current ??
+          newEarning.parse({
             crewMemberId: recipient.crewMemberId,
             sourceType: source,
             title,
@@ -130,15 +203,20 @@ function Form(props: Props & { onClose: () => void }) {
             amountMinor,
             idempotencyKey: uuid.v4(),
           });
+        // Persist before dispatch: a lost response must retain the original retry key.
+        props.store.write(JSON.stringify(pendingEarning.parse({ input, recipient })));
+        request.current = input;
         setAttempted(true);
         setError(undefined);
-        return createEarning(
+        const result = await createEarning(
           props.crewId,
           recipient.userId,
           request.current,
           props.userId,
           props.generation
         );
+        props.store.write("null");
+        return result;
       },
       () => {
         finished.current = true;

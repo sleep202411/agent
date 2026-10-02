@@ -1655,7 +1655,7 @@
   "earningCreate.confirm": "确认收入",
   "earningCreate.edit": "编辑",
   "earningCreate.retry": "重试同一笔收入",
-  "earningCreate.retryHelp": "若保存中断，请在此重试以恢复同一笔收入。新建另一笔前请先检查账本，避免重复记录。",
+  "earningCreate.retryHelp": "此请求已保存在当前设备。重新打开「新增收入」并重试，可恢复同一笔收入；收款人、金额和重试标识保持不变。",
   "payoutCreate.add": "创建付款",
   "payoutCreate.help": "为此成员预留已审核且可用的收入。此操作创建待付款记录，不会转账。",
   "payoutCreate.select": "选择成员",

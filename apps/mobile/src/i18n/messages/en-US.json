@@ -1655,7 +1655,7 @@
   "earningCreate.confirm": "Confirm Earning",
   "earningCreate.edit": "Edit",
   "earningCreate.retry": "Retry Same Earning",
-  "earningCreate.retryHelp": "If saving was interrupted, retry here to recover the same earning. Before starting another entry, check the ledger to avoid recording it twice.",
+  "earningCreate.retryHelp": "This request is saved on this device. Reopen Add Earning and retry to recover the same earning; its recipient, amount and retry key stay unchanged.",
   "payoutCreate.add": "Create Payout",
   "payoutCreate.help": "Reserve approved, available earnings for this member. This creates a pending payout; it does not transfer money.",
   "payoutCreate.select": "Select Member",
