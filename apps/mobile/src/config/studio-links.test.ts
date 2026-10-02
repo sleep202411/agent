@@ -68,6 +68,16 @@ it.each(["global", "cn"])(
         pathPrefix: `${locale}/crew-invite/`,
       })),
     });
+    expect(config.android.intentFilters[5]).toEqual({
+      action: "VIEW",
+      autoVerify: true,
+      category: ["BROWSABLE", "DEFAULT"],
+      data: ["", "/en-US", "/zh-CN", "/zh-HK"].map((locale) => ({
+        scheme: "https",
+        host: siteHost,
+        pathPrefix: `${locale}/crew-invitations/`,
+      })),
+    });
     for (const variant of ["development", "preview"]) {
       vi.stubEnv("APP_VARIANT", variant);
       const dev = configure({ config: {} });

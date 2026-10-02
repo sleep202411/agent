@@ -367,6 +367,16 @@ module.exports = ({ config }) => {
                   pathPrefix: `${locale}/crew-invite/`,
                 })),
               },
+              {
+                action: "VIEW",
+                autoVerify: true,
+                category: ["BROWSABLE", "DEFAULT"],
+                data: ["", "/en-US", "/zh-CN", "/zh-HK"].map((locale) => ({
+                  scheme: "https",
+                  host: siteHost,
+                  pathPrefix: `${locale}/crew-invitations/`,
+                })),
+              },
             ]
           : []),
       ],
