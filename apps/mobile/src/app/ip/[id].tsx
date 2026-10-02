@@ -1,3 +1,4 @@
+import { useIpEngagement } from "@/features/ip-community/use-ip-engagement";
 import { IpFanCommunity } from "@/features/ip-community/ip-fan-community";
 import { IpContributingStudios } from "@/features/studios/ip-contributing-studios";
 import { resolvePlan, type UnlockPlan } from "@/features/content-gps/episode-access";
@@ -43,11 +44,8 @@ import {
   blockIpContent,
   isInsufficientBalanceError,
   isMemberOnlyError,
-  likeIp,
   purchaseIpContent,
-  recordIpView,
   reportIpContent,
-  unlikeIp,
   type IpReportReason,
 } from "@/data/browse-service";
 import type { IpEngagementSnapshot, IpEpisode, Person } from "@/data/types";
@@ -121,7 +119,6 @@ function IpDetailSession() {
   const authGate = useAuthGate();
   const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
-  const viewedIpRef = useRef<string | null>(null);
   const active = useScreenActive();
   const {
     ip,
@@ -139,7 +136,6 @@ function IpDetailSession() {
   } = usePlaybackDetail(id, watch, episode, active);
   const unlockBusyRef = useRef(false);
   const [unlocking, setUnlocking] = useState(false);
-  const [likeBusy, setLikeBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -163,24 +159,9 @@ function IpDetailSession() {
     [locale, setIp]
   );
 
-  useEffect(() => {
-    const ipId = ip?.id;
-    if (!ipId || viewedIpRef.current === ipId) return;
-    viewedIpRef.current = ipId;
-    let alive = true;
-    void recordIpView(ipId, { source: "mobile_detail" })
-      .then((engagement) => {
-        if (!alive) return;
-        applyEngagement(ipId, engagement);
-        if (engagement) invalidateBrowse();
-      })
-      .catch(() => {
-        // Browsing should never dead-end because analytics recording failed.
-      });
-    return () => {
-      alive = false;
-    };
-  }, [applyEngagement, ip?.id]);
+  const engagement = useIpEngagement(ip, active && !accessBusy, applyEngagement, refresh, (error) =>
+    Alert.alert(t("ipDetail.likeFailed"), error instanceof Error ? error.message : undefined)
+  );
 
   const retryAccess = () => {
     if (!accessBusy && !unlocking) void refresh(true);
@@ -222,28 +203,6 @@ function IpDetailSession() {
   }
 
   const planFor = (episode: IpEpisode) => resolvePlan(access, episode);
-
-  const submitLikeToggle = async () => {
-    if (likeBusy) return;
-    setLikeBusy(true);
-    try {
-      const engagement = ip.viewerHasLiked ? await unlikeIp(ip.id) : await likeIp(ip.id);
-      applyEngagement(ip.id, engagement);
-      invalidateBrowse();
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) {
-        authGate.openLogin({ onAuthenticated: () => void submitLikeToggle() });
-        return;
-      }
-      Alert.alert(t("ipDetail.likeFailed"));
-    } finally {
-      setLikeBusy(false);
-    }
-  };
-
-  const toggleLike = () => {
-    authGate.requireAuth({ onAuthenticated: () => void submitLikeToggle() });
-  };
 
   const metaParts = [
     ip.year?.toString(),
@@ -595,8 +554,8 @@ function IpDetailSession() {
                   ip.viewerHasLiked ? "rgba(229,34,39,0.14)" : theme.backgroundElement
                 }
                 borderColor={ip.viewerHasLiked ? theme.brand : theme.border}
-                disabled={likeBusy}
-                onPress={toggleLike}
+                disabled={engagement.busy || accessBusy}
+                onPress={() => void engagement.toggle()}
               />
             </View>
           </View>
