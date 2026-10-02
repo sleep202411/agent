@@ -4,11 +4,23 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IpGenerationPanel } from "./ip-generation-panel";
 const h = vi.hoisted(() => ({
   generation: 1,
+  active: true,
+  records: new Map<string, string>(),
   get: vi.fn(),
   post: vi.fn(),
   pick: vi.fn(),
   upload: vi.fn(),
   alert: vi.fn(),
+}));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("@/lib/durable-record", () => ({
+  durableRecord: (namespace: string, user: string, ip: string) => {
+    const key = [namespace, user, ip].join(":");
+    return {
+      read: () => h.records.get(key) ?? null,
+      write: (value: string) => h.records.set(key, value),
+    };
+  },
 }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({ generation: h.generation, user: { id: String(h.generation) } }),
@@ -29,6 +41,7 @@ vi.mock("./use-ip-generation-preview", () => ({
     costPreview: { computePoints: 10, isFree: false },
     previewLoading: false,
     previewError: false,
+    retryPreview: vi.fn(),
   }),
 }));
 vi.mock("@/components/themed-text", () => ({
@@ -74,6 +87,8 @@ function deferred<T>() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.generation = 1;
+  h.active = true;
+  h.records.clear();
   for (const mock of [h.get, h.post, h.pick, h.upload, h.alert]) mock.mockReset();
   h.get.mockResolvedValue({ templates: [template] });
   host = document.createElement("div");
@@ -148,52 +163,38 @@ it("does not show an old upload failure in the new session", async () => {
   expect(host.textContent).toContain("ipGeneration.uploadButton");
 });
 
-it("ignores the first submission after stopping and starting another job", async () => {
-  const first = deferred<{ jobId: string }>();
-  const second = deferred<{ jobId: string }>();
-  h.get.mockResolvedValue({ templates: [{ ...template, requireReferenceImage: false }] });
-  h.post.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+it("keeps uncertain submissions saved and never reposts when no receipt exists", async () => {
+  h.get
+    .mockResolvedValueOnce({ templates: [{ ...template, requireReferenceImage: false }] })
+    .mockResolvedValue({ jobs: [] });
+  h.post.mockRejectedValueOnce(new Error("Connection lost"));
   await render();
   await click("ipGeneration.generateButton");
-  await click("ipGeneration.cancel");
-  await click("ipGeneration.generateButton");
-  await act(async () => first.resolve({ jobId: "old-job" }));
-  expect(h.get.mock.calls.some(([url]) => String(url).includes("/jobs/old-job"))).toBe(false);
+  expect(host.textContent).toContain("Connection lost");
+  expect(host.textContent).not.toContain("ipGeneration.generateButton");
+  await click("ipGeneration.recoverJob");
+  expect(host.textContent).toContain("ipGeneration.awaitingReceipt");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(h.records.size).toBe(1);
 });
-
-it("ignores a stopped job's late failure while the next submission is pending", async () => {
-  let reject!: (error: Error) => void;
-  h.get.mockResolvedValue({ templates: [{ ...template, requireReferenceImage: false }] });
-  h.post
-    .mockReturnValueOnce(
-      new Promise((_, fail) => {
-        reject = fail;
-      })
-    )
-    .mockReturnValueOnce(new Promise(() => {}));
-  await render();
-  await click("ipGeneration.generateButton");
-  await click("ipGeneration.cancel");
-  await click("ipGeneration.generateButton");
-  await act(async () => reject(new Error("old failure")));
-  expect(host.textContent).not.toContain("old failure");
-  expect(host.textContent).toContain("ipGeneration.cancel");
-});
-
-it("ignores a stopped job's late poll result while the next job is pending", async () => {
+it("stops only local tracking and resumes the same accepted job", async () => {
   const status = deferred<{ status: string; outputs: unknown[]; progress: number }>();
   h.get
     .mockResolvedValueOnce({ templates: [{ ...template, requireReferenceImage: false }] })
-    .mockReturnValueOnce(status.promise);
-  h.post.mockResolvedValueOnce({ jobId: "old-job" }).mockReturnValueOnce(new Promise(() => {}));
+    .mockReturnValueOnce(status.promise)
+    .mockResolvedValueOnce({ status: "completed", outputs: [], progress: 100 });
+  h.post.mockResolvedValueOnce({ jobId: "old-job" });
   await render();
   await click("ipGeneration.generateButton");
-  await click("ipGeneration.cancel");
-  await click("ipGeneration.generateButton");
+  await click("ipGeneration.stopTracking");
   expect((h.get.mock.calls[1][1].signal as AbortSignal).aborted).toBe(true);
+  expect(host.textContent).not.toContain("ipGeneration.generateButton");
   await act(async () => status.resolve({ status: "completed", outputs: [], progress: 100 }));
   expect(host.textContent).not.toContain("ipGeneration.completedLabel");
-  expect(host.textContent).toContain("ipGeneration.cancel");
+  await click("ipGeneration.recoverJob");
+  expect(host.textContent).toContain("ipGeneration.completedLabel");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(h.get.mock.calls[2][0]).toBe(h.get.mock.calls[1][0]);
 });
 
 it("dispatches only one generation when tapped twice before React updates", async () => {
@@ -222,7 +223,7 @@ it("continues polling the active job and permits another run after completion", 
       .mockReturnValueOnce(new Promise(() => {}));
     await render();
     await click("ipGeneration.generateButton");
-    expect(host.textContent).toContain("ipGeneration.cancel");
+    expect(host.textContent).toContain("ipGeneration.stopTracking");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2000);
     });
@@ -244,4 +245,82 @@ it("keeps a failed template catalog visible with retry and then recovers", async
   expect(host.textContent).toContain("Old template");
   expect(host.textContent).not.toContain("Templates temporarily unavailable");
   expect(h.post).not.toHaveBeenCalled();
+});
+it("recovers a saved unknown submission after remount with no second POST", async () => {
+  h.get
+    .mockResolvedValueOnce({ templates: [{ ...template, requireReferenceImage: false }] })
+    .mockResolvedValue({ jobs: [] });
+  h.post.mockRejectedValueOnce(new Error("Network lost"));
+  await render();
+  await click("ipGeneration.generateButton");
+  const key = h.post.mock.calls[0][1].data.idempotencyKey;
+  await act(async () => root.render(null));
+  h.get.mockImplementation(async (url: string) =>
+    url === "/ai/jobs"
+      ? { jobs: [{ id: "found", idempotencyKey: key, sourceSurface: "ip_audience_generation" }] }
+      : url.includes("/jobs/")
+        ? { status: "completed", outputs: [], progress: 100 }
+        : { templates: [] }
+  );
+  await render();
+  expect(host.textContent).toContain("ipGeneration.completedLabel");
+  expect(h.post).toHaveBeenCalledTimes(1);
+});
+it("persists a late acknowledgement after unmount for the next visit", async () => {
+  const run = deferred<{ jobId: string }>();
+  h.get.mockResolvedValueOnce({ templates: [{ ...template, requireReferenceImage: false }] });
+  h.post.mockReturnValueOnce(run.promise);
+  await render();
+  await click("ipGeneration.generateButton");
+  await act(async () => root.render(null));
+  await act(async () => run.resolve({ jobId: "late-job" }));
+  expect([...h.records.values()][0]).toContain("late-job");
+  h.get.mockImplementation(async (url: string) =>
+    url.includes("/jobs/") ? { status: "completed", outputs: [], progress: 100 } : { templates: [] }
+  );
+  await render();
+  expect(host.textContent).toContain("ipGeneration.completedLabel");
+  expect(h.post).toHaveBeenCalledTimes(1);
+});
+it("preserves job identity when a polling read fails and retries only that read", async () => {
+  h.get
+    .mockResolvedValueOnce({ templates: [{ ...template, requireReferenceImage: false }] })
+    .mockRejectedValueOnce(new Error("Status unavailable"))
+    .mockResolvedValueOnce({ status: "completed", outputs: [], progress: 100 });
+  h.post.mockResolvedValueOnce({ jobId: "saved" });
+  await render();
+  await click("ipGeneration.generateButton");
+  expect(host.textContent).toContain("Status unavailable");
+  await click("ipGeneration.recoverJob");
+  expect(host.textContent).toContain("ipGeneration.completedLabel");
+  expect(h.post).toHaveBeenCalledTimes(1);
+});
+it("aborts status reads on blur and rechecks the saved job on return without submission", async () => {
+  const first = deferred<{ status: string; outputs: unknown[]; progress: number }>();
+  h.get
+    .mockResolvedValueOnce({ templates: [{ ...template, requireReferenceImage: false }] })
+    .mockReturnValueOnce(first.promise)
+    .mockResolvedValueOnce({ status: "completed", outputs: [], progress: 100 });
+  h.post.mockResolvedValueOnce({ jobId: "saved" });
+  await render();
+  await click("ipGeneration.generateButton");
+  h.active = false;
+  await render();
+  expect(h.get.mock.calls[1][1].signal.aborted).toBe(true);
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("ipGeneration.completedLabel");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  await act(async () => first.resolve({ status: "in_progress", outputs: [], progress: 5 }));
+  expect(host.textContent).toContain("ipGeneration.completedLabel");
+});
+it("treats expired jobs as terminal instead of polling forever", async () => {
+  h.get
+    .mockResolvedValueOnce({ templates: [{ ...template, requireReferenceImage: false }] })
+    .mockResolvedValueOnce({ status: "expired", outputs: [], progress: 0 });
+  h.post.mockResolvedValueOnce({ jobId: "expired-job" });
+  await render();
+  await click("ipGeneration.generateButton");
+  expect(host.textContent).toContain("ipGeneration.retry");
+  expect(host.textContent).not.toContain("ipGeneration.stopTracking");
 });

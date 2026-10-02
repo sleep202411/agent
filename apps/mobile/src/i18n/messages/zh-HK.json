@@ -4576,5 +4576,9 @@
   "ipDetail.linkCopied": "連結已複製",
   "ipDetail.copyLinkFailed": "未能複製連結，請重試。",
   "ipGeneration.loadingTemplates": "正在載入生成範本…",
-  "ipGeneration.templateLoadFailed": "未能載入生成範本。"
+  "ipGeneration.templateLoadFailed": "未能載入生成範本。",
+  "ipGeneration.stopTracking": "暫停查看",
+  "ipGeneration.recoverJob": "檢查已儲存的生成任務",
+  "ipGeneration.savedAttempt": "請求已儲存。暫停查看不會取消伺服器上的任務。",
+  "ipGeneration.awaitingReceipt": "暫未找到回執，請稍後再檢查；未提交新的生成任務。"
 }

@@ -64,7 +64,7 @@ export function useIpGenerationPreview(input: {
     previewError: current?.error ?? false,
     previewErrorMessage: current?.message,
     retryPreview: () => {
-      if (current?.error) setAttempt((value) => value + 1);
+      if (current) setAttempt((value) => value + 1);
     },
   };
 }

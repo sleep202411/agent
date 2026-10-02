@@ -4576,5 +4576,9 @@
   "ipDetail.linkCopied": "Link copied",
   "ipDetail.copyLinkFailed": "Couldn't copy the link. Please try again.",
   "ipGeneration.loadingTemplates": "Loading generation templates…",
-  "ipGeneration.templateLoadFailed": "Couldn't load generation templates."
+  "ipGeneration.templateLoadFailed": "Couldn't load generation templates.",
+  "ipGeneration.stopTracking": "Stop tracking",
+  "ipGeneration.recoverJob": "Check saved generation",
+  "ipGeneration.savedAttempt": "This request is saved. Stopping tracking does not cancel the server job.",
+  "ipGeneration.awaitingReceipt": "No receipt is available yet. Check again later; no new generation was submitted."
 }
