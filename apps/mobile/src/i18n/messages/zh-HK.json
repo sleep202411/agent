@@ -3495,7 +3495,7 @@
   "ipTemplates.cancelLogoHint": "停止附加此上傳檔案？這只清除本機確認記錄，不會刪除已上傳檔案。",
   "ipTemplates.resetHint": "捨棄本機修改及待確認儲存記錄，並載入上方已儲存模板？這不會撤銷伺服器上的修改或刪除上傳檔案。",
   "ipTemplates.confirm": "確認",
-  "aiLab.heading": "AI 圖像與影片",
+  "aiLab.heading": "AI 生成",
   "aiLab.create": "建立",
   "aiLab.history": "歷史",
   "aiLab.image": "圖像",

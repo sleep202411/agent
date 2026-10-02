@@ -3495,7 +3495,7 @@
   "ipTemplates.cancelLogoHint": "Stop attaching this upload? This clears its local confirmation record, without deleting the uploaded file.",
   "ipTemplates.resetHint": "Discard your local changes and pending save record, and load the saved templates shown above? This does not undo any server changes or delete uploaded files.",
   "ipTemplates.confirm": "Confirm",
-  "aiLab.heading": "AI image & video",
+  "aiLab.heading": "AI generation",
   "aiLab.create": "Create",
   "aiLab.history": "History",
   "aiLab.image": "Image",
