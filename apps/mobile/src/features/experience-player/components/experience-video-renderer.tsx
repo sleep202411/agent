@@ -2,7 +2,7 @@ import { ExperienceStillSegment } from "./experience-still-segment";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
-import type { VideoContentFit } from "expo-video";
+import type { VideoContentFit, VideoSource } from "expo-video";
 
 import {
   ExperienceCoreVideoRendererConfigSchema,
@@ -12,7 +12,7 @@ import {
 
 import { useGatedScreenActive } from "@/hooks/use-app-active";
 
-import { resolvePlaybackUri } from "../lib/experience-media-cache";
+import { resolveExperienceVideoSource } from "../lib/experience-playback-delivery";
 import {
   invalidatePlayableMediaUrl,
   isStillVideoVariant,
@@ -50,7 +50,7 @@ async function loadAndPlayClip(
   player: {
     loop: boolean;
     currentTime: number;
-    replaceAsync: (uri: string) => Promise<void>;
+    replaceAsync: (uri: VideoSource) => Promise<void>;
     play: () => void;
   },
   options: {
@@ -70,9 +70,9 @@ async function loadAndPlayClip(
   }
 ): Promise<void> {
   player.loop = options.isLooping;
-  const playable = await resolvePlaybackUri(options.sourceUri, options.signal);
+  const playable = await resolveExperienceVideoSource(options.sourceUri, options.signal);
   if (options.signal.aborted) return;
-  options.onPlayableResolved(playable);
+  options.onPlayableResolved(playable.uri);
   await player.replaceAsync(playable);
   if (options.signal.aborted) return;
   if (options.clipStartTime !== undefined) {
