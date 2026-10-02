@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   user: "owner",
   generation: 1,
   authenticated: true,
+  active: true,
 }));
 vi.mock("./service-create-api", async (original) => ({
   ...(await original<typeof import("./service-create-api")>()),
@@ -23,7 +24,7 @@ vi.mock("@/auth", () => ({
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -80,6 +81,7 @@ const type = (label: string, text: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -134,4 +136,30 @@ it("ignores a create response after the account changes", async () => {
   await act(async () => finish({ id: "old" }));
   expect(h.refresh).not.toHaveBeenCalled();
   expect(host.textContent).toBe("serviceCreate.title");
+});
+
+it("explains an unconfirmed background write and retries only on explicit action", async () => {
+  let finish!: (value: { id: string }) => void;
+  h.change
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    )
+    .mockResolvedValue({ id: "created" });
+  await fill();
+  await act(async () => click("serviceCreate.save"));
+  h.active = false;
+  await render();
+  await act(async () => finish({ id: "created" }));
+  expect(h.refresh).not.toHaveBeenCalled();
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("serviceCreate.retryHint");
+  expect(host.querySelector("input")?.disabled).toBe(true);
+  expect(h.change).toHaveBeenCalledOnce();
+  await act(async () => click("common.retry"));
+  expect(h.change.mock.calls[1]).toEqual(h.change.mock.calls[0]);
+  expect(h.refresh).toHaveBeenCalledExactlyOnceWith("created");
 });

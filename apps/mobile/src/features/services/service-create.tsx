@@ -92,12 +92,8 @@ export function ServiceCreate({ onCreated }: { onCreated: (id: string) => void }
         style={{ color: theme.text }}
       />
       {!parsed.success && <ThemedText>{t("serviceEdit.invalid")}</ThemedText>}
-      {error && (
-        <>
-          <ThemedText accessibilityRole="alert">{error}</ThemedText>
-          <ThemedText>{t("serviceCreate.retryHint")}</ThemedText>
-        </>
-      )}
+      {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
+      {submitted && !op.busy && <ThemedText>{t("serviceCreate.retryHint")}</ThemedText>}
       <Pressable
         accessibilityRole="button"
         disabled={op.busy || !parsed.success}
