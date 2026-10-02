@@ -51,7 +51,7 @@ secret_has_key() {
 
 echo "==> CN preflight (phase=$PHASE services=${SERVICES[*]})"
 
-for command in git python3 helm kubectl aliyun ssh scp tar split shasum curl; do
+for command in git python3 node openssl helm kubectl aliyun ssh scp tar shasum curl; do
   need_command "$command"
 done
 
