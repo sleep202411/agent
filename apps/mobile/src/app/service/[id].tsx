@@ -1,3 +1,4 @@
+import { SERVICE_TIERS } from "@repo/shared/creator-service";
 import { ServiceEditorDrafts } from "@/features/services/service-editor-drafts";
 import { ServiceIntentProvider } from "@/features/services/service-intent";
 import { ServicePackagesEditor } from "@/features/services/service-packages-editor";
@@ -196,13 +197,14 @@ function PackageCard({ pkg, locale }: { pkg: CreatorServicePackage; locale: stri
   const t = useTranslations();
   const theme = useTheme();
   const price = formatServicePrice({ currency: pkg.currency, startingPrice: pkg.price }, locale);
+  const tier = SERVICE_TIERS.find((value) => value === pkg.tier);
   const revisions = pkg.revisions < 0 ? t("serviceDetail.unlimitedRevisions") : `${pkg.revisions}`;
 
   return (
     <ThemedView type="backgroundElement" style={styles.packageCard}>
       <View style={styles.packageTop}>
         <View style={styles.packageCopy}>
-          <Tag label={pkg.tier} tone="brand" />
+          <Tag label={tier ? t(`servicePackages.tier.${tier}`) : pkg.tier} tone="brand" />
           <ThemedText type="smallBold" numberOfLines={2}>
             {pkg.title}
           </ThemedText>
