@@ -1,6 +1,7 @@
 "use client";
 
 import { ApiRequestError } from "@/lib/api";
+import { useTranslations } from "next-intl";
 import { useAuth } from "@/app/_components/auth-provider";
 
 import { useMemo, useState } from "react";
@@ -78,6 +79,7 @@ export function useProjectAssets(projectId: string): {
   isRetrying: boolean;
   retry: () => Promise<unknown>;
 } {
+  const t = useTranslations("canvasNodes.asset.crew");
   const { assets: canvasAssets } = useCanvasGraphContext();
   const [filter, setFilter] = useState<AssetFilter>("all");
 
@@ -96,16 +98,23 @@ export function useProjectAssets(projectId: string): {
   const crewList = useQuery({
     queryKey: ["project-crew-assets", projectId, "all-folders", user?.id, context.data?.crew?.id],
     queryFn: async ({ signal }) => ({ items: await listAllProjectCrewAssets(projectId, signal) }),
-    enabled: Boolean(projectId && user?.id && context.data?.crew && !context.isError),
+    enabled: Boolean(
+      projectId &&
+      user?.id &&
+      context.data?.crew &&
+      context.data.assetContext?.capabilities.view !== false &&
+      !context.isError
+    ),
     staleTime: 30_000,
     retry: false,
   });
 
+  const permissionDenied = context.data?.assetContext?.capabilities.view === false;
   const crewAccessLost =
     crewList.error instanceof ApiRequestError &&
     [401, 403, 404, 410].includes(crewList.error.status);
   const canUseCrewAssets =
-    !!user?.id && !!context.data?.crew && !context.isError && !crewAccessLost;
+    !!user?.id && !!context.data?.crew && !context.isError && !permissionDenied && !crewAccessLost;
   const assets = useMemo(() => {
     const fromCanvas: ProjectAsset[] = canvasAssets
       .map((asset) => ({
@@ -157,7 +166,8 @@ export function useProjectAssets(projectId: string): {
 
   const isLoading =
     Boolean(projectId && user?.id) &&
-    (context.isPending || (Boolean(context.data?.crew) && crewList.isPending));
+    (context.isPending ||
+      (Boolean(context.data?.crew) && !permissionDenied && !context.isError && crewList.isPending));
 
   return {
     assets,
@@ -165,9 +175,9 @@ export function useProjectAssets(projectId: string): {
     filter,
     setFilter,
     isLoading,
-    error: context.error ?? crewList.error,
+    error: context.error ?? (permissionDenied ? new Error(t("errorBody")) : crewList.error),
     isRetrying: context.isFetching || crewList.isFetching,
-    retry: () => (context.isError ? context.refetch() : crewList.refetch()),
+    retry: () => (context.isError || permissionDenied ? context.refetch() : crewList.refetch()),
   };
 }
 

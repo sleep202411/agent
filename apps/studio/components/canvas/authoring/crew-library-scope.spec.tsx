@@ -297,3 +297,22 @@ it("allows leaving a folder whose access was revoked", async () => {
   );
   expect(host.textContent).toContain("Old folder");
 });
+
+it.each([false, true])(
+  "honors a successful context response that revokes view capability (inventory=%s)",
+  async (inventory) => {
+    await render(inventory);
+    await act(async () => {
+      client.setQueryData(["project-crew-assets", "project", "context", "alice"], {
+        ...context("crew-a"),
+        assetContext: { capabilities: { view: false } },
+      });
+    });
+    expect(host.textContent).not.toContain(inventory ? "Old file" : "Old folder");
+    expect(host.textContent).toContain("errorBody");
+    await act(async () =>
+      [...host.querySelectorAll("button")].find((b) => b.textContent === "retry")!.click()
+    );
+    expect(host.textContent).toContain(inventory ? "Old file" : "Old folder");
+  }
+);

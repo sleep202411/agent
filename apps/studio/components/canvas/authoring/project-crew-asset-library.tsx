@@ -174,6 +174,7 @@ function CrewLibraryContents({
   const deferredQuery = useDeferredValue(query.trim());
   const [path, setPath] = useState<FolderCrumb[]>([]);
   const parentId = path.at(-1)?.id;
+  const permissionDenied = context.data?.assetContext?.capabilities.view === false;
   const listing = useInfiniteQuery({
     queryKey: [
       "project-crew-assets",
@@ -183,7 +184,7 @@ function CrewLibraryContents({
       userId,
       context.data?.crew?.id,
     ],
-    enabled: Boolean(context.data?.crew && userId && !context.isError),
+    enabled: Boolean(context.data?.crew && userId && !context.isError && !permissionDenied),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       listProjectCrewAssets(
@@ -203,7 +204,10 @@ function CrewLibraryContents({
     [listing.data]
   );
 
-  if (context.isPending || (Boolean(context.data?.crew) && listing.isPending)) {
+  if (
+    context.isPending ||
+    (Boolean(context.data?.crew) && !context.isError && !permissionDenied && listing.isPending)
+  ) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <IconLoader2 className="size-5 animate-spin text-white/35" stroke={1.5} />
@@ -214,6 +218,7 @@ function CrewLibraryContents({
     listing.error instanceof ApiRequestError && [401, 403, 404, 410].includes(listing.error.status);
   if (
     context.isError ||
+    permissionDenied ||
     (Boolean(context.data?.crew) && listing.isError && (items.length === 0 || accessUnavailable))
   ) {
     const error = context.error ?? listing.error;
@@ -238,7 +243,9 @@ function CrewLibraryContents({
             size="sm"
             variant="secondary"
             disabled={context.isFetching || listing.isFetching}
-            onClick={() => void (context.isError ? context.refetch() : listing.refetch())}
+            onClick={() =>
+              void (context.isError || permissionDenied ? context.refetch() : listing.refetch())
+            }
           >
             {common("retry")}
           </Button>
