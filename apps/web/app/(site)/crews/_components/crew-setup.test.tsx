@@ -6,6 +6,11 @@ import en from "@/messages/en-US.json";
 import { CrewSetup } from "./crew-setup";
 const state = vi.hoisted(() => ({
   tasks: 0,
+  moreInvitations: false,
+  fetchingInvitations: false,
+  invitationError: false,
+  canInvite: true,
+  fetchInvitations: vi.fn(),
   viewer: "owner",
   denied: false,
   failed: false,
@@ -47,13 +52,21 @@ vi.mock("../_hooks/use-crew", () => ({
     refetch: state.refetch,
   }),
   useCrewInvitations: () => ({
+    hasNextPage: state.moreInvitations,
+    isFetching: state.fetchingInvitations,
+    isError: state.invitationError,
+    fetchNextPage: state.fetchInvitations,
     data: [{ positionCategory: "director", status: "pending", expiresAt: "2099-01-01" }],
     refetch: state.refetch,
   }),
   useUpdateMember: () => ({ mutateAsync: state.update }),
 }));
 vi.mock("../_hooks/use-crew-permissions", () => ({
-  useCrewPermissions: () => ({ can: () => !state.denied, effectiveUserId: state.viewer }),
+  useCrewPermissions: () => ({
+    can: (permission: string) =>
+      !state.denied && (permission !== "members.invite" || state.canInvite),
+    effectiveUserId: state.viewer,
+  }),
 }));
 vi.mock("../_hooks/use-production", () => ({
   useCrewEpisodes: () => ({
@@ -123,6 +136,10 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.resetAllMocks();
   state.tasks = 0;
+  state.moreInvitations = false;
+  state.fetchingInvitations = false;
+  state.invitationError = false;
+  state.canInvite = true;
   state.viewer = "owner";
   state.denied = false;
   state.failed = false;
@@ -226,4 +243,36 @@ it("clears setup step after account replacement and hides failed or unauthorized
   await render();
   expect(host.textContent).not.toContain("Task assignments");
   expect(host.textContent).toContain(en.crewSetup.access);
+});
+
+it("loads remaining invitations before showing complete counts or confirming the team", async () => {
+  state.moreInvitations = true;
+  await render();
+  expect(state.fetchInvitations).toHaveBeenCalledTimes(1);
+  expect(host.textContent).not.toContain("1 pending invitations");
+  const next = () =>
+    [...host.querySelectorAll("button")].find(
+      (b) => b.textContent === en.crewSetup.confirmMembers
+    )!;
+  expect(next().disabled).toBe(true);
+  state.fetchingInvitations = true;
+  await render();
+  expect(state.fetchInvitations).toHaveBeenCalledTimes(1);
+  state.fetchingInvitations = false;
+  state.moreInvitations = false;
+  await render();
+  expect(host.textContent).toContain("1 pending invitations");
+  expect(next().disabled).toBe(false);
+});
+it("does not paginate failed or unauthorized invitation data", async () => {
+  state.moreInvitations = true;
+  state.invitationError = true;
+  await render();
+  expect(state.fetchInvitations).not.toHaveBeenCalled();
+  state.canInvite = false;
+  state.invitationError = false;
+  await render();
+  expect(state.fetchInvitations).not.toHaveBeenCalled();
+  await click(en.crewSetup.confirmMembers);
+  expect(host.textContent).toContain(en.crewSetup.tasksHint);
 });

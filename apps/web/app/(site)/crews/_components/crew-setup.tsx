@@ -34,7 +34,20 @@ function SetupSession({ crewId }: { crewId: string }) {
   const detail = useCrewDetail(crewId),
     roster = useCrewMembers(crewId);
   const permissions = useCrewPermissions(crewId);
-  const invitations = useCrewInvitations(crewId, permissions.can("members.invite"));
+  const canInvite = permissions.can("members.invite");
+  const invitations = useCrewInvitations(crewId, canInvite);
+  const {
+    fetchNextPage: fetchMoreInvitations,
+    hasNextPage: hasMoreInvitations,
+    isFetching: fetchingInvitations,
+    isError: invitationError,
+  } = invitations;
+  useEffect(() => {
+    if (!canInvite || !hasMoreInvitations || fetchingInvitations || invitationError) return;
+    void fetchMoreInvitations();
+  }, [canInvite, hasMoreInvitations, fetchingInvitations, invitationError, fetchMoreInvitations]);
+  const invitationsIncomplete = canInvite && (fetchingInvitations || hasMoreInvitations);
+  const invitationsFailed = canInvite && invitationError;
   const episodes = useCrewEpisodes(crewId, permissions.can("tasks.manage"));
   const update = useUpdateMember(crewId);
   const members = roster.data.filter((member) => member.status === "active");
@@ -100,7 +113,7 @@ function SetupSession({ crewId }: { crewId: string }) {
     void detail.refetch();
     void roster.refetch();
     void episodes.refetch();
-    void invitations.refetch();
+    if (canInvite) void invitations.refetch();
   };
   return (
     <main className="mx-auto max-w-screen-xl space-y-4 px-4 pb-4 pt-8 sm:px-6">
@@ -134,7 +147,7 @@ function SetupSession({ crewId }: { crewId: string }) {
           {step === 1 && (
             <section className="space-y-4">
               <p className="text-sm text-muted-foreground">{t("membersHint")}</p>
-              {(invitations.isError || invitations.isFetching) && (
+              {(invitationsFailed || invitationsIncomplete) && (
                 <p role="status">{invitations.error?.message || t("loading")}</p>
               )}
               <div className="grid items-start gap-2 md:grid-cols-2">
@@ -142,14 +155,15 @@ function SetupSession({ crewId }: { crewId: string }) {
                   const assigned = members.filter((member) =>
                     member.positions.some((p) => p.categoryKey === role.value)
                   );
-                  const pending = invitations.isError
-                    ? []
-                    : invitations.data.filter(
-                        (item) =>
-                          item.positionCategory === role.value &&
-                          item.status === "pending" &&
-                          Date.parse(item.expiresAt) > Date.now()
-                      );
+                  const pending =
+                    !canInvite || invitationsFailed || invitationsIncomplete
+                      ? []
+                      : invitations.data.filter(
+                          (item) =>
+                            item.positionCategory === role.value &&
+                            item.status === "pending" &&
+                            Date.parse(item.expiresAt) > Date.now()
+                        );
                   const candidates = members.filter(
                     (member) => !assigned.includes(member) && member.positions.length < 12
                   );
@@ -189,7 +203,7 @@ function SetupSession({ crewId }: { crewId: string }) {
                             ))}
                           </NativeSelect>
                         )}
-                        {permissions.can("members.invite") && (
+                        {canInvite && (
                           <Button
                             variant="outline"
                             disabled={busy}
@@ -208,7 +222,7 @@ function SetupSession({ crewId }: { crewId: string }) {
                   {t("refresh")}
                 </Button>
                 <Button
-                  disabled={busy || invitations.isError || invitations.isFetching}
+                  disabled={busy || invitationsFailed || invitationsIncomplete}
                   onClick={() => setStep(2)}
                 >
                   {t("confirmMembers")}
@@ -315,7 +329,7 @@ function SetupSession({ crewId }: { crewId: string }) {
       >
         {t("workspace")}
       </Link>
-      {invite && ready && canManage && (
+      {invite && ready && canManage && canInvite && (
         <AddCrewMemberDialog
           open
           crewId={crewId}
