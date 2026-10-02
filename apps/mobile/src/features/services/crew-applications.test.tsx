@@ -423,3 +423,30 @@ it("clears applications after access loss and refreshes from page one", async ()
   await click("crewTerms.refresh");
   expect(h.list.mock.calls.map((call) => call[1])).toEqual([null, "app", null]);
 });
+
+it("returns to the selected application with fresh terms after foregrounding", async () => {
+  await open();
+  expect(host.textContent).toContain("Storyboards");
+  h.active = false;
+  await render();
+  expect(host.textContent).toBe("");
+  h.terms.mockResolvedValue({
+    currentVersion: 3,
+    items: [{ ...row, version: 3, scope: "Updated terms" }],
+    nextBeforeVersion: null,
+  });
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Updated terms");
+  expect(h.list).toHaveBeenCalledTimes(1);
+  expect(h.terms).toHaveBeenCalledTimes(2);
+});
+it("preserves the received applications tab across foreground refresh", async () => {
+  await render();
+  await click("crewRecruitment.received");
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(h.list).toHaveBeenLastCalledWith("creator", null, expect.any(AbortSignal), "received");
+});

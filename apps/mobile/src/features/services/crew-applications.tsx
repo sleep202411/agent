@@ -30,19 +30,22 @@ type Props = {
 };
 export function CrewApplications(props: Props) {
   const active = useScreenActive();
-  return active && props.generation === getAuthGeneration() ? (
+  return props.generation === getAuthGeneration() ? (
     <Applications
       key={`${props.userId}:${props.generation}:${props.initialApplicationId ?? ""}`}
       {...props}
+      active={active}
     />
   ) : null;
 }
-function Applications(props: Props) {
+function Applications(props: Props & { active: boolean }) {
   const [scope, setScope] = useState<"sent" | "received">("sent");
   const [requested, setRequested] = useState(props.initialApplicationId);
   const [invitations, setInvitations] = useState(false);
   const [revision, setRevision] = useState(0),
     [selected, setSelected] = useState<Application>();
+  // Retain navigation intent, but remount private reads after foreground return.
+  if (!props.active) return null;
   if (requested)
     return (
       <RequestedApplication
