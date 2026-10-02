@@ -1080,6 +1080,13 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
               <ThemedText>
                 {selected.error?.userMessage ?? t(`aiLab.status.${selected.status}` as const)}
               </ThemedText>
+              {selected.status === "completed" &&
+              selected.type === "audio" &&
+              !selected.outputs.some(
+                (output) => output.type === "audio" && /^https?:\/\//i.test(output.url)
+              ) ? (
+                <ThemedText accessibilityRole="alert">{t("aiLab.audioNoOutput")}</ThemedText>
+              ) : null}
               {selected.outputs.map((result) => (
                 <View key={result.id}>
                   {result.type === "image" ? (

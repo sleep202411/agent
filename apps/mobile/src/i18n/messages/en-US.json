@@ -3499,6 +3499,7 @@
   "aiLab.create": "Create",
   "aiLab.history": "History",
   "aiLab.image": "Image",
+  "aiLab.audioNoOutput": "The job completed without a playable audio output.",
   "aiLab.audio": "Audio",
   "aiLab.video": "Video",
   "aiLab.unavailable": "This model or option is unavailable for your membership.",

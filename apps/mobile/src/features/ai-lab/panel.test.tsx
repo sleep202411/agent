@@ -1024,3 +1024,46 @@ it("recovers a lost audio submission after reopening without sending another pai
   await click("Audio model · aiLab.status.completed");
   expect(host.textContent).toContain("Audio playback: https://example.test/sound.mp3");
 });
+
+it("reports completed audio with no playable output and clears the warning after refresh", async () => {
+  const audioJob = useAudioCatalog();
+  const previous = h.get.getMockImplementation()!;
+  let ready = false;
+  h.get.mockImplementation(async (path, options) =>
+    path === `/ai/jobs/${job.id}`
+      ? { ...audioJob, outputs: ready ? audioJob.outputs : [] }
+      : previous(path, options)
+  );
+  jobs = [{ ...audioJob, outputs: [] }];
+  await mount();
+  await click("aiLab.audio");
+  await click("aiLab.history");
+  await click("Audio model · aiLab.status.completed");
+  expect(host.textContent).toContain("aiLab.audioNoOutput");
+  expect(button("aiLab.retryJob")).toBeUndefined();
+  expect(h.post).not.toHaveBeenCalled();
+  ready = true;
+  await click("Audio model · aiLab.status.completed");
+  expect(host.textContent).not.toContain("aiLab.audioNoOutput");
+  expect(host.textContent).toContain("Audio playback:");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("does not mistake an image output for playable audio", async () => {
+  const audioJob = useAudioCatalog();
+  const previous = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, options) =>
+    path === `/ai/jobs/${job.id}`
+      ? {
+          ...audioJob,
+          outputs: [{ id: "image", type: "image", url: "https://example.test/cover.png" }],
+        }
+      : previous(path, options)
+  );
+  jobs = [audioJob];
+  await mount();
+  await click("aiLab.audio");
+  await click("aiLab.history");
+  await click("Audio model · aiLab.status.completed");
+  expect(host.textContent).toContain("aiLab.audioNoOutput");
+  expect(host.textContent).not.toContain("Audio playback:");
+});

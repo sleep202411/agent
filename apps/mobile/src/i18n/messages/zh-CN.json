@@ -3499,6 +3499,7 @@
   "aiLab.create": "创建",
   "aiLab.history": "历史",
   "aiLab.image": "图像",
+  "aiLab.audioNoOutput": "任务已完成，但没有可播放的音频结果。",
   "aiLab.audio": "音频",
   "aiLab.video": "视频",
   "aiLab.unavailable": "此模型或选项不适用于当前会员。",
