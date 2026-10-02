@@ -19,6 +19,9 @@ vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
+vi.mock("../_components/task-feedback-panel", () => ({
+  TaskFeedbackPanel: () => <p>Private feedback</p>,
+}));
 vi.mock("../_components/task-unread-marker", () => ({ TaskUnreadMarker: () => null }));
 vi.mock("../_hooks/use-users", () => ({
   useUserDisplays: () => new Map(),

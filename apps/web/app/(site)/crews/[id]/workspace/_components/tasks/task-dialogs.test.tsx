@@ -307,3 +307,23 @@ it("requires nonblank text and a still-attached file, preserving answers after v
     })
   );
 });
+
+it("shows default delivery slots and persists the link with the submission note", async () => {
+  submit.mockResolvedValue({ id: "task-1" });
+  render("task-1");
+  for (const label of ["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"])
+    expect(document.body.textContent).toContain(label);
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="deliveryLink"]')!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "https://example.com/delivery"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    fill("Final cut");
+  });
+  await act(async () => clickSubmit());
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({ note: "https://example.com/delivery\n\nFinal cut" })
+  );
+});

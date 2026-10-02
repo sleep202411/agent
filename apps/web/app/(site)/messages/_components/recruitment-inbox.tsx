@@ -39,7 +39,7 @@ export function RecruitmentInbox() {
   const { open: openAuthDialog } = useAuthDialog();
   if (isLoading || !user)
     return (
-      <main className="flex h-full min-h-0 flex-col overflow-hidden px-4 py-4">
+      <main className="flex h-full min-h-0 flex-col overflow-hidden px-4 py-2">
         {isLoading ? (
           <p role="status">{t("loading")}</p>
         ) : (
@@ -117,18 +117,18 @@ function MyApplications({
   );
   const reviewer = Boolean(application && application.applicantId !== userId);
   return (
-    <main className="flex h-full min-h-0 flex-col overflow-hidden px-4 py-4">
-      <div className="mb-4">
+    <main className="flex h-full min-h-0 flex-col overflow-hidden px-4 py-2">
+      <div className="empty:hidden">
         <PositionInvitationsPanel hideWhenEmpty />
       </div>
-      <div className="grid h-full min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-xl border border-white/10 bg-background  lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_280px]">
+      <div className="grid h-full min-h-0 flex-1 grid-cols-1 overflow-hidden rounded-lg border border-white/10 bg-background lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_240px]">
         <aside
           className={cn(
             "flex min-h-0 flex-col border-r border-white/10",
             application && "hidden lg:flex"
           )}
         >
-          <div className="space-y-3 border-b border-white/10 p-4">
+          <div className="space-y-2 border-b border-white/10 p-3">
             <div className="flex gap-2" aria-label={c("direction")}>
               {(["sent", "received"] as const).map((value) => (
                 <button
@@ -157,7 +157,7 @@ function MyApplications({
               placeholder={c("search")}
               aria-describedby="recruitment-search-hint"
             />
-            <p id="recruitment-search-hint" className="text-xs text-muted-foreground">
+            <p id="recruitment-search-hint" className="sr-only">
               {c("searchHint")}
             </p>
           </div>
@@ -201,7 +201,7 @@ function MyApplications({
                           <span className="mt-1 block truncate text-xs text-muted-foreground">
                             {item.taskTitle ?? positionLabel(item.positionType)} · {item.crewName}
                           </span>
-                          <span className="mt-2 block text-xs text-muted-foreground">
+                          <span className="mt-1 block text-xs text-muted-foreground">
                             {t(item.status)} · {new Date(item.createdAt).toLocaleDateString(locale)}
                           </span>
                         </span>
@@ -233,7 +233,7 @@ function MyApplications({
             <p className="p-6">{t("loading")}</p>
           ) : application ? (
             <div key={application.id} className="flex h-full min-h-0 flex-col">
-              <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-background p-4">
+              <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-background px-4 py-3">
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
@@ -266,7 +266,7 @@ function MyApplications({
                 <summary className="cursor-pointer text-sm">{c("details")}</summary>
                 <div className="max-h-48 overflow-y-auto">
                   {" "}
-                  <div className="space-y-2 px-4 py-3 text-sm">
+                  <div className="space-y-2 py-3 text-xs">
                     <Link
                       className="text-primary underline"
                       href={`/${locale}/creators/${encodeUserId(application.applicantId)}`}
@@ -339,7 +339,7 @@ function MyApplications({
         </section>
         {application && (
           <aside
-            className="min-h-0 space-y-5 overflow-y-auto border-l border-border p-4 max-xl:hidden"
+            className="min-h-0 space-y-3 overflow-y-auto border-l border-border p-4 max-xl:hidden"
             aria-label={c("details")}
           >
             <h2 className="text-sm font-semibold">{c("details")}</h2>
@@ -352,7 +352,7 @@ function MyApplications({
             >
               {application.crewName}
             </Link>
-            <div className="space-y-2 px-4 py-3 text-sm">
+            <div className="space-y-2 py-3 text-xs">
               <Link
                 className="text-primary underline"
                 href={`/${locale}/creators/${encodeUserId(application.applicantId)}`}

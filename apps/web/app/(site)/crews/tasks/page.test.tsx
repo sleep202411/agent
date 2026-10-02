@@ -216,7 +216,7 @@ it.each(["viewer", null])(
     expect(nav).not.toBeNull();
     expect([...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
       "/zh-CN/crews?view=positions",
-      "/zh-CN/crews/applications",
+      "/zh-CN/messages?tab=recruitment",
       "/zh-CN/crews?view=mine",
       "/zh-CN/crews/tasks",
       "/zh-CN/crews/income",
@@ -226,7 +226,7 @@ it.each(["viewer", null])(
     expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("taskDashboardTab");
     const dashboard = container.querySelector('nav[aria-label="taskDashboardTab"]')!;
     expect([...dashboard.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
-      "/zh-CN/crews/applications",
+      "/zh-CN/messages?tab=recruitment",
       "/zh-CN/crews/tasks",
       "/zh-CN/crews/feedback",
       "/zh-CN/crews/cases",

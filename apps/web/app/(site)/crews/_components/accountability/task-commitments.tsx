@@ -71,7 +71,6 @@ function TaskCommitmentSession({
   return (
     <section className="my-6 space-y-3 border-t border-white/[0.06] pt-5 text-xs text-zinc-300">
       <h3 className="font-semibold text-zinc-100">{t("commitments")}</h3>
-      <p className="text-zinc-400">{t("commitmentHelp")}</p>
       {query.isLoading && !query.data ? <p role="status">{t("loading")}</p> : null}
       {query.isError && (
         <div role="alert">

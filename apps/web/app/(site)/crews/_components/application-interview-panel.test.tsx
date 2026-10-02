@@ -257,7 +257,7 @@ it("guards duplicate submits and ignores late completion after switching account
   expect(host.textContent).not.toContain("Private interview plan");
 });
 
-it("renders chronological conversation bubbles and sends a versioned message", async () => {
+it("renders chronological conversation rows and sends a versioned message", async () => {
   h.get.mockResolvedValue({
     ...page,
     items: [
@@ -276,7 +276,7 @@ it("renders chronological conversation bubbles and sends a versioned message", a
   const entries = [...host.querySelectorAll("li")];
   expect(entries[0].textContent).toContain("Earlier question");
   expect(entries[1].textContent).toContain("Private interview plan");
-  expect(entries[0].className).toContain("ml-auto");
+  expect(entries[0].className).toContain("border-b");
   await field("textarea", "Can we discuss the delivery scope?");
   await click("send");
   expect(h.post).toHaveBeenCalledWith(

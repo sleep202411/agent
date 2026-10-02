@@ -868,3 +868,33 @@ it("hands a newly saved task to the publishing form when requested", async () =>
   expect(state.create).toHaveBeenCalledTimes(1);
   expect(publish).toHaveBeenCalledWith("task-created");
 });
+
+it("lets recruitment replace a selected assignee before publishing", async () => {
+  const publish = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, { onPublishTask: publish });
+  act(() =>
+    fill(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      "Open role"
+    )
+  );
+  const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Assignees"]')!;
+  await act(async () =>
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+  );
+  const option = [...document.querySelectorAll('[role="option"]')].find((element) =>
+    element.textContent?.includes("Isaac")
+  )!;
+  await act(async () =>
+    option.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  );
+  const recruit = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(recruit.disabled).toBe(false);
+  act(() => recruit.click());
+  await act(async () => {
+    click(exactButton("Create"));
+    await Promise.resolve();
+  });
+  expect(state.create).toHaveBeenLastCalledWith(expect.objectContaining({ assignees: [] }));
+  expect(publish).toHaveBeenCalledWith("task-created");
+});

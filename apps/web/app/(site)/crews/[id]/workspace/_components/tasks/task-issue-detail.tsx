@@ -305,7 +305,7 @@ export function TaskIssueDetail({
                     value={draftTitle}
                     onChange={(event) => setDraftTitle(event.target.value)}
                     maxLength={180}
-                    className="mb-6 block w-full bg-transparent text-[24px] font-semibold leading-8 tracking-[-0.025em] text-[#f0f0f2] outline-none"
+                    className="mb-6 block w-full bg-transparent text-[20px] font-semibold leading-7 tracking-[-0.025em] text-[#f0f0f2] outline-none"
                     autoFocus
                   />
                   <Textarea
@@ -347,20 +347,23 @@ export function TaskIssueDetail({
                     type="button"
                     disabled={!isOwner || patching}
                     onClick={startBriefEdit}
-                    className="block max-w-full text-left text-[24px] font-semibold leading-8 tracking-[-0.025em] text-[#f0f0f2] disabled:cursor-default"
+                    className="block max-w-full text-left text-[20px] font-semibold leading-7 tracking-[-0.025em] text-[#f0f0f2] disabled:cursor-default"
                   >
                     {task.title}
                   </button>
-                  <button
-                    type="button"
-                    disabled={!isOwner || patching}
-                    onClick={startBriefEdit}
-                    className="mt-7 block min-h-12 w-full whitespace-pre-wrap text-left text-[13px] leading-6 text-[#b8bac0] disabled:cursor-default"
-                  >
-                    {task.description || (
-                      <span className="italic text-[#666970]">{t("noDescription")}</span>
-                    )}
-                  </button>
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs text-muted-foreground">
+                      {t("taskBrief")}
+                    </summary>
+                    <button
+                      type="button"
+                      disabled={!isOwner || patching}
+                      onClick={startBriefEdit}
+                      className="mt-3 block w-full whitespace-pre-wrap text-left text-[13px] leading-6 text-[#b8bac0] disabled:cursor-default"
+                    >
+                      {task.description}
+                    </button>
+                  </details>
                 </>
               )}
               <p className="mt-4 text-[10px] text-[#696c73]">
@@ -373,10 +376,15 @@ export function TaskIssueDetail({
 
             {canSubmit ? submissionForm : null}
             <TaskDeliverySummary task={task} />
-            <TaskCommitments task={task} canManage={isOwner} />
-            <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
-            <TaskExtensionPanel task={task} canManage={isOwner} />
-            <TaskDisputeControl task={task} />
+            <details className="my-3">
+              <summary className="cursor-pointer text-xs text-muted-foreground">
+                {t("deliveryOptions")}
+              </summary>
+              <TaskCommitments task={task} canManage={isOwner} />
+              <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
+              <TaskExtensionPanel task={task} canManage={isOwner} />
+              <TaskDisputeControl task={task} />
+            </details>
 
             <div className="mb-5 flex items-center gap-2 border-t border-white/[0.055] pt-7">
               <IconMessage className="size-4 text-[#8c929c]" />

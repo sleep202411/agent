@@ -434,16 +434,19 @@ export function TaskQuickCreate({
           <label className="mx-5 mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
-              checked={publishOpening && !assigneeUserId}
-              disabled={Boolean(assigneeUserId)}
-              onChange={(event) => setPublishOpening(event.target.checked)}
+              checked={publishOpening}
+              onChange={(event) => {
+                draftRevision.current += 1;
+                setPublishOpening(event.target.checked);
+                if (event.target.checked) setAssigneeUserId("");
+              }}
             />
             {projectT("workbench.publishOpening")}
             {assigneeUserId ? <span>{projectT("workbench.unassignedOnly")}</span> : null}
           </label>
         ) : null}
-        <div className="min-h-0 min-w-0 space-y-6 overflow-y-auto px-5 py-6 sm:px-8">
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+        <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <SelectChip
               icon={<IconCategory className="size-3.5" />}
               value={taskKind}
@@ -475,6 +478,7 @@ export function TaskQuickCreate({
               onChange={(value) => {
                 draftRevision.current += 1;
                 setAssigneeUserId(value);
+                if (value) setPublishOpening(false);
               }}
               options={[
                 { value: "", label: t("unassigned") },
@@ -519,7 +523,7 @@ export function TaskQuickCreate({
               maxLength={180}
               placeholder={t("titlePlaceholder")}
               aria-label={t("taskTitle")}
-              className="block min-h-11 w-full resize-y rounded-md border border-white/15 bg-[#0b0c0f] p-3 text-base text-white outline-none focus:border-primary"
+              className="block min-h-11 w-full resize-y rounded-md border border-white/15 bg-[#0b0c0f] p-3 text-sm text-white outline-none focus:border-primary"
             />
           </label>
           <div className="relative">
@@ -537,8 +541,8 @@ export function TaskQuickCreate({
                 placeholder={t("descriptionPlaceholder")}
                 aria-label={t("taskBrief")}
                 className={cn(
-                  "block min-h-52 w-full resize-y rounded-lg border-2 border-dashed border-white/15 bg-[#0b0c0f] p-3 text-sm leading-6 text-[#d5d5da] outline-none focus:border-primary",
-                  expanded && "min-h-64"
+                  "block min-h-36 w-full resize-y rounded-lg border-2 border-dashed border-white/15 bg-[#0b0c0f] p-3 text-sm leading-6 text-[#d5d5da] outline-none focus:border-primary",
+                  expanded && "min-h-52"
                 )}
               />
             </label>
@@ -577,7 +581,7 @@ export function TaskQuickCreate({
               setDraft(null);
             }}
           />
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <SelectChip
               icon={<StateRing color={activeState?.color} />}
               value={resolvedWorkflowStateId}
@@ -663,7 +667,7 @@ export function TaskQuickCreate({
           </div>
         </div>
 
-        <footer className="flex min-h-20 shrink-0 items-center justify-end border-t border-white/10 px-5 py-4 sm:px-8">
+        <footer className="flex min-h-16 shrink-0 items-center justify-end border-t border-white/10 px-5 py-4 sm:px-8">
           {!onStage ? (
             <button
               type="button"
@@ -758,7 +762,7 @@ function LabelChip({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-12 min-w-0 w-full items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
+          className="inline-flex h-10 min-w-0 w-full items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
           aria-label={t("labels")}
         >
           <IconTag className="size-3.5 shrink-0" stroke={1.8} />
@@ -811,7 +815,7 @@ function DateChip({ value, onChange }: { value: string; onChange: (value: string
         <button
           type="button"
           aria-label={t("due")}
-          className="inline-flex h-12 w-full items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-[#a4a4ac]"
+          className="inline-flex h-10 w-full items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-[#a4a4ac]"
         >
           <IconCalendar className="size-3.5" />
           {date && !Number.isNaN(date.getTime())

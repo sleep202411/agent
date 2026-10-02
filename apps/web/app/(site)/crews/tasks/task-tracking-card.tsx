@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetBody,
+} from "@/components/ui/sheet";
+import { TaskFeedbackPanel } from "../_components/task-feedback-panel";
+import { TaskDeliveryProgress } from "../[id]/workspace/_components/tasks/task-delivery-progress";
 import { useState } from "react";
 import Link from "next/link";
 import { IconChevronDown, IconHistory, IconSend } from "@tabler/icons-react";
@@ -44,14 +54,14 @@ export function TaskTrackingCard({
   const [expanded, setExpanded] = useState(false);
   const [action, setAction] = useState<"submit" | "review" | null>(null);
   return (
-    <li className="min-w-0 rounded-2xl bg-[#1e1e1e]">
-      <div className="flex flex-wrap items-center gap-4 p-5">
+    <li className="min-w-0 rounded-lg bg-[#1e1e1e]">
+      <div className="flex flex-wrap items-center gap-3 p-3">
         <div className="min-w-0 flex-1 basis-48">
           <p className="mb-1 text-xs text-muted-foreground">
             {task.crew.name} · TASK-{task.number}
           </p>
           <Link
-            className="break-words font-semibold hover:underline"
+            className="break-words text-sm font-semibold hover:underline"
             href={localizePath(
               `/crews/${task.crew.id}/workspace?tab=tasks&task=${task.id}`,
               locale
@@ -107,11 +117,35 @@ export function TaskTrackingCard({
           <IconChevronDown className={`size-4 ${expanded ? "rotate-180" : ""}`} />
         </button>
       </div>
-      {expanded ? (
+      {expanded && !action ? (
         <div id={`history-${task.id}`} className="border-t border-white/10 p-5">
           <TaskTrackingDetails task={task} action={action} onCloseAction={() => setAction(null)} />
         </div>
       ) : null}
+      <Sheet
+        open={Boolean(action)}
+        onOpenChange={(open) => {
+          if (!open) setAction(null);
+        }}
+      >
+        <SheetContent side="right" className="w-full sm:max-w-4xl">
+          <SheetHeader>
+            <SheetTitle>{task.title}</SheetTitle>
+            <SheetDescription>
+              {task.crew.name} · TASK-{task.number}
+            </SheetDescription>
+          </SheetHeader>
+          <SheetBody>
+            {action && (
+              <TaskTrackingDetails
+                task={task}
+                action={action}
+                onCloseAction={() => setAction(null)}
+              />
+            )}
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
     </li>
   );
 }
@@ -166,7 +200,8 @@ function TaskTrackingDetails({
         <p role="status">{t("loading")}</p>
       ) : detail.data ? (
         <>
-          {detail.data.description ? (
+          {action && <TaskDeliveryProgress status={detail.data.status} />}
+          {!action && detail.data.description ? (
             <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
               {detail.data.description}
             </p>
@@ -185,7 +220,10 @@ function TaskTrackingDetails({
           ) : null}
           <TaskDeliverySummary task={detail.data} />
           {action === "review" && task.canReview && detail.data.status === "submitted" ? (
-            <TaskReviewForm task={detail.data} onReviewed={onCloseAction} />
+            <div className="space-y-4">
+              <TaskReviewForm task={detail.data} onReviewed={onCloseAction} />
+              <TaskFeedbackPanel task={detail.data} />
+            </div>
           ) : null}
         </>
       ) : null}

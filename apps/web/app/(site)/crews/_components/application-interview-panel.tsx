@@ -171,7 +171,7 @@ function InterviewSession({
   return (
     <section
       className={
-        conversation ? "flex min-h-0 flex-1 flex-col gap-3 px-4 py-4" : "space-y-3 px-4 py-3"
+        conversation ? "flex min-h-0 flex-1 flex-col gap-2 px-4 py-3" : "space-y-3 px-4 py-3"
       }
       aria-label={conversation ? c("conversation") : t("title")}
     >
@@ -213,12 +213,14 @@ function InterviewSession({
               disabled={busy || Boolean(retry)}
               className={
                 conversation
-                  ? "order-last shrink-0 space-y-2 border-t border-border bg-background pt-3"
+                  ? "order-last shrink-0 space-y-2 rounded-lg border border-border bg-white/5 p-3"
                   : "space-y-3"
               }
             >
               <label className="block text-sm">
-                {conversation ? c("message") : t("messageLabel")}
+                <span className={conversation ? "sr-only" : undefined}>
+                  {conversation ? c("message") : t("messageLabel")}
+                </span>
                 <Textarea
                   placeholder={conversation ? c("messagePlaceholder") : undefined}
                   maxLength={4000}
@@ -290,9 +292,7 @@ function InterviewSession({
                   <li
                     key={event.id}
                     className={
-                      conversation
-                        ? `max-w-[90%] rounded-xl border border-white/10 p-3 ${event.actorUserId === userId ? "ml-auto bg-primary/10" : "mr-auto bg-white/5"}`
-                        : undefined
+                      conversation ? "w-full border-b border-white/5 px-1 py-3" : undefined
                     }
                   >
                     <p>

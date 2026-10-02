@@ -4,6 +4,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Page from "./page";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { CrewApiError } from "../_hooks/api";
+vi.mock("../../referral/_components/referral-dashboard", () => ({
+  ReferralDashboardPage: () => <p>Referral panel content</p>,
+}));
+vi.mock("../../profile/earnings/earnings-content", () => ({
+  default: () => <p>Work earnings panel content</p>,
+}));
 vi.mock("./payout-history", () => ({
   PayoutHistory: ({ currency }: { currency: string }) => {
     state.payoutCurrency = currency;
@@ -166,7 +172,7 @@ it.each(["alice", null])(
     expect(nav).not.toBeNull();
     expect([...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
       "/en-US/crews?view=positions",
-      "/en-US/crews/applications",
+      "/en-US/messages?tab=recruitment",
       "/en-US/crews?view=mine",
       "/en-US/crews/tasks",
       "/en-US/crews/income",
@@ -176,3 +182,23 @@ it.each(["alice", null])(
     expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("myIncomeTab");
   }
 );
+
+it("opens income sources in a side panel and clears them when the account changes", () => {
+  render();
+  const source = (name: string) =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === name)!;
+  act(() => source("referralIncome").click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Referral panel content"
+  );
+  state.user = { id: "bob" };
+  render();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  act(() => source("workIncome").click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Work earnings panel content"
+  );
+  state.user = null;
+  render();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
