@@ -200,11 +200,15 @@ export default function MineScreen() {
         ListFooterComponent={
           tab === "works" ? (
             ownerWorks.failed ? (
-              <View style={styles.empty}>
-                <ThemedText accessibilityRole="alert">
-                  {t("creatorDetail.personalWorksError")}
+              <View style={styles.collectionFooter}>
+                <ThemedText accessibilityRole="alert" style={{ textAlign: "center" }}>
+                  {ownerWorks.error ?? t("creatorDetail.personalWorksError")}
                 </ThemedText>
-                <Pressable accessibilityRole="button" onPress={ownerWorks.retry}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={ownerWorks.retry}
+                  style={{ minHeight: 44, justifyContent: "center" }}
+                >
                   <ThemedText>{t("profileEdit.retry")}</ThemedText>
                 </Pressable>
               </View>

@@ -1,3 +1,4 @@
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchMyIpsPage, type MyIp } from "@/data/ip-api";
 import { useBrowseVersion } from "@/data/browse-refresh";
@@ -17,11 +18,12 @@ type Snapshot = Pick<Session, "key" | "items" | "hasMore" | "error"> & { loading
 
 /** Owner includes the auth generation; locale and browse mutations start a fresh list. */
 export function useMyIps(owner?: string) {
+  const active = useScreenActive();
   const locale = useLocale(),
     version = useBrowseVersion(),
     t = useTranslations();
   const [revision, setRevision] = useState(0);
-  const key = owner ? JSON.stringify([owner, locale, version, revision]) : undefined;
+  const key = owner && active ? JSON.stringify([owner, locale, version, revision]) : undefined;
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [snapshotScope, setSnapshotScope] = useState(key);

@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { useMyIps } from "./use-my-ips";
 const h = vi.hoisted(() => ({
   load: vi.fn(),
+  active: true,
   locale: "en-US",
   version: 0,
   t: (key: string) => key,
@@ -11,6 +12,7 @@ const h = vi.hoisted(() => ({
 vi.mock("@/data/ip-api", () => ({ fetchMyIpsPage: h.load }));
 vi.mock("@/data/browse-refresh", () => ({ useBrowseVersion: () => h.version }));
 vi.mock("@/i18n", () => ({ useLocale: () => h.locale, useTranslations: () => h.t }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
 const page = (id = "one", nextCursor: string | null = "one") => ({
@@ -147,4 +149,18 @@ it("requires fresh owned IPs after a return visit", async () => {
   expect(host.textContent).toContain("loading");
   await act(async () => finish(page("fresh", null)));
   expect(host.textContent).toContain("fresh");
+});
+
+it("clears stale IPs while backgrounded and reloads ownership on return", async () => {
+  h.load.mockResolvedValueOnce(page("old", null)).mockResolvedValueOnce(page("updated", null));
+  await render("alice");
+  const signal = h.load.mock.calls[0][1];
+  h.active = false;
+  await render("alice");
+  expect(signal.aborted).toBe(true);
+  expect(host.textContent).not.toContain("old");
+  h.active = true;
+  await render("alice");
+  expect(host.textContent).toContain("updated");
+  expect(h.load.mock.calls[1][0]).toBeNull();
 });
