@@ -60,7 +60,10 @@
     "comingSoon": "{label} · 即将推出",
     "terms": "服务条款",
     "privacy": "隐私政策",
-    "app": "App"
+    "app": "App",
+    "appDownloadAndroid": "下载安卓版",
+    "appDownloadIos": "App Store",
+    "appDownloadGooglePlay": "Google Play"
   },
   "home": {
     "untitledProject": "未命名项目",

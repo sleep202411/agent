@@ -138,8 +138,7 @@ function StudioHeader({
   const searchParams = useSearchParams();
   const upgradeParam = searchParams.get("upgrade");
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  // Chat/notifications/search have no backing feature yet — surface that
-  // honestly instead of rendering live-looking dead buttons.
+  // Search still needs an agreed scope; inbox links use the platform message center.
   const comingSoon = (label: string) => toast.info(t("shell.comingSoon", { label }));
 
   useEffect(() => {
@@ -187,23 +186,21 @@ function StudioHeader({
 
           <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onSwitch={onSwitchWorkspace} />
 
-          <button
-            type="button"
+          <Link
+            href={localizePath("/messages", currentLocale)}
             aria-label={t("shell.chat")}
-            onClick={() => comingSoon(t("shell.chat"))}
             className="flex size-9 items-center justify-center text-white transition-colors hover:text-white/72"
           >
             <IconMessageCircle className="size-5 fill-white" stroke={1.9} />
-          </button>
+          </Link>
 
-          <button
-            type="button"
+          <Link
+            href={localizePath("/messages?tab=notifications", currentLocale)}
             aria-label={t("shell.notifications")}
-            onClick={() => comingSoon(t("shell.notifications"))}
             className="flex size-9 items-center justify-center text-white transition-colors hover:text-white/72"
           >
             <IconBell className="size-5" stroke={1.9} />
-          </button>
+          </Link>
 
           <StudioAccountMenu
             className="ml-0"
@@ -264,23 +261,21 @@ function StudioHeader({
 
           <WorkspaceSwitcher activeWorkspaceId={activeWorkspaceId} onSwitch={onSwitchWorkspace} />
 
-          <button
-            type="button"
+          <Link
+            href={localizePath("/messages", currentLocale)}
             aria-label={t("shell.chat")}
-            onClick={() => comingSoon(t("shell.chat"))}
             className="flex size-10 items-center justify-center rounded-full text-white/54 transition-colors hover:bg-white/8 hover:text-white"
           >
             <IconMessageCircle className="size-5" />
-          </button>
+          </Link>
 
-          <button
-            type="button"
+          <Link
+            href={localizePath("/messages?tab=notifications", currentLocale)}
             aria-label={t("shell.notifications")}
-            onClick={() => comingSoon(t("shell.notifications"))}
             className="flex size-10 items-center justify-center rounded-full text-white/54 transition-colors hover:bg-white/8 hover:text-white"
           >
             <IconBell className="size-5" />
-          </button>
+          </Link>
 
           <StudioAccountMenu className="ml-1" showStoreButton={false} triggerMode="avatar" />
         </div>

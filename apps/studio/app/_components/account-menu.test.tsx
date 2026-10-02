@@ -74,3 +74,33 @@ it("dismisses the account menu when its Settings gear opens settings", async () 
     history.replaceState(null, "", "/");
   }
 });
+
+it.each(["global", "cn"])(
+  "offers the correct app downloads for %s regardless of locale",
+  async (region) => {
+    const { APP_DOWNLOADS_BY_SITE } = await import("@repo/shared");
+    s.region = region;
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    try {
+      for (const locale of ["en-US", "zh-CN", "zh-HK"]) {
+        s.locale = locale;
+        await act(async () => root.render(createElement(AccountMenu)));
+        await act(async () =>
+          Array.from(host.querySelectorAll("button"))
+            .find((b) => b.textContent === "Open menu")!
+            .click()
+        );
+        for (const item of APP_DOWNLOADS_BY_SITE[region as "global" | "cn"]) {
+          const link = host.querySelector<HTMLAnchorElement>(`a[href="${item.href}"]`);
+          expect(link).not.toBeNull();
+          expect(link?.rel).toContain("noopener");
+        }
+      }
+    } finally {
+      await act(async () => root.unmount());
+      s.region = "global";
+      s.locale = "en-US";
+    }
+  }
+);
