@@ -170,6 +170,12 @@ function LinearTaskSession({
     Boolean(activeView) && section === "issues"
   );
   const taskQuery = useCrewTask(selectedTaskId ?? "", Boolean(selectedTaskId));
+  const taskAccessUnavailable =
+    taskQuery.error instanceof CrewApiError &&
+    [401, 403, 404, 410].includes(taskQuery.error.status);
+  if (taskAccessUnavailable && submitTask !== null) {
+    setSubmitTask(null);
+  }
   const tasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
   const productionActivity = useMemo(
     () => productionActivityQuery.data?.pages.flatMap((page) => page.items) ?? [],
@@ -742,8 +748,10 @@ function LinearTaskSession({
           aria-describedby={undefined}
           className="w-full sm:w-[min(85vw,960px)] sm:max-w-none bg-[#090a0c] p-0 text-[#d5d8dd]"
         >
-          <SheetTitle className="sr-only">{taskQuery.data?.title ?? t("issues")}</SheetTitle>
-          {taskQuery.isError && taskQuery.data ? (
+          <SheetTitle className="sr-only">
+            {taskAccessUnavailable ? t("issues") : (taskQuery.data?.title ?? t("issues"))}
+          </SheetTitle>
+          {taskQuery.isError && taskQuery.data && !taskAccessUnavailable ? (
             <div className="flex items-center justify-between gap-3 px-6 py-3">
               <p role="alert">
                 {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
@@ -764,7 +772,7 @@ function LinearTaskSession({
                 {t("issues")}
               </button>
             </div>
-          ) : taskQuery.isError && !taskQuery.data ? (
+          ) : taskQuery.isError && (!taskQuery.data || taskAccessUnavailable) ? (
             <div className="grid flex-1 place-content-center gap-4 p-6">
               <p role="alert">
                 {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
