@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import en from "@/messages/en-US.json";
 import cn from "@/messages/zh-CN.json";
 import hk from "@/messages/zh-HK.json";
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { LinearTaskWorkspace } from "./linear-task-workspace";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -24,6 +25,7 @@ const state = vi.hoisted(() => ({
   projectFetching: false,
   listFailed: false,
   failed: false,
+  failureStatus: null as number | null,
   missing: false,
   retry: vi.fn(),
 }));
@@ -67,7 +69,11 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
     useCrewTask: (id: string) => ({
       data: id && !state.missing ? { id, title: "Selected task", assignees: [] } : undefined,
       isError: state.failed,
-      error: state.failed ? new Error("Task refresh unavailable") : null,
+      error: state.failed
+        ? state.failureStatus
+          ? new CrewApiError(state.failureStatus, { message: "Task access unavailable" })
+          : new Error("Task refresh unavailable")
+        : null,
       refetch: state.retry,
     }),
     useCrewTaskSummary: () => ({ data: {} }),
@@ -168,6 +174,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   state.account = "alice";
   state.failed = false;
+  state.failureStatus = null;
   state.missing = false;
   state.retry.mockClear();
 });
@@ -426,3 +433,34 @@ it("does not grant ordinary members task creation", async () => {
   ).toBe(false);
   expect(document.querySelector("[data-create-task]")).toBeNull();
 });
+
+it.each([401, 403, 404, 410])(
+  "removes cached task details after HTTP %s and allows recovery",
+  async (status) => {
+    state.locale = "en-US";
+    await render("task-1");
+    await act(async () =>
+      [...document.querySelectorAll("button")]
+        .find((button) => button.textContent === "Edit draft")!
+        .click()
+    );
+    state.failed = true;
+    state.failureStatus = status;
+    await render("task-1", true);
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).not.toContain("Private task draft");
+    expect(dialog.textContent).not.toContain("Selected task");
+    expect(dialog.textContent).not.toContain("Edit draft");
+    expect(dialog.querySelector('[role="alert"]')?.textContent).toBe("Task access unavailable");
+    await act(async () =>
+      [...dialog.querySelectorAll("button")]
+        .find((button) => button.textContent === "Retry")!
+        .click()
+    );
+    expect(state.retry).toHaveBeenCalledOnce();
+    state.failed = false;
+    await render("task-1", true);
+    expect(document.body.textContent).toContain("Edit draft");
+    expect(document.body.textContent).not.toContain("Private task draft");
+  }
+);
