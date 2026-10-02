@@ -8,7 +8,7 @@
  */
 import { appEnv, resolveAssetUrl } from "@/config";
 import { PRESET_POSITIONS } from "@repo/shared/crew";
-import { api } from "@/lib/api-client";
+import { api, ApiRequestError } from "@/lib/api-client";
 
 import type { IpReportReason } from "./ip-api";
 import type { CrewDetail, CrewFeedPage, CrewRoleOpening, CrewStatus, CrewSummary } from "./types";
@@ -66,34 +66,32 @@ function mapSummary(dto: CrewDto): CrewSummary {
   };
 }
 
-async function fetchPositions(crewId: string): Promise<CrewRoleOpening[]> {
-  try {
-    const list: PositionDto[] = [];
-    const cursors = new Set<string>();
-    let cursor: string | undefined;
-    do {
-      const page = await api.get<{ items: PositionDto[]; nextCursor: string | null }>(
-        `/crews/${crewId}/positions`,
-        { ...AURORA, params: { cursor } }
-      );
-      list.push(...page.items);
-      cursor = page.nextCursor ?? undefined;
-      if (cursor && cursors.has(cursor)) throw new Error("Repeated crew positions cursor");
-      if (cursor) cursors.add(cursor);
-    } while (cursor);
-    return list
-      .filter((position) => position.status === "open")
-      .map((position) => ({
-        id: position.id,
-        title: prettyRole(position.positionType),
-        positionType: position.positionType ?? undefined,
-        count: position.targetCount ?? 1,
-        location: position.location ?? undefined,
-        employmentType: position.employmentType ?? undefined,
-      }));
-  } catch {
-    return [];
-  }
+async function fetchPositions(crewId: string, signal?: AbortSignal): Promise<CrewRoleOpening[]> {
+  const list: PositionDto[] = [];
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    signal?.throwIfAborted();
+    const page = await api.get<{ items: PositionDto[]; nextCursor: string | null }>(
+      `/crews/${encodeURIComponent(crewId)}/positions`,
+      { ...AURORA, params: { cursor }, signal, retry: false }
+    );
+    signal?.throwIfAborted();
+    list.push(...page.items);
+    cursor = page.nextCursor ?? undefined;
+    if (cursor && cursors.has(cursor)) throw new Error("Repeated crew positions cursor");
+    if (cursor) cursors.add(cursor);
+  } while (cursor);
+  return list
+    .filter((position) => position.status === "open")
+    .map((position) => ({
+      id: position.id,
+      title: prettyRole(position.positionType),
+      positionType: position.positionType ?? undefined,
+      count: position.targetCount ?? 1,
+      location: position.location ?? undefined,
+      employmentType: position.employmentType ?? undefined,
+    }));
 }
 
 /**
@@ -136,13 +134,25 @@ export async function fetchCrewsByUser(userId: string): Promise<CrewSummary[]> {
   return list.map(mapSummary);
 }
 
-export async function fetchCrewById(id: string): Promise<CrewDetail | undefined> {
-  const [crew, roles] = await Promise.all([
-    api.get<CrewDto>(`/crews/${id}`, { ...AURORA }).catch(() => undefined),
-    fetchPositions(id),
-  ]);
-  if (!crew) return undefined;
-
+export async function fetchCrewById(
+  id: string,
+  signal?: AbortSignal
+): Promise<CrewDetail | undefined> {
+  signal?.throwIfAborted();
+  let crew: CrewDto;
+  try {
+    crew = await api.get<CrewDto>(`/crews/${encodeURIComponent(id)}`, {
+      ...AURORA,
+      signal,
+      retry: false,
+    });
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (error instanceof ApiRequestError && error.status === 404) return undefined;
+    throw error;
+  }
+  signal?.throwIfAborted();
+  const roles = await fetchPositions(id, signal);
   return {
     ...mapSummary(crew),
     description: crew.description ?? "",

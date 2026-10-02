@@ -60,6 +60,8 @@ export default function CrewDetailScreen() {
   const router = useRouter();
   const authGate = useAuthGate();
   const [crew, setCrew] = useState<CrewDetail>();
+  const [loadError, setLoadError] = useState<string>();
+  const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -67,13 +69,21 @@ export default function CrewDetailScreen() {
 
   useEffect(() => {
     let alive = true;
+    const controller = new AbortController();
     async function load() {
       setLoading(true);
+      setCrew(undefined);
+      setLoadError(undefined);
       try {
-        const data = await getCrewById(id);
+        const data = await getCrewById(id, controller.signal);
         if (alive) setCrew(data);
-      } catch {
-        if (alive) setCrew(undefined);
+      } catch (error) {
+        if (alive)
+          setLoadError(
+            error instanceof Error && error.message.trim()
+              ? error.message
+              : t("crews.loadErrorFallback")
+          );
       } finally {
         if (alive) setLoading(false);
       }
@@ -81,13 +91,29 @@ export default function CrewDetailScreen() {
     void load();
     return () => {
       alive = false;
+      controller.abort();
     };
-  }, [id]);
+  }, [id, revision, t]);
 
   if (loading) {
     return (
       <ThemedView style={styles.fullCenter}>
         <ActivityIndicator color={theme.textSecondary} />
+      </ThemedView>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
+        <EmptyState title={t("crews.loadErrorTitle")} detail={loadError} />
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setRevision((value) => value + 1)}
+          style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: Spacing.four }}
+        >
+          <ThemedText>{t("common.retry")}</ThemedText>
+        </Pressable>
       </ThemedView>
     );
   }

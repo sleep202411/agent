@@ -104,8 +104,11 @@ export async function getCreatorServiceById(id: string): Promise<CreatorServiceD
   return fetchCreatorServiceById(id);
 }
 
-export async function getCrewById(id: string): Promise<CrewDetail | undefined> {
-  return fetchCrewById(id);
+export async function getCrewById(
+  id: string,
+  signal?: AbortSignal
+): Promise<CrewDetail | undefined> {
+  return fetchCrewById(id, signal);
 }
 
 export async function getCrewsByUser(userId: string): Promise<CrewSummary[]> {
