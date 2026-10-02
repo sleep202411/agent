@@ -1,6 +1,7 @@
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
+import { StoryPlotImportAction } from "@/features/agent/components/story-plot-import";
 import { StoryScriptEditor } from "@/features/agent/components/story-script-editor";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
 import { useTranslations } from "@/i18n";
@@ -20,11 +21,19 @@ export default function AgentScriptScreen() {
           </Pressable>
         </View>
       ) : chapterId ? (
-        <StoryScriptEditor
-          projectId={projectId}
-          chapterId={chapterId}
-          canEdit={capabilities.includes("story.edit")}
-        />
+        <>
+          <StoryPlotImportAction
+            projectId={projectId}
+            chapterId={chapterId}
+            canEdit={capabilities.includes("story.edit")}
+            onImported={refresh}
+          />
+          <StoryScriptEditor
+            projectId={projectId}
+            chapterId={chapterId}
+            canEdit={capabilities.includes("story.edit")}
+          />
+        </>
       ) : (
         <ThemedText>{t("agent.script.empty")}</ThemedText>
       )}
