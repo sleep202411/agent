@@ -77,7 +77,7 @@ class FizzTimelineExportModule : Module() {
               val owned = job?.takeIf { it.id == id } ?: return
               job = null
               destination.delete()
-              owned.promise.reject("EXPORT_FAILED", exception.message ?: "Timeline encoding failed.", exception)
+              owned.promise.reject(if (isSourceFailure(exception)) "EXPORT_SOURCE_FAILED" else "EXPORT_FAILED", exception.message ?: "Timeline encoding failed.", exception)
             }
           }).build()
         job = Job(id, transformer, destination, promise)
@@ -99,6 +99,19 @@ class FizzTimelineExportModule : Module() {
         outputs.clear()
       }
     }
+  }
+
+  // Keep device encoder, muxer, permission and unspecified failures fatal.
+  private fun isSourceFailure(error: ExportException): Boolean = when (error.errorCode) {
+    ExportException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+    ExportException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+    ExportException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE,
+    ExportException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+    ExportException.ERROR_CODE_IO_FILE_NOT_FOUND,
+    ExportException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+    ExportException.ERROR_CODE_DECODING_FAILED,
+    ExportException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED -> true
+    else -> false
   }
 
   private fun cancel(id: String) {

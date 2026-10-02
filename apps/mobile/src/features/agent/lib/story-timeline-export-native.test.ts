@@ -114,3 +114,85 @@ it.each([{ ids: ["two", "one"] }, { ids: ["one", "one"] }, { ids: [] }])(
     expect(h.release).toHaveBeenCalledWith(artifact.uri);
   }
 );
+
+const sourceError = () =>
+  Object.assign(Error("Unreadable source"), { code: "EXPORT_SOURCE_FAILED" });
+it("isolates source failures and composes remaining clips in original order", async () => {
+  const input = [...shots, { ...shots[0]!, id: "bad" }, { ...shots[0]!, id: "three" }];
+  h.render.mockImplementation(async (_id, clips) => {
+    if (clips.some((s: { id: string }) => s.id === "bad")) throw sourceError();
+    return {
+      artifact: {
+        ...artifact,
+        uri: `file:///cache/${clips.map((s: { id: string }) => s.id).join("-")}.mp4`,
+      },
+      completedClipIds: clips.map((s: { id: string }) => s.id),
+    };
+  });
+  const result = await createNativeTimelineEncoder().render(
+    input,
+    new AbortController().signal,
+    vi.fn()
+  );
+  expect(result.completedClipIds).toEqual(["one", "three"]);
+  expect(h.render.mock.calls.map((c) => c[1].map((s: { id: string }) => s.id))).toEqual([
+    ["one", "bad", "three"],
+    ["one"],
+    ["bad"],
+    ["three"],
+    ["one", "three"],
+  ]);
+  expect(h.release.mock.calls).toEqual([["file:///cache/one.mp4"], ["file:///cache/three.mp4"]]);
+});
+it("does not isolate device-wide or unknown errors", async () => {
+  h.render.mockRejectedValue(Error("Encoder unavailable"));
+  await expect(
+    createNativeTimelineEncoder().render(
+      [...shots, { ...shots[0]!, id: "two" }],
+      new AbortController().signal,
+      vi.fn()
+    )
+  ).rejects.toThrow("Encoder unavailable");
+  expect(h.render).toHaveBeenCalledOnce();
+});
+it("fails when every isolated source is unreadable", async () => {
+  h.render.mockRejectedValue(sourceError());
+  await expect(
+    createNativeTimelineEncoder().render(
+      [...shots, { ...shots[0]!, id: "two" }],
+      new AbortController().signal,
+      vi.fn()
+    )
+  ).rejects.toThrow("No timeline clips");
+  expect(h.render).toHaveBeenCalledTimes(3);
+});
+it("stops recovery on cancellation instead of reporting a partial success", async () => {
+  const controller = new AbortController();
+  h.render.mockRejectedValueOnce(sourceError()).mockImplementationOnce(async () => {
+    controller.abort();
+    throw sourceError();
+  });
+  await expect(
+    createNativeTimelineEncoder().render(
+      [...shots, { ...shots[0]!, id: "two" }],
+      controller.signal,
+      vi.fn()
+    )
+  ).rejects.toThrow();
+  expect(h.render).toHaveBeenCalledTimes(2);
+});
+it("stops isolation on a later encoder failure and frees earlier probe output", async () => {
+  h.render
+    .mockRejectedValueOnce(sourceError())
+    .mockResolvedValueOnce({ artifact, completedClipIds: ["one"] })
+    .mockRejectedValueOnce(Error("Disk full"));
+  await expect(
+    createNativeTimelineEncoder().render(
+      [...shots, { ...shots[0]!, id: "two" }],
+      new AbortController().signal,
+      vi.fn()
+    )
+  ).rejects.toThrow("Disk full");
+  expect(h.release).toHaveBeenCalledExactlyOnceWith(artifact.uri);
+  expect(h.render).toHaveBeenCalledTimes(3);
+});
