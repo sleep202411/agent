@@ -140,6 +140,7 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
   const queryClient = useQueryClient();
   const [jobs, setJobs] = useState<FeedJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const historySeq = useRef(0);
   const pollInFlight = useRef(false);
@@ -161,6 +162,7 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
       activeEpoch.current = null;
       setJobs([]);
       setHistoryLoading(true);
+      setHistoryError(null);
       setRealtimeConnected(false);
       historySeq.current += 1;
       pollInFlight.current = false;
@@ -174,13 +176,15 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     try {
       const response = await listFizzAiJobs({ limit: HISTORY_LIMIT, sourceSurface, type });
       if (!isCurrent() || seq !== historySeq.current) return;
+      setHistoryError(null);
       setJobs((prev) => {
         let next = prev;
         for (const job of response.jobs) next = mergeIntoList(next, jobToFeedJob(job));
         return next;
       });
-    } catch {
-      // History is non-critical chrome — the page still composes/generates.
+    } catch (error) {
+      if (isCurrent() && seq === historySeq.current)
+        setHistoryError(normalizeFizzAiError(error, "Could not load generation history"));
     } finally {
       if (isCurrent() && seq === historySeq.current) setHistoryLoading(false);
     }
@@ -406,5 +410,13 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     [jobs]
   );
 
-  return { jobs, historyLoading, hasActiveJobs, submit, retry };
+  return {
+    jobs,
+    historyLoading,
+    historyError,
+    refreshHistory: reconcileHistory,
+    hasActiveJobs,
+    submit,
+    retry,
+  };
 }

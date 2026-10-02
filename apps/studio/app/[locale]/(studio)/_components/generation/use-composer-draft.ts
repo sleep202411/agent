@@ -30,7 +30,7 @@ export const useComposerDraftStore = create<{
     }),
 }));
 
-export function useComposerDraft(modality: "image" | "video" | "project") {
+export function useComposerDraft(modality: "image" | "video" | "audio" | "project") {
   const { user } = useAuth();
   const workspace = useProjectPayerWorkspace();
   const key = JSON.stringify([user?.id ?? null, workspace?.id ?? null, modality]);

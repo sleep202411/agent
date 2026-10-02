@@ -64,7 +64,7 @@ const LABEL_PREFIX: Record<FizzAiReferenceKind, string> = {
  * with live progress, abort-on-remove, object-URL lifecycle, and mention
  * labels (Image1/Video1/…) assigned per kind.
  */
-export function useReferenceUploads(modality?: "image" | "video") {
+export function useReferenceUploads(modality?: "image" | "video" | "audio") {
   // Uploads carry the project's member-accessible workspace (its team pot, or
   // my own personal one when the project is personal) — the upload endpoint is
   // workspace-membership gated, so this is always a workspace I can write to,

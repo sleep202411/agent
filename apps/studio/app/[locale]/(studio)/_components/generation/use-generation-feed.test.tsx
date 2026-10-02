@@ -215,3 +215,26 @@ it.each(["queued", "running"])(
     expect(feed.hasActiveJobs).toBe(false);
   }
 );
+
+it("shows history failures and recovers without submitting or retrying a generation", async () => {
+  vi.mocked(listFizzAiJobs).mockRejectedValueOnce(new Error("History temporarily unavailable"));
+  await render();
+  expect(feed.historyError).toBe("History temporarily unavailable");
+  vi.mocked(listFizzAiJobs).mockResolvedValueOnce({ jobs: [job], nextCursor: null });
+  await act(async () => {
+    await feed.refreshHistory();
+  });
+  expect(feed.historyError).toBeNull();
+  expect(feed.jobs).toHaveLength(1);
+  expect(submitFizzAiJob).not.toHaveBeenCalled();
+  expect(retryFizzAiJob).not.toHaveBeenCalled();
+});
+
+it("clears history errors when the account changes", async () => {
+  vi.mocked(listFizzAiJobs).mockRejectedValueOnce(new Error("Private workspace error"));
+  await render();
+  expect(feed.historyError).toBeTruthy();
+  state.user = "replacement";
+  await render();
+  expect(feed.historyError).toBeNull();
+});

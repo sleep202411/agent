@@ -35,17 +35,25 @@ import { useComputeWalletBalance } from "@/app/_components/credits-badge";
  * by sourceSurface, so a job submitted from the home shows up on /images.
  */
 export function useImageGeneration() {
+  return useStudioGeneration("image");
+}
+
+export function useAudioGeneration() {
+  return useStudioGeneration("audio");
+}
+
+function useStudioGeneration(modality: "image" | "audio") {
   const t = useTranslations("studioModes");
   const tv = useTranslations("generation");
   const tc = useTranslations("canvasOps");
   const { data: catalog } = useAiCatalog();
-  const feed = useGenerationFeed("image", "fizzstudio-image-studio");
+  const feed = useGenerationFeed(modality, `fizzstudio-${modality}-studio`);
   const { data: wallet } = useComputeWalletBalance();
-  const uploads = useReferenceUploads("image");
+  const uploads = useReferenceUploads(modality);
 
-  const draft = useComposerDraft("image");
+  const draft = useComposerDraft(modality);
   const { prompt, setPrompt, setSettings, setMode } = draft;
-  const models = usableModelsByModality(catalog, "image");
+  const models = usableModelsByModality(catalog, modality);
   const model = models.find((entry) => entry.id === draft.modelId) ?? models[0];
   const matchesModel = model?.id === draft.modelId;
   const settings = useMemo(
@@ -101,13 +109,21 @@ export function useImageGeneration() {
   const cost = useMemo(() => {
     if (!model) return null;
     const estimate = estimateModelSellPoints(model, {
+      durationSeconds:
+        typeof settings.durationSeconds === "number"
+          ? settings.durationSeconds
+          : typeof settings.duration === "number"
+            ? settings.duration
+            : undefined,
+      duration: typeof settings.duration === "string" ? settings.duration : undefined,
       quality: typeof settings.quality === "string" ? settings.quality : undefined,
       resolution: typeof settings.resolution === "string" ? settings.resolution : undefined,
       numOutputs: typeof settings.numOutputs === "number" ? settings.numOutputs : 1,
-      referenceImageCount: activeUploads.length,
+      text: prompt,
+      referenceImageCount: activeUploads.filter((item) => item.kind === "image").length,
     });
     return estimate?.sellPoints ?? null;
-  }, [model, settings, activeUploads.length]);
+  }, [model, settings, activeUploads, prompt]);
 
   const uploadsPending = activeUploads.some((item) => item.uploading);
   const canSubmit = Boolean(model && prompt.trim()) && !submitting && !uploadsPending;

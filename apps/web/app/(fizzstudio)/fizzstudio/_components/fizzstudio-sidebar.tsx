@@ -104,8 +104,8 @@ export function FizzStudioSidebar({ variant = "studio" }: { variant?: "enterpris
 
   const homeHref = localizePath("/fizzstudio", locale);
 
-  // Primary nav — the studio workspaces. `canvas` and `audio` are not built yet,
-  // so they render disabled with a "coming soon" tooltip instead of navigating.
+  // Audio routes to the complete standalone Studio composer and history.
+  // Canvas remains unavailable in this legacy shell.
   const items: RailItem[] = [
     { key: "home", href: homeHref, icon: IconHome },
     { key: "projects", href: localizePath("/fizzstudio/projects", locale), icon: IconFolders },
@@ -121,7 +121,6 @@ export function FizzStudioSidebar({ variant = "studio" }: { variant?: "enterpris
       key: "audio",
       href: localizePath("/fizzstudio/audio", locale),
       icon: IconVolume,
-      disabled: true,
     },
   ];
 
