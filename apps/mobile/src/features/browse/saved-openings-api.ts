@@ -49,7 +49,7 @@ export async function setSavedOpening(
     throw Error("The opening save response could not be verified. Refresh its saved state.");
   return data.saved;
 }
-const savedPage = z.object({
+export const savedPage = z.object({
   items: z
     .array(
       z.object({

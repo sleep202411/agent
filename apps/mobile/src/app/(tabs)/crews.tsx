@@ -232,6 +232,13 @@ function CrewHeader() {
       <Pressable
         accessibilityRole="button"
         style={{ minHeight: 44, paddingVertical: 12 }}
+        onPress={() => router.push(toHref("/openings"))}
+      >
+        <ThemedText type="small">{t("openings.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ minHeight: 44, paddingVertical: 12 }}
         onPress={() => {
           const openSaved = () => router.push(toHref("/saved-openings"));
           if (gate.requireAuth({ onAuthenticated: openSaved })) openSaved();
