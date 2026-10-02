@@ -70,6 +70,11 @@ export function CanvasProjectsGrid() {
   const [deleting, setDeleting] = useState<ProjectRef | null>(null);
   const creatingRef = useRef(false);
   const [creating, setCreating] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const requestId = useRef(0);
+  const mutationRef = useRef(false);
+  const [mutating, setMutating] = useState(false);
 
   const refreshScope = useRef({ workspaceId, active: true });
   useLayoutEffect(() => {
@@ -83,26 +88,42 @@ export function CanvasProjectsGrid() {
   const refresh = useCallback(async () => {
     const scope = refreshScope.current;
     if (!workspaceId || !scope.active || scope.workspaceId !== workspaceId) return;
-    const rows = await listProjects(workspaceId);
-    if (refreshScope.current === scope && scope.active) setProjects(rows);
-  }, [workspaceId]);
+    const id = ++requestId.current;
+    setLoadingProjects(true);
+    try {
+      const rows = await listProjects(workspaceId);
+      if (refreshScope.current === scope && scope.active && id === requestId.current) {
+        setProjects(rows);
+        setListError(null);
+      }
+    } catch (error) {
+      if (refreshScope.current === scope && scope.active && id === requestId.current) {
+        setListError(error instanceof Error && error.message ? error.message : t("loadFailed"));
+      }
+    } finally {
+      if (refreshScope.current === scope && scope.active && id === requestId.current) {
+        setLoadingProjects(false);
+      }
+    }
+  }, [workspaceId, t]);
 
-  // Re-scope when the active workspace changes (switch teams → switch grid).
-  // setState is deferred via queueMicrotask so it isn't called synchronously in
-  // the effect body (cascading-render lint), matching the surface's prior pattern.
+  // Clear dialogs and rows on workspace changes; late responses cannot alter
+  // the next workspace, including a return visit to the same workspace.
+  const refreshRef = useRef(refresh);
+  useLayoutEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
   useEffect(() => {
-    if (!workspaceId) return;
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
       setProjects(null);
-      void listProjects(workspaceId)
-        .then((rows) => {
-          if (!cancelled) setProjects(rows);
-        })
-        .catch(() => {
-          if (!cancelled) setProjects([]);
-        });
+      setListError(null);
+      setRenaming(null);
+      setDeleting(null);
+      setMutating(false);
+      mutationRef.current = false;
+      void refreshRef.current();
     });
     return () => {
       cancelled = true;
@@ -145,21 +166,56 @@ export function CanvasProjectsGrid() {
   }, [router, workspaceId, initialDescription, t, ts]);
 
   const confirmDelete = useCallback(async () => {
-    if (deleting) {
+    if (!deleting || mutationRef.current) return;
+    const scope = refreshScope.current;
+    mutationRef.current = true;
+    setMutating(true);
+    try {
       await deleteProject(deleting.id);
-      await refresh();
+      if (!scope.active || refreshScope.current !== scope) return;
+      setProjects((rows) => rows?.filter((row) => row.id !== deleting.id) ?? null);
+      setDeleting(null);
       toast.info(t("projectDeleted"));
+      // A list refresh failure must not turn a successful deletion into a
+      // retryable delete. The read error has its own recovery action.
+      await refresh();
+    } catch (error) {
+      if (scope.active && refreshScope.current === scope) {
+        toast.error(error instanceof Error && error.message ? error.message : t("deleteFailed"));
+      }
+    } finally {
+      if (scope.active && refreshScope.current === scope) {
+        mutationRef.current = false;
+        setMutating(false);
+      }
     }
-    setDeleting(null);
   }, [deleting, refresh, t]);
 
   const submitRename = useCallback(async () => {
-    if (renaming && renameValue.trim()) {
-      await renameProject(renaming.id, renameValue.trim());
+    const name = renameValue.trim();
+    if (!renaming || !name || mutationRef.current) return;
+    const scope = refreshScope.current;
+    mutationRef.current = true;
+    setMutating(true);
+    try {
+      await renameProject(renaming.id, name);
+      if (!scope.active || refreshScope.current !== scope) return;
+      setProjects(
+        (rows) => rows?.map((row) => (row.id === renaming.id ? { ...row, name } : row)) ?? null
+      );
+      setRenaming(null);
       await refresh();
+    } catch (error) {
+      if (scope.active && refreshScope.current === scope) {
+        toast.error(error instanceof Error && error.message ? error.message : t("renameFailed"));
+      }
+    } finally {
+      if (scope.active && refreshScope.current === scope) {
+        mutationRef.current = false;
+        setMutating(false);
+      }
     }
-    setRenaming(null);
-  }, [renaming, renameValue, refresh]);
+  }, [renaming, renameValue, refresh, t]);
 
   if (requestedWorkspaceId && !workspaceLoading && !activeWorkspace) {
     return (
@@ -171,6 +227,18 @@ export function CanvasProjectsGrid() {
 
   return (
     <>
+      {listError && (
+        <div
+          role="alert"
+          className="mt-6 flex items-center justify-between gap-4 rounded-xl bg-muted p-4 text-sm"
+        >
+          <span>{listError}</span>
+          <Button variant="secondary" disabled={loadingProjects} onClick={() => void refresh()}>
+            {loadingProjects && <IconLoader2 className="size-4 animate-spin" />}
+            {tc("retry")}
+          </Button>
+        </div>
+      )}
       <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
         {/* New canvas — soft tile + label below; the brand-red "+" is the
             sanctioned primary CTA (DESIGN.md §2). */}
@@ -196,7 +264,7 @@ export function CanvasProjectsGrid() {
           />
         </button>
 
-        {projects === null ? (
+        {projects === null && !listError ? (
           <>
             {[0, 1].map((key) => (
               <div key={key} className="flex flex-col gap-2.5">
@@ -209,7 +277,7 @@ export function CanvasProjectsGrid() {
             ))}
           </>
         ) : (
-          projects.map((project) => (
+          projects?.map((project) => (
             <Link
               key={project.id}
               href={`/project/${project.id}`}
@@ -235,30 +303,45 @@ export function CanvasProjectsGrid() {
         )}
       </div>
 
-      <Dialog open={renaming !== null} onOpenChange={(open) => !open && setRenaming(null)}>
-        <DialogContent className="sm:max-w-sm">
+      <Dialog
+        open={renaming !== null}
+        onOpenChange={(open) => !open && !mutationRef.current && setRenaming(null)}
+      >
+        <DialogContent className="sm:max-w-sm" showCloseButton={!mutating}>
           <DialogHeader>
             <DialogTitle>{t("renameProject")}</DialogTitle>
           </DialogHeader>
           <Input
+            aria-label={t("renameProject")}
+            disabled={mutating}
             value={renameValue}
             autoFocus
             onChange={(event) => setRenameValue(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") void submitRename();
+              if (event.key === "Enter" && !event.nativeEvent.isComposing) void submitRename();
             }}
           />
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setRenaming(null)}>
+            <Button variant="ghost" disabled={mutating} onClick={() => setRenaming(null)}>
               {tc("cancel")}
             </Button>
-            <Button onClick={() => void submitRename()}>{t("rename")}</Button>
+            <Button
+              disabled={mutating || !renameValue.trim()}
+              aria-busy={mutating}
+              onClick={() => void submitRename()}
+            >
+              {mutating && <IconLoader2 className="size-4 animate-spin" />}
+              {t("rename")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
-        <DialogContent className="sm:max-w-sm">
+      <Dialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && !mutationRef.current && setDeleting(null)}
+      >
+        <DialogContent className="sm:max-w-sm" showCloseButton={!mutating}>
           <DialogHeader>
             <DialogTitle>{t("deleteProjectTitle")}</DialogTitle>
             <DialogDescription>
@@ -266,10 +349,16 @@ export function CanvasProjectsGrid() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleting(null)}>
+            <Button variant="ghost" disabled={mutating} onClick={() => setDeleting(null)}>
               {tc("cancel")}
             </Button>
-            <Button variant="destructive" onClick={() => void confirmDelete()}>
+            <Button
+              variant="destructive"
+              disabled={mutating}
+              aria-busy={mutating}
+              onClick={() => void confirmDelete()}
+            >
+              {mutating && <IconLoader2 className="size-4 animate-spin" />}
               {tc("delete")}
             </Button>
           </DialogFooter>

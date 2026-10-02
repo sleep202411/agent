@@ -262,6 +262,8 @@
     }
   },
   "generation": {
+    "downloadFailed": "无法下载此文件",
+    "openOriginal": "打开原文件",
     "previewLoadFailed": "视频加载失败，请检查网络后重试。",
     "time": {
       "justNow": "刚刚",
@@ -544,6 +546,7 @@
     }
   },
   "projects": {
+    "loadFailed": "无法加载项目",
     "newCanvas": "新建画布",
     "createCanvasLoading": "创建中…",
     "startEmptyBoard": "从空白画板开始",

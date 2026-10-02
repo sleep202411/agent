@@ -262,6 +262,8 @@
     }
   },
   "generation": {
+    "downloadFailed": "Couldn't download this file",
+    "openOriginal": "Open original",
     "previewLoadFailed": "Could not load this video. Check your connection and retry.",
     "time": {
       "justNow": "Just now",
@@ -544,6 +546,7 @@
     }
   },
   "projects": {
+    "loadFailed": "Couldn't load projects",
     "newCanvas": "New canvas",
     "createCanvasLoading": "Creating…",
     "startEmptyBoard": "Start an empty board",
