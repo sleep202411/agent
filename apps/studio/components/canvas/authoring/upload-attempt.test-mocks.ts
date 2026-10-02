@@ -1,10 +1,12 @@
 import { vi } from "vitest";
 export const uploadFileViaSignedUrl = vi.fn();
-export const isUploadAbort = (e: any) => e?.name === "AbortError";
+export const isUploadAbort = (e: unknown) => e instanceof Error && e.name === "AbortError";
 export const useOptionalProjectContext = () => null;
-export const useProjectUIStore = (fn: any) => fn({ assetsOpen: false, nodeInsertRequest: null });
+export const useProjectUIStore = <T>(
+  fn: (state: { assetsOpen: boolean; nodeInsertRequest: null }) => T
+) => fn({ assetsOpen: false, nodeInsertRequest: null });
 export const useReactFlow = () => ({
-  screenToFlowPosition: (p: any) => p,
+  screenToFlowPosition: (p: { x: number; y: number }) => p,
   getNodes: () => [],
   fitView: () => {},
   setCenter: () => {},

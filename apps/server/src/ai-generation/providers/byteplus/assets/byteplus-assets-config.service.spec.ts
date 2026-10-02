@@ -94,7 +94,7 @@ describe('BytePlus asset moderation by deployment cell', () => {
     ).resolves.toEqual({ Id: 'asset-1' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = fetchMock.mock.calls[0]?.[1]?.body;
-    expect(JSON.parse(String(body))).toMatchObject({
+    expect(JSON.parse(typeof body === 'string' ? body : 'null')).toMatchObject({
       Moderation: { Strategy: 'Default' },
     });
   });

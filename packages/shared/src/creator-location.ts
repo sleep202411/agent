@@ -138,3 +138,30 @@ export const CreatorGeocodeStateSchema = z
   })
   .refine((value) => (value.state === "resolved") === (value.point !== null));
 export type CreatorGeocodeState = z.infer<typeof CreatorGeocodeStateSchema>;
+
+/** Public contributor relationships, independent of story-location coordinates. */
+export const IpStudioRequestSchema = z.strictObject({
+  requestId: z.uuid(),
+  ipId: z.uuid(),
+  locale: z.enum(["en-US", "zh-CN", "zh-HK"]),
+  limit: z.number().int().min(1).max(50).default(20),
+  cursor: CreatorDiscoveryRequestSchema.shape.cursor,
+});
+export const IpStudioResultSchema = z.strictObject({
+  requestId: z.uuid(),
+  ipId: z.uuid(),
+  locale: IpStudioRequestSchema.shape.locale,
+  queryId: z.string().regex(/^[a-f0-9]{64}$/),
+  items: z
+    .array(
+      z.strictObject({
+        studio: CreatorDiscoveryCardSchema,
+        roles: z.array(z.strictObject({ role: z.string(), customRole: z.string().nullable() })),
+      })
+    )
+    .max(50),
+  nextCursor: IpStudioRequestSchema.shape.cursor,
+  requiresLogin: z.boolean(),
+});
+export type IpStudioRequest = z.infer<typeof IpStudioRequestSchema>;
+export type IpStudioResult = z.infer<typeof IpStudioResultSchema>;

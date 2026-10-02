@@ -85,7 +85,7 @@ describe("story port connections", () => {
   });
 
   it("offers a free input before an occupied one and blocks an occupied output", () => {
-    let content = connect(createNodes(), "A", "C");
+    const content = connect(createNodes(), "A", "C");
     const { nodes, edges } = buildStoryCanvasModel(content, "en-US");
     const incoming = (targetId: string) =>
       edges.filter(

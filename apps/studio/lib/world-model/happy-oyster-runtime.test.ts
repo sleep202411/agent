@@ -17,7 +17,11 @@ beforeEach(() => {
 const create = () =>
   createHappyOysterRuntime({
     providerKey: FAL_HAPPY_OYSTER_PROVIDER_KEY,
-    connection: { apiBaseUrl: "https://example.test", token: "test", ticket: "test" } as any,
+    connection: {
+      apiBaseUrl: "https://example.test",
+      token: "test",
+      ticket: "test",
+    } as unknown as Parameters<typeof createHappyOysterRuntime>[0]["connection"],
     videoElement: {} as HTMLVideoElement,
     maxExperienceSeconds: null,
   });

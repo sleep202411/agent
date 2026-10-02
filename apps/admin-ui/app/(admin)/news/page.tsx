@@ -1,6 +1,6 @@
 import { NewsListPage } from "@/components/admin/news/news-list-page";
 import { fetchAdminNewsList, fetchAdminNewsTags } from "@/lib/admin-news";
-import { getAdminSession } from "@/lib/admin-session";
+import { requireContentPagePermission } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +22,8 @@ export default async function NewsPage({
 
   // Filters + pagination are server-side: the API does kind/status/q/page; the
   // client only drives them through the URL (see NewsListPage).
-  const [session, list, tags] = await Promise.all([
-    getAdminSession(),
+  const session = await requireContentPagePermission("news.read");
+  const [list, tags] = await Promise.all([
     fetchAdminNewsList({
       kind,
       status,

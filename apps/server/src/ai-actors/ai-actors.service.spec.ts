@@ -60,8 +60,11 @@ beforeEach(() => {
   service = new AiActorsService(
     {
       ...tx,
-      $transaction: (fnOrArray: any) =>
-        Array.isArray(fnOrArray) ? Promise.all(fnOrArray) : fnOrArray(tx),
+      $transaction: (
+        fnOrArray:
+          | Promise<unknown>[]
+          | ((client: ReturnType<typeof makeTransaction>) => Promise<unknown>),
+      ) => (Array.isArray(fnOrArray) ? Promise.all(fnOrArray) : fnOrArray(tx)),
     } as unknown as PrismaService,
     permission as unknown as WorkspacePermissionService,
   );
@@ -214,7 +217,7 @@ it('defaults to ai_actor category when creating without category', async () => {
   });
   expect(tx.aiActor.create).toHaveBeenCalledWith(
     expect.objectContaining({
-      data: expect.objectContaining({ category: 'ai_actor' }),
+      data: expect.objectContaining({ category: 'ai_actor' }) as unknown,
     }),
   );
 });
@@ -228,7 +231,7 @@ it('persists a valid category when provided on create', async () => {
   });
   expect(tx.aiActor.create).toHaveBeenCalledWith(
     expect.objectContaining({
-      data: expect.objectContaining({ category: 'influencer' }),
+      data: expect.objectContaining({ category: 'influencer' }) as unknown,
     }),
   );
 });
@@ -239,7 +242,7 @@ it('rejects an invalid category on create', async () => {
       name: 'Mira',
       photoAssetId,
       active: true,
-      category: 'alien' as any,
+      category: 'alien' as never,
     }),
   ).rejects.toThrow('Invalid actor category.');
   expect(tx.aiActor.create).not.toHaveBeenCalled();

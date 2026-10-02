@@ -12,11 +12,13 @@ const ctx = {
   stroke: vi.fn(),
 };
 beforeEach(async () => {
-  (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   Object.values(ctx)
     .filter((fn) => typeof fn === "function")
     .forEach((fn) => fn.mockClear());
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx as any);
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+    ctx as unknown as CanvasRenderingContext2D
+  );
   vi.stubGlobal(
     "Image",
     class {

@@ -131,7 +131,9 @@ const app = `crew-delete-${randomUUID()}`;
       expect(storage.deleteObject).not.toHaveBeenCalled();
     });
     it('keeps bytes and the trashed node if the database transaction rolls back', async () => {
-      const transaction = db.$transaction.bind(db);
+      const transaction: <T>(
+        callback: (tx: Prisma.TransactionClient) => Promise<T>,
+      ) => Promise<T> = db.$transaction.bind(db) as typeof db.$transaction;
       const injected = jest.spyOn(db, '$transaction').mockImplementationOnce(((
         callback: (tx: Prisma.TransactionClient) => Promise<unknown>,
       ) =>

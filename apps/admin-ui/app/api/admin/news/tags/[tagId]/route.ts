@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { updateAdminNewsTag, type AdminNewsTagSaveInput } from "@/lib/admin-news";
-import { getAdminSession } from "@/lib/admin-session";
+import { contentPermissionResponse } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +9,8 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ tagId: string }> }
 ) {
-  const session = await getAdminSession();
-  if (!session) return Response.json({ error: "未登录" }, { status: 401 });
+  const denied = await contentPermissionResponse("news.write");
+  if (denied) return denied;
   const { tagId } = await params;
   try {
     const input = (await request.json()) as AdminNewsTagSaveInput;

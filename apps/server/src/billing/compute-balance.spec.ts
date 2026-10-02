@@ -27,6 +27,7 @@ function setup({
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   };
   const prisma = {
+    crew: { findFirst: jest.fn().mockResolvedValue(null) },
     workspaceMember: {
       findFirst: jest.fn(
         ({

@@ -290,3 +290,29 @@ it("renders chronological conversation bubbles and sends a versioned message", a
     })
   );
 });
+
+it("keeps approved conversations writable without reopening interview controls", async () => {
+  h.get.mockResolvedValue({
+    ...page,
+    applicationStatus: "approved",
+    canUpdate: false,
+    canMessage: true,
+    state: "completed",
+  });
+  await render(false, true);
+  await flush();
+  expect(host.querySelector("textarea")).not.toBeNull();
+  expect(host.textContent).toContain("send");
+  expect(host.textContent).not.toContain("readOnly");
+  expect(
+    [...host.querySelectorAll("button")].some((button) => button.textContent === "schedule")
+  ).toBe(false);
+  await field("textarea", "Ready to start");
+  await click("send");
+  expect(h.post).toHaveBeenCalledWith(
+    "/applications/app/interview",
+    expect.objectContaining({
+      body: expect.objectContaining({ action: "message", message: "Ready to start" }),
+    })
+  );
+});

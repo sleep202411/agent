@@ -53,7 +53,7 @@ describe('HTTP error snapshots', () => {
         { statusCode: 500, message: 'Internal server error' },
         500,
       );
-      const event = notify.mock.calls[0]?.[0] as AlertEvent;
+      const event = notify.mock.calls[0]?.[0];
       expect(event.request?.path).toBe('/test');
       expect(event.error?.name).toBe('UnknownException');
       expect(event.error?.message).toEqual(expect.any(String));

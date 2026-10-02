@@ -135,7 +135,11 @@ function TermsSession({
       }
       aria-label={t("title")}
     >
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-sky-400">{t("title")}</h3>
+      {(!acceptOffer || latest) && (
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-sky-400">
+          {t("title")}
+        </h3>
+      )}
       {taskTitle && latest && !query.isError && (
         <h4 className="text-xl font-semibold">{taskTitle}</h4>
       )}
@@ -155,7 +159,9 @@ function TermsSession({
       {query.isSuccess && !query.isError && (
         <>
           {!latest ? (
-            <p className="text-sm text-muted-foreground">{t("none")}</p>
+            !acceptOffer ? (
+              <p className="text-sm text-muted-foreground">{t("none")}</p>
+            ) : null
           ) : (
             <div className="space-y-5 text-sm">
               <p>
@@ -204,7 +210,7 @@ function TermsSession({
                 )}
             </div>
           )}
-          {status === "pending" && !ready && (
+          {!acceptOffer && status === "pending" && !ready && (
             <p className="text-sm text-muted-foreground">{t("blocked")}</p>
           )}
           {reviewer && userId !== applicantId && status === "pending" && (
@@ -214,7 +220,9 @@ function TermsSession({
                   setDraftVersion((version) => version ?? query.data.currentVersion);
               }}
             >
-              <summary className="cursor-pointer text-sm">{t("propose")}</summary>
+              <summary className="cursor-pointer text-sm">
+                {t(latest ? "reviseOffer" : "createOffer")}
+              </summary>
               <form
                 className="mt-3 space-y-3"
                 onSubmit={(event) => {
@@ -222,26 +230,25 @@ function TermsSession({
                   void write(false);
                 }}
               >
-                <p className="text-xs text-muted-foreground">
-                  {t("draftVersion", { version: draftVersion ?? query.data.currentVersion })}
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => {
-                    if (pending.current) return;
-                    setScope("");
-                    setFee("");
-                    setPeriod("project");
-                    setShare("0");
-                    setBasis("");
-                    setError("");
-                    setDraftVersion(query.data.currentVersion);
-                  }}
-                >
-                  {t("discardDraft")}
-                </Button>
+                {(scope || fee || share !== "0" || basis) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      if (pending.current) return;
+                      setScope("");
+                      setFee("");
+                      setPeriod("project");
+                      setShare("0");
+                      setBasis("");
+                      setError("");
+                      setDraftVersion(query.data.currentVersion);
+                    }}
+                  >
+                    {t("discardDraft")}
+                  </Button>
+                )}
                 <label className="block text-sm">
                   {t("scope")}
                   <Textarea

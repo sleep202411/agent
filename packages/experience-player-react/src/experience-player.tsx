@@ -1,4 +1,5 @@
 "use client";
+import { usePlaySessionReporter } from "./use-play-session-reporter";
 
 import {
   useCallback,
@@ -141,6 +142,7 @@ export function ExperiencePlayer({
   playSessionReporter,
   endingExtra,
 }: ExperiencePlayerProps) {
+  const sessionReporter = usePlaySessionReporter(playSessionReporter);
   const hydrationSeedId = useId();
   const [restartEpoch, setRestartEpoch] = useState(0);
   const generatedSessionSeedRef = useRef<string | null>(null);
@@ -167,7 +169,7 @@ export function ExperiencePlayer({
           canAccess: access?.canAccess,
           previewAccess,
           restore: restartEpoch === 0 ? accessCheckpoint?.state : undefined,
-          playSessionReporter,
+          playSessionReporter: sessionReporter,
         }),
       };
     } catch (error) {
@@ -176,7 +178,7 @@ export function ExperiencePlayer({
         issues: [{ path: [], message: runtimeErrorMessage(error) }],
       };
     }
-  }, [access, accessCheckpoint, previewAccess, randomSeed, restartEpoch, runtime]);
+  }, [access, accessCheckpoint, previewAccess, randomSeed, restartEpoch, runtime, sessionReporter]);
 
   if (!prepared.ok) {
     return (

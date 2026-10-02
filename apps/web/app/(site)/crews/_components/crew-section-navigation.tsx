@@ -42,15 +42,24 @@ export function CrewSectionNavigation({
   active,
   onViewChange,
   children,
+  showDashboard = true,
+  sticky = true,
 }: {
   active: CrewSection;
   onViewChange?: (view: LobbyView) => void;
   children?: ReactNode;
+  showDashboard?: boolean;
+  sticky?: boolean;
 }) {
   const t = useTranslations("crew");
   const locale = useLocale() as Locale;
   return (
-    <div className="mb-6 bg-background md:sticky md:top-[88px] md:z-30 lg:top-[96px]">
+    <div
+      className={cn(
+        "mb-6 bg-background",
+        sticky && "md:sticky md:top-[88px] md:z-30 lg:top-[96px]"
+      )}
+    >
       <nav
         aria-label={t("navigationLabel")}
         className="flex flex-wrap items-center gap-1 border-b border-border bg-background py-1"
@@ -98,7 +107,7 @@ export function CrewSectionNavigation({
         })}
         {children}
       </nav>
-      {dashboardSections.some((section) => section.id === active) ? (
+      {showDashboard && dashboardSections.some((section) => section.id === active) ? (
         <nav
           aria-label={t("taskDashboardTab")}
           className="flex flex-wrap items-center gap-1 border-b border-border py-2"

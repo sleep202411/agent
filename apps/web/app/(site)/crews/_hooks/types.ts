@@ -509,6 +509,7 @@ export interface CrewPayoutPageDTO {
 }
 
 export interface CrewTaskDTO {
+  storyboardClipId?: string | null;
   assetCategory?: string;
   id: string;
   crewId: string;

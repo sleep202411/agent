@@ -30,6 +30,7 @@ function build() {
     $queryRaw: jest
       .fn()
       .mockResolvedValue([{ user_id: ACTOR.userId, next_seq: 2n }]),
+    crew: { findFirst: jest.fn().mockResolvedValue(null) },
     entitlementGrant: { findMany: jest.fn().mockResolvedValue([]) },
     billingMembershipPlan: { findMany: jest.fn().mockResolvedValue([]) },
     workspace: {

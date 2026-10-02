@@ -122,6 +122,10 @@ export class CrewApplicationInterviewsService {
     return {
       applicationStatus: app.status,
       canUpdate: app.status === 'pending',
+      canMessage:
+        app.status === 'pending' ||
+        (app.status === 'approved' &&
+          Boolean(await this.auth.resolve(app.crewId, userId, this.db))),
       version: latest?.version ?? 0,
       state: latest?.state ?? 'not_started',
       scheduledAt: latest?.scheduledAt ?? null,
@@ -158,7 +162,9 @@ export class CrewApplicationInterviewsService {
           );
         return eventDto(retry);
       }
-      if (app.status !== 'pending')
+      if (app.status === 'approved' && input.action === 'message')
+        await this.auth.requireMembership(app.crewId, userId, tx);
+      else if (app.status !== 'pending')
         throw new ConflictException(
           'Reviewed applications cannot change interview history.',
         );

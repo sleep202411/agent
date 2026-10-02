@@ -1,40 +1,25 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
-import { CrewProductionKind } from '@prisma/client';
+import { CrewProductionKind, type Prisma } from '@prisma/client';
 import { ProjectTaskTemplateService } from './project-task-template.service';
 import { DEFAULT_SERIES_TASK_TEMPLATE } from './project-task-template.types';
 
 describe('ProjectTaskTemplateService', () => {
   let service: ProjectTaskTemplateService;
-  let mockPrisma: any;
-  let mockTx: any;
+  const makePrisma = () => ({ projectTaskTemplate: { findFirst: jest.fn() } });
+  const makeTx = () => ({
+    crewTask: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
+    crewTaskWorkflowState: { findFirst: jest.fn() },
+    crewEpisode: { findFirst: jest.fn() },
+    crewTaskDependency: { create: jest.fn() },
+    projectTaskTemplate: { findFirst: jest.fn() },
+  });
+  let mockPrisma: ReturnType<typeof makePrisma>;
+  let mockTx: ReturnType<typeof makeTx>;
 
   beforeEach(() => {
-    mockPrisma = {
-      projectTaskTemplate: {
-        findFirst: jest.fn(),
-      },
-    };
-    service = new ProjectTaskTemplateService(mockPrisma);
-
-    mockTx = {
-      crewTask: {
-        findMany: jest.fn(),
-        findFirst: jest.fn(),
-        create: jest.fn(),
-      },
-      crewTaskWorkflowState: {
-        findFirst: jest.fn(),
-      },
-      crewEpisode: {
-        findFirst: jest.fn(),
-      },
-      crewTaskDependency: {
-        create: jest.fn(),
-      },
-      projectTaskTemplate: {
-        findFirst: jest.fn(),
-      },
-    };
+    mockPrisma = makePrisma();
+    service = new ProjectTaskTemplateService(mockPrisma as never);
+    mockTx = makeTx();
   });
 
   describe('resolveActiveTemplate', () => {
@@ -84,7 +69,7 @@ describe('ProjectTaskTemplateService', () => {
   });
 
   describe('instantiateTasks', () => {
-    const mockTemplate: any = {
+    const mockTemplate = {
       id: '01990000-0000-7000-8000-000000000001',
       projectType: CrewProductionKind.series,
       name: '短剧全流程标准模板',
@@ -102,15 +87,18 @@ describe('ProjectTaskTemplateService', () => {
       mockTx.crewEpisode.findFirst.mockResolvedValue({ id: 'ep-1' });
       mockTx.crewTask.findFirst.mockResolvedValue(null); // No prior task
 
-      mockTx.crewTask.create.mockImplementation(({ data }: any) =>
-        Promise.resolve({ ...data }),
+      mockTx.crewTask.create.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve({ ...data }),
       );
-      mockTx.crewTaskDependency.create.mockResolvedValue({} as any);
+      mockTx.crewTaskDependency.create.mockResolvedValue({});
 
       const createdTasks = await service.instantiateTasks(
-        mockTx,
+        mockTx as unknown as Prisma.TransactionClient,
         'crew-1',
-        mockTemplate,
+        mockTemplate as unknown as Parameters<
+          typeof service.instantiateTasks
+        >[2],
         {
           idempotencyKey: 'crew-1',
           userId: 'user-creator',
@@ -127,7 +115,9 @@ describe('ProjectTaskTemplateService', () => {
           templateVersion: 1,
           idempotencyKey: 'crew-1',
         });
-        expect((task.metadata as any).templateKey).toBeDefined();
+        expect(
+          (task.metadata as Record<string, unknown>).templateKey,
+        ).toBeDefined();
       }
 
       // Verify dependencies were created
@@ -135,7 +125,7 @@ describe('ProjectTaskTemplateService', () => {
     });
 
     it('returns existing tasks and creates 0 new tasks on duplicate call (idempotency)', async () => {
-      const existingTasks: any[] = [
+      const existingTasks = [
         {
           id: 'task-1',
           crewId: 'crew-1',
@@ -151,9 +141,11 @@ describe('ProjectTaskTemplateService', () => {
       mockTx.crewTask.findMany.mockResolvedValue(existingTasks);
 
       const result = await service.instantiateTasks(
-        mockTx,
+        mockTx as unknown as Prisma.TransactionClient,
         'crew-1',
-        mockTemplate,
+        mockTemplate as unknown as Parameters<
+          typeof service.instantiateTasks
+        >[2],
         {
           idempotencyKey: 'crew-1',
         },

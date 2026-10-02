@@ -1,7 +1,6 @@
 import {
   FilmKnowledgeQueryRequestSchema,
   FilmKnowledgeQueryResponseSchema,
-  type FilmKnowledgeQueryRequest,
   type FilmKnowledgeQueryResponse,
 } from "@repo/agent-protocol";
 

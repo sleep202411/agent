@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { createAdminNews, type AdminNewsSaveInput } from "@/lib/admin-news";
-import { getAdminSession } from "@/lib/admin-session";
+import { contentPermissionResponse } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 // only mutations need a client-callable route. Gated on the admin-ui session;
 // the Java 资讯 backend is then called with the server-only X-Admin-Api-Token.
 export async function POST(request: NextRequest) {
-  const session = await getAdminSession();
-  if (!session) return Response.json({ error: "未登录" }, { status: 401 });
+  const denied = await contentPermissionResponse("news.write");
+  if (denied) return denied;
   try {
     const input = (await request.json()) as AdminNewsSaveInput;
     const id = await createAdminNews(input);

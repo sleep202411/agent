@@ -1,3 +1,6 @@
+import { IpStudiosService } from '../ip-commerce/ip-studios';
+import { IpCommerceService } from '../ip-commerce/ip-commerce.service';
+import { IpStudioRequestSchema } from '@repo/shared/creator-location';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,6 +23,8 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
     let db: PrismaClient;
     let search: CreatorDiscoveryService;
     let locations: CreatorLocationsService;
+    let relationships: IpStudiosService;
+    const ipId = randomUUID();
     const identities = new Map<
       string,
       { id: string; nick_name: string; avatar: string; jobseeking: number }
@@ -65,7 +70,7 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
         `CREATE TABLE creator_services(id text PRIMARY KEY, creator_id text, status text DEFAULT 'listed', deleted_at timestamptz, title text DEFAULT 'Advertising video', category text DEFAULT 'video_production', tags text[] DEFAULT '{}')`,
       );
       await db.$executeRawUnsafe(
-        `CREATE TABLE ip_user_content_blocks(user_id text,target_id text,target_type text,unblocked_at timestamptz)`,
+        `CREATE TABLE ip_user_content_blocks(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id text,target_id text,target_type text,unblocked_at timestamptz)`,
       );
       const migration = readFileSync(
         join(
@@ -85,13 +90,34 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
       );
       for (const sql of geocodes.split(';').filter((s) => s.trim()))
         await db.$executeRawUnsafe(sql);
+      await db.$executeRawUnsafe(
+        `CREATE TABLE ips(id uuid PRIMARY KEY, created_by_id text, deleted_at timestamptz, status text DEFAULT 'published', listing_visibility text DEFAULT 'public', channel_type text DEFAULT 'ip')`,
+      );
+      await db.$executeRawUnsafe(
+        `CREATE TABLE ip_localizations(ip_id uuid, status text DEFAULT 'published', archived_at timestamptz)`,
+      );
+      await db.$executeRawUnsafe(
+        `CREATE TABLE ip_contributors(ip_id uuid,user_id text,role text,custom_role text,is_public boolean DEFAULT true,removed_at timestamptz)`,
+      );
       locations = new CreatorLocationsService(db as PrismaService);
       search = new CreatorDiscoveryService(
         db as PrismaService,
         new LegacyCreatorsService(legacy as unknown as LegacyMysqlService),
       );
+      const catalogue = Object.assign(
+        Object.create(IpCommerceService.prototype) as IpCommerceService,
+        { prisma: db },
+      );
+      relationships = new IpStudiosService(
+        db as PrismaService,
+        catalogue,
+        search,
+      );
     });
     afterEach(async () => {
+      await db.$executeRaw`DELETE FROM ip_contributors`;
+      await db.$executeRaw`DELETE FROM ip_localizations`;
+      await db.$executeRaw`DELETE FROM ips`;
       await db.$executeRaw`DELETE FROM creator_location_revisions`;
       await db.$executeRaw`DELETE FROM creator_services`;
       await db.$executeRaw`DELETE FROM ip_user_content_blocks`;
@@ -101,6 +127,9 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
     afterAll(async () => {
       if (!db) return;
       for (const name of [
+        'ip_contributors',
+        'ip_localizations',
+        'ips',
         'creator_location_geocodes',
         'creator_location_revisions',
         'creator_services',
@@ -125,6 +154,112 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
         { requestId: randomUUID(), expectedVersion: 0, profile: declaration },
       );
     }
+
+    const relationshipInput = () =>
+      IpStudioRequestSchema.parse({
+        requestId: randomUUID(),
+        ipId,
+        locale: 'en-US',
+        limit: 1,
+      });
+    async function credit(id: string | null, role = 'writer', isPublic = true) {
+      await db.$executeRaw`INSERT INTO ip_contributors(ip_id,user_id,role,is_public) VALUES (${ipId}::uuid,${id},${role},${isPublic})`;
+    }
+    async function publicIp() {
+      await db.$executeRaw`INSERT INTO ips(id,created_by_id) VALUES (${ipId}::uuid,'owner')`;
+      await db.$executeRaw`INSERT INTO ip_localizations(ip_id) VALUES (${ipId}::uuid)`;
+    }
+    it('groups public contributor roles and pages across studios independently of catalogue pages', async () => {
+      await publicIp();
+      await add('1');
+      await add('2', { ...profile, showOnMap: false, remote: true });
+      await credit('1');
+      await credit('1', 'director');
+      await credit('1', 'writer');
+      await credit('2');
+      await add('owner'); // ownership alone never establishes contribution
+      await credit(null);
+      await credit('unlinked');
+      const first = await relationships.search(relationshipInput(), {
+        userId: 'viewer',
+      });
+      expect(first.items).toHaveLength(1);
+      expect(first.items[0].roles.map((r) => r.role)).toEqual([
+        'director',
+        'writer',
+      ]);
+      const second = await relationships.search(
+        { ...relationshipInput(), cursor: first.nextCursor },
+        { userId: 'viewer' },
+      );
+      expect(second.items.map((i) => i.studio.id)).toEqual(['2']);
+      expect(second.items[0].studio).toMatchObject({
+        basedIn: null,
+        point: null,
+        showOnMap: false,
+        remote: true,
+      });
+      expect(second.nextCursor).toBeNull();
+      await expect(
+        relationships.search(
+          { ...relationshipInput(), cursor: first.nextCursor },
+          { userId: 'another' },
+        ),
+      ).rejects.toThrow('new studio relationship query');
+      await expect(
+        relationships.search(
+          { ...relationshipInput(), locale: 'zh-CN', cursor: first.nextCursor },
+          { userId: 'viewer' },
+        ),
+      ).rejects.toThrow('new studio relationship query');
+    });
+    it('removes revoked credits, unlisted services, blocked identities and private IPs on the next request', async () => {
+      await publicIp();
+      for (const id of ['1', '2', '3', '4']) {
+        await add(id);
+        await credit(id);
+      }
+      await credit('4', 'director', false);
+      await db.$executeRaw`UPDATE ip_contributors SET removed_at=now() WHERE user_id='1'`;
+      await db.$executeRaw`UPDATE creator_services SET status='draft' WHERE creator_id='2'`;
+      await db.$executeRaw`INSERT INTO ip_user_content_blocks(user_id,target_type,target_id) VALUES ('viewer','creator','3')`;
+      const visible = await relationships.search(
+        { ...relationshipInput(), limit: 50 },
+        { userId: 'viewer' },
+      );
+      expect(visible.items.map((i) => i.studio.id)).toEqual(['4']);
+      expect(visible.items[0].roles).toEqual([
+        { role: 'writer', customRole: null },
+      ]);
+      identities.delete('4');
+      expect(
+        (await relationships.search(relationshipInput(), { userId: 'viewer' }))
+          .items,
+      ).toEqual([]);
+      await db.$executeRaw`UPDATE ips SET listing_visibility='private'`;
+      await expect(relationships.search(relationshipInput())).rejects.toThrow(
+        'IP not found',
+      );
+      await db.$executeRaw`UPDATE ips SET listing_visibility='public', status='draft'`;
+      await expect(relationships.search(relationshipInput())).rejects.toThrow(
+        'IP not found',
+      );
+    });
+    it('scans beyond a full batch of undiscoverable credits and rechecks the IP block', async () => {
+      await publicIp();
+      await add('z-studio');
+      await credit('z-studio');
+      await db.$executeRaw`INSERT INTO ip_contributors(ip_id,user_id,role) SELECT ${ipId}::uuid, 'a-' || n::text, 'writer' FROM generate_series(1,505) n`;
+      expect(
+        (
+          await relationships.search(relationshipInput(), { userId: 'viewer' })
+        ).items.map((i) => i.studio.id),
+      ).toEqual(['z-studio']);
+      await db.$executeRaw`INSERT INTO ip_user_content_blocks(user_id,target_type,target_id) VALUES ('viewer','ip',${ipId})`;
+      await expect(
+        relationships.search(relationshipInput(), { userId: 'viewer' }),
+      ).rejects.toThrow('IP not found');
+    });
     it('counts creators once across multiple matching services, before pagination', async () => {
       await add('1');
       await add('2');

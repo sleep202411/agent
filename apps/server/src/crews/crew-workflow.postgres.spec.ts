@@ -3162,9 +3162,31 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         }
         await applications.approve(appId, owner);
         expect((await interviews.list(appId, worker)).state).toBe('completed');
+        expect(await interviews.list(appId, worker)).toMatchObject({
+          canUpdate: false,
+          canMessage: true,
+        });
+        await interviews.update(
+          appId,
+          worker,
+          change(3, 'message', 'Ready to start work'),
+        );
+        await interviews.update(
+          appId,
+          owner,
+          change(4, 'message', 'Welcome to the crew'),
+        );
         await expect(
-          interviews.update(appId, worker, change(3, 'message')),
+          interviews.update(appId, owner, change(5, 'schedule')),
         ).rejects.toThrow('Reviewed applications');
+        await db.crewMember.updateMany({
+          where: { crewId, userId: worker },
+          data: { status: 'removed', removedAt: new Date() },
+        });
+        expect((await interviews.list(appId, worker)).canMessage).toBe(false);
+        await expect(
+          interviews.update(appId, worker, change(5, 'message')),
+        ).rejects.toThrow('Active crew membership');
       });
       it('allows reasoned cancellation by the applicant without changing application status', async () => {
         await interviews.update(appId, owner, change(0, 'schedule'));

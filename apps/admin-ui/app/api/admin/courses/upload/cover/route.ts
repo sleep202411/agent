@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { uploadAdminCourseCover } from "@/lib/admin-courses";
-import { getAdminSession } from "@/lib/admin-session";
+import { contentPermissionResponse } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const session = await getAdminSession();
-  if (!session) return Response.json({ error: "未登录" }, { status: 401 });
+  const denied = await contentPermissionResponse("courses.write");
+  if (denied) return denied;
   try {
     const form = await request.formData();
     const file = form.get("file");

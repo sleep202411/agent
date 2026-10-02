@@ -45,6 +45,7 @@
     "test:story-project-move": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-story-project-move.ts",
     "test:workspace-permissions": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-workspace-permissions.ts",
     "media:inspect": "tsx scripts/inspect-media.ts",
+    "test:integration:audit": "node scripts/test-audit-integration.mjs",
     "test:integration:gps": "node scripts/test-gps.mjs",
     "test:typecheck-runner": "node --test scripts/check-types.test.mjs"
   },

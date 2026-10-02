@@ -98,7 +98,11 @@ async function request<T>(
       result?.message ??
       result?.msg ??
       (Array.isArray(result?.errors)
-        ? result.errors.map((e: any) => e.message ?? JSON.stringify(e)).join("; ")
+        ? result.errors
+            .map((e: unknown) =>
+              e && typeof e === "object" && "message" in e ? String(e.message) : JSON.stringify(e)
+            )
+            .join("; ")
         : `Request failed (${response.status})`);
     throw new Error(errorMsg);
   }
@@ -160,8 +164,12 @@ export function TaskTemplatesPanel() {
   }
 
   useEffect(() => {
-    void loadTemplate(projectType);
+    let disposed = false;
+    void Promise.resolve().then(() => {
+      if (!disposed) void loadTemplate(projectType);
+    });
     return () => {
+      disposed = true;
       active.current?.abort();
       active.current = null;
     };

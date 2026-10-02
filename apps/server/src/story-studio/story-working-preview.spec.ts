@@ -690,7 +690,7 @@ describe('StoryWorkingPreviewService', () => {
         expect.objectContaining({
           code: 'STORY_BUILD_CLIP_MEDIA_REQUIRED',
           severity: 'warning',
-          details: expect.objectContaining({ kind: 'shot' }),
+          details: expect.objectContaining({ kind: 'shot' }) as unknown,
         }),
       ]),
     );

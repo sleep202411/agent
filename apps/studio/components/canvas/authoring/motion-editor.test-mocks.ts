@@ -1,10 +1,11 @@
 export const useTranslations = () => (key: string) => key;
-export const useStore = (fn: any) => fn({ transform: [0, 0, 1] });
+export const useStore = <T>(fn: (state: { transform: number[] }) => T) =>
+  fn({ transform: [0, 0, 1] });
 export const useAiCatalog = () => ({ data: null });
 export const MOTION_OP = { findModel: () => null };
 export const useSpawnOperationResult = () => () => {};
 export const estimateModelSellPoints = () => 0;
-export const cn = (...args: any[]) => args.filter(Boolean).join(" ");
+export const cn = (...args: unknown[]) => args.filter(Boolean).join(" ");
 export const toast = { error: () => {} };
 export const isUploadAbort = () => false;
 export const uploadFileViaSignedUrl = () => {
