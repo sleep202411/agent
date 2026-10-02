@@ -1,5 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
+  updatePlatformProjectCover,
+  readPlatformProject,
   archivePlatformProject,
   createPlatformProject,
   loadPlatformProjects,
@@ -142,4 +144,43 @@ it("rejects invalid drafts before loading permissions", async () => {
     updatePlatformProject(project, { ...draft, description: "x".repeat(5001) }, 1)
   ).rejects.toThrow();
   expect(h.get).not.toHaveBeenCalled();
+});
+
+it("writes only cover metadata and retains the official cover fields", async () => {
+  h.patch.mockResolvedValue({
+    project: {
+      ...project,
+      version: 3,
+      coverAssetId: id,
+      thumbnailUrl: `/aurora/media/assets/${id}/content`,
+    },
+  });
+  const result = await updatePlatformProjectCover(project, id, 1, new AbortController().signal);
+  expect(result.coverAssetId).toBe(id);
+  expect(result.thumbnailUrl).toContain(id);
+  expect(h.patch).toHaveBeenCalledWith(`/projects/${id}`, {
+    service: "aurora",
+    data: { coverAssetId: id, expectedVersion: 2 },
+  });
+});
+it("removes explicit covers and rejects revoked access before the cover write", async () => {
+  h.patch.mockResolvedValue({ project: { ...project, version: 3, coverAssetId: null } });
+  expect(
+    (await updatePlatformProjectCover(project, null, 1, new AbortController().signal)).coverAssetId
+  ).toBeNull();
+  h.patch.mockClear();
+  h.get.mockResolvedValue({ project: { ...project, role: "viewer" } });
+  await expect(
+    updatePlatformProjectCover(project, id, 1, new AbortController().signal)
+  ).rejects.toThrow("permission");
+  expect(h.patch).not.toHaveBeenCalled();
+});
+it("rejects mismatched cover receipts and foreign project reads", async () => {
+  h.patch.mockResolvedValue({ project: { ...project, version: 3, coverAssetId: workspaceId } });
+  await expect(
+    updatePlatformProjectCover(project, id, 1, new AbortController().signal)
+  ).rejects.toBeInstanceOf(PlatformProjectWriteError);
+  await expect(readPlatformProject(id, id, 1, new AbortController().signal)).rejects.toThrow(
+    "workspace"
+  );
 });

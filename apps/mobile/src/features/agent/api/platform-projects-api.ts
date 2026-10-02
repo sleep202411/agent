@@ -11,6 +11,8 @@ const projectSchema = z.object({
   visibility: z.enum(["private", "workspace", "public"]),
   role: z.enum(["owner", "admin", "editor", "viewer"]).optional(),
   version: z.number().int().nonnegative(),
+  coverAssetId: z.string().uuid().nullable().optional(),
+  thumbnailUrl: z.string().nullable().optional(),
   updatedAt: z.string().datetime({ offset: true }),
 });
 export type PlatformProject = z.infer<typeof projectSchema>;
@@ -162,6 +164,53 @@ export async function archivePlatformProject(
     );
     current(generation);
     if (result.projectId !== fresh.id) throw new Error("Project archive receipt mismatch.");
+  } catch (e) {
+    throw new PlatformProjectWriteError(e instanceof Error ? e.message : String(e));
+  }
+}
+
+export async function readPlatformProject(
+  id: string,
+  workspaceId: string,
+  generation: number,
+  signal: AbortSignal
+) {
+  z.string().uuid().parse(id);
+  current(generation, signal);
+  const { project } = z
+    .object({ project: projectSchema })
+    .parse(await api.get(`/projects/${id}`, { service: "aurora", signal }));
+  current(generation, signal);
+  if (project.id !== id || project.workspaceId !== workspaceId || project.status !== "active")
+    throw new Error("Project is no longer available in this workspace.");
+  return project;
+}
+export async function updatePlatformProjectCover(
+  snapshot: PlatformProject,
+  coverAssetId: string | null,
+  generation: number,
+  signal: AbortSignal
+) {
+  z.string().uuid().nullable().parse(coverAssetId);
+  const fresh = await reviewed(snapshot, generation, signal);
+  if (!canEditPlatformProject(fresh)) throw new Error("Project editor permission is required.");
+  try {
+    const { project } = z.object({ project: projectSchema }).parse(
+      await api.patch(`/projects/${fresh.id}`, {
+        service: "aurora",
+        data: { coverAssetId, expectedVersion: fresh.version },
+      })
+    );
+    current(generation);
+    if (
+      project.id !== fresh.id ||
+      project.workspaceId !== fresh.workspaceId ||
+      project.status !== "active" ||
+      project.version !== fresh.version + 1 ||
+      project.coverAssetId !== coverAssetId
+    )
+      throw new Error("Project cover receipt mismatch.");
+    return project;
   } catch (e) {
     throw new PlatformProjectWriteError(e instanceof Error ? e.message : String(e));
   }

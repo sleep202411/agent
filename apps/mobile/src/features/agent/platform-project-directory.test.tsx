@@ -4,6 +4,9 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { PlatformProjectDirectory } from "./platform-project-directory";
 import { PlatformProjectWriteError } from "./api/platform-projects-api";
 const h = vi.hoisted(() => ({
+  cover: vi.fn(),
+  upload: vi.fn(),
+  read: vi.fn(),
   generation: 1,
   active: true,
   list: vi.fn(),
@@ -13,6 +16,10 @@ const h = vi.hoisted(() => ({
   open: vi.fn(),
   close: vi.fn(),
 }));
+vi.mock("./platform-project-cover", () => ({
+  PlatformProjectCover: () => <span>Cover preview</span>,
+}));
+vi.mock("./api/platform-project-cover-upload", () => ({ uploadPlatformProjectCover: h.upload }));
 vi.mock("./platform-project-sections", () => ({
   PlatformProjectSections: ({
     projectId,
@@ -63,6 +70,8 @@ vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s, getLocale: (
 vi.mock("./api/platform-projects-api", async (original) => ({
   ...(await original<typeof import("./api/platform-projects-api")>()),
   loadPlatformProjects: h.list,
+  readPlatformProject: h.read,
+  updatePlatformProjectCover: h.cover,
   createPlatformProject: h.create,
   updatePlatformProject: h.update,
   archivePlatformProject: h.archive,
@@ -193,6 +202,7 @@ it("keeps failed edits and requires fresh list review after uncertain writes", a
   await click("studioProjects.save");
   expect(host.querySelector("input")!.value).toBe("Draft");
   expect(button("studioProjects.save")!.disabled).toBe(true);
+  await click("studioProjects.discard");
   await click("studioProjects.reload");
   expect(button("studioProjects.create")!.disabled).toBe(true);
   await click("studioProjects.reviewed");
@@ -241,4 +251,49 @@ it("opens the selected project's chapters and refreshes its version on return", 
   await act(async () => host.querySelector("button")!.click());
   expect(h.list.mock.calls.length).toBe(calls + 1);
   expect(button("studioChapters.title")).toBeDefined();
+});
+
+it("cover upload preserves unsaved metadata and advances only the reviewed version", async () => {
+  const next = { ...row, version: row.version + 1, coverAssetId: id };
+  h.upload.mockResolvedValue(id);
+  h.cover.mockResolvedValue(next);
+  await render();
+  await click("studioProjects.details");
+  await input(0, "My title");
+  await input(1, "My description");
+  await click("studioProjects.uploadCover");
+  expect(h.cover).toHaveBeenCalledWith(row, id, 1, expect.any(AbortSignal));
+  expect(host.querySelectorAll("input")[0].value).toBe("My title");
+  expect(host.querySelectorAll("input")[1].value).toBe("My description");
+  await click("studioProjects.save");
+  expect(h.update).toHaveBeenCalledWith(
+    next,
+    { name: "My title", description: "My description" },
+    1,
+    expect.any(AbortSignal)
+  );
+});
+it("cancelled selection never changes the cover", async () => {
+  h.upload.mockResolvedValue(null);
+  await render();
+  await click("studioProjects.details");
+  await click("studioProjects.uploadCover");
+  expect(h.cover).not.toHaveBeenCalled();
+});
+it("refreshes uncertain cover writes without discarding drafts or automatically retrying", async () => {
+  h.upload.mockResolvedValue(id);
+  h.cover.mockRejectedValue(new PlatformProjectWriteError("Lost cover response"));
+  h.read.mockResolvedValue({ ...row, version: row.version + 1, coverAssetId: id });
+  await render();
+  await click("studioProjects.details");
+  await input(1, "Local description");
+  await click("studioProjects.uploadCover");
+  expect(button("studioProjects.uploadCover")!.disabled).toBe(true);
+  await click("studioProjects.refreshDetails");
+  expect(host.querySelectorAll("input")[1].value).toBe("Local description");
+  expect(button("studioProjects.uploadCover")!.disabled).toBe(true);
+  await click("studioProjects.reviewed");
+  expect(button("studioProjects.uploadCover")!.disabled).toBe(false);
+  expect(h.cover).toHaveBeenCalledTimes(1);
+  expect(h.update).not.toHaveBeenCalled();
 });

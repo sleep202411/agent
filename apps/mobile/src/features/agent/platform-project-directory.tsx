@@ -15,11 +15,15 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { PlatformProjectSections } from "./platform-project-sections";
+import { PlatformProjectCover } from "./platform-project-cover";
+import { uploadPlatformProjectCover } from "./api/platform-project-cover-upload";
 import { StudioMembers } from "./studio-members";
 import { StudioInvites } from "./studio-invites";
 import { studioInviteTargetUrl } from "./api/studio-invite-accept-api";
 import { canCreateStudioProject, type StudioWorkspace } from "./api/studio-projects-api";
 import {
+  readPlatformProject,
+  updatePlatformProjectCover,
   archivePlatformProject,
   canEditPlatformProject,
   createPlatformProject,
@@ -52,6 +56,7 @@ function Session({ workspace, generation, onClose }: Props) {
   const [form, setForm] = useState<{ project?: PlatformProject }>();
   const [name, setName] = useState(""),
     [description, setDescription] = useState("");
+  const [detailReview, setDetailReview] = useState<PlatformProject>();
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>();
@@ -88,15 +93,17 @@ function Session({ workspace, generation, onClose }: Props) {
     if (!active || collaboration) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (!lock.current) {
-        if (form) setForm(undefined);
-        else onClose();
+        if (form) {
+          setForm(undefined);
+          setDetailReview(undefined);
+        } else onClose();
       }
       return true;
     });
     return () => sub.remove();
   }, [active, collaboration, form, onClose]);
   const visible = loaded?.revision === revision ? loaded : undefined;
-  const locked = busy || uncertainAt !== undefined;
+  const locked = busy || uncertainAt !== undefined || !!detailReview;
   const editable = form?.project
     ? canEditPlatformProject(form.project)
     : canCreateStudioProject(workspace);
@@ -105,6 +112,7 @@ function Session({ workspace, generation, onClose }: Props) {
     setName(project?.name ?? "");
     setDescription(project?.description ?? "");
     setConfirmation("");
+    setDetailReview(undefined);
     setError(undefined);
     setForm({ project });
   }
@@ -136,6 +144,54 @@ function Session({ workspace, generation, onClose }: Props) {
       if (current()) {
         setForm(undefined);
         setRevision((v) => v + 1);
+      }
+    } catch (e) {
+      if (current()) {
+        setError(e instanceof Error ? e.message : String(e));
+        if (e instanceof PlatformProjectWriteError) setUncertainAt(revision);
+      }
+    } finally {
+      lock.current = false;
+      if (current()) setBusy(false);
+    }
+  }
+  async function cover(action: "upload" | "remove" | "refresh") {
+    if (
+      !form?.project ||
+      lock.current ||
+      busy ||
+      !active ||
+      !current() ||
+      (action !== "refresh" && locked)
+    )
+      return;
+    lock.current = true;
+    setBusy(true);
+    setError(undefined);
+    const c = new AbortController();
+    pending.current = c;
+    try {
+      if (action === "refresh") {
+        const project = await readPlatformProject(
+          form.project.id,
+          workspace.id,
+          generation,
+          c.signal
+        );
+        if (current()) setDetailReview(project);
+      } else {
+        const assetId =
+          action === "remove"
+            ? null
+            : await uploadPlatformProjectCover(form.project, generation, c.signal);
+        if (action === "upload" && !assetId) return;
+        const project = await updatePlatformProjectCover(
+          form.project,
+          assetId,
+          generation,
+          c.signal
+        );
+        if (current()) setForm({ project });
       }
     } catch (e) {
       if (current()) {
@@ -205,8 +261,50 @@ function Session({ workspace, generation, onClose }: Props) {
           )}
         </>
       )}
+      {form && detailReview && (
+        <View style={{ gap: 8 }}>
+          <ThemedText type="smallBold">{detailReview.name}</ThemedText>
+          <ThemedText type="small">{detailReview.description || "—"}</ThemedText>
+          <PlatformProjectCover project={detailReview} />
+          <Action
+            label={t("studioProjects.reviewed")}
+            disabled={busy}
+            onPress={() => {
+              setForm({ project: detailReview });
+              setDetailReview(undefined);
+              setUncertainAt(undefined);
+              setConfirmation("");
+            }}
+          />
+        </View>
+      )}
       {form ? (
         <>
+          {form.project && (
+            <>
+              <ThemedText type="smallBold">{t("studioProjects.cover")}</ThemedText>
+              <PlatformProjectCover key={form.project.id} project={form.project} />
+              {editable && (
+                <Action
+                  label={t("studioProjects.uploadCover")}
+                  disabled={locked}
+                  onPress={() => void cover("upload")}
+                />
+              )}
+              {editable && form.project.coverAssetId && (
+                <Action
+                  label={t("studioProjects.removeCover")}
+                  disabled={locked}
+                  onPress={() => void cover("remove")}
+                />
+              )}
+              <Action
+                label={t("studioProjects.refreshDetails")}
+                disabled={busy}
+                onPress={() => void cover("refresh")}
+              />
+            </>
+          )}
           <ThemedText>{t("studioProjects.name")}</ThemedText>
           <TextInput
             accessibilityLabel={t("studioProjects.name")}
@@ -255,7 +353,10 @@ function Session({ workspace, generation, onClose }: Props) {
           <Action
             label={t("studioProjects.discard")}
             disabled={busy}
-            onPress={() => setForm(undefined)}
+            onPress={() => {
+              setForm(undefined);
+              setDetailReview(undefined);
+            }}
           />
         </>
       ) : (
@@ -338,14 +439,17 @@ function Session({ workspace, generation, onClose }: Props) {
           ))}
         </>
       )}
-      <Action
-        label={t("studioProjects.reload")}
-        disabled={busy}
-        onPress={() => {
-          setForm(undefined);
-          setRevision((v) => v + 1);
-        }}
-      />
+      {!form && (
+        <Action
+          label={t("studioProjects.reload")}
+          disabled={busy}
+          onPress={() => {
+            setForm(undefined);
+            setDetailReview(undefined);
+            setRevision((v) => v + 1);
+          }}
+        />
+      )}
       {busy && <ActivityIndicator />}
       <Action label={t("common.back")} disabled={busy} onPress={onClose} />
     </ScrollView>
