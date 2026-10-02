@@ -1,3 +1,4 @@
+import { serviceFieldStyle } from "./service-field-style";
 import { useRef, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { SERVICE_CATEGORIES } from "@repo/shared/creator-service";
@@ -52,7 +53,7 @@ export function ServiceCreate({ onCreated }: { onCreated: (id: string) => void }
         onChangeText={setTitle}
         maxLength={120}
         editable={!locked}
-        style={{ color: theme.text }}
+        style={serviceFieldStyle(theme)}
       />
       <ThemedText>{t("serviceEdit.summary")}</ThemedText>
       <TextInput
@@ -62,7 +63,7 @@ export function ServiceCreate({ onCreated }: { onCreated: (id: string) => void }
         maxLength={1000}
         multiline
         editable={!locked}
-        style={{ color: theme.text }}
+        style={serviceFieldStyle(theme, true)}
       />
       <ScrollView horizontal>
         {SERVICE_CATEGORIES.map((value) => (
@@ -89,7 +90,7 @@ export function ServiceCreate({ onCreated }: { onCreated: (id: string) => void }
         onChangeText={setTags}
         multiline
         editable={!locked}
-        style={{ color: theme.text }}
+        style={serviceFieldStyle(theme, true)}
       />
       {!parsed.success && <ThemedText>{t("serviceEdit.invalid")}</ThemedText>}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}

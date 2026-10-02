@@ -1,3 +1,4 @@
+import { serviceFieldStyle } from "./service-field-style";
 import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useState } from "react";
 import { Pressable, Switch, TextInput, View } from "react-native";
@@ -99,7 +100,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
             maxLength={240}
             multiline
             editable={!op.busy}
-            style={{ color: theme.text }}
+            style={serviceFieldStyle(theme, true)}
           />
           <ThemedText>{t("serviceQuestions.help")}</ThemedText>
           <TextInput
@@ -109,7 +110,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
             maxLength={240}
             multiline
             editable={!op.busy}
-            style={{ color: theme.text }}
+            style={serviceFieldStyle(theme, true)}
           />
           <ThemedText>{t("serviceQuestions.required")}</ThemedText>
           <Switch

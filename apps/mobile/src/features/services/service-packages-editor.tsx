@@ -1,3 +1,4 @@
+import { serviceFieldStyle } from "./service-field-style";
 import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useState } from "react";
 import { Pressable, ScrollView, Switch, TextInput, View } from "react-native";
@@ -140,7 +141,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
                     maxLength={maxLength}
                     multiline={field === "description" || field === "scope"}
                     editable={!op.busy}
-                    style={{ color: theme.text }}
+                    style={serviceFieldStyle(theme, field === "description" || field === "scope")}
                   />
                 </View>
               ))}

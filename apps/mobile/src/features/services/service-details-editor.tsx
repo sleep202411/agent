@@ -1,3 +1,4 @@
+import { serviceFieldStyle } from "./service-field-style";
 import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
@@ -86,7 +87,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
         onChangeText={setTitle}
         maxLength={120}
         editable={!op.busy}
-        style={{ color: theme.text }}
+        style={serviceFieldStyle(theme)}
       />
       <ThemedText>{t("serviceEdit.summary")}</ThemedText>
       <TextInput
@@ -96,7 +97,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
         maxLength={1000}
         multiline
         editable={!op.busy}
-        style={{ color: theme.text }}
+        style={serviceFieldStyle(theme, true)}
       />
       <ThemedText>{t("serviceEdit.category")}</ThemedText>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -125,7 +126,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
         onChangeText={setTags}
         multiline
         editable={!op.busy}
-        style={{ color: theme.text }}
+        style={serviceFieldStyle(theme, true)}
       />
       {!parsed.success && <ThemedText>{t("serviceEdit.invalid")}</ThemedText>}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
