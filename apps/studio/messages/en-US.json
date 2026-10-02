@@ -262,6 +262,7 @@
     }
   },
   "generation": {
+    "copyPromptFailed": "Could not copy. Select the prompt text to copy it manually.",
     "downloadFailed": "Couldn't download this file",
     "openOriginal": "Open original",
     "previewLoadFailed": "Could not load this video. Check your connection and retry.",
