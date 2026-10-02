@@ -548,11 +548,18 @@ export const IP_REPORT_REASONS = [
 
 export type IpReportReason = (typeof IP_REPORT_REASONS)[number];
 
-/** File a content report against an IP (auth'd; admin reviews in ip-commerce). */
-export async function reportIpContent(ipId: string, reason: IpReportReason): Promise<void> {
+export type IpContentReport = {
+  targetType: "ip" | "episode";
+  targetId: string;
+  reason: IpReportReason;
+  description?: string;
+};
+
+/** Uses the same IP/episode report contract as Web. */
+export async function reportIpContent(report: IpContentReport): Promise<void> {
   await api.post("/ip-commerce/reports", {
     ...AURORA,
-    data: { targetType: "ip", targetId: ipId, reason },
+    data: { ...report, description: report.description?.trim() || undefined },
   });
 }
 

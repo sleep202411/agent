@@ -94,13 +94,18 @@ it("serializes reports across a return visit and retains an accepted reply", asy
   await render();
   await openReport();
   await act(async () => {
-    current.submitReport("privacy");
-    current.submitReport("privacy");
+    current.submitReport();
+    current.submitReport();
   });
-  expect(h.report).toHaveBeenCalledExactlyOnceWith("ip", "privacy");
+  expect(h.report).toHaveBeenCalledExactlyOnceWith({
+    targetType: "ip",
+    targetId: "ip",
+    reason: "copyright",
+    description: undefined,
+  });
   await render(false);
   await render();
-  await act(async () => current.submitReport("privacy"));
+  await act(async () => current.submitReport());
   expect(h.report).toHaveBeenCalledTimes(1);
   await act(async () => finish());
   expect(current.reportOpen).toBe(false);
@@ -111,10 +116,10 @@ it("keeps report open with backend error and supports deliberate retry", async (
   h.report.mockRejectedValueOnce(new Error("Report temporarily unavailable"));
   await render();
   await openReport();
-  await act(async () => current.submitReport("fraud"));
+  await act(async () => current.submitReport());
   expect(current.reportOpen).toBe(true);
   expect(h.alert).toHaveBeenCalledWith("report.failed", "Report temporarily unavailable");
-  await act(async () => current.submitReport("fraud"));
+  await act(async () => current.submitReport());
   expect(current.reportOpen).toBe(false);
   expect(h.report).toHaveBeenCalledTimes(2);
 });
@@ -151,7 +156,7 @@ it("blocks report dismissal while submitting and rejects old-account report comp
   );
   await render();
   await openReport();
-  await act(async () => current.submitReport("other"));
+  await act(async () => current.submitReport());
   await act(async () => current.closeReport());
   expect(current.reportOpen).toBe(true);
   h.generation++;
@@ -159,4 +164,96 @@ it("blocks report dismissal while submitting and rejects old-account report comp
   await act(async () => finish());
   expect(h.alert).not.toHaveBeenCalled();
   expect(current.reportOpen).toBe(false);
+});
+it("reports the episode and trimmed description, then retries only an uncompleted block", async () => {
+  h.block.mockRejectedValueOnce(new Error("Block unavailable"));
+  await render();
+  await act(async () =>
+    current.openActions({ targetType: "episode", targetId: "episode-2", title: "Second" })
+  );
+  await act(async () => h.menu.mock.lastCall![0].onReport());
+  await act(async () =>
+    current.updateDraft({ reason: "privacy", description: "  Personal data  ", blockIp: true })
+  );
+  await act(async () => current.submitReport());
+  expect(h.report).toHaveBeenCalledExactlyOnceWith({
+    targetType: "episode",
+    targetId: "episode-2",
+    reason: "privacy",
+    description: "Personal data",
+  });
+  expect(current.accepted).toBe(true);
+  expect(current.reportOpen).toBe(true);
+  expect(h.alert).toHaveBeenCalledWith("ipDetail.blockFailed", "Block unavailable");
+  await act(async () => current.updateDraft({ reason: "fraud" }));
+  expect(current.draft?.reason).toBe("privacy");
+  await act(async () => current.closeReport());
+  await render(false);
+  await render();
+  await act(async () =>
+    current.openActions({ targetType: "episode", targetId: "episode-2", title: "Second" })
+  );
+  await act(async () => h.menu.mock.lastCall![0].onReport());
+  expect(current.accepted).toBe(true);
+  await act(async () => current.submitReport());
+  expect(h.report).toHaveBeenCalledTimes(1);
+  expect(h.block).toHaveBeenCalledTimes(2);
+  expect(current.draft).toBeNull();
+  expect(current.reportOpen).toBe(false);
+  expect(h.alert).toHaveBeenLastCalledWith("report.successTitle", "report.successBlocked");
+});
+it("retains the draft across dismiss and return; never blocks if reporting failed", async () => {
+  h.report.mockRejectedValueOnce(new Error("Report unavailable"));
+  await render();
+  await openReport();
+  await act(async () => current.updateDraft({ description: "Draft", blockIp: true }));
+  await act(async () => current.submitReport());
+  expect(h.block).not.toHaveBeenCalled();
+  await act(async () => current.closeReport());
+  await render(false);
+  await render();
+  await openReport();
+  expect(current.draft?.description).toBe("Draft");
+  expect(current.accepted).toBe(false);
+});
+it("does not block a replacement account after a late report acknowledgement", async () => {
+  let finish!: () => void;
+  h.report.mockImplementationOnce(
+    () =>
+      new Promise<void>((r) => {
+        finish = r;
+      })
+  );
+  await render();
+  await openReport();
+  await act(async () => current.updateDraft({ blockIp: true }));
+  await act(async () => current.submitReport());
+  h.generation++;
+  await render(true, "replacement");
+  await act(async () => finish());
+  expect(h.block).not.toHaveBeenCalled();
+  expect(current.accepted).toBe(false);
+  expect(current.draft).toBeNull();
+});
+it("keeps report drafts and accepted receipts separate when switching targets", async () => {
+  await render();
+  await openReport();
+  await act(async () => current.updateDraft({ description: "IP details", blockIp: true }));
+  h.block.mockRejectedValueOnce(new Error("Block unavailable"));
+  await act(async () => current.submitReport());
+  await act(async () => current.closeReport());
+  await act(async () =>
+    current.openActions({ targetType: "episode", targetId: "ep", title: "Episode" })
+  );
+  await act(async () => h.menu.mock.lastCall![0].onReport());
+  expect(current.accepted).toBe(false);
+  expect(current.draft?.description).toBe("");
+  await act(async () => current.updateDraft({ description: "Episode details" }));
+  await act(async () => current.closeReport());
+  await openReport();
+  expect(current.draft?.description).toBe("IP details");
+  expect(current.accepted).toBe(true);
+  await act(async () => current.submitReport());
+  expect(h.report).toHaveBeenCalledTimes(1);
+  expect(h.block).toHaveBeenCalledTimes(2);
 });

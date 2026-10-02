@@ -24,7 +24,7 @@ import { useTranslations, type MessageKey } from "@/i18n";
 
 type Translator = ReturnType<typeof useTranslations>;
 
-const REASON_LABELS: Record<IpReportReason, MessageKey> = {
+export const REASON_LABELS: Record<IpReportReason, MessageKey> = {
   copyright: "report.reasonCopyright",
   unsafe_content: "report.reasonUnsafeContent",
   fraud: "report.reasonFraud",

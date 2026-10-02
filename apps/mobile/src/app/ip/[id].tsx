@@ -1,3 +1,4 @@
+import { IpReportSheet } from "@/features/ip-community/ip-report-sheet";
 import { useIpModeration } from "@/features/ip-community/use-ip-moderation";
 import { useIpEngagement } from "@/features/ip-community/use-ip-engagement";
 import { IpFanCommunity } from "@/features/ip-community/ip-fan-community";
@@ -28,7 +29,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 
 import { useAuth, useAuthGate } from "@/auth";
 import { ShareSheet } from "@/components/ip-share-sheet";
-import { MoreActionsButton, ReportReasonSheet } from "@/components/report-actions";
+import { MoreActionsButton } from "@/components/report-actions";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader } from "@/components/ui";
@@ -208,6 +209,7 @@ function IpDetailSession() {
     setPlaying({
       url,
       title: title ?? ip.title,
+      targetEpisodeId: episode?.id,
       episodeId: episode?.feedbackEligible ? episode.id : undefined,
     });
     scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -350,27 +352,39 @@ function IpDetailSession() {
     ? (creator.avatarUrl ?? dicebearAvatarUrl(`user:${creator.userId ?? creator.id}`))
     : undefined;
 
+  const openContentActions = () =>
+    moderation.openActions({
+      targetType: playing?.targetEpisodeId ? "episode" : "ip",
+      targetId: playing?.targetEpisodeId ?? ip.id,
+      title: playing?.targetEpisodeId
+        ? (ip.episodes.find((item) => item.id === playing.targetEpisodeId)?.title ?? playing.title)
+        : ip.title,
+    });
+
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen
         options={{
-          // While the inline player is up the slot becomes its close button —
+          // Playback keeps reporting available alongside its close button —
           // a floating control under the transparent native header would not
           // receive taps (the navigation bar wins the hit test).
           headerRight: playing
             ? () => (
-                <Pressable
-                  accessibilityLabel={t("ipDetail.close")}
-                  accessibilityRole="button"
-                  hitSlop={10}
-                  onPress={() => setPlaying(undefined)}
-                >
-                  <SymbolView
-                    name={{ ios: "xmark", android: "close", web: "close" }}
-                    size={18}
-                    tintColor="#FFFFFF"
-                  />
-                </Pressable>
+                <View style={styles.headerActions}>
+                  <MoreActionsButton label={t("report.moreActions")} onPress={openContentActions} />
+                  <Pressable
+                    accessibilityLabel={t("ipDetail.close")}
+                    accessibilityRole="button"
+                    hitSlop={10}
+                    onPress={() => setPlaying(undefined)}
+                  >
+                    <SymbolView
+                      name={{ ios: "xmark", android: "close", web: "close" }}
+                      size={18}
+                      tintColor="#FFFFFF"
+                    />
+                  </Pressable>
+                </View>
               )
             : () => (
                 <View style={styles.headerActions}>
@@ -390,7 +404,7 @@ function IpDetailSession() {
                   <View style={styles.headerButton}>
                     <MoreActionsButton
                       label={t("report.moreActions")}
-                      onPress={moderation.openActions}
+                      onPress={openContentActions}
                     />
                   </View>
                 </View>
@@ -398,12 +412,17 @@ function IpDetailSession() {
         }}
       />
 
-      <ReportReasonSheet
-        visible={moderation.reportOpen}
-        submitting={moderation.busy}
-        onSelect={moderation.submitReport}
-        onClose={moderation.closeReport}
-      />
+      {moderation.draft && (
+        <IpReportSheet
+          visible={moderation.reportOpen}
+          submitting={moderation.busy}
+          accepted={moderation.accepted}
+          draft={moderation.draft}
+          onChange={moderation.updateDraft}
+          onSubmit={moderation.submitReport}
+          onClose={moderation.closeReport}
+        />
+      )}
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}

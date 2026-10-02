@@ -4559,5 +4559,16 @@
   "inbox.memberCount": "{count} 名成員",
   "orderDetail.cancelledBy": "由 {by} 取消",
   "orderDetail.role.buyer": "買家",
-  "orderDetail.role.creator": "創作者"
+  "orderDetail.role.creator": "創作者",
+  "report.reason": "原因",
+  "report.description": "描述（選填）",
+  "report.descriptionPlaceholder": "請說明此內容存在的問題。",
+  "report.blockIp": "同時在我的動態中屏蔽此 IP",
+  "report.targetIp": "IP",
+  "report.targetEpisode": "劇集",
+  "report.submit": "提交舉報",
+  "report.submitting": "提交中…",
+  "report.successBlocked": "舉報已提交，IP 已屏蔽。",
+  "report.acceptedBlockPending": "舉報已提交，屏蔽尚未完成。可重試屏蔽，不會重複提交舉報。",
+  "report.retryBlock": "重試屏蔽"
 }

@@ -33,7 +33,13 @@ export type { NewsFeedPage } from "./news-api";
 export { NEWS_PAGE_SIZE } from "./news-api";
 
 export type { IpDiscovery } from "./types";
-export { blockIpContent, IP_REPORT_REASONS, reportIpContent, type IpReportReason } from "./ip-api";
+export {
+  blockIpContent,
+  IP_REPORT_REASONS,
+  reportIpContent,
+  type IpReportReason,
+  type IpContentReport,
+} from "./ip-api";
 export { likeIp, recordIpView, unlikeIp } from "./ip-api";
 export {
   fetchCommunityPointBalance,

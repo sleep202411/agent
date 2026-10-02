@@ -4559,5 +4559,16 @@
   "inbox.memberCount": "{count} members",
   "orderDetail.cancelledBy": "Cancelled by {by}",
   "orderDetail.role.buyer": "buyer",
-  "orderDetail.role.creator": "creator"
+  "orderDetail.role.creator": "creator",
+  "report.reason": "Reason",
+  "report.description": "Description (optional)",
+  "report.descriptionPlaceholder": "Tell us what is wrong with this content.",
+  "report.blockIp": "Also hide this IP from my feed",
+  "report.targetIp": "IP",
+  "report.targetEpisode": "Episode",
+  "report.submit": "Submit report",
+  "report.submitting": "Submitting…",
+  "report.successBlocked": "Report submitted and IP hidden.",
+  "report.acceptedBlockPending": "Your report was submitted. Blocking did not finish. Retry blocking without sending another report.",
+  "report.retryBlock": "Retry blocking"
 }

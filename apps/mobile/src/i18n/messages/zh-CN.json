@@ -4559,5 +4559,16 @@
   "inbox.memberCount": "{count} 名成员",
   "orderDetail.cancelledBy": "由 {by} 取消",
   "orderDetail.role.buyer": "买家",
-  "orderDetail.role.creator": "创作者"
+  "orderDetail.role.creator": "创作者",
+  "report.reason": "原因",
+  "report.description": "描述（选填）",
+  "report.descriptionPlaceholder": "请说明此内容存在的问题。",
+  "report.blockIp": "同时在我的信息流中屏蔽此 IP",
+  "report.targetIp": "IP",
+  "report.targetEpisode": "剧集",
+  "report.submit": "提交举报",
+  "report.submitting": "提交中…",
+  "report.successBlocked": "举报已提交，IP 已屏蔽。",
+  "report.acceptedBlockPending": "举报已提交，屏蔽尚未完成。可重试屏蔽，不会重复提交举报。",
+  "report.retryBlock": "重试屏蔽"
 }

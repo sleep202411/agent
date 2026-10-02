@@ -36,6 +36,7 @@ describe("GPS native playback entry", () => {
         url: episode.mediaUrl,
         title: "Second",
         episodeId: episode.id,
+        targetEpisodeId: episode.id,
       });
     }
   );

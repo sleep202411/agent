@@ -1,7 +1,12 @@
 import type { IpAccess, IpDetail } from "@/data/types";
 
 const granted = new Set(["owned_ip", "owned_episode", "free_preview", "member_free", "free"]);
-export type PlaybackEntry = { url: string; title: string; episodeId?: string };
+export type PlaybackEntry = {
+  url: string;
+  title: string;
+  episodeId?: string;
+  targetEpisodeId?: string;
+};
 
 /** A playback intent never substitutes another episode or an IP trailer. */
 export function resolvePlaybackEntry(
@@ -18,6 +23,7 @@ export function resolvePlaybackEntry(
     return {
       url: target.mediaUrl,
       title: target.title,
+      targetEpisodeId: target.id,
       episodeId: target.feedbackEligible ? target.id : undefined,
     };
   }
