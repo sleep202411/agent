@@ -1,7 +1,7 @@
 import { CrewLinkedResources } from "@/features/services/crew-linked-resources";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -12,7 +12,7 @@ import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
 import { invalidateBrowse } from "@/data/browse-refresh";
-import { blockCrew, getCrewById, reportCrew, type IpReportReason } from "@/data/browse-service";
+import { getCrewById, type IpReportReason } from "@/data/browse-service";
 import type { CrewDetail, CrewRoleOpening, CrewStatus, Person } from "@/data/types";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -20,6 +20,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { type MessageKey, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 import { CrewRolePicker } from "@/features/browse/crew-role-picker";
+import { useCrewModeration } from "@/features/browse/use-crew-moderation";
 import { useCrewApplication } from "@/features/browse/use-crew-application";
 import { crewPositionLabel } from "@/lib/crew-position-label";
 import { showCrewActionsMenu } from "@/features/browse/crew-actions-menu";
@@ -71,8 +72,10 @@ export default function CrewDetailScreen() {
   );
   const [read, setRead] = useState<{ scope: typeof scope; crew?: CrewDetail; error?: string }>();
   const [rolePicker, setRolePicker] = useState<{ crewId: string; generation: number }>();
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reporting, setReporting] = useState(false);
+  const moderation = useCrewModeration(id, auth.generation, active);
+  const [actionsIntent, setActionsIntent] = useState<{ crewId: string; generation: number }>();
+  const handledActions = useRef<typeof actionsIntent>(undefined);
+  const [reportScope, setReportScope] = useState<typeof moderation.scope>();
   const { applying, submit: apply } = useCrewApplication(id);
 
   useEffect(() => {
@@ -97,10 +100,96 @@ export default function CrewDetailScreen() {
     return () => controller.abort();
   }, [scope]);
 
+  const crew = read?.scope === scope ? read.crew : undefined;
+  const showActions = () => {
+    if (!crew) return;
+    showCrewActionsMenu({
+      t,
+      onApplications: () => router.push(toHref("/crew-applications")),
+      onAgreements: () => router.push(toHref(`/crew-agreements/${encodeURIComponent(crew.id)}`)),
+      onReviews: () => router.push(toHref(`/crew-reviews/${encodeURIComponent(crew.id)}`)),
+      onInvitations: () => router.push(toHref(`/crew-invitations/${encodeURIComponent(crew.id)}`)),
+      onFinance: () => router.push(toHref(`/crew-finance/${encodeURIComponent(crew.id)}`)),
+      onTasks: () => router.push(toHref(`/crew-tasks/${encodeURIComponent(crew.id)}`)),
+      onReport: () => {
+        if (moderation.isCurrent()) setReportScope(moderation.scope);
+      },
+      onBlock: confirmBlock,
+    });
+  };
+
+  const moderationError = (title: string, error: unknown) => {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      setReportScope(undefined);
+      authGate.openLogin();
+      return;
+    }
+    Alert.alert(title, error instanceof Error && error.message.trim() ? error.message : undefined);
+  };
+
+  const submitBlock = () =>
+    moderation.submit(
+      undefined,
+      () => {
+        invalidateBrowse();
+        Alert.alert(t("crewDetail.blockSuccessTitle"), t("crewDetail.blockSuccessBody"), [
+          {
+            text: t("report.close"),
+            onPress: () => {
+              if (moderation.isCurrent()) router.back();
+            },
+          },
+        ]);
+      },
+      (error) => moderationError(t("crewDetail.blockFailed"), error)
+    );
+
+  const confirmBlock = () => {
+    if (!moderation.isCurrent() || moderation.submitting) return;
+    Alert.alert(t("crewDetail.blockConfirmTitle"), t("crewDetail.blockConfirmBody"), [
+      { text: t("report.cancel"), style: "cancel" },
+      {
+        text: t("crewDetail.blockConfirmAction"),
+        style: "destructive",
+        onPress: () => void submitBlock(),
+      },
+    ]);
+  };
+
+  const submitReport = (reason: IpReportReason) =>
+    moderation.submit(
+      reason,
+      () => {
+        setReportScope(undefined);
+        Alert.alert(t("report.successTitle"), t("report.successBody"));
+      },
+      (error) => moderationError(t("report.failed"), error)
+    );
+
+  const openActions = () => {
+    authGate.requireAuth({
+      onAuthenticated: () => setActionsIntent({ crewId: id, generation: getAuthGeneration() }),
+    });
+  };
+
+  const showReadyActions = useEffectEvent(showActions);
+  useEffect(() => {
+    if (
+      !actionsIntent ||
+      handledActions.current === actionsIntent ||
+      !active ||
+      read?.scope !== scope ||
+      !read.crew
+    )
+      return;
+    handledActions.current = actionsIntent;
+    if (actionsIntent.crewId === id && actionsIntent.generation === auth.generation)
+      showReadyActions();
+  }, [actionsIntent, active, read, scope, id, auth.generation]);
+
   // Hide stale recruitment/access data immediately while a return or account change is read.
   // Keep the component mounted so pending application requests remain serialized.
   if (!active || auth.status === "hydrating") return <CrewReadState />;
-  const crew = read?.scope === scope ? read.crew : undefined;
   const loadError = read?.scope === scope ? read.error : undefined;
   if (read?.scope !== scope) {
     return (
@@ -146,71 +235,6 @@ export default function CrewDetailScreen() {
   const tag = crewStatusTag(crew.status, t);
   const roleTitle = (role: CrewRoleOpening) =>
     crewPositionLabel(role.positionType ?? role.title, t);
-
-  const showActions = () => {
-    showCrewActionsMenu({
-      t,
-      onApplications: () => router.push(toHref("/crew-applications")),
-      onAgreements: () => router.push(toHref(`/crew-agreements/${encodeURIComponent(crew.id)}`)),
-      onReviews: () => router.push(toHref(`/crew-reviews/${encodeURIComponent(crew.id)}`)),
-      onInvitations: () => router.push(toHref(`/crew-invitations/${encodeURIComponent(crew.id)}`)),
-      onFinance: () => router.push(toHref(`/crew-finance/${encodeURIComponent(crew.id)}`)),
-      onTasks: () => router.push(toHref(`/crew-tasks/${encodeURIComponent(crew.id)}`)),
-      onReport: () => setReportOpen(true),
-      onBlock: confirmBlock,
-    });
-  };
-
-  const submitBlock = async () => {
-    try {
-      await blockCrew(crew.id);
-      // The crews list is filtered server-side for this viewer; nudge it to
-      // refetch, then leave the page.
-      invalidateBrowse();
-      Alert.alert(t("crewDetail.blockSuccessTitle"), t("crewDetail.blockSuccessBody"), [
-        { text: t("report.close"), onPress: () => router.back() },
-      ]);
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) {
-        authGate.openLogin({ onAuthenticated: confirmBlock });
-        return;
-      }
-      Alert.alert(t("crewDetail.blockFailed"));
-    }
-  };
-
-  const confirmBlock = () => {
-    Alert.alert(t("crewDetail.blockConfirmTitle"), t("crewDetail.blockConfirmBody"), [
-      { text: t("report.cancel"), style: "cancel" },
-      {
-        text: t("crewDetail.blockConfirmAction"),
-        style: "destructive",
-        onPress: () => void submitBlock(),
-      },
-    ]);
-  };
-
-  const submitReport = async (reason: IpReportReason) => {
-    setReporting(true);
-    try {
-      await reportCrew(crew.id, reason);
-      setReportOpen(false);
-      Alert.alert(t("report.successTitle"), t("report.successBody"));
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) {
-        setReportOpen(false);
-        authGate.openLogin({ onAuthenticated: () => setReportOpen(true) });
-        return;
-      }
-      Alert.alert(t("report.failed"));
-    } finally {
-      setReporting(false);
-    }
-  };
-
-  const openActions = () => {
-    authGate.requireAuth({ onAuthenticated: showActions });
-  };
 
   const submitApply = async (positionId: string) => {
     await apply(
@@ -267,10 +291,12 @@ export default function CrewDetailScreen() {
         }}
       />
       <ReportReasonSheet
-        visible={reportOpen}
-        submitting={reporting}
+        visible={reportScope === moderation.scope}
+        submitting={moderation.submitting}
         onSelect={(reason) => void submitReport(reason)}
-        onClose={() => setReportOpen(false)}
+        onClose={() => {
+          if (!moderation.submitting) setReportScope(undefined);
+        }}
       />
       <ScrollView
         showsVerticalScrollIndicator={false}
