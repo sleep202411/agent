@@ -2,6 +2,7 @@ import { z } from "zod";
 import { NOTIFICATION_FILTERS, notificationCategory } from "@repo/shared/notifications";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
+import { notificationReadConfirmed } from "./notification-read-events";
 export type NotificationFilter = (typeof NOTIFICATION_FILTERS)[number];
 const id = z.string().min(1).max(256);
 const date = z.string().datetime({ offset: true });
@@ -66,6 +67,7 @@ export async function readNotification(
   current(generation, signal);
   if (result.id !== notificationId || !result.readAt)
     throw new Error("Notification read receipt mismatch");
+  notificationReadConfirmed(generation);
   return result;
 }
 export async function readAllNotifications(generation: number, signal: AbortSignal) {
@@ -74,5 +76,6 @@ export async function readAllNotifications(generation: number, signal: AbortSign
     .object({ count: z.number().int().nonnegative().safe() })
     .parse(await api.post("/notifications/read-all", { service: "aurora", signal, retry: false }));
   current(generation, signal);
+  notificationReadConfirmed(generation);
   return result;
 }

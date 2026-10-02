@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { subscribeNotificationReads } from "./notification-read-events";
 import {
   fetchNotifications,
   type NotificationItem,
@@ -23,6 +24,13 @@ type Snapshot = {
 };
 export function useNotifications(owner: string | undefined, contextType: NotificationFilter) {
   const [revision, setRevision] = useState(0);
+  useEffect(
+    () =>
+      subscribeNotificationReads((generation) => {
+        if (owner && Number(owner) === generation) setRevision((value) => value + 1);
+      }),
+    [owner]
+  );
   const key = JSON.stringify([owner, contextType, revision]);
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();

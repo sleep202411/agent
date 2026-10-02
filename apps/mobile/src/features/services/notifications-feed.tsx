@@ -58,12 +58,15 @@ function Feed({ generation, userId }: Props) {
       if (id) await readNotification(id, generation, controller.signal);
       else await readAllNotifications(generation, controller.signal);
     } catch (cause) {
-      if (alive.current && !controller.signal.aborted && generation === getAuthGeneration())
+      if (alive.current && !controller.signal.aborted && generation === getAuthGeneration()) {
         setError(cause instanceof Error ? cause.message : String(cause));
+        // A failed receipt may still represent an applied write. Reconcile
+        // without retrying the mutation; confirmed writes notify active lists.
+        list.refresh();
+      }
     } finally {
       if (alive.current && !controller.signal.aborted && generation === getAuthGeneration()) {
         setBusy(false);
-        list.refresh();
       }
       if (operation.current === controller) operation.current = null;
     }
