@@ -28,6 +28,9 @@ export function VideoView({
       playsInline
       controls={nativeControls}
       style={{
+        width: "100%",
+        height: "100%",
+        display: "block",
         ...(StyleSheet.flatten(style) as CSSProperties),
         objectFit: contentFit === "contain" ? "contain" : contentFit === "cover" ? "cover" : "none",
       }}
