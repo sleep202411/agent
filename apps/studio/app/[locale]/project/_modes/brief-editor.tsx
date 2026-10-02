@@ -45,10 +45,17 @@ function applyTextDiff(ytext: Y.Text, oldStr: string, next: string, origin: unkn
  */
 export function BriefEditor() {
   const t = useTranslations("project");
+  const common = useTranslations("common");
   const { projectId, canEdit } = useProjectContext();
   const { user } = useAuth();
   const collabUser = useMemo(() => toCollabUser(user), [user]);
-  const { documentId, status: docStatus } = useModeDocument(projectId, "brief");
+  const {
+    documentId,
+    status: docStatus,
+    error,
+    retry,
+    retrying,
+  } = useModeDocument(projectId, "brief");
   const { doc, status: connStatus } = useCollabDoc(documentId, collabUser, TEXT_DOC_ROOT_SCHEMA);
 
   const [value, setValue] = useState("");
@@ -83,17 +90,53 @@ export function BriefEditor() {
     setValue(next);
   };
 
+  if (docStatus === "loading") {
+    return (
+      <div
+        role="status"
+        className="flex h-full items-center justify-center text-sm text-muted-foreground"
+      >
+        {common("loading")}
+      </div>
+    );
+  }
+
   if (docStatus === "error") {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-sm text-muted-foreground">{t("documentOpenError")}</p>
+      <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+        <p role="alert" className="max-w-md text-sm text-muted-foreground">
+          {error || t("documentOpenError")}
+        </p>
+        <button
+          type="button"
+          onClick={retry}
+          disabled={retrying}
+          className="rounded-full bg-white/[0.08] px-4 py-2 text-sm text-white/80 hover:bg-white/[0.12] disabled:opacity-50"
+        >
+          {common("retry")}
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="relative h-full">
-      <div className="mx-auto h-full w-full max-w-3xl px-6 pt-6 pb-10">
+    <div className="relative flex h-full min-h-0 flex-col">
+      {error ? (
+        <div className="flex items-center justify-between gap-4 px-6 py-3 text-sm">
+          <p role="alert" className="text-muted-foreground">
+            {error}
+          </p>
+          <button
+            type="button"
+            onClick={retry}
+            disabled={retrying}
+            className="shrink-0 rounded-full bg-white/[0.08] px-4 py-2 text-white/80 hover:bg-white/[0.12] disabled:opacity-50"
+          >
+            {common("retry")}
+          </button>
+        </div>
+      ) : null}
+      <div className="mx-auto min-h-0 w-full max-w-3xl flex-1 px-6 pt-6 pb-10">
         <textarea
           value={value}
           onChange={(event) => onChange(event.target.value)}
