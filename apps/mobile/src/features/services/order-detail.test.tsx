@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { order } from "./order-detail-fixture.test-helper";
 import { OrderDetail } from "./order-detail";
+vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("@/features/services/user-displays", () => ({ useUserDisplays: () => new Map() }));
 const h = vi.hoisted(() => ({
   send: vi.fn(),

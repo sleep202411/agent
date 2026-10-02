@@ -4544,5 +4544,8 @@
   "inbox.searchingMore": "正在尋找更多會話……",
   "inbox.loadMore": "載入更多",
   "inbox.crewFallback": "劇組群聊",
-  "inbox.memberCount": "{count} 名成員"
+  "inbox.memberCount": "{count} 名成員",
+  "orderDetail.cancelledBy": "由 {by} 取消",
+  "orderDetail.role.buyer": "買家",
+  "orderDetail.role.creator": "創作者"
 }

@@ -1,3 +1,4 @@
+import { Image } from "expo-image";
 import { useUserDisplays } from "./user-displays";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, Stack } from "expo-router";
@@ -124,6 +125,8 @@ function Content({ id, userId, active }: { id: string; userId: string; active: b
       }
     );
   };
+  const counterparty = displays?.get(otherId);
+  const counterpartyName = counterparty?.nickname?.trim() || `${t("inbox.person")} ${otherId}`;
   if (!active) return null;
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
@@ -151,9 +154,37 @@ function Content({ id, userId, active }: { id: string; userId: string; active: b
           <ThemedText>
             {t(`orders.status.${order.status}`)} · #{order.id}
           </ThemedText>
-          <ThemedText>
-            {t(order.buyerId === userId ? "orderDetail.creator" : "orderDetail.buyer")}{" "}
-            {displays?.get(otherId)?.nickname?.trim() || otherId}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                overflow: "hidden",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: theme.backgroundSelected,
+              }}
+            >
+              <ThemedText type="small">{Array.from(counterpartyName)[0] || "?"}</ThemedText>
+              {counterparty?.avatar && (
+                <Image
+                  source={{ uri: counterparty.avatar }}
+                  accessible={false}
+                  recyclingKey={otherId + counterparty.avatar}
+                  style={{ position: "absolute", width: 36, height: 36 }}
+                />
+              )}
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t(order.buyerId === userId ? "orderDetail.creator" : "orderDetail.buyer")}
+              </ThemedText>
+              <ThemedText type="smallBold">{counterpartyName}</ThemedText>
+            </View>
+          </View>
+          <ThemedText type="small" themeColor="textSecondary">
+            {t(`servicePackages.tier.${order.packageSnapshot.tier}`)}
           </ThemedText>
           <ThemedText>
             {formatServicePrice(
@@ -203,9 +234,15 @@ function Content({ id, userId, active }: { id: string; userId: string; active: b
               ) : null
           )}
           {order.cancelInfo && (
-            <ThemedText>
-              {t("orderDetail.cancelReason")} {order.cancelInfo.reason}
-            </ThemedText>
+            <View style={{ gap: 4 }}>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("orderDetail.cancelledBy").replace(
+                  "{by}",
+                  t(`orderDetail.role.${order.cancelInfo.by}`)
+                )}
+              </ThemedText>
+              <ThemedText>{order.cancelInfo.reason}</ThemedText>
+            </View>
           )}
           {button(
             t("serviceContact.open"),

@@ -4544,5 +4544,8 @@
   "inbox.searchingMore": "Looking for more conversations…",
   "inbox.loadMore": "Load more",
   "inbox.crewFallback": "Crew chat",
-  "inbox.memberCount": "{count} members"
+  "inbox.memberCount": "{count} members",
+  "orderDetail.cancelledBy": "Cancelled by {by}",
+  "orderDetail.role.buyer": "buyer",
+  "orderDetail.role.creator": "creator"
 }
