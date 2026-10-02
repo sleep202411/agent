@@ -105,7 +105,13 @@ vi.mock("@/src/i18n/i18n", async () => {
   };
 });
 
-vi.mock("@/src/env", () => ({ env: { BANNER_BASE_URL: "https://banner.test", OSS_BASE_URL: "" } }));
+vi.mock("@/src/env", () => ({
+  env: {
+    BANNER_BASE_URL: "https://banner.test",
+    OSS_BASE_URL: "",
+    STUDIO_HOST: "studio.example.test",
+  },
+}));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
@@ -406,6 +412,7 @@ describe("crew workspace tabs", () => {
     expect(nav.replaced).toEqual([]);
     // Pax: asset-based Tasks, Positions and Finance precede chat.
     expect(navLabels()).toEqual([
+      "Basic Info",
       "Tasks",
       "Positions",
       "Finance",
@@ -413,7 +420,6 @@ describe("crew workspace tabs", () => {
       "Fans",
       "Asset Center",
       "Members",
-      "Basic Info",
     ]);
   });
 
@@ -601,6 +607,7 @@ describe("crew workspace with an unresolvable chat thread", () => {
     // The whole workspace is still there: the tab is not removed, the
     // member is still entitled to it, and every other surface works.
     expect(navLabels()).toEqual([
+      "Basic Info",
       "Tasks",
       "Positions",
       "Finance",
@@ -608,7 +615,6 @@ describe("crew workspace with an unresolvable chat thread", () => {
       "Fans",
       "Asset Center",
       "Members",
-      "Basic Info",
     ]);
     click(tabButton("Tasks"));
     reload();

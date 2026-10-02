@@ -179,7 +179,7 @@ export function CrewWorkbenchShell({
           ) : null}
 
           {tabs
-            .filter((tab) => !["chat", "tasks", "roles", "income"].includes(tab.id))
+            .filter((tab) => !["overview", "chat", "tasks", "roles", "income"].includes(tab.id))
             .map((tab) => {
               const Icon = RAIL_ICONS[tab.id];
               return (

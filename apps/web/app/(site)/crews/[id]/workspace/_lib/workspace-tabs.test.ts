@@ -64,15 +64,15 @@ describe("chat is members-only", () => {
   });
 
   it("hides the chat entry from the nav for an outsider", () => {
-    expect(workspaceTabsFor(false).map((t) => t.id)).toEqual(["roles", "members", "overview"]);
+    expect(workspaceTabsFor(false).map((t) => t.id)).toEqual(["overview", "roles", "members"]);
     expect(workspaceTabsFor(true).map((t) => t.id)).toEqual([
+      "overview",
       "tasks",
       "roles",
       "income",
       "chat",
       "assets",
       "members",
-      "overview",
     ]);
   });
 });
@@ -150,13 +150,13 @@ describe("isWorkspaceTabId", () => {
   it("accepts only the seven rendered tabs, in product order", () => {
     // 群聊 / 任务 / 收入 / 资产中心 / 成员 / 招募 / 概览.
     expect(WORKSPACE_TABS.map((tab) => tab.id)).toEqual([
+      "overview",
       "tasks",
       "roles",
       "income",
       "chat",
       "assets",
       "members",
-      "overview",
     ]);
     expect(isWorkspaceTabId("chat")).toBe(true);
     expect(isWorkspaceTabId("tasks")).toBe(true);

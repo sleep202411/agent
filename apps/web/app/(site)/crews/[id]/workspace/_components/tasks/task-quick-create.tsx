@@ -46,7 +46,6 @@ import {
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
-import { TaskCrewContext } from "./task-crew-context";
 import { TaskSelect } from "./task-select";
 
 interface TaskQuickCreateProps {
@@ -120,7 +119,6 @@ export function TaskQuickCreate({
   const [estimatePoints, setEstimatePoints] = useState(
     initialInput?.estimatePoints?.toString() ?? ""
   );
-  const [publishOpening, setPublishOpening] = useState(false);
   const [rewardUsd, setRewardUsd] = useState(
     initialInput?.rewardUsdMinor == null ? "" : String(initialInput.rewardUsdMinor / 100)
   );
@@ -135,7 +133,6 @@ export function TaskQuickCreate({
   const [context, setContext] = useState({ open, crewId, parentId });
   if (context.open !== open || context.crewId !== crewId || context.parentId !== parentId) {
     setContext({ open, crewId, parentId });
-    setPublishOpening(false);
     setTitle(initialInput?.title ?? "");
     setDescription(initialInput?.description ?? "");
     setPriority(initialInput?.priority ?? "normal");
@@ -284,7 +281,7 @@ export function TaskQuickCreate({
     }
   };
 
-  const submit = async () => {
+  const submit = async (recruit = false) => {
     if (!open || operationInFlight.current || create.isPending || draftTask.isPending) return;
     const nextTitle = title.trim();
     if (!nextTitle) {
@@ -319,6 +316,17 @@ export function TaskQuickCreate({
       toast.error(projectT("workbench.invalidCompensation"));
       return;
     }
+    if (
+      episodeId &&
+      (episodes.isLoading ||
+        episodes.isError ||
+        !episodes.data?.some(
+          (episode) => episode.id === episodeId && episode.status !== "cancelled"
+        ))
+    ) {
+      toast.error(t("episodeUnavailable"));
+      return;
+    }
     operationInFlight.current = true;
     const requestedSession = session.current;
     let staged = false;
@@ -344,11 +352,12 @@ export function TaskQuickCreate({
         parentId: parentId ?? draft?.parentId ?? initialInput?.parentId ?? null,
         blockedByTaskIds: draft?.blockedByTaskIds ?? initialInput?.blockedByTaskIds ?? [],
         labelIds,
-        assignees: assigneeUserId
-          ? initialInput?.assignees[0]?.userId === assigneeUserId
-            ? initialInput.assignees
-            : [{ userId: assigneeUserId, currency: CREW_CURRENCY }]
-          : [],
+        assignees:
+          !recruit && assigneeUserId
+            ? initialInput?.assignees[0]?.userId === assigneeUserId
+              ? initialInput.assignees
+              : [{ userId: assigneeUserId, currency: CREW_CURRENCY }]
+            : [],
       };
       if (onStage) {
         staged = true;
@@ -360,7 +369,7 @@ export function TaskQuickCreate({
       if (session.current !== requestedSession) return;
       toast.success(t("created"));
       onCreated?.(task);
-      if (publishOpening && !assigneeUserId) {
+      if (recruit) {
         setOpen(false);
         onPublishTask?.(task.id);
         return;
@@ -431,19 +440,19 @@ export function TaskQuickCreate({
         </div>
 
         {onPublishTask && !onStage ? (
-          <label className="mx-5 mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={publishOpening}
-              onChange={(event) => {
-                draftRevision.current += 1;
-                setPublishOpening(event.target.checked);
-                if (event.target.checked) setAssigneeUserId("");
-              }}
-            />
-            {projectT("workbench.publishOpening")}
-            {assigneeUserId ? <span>{projectT("workbench.unassignedOnly")}</span> : null}
-          </label>
+          <div className="mx-5 mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={create.isPending || draftTask.isPending}
+              onClick={() => void submit(true)}
+            >
+              {projectT("workbench.publishOpening")}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {projectT("workbench.saveThenRecruit")}
+            </span>
+          </div>
         ) : null}
         <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -478,7 +487,6 @@ export function TaskQuickCreate({
               onChange={(value) => {
                 draftRevision.current += 1;
                 setAssigneeUserId(value);
-                if (value) setPublishOpening(false);
               }}
               options={[
                 { value: "", label: t("unassigned") },
@@ -568,19 +576,6 @@ export function TaskQuickCreate({
             </div>
           </div>
 
-          <TaskCrewContext
-            key={`${crewId}:${open}`}
-            crewId={crewId}
-            members={members.map((member) => ({
-              id: member.userId,
-              name: displayNameOf(member.userId, displays),
-            }))}
-            onImport={(text) => {
-              draftRevision.current += 1;
-              setDescription((current) => [current.trim(), text].filter(Boolean).join("\n\n"));
-              setDraft(null);
-            }}
-          />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <SelectChip
               icon={<StateRing color={activeState?.color} />}
@@ -600,8 +595,12 @@ export function TaskQuickCreate({
               value={episodeId ?? ""}
               label={
                 episodeId
-                  ? (episodes.data?.find((episode) => episode.id === episodeId)?.title ??
-                    t("episode"))
+                  ? (() => {
+                      const selected = episodes.data?.find((episode) => episode.id === episodeId);
+                      return selected
+                        ? `${t("episodeNumber", { number: selected.number })} · ${selected.title}`
+                        : t("episode");
+                    })()
                   : t("noEpisode")
               }
               ariaLabel={t("episode")}
@@ -616,32 +615,37 @@ export function TaskQuickCreate({
                   })),
               ]}
             />
-            <LabelChip
-              labels={project.labels}
-              selectedIds={labelIds}
-              onChange={setLabelIds}
-              label={
-                selectedLabels.length > 0
-                  ? selectedLabels.map((item) => item.name).join(", ")
-                  : t("labels")
-              }
-            />
+            <div className="min-w-0 space-y-2">
+              <p className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
+                <IconTag className="size-3.5" />
+                {t("labels")}
+              </p>
+              <LabelChip
+                labels={project.labels}
+                selectedIds={labelIds}
+                onChange={setLabelIds}
+                label={
+                  selectedLabels.length > 0
+                    ? selectedLabels.map((item) => item.name).join(", ")
+                    : t("labels")
+                }
+              />
+            </div>
             {(
               [
                 { key: "rewardUsd", value: rewardUsd, set: setRewardUsd, max: 1_000_000_000 },
                 { key: "profitShare", value: profitShare, set: setProfitShare, max: 100 },
               ] as const
             ).map((field) => (
-              <label
-                key={field.key}
-                className="flex min-h-14 min-w-0 flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 py-3 text-xs text-[#a4a4ac]"
-              >
-                {field.key === "rewardUsd" ? (
-                  <IconCoin className="size-3.5" />
-                ) : (
-                  <IconPercentage className="size-3.5" />
-                )}
-                {projectT(`workbench.${field.key}`)}
+              <label key={field.key} className="block min-w-0 space-y-2">
+                <span className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
+                  {field.key === "rewardUsd" ? (
+                    <IconCoin className="size-3.5" />
+                  ) : (
+                    <IconPercentage className="size-3.5" />
+                  )}
+                  {projectT(`workbench.${field.key}`)}
+                </span>
                 <input
                   type="number"
                   min={0}
@@ -649,7 +653,7 @@ export function TaskQuickCreate({
                   step="0.01"
                   value={field.value}
                   aria-label={projectT(`workbench.${field.key}`)}
-                  className="min-w-0 w-full bg-transparent px-1 text-base text-white outline-none"
+                  className="h-10 data-[size=default]:h-10 w-full min-w-0 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-white outline-none focus:border-primary"
                   onChange={(event) => {
                     draftRevision.current += 1;
                     field.set(event.target.value);
@@ -657,13 +661,19 @@ export function TaskQuickCreate({
                 />
               </label>
             ))}
-            <DateChip
-              value={dueDate}
-              onChange={(value) => {
-                draftRevision.current += 1;
-                setDueDate(value);
-              }}
-            />
+            <div className="min-w-0 space-y-2">
+              <p className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
+                <IconCalendar className="size-3.5" />
+                {t("due")}
+              </p>
+              <DateChip
+                value={dueDate}
+                onChange={(value) => {
+                  draftRevision.current += 1;
+                  setDueDate(value);
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -729,7 +739,7 @@ function SelectChip({
 }) {
   return (
     <div className="min-w-0 space-y-2">
-      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#92929c]">
+      <p className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
         {icon}
         {ariaLabel}
       </p>
@@ -739,7 +749,7 @@ function SelectChip({
         options={options}
         ariaLabel={ariaLabel}
         displayValue={<span className="truncate">{label}</span>}
-        className="h-12 w-full min-w-0 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-[#e8e9ec] hover:bg-white/5 dark:bg-[#101012]"
+        className="h-10 data-[size=default]:h-10 w-full min-w-0 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-[#e8e9ec] hover:bg-white/5 dark:bg-[#101012]"
       />
     </div>
   );
@@ -765,7 +775,6 @@ function LabelChip({
           className="inline-flex h-10 min-w-0 w-full items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
           aria-label={t("labels")}
         >
-          <IconTag className="size-3.5 shrink-0" stroke={1.8} />
           <span className="truncate">{label}</span>
         </button>
       </PopoverTrigger>
@@ -817,7 +826,6 @@ function DateChip({ value, onChange }: { value: string; onChange: (value: string
           aria-label={t("due")}
           className="inline-flex h-10 w-full items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-[#a4a4ac]"
         >
-          <IconCalendar className="size-3.5" />
           {date && !Number.isNaN(date.getTime())
             ? new Intl.DateTimeFormat(locale, {
                 year: "numeric",

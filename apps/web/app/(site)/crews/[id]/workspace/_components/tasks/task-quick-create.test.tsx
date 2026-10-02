@@ -46,7 +46,19 @@ vi.mock("@/src/i18n/i18n", async () => {
   >;
   return {
     useLocale: () => "en-US",
-    useTranslations: (namespace: string) => (key: string) => catalog[namespace]?.[key] ?? key,
+    useTranslations:
+      (namespace: string) =>
+      (key: string, args: Record<string, unknown> = {}) => {
+        const value = `${namespace}.${key}`
+          .split(".")
+          .reduce<unknown>(
+            (current, segment) => (current as Record<string, unknown>)?.[segment],
+            catalog
+          );
+        return typeof value === "string"
+          ? value.replace(/\{\{?(\w+)\}?\}/g, (_, name: string) => String(args[name] ?? name))
+          : key;
+      },
   };
 });
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
@@ -65,7 +77,13 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     data: null,
     isPending: false,
   }),
-  useCrewEpisodes: () => ({ data: [], isLoading: false }),
+  useCrewEpisodes: () => ({
+    data: [
+      { id: "episode-one", number: 1, title: "Opening", status: "active" },
+      { id: "episode-two", number: 2, title: "Opening", status: "active" },
+    ],
+    isLoading: false,
+  }),
   useCrewTaskKindTemplates: () => ({ data: { items: [] }, isLoading: false }),
   useCrewTaskOptions: () => ({ data: [] }),
   CREW_TASK_KINDS: [
@@ -475,7 +493,7 @@ describe("TaskQuickCreate", () => {
       } else {
         const label = field === "priority" ? "Priority" : "Assignees";
         await act(async () => click(document.querySelector(`button[aria-label="${label}"]`)!));
-        const text = field === "priority" ? "priority.low" : "Isaac";
+        const text = field === "priority" ? "Low" : "Isaac";
         const option = [...document.querySelectorAll('[role="option"]')].find(
           (item) => item.textContent?.trim() === text
         );
@@ -748,8 +766,8 @@ it("stages once without posting and preserves the preset episode", async () => {
   renderQuickCreate(vi.fn(), vi.fn(), project, { presetEpisodeId: "episode-one", onStage: stage });
   act(() => fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Review storyboard"));
   await act(async () => {
-    click(exactButton("workbench.stage"));
-    click(exactButton("workbench.stage"));
+    click(exactButton("Add task"));
+    click(exactButton("Add task"));
   });
   expect(stage).toHaveBeenCalledTimes(1);
   expect(stage).toHaveBeenCalledWith(
@@ -800,16 +818,10 @@ it("saves separate USD reward and profit share terms before staging", async () =
   renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
   act(() => {
     fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Paid script");
-    fill(
-      document.querySelector<HTMLInputElement>('input[aria-label="workbench.rewardUsd"]')!,
-      "30.25"
-    );
-    fill(
-      document.querySelector<HTMLInputElement>('input[aria-label="workbench.profitShare"]')!,
-      "2.5"
-    );
+    fill(document.querySelector<HTMLInputElement>('input[aria-label="Reward (USD)"]')!, "30.25");
+    fill(document.querySelector<HTMLInputElement>('input[aria-label="Profit share (%)"]')!, "2.5");
   });
-  await act(async () => click(exactButton("workbench.stage")));
+  await act(async () => click(exactButton("Add task")));
   expect(stage).toHaveBeenCalledWith(
     expect.objectContaining({ rewardUsdMinor: 3025, profitShareBps: 250 })
   );
@@ -823,11 +835,11 @@ it.each(["-1", "100.01", "0.001"])(
     act(() => {
       fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Paid script");
       fill(
-        document.querySelector<HTMLInputElement>('input[aria-label="workbench.profitShare"]')!,
+        document.querySelector<HTMLInputElement>('input[aria-label="Profit share (%)"]')!,
         value
       );
     });
-    await act(async () => click(exactButton("workbench.stage")));
+    await act(async () => click(exactButton("Add task")));
     expect(stage).not.toHaveBeenCalled();
     expect(state.create).not.toHaveBeenCalled();
   }
@@ -850,7 +862,7 @@ it("rejects an expired deadline restored from a saved draft", async () => {
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("hands a newly saved task to the publishing form when requested", async () => {
+it("saves and opens the publishing form directly from Recruit Creators", async () => {
   const publish = vi.fn();
   renderQuickCreate(vi.fn(), vi.fn(), project, { onPublishTask: publish });
   act(() =>
@@ -859,10 +871,8 @@ it("hands a newly saved task to the publishing form when requested", async () =>
       "Open role"
     )
   );
-  act(() => document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-  expect(publish).not.toHaveBeenCalled();
   await act(async () => {
-    click(exactButton("Create"));
+    click(exactButton("Recruit Creators"));
     await Promise.resolve();
   });
   expect(state.create).toHaveBeenCalledTimes(1);
@@ -888,13 +898,43 @@ it("lets recruitment replace a selected assignee before publishing", async () =>
   await act(async () =>
     option.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
   );
-  const recruit = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-  expect(recruit.disabled).toBe(false);
-  act(() => recruit.click());
   await act(async () => {
-    click(exactButton("Create"));
+    click(exactButton("Recruit Creators"));
     await Promise.resolve();
   });
   expect(state.create).toHaveBeenLastCalledWith(expect.objectContaining({ assignees: [] }));
   expect(publish).toHaveBeenCalledWith("task-created");
+});
+
+it("opens the Episode selector, distinguishes duplicate titles, and saves the chosen ID", async () => {
+  renderQuickCreate(vi.fn());
+  act(() =>
+    fill(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      "Episode task"
+    )
+  );
+  const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Episode"]')!;
+  await act(async () =>
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+  );
+  const options = [...document.querySelectorAll('[role="option"]')];
+  expect(options).toHaveLength(3);
+  await act(async () =>
+    options[2].dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  );
+  expect(trigger.textContent).toContain("Opening");
+  await act(async () => click(exactButton("Create")));
+  expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ episodeId: "episode-two" }));
+});
+it("blocks a stale episode instead of silently assigning a different episode", async () => {
+  renderQuickCreate(vi.fn(), vi.fn(), project, { presetEpisodeId: "deleted-episode" });
+  act(() =>
+    fill(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      "Episode task"
+    )
+  );
+  await act(async () => click(exactButton("Create")));
+  expect(state.create).not.toHaveBeenCalled();
 });
