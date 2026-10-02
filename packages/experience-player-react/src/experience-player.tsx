@@ -3,6 +3,7 @@ import { usePlaySessionReporter } from "./use-play-session-reporter";
 
 import {
   useCallback,
+  useContext,
   useEffect,
   useId,
   useLayoutEffect,
@@ -87,6 +88,7 @@ import {
 } from "./experience-playback-delivery";
 import { resolveExperiencePlaybackRejection } from "./experience-playback-rejection";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
+import { ExperienceStoryClock, ExperienceStoryClockContext } from "./experience-story-clock";
 import { useExperienceAudioHost } from "./use-experience-audio-host";
 
 export type ExperiencePlayerFrameProfile = "auto" | ExperienceOrientation;
@@ -670,6 +672,15 @@ function ActiveExperienceRuntimePlayer({
     [controller, manifest, run]
   );
 
+  // Story time for everything that moves the story without media (see
+  // ExperienceStoryClock). It runs from Start, so nothing scheduled behind the
+  // title card — a footage placeholder — spends time the viewer never saw.
+  const [storyClock] = useState(() => new ExperienceStoryClock({ paused: true }));
+  useLayoutEffect(() => {
+    if (started) storyClock.resume();
+    else storyClock.pause();
+  }, [started, storyClock]);
+
   // A `fixed` scene clock is the only clock the experience itself owns. A
   // `renderer` clock is driven by its media's currentTime, and `none` never
   // advances — so a scene that must last a known duration without any media to
@@ -678,28 +689,43 @@ function ActiveExperienceRuntimePlayer({
   //
   // Position is fed through the same `advanceTimeline` the media path uses, so
   // timeline cues fire identically whether the clock came from a video or from
-  // here. `scene.clock-ended` is emitted exactly once per scene entry.
+  // here. `scene.clock-ended` is emitted exactly once per scene entry. The
+  // origin belongs to the entry, not to the effect: an effect that runs again
+  // mid-scene carries on from the clock's position instead of restarting it.
   const clockScene = scene?.clock.kind === "fixed" ? scene : null;
   const clockDurationMs = clockScene?.clock.kind === "fixed" ? clockScene.clock.durationMs : null;
+  const fixedClockEntryRef = useRef<{ key: string; origin: number; ended: boolean } | null>(null);
   useEffect(() => {
     if (!clockScene || clockDurationMs === null || !started) return;
+    const key = `${clockScene.sceneId}:${sceneEpoch}`;
+    const entry =
+      fixedClockEntryRef.current?.key === key
+        ? fixedClockEntryRef.current
+        : { key, origin: storyClock.now(), ended: false };
+    fixedClockEntryRef.current = entry;
     let frame = 0;
-    let ended = false;
-    const startedAt = performance.now();
-    const tick = () => {
-      const elapsed = Math.min(performance.now() - startedAt, clockDurationMs);
+    const tick = (storyNow: number) => {
+      const elapsed = Math.min(storyNow - entry.origin, clockDurationMs);
       advanceTimeline(null, elapsed);
       if (elapsed < clockDurationMs) {
-        frame = window.requestAnimationFrame(tick);
+        frame = storyClock.requestFrame(tick);
         return;
       }
-      if (ended) return;
-      ended = true;
+      if (entry.ended) return;
+      entry.ended = true;
       emitRuntimeEvents([{ type: "scene.clock-ended", sourceId: clockScene.sceneId }]);
     };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [advanceTimeline, clockDurationMs, clockScene, emitRuntimeEvents, started]);
+    frame = storyClock.requestFrame(tick);
+    return () => storyClock.cancelFrame(frame);
+  }, [
+    advanceTimeline,
+    clockDurationMs,
+    clockScene,
+    emitRuntimeEvents,
+    sceneEpoch,
+    started,
+    storyClock,
+  ]);
 
   const handleSoundBlocked = useCallback(() => setSoundBlocked(true), []);
   // Unmute the live elements INSIDE the click, then let state follow. Leaving it
@@ -821,6 +847,7 @@ function ActiveExperienceRuntimePlayer({
       key={key}
       manifest={manifest}
       renderer={renderer}
+      entryKey={`${runtimeState.currentSceneId}:${sceneEpoch}`}
       runtimeState={runtimeState}
       formatPrice={access?.formatPrice}
       active={started}
@@ -851,7 +878,7 @@ function ActiveExperienceRuntimePlayer({
       copy={copy}
       style={theme ? themeStyle(theme) : undefined}
       stage={
-        <>
+        <ExperienceStoryClockContext.Provider value={storyClock}>
           {scene ? (
             rendererSlots
               .filter(({ renderer }) => renderer.rendererId !== EXPERIENCE_CORE_CHOICE_RENDERER_ID)
@@ -899,7 +926,7 @@ function ActiveExperienceRuntimePlayer({
               </button>
             </div>
           ) : null}
-        </>
+        </ExperienceStoryClockContext.Provider>
       }
     >
       {nodeGate ? (
@@ -1050,6 +1077,7 @@ function ActiveExperienceRuntimePlayer({
 function CoreRenderer({
   manifest,
   renderer,
+  entryKey,
   runtimeState,
   active,
   open,
@@ -1069,6 +1097,8 @@ function CoreRenderer({
   formatPrice?: (amount: number) => string;
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
+  /** The current scene entry: its id and epoch, so a re-entry is a new entry. */
+  entryKey: string;
   runtimeState: ExperienceRuntimeState;
   active: boolean;
   open: boolean;
@@ -1097,6 +1127,7 @@ function CoreRenderer({
       return (
         <EmptyVideoSequencePlaceholder
           label={copy.emptySequence}
+          entryKey={entryKey}
           onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
         />
       );
@@ -1354,21 +1385,22 @@ function stillDurationMs(clip: { endBehavior: { behavior: string; durationMs?: n
 
 function EmptyVideoSequencePlaceholder({
   label,
+  entryKey,
   onCompleted,
 }: {
   label: string;
+  entryKey: string;
   onCompleted: () => void;
 }) {
-  const completedRef = useRef(false);
+  const storyClock = useContext(ExperienceStoryClockContext);
+  // The beat belongs to the scene entry: the host hands over a new callback on
+  // every render, and following it would start the beat over each time.
+  const onCompletedRef = useRef(onCompleted);
+  onCompletedRef.current = onCompleted;
   useEffect(() => {
-    completedRef.current = false;
-    const timer = window.setTimeout(() => {
-      if (completedRef.current) return;
-      completedRef.current = true;
-      onCompleted();
-    }, EMPTY_SEQUENCE_HOLD_MS);
-    return () => window.clearTimeout(timer);
-  }, [onCompleted]);
+    const timer = storyClock.setTimeout(() => onCompletedRef.current(), EMPTY_SEQUENCE_HOLD_MS);
+    return () => storyClock.clearTimer(timer);
+  }, [entryKey, storyClock]);
   return (
     <div className="absolute inset-0 grid place-items-center bg-black">
       <p className="text-sm font-semibold tracking-wide text-white/45">{label}</p>
@@ -1402,6 +1434,7 @@ function CoreVideoRenderer({
   onContentSize: (size: { width: number; height: number }) => void;
 }) {
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
+  const storyClock = useContext(ExperienceStoryClockContext);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
     initialCoreVideoPlaybackState(renderer.instanceId)
   );
@@ -1439,12 +1472,15 @@ function CoreVideoRenderer({
     [config.autoplay, onPlaybackHandle, renderer.instanceId, terminalMode?.kind]
   );
 
-  const clearCompletionTimer = useCallback((rendererInstanceId?: string) => {
-    const timer = completionTimerRef.current;
-    if (!timer || (rendererInstanceId && timer.rendererInstanceId !== rendererInstanceId)) return;
-    window.clearTimeout(timer.id);
-    completionTimerRef.current = null;
-  }, []);
+  const clearCompletionTimer = useCallback(
+    (rendererInstanceId?: string) => {
+      const timer = completionTimerRef.current;
+      if (!timer || (rendererInstanceId && timer.rendererInstanceId !== rendererInstanceId)) return;
+      storyClock.clearTimer(timer.id);
+      completionTimerRef.current = null;
+    },
+    [storyClock]
+  );
 
   // The core-video slot is intentionally reused between scenes so WebKit keeps
   // the media element that received the user's audible-playback permission.
@@ -1484,10 +1520,11 @@ function CoreVideoRenderer({
     }
     completeRenderer();
   };
+  // Story time: a pause holds the frame on screen for exactly the time it had left.
   const scheduleCompletion = (durationMs: number) => {
     clearCompletionTimer();
     const rendererInstanceId = renderer.instanceId;
-    const id = window.setTimeout(() => {
+    const id = storyClock.setTimeout(() => {
       const timer = completionTimerRef.current;
       if (!timer || timer.id !== id || timer.rendererInstanceId !== rendererInstanceId) return;
       completionTimerRef.current = null;
@@ -1613,9 +1650,9 @@ function CoreVideoRenderer({
  * A still has no element that plays itself, so it is governed like footage
  * instead of like an image: it declares itself displayed only when the host
  * calls play() — never on image load, which happens behind the title screen —
- * and from then on reports elapsed time so the scene clock keeps advancing and
- * time-anchored interactions stay live. Its screen time is the clip's
- * `hold-last-frame` duration, still owned by the sequence above.
+ * and from then on reports elapsed story time so the scene clock keeps
+ * advancing and time-anchored interactions stay live. Its screen time is the
+ * clip's `hold-last-frame` duration, still owned by the sequence above.
  */
 function ExperienceStillSegment({
   uri,
@@ -1638,6 +1675,7 @@ function ExperienceStillSegment({
   onTimelineTimeMs: (timeMs: number) => void;
   onPlaybackHandle: (handle: ExperienceMediaPlaybackHandle | null) => void;
 }) {
+  const storyClock = useContext(ExperienceStoryClockContext);
   const displayedRef = useRef(false);
   const elapsedMsRef = useRef(0);
   const runningSinceRef = useRef<number | null>(null);
@@ -1649,13 +1687,14 @@ function ExperienceStillSegment({
 
   const stopTicking = useCallback(() => {
     if (tickRef.current === null) return;
-    window.clearInterval(tickRef.current);
+    storyClock.clearTimer(tickRef.current);
     tickRef.current = null;
-  }, []);
+  }, [storyClock]);
 
   // The clock outlives handle registration: the sequence deregisters the
   // handle the moment this clip enters its terminal hold, which is exactly
-  // when the still is on screen and the scene clock must keep running.
+  // when the still is on screen and the scene clock must keep running. Only
+  // the story clock reaches it from then on, so it ticks on story time.
   useEffect(() => {
     displayedRef.current = false;
     elapsedMsRef.current = 0;
@@ -1668,15 +1707,15 @@ function ExperienceStillSegment({
   useEffect(() => {
     const elapsed = () =>
       elapsedMsRef.current +
-      (runningSinceRef.current === null ? 0 : performance.now() - runningSinceRef.current);
+      (runningSinceRef.current === null ? 0 : storyClock.now() - runningSinceRef.current);
     const handle: ExperienceMediaPlaybackHandle = {
       playbackIdentity,
       activate: () => undefined,
       play: async () => {
         if (runningSinceRef.current === null) {
-          runningSinceRef.current = performance.now();
+          runningSinceRef.current = storyClock.now();
           stopTicking();
-          tickRef.current = window.setInterval(() => {
+          tickRef.current = storyClock.setInterval(() => {
             const now = Math.min(elapsed(), durationMs);
             onTimelineTimeMsRef.current(timelineOffsetMs + now);
             if (now >= durationMs) stopTicking();
@@ -1696,7 +1735,7 @@ function ExperienceStillSegment({
       seek: (seconds) => {
         const target = Math.max(0, Math.min(seconds * 1_000, durationMs));
         elapsedMsRef.current = target;
-        if (runningSinceRef.current !== null) runningSinceRef.current = performance.now();
+        if (runningSinceRef.current !== null) runningSinceRef.current = storyClock.now();
         onTimelineTimeMsRef.current(timelineOffsetMs + target);
       },
       // A still carries no audio track, so muting is a no-op rather than an
@@ -1705,7 +1744,7 @@ function ExperienceStillSegment({
     };
     onPlaybackHandle(handle);
     return () => onPlaybackHandle(null);
-  }, [durationMs, onPlaybackHandle, playbackIdentity, stopTicking, timelineOffsetMs]);
+  }, [durationMs, onPlaybackHandle, playbackIdentity, stopTicking, storyClock, timelineOffsetMs]);
 
   return (
     <img src={uri} alt={title} className="absolute inset-0 size-full" style={{ objectFit: fit }} />

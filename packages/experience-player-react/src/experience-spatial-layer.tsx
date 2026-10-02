@@ -47,10 +47,11 @@ import {
   screenDeltaInFrame,
   screenPointInFrame,
 } from "./experience-landscape-presentation";
+import { ExperienceStoryClockContext } from "./experience-story-clock";
 import { evaluateExperienceSwipe, type ExperienceSwipeGesture } from "./experience-swipe-gesture";
 
 /**
- * Wall-clock grace before an untouched timeline-control charge times out.
+ * Story-time grace before an untouched timeline-control charge times out.
  * The scene media is paused while the gate is up, so the media-driven window
  * timeout can never fire on its own; without this the clip would freeze
  * forever waiting for a press that never comes.
@@ -834,6 +835,7 @@ function PressHoldControl({
 }) {
   const { gesture, geometry, transform } = presentation;
   const rotated = useContext(ExperienceFrameRotationContext);
+  const storyClock = useContext(ExperienceStoryClockContext);
   const timelineControl = gesture.timelineControl === true;
   const [state, setState] = useState<ExperiencePressHoldState>(() =>
     createExperiencePressHoldState()
@@ -890,11 +892,12 @@ function PressHoldControl({
   ]);
 
   // A gated charge that nobody presses would freeze the clip forever. The
-  // scene clock cannot run to the window end while paused, so the idle
-  // timeout is wall-clock and resolves the gesture so playback resumes.
+  // scene clock cannot run to the window end while the gate holds the media,
+  // so the idle timeout runs on the story clock — which the gate does not
+  // stop — and resolves the gesture so playback resumes.
   useEffect(() => {
     if (!timelineGate) return;
-    const timer = window.setTimeout(() => {
+    const timer = storyClock.setTimeout(() => {
       timelinePressedRef.current = false;
       setTimelinePressed(false);
       setTimelineResolved(true);
@@ -906,8 +909,8 @@ function PressHoldControl({
         },
       ]);
     }, TIMELINE_CONTROL_IDLE_TIMEOUT_MS);
-    return () => window.clearTimeout(timer);
-  }, [gesture.gestureId, onEvents, sceneTimeMs, timelineGate]);
+    return () => storyClock.clearTimer(timer);
+  }, [gesture.gestureId, onEvents, sceneTimeMs, storyClock, timelineGate]);
 
   const startTimelinePress = () => {
     if (!presentation.available || timelineResolved) return;
@@ -988,6 +991,8 @@ function PressHoldControl({
     [emitSignals, onRuntimeError]
   );
 
+  // Frames arrive on story time, so the hold and its decay never count time
+  // the story spent paused.
   const runFrame = useCallback(
     (time: number) => {
       const previous = previousFrameTimeRef.current ?? time;
@@ -996,10 +1001,10 @@ function PressHoldControl({
       const needsNextFrame =
         pressedRef.current || nextState.status === "decaying" || nextState.blockedUntilRelease;
       animationFrameRef.current = needsNextFrame
-        ? window.requestAnimationFrame(runFrameRef.current)
+        ? storyClock.requestFrame(runFrameRef.current)
         : null;
     },
-    [step]
+    [step, storyClock]
   );
 
   useEffect(() => {
@@ -1009,8 +1014,8 @@ function PressHoldControl({
   const ensureAnimationFrame = useCallback(() => {
     if (animationFrameRef.current !== null) return;
     previousFrameTimeRef.current = null;
-    animationFrameRef.current = window.requestAnimationFrame(runFrameRef.current);
-  }, []);
+    animationFrameRef.current = storyClock.requestFrame(runFrameRef.current);
+  }, [storyClock]);
 
   const stopPress = useCallback(() => {
     if (timelineControl) {
@@ -1028,10 +1033,10 @@ function PressHoldControl({
   useEffect(
     () => () => {
       if (animationFrameRef.current !== null) {
-        window.cancelAnimationFrame(animationFrameRef.current);
+        storyClock.cancelFrame(animationFrameRef.current);
       }
     },
-    []
+    [storyClock]
   );
 
   const startPress = () => {

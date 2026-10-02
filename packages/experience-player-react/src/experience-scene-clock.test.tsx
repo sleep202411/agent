@@ -479,3 +479,120 @@ describe("ExperiencePlayer fixed scene clock", () => {
     expect(container.textContent).not.toContain(copy.runtimeError);
   });
 });
+
+/**
+ * The placeholder for footage not attached yet holds its scene for a fixed beat
+ * of story time: the beat starts at Start, never behind the title card, and it
+ * belongs to the scene entry, so a host render mid-beat does not start it over.
+ */
+describe("ExperiencePlayer footage placeholder", () => {
+  /** The player's beat for a shot without footage (EMPTY_SEQUENCE_HOLD_MS). */
+  const BEAT_MS = 6_000;
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.useFakeTimers();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: () => ({
+        matches: false,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      }),
+    });
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** The timed film, with its first scene turned into a video shot that has no footage yet. */
+  function placeholderManifest() {
+    const runtime = ExperienceRuntimeManifestSchema.parse(timedManifest());
+    runtime.compatibility.requiredCapabilities.push("core.video");
+    runtime.rendererRequirements.push({
+      rendererId: "core.video",
+      apiVersion: "1.0.0",
+      configSchemaVersion: "1.0.0",
+      requiredCapabilities: ["core.video"],
+      outcomes: [{ outcomeType: "media-ended" }],
+      commands: [],
+    });
+    const shot = runtime.graph.nodes[0]!;
+    if (shot.kind !== "scene") throw new Error("Expected scene");
+    shot.clock = { kind: "none" };
+    shot.renderers = [
+      {
+        instanceId: "video.placeholder",
+        rendererId: "core.video",
+        layer: 0,
+        bindings: {},
+        config: { fit: "cover", sequence: [], autoplay: true },
+      },
+    ];
+    shot.eventBindings = [
+      {
+        bindingId: "placeholder.ended",
+        on: { type: "renderer.outcome", sourceId: "video.placeholder", qualifierId: "media-ended" },
+        routes: [{ routeId: "advance", actions: [{ kind: "scene.goto", sceneId: "scene.after" }] }],
+      },
+    ];
+    return runtime;
+  }
+
+  it("holds its beat from Start, once per scene entry, through host renders", async () => {
+    const runtime = placeholderManifest();
+    const render = async (playerCopy: ExperiencePlayerCopy) => {
+      await act(async () => {
+        root.render(
+          <ExperiencePlayer
+            runtime={runtime}
+            locale="en-US"
+            copy={playerCopy}
+            loadTheme={() => Promise.resolve(theme)}
+          />
+        );
+      });
+    };
+    const elapse = async (ms: number) => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    };
+
+    await render(copy);
+    // Longer than the beat, behind the title card: none of it is story time.
+    await elapse(BEAT_MS * 2);
+    const start = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === copy.start
+    );
+    if (!start) throw new Error("The player never offered a start control.");
+    await act(async () => {
+      start.click();
+    });
+    expect(container.textContent).toContain(copy.emptySequence);
+
+    await elapse(BEAT_MS / 2);
+    // A host render hands the placeholder a new callback; the beat carries on.
+    await render({ ...copy });
+    await elapse(BEAT_MS / 2 - 1);
+    expect(container.textContent).not.toContain("next");
+
+    await elapse(1);
+    expect(container.textContent).toContain("next");
+  });
+});
