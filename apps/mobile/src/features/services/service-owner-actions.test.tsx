@@ -45,10 +45,16 @@ vi.mock("react-native", () => ({
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
-const render = (status = "listed") =>
+const render = (status = "listed", packageCount = 1) =>
   act(async () =>
     root.render(
-      <ServiceOwnerActions id="s" creatorId="owner" status={status} refresh={h.refresh} />
+      <ServiceOwnerActions
+        id="s"
+        creatorId="owner"
+        status={status}
+        packageCount={packageCount}
+        refresh={h.refresh}
+      />
     )
   );
 const click = (key: string) =>
@@ -139,3 +145,32 @@ it("clears an obsolete confirmation when the authoritative status changes", asyn
   expect(host.textContent).toContain("myServices.status.paused");
   expect(h.change).not.toHaveBeenCalled();
 });
+
+it.each(["draft", "paused"])(
+  "explains the package requirement before %s activation",
+  async (status) => {
+    await render(status, 0);
+    const action = status === "draft" ? "publish" : "resume";
+    const activation = () =>
+      Array.from(host.querySelectorAll("button")).find(
+        (b) => b.textContent === `myServices.action.${action}`
+      )!;
+    expect(activation().disabled).toBe(true);
+    expect(host.textContent).toContain("myServices.publishNeedsPackage");
+    await act(async () => activation().click());
+    expect(h.change).not.toHaveBeenCalled();
+    expect(host.textContent).not.toContain("myServices.confirm");
+    expect(
+      Array.from(host.querySelectorAll("button")).find(
+        (b) => b.textContent === "myServices.action.archive"
+      )!.disabled
+    ).toBe(false);
+    await render(status, 1);
+    expect(activation().disabled).toBe(false);
+    expect(host.textContent).not.toContain("myServices.publishNeedsPackage");
+    await act(async () => activation().click());
+    expect(host.textContent).toContain("myServices.confirm");
+    await render(status, 0);
+    expect(host.textContent).not.toContain("myServices.confirm");
+  }
+);

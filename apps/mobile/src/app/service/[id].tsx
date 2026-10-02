@@ -142,6 +142,7 @@ function ServiceDetailContent({ id }: { id: string }) {
             id={service.id}
             creatorId={service.creatorId}
             status={service.status}
+            packageCount={service.packages.length}
             refresh={retry}
           />
           <ServiceContact

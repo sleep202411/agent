@@ -1321,6 +1321,7 @@
   "myServices.action.resume": "Resume",
   "myServices.action.archive": "Archive",
   "myServices.confirmHint": "Confirm this service status change.",
+  "myServices.publishNeedsPackage": "Publishing needs at least one enabled tier.",
   "myServices.archiveHint": "Archiving is permanent. Existing order history is retained.",
   "myServices.confirm": "Confirm",
   "myServices.cancel": "Cancel",

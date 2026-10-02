@@ -1321,6 +1321,7 @@
   "myServices.action.resume": "恢复",
   "myServices.action.archive": "归档",
   "myServices.confirmHint": "确认更改此服务状态。",
+  "myServices.publishNeedsPackage": "发布需要至少开启一个档位。",
   "myServices.archiveHint": "归档后无法恢复，现有订单历史将保留。",
   "myServices.confirm": "确认",
   "myServices.cancel": "取消",

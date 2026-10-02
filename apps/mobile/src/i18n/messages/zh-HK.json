@@ -1321,6 +1321,7 @@
   "myServices.action.resume": "恢復",
   "myServices.action.archive": "封存",
   "myServices.confirmHint": "確認更改此服務狀態。",
+  "myServices.publishNeedsPackage": "發布需要至少開啟一個檔位。",
   "myServices.archiveHint": "封存後無法恢復，現有訂單歷史將保留。",
   "myServices.confirm": "確認",
   "myServices.cancel": "取消",
