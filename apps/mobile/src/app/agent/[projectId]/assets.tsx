@@ -1,3 +1,4 @@
+import { AssetCreateSheet } from "@/features/agent/components/story-asset-create-sheet";
 import { useAuth } from "@/auth";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -61,6 +62,7 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
     loading: chapterLoading,
     error: chapterError,
   } = useStoryChapterContext();
+  const [createKind, setCreateKind] = useState<StoryAssetSpecKind>();
   const [activeTab, setActiveTab] = useState<StoryAssetSpecKind>("character");
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
@@ -80,6 +82,7 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
     setLoading(true);
     setError(undefined);
     setDetailAsset(null);
+    setCreateKind(undefined);
   }
 
   const refresh = () => {
@@ -93,6 +96,7 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
     capabilities.includes("story.edit"),
     () => {
       setDetailAsset(null);
+      setCreateKind(undefined);
       refresh();
     }
   );
@@ -213,6 +217,18 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
           </View>
         ) : null}
 
+        {showGallery && capabilities.includes("story.edit") && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={mutation.locked}
+            onPress={() => setCreateKind(activeTab)}
+            style={{ paddingVertical: 12, opacity: mutation.locked ? 0.5 : 1 }}
+          >
+            <ThemedText type="smallBold" style={{ color: theme.brand }}>
+              {t("assetEdit.create")}
+            </ThemedText>
+          </Pressable>
+        )}
         {busy ? (
           <View style={styles.centered}>
             <ActivityIndicator color={theme.brand} />
@@ -247,7 +263,17 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
         ) : null}
       </ScrollView>
 
-      {!detailAsset && recovery}
+      {!detailAsset && !createKind && recovery}
+      {createKind && active && !chapterLoading && !chapterError && (
+        <AssetCreateSheet
+          key={`${resourceKey}:${createKind}`}
+          kind={createKind}
+          locked={mutation.locked}
+          submit={mutation.submit}
+          recovery={recovery}
+          onClose={() => setCreateKind(undefined)}
+        />
+      )}
       <StoryAssetSpecDetailSheet
         recovery={recovery}
         asset={active && !chapterLoading && !chapterError ? detailAsset : null}

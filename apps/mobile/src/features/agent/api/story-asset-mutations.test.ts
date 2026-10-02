@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { assetMutationPending, assetPatchInput, type AssetCommand } from "./story-asset-mutations";
-const h = vi.hoisted(() => ({ patch: vi.fn(), del: vi.fn(), generation: 1 }));
-vi.mock("@/lib/api-client", () => ({ api: { patch: h.patch, delete: h.del } }));
+const h = vi.hoisted(() => ({ post: vi.fn(), patch: vi.fn(), del: vi.fn(), generation: 1 }));
+vi.mock("@/lib/api-client", () => ({ api: { post: h.post, patch: h.patch, delete: h.del } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/durable-record", () => ({ durableRecord: vi.fn() }));
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -124,3 +124,41 @@ it("matches official mutually exclusive media and nonempty patch rules", () => {
     assetPatchInput.safeParse({ expectedVersion: 2, sourceMediaPurpose: "turnaround" }).success
   ).toBe(false);
 });
+
+const creation: AssetCommand = {
+  action: "create",
+  clientKey: id(9),
+  input: { kind: "character", name: "Hero", imagePrompt: "Hero" },
+};
+const created = () => ({
+  ...receipt(),
+  version: 0,
+  kind: "character",
+  name: "Hero",
+  imagePrompt: "Hero",
+  selectedMediaVersion: null,
+  mediaVersions: [],
+});
+it("creates at the chapter collection with a saved idempotency key", async () => {
+  h.post.mockImplementation(async () => {
+    expect(store().read()).toEqual(creation);
+    return created();
+  });
+  await store().submit(creation);
+  expect(h.post.mock.calls[0][0]).toBe(`/story-projects/${id(1)}/chapters/${id(2)}/asset-specs`);
+  expect(store().read()).toBeNull();
+});
+it("retries creation exactly after a lost reply", async () => {
+  h.post.mockRejectedValueOnce(Error("Lost reply")).mockResolvedValueOnce(created());
+  await expect(store().submit(creation)).rejects.toThrow();
+  await store().submit(store().read()!);
+  expect(h.post.mock.calls[0]).toEqual(h.post.mock.calls[1]);
+});
+it.each(["kind", "name", "imagePrompt", "version", "chapterId"])(
+  "retains creation recovery on wrong %s",
+  async (field) => {
+    h.post.mockResolvedValue({ ...created(), [field]: field === "version" ? 1 : "wrong" });
+    await expect(store().submit(creation)).rejects.toThrow();
+    expect(store().read()).toEqual(creation);
+  }
+);

@@ -4394,5 +4394,7 @@
   "assetEdit.useImage": "使用圖片",
   "assetEdit.replaceImage": "替換圖片",
   "assetEdit.turnaround": "新增三視圖",
-  "assetEdit.uploadHelp": "支援 JPEG、PNG 或 WebP，最大 30 MiB。上傳後選擇圖片使用。傳輸中斷需重新上傳；上傳完成後可重試確認。"
+  "assetEdit.uploadHelp": "支援 JPEG、PNG 或 WebP，最大 30 MiB。上傳後選擇圖片使用。傳輸中斷需重新上傳；上傳完成後可重試確認。",
+  "assetEdit.create": "建立資產",
+  "assetEdit.createHelp": "名稱將作為初始圖片提示詞。建立後可以修改。"
 }

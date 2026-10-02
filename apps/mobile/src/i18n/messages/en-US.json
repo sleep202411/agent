@@ -4394,5 +4394,7 @@
   "assetEdit.useImage": "Use image",
   "assetEdit.replaceImage": "Replace image",
   "assetEdit.turnaround": "Add three-view image",
-  "assetEdit.uploadHelp": "JPEG, PNG or WebP up to 30 MiB. Select an uploaded image to use it. Interrupted transfers must restart; completed uploads can retry confirmation."
+  "assetEdit.uploadHelp": "JPEG, PNG or WebP up to 30 MiB. Select an uploaded image to use it. Interrupted transfers must restart; completed uploads can retry confirmation.",
+  "assetEdit.create": "Create asset",
+  "assetEdit.createHelp": "The name becomes the initial image prompt. You can edit it after creating the asset."
 }

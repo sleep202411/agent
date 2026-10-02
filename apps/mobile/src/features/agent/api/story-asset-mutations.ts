@@ -23,7 +23,18 @@ export const assetPatchInput = z
   .refine((v) => !(v.sourceMediaAssetId && v.selectedMediaVersionId !== undefined))
   .refine((v) => !!v.sourceMediaAssetId || v.sourceMediaPurpose === undefined)
   .refine((v) => Object.keys(v).some((k) => k !== "expectedVersion"));
+export const assetCreateInput = z
+  .object({
+    kind: z.enum(["character", "location", "prop"]),
+    name: text(240),
+    imagePrompt: text(12000),
+    description: z.string().trim().max(4000).nullable().optional(),
+    videoPrompt: text(12000).nullable().optional(),
+    negativePrompt: text(4000).nullable().optional(),
+  })
+  .strict();
 const commandSchema = z.discriminatedUnion("action", [
+  z.object({ clientKey: id, action: z.literal("create"), input: assetCreateInput }).strict(),
   z
     .object({ clientKey: id, assetId: id, action: z.literal("patch"), input: assetPatchInput })
     .strict(),
@@ -45,6 +56,7 @@ const receipt = z
     chapterId: id,
     version,
     status: z.enum(["current", "archived"]),
+    kind: z.enum(["character", "location", "prop"]).optional(),
     name: z.string(),
     description: z.string().nullable(),
     imagePrompt: z.string().nullable(),
@@ -62,7 +74,8 @@ function current(scope: TimelineScope) {
 export async function mutateStoryAsset(scope: TimelineScope, raw: AssetCommand) {
   current(scope);
   const command = commandSchema.parse(raw);
-  const path = `/story-projects/${scope.projectId}/chapters/${scope.chapterId}/asset-specs/${command.assetId}`;
+  const base = `/story-projects/${scope.projectId}/chapters/${scope.chapterId}/asset-specs`;
+  const path = command.action === "create" ? base : `${base}/${command.assetId}`;
   const config = {
     service: "aurora" as const,
     retry: false,
@@ -70,17 +83,35 @@ export async function mutateStoryAsset(scope: TimelineScope, raw: AssetCommand) 
     data: command.input,
   };
   const result = receipt.parse(
-    await (command.action === "archive" ? api.delete(path, config) : api.patch(path, config))
+    await (command.action === "create"
+      ? api.post(path, config)
+      : command.action === "archive"
+        ? api.delete(path, config)
+        : api.patch(path, config))
   );
   current(scope);
   if (
-    result.id !== command.assetId ||
+    (command.action !== "create" && result.id !== command.assetId) ||
     result.projectId !== scope.projectId ||
     result.chapterId !== scope.chapterId ||
-    result.version !== command.input.expectedVersion + 1 ||
+    result.version !== (command.action === "create" ? 0 : command.input.expectedVersion + 1) ||
     result.status !== (command.action === "archive" ? "archived" : "current")
   )
     throw Error("Asset receipt does not match the saved request.");
+  if (command.action === "create") {
+    const input = command.input;
+    if (
+      result.kind !== input.kind ||
+      result.name !== input.name ||
+      result.imagePrompt !== input.imagePrompt ||
+      result.description !== (input.description ?? null) ||
+      (result.videoPrompt ?? null) !== (input.videoPrompt ?? null) ||
+      (result.negativePrompt ?? null) !== (input.negativePrompt ?? null) ||
+      result.selectedMediaVersion !== null ||
+      result.mediaVersions.length !== 0
+    )
+      throw Error("Created asset receipt mismatch.");
+  }
   if (command.action === "patch") {
     const input = command.input;
     for (const key of [
