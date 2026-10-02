@@ -113,8 +113,12 @@ export async function getCrewsByUser(userId: string): Promise<CrewSummary[]> {
 }
 
 /** A creator's published IPs (Nest `/ip-commerce/creators/:id/ips`, @Public). */
-export async function getCreatorIps(creatorId: string, limit = 12): Promise<IpSummary[]> {
-  return fetchCreatorIps(creatorId, limit);
+export async function getCreatorIps(
+  creatorId: string,
+  limit = 12,
+  signal?: AbortSignal
+): Promise<IpSummary[]> {
+  return fetchCreatorIps(creatorId, limit, signal);
 }
 
 export async function getNewsFeed(

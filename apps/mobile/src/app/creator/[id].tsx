@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { InvalidCreatorIpPageError } from "@/data/ip-api";
 import { useAuth } from "@/auth";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { IpGrid } from "@/components/ip-grid";
@@ -81,7 +82,7 @@ function CreatorDetailContent({
     anchor.current.following = false;
   };
   const requestError = (cause: unknown) =>
-    cause instanceof InvalidCreatorServicesPageError
+    cause instanceof InvalidCreatorServicesPageError || cause instanceof InvalidCreatorIpPageError
       ? t("contentGpsDiscovery.responseMismatch")
       : cause instanceof Error
         ? cause.message
@@ -161,7 +162,8 @@ function CreatorDetailContent({
           setErrors((current) => ({
             ...current,
             [key]:
-              cause instanceof InvalidCreatorServicesPageError
+              cause instanceof InvalidCreatorServicesPageError ||
+              cause instanceof InvalidCreatorIpPageError
                 ? t("contentGpsDiscovery.responseMismatch")
                 : cause instanceof Error
                   ? cause.message
@@ -184,7 +186,7 @@ function CreatorDetailContent({
         setNextCursor(page.nextCursor);
       }
     );
-    void load("works", () => getCreatorIps(id), setWorks);
+    void load("works", () => getCreatorIps(id, 12, controller.signal), setWorks);
     void load("crews", () => getCrewsByUser(id), setCrews);
     return () => {
       alive = false;

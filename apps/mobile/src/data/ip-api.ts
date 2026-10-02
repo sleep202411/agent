@@ -436,12 +436,43 @@ export async function fetchIpTagPage(
 }
 
 /** A creator's published, publicly-listed IPs (Nest `creators/:id/ips`, @Public). */
-export async function fetchCreatorIps(creatorId: string, limit = 12): Promise<IpSummary[]> {
-  const res = await api.get<ListResponse>(`/ip-commerce/creators/${creatorId}/ips`, {
-    ...AURORA,
-    params: { locale: locale(), limit },
-  });
-  return (res.items ?? []).map((dto) => mapSummary(dto));
+export class InvalidCreatorIpPageError extends Error {}
+export async function fetchCreatorIps(
+  creatorId: string,
+  limit = 12,
+  signal?: AbortSignal
+): Promise<IpSummary[]> {
+  const items = new Map<string, IpSummary>();
+  const visited = new Set<string>();
+  const requestLocale = locale();
+  let cursor: string | undefined;
+  do {
+    signal?.throwIfAborted();
+    const res = await api.get<ListResponse>(
+      `/ip-commerce/creators/${encodeURIComponent(creatorId)}/ips`,
+      {
+        ...AURORA,
+        params: { locale: requestLocale, limit, cursor },
+        signal,
+        retry: false,
+      }
+    );
+    signal?.throwIfAborted();
+    if (
+      !res ||
+      !Array.isArray(res.items) ||
+      res.items.some(
+        (item) => !item || typeof item.id !== "string" || !item.id || typeof item.title !== "string"
+      ) ||
+      (res.nextCursor != null &&
+        (typeof res.nextCursor !== "string" || !res.nextCursor || visited.has(res.nextCursor)))
+    )
+      throw new InvalidCreatorIpPageError("Invalid creator IP page");
+    for (const item of res.items) items.set(item.id, mapSummary(item));
+    cursor = res.nextCursor ?? undefined;
+    if (cursor) visited.add(cursor);
+  } while (cursor);
+  return [...items.values()];
 }
 
 // Legacy default-avatar PNG baked into the user OSS bucket — treat as "no

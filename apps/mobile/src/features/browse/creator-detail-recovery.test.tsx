@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   works: vi.fn(),
   crews: vi.fn(),
 }));
+vi.mock("@/data/ip-api", () => ({ InvalidCreatorIpPageError: class extends Error {} }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({ status: "authenticated", generation: h.generation }),
 }));
