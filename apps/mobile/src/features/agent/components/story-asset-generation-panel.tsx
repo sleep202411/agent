@@ -25,6 +25,7 @@ export function AssetGenerationPanel({
   kind,
   latestId,
   canGenerate,
+  newGenerationDisabledReason,
   onClose,
 }: {
   scope: AssetGenerationScope;
@@ -33,6 +34,7 @@ export function AssetGenerationPanel({
   kind: "image" | "video";
   latestId?: string;
   canGenerate: boolean;
+  newGenerationDisabledReason?: string;
   onClose: () => void;
 }) {
   const t = useTranslations(),
@@ -62,7 +64,9 @@ export function AssetGenerationPanel({
         const saved = store.read();
         setPending(saved ?? null);
         if (!canGenerate) return;
-        const result = await loadTimelineModels(scope, kind, controller.signal);
+        const result = await loadTimelineModels(scope, kind, controller.signal, {
+          imageReference: scope.purpose === "turnaround",
+        });
         if (controller.signal.aborted) return;
         setModels(result.models);
         if (!initialized.current) {
@@ -143,6 +147,7 @@ export function AssetGenerationPanel({
     <View style={{ gap: 12 }}>
       <ThemedText type="smallBold">{t("assetEdit.generation")}</ThemedText>
       {(loading || op.busy) && <ActivityIndicator />}
+      {newGenerationDisabledReason && <ThemedText>{newGenerationDisabledReason}</ThemedText>}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {pending ? (
         <>
@@ -172,7 +177,11 @@ export function AssetGenerationPanel({
           <ThemedText>
             {review.action === "create" ? review.input.modelId : job?.aiJob.modelId}
           </ThemedText>
-          {button(t("timeline.confirmGeneration"), () => submit(review), !canGenerate)}
+          {button(
+            t("timeline.confirmGeneration"),
+            () => submit(review),
+            !canGenerate || !!newGenerationDisabledReason
+          )}
           {button(t("common.cancel"), () => setReview(null))}
         </>
       ) : (
@@ -260,7 +269,7 @@ export function AssetGenerationPanel({
                 setError(e instanceof Error ? e.message : String(e));
               }
             },
-            !canGenerate || loading || !model || needsReload
+            !canGenerate || loading || !model || needsReload || !!newGenerationDisabledReason
           )}
           {job && (
             <>
@@ -299,7 +308,7 @@ export function AssetGenerationPanel({
                       generationId: job.id,
                       input: { expectedVersion: version },
                     }),
-                  !canGenerate
+                  !canGenerate || !!newGenerationDisabledReason
                 )}
               {job.materialization.canRetry &&
                 button(

@@ -4408,5 +4408,6 @@
   "assetEdit.turnaroundVersions": "Three-view versions",
   "assetEdit.noVersions": "No versions yet.",
   "assetEdit.latestTurnaround": "The newest three-view result is the current reference.",
-  "assetEdit.version": "Version"
+  "assetEdit.version": "Version",
+  "assetEdit.turnaroundNeedsPrimary": "Select a primary image before generating a three-view image."
 }

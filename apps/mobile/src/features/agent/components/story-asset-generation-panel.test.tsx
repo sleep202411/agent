@@ -92,7 +92,11 @@ const button = (text: string) =>
 const click = async (text: string) => {
   await act(async () => button(text).click());
 };
-const render = async (canGenerate = true, latestId?: string) => {
+const render = async (
+  canGenerate = true,
+  latestId?: string,
+  newGenerationDisabledReason?: string
+) => {
   await act(async () =>
     root.render(
       <AssetGenerationPanel
@@ -101,6 +105,7 @@ const render = async (canGenerate = true, latestId?: string) => {
         version={2}
         kind="image"
         canGenerate={canGenerate}
+        newGenerationDisabledReason={newGenerationDisabledReason}
         latestId={latestId}
         onClose={h.close}
       />
@@ -206,5 +211,34 @@ it("requires paid confirmation again for retry but routes attachment separately"
   await click("timeline.retryAttachment");
   expect(h.submit).toHaveBeenCalledWith(
     expect.objectContaining({ action: "attach", generationId: id })
+  );
+});
+
+it("requires reference-capable models for three-view jobs", async () => {
+  await render();
+  expect(h.load).toHaveBeenCalledWith(scope, "image", expect.any(AbortSignal), {
+    imageReference: true,
+  });
+});
+it("blocks new generation without a primary image but preserves saved-request recovery", async () => {
+  await render(true, undefined, "Select a primary image");
+  expect(button("assetEdit.generate").disabled).toBe(true);
+  expect(host.textContent).toContain("Select a primary image");
+  const saved = {
+    action: "create",
+    clientKey: id,
+    input: { expectedVersion: 2, purpose: "turnaround", outputKind: "image" },
+  };
+  h.read.mockReturnValue(saved);
+  await click("assetEdit.refreshGeneration");
+  await click("timeline.retry");
+  expect(h.submit).toHaveBeenCalledWith(saved);
+});
+it("keeps cancellation available when a primary image is no longer selected", async () => {
+  h.get.mockResolvedValue({ ...job, aiJob: { ...job.aiJob, status: "in_progress" } });
+  await render(true, id, "Select a primary image");
+  await click("timeline.cancelGeneration");
+  expect(h.submit).toHaveBeenCalledWith(
+    expect.objectContaining({ action: "cancel", generationId: id })
   );
 });

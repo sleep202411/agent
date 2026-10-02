@@ -35,7 +35,8 @@ export function timelineModelOptions(model: GenerationModel): AiObjectSchema {
 export async function loadTimelineModels(
   scope: TimelineScope,
   kind: "image" | "video",
-  signal: AbortSignal
+  signal: AbortSignal,
+  requirements: { imageReference?: boolean } = {}
 ) {
   const current = () => {
     signal.throwIfAborted();
@@ -92,6 +93,7 @@ export async function loadTimelineModels(
     return (
       model.type === kind &&
       model.enabled &&
+      (!requirements.imageReference || Boolean(model.input_schema.properties.referenceImages)) &&
       model.access?.allowed !== false &&
       planRank(model.access?.requiredPlan ?? model.entitlement?.requiredPlan) <= rank &&
       !/hunyuan|panorama/i.test(model.id) &&

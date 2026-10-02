@@ -4408,5 +4408,6 @@
   "assetEdit.turnaroundVersions": "三視圖版本",
   "assetEdit.noVersions": "暫無版本。",
   "assetEdit.latestTurnaround": "最新的三視圖結果為目前參考圖。",
-  "assetEdit.version": "版本"
+  "assetEdit.version": "版本",
+  "assetEdit.turnaroundNeedsPrimary": "請先選擇主圖，再生成三視圖。"
 }

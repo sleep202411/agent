@@ -93,3 +93,35 @@ it("rejects late account changes", async () => {
     "expired"
   );
 });
+
+it("selects a reference-capable fallback when the preferred model cannot accept images", async () => {
+  const noReference = {
+    ...model,
+    input_schema: {
+      ...model.input_schema,
+      properties: { duration: model.input_schema.properties.duration },
+    },
+  };
+  const capable = { ...model, id: "reference" };
+  h.catalog.mockResolvedValue({ rank: 0, catalog: { models: [noReference, capable] } });
+  expect(
+    await loadTimelineModels(scope, "image", new AbortController().signal, { imageReference: true })
+  ).toEqual({ models: [capable], selectedId: "reference" });
+  expect((await loadTimelineModels(scope, "image", new AbortController().signal)).selectedId).toBe(
+    "image"
+  );
+});
+it("returns no models when no entitled model supports image references", async () => {
+  h.catalog.mockResolvedValue({
+    rank: 0,
+    catalog: {
+      models: [
+        { ...model, access: { allowed: false } },
+        { ...model, id: "text-only", input_schema: { type: "object", properties: {} } },
+      ],
+    },
+  });
+  expect(
+    await loadTimelineModels(scope, "image", new AbortController().signal, { imageReference: true })
+  ).toEqual({ models: [], selectedId: "" });
+});

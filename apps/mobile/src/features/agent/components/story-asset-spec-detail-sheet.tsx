@@ -108,6 +108,11 @@ export function StoryAssetSpecDetailSheet({
                 userId={generation.userId}
                 version={asset.version}
                 kind="image"
+                newGenerationDisabledReason={
+                  purpose === "turnaround" && !asset.selectedMediaVersion
+                    ? t("assetEdit.turnaroundNeedsPrimary")
+                    : undefined
+                }
                 latestId={latest?.outputKind === "image" ? latest.id : undefined}
                 canGenerate={generation.canGenerate && !generation.locked}
                 onClose={() => {
