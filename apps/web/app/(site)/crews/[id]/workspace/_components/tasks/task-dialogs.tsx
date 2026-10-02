@@ -12,14 +12,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
   DialogBody,
-  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useSubmitCrewTask, type CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -52,6 +52,7 @@ export function SubmitTaskDialog({
   const submitTask = useSubmitCrewTask(crewId);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState("");
+  const [deliveryLink, setDeliveryLink] = useState("");
   const [deliveryFolderId, setDeliveryFolderId] = useState("");
   const folders = useCrewAssetFolders(crewId, open);
   const [assetIds, setAssetIds] = useState<string[]>([]);
@@ -98,6 +99,7 @@ export function SubmitTaskDialog({
     setContext({ open, crewId, taskId: task?.id, accountId: template.accountId });
     setSaving(false);
     setNote("");
+    setDeliveryLink("");
     setAssetIds([]);
     setAnswers({});
     setDeliveryFolderId("");
@@ -119,6 +121,7 @@ export function SubmitTaskDialog({
     if (!next) {
       generation.current += 1;
       setNote("");
+      setDeliveryLink("");
       setAssetIds([]);
       setAnswers({});
       setDeliveryFolderId("");
@@ -137,7 +140,9 @@ export function SubmitTaskDialog({
       pendingGeneration.current !== null ||
       template.isPending ||
       template.isError ||
-      missingRequiredFields.length > 0
+      missingRequiredFields.length > 0 ||
+      [deliveryLink.trim(), note].filter(Boolean).join("\n\n").length > 5000 ||
+      (Boolean(deliveryLink.trim()) && !/^https?:\/\/\S+$/i.test(deliveryLink.trim()))
     )
       return;
     const requestGeneration = generation.current;
@@ -146,7 +151,7 @@ export function SubmitTaskDialog({
     try {
       await submitTask.mutateAsync({
         taskId: task.id,
-        note,
+        note: [deliveryLink.trim(), note].filter(Boolean).join("\n\n"),
         assetNodeIds: assetIds,
         ...(template.data
           ? {
@@ -252,6 +257,52 @@ export function SubmitTaskDialog({
             }
           />
         ) : null}
+        {!template.data && !template.isPending && !template.isError && (
+          <>
+            <label className="block space-y-2 rounded-lg border border-border p-4 text-sm">
+              {t("deliveryLink")}
+              <Input
+                type="url"
+                aria-label={t("deliveryLink")}
+                placeholder="https://…"
+                value={deliveryLink}
+                disabled={saving}
+                maxLength={1500}
+                onChange={(event) => setDeliveryLink(event.target.value)}
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {(["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"] as const).map(
+                (slot) => (
+                  <div
+                    key={slot}
+                    className="space-y-3 rounded-lg border border-dashed border-border bg-white/[0.025] p-4"
+                  >
+                    <p className="text-sm font-medium">{t(slot)}</p>
+                    <TaskDeliveryUpload
+                      key={`${answerKey}:${slot}`}
+                      crewId={crewId}
+                      parentId={deliveryFolderId || null}
+                      label={t(slot)}
+                      disabled={saving}
+                      onBusyChange={(busy) => {
+                        uploadingRef.current = { ...uploadingRef.current, [slot]: busy };
+                        setUploading(uploadingRef.current);
+                      }}
+                      onUploaded={(asset) => {
+                        setUploadedAssets((current) => [
+                          ...current.filter((item) => item.id !== asset.id),
+                          asset,
+                        ]);
+                        setAssetIds((current) => [...new Set([...current, asset.id])]);
+                      }}
+                    />
+                  </div>
+                )
+              )}
+            </div>
+          </>
+        )}
         {missingRequiredFields.length > 0 ? (
           <p role="status" className="text-sm text-muted-foreground">
             {deliveryT("missingRequiredFields", {
@@ -400,7 +451,9 @@ export function SubmitTaskDialog({
             hasUploads ||
             template.isPending ||
             template.isError ||
-            missingRequiredFields.length > 0
+            missingRequiredFields.length > 0 ||
+            [deliveryLink.trim(), note].filter(Boolean).join("\n\n").length > 5000 ||
+            (Boolean(deliveryLink.trim()) && !/^https?:\/\/\S+$/i.test(deliveryLink.trim()))
           }
           loading={saving}
           onClick={() => void submit()}
@@ -418,8 +471,10 @@ export function SubmitTaskDialog({
       </section>
     ) : null;
   return (
-    <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="sm:max-w-3xl">{content}</DialogContent>
-    </Dialog>
+    <Sheet open={open} onOpenChange={close}>
+      <SheetContent side="right" className="w-full sm:max-w-3xl">
+        {content}
+      </SheetContent>
+    </Sheet>
   );
 }

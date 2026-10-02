@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetBody,
+} from "@/components/ui/sheet";
+import { ReferralDashboardPage } from "../../referral/_components/referral-dashboard";
+import EarningsContent from "../../profile/earnings/earnings-content";
 import { EarningTrend } from "../_components/earning-trend";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -26,6 +36,7 @@ export default function PersonalCrewIncome() {
 
 function PersonalIncomeSession() {
   const client = useQueryClient();
+  const [incomePanel, setIncomePanel] = useState<"referral" | "work" | null>(null);
   const [crewId, setCrewId] = useState<string>();
   const t = useTranslations("crewPersonalIncome");
   const locale = useLocale() as Locale;
@@ -59,16 +70,40 @@ function PersonalIncomeSession() {
           <p className="text-sm text-muted-foreground">{t("description")}</p>
         </header>
         <nav aria-label={t("incomeSources")} className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-          <Link href={localizePath("/referral", locale)} className="text-primary hover:underline">
-            {t("referralIncome")}
-          </Link>
-          <Link
-            href={localizePath("/profile/earnings", locale)}
+          <button
+            type="button"
             className="text-primary hover:underline"
+            onClick={() => (user ? setIncomePanel("referral") : open())}
+          >
+            {t("referralIncome")}
+          </button>
+          <button
+            type="button"
+            className="text-primary hover:underline"
+            onClick={() => (user ? setIncomePanel("work") : open())}
           >
             {t("workIncome")}
-          </Link>
+          </button>
         </nav>
+        <Sheet
+          open={Boolean(incomePanel)}
+          onOpenChange={(value) => {
+            if (!value) setIncomePanel(null);
+          }}
+        >
+          <SheetContent side="right" className="w-full sm:max-w-3xl">
+            <SheetHeader>
+              <SheetTitle>
+                {t(incomePanel === "referral" ? "referralIncome" : "workIncome")}
+              </SheetTitle>
+              <SheetDescription>{t("incomeSourcesHint")}</SheetDescription>
+            </SheetHeader>
+            <SheetBody>
+              {user && incomePanel === "referral" && <ReferralDashboardPage embedded />}
+              {user && incomePanel === "work" && <EarningsContent embedded />}
+            </SheetBody>
+          </SheetContent>
+        </Sheet>
         <p className="text-xs text-muted-foreground">{t("incomeSourcesHint")}</p>
         {isLoading ? (
           <p role="status">{t("loading")}</p>

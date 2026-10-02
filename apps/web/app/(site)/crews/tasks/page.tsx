@@ -3,15 +3,12 @@
 import { CrewSectionNavigation } from "../_components/crew-section-navigation";
 
 import { useDeferredValue, useState } from "react";
-import Link from "next/link";
 import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { crewKeys } from "../_hooks/shared";
 import { crewApi, CrewApiError } from "../_hooks/api";
-import { useLocale, useTranslations } from "@/src/i18n/i18n";
-import type { Locale } from "@/src/i18n/config";
-import { localizePath } from "@/src/i18n/locale-url";
+import { useTranslations } from "@/src/i18n/i18n";
 import { CREW_TASK_KIND_MESSAGE_KEYS, type CrewTaskKind } from "../_hooks/types";
 import { TaskTrackingCard, type TrackingTask } from "./task-tracking-card";
 import { Button } from "@/components/ui/button";
@@ -33,7 +30,6 @@ export default function CrewTaskCenter() {
   const taskT = useTranslations("crewTasks");
   const { user, isLoading: authLoading } = useCurrentUser();
   const { open: openAuthDialog } = useAuthDialog();
-  const locale = useLocale() as Locale;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [scope, setScope] = useState("mine");
   const [status, setStatus] = useState("active");
@@ -61,28 +57,19 @@ export default function CrewTaskCenter() {
   const items = accessDenied ? [] : (feed.data?.pages.flatMap((page) => page.items) ?? []);
   const summary = user && !feed.isError ? feed.data?.pages[0] : undefined;
   return (
-    <main className="mx-auto w-full max-w-[1800px] px-4 py-8 sm:px-6">
+    <main className="mx-auto w-full max-w-[1800px] px-4 py-4 sm:px-6">
       <CrewSectionNavigation active="tasks" />
-      <div className="space-y-6 rounded-2xl bg-[#121212] p-4 sm:p-6">
-        <header className="space-y-2">
-          <Link
-            className="text-sm text-muted-foreground hover:text-foreground"
-            href={localizePath("/crews", locale)}
-          >
-            {t("back")}
-          </Link>
-          <h1 className="text-2xl font-semibold">{t("title")}</h1>
-          <p className="text-sm text-muted-foreground">{t("description")}</p>
-        </header>
-        <div className="grid min-w-0 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="space-y-6 lg:border-r lg:border-white/10 lg:pr-6">
+      <div className="space-y-3 rounded-xl bg-background p-3 sm:p-4">
+        <h1 className="sr-only">{t("title")}</h1>
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="space-y-4 lg:border-r lg:border-white/10 lg:pr-4">
             <div className="flex rounded-xl bg-white/5 p-1" role="group" aria-label={t("scope")}>
               {(["mine", "managed"] as const).map((value) => (
                 <button
                   key={value}
                   type="button"
                   aria-pressed={scope === value}
-                  className={`min-h-11 flex-1 rounded-lg px-3 text-sm ${scope === value ? "bg-sky-500/20 text-sky-300" : "text-muted-foreground"}`}
+                  className={`min-h-11 flex-1 rounded-lg px-3 text-sm ${scope === value ? "bg-primary text-white" : "text-muted-foreground"}`}
                   onClick={() => {
                     setScope(value);
                     setCrewId("");
@@ -104,7 +91,7 @@ export default function CrewTaskCenter() {
             </button>
             <div
               id="tracking-filters"
-              className={`${filtersOpen ? "block" : "hidden"} space-y-6 lg:block`}
+              className={`${filtersOpen ? "block" : "hidden"} space-y-3 lg:block`}
             >
               <nav className="flex flex-wrap gap-1 lg:flex-col" aria-label={t("status")}>
                 {["active", "submitted", "revision_requested", "overdue", "approved", "all"].map(
@@ -113,7 +100,7 @@ export default function CrewTaskCenter() {
                       key={value}
                       type="button"
                       aria-pressed={status === value}
-                      className={`min-h-11 rounded-xl px-4 text-left text-sm ${status === value ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5"}`}
+                      className={`min-h-11 rounded-lg px-3 text-left text-xs lg:min-h-9 ${status === value ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5"}`}
                       onClick={() => setStatus(value)}
                     >
                       {t(`filter_${value}`)}
@@ -180,7 +167,7 @@ export default function CrewTaskCenter() {
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <dt>{t("pendingReviews")}</dt>
-                  <dd className="font-semibold text-sky-400">{summary.stats.pendingReviews}</dd>
+                  <dd className="font-semibold text-foreground">{summary.stats.pendingReviews}</dd>
                 </div>
               </dl>
             ) : null}
@@ -203,7 +190,7 @@ export default function CrewTaskCenter() {
             ) : items.length === 0 ? (
               <p className="py-8 text-muted-foreground">{t("empty")}</p>
             ) : (
-              <ul className="space-y-4">
+              <ul className="space-y-2">
                 {items.map((task) => (
                   <TaskTrackingCard
                     key={`${user?.id}:${scope}:${task.id}`}

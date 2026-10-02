@@ -90,13 +90,19 @@ const STATUS_KEY: Record<ReferralRewardStatus, string> = {
   paid_out: "statusPaidOut",
 };
 
-export function ReferralDashboardPage() {
+export function ReferralDashboardPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useCurrentUser();
   if (!user) return null;
-  return <AccountReferralDashboard key={user.id} accountId={user.id} />;
+  return <AccountReferralDashboard key={user.id} accountId={user.id} embedded={embedded} />;
 }
 
-function AccountReferralDashboard({ accountId }: { accountId: string }) {
+function AccountReferralDashboard({
+  accountId,
+  embedded,
+}: {
+  accountId: string;
+  embedded: boolean;
+}) {
   const t = useTranslations("referral");
   const locale = useLocale() as Locale;
   const queryClient = useQueryClient();
@@ -183,23 +189,31 @@ function AccountReferralDashboard({ accountId }: { accountId: string }) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 pb-24 pt-10">
+    <div className={embedded ? "w-full p-4" : "mx-auto w-full max-w-5xl px-6 pb-24 pt-10"}>
       <header>
         <h1 className="text-3xl font-semibold text-foreground">{t("title")}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{t("subtitle")}</p>
       </header>
 
-      <nav aria-label={t("incomeSources")} className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm">
-        <Link
-          href={localizePath("/profile/earnings", locale)}
-          className="text-primary hover:underline"
+      {!embedded && (
+        <nav
+          aria-label={t("incomeSources")}
+          className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm"
         >
-          {t("workIncome")}
-        </Link>
-        <Link href={localizePath("/crews/income", locale)} className="text-primary hover:underline">
-          {t("crewIncome")}
-        </Link>
-      </nav>
+          <Link
+            href={localizePath("/profile/earnings", locale)}
+            className="text-primary hover:underline"
+          >
+            {t("workIncome")}
+          </Link>
+          <Link
+            href={localizePath("/crews/income", locale)}
+            className="text-primary hover:underline"
+          >
+            {t("crewIncome")}
+          </Link>
+        </nav>
+      )}
       <p className="mt-2 text-xs text-muted-foreground">{t("incomeSourcesHint")}</p>
 
       {!dashboard.programAvailable ? (

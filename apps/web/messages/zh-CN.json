@@ -5248,7 +5248,7 @@
       "emptyCanvas": "此影游尚无可导入场景。请在 Studio 中添加场景后重新预览。",
       "publishJob": "招募创作者",
       "publishOpening": "招募创作者",
-      "unassignedOnly": "仅限未分配的任务",
+      "unassignedOnly": "招募将清除已选负责人",
       "savedCount": "{count} 个已保存任务",
       "recoverTemplates": "已保存的模板草稿（{count}）",
       "templateDraftHelp": "这些预览仅保存在此浏览器中。请在下方创建任务，或丢弃预览。新的导入会直接保存到任务列表。",
@@ -5801,7 +5801,13 @@
     "rewardSuggestedHint": "来自任务模板的建议值",
     "editStagedTask": "编辑任务",
     "saveStagedTask": "保存修改",
-    "clear": "清除"
+    "clear": "清除",
+    "deliveryOptions": "截止时间、交接与交付设置",
+    "deliveryLink": "交付作品链接",
+    "subtitledVideo": "有字幕视频",
+    "cleanVideo": "无字幕视频",
+    "subtitleFile": "字幕文件",
+    "sourceFiles": "原素材"
   },
   "crewInvitations": {
     "signIn": "登录",

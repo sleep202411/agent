@@ -232,7 +232,7 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
         <p>
           {current.data
             ? `${current.data.definition.name} · ${t("revision")} ${current.data.version}`
-            : t("none")}
+            : null}
         </p>
       ) : null}
       {current.error || catalog.error || error ? (

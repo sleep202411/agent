@@ -5248,7 +5248,7 @@
       "emptyCanvas": "此影遊尚無可匯入場景。請在 Studio 中新增場景後重新預覽。",
       "publishJob": "招募創作者",
       "publishOpening": "招募創作者",
-      "unassignedOnly": "僅限未分配的任務",
+      "unassignedOnly": "招募將清除已選負責人",
       "savedCount": "{count} 個已儲存任務",
       "recoverTemplates": "已儲存的範本草稿（{count}）",
       "templateDraftHelp": "這些預覽僅儲存在此瀏覽器中。請在下方建立任務，或捨棄預覽。新的匯入會直接儲存到任務列表。",
@@ -5801,7 +5801,13 @@
     "rewardSuggestedHint": "來自任務模板的建議值",
     "editStagedTask": "編輯任務",
     "saveStagedTask": "儲存修改",
-    "clear": "清除"
+    "clear": "清除",
+    "deliveryOptions": "截止時間、交接與交付設定",
+    "deliveryLink": "交付作品連結",
+    "subtitledVideo": "有字幕影片",
+    "cleanVideo": "無字幕影片",
+    "subtitleFile": "字幕檔案",
+    "sourceFiles": "原素材"
   },
   "crewInvitations": {
     "signIn": "登入",

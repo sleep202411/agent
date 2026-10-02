@@ -5248,7 +5248,7 @@
       "emptyCanvas": "This film has no scenes to import yet. Open it in Studio, add scenes, then preview again.",
       "publishJob": "Recruit Creators",
       "publishOpening": "Recruit Creators",
-      "unassignedOnly": "Unassigned tasks only",
+      "unassignedOnly": "Recruiting clears the selected assignee",
       "savedCount": "{count} saved tasks",
       "recoverTemplates": "Saved template drafts ({count})",
       "templateDraftHelp": "These previews are saved only in this browser. Create their tasks below, or discard them. New imports save directly to Tasks.",
@@ -5801,7 +5801,13 @@
     "rewardSuggestedHint": "Suggested from task template",
     "editStagedTask": "Edit task",
     "saveStagedTask": "Save Changes",
-    "clear": "Clear"
+    "clear": "Clear",
+    "deliveryOptions": "Deadline, handover and delivery settings",
+    "deliveryLink": "Delivery link",
+    "subtitledVideo": "Video with subtitles",
+    "cleanVideo": "Video without subtitles",
+    "subtitleFile": "Subtitle file",
+    "sourceFiles": "Source files"
   },
   "crewInvitations": {
     "signIn": "Sign in",

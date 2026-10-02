@@ -52,11 +52,12 @@ export function CrewSectionNavigation({
   sticky?: boolean;
 }) {
   const t = useTranslations("crew");
+  const messagesT = useTranslations("messages");
   const locale = useLocale() as Locale;
   return (
     <div
       className={cn(
-        "mb-6 bg-background",
+        "mb-3 bg-background",
         sticky && "md:sticky md:top-[88px] md:z-30 lg:top-[96px]"
       )}
     >
@@ -74,7 +75,7 @@ export function CrewSectionNavigation({
           const content = (
             <>
               {Icon && <Icon className="size-4" aria-hidden="true" />}
-              {t(label)}
+              {id === "applications" ? messagesT("centerTitle") : t(label)}
               {selected && (
                 <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />
               )}
