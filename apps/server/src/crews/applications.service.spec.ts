@@ -27,7 +27,7 @@ interface SyncCall {
 function build() {
   const applicationRow = {
     id: APPLICATION_ID,
-    termsVersion: 0,
+    termsVersion: 1,
     crewId: CREW_ID,
     positionId: POSITION_ID,
     applicantId: APPLICANT,
@@ -45,6 +45,9 @@ function build() {
   };
 
   const tx = {
+    crewApplicationTerms: {
+      findUnique: jest.fn().mockResolvedValue({ confirmedAt: new Date() }),
+    },
     crewApplicationInterviewEvent: {
       findFirst: jest.fn().mockResolvedValue(null),
     },

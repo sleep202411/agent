@@ -223,6 +223,7 @@ export type StoryBuildAssetParams = z.infer<typeof StoryBuildAssetParamsSchema>;
 
 export const StoryProjectListQuerySchema = z
   .object({
+    linkedIpId: StoryUuidSchema.optional(),
     workspaceId: StoryUuidSchema,
     status: StoryProjectStatusSchema.default('active'),
     cursor: z.string().trim().min(1).max(500).optional(),

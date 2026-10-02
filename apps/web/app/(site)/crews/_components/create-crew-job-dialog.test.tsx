@@ -466,7 +466,7 @@ it("copies the selected task brief only when explicitly requested, without publi
 });
 
 it("preserves an oversized task brief for editing and blocks advancing the public description", async () => {
-  state.brief = "a".repeat(1001);
+  state.brief = "a".repeat(10001);
   await act(async () =>
     root.render(
       <CreateCrewJobDialog open onOpenChange={state.close} crewId="crew" initialTaskId="task-one" />
@@ -477,7 +477,7 @@ it("preserves an oversized task brief for editing and blocks advancing the publi
       .find((button) => button.textContent === "useTaskBrief")!
       .click()
   );
-  expect(container.querySelector("textarea")?.value).toHaveLength(1001);
+  expect(container.querySelector("textarea")?.value).toHaveLength(10001);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("publicBriefTooLong");
   expect(state.create).not.toHaveBeenCalled();
 });

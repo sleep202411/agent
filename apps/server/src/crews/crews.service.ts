@@ -351,6 +351,12 @@ export class CrewsService {
         viewerId,
       );
       if (recordLike) {
+        const origin = await tx.ipCrewOrigin.findFirst({
+          where: { crewId },
+          select: { ipId: true },
+        });
+        if (!origin)
+          throw new NotFoundException('Link an IP before following this Crew.');
         await tx.$executeRaw`
           INSERT INTO crew_likes (crew_id, user_id) VALUES (${crewId}, ${viewerId})
           ON CONFLICT (crew_id, user_id) DO NOTHING

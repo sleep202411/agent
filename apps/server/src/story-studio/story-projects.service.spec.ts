@@ -600,6 +600,44 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     });
   });
 
+  it('intersects linked confirmed games with workspace and project-only permissions', async () => {
+    const findMany = jest
+      .fn<Promise<unknown[]>, [{ where: unknown }]>()
+      .mockResolvedValue([]);
+    const query = jest.fn().mockResolvedValue([{ id: PROJECT_ID }]);
+    const { service, workspaces } = serviceWith({
+      storyProject: { findMany },
+      $queryRaw: query,
+    });
+    workspaces.requireWorkspacePresence.mockResolvedValue({
+      role: 'viewer',
+      accessScope: 'project_only',
+    });
+    await service.list(USER as never, {
+      workspaceId: WORKSPACE_ID,
+      linkedIpId: REVISION_ID,
+      status: 'active',
+      limit: 20,
+    });
+    const first = findMany.mock.calls[0]?.[0] as { where: unknown };
+    expect(first.where).toMatchObject({
+      id: { in: [PROJECT_ID] },
+      workspaceId: WORKSPACE_ID,
+      members: {
+        some: { userId: USER.userId, status: 'active', removedAt: null },
+      },
+    });
+    query.mockResolvedValueOnce([]);
+    await service.list(USER as never, {
+      workspaceId: WORKSPACE_ID,
+      linkedIpId: REVISION_ID,
+      status: 'active',
+      limit: 20,
+    });
+    const second = findMany.mock.calls[1]?.[0] as { where: unknown };
+    expect(second.where).toMatchObject({ id: { in: [] } });
+  });
+
   it('creates a unified story draft and a non-null empty video workbench', async () => {
     const project = summaryProject({
       draft: draftRow({

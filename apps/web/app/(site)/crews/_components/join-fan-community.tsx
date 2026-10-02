@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
 import { Button } from "@/components/ui/button";
+import { useCrewLinkedIps } from "../_hooks/use-crew-linked-ips";
 import { crewApi } from "../_hooks/api";
 
 export function JoinFanCommunity({ crewId }: { crewId: string }) {
@@ -20,6 +21,8 @@ function FanAction({ crewId, signedIn }: { crewId: string; signedIn: boolean }) 
   const locale = useLocale() as Locale;
   const router = useRouter();
   const { open } = useAuthDialog();
+  const linked = useCrewLinkedIps(crewId);
+  const ipId = !linked.isError && linked.data?.length === 1 ? linked.data[0]?.id : undefined;
   const operation = useRef<AbortController | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +34,7 @@ function FanAction({ crewId, signedIn }: { crewId: string; signedIn: boolean }) 
     []
   );
   async function join() {
+    if (!ipId) return;
     if (!signedIn) {
       open();
       return;
@@ -41,12 +45,21 @@ function FanAction({ crewId, signedIn }: { crewId: string; signedIn: boolean }) 
     setPending(true);
     setError(null);
     try {
-      const result = await crewApi.put<{ conversationId: string }>(
-        `/crews/${encodeURIComponent(crewId)}/like`,
-        { signal: controller.signal }
-      );
+      const result = await crewApi.put<{
+        code: number;
+        msg?: string;
+        data: { conversationId?: string | null };
+      }>(`/ip-commerce/ips/${encodeURIComponent(ipId)}/like`, { signal: controller.signal });
+      if (result.code !== 200) throw new Error(result.msg || `IP error ${result.code}`);
       if (!controller.signal.aborted)
-        router.push(localizePath(`/messages/${encodeURIComponent(result.conversationId)}`, locale));
+        router.push(
+          localizePath(
+            result.data.conversationId
+              ? `/messages/${encodeURIComponent(result.data.conversationId)}`
+              : `/ips/${encodeURIComponent(ipId)}`,
+            locale
+          )
+        );
     } catch (error) {
       if (!controller.signal.aborted)
         setError(error instanceof Error ? error.message : String(error));
@@ -57,6 +70,7 @@ function FanAction({ crewId, signedIn }: { crewId: string; signedIn: boolean }) 
       }
     }
   }
+  if (!ipId) return null;
   return (
     <div className="space-y-2">
       <Button disabled={pending} onClick={() => void join()}>

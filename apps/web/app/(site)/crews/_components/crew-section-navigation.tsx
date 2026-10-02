@@ -23,7 +23,7 @@ const sections = [
     id: "applications",
     label: "messagesOffersTab",
     icon: IconMessageCircle,
-    href: "/crews/applications",
+    href: "/messages?tab=recruitment",
   },
   { id: "mine", label: "myCrewsTitle", icon: IconUsers, href: "/crews?view=mine" },
   { id: "tasks", label: "taskDashboardTab", icon: IconListCheck, href: "/crews/tasks" },
@@ -31,7 +31,7 @@ const sections = [
   { id: "crews", label: "allCrewsTitle", icon: IconUsers, href: "/crews?view=crews" },
 ] as const;
 const dashboardSections = [
-  { id: "applications", label: "myApplicationsTab", href: "/crews/applications" },
+  { id: "applications", label: "myApplicationsTab", href: "/messages?tab=recruitment" },
   { id: "tasks", label: "myTasksTab", href: "/crews/tasks" },
   { id: "feedback", label: "myFeedbackTab", href: "/crews/feedback" },
   { id: "cases", label: "myCasesTab", href: "/crews/cases" },

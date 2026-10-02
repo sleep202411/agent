@@ -15,6 +15,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { CurrentUser, Public } from '../auth';
@@ -107,7 +108,20 @@ export class PositionsDiscoveryController {
   list(
     @Query(new ZodValidationPipe(ListPublicPositionsQuerySchema))
     query: ListPublicPositionsQuery,
+    @CurrentUser() user?: AuthUser,
   ) {
-    return this.svc.listPublic(query);
+    return this.svc.listPublic(query, user?.userId);
+  }
+  @Get(':positionId/saved')
+  saved(@Param('positionId') id: string, @CurrentUser() user: AuthUser) {
+    return this.svc.saved(parseIdParam(id, 'positionId'), user.userId);
+  }
+  @Put(':positionId/saved')
+  save(@Param('positionId') id: string, @CurrentUser() user: AuthUser) {
+    return this.svc.save(parseIdParam(id, 'positionId'), user.userId, true);
+  }
+  @Delete(':positionId/saved')
+  unsave(@Param('positionId') id: string, @CurrentUser() user: AuthUser) {
+    return this.svc.save(parseIdParam(id, 'positionId'), user.userId, false);
   }
 }

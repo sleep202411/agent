@@ -136,7 +136,7 @@ export function CrewWorkbenchShell({
 
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5">
           {tabs
-            .filter((tab) => ["tasks", "roles", "income"].includes(tab.id))
+            .filter((tab) => ["overview", "tasks", "roles", "income"].includes(tab.id))
             .map((tab) => {
               const Icon = RAIL_ICONS[tab.id];
               return (

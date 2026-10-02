@@ -16,6 +16,11 @@ const feed = vi.hoisted(() => ({
   fetchNextPage: vi.fn(),
   refetch: vi.fn(),
 }));
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: null }) }));
+vi.mock("@/components/auth/auth-dialog-provider", () => ({
+  useAuthDialog: () => ({ open: vi.fn() }),
+}));
+vi.mock("./opening-details", () => ({ OpeningDetails: () => <div /> }));
 vi.mock("@tanstack/react-query", () => ({ useInfiniteQuery: () => feed }));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
@@ -32,7 +37,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 it.each(["initial", "refresh", "next"])(
-  "retains loaded openings and retries a %s failure",
+  "clears stale openings and retries a %s failure",
   (kind) => {
     feed.data =
       kind === "initial"
@@ -64,9 +69,8 @@ it.each(["initial", "refresh", "next"])(
     const container = document.createElement("div");
     root = createRoot(container);
     act(() => root.render(<PositionsTab />));
-    expect(container.querySelectorAll("article").length).toBe(kind === "initial" ? 0 : 1);
-    if (kind !== "initial")
-      expect(container.querySelector('a[href$="/crews/crew/positions/position"]')).not.toBeNull();
+    expect(container.querySelectorAll("article").length).toBe(0);
+
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Positions unavailable"
     );

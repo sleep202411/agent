@@ -20,7 +20,7 @@ export default function MessagesLayout({ children }: { children: React.ReactNode
       href: `/${locale}/messages`,
       label: t("chatTab"),
       Icon: IconMessageCircle,
-      active: !notifications,
+      active: !notifications && params.get("tab") !== "recruitment",
     },
     {
       href: `/${locale}/messages?tab=notifications`,
@@ -29,10 +29,10 @@ export default function MessagesLayout({ children }: { children: React.ReactNode
       active: notifications,
     },
     {
-      href: `/${locale}/crews/applications`,
+      href: `/${locale}/messages?tab=recruitment`,
       label: c("messagesOffersTab"),
       Icon: IconMessageCircle,
-      active: false,
+      active: params.get("tab") === "recruitment",
     },
   ];
 

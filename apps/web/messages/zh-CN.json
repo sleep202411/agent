@@ -1880,6 +1880,7 @@
     }
   },
   "crew": {
+    "viewDetails": "查看详情",
     "navigationLabel": "剧组导航",
     "creationRequirements": {
       "title": "剧组创建要求",
@@ -4596,8 +4597,8 @@
     "recruitmentPrivate": "私密 — 仅限受邀者",
     "createJobSalaryAmountError": "请输入 0 至 100,000,000 之间的有效报酬金额，或留空。",
     "useTaskBrief": "使用任务说明",
-    "publicBriefHelp": "发布前请确认公开工作说明，包含交付内容、要求和验收标准，最多1,000字。",
-    "publicBriefTooLong": "请将公开说明缩短至1,000字以内，完整任务说明不受影响。"
+    "publicBriefHelp": "发布前请确认公开工作说明，包含交付内容、要求和验收标准，最多10,000字。",
+    "publicBriefTooLong": "请将公开说明缩短至10,000字以内，完整任务说明不受影响。"
   },
   "crewAssets": {
     "title": "剧组资产中心",
@@ -5544,6 +5545,7 @@
     }
   },
   "crewTasks": {
+    "briefTooLong": "任务说明不能超过 10,000 个字符。",
     "deletion": {
       "label": "删除任务",
       "description": "删除此任务？子任务将移至其父任务下，此任务将不再阻塞其他任务。财务记录将保留。",
@@ -10455,7 +10457,9 @@
     "more": "加载更多",
     "noAgreement": "暂无有效的已批准协议。请先完成招募，再分配此成员。",
     "agreedFee": "约定费用",
-    "useFee": "使用约定费用"
+    "useFee": "使用约定费用",
+    "acceptOffer": "接受邀约并加入剧组",
+    "taskDeadline": "任务截止日期"
   },
   "crewPositionInvites": {
     "title": "应聘邀请",
@@ -11252,10 +11256,57 @@
     "invitedRole": "邀请岗位：{role}"
   },
   "crewOpening": {
+    "ownOpening": "你发布的工作",
     "back": "返回职位广场",
     "unavailable": "该职位已不可用。",
     "description": "工作说明",
     "skills": "所需技能",
-    "deadline": "申请截止日期"
+    "deadline": "申请截止日期",
+    "save": "收藏工作",
+    "saved": "已收藏",
+    "savedJobs": "收藏的工作",
+    "retry": "重试"
+  },
+  "crewLinks": {
+    "title": "关联项目",
+    "ip": "关联 IP",
+    "workspace": "关联工作空间",
+    "films": "关联互动电影游戏",
+    "openIp": "查看 IP {number}",
+    "none": "尚未关联",
+    "loading": "加载中…",
+    "more": "加载更多",
+    "retry": "重试"
+  },
+  "crewTaskContext": {
+    "creator": "主创成员",
+    "select": "选择剧组成员",
+    "import": "导入",
+    "introduction": "剧组介绍",
+    "load": "从剧组设置导入",
+    "empty": "请先在剧组设置中填写介绍。"
+  },
+  "crewOpeningFilters": {
+    "salary": "报酬范围（{currency}）",
+    "min": "最低",
+    "max": "最高",
+    "period": "计酬周期",
+    "apply": "筛选报酬",
+    "invalid": "请输入有效范围，最低金额不能高于最高金额。",
+    "category": "工作类别",
+    "genre": "剧组类型",
+    "all": "全部",
+    "clear": "清除筛选",
+    "genres": {
+      "animation": "动画",
+      "live_action": "真人影视",
+      "documentary": "纪录片",
+      "shortform": "短片",
+      "mv": "音乐视频",
+      "commercial": "广告",
+      "experimental": "实验影像",
+      "vlog": "视频日志"
+    },
+    "filters": "筛选"
   }
 }

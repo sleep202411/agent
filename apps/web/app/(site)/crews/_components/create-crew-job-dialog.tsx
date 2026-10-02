@@ -272,7 +272,7 @@ function PositionForm({
     taskValid &&
     positionType.length > 0 &&
     description.trim().length > 0 &&
-    description.trim().length <= 1000 &&
+    description.trim().length <= 10000 &&
     countOk;
   const step2Valid = locationOk;
   const step3Valid = salaryAmountsOk && salaryRangeOk && durationOk && shareOk;
@@ -429,7 +429,7 @@ function PositionForm({
                   </Button>
                 ) : null}
                 <p className="text-xs text-muted-foreground">{t("publicBriefHelp")}</p>
-                {description.trim().length > 1000 ? (
+                {description.trim().length > 10000 ? (
                   <p role="alert" className="text-sm text-destructive">
                     {t("publicBriefTooLong")}
                   </p>
@@ -439,7 +439,7 @@ function PositionForm({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder={t("createJobDescriptionPlaceholder")}
-                  maxLength={1000}
+                  maxLength={10000}
                   rows={4}
                   disabled={submitting}
                 />

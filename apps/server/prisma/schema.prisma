@@ -5101,6 +5101,7 @@ model CrewAssetFavorite {
 }
 
 model CrewPosition {
+  savedBy CrewSavedPosition[]
   recruitmentVisibility String @default("public") @map("recruitment_visibility") @db.VarChar(16)
   invitations CrewPositionInvitation[]
   taskId String? @map("task_id") @db.Uuid
@@ -10837,4 +10838,14 @@ model DiscoveryAssistantRequest {
   @@id([actorId, requestId])
   @@index([createdAt, status, readExpiresAt], map: "discovery_assistant_quota_idx")
   @@map("discovery_assistant_requests")
+}
+
+model CrewSavedPosition {
+  userId String @map("user_id") @db.VarChar(64)
+  positionId String @map("position_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  position CrewPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+  @@id([userId, positionId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("crew_saved_positions")
 }

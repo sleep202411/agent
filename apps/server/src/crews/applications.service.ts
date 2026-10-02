@@ -197,6 +197,47 @@ export class ApplicationsService {
     };
   }
 
+  /** Exact private thread lookup for either participant; independent of inbox pagination. */
+  async getThread(applicationId: string, userId: string) {
+    const row = await this.prisma.crewApplication.findUnique({
+      where: { id: applicationId },
+      include: {
+        ...INTERVIEW_PROGRESS,
+        crew: {
+          select: {
+            name: true,
+            deletedAt: true,
+            ownership: { select: { member: { select: { userId: true } } } },
+          },
+        },
+        position: {
+          select: {
+            positionType: true,
+            taskId: true,
+            task: { select: { title: true, dueAt: true } },
+          },
+        },
+      },
+    });
+    if (!row || row.crew.deletedAt)
+      throw new NotFoundException('Application not found');
+    if (row.applicantId !== userId)
+      await this.authorization.require(
+        row.crewId,
+        userId,
+        'applications.review',
+      );
+    return {
+      ...toApplicationDTO(row),
+      crewName: row.crew.name,
+      positionType: row.position.positionType,
+      taskId: row.position.taskId,
+      ownerUserId: row.crew.ownership?.member.userId ?? null,
+      taskTitle: row.position.task?.title ?? null,
+      dueAt: row.position.task?.dueAt?.toISOString() ?? null,
+    };
+  }
+
   async getForOwner(crewId: string, applicationId: string, ownerId: string) {
     await this.authorization.require(crewId, ownerId, 'applications.review');
     const row = await this.prisma.crewApplication.findFirst({
@@ -499,6 +540,33 @@ export class ApplicationsService {
     return { crew, position, ownerUserId };
   }
 
+  async acceptOffer(
+    applicationId: string,
+    applicantId: string,
+    version: number,
+    cookie?: string,
+  ) {
+    const app = await this.prisma.crewApplication.findUnique({
+      where: { id: applicationId },
+    });
+    if (!app) throw new NotFoundException('Application not found');
+    if (app.applicantId !== applicantId)
+      throw new ForbiddenException('Only the applicant can accept this offer.');
+    if (app.termsVersion !== version)
+      throw new ConflictException('Terms changed. Review the latest offer.');
+    const offer = await this.prisma.crewApplicationTerms.findUnique({
+      where: { applicationId_version: { applicationId, version } },
+    });
+    if (!offer) throw new NotFoundException('Offer not found');
+    return this.transitionApplication(
+      applicationId,
+      offer.proposedByUserId,
+      'approved',
+      cookie,
+      { applicantId, version },
+    );
+  }
+
   async approve(applicationId: string, reviewerId: string, cookie?: string) {
     return this.transitionApplication(
       applicationId,
@@ -517,6 +585,7 @@ export class ApplicationsService {
     reviewerId: string,
     next: 'approved' | 'rejected',
     cookie?: string,
+    acceptance?: { applicantId: string; version: number },
   ) {
     const app = await this.prisma.crewApplication.findUnique({
       where: { id: applicationId },
@@ -545,6 +614,19 @@ export class ApplicationsService {
       reviewerId,
       'applications.review',
     );
+    if (
+      acceptance &&
+      app.status === 'approved' &&
+      app.applicantId === acceptance.applicantId &&
+      app.termsVersion === acceptance.version
+    ) {
+      const offer = await this.prisma.crewApplicationTerms.findUnique({
+        where: {
+          applicationId_version: { applicationId, version: acceptance.version },
+        },
+      });
+      if (offer?.confirmedAt) return toApplicationDTO(app);
+    }
     if (app.status !== 'pending') {
       throw new BadRequestException({
         message: 'Application is not pending',
@@ -576,6 +658,26 @@ export class ApplicationsService {
           data: { status: next, reviewedAt, reviewerId },
         });
         if (appTransition.count === 0) {
+          if (acceptance) {
+            const current = await tx.crewApplication.findUniqueOrThrow({
+              where: { id: applicationId },
+            });
+            const offer = await tx.crewApplicationTerms.findUnique({
+              where: {
+                applicationId_version: {
+                  applicationId,
+                  version: acceptance.version,
+                },
+              },
+            });
+            if (
+              current.status === 'approved' &&
+              current.applicantId === acceptance.applicantId &&
+              current.termsVersion === acceptance.version &&
+              offer?.confirmedAt
+            )
+              return current;
+          }
           throw new ConflictException({
             message: 'Application was already reviewed',
           });
@@ -595,6 +697,29 @@ export class ApplicationsService {
         });
 
         if (next === 'approved') {
+          if (acceptance) {
+            if (
+              updatedApp.applicantId !== acceptance.applicantId ||
+              updatedApp.termsVersion !== acceptance.version
+            )
+              throw new ConflictException(
+                'Terms changed. Review the latest offer.',
+              );
+            const offer = await tx.crewApplicationTerms.findUnique({
+              where: {
+                applicationId_version: {
+                  applicationId,
+                  version: acceptance.version,
+                },
+              },
+            });
+            if (!offer || offer.proposedByUserId !== reviewerId)
+              throw new ConflictException('The offer is no longer available.');
+            await tx.crewApplicationTerms.update({
+              where: { id: offer.id },
+              data: { confirmedAt: offer.confirmedAt ?? reviewedAt },
+            });
+          }
           await assertInterviewResolved(tx, applicationId);
           if (app.position.taskId) {
             await assertRecruitableTask(tx, app.crewId, app.position.taskId);
@@ -603,6 +728,10 @@ export class ApplicationsService {
                 'Task recruitment requires confirmed final terms before approval.',
               );
           }
+          if (!updatedApp.termsVersion)
+            throw new ConflictException(
+              'Recruitment requires an accepted final offer before joining the Crew.',
+            );
           await assertApplicationTermsConfirmed(
             tx,
             applicationId,

@@ -1880,6 +1880,7 @@
     }
   },
   "crew": {
+    "viewDetails": "View details",
     "navigationLabel": "Crew navigation",
     "creationRequirements": {
       "title": "Crew Creation Requirements",
@@ -4596,8 +4597,8 @@
     "recruitmentPrivate": "Private — invitation only",
     "createJobSalaryAmountError": "Enter a valid compensation amount from 0 to 100,000,000, or leave it blank.",
     "useTaskBrief": "Use task brief",
-    "publicBriefHelp": "Review this public job description before publishing. Include the deliverables, requirements, and acceptance criteria. Maximum 1,000 characters.",
-    "publicBriefTooLong": "Shorten the public description to 1,000 characters; your full task brief is unchanged."
+    "publicBriefHelp": "Review this public job description before publishing. Include the deliverables, requirements, and acceptance criteria. Maximum 10,000 characters.",
+    "publicBriefTooLong": "Shorten the public description to 10,000 characters; your full task brief is unchanged."
   },
   "crewAssets": {
     "title": "Crew Asset Center",
@@ -5544,6 +5545,7 @@
     }
   },
   "crewTasks": {
+    "briefTooLong": "The task brief must be at most 10,000 characters.",
     "deletion": {
       "label": "Delete task",
       "description": "Delete this task? Child tasks will move to its parent. This task will stop blocking other tasks. Financial records will be retained.",
@@ -10455,7 +10457,9 @@
     "more": "Load more",
     "noAgreement": "No active approved agreement. Complete recruitment before assigning this member.",
     "agreedFee": "Agreed fee",
-    "useFee": "Use agreed fee"
+    "useFee": "Use agreed fee",
+    "acceptOffer": "Accept offer & join Crew",
+    "taskDeadline": "Task deadline"
   },
   "crewPositionInvites": {
     "title": "Invitations to apply",
@@ -11252,10 +11256,57 @@
     "invitedRole": "Invited role: {role}"
   },
   "crewOpening": {
+    "ownOpening": "Your opening",
     "back": "Back to openings",
     "unavailable": "This opening is no longer available.",
     "description": "Job description",
     "skills": "Required skills",
-    "deadline": "Application deadline"
+    "deadline": "Application deadline",
+    "save": "Save job",
+    "saved": "Saved",
+    "savedJobs": "Saved jobs",
+    "retry": "Retry"
+  },
+  "crewLinks": {
+    "title": "Linked projects",
+    "ip": "Linked IP",
+    "workspace": "Linked Workspace",
+    "films": "Linked interactive movie games",
+    "openIp": "View IP {number}",
+    "none": "Not linked",
+    "loading": "Loading…",
+    "more": "Load more",
+    "retry": "Retry"
+  },
+  "crewTaskContext": {
+    "creator": "Featured creator",
+    "select": "Select a Crew member",
+    "import": "Import",
+    "introduction": "Crew introduction",
+    "load": "Load from Crew settings",
+    "empty": "Add a Crew introduction in Crew settings first."
+  },
+  "crewOpeningFilters": {
+    "salary": "Pay range ({currency})",
+    "min": "Minimum",
+    "max": "Maximum",
+    "period": "Pay period",
+    "apply": "Apply pay filter",
+    "invalid": "Enter a valid pay range with the minimum no greater than the maximum.",
+    "category": "Job category",
+    "genre": "Crew genre",
+    "all": "All",
+    "clear": "Clear filters",
+    "genres": {
+      "animation": "Animation",
+      "live_action": "Live action",
+      "documentary": "Documentary",
+      "shortform": "Short form",
+      "mv": "Music video",
+      "commercial": "Commercial",
+      "experimental": "Experimental",
+      "vlog": "Vlog"
+    },
+    "filters": "Filters"
   }
 }
