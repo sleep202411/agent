@@ -4538,5 +4538,7 @@
   "notifications.events.payout.paid.body": "{amount} for {grossAmount} has been paid.",
   "notifications.events.payout.voided.title": "Payout voided",
   "notifications.events.payout.voided.body": "The {amount} payout for {grossAmount} was voided; the reserved amount is available again.",
-  "notifications.performedBy": "By {name}"
+  "notifications.performedBy": "By {name}",
+  "notifications.unreadCount": "{count} unread",
+  "notifications.retryUnreadCount": "Retry unread count"
 }

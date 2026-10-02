@@ -4538,5 +4538,7 @@
   "notifications.events.payout.paid.body": "{grossAmount} 對應的 {amount} 已完成發放。",
   "notifications.events.payout.voided.title": "發放單已作廢",
   "notifications.events.payout.voided.body": "{grossAmount} 對應的 {amount} 已作廢，金額已重新可用。",
-  "notifications.performedBy": "操作人：{name}"
+  "notifications.performedBy": "操作人：{name}",
+  "notifications.unreadCount": "{count} 則未讀",
+  "notifications.retryUnreadCount": "重試未讀數量"
 }

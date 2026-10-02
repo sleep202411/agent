@@ -21,6 +21,7 @@ import { useInboxRealtime } from "./use-inbox-realtime";
 import { useNotifications } from "./use-notifications";
 import { useUserDisplays } from "./user-displays";
 import { notificationContent } from "./notification-content";
+import { useNotificationUnreadCount } from "./use-notification-unread-count";
 type Props = { generation: number; userId: string };
 export function NotificationsFeed({ generation, userId }: Props) {
   const active = useScreenActive();
@@ -36,6 +37,11 @@ function Feed({ generation, userId }: Props) {
   const label = (key: string) => t(`notifications.${key}` as MessageKey);
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const list = useNotifications(webPath ? undefined : String(generation), filter);
+  const unread = useNotificationUnreadCount(webPath ? undefined : generation);
+  const refresh = () => {
+    list.refresh();
+    unread.refresh();
+  };
   const actors = useUserDisplays(
     webPath ? undefined : `${generation}:${userId}`,
     list.items.flatMap((item) =>
@@ -48,7 +54,7 @@ function Feed({ generation, userId }: Props) {
     label(key).replace(/\{(\w+)\}/g, (token, name: string) =>
       values?.[name] === undefined ? token : String(values[name])
     );
-  const liveUnavailable = useInboxRealtime(userId, generation, !webPath, list.refresh);
+  const liveUnavailable = useInboxRealtime(userId, generation, !webPath, refresh);
   const operation = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const finishReadOnNavigation = useRef(false);
@@ -76,7 +82,7 @@ function Feed({ generation, userId }: Props) {
         setError(cause instanceof Error ? cause.message : String(cause));
         // A failed receipt may still represent an applied write. Reconcile
         // without retrying the mutation; confirmed writes notify active lists.
-        list.refresh();
+        refresh();
       }
     } finally {
       if (alive.current && !controller.signal.aborted && generation === getAuthGeneration()) {
@@ -136,9 +142,20 @@ function Feed({ generation, userId }: Props) {
           </Pressable>
         ))}
       </ScrollView>
+      {unread.count !== undefined && unread.count > 0 && (
+        <ThemedText type="small">{contentLabel("unreadCount", { count: unread.count })}</ThemedText>
+      )}
+      {unread.error && (
+        <View style={{ gap: 8 }}>
+          <ThemedText accessibilityRole="alert">{unread.error}</ThemedText>
+          <Pressable accessibilityRole="button" onPress={unread.refresh} style={{ padding: 10 }}>
+            <ThemedText>{label("retryUnreadCount")}</ThemedText>
+          </Pressable>
+        </View>
+      )}
       <Pressable
         accessibilityRole="button"
-        disabled={busy || list.loading || !!list.error}
+        disabled={busy || unread.loading || !!unread.error || !unread.count}
         onPress={() => void mark()}
         style={{ padding: 12 }}
       >
@@ -150,7 +167,7 @@ function Feed({ generation, userId }: Props) {
         data={list.items}
         keyExtractor={(item) => item.id}
         refreshing={list.loading}
-        onRefresh={list.refresh}
+        onRefresh={refresh}
         onEndReached={list.loadMore}
         renderItem={({ item }) => {
           const actorName =

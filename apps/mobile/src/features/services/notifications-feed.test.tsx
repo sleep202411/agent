@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
   readAll: vi.fn(),
   refresh: vi.fn(),
   items: [] as NotificationItem[],
+  unread: 1 as number | undefined,
+  countError: undefined as string | undefined,
 }));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/config", () => ({ appEnv: { appRegion: "global" } }));
@@ -25,6 +27,9 @@ vi.mock("./notification-api", () => ({
 }));
 vi.mock("./use-inbox-realtime", () => ({ useInboxRealtime: () => false }));
 vi.mock("./user-displays", () => ({ useUserDisplays: () => undefined }));
+vi.mock("./use-notification-unread-count", () => ({
+  useNotificationUnreadCount: () => ({ count: h.unread, error: h.countError, refresh: vi.fn() }),
+}));
 vi.mock("./use-notifications", () => ({
   useNotifications: () => ({ items: h.items, refresh: h.refresh, loading: false }),
 }));
@@ -76,6 +81,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.active = true;
   h.generation = 1;
+  h.unread = 1;
+  h.countError = undefined;
   h.read.mockResolvedValue({});
   h.items = [
     {
@@ -150,4 +157,21 @@ it("does not open or write from an obsolete account", async () => {
   await click("notifications.view");
   expect(h.read).not.toHaveBeenCalled();
   expect(h.push).not.toHaveBeenCalled();
+});
+
+it.each([0, undefined])("disables mark-all with no confirmed unread items (%s)", async (count) => {
+  h.unread = count;
+  await render();
+  await click("notifications.markAllRead");
+  expect(h.readAll).not.toHaveBeenCalled();
+});
+it("a count failure permits individual navigation and offers its own retry", async () => {
+  h.countError = "Count unavailable";
+  await render();
+  expect(host.textContent).toContain("Count unavailable");
+  expect(host.textContent).toContain("notifications.retryUnreadCount");
+  await click("notifications.markAllRead");
+  expect(h.readAll).not.toHaveBeenCalled();
+  await click("notifications.view");
+  expect(h.push).toHaveBeenCalledWith("/crews");
 });

@@ -4538,5 +4538,7 @@
   "notifications.events.payout.paid.body": "{grossAmount} 对应的 {amount} 已完成发放。",
   "notifications.events.payout.voided.title": "发放单已作废",
   "notifications.events.payout.voided.body": "{grossAmount} 对应的 {amount} 已作废，金额已重新可用。",
-  "notifications.performedBy": "操作人：{name}"
+  "notifications.performedBy": "操作人：{name}",
+  "notifications.unreadCount": "{count} 条未读",
+  "notifications.retryUnreadCount": "重试未读数量"
 }

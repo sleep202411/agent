@@ -17,9 +17,22 @@ const item = z.object({
 });
 const page = z.object({ items: z.array(item), nextCursor: id.nullable() });
 export type NotificationItem = z.infer<typeof item>;
+const unreadCount = z.object({ count: z.number().int().nonnegative().safe() });
 function current(generation: number, signal: AbortSignal) {
   if (signal.aborted || generation !== getAuthGeneration())
     throw new Error("Notification session expired");
+}
+export async function fetchNotificationUnreadCount(generation: number, signal: AbortSignal) {
+  current(generation, signal);
+  const result = unreadCount.parse(
+    await api.get("/notifications/unread-count", {
+      service: "aurora",
+      signal,
+      retry: false,
+    })
+  );
+  current(generation, signal);
+  return result.count;
 }
 export async function fetchNotifications(
   filter: NotificationFilter,
