@@ -4580,5 +4580,7 @@
   "ipGeneration.stopTracking": "暂停查看",
   "ipGeneration.recoverJob": "检查已保存的生成任务",
   "ipGeneration.savedAttempt": "请求已保存。暂停查看不会取消服务器上的任务。",
-  "ipGeneration.awaitingReceipt": "暂未找到回执，请稍后再检查；未提交新的生成任务。"
+  "ipGeneration.awaitingReceipt": "暂未找到回执，请稍后再检查；未提交新的生成任务。",
+  "ipGeneration.savingOutput": "正在保存结果…",
+  "ipGeneration.saveFailed": "无法保存结果，请重试。"
 }

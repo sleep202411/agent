@@ -1,3 +1,5 @@
+import { saveOutput } from "@/features/ai-lab/save-output";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useAudienceGeneration } from "@/features/ip-community/use-audience-generation";
 import { useIpGenerationPreview } from "./use-ip-generation-preview";
 import { useCallback, useEffect, useLayoutEffect, useState, useRef } from "react";
@@ -5,7 +7,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -82,6 +83,43 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   const job = useAudienceGeneration(ipId);
   const { jobStatus, error: genError } = job;
   const generating = job.busy || job.submitting;
+  const active = useScreenActive();
+  const saving = useRef<AbortController | null>(null);
+  const [saveToken, setSaveToken] = useState<AbortController | null>(null);
+  const savingOutput = active && !!saveToken && !saveToken.signal.aborted;
+  const [outputError, setOutputError] = useState<string | null>(null);
+  useEffect(() => {
+    if (active) return;
+    saving.current?.abort();
+    saving.current = null;
+  }, [active]);
+  useEffect(() => () => saving.current?.abort(), []);
+  const handleSaveOutput = async () => {
+    const output = jobStatus?.outputs[0];
+    if (!active || !isCurrent() || saving.current || !output?.url) return;
+    const token = new AbortController();
+    saving.current = token;
+    const current = () => isCurrent() && saving.current === token && !token.signal.aborted;
+    setSaveToken(token);
+    setOutputError(null);
+    try {
+      await saveOutput(
+        { id: output.assetId, url: output.url, type: "image" },
+        token.signal,
+        current
+      );
+    } catch (error) {
+      if (current())
+        setOutputError(
+          error instanceof Error && error.message ? error.message : t("ipGeneration.saveFailed")
+        );
+    } finally {
+      if (current()) {
+        saving.current = null;
+        setSaveToken(null);
+      }
+    }
+  };
 
   // User compute balance
   const balance = useComputeWalletBalance();
@@ -159,6 +197,8 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
     void job.start(selectedTemplate.id, selectedTemplate.name, refAssetId ?? undefined);
   };
   const handleReset = () => {
+    if (saving.current) return;
+    setOutputError(null);
     job.reset();
     retryPreview();
   };
@@ -427,22 +467,30 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
               resizeMode="contain"
             />
           )}
+          {outputError && (
+            <ThemedText
+              accessibilityRole="alert"
+              style={[styles.errorText, { color: theme.brand }]}
+            >
+              {outputError}
+            </ThemedText>
+          )}
           <View style={styles.actionRow}>
             {jobStatus.outputs?.[0]?.url && (
               <Pressable
-                onPress={() => {
-                  if (jobStatus.outputs[0].url) {
-                    void Linking.openURL(jobStatus.outputs[0].url);
-                  }
-                }}
+                accessibilityRole="button"
+                accessibilityState={{ busy: savingOutput, disabled: savingOutput }}
+                disabled={savingOutput}
+                onPress={() => void handleSaveOutput()}
                 style={[styles.primaryButton, { backgroundColor: theme.brand }]}
               >
                 <ThemedText style={styles.primaryButtonText}>
-                  {t("ipGeneration.downloadButton")}
+                  {savingOutput ? t("ipGeneration.savingOutput") : t("ipGeneration.downloadButton")}
                 </ThemedText>
               </Pressable>
             )}
             <Pressable
+              disabled={savingOutput}
               onPress={handleReset}
               style={[styles.secondaryButton, { backgroundColor: theme.backgroundSelected }]}
             >
@@ -657,6 +705,8 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
     gap: 10,
   },
   primaryButton: {

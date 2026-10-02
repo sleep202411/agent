@@ -11,7 +11,9 @@ const h = vi.hoisted(() => ({
   pick: vi.fn(),
   upload: vi.fn(),
   alert: vi.fn(),
+  save: vi.fn(),
 }));
+vi.mock("@/features/ai-lab/save-output", () => ({ saveOutput: h.save }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/lib/durable-record", () => ({
   durableRecord: (namespace: string, user: string, ip: string) => {
@@ -89,7 +91,7 @@ beforeEach(() => {
   h.generation = 1;
   h.active = true;
   h.records.clear();
-  for (const mock of [h.get, h.post, h.pick, h.upload, h.alert]) mock.mockReset();
+  for (const mock of [h.get, h.post, h.pick, h.upload, h.alert, h.save]) mock.mockReset();
   h.get.mockResolvedValue({ templates: [template] });
   host = document.createElement("div");
   root = createRoot(host);
@@ -323,4 +325,65 @@ it("treats expired jobs as terminal instead of polling forever", async () => {
   await click("ipGeneration.generateButton");
   expect(host.textContent).toContain("ipGeneration.retry");
   expect(host.textContent).not.toContain("ipGeneration.stopTracking");
+});
+
+async function completedOutput() {
+  h.get.mockImplementation(async (url: string) =>
+    url.includes("/jobs/")
+      ? {
+          status: "completed",
+          outputs: [{ assetId: "result", url: "https://example.test/result.png" }],
+        }
+      : { templates: [{ ...template, requireReferenceImage: false }] }
+  );
+  h.post.mockResolvedValue({ jobId: "done" });
+  await render();
+  await click("ipGeneration.generateButton");
+}
+it("keeps the completed result after a save error and retries only its download", async () => {
+  await completedOutput();
+  h.save.mockRejectedValueOnce(new Error("Media download failed (HTTP 503)."));
+  await click("ipGeneration.downloadButton");
+  expect(host.textContent).toContain("Media download failed (HTTP 503).");
+  expect(host.textContent).toContain("ipGeneration.completedLabel");
+  h.save.mockResolvedValue(undefined);
+  await click("ipGeneration.downloadButton");
+  expect(h.save).toHaveBeenCalledTimes(2);
+  expect(h.save.mock.calls[1][0]).toEqual({
+    id: "result",
+    url: "https://example.test/result.png",
+    type: "image",
+  });
+  expect(host.textContent).not.toContain("HTTP 503");
+  expect(h.post).toHaveBeenCalledOnce();
+});
+it("serializes saving and prevents regeneration until saving finishes", async () => {
+  await completedOutput();
+  const save = deferred<void>();
+  h.save.mockReturnValue(save.promise);
+  await click("ipGeneration.downloadButton");
+  await click("ipGeneration.savingOutput");
+  await click("ipGeneration.retry");
+  expect(h.save).toHaveBeenCalledOnce();
+  expect(host.textContent).toContain("ipGeneration.completedLabel");
+  await act(async () => save.resolve());
+  expect(host.textContent).toContain("ipGeneration.downloadButton");
+});
+it.each(["background", "account", "ip"])("invalidates saving after %s changes", async (change) => {
+  await completedOutput();
+  const save = deferred<void>();
+  h.save.mockReturnValue(save.promise);
+  await click("ipGeneration.downloadButton");
+  const [, signal, current] = h.save.mock.calls[0];
+  if (change === "background") h.active = false;
+  if (change === "account") h.generation++;
+  await render(change === "ip" ? "two" : "one");
+  expect(signal.aborted).toBe(true);
+  expect(current()).toBe(false);
+  await act(async () => save.resolve());
+  if (change === "background") {
+    h.active = true;
+    await render();
+    expect(host.textContent).toContain("ipGeneration.downloadButton");
+  }
 });

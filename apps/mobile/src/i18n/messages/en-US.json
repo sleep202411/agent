@@ -4580,5 +4580,7 @@
   "ipGeneration.stopTracking": "Stop tracking",
   "ipGeneration.recoverJob": "Check saved generation",
   "ipGeneration.savedAttempt": "This request is saved. Stopping tracking does not cancel the server job.",
-  "ipGeneration.awaitingReceipt": "No receipt is available yet. Check again later; no new generation was submitted."
+  "ipGeneration.awaitingReceipt": "No receipt is available yet. Check again later; no new generation was submitted.",
+  "ipGeneration.savingOutput": "Saving output…",
+  "ipGeneration.saveFailed": "Could not save the output. Please try again."
 }
