@@ -201,3 +201,27 @@ it("ignores a late poll after switching accounts", async () => {
   await act(async () => finish({ items: [item], nextCursor: null }));
   expect(host.textContent).not.toContain("First");
 });
+
+it("revalidates rows and totals when returning to a previously active screen", async () => {
+  let finish!: (value: unknown) => void;
+  h.load
+    .mockResolvedValueOnce({
+      items: [item],
+      summary: [{ key: "crewPersonalIncome.posted", amount: "987654321" }],
+      nextCursor: "next",
+    })
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+  await render("1");
+  expect(host.textContent).toContain("First");
+  await render();
+  await render("1");
+  expect(host.textContent).not.toContain("First");
+  expect(host.textContent).not.toContain("987654321");
+  await act(async () => finish({ items: [{ ...item, title: "Fresh" }], nextCursor: null }));
+  expect(host.textContent).toContain("Fresh");
+});

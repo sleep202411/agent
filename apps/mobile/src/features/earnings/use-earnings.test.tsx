@@ -122,3 +122,23 @@ it.each([401, 403])(
     expect(h.load.mock.calls[3][3]).toBe("next");
   }
 );
+
+it("revalidates rows and totals when returning to a previously active screen", async () => {
+  let finish!: (value: unknown) => void;
+  h.load
+    .mockResolvedValueOnce({ entries: [item], lifetimeEarned: "987654321", nextCursor: "next" })
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+  await render("1");
+  expect(host.textContent).toContain("First");
+  await render();
+  await render("1");
+  expect(host.textContent).not.toContain("First");
+  expect(host.textContent).not.toContain("987654321");
+  await act(async () => finish({ entries: [{ ...item, workTitle: "Fresh" }], nextCursor: null }));
+  expect(host.textContent).toContain("Fresh");
+});

@@ -37,6 +37,12 @@ export function useCrewIncome(
   const key = JSON.stringify([owner, userId, currency, view, crewId, revision]);
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
+  const [snapshotScope, setSnapshotScope] = useState(key);
+  // A return visit must not resurrect the previous visit's rows or totals.
+  if (snapshotScope !== key) {
+    setSnapshotScope(key);
+    setSnapshot(undefined);
+  }
   const load = useCallback(
     async (session: Session, refresh = false) => {
       if (session.busy || (!refresh && !session.more) || session.abort.signal.aborted) return;
