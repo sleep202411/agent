@@ -1,3 +1,4 @@
+import { setStringAsync } from "expo-clipboard";
 import { saveOutput } from "./save-output";
 import {
   loadProjectSkills,
@@ -157,6 +158,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     [jobs, setJobs] = useState<GenerationJob[]>([]),
     [selected, setSelected] = useState<GenerationJob>(),
     [referencePreview, setReferencePreview] = useState<string>(),
+    [copiedPrompt, setCopiedPrompt] = useState<string>(),
     [error, setError] = useState(initial.error),
     [historyError, setHistoryError] = useState(""),
     [historyLoading, setHistoryLoading] = useState(true),
@@ -1078,6 +1080,26 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
           {selected ? (
             <View style={{ gap: 8 }}>
               <ThemedText type="smallBold">{selected.modelId}</ThemedText>
+              {selected.prompt ? (
+                <Button
+                  label={t(
+                    copiedPrompt === `${selected.id}:${selected.prompt}`
+                      ? "aiLab.promptCopied"
+                      : "aiLab.copyPrompt"
+                  )}
+                  disabled={op.busy}
+                  onPress={() => {
+                    setCopiedPrompt(undefined);
+                    run(
+                      async () => {
+                        if (!(await setStringAsync(selected.prompt)))
+                          throw new Error(t("aiLab.copyPromptFailed"));
+                      },
+                      () => setCopiedPrompt(`${selected.id}:${selected.prompt}`)
+                    );
+                  }}
+                />
+              ) : null}
               <ThemedText>
                 {selected.error?.userMessage ?? t(`aiLab.status.${selected.status}` as const)}
               </ThemedText>

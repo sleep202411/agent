@@ -7,6 +7,7 @@ vi.mock("@/features/services/conversation-audio", () => ({
   ConversationAudio: ({ url }: { url: string }) => <span>Audio playback: {url}</span>,
 }));
 vi.mock("./reference-audio-metadata", () => ({ probeReferenceAudio: h.probe }));
+vi.mock("expo-clipboard", () => ({ setStringAsync: h.copy }));
 vi.mock("expo-image", () => ({ Image: () => null }));
 const h = vi.hoisted(() => ({
   signedIn: true,
@@ -20,6 +21,7 @@ const h = vi.hoisted(() => ({
   push: vi.fn(),
   key: 10,
   open: vi.fn(),
+  copy: vi.fn(),
   pick: vi.fn(),
   probe: vi.fn(),
   selected: vi.fn(),
@@ -1099,3 +1101,26 @@ it("recovers history reads without treating them as generation retries", async (
   expect(host.textContent).toContain("Lake");
   expect(h.post).not.toHaveBeenCalled();
 });
+
+for (const outcome of [true, false, "rejected"] as const) {
+  it(`copies a result prompt with honest feedback: ${outcome}`, async () => {
+    const audioJob = useAudioCatalog();
+    jobs = [audioJob];
+    const get = h.get.getMockImplementation()!;
+    h.get.mockImplementation(async (path, options) =>
+      path === `/ai/jobs/${job.id}` ? audioJob : get(path, options)
+    );
+    if (outcome === "rejected") h.copy.mockRejectedValue(new Error("Clipboard unavailable"));
+    else h.copy.mockResolvedValue(outcome);
+    await mount();
+    await click("aiLab.audio");
+    await click("aiLab.history");
+    await click("Audio model · aiLab.status.completed");
+    await click("aiLab.copyPrompt");
+    expect(h.copy).toHaveBeenCalledWith(audioJob.prompt);
+    expect(host.textContent?.includes("aiLab.promptCopied")).toBe(outcome === true);
+    if (outcome === false) expect(host.textContent).toContain("aiLab.copyPromptFailed");
+    if (outcome === "rejected") expect(host.textContent).toContain("Clipboard unavailable");
+    expect(h.post).not.toHaveBeenCalled();
+  });
+}
