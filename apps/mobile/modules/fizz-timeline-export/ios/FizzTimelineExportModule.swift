@@ -51,15 +51,15 @@ public final class FizzTimelineExportModule: Module {
             do {
               let asset = AVURLAsset(url: url)
               let tracks = try await asset.loadTracks(withMediaType: .video)
-              guard let track = tracks.first else { throw self.failure("A timeline clip has no video track.") }
+              guard let track = tracks.first else { throw TimelineExportFailure.sourceFailure("A timeline clip has no video track.") }
               sourceVideo = track
               let duration = try await asset.load(.duration)
-              guard duration.isNumeric, duration.seconds > 0 else { throw self.failure("Invalid source duration.") }
+              guard duration.isNumeric, duration.seconds > 0 else { throw TimelineExportFailure.sourceFailure("Invalid source duration.") }
               length = CMTimeMinimum(duration, CMTime(seconds: milliseconds.doubleValue / 1000, preferredTimescale: 600))
               let size = try await track.load(.naturalSize)
               transform = try await track.load(.preferredTransform)
               bounds = CGRect(origin: .zero, size: size).applying(transform)
-              guard bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 else { throw self.failure("Invalid video dimensions.") }
+              guard bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 else { throw TimelineExportFailure.sourceFailure("Invalid video dimensions.") }
               sourceAudio = try await asset.loadTracks(withMediaType: .audio).first
               if let sourceAudio {
                 let available = try await sourceAudio.load(.timeRange)
@@ -69,6 +69,7 @@ public final class FizzTimelineExportModule: Module {
             } catch {
               // Cancellation and ownership changes are never partial success.
               try self.check(id)
+              guard TimelineExportFailure.isSourceFailure(error) else { throw error }
               continue
             }
             let sourceRange = CMTimeRange(start: .zero, duration: length)
@@ -83,6 +84,7 @@ public final class FizzTimelineExportModule: Module {
             } catch {
               if insertedVideo { composition.removeTimeRange(CMTimeRange(start: cursor, duration: length)) }
               try self.check(id)
+              guard TimelineExportFailure.isSourceFailure(error) else { throw error }
               continue
             }
             if canvas == nil {
@@ -105,7 +107,7 @@ public final class FizzTimelineExportModule: Module {
             cursor = CMTimeAdd(cursor, length)
           }
           try self.check(id)
-          guard !ids.isEmpty, canvas != nil else { throw self.failure("No timeline clips could be exported.") }
+          guard !ids.isEmpty, canvas != nil else { throw TimelineExportFailure.sourceFailure("No timeline clips could be exported.") }
           let videoComposition = AVMutableVideoComposition()
           videoComposition.renderSize = canvas!
           videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
@@ -139,7 +141,7 @@ public final class FizzTimelineExportModule: Module {
           promise.resolve(receipt)
         } catch {
           if let output { try? FileManager.default.removeItem(at: output) }
-          promise.reject("EXPORT_FAILED", error.localizedDescription)
+          promise.reject(TimelineExportFailure.isSourceFailure(error) ? "EXPORT_SOURCE_FAILED" : "EXPORT_FAILED", error.localizedDescription)
         }
         if self.jobID == id { self.jobID = nil; self.session = nil; self.work = nil }
       }
