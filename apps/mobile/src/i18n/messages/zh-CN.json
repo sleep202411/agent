@@ -4475,5 +4475,6 @@
   "applicationReview.invalidPortfolio": "作品集链接必须为有效的 HTTP 或 HTTPS 地址，且不能包含登录凭据。",
   "ipAuthor.conflictReview": "核对当前已保存版本",
   "ipAuthor.conflictHelp": "此 IP 在草稿之后有更新。请先比较下方已保存的值与草稿，再继续。保留草稿会采用当前源语言与版本；再次保存将替换这些已保存字段。",
-  "ipAuthor.keepDraft": "保留我的草稿并继续编辑"
+  "ipAuthor.keepDraft": "保留我的草稿并继续编辑",
+  "studioMedia.accessDenied": "暂时无法访问剧组资产。请刷新以检查权限。"
 }
