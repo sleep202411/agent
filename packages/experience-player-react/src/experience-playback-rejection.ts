@@ -1,10 +1,10 @@
-import { isRoutinePlaybackInterruption } from "./experience-media-player";
+import { isAutoplayPolicyRefusal, isRoutinePlaybackInterruption } from "./experience-media-player";
 
 /**
- * Why a rejected `play()` was, or was not, turned into a runtime-error dialog.
+ * What a rejected `play()` means for the film: nothing, a pause, or a failure.
  *
- * The verdict is named rather than boolean so the two independent reasons to
- * stay silent cannot be confused for one another when this is read back — in a
+ * The verdict is named rather than boolean so the independent reasons to stay
+ * silent cannot be confused for one another when this is read back — in a
  * test, in a log line, or by the next person to touch the host.
  */
 export type ExperiencePlaybackRejectionVerdict =
@@ -12,6 +12,8 @@ export type ExperiencePlaybackRejectionVerdict =
   | "stale-handle"
   /** The browser interrupted a pending `play()`; a clip transition looks like this. */
   | "routine-interruption"
+  /** The browser will not play without a tap. The host pauses the story for one. */
+  | "refused"
   /** A real playback failure. The host stops the clip and tells the viewer. */
   | "surface";
 
@@ -29,6 +31,11 @@ export type ExperiencePlaybackRejectionVerdict =
  *   speak for the element.
  * - `routine-interruption` — the same race seen from the browser's side. An
  *   `AbortError` is what a normal `src` swap raises; there is nothing to report.
+ * - `refused` — a `NotAllowedError`: the autoplay policy declined, and it
+ *   reaches the host only after the muted retry (see playWithSoundFallback), so
+ *   sound was not the reason. WebKit grants an element only to a `play()` made
+ *   inside a user activation, and Low Power Mode refuses every other one. That
+ *   is recoverable with one tap, so it pauses the story; it is not a failure.
  * - `surface` — everything else, including decode and source failures, which
  *   must still reach the viewer.
  *
@@ -36,7 +43,7 @@ export type ExperiencePlaybackRejectionVerdict =
  * whatever it says, so its classification never needs to be trusted.
  *
  * Kept as a pure function, separate from the React host, because these are the
- * two guards that decide whether a perfectly healthy film gets interrupted by a
+ * guards that decide whether a perfectly healthy film gets interrupted by a
  * dialog — they have to be assertable without a media element or a DOM.
  */
 export function resolveExperiencePlaybackRejection<THandle>(
@@ -46,5 +53,6 @@ export function resolveExperiencePlaybackRejection<THandle>(
 ): ExperiencePlaybackRejectionVerdict {
   if (registeredHandle !== rejectedHandle) return "stale-handle";
   if (isRoutinePlaybackInterruption(error)) return "routine-interruption";
+  if (isAutoplayPolicyRefusal(error)) return "refused";
   return "surface";
 }

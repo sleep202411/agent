@@ -24,7 +24,12 @@ import { EXPERIENCE_VIDEO_LOADERS, normalizeVideoSource } from "./experience-vid
 
 export interface ExperienceMediaPlaybackHandle {
   readonly playbackIdentity: string;
-  activate(): void;
+  /**
+   * Plays the element now, synchronously, for the user activation that calls
+   * this: WebKit lets an element play later only once a `play()` ran inside one.
+   * Null when there is nothing to play — no element, or a clip at its end.
+   */
+  playInGesture(): Promise<void> | null;
   play(): Promise<void>;
   pause(): void;
   seek(seconds: number): void;
@@ -32,6 +37,10 @@ export interface ExperienceMediaPlaybackHandle {
    *  unmute click itself so the change rides the user activation instead of
    *  waiting for a render + effect. */
   setMuted(muted: boolean): void;
+  /** Whether the clip has played to its end: playing it again would start it over. */
+  ended(): boolean;
+  /** The element the clip is on; a still has none. */
+  element(): HTMLMediaElement | null;
 }
 
 interface MediaReadinessWaiter {
@@ -168,6 +177,14 @@ function reloadProvider(provider: MediaProviderInstance | null): void {
   if (provider && media) provider.load(media);
 }
 
+/**
+ * `playsinline` on the `<video>` from its first render, not once Vidstack is
+ * ready: a play before that would open iPhone's native fullscreen player.
+ * Vidstack spreads `mediaProps` onto the element, but types them for any media
+ * element, and `playsInline` belongs to video alone.
+ */
+const INLINE_PLAYBACK = { playsInline: true } as const;
+
 /** `onProviderChange` for a player outside any delivery. */
 function configureStandaloneProvider(
   provider: Parameters<typeof configureExperienceMediaProvider>[0]
@@ -224,6 +241,8 @@ export function ExperienceMediaPlayer({
   onTimeUpdate,
   onPlaybackError,
   onPlaybackHandle,
+  onPlaybackInterrupted,
+  onPlaybackRefused,
   onSoundBlocked,
   onContentSize,
   playbackIdentity,
@@ -242,6 +261,13 @@ export function ExperienceMediaPlayer({
   onTimeUpdate: (seconds: number) => void;
   onPlaybackError: (message?: string) => void;
   onPlaybackHandle?: (handle: ExperienceMediaPlaybackHandle | null) => void;
+  /** Something other than the player — the system, the OS media controls —
+   *  paused the clip while it was playing as the player asked. */
+  onPlaybackInterrupted?: () => void;
+  /** The browser refused a play Vidstack started on its own — a loop, the play
+   *  after a seek to the end — while the player wanted the clip playing. The
+   *  player's own plays report a refusal through their promise instead. */
+  onPlaybackRefused?: () => void;
   /** Called once when the browser refused audible playback and the clip had to
    *  fall back to muted, so the host can offer to turn sound on. */
   onSoundBlocked?: () => void;
@@ -328,6 +354,25 @@ export function ExperienceMediaPlayer({
   // per load: a clip that comes back to the element is loaded afresh.
   const hlsRecoveryRef = useRef<string | null>(null);
   const failedRef = useRef<string | null>(null);
+  // Whether Vidstack has a provider on the element. A handle is offered only
+  // then: a Start tap that lands earlier would play nothing inside the click,
+  // and WebKit grants playback only to an element a click played.
+  const [providerAttached, setProviderAttached] = useState(false);
+  // What the player last asked of the element. It is the only party that starts
+  // or stops a clip, so a play it did not ask for is stopped again (`onPlay`),
+  // and a pause it did not ask for is someone else's (`onPause`).
+  const intentRef = useRef<"play" | "pause">("pause");
+  // Whether the clip on the element has played. A pause before that is the load.
+  const reachedPlayingRef = useRef(false);
+  // Vidstack pauses a playing element as the player disconnects, and that pause
+  // can arrive before the passive cleanup withdraws the handle. It is the
+  // player's own, so the intent drops here, in the layout cleanup, ahead of it.
+  useLayoutEffect(
+    () => () => {
+      intentRef.current = "pause";
+    },
+    []
+  );
   useLayoutEffect(() => {
     if (clip === null) {
       // Nothing to source yet: the element keeps the clip it has, and with it
@@ -335,6 +380,7 @@ export function ExperienceMediaPlayer({
       // that frame is held, not played on: the outgoing clip would go on
       // sounding under the viewer's choice, towards an end no longer its own.
       if (rendered !== null && rendered.identity !== playbackIdentity) {
+        intentRef.current = "pause";
         providerMedia(playerRef.current)?.pause();
       }
       return;
@@ -367,6 +413,9 @@ export function ExperienceMediaPlayer({
   useLayoutEffect(() => {
     hlsRecoveryRef.current = null;
     failedRef.current = null;
+    // A clip new to the element has not played, and waits for the host to play it.
+    intentRef.current = "pause";
+    reachedPlayingRef.current = false;
     const readiness = readinessRef.current;
     if (!readiness || readinessKey === null) return;
     readiness.reset(readinessKey);
@@ -379,7 +428,7 @@ export function ExperienceMediaPlayer({
   }, [muted, renderedDuration]);
   useEffect(() => {
     const player = playerRef.current;
-    if (!player || !onPlaybackHandle || readinessKey === null) return;
+    if (!player || !providerAttached || !onPlaybackHandle || readinessKey === null) return;
     // Keyed on the clip the element is SOURCED from, not the prop: the host
     // answers a registration by playing it, and a handle offered while the
     // element still holds the outgoing source would play the clip the viewer
@@ -396,20 +445,20 @@ export function ExperienceMediaPlayer({
     let playVersion = 0;
     onPlaybackHandle({
       playbackIdentity: renderedIdentity,
-      activate: () => {
-        const media = providerMedia(playerRef.current);
-        if (!media) return;
-        try {
-          void media.play().catch(() => undefined);
-        } catch {
-          // The awaited play() reports a live element.
+      playInGesture: () => {
+        const media = providerMedia(player);
+        if (disposed || !media || clipEnded(player, media) || finishAtEnd(player, media)) {
+          return null;
         }
+        intentRef.current = "play";
+        return media.play();
       },
       play: () => {
         const version = ++playVersion;
         const assertActive = () => {
           if (disposed || version !== playVersion) throw mediaReadinessAbort();
         };
+        if (!disposed) intentRef.current = "play";
         return playWithSoundFallback(
           soundFallbackTarget(player, readinessRef.current!, readinessKey, assertActive),
           mutedRef,
@@ -418,6 +467,7 @@ export function ExperienceMediaPlayer({
       },
       pause: () => {
         if (disposed) return;
+        intentRef.current = "pause";
         playVersion++;
         pauseMediaPlayer(player);
       },
@@ -429,16 +479,24 @@ export function ExperienceMediaPlayer({
         mutedRef.current = nextMuted;
         applyPlayerMuted(player, nextMuted);
       },
+      ended: () => {
+        const media = providerMedia(player);
+        return media !== null && clipEnded(player, media);
+      },
+      element: () => (disposed ? null : providerMedia(player)),
     });
     return () => {
       disposed = true;
       playVersion++;
+      // Nothing the player holds no handle for is a clip it wants playing.
+      intentRef.current = "pause";
       onPlaybackHandle(null);
     };
   }, [
     onPlaybackHandle,
     onSoundBlocked,
     playbackIdentity,
+    providerAttached,
     readinessKey,
     renderedIdentity,
     renderedUri,
@@ -489,6 +547,7 @@ export function ExperienceMediaPlayer({
     if (rendered.playback.delivery === "hls") delivery?.forget(rendered.playback.declaredSrc);
     readinessRef.current?.fail(readinessKey, new Error(message));
     if (!current) return;
+    intentRef.current = "pause";
     providerMedia(playerRef.current)?.pause();
     onPlaybackError(message);
   };
@@ -512,11 +571,16 @@ export function ExperienceMediaPlayer({
       preload="auto"
       load="eager"
       preferNativeHLS={experiencePrefersNativeHls()}
-      onProviderChange={delivery ? delivery.configureProvider : configureStandaloneProvider}
+      onProviderChange={(provider) => {
+        (delivery ? delivery.configureProvider : configureStandaloneProvider)(provider);
+        setProviderAttached(provider !== null);
+      }}
       onProviderLoaderChange={() => reloadProvider(providerRef.current)}
       poster={rendered.poster}
       posterLoad="eager"
-      keyTarget="player"
+      // The story owns playback: no key may toggle, seek, mute or fullscreen
+      // the clip (Space, k, arrows, j/l, digits, m, f, i, < and >).
+      keyDisabled
       logLevel="silent"
       onCanPlay={() => {
         readinessRef.current?.markReady(readinessKey);
@@ -529,7 +593,29 @@ export function ExperienceMediaPlayer({
       // source it was just given: `can-play` only promises decodable data, and
       // `time-update` is dispatched off seeks and while paused too, so either one
       // can uncover a cut that has not been composited yet.
-      onPlaying={() => setStillFrameHeld(false)}
+      onPlaying={() => {
+        reachedPlayingRef.current = true;
+        setStillFrameHeld(false);
+      }}
+      // A play the player did not ask for — a browser resuming background media,
+      // Vidstack playing on after a seek into the last second, the OS media
+      // controls — is stopped again: the story decides when its clip runs.
+      onPlay={() => {
+        if (live() && intentRef.current === "pause") providerMedia(playerRef.current)?.pause();
+      }}
+      // A pause the player did not ask for, of a clip that was playing and had
+      // not reached its end: the system (a call, headphones out) or the OS
+      // controls stopped it, and the story stops with it. Vidstack also
+      // announces a pause of its own as a clip ends, so only an element that is
+      // really paused short of its end counts.
+      onPause={() => {
+        const player = playerRef.current;
+        const media = providerMedia(player);
+        if (!live() || intentRef.current !== "play" || !reachedPlayingRef.current) return;
+        if (!player || !media || !media.paused || clipEnded(player, media)) return;
+        intentRef.current = "pause";
+        onPlaybackInterrupted?.();
+      }}
       onEnd={() => {
         if (live()) onEnd();
       }}
@@ -572,13 +658,23 @@ export function ExperienceMediaPlayer({
       // first — what this did before — threw away the `name` the verdict is
       // made on and left only localized browser prose, which can never decide
       // anything. Without the filter an `AbortError` raised by the `src` swap
-      // between two clips, or the `NotAllowedError` the mute fallback is
-      // already retrying, reaches the host as a runtime-error dialog. Genuine
+      // between two clips reaches the host as a runtime-error dialog. Genuine
       // decode/source failures are untouched — they are neither of those, and
       // `onError` above reports them anyway.
+      //
+      // Only a play made through Vidstack fails here, and the player's own plays
+      // go straight to the element (see playMediaPlayerWhenReady), so a
+      // `NotAllowedError` here is a play Vidstack started itself: the next turn
+      // of a loop, the play after a seek to the end. Dropped, it would leave the
+      // clip frozen with nothing to say why; while the player wants the clip
+      // playing, it is the refusal it is.
       onPlayFail={(detail) => {
-        if (!live() || !isSurfacedPlaybackEvent(detail)) return;
-        onPlaybackError(detail.message);
+        if (!live()) return;
+        if (isAutoplayPolicyRefusal(detail)) {
+          if (intentRef.current === "play") onPlaybackRefused?.();
+          return;
+        }
+        if (isSurfacedPlaybackEvent(detail)) onPlaybackError(detail.message);
       }}
       // Same taxonomy, one level down: this detail wraps the rejection in
       // `{ muted, error }`, so the classifier has to be handed `detail.error`.
@@ -600,6 +696,7 @@ export function ExperienceMediaPlayer({
             "group-data-[fullscreen]/experience-video:object-contain"
           ),
           draggable: false,
+          ...INLINE_PLAYBACK,
         }}
       >
         {rendered.poster ? (
@@ -640,14 +737,15 @@ export function ExperienceMediaPlayer({
 
 function ExperienceVideoSurface({ copy }: { copy: ExperiencePlayerVideoCopy }) {
   // Interactive-film playback is story-driven: no scrub bar, no time readout,
-  // no fullscreen chrome (the shell is already full-bleed), and no pause.
+  // no fullscreen chrome (the shell is already full-bleed), and no pause here.
   //
-  // A tap used to toggle pause, which fights the medium: the surface is also
-  // where choices and anchored interactions are read, so the gesture that means
-  // "act on the story" and the gesture that means "stop the story" were the
-  // same one. A paused scene also stalls the exit that advances it, because
-  // advancement is driven by the clip ending. The announcer stays — assistive
-  // tech still needs to hear what playback is doing.
+  // A tap on the clip does not pause it: the surface is also where choices and
+  // anchored interactions are read, so the gesture that means "act on the
+  // story" and the gesture that means "stop the story" would be the same one.
+  // Pausing belongs to the host, which pauses the story — its clock, its timed
+  // windows, its sound — and not just this clip, whose end drives the exit
+  // that advances the scene. The announcer stays — assistive tech still needs
+  // to hear what playback is doing.
   return (
     <>
       <MediaAnnouncer
@@ -775,8 +873,12 @@ function soundFallbackTarget(
  *     regression the viewer cannot explain, and the retry races the new source.
  *   - `NotSupportedError` — the source cannot be decoded. Muting changes nothing
  *     and swallows a real media failure the host needs to surface.
+ *
+ * A refusal that outlives the muted retry is no failure either: WebKit plays an
+ * element only once a `play()` ran inside a tap, and Low Power Mode refuses any
+ * other. The host pauses the story on it (see resolveExperiencePlaybackRejection).
  */
-function isAutoplayPolicyRefusal(error: unknown): boolean {
+export function isAutoplayPolicyRefusal(error: unknown): boolean {
   return domExceptionName(error) === "NotAllowedError";
 }
 
@@ -791,10 +893,10 @@ function isAutoplayPolicyRefusal(error: unknown): boolean {
  * (`NotSupportedError`, decode errors) are NOT routine and still reach the host.
  *
  * The promise the host awaits is gated on this verdict. `play-fail` and
- * `auto-play-fail` go through `isSurfacedPlaybackEvent`, which also drops
- * `NotAllowedError`: that event is the same rejection the mute fallback is
- * about to retry, delivered first. The element's `error` event is neither —
- * it reports decode and source failures.
+ * `auto-play-fail` go through `isSurfacedPlaybackEvent`, which also leaves out
+ * `NotAllowedError`: a refusal is a pause, never a runtime error (see the
+ * player's `onPlayFail`). The element's `error` event is neither — it reports
+ * decode and source failures.
  *
  * Lives next to `isAutoplayPolicyRefusal` because this module owns the
  * DOM-exception taxonomy; the host consumes the verdict, never the `name`.
@@ -857,6 +959,9 @@ export async function playWithSoundFallback(
  * the interruption is routine, but without a queued retry the new clip remains
  * paused forever. The source-scoped latch is therefore authoritative even when
  * the provider already exists.
+ *
+ * A clip waiting within a breath of its end is ended rather than played (see
+ * finishAtEnd), so a resume in its last frames does not start it over.
  */
 export async function playMediaPlayerWhenReady(
   player: MediaPlayerInstance,
@@ -867,8 +972,41 @@ export async function playMediaPlayerWhenReady(
   await readiness.wait(readinessKey);
   assertActive?.();
   const readyMedia = providerMedia(player);
-  if (readyMedia) return readyMedia.play();
-  return player.play();
+  if (!readyMedia) return player.play();
+  if (finishAtEnd(player, readyMedia)) return;
+  return readyMedia.play();
+}
+
+/** Whether the clip has played to its end, by the element's account or by
+ *  Vidstack's: a seek into its last second ends a clip for Vidstack too. */
+function clipEnded(player: MediaPlayerInstance, media: HTMLMediaElement): boolean {
+  return media.ended || player.state.ended;
+}
+
+/**
+ * How near its end a paused clip may be played. Vidstack starts a clip over
+ * when it is played within 0.1 s of its end; the margin covers a position it
+ * has not heard of yet.
+ */
+const CLIP_END_MARGIN_SECONDS = 0.15;
+
+/**
+ * Takes a paused clip that is about to be played within a breath of its end to
+ * its end instead, and says whether it did.
+ *
+ * Vidstack's `play` handler starts a clip over when it is played that close to
+ * its end, judging by the position it last heard of — and WebKit dispatches
+ * `play` before the `seeking` of a seek made just ahead of it, so stepping back
+ * first cannot save the clip. A resume in its last frames would rewind it, and
+ * the scene clock with it. Taken to its end, the clip ends the way playing on
+ * would have: a few frames early, with the same `end` the story waits for.
+ */
+function finishAtEnd(player: MediaPlayerInstance, media: HTMLMediaElement): boolean {
+  const { currentTime, duration, ended, seekableEnd } = player.state;
+  if (ended || !media.paused || !(duration > 0) || !Number.isFinite(duration)) return false;
+  if (duration - currentTime >= CLIP_END_MARGIN_SECONDS) return false;
+  media.currentTime = seekableEnd;
+  return true;
 }
 
 function pauseMediaPlayer(player: MediaPlayerInstance): void {

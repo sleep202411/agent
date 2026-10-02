@@ -77,7 +77,7 @@ import {
 } from "./experience-landscape-presentation";
 import {
   ExperienceMediaPlayer,
-  isRoutinePlaybackInterruption,
+  isAutoplayPolicyRefusal,
   type ExperienceMediaPlaybackHandle,
 } from "./experience-media-player";
 import { warmExperienceMedia } from "./experience-media-warm";
@@ -86,6 +86,12 @@ import {
   ExperiencePlaybackDeliveryContext,
   type ExperienceDeclaredSource,
 } from "./experience-playback-delivery";
+import {
+  nextExperienceViewerPause,
+  resolveExperiencePlaybackHolds,
+  type ExperiencePlaybackGates,
+  type ExperienceViewerPauseReason,
+} from "./experience-playback-holds";
 import { resolveExperiencePlaybackRejection } from "./experience-playback-rejection";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
 import { ExperienceStoryClock, ExperienceStoryClockContext } from "./experience-story-clock";
@@ -97,6 +103,11 @@ export interface ExperienceWorldModelRendererProps {
   config: ExperienceCoreWorldModelRendererConfig;
   active: boolean;
   onCompleted: () => void;
+  /**
+   * Pass the error as raised, never its message: a `NotAllowedError` — the
+   * stream's element refused to play without a tap — pauses the story for one
+   * instead of failing it. Anything else is shown to the viewer verbatim.
+   */
   onError: (error: unknown) => void;
 }
 
@@ -340,6 +351,47 @@ function ActiveExperienceRuntimePlayer({
   // equals charge progress. Lifted from the spatial layer, which owns press
   // state.
   const [timelineHoldGate, setTimelineHoldGate] = useState(false);
+  // The viewer's pause: a state of its own, combined with the gates around it,
+  // never worked out from them. The ref holds the same value as of now, for
+  // code that runs between renders.
+  const [viewerPause, setViewerPause] = useState<ExperienceViewerPauseReason | null>(null);
+  const viewerPauseRef = useRef<ExperienceViewerPauseReason | null>(null);
+  // Story time for everything that moves the story without media (see
+  // ExperienceStoryClock). It stands still whenever the story is held — before
+  // Start, through a pause or an access flow, after the end — so nothing
+  // scheduled behind the title card spends time the viewer never saw.
+  const [storyClock] = useState(() => new ExperienceStoryClock({ paused: true }));
+  // What holds playback, decided once per render by one rule. Code between
+  // renders decides with the same rule, from the gates of the last commit and
+  // the two that change ahead of a render — the viewer pause and the access
+  // check — read from their refs.
+  const playbackGates: ExperiencePlaybackGates = {
+    started,
+    ended: Boolean(runtimeState.completedEndingId),
+    failed: runtimeError !== null,
+    viewerPause,
+    accessPending,
+    retryAccess: retryAccess !== null,
+    nodeGate: nodeGate !== null,
+    chargeGate: timelineHoldGate,
+  };
+  const holds = resolveExperiencePlaybackHolds(playbackGates);
+  const committedGatesRef = useRef(playbackGates);
+  useLayoutEffect(() => {
+    committedGatesRef.current = playbackGates;
+  });
+  const holdsNow = useCallback(
+    () =>
+      resolveExperiencePlaybackHolds({
+        ...committedGatesRef.current,
+        viewerPause: viewerPauseRef.current,
+        accessPending: accessPendingRef.current,
+      }),
+    []
+  );
+  // Counts scene entries, so an outcome held through a pause can tell whether
+  // the scene it belongs to is still the one on stage.
+  const sceneEntryRef = useRef(0);
   const orientation = usePlaybackOrientation(manifest, frameProfile);
   const canAccess = useCallback(
     (requirement: ExperienceAccessRequirement) =>
@@ -370,17 +422,91 @@ function ActiveExperienceRuntimePlayer({
     applyEffects: applyAudioEffects,
   } = useExperienceAudioHost(manifest, playbackLocale, setRuntimeError);
 
+  // Pauses the story for the viewer (see nextExperienceViewerPause for which
+  // reason wins). Everything it holds is held here, synchronously, ahead of the
+  // render: the timers freeze and input in progress is dropped now, before the
+  // story layer turns inert, and the clips stop on this frame. The hold effects
+  // below then find nothing left to do.
+  const pauseStory = useCallback(
+    (reason: ExperienceViewerPauseReason) => {
+      const next = nextExperienceViewerPause(
+        viewerPauseRef.current,
+        { type: "pause", reason },
+        holdsNow()
+      );
+      if (next === viewerPauseRef.current) return;
+      viewerPauseRef.current = next;
+      storyClock.pause();
+      playbackHandlesRef.current.forEach((handle) => handle.pause());
+      void suspendAudio().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
+      debugTrace(`pause ${next}`);
+      setViewerPause(next);
+    },
+    [holdsNow, storyClock, suspendAudio]
+  );
+
+  // Web Audio refuses to start without a tap the way media does, and that is
+  // the same pause, not a failure. Anything else is shown verbatim.
+  const reportAudioError = useCallback(
+    (error: unknown) => {
+      if (isAutoplayPolicyRefusal(error)) pauseStory("refused");
+      else setRuntimeError(runtimeErrorMessage(error));
+    },
+    [pauseStory]
+  );
+  const refusePlayback = useCallback(() => pauseStory("refused"), [pauseStory]);
+
+  // Whether code running between renders may start media now: the story asked
+  // for playback and nothing holds it.
+  const mayPlayNow = useCallback(
+    () => playbackEnabledRef.current && !holdsNow().mediaHeld,
+    [holdsNow]
+  );
+
+  // The one place a play the player starts is made and classified: on
+  // registration, on the story's `play` command, and whenever a hold lifts —
+  // Start included. A refusal pauses the story for a tap; only a real failure
+  // stops the clip and tells the viewer.
+  const playHandle = useCallback(
+    (instanceId: string, handle: ExperienceMediaPlaybackHandle) => {
+      void handle.play().catch((error: unknown) => {
+        // The reasoning and the ordering live with the verdict, next to its tests.
+        const verdict = resolveExperiencePlaybackRejection(
+          playbackHandlesRef.current.get(instanceId),
+          handle,
+          error
+        );
+        debugTrace(`play ${instanceId} ${verdict}`);
+        if (verdict === "stale-handle" || verdict === "routine-interruption") return;
+        if (verdict === "refused") {
+          pauseStory("refused");
+          return;
+        }
+        handle.pause();
+        // Web Audio follows through the failure's hold.
+        setRuntimeError(runtimeErrorMessage(error));
+      });
+    },
+    [pauseStory]
+  );
+
   const applyResult = useCallback(
     (result: ExperienceEventQueueResult) => {
       setRuntimeState(result.state);
       applyAudioEffects(result.effects);
+      // The story is over: there is nothing to resume, and Web Audio — which a
+      // pause holds — has the ending's cues to play.
+      if (result.state.completedEndingId && viewerPauseRef.current !== null) {
+        viewerPauseRef.current = null;
+        setViewerPause(null);
+      }
       result.effects.forEach((effect) => {
         if (effect.kind !== "renderer.command") return;
         const handle = playbackHandlesRef.current.get(effect.instanceId);
         if (!handle) return;
         if (effect.commandType === "play") {
           playbackEnabledRef.current = true;
-          void handle.play().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
+          if (mayPlayNow()) playHandle(effect.instanceId, handle);
           return;
         }
         if (effect.commandType === "pause") {
@@ -421,6 +547,7 @@ function ActiveExperienceRuntimePlayer({
       // never opened (the charge scene skipping straight to its fail branch).
       if (sceneChangeEffects.length > 0) {
         setSceneEpoch((value) => value + sceneChangeEffects.length);
+        sceneEntryRef.current += sceneChangeEffects.length;
         setSceneTimeMs(0);
         parkedGestureEventsRef.current = [];
         timelineCursorRef.current = createExperienceTimelineCursor(
@@ -429,7 +556,7 @@ function ActiveExperienceRuntimePlayer({
         debugTrace(`scene -> ${latestSceneId ?? result.state.currentSceneId}`);
       }
     },
-    [applyAudioEffects]
+    [applyAudioEffects, mayPlayNow, playHandle]
   );
 
   const run = useCallback(
@@ -595,12 +722,26 @@ function ActiveExperienceRuntimePlayer({
       outcomeType: string,
       payload: Record<string, never> | { choiceId: string }
     ) => {
-      void run(
-        () => controller.emitRendererOutcome({ instanceId, outcomeType, payload }),
-        outcomeType === "choice-selected"
-      );
+      const dispatch = () =>
+        void run(
+          () => controller.emitRendererOutcome({ instanceId, outcomeType, payload }),
+          outcomeType === "choice-selected"
+        );
+      if (viewerPauseRef.current === null) {
+        dispatch();
+        return;
+      }
+      // A renderer can still finish while the viewer has the story paused: an
+      // `ended` its element had already queued, a world session closing. The
+      // outcome waits on the story clock, so the story moves on when the viewer
+      // resumes — not behind the pause, into an ending or a paywall that would
+      // take the screen. One whose scene was left meanwhile is dropped.
+      const entry = sceneEntryRef.current;
+      storyClock.setTimeout(() => {
+        if (aliveRef.current && sceneEntryRef.current === entry) dispatch();
+      }, 0);
     },
-    [controller, run]
+    [controller, run, storyClock]
   );
 
   const advanceTimeline = useCallback(
@@ -672,14 +813,13 @@ function ActiveExperienceRuntimePlayer({
     [controller, manifest, run]
   );
 
-  // Story time for everything that moves the story without media (see
-  // ExperienceStoryClock). It runs from Start, so nothing scheduled behind the
-  // title card — a footage placeholder — spends time the viewer never saw.
-  const [storyClock] = useState(() => new ExperienceStoryClock({ paused: true }));
+  // The holds, brought to their steady state. Three effects: story time, Web
+  // Audio, and the clips. A pause and a resume do the same work earlier and
+  // synchronously, so running these again changes nothing.
   useLayoutEffect(() => {
-    if (started) storyClock.resume();
-    else storyClock.pause();
-  }, [started, storyClock]);
+    if (holds.storyHeld) storyClock.pause();
+    else storyClock.resume();
+  }, [holds.storyHeld, storyClock]);
 
   // A `fixed` scene clock is the only clock the experience itself owns. A
   // `renderer` clock is driven by its media's currentTime, and `none` never
@@ -739,23 +879,35 @@ function ActiveExperienceRuntimePlayer({
     setSoundBlocked(false);
   }, []);
 
-  // Timeline-control charge gating: while a press-hold window is open,
-  // unresolved, and not held, the media must not advance — playback position
-  // is the charge progress. The moment the gate lifts (press, resolution, or
-  // idle timeout), playback resumes so the clip can run its resolve beat to
-  // the safe branch frame. Film scenes carry exactly one clock-driving video,
-  // so gating every registered handle is equivalent to gating the clock.
+  // Web Audio follows its hold. This is also what resumes it after an access
+  // flow, which suspends it for the dialog.
   useEffect(() => {
     if (!started) return;
-    if (timelineHoldGate || accessPending || retryAccess) {
+    void (holds.audioHeld ? suspendAudio() : unlockAudio()).catch(reportAudioError);
+  }, [holds.audioHeld, reportAudioError, started, suspendAudio, unlockAudio]);
+
+  // The clips follow theirs. Among what holds them is the timeline-control
+  // charge: while a press-hold window is open, unresolved, and not held, the
+  // media must not advance — playback position is the charge progress. When
+  // a hold lifts (a press, a resolution, an idle timeout, the end of an access
+  // flow, Start), every clip that has not ended plays through `playHandle`, so
+  // a refusal there pauses the story like any other. A clip that has ended is
+  // left alone: playing it again would start it over — the clip under a
+  // declined paid choice, replayed. Film scenes carry exactly one
+  // clock-driving video, so gating every registered handle is equivalent to
+  // gating the clock.
+  useEffect(() => {
+    if (!started) return;
+    if (holds.mediaHeld) {
       playbackHandlesRef.current.forEach((handle) => handle.pause());
       return;
     }
+    // The story's own `pause` command still wins.
     if (!playbackEnabledRef.current) return;
-    playbackHandlesRef.current.forEach((handle) => {
-      void handle.play().catch(() => undefined);
+    playbackHandlesRef.current.forEach((handle, instanceId) => {
+      if (!handle.ended()) playHandle(instanceId, handle);
     });
-  }, [accessPending, retryAccess, started, timelineHoldGate]);
+  }, [holds.mediaHeld, playHandle, started]);
 
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
@@ -771,75 +923,73 @@ function ActiveExperienceRuntimePlayer({
         return;
       }
       playbackHandlesRef.current.set(instanceId, handle);
-      if (!playbackEnabledRef.current || accessPendingRef.current) return;
-      void handle.play().catch((error: unknown) => {
-        // Two guards, both about the gap between "a play() rejected" and "the
-        // film is broken": the rejection may belong to a handle that has since
-        // been replaced, and an interrupted play() is what a normal clip
-        // transition looks like. Either way, pausing and raising the dialog
-        // would stop a film that is playing perfectly well. The reasoning and
-        // the ordering live with the verdict, next to its tests.
-        const verdict = resolveExperiencePlaybackRejection(
-          playbackHandlesRef.current.get(instanceId),
-          handle,
-          error
-        );
-        if (verdict !== "surface") return;
-        handle.pause();
-        void Promise.allSettled([suspendAudio()]).then(() => {
-          setRuntimeError(runtimeErrorMessage(error));
-        });
-      });
+      // Held clips wait for their hold to lift, the charge gate's included.
+      if (mayPlayNow()) playHandle(instanceId, handle);
     },
-    [suspendAudio]
+    [mayPlayNow, playHandle]
   );
 
-  const begin = async () => {
+  // A clip stopped from outside while it was playing: the system (a call,
+  // headphones out) or the OS media controls. The story pauses with it rather
+  // than running its clock and windows on under a frozen picture.
+  const handlePlaybackInterrupted = useCallback(
+    (instanceId: string) => {
+      if (!playbackHandlesRef.current.has(instanceId)) return;
+      // iOS lets one audible element play at a time: starting one pauses the
+      // other. That is the player's own play, and another of its clips is
+      // playing; a system interruption stops them all.
+      for (const [otherId, handle] of playbackHandlesRef.current) {
+        const element = otherId === instanceId ? null : handle.element();
+        if (element && !element.paused) return;
+      }
+      pauseStory(document.visibilityState === "hidden" ? "hidden" : "user");
+    },
+    [pauseStory]
+  );
+
+  // Plays every staged clip inside the user activation that calls this: that
+  // play() is what WebKit grants an element on, and Low Power Mode refuses any
+  // play() a tap did not start. Each play is classified by the one that
+  // follows through `playHandle`; this one only unlocks, so its outcome is
+  // only traced.
+  const unlockMedia = () => {
+    playbackHandlesRef.current.forEach((handle, instanceId) => {
+      const playing = handle.playInGesture();
+      if (!playing) return;
+      playing.then(
+        () => debugTrace(`unlock ${instanceId}`),
+        (error: unknown) => debugTrace(`unlock ${instanceId} ${describeRejection(error)}`)
+      );
+    });
+  };
+
+  const begin = () => {
     if (started || starting || !theme || entryMediaPending) return;
-    const playbackHandles = [...playbackHandlesRef.current.values()];
-    // WebKit grants later play() calls to the element that was played inside
-    // this click. The awaited play() below sits after `await run()`, and a
-    // play() that starts there is the NotAllowedError dialog. Do not pause
-    // here: that pause is delivered as its own task and lands after the real
-    // play() has started.
-    for (const handle of playbackHandles) handle.activate();
+    // Inside the click, before anything is awaited. The entry clip is not
+    // paused again here: that pause would be delivered as its own task and land
+    // after the real play() started.
+    unlockMedia();
     // Fullscreen and the orientation lock need this click's activation too.
     // Not awaited: the film starts alongside, and a refusal only means the
     // frame is drawn sideways instead (see shouldRotateFrame).
     if (phone && landscapeFilm) enterLandscape(shellRef.current);
+    // AudioContext.resume() runs before unlock()'s first await, so inside it too.
+    void unlockAudio().catch(reportAudioError);
     setStarting(true);
-    try {
-      const playbacks: Promise<void>[] = [];
-      const audioUnlock = unlockAudio();
-      if (
-        !(await run(() =>
-          accessCheckpoint ? controller.dispatch(accessCheckpoint.events) : controller.start()
-        ))
-      ) {
-        await Promise.allSettled([audioUnlock, ...playbacks]);
-        playbackHandles.forEach((handle) => handle.pause());
-        await Promise.allSettled([suspendAudio()]);
-        return;
-      }
-      playbacks.push(...playbackHandles.map((handle) => handle.play()));
-      const results = await Promise.allSettled([audioUnlock, ...playbacks]);
-      const failure = results.find(
-        (result): result is PromiseRejectedResult => result.status === "rejected"
-      );
-      // An interrupted play() is a recovery or a clip failing on its own, never
-      // the cause: a recovered element plays again by itself, and a failed clip
-      // reports its verbatim error through onPlaybackError. Same rule as
-      // registerPlaybackHandle.
-      if (failure && !isRoutinePlaybackInterruption(failure.reason)) throw failure.reason;
-      playbackEnabledRef.current = true;
-      setStarted(true);
-    } catch (error) {
-      playbackHandles.forEach((handle) => handle.pause());
-      await Promise.allSettled([suspendAudio()]);
-      setRuntimeError(runtimeErrorMessage(error));
-    } finally {
-      setStarting(false);
-    }
+    void run(() =>
+      accessCheckpoint ? controller.dispatch(accessCheckpoint.events) : controller.start()
+    )
+      .then((entered) => {
+        if (!entered) {
+          playbackHandlesRef.current.forEach((handle) => handle.pause());
+          return;
+        }
+        playbackEnabledRef.current = true;
+        // The clip hold lifts with this, and its effect plays the entry clip
+        // through `playHandle`: a refusal is a pause and a tap, not a dialog.
+        setStarted(true);
+      })
+      .finally(() => setStarting(false));
   };
 
   const renderSlot = ({ renderer, key }: (typeof rendererSlots)[number]) => (
@@ -860,6 +1010,8 @@ function ActiveExperienceRuntimePlayer({
       onOutcome={emitOutcome}
       onRuntimeError={setRuntimeError}
       onPlaybackHandle={registerPlaybackHandle}
+      onPlaybackInterrupted={handlePlaybackInterrupted}
+      onPlaybackRefused={refusePlayback}
       onSoundBlocked={handleSoundBlocked}
       onContentSize={setDecodedContentSize}
       renderWorldModel={renderWorldModel}
@@ -879,38 +1031,52 @@ function ActiveExperienceRuntimePlayer({
       style={theme ? themeStyle(theme) : undefined}
       stage={
         <ExperienceStoryClockContext.Provider value={storyClock}>
-          {scene ? (
-            rendererSlots
-              .filter(({ renderer }) => renderer.rendererId !== EXPERIENCE_CORE_CHOICE_RENDERER_ID)
-              .map(renderSlot)
-          ) : (
-            <div className="absolute inset-0 bg-black" />
-          )}
-          {scene && started && !endingId && !accessPending && !retryAccess ? (
-            <ExperienceSpatialLayer
-              key={scene.sceneId}
-              manifest={manifest}
-              scene={scene}
-              runtimeState={runtimeState}
-              sceneTimeMs={sceneTimeMs}
-              locale={playbackLocale}
-              viewerLocale={locale}
-              orientation={orientation}
-              decodedContentSize={decodedContentSize}
-              onEvents={emitRuntimeEvents}
-              onRuntimeError={setRuntimeError}
-              onTimelineHoldGateChange={setTimelineHoldGate}
-            />
-          ) : null}
-          {/* Choices belong to the picture: they sit in the film frame, turn
-              with it when it is drawn sideways, and scale with it. */}
-          {!endingId && !runtimeError && !nodeGate
-            ? rendererSlots
+          {/* The story itself. Always rendered and never re-keyed, so a pause
+              keeps the spatial layer — and the gestures it has already settled —
+              as it is; while paused it takes no input at all. No z-index:
+              renderer layers still stack in the stage's own context, and `cq*`
+              units still resolve against the stage. */}
+          <div
+            data-experience-story-layer=""
+            data-experience-paused={viewerPause ?? undefined}
+            inert={viewerPause !== null}
+            className="absolute inset-0"
+          >
+            {scene ? (
+              rendererSlots
                 .filter(
-                  ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID
+                  ({ renderer }) => renderer.rendererId !== EXPERIENCE_CORE_CHOICE_RENDERER_ID
                 )
                 .map(renderSlot)
-            : null}
+            ) : (
+              <div className="absolute inset-0 bg-black" />
+            )}
+            {scene && started && !endingId && !accessPending && !retryAccess ? (
+              <ExperienceSpatialLayer
+                key={scene.sceneId}
+                manifest={manifest}
+                scene={scene}
+                runtimeState={runtimeState}
+                sceneTimeMs={sceneTimeMs}
+                locale={playbackLocale}
+                viewerLocale={locale}
+                orientation={orientation}
+                decodedContentSize={decodedContentSize}
+                onEvents={emitRuntimeEvents}
+                onRuntimeError={setRuntimeError}
+                onTimelineHoldGateChange={setTimelineHoldGate}
+              />
+            ) : null}
+            {/* Choices belong to the picture: they sit in the film frame, turn
+                with it when it is drawn sideways, and scale with it. */}
+            {!endingId && !runtimeError && !nodeGate
+              ? rendererSlots
+                  .filter(
+                    ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID
+                  )
+                  .map(renderSlot)
+              : null}
+          </div>
           {soundBlocked && started && !endingId && !runtimeError && hasVideoRenderer ? (
             // Renderer overlays stack on the manifest's own `renderer.layer` as a
             // raw zIndex — a choice overlay compiles to 100 — so a Tailwind z-* on
@@ -1013,7 +1179,7 @@ function ActiveExperienceRuntimePlayer({
               type="button"
               className={`${PRIMARY_BUTTON} mt-6`}
               disabled={!theme || starting || entryMediaPending}
-              onClick={() => void begin()}
+              onClick={begin}
             >
               <IconPlayerPlay className="size-4 fill-current" />
               {starting ? copy.starting : entryMediaPending ? copy.loadingMedia : copy.start}
@@ -1089,6 +1255,8 @@ function CoreRenderer({
   onOutcome,
   onRuntimeError,
   onPlaybackHandle,
+  onPlaybackInterrupted,
+  onPlaybackRefused,
   onSoundBlocked,
   onContentSize,
   renderWorldModel,
@@ -1114,6 +1282,10 @@ function CoreRenderer({
   ) => void;
   onRuntimeError: (message: string) => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
+  /** The renderer's clip was paused from outside while it played. */
+  onPlaybackInterrupted: (instanceId: string) => void;
+  /** The browser refused to play the renderer's media without a tap. */
+  onPlaybackRefused: () => void;
   onSoundBlocked: () => void;
   onContentSize: (size: { width: number; height: number }) => void;
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
@@ -1143,6 +1315,8 @@ function CoreRenderer({
         onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
         onRuntimeError={onRuntimeError}
         onPlaybackHandle={onPlaybackHandle}
+        onPlaybackInterrupted={() => onPlaybackInterrupted(renderer.instanceId)}
+        onPlaybackRefused={onPlaybackRefused}
         onSoundBlocked={onSoundBlocked}
         onContentSize={onContentSize}
       />
@@ -1183,6 +1357,7 @@ function CoreRenderer({
         renderWorldModel={renderWorldModel}
         onCompleted={() => onOutcome(renderer.instanceId, "world-completed", {})}
         onRuntimeError={onRuntimeError}
+        onPlaybackRefused={onPlaybackRefused}
       />
     );
   }
@@ -1196,12 +1371,14 @@ function CoreWorldModelRenderer({
   renderWorldModel,
   onCompleted,
   onRuntimeError,
+  onPlaybackRefused,
 }: {
   renderer: ExperienceRendererInstance;
   active: boolean;
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
   onCompleted: () => void;
   onRuntimeError: (message: string) => void;
+  onPlaybackRefused: () => void;
 }) {
   const reportedErrorRef = useRef<string | null>(null);
   const parsed = ExperienceCoreWorldModelRendererConfigSchema.safeParse(renderer.config);
@@ -1229,7 +1406,12 @@ function CoreWorldModelRenderer({
         config: parsed.data,
         active,
         onCompleted,
-        onError: (error) => onRuntimeError(runtimeErrorMessage(error)),
+        // The stream's element refusing to play without a tap takes the same
+        // refused path as a clip's: a pause, never the failure dialog.
+        onError: (error) =>
+          isAutoplayPolicyRefusal(error)
+            ? onPlaybackRefused()
+            : onRuntimeError(runtimeErrorMessage(error)),
       })}
     </div>
   );
@@ -1418,6 +1600,8 @@ function CoreVideoRenderer({
   onCompleted,
   onRuntimeError,
   onPlaybackHandle,
+  onPlaybackInterrupted,
+  onPlaybackRefused,
   onSoundBlocked,
   onContentSize,
 }: {
@@ -1430,6 +1614,8 @@ function CoreVideoRenderer({
   onCompleted: () => void;
   onRuntimeError: (message: string) => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
+  onPlaybackInterrupted: () => void;
+  onPlaybackRefused: () => void;
   onSoundBlocked: () => void;
   onContentSize: (size: { width: number; height: number }) => void;
 }) {
@@ -1602,6 +1788,8 @@ function CoreVideoRenderer({
       onTimeUpdate={(seconds) => onTimelineTimeMs(timelineOffsetMs + Math.round(seconds * 1_000))}
       onPlaybackError={(message) => onRuntimeError(message?.trim() || copy.mediaError(assetId))}
       onPlaybackHandle={registerPlaybackHandle}
+      onPlaybackInterrupted={onPlaybackInterrupted}
+      onPlaybackRefused={onPlaybackRefused}
       onSoundBlocked={onSoundBlocked}
       onContentSize={onContentSize}
       playbackIdentity={playbackIdentity}
@@ -1710,7 +1898,11 @@ function ExperienceStillSegment({
       (runningSinceRef.current === null ? 0 : storyClock.now() - runningSinceRef.current);
     const handle: ExperienceMediaPlaybackHandle = {
       playbackIdentity,
-      activate: () => undefined,
+      // No element, so nothing for a tap to unlock — and nothing to start over:
+      // a still played again picks its clock up where it stopped.
+      playInGesture: () => null,
+      ended: () => false,
+      element: () => null,
       play: async () => {
         if (runningSinceRef.current === null) {
           runningSinceRef.current = storyClock.now();
@@ -2348,6 +2540,13 @@ function sequenceTimelineOffsetMs(
 function runtimeErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Unknown experience runtime error";
+}
+
+/** A rejection as one trace line: its name, which is what classifies it, then its prose. */
+function describeRejection(error: unknown): string {
+  if (typeof error !== "object" || error === null) return String(error);
+  const { name, message } = error as { name?: unknown; message?: unknown };
+  return `${String(name)}: ${String(message)}`;
 }
 
 /**

@@ -41,6 +41,31 @@ A manifest names one progressive file per clip; a frozen build clip is a
   start on that rendition); native HLS only negotiates; a progressive warm
   preloads on a detached element until it can play through.
 
+## Playback state
+
+The viewer's pause is a state of its own — `user`, `hidden` or `refused` —
+combined with the gates the story already has (access, the locked-scene gate,
+the timeline-control charge), never worked out from them.
+
+- **Holds.** One rule (`resolveExperiencePlaybackHolds`) decides what holds
+  story time, Web Audio and the clips, at render and between renders alike. A
+  pause or an access flow holds all three; a charge holds only its clip, since
+  its idle timeout is story time; the ending leaves Web Audio to its cues.
+- **Story time.** Everything that moves the story without media — the fixed
+  scene clock, stills, held frames, placeholders, the charge idle timeout,
+  press-hold frames — runs on `ExperienceStoryClock`, never on `window`, so one
+  pause freezes it all. Video time stops with its element.
+- **One play path.** Every play the player starts goes through `playHandle`
+  and one classifier (`resolveExperiencePlaybackRejection`). A `NotAllowedError`
+  that outlives the muted retry — WebKit plays an element only once a tap played
+  it, and Low Power Mode refuses every other play — pauses the story as
+  `refused`, for one tap; so does one from Web Audio, from a world stream, or
+  from a play Vidstack starts itself. Only a real failure shows the dialog.
+- **Pauses from outside.** A clip the system or the OS controls stop while it
+  plays pauses the story with it; a play the player did not ask for is stopped
+  again. A press or swipe in progress is dropped without a verdict, and a
+  renderer outcome that lands during a pause waits for the resume.
+
 ## Landscape films on phones
 
 A cinematic landscape film is presented in landscape on a phone, decided by the

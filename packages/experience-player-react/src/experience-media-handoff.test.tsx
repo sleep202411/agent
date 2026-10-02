@@ -28,9 +28,11 @@ import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
  * fired on demand instead of waited for, and its provider exposes a `<video>`
  * whose readiness the test controls — which is what decides whether a frame can
  * be copied at all. An HLS source is played through a stand-in hls.js instance.
+ * As in Vidstack, the provider attaches once the element is mounted, and the
+ * player's `state` reports the position the test gives it.
  */
 vi.mock("@vidstack/react", async () => {
-  const { createElement, useImperativeHandle, useRef } = await import("react");
+  const { createElement, useEffect, useImperativeHandle, useRef } = await import("react");
   const actual = await vi.importActual<typeof import("@vidstack/react")>("@vidstack/react");
 
   function StubMediaPlayer({
@@ -38,6 +40,7 @@ vi.mock("@vidstack/react", async () => {
     src,
     loop,
     preload,
+    keyDisabled,
     children,
     onPlaying,
     onCanPlay,
@@ -45,12 +48,17 @@ vi.mock("@vidstack/react", async () => {
     onTimeUpdate,
     onError,
     onHlsError,
+    onPlay,
+    onPause,
+    onPlayFail,
+    onProviderChange,
     onProviderLoaderChange,
   }: ElementCallbacks & {
     ref?: React.Ref<unknown>;
     src: string | { src: string; type?: string };
     loop?: boolean;
     preload?: string;
+    keyDisabled?: boolean;
     children?: React.ReactNode;
     onPlaying?: () => void;
     onCanPlay?: () => void;
@@ -61,7 +69,16 @@ vi.mock("@vidstack/react", async () => {
     hlsSourceRef.current = typeof src !== "string" && src.type === "application/vnd.apple.mpegurl";
     // As in Vidstack: whatever the element fires reaches the callbacks of the
     // player's latest render.
-    elementCallbacks.current = { onEnd, onTimeUpdate, onError, onHlsError };
+    elementCallbacks.current = {
+      onEnd,
+      onTimeUpdate,
+      onError,
+      onHlsError,
+      onPlay,
+      onPause,
+      onPlayFail,
+      onProviderChange,
+    };
     useImperativeHandle(
       ref,
       () => ({
@@ -71,6 +88,9 @@ vi.mock("@vidstack/react", async () => {
             ? { type: "hls", instance: stubHls.current, media, video: media }
             : { type: "video", media, video: media };
         },
+        get state() {
+          return playerState.current;
+        },
         muted: false,
         duration: 0,
         play: () => Promise.resolve(),
@@ -78,6 +98,12 @@ vi.mock("@vidstack/react", async () => {
       }),
       []
     );
+    useEffect(() => {
+      if (!providerAttachment.deferred) {
+        const media = videoRef.current;
+        elementCallbacks.current.onProviderChange?.({ type: "video", media, video: media });
+      }
+    }, []);
     const uri = typeof src === "string" ? src : src.src;
     return createElement(
       "div",
@@ -86,6 +112,7 @@ vi.mock("@vidstack/react", async () => {
         "data-type": typeof src === "string" ? "" : (src.type ?? ""),
         "data-loop": String(loop),
         "data-preload": preload,
+        "data-key-disabled": String(keyDisabled),
       },
       // A real `<video>`, because the assertions turn on its identity (a
       // remounted player is a different element, and a different element is a
@@ -110,9 +137,11 @@ vi.mock("@vidstack/react", async () => {
   function StubMediaProvider({
     ref,
     children,
+    mediaProps,
   }: {
     ref?: React.Ref<unknown>;
     children?: React.ReactNode;
+    mediaProps?: { playsInline?: boolean };
   }) {
     const elementRef = useRef<HTMLDivElement>(null);
     useImperativeHandle(
@@ -127,7 +156,11 @@ vi.mock("@vidstack/react", async () => {
       }),
       []
     );
-    return createElement("div", { ref: elementRef }, children);
+    return createElement(
+      "div",
+      { ref: elementRef, "data-plays-inline": String(mediaProps?.playsInline) },
+      children
+    );
   }
 
   return {
@@ -147,9 +180,21 @@ interface ElementCallbacks {
   onTimeUpdate?: (detail: { currentTime: number }) => void;
   onError?: (detail: { message: string; code: number }) => void;
   onHlsError?: (detail: ErrorData) => void;
+  onPlay?: () => void;
+  onPause?: () => void;
+  onPlayFail?: (detail: Error) => void;
+  onProviderChange?: (provider: unknown) => void;
 }
 
 const elementCallbacks = vi.hoisted(() => ({ current: {} as ElementCallbacks }));
+
+/** Vidstack's view of the clip: where it last heard the element was. */
+const playerState = vi.hoisted(() => ({
+  current: { currentTime: 0, duration: 0, ended: false, seekableEnd: 0 },
+}));
+
+/** Set to hold the provider back until the test attaches it. */
+const providerAttachment = vi.hoisted(() => ({ deferred: false }));
 
 /** The slice of an hls.js instance the player reaches for when a stream fails. */
 class FakeHls {
@@ -215,6 +260,8 @@ describe("ExperienceMediaPlayer cut cover", () => {
     root = createRoot(container);
     onPlaybackHandle = vi.fn<(handle: ExperienceMediaPlaybackHandle | null) => void>();
     stubHls.current = new FakeHls();
+    playerState.current = { currentTime: 0, duration: 0, ended: false, seekableEnd: 0 };
+    providerAttachment.deferred = false;
     drawImage = vi.fn<(image: CanvasImageSource, x: number, y: number) => void>();
     // jsdom has no 2D context to hand out, so the cover canvas gets one that
     // records what was drawn into it.
@@ -253,6 +300,8 @@ describe("ExperienceMediaPlayer cut cover", () => {
       onTimeUpdate?: (seconds: number) => void;
       onContentSize?: (size: { width: number; height: number }) => void;
       onPlaybackError?: (message?: string) => void;
+      onPlaybackInterrupted?: () => void;
+      onPlaybackRefused?: () => void;
     } = {}
   ) => {
     await act(async () => {
@@ -272,6 +321,8 @@ describe("ExperienceMediaPlayer cut cover", () => {
             onTimeUpdate={options.onTimeUpdate ?? (() => {})}
             onPlaybackError={options.onPlaybackError ?? (() => {})}
             onPlaybackHandle={onPlaybackHandle}
+            onPlaybackInterrupted={options.onPlaybackInterrupted}
+            onPlaybackRefused={options.onPlaybackRefused}
             onContentSize={options.onContentSize}
             playbackIdentity={clip.identity}
             copy={copy}
@@ -403,9 +454,272 @@ describe("ExperienceMediaPlayer cut cover", () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
     await showClip("a", { frameReady: false });
-    registeredHandles().at(-1)!.activate();
+    // Synchronously, inside the activation that calls it — not after the wait
+    // for readiness, which would leave the activation behind.
+    const playing = registeredHandles().at(-1)!.playInGesture();
     expect(play).toHaveBeenCalledOnce();
+    expect(play.mock.contexts[0]).toBe(video());
     expect(pause).not.toHaveBeenCalled();
+    await expect(playing).resolves.toBeUndefined();
+  });
+
+  it("offers nothing to unlock once the clip has ended", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    await showClip("a");
+    const handle = registeredHandles().at(-1)!;
+    Object.defineProperty(video(), "ended", { value: true, configurable: true });
+
+    // Playing an ended clip starts it over; the hold effect skips it, and a tap
+    // has nothing to unlock on it either.
+    expect(handle.ended()).toBe(true);
+    expect(handle.playInGesture()).toBeNull();
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it("counts a clip Vidstack has ended as ended", async () => {
+    await showClip("a");
+    playerState.current = { currentTime: 5, duration: 5, ended: true, seekableEnd: 5 };
+    expect(registeredHandles().at(-1)!.ended()).toBe(true);
+  });
+
+  it("names the element a handle plays, and none once the handle is withdrawn", async () => {
+    await showClip("a");
+    const first = registeredHandles().at(-1)!;
+    expect(first.element()).toBe(video());
+    await showClip("b");
+    expect(first.element()).toBeNull();
+    expect(registeredHandles().at(-1)!.element()).toBe(video());
+  });
+
+  it("offers a handle only once the provider is on the element", async () => {
+    providerAttachment.deferred = true;
+    await showClip("a");
+
+    // Before the provider attaches, a Start tap would play nothing inside the
+    // click, and WebKit grants playback only to an element a click played.
+    expect(registeredHandles()).toHaveLength(0);
+
+    await act(async () => {
+      elementCallbacks.current.onProviderChange?.({
+        type: "video",
+        media: video(),
+        video: video(),
+      });
+    });
+
+    expect(registeredHandles()).toHaveLength(1);
+    expect(registeredHandles()[0]!.playbackIdentity).toBe("renderer:0:sequence:a");
+
+    // A provider torn down (a loader change) withdraws the handle with it.
+    await act(async () => {
+      elementCallbacks.current.onProviderChange?.(null);
+    });
+    expect(onPlaybackHandle.mock.calls.at(-1)?.[0]).toBeNull();
+  });
+
+  it("turns off Vidstack's keyboard and keeps the element inline from its first render", async () => {
+    await showClip("a");
+    // No key may toggle, seek, mute or fullscreen the story's clip.
+    expect(container.querySelector("[data-clip]")?.getAttribute("data-key-disabled")).toBe("true");
+    // A play before Vidstack is ready must not open iPhone's native player.
+    expect(container.querySelector("[data-plays-inline]")?.getAttribute("data-plays-inline")).toBe(
+      "true"
+    );
+  });
+
+  /** The element, paused `remaining` seconds from the end of a `duration` clip. */
+  const pauseNearEnd = (duration: number, remaining: number) => {
+    const element = video();
+    Object.defineProperty(element, "paused", { value: true, configurable: true });
+    playerState.current = {
+      currentTime: duration - remaining,
+      duration,
+      ended: false,
+      seekableEnd: duration,
+    };
+    return element;
+  };
+
+  it("ends a clip resumed in its last frames instead of letting Vidstack start it over", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    await showClip("a");
+    const handle = registeredHandles().at(-1)!;
+    const element = pauseNearEnd(5.5, 0.08);
+
+    // Vidstack restarts a clip played within 0.1 s of its end, judging by the
+    // position it last heard of — which WebKit updates only after `play`. So the
+    // clip is not played at all: it is taken to its end, which ends it.
+    expect(handle.playInGesture()).toBeNull();
+    expect(play).not.toHaveBeenCalled();
+    expect(element.currentTime).toBe(5.5);
+
+    element.currentTime = 5.42;
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-ready="/a.mp4"]')!.click();
+    });
+    await handle.play();
+    expect(play).not.toHaveBeenCalled();
+    expect(element.currentTime).toBe(5.5);
+  });
+
+  it("plays a clip on from anywhere short of its last frames", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    await showClip("a");
+    const handle = registeredHandles().at(-1)!;
+    const element = pauseNearEnd(5.5, 0.4);
+    element.currentTime = 5.1;
+
+    await handle.playInGesture();
+    expect(play).toHaveBeenCalledOnce();
+    expect(element.currentTime).toBe(5.1);
+  });
+
+  /** A clip the host has played, which the element has started presenting. */
+  const playingClip = async (
+    clipId: string,
+    callbacks: { onPlaybackInterrupted?: () => void; onPlaybackRefused?: () => void } = {}
+  ) => {
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    await renderClip(
+      { uri: `/${clipId}.mp4`, identity: `renderer:0:sequence:${clipId}` },
+      callbacks
+    );
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-ready="/${clipId}.mp4"]`)!.click();
+    });
+    const handle = registeredHandles().at(-1)!;
+    await handle.play();
+    await signalPlaying(`/${clipId}.mp4`);
+    return handle;
+  };
+
+  /** The element stopped, and its `pause` delivered, as the system stops it. */
+  const pauseFromOutside = async (options: { ended?: boolean; paused?: boolean } = {}) => {
+    const element = video();
+    Object.defineProperty(element, "paused", {
+      value: options.paused ?? true,
+      configurable: true,
+    });
+    Object.defineProperty(element, "ended", { value: options.ended ?? false, configurable: true });
+    await emit((callbacks) => callbacks.onPause?.());
+  };
+
+  it("reports a pause it did not ask for, once, after the clip played", async () => {
+    const onPlaybackInterrupted = vi.fn();
+    await playingClip("a", { onPlaybackInterrupted });
+
+    await pauseFromOutside();
+    await pauseFromOutside();
+
+    // A call, headphones out, the OS controls: the story pauses with the clip.
+    // Reported once: the clip is no longer one the player wants playing.
+    expect(onPlaybackInterrupted).toHaveBeenCalledOnce();
+  });
+
+  it("does not report the pauses that are the player's own or the clip's end", async () => {
+    const onPlaybackInterrupted = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const handle = await playingClip("a", { onPlaybackInterrupted });
+
+    // The clip's end: the element pauses just before `ended`.
+    await pauseFromOutside({ ended: true });
+    // Vidstack's own announcement as a clip ends, while the element plays on.
+    await pauseFromOutside({ paused: false });
+    // A pause the player asked for.
+    handle.pause();
+    await pauseFromOutside();
+
+    expect(onPlaybackInterrupted).not.toHaveBeenCalled();
+  });
+
+  it("does not report a pause before the clip has played, or after it was cut away from", async () => {
+    const onPlaybackInterrupted = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    await renderClip(
+      { uri: "/a.mp4", identity: "renderer:0:sequence:a" },
+      { onPlaybackInterrupted }
+    );
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-ready="/a.mp4"]')!.click();
+    });
+    void registeredHandles().at(-1)!.play();
+    await act(async () => {});
+
+    // Asked to play, but still loading: a pause now is the load's, not the viewer's.
+    await pauseFromOutside();
+    expect(onPlaybackInterrupted).not.toHaveBeenCalled();
+
+    await signalPlaying("/a.mp4");
+    await renderClip(
+      { uri: "/b.mp4", identity: "renderer:0:sequence:b" },
+      { onPlaybackInterrupted }
+    );
+
+    // The cut: the next clip waits for the host to play it.
+    await pauseFromOutside();
+    expect(onPlaybackInterrupted).not.toHaveBeenCalled();
+  });
+
+  it("does not report the pause Vidstack makes as the player unmounts", async () => {
+    const onPlaybackInterrupted = vi.fn();
+    await playingClip("a", { onPlaybackInterrupted });
+    const element = video();
+    const { onPause } = elementCallbacks.current;
+
+    // Vidstack pauses a playing element as it disconnects: the player's own pause.
+    act(() => root.unmount());
+    Object.defineProperty(element, "paused", { value: true, configurable: true });
+    onPause?.();
+
+    expect(onPlaybackInterrupted).not.toHaveBeenCalled();
+    root = createRoot(container);
+  });
+
+  it("stops a play it did not ask for", async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const handle = await playingClip("a");
+    handle.pause();
+    pause.mockClear();
+
+    // Chrome resuming background media, Vidstack playing on after a seek to the
+    // end, the OS controls: the story decides when its clip runs.
+    await emit((callbacks) => callbacks.onPlay?.());
+    expect(pause).toHaveBeenCalledOnce();
+    expect(pause.mock.contexts[0]).toBe(video());
+
+    pause.mockClear();
+    await handle.play();
+    await emit((callbacks) => callbacks.onPlay?.());
+    expect(pause).not.toHaveBeenCalled();
+  });
+
+  it("reports a refused play Vidstack started itself while the clip should play", async () => {
+    const onPlaybackRefused = vi.fn();
+    const onPlaybackError = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const handle = await playingClip("a", { onPlaybackRefused });
+    await renderClip(
+      { uri: "/a.mp4", identity: "renderer:0:sequence:a" },
+      { onPlaybackRefused, onPlaybackError }
+    );
+    const refusal = new DOMException("Not allowed by the user agent.", "NotAllowedError");
+
+    // The next turn of a loop, refused: dropped, the film would freeze silently.
+    await emit((callbacks) => callbacks.onPlayFail?.(refusal));
+    expect(onPlaybackRefused).toHaveBeenCalledOnce();
+    expect(onPlaybackError).not.toHaveBeenCalled();
+
+    // Held by the player, the clip is not one it wants playing.
+    handle.pause();
+    await emit((callbacks) => callbacks.onPlayFail?.(refusal));
+    expect(onPlaybackRefused).toHaveBeenCalledOnce();
+
+    // A real failure from the same event still reaches the viewer.
+    await emit((callbacks) =>
+      callbacks.onPlayFail?.(new DOMException("No supported sources.", "NotSupportedError"))
+    );
+    expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith("No supported sources.");
   });
 
   it("does not start a waiting play after the host pauses it", async () => {

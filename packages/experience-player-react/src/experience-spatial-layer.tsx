@@ -493,6 +493,8 @@ function GestureCue({
         }
         .experience-cue-swipe { animation: experience-cue-swipe 1.45s ease-in-out infinite; }
         .experience-cue-tap { animation: experience-cue-tap 1.15s ease-in-out infinite; }
+        [data-experience-paused] .experience-cue-swipe,
+        [data-experience-paused] .experience-cue-tap { animation-play-state: paused; }
       `}</style>
       <span className="flex max-w-full flex-col items-center">
         {kind === "swipe" ? (
@@ -690,13 +692,28 @@ function SwipeControl({
     y: number;
     startedAt: number;
   } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const rotated = useContext(ExperienceFrameRotationContext);
+  const storyClock = useContext(ExperienceStoryClockContext);
   const projected = projectExperienceGeometryToViewport(
     presentation.geometry,
     presentation.transform
   );
   const bounds = boundsOfExperienceProjectedGeometry(projected);
   const clipPath = geometryClipPath(projected, bounds);
+
+  // A swipe in progress when the story pauses is dropped without an event: a
+  // pause is not a cancel, and the viewer swipes again after the resume.
+  useEffect(
+    () =>
+      storyClock.subscribe(() => {
+        const pointer = pointerRef.current;
+        if (!storyClock.paused || !pointer) return;
+        pointerRef.current = null;
+        releasePointer(buttonRef.current, pointer.pointerId);
+      }),
+    [storyClock]
+  );
 
   const emit = useCallback(
     (
@@ -771,6 +788,7 @@ function SwipeControl({
       }}
     >
       <button
+        ref={buttonRef}
         type="button"
         className={classNames(
           "absolute inset-0 touch-none bg-transparent select-none outline-none focus-visible:ring-2 focus-visible:ring-white/80",
@@ -846,6 +864,7 @@ function PressHoldControl({
   >(null);
   const pressedRef = useRef(false);
   const pointerInsideRef = useRef(true);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const animationFrameRef = useRef<number | null>(null);
   const previousFrameTimeRef = useRef<number | null>(null);
   const latestRef = useRef({ gesture, runtimeState, sceneTimeMs });
@@ -966,7 +985,7 @@ function PressHoldControl({
   );
 
   const step = useCallback(
-    (deltaMs: number) => {
+    (deltaMs: number, emit = true) => {
       try {
         const current = latestRef.current;
         const result = stepExperiencePressHoldInRuntime(
@@ -981,7 +1000,7 @@ function PressHoldControl({
         );
         stateRef.current = result.state;
         setState(result.state);
-        emitSignals(result.signals, result.state);
+        if (emit) emitSignals(result.signals, result.state);
         return result.state;
       } catch (error) {
         onRuntimeError(runtimeErrorMessage(error));
@@ -1036,6 +1055,40 @@ function PressHoldControl({
         storyClock.cancelFrame(animationFrameRef.current);
       }
     },
+    [storyClock]
+  );
+
+  // A pause is not a release. A press in progress when the story pauses is
+  // dropped without a verdict: a timeline-control charge keeps the progress it
+  // made, which is scene time, and its gate comes back over the clip; any other
+  // hold is let go of with its signals thrown away, and decays on story time
+  // after the resume. It runs inside the pause, so the blur or lost capture
+  // that `inert` brings afterwards finds no input left to judge.
+  const abandonPress = () => {
+    const input = activeInputRef.current;
+    activeInputRef.current = null;
+    if (input?.kind === "pointer") releasePointer(buttonRef.current, input.id);
+    if (timelineControl) {
+      if (!timelinePressedRef.current) return;
+      timelinePressedRef.current = false;
+      setTimelinePressed(false);
+      return;
+    }
+    if (!pressedRef.current) return;
+    pressedRef.current = false;
+    pointerInsideRef.current = true;
+    step(0, false);
+    ensureAnimationFrame();
+  };
+  const abandonPressRef = useRef(abandonPress);
+  useEffect(() => {
+    abandonPressRef.current = abandonPress;
+  });
+  useEffect(
+    () =>
+      storyClock.subscribe(() => {
+        if (storyClock.paused) abandonPressRef.current();
+      }),
     [storyClock]
   );
 
@@ -1117,6 +1170,7 @@ function PressHoldControl({
       style={controlStyle}
     >
       <button
+        ref={buttonRef}
         type="button"
         className={classNames(
           "absolute inset-0 touch-none bg-transparent select-none outline-none focus-visible:ring-2 focus-visible:ring-white/80",
@@ -1228,6 +1282,18 @@ function geometryClipPath(
         `${((point.x - bounds.x) / bounds.width) * 100}% ${((point.y - bounds.y) / bounds.height) * 100}%`
     )
     .join(",")})`;
+}
+
+/**
+ * Ends pointer capture for an input the layer has dropped. Its own
+ * `lostpointercapture` then finds no input left to judge.
+ */
+function releasePointer(element: Element | null, pointerId: number): void {
+  try {
+    element?.releasePointerCapture(pointerId);
+  } catch {
+    // Capture was already gone: the pointer ended it on its own.
+  }
 }
 
 function keyboardSwipeDirection(key: string): ExperienceSwipeGesture["directions"][number] | null {

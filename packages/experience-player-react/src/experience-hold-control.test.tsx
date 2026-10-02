@@ -4,10 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
+import { ExperienceStoryClock, ExperienceStoryClockContext } from "./experience-story-clock";
 
 type Props = ComponentProps<typeof ExperienceSpatialLayer>;
 let container: HTMLDivElement;
 let root: Root;
+let clock: ExperienceStoryClock;
 const onEvents = vi.fn();
 const scene = {
   sceneId: "scene",
@@ -56,29 +58,38 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  clock = new ExperienceStoryClock({ paused: false });
   onEvents.mockClear();
+  render(scene);
+});
+
+function render(layerScene: Props["scene"]) {
   act(() =>
     root.render(
-      <ExperienceSpatialLayer
-        manifest={
-          {
-            assets: [],
-            inputActions: [],
-            localization: { defaultLocale: "en-US" },
-          } as unknown as Props["manifest"]
-        }
-        scene={scene}
-        runtimeState={{} as Props["runtimeState"]}
-        sceneTimeMs={0}
-        locale="en-US"
-        orientation="landscape"
-        onEvents={onEvents}
-        onRuntimeError={vi.fn()}
-      />
+      <ExperienceStoryClockContext.Provider value={clock}>
+        <ExperienceSpatialLayer
+          manifest={
+            {
+              assets: [],
+              inputActions: [],
+              localization: { defaultLocale: "en-US" },
+            } as unknown as Props["manifest"]
+          }
+          scene={layerScene}
+          runtimeState={{} as Props["runtimeState"]}
+          sceneTimeMs={0}
+          locale="en-US"
+          orientation="landscape"
+          onEvents={onEvents}
+          onRuntimeError={vi.fn()}
+        />
+      </ExperienceStoryClockContext.Provider>
     )
   );
-  container.querySelector("button")!.setPointerCapture = vi.fn();
-});
+  const button = container.querySelector("button")!;
+  button.setPointerCapture = vi.fn();
+  button.releasePointerCapture = vi.fn();
+}
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
@@ -140,4 +151,58 @@ it("ends a hold when focus leaves", () => {
   );
   expect(pressed()).toBe("false");
   expect(onEvents).toHaveBeenCalledWith([expect.objectContaining({ type: "gesture.cancelled" })]);
+});
+
+/**
+ * A pause is not a release: a hold in progress when the story clock pauses is
+ * dropped without a verdict, and what `inert` brings next — a blur, the lost
+ * capture, the finger lifting — has nothing left to decide.
+ */
+it("drops a charge in progress when the story pauses, and takes no verdict from it", () => {
+  pointer("pointerdown", 1);
+  expect(pressed()).toBe("true");
+
+  act(() => clock.pause());
+
+  expect(pressed()).toBe("false");
+  expect(container.querySelector("button")!.releasePointerCapture).toHaveBeenCalledWith(1);
+  pointer("lostpointercapture", 1);
+  pointer("pointerup", 1);
+  act(() =>
+    container.querySelector("button")!.dispatchEvent(new FocusEvent("focusout", { bubbles: true }))
+  );
+  expect(onEvents).not.toHaveBeenCalled();
+
+  // After the resume the viewer holds again, and that hold is judged.
+  act(() => clock.resume());
+  pointer("pointerdown", 2);
+  expect(pressed()).toBe("true");
+  pointer("pointerup", 2);
+  expect(onEvents).toHaveBeenCalledWith([expect.objectContaining({ type: "gesture.cancelled" })]);
+});
+
+it("drops a plain hold when the story pauses, without the cancel a release would send", () => {
+  render({
+    ...scene,
+    gestures: [
+      {
+        gestureId: "hold",
+        kind: "press-hold",
+        anchorId: "anchor",
+        inputActionId: "hold",
+        durationMs: 1000,
+        releaseBehavior: "reset",
+        cancelOnPointerExit: false,
+      },
+    ],
+  } as unknown as Props["scene"]);
+  key("keydown", "Enter");
+  expect(onEvents).toHaveBeenCalledWith([expect.objectContaining({ type: "gesture.started" })]);
+  onEvents.mockClear();
+
+  act(() => clock.pause());
+  key("keyup", "Enter");
+
+  expect(pressed()).toBe("false");
+  expect(onEvents).not.toHaveBeenCalled();
 });

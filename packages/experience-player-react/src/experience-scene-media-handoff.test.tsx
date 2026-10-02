@@ -14,11 +14,12 @@ import type { ExperiencePlayerCopy } from "./experience-player-copy";
 /**
  * Only Vidstack is stubbed — it needs a media pipeline jsdom does not have — so
  * the real ExperienceMediaPlayer runs, and with it the commit timing the
- * look-ahead depends on. The stub shows which clip the element holds, and lets
- * a test report it ready or ended.
+ * look-ahead depends on. The stub shows which clip the element holds, attaches
+ * its provider once mounted, as Vidstack does, and lets a test report the clip
+ * ready or ended.
  */
 vi.mock("@vidstack/react", async () => {
-  const { createElement, useImperativeHandle, useRef } = await import("react");
+  const { createElement, useEffect, useImperativeHandle, useRef } = await import("react");
   const actual = await vi.importActual<typeof import("@vidstack/react")>("@vidstack/react");
 
   function StubMediaPlayer({
@@ -27,12 +28,14 @@ vi.mock("@vidstack/react", async () => {
     children,
     onCanPlay,
     onEnd,
+    onProviderChange,
   }: {
     ref?: React.Ref<unknown>;
     src: string | { src: string };
     children?: React.ReactNode;
     onCanPlay?: () => void;
     onEnd?: () => void;
+    onProviderChange?: (provider: unknown) => void;
   }) {
     const videoRef = useRef<HTMLVideoElement>(null);
     useImperativeHandle(
@@ -41,11 +44,18 @@ vi.mock("@vidstack/react", async () => {
         get provider() {
           return { type: "video", media: videoRef.current, video: videoRef.current };
         },
+        state: { currentTime: 0, duration: 0, ended: false, seekableEnd: 0 },
         muted: false,
         duration: 0,
       }),
       []
     );
+    useEffect(() => {
+      const media = videoRef.current;
+      onProviderChange?.({ type: "video", media, video: media });
+      // Once, as the element mounts.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const uri = typeof src === "string" ? src : src.src;
     return createElement(
       "div",
