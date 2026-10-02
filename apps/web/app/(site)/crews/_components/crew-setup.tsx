@@ -137,7 +137,7 @@ function SetupSession({ crewId }: { crewId: string }) {
               {(invitations.isError || invitations.isFetching) && (
                 <p role="status">{invitations.error?.message || t("loading")}</p>
               )}
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid items-start gap-2 md:grid-cols-2">
                 {PRESET_POSITIONS.map((role) => {
                   const assigned = members.filter((member) =>
                     member.positions.some((p) => p.categoryKey === role.value)
@@ -150,44 +150,56 @@ function SetupSession({ crewId }: { crewId: string }) {
                           item.status === "pending" &&
                           Date.parse(item.expiresAt) > Date.now()
                       );
+                  const candidates = members.filter(
+                    (member) => !assigned.includes(member) && member.positions.length < 12
+                  );
                   return (
-                    <section key={role.value} className="space-y-3 rounded-xl bg-muted/30 p-4">
-                      <h2 className="font-semibold">{roleT(role.value)}</h2>
-                      <p className="text-sm">
-                        {assigned
-                          .map((member) => displayNameOf(member.userId, displays))
-                          .join(" · ") || t("vacant")}
-                      </p>
-                      {pending.length > 0 && (
-                        <p className="text-sm text-muted-foreground">
-                          {t("pending", { count: pending.length })}
-                        </p>
-                      )}
-                      <NativeSelect
-                        aria-label={t("addToRole", { role: roleT(role.value) })}
-                        value=""
-                        disabled={busy}
-                        onChange={(value) => void addRole(role.value, value)}
-                      >
-                        <NativeSelectOption value="">{t("chooseMember")}</NativeSelectOption>
-                        {members
-                          .filter((m) => !assigned.includes(m) && m.positions.length < 12)
-                          .map((member) => (
-                            <NativeSelectOption key={member.id} value={member.id}>
-                              {displayNameOf(member.userId, displays)}
-                            </NativeSelectOption>
-                          ))}
-                      </NativeSelect>
-                      {permissions.can("members.invite") && (
-                        <Button
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => setInvite(role.value)}
-                        >
-                          {t("invite")}
-                        </Button>
-                      )}
-                    </section>
+                    <details
+                      key={role.value}
+                      name="crew-setup-role"
+                      className="rounded-lg bg-muted/30"
+                    >
+                      <summary className="cursor-pointer rounded-lg px-4 py-3 text-sm focus-visible:outline-2 focus-visible:outline-ring">
+                        <span className="font-medium">{roleT(role.value)}</span>
+                        <span className="mt-1 block pl-4 text-muted-foreground">
+                          {assigned
+                            .map((member) => displayNameOf(member.userId, displays))
+                            .join(" · ") || t("vacant")}
+                        </span>
+                        {pending.length > 0 && (
+                          <span className="mt-1 block pl-4 text-muted-foreground">
+                            {t("pending", { count: pending.length })}
+                          </span>
+                        )}
+                      </summary>
+                      <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+                        {candidates.length > 0 && (
+                          <NativeSelect
+                            className="min-w-0 flex-1"
+                            aria-label={t("addToRole", { role: roleT(role.value) })}
+                            value=""
+                            disabled={busy}
+                            onChange={(value) => void addRole(role.value, value)}
+                          >
+                            <NativeSelectOption value="">{t("chooseMember")}</NativeSelectOption>
+                            {candidates.map((member) => (
+                              <NativeSelectOption key={member.id} value={member.id}>
+                                {displayNameOf(member.userId, displays)}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelect>
+                        )}
+                        {permissions.can("members.invite") && (
+                          <Button
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => setInvite(role.value)}
+                          >
+                            {t("invite")}
+                          </Button>
+                        )}
+                      </div>
+                    </details>
                   );
                 })}
               </div>
