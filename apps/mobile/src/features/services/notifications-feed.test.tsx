@@ -24,6 +24,7 @@ vi.mock("./notification-api", () => ({
   readAllNotifications: h.readAll,
 }));
 vi.mock("./use-inbox-realtime", () => ({ useInboxRealtime: () => false }));
+vi.mock("./user-displays", () => ({ useUserDisplays: () => undefined }));
 vi.mock("./use-notifications", () => ({
   useNotifications: () => ({ items: h.items, refresh: h.refresh, loading: false }),
 }));

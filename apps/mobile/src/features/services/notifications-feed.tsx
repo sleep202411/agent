@@ -19,6 +19,8 @@ import {
 } from "./notification-api";
 import { useInboxRealtime } from "./use-inbox-realtime";
 import { useNotifications } from "./use-notifications";
+import { useUserDisplays } from "./user-displays";
+import { notificationContent } from "./notification-content";
 type Props = { generation: number; userId: string };
 export function NotificationsFeed({ generation, userId }: Props) {
   const active = useScreenActive();
@@ -34,6 +36,18 @@ function Feed({ generation, userId }: Props) {
   const label = (key: string) => t(`notifications.${key}` as MessageKey);
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const list = useNotifications(webPath ? undefined : String(generation), filter);
+  const actors = useUserDisplays(
+    webPath ? undefined : `${generation}:${userId}`,
+    list.items.flatMap((item) =>
+      item.type.startsWith("crew.task.") && typeof item.meta.actorUserId === "string"
+        ? [item.meta.actorUserId]
+        : []
+    )
+  );
+  const contentLabel = (key: string, values?: Record<string, string | number | Date>) =>
+    label(key).replace(/\{(\w+)\}/g, (token, name: string) =>
+      values?.[name] === undefined ? token : String(values[name])
+    );
   const liveUnavailable = useInboxRealtime(userId, generation, !webPath, list.refresh);
   const operation = useRef<AbortController | null>(null);
   const alive = useRef(true);
@@ -138,41 +152,58 @@ function Feed({ generation, userId }: Props) {
         refreshing={list.loading}
         onRefresh={list.refresh}
         onEndReached={list.loadMore}
-        renderItem={({ item }) => (
-          <View
-            style={{
-              padding: 12,
-              marginBottom: 8,
-              gap: 8,
-              backgroundColor: theme.backgroundElement,
-              borderRadius: 8,
-            }}
-          >
-            <ThemedText type="smallBold">{item.title}</ThemedText>
-            <ThemedText>{item.body}</ThemedText>
-            <ThemedText type="small">{new Date(item.createdAt).toLocaleString(locale)}</ThemedText>
-            {notificationDestination(item, appEnv.appRegion, locale) && (
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy || !!list.error}
-                style={{ padding: 10 }}
-                onPress={() => void openNotification(item)}
-              >
-                <ThemedText>{label("view")}</ThemedText>
-              </Pressable>
-            )}
-            {!item.readAt && (
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy || !!list.error}
-                onPress={() => void mark(item.id)}
-                style={{ padding: 10 }}
-              >
-                <ThemedText>{label("markRead")}</ThemedText>
-              </Pressable>
-            )}
-          </View>
-        )}
+        renderItem={({ item }) => {
+          const actorName =
+            typeof item.meta.actorUserId === "string"
+              ? actors?.get(item.meta.actorUserId)?.nickname.trim()
+              : undefined;
+          const content = notificationContent(item, locale, contentLabel, actorName);
+          return (
+            <View
+              style={{
+                padding: 12,
+                marginBottom: 8,
+                gap: 8,
+                backgroundColor: theme.backgroundElement,
+                borderRadius: 8,
+              }}
+            >
+              <ThemedText type="smallBold">{content.title}</ThemedText>
+              {actorName &&
+                item.type.startsWith("crew.task.") &&
+                item.type !== "crew.task.assigned" &&
+                item.type !== "crew.task.updated" && (
+                  <ThemedText type="small">
+                    {contentLabel("performedBy", { name: actorName })}
+                  </ThemedText>
+                )}
+              <ThemedText>{content.body}</ThemedText>
+              <ThemedText type="small">
+                {new Date(item.createdAt).toLocaleString(locale)}
+              </ThemedText>
+              {notificationDestination(item, appEnv.appRegion, locale) && (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy || !!list.error}
+                  style={{ padding: 10 }}
+                  onPress={() => void openNotification(item)}
+                >
+                  <ThemedText>{label("view")}</ThemedText>
+                </Pressable>
+              )}
+              {!item.readAt && (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy || !!list.error}
+                  onPress={() => void mark(item.id)}
+                  style={{ padding: 10 }}
+                >
+                  <ThemedText>{label("markRead")}</ThemedText>
+                </Pressable>
+              )}
+            </View>
+          );
+        }}
         ListEmptyComponent={
           !list.loading && !list.error ? <ThemedText>{label("empty")}</ThemedText> : null
         }
