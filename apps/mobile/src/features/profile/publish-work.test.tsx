@@ -69,6 +69,7 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("react-native", () => {
   const Box = ({ children }: { children: ReactNode }) => <div>{children}</div>;
   return {
+    AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
     View: Box,
     ScrollView: Box,
     KeyboardAvoidingView: Box,

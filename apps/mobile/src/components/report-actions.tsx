@@ -12,12 +12,14 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   View,
 } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
-import { Spacing } from "@/constants/theme";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MaxContentWidth, Spacing } from "@/constants/theme";
 import { IP_REPORT_REASONS, type IpReportReason } from "@/data/ip-api";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations, type MessageKey } from "@/i18n";
@@ -90,6 +92,7 @@ export function ReportReasonSheet({
 }) {
   const t = useTranslations();
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -101,35 +104,50 @@ export function ReportReasonSheet({
         <Pressable
           accessible={false}
           onAccessibilityEscape={onClose}
-          style={[styles.sheet, { backgroundColor: theme.backgroundElement }]}
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: theme.backgroundElement,
+              paddingBottom: Math.max(Spacing.six, insets.bottom),
+            },
+          ]}
           onPress={(e) => e.stopPropagation()}
         >
           <View style={styles.sheetHeader}>
             <ThemedText type="smallBold">{t("report.sheetTitle")}</ThemedText>
             {submitting ? <ActivityIndicator size="small" color={theme.textSecondary} /> : null}
           </View>
-          {IP_REPORT_REASONS.map((reason) => (
-            <Pressable
-              key={reason}
-              accessibilityRole="button"
-              disabled={submitting}
-              onPress={() => onSelect(reason)}
-              style={({ pressed }) => (pressed ? styles.pressed : null)}
-            >
-              <View
-                style={[styles.sheetRow, { borderBottomColor: theme.border, borderBottomWidth: 1 }]}
+          <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled">
+            {IP_REPORT_REASONS.map((reason) => (
+              <Pressable
+                key={reason}
+                accessibilityRole="button"
+                disabled={submitting}
+                onPress={() => onSelect(reason)}
+                style={({ pressed }) => (pressed ? styles.pressed : null)}
               >
-                <ThemedText type="small" themeColor={submitting ? "textSecondary" : undefined}>
-                  {t(REASON_LABELS[reason])}
-                </ThemedText>
-                <SymbolView
-                  name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
-                  size={13}
-                  tintColor={theme.textSecondary}
-                />
-              </View>
-            </Pressable>
-          ))}
+                <View
+                  style={[
+                    styles.sheetRow,
+                    { borderBottomColor: theme.border, borderBottomWidth: 1 },
+                  ]}
+                >
+                  <ThemedText
+                    type="small"
+                    style={{ flex: 1, paddingVertical: Spacing.two }}
+                    themeColor={submitting ? "textSecondary" : undefined}
+                  >
+                    {t(REASON_LABELS[reason])}
+                  </ThemedText>
+                  <SymbolView
+                    name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
+                    size={13}
+                    tintColor={theme.textSecondary}
+                  />
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
           <Pressable
             accessibilityRole="button"
             disabled={submitting}
@@ -155,6 +173,10 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
+    maxHeight: "85%",
+    width: "100%",
+    maxWidth: Platform.OS === "web" ? MaxContentWidth : undefined,
+    alignSelf: "center",
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingBottom: Spacing.six,
