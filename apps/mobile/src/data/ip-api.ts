@@ -676,9 +676,13 @@ type WalletDto = {
  *  string). `GET /aurora/ip-commerce/wallet` (auth). Filters to the
  *  community_point/consumable account (NOT the withdrawable earnings pool).
  *  Returns null when the wallet cannot be read; a valid empty wallet is zero. */
-export async function fetchCommunityPointBalance(): Promise<string | null> {
+export async function fetchCommunityPointBalance(signal?: AbortSignal): Promise<string | null> {
   try {
-    const res = await api.get<WalletDto>("/ip-commerce/wallet", AURORA);
+    const res = await api.get<WalletDto>("/ip-commerce/wallet", {
+      ...AURORA,
+      signal,
+      cache: "no-store",
+    });
     if (
       !Array.isArray(res.accounts) ||
       res.accounts.some(
