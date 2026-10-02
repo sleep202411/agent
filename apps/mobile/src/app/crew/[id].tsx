@@ -1,3 +1,4 @@
+import { CrewLinkedResources } from "@/features/services/crew-linked-resources";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEffect, useState } from "react";
@@ -302,6 +303,8 @@ export default function CrewDetailScreen() {
           <ThemedText type="small" themeColor="textSecondary">
             {crew.description}
           </ThemedText>
+
+          <CrewLinkedResources crewId={crew.id} />
 
           {crew.roles.length ? (
             <View style={styles.section}>

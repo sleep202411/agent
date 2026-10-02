@@ -4184,7 +4184,7 @@
   "crewJoin.open": "Open",
   "crewJoin.uncertain": "The join response could not be verified. Check again to recover access; repeated redemption of this link does not use another place.",
   "crewJoin.invalidLink": "Use an official Crew invitation link for this app region.",
-  "crewLinks.title": "Invitation links",
+  "crewLinks.title": "Linked projects",
   "crewLinks.help": "Anyone holding a member link can join with its selected access. Community links join chat only. Review access before sharing.",
   "crewLinks.invalidNumber": "Enter a whole number.",
   "crewLinks.standard": "Standard access",
@@ -4264,5 +4264,13 @@
   "crewOffers.effect": "Review this offer before accepting. Acceptance approves your application and grants the agreed Crew or task access; it does not make a payment.",
   "crewRecruitment.sent": "Sent",
   "crewRecruitment.received": "Received",
-  "crewRecruitment.search": "Search loaded applications"
+  "crewRecruitment.search": "Search loaded applications",
+  "crewLinks.ip": "Linked IP",
+  "crewLinks.workspace": "Linked Workspace",
+  "crewLinks.films": "Linked interactive movie games",
+  "crewLinks.openIp": "View IP {number}",
+  "crewLinks.none": "Not linked",
+  "crewLinks.loading": "Loading…",
+  "crewLinks.more": "Load more",
+  "crewLinks.retry": "Retry"
 }
