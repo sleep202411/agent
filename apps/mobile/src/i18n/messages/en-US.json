@@ -4612,5 +4612,12 @@
   "channelSubmissions.reject": "Reject",
   "channelSubmissions.retry": "Retry",
   "channelSubmissions.failed": "Could not load channel submissions. Please retry.",
-  "channelSubmissions.refresh": "Refresh submissions"
+  "channelSubmissions.refresh": "Refresh submissions",
+  "creatorStudio.title": "Studio services",
+  "creatorStudio.loading": "Loading studio services…",
+  "creatorStudio.retry": "Retry",
+  "creatorStudio.basedIn": "Based in",
+  "creatorStudio.serves": "Serves",
+  "creatorStudio.delivery": "Service delivery",
+  "creatorStudio.remote": "Remote services available"
 }

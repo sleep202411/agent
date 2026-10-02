@@ -27,6 +27,7 @@ import {
   fetchCreatorServicesPage,
   InvalidCreatorServicesPageError,
 } from "@/data/creator-service-api";
+import { PublicStudioProfile } from "@/features/studios/public-studio-profile";
 import { CreatorPersonalWorks } from "@/features/profile/creator-personal-works";
 import { CreatorExperience } from "@/features/profile/creator-experience";
 import { CreatorCertificates } from "@/features/certificates/creator-certificates";
@@ -371,64 +372,70 @@ function CreatorDetailContent({
               scrollToServices();
             }}
           >
-            <SectionHeader
-              title={t("creatorDetail.servicesTitle")}
-              trailing={
-                sectionLoading.services || errors.services ? undefined : `${services.length}`
+            <PublicStudioProfile
+              creatorId={creator.id}
+              header={
+                <SectionHeader
+                  title={t("creatorDetail.servicesTitle")}
+                  trailing={
+                    sectionLoading.services || errors.services ? undefined : `${services.length}`
+                  }
+                />
               }
-            />
-            {errors.services && (
-              <View style={{ gap: Spacing.two }}>
-                <ThemedText accessibilityRole="alert">{errors.services}</ThemedText>
+            >
+              {errors.services && (
+                <View style={{ gap: Spacing.two }}>
+                  <ThemedText accessibilityRole="alert">{errors.services}</ThemedText>
+                  <Pressable
+                    accessibilityRole="button"
+                    style={{ minHeight: 44, justifyContent: "center" }}
+                    onPress={() => {
+                      // Retrying remounts the scroll view; return to the failed section.
+                      anchor.current = { following: true, body: null, services: null };
+                      setRevision((n) => n + 1);
+                    }}
+                  >
+                    <ThemedText>{t("common.retry")}</ThemedText>
+                  </Pressable>
+                </View>
+              )}
+              {sectionLoading.services ? (
+                <ActivityIndicator
+                  accessibilityLabel={t("creatorDetail.servicesTitle")}
+                  color={theme.textSecondary}
+                />
+              ) : services.length ? (
+                <View style={styles.serviceList}>
+                  {services.map((service) => (
+                    <CreatorServiceRow
+                      key={service.id}
+                      service={service}
+                      locale={locale}
+                      onPress={() => router.push(toHref(`/service/${service.id}`))}
+                    />
+                  ))}
+                </View>
+              ) : !errors.services ? (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t("creatorDetail.servicesEmpty")}
+                </ThemedText>
+              ) : null}
+              {moreError && <ThemedText accessibilityRole="alert">{moreError}</ThemedText>}
+              {nextCursor && (
                 <Pressable
                   accessibilityRole="button"
+                  disabled={moreBusy}
+                  onPress={() => void loadMore()}
                   style={{ minHeight: 44, justifyContent: "center" }}
-                  onPress={() => {
-                    // Retrying remounts the scroll view; return to the failed section.
-                    anchor.current = { following: true, body: null, services: null };
-                    setRevision((n) => n + 1);
-                  }}
                 >
-                  <ThemedText>{t("common.retry")}</ThemedText>
+                  {moreBusy ? (
+                    <ActivityIndicator />
+                  ) : (
+                    <ThemedText>{t(moreError ? "common.retry" : "myServices.loadMore")}</ThemedText>
+                  )}
                 </Pressable>
-              </View>
-            )}
-            {sectionLoading.services ? (
-              <ActivityIndicator
-                accessibilityLabel={t("creatorDetail.servicesTitle")}
-                color={theme.textSecondary}
-              />
-            ) : services.length ? (
-              <View style={styles.serviceList}>
-                {services.map((service) => (
-                  <CreatorServiceRow
-                    key={service.id}
-                    service={service}
-                    locale={locale}
-                    onPress={() => router.push(toHref(`/service/${service.id}`))}
-                  />
-                ))}
-              </View>
-            ) : !errors.services ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                {t("creatorDetail.servicesEmpty")}
-              </ThemedText>
-            ) : null}
-            {moreError && <ThemedText accessibilityRole="alert">{moreError}</ThemedText>}
-            {nextCursor && (
-              <Pressable
-                accessibilityRole="button"
-                disabled={moreBusy}
-                onPress={() => void loadMore()}
-                style={{ minHeight: 44, justifyContent: "center" }}
-              >
-                {moreBusy ? (
-                  <ActivityIndicator />
-                ) : (
-                  <ThemedText>{t(moreError ? "common.retry" : "myServices.loadMore")}</ThemedText>
-                )}
-              </Pressable>
-            )}
+              )}
+            </PublicStudioProfile>
           </View>
         </View>
       </ScrollView>

@@ -4612,5 +4612,12 @@
   "channelSubmissions.reject": "拒絕",
   "channelSubmissions.retry": "重試",
   "channelSubmissions.failed": "無法載入頻道投稿，請重試。",
-  "channelSubmissions.refresh": "重新整理投稿"
+  "channelSubmissions.refresh": "重新整理投稿",
+  "creatorStudio.title": "工作室服務",
+  "creatorStudio.loading": "正在載入工作室服務…",
+  "creatorStudio.retry": "重試",
+  "creatorStudio.basedIn": "所在城市",
+  "creatorStudio.serves": "服務地區",
+  "creatorStudio.delivery": "服務方式",
+  "creatorStudio.remote": "可提供遠端服務"
 }
