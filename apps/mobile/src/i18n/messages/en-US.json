@@ -4357,5 +4357,14 @@
   "timeline.clearUpload": "Clear upload recovery",
   "timeline.clearUploadHelp": "This clears local recovery only. Media already uploaded may remain in the project.",
   "timeline.uploadMedia": "Upload image or video",
-  "timeline.uploadMediaHelp": "JPEG, PNG or WebP up to 30 MiB; MP4 or MOV up to 2 GiB. Select the uploaded media for this clip. Interrupted file transfers must restart; completed uploads can retry confirmation."
+  "timeline.uploadMediaHelp": "JPEG, PNG or WebP up to 30 MiB; MP4 or MOV up to 2 GiB. Select the uploaded media for this clip. Interrupted file transfers must restart; completed uploads can retry confirmation.",
+  "timeline.savedPreview": "Saved timeline preview",
+  "timeline.noClipMedia": "No media selected for this clip.",
+  "timeline.play": "Play",
+  "timeline.pause": "Pause",
+  "timeline.hidePreview": "Hide preview",
+  "timeline.showPreview": "Preview saved timeline",
+  "timeline.seekSeconds": "Time in seconds",
+  "timeline.seek": "Go to time",
+  "timeline.seekError": "Enter a time within this timeline."
 }

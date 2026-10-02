@@ -1,3 +1,4 @@
+import { TimelinePreview } from "./story-timeline-preview";
 import { TimelineMediaPicker } from "./story-timeline-media-picker";
 import { timelineMediaPending } from "../api/story-timeline-media";
 import { useEffect, useMemo, useState } from "react";
@@ -95,6 +96,7 @@ export function TimelineEditor({
     theme = useTheme();
   const store = useMemo(() => timelinePending(scope, userId), [scope, userId]);
   const mediaStore = useMemo(() => timelineMediaPending(scope, userId), [scope, userId]);
+  const [preview, setPreview] = useState(false);
   const [mediaTarget, setMediaTarget] = useState<{ sequenceId: string; clipId: string }>();
   const op = useAuthFormOperation(`${scope.projectId}:${scope.chapterId}`, true);
   const [rows, setRows] = useState<TimelineSequence[]>([]),
@@ -312,6 +314,16 @@ export function TimelineEditor({
         )}
         {draft && !mediaTarget && (
           <>
+            {!dirty && !pending && !op.busy && rows.find((row) => row.id === selected) && (
+              <>
+                <Action
+                  label={t(preview ? "timeline.hidePreview" : "timeline.showPreview")}
+                  onPress={() => setPreview((v) => !v)}
+                />
+                {preview && <TimelinePreview sequence={rows.find((row) => row.id === selected)!} />}
+              </>
+            )}
+
             <ThemedText>
               {t("timeline.durationMs")}: {draft.durationMs}
             </ThemedText>

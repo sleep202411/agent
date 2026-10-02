@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TimelineEditor } from "./story-timeline-editor";
+vi.mock("./story-timeline-preview", () => ({ TimelinePreview: () => <span>Saved preview</span> }));
 const h = vi.hoisted(() => ({
   fetch: vi.fn(),
   read: vi.fn(),
@@ -179,4 +180,14 @@ it("does not submit invalid newly added clips", async () => {
   await click("timeline.add");
   await click("timeline.save");
   expect(h.submit).not.toHaveBeenCalled();
+});
+it("offers saved preview to viewers and removes it when an edit becomes unsaved", async () => {
+  await render(false);
+  await click("Scene");
+  await click("timeline.showPreview");
+  expect(host.textContent).toContain("Saved preview");
+  await render(true);
+  await click("timeline.add");
+  expect(host.textContent).not.toContain("Saved preview");
+  expect(button("timeline.showPreview")).toBeUndefined();
 });

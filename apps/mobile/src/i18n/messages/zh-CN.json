@@ -4357,5 +4357,14 @@
   "timeline.clearUpload": "清除上传恢复记录",
   "timeline.clearUploadHelp": "这只会清除本地恢复记录。已上传的媒体可能仍保留在项目中。",
   "timeline.uploadMedia": "上传图片或视频",
-  "timeline.uploadMediaHelp": "JPEG、PNG 或 WebP 最大 30 MiB；MP4 或 MOV 最大 2 GiB。上传后选择用于此镜头。文件传输中断后需要重新上传；传输完成后可重试确认。"
+  "timeline.uploadMediaHelp": "JPEG、PNG 或 WebP 最大 30 MiB；MP4 或 MOV 最大 2 GiB。上传后选择用于此镜头。文件传输中断后需要重新上传；传输完成后可重试确认。",
+  "timeline.savedPreview": "已保存时间线预览",
+  "timeline.noClipMedia": "此镜头尚未选择媒体。",
+  "timeline.play": "播放",
+  "timeline.pause": "暂停",
+  "timeline.hidePreview": "收起预览",
+  "timeline.showPreview": "预览已保存时间线",
+  "timeline.seekSeconds": "时间（秒）",
+  "timeline.seek": "跳转到时间",
+  "timeline.seekError": "请输入时间线范围内的时间。"
 }

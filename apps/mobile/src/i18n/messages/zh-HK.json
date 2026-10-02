@@ -4357,5 +4357,14 @@
   "timeline.clearUpload": "清除上傳恢復記錄",
   "timeline.clearUploadHelp": "這只會清除本地恢復記錄。已上傳的媒體可能仍保留在項目中。",
   "timeline.uploadMedia": "上傳圖片或影片",
-  "timeline.uploadMediaHelp": "JPEG、PNG 或 WebP 最大 30 MiB；MP4 或 MOV 最大 2 GiB。上傳後選擇用於此鏡頭。檔案傳輸中斷後需要重新上傳；傳輸完成後可重試確認。"
+  "timeline.uploadMediaHelp": "JPEG、PNG 或 WebP 最大 30 MiB；MP4 或 MOV 最大 2 GiB。上傳後選擇用於此鏡頭。檔案傳輸中斷後需要重新上傳；傳輸完成後可重試確認。",
+  "timeline.savedPreview": "已儲存時間線預覽",
+  "timeline.noClipMedia": "此鏡頭尚未選擇媒體。",
+  "timeline.play": "播放",
+  "timeline.pause": "暫停",
+  "timeline.hidePreview": "收起預覽",
+  "timeline.showPreview": "預覽已儲存時間線",
+  "timeline.seekSeconds": "時間（秒）",
+  "timeline.seek": "跳轉至時間",
+  "timeline.seekError": "請輸入時間線範圍內的時間。"
 }
