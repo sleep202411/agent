@@ -163,20 +163,18 @@ export async function fetchCrewById(
 }
 
 /** The signed-in user's crews — owned + joined (auth'd; `/aurora/crews/my`). */
-export async function fetchMyCrews(): Promise<CrewSummary[]> {
-  try {
-    const res = await api.get<
-      { items?: CrewDto[]; founded?: CrewDto[]; joined?: CrewDto[] } | CrewDto[]
-    >("/crews/my", { ...AURORA });
-    const list = Array.isArray(res)
-      ? res
-      : (res.items ?? [...(res.founded ?? []), ...(res.joined ?? [])]);
-    // De-dupe (a crew can be both owned and joined).
-    const seen = new Set<string>();
-    return list.filter((dto) => dto?.id && !seen.has(dto.id) && seen.add(dto.id)).map(mapSummary);
-  } catch {
-    return [];
-  }
+export async function fetchMyCrews(signal?: AbortSignal): Promise<CrewSummary[]> {
+  signal?.throwIfAborted();
+  const res = await api.get<{ founded: CrewDto[]; joined: CrewDto[] }>("/crews/my", {
+    ...AURORA,
+    signal,
+    retry: false,
+  });
+  signal?.throwIfAborted();
+  const list = [...res.founded, ...res.joined];
+  // A Crew can be both owned and joined; community subscriptions are not membership.
+  const seen = new Set<string>();
+  return list.filter((dto) => dto?.id && !seen.has(dto.id) && seen.add(dto.id)).map(mapSummary);
 }
 
 /** File a content report against a crew (auth'd; same reason set as IPs). */

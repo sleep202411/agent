@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { useFocusEffect, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -10,11 +10,10 @@ import { LanguageSheet, LOCALE_NAMES } from "@/components/language-switcher";
 import { ThemedText } from "@/components/themed-text";
 import { appEnv, resolveAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
-import { fetchMyCrews } from "@/data/crew-api";
+import { useMyCrews } from "@/features/profile/use-my-crews";
 import { useMyIps } from "@/features/profile/use-my-ips";
 import { useMyWorks } from "@/features/profile/use-my-works";
 import { ListFooter } from "@/components/ui";
-import type { CrewSummary } from "@/data/types";
 import { openPaywall } from "@/features/paywall";
 import { usePersonalBalances } from "@/features/profile/use-personal-balances";
 import { useTheme } from "@/hooks/use-theme";
@@ -89,33 +88,10 @@ export default function MineScreen() {
   const [languageOpen, setLanguageOpen] = useState(false);
   const ownerWorks = useMyWorks(authOwnerKey);
   const ownerIps = useMyIps(authOwnerKey);
-  const [crews, setCrews] = useState<CrewSummary[]>();
+  const ownerCrews = useMyCrews(authOwnerKey);
   const balances = usePersonalBalances(authOwnerKey);
   const pointsBalance = balances?.community;
   const computeBalance = balances?.compute;
-  const [loadedFor, setLoadedFor] = useState<string>();
-
-  useEffect(() => {
-    // Personal collections are user-scoped — only fetch once signed in, so a
-    // guest never fires (and 401s) these requests.
-    if (!authOwnerKey) return;
-    let active = true;
-    void fetchMyCrews()
-      .then((nextCrews) => {
-        if (!active) return;
-        setCrews(nextCrews);
-        setLoadedFor(authOwnerKey);
-      })
-      .catch(() => {
-        if (!active) return;
-        setCrews([]);
-        setLoadedFor(authOwnerKey);
-      });
-    return () => {
-      active = false;
-    };
-  }, [authOwnerKey]);
-
   const displayName =
     auth.user?.nickName ??
     auth.user?.nickname ??
@@ -133,10 +109,9 @@ export default function MineScreen() {
       ? resolveAssetUrl(rawAvatar, appEnv.assets.userBaseUrl)
       : undefined;
 
-  const hasCurrentUserData = Boolean(authOwnerKey && loadedFor === authOwnerKey);
   const currentWorks = ownerWorks.works;
   const currentIps = ownerIps.items;
-  const currentCrews = hasCurrentUserData ? crews : undefined;
+  const currentCrews = ownerCrews.items;
 
   const tiles = useMemo<Tile[] | undefined>(() => {
     if (tab === "works") {
@@ -253,7 +228,26 @@ export default function MineScreen() {
                 </Pressable>
               )}
             </View>
-          ) : null
+          ) : (
+            <View style={styles.collectionFooter}>
+              {ownerCrews.error ? (
+                <ThemedText accessibilityRole="alert" style={{ textAlign: "center" }}>
+                  {ownerCrews.error}
+                </ThemedText>
+              ) : null}
+              {ownerCrews.loading ? (
+                <ListFooter loading />
+              ) : (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={ownerCrews.refresh}
+                  style={{ minHeight: 44, justifyContent: "center" }}
+                >
+                  <ThemedText>{t(ownerCrews.error ? "common.retry" : "thread.refresh")}</ThemedText>
+                </Pressable>
+              )}
+            </View>
+          )
         }
         ListHeaderComponent={
           <View>
@@ -537,13 +531,14 @@ export default function MineScreen() {
           </View>
         }
         ListEmptyComponent={
-          <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-            {loading ||
-            (tab === "works" && (ownerWorks.failed || ownerWorks.loading)) ||
-            (tab === "ips" && (ownerIps.error || ownerIps.loading))
-              ? ""
-              : emptyText}
-          </ThemedText>
+          loading ||
+          (tab === "works" && (ownerWorks.failed || ownerWorks.loading)) ||
+          (tab === "ips" && (ownerIps.error || ownerIps.loading)) ||
+          (tab === "crews" && (ownerCrews.error || ownerCrews.loading)) ? null : (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+              {emptyText}
+            </ThemedText>
+          )
         }
         renderItem={({ item }) => {
           if (item.ghost) return <View style={styles.cell} />;
@@ -789,6 +784,12 @@ const styles = StyleSheet.create({
   },
   tileTitle: {
     paddingHorizontal: 2,
+  },
+  collectionFooter: {
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.three,
+    alignItems: "center",
+    gap: Spacing.two,
   },
   empty: {
     paddingTop: Spacing.eight,

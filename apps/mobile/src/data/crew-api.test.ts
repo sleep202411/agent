@@ -158,3 +158,18 @@ it("encodes the destination and stops paging when the reader leaves", async () =
     expect.objectContaining({ signal: controller.signal, retry: false })
   );
 });
+
+it("propagates owned-Crew failures and cancellation instead of reporting an empty collection", async () => {
+  get.mockRejectedValueOnce(new Error("Membership service offline"));
+  await expect(fetchMyCrews()).rejects.toThrow("Membership service offline");
+  const controller = new AbortController();
+  get.mockImplementationOnce(async () => {
+    controller.abort();
+    return { founded: [], joined: [] };
+  });
+  await expect(fetchMyCrews(controller.signal)).rejects.toThrow();
+  expect(get).toHaveBeenLastCalledWith(
+    "/crews/my",
+    expect.objectContaining({ signal: controller.signal, retry: false })
+  );
+});
