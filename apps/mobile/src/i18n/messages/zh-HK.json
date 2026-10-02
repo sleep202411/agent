@@ -4542,5 +4542,7 @@
   "notifications.unreadCount": "{count} 則未讀",
   "notifications.retryUnreadCount": "重試未讀數量",
   "inbox.searchingMore": "正在尋找更多會話……",
-  "inbox.loadMore": "載入更多"
+  "inbox.loadMore": "載入更多",
+  "inbox.crewFallback": "劇組群聊",
+  "inbox.memberCount": "{count} 名成員"
 }

@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import InboxScreen from "@/app/inbox";
+vi.mock("expo-image", () => ({ Image: () => null }));
+vi.mock("@/config", () => ({
+  appEnv: { assets: { bannerBaseUrl: "https://banner.test" } },
+  resolveAssetUrl: (p: string, b: string) => b + "/" + p,
+}));
 vi.mock("@/features/services/user-displays", () => ({ useUserDisplays: () => new Map() }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
 vi.mock("@/features/services/use-inbox-realtime", () => ({ useInboxRealtime: () => false }));
@@ -104,7 +109,7 @@ it("wires native filters and order navigation", async () => {
   await render();
   await act(async () =>
     Array.from(host.querySelectorAll("button"))
-      .find((b) => b.textContent?.startsWith("Film"))!
+      .find((b) => b.textContent?.includes("Film"))!
       .click()
   );
   expect(h.push).toHaveBeenCalledWith("/conversation/a%2Fb");

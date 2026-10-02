@@ -4542,5 +4542,7 @@
   "notifications.unreadCount": "{count} unread",
   "notifications.retryUnreadCount": "Retry unread count",
   "inbox.searchingMore": "Looking for more conversations…",
-  "inbox.loadMore": "Load more"
+  "inbox.loadMore": "Load more",
+  "inbox.crewFallback": "Crew chat",
+  "inbox.memberCount": "{count} members"
 }
