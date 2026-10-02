@@ -1225,6 +1225,8 @@
   "serviceContact.send": "Send",
   "serviceContact.sent": "Message sent.",
   "serviceContact.open": "Open Conversation",
+  "serviceOrder.offerChanged": "This service changed. Review the current package and requirements before submitting.",
+  "serviceOrder.reviewOffer": "I have reviewed the current offer",
   "serviceOrder.title": "Request Service",
   "serviceOrder.hint": "Submit a request for the creator to accept. This does not confirm payment.",
   "serviceOrder.sent": "Request submitted for creator acceptance.",

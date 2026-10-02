@@ -1,3 +1,4 @@
+import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useServiceIntent } from "./service-intent";
 import { orderOutbox } from "./order-outbox";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -119,22 +120,34 @@ function RequestForm({
       return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
     }
   });
+  const clearDraft = useClearServiceEditorDraft("order");
+  useServiceEditorState("order:open", true);
+  const [reviewedVersion, setReviewedVersion] = useServiceEditorState(
+    "order:version",
+    service.version
+  );
   const offer = initial.pending?.offer ?? service;
-  const [tier, setTier] = useState(
+  const [tier, setTier] = useServiceEditorState(
+      "order:tier",
       initial.pending?.payload.packageTier ?? service.packages[0]!.tier
     ),
-    [answers, setAnswers] = useState<Record<string, string>>(
+    [answers, setAnswers] = useServiceEditorState<Record<string, string>>(
+      "order:answers",
       Object.fromEntries(
         initial.pending?.payload.answers.map((answer) => [answer.questionId, answer.answer]) ?? []
       )
     ),
-    [note, setNote] = useState(initial.pending?.payload.note ?? ""),
+    [note, setNote] = useServiceEditorState("order:note", initial.pending?.payload.note ?? ""),
     [error, setError] = useState<string | undefined>(initial.error),
     [order, setOrder] = useState<string>(),
     [locked, setLocked] = useState(!!initial.pending);
   const intent = useRef(initial.pending ?? undefined);
+  const needsReview = !locked && reviewedVersion !== service.version;
   const valid =
-    locked || !offer.requirementQuestions.some((q) => q.required && !(answers[q.id] ?? "").trim());
+    locked ||
+    (!needsReview &&
+      offer.packages.some((pkg) => pkg.tier === tier) &&
+      !offer.requirementQuestions.some((q) => q.required && !(answers[q.id] ?? "").trim()));
   const send = () =>
     void op.run(
       async () => {
@@ -153,7 +166,10 @@ function RequestForm({
         outbox.clear(intent.current.clientKey);
         return id;
       },
-      setOrder,
+      (id) => {
+        clearDraft();
+        setOrder(id);
+      },
       (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
     );
   const inputStyle = {
@@ -229,6 +245,17 @@ function RequestForm({
             maxLength={2000}
             style={inputStyle}
           />
+          {needsReview && (
+            <View style={{ gap: 8 }}>
+              <ThemedText>{t("serviceOrder.offerChanged")}</ThemedText>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setReviewedVersion(service.version)}
+              >
+                <ThemedText>{t("serviceOrder.reviewOffer")}</ThemedText>
+              </Pressable>
+            </View>
+          )}
           {locked && error && <ThemedText>{t("serviceOrder.retryHint")}</ThemedText>}
           <Pressable
             accessibilityRole="button"
@@ -241,7 +268,14 @@ function RequestForm({
       )}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {op.busy && <ActivityIndicator />}
-      <Pressable accessibilityRole="button" disabled={op.busy} onPress={close}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={op.busy}
+        onPress={() => {
+          clearDraft();
+          close();
+        }}
+      >
         <ThemedText>{t("experienceEdit.cancel")}</ThemedText>
       </Pressable>
     </View>

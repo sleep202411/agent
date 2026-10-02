@@ -1,3 +1,4 @@
+import { ServiceEditorDrafts } from "./service-editor-drafts";
 import { ServiceIntentProvider } from "./service-intent";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -274,4 +275,101 @@ it("does not resume an old guest action on a different service page", async () =
   await act(async () => complete());
   expect(host.querySelector("input")).toBeNull();
   expect(h.send).not.toHaveBeenCalled();
+});
+
+it("preserves unsent answers on reload and requires review of a changed offer", async () => {
+  const draw = (shown: boolean, version = 3, scope = "buyer") =>
+    act(async () =>
+      root.render(
+        <ServiceEditorDrafts key={scope}>
+          <ServiceIntentProvider>
+            {shown && (
+              <ServiceOrder
+                key={version}
+                service={{
+                  ...service,
+                  version,
+                  packages: service.packages.map((p) => ({
+                    ...p,
+                    price: version === 3 ? p.price : p.price + 10,
+                  })),
+                }}
+              />
+            )}
+          </ServiceIntentProvider>
+        </ServiceEditorDrafts>
+      )
+    );
+  await draw(true);
+  await act(async () => click("serviceOrder.title"));
+  await act(async () => type("Keep this brief"));
+  const note = host.querySelectorAll("input")[2]!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      note,
+      "Keep this note"
+    );
+    note.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await draw(false);
+  await draw(true);
+  expect(host.querySelectorAll("input")[0]?.value).toBe("Keep this brief");
+  expect(host.querySelectorAll("input")[2]?.value).toBe("Keep this note");
+  expect(host.textContent).not.toContain("serviceOrder.offerChanged");
+  await draw(false);
+  await draw(true, 4);
+  expect(host.querySelectorAll("input")[0]?.value).toBe("Keep this brief");
+  expect(host.textContent).toContain("serviceOrder.offerChanged");
+  await act(async () => click("serviceOrder.submit"));
+  expect(h.send).not.toHaveBeenCalled();
+  await act(async () => click("serviceOrder.reviewOffer"));
+  h.send.mockResolvedValue("order");
+  await act(async () => click("serviceOrder.submit"));
+  expect(h.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      expectedServiceVersion: 4,
+      note: "Keep this note",
+      answers: expect.arrayContaining([{ questionId: "brief", answer: "Keep this brief" }]),
+    })
+  );
+  await act(async () => click("experienceEdit.cancel"));
+  await act(async () => click("serviceOrder.title"));
+  expect(host.querySelector("input")?.value).toBe("");
+  await act(async () => type("Different draft"));
+  await draw(true, 4, "other-account");
+  await act(async () => click("serviceOrder.title"));
+  expect(host.querySelector("input")?.value).toBe("");
+});
+
+it("requires choosing a remaining package when the selected tier was removed", async () => {
+  const draw = (version: number) =>
+    act(async () =>
+      root.render(
+        <ServiceEditorDrafts>
+          <ServiceIntentProvider>
+            <ServiceOrder
+              key={version}
+              service={{
+                ...service,
+                version,
+                packages: version === 3 ? service.packages : service.packages.slice(1),
+              }}
+            />
+          </ServiceIntentProvider>
+        </ServiceEditorDrafts>
+      )
+    );
+  await draw(3);
+  await act(async () => click("serviceOrder.title"));
+  await act(async () => type("Keep this brief"));
+  await draw(4);
+  await act(async () => click("serviceOrder.reviewOffer"));
+  await act(async () => click("serviceOrder.submit"));
+  expect(h.send).not.toHaveBeenCalled();
+  await act(async () => click("Premium · $30.00"));
+  h.send.mockResolvedValue("order");
+  await act(async () => click("serviceOrder.submit"));
+  expect(h.send).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ packageTier: "premium", expectedServiceVersion: 4 })
+  );
 });

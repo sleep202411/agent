@@ -1225,6 +1225,8 @@
   "serviceContact.send": "傳送",
   "serviceContact.sent": "訊息已傳送。",
   "serviceContact.open": "開啟對話",
+  "serviceOrder.offerChanged": "此服務已更新。提交前請檢查目前套餐和要求。",
+  "serviceOrder.reviewOffer": "我已檢查目前服務內容",
   "serviceOrder.title": "申請服務",
   "serviceOrder.hint": "提交申請後等待創作者接受，不表示已付款。",
   "serviceOrder.sent": "申請已提交，等待創作者接受。",
