@@ -125,7 +125,7 @@ function MyApplications({
         <aside
           className={cn(
             "flex min-h-0 flex-col border-r border-white/10",
-            application && "hidden lg:flex"
+            selected && "hidden lg:flex"
           )}
         >
           <div className="space-y-2 border-b border-white/10 p-3">
@@ -221,16 +221,38 @@ function MyApplications({
         <section
           className={cn(
             "min-h-0 min-w-0 overflow-hidden",
-            !application && "hidden lg:flex lg:items-center lg:justify-center"
+            !selected && "hidden lg:flex lg:items-center lg:justify-center"
           )}
         >
-          {detail.isError ? (
-            <div role="alert" className="p-6">
-              <p>{detail.error.message}</p>
-              <Button onClick={() => void detail.refetch()}>{t("refresh")}</Button>
+          {selected && !application ? (
+            <div className="space-y-4 p-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="lg:hidden"
+                onClick={() => setSelected(null)}
+              >
+                <IconArrowLeft className="size-4" />
+                {c("back")}
+              </Button>
+              {detail.isError ? (
+                <div role="alert" className="space-y-3 text-sm">
+                  <p>{detail.error.message}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={detail.isFetching}
+                    onClick={() => void detail.refetch()}
+                  >
+                    {t("refresh")}
+                  </Button>
+                </div>
+              ) : (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {t("loading")}
+                </p>
+              )}
             </div>
-          ) : selected && detail.isPending ? (
-            <p className="p-6">{t("loading")}</p>
           ) : application ? (
             <div key={application.id} className="flex h-full min-h-0 flex-col">
               <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-background px-4 py-3">

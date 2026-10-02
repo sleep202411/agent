@@ -178,7 +178,9 @@ it("hides selected private panels after a failed inbox refresh and restores acce
   });
   expect(host.textContent).not.toContain("Terms for first");
   expect(host.textContent).not.toContain("Interview controls");
-  expect(host.querySelector("aside")?.className).not.toContain("hidden");
+  expect(host.querySelector("section [role=alert]")?.textContent).toContain(
+    "Application access revoked"
+  );
   expect(host.querySelector('[role="alert"]')?.textContent).toContain("Application access revoked");
   expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "more")).toBe(
     false
@@ -193,4 +195,36 @@ it("hides selected private panels after a failed inbox refresh and restores acce
   });
   expect(host.textContent).toContain("Terms for first");
   expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("lets a selected conversation recover or return to the inbox while its detail read fails", async () => {
+  await render();
+  h.get.mockImplementation((path: string) =>
+    path.startsWith("/applications/")
+      ? Promise.reject(new Error("Conversation unavailable"))
+      : Promise.resolve({ items: [row("first")], nextCursor: null })
+  );
+  await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  await render();
+  const panel = host.querySelector("section")!;
+  expect(panel.textContent).toContain("Conversation unavailable");
+  expect(panel.textContent).not.toContain("Interview controls");
+  await act(async () =>
+    Array.from(panel.querySelectorAll("button"))
+      .find((b) => b.textContent === "back")!
+      .click()
+  );
+  expect(host.querySelector("section [role=alert]")).toBeNull();
+  expect(host.querySelector("li button")?.getAttribute("aria-pressed")).toBe("false");
+  await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  await render();
+  h.get.mockResolvedValue({ items: [row("first")], nextCursor: null });
+  await act(async () =>
+    Array.from(panel.querySelectorAll("button"))
+      .find((b) => b.textContent === "refresh")!
+      .click()
+  );
+  await render();
+  expect(panel.textContent).toContain("Terms for first");
+  expect(panel.querySelector("[role=alert]")).toBeNull();
 });
