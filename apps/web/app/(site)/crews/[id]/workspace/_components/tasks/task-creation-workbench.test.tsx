@@ -738,7 +738,67 @@ function seedBatch() {
 }
 it("imports new canvas tasks directly instead of staging another browser draft", async () => {
   await render();
-  await click("Production");
+  await click("Interactive Film Canvas");
   expect(host.querySelector('[data-direct-import="true"]')).not.toBeNull();
   expect(button("Create All Tasks")).toBeUndefined();
+});
+
+it("reveals tasks arriving after loading without reopening a manually collapsed group", async () => {
+  state.taskLoading = true;
+  await render();
+  const scripts = () =>
+    [...host.querySelectorAll("details")].find((d) =>
+      d.querySelector('button[aria-label="Create Task · Scripts"]')
+    )!;
+  expect(scripts().open).toBe(false);
+  state.taskLoading = false;
+  state.tasks = [
+    {
+      id: "loaded",
+      parentId: null,
+      status: "open",
+      assetCategory: "scripts",
+      title: "Loaded script",
+      description: "Brief",
+      priority: "normal",
+      taskKind: "script",
+      assignees: [],
+    },
+  ];
+  await render();
+  expect(scripts().open).toBe(true);
+  scripts().open = false;
+  await render();
+  expect(scripts().open).toBe(false);
+});
+it("does not carry a recovered draft episode into a new category task", async () => {
+  window.localStorage.setItem(
+    "fizz:workbench:v1:user:crew",
+    JSON.stringify({
+      version: 1,
+      batches: [],
+      drafts: [
+        {
+          id: 1,
+          state: "staged",
+          input: {
+            title: "Episode draft",
+            description: "Brief",
+            priority: "normal",
+            taskKind: "script",
+            assignees: [],
+            episodeId: "ep",
+          },
+        },
+      ],
+    })
+  );
+  await render();
+  await click("Edit Episode draft");
+  await click("Save Draft");
+  await click("Create Task · Music");
+  await click("Save Task");
+  expect(state.create).toHaveBeenCalledWith(
+    expect.objectContaining({ taskKind: "music", episodeId: null })
+  );
 });

@@ -410,7 +410,7 @@ function TaskCreationSession({
                     size="sm"
                     onClick={() => setProductionOpen(true)}
                   >
-                    {t("assetGroup_production")}
+                    {t("canvasImport")}
                   </Button>
                   <Button
                     size="sm"
@@ -500,8 +500,8 @@ function TaskCreationSession({
                       <details
                         key={barKey}
                         ref={(el) => {
-                          if (el && !el.dataset.initialized) {
-                            el.open = hasItems;
+                          if (el && hasItems && !el.dataset.initialized) {
+                            el.open = true;
                             el.dataset.initialized = "1";
                           }
                         }}
@@ -521,7 +521,7 @@ function TaskCreationSession({
                               onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
-                                setEditingId(null);
+                                openTask();
                                 setPresetTaskKind(
                                   (
                                     {
@@ -547,21 +547,6 @@ function TaskCreationSession({
                           </span>
                         </summary>
                         <div className="mt-3 space-y-3 border-t border-white/[0.06] pt-3">
-                          {canManage && barKey === "production" ? (
-                            <div className="flex items-center justify-between gap-2 rounded border border-white/10 bg-[#121316] p-2.5">
-                              <span className="text-xs text-muted-foreground">
-                                {t("assetGroup_production")} · {t("canvasImport")}
-                              </span>
-                              <Button
-                                variant="outline"
-                                color="muted"
-                                size="sm"
-                                onClick={() => setProductionOpen(true)}
-                              >
-                                {t("canvasImport")}
-                              </Button>
-                            </div>
-                          ) : null}
                           {categoryDrafts.length > 0 ? (
                             <div className="grid gap-3 @[850px]:grid-cols-2 @[1200px]:grid-cols-3">
                               {categoryDrafts.map((draft) => (
