@@ -1303,6 +1303,8 @@
   "inbox.activity.crew.member.joined": "有成员加入。",
   "inbox.activity.crew.member.left": "有成员离开。",
   "myServices.loadMore": "加载更多",
+  "myServices.deliveryFrom": "{days}天起",
+  "myServices.packageCount": "{count} 档",
   "myServices.title": "我的服务",
   "myServices.signIn": "登录以管理您的服务",
   "myServices.all": "全部",

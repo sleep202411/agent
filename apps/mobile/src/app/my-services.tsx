@@ -8,7 +8,8 @@ import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useScreenActive } from "@/hooks/use-app-active";
-import { useTranslations } from "@/i18n";
+import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
+import { useLocale, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 import { useOwnedServices } from "@/features/services/use-owned-services";
 import type { ServiceFilter } from "@/features/services/owner-service-api";
@@ -17,6 +18,7 @@ export default function MyServicesScreen() {
   const auth = useAuth(),
     gate = useAuthGate(),
     active = useScreenActive();
+  const locale = useLocale();
   const t = useTranslations(),
     theme = useTheme(),
     router = useRouter();
@@ -97,8 +99,33 @@ export default function MyServicesScreen() {
                   backgroundColor: theme.backgroundElement,
                 }}
               >
+                <ThemedText type="small" themeColor="textSecondary">
+                  {serviceCategoryLabel(item.category, t)}
+                </ThemedText>
                 <ThemedText type="smallBold">{item.title}</ThemedText>
-                <ThemedText numberOfLines={2}>{item.summary}</ThemedText>
+                <ThemedText type="small" numberOfLines={2}>
+                  {item.summary}
+                </ThemedText>
+                {item.packageCount > 0 && (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                    <ThemedText type="smallBold">
+                      {t("creatorService.fromPrice")} {formatServicePrice(item, locale)}
+                    </ThemedText>
+                    {item.startingDeliveryDays > 0 && (
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {t("myServices.deliveryFrom").replace(
+                          "{days}",
+                          String(item.startingDeliveryDays)
+                        )}
+                      </ThemedText>
+                    )}
+                    {item.packageCount > 1 && (
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {t("myServices.packageCount").replace("{count}", String(item.packageCount))}
+                      </ThemedText>
+                    )}
+                  </View>
+                )}
               </Pressable>
             )}
             ListEmptyComponent={
