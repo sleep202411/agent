@@ -4351,5 +4351,11 @@
   "timeline.replaceHelp": "请先保存时间线修改。选择项目媒体，替换视频可能会更新片段时长。",
   "timeline.noProjectMedia": "暂无就绪的项目图片或视频。",
   "timeline.useMedia": "使用此媒体",
-  "timeline.previewMedia": "预览视频"
+  "timeline.previewMedia": "预览视频",
+  "timeline.uploadImage": "上传图片",
+  "timeline.uploadImageHelp": "支持 JPEG、PNG 或 WebP，最大 30 MiB。上传到项目后，选择用于此镜头。",
+  "timeline.uploadRecovery": "完成已上传图片",
+  "timeline.retryUpload": "重试上传确认",
+  "timeline.clearUpload": "清除上传恢复记录",
+  "timeline.clearUploadHelp": "这只会清除本地恢复记录。已上传的图片可能仍保留在项目中。"
 }

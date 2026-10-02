@@ -1,6 +1,6 @@
 import { ConversationVideo } from "@/features/services/conversation-video";
 import { useScreenActive } from "@/hooks/use-app-active";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import { uuid } from "expo-modules-core";
@@ -14,6 +14,7 @@ import {
   type TimelineCandidate,
   type TimelineMediaCommand,
 } from "../api/story-timeline-media";
+import { timelineUpload, type TimelineUploadCheckpoint } from "../api/story-timeline-upload";
 import type { TimelineScope, TimelineInput } from "../api/story-timeline-api";
 export function TimelineMediaPicker({
   scope,
@@ -35,6 +36,10 @@ export function TimelineMediaPicker({
   const active = useScreenActive();
   const [preview, setPreview] = useState<string>();
   const store = useMemo(() => timelineMediaPending(scope, userId), [scope, userId]);
+  const uploads = useMemo(() => timelineUpload(scope, userId), [scope, userId]);
+  const uploadAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadAbort.current?.abort(), [uploads]);
+  const [uploadPending, setUploadPending] = useState<TimelineUploadCheckpoint | null>(null);
   const op = useAuthFormOperation(`${sequenceId}:${clip?.id ?? "recovery"}`, true);
   const [items, setItems] = useState<TimelineCandidate[]>([]),
     [pending, setPending] = useState<TimelineMediaCommand | null>(null),
@@ -46,6 +51,8 @@ export function TimelineMediaPicker({
     void Promise.resolve()
       .then(async () => {
         const saved = store.read();
+        const upload = uploads.read();
+        if (!c.signal.aborted) setUploadPending(upload ?? null);
         if (!c.signal.aborted) setPending(saved ?? null);
         return fetchTimelineCandidates(scope, c.signal);
       })
@@ -61,7 +68,7 @@ export function TimelineMediaPicker({
         if (!c.signal.aborted) setLoading(false);
       });
     return () => c.abort();
-  }, [scope, store, revision]);
+  }, [scope, store, uploads, revision]);
   const submit = (candidate?: TimelineCandidate) => {
     if (!canEdit) return;
     void op.run(
@@ -94,6 +101,33 @@ export function TimelineMediaPicker({
         onDone();
       },
       (cause) => setError(cause instanceof Error ? cause.message : String(cause))
+    );
+  };
+  const upload = () => {
+    if (!canEdit || pending) return;
+    void op.run(
+      async () => {
+        const controller = new AbortController();
+        uploadAbort.current = controller;
+        setError(undefined);
+        return uploads.read() ? uploads.resume(controller.signal) : uploads.pick(controller.signal);
+      },
+      (candidate) => {
+        setUploadPending(null);
+        if (candidate)
+          setItems((values) => [
+            candidate,
+            ...values.filter((v) => v.asset.id !== candidate.asset.id),
+          ]);
+      },
+      (cause) => {
+        try {
+          setUploadPending(uploads.read() ?? null);
+        } catch {
+          /* Preserve the original failure. */
+        }
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
     );
   };
   const button = (label: string, onPress: () => void, disabled = false) => (
@@ -138,6 +172,40 @@ export function TimelineMediaPicker({
         </>
       ) : (
         <>
+          {uploadPending && (
+            <ThemedText>
+              {t("timeline.uploadRecovery")}: {uploadPending.name}
+            </ThemedText>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            disabled={!canEdit || loading || op.busy}
+            onPress={upload}
+            style={{ paddingVertical: 12, opacity: !canEdit || loading || op.busy ? 0.5 : 1 }}
+          >
+            <ThemedText type="smallBold" style={{ color: theme.brand }}>
+              {t(uploadPending ? "timeline.retryUpload" : "timeline.uploadImage")}
+            </ThemedText>
+          </Pressable>
+          <ThemedText type="small">{t("timeline.uploadImageHelp")}</ThemedText>
+          {uploadPending &&
+            button(t("timeline.clearUpload"), () =>
+              Alert.alert(t("timeline.clearUpload"), t("timeline.clearUploadHelp"), [
+                { text: t("common.cancel"), style: "cancel" },
+                {
+                  text: t("timeline.clearUpload"),
+                  style: "destructive",
+                  onPress: () => {
+                    try {
+                      uploads.clear(uploadPending.clientKey);
+                      setUploadPending(null);
+                    } catch (cause) {
+                      setError(String(cause));
+                    }
+                  },
+                },
+              ])
+            )}
           {!loading && !items.length && <ThemedText>{t("timeline.noProjectMedia")}</ThemedText>}
           {items.map((item) => (
             <View
@@ -172,7 +240,11 @@ export function TimelineMediaPicker({
               <ThemedText type="small">
                 {item.asset.kind} · {item.asset.contentType}
               </ThemedText>
-              {button(t("timeline.useMedia"), () => submit(item), !canEdit || loading || !clip?.id)}
+              {button(
+                t("timeline.useMedia"),
+                () => submit(item),
+                !canEdit || loading || !clip?.id || !!uploadPending
+              )}
             </View>
           ))}
           {button(

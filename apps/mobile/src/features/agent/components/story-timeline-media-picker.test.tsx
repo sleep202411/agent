@@ -10,10 +10,21 @@ const h = vi.hoisted(() => ({
   clear: vi.fn(),
   close: vi.fn(),
   generation: 1,
+  uploadRead: vi.fn(),
+  uploadPick: vi.fn(),
+  uploadResume: vi.fn(),
 }));
 vi.mock("../api/story-timeline-media", () => ({
   fetchTimelineCandidates: h.fetch,
   timelineMediaPending: () => ({ read: h.read, save: h.save, submit: h.submit, clear: h.clear }),
+}));
+vi.mock("../api/story-timeline-upload", () => ({
+  timelineUpload: () => ({
+    read: h.uploadRead,
+    clear: vi.fn(),
+    pick: h.uploadPick,
+    resume: h.uploadResume,
+  }),
 }));
 vi.mock("expo-image", () => ({ Image: () => <span>image</span> }));
 vi.mock("@/features/services/conversation-video", () => ({
@@ -120,6 +131,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
   h.read.mockReturnValue(null);
+  h.uploadRead.mockReturnValue(null);
   h.fetch.mockResolvedValue([candidate]);
   h.submit.mockResolvedValue({});
   host = document.createElement("div");
@@ -191,4 +203,31 @@ it("does not dispatch when durable storage fails", async () => {
   await click("timeline.useMedia");
   expect(h.submit).not.toHaveBeenCalled();
   expect(host.textContent).toContain("Storage full");
+});
+
+it("recovers an interrupted upload and requires explicit clip selection", async () => {
+  h.uploadRead.mockReturnValue({ name: "image.png", clientKey: "storage-key" });
+  h.uploadResume.mockResolvedValue(candidate);
+  await render();
+  expect(button("timeline.useMedia").disabled).toBe(true);
+  await click("timeline.retryUpload");
+  expect(h.uploadResume).toHaveBeenCalledOnce();
+  expect(h.submit).not.toHaveBeenCalled();
+  expect(button("timeline.useMedia").disabled).toBe(false);
+});
+it("does not upload for viewers", async () => {
+  await render(false);
+  expect(button("timeline.uploadImage").disabled).toBe(true);
+});
+it("cancels the active upload when leaving the picker", async () => {
+  let signal: AbortSignal | undefined;
+  h.uploadPick.mockImplementation((value: AbortSignal) => {
+    signal = value;
+    return new Promise(() => {});
+  });
+  await render();
+  await click("timeline.uploadImage");
+  expect(signal?.aborted).toBe(false);
+  await act(async () => root.render(null));
+  expect(signal?.aborted).toBe(true);
 });

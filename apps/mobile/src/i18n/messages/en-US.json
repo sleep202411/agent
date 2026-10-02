@@ -4351,5 +4351,11 @@
   "timeline.replaceHelp": "Save timeline edits first. Choose project media; video replacement may update clip timing.",
   "timeline.noProjectMedia": "No ready project images or videos.",
   "timeline.useMedia": "Use this media",
-  "timeline.previewMedia": "Preview video"
+  "timeline.previewMedia": "Preview video",
+  "timeline.uploadImage": "Upload image",
+  "timeline.uploadImageHelp": "JPEG, PNG or WebP, up to 30 MiB. Upload to the project, then select it for this clip.",
+  "timeline.uploadRecovery": "Finish uploaded image",
+  "timeline.retryUpload": "Retry upload confirmation",
+  "timeline.clearUpload": "Clear upload recovery",
+  "timeline.clearUploadHelp": "This clears local recovery only. An image already uploaded may remain in the project."
 }

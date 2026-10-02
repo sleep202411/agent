@@ -5,7 +5,7 @@ import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import { pendingRequest } from "@/lib/pending-request";
 import { timelineClipSchema, type TimelineScope } from "./story-timeline-api";
 const id = z.string().uuid();
-const candidateSchema = z.object({
+export const candidateSchema = z.object({
   asset: z.object({
     id,
     kind: z.enum(["image", "video", "audio", "document", "other"]),

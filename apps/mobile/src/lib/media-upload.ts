@@ -30,7 +30,7 @@ export interface MediaConfirmation {
   storageKey: string;
   kind: string;
   contentType: string;
-  scope?: { crewId: string };
+  scope?: { crewId?: string; storyProjectId?: string };
 }
 
 export async function confirmMobileMediaUpload(data: MediaConfirmation, signal?: AbortSignal) {
@@ -46,7 +46,7 @@ export interface MobileUploadOptions {
   kind: string;
   maxBytes?: number;
   signal?: AbortSignal;
-  scope?: { crewId?: string };
+  scope?: { crewId?: string; storyProjectId?: string };
   beforeConfirm?: (confirmation: MediaConfirmation) => void;
   onProgress?: (percent: number) => void;
 }
@@ -64,11 +64,20 @@ export async function uploadMobileMediaFile(
   // and may be stale; the server requires a positive, accurate byte count.
   assertCurrent();
   const crewId = options.scope?.crewId?.trim();
-  if (options.scope && (!crewId || crewId.length > 64))
-    throw new Error("Provide a valid Crew upload scope");
+  const storyProjectId = options.scope?.storyProjectId?.trim();
+  if (options.scope && ((!crewId && !storyProjectId) || (crewId && storyProjectId)))
+    throw new Error("Provide exactly one upload scope");
+  if (crewId && crewId.length > 64) throw new Error("Provide a valid Crew upload scope");
+  if (
+    storyProjectId &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(storyProjectId)
+  )
+    throw new Error("Provide a valid Story project upload scope");
   if (options.kind === "crew_asset_file" && !crewId)
     throw new Error("Crew uploads require a Crew scope");
-  const scope = crewId ? { crewId } : undefined;
+  if (storyProjectId && ["episode_source_video", "content_review_video"].includes(options.kind))
+    throw new Error("This upload kind cannot use a Story project scope");
+  const scope = crewId ? { crewId } : storyProjectId ? { storyProjectId } : undefined;
   const response = await fetch(file.uri, { signal: options.signal });
   if (!response.ok) throw new Error(`Cannot read selected file: HTTP ${response.status}`);
   const blob = await response.blob();

@@ -268,3 +268,23 @@ it("rejects a confirmation receipt after an account switch", async () => {
     "account changed"
   );
 });
+
+it("preserves Story project scope when signing and confirming", async () => {
+  const scope = { storyProjectId: "00000000-0000-4000-8000-000000000001" };
+  await uploadMobileMediaFile(
+    { ...file, type: "image/png" },
+    { kind: "ai_reference_image", scope }
+  );
+  expect(vi.mocked(api.post).mock.calls[0][1]?.data).toMatchObject({ scope });
+  expect(vi.mocked(api.post).mock.calls[1][1]?.data).toMatchObject({ scope });
+});
+it.each([
+  { crewId: "crew", storyProjectId: "00000000-0000-4000-8000-000000000001" },
+  { storyProjectId: "not-a-project" },
+  {},
+])("rejects invalid or ambiguous upload scope before reading bytes", async (scope) => {
+  await expect(uploadMobileMediaFile(file, { kind: "ai_reference_image", scope })).rejects.toThrow(
+    "scope"
+  );
+  expect(fetchMock).not.toHaveBeenCalled();
+});

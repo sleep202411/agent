@@ -4351,5 +4351,11 @@
   "timeline.replaceHelp": "請先儲存時間線修改。選擇專案媒體，替換影片可能會更新片段時長。",
   "timeline.noProjectMedia": "暫無就緒的專案圖片或影片。",
   "timeline.useMedia": "使用此媒體",
-  "timeline.previewMedia": "預覽影片"
+  "timeline.previewMedia": "預覽影片",
+  "timeline.uploadImage": "上傳圖片",
+  "timeline.uploadImageHelp": "支援 JPEG、PNG 或 WebP，最大 30 MiB。上傳至項目後，選擇用於此鏡頭。",
+  "timeline.uploadRecovery": "完成已上傳圖片",
+  "timeline.retryUpload": "重試上傳確認",
+  "timeline.clearUpload": "清除上傳恢復記錄",
+  "timeline.clearUploadHelp": "這只會清除本地恢復記錄。已上傳的圖片可能仍保留在項目中。"
 }
