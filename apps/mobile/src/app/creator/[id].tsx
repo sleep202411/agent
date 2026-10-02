@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAuth } from "@/auth";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { IpGrid } from "@/components/ip-grid";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -36,9 +38,13 @@ import { CreatorEducation } from "@/features/profile/creator-education";
 export default function CreatorDetailScreen() {
   const { id, section } = useLocalSearchParams<{ id: string; section?: string | string[] }>();
   const servicesRequested = section === "services";
+  const auth = useAuth();
+  const locale = useLocale();
+  const active = useScreenActive();
+  if (!active || auth.status === "hydrating") return null;
   return (
     <CreatorDetailContent
-      key={JSON.stringify([id, servicesRequested])}
+      key={JSON.stringify([id, servicesRequested, auth.generation, locale])}
       id={id}
       servicesRequested={servicesRequested}
     />

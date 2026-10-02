@@ -4,6 +4,9 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import CreatorDetail from "@/app/creator/[id]";
 const h = vi.hoisted(() => ({
   t: (k: string) => k,
+  active: true,
+  generation: 1,
+  locale: "en-US",
   id: "a",
   section: undefined as string | string[] | undefined,
   scrollTo: vi.fn(),
@@ -14,6 +17,10 @@ const h = vi.hoisted(() => ({
   works: vi.fn(),
   crews: vi.fn(),
 }));
+vi.mock("@/auth", () => ({
+  useAuth: () => ({ status: "authenticated", generation: h.generation }),
+}));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("expo-router", () => ({
   router: { push: vi.fn() },
   Stack: { Screen: () => null },
@@ -48,7 +55,7 @@ vi.mock("@/data/creator-service-api", () => ({
   },
 }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("@/i18n", () => ({ useTranslations: () => h.t, useLocale: () => "en-US" }));
+vi.mock("@/i18n", () => ({ useTranslations: () => h.t, useLocale: () => h.locale }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
@@ -95,6 +102,9 @@ const retry = () =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.id = "a";
+  h.active = true;
+  h.generation = 1;
+  h.locale = "en-US";
   h.section = undefined;
   h.layouts = [];
   h.profile.mockResolvedValue({ id: "a", name: "Alice", levels: [] });
@@ -294,4 +304,37 @@ it("serializes more requests and ignores their late result after switching creat
   await act(async () => finish({ items: [], nextCursor: "stale" }));
   expect(host.textContent).toContain("Bob");
   expect(host.textContent).not.toContain("myServices.loadMore");
+});
+
+it("reloads the profile and services after a return visit", async () => {
+  await render();
+  expect(host.textContent).toContain("Alice");
+  const signal = h.services.mock.calls[0][2] as AbortSignal;
+  h.active = false;
+  await render();
+  expect(host.textContent).toBe("");
+  expect(signal.aborted).toBe(true);
+  h.profile.mockResolvedValue({ id: "a", name: "Updated Alice", levels: [] });
+  h.active = true;
+  await render();
+  expect(h.profile).toHaveBeenCalledTimes(2);
+  expect(h.services).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("Updated Alice");
+});
+it.each(["account", "locale"])("isolates pending profile data after %s changes", async (mode) => {
+  let finish!: (value: unknown) => void;
+  h.profile.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  if (mode === "account") h.generation++;
+  else h.locale = "zh-CN";
+  h.profile.mockResolvedValue({ id: "a", name: "Current profile", levels: [] });
+  await render();
+  await act(async () => finish({ id: "a", name: "Stale profile", levels: [] }));
+  expect(host.textContent).toContain("Current profile");
+  expect(host.textContent).not.toContain("Stale profile");
 });

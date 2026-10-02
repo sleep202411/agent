@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { CreatorDiscoveryCardSchema } from "@repo/shared/creator-location";
 import { regionLabel } from "@repo/shared/regions";
-import { z } from "zod";
 import { useAuth } from "@/auth";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -15,7 +14,7 @@ export function PublicStudioProfile(props: Props) {
   const auth = useAuth(),
     locale = useLocale(),
     active = useScreenActive();
-  if (!active || auth.status === "loading") return null;
+  if (!active || auth.status === "hydrating") return null;
   return (
     <Profile
       key={JSON.stringify([props.creatorId, auth.generation, locale])}
@@ -34,7 +33,7 @@ function Profile({
 }: Props & { generation: number; signedIn: boolean }) {
   const t = useTranslations(),
     locale = useLocale();
-  const [profile, setProfile] = useState<z.infer<typeof CreatorDiscoveryCardSchema>>();
+  const [profile, setProfile] = useState<ReturnType<typeof CreatorDiscoveryCardSchema.parse>>();
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState<string>();

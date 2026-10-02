@@ -8,10 +8,14 @@ const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
   signedIn: false,
+  hydrating: false,
   t: (key: string) => key,
 }));
 vi.mock("@/auth", () => ({
-  useAuth: () => ({ status: h.signedIn ? "authenticated" : "anonymous", generation: h.generation }),
+  useAuth: () => ({
+    status: h.hydrating ? "hydrating" : h.signedIn ? "authenticated" : "anonymous",
+    generation: h.generation,
+  }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
@@ -65,6 +69,7 @@ beforeEach(() => {
   h.generation = 1;
   h.active = true;
   h.signedIn = false;
+  h.hydrating = false;
   h.get.mockResolvedValue(profile);
   host = document.createElement("div");
   root = createRoot(host);
@@ -148,4 +153,14 @@ it("ignores a late previous-account projection", async () => {
     expect.any(String),
     expect.objectContaining({ credentials: "include" })
   );
+});
+
+it("waits for session hydration before requesting the public projection", async () => {
+  h.hydrating = true;
+  await render();
+  expect(h.get).not.toHaveBeenCalled();
+  expect(host.textContent).toBe("");
+  h.hydrating = false;
+  await render();
+  expect(host.textContent).toContain("Service cards");
 });
