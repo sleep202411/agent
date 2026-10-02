@@ -46,6 +46,7 @@ import {
   advanceExperienceTimeline,
   createExperienceTimelineCursor,
   evaluateExperienceCondition,
+  initializeExperienceRuntime,
   isExperienceRendererVisible,
   type ExperienceEventQueueResult,
   type ExperienceRuntimeController,
@@ -60,7 +61,6 @@ import {
   IconLock,
   IconPlayerPlay,
   IconRefresh,
-  IconVolumeOff,
 } from "@tabler/icons-react";
 import { classNames } from "./class-names";
 import {
@@ -92,7 +92,9 @@ import {
   type ExperiencePlaybackGates,
   type ExperienceViewerPauseReason,
 } from "./experience-playback-holds";
+import { ExperienceFrameControls, ExperiencePausedScrim } from "./experience-playback-controls";
 import { resolveExperiencePlaybackRejection } from "./experience-playback-rejection";
+import { PRIMARY_BUTTON } from "./experience-player-styles";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
 import { ExperienceStoryClock, ExperienceStoryClockContext } from "./experience-story-clock";
 import { useExperienceAudioHost } from "./use-experience-audio-host";
@@ -102,6 +104,11 @@ export type ExperiencePlayerFrameProfile = "auto" | ExperienceOrientation;
 export interface ExperienceWorldModelRendererProps {
   config: ExperienceCoreWorldModelRendererConfig;
   active: boolean;
+  /**
+   * The story is held — the viewer paused it, an access flow is open, it is
+   * over — and the stream holds with it. Ignore input while it is.
+   */
+  paused: boolean;
   onCompleted: () => void;
   /**
    * Pass the error as raised, never its message: a `NotAllowedError` — the
@@ -109,6 +116,13 @@ export interface ExperienceWorldModelRendererProps {
    * instead of failing it. Anything else is shown to the viewer verbatim.
    */
   onError: (error: unknown) => void;
+  /**
+   * Hand over the element the stream plays on, and null when it goes. The
+   * player plays it inside the viewer's taps, which is what lets a browser that
+   * refuses to play without one (WebKit, Low Power Mode) play it at all, and it
+   * plays and pauses it with the story.
+   */
+  onMediaElement: (element: HTMLVideoElement | null) => void;
 }
 
 export interface ExperiencePlayerAccess {
@@ -127,7 +141,15 @@ export interface ExperienceAccessCheckpoint {
 }
 
 export interface ExperiencePlayerProps {
+  /** Where a host returning from a purchase resumes. The first run only. */
   accessCheckpoint?: ExperienceAccessCheckpoint;
+  /**
+   * Private authoring hosts only: every run — the first, and every restart —
+   * starts at this scene instead of the story's entry. It must name a scene of
+   * the runtime. A purchase being resumed (`accessCheckpoint`) still wins on
+   * the first run.
+   */
+  startSceneId?: string;
   onAccessCheckpoint?: (checkpoint: ExperienceAccessCheckpoint) => void;
   access?: ExperiencePlayerAccess;
   /** Only private authoring hosts may bypass payment for playtests. */
@@ -153,8 +175,6 @@ export interface ExperiencePlayerProps {
   adaptivePlayback?: boolean;
 }
 
-const PRIMARY_BUTTON =
-  "inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[var(--experience-color-accent,#ea2804)] px-7 text-sm font-semibold text-white outline-none transition-colors hover:brightness-110 focus-visible:ring-2 focus-visible:ring-white/60 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none";
 const SECONDARY_BUTTON =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-white/[0.12] px-5 text-sm font-semibold text-white outline-none transition-colors hover:bg-white/[0.2] focus-visible:ring-2 focus-visible:ring-white/60 motion-reduce:transition-none";
 
@@ -170,6 +190,7 @@ export function ExperiencePlayer({
   access,
   previewAccess = false,
   accessCheckpoint,
+  startSceneId,
   onAccessCheckpoint,
   onStateChange,
   playSessionReporter,
@@ -199,15 +220,24 @@ export function ExperiencePlayer({
     const parsed = ExperienceRuntimeManifestSchema.safeParse(runtime);
     if (!parsed.success) return { ok: false as const, issues: parsed.error.issues };
     try {
+      // Where this run starts: the purchase it comes back from, on the first
+      // run only; otherwise the authoring host's chosen scene, on every run.
+      const entryCheckpoint =
+        restartEpoch === 0 && accessCheckpoint
+          ? accessCheckpoint
+          : startSceneId
+            ? sceneEntryCheckpoint(parsed.data, startSceneId, randomSeed)
+            : undefined;
       return {
         ok: true as const,
         manifest: parsed.data,
+        entryCheckpoint,
         controller: createExperienceRuntime(parsed.data, {
           rendererAdapters: EXPERIENCE_CORE_RENDERER_ADAPTERS,
           randomSeed,
           canAccess: access?.canAccess,
           previewAccess,
-          restore: restartEpoch === 0 ? accessCheckpoint?.state : undefined,
+          restore: entryCheckpoint?.state,
           playSessionReporter: sessionReporter,
         }),
       };
@@ -217,7 +247,16 @@ export function ExperiencePlayer({
         issues: [{ path: [], message: runtimeErrorMessage(error) }],
       };
     }
-  }, [access, accessCheckpoint, previewAccess, randomSeed, restartEpoch, runtime, sessionReporter]);
+  }, [
+    access,
+    accessCheckpoint,
+    previewAccess,
+    randomSeed,
+    restartEpoch,
+    runtime,
+    sessionReporter,
+    startSceneId,
+  ]);
 
   if (!prepared.ok) {
     return (
@@ -243,7 +282,7 @@ export function ExperiencePlayer({
         key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
         access={access}
         previewAccess={previewAccess}
-        accessCheckpoint={restartEpoch === 0 ? accessCheckpoint : undefined}
+        entryCheckpoint={prepared.entryCheckpoint}
         onAccessCheckpoint={onAccessCheckpoint}
         onStateChange={onStateChange}
         manifest={prepared.manifest}
@@ -278,12 +317,13 @@ function ActiveExperienceRuntimePlayer({
   onRestart,
   access,
   previewAccess,
-  accessCheckpoint,
+  entryCheckpoint,
   onAccessCheckpoint,
   onStateChange,
   endingExtra,
 }: {
-  accessCheckpoint?: ExperienceAccessCheckpoint;
+  /** Where the run enters, in place of the story's entry: its state is already restored. */
+  entryCheckpoint?: ExperienceAccessCheckpoint;
   onAccessCheckpoint?: (checkpoint: ExperienceAccessCheckpoint) => void;
   onStateChange?: (state: ExperienceRuntimeState) => void;
   endingExtra?: (sessionId: string | null) => ReactNode;
@@ -356,6 +396,14 @@ function ActiveExperienceRuntimePlayer({
   // code that runs between renders.
   const [viewerPause, setViewerPause] = useState<ExperienceViewerPauseReason | null>(null);
   const viewerPauseRef = useRef<ExperienceViewerPauseReason | null>(null);
+  // The resume, for listeners added once (the OS media controls); it changes
+  // with the sound and the presentation it restores.
+  const resumeStoryRef = useRef<(source: "gesture" | "system") => void>(() => undefined);
+  // Focus a pause takes from the story — the story layer turns inert — and the
+  // resume gives back, and the paused frame a refusal moves focus to.
+  const storyLayerRef = useRef<HTMLDivElement | null>(null);
+  const focusBeforePauseRef = useRef<HTMLElement | null>(null);
+  const pausedFrameRef = useRef<HTMLButtonElement | null>(null);
   // Story time for everything that moves the story without media (see
   // ExperienceStoryClock). It stands still whenever the story is held — before
   // Start, through a pause or an access flow, after the end — so nothing
@@ -403,6 +451,7 @@ function ActiveExperienceRuntimePlayer({
     phone,
     portrait,
     locked: landscapeLocked,
+    fullscreen,
     enter: enterLandscape,
     exit: exitLandscape,
   } = useLandscapePresentation();
@@ -429,12 +478,12 @@ function ActiveExperienceRuntimePlayer({
   // below then find nothing left to do.
   const pauseStory = useCallback(
     (reason: ExperienceViewerPauseReason) => {
-      const next = nextExperienceViewerPause(
-        viewerPauseRef.current,
-        { type: "pause", reason },
-        holdsNow()
-      );
-      if (next === viewerPauseRef.current) return;
+      const current = viewerPauseRef.current;
+      const next = nextExperienceViewerPause(current, { type: "pause", reason }, holdsNow());
+      if (next === current) return;
+      // Taken before the story layer turns inert, which drops it. A refusal
+      // that replaces a pause keeps what the first pause took.
+      if (current === null) focusBeforePauseRef.current = focusedWithin(storyLayerRef.current);
       viewerPauseRef.current = next;
       storyClock.pause();
       playbackHandlesRef.current.forEach((handle) => handle.pause());
@@ -684,6 +733,41 @@ function ActiveExperienceRuntimePlayer({
   const hasVideoRenderer = rendererSlots.some(
     ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID
   );
+  const hasWorldModelRenderer = rendererSlots.some(
+    ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID
+  );
+  // What the frame's controls offer. The toggle shows wherever the scene has
+  // time to stop — footage, a fixed clock, a world stream, sound — and while
+  // the story is paused; a silent text or decision beat has nothing to pause.
+  // Space toggles the film wherever the toggle shows, save over a world stream,
+  // which takes Space for a move of its own.
+  const sceneHasTime =
+    hasVideoRenderer ||
+    scene?.clock.kind === "fixed" ||
+    hasWorldModelRenderer ||
+    Boolean(manifest.audio);
+  const toggleVisible = viewerPause !== null || sceneHasTime;
+  const spaceToggles = holds.pauseUi && toggleVisible && !hasWorldModelRenderer;
+  const sceneHasTimeRef = useRef(sceneHasTime);
+  useLayoutEffect(() => {
+    sceneHasTimeRef.current = sceneHasTime;
+  });
+  // A page put away — a tab switched, the phone locked, the app left — pauses
+  // a film that has time to lose, and coming back leaves it paused: the viewer
+  // resumes it. A silent beat loses nothing and is left as it is.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden" && sceneHasTimeRef.current) pauseStory("hidden");
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [pauseStory]);
+  // Start settles after its tap, and the page can be put away in between.
+  useEffect(() => {
+    if (started && document.visibilityState === "hidden" && sceneHasTimeRef.current) {
+      pauseStory("hidden");
+    }
+  }, [pauseStory, started]);
   // Start plays the entry clip inside the click, so it waits until that clip is
   // on an element. Before then Start would press play on nothing — and the
   // negotiation and buffering this covers are exactly the wait it shows.
@@ -909,6 +993,19 @@ function ActiveExperienceRuntimePlayer({
     });
   }, [holds.mediaHeld, playHandle, started]);
 
+  // The OS media controls — the lock screen, headphones, Control Center — play
+  // and pause the story, never just the clip under it, and cannot seek it. Each
+  // Vidstack player takes the session for itself as it connects and clears it
+  // as it goes, so the player takes it back whenever media is staged; with
+  // none staged there is nothing for the controls to act on.
+  const claimMediaSession = useCallback(() => {
+    setMediaSessionHandlers({
+      play: () => resumeStoryRef.current("system"),
+      pause: () => pauseStory("user"),
+    });
+  }, [pauseStory]);
+  useEffect(() => () => setMediaSessionHandlers(null), []);
+
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
       setStagedHandleIds((current) => {
@@ -923,10 +1020,11 @@ function ActiveExperienceRuntimePlayer({
         return;
       }
       playbackHandlesRef.current.set(instanceId, handle);
+      claimMediaSession();
       // Held clips wait for their hold to lift, the charge gate's included.
       if (mayPlayNow()) playHandle(instanceId, handle);
     },
-    [mayPlayNow, playHandle]
+    [claimMediaSession, mayPlayNow, playHandle]
   );
 
   // A clip stopped from outside while it was playing: the system (a call,
@@ -951,8 +1049,9 @@ function ActiveExperienceRuntimePlayer({
   // play() is what WebKit grants an element on, and Low Power Mode refuses any
   // play() a tap did not start. Each play is classified by the one that
   // follows through `playHandle`; this one only unlocks, so its outcome is
-  // only traced.
-  const unlockMedia = () => {
+  // only traced. A clip the story holds is paused again at once: granted, not
+  // started. One at its end is left alone — played, it would start over.
+  const unlockMedia = useCallback((keepPlaying: boolean) => {
     playbackHandlesRef.current.forEach((handle, instanceId) => {
       const playing = handle.playInGesture();
       if (!playing) return;
@@ -960,15 +1059,97 @@ function ActiveExperienceRuntimePlayer({
         () => debugTrace(`unlock ${instanceId}`),
         (error: unknown) => debugTrace(`unlock ${instanceId} ${describeRejection(error)}`)
       );
+      if (!keepPlaying) handle.pause();
     });
-  };
+  }, []);
+
+  // Resumes the story for the viewer, inside their tap or key press, in an
+  // order that matters: the clips are played first and synchronously — that
+  // play is what WebKit grants an element on — then Web Audio, whose resume()
+  // runs before unlock()'s first await; the state follows last. The hold
+  // effects then catch up, and each clip is played again through `playHandle`,
+  // so a tap that still cannot play is a refusal once more, not a dialog.
+  const resumeStory = useCallback(
+    (source: "gesture" | "system") => {
+      const current = viewerPauseRef.current;
+      const next = nextExperienceViewerPause(current, { type: "resume", source }, holdsNow());
+      if (next === current) return;
+      // A refusal is what muted the clip, on its way to failing: the tap that
+      // recovers it may play it with sound. Sound the viewer left off stays off.
+      if (current === "refused" && soundBlocked) enableSound();
+      // Held by the story's own pause command, or by an open charge: unlocked
+      // for the tap, but not started.
+      unlockMedia(playbackEnabledRef.current && !committedGatesRef.current.chargeGate);
+      void unlockAudio().catch(reportAudioError);
+      // A phone that lost the screen — the viewer left fullscreen, an access
+      // dialog gave it back — takes it again with the tap. The OS controls are
+      // no tap on the film, and do not.
+      if (source === "gesture" && phone && landscapeFilm) enterLandscape(shellRef.current);
+      viewerPauseRef.current = null;
+      storyClock.resume();
+      debugTrace(`resume ${source}`);
+      setViewerPause(null);
+    },
+    [
+      enableSound,
+      enterLandscape,
+      holdsNow,
+      landscapeFilm,
+      phone,
+      reportAudioError,
+      soundBlocked,
+      storyClock,
+      unlockAudio,
+      unlockMedia,
+    ]
+  );
+  useLayoutEffect(() => {
+    resumeStoryRef.current = resumeStory;
+  });
+
+  // The toggle, the paused frame's tap and Space all come here.
+  const togglePause = useCallback(() => {
+    if (viewerPauseRef.current === null) pauseStory("user");
+    else resumeStoryRef.current("gesture");
+  }, [pauseStory]);
+
+  // Space, from the page or the player: a key press is a user activation, so
+  // it resumes as a tap does. Listened to on the document, after React's own
+  // handlers, so a control that takes Space for itself has already said so.
+  useEffect(() => {
+    if (!spaceToggles) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isPlaybackToggleKey(event, shellRef.current)) return;
+      event.preventDefault();
+      togglePause();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [spaceToggles, togglePause]);
+
+  // Focus follows the pause. A refusal asks for one tap, so the paused frame
+  // takes focus — unless the viewer is busy elsewhere on the page, in a host
+  // composer or dialog. A resume gives focus back where the pause took it from,
+  // if that is still on the page and nothing else has taken it since.
+  useEffect(() => {
+    if (viewerPause === "refused") {
+      if (focusIsFree(shellRef.current)) pausedFrameRef.current?.focus({ preventScroll: true });
+      return;
+    }
+    if (viewerPause !== null) return;
+    const target = focusBeforePauseRef.current;
+    focusBeforePauseRef.current = null;
+    if (holds.running && target?.isConnected && focusIsFree(shellRef.current)) {
+      target.focus({ preventScroll: true });
+    }
+  }, [holds.running, viewerPause]);
 
   const begin = () => {
     if (started || starting || !theme || entryMediaPending) return;
     // Inside the click, before anything is awaited. The entry clip is not
     // paused again here: that pause would be delivered as its own task and land
     // after the real play() started.
-    unlockMedia();
+    unlockMedia(true);
     // Fullscreen and the orientation lock need this click's activation too.
     // Not awaited: the film starts alongside, and a refusal only means the
     // frame is drawn sideways instead (see shouldRotateFrame).
@@ -977,7 +1158,7 @@ function ActiveExperienceRuntimePlayer({
     void unlockAudio().catch(reportAudioError);
     setStarting(true);
     void run(() =>
-      accessCheckpoint ? controller.dispatch(accessCheckpoint.events) : controller.start()
+      entryCheckpoint ? controller.dispatch(entryCheckpoint.events) : controller.start()
     )
       .then((entered) => {
         if (!entered) {
@@ -1001,6 +1182,7 @@ function ActiveExperienceRuntimePlayer({
       runtimeState={runtimeState}
       formatPrice={access?.formatPrice}
       active={started}
+      paused={holds.storyHeld}
       open={openRendererIds.has(renderer.instanceId)}
       locale={playbackLocale}
       orientation={orientation}
@@ -1027,6 +1209,7 @@ function ActiveExperienceRuntimePlayer({
       experienceProfile={experienceProfile}
       stageProfile={stageProfile}
       rotated={frameRotated}
+      fullscreen={fullscreen}
       copy={copy}
       style={theme ? themeStyle(theme) : undefined}
       stage={
@@ -1037,6 +1220,7 @@ function ActiveExperienceRuntimePlayer({
               renderer layers still stack in the stage's own context, and `cq*`
               units still resolve against the stage. */}
           <div
+            ref={storyLayerRef}
             data-experience-story-layer=""
             data-experience-paused={viewerPause ?? undefined}
             inert={viewerPause !== null}
@@ -1077,20 +1261,27 @@ function ActiveExperienceRuntimePlayer({
                   .map(renderSlot)
               : null}
           </div>
-          {soundBlocked && started && !endingId && !runtimeError && hasVideoRenderer ? (
-            // Renderer overlays stack on the manifest's own `renderer.layer` as a
-            // raw zIndex — a choice overlay compiles to 100 — so a Tailwind z-* on
-            // this button puts it BEHIND the overlay it most needs to sit next to.
-            // Stack above the widest band any manifest may declare instead.
-            <div
-              className="absolute top-0 right-0 p-[clamp(10px,2.4cqmin,24px)]"
-              style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 1 }}
-            >
-              <button type="button" className={SECONDARY_BUTTON} onClick={enableSound}>
-                <IconVolumeOff className="size-4" aria-hidden="true" />
-                {copy.video.unmute}
-              </button>
-            </div>
+          {/* The pause is part of the picture: the paused frame and the controls
+              sit in the film frame and turn with it. Neither shows over an
+              access flow, the locked-scene gate, the ending or a failure. */}
+          {holds.pauseUi && viewerPause !== null ? (
+            <ExperiencePausedScrim
+              ref={pausedFrameRef}
+              copy={copy.playback}
+              reason={viewerPause}
+              onResume={() => resumeStory("gesture")}
+            />
+          ) : null}
+          {holds.pauseUi ? (
+            <ExperienceFrameControls
+              copy={copy}
+              paused={viewerPause !== null}
+              toggleVisible={toggleVisible}
+              unmuteVisible={soundBlocked && hasVideoRenderer && viewerPause === null}
+              keyShortcut={spaceToggles}
+              onToggle={togglePause}
+              onUnmute={enableSound}
+            />
           ) : null}
         </ExperienceStoryClockContext.Provider>
       }
@@ -1246,6 +1437,7 @@ function CoreRenderer({
   entryKey,
   runtimeState,
   active,
+  paused,
   open,
   locale,
   orientation,
@@ -1269,6 +1461,8 @@ function CoreRenderer({
   entryKey: string;
   runtimeState: ExperienceRuntimeState;
   active: boolean;
+  /** Story time stands still: the viewer paused, an access flow is open, the story is over. */
+  paused: boolean;
   open: boolean;
   locale: string;
   orientation: ExperienceOrientation;
@@ -1354,9 +1548,11 @@ function CoreRenderer({
       <CoreWorldModelRenderer
         renderer={renderer}
         active={active}
+        paused={paused}
         renderWorldModel={renderWorldModel}
         onCompleted={() => onOutcome(renderer.instanceId, "world-completed", {})}
         onRuntimeError={onRuntimeError}
+        onPlaybackHandle={onPlaybackHandle}
         onPlaybackRefused={onPlaybackRefused}
       />
     );
@@ -1368,19 +1564,33 @@ function CoreRenderer({
 function CoreWorldModelRenderer({
   renderer,
   active,
+  paused,
   renderWorldModel,
   onCompleted,
   onRuntimeError,
+  onPlaybackHandle,
   onPlaybackRefused,
 }: {
   renderer: ExperienceRendererInstance;
   active: boolean;
+  paused: boolean;
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
   onCompleted: () => void;
   onRuntimeError: (message: string) => void;
+  onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
   onPlaybackRefused: () => void;
 }) {
   const reportedErrorRef = useRef<string | null>(null);
+  // The stream plays on an element of its own, which is played and held like a
+  // clip's: inside the viewer's taps, and with the story.
+  const handOverElement = useCallback(
+    (element: HTMLVideoElement | null) =>
+      onPlaybackHandle(
+        renderer.instanceId,
+        element ? liveStreamPlaybackHandle(renderer.instanceId, element) : null
+      ),
+    [onPlaybackHandle, renderer.instanceId]
+  );
   const parsed = ExperienceCoreWorldModelRendererConfigSchema.safeParse(renderer.config);
   const errorMessage = !parsed.success
     ? parsed.error.issues.map((issue) => issue.message).join("; ")
@@ -1405,6 +1615,7 @@ function CoreWorldModelRenderer({
       {renderWorldModel({
         config: parsed.data,
         active,
+        paused,
         onCompleted,
         // The stream's element refusing to play without a tap takes the same
         // refused path as a clip's: a pause, never the failure dialog.
@@ -1412,6 +1623,7 @@ function CoreWorldModelRenderer({
           isAutoplayPolicyRefusal(error)
             ? onPlaybackRefused()
             : onRuntimeError(runtimeErrorMessage(error)),
+        onMediaElement: handOverElement,
       })}
     </div>
   );
@@ -1793,7 +2005,6 @@ function CoreVideoRenderer({
       onSoundBlocked={onSoundBlocked}
       onContentSize={onContentSize}
       playbackIdentity={playbackIdentity}
-      copy={copy.video}
     />
   );
   if (native) {
@@ -2095,12 +2306,12 @@ const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
 };
 
 /**
- * Two layers. The film frame — media, spatial cues, choices, the unmute control
- * — sits in a landscape viewport that turns as one unit when the frame is drawn
- * sideways (see shouldRotateFrame), so a phone held sideways sees the picture
- * and everything on it the same way up. System UI that is not part of the
- * picture — title card, access gates, ending, errors — sits in the viewport
- * overlay above it and never turns.
+ * Two layers. The film frame — media, spatial cues, choices, the paused frame
+ * and the frame's controls — sits in a landscape viewport that turns as one
+ * unit when the frame is drawn sideways (see shouldRotateFrame), so a phone held
+ * sideways sees the picture and everything on it the same way up. System UI
+ * that is not part of the picture — title card, access gates, ending, errors —
+ * sits in the viewport overlay above it and never turns.
  *
  * The cinematic stage keeps the authored aspect ratio and fits inside that
  * landscape viewport (letterboxed), so the whole frame stays visible and fills
@@ -2109,6 +2320,12 @@ const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
  * is responsive instead, so long-form text owns the available reading
  * viewport. Renderer selection remains entirely manifest-driven in both
  * profiles; only the shell's measured box decides the fit, never the window.
+ *
+ * The stage also carries what the frame's controls need to keep clear of the
+ * host's chrome (see ExperienceFrameControls): `--experience-frame-inset-top`,
+ * the band above the picture, and — when the frame is turned, so its top runs
+ * down the side of the screen, or the player has the screen to itself — a
+ * `--experience-chrome-inset-top` of zero over whatever the host set.
  */
 function PlayerFrame({
   shellRef,
@@ -2116,6 +2333,7 @@ function PlayerFrame({
   experienceProfile,
   stageProfile,
   rotated,
+  fullscreen,
   copy,
   style,
   stage,
@@ -2127,6 +2345,8 @@ function PlayerFrame({
   stageProfile: ExperienceProfile;
   /** Draw the frame sideways — decided by the device, see shouldRotateFrame. */
   rotated: boolean;
+  /** The player holds the screen: no host chrome shows around it. */
+  fullscreen: boolean;
   copy: ExperiencePlayerCopy;
   style?: CSSProperties;
   stage: React.ReactNode;
@@ -2139,15 +2359,22 @@ function PlayerFrame({
   const turned = rotated && shellSize !== null;
   let viewportStyle: CSSProperties = { width: "100%", height: "100%" };
   let stageStyle: CSSProperties = { width: "100%", height: "100%" };
+  let frameInsetTop = 0;
   if (shellSize) {
     const viewportWidth = turned ? shellSize.height : shellSize.width;
     const viewportHeight = turned ? shellSize.width : shellSize.height;
     viewportStyle = { width: viewportWidth, height: viewportHeight };
     if (stageProfile === "cinematic") {
       const width = Math.min(viewportWidth, viewportHeight * aspect);
-      stageStyle = { width: Math.round(width), height: Math.round(width / aspect) };
+      const height = Math.round(width / aspect);
+      stageStyle = { width: Math.round(width), height };
+      if (!turned) frameInsetTop = Math.max(0, (viewportHeight - height) / 2);
     }
   }
+  const chromeInsets: Record<`--${string}`, string> = {
+    "--experience-frame-inset-top": `${frameInsetTop}px`,
+    ...(turned || fullscreen ? { "--experience-chrome-inset-top": "0px" } : {}),
+  };
   return (
     <div
       ref={shellRef}
@@ -2173,6 +2400,7 @@ function PlayerFrame({
           className="absolute left-1/2 top-1/2 isolate"
           style={{
             ...stageStyle,
+            ...chromeInsets,
             transform: "translate(-50%, -50%)",
             containerType: "size",
             containerName: "experience-frame",
@@ -2547,6 +2775,123 @@ function describeRejection(error: unknown): string {
   if (typeof error !== "object" || error === null) return String(error);
   const { name, message } = error as { name?: unknown; message?: unknown };
   return `${String(name)}: ${String(message)}`;
+}
+
+/**
+ * A run that starts at `sceneId` instead of the story's entry: a fresh state
+ * moved there, and the entry event `start()` would have dispatched for it.
+ */
+function sceneEntryCheckpoint(
+  manifest: ExperienceRuntimeManifest,
+  sceneId: string,
+  randomSeed: string
+): ExperienceAccessCheckpoint {
+  return {
+    state: { ...initializeExperienceRuntime(manifest, { randomSeed }), currentSceneId: sceneId },
+    events: [{ type: "scene.entered", sourceId: sceneId, payload: {} }],
+  };
+}
+
+/**
+ * A live stream's element as a playback handle, so it is played and held like
+ * a clip: inside the viewer's taps, and with the story. Live, it has nothing to
+ * seek and never ends on the element.
+ */
+function liveStreamPlaybackHandle(
+  identity: string,
+  element: HTMLMediaElement
+): ExperienceMediaPlaybackHandle {
+  return {
+    playbackIdentity: identity,
+    playInGesture: () => element.play(),
+    play: () => element.play(),
+    pause: () => element.pause(),
+    seek: () => undefined,
+    setMuted: (muted) => {
+      element.muted = muted;
+    },
+    ended: () => false,
+    element: () => element,
+  };
+}
+
+/**
+ * Points the OS media controls at the story, or clears them. Seeking is never
+ * offered: the story's clip is not the viewer's to scrub. Each action is set on
+ * its own, because a browser throws for one it does not support.
+ */
+function setMediaSessionHandlers(handlers: { play: () => void; pause: () => void } | null): void {
+  if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+  const actions: [MediaSessionAction, MediaSessionActionHandler | null][] = [
+    ["play", handlers?.play ?? null],
+    ["pause", handlers?.pause ?? null],
+    ["seekto", null],
+    ["seekforward", null],
+    ["seekbackward", null],
+  ];
+  for (const [action, handler] of actions) {
+    try {
+      navigator.mediaSession.setActionHandler(action, handler);
+    } catch {
+      // An action this browser does not support is one nothing can trigger.
+    }
+  }
+}
+
+/**
+ * What takes Space for itself, and so never toggles the film: native and ARIA
+ * controls activate on it — a focused choice is chosen, the toggle and the
+ * paused frame are pressed, a press-hold hotspot is held — and a text scene
+ * scrolls by it.
+ */
+const SPACE_KEEPERS = [
+  "button",
+  "a[href]",
+  "input",
+  "textarea",
+  "select",
+  "[contenteditable]",
+  '[role="button"]',
+  '[role="link"]',
+  '[role="checkbox"]',
+  '[role="switch"]',
+  '[role="slider"]',
+  '[role^="menuitem"]',
+  '[role="option"]',
+  '[role="tab"]',
+  `[data-experience-renderer="${EXPERIENCE_CORE_TEXT_RENDERER_ID}"]`,
+].join(", ");
+
+/**
+ * Whether a key press toggles the film: a bare Space nothing has taken yet,
+ * pressed on the page itself or inside the player — never in host UI around
+ * it, such as an authoring composer or a host dialog.
+ */
+function isPlaybackToggleKey(event: KeyboardEvent, shell: HTMLElement | null): boolean {
+  if (event.key !== " " || event.repeat || event.isComposing || event.defaultPrevented) {
+    return false;
+  }
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+  const target = event.target;
+  if (!shell || !(target instanceof Element)) return false;
+  if (target !== document.body && !shell.contains(target)) return false;
+  return target.closest(SPACE_KEEPERS) === null;
+}
+
+/** The element focused inside `container`, if focus is there. */
+function focusedWithin(container: HTMLElement | null): HTMLElement | null {
+  const focused = document.activeElement;
+  return focused instanceof HTMLElement && container?.contains(focused) ? focused : null;
+}
+
+/**
+ * Whether the player may move focus: it rests on nothing in particular (the
+ * page itself), or is already inside the player. Focus in host UI around the
+ * player — an authoring composer, a dialog — is the viewer's, and stays put.
+ */
+function focusIsFree(shell: HTMLElement | null): boolean {
+  const focused = document.activeElement;
+  return !focused || focused === document.body || Boolean(shell?.contains(focused));
 }
 
 /**

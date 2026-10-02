@@ -65,6 +65,37 @@ the timeline-control charge), never worked out from them.
   plays pauses the story with it; a play the player did not ask for is stopped
   again. A press or swipe in progress is dropped without a verdict, and a
   renderer outcome that lands during a pause waits for the resume.
+- **Resume.** A tap, a click or Space resumes inside the user activation: every
+  staged clip is played first and synchronously — that play is what WebKit
+  grants an element on — then Web Audio, then the state. A clip the story holds
+  (its own pause command, an open charge) is played and paused at once:
+  granted, not started. Sound a refusal muted comes back with the tap; sound
+  the viewer left off stays off.
+- **Controls.** The pause toggle (with the unmute pill beside it) sits at the
+  film frame's top-right and the paused frame covers the picture; both turn with
+  the frame. Tapping anywhere on the paused frame resumes — the story under it
+  is inert — and after a refusal it asks for that tap and says why. The toggle
+  shows wherever the scene has time to stop, and steps aside while an available
+  interaction lies under it. Space toggles the film from the page or the
+  player, except where a control or a text scene takes Space, and over a world
+  stream.
+- **Page and OS.** A page put away pauses a film with time to lose, and coming
+  back leaves it paused. The OS media controls play and pause the story and
+  cannot seek it; the player claims them back whenever media is staged, since
+  each Vidstack player takes them as it connects and clears them as it goes.
+- **Host chrome.** A host with chrome along the top of the screen sets
+  `--experience-chrome-inset-top` (any CSS length) on an ancestor; the frame
+  sets `--experience-frame-inset-top`, and the controls drop by what the first
+  leaves of the second. A turned frame or a fullscreen player ignores the host's.
+- **World streams.** A world renderer hands its element over with
+  `onMediaElement`, so it is played inside taps and held with the story, and
+  pauses its stream while `paused` is set.
+- **A lost file.** A progressive clip whose element loses its file mid-play — a
+  signed URL behind `/content` that expired over a long pause — is loaded again
+  from where it was. A reload that fails before it plays is the failure.
+
+An authoring host may pass `startSceneId`: every run, restarts included, starts
+at that scene instead of the story's entry.
 
 ## Landscape films on phones
 

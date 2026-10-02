@@ -4178,6 +4178,13 @@
     "start": "Start experience",
     "restart": "Restart",
     "regionLabel": "Interactive story playtest",
+    "playback": {
+      "pause": "Pause",
+      "resume": "Resume",
+      "paused": "Paused",
+      "continuePlaying": "Tap to continue",
+      "interrupted": "This device needs a tap to keep playing."
+    },
     "videoLabel": "Story video for scene {nodeId}",
     "continue": "Continue",
     "noVisibleChoices": "No choice is currently available for this story state.",
@@ -4187,15 +4194,7 @@
     "runtimeError": "The playtest cannot continue",
     "mediaError": "Frozen media asset {assetId} could not be played.",
     "video": {
-      "play": "Play",
-      "pause": "Pause",
-      "mute": "Mute",
-      "unmute": "Unmute",
-      "volume": "Volume",
-      "enterFullscreen": "Enter fullscreen",
-      "exitFullscreen": "Exit fullscreen",
-      "seekForward": "Seek forward",
-      "seekBackward": "Seek backward"
+      "unmute": "Unmute"
     },
     "emptySequence": "No footage yet",
     "loadingMedia": "Loading footage",
@@ -4208,8 +4207,6 @@
       "backward": "Move backward",
       "left": "Move left",
       "right": "Move right",
-      "pause": "Pause world",
-      "resume": "Resume world",
       "finish": "Finish world experience"
     }
   },

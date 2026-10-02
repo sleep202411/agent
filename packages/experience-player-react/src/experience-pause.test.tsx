@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { act, useEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import {
@@ -8,7 +8,11 @@ import {
   type ExperienceRuntimeManifest,
   type ExperienceThemeConfig,
 } from "@repo/shared/experience-runtime";
-import { ExperiencePlayer, type ExperiencePlayerProps } from "./experience-player";
+import {
+  ExperiencePlayer,
+  type ExperiencePlayerProps,
+  type ExperienceWorldModelRendererProps,
+} from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 
 /**
@@ -82,7 +86,6 @@ vi.mock("@vidstack/react", async () => {
     MediaProvider: ({ children }: { children?: React.ReactNode }) =>
       createElement("div", null, children),
     Poster: () => null,
-    MediaAnnouncer: () => null,
   };
 });
 
@@ -108,16 +111,13 @@ const copy = {
   emptySequence: "No footage yet",
   loadingMedia: "Loading",
   regionLabel: "Experience player",
-  video: {
-    play: "Play",
+  video: { unmute: "Unmute" },
+  playback: {
     pause: "Pause",
-    mute: "Mute",
-    unmute: "Unmute",
-    volume: "Volume",
-    enterFullscreen: "Enter fullscreen",
-    exitFullscreen: "Exit fullscreen",
-    seekForward: "Seek forward",
-    seekBackward: "Seek backward",
+    resume: "Resume",
+    paused: "Paused",
+    continuePlaying: "Tap to continue",
+    interrupted: "This device needs a tap to keep playing.",
   },
 } as ExperiencePlayerCopy;
 
@@ -243,7 +243,7 @@ const REQUIREMENTS: Record<string, unknown> = {
     apiVersion: "1.0.0",
     configSchemaVersion: "1.0.0",
     requiredCapabilities: ["core.text"],
-    outcomes: [],
+    outcomes: [{ outcomeType: "text-completed" }],
     commands: [],
   },
   "core.choice": {
@@ -336,6 +336,157 @@ const viewportAnchor = (anchorId: string, x: number) => ({
   motion: { kind: "fixed" },
 });
 
+/** A text beat timed by the fixed scene clock, then `after`. */
+function beatFilm(durationMs = 6_000, after = textScene("scene.after", "after")) {
+  return film({
+    nodes: [
+      textScene("scene.beat", "beat", {
+        clock: { kind: "fixed", durationMs },
+        eventBindings: [on("scene.clock-ended", undefined, [goto(after.sceneId)])],
+      }),
+      after,
+    ],
+  });
+}
+
+/** A text scene that waits for its Continue: nothing in it runs on time. */
+function silentFilm() {
+  return film({
+    nodes: [
+      {
+        kind: "scene",
+        sceneId: "scene.read",
+        clock: { kind: "none" },
+        renderers: [
+          {
+            instanceId: "text.read",
+            rendererId: "core.text",
+            layer: 0,
+            config: { body: localized("Read at leisure"), completion: "continue" },
+            bindings: {},
+          },
+        ],
+        anchors: [],
+        gestures: [],
+        timeline: { cues: [] },
+        eventBindings: [on("renderer.outcome", "text.read", [finish], "text-completed")],
+      } as unknown as Node,
+    ],
+  });
+}
+
+/** A clip with its choice already open over it. */
+function choiceFilm() {
+  const choice = {
+    instanceId: "choice.a",
+    rendererId: "core.choice",
+    layer: 100,
+    bindings: {},
+    config: {
+      decisionId: "decision.a",
+      initiallyOpen: true,
+      choices: [{ choiceId: "next", label: localized("Next scene") }],
+    },
+  };
+  return film({
+    assets: [videoAsset("asset.a", "/a.mp4")],
+    capabilities: ["core.choice"],
+    nodes: [
+      {
+        ...videoScene("scene.a", "asset.a", [finish]),
+        renderers: [videoRenderer("video.scene.a", "asset.a"), choice],
+        eventBindings: [
+          mediaEnded("video.scene.a", [finish]),
+          on("renderer.outcome", "choice.a", [finish], "choice-selected"),
+        ],
+      } as unknown as Node,
+    ],
+  });
+}
+
+/** A clip with one hotspot over it: a tap, or a press-hold that charges the clip or not. */
+function gestureFilm(gesture: "tap" | "hold" | "charge") {
+  const label = { tap: "Go on", hold: "Hold", charge: "Charge" }[gesture];
+  const shape =
+    gesture === "tap"
+      ? { kind: "tap", maxDurationMs: 500 }
+      : {
+          kind: "press-hold",
+          durationMs: 1_000,
+          releaseBehavior: "reset",
+          cancelOnPointerExit: true,
+          activeWindow: { startMs: 0, endMs: 3_000 },
+          branchAtMs: 500,
+          ...(gesture === "charge" ? { timelineControl: true } : {}),
+        };
+  return film({
+    assets: [videoAsset("asset.a", "/a.mp4")],
+    capabilities: [gesture === "tap" ? "input.tap" : "input.press-hold", "spatial.anchor"],
+    inputActions: [{ actionId: "input.act", label: localized(label), required: true }],
+    nodes: [
+      {
+        ...videoScene("scene.a", "asset.a", [finish]),
+        anchors: [viewportAnchor("anchor.act", 0.4)],
+        gestures: [
+          {
+            gestureId: "gesture.act",
+            anchorId: "anchor.act",
+            inputActionId: "input.act",
+            ...shape,
+          },
+        ],
+        eventBindings: [
+          mediaEnded("video.scene.a", [finish]),
+          on("gesture.completed", "gesture.act", [goto("scene.cleared")]),
+          on("gesture.cancelled", "gesture.act", [goto("scene.failed")]),
+          on("gesture.timed-out", "gesture.act", [goto("scene.failed")]),
+        ],
+      } as unknown as Node,
+      textScene("scene.cleared", "cleared"),
+      textScene("scene.failed", "failed"),
+    ],
+  });
+}
+
+/** A rect in screen pixels, as `getBoundingClientRect` reports it. */
+function box(left: number, top: number, width: number, height: number): DOMRect {
+  return {
+    x: left,
+    y: top,
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+/** A pointer event jsdom can dispatch: it has no PointerEvent constructor. */
+function pointer(type: string) {
+  const event = new MouseEvent(type, { bubbles: true, button: 0 });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  return event;
+}
+
+/** A world renderer that hands its element over, and records the hold it was given. */
+function StreamDouble({
+  paused,
+  onMediaElement,
+  held,
+}: ExperienceWorldModelRendererProps & { held: boolean[] }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    onMediaElement(ref.current);
+    return () => onMediaElement(null);
+  }, [onMediaElement]);
+  useEffect(() => {
+    held.push(paused);
+  }, [held, paused]);
+  return <video ref={ref} data-world-stream="" />;
+}
+
 // ── The browser ─────────────────────────────────────────────────────────────
 
 describe("ExperiencePlayer paused state", () => {
@@ -393,6 +544,9 @@ describe("ExperiencePlayer paused state", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     Reflect.deleteProperty(document, "visibilityState");
+    Reflect.deleteProperty(navigator, "mediaSession");
+    Reflect.deleteProperty(window.screen, "width");
+    Reflect.deleteProperty(window.screen, "height");
   });
 
   const render = async (
@@ -416,7 +570,8 @@ describe("ExperiencePlayer paused state", () => {
   const settle = async () => {
     for (let turn = 0; turn < 5; turn += 1) {
       await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(0);
+        else await new Promise((resolve) => setTimeout(resolve, 0));
       });
     }
   };
@@ -747,6 +902,39 @@ describe("ExperiencePlayer paused state", () => {
       expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
       expect(container.textContent).toContain("The world session expired.");
     });
+
+    it("plays the stream's element inside the tap that recovers it, and holds it with the story", async () => {
+      const held: boolean[] = [];
+      refuseWith = domException("NotAllowedError");
+      await startFilm(worldFilm(), [], {
+        renderWorldModel: (props) => <StreamDouble {...props} held={held} />,
+      });
+
+      // The player played the stream's element itself, and the device refused.
+      expectRefusedPause();
+      expect(held.at(-1)).toBe(true);
+
+      refuseWith = null;
+      const plays = await playsDuring(() => pausedFrame()!.click());
+
+      const stream = container.querySelector<HTMLVideoElement>("[data-world-stream]");
+      expect(plays).toContainEqual({ inside: true, element: stream });
+      expect(pausedFor()).toBeNull();
+      expect(held.at(-1)).toBe(false);
+    });
+
+    it("keeps Space for the stream's own moves, while the toggle still pauses it", async () => {
+      await startFilm(worldFilm(), [], {
+        renderWorldModel: (props) => <StreamDouble {...props} held={[]} />,
+      });
+
+      expect((await keySpace(document.body)).defaultPrevented).toBe(false);
+      expect(pausedFor()).toBeNull();
+      expect(toggle()?.hasAttribute("aria-keyshortcuts")).toBe(false);
+
+      await press(toggle());
+      expect(pausedFor()).toBe("user");
+    });
   });
 
   describe("Web Audio", () => {
@@ -835,6 +1023,31 @@ describe("ExperiencePlayer paused state", () => {
       await runFrames();
       expect(container.textContent).toContain("beat");
       expect(container.textContent).not.toContain("after");
+    });
+
+    it("is suspended with a pause, and resumed inside the tap that ends it", async () => {
+      const runtime = twoClipFilm();
+      runtime.compatibility.requiredCapabilities.push("audio.core");
+      runtime.audio = {
+        buses: [{ busId: "master", role: "master", defaultGain: 1, defaultMuted: false }],
+        cues: [],
+        snapshots: [],
+        duckingRules: [],
+      };
+      await startFilm(runtime, ["/a.mp4"]);
+      expect(resumes).toBe(1);
+
+      await press(toggle());
+      expect(suspends).toBe(1);
+
+      let resumedInsideTap = 0;
+      await act(async () => {
+        pausedFrame()!.click();
+        resumedInsideTap = resumes;
+      });
+      await settle();
+      expect(resumedInsideTap).toBe(2);
+      expect(pausedFor()).toBeNull();
     });
 
     it("is suspended with the story when a clip is stopped from outside", async () => {
@@ -1046,5 +1259,760 @@ describe("ExperiencePlayer paused state", () => {
     // it again would start it over behind the decision.
     expect(play).not.toHaveBeenCalled();
     expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it("starts every run of an authoring playtest at the chosen scene", async () => {
+    // The entry waits for its Continue, and only then leads to the chosen scene.
+    const intro = {
+      kind: "scene",
+      sceneId: "scene.intro",
+      clock: { kind: "none" },
+      renderers: [
+        {
+          instanceId: "text.intro",
+          rendererId: "core.text",
+          layer: 0,
+          config: { body: localized("intro"), completion: "continue" },
+          bindings: {},
+        },
+      ],
+      anchors: [],
+      gestures: [],
+      timeline: { cues: [] },
+      eventBindings: [
+        on("renderer.outcome", "text.intro", [goto("scene.chosen")], "text-completed"),
+      ],
+    } as unknown as Node;
+    const scenes: string[] = [];
+    await render(film({ nodes: [intro, textScene("scene.chosen", "chosen")] }), {
+      startSceneId: "scene.chosen",
+      onStateChange: (state) => scenes.push(state.currentSceneId),
+    });
+    await start();
+    expect(container.textContent).toContain(copy.endingEyebrow);
+
+    // Play again is a new run, and it starts where the first one did.
+    await press(button(copy.playAgain));
+    await start();
+
+    expect(container.textContent).toContain(copy.endingEyebrow);
+    expect(scenes).toContain("scene.chosen");
+    expect(scenes).not.toContain("scene.intro");
+  });
+
+  // ── The frame's controls ──────────────────────────────────────────────────
+
+  /** The pause toggle, by the label it carries now. */
+  const toggle = () =>
+    [
+      ...container.querySelectorAll<HTMLButtonElement>("[data-experience-frame-controls] button"),
+    ].find(
+      (item) =>
+        item.getAttribute("aria-label") === copy.playback.pause ||
+        item.getAttribute("aria-label") === copy.playback.resume
+    );
+
+  const pausedFrame = () =>
+    container.querySelector<HTMLButtonElement>("[data-experience-paused-frame]");
+
+  const frameControls = () =>
+    container.querySelector<HTMLElement>("[data-experience-frame-controls]");
+
+  const mediaStage = () => {
+    const stage = container.querySelector<HTMLElement>("[data-experience-media-stage]");
+    if (!stage) throw new Error("The player has no film frame.");
+    return stage;
+  };
+
+  /** A tap: one click event, inside which the player has to do its unlocking. */
+  const press = async (target: HTMLElement | null | undefined) => {
+    if (!target) throw new Error("There is nothing to press.");
+    await act(async () => {
+      target.click();
+    });
+    await settle();
+  };
+
+  /** Each native play() the tap leads to, and whether it ran inside the tap. */
+  const playsDuring = async (tap: () => void) => {
+    let inside = false;
+    const plays: { inside: boolean; element: HTMLMediaElement }[] = [];
+    play.mockImplementation(function (this: HTMLMediaElement) {
+      plays.push({ inside, element: this });
+      return refuseWith ? Promise.reject(refuseWith) : Promise.resolve();
+    });
+    await act(async () => {
+      inside = true;
+      tap();
+      inside = false;
+    });
+    await settle();
+    return plays;
+  };
+
+  const keySpace = async (target: EventTarget, init: KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent("keydown", {
+      key: " ",
+      code: "Space",
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    await act(async () => {
+      target.dispatchEvent(event);
+    });
+    await settle();
+    return event;
+  };
+
+  const setPageVisibility = async (state: DocumentVisibilityState) => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await settle();
+  };
+
+  describe("the frame's controls", () => {
+    it("sit in the film frame, outside the story, and pause and resume it", async () => {
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      const pause = vi.mocked(HTMLMediaElement.prototype.pause);
+      const control = toggle();
+      expect(control?.getAttribute("aria-label")).toBe(copy.playback.pause);
+      expect(control?.getAttribute("aria-keyshortcuts")).toBe("Space");
+      expect(control?.closest("[data-experience-media-stage]")).toBe(mediaStage());
+      expect(control?.closest("[data-experience-story-layer]")).toBeNull();
+      pause.mockClear();
+
+      await press(control);
+
+      expect(pausedFor()).toBe("user");
+      expect(pause.mock.contexts).toContain(element("/a.mp4"));
+      expect(toggle()?.getAttribute("aria-label")).toBe(copy.playback.resume);
+      expect(pausedFrame()?.getAttribute("aria-label")).toBe(copy.playback.resume);
+      expect(mediaStage().querySelector('[role="status"]')?.textContent).toBe(copy.playback.paused);
+
+      // Anywhere on the paused frame: the story under it takes no input.
+      await press(pausedFrame());
+
+      expect(pausedFor()).toBeNull();
+      expect(pausedFrame()).toBeNull();
+      expect(toggle()?.getAttribute("aria-label")).toBe(copy.playback.pause);
+      expect(mediaStage().querySelector('[role="status"]')?.textContent).toBe("");
+    });
+
+    it("play the clips inside the tap that resumes, before anything is awaited", async () => {
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      await press(toggle());
+
+      const plays = await playsDuring(() => pausedFrame()!.click());
+
+      // That play is what WebKit grants the element on.
+      expect(plays[0]).toEqual({ inside: true, element: element("/a.mp4") });
+      expect(pausedFor()).toBeNull();
+    });
+
+    it("turn with the frame on an upright phone, where no host chrome reaches", async () => {
+      Object.defineProperty(window, "matchMedia", {
+        configurable: true,
+        writable: true,
+        value: (query: string) => ({
+          matches:
+            query === "(pointer: coarse) and (hover: none)" || query === "(orientation: portrait)",
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        }),
+      });
+      Object.defineProperty(window.screen, "width", { configurable: true, value: 390 });
+      Object.defineProperty(window.screen, "height", { configurable: true, value: 844 });
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(box(0, 0, 390, 844));
+
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+
+      const turned = container.querySelector("[data-experience-frame-rotated]");
+      expect(turned).not.toBeNull();
+      expect(turned!.contains(toggle()!)).toBe(true);
+      // The frame's top runs down the side of the screen, away from the host's chrome.
+      expect(mediaStage().style.getPropertyValue("--experience-chrome-inset-top")).toBe("0px");
+    });
+
+    it("know the band above the picture, to clear the host's chrome by what it leaves", async () => {
+      // A 16:9 film in a taller shell is letterboxed 90px from the top.
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockReturnValue(box(0, 0, 1280, 900));
+
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+
+      expect(mediaStage().style.getPropertyValue("--experience-frame-inset-top")).toBe("90px");
+      // How far the host's chrome reaches is the host's to say.
+      expect(mediaStage().style.getPropertyValue("--experience-chrome-inset-top")).toBe("");
+    });
+
+    it("are not offered before Start, nor at the ending", async () => {
+      await render(twoClipFilm());
+      await fire("/a.mp4", "onCanPlay");
+      expect(frameControls()).toBeNull();
+
+      await start();
+      expect(toggle()).toBeDefined();
+
+      await fire("/a.mp4", "onEnd");
+      await fire("/b.mp4", "onCanPlay");
+      await fire("/b.mp4", "onEnd");
+      expect(container.textContent).toContain(copy.endingEyebrow);
+      expect(frameControls()).toBeNull();
+    });
+
+    it("are not offered over a failure", async () => {
+      refuseWith = domException("NotSupportedError");
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+
+      expect(container.querySelector('[role="alertdialog"]')).not.toBeNull();
+      expect(frameControls()).toBeNull();
+    });
+
+    it("offer no toggle in a beat with nothing to pause", async () => {
+      await startFilm(silentFilm(), []);
+
+      expect(container.textContent).toContain("Read at leisure");
+      expect(toggle()).toBeUndefined();
+    });
+
+    it("step aside for an interaction under them, and come back over the paused frame", async () => {
+      await startFilm(gestureFilm("tap"), ["/a.mp4"]);
+      await playedTo("/a.mp4", 0.1);
+      const cluster = frameControls()!;
+      // Every box in this test sits on every other: the hotspot is under the toggle.
+      expect(cluster.hasAttribute("data-experience-gesture-covered")).toBe(true);
+
+      await press(toggle());
+      // Paused, the story takes no input, so nothing under the controls can be hit.
+      expect(cluster.hasAttribute("data-experience-gesture-covered")).toBe(false);
+      await press(pausedFrame());
+      expect(cluster.hasAttribute("data-experience-gesture-covered")).toBe(true);
+
+      // A hotspot elsewhere in the frame leaves the controls where they are.
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (
+        this: HTMLElement
+      ) {
+        if (this.closest("[data-experience-frame-controls]")) return box(1216, 16, 44, 44);
+        if (this.hasAttribute("data-experience-gesture-available")) return box(512, 216, 256, 288);
+        return box(0, 0, 1280, 720);
+      });
+      await playedTo("/a.mp4", 0.2);
+      expect(cluster.hasAttribute("data-experience-gesture-covered")).toBe(false);
+    });
+  });
+
+  // ── A refusal, recovered ──────────────────────────────────────────────────
+
+  describe("the paused frame after a refusal", () => {
+    it("asks for one tap, says why, and recovers with it, sound included", async () => {
+      refuseWith = domException("NotAllowedError");
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      const frame = pausedFrame()!;
+      expect(frame.getAttribute("data-experience-paused-frame")).toBe("refused");
+      expect(frame.getAttribute("aria-label")).toBe(copy.playback.continuePlaying);
+      expect(frame.textContent).toContain(copy.playback.continuePlaying);
+      const hint = document.getElementById(frame.getAttribute("aria-describedby") ?? "");
+      expect(hint?.textContent).toBe(copy.playback.interrupted);
+      // The refusal muted the clip on its way to failing.
+      expect(element("/a.mp4").muted).toBe(true);
+
+      // A tap is a user activation: the device plays now.
+      refuseWith = null;
+      const plays = await playsDuring(() => frame.click());
+
+      expect(plays[0]).toEqual({ inside: true, element: element("/a.mp4") });
+      expect(pausedFor()).toBeNull();
+      expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+      // Sound is not what was refused, so the tap brings it back.
+      expect(element("/a.mp4").muted).toBe(false);
+    });
+
+    it("leaves sound the viewer left off, off", async () => {
+      // Audible playback refused, muted playback allowed: the film plays muted
+      // and offers to turn sound on, which the viewer does not take.
+      play.mockImplementation(function (this: HTMLMediaElement) {
+        return this.muted ? Promise.resolve() : Promise.reject(domException("NotAllowedError"));
+      });
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      expect(pausedFor()).toBeNull();
+      expect(button(copy.video.unmute)).toBeDefined();
+
+      await press(toggle());
+      expect(button(copy.video.unmute)).toBeUndefined();
+      let mutedThroughTheTap = false;
+      await act(async () => {
+        pausedFrame()!.click();
+        mutedThroughTheTap = element("/a.mp4").muted;
+      });
+      await settle();
+
+      // The tap that resumes is no answer to the offer to turn sound on.
+      expect(mutedThroughTheTap).toBe(true);
+      expect(element("/a.mp4").muted).toBe(true);
+      expect(button(copy.video.unmute)).toBeDefined();
+    });
+
+    it("takes focus, but never from the host's own UI", async () => {
+      refuseWith = domException("NotAllowedError");
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      expect(document.activeElement).toBe(pausedFrame());
+      refuseWith = null;
+      await press(pausedFrame());
+      expect(pausedFor()).toBeNull();
+
+      // The viewer is typing in a host composer when the next cut is refused.
+      const composer = document.createElement("textarea");
+      document.body.appendChild(composer);
+      try {
+        composer.focus();
+        refuseWith = domException("NotAllowedError");
+        await fire("/a.mp4", "onEnd");
+        await fire("/b.mp4", "onCanPlay");
+        expectRefusedPause();
+        expect(document.activeElement).toBe(composer);
+      } finally {
+        composer.remove();
+      }
+    });
+  });
+
+  it("gives focus back, on resume, to what the pause took it from", async () => {
+    await startFilm(beatFilm(), []);
+    const article = container.querySelector<HTMLElement>('[data-experience-renderer="core.text"]')!;
+    // The text scene takes focus as it opens.
+    expect(document.activeElement).toBe(article);
+
+    await press(toggle());
+    // `inert` takes focus off the story as it pauses; jsdom leaves that to the test.
+    article.blur();
+    await press(pausedFrame());
+
+    expect(document.activeElement).toBe(article);
+  });
+
+  // ── The page and the OS ───────────────────────────────────────────────────
+
+  describe("a page put away", () => {
+    it("pauses the film, which stays paused when the page comes back", async () => {
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+
+      await setPageVisibility("hidden");
+      expect(pausedFor()).toBe("hidden");
+      await setPageVisibility("visible");
+      expect(pausedFor()).toBe("hidden");
+      expect(pausedFrame()?.getAttribute("aria-label")).toBe(copy.playback.resume);
+
+      // The viewer resumes it, here with Space.
+      expect((await keySpace(document.body)).defaultPrevented).toBe(true);
+      expect(pausedFor()).toBeNull();
+    });
+
+    it("leaves a beat with nothing to lose as it is", async () => {
+      await startFilm(silentFilm(), []);
+      await setPageVisibility("hidden");
+      expect(pausedFor()).toBeNull();
+    });
+
+    it("pauses a film whose Start settled while the page was away", async () => {
+      await render(twoClipFilm());
+      await fire("/a.mp4", "onCanPlay");
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => "hidden",
+      });
+
+      await start();
+
+      expect(pausedFor()).toBe("hidden");
+    });
+  });
+
+  describe("Space", () => {
+    it("toggles the film from the page", async () => {
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+
+      expect((await keySpace(document.body)).defaultPrevented).toBe(true);
+      expect(pausedFor()).toBe("user");
+      await keySpace(document.body);
+      expect(pausedFor()).toBeNull();
+    });
+
+    it("is left to a focused choice", async () => {
+      await startFilm(choiceFilm(), ["/a.mp4"]);
+      const option = [...container.querySelectorAll("button span")]
+        .find((item) => item.textContent === "Next scene")
+        ?.closest("button");
+      if (!option) throw new Error("The choice is not open.");
+      option.focus();
+
+      expect((await keySpace(option)).defaultPrevented).toBe(false);
+      expect(pausedFor()).toBeNull();
+    });
+
+    it("is left to a text scene, which scrolls by it", async () => {
+      await startFilm(beatFilm(), []);
+      const article = container.querySelector<HTMLElement>(
+        '[data-experience-renderer="core.text"]'
+      )!;
+
+      expect((await keySpace(article)).defaultPrevented).toBe(false);
+      expect(pausedFor()).toBeNull();
+    });
+
+    it("is not taken with a modifier, on repeat, while composing, or from outside the player", async () => {
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      const presses: KeyboardEventInit[] = [
+        { shiftKey: true },
+        { ctrlKey: true },
+        { altKey: true },
+        { metaKey: true },
+        { repeat: true },
+        { isComposing: true },
+      ];
+      for (const init of presses) {
+        expect((await keySpace(document.body, init)).defaultPrevented).toBe(false);
+      }
+      const outside = document.createElement("div");
+      outside.tabIndex = 0;
+      document.body.appendChild(outside);
+      try {
+        expect((await keySpace(outside)).defaultPrevented).toBe(false);
+      } finally {
+        outside.remove();
+      }
+
+      expect(pausedFor()).toBeNull();
+    });
+  });
+
+  describe("the OS media controls", () => {
+    let handlers: Map<MediaSessionAction, MediaSessionActionHandler | null>;
+
+    beforeEach(() => {
+      handlers = new Map();
+      Object.defineProperty(navigator, "mediaSession", {
+        configurable: true,
+        value: {
+          setActionHandler: (
+            action: MediaSessionAction,
+            handler: MediaSessionActionHandler | null
+          ) => void handlers.set(action, handler),
+        },
+      });
+    });
+
+    const osPress = async (action: MediaSessionAction) => {
+      const handler = handlers.get(action);
+      if (!handler) throw new Error(`The OS controls have no ${action}.`);
+      await act(async () => {
+        handler({ action });
+      });
+      await settle();
+    };
+
+    it("play and pause the story, and never seek it", async () => {
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      for (const seek of ["seekto", "seekforward", "seekbackward"] as const) {
+        expect(handlers.get(seek)).toBeNull();
+      }
+
+      await osPress("pause");
+      expect(pausedFor()).toBe("user");
+      await osPress("play");
+      expect(pausedFor()).toBeNull();
+    });
+
+    it("cannot take back a refusal, which only a tap can", async () => {
+      refuseWith = domException("NotAllowedError");
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+
+      await osPress("play");
+
+      expect(pausedFor()).toBe("refused");
+    });
+
+    it("are claimed back whenever media is staged, and let go with the player", async () => {
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      // A Vidstack player clears every action as it goes.
+      for (const action of ["play", "pause", "seekto", "seekforward", "seekbackward"] as const) {
+        handlers.set(action, null);
+      }
+
+      await fire("/a.mp4", "onEnd");
+      await fire("/b.mp4", "onCanPlay");
+      expect(handlers.get("play")).toBeTypeOf("function");
+      expect(handlers.get("pause")).toBeTypeOf("function");
+
+      await act(async () => {
+        root.render(<></>);
+      });
+      expect(handlers.get("play")).toBeNull();
+      expect(handlers.get("pause")).toBeNull();
+    });
+  });
+
+  // ── Story time ────────────────────────────────────────────────────────────
+
+  describe("story time through a pause", () => {
+    beforeEach(() => {
+      // Fake time moves performance.now, timers and frames together.
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const elapse = async (ms: number) => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+    };
+
+    it("freezes a fixed scene clock, which ends after its running time", async () => {
+      await startFilm(beatFilm(6_000), []);
+      await elapse(2_000);
+
+      await press(toggle());
+      await elapse(10_000);
+      expect(container.textContent).toContain("beat");
+      expect(container.textContent).not.toContain("after");
+
+      await press(pausedFrame());
+      await elapse(3_900);
+      expect(container.textContent).not.toContain("after");
+      await elapse(200);
+      expect(container.textContent).toContain("after");
+    });
+
+    it("freezes a placeholder's beat", async () => {
+      const runtime = film({
+        nodes: [
+          {
+            kind: "scene",
+            sceneId: "scene.shot",
+            clock: { kind: "none" },
+            renderers: [
+              {
+                instanceId: "video.shot",
+                rendererId: "core.video",
+                layer: 0,
+                config: { fit: "cover", sequence: [], autoplay: true },
+                bindings: {},
+              },
+            ],
+            anchors: [],
+            gestures: [],
+            timeline: { cues: [] },
+            eventBindings: [mediaEnded("video.shot", [goto("scene.after")])],
+          } as unknown as Node,
+          textScene("scene.after", "after"),
+        ],
+      });
+      await startFilm(runtime, []);
+      await elapse(3_000);
+
+      await press(toggle());
+      await elapse(20_000);
+      expect(container.textContent).toContain(copy.emptySequence);
+
+      await press(pausedFrame());
+      await elapse(2_990);
+      expect(container.textContent).not.toContain("after");
+      await elapse(20);
+      expect(container.textContent).toContain("after");
+    });
+
+    it("freezes a still's screen time", async () => {
+      const still = {
+        assetId: "asset.still",
+        kind: "video",
+        orientationPolicy: "single-master",
+        variants: [
+          {
+            variantId: "asset.still.landscape",
+            sourceAssetId: "asset.still.source",
+            sha256: HASH,
+            uri: "/still.png",
+            mediaType: "image/png",
+            orientation: "landscape",
+            width: 1920,
+            height: 1080,
+          },
+        ],
+      };
+      const shot = videoScene("scene.still", "asset.still", [goto("scene.after")]);
+      const runtime = film({
+        assets: [still],
+        capabilities: ["core.video.still"],
+        nodes: [
+          {
+            ...shot,
+            renderers: [
+              {
+                ...videoRenderer("video.scene.still", "asset.still"),
+                config: {
+                  fit: "cover",
+                  autoplay: true,
+                  sequence: [
+                    {
+                      clipId: "clip.still",
+                      assetId: "asset.still",
+                      endBehavior: { behavior: "hold-last-frame", durationMs: 3_000 },
+                    },
+                  ],
+                },
+              },
+            ],
+          } as unknown as Node,
+          textScene("scene.after", "after"),
+        ],
+      });
+      await startFilm(runtime, []);
+      await elapse(1_000);
+
+      await press(toggle());
+      await elapse(20_000);
+      expect(container.textContent).not.toContain("after");
+
+      await press(pausedFrame());
+      await elapse(1_990);
+      expect(container.textContent).not.toContain("after");
+      await elapse(20);
+      expect(container.textContent).toContain("after");
+    });
+
+    it("freezes a charge's idle timeout, and unlocks its clip in the tap without starting it", async () => {
+      await startFilm(gestureFilm("charge"), ["/a.mp4"]);
+      // The window is open and the charge holds the clip until it is pressed —
+      // here past the branch frame, so a timeout routes the moment it lands.
+      await playedTo("/a.mp4", 0.6);
+      const hotspot = container.querySelector('button[aria-label="Charge"]');
+      await elapse(1_000);
+
+      await press(toggle());
+      await elapse(10_000);
+      expect(container.textContent).not.toContain("failed");
+
+      const calls: string[] = [];
+      play.mockImplementation(() => {
+        calls.push("play");
+        return Promise.resolve();
+      });
+      vi.mocked(HTMLMediaElement.prototype.pause).mockImplementation(() => {
+        calls.push("pause");
+      });
+      await act(async () => {
+        pausedFrame()!.click();
+      });
+      // Played inside the tap, so the device grants it — and held again at once.
+      expect(calls.slice(0, 2)).toEqual(["play", "pause"]);
+      await settle();
+      // The layer, and the gestures it holds, came through the pause as they were.
+      expect(container.querySelector('button[aria-label="Charge"]')).toBe(hotspot);
+
+      await elapse(1_900);
+      expect(container.textContent).not.toContain("failed");
+      await elapse(200);
+      expect(container.textContent).toContain("failed");
+    });
+
+    it("drops a press in progress without a verdict", async () => {
+      await startFilm(gestureFilm("hold"), ["/a.mp4"]);
+      await playedTo("/a.mp4", 0.6);
+      const hotspot = container.querySelector<HTMLButtonElement>('button[aria-label="Hold"]')!;
+      await act(async () => {
+        hotspot.dispatchEvent(pointer("pointerdown"));
+      });
+      await elapse(200);
+
+      // The app is left mid-press.
+      await setPageVisibility("hidden");
+      expect(pausedFor()).toBe("hidden");
+      await act(async () => {
+        hotspot.dispatchEvent(pointer("pointerup"));
+        hotspot.dispatchEvent(pointer("lostpointercapture"));
+      });
+      await elapse(5_000);
+
+      expect(container.textContent).not.toContain("cleared");
+      expect(container.textContent).not.toContain("failed");
+    });
+
+    describe("an access flow", () => {
+      const paidFilm = () =>
+        film({
+          assets: [videoAsset("asset.b", "/b.mp4")],
+          capabilities: ["commerce.community-points"],
+          nodes: [
+            textScene("scene.beat", "beat", {
+              clock: { kind: "fixed", durationMs: 1_000 },
+              eventBindings: [on("scene.clock-ended", undefined, [goto("scene.paid")])],
+            }),
+            {
+              ...videoScene("scene.paid", "asset.b", [finish]),
+              access: { key: "node:scene.paid", communityPointPrice: 20, title: localized("Paid") },
+            } as unknown as Node,
+          ],
+        });
+
+      it("offers no pause controls over the flow or its retry", async () => {
+        let decide!: (allowed: boolean) => void;
+        await startFilm(paidFilm(), [], {
+          access: {
+            canAccess: () => false,
+            requestAccess: () =>
+              new Promise<boolean>((resolve) => {
+                decide = resolve;
+              }),
+            formatPrice: (amount) => `${amount} points`,
+          },
+        });
+        expect(toggle()).toBeDefined();
+
+        await elapse(1_100);
+        expect(frameControls()).toBeNull();
+
+        await act(async () => {
+          decide(false);
+        });
+        await settle();
+        // Declined: the viewer is asked to Continue, and the controls stay away.
+        expect(button(copy.continue)).toBeDefined();
+        expect(frameControls()).toBeNull();
+      });
+
+      it("keeps a film paused through a flow it finished while put away", async () => {
+        let owned = false;
+        let decide!: (allowed: boolean) => void;
+        await startFilm(paidFilm(), [], {
+          access: {
+            canAccess: () => owned,
+            requestAccess: () =>
+              new Promise<boolean>((resolve) => {
+                decide = resolve;
+              }),
+            formatPrice: (amount) => `${amount} points`,
+          },
+        });
+        await elapse(1_100);
+
+        await setPageVisibility("hidden");
+        expect(pausedFor()).toBe("hidden");
+        play.mockClear();
+        owned = true;
+        await act(async () => {
+          decide(true);
+        });
+        await settle();
+        await fire("/b.mp4", "onCanPlay");
+
+        expect(container.querySelector('[data-video-source="/b.mp4"]')).not.toBeNull();
+        expect(play).not.toHaveBeenCalled();
+        expect(pausedFrame()?.getAttribute("aria-label")).toBe(copy.playback.resume);
+      });
+    });
   });
 });

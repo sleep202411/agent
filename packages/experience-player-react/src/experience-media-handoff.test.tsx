@@ -12,7 +12,6 @@ import {
   ExperiencePlaybackDelivery,
   ExperiencePlaybackDeliveryContext,
 } from "./experience-playback-delivery";
-import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
 
 /**
  * The cut, asserted as a lifecycle rather than as pixels: jsdom cannot decode a
@@ -168,7 +167,6 @@ vi.mock("@vidstack/react", async () => {
     MediaPlayer: StubMediaPlayer,
     MediaProvider: StubMediaProvider,
     Poster: () => null,
-    MediaAnnouncer: () => createElement("div", { "data-announcer": "" }),
   };
 });
 
@@ -234,18 +232,6 @@ function deferredResponse() {
   });
   return { response, release };
 }
-
-const copy: ExperiencePlayerVideoCopy = {
-  play: "Play",
-  pause: "Pause",
-  mute: "Mute",
-  unmute: "Unmute",
-  volume: "Volume",
-  enterFullscreen: "Enter fullscreen",
-  exitFullscreen: "Exit fullscreen",
-  seekForward: "Seek forward",
-  seekBackward: "Seek backward",
-};
 
 describe("ExperienceMediaPlayer cut cover", () => {
   let container: HTMLDivElement;
@@ -325,7 +311,6 @@ describe("ExperienceMediaPlayer cut cover", () => {
             onPlaybackRefused={options.onPlaybackRefused}
             onContentSize={options.onContentSize}
             playbackIdentity={clip.identity}
-            copy={copy}
           />
         </ExperiencePlaybackDeliveryContext.Provider>
       );
@@ -1287,5 +1272,120 @@ describe("ExperienceMediaPlayer cut cover", () => {
 
     expect(onPlaybackError).not.toHaveBeenCalled();
     expect(stubHls.current!.detachMedia).not.toHaveBeenCalled();
+  });
+
+  // ── A lost file ───────────────────────────────────────────────────────────
+
+  /** Where the element is in its clip, as the browser keeps it. */
+  const setPosition = (seconds: number) =>
+    Object.defineProperty(video(), "currentTime", {
+      configurable: true,
+      writable: true,
+      value: seconds,
+    });
+
+  /** The element losing its way to the file, as Vidstack reports it: `MEDIA_ERR_NETWORK`. */
+  const loseTheFile = () =>
+    emit((element) => element.onError?.({ message: "MEDIA_ELEMENT_ERROR: network", code: 2 }));
+
+  it("loads a clip that lost its file again, on the same element, from where it was", async () => {
+    const onPlaybackError = vi.fn();
+    const onTimeUpdate = vi.fn();
+    await renderClip(
+      { uri: CONTENT_A, identity: "renderer:0:sequence:a" },
+      { onPlaybackError, onTimeUpdate }
+    );
+    const element = video();
+    await signalPlaying(CONTENT_A);
+    setPosition(12.5);
+    const offered = registeredHandles().length;
+
+    await loseTheFile();
+
+    // The same manifest URI, asked for again: its redirect is never cached, so
+    // the request is signed afresh. The fragment starts it where it was.
+    expect(onPlaybackError).not.toHaveBeenCalled();
+    expect(mountedClip()).toBe(`${CONTENT_A}#t=12.5`);
+    expect(video()).toBe(element);
+    expect(registeredHandles()).toHaveLength(offered + 1);
+    expect(registeredHandles().at(-1)!.playbackIdentity).toBe("renderer:0:sequence:a");
+    // Covered by the frame it was showing until it plays again.
+    expect(stillFrame().hidden).toBe(false);
+
+    // Loading starts the element over: the story hears nothing until it plays.
+    await emit((callbacks) => callbacks.onTimeUpdate?.({ currentTime: 0 }));
+    expect(onTimeUpdate).not.toHaveBeenCalled();
+    await signalPlaying(`${CONTENT_A}#t=12.5`);
+    await emit((callbacks) => callbacks.onTimeUpdate?.({ currentTime: 12.6 }));
+    expect(onTimeUpdate).toHaveBeenCalledExactlyOnceWith(12.6);
+    expect(stillFrame().hidden).toBe(true);
+  });
+
+  it("shows the failure as the element reports it when the reload fails before it plays", async () => {
+    const onPlaybackError = vi.fn();
+    await renderClip({ uri: CONTENT_A, identity: "renderer:0:sequence:a" }, { onPlaybackError });
+    await signalPlaying(CONTENT_A);
+    setPosition(3);
+    await loseTheFile();
+    expect(onPlaybackError).not.toHaveBeenCalled();
+    // The reload got as far as loading a little, but never played.
+    setPosition(3.2);
+
+    await loseTheFile();
+
+    expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith("MEDIA_ELEMENT_ERROR: network");
+    expect(mountedClip()).toBe(`${CONTENT_A}#t=3`);
+  });
+
+  it("does not reload a clip onto the very position its reload failed at", async () => {
+    const onPlaybackError = vi.fn();
+    await renderClip({ uri: CONTENT_A, identity: "renderer:0:sequence:a" }, { onPlaybackError });
+    await signalPlaying(CONTENT_A);
+    setPosition(3);
+    await loseTheFile();
+    // It played, for an instant, and lost the file again where it started.
+    await signalPlaying(`${CONTENT_A}#t=3`);
+
+    await loseTheFile();
+
+    expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith("MEDIA_ELEMENT_ERROR: network");
+  });
+
+  it("loads it again whenever a reload that played loses the file too", async () => {
+    const onPlaybackError = vi.fn();
+    await renderClip({ uri: CONTENT_A, identity: "renderer:0:sequence:a" }, { onPlaybackError });
+    await signalPlaying(CONTENT_A);
+    setPosition(3);
+    await loseTheFile();
+    await signalPlaying(`${CONTENT_A}#t=3`);
+    setPosition(40);
+
+    await loseTheFile();
+
+    expect(onPlaybackError).not.toHaveBeenCalled();
+    expect(mountedClip()).toBe(`${CONTENT_A}#t=40`);
+  });
+
+  it("starts clean when the story comes back to a clip it reloaded", async () => {
+    await renderClip({ uri: CONTENT_A, identity: "renderer:0:sequence:a" });
+    await signalPlaying(CONTENT_A);
+    setPosition(3);
+    await loseTheFile();
+    expect(mountedClip()).toBe(`${CONTENT_A}#t=3`);
+
+    await renderClip({ uri: CONTENT_B, identity: "renderer:0:sequence:b" });
+    await renderClip({ uri: CONTENT_A, identity: "renderer:0:sequence:a" });
+
+    expect(mountedClip()).toBe(CONTENT_A);
+  });
+
+  it("leaves a stream's network failure to fail, verbatim", async () => {
+    const onPlaybackError = vi.fn();
+    await renderHlsClip(CONTENT_B, MASTER_B, "renderer:0:sequence:b", onPlaybackError);
+
+    await loseTheFile();
+
+    expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith("MEDIA_ELEMENT_ERROR: network");
+    expect(mountedClip()).toBe(MASTER_B);
   });
 });

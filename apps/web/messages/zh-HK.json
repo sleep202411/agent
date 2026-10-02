@@ -9436,21 +9436,20 @@
     "noVisibleChoices": "目前故事狀態下沒有可用選項。",
     "continue": "繼續",
     "regionLabel": "影遊播放器",
+    "playback": {
+      "pause": "暫停",
+      "resume": "繼續播放",
+      "paused": "已暫停",
+      "continuePlaying": "點擊繼續播放",
+      "interrupted": "此裝置需要點擊才能繼續播放。"
+    },
     "chapters": "章節",
     "loadErrorTitle": "目前體驗不可用",
     "loadErrorDescription": "已發佈版本未通過播放器完整性校驗，服務回傳的資訊如下。",
     "loadErrorUnknown": "無法載入已發佈的互動體驗。",
     "returnToGames": "返回遊戲列表",
     "video": {
-      "play": "播放",
-      "pause": "暫停",
-      "mute": "靜音",
-      "unmute": "取消靜音",
-      "volume": "音量",
-      "enterFullscreen": "進入全螢幕",
-      "exitFullscreen": "退出全螢幕",
-      "seekForward": "快進",
-      "seekBackward": "快退"
+      "unmute": "取消靜音"
     },
     "share": "分享",
     "shareCopied": "連結已複製",

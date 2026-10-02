@@ -9436,21 +9436,20 @@
     "noVisibleChoices": "No available choices match the current story state.",
     "continue": "Continue",
     "regionLabel": "Interactive film player",
+    "playback": {
+      "pause": "Pause",
+      "resume": "Resume",
+      "paused": "Paused",
+      "continuePlaying": "Tap to continue",
+      "interrupted": "This device needs a tap to keep playing."
+    },
     "chapters": "Chapters",
     "loadErrorTitle": "This experience is not available",
     "loadErrorDescription": "The published release could not pass the player’s integrity checks. The service response is shown below.",
     "loadErrorUnknown": "The published experience could not be loaded.",
     "returnToGames": "Back to games",
     "video": {
-      "play": "Play",
-      "pause": "Pause",
-      "mute": "Mute",
-      "unmute": "Unmute",
-      "volume": "Volume",
-      "enterFullscreen": "Enter fullscreen",
-      "exitFullscreen": "Exit fullscreen",
-      "seekForward": "Seek forward",
-      "seekBackward": "Seek backward"
+      "unmute": "Unmute"
     },
     "share": "Share",
     "shareCopied": "Link copied",

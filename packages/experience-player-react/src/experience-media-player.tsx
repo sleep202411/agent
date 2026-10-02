@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  MediaAnnouncer,
   MediaPlayer,
   MediaProvider,
   Poster,
@@ -19,7 +18,6 @@ import {
   type ExperienceDeclaredSource,
   type ExperiencePlaybackSource,
 } from "./experience-playback-delivery";
-import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
 import { EXPERIENCE_VIDEO_LOADERS, normalizeVideoSource } from "./experience-video-source";
 
 export interface ExperienceMediaPlaybackHandle {
@@ -138,6 +136,8 @@ function mediaReadinessAbort(): Error {
  * says the element is about to be blanked. `playback` is the answer the clip
  * is played from: what the element loads (`uri` — a negotiated HLS master, or
  * the declared file), how it is delivered, and the manifest URI it stands in for.
+ * `resumeAt` marks a clip loaded again after its element lost the file (see
+ * `onError`): the position it picks up at, which its `uri` carries too.
  */
 interface MediaClip {
   readonly identity: string;
@@ -148,7 +148,18 @@ interface MediaClip {
   readonly clipStartTime?: number;
   readonly durationSeconds?: number;
   readonly loop: boolean;
+  readonly resumeAt?: number;
 }
+
+/** A clip to load again, and where it was when its element lost the file. */
+interface MediaReload {
+  readonly identity: string;
+  readonly src: string;
+  readonly seconds: number;
+}
+
+/** `MediaError.MEDIA_ERR_NETWORK`: the element lost its way to the file after it started loading. */
+const MEDIA_ERR_NETWORK = 2;
 
 /** A declared clip played as it is, for players outside any delivery. */
 function declaredPlayback(declared: ExperienceDeclaredSource): ExperiencePlaybackSource {
@@ -246,7 +257,6 @@ export function ExperienceMediaPlayer({
   onSoundBlocked,
   onContentSize,
   playbackIdentity,
-  copy,
 }: {
   source: { src: string; type?: string | null };
   title: string;
@@ -274,7 +284,6 @@ export function ExperienceMediaPlayer({
   /** Decoded frame size, used when the manifest omits technical dimensions. */
   onContentSize?: (size: { width: number; height: number }) => void;
   playbackIdentity: string;
-  copy: ExperiencePlayerVideoCopy;
 }) {
   const { src, type } = source;
   const delivery = useContext(ExperiencePlaybackDeliveryContext);
@@ -314,22 +323,33 @@ export function ExperienceMediaPlayer({
       cancelled = true;
     };
   }, [declared, delivery, playback]);
-  const clip = useMemo<MediaClip | null>(
-    () =>
-      playback
-        ? {
-            identity: playbackIdentity,
-            uri: playback.src,
-            playback,
-            source: normalizeVideoSource(playback),
-            poster,
-            clipStartTime,
-            durationSeconds,
-            loop,
-          }
-        : null,
-    [clipStartTime, durationSeconds, loop, playback, playbackIdentity, poster]
-  );
+  // The clip loaded again after its element lost the file (see `onError`). It
+  // belongs to that clip alone: the next one starts clean, and so does this one
+  // when the story comes back to it.
+  const [reload, setReload] = useState<MediaReload | null>(null);
+  if (reload !== null && reload.identity !== playbackIdentity) setReload(null);
+  const clip = useMemo<MediaClip | null>(() => {
+    if (!playback) return null;
+    const resumeAt =
+      reload?.identity === playbackIdentity && reload.src === playback.src
+        ? reload.seconds
+        : undefined;
+    // A media fragment both starts the element where the clip was and makes the
+    // source a new one, which is what loads it again: the request it sends is
+    // the manifest URI itself.
+    const uri = resumeAt === undefined ? playback.src : `${playback.src}#t=${resumeAt}`;
+    return {
+      identity: playbackIdentity,
+      uri,
+      playback,
+      source: normalizeVideoSource({ src: uri, type: playback.type }),
+      poster,
+      clipStartTime,
+      durationSeconds,
+      loop,
+      resumeAt,
+    };
+  }, [clipStartTime, durationSeconds, loop, playback, playbackIdentity, poster, reload]);
   const playerRef = useRef<MediaPlayerInstance>(null);
   const providerRef = useRef<MediaProviderInstance>(null);
   const stillFrameRef = useRef<HTMLCanvasElement>(null);
@@ -551,6 +571,23 @@ export function ExperienceMediaPlayer({
     providerMedia(playerRef.current)?.pause();
     onPlaybackError(message);
   };
+  // The element lost its way to the file of a clip it was playing. A frozen
+  // clip is reached through a `/content` redirect to a signed URL that expires
+  // — over a long pause, or a long wait on the title card — and the redirect is
+  // never cached, so asking for the same clip again signs it afresh. It is
+  // loaded once more, from where it was, and plays as the host has it play. A
+  // reload that fails before it ever played is the failure, as the element
+  // reports it, and so is one that would land on the very position it left.
+  const reloadRendered = (): boolean => {
+    if (!current || failedRef.current === readinessKey) return false;
+    if (rendered.playback.delivery !== "progressive") return false;
+    if (rendered.resumeAt !== undefined && !reachedPlayingRef.current) return false;
+    const media = providerMedia(playerRef.current);
+    const seconds = Math.floor(Math.max(0, media?.currentTime ?? 0) * 1_000) / 1_000;
+    if (seconds === rendered.resumeAt) return false;
+    setReload({ identity: rendered.identity, src: rendered.playback.src, seconds });
+    return true;
+  };
   return (
     <MediaPlayer
       ref={playerRef}
@@ -559,6 +596,13 @@ export function ExperienceMediaPlayer({
       ariaLabel={title}
       viewType="video"
       streamType="on-demand"
+      // The story owns playback: no scrub bar, no time readout, and no pause on
+      // the clip. A tap on the picture is how the viewer acts on the story, so
+      // it cannot also mean "stop"; the host's frame controls pause the story —
+      // its clock, its windows, its sound — not just this clip, whose end moves
+      // the scene on. Nor is there an announcer: the host says when the viewer
+      // has the film paused, and Vidstack's would read out every pause, play and
+      // seek the story makes on its own.
       controls={false}
       autoPlay={autoPlay}
       muted={muted}
@@ -621,14 +665,23 @@ export function ExperienceMediaPlayer({
       }}
       onTimeUpdate={(detail) => {
         if (!live()) return;
+        // A clip loaded again reports nothing until it plays: loading starts the
+        // element over before it picks up where it was, and the story must not
+        // hear its clock go back.
+        if (rendered.resumeAt !== undefined && !reachedPlayingRef.current) return;
         reportDecodedContentSize(playerRef.current, onContentSize);
         emitValidTimeUpdate(onTimeUpdate, detail.currentTime);
       }}
-      // The element's own decode/source failure. Always fatal, never routine:
+      // The element's own decode/source failure. Fatal, never routine:
       // `MediaErrorDetail` is not a DOM exception and carries no `name` to
-      // classify, so it goes straight to the host. hls.js fatal errors arrive
-      // here too — all but its media errors, which `onHlsError` takes.
-      onError={(detail) => failRendered(detail.message)}
+      // classify, so it goes straight to the host — save a progressive clip
+      // that lost its file mid-play, which is loaded again first (see
+      // `reloadRendered`). hls.js fatal errors arrive here too — all but its
+      // media errors, which `onHlsError` takes.
+      onError={(detail) => {
+        if (detail.code === MEDIA_ERR_NETWORK && reloadRendered()) return;
+        failRendered(detail.message);
+      }}
       // Vidstack answers every fatal hls.js media error with
       // `recoverMediaError()` and never reports it, so a stream this browser
       // cannot play would stall with no error shown. This runs just before that
@@ -730,38 +783,7 @@ export function ExperienceMediaPlayer({
           "group-data-[fullscreen]/experience-video:object-contain"
         )}
       />
-      <ExperienceVideoSurface copy={copy} />
     </MediaPlayer>
-  );
-}
-
-function ExperienceVideoSurface({ copy }: { copy: ExperiencePlayerVideoCopy }) {
-  // Interactive-film playback is story-driven: no scrub bar, no time readout,
-  // no fullscreen chrome (the shell is already full-bleed), and no pause here.
-  //
-  // A tap on the clip does not pause it: the surface is also where choices and
-  // anchored interactions are read, so the gesture that means "act on the
-  // story" and the gesture that means "stop the story" would be the same one.
-  // Pausing belongs to the host, which pauses the story — its clock, its timed
-  // windows, its sound — and not just this clip, whose end drives the exit
-  // that advances the scene. The announcer stays — assistive tech still needs
-  // to hear what playback is doing.
-  return (
-    <>
-      <MediaAnnouncer
-        className="sr-only"
-        translations={{
-          Play: copy.play,
-          Pause: copy.pause,
-          Mute: copy.mute,
-          Volume: copy.volume,
-          "Enter Fullscreen": copy.enterFullscreen,
-          "Exit Fullscreen": copy.exitFullscreen,
-          "Seek Forward": copy.seekForward,
-          "Seek Backward": copy.seekBackward,
-        }}
-      />
-    </>
   );
 }
 

@@ -67,16 +67,13 @@ export function ExperienceRuntimePlayer({
       noVisibleChoices: t("noVisibleChoices"),
       continue: t("continue"),
       regionLabel: t("regionLabel"),
-      video: {
-        play: t("video.play"),
-        pause: t("video.pause"),
-        mute: t("video.mute"),
-        unmute: t("video.unmute"),
-        volume: t("video.volume"),
-        enterFullscreen: t("video.enterFullscreen"),
-        exitFullscreen: t("video.exitFullscreen"),
-        seekForward: t("video.seekForward"),
-        seekBackward: t("video.seekBackward"),
+      video: { unmute: t("video.unmute") },
+      playback: {
+        pause: t("playback.pause"),
+        resume: t("playback.resume"),
+        paused: t("playback.paused"),
+        continuePlaying: t("playback.continuePlaying"),
+        interrupted: t("playback.interrupted"),
       },
     }),
     [t]

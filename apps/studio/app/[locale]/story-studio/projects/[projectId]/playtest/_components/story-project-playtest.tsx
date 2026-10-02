@@ -4,7 +4,7 @@ import { createNoopPlaySessionReporter } from "../_lib/play-session-reporter.noo
 import { IconAlertTriangle, IconArrowLeft, IconLoader2, IconRefresh } from "@tabler/icons-react";
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type CSSProperties } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ExperienceRuntimePlayer } from "@/components/experience-runtime/experience-runtime-player";
 import { StoryPlaytestStateHud } from "./story-playtest-state-hud";
@@ -60,6 +60,24 @@ export function StoryProjectPlaytest({
     retry: false,
   });
   const playSessionReporter = useMemo(() => createNoopPlaySessionReporter(), []);
+  // The player keeps its frame controls clear of this header through
+  // `--experience-chrome-inset-top`: how far down the header reaches over the
+  // column the controls sit in, which is the refresh button's. The state HUD
+  // beside it grows with the story's state, so the wider gap before the refresh
+  // button keeps it out of that column instead of letting it push them down.
+  const [chromeInsetTop, setChromeInsetTop] = useState<number | null>(null);
+  const measureChromeInset = useCallback((refresh: HTMLButtonElement | null) => {
+    const main = refresh?.closest("main");
+    if (!refresh || !main) return;
+    const update = () =>
+      setChromeInsetTop(
+        Math.ceil(refresh.getBoundingClientRect().bottom - main.getBoundingClientRect().top)
+      );
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(main);
+    return () => observer.disconnect();
+  }, []);
 
   const loading = runtimeQuery.isLoading;
   const loadError = runtimeQuery.error;
@@ -131,7 +149,14 @@ export function StoryProjectPlaytest({
     : t("pageTitle");
 
   return (
-    <main className="relative isolate min-h-dvh min-w-0 flex-1 overflow-hidden bg-black text-white">
+    <main
+      className="relative isolate min-h-dvh min-w-0 flex-1 overflow-hidden bg-black text-white"
+      style={
+        chromeInsetTop === null
+          ? undefined
+          : ({ "--experience-chrome-inset-top": `${chromeInsetTop}px` } as CSSProperties)
+      }
+    >
       <div className="absolute inset-0">
         <ExperienceRuntimePlayer
           key={`${parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}:${source.kind === "draft" ? (source.sceneId ?? "entry") : "entry"}`}
@@ -162,7 +187,7 @@ export function StoryProjectPlaytest({
           </div>
         </div>
 
-        <div className="pointer-events-auto flex items-start gap-2">
+        <div className="pointer-events-auto flex items-start gap-5">
           {stateRows.length > 0 ? (
             <StoryPlaytestStateHud
               values={sessionValues}
@@ -171,6 +196,7 @@ export function StoryProjectPlaytest({
             />
           ) : null}
           <Button
+            ref={measureChromeInset}
             type="button"
             size="icon"
             variant="secondary"

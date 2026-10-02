@@ -642,6 +642,7 @@ function TapControl({
   const clipPath = geometryClipPath(projected, bounds);
   return (
     <div
+      data-experience-gesture-available={presentation.available ? "" : undefined}
       className={classNames("absolute", !presentation.available && "pointer-events-none opacity-0")}
       style={{
         left: bounds.x,
@@ -778,6 +779,7 @@ function SwipeControl({
 
   return (
     <div
+      data-experience-gesture-available={presentation.available ? "" : undefined}
       className={classNames("absolute", !presentation.available && "pointer-events-none opacity-0")}
       style={{
         left: bounds.x,
@@ -1166,6 +1168,7 @@ function PressHoldControl({
 
   return (
     <div
+      data-experience-gesture-available={presentation.available ? "" : undefined}
       className={classNames("absolute", !presentation.available && "pointer-events-none opacity-0")}
       style={controlStyle}
     >

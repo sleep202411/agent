@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import { randomUUID } from "node:crypto";
 import { headers } from "next/headers";
 import enUS from "@/messages/en-US.json";
@@ -18,6 +19,16 @@ type RouteProps = {
   params: Promise<{ gameId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
+
+/**
+ * How far the chapter menu and the share button reach down the screen. The
+ * player's own controls sit at the film frame's top-right and keep clear of
+ * them by this much (`--experience-chrome-inset-top`): the buttons' top offset,
+ * their height and a breath of space.
+ */
+const PLAYER_CHROME_INSET = {
+  "--experience-chrome-inset-top": "calc(max(1rem, env(safe-area-inset-top)) + 2.75rem)",
+} as CSSProperties;
 
 const PLAYER_COPY = {
   "en-US": enUS.experiencePlayer,
@@ -93,7 +104,7 @@ export default async function InteractiveFilmPage({ params, searchParams }: Rout
 
   if (published) {
     return (
-      <main className="relative h-[100dvh] bg-black text-white">
+      <main className="relative h-[100dvh] bg-black text-white" style={PLAYER_CHROME_INSET}>
         <ExperienceRuntimePlayer
           runtime={published.manifest}
           locale={locale}
