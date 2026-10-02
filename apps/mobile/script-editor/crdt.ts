@@ -1,14 +1,11 @@
 import * as Y from "yjs";
 import { z } from "zod";
 
-const encoded = z
-  .string()
-  .min(4)
-  .regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
-const editSchema = z.object({ clientKey: z.string().uuid(), yjsUpdateBase64: encoded }).strict();
-const checkpointSchema = z
-  .object({ version: z.literal(1), state: encoded, pending: z.array(editSchema) })
-  .strict();
+import {
+  encodedScriptState as encoded,
+  scriptEditSchema as editSchema,
+  scriptCheckpointSchema as checkpointSchema,
+} from "./protocol";
 export type ScriptEdit = z.infer<typeof editSchema>;
 export type ScriptCheckpoint = z.infer<typeof checkpointSchema>;
 const REMOTE = Symbol("script-remote");

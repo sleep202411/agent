@@ -88,7 +88,9 @@
     "build:document-editor": "node scripts/build-document-editor.mjs",
     "check:document-editor": "node scripts/build-document-editor.mjs --check",
     "build:discovery-map": "node scripts/build-discovery-map.mjs",
-    "check:discovery-map": "node scripts/build-discovery-map.mjs --check"
+    "check:discovery-map": "node scripts/build-discovery-map.mjs --check",
+    "build:script-editor": "node ./scripts/build-script-editor.mjs",
+    "check:script-editor": "node ./scripts/build-script-editor.mjs --check"
   },
   "private": true
 }
