@@ -1943,7 +1943,7 @@
   "projectActivity.resource_added": "Resource Added",
   "projectActivity.resource_removed": "Resource Removed",
   "taskWorkbench.title": "Task Creation Workbench",
-  "taskWorkbench.help": "Stage tasks, review their details, then create them together. Drafts stay in this signed-in session while you switch screens; they are not saved on the server and are lost when the app restarts or you sign out.",
+  "taskWorkbench.help": "Review drafts, then create the tasks together. Drafts are saved locally on this device for your account; they are not server tasks until you create them.",
   "taskWorkbench.stage": "Stage Task",
   "taskWorkbench.count": "{count} Tasks Staged",
   "taskWorkbench.staged": "Staged",

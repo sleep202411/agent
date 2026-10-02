@@ -1,5 +1,5 @@
 import { TaskCompensationSummary } from "./task-compensation-summary";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
@@ -42,9 +42,16 @@ function Session(props: Props) {
     session.getSnapshot
   );
   const [editing, setEditing] = useState<boolean | number>(false),
-    [allowed, setAllowed] = useState<boolean>(),
-    [error, setError] = useState<string>(),
     [remove, setRemove] = useState<number>();
+  const [accessRevision, setAccessRevision] = useState(0);
+  const accessScope = useMemo(() => ({ active, accessRevision }), [active, accessRevision]);
+  const [accessResult, setAccessResult] = useState<{
+    scope: typeof accessScope;
+    allowed?: boolean;
+    error?: string;
+  }>();
+  const allowed = accessResult?.scope === accessScope ? accessResult.allowed : undefined;
+  const error = accessResult?.scope === accessScope ? accessResult.error : undefined;
   const [section, setSection] = useState<
     "assets" | "progress" | "episodes" | "template" | "canvas"
   >();
@@ -58,18 +65,21 @@ function Session(props: Props) {
     void fetchTaskCommentAccess(props.crewId, props.userId, c.signal).then(
       (access) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setAllowed(access.canManage);
+          setAccessResult({ scope: accessScope, allowed: access.canManage });
       },
       (cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setAccessResult({
+            scope: accessScope,
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
       }
     );
     return () => {
       alive.current = false;
       c.abort();
     };
-  }, [props.crewId, props.userId, props.generation, active]);
+  }, [props.crewId, props.userId, props.generation, active, accessScope]);
   // Keep the draft session mounted while inspecting source assets or episodes.
   // Each destination checks its own read/write permissions independently.
   if (section) {
@@ -174,6 +184,9 @@ function Session(props: Props) {
       {(error || allowed === false) && (
         <ThemedText accessibilityRole="alert">{error ?? t("taskCreate.managerOnly")}</ThemedText>
       )}
+      {error && (
+        <Button label={t("inbox.retry")} onPress={() => setAccessRevision((value) => value + 1)} />
+      )}
       {allowed && (
         <>
           <Button
@@ -187,7 +200,7 @@ function Session(props: Props) {
             onPress={() => setSection("template")}
           />
           <Button
-            label={`${t("assetTaskProgress.production")} · ${t("canvasImport.title")}`}
+            label={t("canvasImport.title")}
             disabled={snapshot.busy || !!snapshot.storageError}
             onPress={() => setSection("canvas")}
           />

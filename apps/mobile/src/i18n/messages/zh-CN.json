@@ -1943,7 +1943,7 @@
   "projectActivity.resource_added": "资源已添加",
   "projectActivity.resource_removed": "资源已移除",
   "taskWorkbench.title": "任务创建工作台",
-  "taskWorkbench.help": "先暂存任务并核对详情，再一起创建。草稿可在当前登录会话中跨页面保留，但尚未保存至服务器；重启应用或退出登录后会丢失。",
+  "taskWorkbench.help": "核对草稿后统一创建任务。草稿按账号保存在当前设备上；确认创建后才会成为服务器上的任务。",
   "taskWorkbench.stage": "暂存任务",
   "taskWorkbench.count": "已暂存 {count} 个任务",
   "taskWorkbench.staged": "已暂存",

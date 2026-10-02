@@ -386,3 +386,29 @@ it("reopens and saves a staged card in place without adding a second task", asyn
   await click("taskWorkbench.createAll");
   expect(h.create).toHaveBeenCalledOnce();
 });
+
+it("requires a fresh permission result after returning and preserves drafts through retry", async () => {
+  await render();
+  await stage();
+  h.active = false;
+  await render();
+  let fail!: (e: Error) => void;
+  h.access.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      })
+  );
+  h.active = true;
+  await render();
+  expect(button("taskCreate.title")).toBeUndefined();
+  expect(host.textContent).not.toContain("Storyboard");
+  await act(async () => fail(Error("Permission lookup failed")));
+  expect(button("taskCreate.title")).toBeUndefined();
+  expect(host.textContent).toContain("Permission lookup failed");
+  await click("inbox.retry");
+  expect(button("taskCreate.title")).toBeDefined();
+  expect(host.textContent).toContain("Storyboard");
+  expect(host.textContent).not.toContain("Permission lookup failed");
+  expect(h.create).not.toHaveBeenCalled();
+});

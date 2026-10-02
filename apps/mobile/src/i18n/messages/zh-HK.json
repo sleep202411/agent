@@ -1943,7 +1943,7 @@
   "projectActivity.resource_added": "資源已新增",
   "projectActivity.resource_removed": "資源已移除",
   "taskWorkbench.title": "任務建立工作台",
-  "taskWorkbench.help": "先暫存任務並核對詳情，再一起建立。草稿可在目前登入工作階段中跨頁面保留，但尚未儲存至伺服器；重新啟動應用或登出後會遺失。",
+  "taskWorkbench.help": "核對草稿後統一建立任務。草稿按帳號儲存在目前裝置上；確認建立後才會成為伺服器上的任務。",
   "taskWorkbench.stage": "暫存任務",
   "taskWorkbench.count": "已暫存 {count} 個任務",
   "taskWorkbench.staged": "已暫存",
