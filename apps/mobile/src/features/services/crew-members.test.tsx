@@ -286,3 +286,10 @@ it("opens link management only with invite permission and refreshes on return", 
   await click("crewLinks.title");
   expect(h.push).toHaveBeenCalledWith("/crew-invite-links?crewId=crew");
 });
+
+it("opens the member public profile from the member card", async () => {
+  h.read.mockResolvedValue({ items: [member], nextCursor: null, total: 1 });
+  await render();
+  await click("crewMembers.viewProfile");
+  expect(h.push).toHaveBeenCalledWith("/creator/1");
+});

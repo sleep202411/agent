@@ -4466,5 +4466,9 @@
   "plotImport.confirm": "我确认此文件和导入方式。",
   "plotImport.submit": "导入剧情",
   "plotImport.template": "查看剧情模板",
-  "plotImport.inspect": "检查当前剧情"
+  "plotImport.inspect": "检查当前剧情",
+  "crewMembers.viewProfile": "查看主页",
+  "plotImport.empty": "本章节还没有剧情节点。",
+  "plotImport.details": "显示技术详情",
+  "plotImport.hideDetails": "隐藏技术详情"
 }

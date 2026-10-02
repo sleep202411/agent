@@ -241,6 +241,10 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
           <ThemedText type="smallBold">
             {displays?.get(member.userId)?.nickname || member.userId}
           </ThemedText>
+          <Button
+            label={t("crewMembers.viewProfile")}
+            onPress={() => router.push(toHref(`/creator/${encodeURIComponent(member.userId)}`))}
+          />
           <ThemedText>
             {t("crewMembers.userId")}: {member.userId}
           </ThemedText>

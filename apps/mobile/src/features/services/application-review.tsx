@@ -1,3 +1,5 @@
+import { router } from "expo-router";
+import { toHref } from "@/lib/navigation";
 import { ApplicationAmendments } from "./application-amendments";
 import { TermsProposalScreen } from "./terms-proposal";
 import { ApplicationInterview } from "./application-interview";
@@ -216,6 +218,12 @@ function ReviewDetail(
           <ThemedText>
             {review.app.applicantId} · {review.app.positionId}
           </ThemedText>
+          <Action
+            label={t("crewMembers.viewProfile")}
+            onPress={() =>
+              router.push(toHref(`/creator/${encodeURIComponent(review.app.applicantId)}`))
+            }
+          />
           <ThemedText>{t(`crewTerms.${result ?? review.app.status}`)}</ThemedText>
           {review.app.message && <ThemedText>{review.app.message}</ThemedText>}
           {review.app.portfolioUrl && <ThemedText>{review.app.portfolioUrl}</ThemedText>}

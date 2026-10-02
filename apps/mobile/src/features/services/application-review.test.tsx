@@ -2,6 +2,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ApplicationReview } from "./application-review";
+vi.mock("expo-router", () => ({ router: { push: (path: string) => h.push(path) } }));
+vi.mock("@/lib/navigation", () => ({ toHref: (path: string) => path }));
 vi.mock("./application-amendments", () => ({
   ApplicationAmendments: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>Amendments</button>
@@ -21,7 +23,13 @@ vi.mock("./application-interview", () => ({
     onClose: () => void;
   }) => <button onClick={onClose}>Interview: {applicantId}</button>,
 }));
-const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), post: vi.fn(), close: vi.fn() }));
+const h = vi.hoisted(() => ({
+  generation: 1,
+  push: vi.fn(),
+  get: vi.fn(),
+  post: vi.fn(),
+  close: vi.fn(),
+}));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white", border: "gray" }) }));
@@ -271,4 +279,10 @@ it("opens amendments after approval and reloads the application on return", asyn
   expect(host.textContent).toBe("Amendments");
   await click("Amendments");
   expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
+});
+
+it("opens the applicant public profile from review", async () => {
+  await open();
+  await click("crewMembers.viewProfile");
+  expect(h.push).toHaveBeenCalledWith(`/creator/${encodeURIComponent(app.applicantId)}`);
 });

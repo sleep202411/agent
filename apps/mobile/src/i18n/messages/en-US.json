@@ -4466,5 +4466,9 @@
   "plotImport.confirm": "I confirm this file and import mode.",
   "plotImport.submit": "Import plot",
   "plotImport.template": "View plot template",
-  "plotImport.inspect": "Inspect current plot"
+  "plotImport.inspect": "Inspect current plot",
+  "crewMembers.viewProfile": "View profile",
+  "plotImport.empty": "No plot nodes in this chapter.",
+  "plotImport.details": "Show technical details",
+  "plotImport.hideDetails": "Hide technical details"
 }

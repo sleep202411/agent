@@ -4466,5 +4466,9 @@
   "plotImport.confirm": "我確認此檔案和匯入方式。",
   "plotImport.submit": "匯入劇情",
   "plotImport.template": "檢視劇情範本",
-  "plotImport.inspect": "檢查目前劇情"
+  "plotImport.inspect": "檢查目前劇情",
+  "crewMembers.viewProfile": "查看主頁",
+  "plotImport.empty": "本章節還沒有劇情節點。",
+  "plotImport.details": "顯示技術詳情",
+  "plotImport.hideDetails": "隱藏技術詳情"
 }

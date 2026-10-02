@@ -82,6 +82,7 @@ function ImportSession({
   const [confirmed, setConfirmed] = useState(false),
     [reviewed, setReviewed] = useState(false);
   const [showCurrent, setShowCurrent] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>();
   const current = useCallback(
@@ -204,25 +205,34 @@ function ImportSession({
         gap: 12,
       }}
     >
-      <ThemedText type="smallBold">{t("plotImport.title")}</ThemedText>
-      <ImportButton label={t("ipDetail.close")} onPress={onClose} />
-      <ThemedText>{t("plotImport.help")}</ThemedText>
-      <ImportButton
-        label={t("plotImport.template")}
-        onPress={() => {
-          const origin =
-            appEnv.siteRegion === "cn"
-              ? "https://studio.fizzspace.cn"
-              : "https://studio.fizzdragon.com";
-          void Linking.openURL(`${origin}/templates/story-plot/${locale}.md`).catch((e) => {
-            if (current()) setError(message(e));
-          });
-        }}
-      />
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <ThemedText type="smallBold" style={{ flex: 1 }}>
+          {t("plotImport.title")}
+        </ThemedText>
+        <ImportButton label={t("ipDetail.close")} onPress={onClose} quiet />
+      </View>
+      <ThemedText type="small" themeColor="textSecondary">
+        {t("plotImport.help")}
+      </ThemedText>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <ImportButton
+          quiet
+          label={t("plotImport.template")}
+          onPress={() => {
+            const origin =
+              appEnv.siteRegion === "cn"
+                ? "https://studio.fizzspace.cn"
+                : "https://studio.fizzdragon.com";
+            void Linking.openURL(`${origin}/templates/story-plot/${locale}.md`).catch((e) => {
+              if (current()) setError(message(e));
+            });
+          }}
+        />
+        <ImportButton quiet label={t("plotImport.refresh")} onPress={refresh} disabled={busy} />
+      </View>
       {!visible && <ActivityIndicator />}
       {visible?.error && <ThemedText accessibilityRole="alert">{visible.error}</ThemedText>}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      <ImportButton label={t("plotImport.refresh")} onPress={refresh} disabled={busy} />
       {visible?.draft && (
         <>
           <ThemedText>
@@ -242,9 +252,45 @@ function ImportSession({
                 onPress={() => setShowCurrent((v) => !v)}
               />
               {showCurrent && (
-                <ThemedText selectable>
-                  {JSON.stringify(visible.draft.content.graph, null, 2)}
-                </ThemedText>
+                <View style={{ gap: 8 }}>
+                  {visible.draft.content.graph.nodes.length === 0 && (
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {t("plotImport.empty")}
+                    </ThemedText>
+                  )}
+                  {visible.draft.content.graph.nodes.map((node) => (
+                    <View
+                      key={node.nodeId}
+                      style={{
+                        padding: 12,
+                        gap: 4,
+                        borderRadius: 8,
+                        backgroundColor: theme.backgroundElement,
+                      }}
+                    >
+                      <ThemedText type="smallBold" selectable>
+                        {typeof node.name === "string" && node.name.trim()
+                          ? node.name
+                          : node.nodeId}
+                      </ThemedText>
+                      {typeof node.description === "string" && !!node.description && (
+                        <ThemedText type="small" themeColor="textSecondary" selectable>
+                          {node.description}
+                        </ThemedText>
+                      )}
+                    </View>
+                  ))}
+                  <ImportButton
+                    quiet
+                    label={t(showDetails ? "plotImport.hideDetails" : "plotImport.details")}
+                    onPress={() => setShowDetails((v) => !v)}
+                  />
+                  {showDetails && (
+                    <ThemedText type="code" themeColor="textSecondary" selectable>
+                      {JSON.stringify(visible.draft.content.graph, null, 2)}
+                    </ThemedText>
+                  )}
+                </View>
               )}
               <Pressable
                 accessibilityRole="checkbox"
@@ -332,6 +378,7 @@ function ImportSession({
                     </ThemedText>
                   </Pressable>
                   <ImportButton
+                    primary
                     label={t("plotImport.submit")}
                     onPress={() => void submit()}
                     disabled={busy || !confirmed}
@@ -351,10 +398,14 @@ function ImportButton({
   label,
   onPress,
   disabled = false,
+  quiet = false,
+  primary = false,
 }: {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  quiet?: boolean;
+  primary?: boolean;
 }) {
   const theme = useTheme();
   return (
@@ -366,12 +417,14 @@ function ImportButton({
         padding: 12,
         minHeight: 44,
         borderRadius: 8,
-        backgroundColor: theme.backgroundElement,
+        backgroundColor: primary ? theme.brand : quiet ? "transparent" : theme.backgroundElement,
         opacity: disabled ? 0.45 : 1,
       }}
       onPress={onPress}
     >
-      <ThemedText>{label}</ThemedText>
+      <ThemedText type="smallBold" themeColor={quiet ? "textSecondary" : "text"}>
+        {label}
+      </ThemedText>
     </Pressable>
   );
 }

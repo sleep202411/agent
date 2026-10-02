@@ -168,7 +168,12 @@ it("recovers a lost response after close/reopen without replaying it", async () 
   expect(button("plotImport.choose")).toBeUndefined();
   expect(button("plotImport.clear").disabled).toBe(true);
   await click("plotImport.inspect");
+  expect(host.textContent).toContain("plotImport.empty");
+  expect(host.textContent).not.toContain("entryNodeId");
+  await click("plotImport.details");
   expect(host.textContent).toContain("entryNodeId");
+  await click("plotImport.hideDetails");
+  expect(host.textContent).not.toContain("entryNodeId");
   await confirm();
   await click("plotImport.clear");
   expect(button("plotImport.choose")).toBeDefined();
