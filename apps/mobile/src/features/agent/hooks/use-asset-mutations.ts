@@ -65,6 +65,7 @@ export function useAssetMutations(
     submit,
     clear,
     busy: op.busy,
+    recoveryLocked: !active || loaded !== store || !!pending || op.busy,
     locked: !active || !canEdit || loaded !== store || !!pending || op.busy,
   };
 }

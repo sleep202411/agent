@@ -4396,5 +4396,12 @@
   "assetEdit.turnaround": "Add three-view image",
   "assetEdit.uploadHelp": "JPEG, PNG or WebP up to 30 MiB. Select an uploaded image to use it. Interrupted transfers must restart; completed uploads can retry confirmation.",
   "assetEdit.create": "Create asset",
-  "assetEdit.createHelp": "The name becomes the initial image prompt. You can edit it after creating the asset."
+  "assetEdit.createHelp": "The name becomes the initial image prompt. You can edit it after creating the asset.",
+  "assetEdit.generateImage": "Generate image",
+  "assetEdit.generateTurnaround": "Generate three-view image",
+  "assetEdit.saveBeforeGeneration": "Save your changes before generating.",
+  "assetEdit.generation": "Asset generation",
+  "assetEdit.generate": "Generate",
+  "assetEdit.refreshGeneration": "Refresh generation",
+  "assetEdit.reloadAsset": "Reload asset to use the attached result"
 }

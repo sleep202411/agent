@@ -275,6 +275,17 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
         />
       )}
       <StoryAssetSpecDetailSheet
+        key={`${resourceKey}:${detailAsset?.id}:${detailAsset?.version}`}
+        generation={{
+          scope,
+          userId,
+          canGenerate: capabilities.includes("story.generate"),
+          locked: mutation.recoveryLocked,
+          refresh: () => {
+            setDetailAsset(null);
+            refresh();
+          },
+        }}
         recovery={recovery}
         asset={active && !chapterLoading && !chapterError ? detailAsset : null}
         editing={
@@ -283,7 +294,10 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
             : undefined
         }
         visible={detailAsset != null}
-        onClose={() => setDetailAsset(null)}
+        onClose={() => {
+          setDetailAsset(null);
+          refresh();
+        }}
       />
     </ThemedView>
   );

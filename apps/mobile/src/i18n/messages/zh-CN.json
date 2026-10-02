@@ -4396,5 +4396,12 @@
   "assetEdit.turnaround": "添加三视图",
   "assetEdit.uploadHelp": "支持 JPEG、PNG 或 WebP，最大 30 MiB。上传后选择图片使用。传输中断需重新上传；上传完成后可重试确认。",
   "assetEdit.create": "创建资产",
-  "assetEdit.createHelp": "名称将作为初始图片提示词。创建后可以修改。"
+  "assetEdit.createHelp": "名称将作为初始图片提示词。创建后可以修改。",
+  "assetEdit.generateImage": "生成图片",
+  "assetEdit.generateTurnaround": "生成三视图",
+  "assetEdit.saveBeforeGeneration": "请先保存修改，再生成。",
+  "assetEdit.generation": "资产生成",
+  "assetEdit.generate": "生成",
+  "assetEdit.refreshGeneration": "刷新生成状态",
+  "assetEdit.reloadAsset": "重新加载资产以使用已生成的结果"
 }

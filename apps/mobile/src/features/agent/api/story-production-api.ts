@@ -31,6 +31,17 @@ export type StoryAssetSpec = {
   id: string;
   projectId: string;
   chapterId: string;
+  latestGeneration?: {
+    id: string;
+    purpose: "primary" | "turnaround";
+    outputKind: "image" | "video";
+  } | null;
+  latestGenerations?: Partial<
+    Record<
+      "primary" | "turnaround",
+      { id: string; purpose: "primary" | "turnaround"; outputKind: "image" | "video" } | null
+    >
+  >;
   stableKey: string;
   kind: StoryAssetSpecKind;
   name: string;

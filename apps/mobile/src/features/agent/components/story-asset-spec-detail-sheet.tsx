@@ -1,6 +1,8 @@
 import { StoryAssetEditFields } from "./story-asset-edit-fields";
 import type { AssetCommand } from "../api/story-asset-mutations";
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { AssetGenerationPanel } from "./story-asset-generation-panel";
+import type { TimelineScope } from "../api/story-timeline-api";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -22,17 +24,39 @@ export function StoryAssetSpecDetailSheet({
   onClose,
   editing,
   recovery,
+  generation,
 }: {
   asset: StoryAssetSpec | null;
   visible: boolean;
   onClose: () => void;
   recovery?: ReactNode;
+  generation?: {
+    scope: TimelineScope;
+    userId: string;
+    canGenerate: boolean;
+    locked: boolean;
+    refresh: () => void;
+  };
   editing?: { locked: boolean; submit: (command: AssetCommand) => void };
 }) {
   const t = useTranslations();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [purpose, setPurpose] = useState<"primary" | "turnaround">();
+  const baseScope = generation?.scope,
+    assetId = asset?.id;
+  const scope = useMemo(
+    () =>
+      baseScope && assetId && purpose
+        ? { ...baseScope, assetId, purpose, outputKind: "image" as const }
+        : undefined,
+    [baseScope, assetId, purpose]
+  );
   if (!asset) return null;
+  const latest = purpose
+    ? (asset.latestGenerations?.[purpose] ??
+      (asset.latestGeneration?.purpose === purpose ? asset.latestGeneration : null))
+    : null;
 
   const reference = asset.stableKey.startsWith("@") ? asset.stableKey : `@${asset.stableKey}`;
   const prompt = asset.imagePrompt?.trim() || "—";
@@ -77,12 +101,49 @@ export function StoryAssetSpecDetailSheet({
               </>
             )}
             {recovery}
-            {editing && (
-              <StoryAssetEditFields
-                key={`${asset.id}:${asset.version}`}
-                asset={asset}
-                {...editing}
+            {scope && generation ? (
+              <AssetGenerationPanel
+                scope={scope}
+                userId={generation.userId}
+                version={asset.version}
+                kind="image"
+                latestId={latest?.outputKind === "image" ? latest.id : undefined}
+                canGenerate={generation.canGenerate && !generation.locked}
+                onClose={() => {
+                  setPurpose(undefined);
+                  generation.refresh();
+                }}
               />
+            ) : (
+              <>
+                {!editing &&
+                  generation &&
+                  (["primary", ...(asset.kind === "character" ? ["turnaround"] : [])] as const).map(
+                    (target) => (
+                      <Pressable
+                        key={target}
+                        accessibilityRole="button"
+                        onPress={() => setPurpose(target as "primary" | "turnaround")}
+                      >
+                        <ThemedText type="smallBold">
+                          {t(
+                            target === "primary"
+                              ? "assetEdit.generateImage"
+                              : "assetEdit.generateTurnaround"
+                          )}
+                        </ThemedText>
+                      </Pressable>
+                    )
+                  )}
+                {editing && (
+                  <StoryAssetEditFields
+                    key={`${asset.id}:${asset.version}`}
+                    asset={asset}
+                    {...editing}
+                    onGenerate={generation && !generation.locked ? setPurpose : undefined}
+                  />
+                )}
+              </>
             )}
           </ScrollView>
 

@@ -12,7 +12,9 @@ export function StoryAssetEditFields({
   asset,
   locked,
   submit,
+  onGenerate,
 }: {
+  onGenerate?: (purpose: "primary" | "turnaround") => void;
   asset: StoryAssetSpec;
   locked: boolean;
   submit: (command: AssetCommand) => void;
@@ -93,6 +95,30 @@ export function StoryAssetEditFields({
           />
         </View>
       ))}
+      {onGenerate && (
+        <>
+          {(name !== asset.name ||
+            prompt !== (asset.imagePrompt ?? "") ||
+            description !== (asset.description ?? "")) && (
+            <ThemedText type="small">{t("assetEdit.saveBeforeGeneration")}</ThemedText>
+          )}
+          {button(
+            t("assetEdit.generateImage"),
+            () => onGenerate("primary"),
+            name !== asset.name ||
+              prompt !== (asset.imagePrompt ?? "") ||
+              description !== (asset.description ?? "")
+          )}
+          {asset.kind === "character" &&
+            button(
+              t("assetEdit.generateTurnaround"),
+              () => onGenerate("turnaround"),
+              name !== asset.name ||
+                prompt !== (asset.imagePrompt ?? "") ||
+                description !== (asset.description ?? "")
+            )}
+        </>
+      )}
       {button(t("assetEdit.save"), () => patch(), !name.trim() || !prompt.trim())}
       {button(
         t("assetEdit.replaceImage"),

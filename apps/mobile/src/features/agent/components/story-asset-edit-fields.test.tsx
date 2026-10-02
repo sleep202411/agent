@@ -141,3 +141,27 @@ it("imports selected candidates using the saved asset version", async () => {
     name: "Asset",
   });
 });
+
+it("requires saving changed fields before opening generation", async () => {
+  const generate = vi.fn();
+  await act(async () =>
+    root.render(
+      <StoryAssetEditFields asset={asset} locked={false} submit={submit} onGenerate={generate} />
+    )
+  );
+  await click("assetEdit.generateImage");
+  expect(generate).toHaveBeenCalledWith("primary");
+  const input = host.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Changed"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "assetEdit.generateImage")!
+      .disabled
+  ).toBe(true);
+  expect(host.textContent).toContain("assetEdit.saveBeforeGeneration");
+});
