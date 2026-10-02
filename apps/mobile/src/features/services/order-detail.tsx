@@ -1,11 +1,12 @@
 import { useUserDisplays } from "./user-displays";
-import { useEffect, useState } from "react";
-import { useIsFocused, useRouter, Stack } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, Stack } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import type { OrderAction } from "@repo/shared/order";
 import { useAuth, useAuthGate } from "@/auth";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice } from "@/lib/creator-service-format";
@@ -20,7 +21,7 @@ import {
 export function OrderDetail({ id }: { id: string }) {
   const auth = useAuth(),
     gate = useAuthGate(),
-    focused = useIsFocused(),
+    active = useScreenActive(),
     t = useTranslations(),
     theme = useTheme();
   const userId = String(auth.user?.userId ?? auth.user?.id ?? "");
@@ -40,74 +41,90 @@ export function OrderDetail({ id }: { id: string }) {
         <Pressable accessibilityRole="button" onPress={() => gate.requireAuth()}>
           <ThemedText>{t("orders.signIn")}</ThemedText>
         </Pressable>
-      ) : focused && id && userId ? (
-        <Content key={JSON.stringify([id, auth.generation, userId])} id={id} userId={userId} />
+      ) : id && userId ? (
+        <Content
+          key={JSON.stringify([id, auth.generation, userId])}
+          id={id}
+          userId={userId}
+          active={active}
+        />
       ) : null}
     </View>
   );
 }
-function Content({ id, userId }: { id: string; userId: string }) {
+function Content({ id, userId, active }: { id: string; userId: string; active: boolean }) {
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme(),
     router = useRouter();
-  const [order, setOrder] = useState<NativeOrder>(),
-    [error, setError] = useState<string>(),
-    [loading, setLoading] = useState(true),
-    [revision, setRevision] = useState(0);
+  const [revision, setRevision] = useState(0);
+  const scope = useMemo(
+    () => ({ id, userId, active, revision, t }),
+    [id, userId, active, revision, t]
+  );
+  const [snapshot, setSnapshot] = useState<{
+    scope: object;
+    order?: NativeOrder;
+    error?: string;
+  }>();
+  const visible = active && snapshot?.scope === scope ? snapshot : undefined;
+  const order = visible?.order;
+  const error = visible?.error;
+  const loading = active && !visible;
   const [action, setAction] = useState<OrderAction>(),
     [reason, setReason] = useState("");
-  const op = useAuthFormOperation(id, true);
+  const op = useAuthFormOperation(id, active);
   const auth = useAuth();
   const otherId = order ? (order.buyerId === userId ? order.creatorId : order.buyerId) : "";
-  const displays = useUserDisplays(String(auth.generation), [otherId]);
+  const displays = useUserDisplays(active ? String(auth.generation) : undefined, [otherId]);
   useEffect(() => {
+    if (!active) return;
     const controller = new AbortController();
     void fetchOrder(id, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         if (result.buyerId !== userId && result.creatorId !== userId)
           throw new Error("Order is not available to this account");
-        setOrder(result);
-        setError(undefined);
+        setSnapshot({ scope, order: result });
+        setAction((current) =>
+          current && orderActions(result, userId).includes(current) ? current : undefined
+        );
       })
       .catch((cause) => {
         if (!controller.signal.aborted) {
-          setOrder(undefined);
-          setAction(undefined);
-          setError(cause instanceof Error ? cause.message : t("profileEdit.failed"));
+          setSnapshot({
+            scope,
+            error: cause instanceof Error ? cause.message : t("profileEdit.failed"),
+          });
         }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [id, userId, revision, t]);
+  }, [id, userId, scope, active, t]);
   const refresh = () => {
-    setLoading(true);
-    setOrder(undefined);
-    setAction(undefined);
     setRevision((value) => value + 1);
   };
   const submit = () => {
-    if (!order || !action || loading) return;
+    if (!active || !order || !action || loading || !orderActions(order, userId).includes(action))
+      return;
     void op.run(
       () => transitionOrder(order, userId, action, reason),
       (result) => {
-        setOrder(result);
+        setSnapshot({ scope, order: result });
         setAction(undefined);
         setReason("");
-        setError(undefined);
       },
       (cause) => {
         // A failed response does not prove the transition failed. Require a
         // fresh authoritative read before offering another order action.
-        setOrder(undefined);
+        setSnapshot({
+          scope,
+          error: cause instanceof Error ? cause.message : t("profileEdit.failed"),
+        });
         setAction(undefined);
-        setError(cause instanceof Error ? cause.message : t("profileEdit.failed"));
       }
     );
   };
+  if (!active) return null;
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
