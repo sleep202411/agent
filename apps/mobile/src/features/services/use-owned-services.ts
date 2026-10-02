@@ -57,6 +57,14 @@ export function useOwnedServices(
       } catch (cause) {
         if (session.abort.signal.aborted) return;
         session.failed = true;
+        const status =
+          cause && typeof cause === "object" && "status" in cause ? cause.status : undefined;
+        if (status === 401 || status === 403) {
+          session.items = [];
+          session.cursor = null;
+          session.seen.clear();
+          session.more = true;
+        }
         error = cause instanceof Error ? cause.message : "Unable to load services";
       } finally {
         session.busy = false;

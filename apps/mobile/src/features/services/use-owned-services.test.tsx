@@ -109,3 +109,25 @@ it("does not restore stale rows while revalidating a return visit", async () => 
   expect(host.textContent).not.toContain("First");
   expect(h.load).toHaveBeenCalledTimes(2);
 });
+
+it.each([401, 403])(
+  "clears loaded services after %s and retries from the first page",
+  async (status) => {
+    h.load
+      .mockResolvedValueOnce({ items: [item], nextCursor: "next" })
+      .mockRejectedValueOnce(Object.assign(new Error("Access denied"), { status }))
+      .mockResolvedValueOnce({ items: [{ ...item, title: "Revalidated" }], nextCursor: "next" })
+      .mockResolvedValueOnce({ items: [], nextCursor: null });
+    await render("1");
+    await click(0);
+    expect(host.textContent).not.toContain("First");
+    expect(host.textContent).toContain("Access denied");
+    await click(0);
+    expect(h.load).toHaveBeenCalledTimes(2);
+    await click(1);
+    expect(h.load.mock.calls[2][2]).toBeNull();
+    expect(host.textContent).toContain("Revalidated");
+    await click(0);
+    expect(h.load.mock.calls[3][2]).toBe("next");
+  }
+);
