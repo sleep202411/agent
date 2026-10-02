@@ -194,7 +194,8 @@ function Relationships(props: {
                   "{count}",
                   String(studio.serviceCount)
                 ),
-                () => router.push(toHref(`/creator/${encodeURIComponent(studio.id)}`))
+                () =>
+                  router.push(toHref(`/creator/${encodeURIComponent(studio.id)}?section=services`))
               )}
               {action(t("contentGpsDiscovery.studioDiscovery"), () =>
                 router.push(toHref(`/studios?selected=${encodeURIComponent(studio.id)}`))

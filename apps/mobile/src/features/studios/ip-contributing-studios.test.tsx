@@ -93,7 +93,7 @@ it("shows contributor identity/roles with native profile and selected-studio lin
   await click("Studio one");
   expect(h.push).toHaveBeenLastCalledWith("/creator/one");
   await click("contentGpsDiscovery.studioServices");
-  expect(h.push).toHaveBeenLastCalledWith("/creator/one");
+  expect(h.push).toHaveBeenLastCalledWith("/creator/one?section=services");
   await click("contentGpsDiscovery.studioDiscovery");
   expect(h.push).toHaveBeenLastCalledWith("/studios?selected=one");
 });

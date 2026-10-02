@@ -4,6 +4,10 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import CreatorDetail from "@/app/creator/[id]";
 const h = vi.hoisted(() => ({
   id: "a",
+  section: undefined as string | string[] | undefined,
+  scrollTo: vi.fn(),
+  layouts: [] as ((event: any) => void)[],
+  scrollProps: {} as any,
   profile: vi.fn(),
   services: vi.fn(),
   works: vi.fn(),
@@ -12,7 +16,7 @@ const h = vi.hoisted(() => ({
 vi.mock("expo-router", () => ({
   router: { push: vi.fn() },
   Stack: { Screen: () => null },
-  useLocalSearchParams: () => ({ id: h.id }),
+  useLocalSearchParams: () => ({ id: h.id, section: h.section }),
 }));
 vi.mock("@/features/certificates/creator-certificates", () => ({
   CreatorCertificates: () => null,
@@ -46,16 +50,26 @@ vi.mock("@/components/ui", () => ({
 vi.mock("@/features/profile/creator-personal-works", () => ({ CreatorPersonalWorks: () => null }));
 vi.mock("@/features/profile/creator-experience", () => ({ CreatorExperience: () => null }));
 vi.mock("@/features/profile/creator-education", () => ({ CreatorEducation: () => null }));
-vi.mock("react-native", () => ({
-  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ActivityIndicator: () => <span>loading</span>,
-  StyleSheet: { create: (v: unknown) => v },
-  Platform: { select: (v: Record<string, unknown>) => v.web ?? v.default },
-  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
-    <button onClick={onPress}>{children}</button>
-  ),
-}));
+vi.mock("react-native", async () => {
+  const { useImperativeHandle } = await import("react");
+  return {
+    View: ({ children, onLayout }: any) => {
+      if (onLayout) h.layouts.push(onLayout);
+      return <div>{children}</div>;
+    },
+    ScrollView: ({ children, ref, ...props }: any) => {
+      useImperativeHandle(ref, () => ({ scrollTo: h.scrollTo }));
+      h.scrollProps = props;
+      return <div>{children}</div>;
+    },
+    ActivityIndicator: () => <span>loading</span>,
+    StyleSheet: { create: (v: unknown) => v },
+    Platform: { select: (v: Record<string, unknown>) => v.web ?? v.default },
+    Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
+      <button onClick={onPress}>{children}</button>
+    ),
+  };
+});
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const render = () => act(async () => root.render(<CreatorDetail />));
@@ -66,6 +80,8 @@ const retry = () =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.id = "a";
+  h.section = undefined;
+  h.layouts = [];
   h.profile.mockResolvedValue({ id: "a", name: "Alice", levels: [] });
   h.services.mockResolvedValue([]);
   h.works.mockResolvedValue([{ id: "ip" }]);
@@ -158,4 +174,48 @@ it("does not attach a previous creator's late section error to the new profile",
   await act(async () => fail(Error("Alice services failed")));
   expect(host.textContent).toContain("Bob");
   expect(host.textContent).not.toContain("Alice");
+});
+
+it("targets services after layout and follows delayed content until the user scrolls", async () => {
+  h.section = "services";
+  await render();
+  const [body, services] = h.layouts.slice(-2);
+  act(() => body({ nativeEvent: { layout: { y: 200 } } }));
+  expect(h.scrollTo).not.toHaveBeenCalled();
+  act(() => services({ nativeEvent: { layout: { y: 900 } } }));
+  expect(h.scrollTo).toHaveBeenLastCalledWith({ y: 1044, animated: false });
+  act(() => services({ nativeEvent: { layout: { y: 1100 } } }));
+  expect(h.scrollTo).toHaveBeenLastCalledWith({ y: 1244, animated: false });
+  act(() => h.scrollProps.onScrollBeginDrag());
+  h.scrollTo.mockClear();
+  act(() => {
+    services({ nativeEvent: { layout: { y: 1400 } } });
+    h.scrollProps.onContentSizeChange();
+  });
+  expect(h.scrollTo).not.toHaveBeenCalled();
+});
+it.each([undefined, "unknown", ["services", "services"]])(
+  "does not scroll ordinary or invalid profile links: %s",
+  async (section) => {
+    h.section = section;
+    await render();
+    for (const callback of h.layouts.slice(-2))
+      act(() => callback({ nativeEvent: { layout: { y: 900 } } }));
+    act(() => h.scrollProps.onContentSizeChange());
+    expect(h.scrollTo).not.toHaveBeenCalled();
+  }
+);
+
+it("returns to services after a touch-triggered retry remounts the profile", async () => {
+  h.section = "services";
+  h.services.mockRejectedValueOnce(Error("Services offline"));
+  await render();
+  act(() => h.scrollProps.onTouchStart());
+  await retry();
+  const [body, services] = h.layouts.slice(-2);
+  act(() => {
+    body({ nativeEvent: { layout: { y: 200 } } });
+    services({ nativeEvent: { layout: { y: 900 } } });
+  });
+  expect(h.scrollTo).toHaveBeenLastCalledWith({ y: 1044, animated: false });
 });

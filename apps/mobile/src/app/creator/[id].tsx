@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -34,15 +34,46 @@ import { CreatorCertificates } from "@/features/certificates/creator-certificate
 import { CreatorEducation } from "@/features/profile/creator-education";
 
 export default function CreatorDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  return <CreatorDetailContent key={id} id={id} />;
+  const { id, section } = useLocalSearchParams<{ id: string; section?: string | string[] }>();
+  const servicesRequested = section === "services";
+  return (
+    <CreatorDetailContent
+      key={JSON.stringify([id, servicesRequested])}
+      id={id}
+      servicesRequested={servicesRequested}
+    />
+  );
 }
 
-function CreatorDetailContent({ id }: { id: string }) {
+function CreatorDetailContent({
+  id,
+  servicesRequested,
+}: {
+  id: string;
+  servicesRequested: boolean;
+}) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const t = useTranslations();
   const locale = useLocale();
+  const scroll = useRef<ScrollView>(null);
+  const anchor = useRef({
+    following: servicesRequested,
+    body: null as number | null,
+    services: null as number | null,
+  });
+  const scrollToServices = () => {
+    const target = anchor.current;
+    if (target.following && target.body !== null && target.services !== null) {
+      scroll.current?.scrollTo({
+        y: Math.max(0, target.body + target.services - insets.top - 56),
+        animated: false,
+      });
+    }
+  };
+  const stopFollowing = () => {
+    anchor.current.following = false;
+  };
   const [creator, setCreator] = useState<CreatorSummary>();
   const [services, setServices] = useState<CreatorServiceSummary[]>([]);
   const [works, setWorks] = useState<IpSummary[]>([]);
@@ -141,6 +172,10 @@ function CreatorDetailContent({ id }: { id: string }) {
         }}
       />
       <ScrollView
+        ref={scroll}
+        onScrollBeginDrag={stopFollowing}
+        onTouchStart={stopFollowing}
+        onContentSizeChange={scrollToServices}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.seven }}
@@ -184,12 +219,17 @@ function CreatorDetailContent({ id }: { id: string }) {
           </View>
         </View>
 
-        <View style={styles.body}>
-          {Object.keys(errors).length > 0 && (
+        <View
+          style={styles.body}
+          onLayout={(event) => {
+            anchor.current.body = event.nativeEvent.layout.y;
+            scrollToServices();
+          }}
+        >
+          {(errors.works || errors.crews) && (
             <View style={styles.section}>
               {(
                 [
-                  ["services", "creatorDetail.servicesTitle"],
                   ["works", "creatorDetail.worksTitle"],
                   ["crews", "creatorDetail.crewsTitle"],
                 ] as const
@@ -266,13 +306,35 @@ function CreatorDetailContent({ id }: { id: string }) {
             </View>
           ) : null}
 
-          <View style={styles.section}>
+          <View
+            style={styles.section}
+            onLayout={(event) => {
+              anchor.current.services = event.nativeEvent.layout.y;
+              scrollToServices();
+            }}
+          >
             <SectionHeader
               title={t("creatorDetail.servicesTitle")}
               trailing={
                 sectionLoading.services || errors.services ? undefined : `${services.length}`
               }
             />
+            {errors.services && (
+              <View style={{ gap: Spacing.two }}>
+                <ThemedText accessibilityRole="alert">{errors.services}</ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  style={{ minHeight: 44, justifyContent: "center" }}
+                  onPress={() => {
+                    // Retrying remounts the scroll view; return to the failed section.
+                    anchor.current = { following: true, body: null, services: null };
+                    setRevision((n) => n + 1);
+                  }}
+                >
+                  <ThemedText>{t("common.retry")}</ThemedText>
+                </Pressable>
+              </View>
+            )}
             {sectionLoading.services ? (
               <ActivityIndicator
                 accessibilityLabel={t("creatorDetail.servicesTitle")}
