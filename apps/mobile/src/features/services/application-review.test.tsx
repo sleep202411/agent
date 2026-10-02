@@ -90,6 +90,7 @@ const app = {
   applicantId: "creator",
   message: "Hello",
   portfolioUrl: null as string | null,
+  taskId: null as string | null,
   expectedCompensation: null,
   availableStartDate: null,
   yearsExperience: 2,
@@ -143,6 +144,7 @@ beforeEach(() => {
   h.generation = 1;
   h.displays.clear();
   app.portfolioUrl = null;
+  app.taskId = null;
   h.get.mockImplementation(async (path) =>
     path === "/crews/crew/applications"
       ? { items: [app], nextCursor: null }
@@ -267,7 +269,7 @@ it("opens reviewer interview for the selected applicant and reloads on return", 
   expect(host.textContent).toBe("Interview: creator");
   await click("Interview: creator");
   expect(button("applicationReview.approve")).toBeTruthy();
-  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
+  expect(h.get.mock.calls.filter((c) => c[0] === "/applications/app")).toHaveLength(2);
 });
 
 it("opens terms proposals and refreshes approval readiness on return", async () => {
@@ -275,17 +277,18 @@ it("opens terms proposals and refreshes approval readiness on return", async () 
   await click("termsProposal.open");
   expect(host.textContent).toBe("Proposal");
   await click("Proposal");
-  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
+  expect(h.get.mock.calls.filter((c) => c[0] === "/applications/app")).toHaveLength(2);
 });
 
 it("opens amendments after approval and reloads the application on return", async () => {
+  app.taskId = "00000000-0000-4000-8000-000000000001";
   await open();
   await click("applicationReview.approve");
   await click("applicationReview.confirm");
   await click("crewAmendments.title");
   expect(host.textContent).toBe("Amendments");
   await click("Amendments");
-  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
+  expect(h.get.mock.calls.filter((c) => c[0] === "/applications/app")).toHaveLength(2);
 });
 
 it("opens the applicant public profile from review", async () => {
@@ -324,4 +327,21 @@ it("uses the applicant display name without changing the profile destination", a
   expect(host.textContent).toContain("River Chen");
   await click("crewMembers.viewProfile");
   expect(h.push).toHaveBeenCalledWith("/creator/creator");
+});
+
+it("opens an approved task directly from the owner review", async () => {
+  app.taskId = "00000000-0000-4000-8000-000000000001";
+  await open();
+  expect(button("crewFinance.openTask")).toBeUndefined();
+  await click("applicationReview.approve");
+  await click("applicationReview.confirm");
+  await click("crewFinance.openTask");
+  expect(h.push).toHaveBeenCalledWith(`/crew-tasks/crew?task=${app.taskId}`);
+});
+it("omits task-only actions for an approved Crew membership without a task", async () => {
+  await open();
+  await click("applicationReview.approve");
+  await click("applicationReview.confirm");
+  expect(button("crewFinance.openTask")).toBeUndefined();
+  expect(button("crewAmendments.title")).toBeUndefined();
 });

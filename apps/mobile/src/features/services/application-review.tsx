@@ -319,12 +319,26 @@ function ReviewDetail(
             onPress={() => props.onInterview(review.app.applicantId)}
           />
           <Action disabled={op.busy} label={t("termsProposal.open")} onPress={props.onProposal} />
-          {(result ?? review.app.status) === "approved" && (
-            <Action
-              disabled={op.busy}
-              label={t("crewAmendments.title")}
-              onPress={() => props.onAmendments(review.app.applicantId)}
-            />
+          {(result ?? review.app.status) === "approved" && review.app.taskId && (
+            <>
+              <Action
+                disabled={op.busy}
+                label={t("crewFinance.openTask")}
+                onPress={() => {
+                  if (props.generation !== getAuthGeneration()) return;
+                  router.push(
+                    toHref(
+                      `/crew-tasks/${encodeURIComponent(review.app.crewId)}?task=${encodeURIComponent(review.app.taskId!)}`
+                    )
+                  );
+                }}
+              />
+              <Action
+                disabled={op.busy}
+                label={t("crewAmendments.title")}
+                onPress={() => props.onAmendments(review.app.applicantId)}
+              />
+            </>
           )}
           <ThemedText>{t("applicationReview.requirements")}</ThemedText>
           {review.app.status === "pending" && !result && !attempted && (
