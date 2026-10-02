@@ -130,18 +130,16 @@ function TermsSession({
     <section
       className={
         acceptOffer && latest && !query.isError
-          ? "space-y-5 overflow-hidden rounded-xl border border-sky-400/30 bg-gradient-to-br from-sky-950/50 to-violet-950/30 p-5 shadow-[0_0_22px_rgba(0,191,255,0.07)] sm:p-6"
+          ? "space-y-3 overflow-hidden rounded-lg bg-white/5 p-4"
           : "space-y-3 px-4 py-3"
       }
       aria-label={t("title")}
     >
       {(!acceptOffer || latest) && (
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-sky-400">
-          {t("title")}
-        </h3>
+        <h3 className="text-sm font-semibold text-foreground">{t("title")}</h3>
       )}
       {taskTitle && latest && !query.isError && (
-        <h4 className="text-xl font-semibold">{taskTitle}</h4>
+        <h4 className="text-base font-semibold">{taskTitle}</h4>
       )}
       {query.isPending && <p>{t("loading")}</p>}
       {query.isError && <p role="alert">{query.error.message}</p>}
@@ -163,18 +161,16 @@ function TermsSession({
               <p className="text-sm text-muted-foreground">{t("none")}</p>
             ) : null
           ) : (
-            <div className="space-y-5 text-sm">
-              <p>
+            <div className="space-y-3 text-sm">
+              <p className="text-xs text-muted-foreground">
                 {t("version", { version: latest.version })} ·{" "}
                 {t(latest.confirmedAt ? "confirmed" : "awaiting")}
               </p>
               <p className="whitespace-pre-wrap">{latest.scope}</p>
-              <dl className="grid grid-cols-1 gap-5 border-y border-sky-400/20 py-5 sm:grid-cols-3">
+              <dl className="grid grid-cols-1 gap-4 border-y border-white/10 py-3 sm:grid-cols-3">
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                    {t("fee")}
-                  </dt>
-                  <dd className="mt-2 text-lg font-semibold">
+                  <dt className="text-xs text-muted-foreground">{t("fee")}</dt>
+                  <dd className="mt-1 text-base font-semibold">
                     {latest.currency} {exactMajorUnits(latest.feeAmount)}
                     <span className="block text-xs font-normal text-muted-foreground">
                       {t(latest.feePeriod)}
@@ -182,19 +178,15 @@ function TermsSession({
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                    {t("share")}
-                  </dt>
-                  <dd className="mt-2 text-lg font-semibold text-sky-400">
+                  <dt className="text-xs text-muted-foreground">{t("share")}</dt>
+                  <dd className="mt-1 text-base font-semibold">
                     {exactMajorUnits(String(latest.revenueShareBp))}%
                   </dd>
                 </div>
                 {dueAt && (
                   <div>
-                    <dt className="text-xs uppercase tracking-wide text-muted-foreground">
-                      {t("taskDeadline")}
-                    </dt>
-                    <dd className="mt-2 text-lg font-semibold">
+                    <dt className="text-xs text-muted-foreground">{t("taskDeadline")}</dt>
+                    <dd className="mt-1 text-base font-semibold">
                       {new Date(dueAt).toLocaleDateString(locale)}
                     </dd>
                   </div>
