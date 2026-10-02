@@ -59,6 +59,8 @@ export function ApplicationInterview(props: {
   };
   const write = (action: InterviewUpdate["action"]) => {
     if (!page || props.generation !== getAuthGeneration()) return;
+    const requestedAction = retry?.action ?? action;
+    if (requestedAction === "message" ? !page.canMessage : !page.canUpdate) return;
     let scheduledAt: string | null = null;
     if (!retry && action === "schedule") {
       try {
@@ -137,7 +139,9 @@ export function ApplicationInterview(props: {
           {page.scheduledAt && (
             <ThemedText>{new Date(page.scheduledAt).toLocaleString(locale)}</ThemedText>
           )}
-          {!page.canUpdate && <ThemedText>{t("crewInterview.readOnly")}</ThemedText>}
+          {!page.canUpdate && !page.canMessage && (
+            <ThemedText>{t("crewInterview.readOnly")}</ThemedText>
+          )}
           {retry ? (
             <>
               {<ThemedText>{t("crewInterview.retryHelp")}</ThemedText>}
@@ -145,7 +149,7 @@ export function ApplicationInterview(props: {
             </>
           ) : (
             before === null &&
-            page.canUpdate &&
+            (page.canUpdate || page.canMessage) &&
             (applicant || props.reviewer) && (
               <>
                 <ThemedText>{t("crewInterview.messageLabel")}</ThemedText>
@@ -166,7 +170,7 @@ export function ApplicationInterview(props: {
                   }}
                 />
                 <ThemedText>{t("crewInterview.sharedNote")}</ThemedText>
-                {!applicant && props.reviewer && (
+                {page.canUpdate && !applicant && props.reviewer && (
                   <>
                     <ThemedText>
                       {t("crewInterview.timeLabel").replace(
@@ -193,12 +197,15 @@ export function ApplicationInterview(props: {
                       button(t("crewInterview.complete"), () => write("complete"), denied)}
                   </>
                 )}
-                {applicant &&
+                {page.canUpdate &&
+                  applicant &&
                   page.state === "proposed" &&
                   button(t("crewInterview.confirm"), () => write("confirm"), denied)}
-                {["proposed", "confirmed"].includes(page.state) &&
+                {page.canUpdate &&
+                  ["proposed", "confirmed"].includes(page.state) &&
                   button(t("crewInterview.cancel"), () => write("cancel"), denied)}
-                {button(t("crewInterview.message"), () => write("message"), denied)}
+                {page.canMessage &&
+                  button(t("crewInterview.message"), () => write("message"), denied)}
               </>
             )
           )}

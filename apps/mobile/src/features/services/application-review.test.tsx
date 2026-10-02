@@ -94,6 +94,7 @@ const result = {
 const interview = {
   applicationStatus: "pending",
   canUpdate: true,
+  canMessage: true,
   version: 0,
   state: "not_started",
   scheduledAt: null,
