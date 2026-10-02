@@ -7,6 +7,7 @@ import {
   type StudioPage,
   type StudioQuery,
   type StudioScope,
+  type StudioViewport,
 } from "./studio-search-api";
 type Session = {
   key: string;
@@ -32,7 +33,8 @@ export function useStudioSearch(
   query: StudioQuery,
   locale: string,
   enabled: boolean,
-  selectedCreatorId: string | null = null
+  selectedCreatorId: string | null = null,
+  viewport: StudioViewport | null = null
 ) {
   const [revision, setRevision] = useState(0),
     [snapshot, setSnapshot] = useState<Snapshot>();
@@ -42,6 +44,7 @@ export function useStudioSearch(
     locale,
     query,
     selectedCreatorId,
+    viewport,
     revision,
     enabled,
   ]);
@@ -59,7 +62,8 @@ export function useStudioSearch(
           s.cursor,
           uuid.v4(),
           s.abort.signal,
-          selectedCreatorId
+          selectedCreatorId,
+          viewport
         );
         if (s.abort.signal.aborted) return;
         if (
@@ -102,7 +106,7 @@ export function useStudioSearch(
           });
       }
     },
-    [generation, viewerId, query, selectedCreatorId]
+    [generation, viewerId, query, selectedCreatorId, viewport]
   );
   useEffect(() => {
     if (!enabled) return;

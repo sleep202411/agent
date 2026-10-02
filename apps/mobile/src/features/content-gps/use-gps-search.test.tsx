@@ -35,16 +35,29 @@ function Probe({
   query = emptyGpsQuery,
   locale = "en-US",
   selected = null,
+  viewport = null,
 }: {
   generation?: number;
   enabled?: boolean;
   query?: GpsQuery;
   locale?: string;
   selected?: string | null;
+  viewport?: {
+    coordinateSystem: "WGS84";
+    west: number;
+    east: number;
+    south: number;
+    north: number;
+  } | null;
 }) {
   const options = useMemo(
-    () => ({ selectedIpId: selected, placeSearch: "", coordinateSystem: "WGS84" as const }),
-    [selected]
+    () => ({
+      selectedIpId: selected,
+      placeSearch: "",
+      coordinateSystem: "WGS84" as const,
+      viewport: viewport ?? undefined,
+    }),
+    [selected, viewport]
   );
   const s = useGpsSearch(
     { generation, viewerId: generation === 1 ? null : "viewer" },
@@ -172,4 +185,34 @@ it("resets paging and hides previous selection while a new link resolves", async
   expect(host.textContent).toContain("Selected B");
   await render({ enabled: false, selected: "b" });
   expect(host.textContent).not.toContain("Selected B");
+});
+
+it("aborts paging on map movement and ignores late results from the previous viewport", async () => {
+  const viewport = {
+    coordinateSystem: "WGS84" as const,
+    west: 100,
+    east: 120,
+    south: 0,
+    north: 20,
+  };
+  await render({ viewport });
+  let finish!: (v: unknown) => void;
+  h.load.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await click(0);
+  const oldSignal = h.load.mock.calls[1][4];
+  const nextViewport = { ...viewport, east: 130 };
+  h.load.mockResolvedValueOnce(page("fresh", null));
+  await render({ viewport: nextViewport });
+  expect(oldSignal.aborted).toBe(true);
+  expect(h.load.mock.calls[2][2]).toBeNull();
+  expect(h.load.mock.calls[2][5].viewport).toEqual(nextViewport);
+  await act(async () => finish(page("old", null)));
+  expect(host.textContent).toContain("IP fresh");
+  expect(host.textContent).not.toContain("IP old");
+  expect(host.textContent).not.toContain("IP 1");
 });

@@ -176,3 +176,37 @@ it("permits repeated list filters but blocks ambiguous single-value conditions o
   expect(readGpsLink({ selected: "not-an-ip" }).invalid).toBe(true);
   expect(readGpsLink({ selected: [id, other] }).invalid).toBe(true);
 });
+
+it("requests the visible viewport and rejects stale bounds or coordinate mismatches", async () => {
+  for (const coordinateSystem of ["WGS84", "GCJ02"] as const) {
+    const viewport = { coordinateSystem, west: 170, east: -170, south: -20, north: 20 };
+    h.post.mockResolvedValueOnce({ ...result(), mapScope: viewport });
+    await searchGps(scope, query, null, id, signal(), { ...options, coordinateSystem, viewport });
+    expect(h.post.mock.lastCall?.[1].data).toMatchObject({ query, map: viewport });
+    h.post.mockResolvedValueOnce(result());
+    await expect(
+      searchGps(scope, query, null, id, signal(), {
+        ...options,
+        coordinateSystem,
+        viewport,
+      })
+    ).rejects.toThrow("changed");
+  }
+});
+it("rejects invalid bounds and regional coordinate mismatch before dispatch", async () => {
+  for (const patch of [
+    { west: 0, east: 0 },
+    { south: 20, north: 10 },
+    { west: NaN },
+    { east: 181 },
+    { coordinateSystem: "GCJ02" },
+  ]) {
+    await expect(
+      searchGps(scope, query, null, id, signal(), {
+        ...options,
+        viewport: { ...result().mapScope, ...patch } as never,
+      })
+    ).rejects.toThrow();
+  }
+  expect(h.post).not.toHaveBeenCalled();
+});

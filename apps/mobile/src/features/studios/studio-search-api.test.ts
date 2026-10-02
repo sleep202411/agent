@@ -145,3 +145,80 @@ it("resolves the requested selected studio independently of filters and sanitize
     (await searchStudios(scope, emptyStudioQuery, null, requestId, signal(), "missing")).selected
   ).toBeNull();
 });
+
+const viewport = {
+  coordinateSystem: "WGS84" as const,
+  west: 170,
+  east: -170,
+  south: -20,
+  north: 20,
+};
+const mapResult = () => ({
+  viewport,
+  creatorCount: 1,
+  matchedCreatorCount: 1,
+  scope: "visible_creator_results",
+  clusters: [
+    { cell: "cell", matched: true, count: 1, creatorId: "1", latitude: 0, longitude: 175 },
+  ],
+});
+it("accepts map results for the requested viewport without changing filters", async () => {
+  for (const coordinateSystem of ["WGS84", "GCJ02"] as const) {
+    const map = { ...mapResult(), viewport: { ...viewport, coordinateSystem } };
+    h.post.mockResolvedValueOnce({ ...result(), map });
+    const page = await searchStudios(
+      scope,
+      emptyStudioQuery,
+      null,
+      requestId,
+      signal(),
+      null,
+      map.viewport
+    );
+    expect(page.map).toEqual(map);
+    expect(h.post.mock.lastCall?.[1].data).toMatchObject({
+      map: map.viewport,
+      query: emptyStudioQuery,
+    });
+  }
+});
+it("rejects missing, unsolicited or stale map results and inconsistent counts", async () => {
+  for (const map of [
+    null,
+    { ...mapResult(), viewport: { ...viewport, east: -160 } },
+    { ...mapResult(), viewport: { ...viewport, coordinateSystem: "GCJ02" } },
+    { ...mapResult(), creatorCount: 3 },
+    { ...mapResult(), matchedCreatorCount: 2 },
+  ]) {
+    h.post.mockResolvedValueOnce({ ...result(), map });
+    await expect(
+      searchStudios(scope, emptyStudioQuery, null, requestId, signal(), null, viewport)
+    ).rejects.toThrow("does not match");
+  }
+  h.post.mockResolvedValueOnce({ ...result(), map: mapResult() });
+  await expect(searchStudios(scope, emptyStudioQuery, null, requestId, signal())).rejects.toThrow(
+    "does not match"
+  );
+});
+it("rejects identifiable map pins for creators who withheld map consent", async () => {
+  for (const patch of [
+    { items: [{ ...card, showOnMap: false }] },
+    { items: [], selected: { ...card, showOnMap: false } },
+  ]) {
+    h.post.mockResolvedValueOnce({ ...result(), ...patch, map: mapResult() });
+    await expect(
+      searchStudios(scope, emptyStudioQuery, null, requestId, signal(), "1", viewport)
+    ).rejects.toThrow("does not match");
+  }
+});
+it("validates viewport bounds before sending a map request", async () => {
+  for (const patch of [{ east: 181 }, { south: 30, north: 20 }, { west: 0, east: 0 }]) {
+    await expect(
+      searchStudios(scope, emptyStudioQuery, null, requestId, signal(), null, {
+        ...viewport,
+        ...patch,
+      })
+    ).rejects.toThrow();
+  }
+  expect(h.post).not.toHaveBeenCalled();
+});

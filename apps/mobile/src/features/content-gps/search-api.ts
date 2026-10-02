@@ -9,10 +9,12 @@ import { api } from "@/lib/api-client";
 export type GpsQuery = ContentGpsQuery;
 export type GpsPage = ContentGpsSearchResult;
 export type GpsSearchScope = { generation: number; viewerId: string | null };
+export type GpsViewport = GpsPage["mapScope"];
 export type GpsSearchOptions = {
   selectedIpId: string | null;
   placeSearch: string;
   coordinateSystem: "WGS84" | "GCJ02";
+  viewport?: GpsViewport;
 };
 export class GpsSearchChanged extends Error {}
 function current(scope: GpsSearchScope, signal: AbortSignal) {
@@ -28,6 +30,8 @@ export async function searchGps(
   options: GpsSearchOptions
 ) {
   current(scope, signal);
+  if (options.viewport && options.viewport.coordinateSystem !== options.coordinateSystem)
+    throw new GpsSearchChanged("The map coordinate system does not match this region.");
   const data = ContentGpsSearchRequestSchema.parse({
     requestId,
     query,
@@ -35,7 +39,7 @@ export async function searchGps(
     limit: 20,
     selectedIpId: options.selectedIpId,
     placeSearch: options.placeSearch,
-    map: {
+    map: options.viewport ?? {
       coordinateSystem: options.coordinateSystem,
       west: -180,
       east: 180,
