@@ -4470,5 +4470,7 @@
   "crewMembers.viewProfile": "查看主页",
   "plotImport.empty": "本章节还没有剧情节点。",
   "plotImport.details": "显示技术详情",
-  "plotImport.hideDetails": "隐藏技术详情"
+  "plotImport.hideDetails": "隐藏技术详情",
+  "applicationReview.portfolio": "打开作品集",
+  "applicationReview.invalidPortfolio": "作品集链接必须为有效的 HTTP 或 HTTPS 地址，且不能包含登录凭据。"
 }

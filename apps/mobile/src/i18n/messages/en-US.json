@@ -4470,5 +4470,7 @@
   "crewMembers.viewProfile": "View profile",
   "plotImport.empty": "No plot nodes in this chapter.",
   "plotImport.details": "Show technical details",
-  "plotImport.hideDetails": "Hide technical details"
+  "plotImport.hideDetails": "Hide technical details",
+  "applicationReview.portfolio": "Open portfolio",
+  "applicationReview.invalidPortfolio": "The portfolio link must be a valid HTTP or HTTPS address without embedded credentials."
 }

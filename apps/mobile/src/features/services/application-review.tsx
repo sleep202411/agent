@@ -1,10 +1,11 @@
+import { useUserDisplays } from "./user-displays";
 import { router } from "expo-router";
 import { toHref } from "@/lib/navigation";
 import { ApplicationAmendments } from "./application-amendments";
 import { TermsProposalScreen } from "./terms-proposal";
 import { ApplicationInterview } from "./application-interview";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -95,23 +96,29 @@ function ReviewList(
     );
     return () => c.abort();
   }, [props.crewId, props.generation, props.status, props.cursor]);
+  const displays = useUserDisplays(
+    `${props.userId}:${props.generation}`,
+    page?.items.map((row) => row.applicantId) ?? []
+  );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <ThemedText>{t("applicationReview.title")}</ThemedText>
-      {(["pending", "approved", "rejected"] as const).map((status) => (
-        <Action
-          key={status}
-          selected={status === props.status}
-          label={t(`crewTerms.${status}`)}
-          onPress={() => props.onStatus(status)}
-        />
-      ))}
+      <ThemedText type="smallBold">{t("applicationReview.title")}</ThemedText>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {(["pending", "approved", "rejected"] as const).map((status) => (
+          <Action
+            key={status}
+            selected={status === props.status}
+            label={t(`crewTerms.${status}`)}
+            onPress={() => props.onStatus(status)}
+          />
+        ))}
+      </View>
       {!page && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {page?.items.map((row) => (
         <Action
           key={row.id}
-          label={`${row.applicantId} · ${row.positionId} · ${row.createdAt.slice(0, 10)}`}
+          label={`${displays?.get(row.applicantId)?.nickname || row.applicantId} · ${row.positionId} · ${row.createdAt.slice(0, 10)}`}
           onPress={() => props.onSelect(row.id)}
         />
       ))}
@@ -208,15 +215,22 @@ function ReviewDetail(
     return () => c.abort();
   }, [props.crewId, props.applicationId, props.generation]);
   const latest = review?.terms.items.find((row) => row.version === review.terms.currentVersion);
+  const displays = useUserDisplays(
+    `${props.userId}:${props.generation}`,
+    review ? [review.app.applicantId] : []
+  );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <ThemedText>{t("applicationReview.title")}</ThemedText>
+      <ThemedText type="smallBold">{t("applicationReview.title")}</ThemedText>
       {!review && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {review && (
         <>
-          <ThemedText>
-            {review.app.applicantId} · {review.app.positionId}
+          <ThemedText type="smallBold">
+            {displays?.get(review.app.applicantId)?.nickname || review.app.applicantId}
+          </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {review.app.positionId}
           </ThemedText>
           <Action
             label={t("crewMembers.viewProfile")}
@@ -226,7 +240,30 @@ function ReviewDetail(
           />
           <ThemedText>{t(`crewTerms.${result ?? review.app.status}`)}</ThemedText>
           {review.app.message && <ThemedText>{review.app.message}</ThemedText>}
-          {review.app.portfolioUrl && <ThemedText>{review.app.portfolioUrl}</ThemedText>}
+          {review.app.portfolioUrl && (
+            <Action
+              label={t("applicationReview.portfolio")}
+              disabled={op.busy}
+              onPress={() =>
+                void op.run(
+                  async () => {
+                    setError(undefined);
+                    let url: URL;
+                    try {
+                      url = new URL(review.app.portfolioUrl!);
+                    } catch {
+                      throw new Error(t("applicationReview.invalidPortfolio"));
+                    }
+                    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password)
+                      throw new Error(t("applicationReview.invalidPortfolio"));
+                    await Linking.openURL(url.href);
+                  },
+                  () => {},
+                  (cause) => setError(cause instanceof Error ? cause.message : String(cause))
+                )
+              }
+            />
+          )}
           {review.app.expectedCompensation && (
             <ThemedText>
               {t("applicationReview.expected")} · {review.app.expectedCompensation.currency}{" "}
@@ -244,7 +281,7 @@ function ReviewDetail(
               {t("applicationReview.experience")} · {review.app.yearsExperience}
             </ThemedText>
           )}
-          <ThemedText>{t("crewTerms.title")}</ThemedText>
+          <ThemedText type="smallBold">{t("crewTerms.title")}</ThemedText>
           {latest ? (
             <>
               <ThemedText>

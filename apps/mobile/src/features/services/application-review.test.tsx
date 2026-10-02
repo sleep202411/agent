@@ -26,6 +26,8 @@ vi.mock("./application-interview", () => ({
 const h = vi.hoisted(() => ({
   generation: 1,
   push: vi.fn(),
+  openUrl: vi.fn(),
+  displays: new Map<string, { nickname: string }>(),
   get: vi.fn(),
   post: vi.fn(),
   close: vi.fn(),
@@ -40,7 +42,10 @@ vi.mock("@/i18n", () => ({
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
+vi.mock("./user-displays", () => ({ useUserDisplays: () => h.displays }));
 vi.mock("react-native", () => ({
+  Linking: { openURL: h.openUrl },
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
   Pressable: ({
@@ -84,7 +89,7 @@ const app = {
   positionId: "position",
   applicantId: "creator",
   message: "Hello",
-  portfolioUrl: null,
+  portfolioUrl: null as string | null,
   expectedCompensation: null,
   availableStartDate: null,
   yearsExperience: 2,
@@ -136,6 +141,8 @@ const open = async () => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.displays.clear();
+  app.portfolioUrl = null;
   h.get.mockImplementation(async (path) =>
     path === "/crews/crew/applications"
       ? { items: [app], nextCursor: null }
@@ -285,4 +292,36 @@ it("opens the applicant public profile from review", async () => {
   await open();
   await click("crewMembers.viewProfile");
   expect(h.push).toHaveBeenCalledWith(`/creator/${encodeURIComponent(app.applicantId)}`);
+});
+
+it("opens a valid portfolio and allows retry after an OS failure", async () => {
+  app.portfolioUrl = "https://portfolio.example/artist?work=showreel";
+  h.openUrl.mockRejectedValueOnce(Error("Browser unavailable")).mockResolvedValueOnce(undefined);
+  await open();
+  await click("applicationReview.portfolio");
+  expect(host.textContent).toContain("Browser unavailable");
+  await click("applicationReview.portfolio");
+  expect(h.openUrl).toHaveBeenCalledTimes(2);
+  expect(h.openUrl).toHaveBeenLastCalledWith(app.portfolioUrl);
+  expect(host.textContent).not.toContain("Browser unavailable");
+});
+it.each([
+  "javascript:alert(1)",
+  "file:///private/data",
+  "https://user:secret@example.com",
+  "not a URL",
+])("does not launch an invalid portfolio: %s", async (url) => {
+  app.portfolioUrl = url;
+  await open();
+  await click("applicationReview.portfolio");
+  expect(h.openUrl).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("applicationReview.invalidPortfolio");
+});
+it("uses the applicant display name without changing the profile destination", async () => {
+  h.displays.set("creator", { nickname: "River Chen" });
+  await render();
+  await click("River Chen · position · 2026-10-01");
+  expect(host.textContent).toContain("River Chen");
+  await click("crewMembers.viewProfile");
+  expect(h.push).toHaveBeenCalledWith("/creator/creator");
 });
