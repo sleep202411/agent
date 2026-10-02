@@ -14,6 +14,7 @@ import {
   openingViewerIsMember,
 } from "@/features/browse/crew-opening-api";
 import { useCrewApplication } from "@/features/browse/use-crew-application";
+import { SaveOpening } from "@/features/browse/save-opening";
 const subscribe = () => () => {};
 export default function CrewOpeningScreen() {
   const auth = useAuth();
@@ -187,6 +188,7 @@ function Opening({ crewId, positionId }: { crewId: string; positionId: string })
               {t("positionCreate.closeDate")}: {position.closeDate}
             </ThemedText>
           ) : null}
+          <SaveOpening positionId={position.id} />
           {button(
             isMember
               ? t("crewOpening.member")

@@ -4251,5 +4251,11 @@
   "discoveryMap.zoomIn": "放大",
   "discoveryMap.zoomOut": "缩小",
   "discoveryMap.matches": "{count} 个匹配结果",
-  "discoveryMap.other": "{count} 个其他结果"
+  "discoveryMap.other": "{count} 个其他结果",
+  "savedOpenings.title": "收藏的岗位",
+  "savedOpenings.save": "收藏岗位",
+  "savedOpenings.remove": "取消收藏岗位",
+  "savedOpenings.available": "仅显示当前仍可申请的已收藏岗位。",
+  "savedOpenings.empty": "暂无可申请的已收藏岗位。",
+  "savedOpenings.signIn": "登录查看收藏的岗位"
 }

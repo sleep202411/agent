@@ -231,6 +231,16 @@ function CrewHeader() {
       <ScreenHeader title={t("crews.title")} />
       <Pressable
         accessibilityRole="button"
+        style={{ minHeight: 44, paddingVertical: 12 }}
+        onPress={() => {
+          const openSaved = () => router.push(toHref("/saved-openings"));
+          if (gate.requireAuth({ onAuthenticated: openSaved })) openSaved();
+        }}
+      >
+        <ThemedText type="small">{t("savedOpenings.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
         style={{ paddingVertical: 8 }}
         onPress={() => {
           if (gate.requireAuth({ onAuthenticated: open })) open();

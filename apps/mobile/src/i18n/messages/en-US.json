@@ -4251,5 +4251,11 @@
   "discoveryMap.zoomIn": "Zoom in",
   "discoveryMap.zoomOut": "Zoom out",
   "discoveryMap.matches": "{count} matching results",
-  "discoveryMap.other": "{count} other results"
+  "discoveryMap.other": "{count} other results",
+  "savedOpenings.title": "Saved openings",
+  "savedOpenings.save": "Save opening",
+  "savedOpenings.remove": "Unsave opening",
+  "savedOpenings.available": "Only currently available saved openings are shown.",
+  "savedOpenings.empty": "No available saved openings.",
+  "savedOpenings.signIn": "Sign in to view saved openings"
 }
