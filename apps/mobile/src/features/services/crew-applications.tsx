@@ -11,7 +11,9 @@ import { formatFinanceMoney } from "./crew-finance-api";
 import {
   fetchMyApplications,
   fetchApplicationTerms,
-  confirmApplicationTerms,
+  acceptApplicationOffer,
+  fetchApplicationThread,
+  type ApplicationThread,
   type Application,
   type Terms,
 } from "./application-terms-api";
@@ -195,6 +197,7 @@ function TermsPage(
   const t = useTranslations(),
     op = useAuthFormOperation(props.application.id, true);
   const theme = useTheme();
+  const [thread, setThread] = useState<ApplicationThread>();
   const [page, setPage] = useState<Awaited<ReturnType<typeof fetchApplicationTerms>>>(),
     [error, setError] = useState<string>(),
     [result, setResult] = useState<Terms>(),
@@ -202,9 +205,15 @@ function TermsPage(
     [denied, setDenied] = useState(false);
   useEffect(() => {
     const c = new AbortController();
-    void fetchApplicationTerms(props.application.id, props.before, c.signal).then(
+    void Promise.all([
+      fetchApplicationTerms(props.application.id, props.before, c.signal),
+      fetchApplicationThread(props.application.id, props.userId, props.generation, c.signal),
+    ]).then(
       (value) => {
-        if (!c.signal.aborted && props.generation === getAuthGeneration()) setPage(value);
+        if (!c.signal.aborted && props.generation === getAuthGeneration()) {
+          setPage(value[0]);
+          setThread(value[1]);
+        }
       },
       (cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
@@ -212,7 +221,7 @@ function TermsPage(
       }
     );
     return () => c.abort();
-  }, [props.application.id, props.before, props.generation]);
+  }, [props.application.id, props.before, props.generation, props.userId]);
   const latest = page?.items.find((row) => row.version === page.currentVersion);
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
@@ -220,9 +229,16 @@ function TermsPage(
         {props.application.crewName} · {props.application.positionType}
       </ThemedText>
       <Action disabled={op.busy} label={t("crewInterview.title")} onPress={props.onInterview} />
-      {props.application.status === "approved" && props.application.taskId && (
+      {thread?.status === "approved" && props.application.taskId && (
         <Action disabled={op.busy} label={t("crewAmendments.title")} onPress={props.onAmendments} />
       )}
+      {thread?.taskTitle && <ThemedText>{thread.taskTitle}</ThemedText>}
+      {thread?.dueAt && (
+        <ThemedText>
+          {t("crewOffers.deadline")}: {thread.dueAt.slice(0, 10)}
+        </ThemedText>
+      )}
+      {result && <ThemedText>{t("crewOffers.accepted")}</ThemedText>}
       <ThemedText>{t("crewTerms.title")}</ThemedText>
       {!page && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
@@ -256,49 +272,40 @@ function TermsPage(
           {row.shareBasis && <ThemedText>{row.shareBasis}</ThemedText>}
         </View>
       ))}
-      {latest &&
-        !latest.confirmedAt &&
-        !result &&
-        props.application.status === "pending" &&
-        props.application.applicantId === props.userId && (
-          <View style={{ gap: 12 }}>
-            <ThemedText>{t("nativeApplications.review")}</ThemedText>
-            <ThemedText>{t("crewTerms.noPayment")}</ThemedText>
-            <Action
-              primary
-              disabled={op.busy || denied}
-              label={
-                attempted
-                  ? t("nativeApplications.retry")
-                  : t("crewTerms.confirm").replace("{version}", String(latest.version))
-              }
-              onPress={() => {
-                if (props.generation !== getAuthGeneration()) return;
-                void op.run(
-                  () => {
-                    setAttempted(true);
-                    setError(undefined);
-                    return confirmApplicationTerms(
-                      props.application,
-                      latest,
-                      props.userId,
-                      props.generation
-                    );
-                  },
-                  setResult,
-                  (cause) => {
-                    setError(cause instanceof Error ? cause.message : String(cause));
-                    const status =
-                      cause && typeof cause === "object" && "status" in cause
-                        ? Number(cause.status)
-                        : 0;
-                    if ([400, 401, 403, 404, 409, 422].includes(status)) setDenied(true);
-                  }
-                );
-              }}
-            />
-          </View>
-        )}
+      {latest && !result && thread?.status === "pending" && thread.applicantId === props.userId && (
+        <View style={{ gap: 12 }}>
+          <ThemedText>{t("nativeApplications.review")}</ThemedText>
+          <ThemedText>{t("crewOffers.effect")}</ThemedText>
+          <Action
+            primary
+            disabled={op.busy || denied}
+            label={
+              attempted
+                ? t("nativeApplications.retry")
+                : t("crewOffers.accept").replace("{version}", String(latest.version))
+            }
+            onPress={() => {
+              if (props.generation !== getAuthGeneration()) return;
+              void op.run(
+                () => {
+                  setAttempted(true);
+                  setError(undefined);
+                  return acceptApplicationOffer(thread, latest, props.userId, props.generation);
+                },
+                setResult,
+                (cause) => {
+                  setError(cause instanceof Error ? cause.message : String(cause));
+                  const status =
+                    cause && typeof cause === "object" && "status" in cause
+                      ? Number(cause.status)
+                      : 0;
+                  if ([400, 401, 403, 404, 409, 422].includes(status)) setDenied(true);
+                }
+              );
+            }}
+          />
+        </View>
+      )}
       {op.busy && <ActivityIndicator />}
       {page?.nextBeforeVersion && (
         <Action

@@ -14,13 +14,15 @@ const h = vi.hoisted(() => ({
   active: true,
   list: vi.fn(),
   terms: vi.fn(),
+  thread: vi.fn(),
   confirm: vi.fn(),
   web: vi.fn(),
 }));
 vi.mock("./application-terms-api", () => ({
   fetchMyApplications: h.list,
   fetchApplicationTerms: h.terms,
-  confirmApplicationTerms: h.confirm,
+  acceptApplicationOffer: h.confirm,
+  fetchApplicationThread: h.thread,
 }));
 vi.mock("@/hooks/use-theme", () => ({
   useTheme: () => ({ border: "gray", brand: "red", backgroundElement: "black" }),
@@ -97,6 +99,7 @@ beforeEach(() => {
   h.generation = 1;
   h.active = true;
   h.list.mockResolvedValue({ items: [app], nextCursor: null });
+  h.thread.mockResolvedValue(app);
   h.terms.mockResolvedValue({ currentVersion: 2, items: [row], nextBeforeVersion: null });
   h.confirm.mockResolvedValue({ ...row, confirmedAt: "2026-09-30T01:00:00Z" });
   host = document.createElement("div");
@@ -111,9 +114,9 @@ it("shows terms before explicit applicant confirmation", async () => {
   await open();
   expect(host.textContent).toContain("Storyboards");
   expect(host.textContent).toContain("2.50%");
-  expect(host.textContent).toContain("crewTerms.noPayment");
+  expect(host.textContent).toContain("crewOffers.effect");
   expect(h.confirm).not.toHaveBeenCalled();
-  await click("crewTerms.confirm");
+  await click("crewOffers.accept");
   expect(h.confirm).toHaveBeenCalledWith(app, row, "creator", 1);
   expect(host.textContent).toContain("crewTerms.confirmed");
   expect(button("nativeApplications.retry")).toBeUndefined();
@@ -128,8 +131,8 @@ it("blocks duplicate confirmation and navigation while pending", async () => {
   );
   await open();
   await act(async () => {
-    button("crewTerms.confirm").click();
-    button("crewTerms.confirm").click();
+    button("crewOffers.accept").click();
+    button("crewOffers.accept").click();
   });
   expect(h.confirm).toHaveBeenCalledTimes(1);
   expect(button("crewTerms.refresh").disabled).toBe(true);
@@ -140,7 +143,7 @@ it("blocks duplicate confirmation and navigation while pending", async () => {
 it("retries identical reviewed terms after a network error", async () => {
   h.confirm.mockRejectedValueOnce(new Error("Network"));
   await open();
-  await click("crewTerms.confirm");
+  await click("crewOffers.accept");
   expect(host.textContent).toContain("Network");
   await click("nativeApplications.retry");
   expect(h.confirm.mock.calls[0]).toEqual(h.confirm.mock.calls[1]);
@@ -149,7 +152,7 @@ it("retries identical reviewed terms after a network error", async () => {
 it("requires refresh after a version conflict", async () => {
   h.confirm.mockRejectedValue(Object.assign(new Error("Terms changed"), { status: 409 }));
   await open();
-  await click("crewTerms.confirm");
+  await click("crewOffers.accept");
   expect(button("nativeApplications.retry").disabled).toBe(true);
   h.terms.mockResolvedValue({
     currentVersion: 3,
@@ -159,7 +162,7 @@ it("requires refresh after a version conflict", async () => {
   await click("crewTerms.refresh");
   expect(host.textContent).toContain("Revised scope");
   expect(h.confirm).toHaveBeenCalledTimes(1);
-  expect(button("crewTerms.confirm").disabled).toBe(false);
+  expect(button("crewOffers.accept").disabled).toBe(false);
 });
 it("never confirms an older history version", async () => {
   h.terms
@@ -172,13 +175,14 @@ it("never confirms an older history version", async () => {
   await open();
   await click("nativeApplications.history");
   expect(h.terms).toHaveBeenLastCalledWith("app", 2, expect.any(AbortSignal));
-  expect(button("crewTerms.confirm")).toBeUndefined();
+  expect(button("crewOffers.accept")).toBeUndefined();
 });
 it.each(["approved", "rejected"])("does not confirm a %s application", async (status) => {
   h.list.mockResolvedValue({ items: [{ ...app, status }], nextCursor: null });
+  h.thread.mockResolvedValue({ ...app, status });
   await render();
   await click(`Crew · Director · 2026-09-30 · crewTerms.${status}`);
-  expect(button("crewTerms.confirm")).toBeUndefined();
+  expect(button("crewOffers.accept")).toBeUndefined();
 });
 it("preserves access to existing Web workflows", async () => {
   await render();
@@ -250,6 +254,11 @@ it("opens native invitation inbox", async () => {
 });
 
 it("opens approved task amendments and reloads terms on return", async () => {
+  h.thread.mockResolvedValue({
+    ...app,
+    status: "approved",
+    taskId: "00000000-0000-4000-8000-000000000002",
+  });
   h.list.mockResolvedValue({
     items: [{ ...app, status: "approved", taskId: "00000000-0000-4000-8000-000000000002" }],
     nextCursor: null,
@@ -260,4 +269,27 @@ it("opens approved task amendments and reloads terms on return", async () => {
   expect(host.textContent).toBe("Amendments");
   await click("Amendments");
   expect(h.terms).toHaveBeenCalledTimes(2);
+});
+
+it("uses the exact current thread status instead of stale inbox status", async () => {
+  h.thread.mockResolvedValue({ ...app, status: "approved" });
+  await open();
+  expect(button("crewOffers.accept")).toBeUndefined();
+});
+it("permits acceptance of a pending offer whose terms were already confirmed", async () => {
+  h.terms.mockResolvedValue({
+    currentVersion: 2,
+    items: [{ ...row, confirmedAt: app.createdAt }],
+    nextBeforeVersion: null,
+  });
+  await open();
+  await click("crewOffers.accept");
+  expect(h.confirm).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("crewOffers.accepted");
+});
+it("does not expose acceptance when the thread lookup fails", async () => {
+  h.thread.mockRejectedValue(new Error("Application unavailable"));
+  await open();
+  expect(button("crewOffers.accept")).toBeUndefined();
+  expect(host.textContent).toContain("Application unavailable");
 });

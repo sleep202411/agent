@@ -4257,5 +4257,9 @@
   "savedOpenings.remove": "Unsave opening",
   "savedOpenings.available": "Only currently available saved openings are shown.",
   "savedOpenings.empty": "No available saved openings.",
-  "savedOpenings.signIn": "Sign in to view saved openings"
+  "savedOpenings.signIn": "Sign in to view saved openings",
+  "crewOffers.accept": "Accept offer v{version}",
+  "crewOffers.accepted": "Offer accepted. Your application is approved.",
+  "crewOffers.deadline": "Delivery deadline",
+  "crewOffers.effect": "Review this offer before accepting. Acceptance approves your application and grants the agreed Crew or task access; it does not make a payment."
 }

@@ -4257,5 +4257,9 @@
   "savedOpenings.remove": "取消收藏岗位",
   "savedOpenings.available": "仅显示当前仍可申请的已收藏岗位。",
   "savedOpenings.empty": "暂无可申请的已收藏岗位。",
-  "savedOpenings.signIn": "登录查看收藏的岗位"
+  "savedOpenings.signIn": "登录查看收藏的岗位",
+  "crewOffers.accept": "接受第 {version} 版录用条件",
+  "crewOffers.accepted": "已接受录用条件，申请已获批准。",
+  "crewOffers.deadline": "交付截止日期",
+  "crewOffers.effect": "接受前请核对录用条件。接受后申请将获批准，并获得约定的剧组或任务访问权限；此操作不会付款。"
 }
