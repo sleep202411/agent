@@ -9,6 +9,7 @@ import {
   IconMaximize,
   IconRefresh,
 } from "@tabler/icons-react";
+import { downloadOutput } from "./download-output";
 import { cn } from "@/lib/utils";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import type { FizzAiJobOutput } from "@/lib/canvas-authoring/generation-api";
@@ -166,20 +167,6 @@ export function FailedTile({
   );
 }
 
-async function downloadOutput(url: string, name: string) {
-  try {
-    const blob = await (await fetch(url)).blob();
-    const objectUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = name;
-    anchor.click();
-    URL.revokeObjectURL(objectUrl);
-  } catch {
-    window.open(url, "_blank");
-  }
-}
-
 function HoverCaption({ job, index, total }: { job: FeedJob; index: number; total: number }) {
   const t = useTranslations("generation");
   return (
@@ -233,7 +220,10 @@ export function ImageResultTile({
           aria-label={t("download")}
           onClick={(event) => {
             event.stopPropagation();
-            void downloadOutput(src, `${job.prompt.slice(0, 40) || "image"}.png`);
+            void downloadOutput(src, `${job.prompt.slice(0, 40) || "image"}.png`, {
+              failed: t("downloadFailed"),
+              openOriginal: t("openOriginal"),
+            });
           }}
           className="flex size-8 items-center justify-center rounded-full bg-black/55 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/75 hover:text-white"
         >
@@ -311,7 +301,10 @@ export function VideoResultTile({
           aria-label={t("download")}
           onClick={(event) => {
             event.stopPropagation();
-            void downloadOutput(src, `${job.prompt.slice(0, 40) || "video"}.mp4`);
+            void downloadOutput(src, `${job.prompt.slice(0, 40) || "video"}.mp4`, {
+              failed: t("downloadFailed"),
+              openOriginal: t("openOriginal"),
+            });
           }}
           className="flex size-8 items-center justify-center rounded-full bg-black/55 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/75 hover:text-white"
         >

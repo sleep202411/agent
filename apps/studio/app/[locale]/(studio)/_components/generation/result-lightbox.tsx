@@ -12,6 +12,7 @@ import {
 } from "@tabler/icons-react";
 import type { FizzAiJobOutput } from "@/lib/canvas-authoring/generation-api";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
+import { downloadOutput } from "./download-output";
 import { timeAgo } from "./feed-tiles";
 import type { FeedJob } from "./use-generation-feed";
 
@@ -98,19 +99,11 @@ export function ResultLightbox({
     }
   };
 
-  const download = async () => {
-    try {
-      const blob = await (await fetch(src)).blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${job.prompt.slice(0, 40) || "result"}.${isVideo ? "mp4" : "png"}`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      window.open(src, "_blank");
-    }
-  };
+  const download = () =>
+    downloadOutput(src, `${job.prompt.slice(0, 40) || "result"}.${isVideo ? "mp4" : "png"}`, {
+      failed: t("downloadFailed"),
+      openOriginal: t("openOriginal"),
+    });
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex bg-black/92 backdrop-blur-sm">

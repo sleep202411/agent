@@ -11,6 +11,8 @@ const state = vi.hoisted(() => ({
     workspaceId: string;
     onEvent: (e: { kind: string; workspaceId: string }) => void;
   }[],
+  rename: vi.fn(),
+  remove: vi.fn(),
   create: vi.fn(),
   push: vi.fn(),
   error: vi.fn(),
@@ -27,8 +29,8 @@ vi.mock("@/app/_components/workspace-context", () => ({
 vi.mock("@/lib/collab/projects-api", () => ({
   createProject: state.create,
   listProjects: state.list,
-  deleteProject: vi.fn(),
-  renameProject: vi.fn(),
+  deleteProject: state.remove,
+  renameProject: state.rename,
 }));
 vi.mock("@/lib/canvas-authoring/assets-realtime-kernel", () => ({
   getAssetsRealtimeKernel: ({ workspaceId }: { workspaceId: string }) => ({
@@ -40,16 +42,22 @@ vi.mock("@/lib/canvas-authoring/assets-realtime-kernel", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { error: state.error, info: vi.fn() } }));
 vi.mock("@/components/ui/tile-card", () => ({
-  TileCard: ({ title }: { title: string }) => <span>{title}</span>,
+  TileCard: ({ title, overlay }: { title: string; overlay: ReactNode }) => (
+    <div>
+      {title}
+      {overlay}
+    </div>
+  ),
 }));
 vi.mock("@/components/project-card", () => ({ WorkflowPreview: () => null }));
-vi.mock("@/components/ui/dialog", () => ({
-  Dialog: () => null,
-  DialogContent: () => null,
-  DialogDescription: () => null,
-  DialogFooter: () => null,
-  DialogHeader: () => null,
-  DialogTitle: () => null,
+vi.mock("@/components/ui/dropdown-menu", () => ({
+  DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuItem: ({ children, onSelect }: { children: ReactNode; onSelect: () => void }) => (
+    <button onClick={onSelect}>{children}</button>
+  ),
+  DropdownMenuTrigger: () => null,
+  DropdownMenuSeparator: () => null,
 }));
 const host = document.createElement("div");
 document.body.append(host);
@@ -121,4 +129,101 @@ it("does not revive an old refresh when returning to the same workspace", async 
   await act(async () => finish([row("A-stale")]));
   expect(host.textContent).toContain("A-current");
   expect(host.textContent).not.toContain("A-stale");
+});
+
+async function click(label: string, inDialog = false) {
+  const scope = inDialog ? document.querySelector('[role="dialog"]')! : host;
+  const button = Array.from(scope.querySelectorAll("button")).find((b) => b.textContent === label)!;
+  expect(button).toBeTruthy();
+  await act(async () => button.click());
+}
+async function renameInput(value: string) {
+  const input = document.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it("shows an initial load failure and retries without creating anything", async () => {
+  state.list.mockRejectedValueOnce(new Error("Workspace unavailable"));
+  await render();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Workspace unavailable");
+  state.list.mockResolvedValue([row("Recovered")]);
+  await click("retry");
+  expect(host.textContent).toContain("Recovered");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(state.create).not.toHaveBeenCalled();
+});
+it("retains the rename draft after failure and allows one retry", async () => {
+  state.list.mockResolvedValue([row("Original")]);
+  await render();
+  await click("rename");
+  await renameInput("New name");
+  state.rename.mockRejectedValueOnce(new Error("Rename permission changed"));
+  await click("rename", true);
+  expect(state.error).toHaveBeenCalledWith("Rename permission changed");
+  expect(document.querySelector("input")?.value).toBe("New name");
+  state.rename.mockResolvedValue(undefined);
+  state.list.mockResolvedValue([row("New name")]);
+  await click("rename", true);
+  expect(state.rename).toHaveBeenLastCalledWith("Original", "New name");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.textContent).toContain("New name");
+});
+it("prevents duplicate deletes, preserves confirmation after failure, and separates refresh errors", async () => {
+  state.list.mockResolvedValue([row("Original")]);
+  await render();
+  await click("delete");
+  let reject!: (error: Error) => void;
+  state.remove.mockImplementationOnce(
+    () =>
+      new Promise((_, r) => {
+        reject = r;
+      })
+  );
+  await click("delete", true);
+  await click("delete", true);
+  expect(state.remove).toHaveBeenCalledTimes(1);
+  await act(async () => reject(new Error("Cannot delete yet")));
+  expect(state.error).toHaveBeenCalledWith("Cannot delete yet");
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  state.remove.mockResolvedValue(undefined);
+  state.list.mockRejectedValue(new Error("List temporarily unavailable"));
+  await click("delete", true);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.textContent).not.toContain("Original");
+  expect(host.textContent).toContain("List temporarily unavailable");
+  await click("retry");
+  expect(state.remove).toHaveBeenCalledTimes(2);
+});
+it("ignores a rename response after changing workspace", async () => {
+  state.list.mockResolvedValue([row("Original")]);
+  await render();
+  await click("rename");
+  await renameInput("New name");
+  let finish!: () => void;
+  state.rename.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  await click("rename", true);
+  state.workspaceId = "B";
+  state.list.mockResolvedValue([row("B-project")]);
+  await render();
+  await act(async () => finish());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.textContent).toContain("B-project");
+  expect(host.textContent).not.toContain("New name");
+});
+it("keeps existing projects visible when a realtime refresh fails", async () => {
+  state.list.mockResolvedValue([row("Original")]);
+  await render();
+  state.list.mockRejectedValue(new Error("Connection lost"));
+  await act(async () =>
+    state.callbacks.at(-1)!.onEvent({ kind: "project_changed", workspaceId: "A" })
+  );
+  expect(host.textContent).toContain("Original");
+  expect(host.textContent).toContain("Connection lost");
 });
