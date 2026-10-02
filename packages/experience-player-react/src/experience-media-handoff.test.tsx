@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { ErrorDetails, ErrorTypes, type ErrorData } from "hls.js";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
@@ -7,6 +8,10 @@ import {
   ExperienceMediaPlayer,
   type ExperienceMediaPlaybackHandle,
 } from "./experience-media-player";
+import {
+  ExperiencePlaybackDelivery,
+  ExperiencePlaybackDeliveryContext,
+} from "./experience-playback-delivery";
 import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
 
 /**
@@ -16,36 +21,56 @@ import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
  * contract — one element for the life of the surface, and a still frame over it
  * from the source swap until the new source reports it is playing.
  *
- * `@vidstack/react` is stubbed because driving the real player needs a media
- * pipeline jsdom does not have. The stub buys three things the assertions need:
- * the element's source is visible in the DOM, its `playing` callback can be fired
- * on demand instead of waited for, and its provider exposes a `<video>` whose
- * readiness the test controls — which is what decides whether a frame can be
- * copied at all.
+ * `@vidstack/react`'s components are stubbed because driving the real player
+ * needs a media pipeline jsdom does not have; everything else stays real. The
+ * stub buys what the assertions need: the element's source and playback props
+ * are visible in the DOM, its `playing`, `can-play` and `error` callbacks can be
+ * fired on demand instead of waited for, and its provider exposes a `<video>`
+ * whose readiness the test controls — which is what decides whether a frame can
+ * be copied at all. An HLS source is played through a stand-in hls.js instance.
  */
 vi.mock("@vidstack/react", async () => {
   const { createElement, useImperativeHandle, useRef } = await import("react");
-  const { VideoProviderLoader } =
-    await vi.importActual<typeof import("@vidstack/react")>("@vidstack/react");
+  const actual = await vi.importActual<typeof import("@vidstack/react")>("@vidstack/react");
 
   function StubMediaPlayer({
     ref,
     src,
+    loop,
+    preload,
     children,
     onPlaying,
     onCanPlay,
-  }: {
+    onEnd,
+    onTimeUpdate,
+    onError,
+    onHlsError,
+    onProviderLoaderChange,
+  }: ElementCallbacks & {
     ref?: React.Ref<unknown>;
-    src: string | { src: string };
+    src: string | { src: string; type?: string };
+    loop?: boolean;
+    preload?: string;
     children?: React.ReactNode;
     onPlaying?: () => void;
     onCanPlay?: () => void;
+    onProviderLoaderChange?: () => void;
   }) {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const hlsSourceRef = useRef(false);
+    hlsSourceRef.current = typeof src !== "string" && src.type === "application/vnd.apple.mpegurl";
+    // As in Vidstack: whatever the element fires reaches the callbacks of the
+    // player's latest render.
+    elementCallbacks.current = { onEnd, onTimeUpdate, onError, onHlsError };
     useImperativeHandle(
       ref,
       () => ({
-        provider: { type: "video", media: videoRef.current, video: videoRef.current },
+        get provider() {
+          const media = videoRef.current;
+          return hlsSourceRef.current
+            ? { type: "hls", instance: stubHls.current, media, video: media }
+            : { type: "video", media, video: media };
+        },
         muted: false,
         duration: 0,
         play: () => Promise.resolve(),
@@ -56,7 +81,12 @@ vi.mock("@vidstack/react", async () => {
     const uri = typeof src === "string" ? src : src.src;
     return createElement(
       "div",
-      { "data-clip": uri },
+      {
+        "data-clip": uri,
+        "data-type": typeof src === "string" ? "" : (src.type ?? ""),
+        "data-loop": String(loop),
+        "data-preload": preload,
+      },
       // A real `<video>`, because the assertions turn on its identity (a
       // remounted player is a different element, and a different element is a
       // different audible-playback verdict) and on its readiness.
@@ -67,19 +97,98 @@ vi.mock("@vidstack/react", async () => {
         onClick: onPlaying,
       }),
       createElement("button", { "data-ready": uri, onClick: onCanPlay }),
+      createElement("button", {
+        "data-fail": uri,
+        onClick: () => onError?.({ message: "hls.js: manifestLoadError", code: 1 }),
+      }),
+      createElement("button", { "data-loader-change": uri, onClick: onProviderLoaderChange }),
       children
     );
   }
 
+  /** The provider instance the player is handed: its element, and `load()`. */
+  function StubMediaProvider({
+    ref,
+    children,
+  }: {
+    ref?: React.Ref<unknown>;
+    children?: React.ReactNode;
+  }) {
+    const elementRef = useRef<HTMLDivElement>(null);
+    useImperativeHandle(
+      ref,
+      () => ({
+        // The real provider's element wraps its media element; here the stub
+        // player owns the `<video>`, so the provider reads its parent.
+        get el() {
+          return elementRef.current?.parentElement ?? null;
+        },
+        load: providerLoad,
+      }),
+      []
+    );
+    return createElement("div", { ref: elementRef }, children);
+  }
+
   return {
-    VideoProviderLoader,
+    ...actual,
     MediaPlayer: StubMediaPlayer,
-    MediaProvider: ({ children }: { children?: React.ReactNode }) =>
-      createElement("div", null, children),
+    MediaProvider: StubMediaProvider,
     Poster: () => null,
     MediaAnnouncer: () => createElement("div", { "data-announcer": "" }),
   };
 });
+
+const providerLoad = vi.hoisted(() => vi.fn<(target: HTMLElement | null) => void>());
+
+/** What the one element reports through: the player's media events. */
+interface ElementCallbacks {
+  onEnd?: () => void;
+  onTimeUpdate?: (detail: { currentTime: number }) => void;
+  onError?: (detail: { message: string; code: number }) => void;
+  onHlsError?: (detail: ErrorData) => void;
+}
+
+const elementCallbacks = vi.hoisted(() => ({ current: {} as ElementCallbacks }));
+
+/** The slice of an hls.js instance the player reaches for when a stream fails. */
+class FakeHls {
+  static readonly ErrorTypes = ErrorTypes;
+  static readonly ErrorDetails = ErrorDetails;
+  readonly detachMedia = vi.fn();
+}
+
+const stubHls = vi.hoisted(() => ({ current: null as FakeHls | null }));
+
+const CONTENT_A = "/aurora/story-projects/p/builds/b/assets/a/variants/original/content";
+const MASTER_A = "https://media.fizzspace.cn/hls/a/master.m3u8";
+const CONTENT_B = "/aurora/story-projects/p/builds/b/assets/b/variants/original/content";
+const MASTER_B = "https://media.fizzspace.cn/hls/b/master.m3u8";
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status });
+}
+
+function hlsAnswer(master: string): Response {
+  return jsonResponse(200, {
+    code: 200,
+    data: { url: master, contentType: "application/vnd.apple.mpegurl" },
+  });
+}
+
+/** A fatal hls.js media error, as hls.js raises it. */
+function fatalMediaError(details: ErrorDetails, message: string): ErrorData {
+  return { type: ErrorTypes.MEDIA_ERROR, details, fatal: true, error: new Error(message) };
+}
+
+/** A `/playback` answer the test releases when it is ready to. */
+function deferredResponse() {
+  let release!: (response: Response) => void;
+  const response = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  return { response, release };
+}
 
 const copy: ExperiencePlayerVideoCopy = {
   play: "Play",
@@ -105,6 +214,7 @@ describe("ExperienceMediaPlayer cut cover", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     onPlaybackHandle = vi.fn<(handle: ExperienceMediaPlaybackHandle | null) => void>();
+    stubHls.current = new FakeHls();
     drawImage = vi.fn<(image: CanvasImageSource, x: number, y: number) => void>();
     // jsdom has no 2D context to hand out, so the cover canvas gets one that
     // records what was drawn into it.
@@ -129,28 +239,54 @@ describe("ExperienceMediaPlayer cut cover", () => {
    * holds has a decoded frame that could be copied when the next clip arrives.
    */
   const renderClip = async (
-    clip: { uri: string; identity: string; clipStartTime?: number },
-    options: { frameReady?: boolean } = {}
+    clip: {
+      uri: string;
+      identity: string;
+      clipStartTime?: number;
+      loop?: boolean;
+      poster?: string;
+    },
+    options: {
+      frameReady?: boolean;
+      delivery?: ExperiencePlaybackDelivery;
+      onEnd?: () => void;
+      onTimeUpdate?: (seconds: number) => void;
+      onContentSize?: (size: { width: number; height: number }) => void;
+      onPlaybackError?: (message?: string) => void;
+    } = {}
   ) => {
     await act(async () => {
       root.render(
-        <ExperienceMediaPlayer
-          source={{ src: clip.uri, type: "video/mp4" }}
-          title="Clip"
-          autoPlay={false}
-          muted={false}
-          loop={false}
-          clipStartTime={clip.clipStartTime}
-          onEnd={() => {}}
-          onTimeUpdate={() => {}}
-          onPlaybackError={() => {}}
-          onPlaybackHandle={onPlaybackHandle}
-          playbackIdentity={clip.identity}
-          copy={copy}
-        />
+        // Always provided — null plays clips as declared — so a test that adds a
+        // delivery keeps the same tree, and with it the same element.
+        <ExperiencePlaybackDeliveryContext.Provider value={options.delivery ?? null}>
+          <ExperienceMediaPlayer
+            source={{ src: clip.uri, type: "video/mp4" }}
+            title="Clip"
+            poster={clip.poster}
+            autoPlay={false}
+            muted={false}
+            loop={clip.loop ?? false}
+            clipStartTime={clip.clipStartTime}
+            onEnd={options.onEnd ?? (() => {})}
+            onTimeUpdate={options.onTimeUpdate ?? (() => {})}
+            onPlaybackError={options.onPlaybackError ?? (() => {})}
+            onPlaybackHandle={onPlaybackHandle}
+            onContentSize={options.onContentSize}
+            playbackIdentity={clip.identity}
+            copy={copy}
+          />
+        </ExperiencePlaybackDeliveryContext.Provider>
       );
     });
-    setFrameReady(options.frameReady ?? true);
+    if (container.querySelector("[data-media-element]")) setFrameReady(options.frameReady ?? true);
+  };
+
+  /** Something the element fires, delivered as Vidstack delivers it. */
+  const emit = async (fire: (element: ElementCallbacks) => void) => {
+    await act(async () => {
+      fire(elementCallbacks.current);
+    });
   };
 
   /** The next clip of a sequence: new source, new identity. */
@@ -349,5 +485,493 @@ describe("ExperienceMediaPlayer cut cover", () => {
     await signalPlaying("/a-portrait.mp4");
 
     expect(stillFrame().hidden).toBe(true);
+  });
+
+  it("hands the same element back to the provider when its loader changes", async () => {
+    await showClip("a");
+    const element = video();
+    providerLoad.mockClear();
+
+    // A cut between an HLS clip and a progressive one swaps hls.js for the
+    // native loader. Vidstack only runs a loader when given the element, so
+    // without this the new provider is never built and the element stays empty.
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-loader-change="/a.mp4"]')!.click();
+    });
+
+    expect(providerLoad).toHaveBeenCalledExactlyOnceWith(element);
+  });
+
+  it("buffers the whole clip ahead of Start", async () => {
+    await showClip("a");
+    expect(container.querySelector("[data-clip]")?.getAttribute("data-preload")).toBe("auto");
+  });
+
+  /** A delivery that negotiates build clips through `answers`, in order. */
+  const negotiatingDelivery = (answers: Array<Response | Promise<Response>>) => {
+    const fetch = vi.fn<typeof globalThis.fetch>(() => {
+      const next = answers.shift();
+      if (!next) throw new Error("Unexpected negotiation request.");
+      return Promise.resolve(next);
+    });
+    const delivery = new ExperiencePlaybackDelivery({
+      adaptive: true,
+      fetch,
+      acceptsHls: () => true,
+    });
+    return { delivery, fetch };
+  };
+
+  it("holds the outgoing clip, with no handle, while the next one is negotiated", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const answer = deferredResponse();
+    const { delivery } = negotiatingDelivery([answer.response]);
+    await renderClip({ uri: "/a.mp4", identity: "renderer:0:sequence:a" }, { delivery });
+    const element = video();
+    expect(registeredHandles()).toHaveLength(1);
+
+    await renderClip(
+      { uri: CONTENT_B, identity: "renderer:0:sequence:b", loop: true },
+      { delivery }
+    );
+
+    // Nothing to source yet: the element keeps the clip — and the frame — it
+    // has, and the host holds no handle that could replay the clip just left.
+    expect(mountedClip()).toBe("/a.mp4");
+    expect(container.querySelector("[data-clip]")?.getAttribute("data-loop")).toBe("false");
+    expect(onPlaybackHandle.mock.calls.at(-1)?.[0]).toBeNull();
+    expect(drawImage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      answer.release(
+        jsonResponse(200, {
+          code: 200,
+          data: { url: MASTER_B, contentType: "application/vnd.apple.mpegurl" },
+        })
+      );
+    });
+
+    // The answer swaps the source on the same element, covered like any cut.
+    expect(video()).toBe(element);
+    expect(mountedClip()).toBe(MASTER_B);
+    const player = container.querySelector("[data-clip]")!;
+    expect(player.getAttribute("data-type")).toBe("application/vnd.apple.mpegurl");
+    expect(player.getAttribute("data-loop")).toBe("true");
+    expect(drawImage).toHaveBeenCalledWith(element, 0, 0);
+    expect(stillFrame().hidden).toBe(false);
+    const handle = registeredHandles().at(-1);
+    expect(handle?.playbackIdentity).toBe("renderer:0:sequence:b");
+    expect(delivery.hasStagedOrWarmed(CONTENT_B)).toBe(true);
+  });
+
+  it("pauses the outgoing clip during a negotiated cut, and gives none of its events to the next", async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const answer = deferredResponse();
+    const { delivery } = negotiatingDelivery([hlsAnswer(MASTER_A), answer.response]);
+    const outgoing = { src: CONTENT_A, type: "video/mp4" };
+    await delivery.resolve(outgoing);
+    await renderClip({ uri: CONTENT_A, identity: "renderer:0:sequence:a" }, { delivery });
+    expect(pause).not.toHaveBeenCalled();
+    const incoming = {
+      onEnd: vi.fn(),
+      onTimeUpdate: vi.fn(),
+      onContentSize: vi.fn(),
+      onPlaybackError: vi.fn(),
+    };
+
+    await renderClip(
+      { uri: CONTENT_B, identity: "renderer:0:sequence:b" },
+      { delivery, ...incoming }
+    );
+
+    // The cut is waiting on `/playback`, so the element still holds the clip the
+    // viewer left. Held, not played on under the next clip: it is paused on its
+    // frame, and what it reports meanwhile is not the next clip's to hear — its
+    // time would run the next scene's clock, its end would end the next clip.
+    expect(mountedClip()).toBe(MASTER_A);
+    expect(pause).toHaveBeenCalledOnce();
+    expect(pause.mock.contexts[0]).toBe(video());
+    const decodeError = fatalMediaError(ErrorDetails.BUFFER_APPEND_ERROR, "Failed to append");
+    await emit((element) => element.onTimeUpdate?.({ currentTime: 7.5 }));
+    await emit((element) => element.onEnd?.());
+    await emit((element) => element.onHlsError?.(decodeError));
+    await emit((element) => element.onHlsError?.(decodeError));
+    await emit((element) => element.onError?.({ message: "hls.js: fragLoadError", code: 1 }));
+    expect(incoming.onTimeUpdate).not.toHaveBeenCalled();
+    expect(incoming.onEnd).not.toHaveBeenCalled();
+    expect(incoming.onContentSize).not.toHaveBeenCalled();
+    expect(incoming.onPlaybackError).not.toHaveBeenCalled();
+    // A failure is still the outgoing clip's own: its answer is retired, and
+    // hls.js is left to Vidstack rather than stopped under a clip about to load.
+    expect(delivery.peek(outgoing)).toBeUndefined();
+    expect(stubHls.current!.detachMedia).not.toHaveBeenCalled();
+
+    await act(async () => {
+      answer.release(hlsAnswer(MASTER_B));
+    });
+
+    // On the element, the incoming clip is the one the element reports for.
+    expect(mountedClip()).toBe(MASTER_B);
+    await emit((element) => element.onTimeUpdate?.({ currentTime: 0.5 }));
+    await emit((element) => element.onEnd?.());
+    expect(incoming.onTimeUpdate).toHaveBeenCalledExactlyOnceWith(0.5);
+    expect(incoming.onContentSize).toHaveBeenCalledWith({ width: 1920, height: 1080 });
+    expect(incoming.onEnd).toHaveBeenCalledOnce();
+    expect(pause).toHaveBeenCalledOnce();
+  });
+
+  it("plays build clips as declared, cutting at once, when adaptive playback is off", async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const fetch = vi.fn<typeof globalThis.fetch>();
+    const delivery = new ExperiencePlaybackDelivery({
+      adaptive: false,
+      fetch,
+      acceptsHls: () => true,
+    });
+    await renderClip({ uri: CONTENT_A, identity: "renderer:0:sequence:a" }, { delivery });
+    const onEnd = vi.fn();
+
+    await renderClip({ uri: CONTENT_B, identity: "renderer:0:sequence:b" }, { delivery, onEnd });
+
+    // The .com path: no `/playback`, the progressive file on the element — so
+    // the native loader, never hls.js — and a cut with nothing to wait for.
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mountedClip()).toBe(CONTENT_B);
+    expect(container.querySelector("[data-clip]")?.getAttribute("data-type")).toBe("video/mp4");
+    expect(registeredHandles().at(-1)?.playbackIdentity).toBe("renderer:0:sequence:b");
+    await emit((element) => element.onEnd?.());
+    expect(onEnd).toHaveBeenCalledOnce();
+    expect(pause).not.toHaveBeenCalled();
+  });
+
+  it("keeps the tail loop and a rotation playing, and reporting, on the same clip", async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const answer = deferredResponse();
+    const { delivery } = negotiatingDelivery([answer.response]);
+    const onTimeUpdate = vi.fn();
+    await renderClip(
+      { uri: "/a.mp4", identity: "renderer:0:sequence:a" },
+      { delivery, onTimeUpdate }
+    );
+
+    // The tail wait loop: a new identity on the same source, sought, not cut.
+    await renderClip(
+      { uri: "/a.mp4", identity: "renderer:0:loop:a:11", clipStartTime: 11 },
+      { delivery, onTimeUpdate }
+    );
+    await emit((element) => element.onTimeUpdate?.({ currentTime: 11.5 }));
+    expect(onTimeUpdate).toHaveBeenLastCalledWith(11.5);
+
+    // A rotation re-resolves the same clip to a file still being negotiated:
+    // until it lands, the clip on the element is still the one the host plays.
+    await renderClip(
+      { uri: CONTENT_B, identity: "renderer:0:loop:a:11", clipStartTime: 11 },
+      { delivery, onTimeUpdate }
+    );
+    expect(mountedClip()).toBe("/a.mp4");
+    await emit((element) => element.onTimeUpdate?.({ currentTime: 12 }));
+    expect(onTimeUpdate).toHaveBeenLastCalledWith(12);
+    expect(onPlaybackHandle.mock.calls.at(-1)?.[0]?.playbackIdentity).toBe("renderer:0:loop:a:11");
+    expect(pause).not.toHaveBeenCalled();
+  });
+
+  it("shows the poster, and offers nothing, while a first clip is negotiated", async () => {
+    const answer = deferredResponse();
+    const { delivery } = negotiatingDelivery([answer.response]);
+
+    await renderClip(
+      { uri: CONTENT_B, identity: "renderer:0:sequence:b", poster: "/b-poster.jpg" },
+      { delivery }
+    );
+
+    const pending = container.querySelector("[data-experience-video-pending]");
+    expect(pending).not.toBeNull();
+    expect(pending?.querySelector("img")?.getAttribute("src")).toBe("/b-poster.jpg");
+    expect(container.querySelector("[data-media-element]")).toBeNull();
+    expect(onPlaybackHandle).not.toHaveBeenCalled();
+
+    await act(async () => {
+      answer.release(jsonResponse(200, { code: 200, data: null }));
+    });
+
+    expect(container.querySelector("[data-experience-video-pending]")).toBeNull();
+    expect(mountedClip()).toBe(CONTENT_B);
+    expect(registeredHandles().at(-1)?.playbackIdentity).toBe("renderer:0:sequence:b");
+  });
+
+  it("reports a refused clip once, verbatim, and does not ask again on re-render", async () => {
+    const { delivery, fetch } = negotiatingDelivery([
+      jsonResponse(410, {
+        code: "STORY_BUILD_ASSET_DELETED",
+        message: "This clip was removed by its author.",
+      }),
+    ]);
+    const onPlaybackError = vi.fn();
+
+    await renderClip(
+      { uri: CONTENT_B, identity: "renderer:0:sequence:b" },
+      { delivery, onPlaybackError }
+    );
+
+    expect(onPlaybackError).toHaveBeenCalledOnce();
+    expect(onPlaybackError).toHaveBeenCalledWith("This clip was removed by its author.");
+
+    const rerendered = vi.fn();
+    await renderClip(
+      { uri: CONTENT_B, identity: "renderer:0:sequence:b" },
+      { delivery, onPlaybackError: rerendered }
+    );
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(rerendered).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-experience-video-pending]")).not.toBeNull();
+  });
+
+  it.each([
+    ["on its first clip", false],
+    ["after a cut into it", true],
+  ])("retires the negotiated answer when the stream fails fatally, %s", async (_label, cut) => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const { delivery, fetch } = negotiatingDelivery([
+      jsonResponse(200, {
+        code: 200,
+        data: { url: MASTER_B, contentType: "application/vnd.apple.mpegurl" },
+      }),
+    ]);
+    const onPlaybackError = vi.fn();
+    const declared = { src: CONTENT_B, type: "video/mp4" };
+    // Answered ahead of the cut, as the look-ahead does: the element takes the
+    // answer straight from the delivery instead of asking for it itself.
+    await delivery.resolve(declared);
+    if (cut) await renderClip({ uri: "/a.mp4", identity: "renderer:0:sequence:a" }, { delivery });
+    await renderClip(
+      { uri: CONTENT_B, identity: "renderer:0:sequence:b" },
+      { delivery, onPlaybackError }
+    );
+    expect(mountedClip()).toBe(MASTER_B);
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-fail="${MASTER_B}"]`)!.click();
+    });
+
+    // Restarting asks the server again rather than replaying a failed master.
+    expect(delivery.peek(declared)).toBeUndefined();
+    expect(onPlaybackError).toHaveBeenCalledWith("hls.js: manifestLoadError");
+    // And the failed clip stops where it is, rather than playing on behind the error.
+    expect(pause).toHaveBeenCalledOnce();
+    expect(pause.mock.contexts[0]).toBe(video());
+
+    // …but only a restart: the failed element neither asks again behind the
+    // error on a re-render nor swaps its source.
+    await renderClip(
+      { uri: CONTENT_B, identity: "renderer:0:sequence:b" },
+      { delivery, onPlaybackError: vi.fn() }
+    );
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(mountedClip()).toBe(MASTER_B);
+  });
+
+  /** An HLS clip on the element, answered ahead of time as the look-ahead does. */
+  const renderHlsClip = async (
+    uri: string,
+    master: string,
+    identity: string,
+    onPlaybackError: (message?: string) => void
+  ) => {
+    const { delivery } = negotiatingDelivery([hlsAnswer(master)]);
+    const declared = { src: uri, type: "video/mp4" };
+    await delivery.resolve(declared);
+    await renderClip({ uri, identity }, { delivery, onPlaybackError });
+    expect(mountedClip()).toBe(master);
+    return { delivery, declared };
+  };
+
+  it("reports a fatal media error that one recovery did not cure, once, verbatim", async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const onPlaybackError = vi.fn();
+    const { delivery, declared } = await renderHlsClip(
+      CONTENT_B,
+      MASTER_B,
+      "renderer:0:sequence:b",
+      onPlaybackError
+    );
+    const playing = registeredHandles().at(-1)!.play();
+    const failed = expect(playing).rejects.toThrow("Failed to append segment");
+    const appendError = fatalMediaError(
+      ErrorDetails.BUFFER_APPEND_ERROR,
+      "Failed to append segment"
+    );
+
+    await emit((element) => element.onHlsError?.(appendError));
+
+    // The first is left to the `recoverMediaError()` Vidstack runs next.
+    expect(stubHls.current!.detachMedia).not.toHaveBeenCalled();
+    expect(onPlaybackError).not.toHaveBeenCalled();
+    expect(delivery.peek(declared)).toBeDefined();
+    expect(pause).not.toHaveBeenCalled();
+
+    await emit((element) => element.onHlsError?.(appendError));
+
+    // The second is the stream, not a hiccup. hls.js lets go of the element, so
+    // that recovery has nothing to re-attach, and the failure takes the path of
+    // every fatal one: the answer retired, the waiting play failed, the message
+    // shown as hls.js wrote it.
+    expect(stubHls.current!.detachMedia).toHaveBeenCalledOnce();
+    expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith("Failed to append segment");
+    expect(delivery.peek(declared)).toBeUndefined();
+    expect(pause).toHaveBeenCalledOnce();
+    await failed;
+  });
+
+  it("takes a failed clip out of the story: nothing the element reports after is passed on", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const { delivery } = negotiatingDelivery([hlsAnswer(MASTER_B)]);
+    await delivery.resolve({ src: CONTENT_B, type: "video/mp4" });
+    const host = {
+      onEnd: vi.fn(),
+      onTimeUpdate: vi.fn(),
+      onContentSize: vi.fn(),
+      onPlaybackError: vi.fn(),
+    };
+    await renderClip({ uri: CONTENT_B, identity: "renderer:0:sequence:b" }, { delivery, ...host });
+    const appendError = fatalMediaError(ErrorDetails.BUFFER_APPEND_ERROR, "Failed to append");
+    await emit((element) => element.onHlsError?.(appendError));
+    await emit((element) => element.onHlsError?.(appendError));
+    expect(host.onPlaybackError).toHaveBeenCalledExactlyOnceWith("Failed to append");
+
+    // hls.js let go of the element, but the element may still play what it had
+    // buffered and end early. None of that is the story's: its end would take
+    // the clip's exit — choices, a scene change, an ending — behind the error.
+    // And a second failure from the dying element (Chrome's own demuxer text,
+    // say) must not bury the first.
+    await emit((element) => element.onTimeUpdate?.({ currentTime: 5.9 }));
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(`[data-ready="${MASTER_B}"]`)!.click();
+    });
+    await emit((element) => element.onEnd?.());
+    await emit((element) =>
+      element.onError?.({ message: "PipelineStatus::DEMUXER_ERROR_COULD_NOT_OPEN", code: 4 })
+    );
+    await emit((element) => element.onHlsError?.(appendError));
+    expect(host.onTimeUpdate).not.toHaveBeenCalled();
+    expect(host.onContentSize).not.toHaveBeenCalled();
+    expect(host.onEnd).not.toHaveBeenCalled();
+    expect(host.onPlaybackError).toHaveBeenCalledOnce();
+  });
+
+  it("gives a clip that failed on the element no recovery from hls.js", async () => {
+    const onPlaybackError = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    await renderHlsClip(CONTENT_B, MASTER_B, "renderer:0:sequence:b", onPlaybackError);
+
+    await emit((element) => element.onError?.({ message: "PIPELINE_ERROR_DECODE", code: 3 }));
+    await emit((element) =>
+      element.onHlsError?.(fatalMediaError(ErrorDetails.BUFFER_APPEND_ERROR, "Failed to append"))
+    );
+
+    // The failure already reported stands, and hls.js lets go of the element, so
+    // the recovery Vidstack runs next cannot reload the clip behind the error.
+    expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith("PIPELINE_ERROR_DECODE");
+    expect(stubHls.current!.detachMedia).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR, "no level with compatible codecs found"],
+    [ErrorDetails.BUFFER_INCOMPATIBLE_CODECS_ERROR, "could not create source buffer"],
+  ])("gives up at once on %s", async (details, message) => {
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const onPlaybackError = vi.fn();
+    const { delivery, declared } = await renderHlsClip(
+      CONTENT_B,
+      MASTER_B,
+      "renderer:0:sequence:b",
+      onPlaybackError
+    );
+
+    await emit((element) => element.onHlsError?.(fatalMediaError(details, message)));
+    // Ending a MediaSource that never reached its metadata is an error of its
+    // own to Chrome, which the element reports next.
+    await emit((element) =>
+      element.onError?.({ message: "PipelineStatus::DEMUXER_ERROR_COULD_NOT_OPEN", code: 4 })
+    );
+
+    // A browser that cannot decode the codecs will not decode them on a retry,
+    // and the viewer is shown why, not the demuxer's echo of it.
+    expect(stubHls.current!.detachMedia).toHaveBeenCalledOnce();
+    expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith(message);
+    expect(delivery.peek(declared)).toBeUndefined();
+  });
+
+  it("allows every source its own recovery", async () => {
+    const onPlaybackError = vi.fn();
+    const appendError = fatalMediaError(ErrorDetails.BUFFER_APPEND_ERROR, "Failed to append");
+    const { delivery } = negotiatingDelivery([hlsAnswer(MASTER_A), hlsAnswer(MASTER_B)]);
+    await delivery.resolve({ src: CONTENT_A, type: "video/mp4" });
+    await delivery.resolve({ src: CONTENT_B, type: "video/mp4" });
+    await renderClip(
+      { uri: CONTENT_A, identity: "renderer:0:sequence:a" },
+      { delivery, onPlaybackError }
+    );
+    await emit((element) => element.onHlsError?.(appendError));
+
+    await renderClip(
+      { uri: CONTENT_B, identity: "renderer:0:sequence:b" },
+      { delivery, onPlaybackError }
+    );
+    expect(mountedClip()).toBe(MASTER_B);
+    await emit((element) => element.onHlsError?.(appendError));
+
+    expect(onPlaybackError).not.toHaveBeenCalled();
+    expect(stubHls.current!.detachMedia).not.toHaveBeenCalled();
+  });
+
+  it("gives a source its recovery again each time it comes back to the element", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const onPlaybackError = vi.fn();
+    const appendError = fatalMediaError(ErrorDetails.BUFFER_APPEND_ERROR, "Failed to append");
+    const { delivery } = negotiatingDelivery([hlsAnswer(MASTER_A), hlsAnswer(MASTER_B)]);
+    await delivery.resolve({ src: CONTENT_A, type: "video/mp4" });
+    await delivery.resolve({ src: CONTENT_B, type: "video/mp4" });
+    // A hub scene's opening has the same identity and source on every visit.
+    const hub = { uri: CONTENT_A, identity: "hub.video:0:sequence:a" };
+    await renderClip(hub, { delivery, onPlaybackError });
+    await emit((element) => element.onHlsError?.(appendError));
+
+    await renderClip({ uri: CONTENT_B, identity: "room.video:0:sequence:b" }, { delivery });
+    await renderClip(hub, { delivery, onPlaybackError });
+    expect(mountedClip()).toBe(MASTER_A);
+
+    // A fresh load of the hub clip: its first glitch is recovered as on the
+    // first visit, and only a second one on this load is the stream's.
+    await emit((element) => element.onHlsError?.(appendError));
+    expect(onPlaybackError).not.toHaveBeenCalled();
+    expect(stubHls.current!.detachMedia).not.toHaveBeenCalled();
+    await emit((element) => element.onHlsError?.(appendError));
+    expect(onPlaybackError).toHaveBeenCalledExactlyOnceWith("Failed to append");
+  });
+
+  it("leaves hls.js errors that are not fatal media errors to hls.js and Vidstack", async () => {
+    const onPlaybackError = vi.fn();
+    await renderHlsClip(CONTENT_B, MASTER_B, "renderer:0:sequence:b", onPlaybackError);
+    const stall: ErrorData = {
+      type: ErrorTypes.MEDIA_ERROR,
+      details: ErrorDetails.BUFFER_STALLED_ERROR,
+      fatal: false,
+      error: new Error("Playback stalling"),
+    };
+    // Fatal network errors reach `onError` through Vidstack instead.
+    const network: ErrorData = {
+      type: ErrorTypes.NETWORK_ERROR,
+      details: ErrorDetails.MANIFEST_LOAD_ERROR,
+      fatal: true,
+      error: new Error("HTTP 404"),
+    };
+
+    for (const error of [stall, stall, network, network]) {
+      await emit((element) => element.onHlsError?.(error));
+    }
+
+    expect(onPlaybackError).not.toHaveBeenCalled();
+    expect(stubHls.current!.detachMedia).not.toHaveBeenCalled();
   });
 });

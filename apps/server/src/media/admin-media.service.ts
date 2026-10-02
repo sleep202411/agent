@@ -17,6 +17,7 @@ import {
   type EnqueueMediaProcessingJobInput,
 } from './media-processing.service';
 import { MediaModerationAdminService } from './media-moderation-admin.service';
+import { hlsStreamJobKey } from './hls-output';
 import type {
   CreateAdminMediaProcessingJobInput,
   ListAdminMediaAssetsQuery,
@@ -301,7 +302,7 @@ export class AdminMediaService {
         input.jobType === MediaProcessingJobType.backfill_original_placement
           ? `media-backfill-original-placement:${assetId}`
           : input.jobType === MediaProcessingJobType.hls_stream
-            ? `hls-stream:${assetId}`
+            ? hlsStreamJobKey(assetId)
             : null,
       createdByAdminId: adminId,
     };

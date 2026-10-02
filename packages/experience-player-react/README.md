@@ -17,3 +17,37 @@ player.
 
 Tailwind v4 host stylesheets must register `src/` with `@source`; both Web and
 Studio do this in their global stylesheet.
+
+## Media delivery
+
+A manifest names one progressive file per clip; a frozen build clip is a
+`/story-projects/…/builds/…/assets/…/variants/…/content` URI.
+
+- **Adaptive playback (`adaptivePlayback`)** — off by default. When a host turns
+  it on, the player asks the sibling `/playback` endpoint of each build clip
+  whether a ready HLS master stands in for it, and plays that master instead.
+  `null` keeps the declared file. A refused or malformed answer is shown to the
+  viewer verbatim; nothing silently falls back to `/content`. Only enable it
+  where the server transcodes: Web on the cn cell (`adaptiveStoryPlayback`).
+  Studio leaves it off.
+- **hls.js is bundled.** It is loaded with a dynamic `import("hls.js")`, never
+  from Vidstack's jsDelivr default, so the cn cell has no third-party CDN
+  dependency. On Apple WebKit an HLS master goes to the native element instead.
+- **Prefetch.** Before Start only the entry clip buffers, on its own element
+  (`preload="auto"`); Start waits until it is on an element. After Start the
+  look-ahead warms one clip opening at a time: the rest of the current scene,
+  then the first clip of each scene one `scene.goto` away that the viewer can
+  access. An HLS warm fetches one rendition's first segment (and pins hls.js to
+  start on that rendition); native HLS only negotiates; a progressive warm
+  preloads on a detached element until it can play through.
+
+## Landscape films on phones
+
+A cinematic landscape film is presented in landscape on a phone, decided by the
+device (`isPhoneDevice`), never by the window size: tablets and desktops
+letterbox. Start asks for fullscreen and a landscape orientation lock; where the
+browser refuses (Safari on iPhone, many in-app browsers) the film frame is drawn
+sideways while the phone is upright. Everything that belongs to the picture —
+media, spatial cues, choices — sits in that frame and turns with it, and choice
+UI is sized with container-query units against the frame. The player gives the
+screen back at the ending, before a host access dialog, and on unmount.

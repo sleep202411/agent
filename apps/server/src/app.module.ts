@@ -16,6 +16,7 @@ import { InternalModule } from './internal/internal.module';
 import { CertificatesModule } from './certificates/certificates.module';
 import { CharactersModule } from './characters/characters.module';
 import { StoryStudioModule } from './story-studio/story-studio.module';
+import { StoryPlaybackModule } from './story-studio/playback/story-playback.module';
 import { AlertingModule } from './common/alerting';
 import { RegionModule } from './common/region';
 import { ThrottleModule } from './common/throttle/throttle.module';
@@ -96,6 +97,7 @@ const agentOsGatewayEnabled = (() => {
     CertificatesModule,
     CharactersModule,
     StoryStudioModule,
+    StoryPlaybackModule,
     MediaModule,
     AiActorsModule,
     CrewsModule,

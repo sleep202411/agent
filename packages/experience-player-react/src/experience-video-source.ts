@@ -53,12 +53,21 @@ export class ExperienceVideoProviderLoader extends VideoProviderLoader {
 
 export const EXPERIENCE_VIDEO_LOADERS = [ExperienceVideoProviderLoader];
 
+/** Both spellings of the HLS master MIME a server may answer with. */
+const HLS_MIME_TYPES = new Set(["application/vnd.apple.mpegurl", "application/x-mpegurl"]);
+
 export function normalizeVideoSource(source: { src: string; type?: string | null }): PlayerSrc {
   const normalizedType = source.type?.split(";", 1)[0]?.trim().toLowerCase();
   if (normalizedType && VIDEO_MIME_TYPES.has(normalizedType as VideoMimeType | "video/quicktime")) {
     // The custom loader supports the real QuickTime MIME at runtime. Vidstack's
     // PlayerSrc union only lists its built-in loaders' MIME types.
     return { src: source.src, type: normalizedType } as PlayerSrc;
+  }
+  if (normalizedType && HLS_MIME_TYPES.has(normalizedType)) {
+    // A negotiated master declares its MIME. Passing it on routes the source
+    // to Vidstack's own HLS loader whatever the URL looks like — hls.js, or the
+    // native element where `preferNativeHLS` puts that first.
+    return { src: source.src, type: "application/vnd.apple.mpegurl" };
   }
   return source.src;
 }

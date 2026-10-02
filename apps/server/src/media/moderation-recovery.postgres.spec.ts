@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { PrismaService } from '../infra/db/db.module';
 import { MediaModerationAdminService } from './media-moderation-admin.service';
+import { MediaProcessingService } from './media-processing.service';
 const databaseUrl =
   process.env.TASK01_TEST_DATABASE_URL ??
   (process.env.DATABASE_POSTGRES_INTEGRATION === '1'
@@ -18,7 +19,10 @@ integration('Media moderation administrator writes (owned PostgreSQL)', () => {
   let assetId: string;
   let recipient: string;
   const service = (client: unknown = db) =>
-    new MediaModerationAdminService(client as PrismaService);
+    new MediaModerationAdminService(
+      client as PrismaService,
+      new MediaProcessingService(client as PrismaService),
+    );
   beforeAll(async () => {
     const url = postgresFixtureUrl(databaseUrl!);
     if (

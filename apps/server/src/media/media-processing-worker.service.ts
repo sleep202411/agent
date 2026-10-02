@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import {
   MediaAssetKind,
+  MediaAssetModerationStatus,
+  MediaAssetVariantStatus,
   MediaProcessingJobStatus,
   MediaProcessingJobType,
   MediaStorageProvider,
@@ -19,10 +21,20 @@ import { PrismaService } from '../infra/db/db.module';
 import {
   ensureOriginalMediaPlacement,
   ensureStreamVariantPlacement,
+  HLS_VARIANT_KEY,
   markStreamVariantFailed,
   syncStreamOutputPlacements,
 } from '../infra/storage/media-asset-placement';
-import { ImmTranscodeService } from '../infra/storage/imm-transcode.service';
+import {
+  IMM_HLS_SEGMENT_SECONDS,
+  ImmTranscodeService,
+  immMaxMinutes,
+  type ImmFinalizeResult,
+} from '../infra/storage/imm-transcode.service';
+import {
+  findBlockingHlsTakedown,
+  unfinishedHlsTakedownWhere,
+} from './hls-output';
 import { VideoPosterService } from './video-poster.service';
 
 const DEFAULT_INTERVAL_MS = 5_000;
@@ -44,6 +56,13 @@ const POD_ID = `${hostname()}-${process.pid}`;
  * kill a healthy job. At the ~20s poll cadence this is ~10 min of failures.
  */
 const MAX_POLL_ERRORS = 30;
+/** Phase-1 re-check cadence while an HLS takedown owns the asset's prefix. */
+const TAKEDOWN_DEFER_MS = 60_000;
+/** Budget for deleting an unpublished output after IMM failed or degenerated. */
+const DISCARD_BUDGET_MS = 60_000;
+
+/** The asset became unpublishable while IMM was transcoding it. */
+class HlsPublishBlockedError extends Error {}
 
 @Injectable()
 export class MediaProcessingWorkerService
@@ -269,8 +288,13 @@ export class MediaProcessingWorkerService
    * first run submits + re-queues; subsequent runs poll `GetTask` and re-queue
    * (via {@link requeueForPoll}, which does NOT consume an attempt) until the
    * task succeeds, fails, or times out. Only genuine errors go through
-   * `fail()`. A ≤1-segment result (degenerate/truncated/ultra-short source) is
-   * recorded as a failed variant and the original mp4 is kept.
+   * `fail()`. A degenerate output (see {@link degenerateOutput}) is recorded as
+   * a failed variant, dead-lettered for an operator retry, and the original mp4
+   * keeps playing.
+   *
+   * Moderation is re-checked at both ends: a blocked asset is never submitted,
+   * and the publish transaction takes `FOR SHARE` on the asset so a block that
+   * lands mid-transcode cancels the job instead of publishing.
    */
   private async processHlsStream(row: MediaProcessingJob): Promise<void> {
     if (!this.imm.isConfigured()) {
@@ -292,6 +316,7 @@ export class MediaProcessingWorkerService
         region: true,
         objectKey: true,
         durationSeconds: true,
+        moderationStatus: true,
       },
     });
     if (!asset) {
@@ -349,8 +374,33 @@ export class MediaProcessingWorkerService
 
     // Phase 1 — submit the IMM task, then poll. A submit failure bubbles to
     // processOne's catch → fail() (normal retry budget); a rejected submit is
-    // worth a few backed-off retries before dead-lettering.
+    // worth a few backed-off retries before dead-lettering. The guards apply
+    // only before submit: an in-flight task is never cut short, IMM must
+    // finish writing before anyone can clean its prefix.
     if (!state.immTaskId) {
+      if (asset.moderationStatus === MediaAssetModerationStatus.blocked) {
+        await this.cancel(
+          row,
+          'Media asset is moderation-blocked; HLS transcode refused.',
+        );
+        return;
+      }
+      const takedown = await findBlockingHlsTakedown(
+        this.prisma,
+        asset.id,
+        new Date(),
+      );
+      if (takedown) {
+        // The prefix is being emptied (or its CDN refresh is still settling).
+        // Writing it now would race the delete or splice cached bytes; wait
+        // without consuming an attempt.
+        await this.requeueForPoll(
+          row,
+          { deferredByTakedown: takedown.id },
+          TAKEDOWN_DEFER_MS,
+        );
+        return;
+      }
       const taskId = await this.imm.submitHlsTask(
         asset.id,
         asset.bucket,
@@ -375,19 +425,19 @@ export class MediaProcessingWorkerService
     // burn the submit retry budget or trigger the exponential fail() backoff
     // (which would dead-letter a healthy transcode and/or delay HLS publish by
     // hours). They're bounded separately by `pollErrors` + the wall-clock
-    // `maxMinutes` ceiling. Only TERMINAL provider outcomes call fail().
+    // `immMaxMinutes()` ceiling. Only TERMINAL provider outcomes call fail().
     try {
       const status = await this.imm.getTaskStatus(state.immTaskId);
       if (status.state === 'running') {
         const submittedAt = state.submittedAt
           ? Date.parse(state.submittedAt)
           : Date.now();
-        if (Date.now() - submittedAt > maxMinutes() * 60_000) {
+        if (Date.now() - submittedAt > immMaxMinutes() * 60_000) {
           // A transcode that never finishes is a dead end — re-polling won't
           // help. Dead-letter (visible); a re-enqueue resets state + re-submits.
           await this.fail(
             row,
-            `IMM transcode timed out after ${maxMinutes()}m (task=${state.immTaskId}).`,
+            `IMM transcode timed out after ${immMaxMinutes()}m (task=${state.immTaskId}).`,
             { permanent: true },
           );
           return;
@@ -406,74 +456,148 @@ export class MediaProcessingWorkerService
       }
       if (status.state === 'failed') {
         // IMM failed the task — re-polling the same task can never recover.
+        const cleanup = await this.discardUnpublishedOutput(
+          asset.id,
+          assetBucket,
+        );
         await this.fail(
           row,
-          `IMM transcode failed (task=${state.immTaskId}): ${status.errorMessage ?? status.raw}`,
+          `IMM transcode failed (task=${state.immTaskId}): ${status.errorCode ? `${status.errorCode}: ` : ''}${status.errorMessage ?? status.raw}${cleanup}`,
           { permanent: true },
         );
         return;
       }
 
-      // Succeeded → inspect output, publish variant or keep mp4.
+      // Succeeded → judge the output, then publish it or keep the mp4.
       const finalize = await this.imm.finalizeHls(asset.id);
-      if (finalize.segmentCount <= 1) {
+      const top = topRendition(finalize);
+      if (!top || degenerateOutput(finalize, top, asset.durationSeconds)) {
+        const wasReady = await this.hlsVariantReady(asset.id);
         await this.prisma.$transaction((tx) =>
           markStreamVariantFailed(tx, asset.id, {
             reason: 'degenerate_output',
-            segmentCount: finalize.segmentCount,
             immTaskId: state.immTaskId ?? null,
+            renditions: finalize.renditions.map((rendition) => ({
+              name: rendition.name,
+              segmentCount: rendition.segmentCount,
+              durationSeconds: rendition.durationSeconds,
+              maxSegmentSeconds: rendition.maxSegmentSeconds,
+            })),
+            missingKeys: finalize.missingKeys.slice(0, 20),
           }),
         );
-        this.logger.warn(
-          `hls_stream degenerate output (${finalize.segmentCount} segment) asset=${asset.id} — keeping mp4`,
+        // A previously published output may still be cached on CDN edges;
+        // only a takedown (delete + refresh) may remove it. This run's own
+        // output was never served, so the worker may delete it.
+        const cleanup = wasReady
+          ? ''
+          : await this.deleteUnpublishedOutput(asset.id, assetBucket);
+        await this.fail(
+          row,
+          `IMM output rejected as degenerate (task=${state.immTaskId}): ${describeOutput(finalize, asset.durationSeconds)}${cleanup}`,
+          { permanent: true },
         );
-        await this.complete(row, {
-          skipped: 'degenerate_output',
-          segmentCount: finalize.segmentCount,
-          immTaskId: state.immTaskId ?? null,
-        });
         return;
       }
 
-      const result = await this.prisma.$transaction(async (tx) => {
-        const placement = await ensureStreamVariantPlacement(tx, {
-          assetId: asset.id,
-          storageProvider: asset.storageProvider,
-          bucket: asset.bucket,
-          region: asset.region,
-          objectKey: finalize.masterObjectKey,
-          durationSeconds: asset.durationSeconds,
-          metadata: {
-            source: 'imm_media_convert',
-            segmentCount: finalize.segmentCount,
-            immTaskId: state.immTaskId ?? null,
-          },
+      await this.imm
+        .applyHlsCacheControl(asset.id)
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `HLS Cache-Control pass failed asset=${asset.id}: ${errorText(err)}`,
+          ),
+        );
+
+      const publishedAt = new Date().toISOString();
+      let result: Awaited<ReturnType<typeof ensureStreamVariantPlacement>> & {
+        outputs: Awaited<ReturnType<typeof syncStreamOutputPlacements>>;
+      };
+      try {
+        result = await this.prisma.$transaction(async (tx) => {
+          // Serialises against the moderation decision's FOR UPDATE: a block
+          // either commits first (and is seen here) or waits for this publish
+          // and then queues the takedown of what it published.
+          const [locked] = await tx.$queryRaw<
+            Array<{ moderation_status: MediaAssetModerationStatus }>
+          >`SELECT moderation_status FROM media_assets WHERE id=${asset.id}::uuid FOR SHARE`;
+          if (!locked) throw new Error('Media asset no longer exists.');
+          if (locked.moderation_status === MediaAssetModerationStatus.blocked) {
+            throw new HlsPublishBlockedError(
+              'Asset was moderation-blocked during transcoding; HLS output not published.',
+            );
+          }
+          // A takedown still emptying this prefix (blocked, then restored while
+          // this task ran) would delete what we publish; leave the output to it.
+          const takedown = await tx.mediaModerationAction.findFirst({
+            where: unfinishedHlsTakedownWhere(asset.id),
+            select: { id: true },
+          });
+          if (takedown) {
+            throw new HlsPublishBlockedError(
+              `HLS takedown ${takedown.id} is still emptying this asset's output; HLS output not published.`,
+            );
+          }
+          const placement = await ensureStreamVariantPlacement(tx, {
+            assetId: asset.id,
+            storageProvider: asset.storageProvider,
+            bucket: asset.bucket,
+            region: asset.region,
+            objectKey: finalize.masterObjectKey,
+            sizeBytes: finalize.totalBytes,
+            width: top.width,
+            height: top.height,
+            durationMs: Math.round(top.durationSeconds * 1000),
+            durationSeconds: asset.durationSeconds,
+            metadata: {
+              source: 'imm_media_convert',
+              immTaskId: state.immTaskId ?? null,
+              submittedAt: state.submittedAt ?? null,
+              publishedAt,
+              renditions: finalize.renditions.map((rendition) => ({
+                name: rendition.name,
+                width: rendition.width,
+                height: rendition.height,
+                segmentCount: rendition.segmentCount,
+                durationSeconds: rendition.durationSeconds,
+              })),
+              totalBytes: finalize.totalBytes.toString(),
+            },
+          });
+          // Register EVERY produced HLS object (rendition playlists + segments)
+          // too: the ledger of published keys is what a later takedown
+          // refreshes on the CDN.
+          const outputs = await syncStreamOutputPlacements(tx, {
+            assetId: asset.id,
+            variantId: placement.variantId,
+            storageProvider: asset.storageProvider,
+            bucket: assetBucket,
+            region: asset.region,
+            masterObjectKey: finalize.masterObjectKey,
+            objectKeys: finalize.objectKeys,
+          });
+          return { ...placement, outputs };
         });
-        // Register EVERY produced HLS object (rendition playlists + segments)
-        // as a placement too. Moderation takedown fans out one action per
-        // placement, so without these rows a block would down only the master
-        // playlist while the renditions stayed publicly streamable.
-        const outputs = await syncStreamOutputPlacements(tx, {
-          assetId: asset.id,
-          variantId: placement.variantId,
-          storageProvider: asset.storageProvider,
-          bucket: assetBucket,
-          region: asset.region,
-          masterObjectKey: finalize.masterObjectKey,
-          objectKeys: finalize.objectKeys,
-        });
-        return { ...placement, outputs };
-      });
+      } catch (err) {
+        if (!(err instanceof HlsPublishBlockedError)) throw err;
+        // Terminal, not transient: the takedown removes the objects once this
+        // job can no longer write.
+        await this.cancel(row, err.message);
+        return;
+      }
       this.logger.log(
-        `hls_stream ready job=${row.id} asset=${asset.id} segments=${finalize.segmentCount} ` +
+        `hls_stream ready job=${row.id} asset=${asset.id} renditions=${finalize.renditions.length} ` +
           `outputPlacements(created=${result.outputs.created} reactivated=${result.outputs.reactivated} retired=${result.outputs.retired})`,
       );
       await this.complete(row, {
         variantId: result.variantId,
         placementId: result.placementId,
-        segmentCount: finalize.segmentCount,
-        outputPlacements: { ...result.outputs },
         immTaskId: state.immTaskId ?? null,
+        // Kept from the poll state: claim() overwrites startedAt on every poll,
+        // so this is the only record of when IMM started the transcode.
+        submittedAt: state.submittedAt ?? null,
+        renditions: finalize.renditions.map((rendition) => rendition.name),
+        totalBytes: finalize.totalBytes.toString(),
+        outputPlacements: { ...result.outputs },
       });
     } catch (err) {
       // Transient poll/finalize error (network blip, OSS read-after-write lag,
@@ -500,6 +624,53 @@ export class MediaProcessingWorkerService
         },
         pollIntervalMs(),
       );
+    }
+  }
+
+  private async hlsVariantReady(assetId: string): Promise<boolean> {
+    const variant = await this.prisma.mediaAssetVariant.findUnique({
+      where: { assetId_variantKey: { assetId, variantKey: HLS_VARIANT_KEY } },
+      select: { status: true, deletedAt: true },
+    });
+    return (
+      variant?.status === MediaAssetVariantStatus.ready &&
+      variant.deletedAt === null
+    );
+  }
+
+  /**
+   * Delete a failed task's output unless a published (ready) HLS variant lives
+   * under the same prefix — that one may be cached on CDN edges, and only a
+   * takedown may remove it. Returns a suffix for the job error, '' on success.
+   */
+  private async discardUnpublishedOutput(
+    assetId: string,
+    bucket: string,
+  ): Promise<string> {
+    try {
+      if (await this.hlsVariantReady(assetId)) return '';
+    } catch (err) {
+      return `; output cleanup failed: ${errorText(err)}`;
+    }
+    return this.deleteUnpublishedOutput(assetId, bucket);
+  }
+
+  /** Best-effort delete of a never-published output; never throws. */
+  private async deleteUnpublishedOutput(
+    assetId: string,
+    bucket: string,
+  ): Promise<string> {
+    try {
+      const result = await this.imm.deleteHlsOutput(
+        assetId,
+        bucket,
+        Date.now() + DISCARD_BUDGET_MS,
+      );
+      return result.complete
+        ? ''
+        : `; output cleanup incomplete: deleted ${result.deleted} objects before the ${DISCARD_BUDGET_MS / 1000}s budget ran out`;
+    } catch (err) {
+      return `; output cleanup failed: ${errorText(err)}`;
     }
   }
 
@@ -593,6 +764,104 @@ export class MediaProcessingWorkerService
       `media processing failed job=${row.id} type=${row.jobType} attempt=${nextAttempt}/${row.maxAttempts}${isDead ? ' [DLQ]' : ''}: ${message}`,
     );
   }
+
+  /**
+   * Terminal refusal that is not a failure: the work must not happen (e.g. the
+   * asset was moderation-blocked). `claim()` never picks a cancelled job; only
+   * an explicit restart (enqueue with restart) revives it. Guarded like fail().
+   */
+  private async cancel(
+    row: MediaProcessingJob,
+    message: string,
+  ): Promise<void> {
+    const now = new Date();
+    const result = await this.prisma.mediaProcessingJob.updateMany({
+      where: {
+        id: row.id,
+        status: MediaProcessingJobStatus.processing,
+        lockedBy: row.lockedBy,
+        startedAt: row.startedAt,
+      },
+      data: {
+        status: MediaProcessingJobStatus.cancelled,
+        attempt: row.attempt + 1,
+        errorMessage: message.slice(0, 4000),
+        lockedAt: null,
+        lockedBy: null,
+        nextAttemptAt: null,
+        failedAt: now,
+        deadAt: null,
+      },
+    });
+    if (result.count === 0) return;
+    this.logger.warn(
+      `media processing cancelled job=${row.id} type=${row.jobType}: ${message}`,
+    );
+  }
+}
+
+/**
+ * An IMM "success" that must not be published. Each rule catches a failure
+ * seen in practice or one the measurements make cheap to rule out:
+ * - no rendition (the caller checks: there is no top tier), or a rendition
+ *   with no segment;
+ * - a referenced object missing from the bucket (players would 404 mid-play);
+ * - a segment longer than twice the 6 s target — the known "one segment for
+ *   the whole video" IMM failure, invisible to the duration rule;
+ * - the top tier covering less than 90% of the source (truncated source).
+ */
+function degenerateOutput(
+  finalize: ImmFinalizeResult,
+  top: ImmFinalizeResult['renditions'][number],
+  sourceDurationSeconds: number | null,
+): boolean {
+  return (
+    finalize.renditions.some((rendition) => rendition.segmentCount === 0) ||
+    finalize.missingKeys.length > 0 ||
+    finalize.renditions.some(
+      (rendition) => rendition.maxSegmentSeconds > 2 * IMM_HLS_SEGMENT_SECONDS,
+    ) ||
+    (sourceDurationSeconds != null &&
+      top.durationSeconds < 0.9 * sourceDurationSeconds - 1)
+  );
+}
+
+/** The measurements behind a degenerate verdict, for the job error. */
+function describeOutput(
+  finalize: ImmFinalizeResult,
+  sourceDurationSeconds: number | null,
+): string {
+  const renditions = finalize.renditions;
+  const top = topRendition(finalize);
+  const maxSegmentSeconds = renditions.reduce(
+    (max, rendition) => Math.max(max, rendition.maxSegmentSeconds),
+    0,
+  );
+  const missing = finalize.missingKeys;
+  return [
+    `renditions=${renditions.length > 0 ? renditions.map((rendition) => rendition.name).join(',') : 'none'}`,
+    `segments=[${renditions.map((rendition) => rendition.segmentCount).join(',')}]`,
+    `maxSegmentSeconds=${round2(maxSegmentSeconds)}`,
+    `durationSeconds=${top ? round2(top.durationSeconds) : 'n/a'} (source ${sourceDurationSeconds ?? 'unknown'})`,
+    `missing=[${missing.slice(0, 5).join(', ')}${missing.length > 5 ? `, +${missing.length - 5} more` : ''}]`,
+  ].join('; ');
+}
+
+/** The tallest tier (IMM's master order is not a contract); else the first. */
+function topRendition(
+  finalize: ImmFinalizeResult,
+): ImmFinalizeResult['renditions'][number] | undefined {
+  return finalize.renditions.reduce<
+    ImmFinalizeResult['renditions'][number] | undefined
+  >(
+    (best, rendition) =>
+      !best || (rendition.height ?? 0) > (best.height ?? 0) ? rendition : best,
+    undefined,
+  );
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function placementInputFromAsset(asset: MediaAsset) {
@@ -623,11 +892,6 @@ function positiveInt(value: string | undefined, fallback: number): number {
 /** Delay between IMM GetTask polls (tuning knob). */
 function pollIntervalMs(): number {
   return positiveInt(process.env.IMM_POLL_INTERVAL_MS, 20_000);
-}
-
-/** Ceiling on total IMM transcode wall time before the job is failed. */
-function maxMinutes(): number {
-  return positiveInt(process.env.IMM_MAX_MINUTES, 30);
 }
 
 function errorText(err: unknown): string {

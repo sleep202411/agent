@@ -44,6 +44,18 @@ describe("published video provider selection", () => {
     }
   );
 
+  it.each([
+    "application/vnd.apple.mpegurl",
+    "Application/X-MPEGURL",
+    'application/vnd.apple.mpegurl; codecs="avc1.640028"',
+  ])("hands a negotiated %s master to the HLS loader", (type) => {
+    const master = "https://media.fizzspace.cn/hls/asset/master.m3u8";
+    expect(normalizeVideoSource({ src: master, type })).toEqual({
+      src: master,
+      type: "application/vnd.apple.mpegurl",
+    });
+  });
+
   it.each(["application/vnd.apple.mpegurl", "application/dash+xml", "video/youtube", "image/png"])(
     "preserves the existing provider decision for %s",
     (type) => {

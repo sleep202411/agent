@@ -1,18 +1,30 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   AiOutboxEventType,
+  MediaAssetKind,
   MediaAssetModerationStatus,
+  MediaAssetVariantStatus,
   MediaModerationActionStatus,
   MediaModerationActionType,
   MediaModerationCaseStatus,
   MediaModerationSeverity,
   MediaObjectPlacementStatus,
+  MediaProcessingJobStatus,
+  MediaProcessingJobType,
   MediaStorageProvider,
   Prisma,
 } from '@prisma/client';
 import type { AssetEvent } from '@repo/shared';
 import { enqueueAssetEventOutbox } from '../ai-generation/outbox.service';
 import { PrismaService } from '../infra/db/db.module';
+import { HLS_VARIANT_KEY } from '../infra/storage/media-asset-placement';
+import {
+  HLS_PREFIX_SCOPE,
+  hlsStreamJobKey,
+  transcodeMayStillWrite,
+  type HlsPrefixTakedownMetadata,
+} from './hls-output';
+import { MediaProcessingService } from './media-processing.service';
 
 export type UpdateMediaAssetModerationInput = {
   moderationStatus: MediaAssetModerationStatus;
@@ -36,7 +48,16 @@ type PlacementRow = {
   cdnCacheKey: string | null;
   publicBaseUrl: string | null;
   metadata: Prisma.JsonValue;
+  variant: { variantKey: string } | null;
 };
+
+/** Job states in which an `hls_stream` job is idle and may be restarted. */
+const IDLE_HLS_JOB_STATUSES = new Set<MediaProcessingJobStatus>([
+  MediaProcessingJobStatus.completed,
+  MediaProcessingJobStatus.failed,
+  MediaProcessingJobStatus.dead,
+  MediaProcessingJobStatus.cancelled,
+]);
 
 /** One physical object that a takedown acts on — the asset's own object
  *  (placementId null) or a single placement. */
@@ -50,7 +71,10 @@ type PhysicalObject = {
 
 @Injectable()
 export class MediaModerationAdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly processing: MediaProcessingService,
+  ) {}
 
   async updateAssetModeration(
     assetId: string,
@@ -63,8 +87,11 @@ export class MediaModerationAdminService {
         where: { id: assetId, deletedAt: null },
         select: {
           id: true,
+          kind: true,
           moderationStatus: true,
           storageProvider: true,
+          bucket: true,
+          region: true,
           objectKey: true,
           metadata: true,
         },
@@ -174,10 +201,22 @@ export class MediaModerationAdminService {
           cdnCacheKey: true,
           publicBaseUrl: true,
           metadata: true,
+          variant: { select: { variantKey: true } },
         },
       });
 
       const physicalObjects = enumeratePhysicalObjects(existing, placements);
+      // IMM HLS output lives under its own `hls/{assetId}/` prefix. On .cn an
+      // ACL flip achieves nothing (the bucket is private behind CDN origin
+      // auth), so a block deletes the whole prefix and refreshes its published
+      // keys through one durable action instead. A legacy asset whose own
+      // objectKey points INTO that prefix keeps the per-object path: deleting
+      // the prefix would delete the asset itself.
+      const hlsOutputManaged =
+        existing.kind === MediaAssetKind.video &&
+        existing.storageProvider === MediaStorageProvider.aliyun_oss &&
+        Boolean(existing.bucket) &&
+        !existing.objectKey?.startsWith('hls/');
 
       if (isBlock) {
         // CDN cache invalidation for placements served behind a CDN.
@@ -224,6 +263,17 @@ export class MediaModerationAdminService {
             ),
           });
         }
+
+        if (hlsOutputManaged && existing.bucket) {
+          await this.queueHlsTakedown(tx, {
+            caseId: moderationCase.id,
+            assetId,
+            adminId,
+            reason: input.reason ?? null,
+            bucket: existing.bucket,
+            region: existing.region,
+          });
+        }
       } else {
         // Restore: reactivate placements that a prior block parked in
         // purging/purged. deletedAt:null guards against resurrecting
@@ -259,6 +309,13 @@ export class MediaModerationAdminService {
               'restore',
             ),
           });
+        }
+
+        if (
+          hlsOutputManaged &&
+          existing.moderationStatus === MediaAssetModerationStatus.blocked
+        ) {
+          await this.requeueIpHlsTranscode(tx, assetId);
         }
       }
 
@@ -299,6 +356,148 @@ export class MediaModerationAdminService {
       return updated;
     });
   }
+
+  /**
+   * Queue the durable deletion of the asset's HLS prefix: everything IMM wrote
+   * there, published or not, plus a CDN refresh of the keys that were
+   * published — every placement row of the variant, retired ones included
+   * (rows are never hard-deleted, and a retired key may still be cached). The
+   * variant flips to `blocked` at once, so a restore that lands before the
+   * takedown finishes can never serve a prefix being emptied. Nothing is
+   * queued when the asset never had an HLS variant or job.
+   */
+  private async queueHlsTakedown(
+    tx: Prisma.TransactionClient,
+    input: {
+      caseId: string;
+      assetId: string;
+      adminId: string;
+      reason: string | null;
+      bucket: string;
+      region: string | null;
+    },
+  ): Promise<void> {
+    const hls = await tx.mediaAssetVariant.findUnique({
+      where: {
+        assetId_variantKey: {
+          assetId: input.assetId,
+          variantKey: HLS_VARIANT_KEY,
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        deletedAt: true,
+        placements: { select: { objectKey: true } },
+      },
+    });
+    const job = await tx.mediaProcessingJob.findUnique({
+      where: { idempotencyKey: hlsStreamJobKey(input.assetId) },
+      select: { id: true },
+    });
+    const liveVariant =
+      hls != null &&
+      hls.status !== MediaAssetVariantStatus.deleted &&
+      hls.deletedAt === null
+        ? hls
+        : null;
+    if (!liveVariant && !job) return;
+
+    if (liveVariant) {
+      await tx.mediaAssetVariant.update({
+        where: { id: liveVariant.id },
+        data: { status: MediaAssetVariantStatus.blocked },
+      });
+    }
+    const metadata: HlsPrefixTakedownMetadata = {
+      scope: HLS_PREFIX_SCOPE,
+      origin: 'moderation',
+      bucket: input.bucket,
+      region: input.region,
+      prefix: `hls/${input.assetId}/`,
+      refreshKeys: (liveVariant?.placements ?? []).flatMap((placement) =>
+        placement.objectKey ? [placement.objectKey] : [],
+      ),
+    };
+    await tx.mediaModerationAction.create({
+      data: {
+        caseId: input.caseId,
+        assetId: input.assetId,
+        variantId: hls?.id ?? null,
+        placementId: null,
+        actionType: MediaModerationActionType.delete_object,
+        status: MediaModerationActionStatus.pending,
+        reason: input.reason,
+        actorAdminId: input.adminId,
+        idempotencyKey: `media-hls-takedown:${input.caseId}`,
+        provider: MediaStorageProvider.aliyun_oss,
+        metadata: { ...metadata },
+      },
+    });
+  }
+
+  /**
+   * Restore of a previously blocked asset that an IP episode or trailer plays:
+   * its HLS output was taken down, so queue a fresh transcode (the worker
+   * waits for the takedown and the CDN settle window before submitting). Live
+   * story clips are re-prepared by the story-playback reconcile instead.
+   */
+  private async requeueIpHlsTranscode(
+    tx: Prisma.TransactionClient,
+    assetId: string,
+  ): Promise<void> {
+    const hls = await tx.mediaAssetVariant.findUnique({
+      where: { assetId_variantKey: { assetId, variantKey: HLS_VARIANT_KEY } },
+      select: { id: true },
+    });
+    if (!hls) return;
+    const ipReferenced = await tx.mediaAsset.findFirst({
+      where: {
+        id: assetId,
+        OR: [
+          { ipEpisodeMedia: { some: {} } },
+          { ipEpisodeTrailers: { some: {} } },
+          { ipTrailers: { some: {} } },
+          { ipDiscoveryTrailerMedia: { some: {} } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (!ipReferenced) return;
+    const idempotencyKey = hlsStreamJobKey(assetId);
+    // Take enqueueJobTx's locks before the idle check, so the check still
+    // holds at the restart: a worker claim waits for this decision to commit
+    // and then picks up the restarted job.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`media:enqueue:${idempotencyKey}`})::bigint)`;
+    await tx.$queryRaw`SELECT id FROM media_processing_jobs WHERE idempotency_key=${idempotencyKey} FOR UPDATE`;
+    const job = await tx.mediaProcessingJob.findUnique({
+      where: { idempotencyKey },
+      select: { status: true, lockedAt: true, output: true },
+    });
+    // Only an idle job may restart. A restart also erases the job's IMM task
+    // id, which the pending takedown relies on to wait for that task: never
+    // restart one IMM may still be running (operators can re-run it from
+    // media admin once it settles).
+    if (
+      job &&
+      !(
+        IDLE_HLS_JOB_STATUSES.has(job.status) &&
+        !job.lockedAt &&
+        !transcodeMayStillWrite(job, Date.now())
+      )
+    )
+      return;
+    await this.processing.enqueueJobTx(
+      {
+        assetId,
+        jobType: MediaProcessingJobType.hls_stream,
+        priority: 50,
+        idempotencyKey,
+      },
+      tx,
+      true,
+    );
+  }
 }
 
 /** Collect every physical object of an asset (its own object + each placement)
@@ -327,7 +526,10 @@ function enumeratePhysicalObjects(
     if (
       placement.status === MediaObjectPlacementStatus.deleted ||
       !PHYSICAL_TAKEDOWN_PROVIDERS.has(placement.storageProvider) ||
-      !placement.objectKey
+      !placement.objectKey ||
+      // HLS output objects are taken down as one prefix (delete + CDN
+      // refresh), never per object — see queueHlsTakedown.
+      placement.variant?.variantKey === HLS_VARIANT_KEY
     ) {
       continue;
     }

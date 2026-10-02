@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -40,6 +41,12 @@ import {
   type ExperienceSize,
 } from "@repo/experience-engine";
 import { classNames } from "./class-names";
+import {
+  ExperienceFrameRotationContext,
+  frameSizeOfRect,
+  screenDeltaInFrame,
+  screenPointInFrame,
+} from "./experience-landscape-presentation";
 import { evaluateExperienceSwipe, type ExperienceSwipeGesture } from "./experience-swipe-gesture";
 
 /**
@@ -682,6 +689,7 @@ function SwipeControl({
     y: number;
     startedAt: number;
   } | null>(null);
+  const rotated = useContext(ExperienceFrameRotationContext);
   const projected = projectExperienceGeometryToViewport(
     presentation.geometry,
     presentation.transform
@@ -718,11 +726,12 @@ function SwipeControl({
     pointerRef.current = null;
     if (!presentation.available) return;
     const durationMs = Math.max(0, Math.round(performance.now() - pointer.startedAt));
-    const deltaX = event.clientX - pointer.x;
-    const deltaY = event.clientY - pointer.y;
+    // Directions belong to the picture: on a frame drawn sideways, a swipe
+    // toward the picture's right runs down the screen.
+    const delta = screenDeltaInFrame(event.clientX - pointer.x, event.clientY - pointer.y, rotated);
     const evaluation = evaluateExperienceSwipe(presentation.gesture, {
-      deltaX,
-      deltaY,
+      deltaX: delta.x,
+      deltaY: delta.y,
       durationMs,
       viewportWidth: bounds.width,
       viewportHeight: bounds.height,
@@ -824,6 +833,7 @@ function PressHoldControl({
   onGateStateChange?: (gating: boolean) => void;
 }) {
   const { gesture, geometry, transform } = presentation;
+  const rotated = useContext(ExperienceFrameRotationContext);
   const timelineControl = gesture.timelineControl === true;
   const [state, setState] = useState<ExperiencePressHoldState>(() =>
     createExperiencePressHoldState()
@@ -1043,7 +1053,7 @@ function PressHoldControl({
     if (!viewport) return;
     pointerInsideRef.current = hitTestExperienceGeometry(
       geometry,
-      { x: event.clientX - viewport.left, y: event.clientY - viewport.top },
+      screenPointInFrame(viewport, event.clientX, event.clientY, rotated),
       transform
     );
   };
@@ -1223,20 +1233,26 @@ function keyboardSwipeDirection(key: string): ExperienceSwipeGesture["directions
   return null;
 }
 
+/**
+ * The layer's box in the film frame's own axes. Re-read when the frame turns:
+ * a turn changes the screen rect without resizing the element, so the resize
+ * observer alone would keep the old reading.
+ */
 function useElementSize(ref: RefObject<HTMLElement | null>): ExperienceSize | null {
+  const rotated = useContext(ExperienceFrameRotationContext);
   const [size, setSize] = useState<ExperienceSize | null>(null);
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
     const update = () => {
       const rect = element.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) setSize({ width: rect.width, height: rect.height });
+      if (rect.width > 0 && rect.height > 0) setSize(frameSizeOfRect(rect, rotated));
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [ref]);
+  }, [ref, rotated]);
   return size;
 }
 

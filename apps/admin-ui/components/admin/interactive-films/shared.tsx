@@ -39,6 +39,41 @@ export function InteractiveFilmErrorBanner({ message }: { message: string }) {
   );
 }
 
+export function InteractiveFilmMetric({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number | string | undefined;
+  tone?: "default" | "warn" | "success" | "risk";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-2",
+        tone === "default" && "border-slate-200 bg-slate-50",
+        tone === "warn" && "border-amber-200 bg-amber-50",
+        tone === "success" && "border-emerald-200 bg-emerald-50",
+        tone === "risk" && "border-red-200 bg-red-50"
+      )}
+    >
+      <p
+        className={cn(
+          "text-[11px] font-medium",
+          tone === "default" && "text-slate-500",
+          tone === "warn" && "text-amber-700",
+          tone === "success" && "text-emerald-700",
+          tone === "risk" && "text-red-600"
+        )}
+      >
+        {label}
+      </p>
+      <p className="mt-1 text-xl font-semibold tracking-tight text-slate-950">{value ?? "—"}</p>
+    </div>
+  );
+}
+
 export function InteractiveFilmSuccessBanner({ message }: { message: string }) {
   return (
     <div

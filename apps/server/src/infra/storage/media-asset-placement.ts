@@ -98,40 +98,26 @@ export async function ensureOriginalMediaPlacement(
     return { variantId: variant.id, placementId: existingPlacement.id };
   }
 
-  try {
-    const placement = await client.mediaObjectPlacement.create({
-      data: {
-        assetId: input.assetId,
-        variantId: variant.id,
-        role: MediaObjectPlacementRole.primary,
-        status: MediaObjectPlacementStatus.active,
-        storageProvider: input.storageProvider,
-        bucket: input.bucket,
-        region: input.region,
-        objectKey: input.objectKey,
-        externalUrl: input.externalUrl ?? null,
-        priority: 0,
-        metadata: {},
-      },
-      select: { id: true },
-    });
-    return { variantId: variant.id, placementId: placement.id };
-  } catch (err) {
-    if (!isUniqueConstraintError(err)) throw err;
-    // The unique index (variantId, role, provider, bucket, objectKey) EXCLUDES
-    // deletedAt, so the colliding row may be SOFT-DELETED (e.g. a prior
-    // takedown/purge). Find it regardless of deletedAt and reactivate it, rather
-    // than throwing when a deletedAt:null lookup finds nothing.
-    const conflict = await client.mediaObjectPlacement.findFirstOrThrow({
-      where: {
-        variantId: variant.id,
-        role: MediaObjectPlacementRole.primary,
-        storageProvider: input.storageProvider,
-        bucket: input.bucket,
-        objectKey: input.objectKey,
-      },
-      select: { id: true, deletedAt: true, status: true },
-    });
+  // The unique index (variantId, role, provider, bucket, objectKey) EXCLUDES
+  // deletedAt, so the key may still be held by a SOFT-DELETED row (e.g. a
+  // prior takedown/purge). Find it regardless of deletedAt and reactivate it
+  // BEFORE inserting: a unique violation aborts the caller's transaction, so
+  // it cannot be recovered from afterwards. A NULL bucket or objectKey never
+  // collides.
+  const conflict =
+    input.bucket && input.objectKey
+      ? await client.mediaObjectPlacement.findFirst({
+          where: {
+            variantId: variant.id,
+            role: MediaObjectPlacementRole.primary,
+            storageProvider: input.storageProvider,
+            bucket: input.bucket,
+            objectKey: input.objectKey,
+          },
+          select: { id: true, deletedAt: true, status: true },
+        })
+      : null;
+  if (conflict) {
     if (
       conflict.deletedAt ||
       conflict.status !== MediaObjectPlacementStatus.active
@@ -147,6 +133,24 @@ export async function ensureOriginalMediaPlacement(
     }
     return { variantId: variant.id, placementId: conflict.id };
   }
+
+  const placement = await client.mediaObjectPlacement.create({
+    data: {
+      assetId: input.assetId,
+      variantId: variant.id,
+      role: MediaObjectPlacementRole.primary,
+      status: MediaObjectPlacementStatus.active,
+      storageProvider: input.storageProvider,
+      bucket: input.bucket,
+      region: input.region,
+      objectKey: input.objectKey,
+      externalUrl: input.externalUrl ?? null,
+      priority: 0,
+      metadata: {},
+    },
+    select: { id: true },
+  });
+  return { variantId: variant.id, placementId: placement.id };
 }
 
 export interface EnsureStreamVariantPlacementInput {
@@ -156,6 +160,13 @@ export interface EnsureStreamVariantPlacementInput {
   region: string | null;
   /** The produced HLS master playlist key, e.g. `hls/{assetId}/master.m3u8`. */
   objectKey: string;
+  /** Bytes of every object stored under the output prefix. */
+  sizeBytes: bigint;
+  /** Top tier's actual frame size, from the master playlist. */
+  width: number | null;
+  height: number | null;
+  /** Top tier's measured playlist duration. */
+  durationMs: number | null;
   durationSeconds?: number | null;
   metadata?: Prisma.InputJsonValue;
 }
@@ -189,6 +200,10 @@ export async function ensureStreamVariantPlacement(
       kind: MediaAssetVariantKind.stream,
       status: MediaAssetVariantStatus.ready,
       contentType: HLS_CONTENT_TYPE,
+      sizeBytes: input.sizeBytes,
+      width: input.width,
+      height: input.height,
+      durationMs: input.durationMs,
       durationSeconds: input.durationSeconds ?? null,
       metadata: input.metadata ?? {},
     },
@@ -196,6 +211,10 @@ export async function ensureStreamVariantPlacement(
       kind: MediaAssetVariantKind.stream,
       status: MediaAssetVariantStatus.ready,
       contentType: HLS_CONTENT_TYPE,
+      sizeBytes: input.sizeBytes,
+      width: input.width,
+      height: input.height,
+      durationMs: input.durationMs,
       durationSeconds: input.durationSeconds ?? null,
       deletedAt: null,
       metadata: input.metadata ?? {},
@@ -218,39 +237,22 @@ export async function ensureStreamVariantPlacement(
     return { variantId: variant.id, placementId: existingPlacement.id };
   }
 
-  try {
-    const placement = await client.mediaObjectPlacement.create({
-      data: {
-        assetId: input.assetId,
-        variantId: variant.id,
-        role: MediaObjectPlacementRole.primary,
-        status: MediaObjectPlacementStatus.active,
-        storageProvider: input.storageProvider,
-        bucket: input.bucket,
-        region: input.region,
-        objectKey: input.objectKey,
-        priority: 0,
-        metadata: {},
-      },
-      select: { id: true },
-    });
-    return { variantId: variant.id, placementId: placement.id };
-  } catch (err) {
-    if (!isUniqueConstraintError(err)) throw err;
-    // The unique index (variantId, role, provider, bucket, objectKey) EXCLUDES
-    // deletedAt, so the colliding row may be SOFT-DELETED (e.g. a prior
-    // takedown/purge). Find it regardless of deletedAt and reactivate it, rather
-    // than throwing when a deletedAt:null lookup finds nothing.
-    const conflict = await client.mediaObjectPlacement.findFirstOrThrow({
-      where: {
-        variantId: variant.id,
-        role: MediaObjectPlacementRole.primary,
-        storageProvider: input.storageProvider,
-        bucket: input.bucket,
-        objectKey: input.objectKey,
-      },
-      select: { id: true, deletedAt: true, status: true },
-    });
+  // The unique index (variantId, role, provider, bucket, objectKey) EXCLUDES
+  // deletedAt, so a retired output (takedown, lifecycle GC) still holds the
+  // master key with a SOFT-DELETED row. Find it regardless of deletedAt and
+  // reactivate it BEFORE inserting: a unique violation aborts the caller's
+  // transaction, so it cannot be recovered from afterwards.
+  const conflict = await client.mediaObjectPlacement.findFirst({
+    where: {
+      variantId: variant.id,
+      role: MediaObjectPlacementRole.primary,
+      storageProvider: input.storageProvider,
+      bucket: input.bucket,
+      objectKey: input.objectKey,
+    },
+    select: { id: true, deletedAt: true, status: true },
+  });
+  if (conflict) {
     if (
       conflict.deletedAt ||
       conflict.status !== MediaObjectPlacementStatus.active
@@ -261,11 +263,32 @@ export async function ensureStreamVariantPlacement(
           deletedAt: null,
           status: MediaObjectPlacementStatus.active,
           region: input.region,
+          // A reactivated output starts a new liveness lifetime: only the
+          // story-playback reconcile's markLive may stamp it again, so a
+          // stale clock from the retired output can never expire it early.
+          lastVerifiedAt: null,
         },
       });
     }
     return { variantId: variant.id, placementId: conflict.id };
   }
+
+  const placement = await client.mediaObjectPlacement.create({
+    data: {
+      assetId: input.assetId,
+      variantId: variant.id,
+      role: MediaObjectPlacementRole.primary,
+      status: MediaObjectPlacementStatus.active,
+      storageProvider: input.storageProvider,
+      bucket: input.bucket,
+      region: input.region,
+      objectKey: input.objectKey,
+      priority: 0,
+      metadata: {},
+    },
+    select: { id: true },
+  });
+  return { variantId: variant.id, placementId: placement.id };
 }
 
 export interface SyncStreamOutputPlacementsInput {
@@ -293,13 +316,11 @@ export interface SyncStreamOutputPlacementsResult {
  * playlists + media segments) as a `replica` placement on the `hls` variant,
  * and retires rows whose object a re-transcode no longer produced.
  *
- * WHY: a moderation takedown fans out one `restrict_visibility` action per
- * placement. With only the master playlist registered, blocking an asset
- * downed the master while every rendition playlist and segment under
- * `hls/{assetId}/` stayed publicly streamable. Registering the full produced
- * set makes the existing per-placement worker cover block AND restore for
- * every physical object symmetrically — no special-casing in the takedown
- * path.
+ * WHY: the rows are the ledger of every key that was published. An HLS
+ * takedown (moderation block or lifecycle GC) deletes the whole
+ * `hls/{assetId}/` prefix and refreshes exactly these keys on the CDN, whose
+ * segments are cached as immutable — so the CDN refresh list must name every
+ * published object, not just the master.
  *
  * Playback is unaffected: the URL resolver's `pickPlacement` only ever
  * selects `role: primary`, so replica rows are pure takedown/ledger surface.
@@ -309,8 +330,9 @@ export interface SyncStreamOutputPlacementsResult {
  *   (variantId, role, provider, bucket, objectKey) unique index);
  * - existing rows for produced keys that are soft-deleted/non-active →
  *   reactivated;
- * - active rows whose key was NOT produced this run → soft-deleted, so a
- *   later takedown never queues an ACL flip against a vanished object.
+ * - active rows whose key was NOT produced this run → soft-deleted. The row
+ *   stays in the ledger: a takedown refreshes the keys of every row of the
+ *   variant, retired ones included, since the object may still be cached.
  */
 export async function syncStreamOutputPlacements(
   client: Prisma.TransactionClient,
@@ -396,11 +418,15 @@ export async function syncStreamOutputPlacements(
 }
 
 /**
- * Marks the `hls` variant as `failed` (degenerate/short/truncated source, or a
- * transcode that yielded ≤1 segment) WITHOUT a placement, so it's visible in
- * admin yet never selected for playback (playback keeps the original mp4). The
- * episode query loads only `status: ready` variants, so a failed variant simply
- * doesn't appear on the playback DTO.
+ * Marks the `hls` variant as `failed` (an IMM output rejected as degenerate —
+ * short/truncated source, missing objects, one giant segment), so it's visible
+ * in admin yet never selected for playback (playback keeps the original mp4).
+ * The episode query loads only `status: ready` variants, so a failed variant
+ * simply doesn't appear on the playback DTO.
+ *
+ * Placements are left alone: after a re-run of a published output they are
+ * the ledger of keys that may still sit on CDN edges, and only a takedown or
+ * the lifecycle GC (`retireHlsOutput`) may retire them.
  */
 export async function markStreamVariantFailed(
   client: Prisma.TransactionClient,
@@ -423,13 +449,6 @@ export async function markStreamVariantFailed(
     },
     select: { id: true },
   });
-  // Retire any placement from a prior successful run so no `active` placement
-  // lingers behind a now-`failed` variant (ledger hygiene; playback already
-  // excludes it via the ready-variant filter).
-  await client.mediaObjectPlacement.updateMany({
-    where: { variantId: variant.id, deletedAt: null },
-    data: { deletedAt: new Date(), status: MediaObjectPlacementStatus.deleted },
-  });
   return { variantId: variant.id };
 }
 
@@ -450,10 +469,4 @@ function assertPlacementShape(input: EnsureOriginalMediaPlacementInput): void {
 function normalizeBigInt(value: bigint | number | null | undefined) {
   if (value == null) return null;
   return typeof value === 'bigint' ? value : BigInt(value);
-}
-
-function isUniqueConstraintError(err: unknown): boolean {
-  return (
-    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
-  );
 }
