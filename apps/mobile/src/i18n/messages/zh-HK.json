@@ -4574,5 +4574,7 @@
   "ipDetail.sharePosterFailed": "封面未能載入。點擊分享重試。",
   "ipDetail.copyLink": "複製連結",
   "ipDetail.linkCopied": "連結已複製",
-  "ipDetail.copyLinkFailed": "未能複製連結，請重試。"
+  "ipDetail.copyLinkFailed": "未能複製連結，請重試。",
+  "ipGeneration.loadingTemplates": "正在載入生成範本…",
+  "ipGeneration.templateLoadFailed": "未能載入生成範本。"
 }

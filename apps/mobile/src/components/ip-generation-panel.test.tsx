@@ -235,3 +235,13 @@ it("continues polling the active job and permits another run after completion", 
     vi.useRealTimers();
   }
 });
+
+it("keeps a failed template catalog visible with retry and then recovers", async () => {
+  h.get.mockRejectedValueOnce(new Error("Templates temporarily unavailable"));
+  await render();
+  expect(host.textContent).toContain("Templates temporarily unavailable");
+  await click("common.retry");
+  expect(host.textContent).toContain("Old template");
+  expect(host.textContent).not.toContain("Templates temporarily unavailable");
+  expect(h.post).not.toHaveBeenCalled();
+});

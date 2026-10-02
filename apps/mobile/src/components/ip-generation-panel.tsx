@@ -67,6 +67,9 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   );
   const { requireAuth } = useAuthGate();
 
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<AudienceTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<AudienceTemplate | null>(null);
 
@@ -75,12 +78,13 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   const [refAssetUrl, setRefAssetUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  const { costPreview, previewLoading, previewError } = useIpGenerationPreview({
-    ipId,
-    templateId: selectedTemplate?.id ?? null,
-    requiresReference: selectedTemplate?.requireReferenceImage ?? false,
-    referenceId: refAssetId,
-  });
+  const { costPreview, previewLoading, previewError, previewErrorMessage, retryPreview } =
+    useIpGenerationPreview({
+      ipId,
+      templateId: selectedTemplate?.id ?? null,
+      requiresReference: selectedTemplate?.requireReferenceImage ?? false,
+      referenceId: refAssetId,
+    });
 
   // Job progress state
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
@@ -107,13 +111,17 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
           setSelectedTemplate(res.templates?.[0] ?? null);
         }
       })
-      .catch(() => {
-        if (!controller.signal.aborted && isCurrent()) setTemplates([]);
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && isCurrent())
+          setCatalogError(error instanceof Error && error.message ? error.message : "");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && isCurrent()) setCatalogLoading(false);
       });
     return () => {
       controller.abort();
     };
-  }, [ipId, isCurrent]);
+  }, [ipId, isCurrent, catalogAttempt]);
 
   // Clean up poll on unmount
   useEffect(() => {
@@ -264,7 +272,42 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   };
 
   if (!templates.length) {
-    return null;
+    if (!catalogLoading && catalogError === null) return null;
+    return (
+      <View
+        style={[
+          styles.container,
+          { borderColor: theme.border, backgroundColor: theme.backgroundElement },
+        ]}
+      >
+        <ThemedText style={styles.title}>{t("ipGeneration.title")}</ThemedText>
+        {catalogLoading ? (
+          <View style={styles.costRow}>
+            <ActivityIndicator color={theme.textSecondary} />
+            <ThemedText style={styles.subtitle}>{t("ipGeneration.loadingTemplates")}</ThemedText>
+          </View>
+        ) : (
+          <>
+            <ThemedText style={[styles.errorText, { color: theme.brand }]}>
+              {catalogError || t("ipGeneration.templateLoadFailed")}
+            </ThemedText>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setCatalogLoading(true);
+                setCatalogError(null);
+                setCatalogAttempt((value) => value + 1);
+              }}
+              style={[styles.secondaryButton, { backgroundColor: theme.backgroundSelected }]}
+            >
+              <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>
+                {t("common.retry")}
+              </ThemedText>
+            </Pressable>
+          </>
+        )}
+      </View>
+    );
   }
 
   return (
@@ -399,6 +442,24 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
             <ThemedText style={{ color: theme.textSecondary, fontSize: 13 }}>-</ThemedText>
           )}
         </View>
+        {previewError && (
+          <View style={{ gap: Spacing.two }}>
+            {!!previewErrorMessage && (
+              <ThemedText style={[styles.errorText, { color: theme.brand }]}>
+                {previewErrorMessage}
+              </ThemedText>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              onPress={retryPreview}
+              style={[styles.secondaryButton, { backgroundColor: theme.backgroundSelected }]}
+            >
+              <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>
+                {t("common.retry")}
+              </ThemedText>
+            </Pressable>
+          </View>
+        )}
         {balance !== null && (
           <View style={styles.costRow}>
             <ThemedText style={[styles.costLabel, { color: theme.textSecondary }]}>

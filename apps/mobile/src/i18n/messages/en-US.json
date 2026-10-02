@@ -4574,5 +4574,7 @@
   "ipDetail.sharePosterFailed": "The poster could not load. Tap Share to try again.",
   "ipDetail.copyLink": "Copy link",
   "ipDetail.linkCopied": "Link copied",
-  "ipDetail.copyLinkFailed": "Couldn't copy the link. Please try again."
+  "ipDetail.copyLinkFailed": "Couldn't copy the link. Please try again.",
+  "ipGeneration.loadingTemplates": "Loading generation templates…",
+  "ipGeneration.templateLoadFailed": "Couldn't load generation templates."
 }
