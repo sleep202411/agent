@@ -27,13 +27,15 @@ let engine: ScriptCrdt | undefined,
   editor: Editor | undefined,
   editable = false,
   failed = false,
+  hostBlocked = false,
   revision = 0,
   queued = false;
 const status = document.querySelector<HTMLElement>("[data-status]")!;
 const toolbar = document.querySelector<HTMLElement>("[data-toolbar]")!;
 const setEditable = () => {
-  editor?.setEditable(editable && !failed);
-  for (const button of toolbar.querySelectorAll("button")) button.disabled = !editable || failed;
+  editor?.setEditable(editable && !failed && !hostBlocked);
+  for (const button of toolbar.querySelectorAll("button"))
+    button.disabled = !editable || failed || hostBlocked;
 };
 const fail = (error: unknown) => {
   failed = true;
@@ -132,7 +134,7 @@ function setup() {
     button.type = "button";
     button.textContent = labels[key];
     button.onclick = () => {
-      if (editable && !failed) action();
+      if (editable && !failed && !hostBlocked) action();
     };
     toolbar.append(button);
   }
@@ -171,11 +173,14 @@ host.__fizzScriptReceive = (raw) => {
         setEditable();
         break;
       case "persisted":
-        if (message.revision === revision && !failed)
+        if (message.revision === revision && !failed) {
+          hostBlocked = false;
+          setEditable();
           status.textContent = engine.checkpoint().pending.length ? labels.pending : labels.synced;
+        }
         break;
       case "hostError":
-        failed = true;
+        hostBlocked = true;
         setEditable();
         status.textContent = message.message;
         break;

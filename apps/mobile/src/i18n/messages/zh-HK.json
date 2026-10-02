@@ -4409,5 +4409,18 @@
   "assetEdit.noVersions": "暫無版本。",
   "assetEdit.latestTurnaround": "最新的三視圖結果為目前參考圖。",
   "assetEdit.version": "版本",
-  "assetEdit.turnaroundNeedsPrimary": "請先選擇主圖，再生成三視圖。"
+  "assetEdit.turnaroundNeedsPrimary": "請先選擇主圖，再生成三視圖。",
+  "scriptEditor.editor": "劇本編輯器",
+  "scriptEditor.saving": "正在儲存至此裝置…",
+  "scriptEditor.pending": "已儲存至此裝置 · 等待同步",
+  "scriptEditor.synced": "已同步",
+  "scriptEditor.bold": "粗體",
+  "scriptEditor.italic": "斜體",
+  "scriptEditor.heading": "標題",
+  "scriptEditor.bullets": "項目符號",
+  "scriptEditor.numbered": "編號清單",
+  "scriptEditor.quote": "引用",
+  "scriptEditor.undo": "復原",
+  "scriptEditor.redo": "重做",
+  "scriptEditor.frameError": "編輯器已停止。請重試以重新開啟已儲存的草稿。"
 }

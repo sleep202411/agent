@@ -4409,5 +4409,18 @@
   "assetEdit.noVersions": "No versions yet.",
   "assetEdit.latestTurnaround": "The newest three-view result is the current reference.",
   "assetEdit.version": "Version",
-  "assetEdit.turnaroundNeedsPrimary": "Select a primary image before generating a three-view image."
+  "assetEdit.turnaroundNeedsPrimary": "Select a primary image before generating a three-view image.",
+  "scriptEditor.editor": "Script editor",
+  "scriptEditor.saving": "Saving on this device…",
+  "scriptEditor.pending": "Saved on this device · Sync pending",
+  "scriptEditor.synced": "Synced",
+  "scriptEditor.bold": "Bold",
+  "scriptEditor.italic": "Italic",
+  "scriptEditor.heading": "Heading",
+  "scriptEditor.bullets": "Bullets",
+  "scriptEditor.numbered": "Numbered list",
+  "scriptEditor.quote": "Quote",
+  "scriptEditor.undo": "Undo",
+  "scriptEditor.redo": "Redo",
+  "scriptEditor.frameError": "The editor stopped. Retry to reopen the saved draft."
 }

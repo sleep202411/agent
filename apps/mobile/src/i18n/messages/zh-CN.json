@@ -4409,5 +4409,18 @@
   "assetEdit.noVersions": "暂无版本。",
   "assetEdit.latestTurnaround": "最新的三视图结果为当前参考图。",
   "assetEdit.version": "版本",
-  "assetEdit.turnaroundNeedsPrimary": "请先选择主图，再生成三视图。"
+  "assetEdit.turnaroundNeedsPrimary": "请先选择主图，再生成三视图。",
+  "scriptEditor.editor": "剧本编辑器",
+  "scriptEditor.saving": "正在保存到此设备…",
+  "scriptEditor.pending": "已保存到此设备 · 等待同步",
+  "scriptEditor.synced": "已同步",
+  "scriptEditor.bold": "粗体",
+  "scriptEditor.italic": "斜体",
+  "scriptEditor.heading": "标题",
+  "scriptEditor.bullets": "项目符号",
+  "scriptEditor.numbered": "编号列表",
+  "scriptEditor.quote": "引用",
+  "scriptEditor.undo": "撤销",
+  "scriptEditor.redo": "重做",
+  "scriptEditor.frameError": "编辑器已停止。请重试以重新打开已保存的草稿。"
 }
