@@ -12,6 +12,9 @@ export const application = z.object({
   taskId: z.string().uuid().nullable(),
   status: z.enum(["pending", "approved", "rejected"]),
   createdAt: date,
+  ownerUserId: id.nullable().optional(),
+  taskTitle: z.string().nullable().optional(),
+  dueAt: date.nullable().optional(),
 });
 export type Application = z.infer<typeof application>;
 export const terms = z.object({
@@ -32,19 +35,27 @@ export type Terms = z.infer<typeof terms>;
 export async function fetchMyApplications(
   userId: string,
   cursor: string | null,
-  signal: AbortSignal
+  signal: AbortSignal,
+  scope: "sent" | "received" = "sent"
 ) {
   id.parse(userId);
+  z.enum(["sent", "received"]).parse(scope);
   if (cursor) id.parse(cursor);
   const page = z.object({ items: z.array(application), nextCursor: id.nullable() }).parse(
     await api.get("/me/crew-applications", {
       service: "aurora",
       signal,
-      params: { limit: 20, ...(cursor ? { cursor } : {}) },
+      params: {
+        limit: 20,
+        ...(scope === "received" ? { scope } : {}),
+        ...(cursor ? { cursor } : {}),
+      },
     })
   );
   if (
-    page.items.some((r) => r.applicantId !== userId) ||
+    page.items.some((r) =>
+      scope === "sent" ? r.applicantId !== userId : r.ownerUserId !== userId
+    ) ||
     new Set(page.items.map((r) => r.id)).size !== page.items.length ||
     (cursor !== null && page.nextCursor === cursor)
   )

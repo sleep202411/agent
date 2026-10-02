@@ -1,7 +1,8 @@
+import { useUserDisplays } from "./user-displays";
 import { ApplicationReview } from "./application-review";
 import { ApplicationAmendments } from "./application-amendments";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -36,6 +37,7 @@ export function CrewApplications(props: Props) {
   ) : null;
 }
 function Applications(props: Props) {
+  const [scope, setScope] = useState<"sent" | "received">("sent");
   const [requested, setRequested] = useState(props.initialApplicationId);
   const [invitations, setInvitations] = useState(false);
   const [revision, setRevision] = useState(0),
@@ -58,6 +60,17 @@ function Applications(props: Props) {
         }}
       />
     );
+  if (selected && selected.applicantId !== props.userId)
+    return (
+      <RequestedApplication
+        {...props}
+        applicationId={selected.id}
+        onClose={() => {
+          setSelected(undefined);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (selected)
     return (
       <TermsReview
@@ -71,8 +84,10 @@ function Applications(props: Props) {
     );
   return (
     <ApplicationPage
-      key={revision}
+      key={`${revision}:${scope}`}
       {...props}
+      scope={scope}
+      onScope={setScope}
       onInvitations={() => setInvitations(true)}
       onSelect={setSelected}
       onRefresh={() => {
@@ -134,6 +149,8 @@ function RequestedApplication(props: Props & { applicationId: string; onClose: (
 }
 function ApplicationPage(
   props: Props & {
+    scope: "sent" | "received";
+    onScope: (scope: "sent" | "received") => void;
     onInvitations: () => void;
     onSelect: (app: Application) => void;
     onRefresh: () => void;
@@ -144,13 +161,27 @@ function ApplicationPage(
   const [page, setPage] = useState<Awaited<ReturnType<typeof fetchMyApplications>>>();
   const [error, setError] = useState<string>(),
     [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const peerId = (row: Application) =>
+    row.applicantId === props.userId ? row.ownerUserId : row.applicantId;
+  const displays = useUserDisplays(
+    `${props.userId}:${props.generation}`,
+    (page?.items ?? []).flatMap((row) => (peerId(row) ? [peerId(row)!] : []))
+  );
+  const peerName = (row: Application) => displays?.get(peerId(row) ?? "")?.nickname ?? "";
+  const filtered = page?.items.filter((row) =>
+    `${peerName(row)} ${row.crewName} ${row.taskTitle ?? row.positionType}`
+      .toLocaleLowerCase()
+      .includes(search.trim().toLocaleLowerCase())
+  );
+  const theme = useTheme();
   const records = useRef<Application[]>([]),
     seen = useRef(new Set<string>()),
     pending = useRef(false);
   useEffect(() => {
     const c = new AbortController();
     pending.current = true;
-    void fetchMyApplications(props.userId, cursor, c.signal)
+    void fetchMyApplications(props.userId, cursor, c.signal, props.scope)
       .then((value) => {
         if (c.signal.aborted || props.generation !== getAuthGeneration()) return;
         if (
@@ -175,23 +206,57 @@ function ApplicationPage(
         }
       });
     return () => c.abort();
-  }, [props.userId, props.generation, cursor]);
+  }, [props.userId, props.generation, cursor, props.scope]);
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewTerms.myApplications")}</ThemedText>
       <Action label={t("crewPositionInvites.title")} onPress={props.onInvitations} />
       <Action label={t("nativeApplications.webWorkflow")} onPress={props.onWeb} />
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        {(["sent", "received"] as const).map((value) => (
+          <Pressable
+            key={value}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: props.scope === value }}
+            style={{
+              padding: 12,
+              minHeight: 44,
+              borderRadius: 8,
+              backgroundColor:
+                props.scope === value ? theme.backgroundSelected : theme.backgroundElement,
+            }}
+            onPress={() => props.onScope(value)}
+          >
+            <ThemedText>{t(`crewRecruitment.${value}`)}</ThemedText>
+          </Pressable>
+        ))}
+      </View>
+      <TextInput
+        accessibilityLabel={t("crewRecruitment.search")}
+        placeholder={t("crewRecruitment.search")}
+        value={search}
+        onChangeText={setSearch}
+        style={{
+          color: theme.text,
+          minHeight: 44,
+          padding: 12,
+          borderWidth: 1,
+          borderColor: theme.border,
+          borderRadius: 8,
+        }}
+        placeholderTextColor={theme.textSecondary}
+      />
       {loading && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      {page?.items.map((row) => (
+      {filtered?.map((row) => (
         <Action
           key={row.id}
           disabled={loading}
-          label={`${row.crewName} · ${row.positionType} · ${row.createdAt.slice(0, 10)} · ${t(`crewTerms.${row.status}`)}`}
+          label={`${peerName(row) ? `${peerName(row)} · ` : ""}${row.crewName} · ${row.taskTitle ?? row.positionType} · ${row.createdAt.slice(0, 10)} · ${t(`crewTerms.${row.status}`)}`}
           onPress={() => props.onSelect(row)}
         />
       ))}
-      {page?.items.length === 0 && <ThemedText>{t("crewTerms.empty")}</ThemedText>}
+      {filtered?.length === 0 && <ThemedText>{t("crewTerms.empty")}</ThemedText>}
       {page?.nextCursor && (
         <Action
           disabled={loading}

@@ -212,3 +212,22 @@ it("allows server-authorized reviewers only in explicit participant mode", async
     "account"
   );
 });
+
+it("requests received applications and verifies the current owner on each row", async () => {
+  vi.mocked(api.get).mockResolvedValue({
+    items: [{ ...app, applicantId: "other", ownerUserId: "creator" }],
+    nextCursor: null,
+  });
+  expect((await fetchMyApplications("creator", null, signal(), "received")).items).toHaveLength(1);
+  expect(api.get).toHaveBeenCalledWith(
+    "/me/crew-applications",
+    expect.objectContaining({ params: { limit: 20, scope: "received" } })
+  );
+  vi.mocked(api.get).mockResolvedValue({
+    items: [{ ...app, ownerUserId: "other" }],
+    nextCursor: null,
+  });
+  await expect(fetchMyApplications("creator", null, signal(), "received")).rejects.toThrow(
+    "account"
+  );
+});

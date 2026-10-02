@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewApplications } from "./crew-applications";
+vi.mock("./user-displays", () => ({ useUserDisplays: () => undefined }));
 vi.mock("./application-review", () => ({
   ApplicationReview: ({ initialApplicationId }: { initialApplicationId?: string }) => (
     <span>Review:{initialApplicationId}</span>
@@ -45,6 +46,9 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
+  TextInput: ({ value, onChangeText }: { value: string; onChangeText: (s: string) => void }) => (
+    <input value={value} onChange={(e) => onChangeText(e.target.value)} />
+  ),
   Pressable: ({
     children,
     onPress,
@@ -345,4 +349,32 @@ it("keeps denied exact threads out of the list until the user returns", async ()
   expect(h.list).not.toHaveBeenCalled();
   await click("nativeApplications.back");
   expect(h.list).toHaveBeenCalledTimes(1);
+});
+
+it("switches to received without retaining sent records and opens exact reviewer thread", async () => {
+  await render();
+  h.list.mockResolvedValue({
+    items: [{ ...app, id: "received", applicantId: "other", ownerUserId: "creator" }],
+    nextCursor: null,
+  });
+  h.thread.mockResolvedValue({ ...app, id: "received", applicantId: "other" });
+  await click("crewRecruitment.received");
+  expect(h.list).toHaveBeenLastCalledWith("creator", null, expect.any(AbortSignal), "received");
+  await click("Crew · Director · 2026-09-30 · crewTerms.pending");
+  expect(host.textContent).toBe("Review:received");
+});
+it("aborts the previous scope and ignores its late list response", async () => {
+  let resolve!: (value: unknown) => void;
+  h.list.mockReturnValueOnce(
+    new Promise((r) => {
+      resolve = r;
+    })
+  );
+  await render();
+  const signal = h.list.mock.calls[0]![2];
+  h.list.mockResolvedValue({ items: [], nextCursor: null });
+  await click("crewRecruitment.received");
+  expect(signal.aborted).toBe(true);
+  await act(async () => resolve({ items: [app], nextCursor: null }));
+  expect(host.textContent).not.toContain("Crew · Director");
 });
