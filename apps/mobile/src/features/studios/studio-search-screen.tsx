@@ -181,7 +181,12 @@ function StudioCard({ studio }: { studio: StudioPage["items"][number] }) {
       <ThemedText>
         {t("studioDiscovery.services").replace("{count}", String(studio.matchingServiceCount))}
       </ThemedText>
-      <Action label={t("studioDiscovery.viewStudio")} onPress={open} />
+      <Action
+        label={t("studioDiscovery.viewStudio")}
+        onPress={() =>
+          router.push(toHref(`/creator/${encodeURIComponent(studio.id)}?section=services`))
+        }
+      />
     </View>
   );
 }
