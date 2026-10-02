@@ -200,9 +200,7 @@ export function ImageResultTile({
       ? `${output.width} / ${output.height}`
       : aspectRatioFromInput(job.input, "1 / 1");
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       className="group relative block w-full overflow-hidden rounded-xl bg-card text-left"
       style={{ aspectRatio: ratio }}
     >
@@ -213,10 +211,16 @@ export function ImageResultTile({
         loading="lazy"
         className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.025]"
       />
+      <button
+        type="button"
+        aria-label={`${t("fullscreen")}: ${job.prompt}`}
+        onClick={onOpen}
+        className="absolute inset-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70"
+      />
       <HoverCaption job={job} index={index} total={total} />
-      <span className="absolute top-2 right-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-        <span
-          role="button"
+      <span className="absolute top-2 right-2 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+        <button
+          type="button"
           aria-label={t("download")}
           onClick={(event) => {
             event.stopPropagation();
@@ -228,9 +232,9 @@ export function ImageResultTile({
           className="flex size-8 items-center justify-center rounded-full bg-black/55 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/75 hover:text-white"
         >
           <IconDownload className="size-4" stroke={1.8} />
-        </span>
+        </button>
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -247,10 +251,38 @@ export function VideoResultTile({
   const videoRef = useRef<HTMLVideoElement>(null);
   const src = output.url ?? output.accessUrl;
   const { failed, onError } = useVideoPlaybackError(src);
+  useEffect(() => {
+    const video = videoRef.current;
+    const restore = () => {
+      if (video && document.fullscreenElement !== video) {
+        video.controls = false;
+        video.muted = true;
+      }
+    };
+    document.addEventListener("fullscreenchange", restore);
+    return () => {
+      document.removeEventListener("fullscreenchange", restore);
+    };
+  }, []);
+  const enterFullscreen = async () => {
+    const video = videoRef.current;
+    if (!video?.requestFullscreen) {
+      onOpen();
+      return;
+    }
+    video.controls = true;
+    video.muted = false;
+    try {
+      await video.requestFullscreen();
+    } catch {
+      video.controls = false;
+      video.muted = true;
+      if (video.isConnected) onOpen();
+    }
+  };
   return (
     <div
       className="group relative aspect-video cursor-pointer overflow-hidden rounded-xl bg-card"
-      onClick={onOpen}
       onMouseEnter={() => void videoRef.current?.play().catch(() => {})}
       onMouseLeave={() => {
         const el = videoRef.current;
@@ -270,34 +302,28 @@ export function VideoResultTile({
         onError={onError}
         className="size-full object-cover"
       />
+      <button
+        type="button"
+        aria-label={`${t("fullscreen")}: ${job.prompt}`}
+        onClick={onOpen}
+        className="absolute inset-0 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/70"
+      />
       {failed && <VideoPlaybackFallback compact />}
       <HoverCaption job={job} index={0} total={1} />
-      <span className="absolute top-2 right-2 flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-        <span
-          role="button"
+      <span className="absolute top-2 right-2 flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+        <button
+          type="button"
           aria-label={t("fullscreen")}
           onClick={(event) => {
             event.stopPropagation();
-            const el = videoRef.current;
-            if (!el) return;
-            el.controls = true;
-            el.muted = false;
-            void el.requestFullscreen?.();
-            const restore = () => {
-              if (!document.fullscreenElement) {
-                el.controls = false;
-                el.muted = true;
-                document.removeEventListener("fullscreenchange", restore);
-              }
-            };
-            document.addEventListener("fullscreenchange", restore);
+            void enterFullscreen();
           }}
           className="flex size-8 items-center justify-center rounded-full bg-black/55 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/75 hover:text-white"
         >
           <IconMaximize className="size-4" stroke={1.8} />
-        </span>
-        <span
-          role="button"
+        </button>
+        <button
+          type="button"
           aria-label={t("download")}
           onClick={(event) => {
             event.stopPropagation();
@@ -309,7 +335,7 @@ export function VideoResultTile({
           className="flex size-8 items-center justify-center rounded-full bg-black/55 text-white/85 backdrop-blur-sm transition-colors hover:bg-black/75 hover:text-white"
         >
           <IconDownload className="size-4" stroke={1.8} />
-        </span>
+        </button>
       </span>
     </div>
   );
