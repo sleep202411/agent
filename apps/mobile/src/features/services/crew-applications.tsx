@@ -1,3 +1,4 @@
+import { ApplicationReview } from "./application-review";
 import { ApplicationAmendments } from "./application-amendments";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -19,17 +20,34 @@ import {
 } from "./application-terms-api";
 import { PositionInvitations } from "./position-invitations";
 import { ApplicationInterview } from "./application-interview";
-type Props = { userId: string; generation: number; onWeb: () => void };
+type Props = {
+  userId: string;
+  generation: number;
+  onWeb: () => void;
+  initialApplicationId?: string;
+};
 export function CrewApplications(props: Props) {
   const active = useScreenActive();
   return active && props.generation === getAuthGeneration() ? (
-    <Applications key={`${props.userId}:${props.generation}`} {...props} />
+    <Applications
+      key={`${props.userId}:${props.generation}:${props.initialApplicationId ?? ""}`}
+      {...props}
+    />
   ) : null;
 }
 function Applications(props: Props) {
+  const [requested, setRequested] = useState(props.initialApplicationId);
   const [invitations, setInvitations] = useState(false);
   const [revision, setRevision] = useState(0),
     [selected, setSelected] = useState<Application>();
+  if (requested)
+    return (
+      <RequestedApplication
+        {...props}
+        applicationId={requested}
+        onClose={() => setRequested(undefined)}
+      />
+    );
   if (invitations)
     return (
       <PositionInvitations
@@ -61,6 +79,57 @@ function Applications(props: Props) {
         setRevision((n) => n + 1);
       }}
     />
+  );
+}
+function RequestedApplication(props: Props & { applicationId: string; onClose: () => void }) {
+  const t = useTranslations();
+  const [thread, setThread] = useState<ApplicationThread>();
+  const [error, setError] = useState<string>();
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchApplicationThread(
+      props.applicationId,
+      props.userId,
+      props.generation,
+      controller.signal,
+      "either"
+    ).then(
+      (value) => {
+        if (!controller.signal.aborted && props.generation === getAuthGeneration())
+          setThread(value);
+      },
+      (cause) => {
+        if (!controller.signal.aborted && props.generation === getAuthGeneration())
+          setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    );
+    return () => controller.abort();
+  }, [props.applicationId, props.userId, props.generation, revision]);
+  if (thread)
+    return thread.applicantId === props.userId ? (
+      <TermsReview {...props} application={thread} />
+    ) : (
+      <ApplicationReview {...props} crewId={thread.crewId} initialApplicationId={thread.id} />
+    );
+  return (
+    <View style={{ padding: 16, gap: 12 }}>
+      {error ? (
+        <>
+          <ThemedText accessibilityRole="alert">{error}</ThemedText>
+          <Action
+            label={t("common.retry")}
+            onPress={() => {
+              setError(undefined);
+              setRevision((n) => n + 1);
+            }}
+          />
+        </>
+      ) : (
+        <ActivityIndicator />
+      )}
+      <Action label={t("nativeApplications.back")} onPress={props.onClose} />
+    </View>
   );
 }
 function ApplicationPage(

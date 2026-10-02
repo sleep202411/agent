@@ -17,7 +17,7 @@ vi.mock("@/features/services/crew-applications", () => ({
     <button onClick={onWeb}>advanced-web</button>
   ),
 }));
-vi.mock("expo-router", () => ({ Stack: { Screen: () => null } }));
+vi.mock("expo-router", () => ({ Stack: { Screen: () => null }, useLocalSearchParams: () => ({}) }));
 vi.mock("react-native", () => ({
   View: ({ children }: any) => <div>{children}</div>,
   ActivityIndicator: () => null,
@@ -82,7 +82,7 @@ it("opens the existing Crew application workflow inside the authenticated native
   await act(async () => root.render(<CrewApplicationsScreen />));
   await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
   expect(state.props.source).toEqual({
-    uri: "https://app.example/en-US/crews/applications",
+    uri: "https://app.example/en-US/messages?tab=recruitment",
     headers: { Cookie: "satoken=fixture-token" },
   });
   expect(state.props.applicationNameForUserAgent).toBe("FizzDragonApp");
@@ -99,7 +99,7 @@ it("gates a direct application link and resumes that workflow after login", asyn
   expect(host.textContent).toContain("advanced-web");
   await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
   expect(state.props.source).toEqual({
-    uri: "https://app.example/en-US/crews/applications",
+    uri: "https://app.example/en-US/messages?tab=recruitment",
     headers: { Cookie: "satoken=fresh-session" },
   });
 });

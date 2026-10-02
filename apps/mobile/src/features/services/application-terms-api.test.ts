@@ -202,3 +202,13 @@ it("allows accepting already confirmed terms but rejects wrong applicants and st
   await expect(acceptApplicationOffer(thread, row, "creator", 1)).rejects.toThrow("expired");
   expect(api.post).not.toHaveBeenCalled();
 });
+
+it("allows server-authorized reviewers only in explicit participant mode", async () => {
+  vi.mocked(api.get).mockResolvedValue(thread);
+  await expect(fetchApplicationThread("app", "reviewer", 1, signal())).rejects.toThrow("account");
+  expect(await fetchApplicationThread("app", "reviewer", 1, signal(), "either")).toEqual(thread);
+  vi.mocked(api.get).mockResolvedValue({ ...thread, id: "wrong" });
+  await expect(fetchApplicationThread("app", "reviewer", 1, signal(), "either")).rejects.toThrow(
+    "account"
+  );
+});

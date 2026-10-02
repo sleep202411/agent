@@ -17,6 +17,7 @@ import {
   type ReviewStatus,
 } from "./application-review-api";
 type Props = {
+  initialApplicationId?: string;
   crewId: string;
   userId: string;
   generation: number;
@@ -24,7 +25,7 @@ type Props = {
   onWeb: () => void;
 };
 export function ApplicationReview(props: Props) {
-  const [selected, setSelected] = useState<string>(),
+  const [selected, setSelected] = useState<string | undefined>(props.initialApplicationId),
     [status, setStatus] = useState<ReviewStatus>("pending"),
     [cursor, setCursor] = useState<string | null>(null),
     [revision, setRevision] = useState(0);

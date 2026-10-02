@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewApplications } from "./crew-applications";
+vi.mock("./application-review", () => ({
+  ApplicationReview: ({ initialApplicationId }: { initialApplicationId?: string }) => (
+    <span>Review:{initialApplicationId}</span>
+  ),
+}));
 vi.mock("./application-amendments", () => ({
   ApplicationAmendments: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>Amendments</button>
@@ -292,4 +297,52 @@ it("does not expose acceptance when the thread lookup fails", async () => {
   await open();
   expect(button("crewOffers.accept")).toBeUndefined();
   expect(host.textContent).toContain("Application unavailable");
+});
+
+it("opens a requested application outside the loaded inbox page", async () => {
+  await act(async () =>
+    root.render(
+      <CrewApplications
+        userId="creator"
+        generation={1}
+        onWeb={h.web}
+        initialApplicationId="exact"
+      />
+    )
+  );
+  expect(h.list).not.toHaveBeenCalled();
+  expect(h.thread).toHaveBeenCalledWith("exact", "creator", 1, expect.any(AbortSignal), "either");
+  expect(host.textContent).toContain("Storyboards");
+});
+it("routes a server-authorized reviewer to the exact review screen", async () => {
+  h.thread.mockResolvedValue({ ...app, id: "exact", applicantId: "other" });
+  await act(async () =>
+    root.render(
+      <CrewApplications
+        userId="creator"
+        generation={1}
+        onWeb={h.web}
+        initialApplicationId="exact"
+      />
+    )
+  );
+  expect(host.textContent).toBe("Review:exact");
+  expect(h.confirm).not.toHaveBeenCalled();
+});
+it("keeps denied exact threads out of the list until the user returns", async () => {
+  h.thread.mockRejectedValue(new Error("Access denied"));
+  await act(async () =>
+    root.render(
+      <CrewApplications
+        userId="creator"
+        generation={1}
+        onWeb={h.web}
+        initialApplicationId="exact"
+      />
+    )
+  );
+  expect(host.textContent).toContain("Access denied");
+  expect(h.list).not.toHaveBeenCalled();
+  await click("nativeApplications.back");
+  expect(h.list).toHaveBeenCalledTimes(1);
 });

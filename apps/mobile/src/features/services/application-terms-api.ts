@@ -134,7 +134,8 @@ export async function fetchApplicationThread(
   applicationId: string,
   userId: string,
   generation: number,
-  signal: AbortSignal
+  signal: AbortSignal,
+  participant: "applicant" | "either" = "applicant"
 ) {
   id.parse(applicationId);
   id.parse(userId);
@@ -152,7 +153,7 @@ export async function fetchApplicationThread(
     })
   );
   current();
-  if (result.id !== applicationId || result.applicantId !== userId)
+  if (result.id !== applicationId || (participant === "applicant" && result.applicantId !== userId))
     throw Error("Application account changed. Refresh to reload.");
   return result;
 }

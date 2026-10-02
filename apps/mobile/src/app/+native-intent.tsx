@@ -1,3 +1,4 @@
+import { redirectRecruitment } from "@/features/services/recruitment-link";
 import { redirectCrewInvite } from "@/features/services/crew-invite-link";
 import { redirectCrewInvitationResponse } from "@/features/services/crew-invitation-response-link";
 import { redirectGpsSearch } from "@/features/content-gps/search-link";
@@ -18,7 +19,11 @@ export function redirectSystemPath({ path }: { path: string; initial: boolean })
           redirectCastingInvite(
             redirectCrewOpening(
               redirectCrewInvite(
-                redirectCrewInvitationResponse(path, appEnv.appRegion, schemes),
+                redirectCrewInvitationResponse(
+                  redirectRecruitment(path, appEnv.appRegion, schemes),
+                  appEnv.appRegion,
+                  schemes
+                ),
                 appEnv.appRegion,
                 schemes
               ),

@@ -59,6 +59,13 @@ export default function InboxScreen() {
           >
             <ThemedText>{t("notifications.title")}</ThemedText>
           </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push(toHref("/crew-applications"))}
+            style={{ minHeight: 44, padding: 10 }}
+          >
+            <ThemedText>{t("crewTerms.myApplications")}</ThemedText>
+          </Pressable>
           <View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {(["", ...CONVERSATION_CONTEXT_TYPES] as const).map((value) => (
