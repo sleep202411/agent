@@ -197,6 +197,10 @@ function ActiveExperienceRuntimePlayer({
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [timelineHoldGate, setTimelineHoldGate] = useState(false);
+  const timelineHoldGateRef = useRef(false);
+  useEffect(() => {
+    timelineHoldGateRef.current = timelineHoldGate;
+  }, [timelineHoldGate]);
   const accessPendingRef = useRef(false);
   const [accessPending, setAccessPending] = useState(false);
   const [retryAccess, setRetryAccess] = useState<(() => void) | null>(null);
@@ -251,7 +255,7 @@ function ActiveExperienceRuntimePlayer({
         if (!handle) return;
         if (effect.commandType === "play") {
           playbackEnabledRef.current = true;
-          if (presentingRef.current) {
+          if (presentingRef.current && !timelineHoldGateRef.current) {
             void handle
               .play()
               .catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
@@ -402,7 +406,7 @@ function ActiveExperienceRuntimePlayer({
       const deliver = () => {
         void run(() => controller.emitRendererOutcome({ instanceId, outcomeType, payload }), true);
       };
-      if (!presentingRef.current) {
+      if (!presentingRef.current || timelineHoldGateRef.current) {
         deferredOutcomesRef.current.push(deliver);
         return;
       }
@@ -428,7 +432,8 @@ function ActiveExperienceRuntimePlayer({
 
   const advanceTimeline = useCallback(
     (rendererInstanceId: string | null, positionMs: number) => {
-      if (!presentingRef.current) return;
+      if (!presentingRef.current || (rendererInstanceId !== null && timelineHoldGateRef.current))
+        return;
       const currentState = controller.state();
       const activeNode = findGraphNode(manifest, currentState.currentSceneId);
       if (!activeNode || activeNode.kind !== "scene") return;
@@ -488,11 +493,11 @@ function ActiveExperienceRuntimePlayer({
 
   useEffect(() => {
     presentingRef.current = presenting;
-    if (presenting) {
+    if (presenting && !timelineHoldGate) {
       const pending = deferredOutcomesRef.current.splice(0);
       pending.forEach((deliver) => deliver());
     }
-  }, [presenting]);
+  }, [presenting, timelineHoldGate]);
   /** Pause / resume hook published by the scene-clock effect while it runs. */
   const clockGateRef = useRef<((active: boolean) => void) | null>(null);
 
@@ -716,20 +721,22 @@ function ActiveExperienceRuntimePlayer({
             accessibilityElementsHidden={!presenting}
             importantForAccessibility={presenting ? "auto" : "no-hide-descendants"}
           >
-            <RendererPanel
-              manifest={manifest}
-              renderer={renderer}
-              runtimeState={runtimeState}
-              open={openRendererIds.has(renderer.instanceId)}
-              locale={locale}
-              copy={copy}
-              accent={accent}
-              formatPrice={access?.formatPrice}
-              onOutcome={emitOutcome}
-              onRuntimeError={setRuntimeError}
-              onTimelineTimeMs={(positionMs) => advanceTimeline(renderer.instanceId, positionMs)}
-              onPlaybackHandle={registerPlaybackHandle}
-            />
+            <ScreenActiveGateContext.Provider value={presenting && !timelineHoldGate}>
+              <RendererPanel
+                manifest={manifest}
+                renderer={renderer}
+                runtimeState={runtimeState}
+                open={openRendererIds.has(renderer.instanceId)}
+                locale={locale}
+                copy={copy}
+                accent={accent}
+                formatPrice={access?.formatPrice}
+                onOutcome={emitOutcome}
+                onRuntimeError={setRuntimeError}
+                onTimelineTimeMs={(positionMs) => advanceTimeline(renderer.instanceId, positionMs)}
+                onPlaybackHandle={registerPlaybackHandle}
+              />
+            </ScreenActiveGateContext.Provider>
           </View>
         ))}
         {scene && started && !endingId && !accessPending && !retryAccess ? (

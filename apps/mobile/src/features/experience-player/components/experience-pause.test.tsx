@@ -16,6 +16,9 @@ const h = vi.hoisted(() => ({
   effects: vi.fn(),
   dispatch: vi.fn(),
   outcome: vi.fn(),
+  mediaPresenting: true,
+  spatialPresenting: true,
+  hold: (_hold: boolean) => {},
   video: {} as { onCompleted: () => void },
 }));
 vi.mock("react-native", () => ({
@@ -58,13 +61,32 @@ vi.mock("../lib/experience-runtime-host", () => ({
     emitRendererOutcome: h.outcome,
   }),
 }));
-vi.mock("./experience-spatial-layer", () => ({ ExperienceSpatialLayer: () => null }));
-vi.mock("./experience-video-renderer", () => ({
-  ExperienceVideoRenderer: (props: unknown) => {
-    h.video = props as typeof h.video;
-    return <div>Film</div>;
-  },
-}));
+vi.mock("./experience-spatial-layer", async () => {
+  const { useContext } = await import("react");
+  const { ScreenActiveGateContext } = await import("@/hooks/use-app-active");
+  return {
+    ExperienceSpatialLayer: ({
+      onTimelineHoldGateChange,
+    }: {
+      onTimelineHoldGateChange: (hold: boolean) => void;
+    }) => {
+      h.hold = onTimelineHoldGateChange;
+      h.spatialPresenting = useContext(ScreenActiveGateContext);
+      return null;
+    },
+  };
+});
+vi.mock("./experience-video-renderer", async () => {
+  const { useContext } = await import("react");
+  const { ScreenActiveGateContext } = await import("@/hooks/use-app-active");
+  return {
+    ExperienceVideoRenderer: (props: unknown) => {
+      h.video = props as typeof h.video;
+      h.mediaPresenting = useContext(ScreenActiveGateContext);
+      return <div>Film</div>;
+    },
+  };
+});
 vi.mock("./experience-start-shell", () => ({
   EXPERIENCE_START_ACCENT: "red",
   ExperienceStartShell: ({ onPressCta }: { onPressCta: () => void }) => (
@@ -177,4 +199,23 @@ it("returning from the background stays paused until the viewer resumes", async 
   expect(h.unlock).toHaveBeenCalledTimes(unlocks);
   await click("Resume");
   expect(container.querySelector('[aria-label="Pause"]')).not.toBeNull();
+});
+
+it("holds media without freezing the interaction, then releases a late completion once", async () => {
+  await render();
+  await click("Start");
+  await act(async () => h.hold(true));
+  expect(h.mediaPresenting).toBe(false);
+  expect(h.spatialPresenting).toBe(true);
+  await act(async () => h.video.onCompleted());
+  expect(h.outcome).not.toHaveBeenCalled();
+  await click("Pause");
+  expect(h.spatialPresenting).toBe(false);
+  await click("Resume");
+  expect(h.mediaPresenting).toBe(false);
+  expect(h.spatialPresenting).toBe(true);
+  expect(h.outcome).not.toHaveBeenCalled();
+  await act(async () => h.hold(false));
+  expect(h.mediaPresenting).toBe(true);
+  expect(h.outcome).toHaveBeenCalledTimes(1);
 });
