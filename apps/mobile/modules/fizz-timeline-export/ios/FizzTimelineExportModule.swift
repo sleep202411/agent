@@ -50,7 +50,9 @@ public final class FizzTimelineExportModule: Module {
             let sourceVideo: AVAssetTrack
             let sourceAudio: AVAssetTrack?
             let audioRange: CMTimeRange?
+            let requestedLength = CMTime(value: milliseconds.int64Value, timescale: 1000)
             let length: CMTime
+            var tail: (track: AVAssetTrack, duration: CMTime, size: CGSize)?
             let bounds: CGRect
             let transform: CGAffineTransform
             do {
@@ -63,6 +65,19 @@ public final class FizzTimelineExportModule: Module {
                   duration: CMTime(value: milliseconds.int64Value, timescale: 1000), to: temporary,
                   check: { try self.check(id) })
                 mediaURL = temporary
+              } else {
+                // AVAssetReader consumes file-backed media. Own the downloaded source
+                // through composition completion, then remove it with other intermediates.
+                let (download, response) = try await URLSession.shared.download(from: url)
+                defer { try? FileManager.default.removeItem(at: download) }
+                try self.check(id)
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                  throw TimelineExportFailure.sourceFailure("Cannot load timeline video.")
+                }
+                let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("fizz-source-\(UUID().uuidString).mp4")
+                intermediates.append(temporary)
+                try FileManager.default.moveItem(at: download, to: temporary)
+                mediaURL = temporary
               }
               let asset = AVURLAsset(url: mediaURL)
               let tracks = try await asset.loadTracks(withMediaType: .video)
@@ -70,7 +85,7 @@ public final class FizzTimelineExportModule: Module {
               sourceVideo = track
               let duration = try await asset.load(.duration)
               guard duration.isNumeric, duration.seconds > 0 else { throw TimelineExportFailure.sourceFailure("Invalid source duration.") }
-              length = CMTimeMinimum(duration, CMTime(value: milliseconds.int64Value, timescale: 1000))
+              length = CMTimeMinimum(duration, requestedLength)
               let size = try await track.load(.naturalSize)
               transform = try await track.load(.preferredTransform)
               bounds = CGRect(origin: .zero, size: size).applying(transform)
@@ -81,6 +96,18 @@ public final class FizzTimelineExportModule: Module {
                 let intersection = CMTimeRangeGetIntersection(CMTimeRange(start: .zero, duration: length), available)
                 audioRange = intersection.duration.isNumeric && intersection.duration.seconds > 0 ? intersection : nil
               } else { audioRange = nil }
+              if kind == "video" && CMTimeCompare(requestedLength, length) > 0 {
+                let held = try await TimelineStillVideo.finalFrame(of: asset, check: { try self.check(id) })
+                let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("fizz-hold-\(UUID().uuidString).mp4")
+                intermediates.append(temporary)
+                let remaining = CMTimeSubtract(requestedLength, length)
+                try await TimelineStillVideo.write(held, duration: remaining, to: temporary, check: { try self.check(id) })
+                let heldAsset = AVURLAsset(url: temporary)
+                guard let heldTrack = try await heldAsset.loadTracks(withMediaType: .video).first else {
+                  throw self.failure("The held frame could not be encoded.")
+                }
+                tail = (heldTrack, remaining, try await heldTrack.load(.naturalSize))
+              }
             } catch {
               // Cancellation and ownership changes are never partial success.
               try self.check(id)
@@ -93,11 +120,15 @@ public final class FizzTimelineExportModule: Module {
             do {
               try video.insertTimeRange(sourceRange, of: sourceVideo, at: cursor)
               insertedVideo = true
+              if let tail {
+                try video.insertTimeRange(CMTimeRange(start: .zero, duration: tail.duration), of: tail.track,
+                  at: CMTimeAdd(cursor, length))
+              }
               if let sourceAudio, let audioRange {
                 try audio.insertTimeRange(audioRange, of: sourceAudio, at: CMTimeAdd(cursor, audioRange.start))
               }
             } catch {
-              if insertedVideo { composition.removeTimeRange(CMTimeRange(start: cursor, duration: length)) }
+              if insertedVideo { composition.removeTimeRange(CMTimeRange(start: cursor, duration: requestedLength)) }
               try self.check(id)
               guard TimelineExportFailure.isSourceFailure(error) else { throw error }
               continue
@@ -118,8 +149,20 @@ public final class FizzTimelineExportModule: Module {
             instruction.timeRange = CMTimeRange(start: cursor, duration: length)
             instruction.layerInstructions = [layer]
             instructions.append(instruction)
+            if let tail {
+              let start = CMTimeAdd(cursor, length)
+              let scale = min(target.width / tail.size.width, target.height / tail.size.height)
+              let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: video)
+              layer.setTransform(CGAffineTransform(scaleX: scale, y: scale)
+                .concatenating(CGAffineTransform(translationX: (target.width - tail.size.width * scale) / 2,
+                  y: (target.height - tail.size.height * scale) / 2)), at: start)
+              let instruction = AVMutableVideoCompositionInstruction()
+              instruction.timeRange = CMTimeRange(start: start, duration: tail.duration)
+              instruction.layerInstructions = [layer]
+              instructions.append(instruction)
+            }
             ids.append(clipID)
-            cursor = CMTimeAdd(cursor, length)
+            cursor = CMTimeAdd(cursor, tail == nil ? length : requestedLength)
           }
           try self.check(id)
           guard !ids.isEmpty, canvas != nil else { throw TimelineExportFailure.sourceFailure("No timeline clips could be exported.") }

@@ -1,5 +1,6 @@
 import AVFoundation
 import ImageIO
+import CoreImage
 
 /** Encode a still using bounded frame storage; the caller owns the temporary output. */
 @MainActor
@@ -24,6 +25,40 @@ enum TimelineStillVideo {
       throw TimelineExportFailure.sourceFailure("Cannot decode timeline image.")
     }
     try check()
+    return image
+  }
+
+  /** Decode to the actual final sample rather than selecting an approximate keyframe. */
+  static func finalFrame(of asset: AVAsset, check: () throws -> Void) async throws -> CGImage {
+    try check()
+    guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+      throw TimelineExportFailure.sourceFailure("A timeline clip has no video track.")
+    }
+    let transform = try await track.load(.preferredTransform)
+    let reader = try AVAssetReader(asset: asset)
+    defer { if reader.status == .reading { reader.cancelReading() } }
+    let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+      kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+    ])
+    output.alwaysCopiesSampleData = false
+    guard reader.canAdd(output) else { throw failure("Cannot read the final video frame.") }
+    reader.add(output)
+    guard reader.startReading() else { throw reader.error ?? failure("Cannot start video decoding.") }
+    var last: CVPixelBuffer?
+    var frames = 0
+    while let sample = output.copyNextSampleBuffer() {
+      try check()
+      if let buffer = CMSampleBufferGetImageBuffer(sample) { last = buffer }
+      frames += 1
+      if frames % 30 == 0 { await Task.yield() }
+    }
+    try check()
+    guard reader.status == .completed else { throw reader.error ?? failure("Video decoding stopped.") }
+    guard let last else { throw TimelineExportFailure.sourceFailure("A timeline clip has no decodable frames.") }
+    let frame = CIImage(cvPixelBuffer: last).transformed(by: transform)
+    guard let image = CIContext().createCGImage(frame, from: frame.extent) else {
+      throw failure("Cannot preserve the final video frame.")
+    }
     return image
   }
 
