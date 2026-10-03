@@ -1,10 +1,9 @@
 import { z } from "zod";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useIsFocused, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { CrewChat } from "@/features/services/crew-chat";
-import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
@@ -12,7 +11,7 @@ export default function CrewChatScreen() {
   const { id, channel = "team" } = useLocalSearchParams<{ id: string; channel?: string }>();
   const auth = useAuth(),
     gate = useAuthGate(),
-    active = useScreenActive();
+    active = useIsFocused();
   const theme = useTheme(),
     t = useTranslations();
   const userId = String(auth.user?.userId ?? auth.user?.id ?? "");

@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import CrewChatScreen from "@/app/crew-chat/[id]";
 import CrewTasksScreen from "@/app/crew-tasks/[id]";
 const h = vi.hoisted(() => ({
   focused: true,
@@ -18,6 +19,9 @@ vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({ status: h.status, generation: h.generation, user: { id: "user" } }),
   useAuthGate: () => ({ requireAuth: vi.fn() }),
+}));
+vi.mock("@/features/services/crew-chat", () => ({
+  CrewChat: () => <input defaultValue="chat draft" />,
 }));
 vi.mock("@/features/services/crew-task-browser", () => ({
   CrewTaskBrowser: () => <input aria-label="pending upload" defaultValue="" />,
@@ -68,5 +72,17 @@ it("retires task state when navigation focus or the account changes", async () =
   h.focused = true;
   h.status = "anonymous";
   await render();
+  expect(host.querySelector("input")).toBeNull();
+});
+
+it("keeps the Crew chat route mounted during native picker handoff but clears it on blur", async () => {
+  const renderChat = () => act(async () => root.render(<CrewChatScreen />));
+  await renderChat();
+  const input = host.querySelector("input")!;
+  h.active = false;
+  await renderChat();
+  expect(host.querySelector("input")).toBe(input);
+  h.focused = false;
+  await renderChat();
   expect(host.querySelector("input")).toBeNull();
 });

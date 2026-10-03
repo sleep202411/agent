@@ -8,7 +8,7 @@ vi.mock("./native-conversation", () => ({
   NativeConversation: ({ id }: { id: string }) => <span>conversation {id}</span>,
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.active }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,

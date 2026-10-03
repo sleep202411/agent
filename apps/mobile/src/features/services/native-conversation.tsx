@@ -11,7 +11,7 @@ import {
   View,
   type ViewToken,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useIsFocused, useRouter } from "expo-router";
 import { getAuthGeneration } from "@/auth/auth-store";
 import {
   pickAndUploadCrewFile,
@@ -57,7 +57,8 @@ function ConversationSession({
   userId: string;
   generation: number;
 }) {
-  const active = useScreenActive(),
+  const focused = useIsFocused(),
+    active = useScreenActive(),
     t = useTranslations(),
     theme = useTheme(),
     router = useRouter();
@@ -98,7 +99,7 @@ function ConversationSession({
     () => () => {
       uploadRequest.current?.abort();
     },
-    [active]
+    [focused]
   );
   useEffect(
     () => () => {
@@ -119,7 +120,7 @@ function ConversationSession({
       initial.pending?.tasks ?? []
     );
   const [selectedTask, setSelectedTask] = useState<{ crewId: string; taskId: string }>();
-  const [selectedAsset, setSelectedAsset] = useState<string>();
+  const [selectedAsset, setSelectedAsset] = useState<{ crewId: string; nodeId: string }>();
   const [taskTarget, setTaskTarget] = useState<string>();
   const intent = useRef<
     | {
@@ -215,6 +216,7 @@ function ConversationSession({
       <ThemedText>{label}</ThemedText>
     </Pressable>
   );
+  if (!focused) return null;
   if (web || requiresWeb)
     return (
       <View style={{ flex: 1 }}>
@@ -223,14 +225,6 @@ function ConversationSession({
           path={taskTarget ?? `/messages/${encodeURIComponent(id)}`}
           title={t("serviceContact.open")}
         />
-      </View>
-    );
-  if (!history.detail)
-    return (
-      <View style={{ padding: 16 }}>
-        {history.loading && <ActivityIndicator />}
-        {history.error && <ThemedText accessibilityRole="alert">{history.error}</ThemedText>}
-        {button(t("inbox.retry"), history.retry, history.loading)}
       </View>
     );
   if (selectedTask)
@@ -249,20 +243,28 @@ function ConversationSession({
         }}
       />
     );
-  const conversation = history.detail;
-  if (selectedAsset && conversation.contextType === "crew")
-    return active ? (
+  if (selectedAsset)
+    return (
       <View style={{ flex: 1 }}>
         {button(t("thread.backToChat"), () => setSelectedAsset(undefined))}
         <AssetOrganization
-          crewId={conversation.contextId}
+          crewId={selectedAsset.crewId}
           userId={userId}
           generation={generation}
-          initialNodeId={selectedAsset}
+          initialNodeId={selectedAsset.nodeId}
           onClose={() => setSelectedAsset(undefined)}
         />
       </View>
-    ) : null;
+    );
+  if (!history.detail)
+    return (
+      <View style={{ padding: 16 }}>
+        {history.loading && <ActivityIndicator />}
+        {history.error && <ThemedText accessibilityRole="alert">{history.error}</ThemedText>}
+        {button(t("inbox.retry"), history.retry, history.loading)}
+      </View>
+    );
+  const conversation = history.detail;
   const canAttach = canAttachCrewFiles(conversation, userId);
   if (taskPicker && canAttach)
     return (
@@ -395,7 +397,11 @@ function ConversationSession({
                   {conversation.contextType === "crew" &&
                     button(
                       t("thread.openInCrewAssets"),
-                      () => setSelectedAsset(file.assetNodeId),
+                      () =>
+                        setSelectedAsset({
+                          crewId: conversation.contextId,
+                          nodeId: file.assetNodeId!,
+                        }),
                       uploading || op.busy
                     )}
                 </View>

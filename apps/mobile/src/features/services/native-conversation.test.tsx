@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   outboxClear: vi.fn(),
   outboxSave: vi.fn(),
   active: true,
+  focused: true,
   send: vi.fn(),
   attach: vi.fn(),
   upload: vi.fn(),
@@ -77,7 +78,10 @@ vi.mock("./task-picker", () => ({
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
+vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
+  useRouter: () => ({ push: h.push }),
+}));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("./use-inbox-realtime", () => ({ useInboxRealtime: () => false }));
 vi.mock("./user-displays", () => ({ useUserDisplays: () => new Map() }));
@@ -215,6 +219,7 @@ beforeEach(() => {
   h.outboxRead.mockReturnValue(null);
   h.generation = 1;
   h.active = true;
+  h.focused = true;
   h.viewCallbacks.length = 0;
   h.detail = detail;
   h.messages = [message];
@@ -629,7 +634,7 @@ it("opens a crew attachment's exact asset and returns to the conversation", asyn
   expect(host.textContent).not.toContain("file:Shot.mp4");
   h.active = false;
   await render();
-  expect(host.textContent).not.toContain("asset-detail");
+  expect(host.textContent).toContain("asset-detail:crew:node");
   h.active = true;
   await render();
   await act(async () => click("thread.backToChat"));
@@ -662,4 +667,50 @@ it("requires a new visibility observation after return and keeps the unsent draf
     h.view!({ viewableItems: [{ item: message, index: 0, isViewable: true }] })
   );
   expect(h.read).toHaveBeenCalledTimes(2);
+});
+
+it("finishes file selection after a background handoff without uploading twice", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  let finish!: (value: unknown) => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await act(async () => click("thread.uploadFile"));
+  const signal = h.upload.mock.calls[0][1] as AbortSignal;
+  h.active = false;
+  await render();
+  expect(signal.aborted).toBe(false);
+  h.active = true;
+  await render();
+  await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Selected.mp4" }));
+  expect(host.textContent).toContain("Selected.mp4");
+  expect(h.upload).toHaveBeenCalledTimes(1);
+  expect(h.attach).not.toHaveBeenCalled();
+});
+it("aborts file selection on route blur and ignores the late picker result", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  let finish!: (value: unknown) => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await act(async () => click("thread.uploadFile"));
+  const signal = h.upload.mock.calls[0][1] as AbortSignal;
+  h.active = false;
+  h.focused = false;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Retired.mp4" }));
+  h.active = true;
+  h.focused = true;
+  await render();
+  expect(host.textContent).not.toContain("Retired.mp4");
+  expect(h.attach).not.toHaveBeenCalled();
 });

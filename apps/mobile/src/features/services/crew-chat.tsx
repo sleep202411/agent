@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
-import { useScreenActive } from "@/hooks/use-app-active";
+import { useIsFocused } from "expo-router";
 import { useTranslations } from "@/i18n";
 import { fetchCrewConversation } from "./conversation-api";
 import { NativeConversation } from "./native-conversation";
 type Props = { crewId: string; channel: "team" | "community"; userId: string; generation: number };
 export function CrewChat(props: Props) {
-  const active = useScreenActive();
+  const active = useIsFocused();
   const [revision, setRevision] = useState(0);
   if (!active || props.generation !== getAuthGeneration()) return null;
   return (
