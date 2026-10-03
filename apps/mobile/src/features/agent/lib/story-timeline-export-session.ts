@@ -2,7 +2,12 @@
  * upload and candidate attachment retain separate retry checkpoints. */
 export type TimelineExportArtifact = { uri: string; contentType: "video/mp4"; size: number };
 export type TimelineExportResult = { artifact: TimelineExportArtifact; completedClipIds: string[] };
-export type TimelineExportShot = { id: string; url: string; durationMs: number };
+export type TimelineExportShot = {
+  id: string;
+  kind: "video" | "image";
+  url: string;
+  durationMs: number;
+};
 export type TimelineExportSnapshot = {
   projectId: string;
   chapterId: string;

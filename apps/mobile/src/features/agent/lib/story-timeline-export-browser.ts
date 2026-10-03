@@ -23,13 +23,13 @@ export function createBrowserTimelineEncoder() {
           "This browser does not support timeline video export."
         );
       // Preserve exact source order and timeline-set duration. The official renderer
-      // clips to source duration rather than extending with frozen frames.
+      // holds still images and the final video frame through the requested duration.
       const captured = shots.map((shot) => ({ ...shot }));
       let completedClipIds: string[] | undefined;
       const blob = await encoder.exportTimelineToMp4(
         captured.map((shot) => ({
           id: shot.id,
-          videoUrl: shot.url,
+          ...(shot.kind === "image" ? { imageUrl: shot.url } : { videoUrl: shot.url }),
           duration: shot.durationMs / 1000,
         })),
         {

@@ -12,8 +12,8 @@ function setup() {
     sequenceId: "sequence",
     version: 2,
     shots: [
-      { id: "one", url: "https://media.example/one.mp4", durationMs: 1000 },
-      { id: "two", url: "https://media.example/two.mp4", durationMs: 2000 },
+      { id: "one", kind: "video" as const, url: "https://media.example/one.mp4", durationMs: 1000 },
+      { id: "two", kind: "video" as const, url: "https://media.example/two.mp4", durationMs: 2000 },
     ],
     omittedClipIds: ["image"],
   };

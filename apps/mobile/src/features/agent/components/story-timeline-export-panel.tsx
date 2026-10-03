@@ -44,7 +44,7 @@ function ExportPanel({ scope, userId, sequence }: Props) {
   const clips = timelinePlaybackClips(sequence);
   const shots = clips
     .filter((c) => c.kind === "video" && c.source && c.durationMs > 0)
-    .map((c) => ({ id: c.id, url: c.source!, durationMs: c.durationMs }));
+    .map((c) => ({ id: c.id, kind: "video" as const, url: c.source!, durationMs: c.durationMs }));
   const [omitted, setOmitted] = useState(clips.length - shots.length);
   useEffect(() => {
     const owned = {

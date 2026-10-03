@@ -100,7 +100,7 @@ it("renders the saved snapshot and saves its file", async () => {
   await mount();
   await click("timeline.exportSave");
   expect(h.render.mock.calls[0][0]).toEqual([
-    { id: "clip", url: "https://example.com/clip.mp4", durationMs: 1000 },
+    { id: "clip", kind: "video" as const, url: "https://example.com/clip.mp4", durationMs: 1000 },
   ]);
   expect(h.upload.mock.calls[0][0]).toMatchObject({
     uri: result.artifact.uri,

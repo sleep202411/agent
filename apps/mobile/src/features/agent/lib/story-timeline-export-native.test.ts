@@ -13,7 +13,9 @@ vi.mock("expo-modules-core", () => ({
   uuid: { v4: () => "job" },
 }));
 const artifact = { uri: "file:///cache/export.mp4", contentType: "video/mp4", size: 10 };
-const shots = [{ id: "one", url: "https://example.test/a.mp4", durationMs: 1000 }];
+const shots = [
+  { id: "one", kind: "video" as const, url: "https://example.test/a.mp4", durationMs: 1000 },
+];
 beforeEach(() => {
   vi.resetAllMocks();
   h.module.mockReturnValue({
