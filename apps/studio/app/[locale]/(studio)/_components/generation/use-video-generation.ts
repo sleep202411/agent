@@ -172,6 +172,7 @@ export function useVideoGeneration() {
   const canSubmit =
     Boolean(model && (prompt.trim() || readyUploads.length > 0)) &&
     !submitting &&
+    !feed.submissionRecovery?.pending &&
     !uploadsPending &&
     inputsCheck.ok;
 

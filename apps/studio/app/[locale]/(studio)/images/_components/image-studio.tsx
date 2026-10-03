@@ -148,6 +148,7 @@ export function ImageStudio({
       </section>
 
       <StudioComposer
+        submissionRecovery={feed.submissionRecovery}
         modality="image"
         catalog={catalog}
         prompt={gen.prompt}
