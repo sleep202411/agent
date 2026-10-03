@@ -361,9 +361,14 @@ export interface CreateComputeCustomRechargeInput {
   backUrl: string;
 }
 
-export function createComputeCustomRecharge(input: CreateComputeCustomRechargeInput) {
+export function createComputeCustomRecharge(
+  input: CreateComputeCustomRechargeInput,
+  signal?: AbortSignal
+) {
   return api.post<ComputePaymentResult>("/aurora/billing/recharge-custom", {
     data: { ...input, currency: "compute_point" },
+    signal,
+    requestScope: "user",
   });
 }
 
@@ -377,8 +382,10 @@ export function createComputeCustomRecharge(input: CreateComputeCustomRechargeIn
  */
 export async function redirectToComputePayment(
   result: ComputePaymentResult,
-  urls: { successUrl: string; backUrl: string }
+  urls: { successUrl: string; backUrl: string },
+  assertCurrent: () => void = () => {}
 ): Promise<"fulfilled" | "redirecting"> {
+  assertCurrent();
   if (result.order.status === "fulfilled" && !result.paymentIntent) return "fulfilled";
 
   const pi = result.paymentIntent;
@@ -388,7 +395,9 @@ export async function redirectToComputePayment(
   }
   if (result.order.provider === "airwallex" && pi?.providerPaymentIntentId && pi.clientSecret) {
     const { init } = await import("@airwallex/components-sdk");
+    assertCurrent();
     const aw = await init({ env: result.env, enabledElements: ["payments"] });
+    assertCurrent();
     if (!aw.payments) throw new Error("Payment is unavailable right now.");
     await aw.payments.redirectToCheckout({
       env: result.env,
