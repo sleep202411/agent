@@ -45,13 +45,14 @@ export function useStoryTimelineExport({
     if (!clips?.length) return [];
     const result: ExportableShot[] = [];
     for (const clip of clips) {
-      const videoUrl = clip.selectedMediaVersion?.previewUrl;
-      if (!videoUrl) {
+      const media = clip.selectedMediaVersion;
+      const mediaUrl = media?.previewUrl;
+      if (!mediaUrl) {
         continue;
       }
       result.push({
         id: clip.id,
-        videoUrl,
+        ...(media?.mediaKind === "image" ? { imageUrl: mediaUrl } : { videoUrl: mediaUrl }),
         duration: clip.durationMs > 0 ? clip.durationMs / 1000 : undefined,
       });
     }

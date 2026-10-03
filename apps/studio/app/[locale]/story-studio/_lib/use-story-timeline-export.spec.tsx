@@ -496,3 +496,14 @@ it("cancels pending asset attachment after account departure", async () => {
   expect(h.success).not.toHaveBeenCalled();
   expect(options.onComplete).not.toHaveBeenCalled();
 });
+
+it("passes image media as a timed still rather than a video source", async () => {
+  options.sequence = sequence("https://example.test/still.png");
+  options.sequence!.clips[0].selectedMediaVersion!.mediaKind = "image";
+  await render();
+  await act(async () => api.downloadOnly());
+  expect(h.export).toHaveBeenCalledWith(
+    [{ id: "clip", imageUrl: "https://example.test/still.png", duration: 1.234 }],
+    expect.anything()
+  );
+});

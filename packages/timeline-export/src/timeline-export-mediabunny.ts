@@ -28,9 +28,8 @@
  *   timestamp-rebased to the global timeline, and re-encoded as AAC
  *   alongside the video. Audio is normalised to stereo / 48 kHz so
  *   shots with mismatched sample rates don't trip the encoder.
- * - Still v2: shots without a `videoUrl` are skipped. Static-image
- *   shots aren't rendered as held frames yet — that's a deferred
- *   feature that will need its own canvas-source pipeline.
+ * - Still images are encoded as held frames for their timeline duration.
+ *   Mixed image/video shots preserve ordering and use one output frame box.
  * - Still v2: H.264 / AAC fixed; runs on the main thread.
  */
 
@@ -46,6 +45,7 @@ import {
   Output,
   QUALITY_MEDIUM,
   UrlSource,
+  VideoSample,
   VideoSampleSink,
   VideoSampleSource,
 } from "mediabunny";
@@ -53,10 +53,11 @@ import {
 export interface ExportableShot {
   id: string;
   videoUrl?: string;
+  /** A still image held for the positive timeline duration. */
+  imageUrl?: string;
   /** Timeline-set playback length, in seconds. When provided and
    *  shorter than the source video, the source is clipped. When
-   *  longer, the export falls back to the source's natural length —
-   *  we don't yet freeze-frame to extend a clip. */
+   *  longer, the final video frame is held to match the timeline. */
   duration?: number;
 }
 
@@ -137,12 +138,14 @@ export function isExportSupported(): boolean {
 interface ProbedShot {
   index: number;
   shot: ExportableShot;
-  input: Input;
-  videoTrack: InputVideoTrack;
+  input: Input | null;
+  videoTrack: InputVideoTrack | null;
+  image?: ImageBitmap;
   audioTrack: InputAudioTrack | null;
   /** Effective playback length on the global timeline (seconds).
-   *  `min(shot.duration, sourceDuration)` — see ExportableShot.duration. */
+   *  Respects clip trimming and held final frames. */
   effectiveDuration: number;
+  sourceDuration: number;
 }
 
 /**
@@ -173,13 +176,13 @@ export async function exportTimelineToMp4(
   options.signal?.throwIfAborted();
   const issues: TimelineExportIssue[] = [];
   const eligible = shots.flatMap((shot, index) => {
-    if (shot.videoUrl) return [{ shot, index }];
+    if (shot.videoUrl || shot.imageUrl) return [{ shot, index }];
     issues.push({ index, shotId: shot.id, reason: "missing_video" });
     return [];
   });
   let completedShots = 0;
   if (eligible.length === 0) {
-    throw new TimelineExportError("Timeline has no shots with a video URL to export.");
+    throw new TimelineExportError("Timeline has no shots with media to export.");
   }
 
   // Phase 1: open every input and probe its tracks + duration. Done
@@ -190,6 +193,7 @@ export async function exportTimelineToMp4(
   const probed: ProbedShot[] = [];
   let firstProbeError: unknown = null;
   const inputs = new Set<Input>();
+  const images = new Set<ImageBitmap>();
   let pendingOutput: Output | null = null;
   const releaseInput = (input: Input) => {
     if (!inputs.delete(input)) return;
@@ -209,6 +213,28 @@ export async function exportTimelineToMp4(
         let input: Input | null = null;
         try {
           options.signal?.throwIfAborted();
+          if (shot.imageUrl) {
+            if (!Number.isFinite(shot.duration) || !shot.duration || shot.duration <= 0) {
+              throw new TimelineExportError("Image clips require a positive timeline duration.");
+            }
+            const response = await fetch(shot.imageUrl, { signal: options.signal });
+            if (!response.ok)
+              throw new TimelineExportError(`Image request failed (${response.status}).`);
+            const image = await createImageBitmap(await response.blob());
+            images.add(image);
+            options.signal?.throwIfAborted();
+            probed.push({
+              index,
+              shot,
+              input: null,
+              videoTrack: null,
+              audioTrack: null,
+              image,
+              effectiveDuration: shot.duration,
+              sourceDuration: shot.duration,
+            });
+            return;
+          }
           input = new Input({ source: new UrlSource(shot.videoUrl!), formats: ALL_FORMATS });
           inputs.add(input);
           const videoTrack = await input.getPrimaryVideoTrack();
@@ -223,13 +249,17 @@ export async function exportTimelineToMp4(
           options.signal?.throwIfAborted();
           const sourceDuration = await input.computeDuration([videoTrack]);
           options.signal?.throwIfAborted();
-          const requested = shot.duration && shot.duration > 0 ? shot.duration : sourceDuration;
-          // Clip request down to source length — we can't synthesise
-          // extra frames yet. Going the other way (request shorter
-          // than source) is the common case and works naturally via
-          // the bounded `samples(0, end)` iterator below.
-          const effectiveDuration = Math.min(requested, sourceDuration);
-          probed.push({ index, shot, input, videoTrack, audioTrack, effectiveDuration });
+          const effectiveDuration =
+            Number.isFinite(shot.duration) && shot.duration! > 0 ? shot.duration! : sourceDuration;
+          probed.push({
+            index,
+            shot,
+            input,
+            videoTrack,
+            audioTrack,
+            effectiveDuration,
+            sourceDuration,
+          });
         } catch (error) {
           issues.push({ index, shotId: shot.id, reason: "probe_failed" });
           console.error(`[timeline-export] shot ${shot.id} probe failed:`, error);
@@ -252,7 +282,7 @@ export async function exportTimelineToMp4(
             ? String(firstProbeError)
             : "no per-shot error captured";
       throw new TimelineExportError(
-        `Couldn't open any of the timeline's video sources (likely CORS or unsupported format). First failure: ${detail}`,
+        `Couldn't open any of the timeline's media sources (likely CORS or unsupported format). First failure: ${detail}`,
         firstProbeError ?? undefined
       );
     }
@@ -312,7 +342,16 @@ export async function exportTimelineToMp4(
     let totalFramesEncoded = 0;
     let firstShotError: unknown = null;
 
-    for (const { index, shot, input, videoTrack, audioTrack, effectiveDuration } of probed) {
+    for (const {
+      index,
+      shot,
+      input,
+      videoTrack,
+      audioTrack,
+      image,
+      effectiveDuration,
+      sourceDuration,
+    } of probed) {
       if (options.signal?.aborted) {
         // Caller cancelled — finalise what we already encoded so the
         // user at least gets a valid (truncated) MP4.
@@ -325,19 +364,68 @@ export async function exportTimelineToMp4(
 
       try {
         const encodeVideo = async () => {
-          const sink = new VideoSampleSink(videoTrack);
-          for await (const sample of sink.samples(0, effectiveDuration)) {
-            if (options.signal?.aborted) {
-              sample.close();
-              break;
+          if (image) {
+            const fps = 30;
+            for (let frame = 0; frame < Math.ceil(effectiveDuration * fps); frame++) {
+              if (options.signal?.aborted) break;
+              const timestamp = frame / fps;
+              const sample = new VideoSample(image, {
+                timestamp: offset + timestamp,
+                duration: Math.min(1 / fps, effectiveDuration - timestamp),
+              });
+              try {
+                await videoSource.add(sample);
+                shotFramesEncoded += 1;
+              } finally {
+                sample.close();
+              }
             }
-            try {
-              sample.setTimestamp(sample.timestamp + offset);
-              await videoSource.add(sample);
-              shotFramesEncoded += 1;
-            } finally {
-              sample.close();
+            return;
+          }
+          const sink = new VideoSampleSink(videoTrack!);
+          let held: VideoSample | null = null;
+          try {
+            for await (const sample of sink.samples(
+              0,
+              Math.min(effectiveDuration, sourceDuration)
+            )) {
+              if (options.signal?.aborted) {
+                sample.close();
+                break;
+              }
+              try {
+                if (sample.duration && sample.timestamp + sample.duration > effectiveDuration) {
+                  sample.setDuration(Math.max(0, effectiveDuration - sample.timestamp));
+                }
+                sample.setTimestamp(sample.timestamp + offset);
+                await videoSource.add(sample);
+                shotFramesEncoded += 1;
+                if (effectiveDuration > sourceDuration) {
+                  held?.close();
+                  held = sample.clone();
+                }
+              } finally {
+                sample.close();
+              }
             }
+            if (held) {
+              const holdDuration = effectiveDuration - sourceDuration;
+              for (let frame = 0; frame < Math.ceil(holdDuration * 30); frame++) {
+                if (options.signal?.aborted) break;
+                const timestamp = frame / 30;
+                const sample = held.clone();
+                try {
+                  sample.setTimestamp(offset + sourceDuration + timestamp);
+                  sample.setDuration(Math.min(1 / 30, holdDuration - timestamp));
+                  await videoSource.add(sample);
+                  shotFramesEncoded += 1;
+                } finally {
+                  sample.close();
+                }
+              }
+            }
+          } finally {
+            held?.close();
           }
         };
 
@@ -389,7 +477,8 @@ export async function exportTimelineToMp4(
         if (shotFramesEncoded > 0 || shotAudioSamplesEncoded > 0) {
           timelineOffsetSeconds += effectiveDuration;
         }
-        releaseInput(input);
+        if (input) releaseInput(input);
+        if (image && images.delete(image)) image.close();
       }
 
       processedShots += 1;
@@ -441,6 +530,8 @@ export async function exportTimelineToMp4(
   } finally {
     options.signal?.removeEventListener("abort", onAbort);
     for (const input of inputs) releaseInput(input);
+    for (const image of images) image.close();
+    images.clear();
     if (pendingOutput) {
       try {
         await pendingOutput.cancel();
