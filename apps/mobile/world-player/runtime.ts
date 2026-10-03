@@ -74,7 +74,8 @@ async function execute(command: WorldCommand): Promise<unknown> {
       return;
   }
 }
-window.__fizzWorldReceive = (raw) => {
+const receive = (raw: string) => {
+  if (typeof raw !== "string" || raw.length > 100000) return;
   let parsed: ReturnType<typeof worldCommandSchema.safeParse>;
   try {
     parsed = worldCommandSchema.safeParse(JSON.parse(raw));
@@ -96,8 +97,14 @@ window.__fizzWorldReceive = (raw) => {
     }
   });
 };
+window.__fizzWorldReceive = receive;
+const receiveParent = (event: MessageEvent) => {
+  if (window.parent !== window && event.source === window.parent) receive(event.data);
+};
+window.addEventListener("message", receiveParent);
 window.addEventListener("pagehide", () => {
   retired = true;
+  window.removeEventListener("message", receiveParent);
   void runtime?.dispose().catch(() => undefined);
 });
 send({ type: "ready" });

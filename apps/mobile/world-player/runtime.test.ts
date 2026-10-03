@@ -88,6 +88,32 @@ it("rejects unknown commands, invalid movement, and another document's session",
   expect(h.runtime.move).not.toHaveBeenCalled();
   expect(replies.filter((r) => r.requestId && r.requestId !== "init")).toEqual([]);
 });
+
+it("accepts iframe commands only from its parent with the matching document identity", async () => {
+  const parentFrame = document.createElement("iframe");
+  document.body.append(parentFrame);
+  const parent = parentFrame.contentWindow!;
+  vi.spyOn(window, "parent", "get").mockReturnValue(parent);
+  const data = JSON.stringify({
+    sessionId,
+    type: "move",
+    requestId: "parent",
+    command: { movement: "forward" },
+  });
+  window.dispatchEvent(new MessageEvent("message", { source: window, data }));
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      source: parent,
+      data: data.replace(sessionId, "22222222-2222-4222-8222-222222222222"),
+    })
+  );
+  await settle();
+  expect(h.runtime.move).not.toHaveBeenCalled();
+  window.dispatchEvent(new MessageEvent("message", { source: parent, data }));
+  await settle();
+  expect(h.runtime.move).toHaveBeenCalledExactlyOnceWith({ movement: "forward" });
+  parentFrame.remove();
+});
 it("keeps failed disposal retryable but retires the document after successful cleanup", async () => {
   h.runtime.dispose.mockRejectedValueOnce(new Error("Close refused"));
   send({ type: "dispose", requestId: "close1" });
