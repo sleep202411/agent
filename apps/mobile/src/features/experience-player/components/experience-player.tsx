@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
-  EXPERIENCE_CORE_RENDERER_ADAPTERS,
+  ExperienceRuntimeInvariantError,
   ExperienceAccessRequiredError,
   advanceExperienceTimeline,
   createExperienceTimelineCursor,
@@ -99,7 +99,6 @@ export function ExperiencePlayer({
         ok: true as const,
         manifest: parsed.data,
         controller: createExperienceRuntime(parsed.data, {
-          rendererAdapters: EXPERIENCE_CORE_RENDERER_ADAPTERS,
           randomSeed,
           canAccess: access?.canAccess,
         }),
@@ -107,6 +106,9 @@ export function ExperiencePlayer({
     } catch (error) {
       return {
         ok: false as const,
+        unavailable:
+          error instanceof ExperienceRuntimeInvariantError &&
+          (error.code === "CAPABILITY_UNSUPPORTED" || error.code === "RENDERER_UNAVAILABLE"),
         issues: [{ path: [] as PropertyKey[], message: runtimeErrorMessage(error) }],
       };
     }
@@ -116,7 +118,9 @@ export function ExperiencePlayer({
     return (
       <View style={styles.alert}>
         <ThemedText type="smallBold" style={styles.alertTitle}>
-          {copy.invalidManifest}
+          {"unavailable" in prepared && prepared.unavailable
+            ? copy.unsupportedRuntime
+            : copy.invalidManifest}
         </ThemedText>
         {prepared.issues.slice(0, 8).map((issue, index) => (
           <ThemedText

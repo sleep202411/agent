@@ -4,17 +4,18 @@ import {
 } from "@repo/shared/experience-runtime";
 import {
   EXPERIENCE_API_VERSION,
+  EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER,
+  EXPERIENCE_CORE_TEXT_RENDERER_ADAPTER,
+  EXPERIENCE_CORE_CHOICE_RENDERER_ADAPTER,
+  EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ADAPTER,
   EXPERIENCE_ENGINE_API_VERSION,
   EXPERIENCE_ENGINE_BUILT_IN_CAPABILITIES,
   ExperienceRendererRegistry,
   ExperienceRuntimeController,
-  type ExperienceRendererAdapter,
   type ExperienceAccessCheck,
 } from "@repo/experience-engine";
 
 export interface ExperienceRuntimeOptions {
-  rendererAdapters: readonly ExperienceRendererAdapter[];
-  additionalCapabilities?: ReadonlySet<string>;
   randomSeed?: string;
   canAccess?: ExperienceAccessCheck;
 }
@@ -42,12 +43,19 @@ export function createExperienceRuntime(
   options: ExperienceRuntimeOptions
 ): ExperienceRuntimeController {
   const rendererRegistry = new ExperienceRendererRegistry();
-  options.rendererAdapters.forEach((adapter) => rendererRegistry.register(adapter));
+  // The shared adapter registry describes engine contracts, not native UI.
+  // Register only renderers this host paints; world-model streaming still needs
+  // a Mobile runtime integration and must not silently render an empty scene.
+  [
+    EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER,
+    EXPERIENCE_CORE_TEXT_RENDERER_ADAPTER,
+    EXPERIENCE_CORE_CHOICE_RENDERER_ADAPTER,
+    EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ADAPTER,
+  ].forEach((adapter) => rendererRegistry.register(adapter));
   const capabilities = new Set(EXPERIENCE_ENGINE_BUILT_IN_CAPABILITIES);
   rendererRegistry.capabilities().forEach((capability) => capabilities.add(capability));
   EXPERIENCE_NATIVE_HOST_CAPABILITIES.forEach((capability) => capabilities.add(capability));
   if (options.canAccess) capabilities.add("commerce.community-points");
-  options.additionalCapabilities?.forEach((capability) => capabilities.add(capability));
 
   return new ExperienceRuntimeController(manifest, {
     compatibility: {

@@ -380,6 +380,7 @@
   "play.errorTitle": "目前體驗不可用",
   "play.missingGameId": "缺少作品 ID。",
   "play.invalidManifest": "內容清單無效，目前體驗無法啟動。",
+  "play.unsupportedRuntime": "此體驗需要目前應用程式尚未支援的播放功能。",
   "play.manifestRoot": "內容清單",
   "play.interactiveFilm": "影遊",
   "play.starting": "正在啟動…",

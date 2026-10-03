@@ -68,6 +68,7 @@ export default function PlayGameScreen() {
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
       invalidManifest: t("play.invalidManifest"),
+      unsupportedRuntime: t("play.unsupportedRuntime"),
       manifestRoot: t("play.manifestRoot"),
       interactiveFilm: t("play.interactiveFilm"),
       starting: t("play.starting"),

@@ -62,6 +62,7 @@ export default function StoryPreviewScreen() {
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
       invalidManifest: t("play.invalidManifest"),
+      unsupportedRuntime: t("play.unsupportedRuntime"),
       manifestRoot: t("play.manifestRoot"),
       interactiveFilm: t("play.playtest.eyebrow"),
       starting: t("play.starting"),

@@ -376,6 +376,7 @@
   "play.errorTitle": "This experience is not available",
   "play.missingGameId": "Missing game id.",
   "play.invalidManifest": "This experience cannot start because its manifest is invalid.",
+  "play.unsupportedRuntime": "This experience requires playback features that are not available in this app yet.",
   "play.manifestRoot": "manifest",
   "play.interactiveFilm": "Interactive film",
   "play.starting": "Starting…",

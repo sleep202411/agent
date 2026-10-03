@@ -394,6 +394,7 @@
   "play.errorTitle": "当前体验不可用",
   "play.missingGameId": "缺少作品 ID。",
   "play.invalidManifest": "内容清单无效，当前体验无法启动。",
+  "play.unsupportedRuntime": "此体验需要当前应用尚未支持的播放功能。",
   "play.manifestRoot": "内容清单",
   "play.interactiveFilm": "影游",
   "play.starting": "正在启动…",

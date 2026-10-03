@@ -1,5 +1,6 @@
 export interface ExperiencePlayerCopy {
   invalidManifest: string;
+  unsupportedRuntime: string;
   manifestRoot: string;
   interactiveFilm: string;
   starting: string;
