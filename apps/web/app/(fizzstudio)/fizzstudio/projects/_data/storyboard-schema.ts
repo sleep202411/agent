@@ -136,6 +136,10 @@ export interface CanvasAssetNode {
   status?: CanvasGenerationStatus;
   generation?: CanvasGenerationState;
   settings?: {
+    modelId?: string;
+    schemaVersion?: string;
+    input?: Record<string, string | number | boolean>;
+    referenceField?: string;
     aspectRatio?: "2:1";
     model?: string;
     outputCount?: number;

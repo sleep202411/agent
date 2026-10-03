@@ -1,23 +1,16 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   Icon360View,
-  Icon3dCubeSphere,
-  IconAdjustmentsHorizontal,
-  IconCamera,
-  IconChevronDown,
   IconDownload,
   IconExternalLink,
-  IconGridDots,
   IconLoader2,
-  IconPhoto,
   IconPlus,
-  IconSend,
-  IconSparkles,
-  IconTag,
 } from "@tabler/icons-react";
+import { CanvasGenerationComposer } from "./canvas-generation-composer";
+import type { CanvasGenerationRequest } from "./canvas-generation";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { toast } from "sonner";
@@ -26,9 +19,6 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { downloadMediaFile, inferDownloadFilename } from "@/src/lib/media-download";
 import type { CanvasAssetNode, MediaItem } from "../../_data/storyboard-schema";
 import {
-  MIN_CANVAS_ZOOM,
-  NODE_COMPOSER_GAP,
-  NODE_COMPOSER_WIDTH,
   MOCK_PANORAMA_IMAGE_URL,
   PANORAMA_NODE_HEIGHT,
   PANORAMA_NODE_WIDTH,
@@ -36,8 +26,6 @@ import {
 import type { NodeComposerLayout } from "./shot-node";
 
 type PanoramaRelation = "selected" | "incoming" | "outgoing" | "neutral";
-type PanoramaMenu = "format" | "model" | "output" | "settings" | null;
-type PanoramaTool = "marker" | "style" | null;
 
 type PanoramaPose = {
   fov: number;
@@ -63,26 +51,8 @@ export interface PanoramaNodeData {
   [key: string]: unknown;
 }
 
-export type PanoramaGenerationRequest = {
-  modelLabel: (typeof PANORAMA_MODELS)[number];
-  outputCount: number;
-  prompt: string;
-  quality: (typeof PANORAMA_QUALITIES)[number];
-  referenceUrl?: string;
-  resolution: (typeof PANORAMA_RESOLUTIONS)[number];
-};
-
-const PANORAMA_MODELS = ["Fizz Image 2.0", "Fizz Image Pro", "Lib Image"] as const;
-const PANORAMA_OUTPUT_COUNTS = [1, 2, 4] as const;
-const PANORAMA_QUALITIES = ["standard", "high"] as const;
-const PANORAMA_RESOLUTIONS = ["2K", "4K"] as const;
+export type PanoramaGenerationRequest = CanvasGenerationRequest;
 const DEFAULT_POSE: PanoramaPose = { fov: 60, pitch: 0, yaw: 0 };
-
-function asPanoramaModel(value: string | undefined): (typeof PANORAMA_MODELS)[number] {
-  return PANORAMA_MODELS.includes(value as (typeof PANORAMA_MODELS)[number])
-    ? (value as (typeof PANORAMA_MODELS)[number])
-    : PANORAMA_MODELS[0];
-}
 
 function resolvePanoramaMedia(node: CanvasAssetNode): MediaItem | undefined {
   const media = (node.media ?? []).filter((item) => item.url !== MOCK_PANORAMA_IMAGE_URL);
@@ -303,713 +273,6 @@ function PanoramaHud({ pose }: { pose: PanoramaPose }) {
   );
 }
 
-function placeCaretAtEnd(element: HTMLElement | null) {
-  if (!element) return;
-
-  const selection = window.getSelection();
-  if (!selection) return;
-
-  const range = document.createRange();
-  range.selectNodeContents(element);
-  range.collapse(false);
-  selection.removeAllRanges();
-  selection.addRange(range);
-}
-
-function readPanoramaPromptText(root: HTMLElement, textElement: HTMLElement | null) {
-  let text = "";
-  for (const node of root.childNodes) {
-    if (node instanceof HTMLElement) {
-      if (
-        node.dataset.fizzPanoramaPromptChip === "true" ||
-        node.dataset.fizzPanoramaPromptPlaceholder === "true"
-      ) {
-        continue;
-      }
-    }
-    text += node === textElement ? (textElement?.textContent ?? "") : (node.textContent ?? "");
-  }
-
-  return text.replace(/\u00a0/g, " ");
-}
-
-function normalizePanoramaPromptDom(
-  root: HTMLElement,
-  textElement: HTMLElement | null,
-  text: string
-) {
-  if (!textElement) return;
-
-  textElement.textContent = text;
-  for (const node of [...root.childNodes]) {
-    if (node === textElement) continue;
-    if (node instanceof HTMLElement) {
-      if (
-        node.dataset.fizzPanoramaPromptChip === "true" ||
-        node.dataset.fizzPanoramaPromptPlaceholder === "true"
-      ) {
-        continue;
-      }
-    }
-    root.removeChild(node);
-  }
-}
-
-function PanoramaPromptEditor({
-  ariaLabel,
-  onFocusInput,
-  onValueChange,
-  placeholder,
-  referenceLabel,
-  value,
-}: {
-  ariaLabel: string;
-  onFocusInput: () => void;
-  onValueChange: (value: string) => void;
-  placeholder: string;
-  referenceLabel: string;
-  value: string;
-}) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const textRef = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (!textRef.current || textRef.current.textContent === value) return;
-    textRef.current.textContent = value;
-  }, [value]);
-
-  const focusPromptEnd = () => {
-    rootRef.current?.focus();
-    placeCaretAtEnd(textRef.current);
-  };
-
-  const syncValueFromDom = () => {
-    const root = rootRef.current;
-    const textElement = textRef.current;
-    if (!root) return;
-
-    const nextText = readPanoramaPromptText(root, textElement).slice(0, 500);
-    if (nextText !== readPanoramaPromptText(root, textElement)) {
-      normalizePanoramaPromptDom(root, textElement, nextText);
-      placeCaretAtEnd(textElement);
-    }
-    onValueChange(nextText);
-  };
-
-  return (
-    <div
-      ref={rootRef}
-      data-fizz-panorama-prompt-input="true"
-      contentEditable
-      suppressContentEditableWarning
-      role="textbox"
-      tabIndex={0}
-      onClick={(event) => {
-        const target = event.target as HTMLElement;
-        if (!target.closest("[data-fizz-panorama-prompt-text='true']")) focusPromptEnd();
-      }}
-      onFocus={onFocusInput}
-      onInput={syncValueFromDom}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === "Escape") event.currentTarget.blur();
-      }}
-      onPaste={(event) => {
-        event.preventDefault();
-        const root = rootRef.current;
-        const textElement = textRef.current;
-        if (!root || !textElement) return;
-
-        const currentText = readPanoramaPromptText(root, textElement);
-        const pasteText = event.clipboardData.getData("text/plain");
-        const allowedText = pasteText.slice(0, Math.max(0, 500 - currentText.length));
-        document.execCommand("insertText", false, allowedText);
-      }}
-      className="nodrag nowheel min-h-[58px] w-full cursor-text whitespace-pre-wrap break-words bg-transparent pb-5 pr-2 text-[15px] font-normal leading-7 text-white/88 outline-none"
-      aria-label={ariaLabel}
-    >
-      <span
-        data-fizz-panorama-prompt-chip="true"
-        contentEditable={false}
-        className="mention-badge mr-1 inline-flex h-7 select-none items-center gap-1 whitespace-nowrap rounded-lg border border-white/[0.11] bg-white/[0.07] px-1.5 align-[-0.18em] text-white/88 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
-      >
-        <Icon360View className="size-4 text-indigo-300" />
-        {referenceLabel}
-      </span>
-      <span ref={textRef} data-fizz-panorama-prompt-text="true" className="outline-none" />
-      {value ? null : (
-        <span
-          data-fizz-panorama-prompt-placeholder="true"
-          contentEditable={false}
-          className="pointer-events-none select-none text-white/28"
-        >
-          {placeholder}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function PanoramaComposer({
-  node,
-  onNodeChange,
-  onSubmitGeneration,
-  referenceMedia,
-  referenceLabel,
-  layout,
-  zoom,
-}: {
-  layout: NodeComposerLayout;
-  node: CanvasAssetNode;
-  onNodeChange?: PanoramaNodeData["onNodeChange"];
-  onSubmitGeneration?: PanoramaNodeData["onSubmitGeneration"];
-  referenceLabel?: string;
-  referenceMedia?: MediaItem;
-  zoom: number;
-}) {
-  const t = useTranslations("fizzStudio");
-  const safeZoom = Math.max(zoom, MIN_CANVAS_ZOOM);
-  const inverseScale = 1 / safeZoom;
-  const [activeMenu, setActiveMenu] = useState<PanoramaMenu>(null);
-  const [activeTool, setActiveTool] = useState<PanoramaTool>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [prompt, setPrompt] = useState(node.prompt ?? "");
-  const settings = node.settings ?? {};
-  const model = asPanoramaModel(settings.model);
-  const resolution = settings.resolution ?? "2K";
-  const quality = settings.quality ?? "standard";
-  const outputCount = settings.outputCount ?? 1;
-  const status = node.status ?? "idle";
-  const busy = submitting || status === "queued" || status === "generating";
-  const canGenerate = prompt.trim().length > 0 && !busy;
-
-  const updateNode = (patch: Partial<Omit<CanvasAssetNode, "id" | "kind">>) => {
-    onNodeChange?.(node.id, patch);
-  };
-
-  const updateSettings = (patch: NonNullable<CanvasAssetNode["settings"]>) => {
-    updateNode({ settings: { ...settings, ...patch } });
-  };
-
-  const appendToken = (token: string) => {
-    const next = prompt ? `${prompt}，${token}` : token;
-    setPrompt(next);
-    updateNode({ prompt: next });
-  };
-
-  const renderMenu = (menu: Exclude<PanoramaMenu, null>) => {
-    if (menu === "model") {
-      return (
-        <PanoramaMenuGroup label={t("sbPanoramaModel")}>
-          {PANORAMA_MODELS.map((option) => (
-            <PanoramaMenuItem
-              key={option}
-              active={option === model}
-              label={option}
-              onClick={() => updateSettings({ model: option })}
-            />
-          ))}
-        </PanoramaMenuGroup>
-      );
-    }
-
-    if (menu === "format") {
-      return (
-        <>
-          <PanoramaMenuGroup label={t("sbPanoramaAspect")}>
-            <PanoramaPill active label="2:1" />
-          </PanoramaMenuGroup>
-          <PanoramaMenuGroup label={t("sbPanoramaResolution")}>
-            <div className="flex gap-1">
-              {PANORAMA_RESOLUTIONS.map((option) => (
-                <PanoramaPill
-                  key={option}
-                  active={option === resolution}
-                  label={option}
-                  onClick={() => updateSettings({ resolution: option })}
-                />
-              ))}
-            </div>
-          </PanoramaMenuGroup>
-          <PanoramaMenuGroup label={t("sbPanoramaQuality")}>
-            <div className="flex gap-1">
-              {PANORAMA_QUALITIES.map((option) => (
-                <PanoramaPill
-                  key={option}
-                  active={option === quality}
-                  label={
-                    option === "high" ? t("sbPanoramaQualityHigh") : t("sbPanoramaQualityStandard")
-                  }
-                  onClick={() => updateSettings({ quality: option })}
-                />
-              ))}
-            </div>
-          </PanoramaMenuGroup>
-        </>
-      );
-    }
-
-    if (menu === "output") {
-      return (
-        <PanoramaMenuGroup label={t("sbPanoramaOutput")}>
-          <div className="flex gap-1">
-            {PANORAMA_OUTPUT_COUNTS.map((option) => (
-              <PanoramaPill
-                key={option}
-                active={option === outputCount}
-                label={String(option)}
-                onClick={() => updateSettings({ outputCount: option })}
-              />
-            ))}
-          </div>
-        </PanoramaMenuGroup>
-      );
-    }
-
-    return (
-      <PanoramaMenuGroup label={t("sbPanoramaSettings")}>
-        <PanoramaMenuItem active label={t("sbPanoramaAutoSeam")} onClick={() => undefined} />
-        <PanoramaMenuItem active label={t("sbPanoramaHorizonLock")} onClick={() => undefined} />
-      </PanoramaMenuGroup>
-    );
-  };
-
-  const toolOptions =
-    activeTool === "style"
-      ? [t("sbPanoramaStyleCinematic"), t("sbPanoramaStyleRealistic"), t("sbPanoramaStyleConcept")]
-      : activeTool === "marker"
-        ? [t("sbPanoramaMarkerLighting"), t("sbPanoramaMarkerScale"), t("sbPanoramaMarkerWeather")]
-        : [];
-
-  return (
-    <div
-      data-fizz-panorama-composer="true"
-      className={cn(
-        "node-floating-ui nodrag nowheel nopan absolute left-1/2 z-30 transition-[margin,opacity] duration-150 ease-out",
-        layout.placement === "bottom" ? "top-full" : "bottom-full"
-      )}
-      onClick={(event) => event.stopPropagation()}
-      onDoubleClick={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
-      onPointerMove={(event) => event.stopPropagation()}
-      onPointerUp={(event) => event.stopPropagation()}
-      onWheel={(event) => event.stopPropagation()}
-      style={{
-        marginBottom: layout.placement === "top" ? NODE_COMPOSER_GAP / safeZoom : undefined,
-        marginLeft: -NODE_COMPOSER_WIDTH / 2 + layout.offsetX / safeZoom,
-        marginTop: layout.placement === "bottom" ? NODE_COMPOSER_GAP / safeZoom : undefined,
-        transform: `scale(${inverseScale})`,
-        transformOrigin: layout.placement === "bottom" ? "top center" : "bottom center",
-        width: NODE_COMPOSER_WIDTH,
-      }}
-    >
-      <div
-        className="relative isolate flex min-h-[218px] w-full flex-col overflow-hidden rounded-xl border border-white/[0.12] p-2 text-white"
-        style={{
-          background:
-            "linear-gradient(135deg, rgba(255,255,255,0.12), rgba(42,42,44,0.76) 28%, rgba(30,30,32,0.84) 100%)",
-          boxShadow:
-            "0 24px 70px -42px rgba(0,0,0,0.98), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(255,255,255,0.05)",
-          WebkitBackdropFilter: "blur(24px) saturate(140%)",
-          backdropFilter: "blur(24px) saturate(140%)",
-        }}
-      >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 rounded-[inherit]"
-          style={{
-            background:
-              "radial-gradient(110% 86% at 12% 0%, rgba(255,255,255,0.15), rgba(255,255,255,0.035) 40%, transparent 66%), linear-gradient(90deg, rgba(255,255,255,0.045), transparent 48%, rgba(255,255,255,0.025))",
-          }}
-        />
-
-        <button
-          type="button"
-          className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-lg bg-[#262628]/72 text-white/52 transition-colors hover:bg-white/[0.08] hover:text-white/82"
-          aria-label={t("sbComposerExpand")}
-          title={t("sbComposerExpand")}
-        >
-          <IconExternalLink className="size-3.5" />
-        </button>
-
-        <div className="flex h-12 items-center gap-2 pr-9">
-          <PanoramaToolButton
-            active={activeTool === "style"}
-            icon={<Icon3dCubeSphere className="size-4" />}
-            label={t("sbPanoramaStyle")}
-            onClick={() => {
-              setActiveMenu(null);
-              setActiveTool((current) => (current === "style" ? null : "style"));
-            }}
-          />
-          <PanoramaToolButton
-            active={activeTool === "marker"}
-            icon={<IconTag className="size-4" />}
-            label={t("sbPanoramaMarker")}
-            onClick={() => {
-              setActiveMenu(null);
-              setActiveTool((current) => (current === "marker" ? null : "marker"));
-            }}
-          />
-          <div
-            className="relative size-12 overflow-hidden rounded-lg bg-[#1e1e22]/78 ring-1 ring-inset ring-white/[0.12]"
-            title={referenceLabel}
-          >
-            {referenceMedia?.url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={referenceMedia.url}
-                alt=""
-                className="size-full object-cover"
-                draggable={false}
-              />
-            ) : (
-              <div className="flex size-full items-center justify-center">
-                <IconPhoto className="size-4 text-white/28" />
-              </div>
-            )}
-            <span className="absolute right-0.5 top-0.5 rounded bg-black/60 px-1 text-[8px] leading-[10px] text-white/86">
-              1
-            </span>
-          </div>
-        </div>
-
-        {toolOptions.length > 0 ? (
-          <div className="mt-2 flex h-8 items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.035] px-1">
-            {toolOptions.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => appendToken(option)}
-                className="h-6 rounded-md px-2 text-[11px] font-normal text-white/62 transition-colors hover:bg-white/[0.08] hover:text-white"
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="relative mt-2 min-h-[74px] rounded-xl border border-white/[0.1] bg-white/[0.035] p-2">
-          <PanoramaPromptEditor
-            ariaLabel={t("sbPanoramaPromptInput")}
-            placeholder={t("sbPanoramaPromptPlaceholder")}
-            referenceLabel={t("sbPanoramaReferenceChip")}
-            value={prompt}
-            onFocusInput={() => setActiveMenu(null)}
-            onValueChange={(next) => {
-              setPrompt(next);
-              setSubmitError(null);
-              updateNode({ prompt: next });
-            }}
-          />
-          <span className="pointer-events-none absolute bottom-1.5 right-2 text-[10px] tabular-nums text-white/28">
-            {prompt.length}/500
-          </span>
-          {submitError ? (
-            <span className="pointer-events-none absolute bottom-1.5 left-2 max-w-[360px] truncate text-[10px] font-normal text-white/44">
-              {submitError}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="mt-auto flex h-9 w-full items-end gap-1 pt-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            <PanoramaMenuAnchor
-              panel={activeMenu === "model" ? renderMenu("model") : null}
-              widthClassName="w-[188px]"
-            >
-              <PanoramaMetaButton
-                active={activeMenu === "model"}
-                icon={<IconSparkles className="size-3.5" />}
-                label={model}
-                onClick={() => setActiveMenu((current) => (current === "model" ? null : "model"))}
-              />
-            </PanoramaMenuAnchor>
-            <PanoramaMenuAnchor
-              panel={activeMenu === "format" ? renderMenu("format") : null}
-              widthClassName="w-[226px]"
-            >
-              <PanoramaMetaButton
-                active={activeMenu === "format"}
-                icon={<IconGridDots className="size-3.5" />}
-                label={`2:1 · ${resolution}`}
-                onClick={() => setActiveMenu((current) => (current === "format" ? null : "format"))}
-              />
-            </PanoramaMenuAnchor>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            <PanoramaMetaButton
-              disabled
-              icon={<IconCamera className="size-3.5" />}
-              label={t("sbPanoramaCamera")}
-            />
-            <PanoramaMenuAnchor
-              align="right"
-              panel={activeMenu === "settings" ? renderMenu("settings") : null}
-              widthClassName="w-[210px]"
-            >
-              <PanoramaIconButton
-                active={activeMenu === "settings"}
-                label={t("sbPanoramaSettings")}
-                onClick={() =>
-                  setActiveMenu((current) => (current === "settings" ? null : "settings"))
-                }
-              >
-                <IconAdjustmentsHorizontal className="size-4" />
-              </PanoramaIconButton>
-            </PanoramaMenuAnchor>
-            <PanoramaMenuAnchor
-              align="right"
-              panel={activeMenu === "output" ? renderMenu("output") : null}
-              widthClassName="w-[140px]"
-            >
-              <PanoramaMetaButton
-                active={activeMenu === "output"}
-                icon={<IconPlus className="size-3.5" />}
-                label={
-                  outputCount === 1
-                    ? t("sbPanoramaOutputOne")
-                    : t("sbPanoramaOutputMany").replace("{count}", String(outputCount))
-                }
-                onClick={() => setActiveMenu((current) => (current === "output" ? null : "output"))}
-              />
-            </PanoramaMenuAnchor>
-            <span className="inline-flex h-8 items-center gap-1 px-1.5 text-[13px] font-normal text-white/35">
-              <IconSparkles className="size-3.5" />
-              22
-            </span>
-            <button
-              type="button"
-              disabled={!canGenerate}
-              onClick={async () => {
-                if (!canGenerate) return;
-                setActiveMenu(null);
-                setSubmitError(null);
-                setSubmitting(true);
-                try {
-                  await onSubmitGeneration?.(node, {
-                    modelLabel: model,
-                    outputCount,
-                    prompt: prompt.trim(),
-                    quality,
-                    referenceUrl: referenceMedia?.url,
-                    resolution,
-                  });
-                } catch (error) {
-                  setSubmitError(
-                    error instanceof Error ? error.message : t("sbGenerationSubmitFailed")
-                  );
-                } finally {
-                  setSubmitting(false);
-                }
-              }}
-              className="flex size-8 items-center justify-center rounded-lg bg-white text-black transition-colors hover:bg-white/88 disabled:pointer-events-none disabled:bg-white/35 disabled:text-black/45"
-              aria-label={t("sbPanoramaGenerate")}
-              title={t("sbPanoramaGenerate")}
-            >
-              {busy ? (
-                <IconLoader2 className="size-4 animate-spin" />
-              ) : (
-                <IconSend className="size-4" />
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PanoramaToolButton({
-  active,
-  icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex size-12 flex-col items-center justify-center rounded-lg border text-[11px] font-normal transition-colors",
-        active
-          ? "border-white/[0.22] bg-white/[0.12] text-white"
-          : "border-white/[0.1] bg-white/[0.035] text-white/52 hover:border-white/[0.16] hover:text-white/78"
-      )}
-      aria-pressed={active}
-      title={label}
-    >
-      {icon}
-      <span className="mt-0.5 leading-none">{label}</span>
-    </button>
-  );
-}
-
-function PanoramaMetaButton({
-  active,
-  disabled,
-  icon,
-  label,
-  onClick,
-}: {
-  active?: boolean;
-  disabled?: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-8 min-w-0 items-center gap-1 rounded-lg px-2 text-[13px] font-normal leading-none transition-colors",
-        active
-          ? "bg-white/[0.12] text-white"
-          : "text-white/78 hover:bg-white/[0.07] hover:text-white",
-        disabled && "pointer-events-none text-white/28"
-      )}
-      title={label}
-    >
-      {icon}
-      <span className="truncate">{label}</span>
-      {!disabled ? <IconChevronDown className="size-3.5 shrink-0 text-white/38" /> : null}
-    </button>
-  );
-}
-
-function PanoramaIconButton({
-  active,
-  children,
-  label,
-  onClick,
-}: {
-  active?: boolean;
-  children: ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex size-8 items-center justify-center rounded-lg transition-colors",
-        active
-          ? "bg-white/[0.13] text-white"
-          : "text-white/66 hover:bg-white/[0.08] hover:text-white"
-      )}
-      aria-label={label}
-      title={label}
-    >
-      {children}
-    </button>
-  );
-}
-
-function PanoramaMenuAnchor({
-  align,
-  children,
-  panel,
-  widthClassName,
-}: {
-  align?: "left" | "right";
-  children: ReactNode;
-  panel: ReactNode;
-  widthClassName: string;
-}) {
-  return (
-    <div className="relative min-w-0 shrink-0">
-      {children}
-      {panel ? (
-        <div
-          data-fizz-panorama-menu-panel="true"
-          className={cn(
-            "absolute bottom-[calc(100%+8px)] z-40 rounded-xl border border-white/[0.12] bg-[#27272a]/84 p-2 text-white shadow-[0_18px_54px_-28px_rgba(0,0,0,0.98),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl",
-            widthClassName,
-            align === "right" ? "right-0" : "left-0"
-          )}
-          style={{
-            WebkitBackdropFilter: "blur(22px) saturate(145%)",
-            backdropFilter: "blur(22px) saturate(145%)",
-          }}
-        >
-          <div className="space-y-2">{panel}</div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function PanoramaMenuGroup({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <div className="space-y-1.5">
-      <div className="px-1 text-[10px] font-normal leading-4 text-white/38">{label}</div>
-      {children}
-    </div>
-  );
-}
-
-function PanoramaMenuItem({
-  active,
-  label,
-  onClick,
-}: {
-  active?: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-[13px] font-normal transition-colors",
-        active
-          ? "bg-white/[0.1] text-white"
-          : "text-white/62 hover:bg-white/[0.06] hover:text-white"
-      )}
-    >
-      <span>{label}</span>
-      {active ? <span className="size-1.5 rounded-full bg-white/80" /> : null}
-    </button>
-  );
-}
-
-function PanoramaPill({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex h-7 min-w-12 items-center justify-center rounded-lg border px-2 text-[11px] font-normal leading-none transition-colors",
-        active
-          ? "border-white/[0.18] bg-white/[0.12] text-white"
-          : "border-white/[0.1] bg-black/10 text-white/58 hover:bg-white/[0.06] hover:text-white/82"
-      )}
-      aria-pressed={active}
-    >
-      {label}
-    </button>
-  );
-}
-
 function PanoramaNodeImpl({ data, selected }: NodeProps) {
   const d = data as PanoramaNodeData;
   const t = useTranslations("fizzStudio");
@@ -1186,14 +449,37 @@ function PanoramaNodeImpl({ data, selected }: NodeProps) {
       </div>
 
       {d.composerVisible ? (
-        <PanoramaComposer
+        <CanvasGenerationComposer
+          key={d.node.id}
+          type="image"
+          initial={{
+            schemaVersion: d.node.settings?.schemaVersion,
+            prompt: d.node.prompt ?? "",
+            modelId: d.node.settings?.modelId ?? d.node.settings?.model ?? "",
+            settings: d.node.settings?.input ?? {},
+            referenceField: d.node.settings?.referenceField ?? "",
+          }}
           layout={d.composerLayout}
-          node={d.node}
-          onNodeChange={d.onNodeChange}
-          onSubmitGeneration={d.onSubmitGeneration}
-          referenceLabel={d.referenceLabel}
-          referenceMedia={d.referenceMedia}
           zoom={d.viewportZoom}
+          busy={status === "queued" || status === "generating"}
+          referenceUrl={
+            d.referenceMedia?.url === MOCK_PANORAMA_IMAGE_URL ? undefined : d.referenceMedia?.url
+          }
+          onChange={(draft) =>
+            d.onNodeChange?.(d.node.id, {
+              prompt: draft.prompt,
+              settings: {
+                ...d.node.settings,
+                modelId: draft.modelId,
+                schemaVersion: draft.schemaVersion,
+                input: draft.settings,
+                referenceField: draft.referenceField,
+              },
+            })
+          }
+          onSubmit={
+            d.onSubmitGeneration ? (request) => d.onSubmitGeneration!(d.node, request) : undefined
+          }
         />
       ) : null}
     </div>
