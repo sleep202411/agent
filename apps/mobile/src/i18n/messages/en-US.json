@@ -1450,6 +1450,7 @@
   "taskSchedule.clearHelp": "Leave a date blank to remove it.",
   "taskSchedule.invalid": "Enter valid dates. The due date must be on or after the start date.",
   "taskSchedule.save": "Save Changes",
+  "taskRelationships.latest": "Latest saved relationships",
   "taskRelationships.edit": "Edit Task Relationships",
   "taskRelationships.chooseParent": "Choose Parent Task",
   "taskRelationships.removeParent": "Remove Parent Task",

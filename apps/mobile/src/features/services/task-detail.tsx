@@ -23,6 +23,7 @@ import { useTaskPlanningSession } from "./use-task-planning-session";
 import { TaskPlanningEditor } from "./task-planning-editor";
 import { useTaskBriefSession } from "./use-task-brief-session";
 import { TaskBrief } from "./task-brief";
+import { useTaskRelationshipSession } from "./use-task-relationship-session";
 import { TaskRelationshipEditor } from "./task-relationship-editor";
 import { TaskRelations } from "./task-relations";
 import { TaskSubmit } from "./task-submit";
@@ -102,6 +103,9 @@ function TaskContent({
     setRevision((v) => v + 1)
   );
   const customFieldSession = useTaskCustomFieldSession(taskId, generation, () =>
+    setRevision((v) => v + 1)
+  );
+  const relationshipSession = useTaskRelationshipSession(taskId, generation, () =>
     setRevision((v) => v + 1)
   );
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
@@ -256,6 +260,7 @@ function TaskContent({
             onRefresh={() => setRevision((v) => v + 1)}
           />
           <TaskRelationshipEditor
+            session={relationshipSession}
             key={`relationships:${revision}`}
             task={data}
             userId={userId}

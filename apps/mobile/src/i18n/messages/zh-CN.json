@@ -1450,6 +1450,7 @@
   "taskSchedule.clearHelp": "留空可移除日期。",
   "taskSchedule.invalid": "请输入有效日期，截止时间不得早于开始时间。",
   "taskSchedule.save": "保存修改",
+  "taskRelationships.latest": "最新保存的任务关系",
   "taskRelationships.edit": "编辑任务关系",
   "taskRelationships.chooseParent": "选择父任务",
   "taskRelationships.removeParent": "移除父任务",
