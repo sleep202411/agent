@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   templates: vi.fn(),
   generation: 1,
   active: true,
+  suspended: false,
 }));
 vi.mock("./task-creation-defaults", () => ({ fetchTaskCreationDefaults: h.defaults }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
@@ -73,6 +74,7 @@ const render = (initialParent?: { id: string; number: number; title: string }) =
   act(async () =>
     root.render(
       <TaskCreate
+        suspended={h.suspended}
         crewId="crew"
         initialParent={initialParent}
         userId="1"
@@ -93,6 +95,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
   h.active = true;
+  h.suspended = false;
   h.defaults.mockResolvedValue({ cycle: null, workflow: null });
   h.fields.mockResolvedValue([]);
   h.templates.mockResolvedValue([
@@ -852,5 +855,18 @@ it("restores older draft selections after a failed lookup and retry", async () =
     workflowStateId: "33333333-3333-4333-8333-333333333333",
   });
   expect(onStage.mock.calls[0][1].editor.planning.episode.id).toBe(id);
+  expect(h.update).not.toHaveBeenCalled();
+});
+
+it("retains unstaged text while permission refresh suspends all editor controls", async () => {
+  await render();
+  await act(async () => type(0, "Unstaged title"));
+  h.suspended = true;
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  expect(host.querySelector("button")).toBeNull();
+  h.suspended = false;
+  await render();
+  expect(host.querySelector("input")!.value).toBe("Unstaged title");
   expect(h.update).not.toHaveBeenCalled();
 });

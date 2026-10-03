@@ -105,6 +105,7 @@ vi.mock("./task-create", () => ({
     onClose: () => void;
   }) => (
     <>
+      <input aria-label="unstaged title" defaultValue="" />
       <button
         onClick={() =>
           onStage(
@@ -317,6 +318,8 @@ it("keeps the open creation form across background/foreground without staging it
   await render();
   await click("taskCreate.title");
   expect(button("stage form")).toBeDefined();
+  const title = host.querySelector("input")!;
+  title.value = "Unstaged user title";
   h.active = false;
   await render();
   h.active = true;
@@ -324,6 +327,8 @@ it("keeps the open creation form across background/foreground without staging it
   expect(button("stage form")).toBeDefined();
   expect(h.create).not.toHaveBeenCalled();
   expect(h.access).toHaveBeenCalledTimes(2);
+  expect(host.querySelector("input")).toBe(title);
+  expect(host.querySelector("input")!.value).toBe("Unstaged user title");
 });
 it("closes the preserved editor when management permission was revoked in background", async () => {
   await render();
@@ -414,5 +419,22 @@ it("requires a fresh permission result after returning and preserves drafts thro
   expect(button("taskCreate.title")).toBeDefined();
   expect(host.textContent).toContain("Storyboard");
   expect(host.textContent).not.toContain("Permission lookup failed");
+  expect(h.create).not.toHaveBeenCalled();
+});
+
+it("retains the unstaged editor through a failed foreground permission lookup and retry", async () => {
+  await render();
+  await click("taskCreate.title");
+  const title = host.querySelector("input")!;
+  title.value = "Keep through retry";
+  h.active = false;
+  await render();
+  h.access.mockRejectedValueOnce(new Error("Permission lookup failed"));
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Permission lookup failed");
+  await click("inbox.retry");
+  expect(host.querySelector("input")).toBe(title);
+  expect(title.value).toBe("Keep through retry");
   expect(h.create).not.toHaveBeenCalled();
 });

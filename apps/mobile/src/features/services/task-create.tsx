@@ -40,6 +40,7 @@ type Props = {
   initialParent?: TaskOption;
   initialWorkflow?: TaskWorkflow;
   closeLabel?: string;
+  suspended?: boolean;
   onStage?: (input: TaskDraftInput, review: TaskDraftReview) => void;
   onCreated: (id: string) => void;
   onClose: () => void;
@@ -139,6 +140,7 @@ function Editor({
   initialDraft,
   defaults,
   closeLabel,
+  suspended,
   onCreated,
   onStage,
   onClose,
@@ -228,7 +230,7 @@ function Editor({
     deadlineInvalid = cause instanceof TaskCreationDeadlineError;
     input = undefined;
   }
-  if (!active) return null;
+  if (!active || suspended) return null;
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -432,7 +434,13 @@ function Editor({
         disabled={!input || locked}
         style={{ padding: 12 }}
         onPress={() => {
-          if (!active || !input || attemptedRef.current || generation !== getAuthGeneration())
+          if (
+            !active ||
+            suspended ||
+            !input ||
+            attemptedRef.current ||
+            generation !== getAuthGeneration()
+          )
             return;
           try {
             assertTaskCreationDeadline(input.dueAt);

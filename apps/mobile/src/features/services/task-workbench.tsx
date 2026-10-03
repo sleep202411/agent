@@ -125,19 +125,42 @@ function Session(props: Props) {
     typeof editing === "number"
       ? snapshot.drafts.find((row) => row.id === editing && row.kind === "task")
       : undefined;
-  if (editing && allowed)
+  // Retain unstaged editor state while foreground permissions are refreshed.
+  // Only a fresh authorization may expose its controls; revocation retires it.
+  if (editing && allowed !== false)
     return (
-      <TaskCreate
-        {...props}
-        initialDraft={editingDraft?.kind === "task" ? editingDraft : undefined}
-        closeLabel={t("taskWorkbench.title")}
-        onClose={() => setEditing(false)}
-        onStage={(input, review) => {
-          if (typeof editing === "number") session.edit(editing, input, review);
-          else session.stage(input, review);
-          setEditing(false);
-        }}
-      />
+      <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, display: allowed ? "flex" : "none" }}>
+          <TaskCreate
+            {...props}
+            suspended={!allowed}
+            initialDraft={editingDraft?.kind === "task" ? editingDraft : undefined}
+            closeLabel={t("taskWorkbench.title")}
+            onClose={() => setEditing(false)}
+            onStage={(input, review) => {
+              if (typeof editing === "number") session.edit(editing, input, review);
+              else session.stage(input, review);
+              setEditing(false);
+            }}
+          />
+        </View>
+        {active && !allowed && (
+          <View style={{ padding: 16, gap: 12 }}>
+            {error ? (
+              <>
+                <ThemedText accessibilityRole="alert">{error}</ThemedText>
+                <Button
+                  label={t("inbox.retry")}
+                  onPress={() => setAccessRevision((value) => value + 1)}
+                />
+              </>
+            ) : (
+              <ActivityIndicator />
+            )}
+            <Button label={t("taskWorkbench.title")} onPress={() => setEditing(false)} />
+          </View>
+        )}
+      </View>
     );
   if (!active) return null;
   const staged = snapshot.drafts
