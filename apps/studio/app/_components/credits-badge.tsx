@@ -43,11 +43,13 @@ export function computeWalletBalanceKey(workspaceId: string | null | undefined) 
 }
 
 async function getComputeWalletBalance(
-  workspaceId: string | null | undefined
+  workspaceId: string | null | undefined,
+  signal?: AbortSignal
 ): Promise<ComputeWalletBalance> {
   const data = await api.get<ComputeBalanceData>("/aurora/billing/compute-balance", {
     // Never inherit another tab's active workspace while the payer resolves.
     requestScope: "user",
+    signal,
     headers: workspaceId ? { "x-fizz-workspace-id": workspaceId } : undefined,
   });
   return {
@@ -66,8 +68,8 @@ export function useComputeWalletBalance(enabled = true, explicitWorkspaceId?: st
   const payerWorkspaceId = useProjectPayerWorkspace()?.id ?? null;
   const workspaceId = explicitWorkspaceId ?? payerWorkspaceId;
   return useQuery({
-    queryKey: computeWalletBalanceKey(workspaceId),
-    queryFn: () => getComputeWalletBalance(workspaceId),
+    queryKey: [...computeWalletBalanceKey(workspaceId), user?.id == null ? null : String(user.id)],
+    queryFn: ({ signal }) => getComputeWalletBalance(workspaceId, signal),
     staleTime: 20_000,
     // No interval poll: wallet_changed realtime pushes drive updates (see
     // useWalletRealtime). refetchOnWindowFocus stays as a cheap missed-push backstop.

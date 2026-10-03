@@ -181,16 +181,25 @@ export interface MyEntitlement {
 }
 
 /** The caller's current plan + the subscription that backs it (for renew/cancel). */
-export function getMyEntitlement(workspaceId?: string | null) {
+export function getMyEntitlement(workspaceId?: string | null, signal?: AbortSignal) {
   return api.get<MyEntitlement>("/aurora/billing/entitlement/me", {
+    signal,
+    requestScope: "user",
     headers: workspaceId ? { "x-fizz-workspace-id": workspaceId } : undefined,
   });
 }
 
 /** Cancel a recurring subscription. Access continues until currentPeriodEnd. */
-export function cancelSubscription(subscriptionId: string) {
+export function cancelSubscription(
+  subscriptionId: string,
+  workspaceId?: string | null,
+  signal?: AbortSignal
+) {
   return api.post<ActiveSubscription>(`/aurora/billing/subscriptions/${subscriptionId}/cancel`, {
     data: {},
+    requestScope: "user",
+    headers: workspaceId ? { "x-fizz-workspace-id": workspaceId } : undefined,
+    signal,
   });
 }
 
