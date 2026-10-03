@@ -1,3 +1,4 @@
+import type { TaskCustomFieldSession } from "./use-task-custom-field-session";
 import { TaskCustomFieldEditing } from "./task-custom-field-editor";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
@@ -12,11 +13,13 @@ export function TaskCustomFields({
   generation,
   userId,
   onRefresh,
+  session,
 }: {
   task: TaskDetail;
   generation: number;
   userId: string;
   onRefresh: () => void;
+  session?: TaskCustomFieldSession;
 }) {
   const t = useTranslations();
   const [rows, setRows] = useState<Awaited<ReturnType<typeof fetchTaskCustomFields>>>();
@@ -41,7 +44,7 @@ export function TaskCustomFields({
       r.field.type === "user" && typeof r.value === "string" ? [r.value] : []
     ) ?? []
   );
-  if (rows?.length === 0) return null;
+  if (rows?.length === 0 && !session?.selected) return null;
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("taskCustomFields.title")}</ThemedText>
@@ -62,6 +65,7 @@ export function TaskCustomFields({
       )}
       {rows && (
         <TaskCustomFieldEditing
+          session={session}
           task={task}
           generation={generation}
           userId={userId}

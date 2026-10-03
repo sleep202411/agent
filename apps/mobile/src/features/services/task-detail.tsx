@@ -3,6 +3,7 @@ import { TaskCompensationSummary } from "./task-compensation-summary";
 import { TaskDelete } from "./task-delete";
 import { TaskClosure } from "./task-closure";
 import { TaskDeadline } from "./task-deadline";
+import { useTaskCustomFieldSession } from "./use-task-custom-field-session";
 import { TaskCustomFields } from "./task-custom-fields";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -98,6 +99,9 @@ function TaskContent({
     setRevision((v) => v + 1)
   );
   const assignmentSession = useTaskAssignmentSession(taskId, generation, () =>
+    setRevision((v) => v + 1)
+  );
+  const customFieldSession = useTaskCustomFieldSession(taskId, generation, () =>
     setRevision((v) => v + 1)
   );
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
@@ -266,6 +270,7 @@ function TaskContent({
             onOpen={() => setCreatingChild(true)}
           />
           <TaskCustomFields
+            session={customFieldSession}
             key={`fields:${revision}`}
             task={data}
             generation={generation}

@@ -1505,6 +1505,8 @@
   "taskPlanning.unlimited": "Unlimited",
   "taskPlanning.numberHelp": "Use whole numbers: estimate 0–1,000,000; revision limit 0–100 and no lower than rounds already used. Leave blank to clear.",
   "taskCreate.addSubtask": "Add Subtask",
+  "taskCustomFields.latest": "Latest saved field value",
+  "taskCustomFields.typeChanged": "This field’s type changed. Cancel these edits and reopen the field.",
   "taskCustomFields.title": "Custom Fields",
   "taskCustomFields.yes": "Yes",
   "taskCustomFields.no": "No",

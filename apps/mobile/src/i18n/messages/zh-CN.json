@@ -1505,6 +1505,8 @@
   "taskPlanning.unlimited": "不限",
   "taskPlanning.numberHelp": "请输入整数：预估工作量为 0–1,000,000；修改轮次上限为 0–100，且不得低于已使用轮次。留空可清除。",
   "taskCreate.addSubtask": "添加子任务",
+  "taskCustomFields.latest": "最新保存的字段值",
+  "taskCustomFields.typeChanged": "此字段的类型已更改。请取消本次编辑并重新打开字段。",
   "taskCustomFields.title": "自定义字段",
   "taskCustomFields.yes": "是",
   "taskCustomFields.no": "否",

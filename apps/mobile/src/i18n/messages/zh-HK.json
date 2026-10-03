@@ -1505,6 +1505,8 @@
   "taskPlanning.unlimited": "不限",
   "taskPlanning.numberHelp": "請輸入整數：預估工作量為 0–1,000,000；修改輪次上限為 0–100，且不得低於已使用輪次。留空可清除。",
   "taskCreate.addSubtask": "新增子任務",
+  "taskCustomFields.latest": "最新儲存的欄位值",
+  "taskCustomFields.typeChanged": "此欄位的類型已更改。請取消本次編輯並重新開啟欄位。",
   "taskCustomFields.title": "自訂欄位",
   "taskCustomFields.yes": "是",
   "taskCustomFields.no": "否",
