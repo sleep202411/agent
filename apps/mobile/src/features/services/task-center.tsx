@@ -1,5 +1,6 @@
 import { taskWorkflowLabel } from "./task-workflow-label";
 import { useState } from "react";
+import { useIsFocused } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -14,10 +15,15 @@ import { useTaskCenter } from "./use-task-center";
 import type { CenterFilters, CenterTask } from "./task-center-api";
 export function TaskCenter({ userId, generation }: { userId: string; generation: number }) {
   const active = useScreenActive();
+  const focused = useIsFocused();
+  const [activity, setActivity] = useState({ active, revision: 0 });
+  if (activity.active !== active) {
+    setActivity({ active, revision: activity.revision + (active ? 1 : 0) });
+  }
   const [selected, select] = useState<CenterTask>();
   const [webTask, setWebTask] = useState<string>();
   const t = useTranslations();
-  if (!active || generation !== getAuthGeneration()) return null;
+  if (!focused || generation !== getAuthGeneration()) return null;
   const detail =
     selected && webTask ? (
       <View style={{ flex: 1 }}>
@@ -37,6 +43,7 @@ export function TaskCenter({ userId, generation }: { userId: string; generation:
       <TaskDetail
         crewId={selected.crew.id}
         taskId={selected.id}
+        refreshKey={activity.revision}
         userId={userId}
         generation={generation}
         onClose={() => select(undefined)}
@@ -44,7 +51,7 @@ export function TaskCenter({ userId, generation }: { userId: string; generation:
       />
     ) : null;
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
       <View style={{ flex: 1, display: selected ? "none" : "flex" }}>
         <TaskCenterList generation={generation} onSelect={select} enabled={!selected} />
       </View>

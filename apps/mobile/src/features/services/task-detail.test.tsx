@@ -2,6 +2,8 @@ import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskDetail } from "./task-detail";
+import { TaskCenter } from "./task-center";
+import type { TaskSubmitSession } from "./use-task-submit-session";
 vi.mock("@/config", () => ({ appEnv: { siteRegion: "global" } }));
 vi.mock("./task-delivery-management", () => ({
   TaskDeliveryManagement: () => <div>delivery management</div>,
@@ -40,6 +42,7 @@ vi.mock("./task-assignments", () => ({ TaskAssignments: () => null }));
 const h = vi.hoisted(() => ({
   fetch: vi.fn(),
   focused: true,
+  active: true,
   generation: 1,
   close: vi.fn(),
   web: vi.fn(),
@@ -51,7 +54,35 @@ vi.mock("./task-relationship-editor", () => ({
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
 vi.mock("./task-brief", () => ({ TaskBrief: () => <div>brief editor</div> }));
-vi.mock("./task-submit", () => ({ TaskSubmit: () => <div>submit</div> }));
+vi.mock("./task-submit", () => ({
+  TaskSubmit: ({ session }: { session: TaskSubmitSession }) => (
+    <input
+      aria-label="submission note"
+      value={session.note}
+      onChange={(event) => session.setNote(event.target.value)}
+    />
+  ),
+}));
+vi.mock("./use-task-center", () => ({
+  useTaskCenter: () => ({
+    items: [
+      {
+        id: "task",
+        title: "Center task",
+        number: 7,
+        crew: { id: "crew", name: "Crew" },
+        workflowState: { name: "Open" },
+        priority: "normal",
+        dueAt: null,
+      },
+    ],
+    loading: false,
+    hasMore: false,
+  }),
+}));
+vi.mock("./use-task-unread", () => ({ useTaskUnread: () => ({ counts: {} }) }));
+vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
+vi.mock("@/components/authed-web-view", () => ({ AuthedWebView: () => null }));
 vi.mock("./task-case-create", () => ({ TaskCaseCreate: () => <div>task case</div> }));
 vi.mock("./task-feedback-create", () => ({ TaskFeedbackCreate: () => <div>task feedback</div> }));
 vi.mock("./task-review", () => ({ TaskReview: () => <div>review</div> }));
@@ -71,7 +102,7 @@ vi.mock("./task-detail-api", async (original) => ({
   fetchTaskDetail: h.fetch,
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("./user-displays", () => ({
   useUserDisplays: () => new Map([["1", { nickname: "Artist" }]]),
@@ -84,6 +115,20 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <div>loading</div>,
+  TextInput: () => null,
+  FlatList: ({
+    data,
+    renderItem,
+  }: {
+    data: unknown[];
+    renderItem: (props: { item: unknown }) => ReactNode;
+  }) => (
+    <div>
+      {data.map((item, index) => (
+        <div key={index}>{renderItem({ item })}</div>
+      ))}
+    </div>
+  ),
   Pressable: ({
     children,
     onPress,
@@ -139,6 +184,7 @@ const click = (s: string) =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.focused = true;
+  h.active = true;
   h.generation = 1;
   h.fetch.mockResolvedValue(detail);
   host = document.createElement("div");
@@ -295,7 +341,7 @@ it("leaves the deleted task detail", async () => {
 it("retains comment composition across detail failure/retry and cancelled child creation", async () => {
   await render();
   await act(async () => {
-    const input = host.querySelector("input")!;
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="comment"]')!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       input,
       "Unsent note"
@@ -304,16 +350,78 @@ it("retains comment composition across detail failure/retry and cancelled child 
   });
   h.fetch.mockRejectedValueOnce(new Error("Refresh failed"));
   await act(async () => click("thread.refresh"));
-  expect(host.querySelector("input")).toBeNull();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="comment"]')).toBeNull();
   expect(h.timelineUnmount).not.toHaveBeenCalled();
   await act(async () => click("inbox.retry"));
-  expect(host.querySelector("input")!.value).toBe("Unsent note");
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="comment"]')!.value).toBe(
+    "Unsent note"
+  );
   await act(async () => click("add subtask"));
-  expect(host.querySelector("input")).toBeNull();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="comment"]')).toBeNull();
   await act(async () => click("cancel child"));
-  expect(host.querySelector("input")!.value).toBe("Unsent note");
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="comment"]')!.value).toBe(
+    "Unsent note"
+  );
   expect(h.timelineUnmount).not.toHaveBeenCalled();
   h.focused = false;
   await render();
   expect(h.timelineUnmount).toHaveBeenCalledTimes(1);
+});
+
+const renderCenter = () => act(async () => root.render(<TaskCenter userId="1" generation={1} />));
+const noteInput = () => host.querySelector<HTMLInputElement>('input[aria-label="submission note"]');
+async function composeSubmission() {
+  await act(async () => {
+    const input = noteInput()!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Keep my delivery draft"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it("preserves a Task Center draft across background and refreshes details before return", async () => {
+  await renderCenter();
+  await act(async () =>
+    click("Crew · #7Center taskOpen · taskSchedule.normalcrewTaskCenter.history")
+  );
+  await composeSubmission();
+  h.active = false;
+  await renderCenter();
+  expect(h.timelineUnmount).not.toHaveBeenCalled();
+  let resolve!: (value: unknown) => void;
+  h.fetch.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  h.active = true;
+  await renderCenter();
+  expect(host.textContent).not.toContain("Private brief");
+  expect(noteInput()).toBeNull();
+  await act(async () => resolve({ ...detail, title: "Updated task" }));
+  expect(host.textContent).toContain("Updated task");
+  expect(noteInput()!.value).toBe("Keep my delivery draft");
+  expect(h.fetch).toHaveBeenCalledTimes(2);
+});
+it("keeps a returning Task Center draft through access failure and retry", async () => {
+  await renderCenter();
+  await act(async () =>
+    click("Crew · #7Center taskOpen · taskSchedule.normalcrewTaskCenter.history")
+  );
+  await composeSubmission();
+  h.active = false;
+  await renderCenter();
+  h.fetch.mockRejectedValueOnce(new Error("Task access denied"));
+  h.active = true;
+  await renderCenter();
+  expect(host.textContent).toContain("Task access denied");
+  expect(host.textContent).not.toContain("Private brief");
+  expect(noteInput()).toBeNull();
+  await act(async () => click("inbox.retry"));
+  expect(noteInput()!.value).toBe("Keep my delivery draft");
+  h.generation = 2;
+  await renderCenter();
+  expect(host.textContent).toBe("");
 });

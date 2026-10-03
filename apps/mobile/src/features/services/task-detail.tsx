@@ -45,6 +45,8 @@ type Props = {
   userId: string;
   onClose: () => void;
   closeLabel?: string;
+  /** Revalidate a returning host without discarding task-owned drafts. */
+  refreshKey?: number;
   onOpenWeb: (taskId: string) => void;
 };
 export function TaskDetail(props: Props) {
@@ -86,6 +88,7 @@ function TaskContent({
   onOpenTask,
   backToTask,
   closeLabel,
+  refreshKey = 0,
 }: Props & {
   onOpenTask: (id: string) => void;
   backToTask: boolean;
@@ -118,22 +121,32 @@ function TaskContent({
   const submitSession = useTaskSubmitSession(taskId, generation, () => setRevision((v) => v + 1));
   const reviewSession = useTaskReviewSession(taskId, generation, () => setRevision((v) => v + 1));
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
-  const [result, setResult] = useState<{ revision: number; data?: Detail; error?: string }>();
+  const [result, setResult] = useState<{
+    revision: number;
+    refreshKey: number;
+    data?: Detail;
+    error?: string;
+  }>();
   useEffect(() => {
     const controller = new AbortController();
     void fetchTaskDetail(crewId, taskId, controller.signal).then(
       (data) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setResult({ revision, data });
+          setResult({ revision, refreshKey, data });
       },
       (cause) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setResult({ revision, error: cause instanceof Error ? cause.message : String(cause) });
+          setResult({
+            revision,
+            refreshKey,
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
       }
     );
     return () => controller.abort();
-  }, [crewId, taskId, generation, revision]);
-  const current = result?.revision === revision ? result : undefined;
+  }, [crewId, taskId, generation, revision, refreshKey]);
+  const current =
+    result?.revision === revision && result.refreshKey === refreshKey ? result : undefined;
   const data = current?.data;
   const displays = useUserDisplays(String(generation), data?.assignees.map((a) => a.userId) ?? []);
   const date = (value: string | null) =>
