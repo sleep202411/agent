@@ -153,7 +153,6 @@ class ExperienceAudioHost {
       this.#unlocked = true;
       this.#suspended = false;
       for (const playback of this.#active.values()) {
-        if (playback.stopping) continue;
         playback.player.play();
       }
     });
@@ -481,6 +480,7 @@ class ExperienceAudioHost {
     const steps = Math.max(1, Math.ceil(durationMs / FADE_STEP_MS));
     let step = 0;
     playback.ramps[factor] = setInterval(() => {
+      if (this.#suspended) return;
       step += 1;
       const progress = Math.min(1, step / steps);
       playback[factor] = from + (to - from) * progress;

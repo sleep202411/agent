@@ -4,6 +4,9 @@ export interface ExperiencePlayerCopy {
   interactiveFilm: string;
   starting: string;
   start: string;
+  pause: string;
+  resume: string;
+  paused: string;
   loadingMedia: string;
   endingEyebrow: string;
   unknownEnding: string;

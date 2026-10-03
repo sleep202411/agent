@@ -264,3 +264,39 @@ it("continues native cleanup after a status subscription is already detached", a
   expect(players[0]!.remove).toHaveBeenCalledTimes(1);
   expect(native.setIsAudioActiveAsync).toHaveBeenLastCalledWith(false);
 });
+it("freezes an in-flight fade while paused and resumes the fading cue", async () => {
+  vi.useFakeTimers();
+  try {
+    const players = await concurrencyFixture();
+    await act(async () => {
+      play(1);
+    });
+    await act(async () => {
+      play(2);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    const fading = players[0]!;
+    const volume = fading.volume;
+    await act(async () => {
+      await latest.suspend();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20000);
+    });
+    expect(fading.volume).toBe(volume);
+    expect(fading.remove).not.toHaveBeenCalled();
+    const plays = fading.play.mock.calls.length;
+    await act(async () => {
+      await latest.unlock();
+    });
+    expect(fading.play).toHaveBeenCalledTimes(plays + 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(fading.remove).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});

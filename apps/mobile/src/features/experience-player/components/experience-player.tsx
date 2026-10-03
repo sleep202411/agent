@@ -185,6 +185,15 @@ function ActiveExperienceRuntimePlayer({
   const [sceneTimeMs, setSceneTimeMs] = useState(0);
   const [theme, setTheme] = useState<ExperienceThemeConfig | null>(null);
   const [started, setStarted] = useState(false);
+  const [viewerPaused, setViewerPaused] = useState(false);
+  const screenActive = useScreenActive();
+  const [lastScreenActive, setLastScreenActive] = useState(screenActive);
+  if (lastScreenActive !== screenActive) {
+    setLastScreenActive(screenActive);
+    if (!screenActive && started) setViewerPaused(true);
+  }
+  const presentingRef = useRef(false);
+  const deferredOutcomesRef = useRef<(() => void)[]>([]);
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [timelineHoldGate, setTimelineHoldGate] = useState(false);
@@ -242,7 +251,11 @@ function ActiveExperienceRuntimePlayer({
         if (!handle) return;
         if (effect.commandType === "play") {
           playbackEnabledRef.current = true;
-          void handle.play().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
+          if (presentingRef.current) {
+            void handle
+              .play()
+              .catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
+          }
           return;
         }
         if (effect.commandType === "pause") {
@@ -386,7 +399,14 @@ function ActiveExperienceRuntimePlayer({
       outcomeType: string,
       payload: Record<string, never> | { choiceId: string } = {}
     ) => {
-      void run(() => controller.emitRendererOutcome({ instanceId, outcomeType, payload }), true);
+      const deliver = () => {
+        void run(() => controller.emitRendererOutcome({ instanceId, outcomeType, payload }), true);
+      };
+      if (!presentingRef.current) {
+        deferredOutcomesRef.current.push(deliver);
+        return;
+      }
+      deliver();
     },
     [controller, run]
   );
@@ -408,6 +428,7 @@ function ActiveExperienceRuntimePlayer({
 
   const advanceTimeline = useCallback(
     (rendererInstanceId: string | null, positionMs: number) => {
+      if (!presentingRef.current) return;
       const currentState = controller.state();
       const activeNode = findGraphNode(manifest, currentState.currentSceneId);
       if (!activeNode || activeNode.kind !== "scene") return;
@@ -423,6 +444,7 @@ function ActiveExperienceRuntimePlayer({
 
   const emitRuntimeEvents = useCallback(
     (events: readonly ExperienceRuntimeEvent[]) => {
+      if (!presentingRef.current) return;
       const parked = events.filter(
         (event) =>
           event.type.startsWith("gesture.") &&
@@ -461,11 +483,15 @@ function ActiveExperienceRuntimePlayer({
    * all stop when the app leaves the foreground, the viewer leaves the page, or
    * the host pauses us (chapter switch in flight).
    */
-  const screenActive = useScreenActive();
-  const presenting = screenActive && active;
-  const presentingRef = useRef(presenting);
+  const presenting =
+    screenActive && active && !viewerPaused && !accessPending && !retryAccess && !runtimeError;
+
   useEffect(() => {
     presentingRef.current = presenting;
+    if (presenting) {
+      const pending = deferredOutcomesRef.current.splice(0);
+      pending.forEach((deliver) => deliver());
+    }
   }, [presenting]);
   /** Pause / resume hook published by the scene-clock effect while it runs. */
   const clockGateRef = useRef<((active: boolean) => void) | null>(null);
@@ -572,7 +598,7 @@ function ActiveExperienceRuntimePlayer({
 
   useEffect(() => {
     if (!started) return;
-    if (timelineHoldGate || accessPending) {
+    if (!presenting || timelineHoldGate || accessPending) {
       playbackHandlesRef.current.forEach((handle) => handle.pause());
       return;
     }
@@ -580,7 +606,7 @@ function ActiveExperienceRuntimePlayer({
     playbackHandlesRef.current.forEach((handle) => {
       void handle.play().catch(() => undefined);
     });
-  }, [started, timelineHoldGate, accessPending]);
+  }, [started, timelineHoldGate, accessPending, presenting]);
 
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
@@ -589,7 +615,13 @@ function ActiveExperienceRuntimePlayer({
         return;
       }
       playbackHandlesRef.current.set(instanceId, handle);
-      if (!playbackEnabledRef.current || timelineHoldGate || accessPendingRef.current) return;
+      if (
+        !presentingRef.current ||
+        !playbackEnabledRef.current ||
+        timelineHoldGate ||
+        accessPendingRef.current
+      )
+        return;
       void handle.play().catch(() => undefined);
     },
     [timelineHoldGate]
@@ -674,13 +706,15 @@ function ActiveExperienceRuntimePlayer({
     // rather than through every layer of renderer props. Timeline-control hold
     // pauses via playback handles, not this gate — otherwise the still clock
     // and video presenting effect would fight the hold.
-    <ScreenActiveGateContext.Provider value={active}>
+    <ScreenActiveGateContext.Provider value={presenting}>
       <View style={styles.stage}>
         {visibleRenderers.map((renderer) => (
           <View
             key={`${scene?.sceneId}:${sceneEpoch}:${renderer.instanceId}`}
             style={[styles.rendererLayer, { zIndex: renderer.layer }]}
-            pointerEvents="box-none"
+            pointerEvents={presenting ? "box-none" : "none"}
+            accessibilityElementsHidden={!presenting}
+            importantForAccessibility={presenting ? "auto" : "no-hide-descendants"}
           >
             <RendererPanel
               manifest={manifest}
@@ -712,6 +746,34 @@ function ActiveExperienceRuntimePlayer({
             onRuntimeError={setRuntimeError}
             onTimelineHoldGateChange={setTimelineHoldGate}
           />
+        ) : null}
+        {scene && !accessPending && !retryAccess ? (
+          viewerPaused ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={copy.resume}
+              onPress={() => setViewerPaused(false)}
+              style={styles.pauseOverlay}
+            >
+              <ThemedText type="smallBold" style={styles.lightText}>
+                {copy.paused}
+              </ThemedText>
+              <ThemedText type="small" style={styles.lightText}>
+                {copy.resume}
+              </ThemedText>
+            </Pressable>
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={copy.pause}
+              onPress={() => setViewerPaused(true)}
+              style={styles.pauseControl}
+            >
+              <ThemedText type="small" style={styles.lightText}>
+                {copy.pause}
+              </ThemedText>
+            </Pressable>
+          )
         ) : null}
         {nodeGate ? <View pointerEvents="none" style={styles.nodeGate} /> : null}
         {retryAccess && started && !nodeGate ? (
@@ -1050,6 +1112,29 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     maxWidth: 420,
     width: "100%",
+  },
+  pauseControl: {
+    position: "absolute",
+    right: 12,
+    top: 12,
+    zIndex: 1000,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: 8,
+  },
+  pauseOverlay: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1001,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
   stage: {
     flex: 1,

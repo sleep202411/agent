@@ -1,0 +1,67 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { usePausableTimeout } from "./use-pausable-timeout";
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let root: Root;
+let running = true;
+let enabled = true;
+const done = vi.fn();
+function Harness() {
+  usePausableTimeout({ running, enabled, durationMs: 3000, onTimeout: done });
+  return null;
+}
+const render = () => act(async () => root.render(<Harness />));
+const advance = (ms: number) =>
+  act(async () => {
+    vi.advanceTimersByTime(ms);
+  });
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  root = createRoot(document.createElement("div"));
+  running = enabled = true;
+  done.mockClear();
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  vi.useRealTimers();
+});
+it("retains the remaining charge timeout across repeated pauses", async () => {
+  await render();
+  await advance(1000);
+  running = false;
+  await render();
+  await advance(20000);
+  expect(done).not.toHaveBeenCalled();
+  running = true;
+  await render();
+  await advance(1000);
+  running = false;
+  await render();
+  await advance(20000);
+  running = true;
+  await render();
+  await advance(999);
+  expect(done).not.toHaveBeenCalled();
+  await advance(1);
+  expect(done).toHaveBeenCalledTimes(1);
+  running = false;
+  await render();
+  running = true;
+  await render();
+  await advance(10000);
+  expect(done).toHaveBeenCalledTimes(1);
+});
+it("starts a full new window when a gesture gate is reopened", async () => {
+  await render();
+  await advance(2000);
+  enabled = false;
+  await render();
+  await advance(10000);
+  enabled = true;
+  await render();
+  await advance(2999);
+  expect(done).not.toHaveBeenCalled();
+  await advance(1);
+  expect(done).toHaveBeenCalledTimes(1);
+});

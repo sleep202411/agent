@@ -1,3 +1,4 @@
+import { usePausableTimeout } from "../hooks/use-pausable-timeout";
 import { ExperienceStillSegment } from "./experience-still-segment";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -303,12 +304,13 @@ export function ExperienceVideoRenderer({
     !isStill && terminalMode?.kind === "held" && clip?.endBehavior.behavior === "hold-last-frame"
       ? clip.endBehavior.durationMs
       : undefined;
-  const advanceAfterHold = useEffectEvent(() => advanceSequence());
-  useEffect(() => {
-    if (videoHoldMs === undefined) return;
-    const timer = setTimeout(() => advanceAfterHold(), videoHoldMs);
-    return () => clearTimeout(timer);
-  }, [sequenceIndex, videoHoldMs]);
+  usePausableTimeout({
+    identity: `${renderer.instanceId}:${sequenceIndex}`,
+    enabled: videoHoldMs !== undefined,
+    running: presenting,
+    durationMs: videoHoldMs ?? 0,
+    onTimeout: advanceSequence,
+  });
 
   const reportTimeline = useEffectEvent((currentTime: number) => {
     onTimelineTimeMs(timelineOffsetMs + Math.round(currentTime * 1_000));
@@ -342,15 +344,13 @@ export function ExperienceVideoRenderer({
     onRuntimeError(message);
   });
 
-  const completeEmptySequence = useEffectEvent(() => completeRenderer());
-
-  // Empty sequence: hold, then complete — kept in an effect so completion can
-  // go through useEffectEvent (not callable during render).
-  useEffect(() => {
-    if (sequenceLength !== 0) return;
-    const timer = setTimeout(() => completeEmptySequence(), EMPTY_SEQUENCE_HOLD_MS);
-    return () => clearTimeout(timer);
-  }, [renderer.instanceId, sequenceLength]);
+  usePausableTimeout({
+    identity: renderer.instanceId,
+    enabled: sequenceLength === 0,
+    running: presenting,
+    durationMs: EMPTY_SEQUENCE_HOLD_MS,
+    onTimeout: completeRenderer,
+  });
 
   useEffect(() => {
     if (!sourceUri || isStill) {
