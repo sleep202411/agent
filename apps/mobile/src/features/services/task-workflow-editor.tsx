@@ -1,3 +1,4 @@
+import { taskWorkflowLabel } from "./task-workflow-label";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -161,7 +162,7 @@ function Editor({
       {canReview && (
         <View style={{ gap: 8 }}>
           <ThemedText>{t("taskWorkflow.latest")}</ThemedText>
-          <ThemedText>{snapshot.workflowState.name}</ThemedText>
+          <ThemedText>{taskWorkflowLabel(snapshot.workflowState, t)}</ThemedText>
           <Pressable
             accessibilityRole="button"
             onPress={() => session.review(snapshot)}

@@ -72,3 +72,18 @@ it("preserves parent, subtask and dependency identities and resolution flags", a
     await expect(fetchTaskDetail("crew", id, new AbortController().signal)).rejects.toThrow();
   }
 });
+it("preserves the workflow display identity for task and related-task labels", async () => {
+  const workflowState = { name: "Director review", systemKey: "submitted" };
+  const parent = {
+    id: "22222222-2222-4222-8222-222222222222",
+    number: 2,
+    title: "Parent",
+    status: "submitted",
+    workflowState,
+    parentId: null,
+  };
+  vi.mocked(api.get).mockResolvedValue({ ...detail, workflowState, parent });
+  const result = await fetchTaskDetail("crew", id, new AbortController().signal);
+  expect(result.workflowState).toEqual(workflowState);
+  expect(result.parent?.workflowState).toEqual(workflowState);
+});

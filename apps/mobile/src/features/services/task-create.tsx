@@ -1,3 +1,4 @@
+import { taskWorkflowLabel } from "./task-workflow-label";
 import { restoreTaskDraftEditor } from "./task-draft-editor-context";
 import { TaskCrewContext } from "./task-crew-context";
 import { assertTaskCreationDeadline, TaskCreationDeadlineError } from "./task-creation-deadline";
@@ -449,7 +450,7 @@ function Editor({
               context: [
                 planning.episode && `${t("taskPlanning.episode")}: ${planning.episode.name}`,
                 planning.cycle && `${t("taskPlanning.cycle")}: ${planning.cycle.name}`,
-                workflow && `${t("thread.taskState")}: ${workflow.name}`,
+                workflow && `${t("thread.taskState")}: ${taskWorkflowLabel(workflow, t)}`,
                 parent && `${t("taskRelations.parentTask")}: ${parent.title}`,
                 ...blockers.map((row) => `${t("taskRelations.blockedBy")}: ${row.title}`),
                 ...planning.labels.map((row) => `${t("taskPlanning.labels")}: ${row.name}`),

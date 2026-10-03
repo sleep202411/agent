@@ -1,3 +1,4 @@
+import { taskWorkflowLabel } from "./task-workflow-label";
 import { useTaskDeliverySession } from "./use-task-delivery-session";
 import { TaskDeliveryManagement } from "./task-delivery-management";
 import { TaskCompensationSummary } from "./task-compensation-summary";
@@ -169,7 +170,7 @@ function TaskContent({
             TASK-{data.number} · {data.title}
           </ThemedText>
           <ThemedText>
-            {t("thread.taskState")}: {data.workflowState.name}
+            {t("thread.taskState")}: {taskWorkflowLabel(data.workflowState, t)}
           </ThemedText>
           <ThemedText>{data.description || t("thread.taskNoDescription")}</ThemedText>
           <ThemedText>

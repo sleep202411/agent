@@ -1,3 +1,4 @@
+import { taskWorkflowLabel } from "./task-workflow-label";
 import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -221,7 +222,8 @@ export function TaskCenterList({
             </ThemedText>
           )}
           <ThemedText type="small">
-            {item.workflowState.name} · {t(`taskSchedule.${item.priority}` as MessageKey)}
+            {taskWorkflowLabel(item.workflowState, t)} ·{" "}
+            {t(`taskSchedule.${item.priority}` as MessageKey)}
           </ThemedText>
           {item.dueAt && (
             <ThemedText type="small">{new Date(item.dueAt).toLocaleString(locale)}</ThemedText>

@@ -7,7 +7,7 @@ import { taskOption } from "./task-options";
 const date = z.string().datetime({ offset: true }).nullable();
 export const taskReference = taskOption.extend({
   status: z.string().min(1),
-  workflowState: z.object({ name: z.string().min(1) }),
+  workflowState: z.object({ name: z.string().min(1), systemKey: z.string().nullish() }),
   parentId: z.string().uuid().nullable(),
 });
 export const taskDetailSchema = taskOption.extend({
@@ -27,7 +27,7 @@ export const taskDetailSchema = taskOption.extend({
   revisionLimit: z.number().int().nonnegative().nullable(),
   revisionRoundsUsed: z.number().int().nonnegative(),
   storyboardClipId: z.string().nullable().optional(),
-  workflowState: z.object({ name: z.string().min(1) }),
+  workflowState: z.object({ name: z.string().min(1), systemKey: z.string().nullish() }),
   startAt: date,
   dueAt: date,
   labels: z.array(z.object({ id: z.string().uuid(), name: z.string() })),
