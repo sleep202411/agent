@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { IpContributorsPanel } from "./contributors-panel";
 const h = vi.hoisted(() => ({
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   patch: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("@/lib/durable-record", () => ({
   }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({
@@ -122,6 +124,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   host = document.createElement("div");
   document.body.append(host);
@@ -254,4 +257,53 @@ it("hides loaded private content when refresh reports loss of access", async () 
   await click("thread.refresh");
   expect(host.textContent).not.toContain("Original");
   expect(host.textContent).toContain("No access");
+});
+
+it("retains an unsaved credit across backgrounding without changing account or share", async () => {
+  await mount();
+  await click("ipContributors.edit");
+  await type("ipContributors.displayName", "Edited");
+  h.active = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.active = true;
+  await mount();
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="ipContributors.displayName"]')?.value
+  ).toBe("Edited");
+  expect(h.patch).not.toHaveBeenCalled();
+  await click("ipContributors.save");
+  expect(h.patch).toHaveBeenCalledOnce();
+  expect(h.patch.mock.calls[0][1].data).toMatchObject({
+    displayName: "Edited",
+    userId: "123",
+    revenueShareBps: 3000,
+  });
+});
+it("does not save retained edits after permission is revoked in background", async () => {
+  await mount();
+  await click("ipContributors.edit");
+  await type("ipContributors.displayName", "Edited");
+  h.active = false;
+  await mount();
+  const { ApiRequestError } = await import("@/lib/api-client");
+  h.get.mockRejectedValue(new ApiRequestError("DENIED", "Access removed", 403));
+  h.active = true;
+  await mount();
+  await click("ipContributors.save");
+  expect(h.patch).not.toHaveBeenCalled();
+  expect(host.querySelector("input")).toBeNull();
+  expect(host.textContent).toContain("Access removed");
+});
+it("retires unsent credit edits on route exit", async () => {
+  await mount();
+  await click("ipContributors.edit");
+  await type("ipContributors.displayName", "Unsent");
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.patch).not.toHaveBeenCalled();
 });
