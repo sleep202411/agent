@@ -36,6 +36,7 @@ const manifest = {
 } as unknown as ExperienceRuntimeManifest;
 const completed = vi.fn();
 const noop = () => {};
+const refused = vi.fn();
 let root: Root;
 const render = (id = "empty") =>
   act(async () =>
@@ -49,6 +50,7 @@ const render = (id = "empty") =>
           } as unknown as ExperienceRendererInstance
         }
         copy={{ emptySequence: "No footage" } as ExperiencePlayerCopy}
+        onPlaybackRefused={refused}
         onCompleted={completed}
         onRuntimeError={noop}
         onTimelineTimeMs={noop}
@@ -63,6 +65,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   h.active = true;
   completed.mockClear();
+  refused.mockClear();
+  h.player.addListener.mockClear();
   root = createRoot(document.createElement("div"));
 });
 afterEach(async () => {
@@ -91,4 +95,16 @@ it("starts a fresh placeholder duration for a different renderer", async () => {
   expect(completed).not.toHaveBeenCalled();
   await advance(5000);
   expect(completed).toHaveBeenCalledTimes(1);
+});
+
+it("routes browser autoplay refusal to pause without completing the scene", async () => {
+  await render();
+  const listener = (
+    h.player.addListener.mock.calls as unknown as [string, (event: unknown) => void][]
+  ).find(([event]) => event === "statusChange")![1];
+  await act(async () =>
+    listener({ status: "error", error: { name: "NotAllowedError", message: "Tap to play" } })
+  );
+  expect(refused).toHaveBeenCalledOnce();
+  expect(completed).not.toHaveBeenCalled();
 });

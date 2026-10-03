@@ -19,7 +19,11 @@ const h = vi.hoisted(() => ({
   mediaPresenting: true,
   spatialPresenting: true,
   hold: (_hold: boolean) => {},
-  video: {} as { onCompleted: () => void },
+  video: {} as {
+    onCompleted: () => void;
+    onPlaybackRefused: () => void;
+    onPlaybackHandle: (id: string, handle: unknown) => void;
+  },
 }));
 vi.mock("react-native", () => ({
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
@@ -218,4 +222,32 @@ it("holds media without freezing the interaction, then releases a late completio
   await act(async () => h.hold(false));
   expect(h.mediaPresenting).toBe(true);
   expect(h.outcome).toHaveBeenCalledTimes(1);
+});
+
+it("pauses on autoplay refusal and retries from the Resume tap", async () => {
+  await render();
+  await click("Start");
+  const play = vi.fn().mockResolvedValue(undefined);
+  await act(async () =>
+    h.video.onPlaybackHandle("film", {
+      play,
+      pause: vi.fn(),
+      seek: vi.fn(),
+      playbackIdentity: "film",
+    })
+  );
+  await act(async () => h.video.onPlaybackRefused());
+  expect(container.querySelector('[aria-label="Resume"]')).not.toBeNull();
+  await act(async () => vi.advanceTimersByTime(15000));
+  expect(h.dispatch).not.toHaveBeenCalledWith(
+    expect.arrayContaining([expect.objectContaining({ type: "scene.clock-ended" })])
+  );
+  play.mockClear();
+  await click("Resume");
+  expect(play).toHaveBeenCalledWith({ userGesture: true });
+  await act(async () => h.hold(true));
+  await click("Pause");
+  play.mockClear();
+  await click("Resume");
+  expect(play).not.toHaveBeenCalled();
 });

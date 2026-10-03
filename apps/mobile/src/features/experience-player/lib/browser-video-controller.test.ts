@@ -130,3 +130,20 @@ it("ignores an older play rejection but still reports a current failure", async 
   await Promise.resolve();
   expect(error).toHaveBeenCalledWith({ status: "error", error: { message: "Playback blocked" } });
 });
+
+it("preserves autoplay refusal identity for recoverable pause without replacing the source", async () => {
+  const error = vi.fn();
+  player.addListener("statusChange", error);
+  vi.mocked(video.play).mockRejectedValueOnce(new DOMException("Tap to play", "NotAllowedError"));
+  player.currentTime = 12;
+  player.play();
+  await Promise.resolve();
+  expect(error).toHaveBeenCalledWith({
+    status: "error",
+    error: { message: "Tap to play", name: "NotAllowedError" },
+  });
+  expect(player.currentTime).toBe(12);
+  player.play();
+  await Promise.resolve();
+  expect(error).toHaveBeenCalledTimes(1);
+});

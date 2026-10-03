@@ -97,7 +97,7 @@ function EmptyVideoSequencePlaceholder({ label }: { label: string }) {
 
 export type ExperienceMediaPlaybackHandle = {
   readonly playbackIdentity: string;
-  play(): Promise<void>;
+  play(options?: { userGesture?: boolean }): Promise<void>;
   pause(): void;
   seek(seconds: number): void;
 };
@@ -110,6 +110,7 @@ export function ExperienceVideoRenderer({
   onCompleted,
   onRuntimeError,
   onPlaybackHandle,
+  onPlaybackRefused,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -117,6 +118,7 @@ export function ExperienceVideoRenderer({
   onTimelineTimeMs: (timeMs: number) => void;
   onCompleted: () => void;
   onRuntimeError: (message: string) => void;
+  onPlaybackRefused?: () => void;
   onPlaybackHandle?: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
 }) {
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
@@ -413,8 +415,8 @@ export function ExperienceVideoRenderer({
     }
     const handle: ExperienceMediaPlaybackHandle = {
       playbackIdentity,
-      play: async () => {
-        if (!presentingRef.current) {
+      play: async (options) => {
+        if (!presentingRef.current && !options?.userGesture) {
           resumeWhenPresentingRef.current = true;
           return;
         }
@@ -443,6 +445,10 @@ export function ExperienceVideoRenderer({
     terminalMode?.kind,
   ]);
 
+  const handlePlaybackRefused = useEffectEvent(() => {
+    resumeWhenPresentingRef.current = true;
+    onPlaybackRefused?.();
+  });
   const handleNativeEnd = useEffectEvent(() => handleEnd());
   useEffect(() => {
     const endSubscription = player.addListener("playToEnd", () => handleNativeEnd());
@@ -451,6 +457,12 @@ export function ExperienceVideoRenderer({
     });
     const statusSubscription = player.addListener("statusChange", ({ status, error }) => {
       if (status === "error") {
+        // Browser policy rejection is recoverable through the existing Resume action.
+        // Keep decoding/network failures on the normal error and signed-URL recovery path.
+        if (error && "name" in error && error.name === "NotAllowedError" && onPlaybackRefused) {
+          handlePlaybackRefused();
+          return;
+        }
         reportPlaybackError(error?.message?.trim() || copy.mediaError(assetId ?? "unknown"));
       }
     });
@@ -459,7 +471,7 @@ export function ExperienceVideoRenderer({
       timeSubscription.remove();
       statusSubscription.remove();
     };
-  }, [assetId, copy, player]);
+  }, [assetId, copy, onPlaybackRefused, player]);
 
   if (sequenceLength === 0) {
     return <EmptyVideoSequencePlaceholder label={copy.emptySequence} />;

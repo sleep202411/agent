@@ -734,6 +734,7 @@ function ActiveExperienceRuntimePlayer({
                 onOutcome={emitOutcome}
                 onRuntimeError={setRuntimeError}
                 onTimelineTimeMs={(positionMs) => advanceTimeline(renderer.instanceId, positionMs)}
+                onPlaybackRefused={() => setViewerPaused(true)}
                 onPlaybackHandle={registerPlaybackHandle}
               />
             </ScreenActiveGateContext.Provider>
@@ -759,7 +760,18 @@ function ActiveExperienceRuntimePlayer({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={copy.resume}
-              onPress={() => setViewerPaused(false)}
+              onPress={() => {
+                // Invoke play during the tap itself: browsers may reject an effect's
+                // later attempt after transient user activation has expired.
+                if (screenActive && !timelineHoldGate && !accessPending && !retryAccess) {
+                  playbackHandlesRef.current.forEach((handle) => {
+                    void handle
+                      .play({ userGesture: true })
+                      .catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
+                  });
+                }
+                setViewerPaused(false);
+              }}
               style={styles.pauseOverlay}
             >
               <ThemedText type="smallBold" style={styles.lightText}>
@@ -806,6 +818,7 @@ function RendererPanel({
   onRuntimeError,
   onTimelineTimeMs,
   onPlaybackHandle,
+  onPlaybackRefused,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -822,6 +835,7 @@ function RendererPanel({
   ) => void;
   onRuntimeError: (message: string) => void;
   onTimelineTimeMs: (timeMs: number) => void;
+  onPlaybackRefused: () => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
 }) {
   const defaultLocale = manifest.localization.defaultLocale;
@@ -835,6 +849,7 @@ function RendererPanel({
         onTimelineTimeMs={onTimelineTimeMs}
         onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
         onRuntimeError={onRuntimeError}
+        onPlaybackRefused={onPlaybackRefused}
         onPlaybackHandle={onPlaybackHandle}
       />
     );

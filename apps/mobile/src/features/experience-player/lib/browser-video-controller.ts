@@ -5,7 +5,7 @@ import type { VideoSource } from "expo-video";
 type Events = {
   playToEnd: Record<string, never>;
   timeUpdate: { currentTime: number };
-  statusChange: { status: "readyToPlay" | "error"; error?: { message: string } };
+  statusChange: { status: "readyToPlay" | "error"; error?: { message: string; name?: string } };
 };
 
 /** The small imperative interface used by the cinematic renderer, backed by HTML video. */
@@ -53,7 +53,21 @@ export class BrowserVideoController {
         if (this.media === media && this.sequence === sequence && this.playIntent === intent)
           this.emit("statusChange", {
             status: "error",
-            error: { message: error instanceof Error ? error.message : "Video playback failed" },
+            error: {
+              message:
+                error &&
+                typeof error === "object" &&
+                "message" in error &&
+                typeof error.message === "string"
+                  ? error.message
+                  : "Video playback failed",
+              ...(error &&
+              typeof error === "object" &&
+              "name" in error &&
+              error.name === "NotAllowedError"
+                ? { name: error.name }
+                : {}),
+            },
           });
       });
   }
