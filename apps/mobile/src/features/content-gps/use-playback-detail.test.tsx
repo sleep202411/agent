@@ -147,3 +147,91 @@ it("does not start hidden reads and recovers an initial detail failure", async (
   });
   expect(current.ip).toBe(detail);
 });
+
+it("resumes the manually chosen episode using fresh media rather than the original link", async () => {
+  await render();
+  await act(async () =>
+    current.setPlaying({ url: "old-second.mp4", title: "Second", targetEpisodeId: "ep2" })
+  );
+  await render(false);
+  h.load.mockResolvedValue({
+    detail: {
+      ...detail,
+      episodes: [...detail.episodes, { id: "ep2", title: "Second", mediaUrl: "new-second.mp4" }],
+    },
+    access: {
+      ...access(),
+      episodes: { ...access().episodes, ep2: { access: "free", owned: false, price: null } },
+    },
+    accessError: null,
+  });
+  await render();
+  expect(current.playing?.url).toBe("new-second.mp4");
+  expect(current.playing?.targetEpisodeId).toBe("ep2");
+  await render(false);
+  h.load.mockResolvedValue(result());
+  await render();
+  expect(current.playing).toBeUndefined();
+});
+it("does not reopen deliberately closed playback on return", async () => {
+  await render();
+  await act(async () => current.setPlaying(undefined));
+  await render(false);
+  await render();
+  expect(current.playing).toBeUndefined();
+  expect(h.load).toHaveBeenCalledTimes(2);
+});
+it("refreshes a selected trailer without substituting the linked full episode", async () => {
+  await render();
+  await act(async () =>
+    current.setPlaying({ url: "old-trailer.mp4", title: "Trailer", source: "trailer" })
+  );
+  await render(false);
+  h.load.mockResolvedValue({ ...result(), detail: { ...detail, trailerUrl: "new-trailer.mp4" } });
+  await render();
+  expect(current.playing).toEqual({ url: "new-trailer.mp4", title: "Trailer", source: "trailer" });
+  await render(false);
+  h.load.mockResolvedValue(result());
+  await render();
+  expect(current.playing).toBeUndefined();
+});
+it("keeps the chosen episode through a failed return read without bypassing revoked access", async () => {
+  await render();
+  await act(async () =>
+    current.setPlaying({ url: "second.mp4", title: "Second", targetEpisodeId: "ep2" })
+  );
+  await render(false);
+  h.load.mockRejectedValueOnce(new Error("Offline"));
+  await render();
+  expect(current.playing).toBeUndefined();
+  expect(current.accessError).toBe("Offline");
+  const selectedDetail = {
+    ...detail,
+    episodes: [...detail.episodes, { id: "ep2", title: "Second", mediaUrl: "fresh-second.mp4" }],
+  };
+  h.load.mockResolvedValue({
+    detail: selectedDetail,
+    access: {
+      ...access(),
+      episodes: { ...access().episodes, ep2: { access: "locked", owned: false, price: null } },
+    },
+    accessError: null,
+  });
+  await act(async () => {
+    await current.refresh(true);
+  });
+  expect(current.playing).toBeUndefined();
+  h.load.mockResolvedValue({
+    detail: selectedDetail,
+    access: {
+      ...access(),
+      episodes: { ...access().episodes, ep2: { access: "free", owned: false, price: null } },
+    },
+    accessError: null,
+  });
+  await act(async () => {
+    await current.refresh(true);
+  });
+  expect(current.playing?.targetEpisodeId).toBe("ep2");
+  expect(current.playing?.url).toBe("fresh-second.mp4");
+});

@@ -17,6 +17,13 @@ export function usePlaybackDetail(
   const [loading, setLoading] = useState(true);
   const [accessBusy, setAccessBusy] = useState(active);
   const [playing, setPlaying] = useState<PlaybackEntry>();
+  // Undefined follows the incoming link; null is an explicit close. Preserve
+  // user intent across access refreshes, never the old playable URL itself.
+  const selection = useRef<PlaybackEntry | null | undefined>(undefined);
+  const selectPlayback = useCallback((next: PlaybackEntry | undefined) => {
+    selection.current = next ?? null;
+    setPlaying(next);
+  }, []);
   const aliveRef = useRef(false);
   const activeRef = useRef(active);
   useLayoutEffect(() => {
@@ -59,7 +66,21 @@ export function usePlaybackDetail(
             setAccess(result.access);
             setAccessError(result.accessError);
             if (resume && result.detail) {
-              setPlaying(resolvePlaybackEntry(result.detail, result.access, watch, episode));
+              const selected = selection.current;
+              setPlaying(
+                selected === null
+                  ? undefined
+                  : selected?.source === "trailer"
+                    ? result.detail.trailerUrl
+                      ? { url: result.detail.trailerUrl, title: selected.title, source: "trailer" }
+                      : undefined
+                    : resolvePlaybackEntry(
+                        result.detail,
+                        result.access,
+                        selected ? "1" : watch,
+                        selected?.targetEpisodeId ?? episode
+                      )
+              );
             }
             return result;
           },
@@ -102,7 +123,7 @@ export function usePlaybackDetail(
     loading,
     accessBusy,
     playing: active ? playing : undefined,
-    setPlaying,
+    setPlaying: selectPlayback,
     refresh,
     aliveRef,
     revision,

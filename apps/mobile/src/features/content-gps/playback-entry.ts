@@ -6,6 +6,7 @@ export type PlaybackEntry = {
   title: string;
   episodeId?: string;
   targetEpisodeId?: string;
+  source?: "trailer";
 };
 
 /** A playback intent never substitutes another episode or an IP trailer. */

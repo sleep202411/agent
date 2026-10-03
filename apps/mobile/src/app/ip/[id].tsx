@@ -218,6 +218,7 @@ function IpDetailSession() {
       url,
       title: title ?? ip.title,
       targetEpisodeId: episode?.id,
+      source: episode ? undefined : "trailer",
       episodeId: episode?.feedbackEligible ? episode.id : undefined,
     });
     scrollRef.current?.scrollTo({ y: 0, animated: true });
