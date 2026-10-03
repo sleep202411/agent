@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ExperienceStableIdSchema, parseExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
+import {
+  ExperienceStableIdSchema,
+  parseExperienceRuntimeManifest,
+} from "@repo/shared/experience-runtime";
 import {
   advanceExperienceTimeline,
   assertExperienceRuntimeCompatibility,
@@ -784,12 +787,14 @@ test("audio cue counters survive JSON restoration without inherited ID collision
     assert.equal(ExperienceStableIdSchema.parse(cueId), cueId);
     const manifest = {
       audio: {
-        cues: [{
-          cueId,
-          assetIds: ["audio.a", "audio.b"],
-          selection: "sequential",
-          playbackRate: { minimum: 1, maximum: 1 },
-        }],
+        cues: [
+          {
+            cueId,
+            assetIds: ["audio.a", "audio.b"],
+            selection: "sequential",
+            playbackRate: { minimum: 1, maximum: 1 },
+          },
+        ],
       },
     };
     let state = JSON.parse(JSON.stringify(createExperienceDeterministicRuntimeState()));
@@ -802,4 +807,56 @@ test("audio cue counters survive JSON restoration without inherited ID collision
     assert.equal(second.playbackOrdinal, 1);
     assert.equal(state.audioCuePlayCounts[cueId], 2);
   }
+});
+
+test("reports a fast ending after delayed session creation, in progress/completion order", async () => {
+  let resolveStart;
+  const pendingStart = new Promise((resolve) => {
+    resolveStart = resolve;
+  });
+  const events = [];
+  const registry = new ExperienceRendererRegistry();
+  registry.register({
+    rendererId: "core.text",
+    apiVersion: "1.0.0",
+    configSchemaVersion: "1.0.0",
+    capabilities: new Set(["core.text"]),
+    supportsCommand: () => false,
+    supportsOutcome: () => false,
+    assertConfig() {},
+    assertCommand() {},
+    assertOutcome() {},
+  });
+  const controller = new ExperienceRuntimeController(manifestFixture(), {
+    compatibility: {
+      engineApiVersion: "2.0.0",
+      experienceApiVersion: "1.0.0",
+      capabilities: new Set(["core.text"]),
+    },
+    rendererRegistry: registry,
+    playSessionReporter: {
+      onStart: () => pendingStart,
+      onProgress: async (sessionId, payload) => {
+        events.push(["progress", sessionId, payload]);
+      },
+      onComplete: async (sessionId, payload) => {
+        events.push(["complete", sessionId, payload]);
+      },
+    },
+  });
+  controller.start();
+  const result = controller.dispatch([
+    {
+      type: "interaction.completed",
+      sourceId: "interaction.test",
+      payload: { input: "hold", durationMs: 1650 },
+    },
+  ]);
+  assert.equal(result.state.status, "completed");
+  resolveStart({ sessionId: "session.delayed" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, [
+    ["progress", "session.delayed", { currentNode: "scene.two" }],
+    ["complete", "session.delayed", { endingId: "ending.done", currentNode: "scene.two" }],
+  ]);
 });

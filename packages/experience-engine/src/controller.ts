@@ -43,6 +43,7 @@ export class ExperienceRuntimeController {
   readonly #canAccess?: ExperienceAccessCheck;
   readonly #reporter?: PlaySessionReporter;
   #playSessionId: string | null = null;
+  #reporting: Promise<void> = Promise.resolve();
   #visitedNodeIds = new Set<string>();
 
   get playSessionId(): string | null {
@@ -144,7 +145,7 @@ export class ExperienceRuntimeController {
 
     // Fire-and-forget session start — skipped if a sessionId was restored.
     if (this.#reporter && !this.#playSessionId) {
-      void (async () => {
+      this.#reporting = (async () => {
         try {
           const res = await this.#reporter!.onStart({
             gameId: this.#manifest.gameId,
@@ -201,7 +202,7 @@ export class ExperienceRuntimeController {
     }
     result.effects.forEach((effect) => {
       if (effect.kind === "scene.changed") {
-        if (this.#reporter && this.#playSessionId) {
+        if (this.#reporter) {
           if (!this.#visitedNodeIds.has(effect.toSceneId)) {
             this.#visitedNodeIds.add(effect.toSceneId);
             try {
@@ -214,9 +215,10 @@ export class ExperienceRuntimeController {
             } catch {
               // ignore
             }
-            const sessionId = this.#playSessionId;
             const currentNode = effect.toSceneId;
-            void Promise.resolve().then(async () => {
+            this.#reporting = this.#reporting.then(async () => {
+              const sessionId = this.#playSessionId;
+              if (!sessionId) return;
               try {
                 await this.#reporter!.onProgress(sessionId, { currentNode });
               } catch (err) {
@@ -226,11 +228,12 @@ export class ExperienceRuntimeController {
           }
         }
       } else if (effect.kind === "ending.completed") {
-        if (this.#reporter && this.#playSessionId) {
-          const sessionId = this.#playSessionId;
+        if (this.#reporter) {
           const endingId = effect.endingId;
-          const currentNode = this.#state.currentSceneId;
-          void Promise.resolve().then(async () => {
+          const currentNode = result.state.currentSceneId;
+          this.#reporting = this.#reporting.then(async () => {
+            const sessionId = this.#playSessionId;
+            if (!sessionId) return;
             try {
               await this.#reporter!.onComplete(sessionId, { endingId, currentNode });
             } catch (err) {
@@ -295,7 +298,7 @@ export class ExperienceRuntimeController {
     const payload = structuredClone(input.payload ?? {});
     this.#rendererRegistry.require(instance.rendererId).assertOutcome(input.outcomeType, payload);
 
-    if (input.outcomeType === "choice-selected" && this.#reporter && this.#playSessionId) {
+    if (input.outcomeType === "choice-selected" && this.#reporter) {
       const choiceId = (payload as any)?.choiceId;
       if (choiceId && typeof choiceId === "string") {
         const config = instance.config as any;
@@ -309,9 +312,10 @@ export class ExperienceRuntimeController {
             typeof rawLabel === "string"
               ? rawLabel
               : rawLabel?.[defaultLoc] || Object.values(rawLabel || {})[0] || choiceId;
-          const sessionId = this.#playSessionId;
           const currentNode = this.#state.currentSceneId;
-          void Promise.resolve().then(async () => {
+          this.#reporting = this.#reporting.then(async () => {
+            const sessionId = this.#playSessionId;
+            if (!sessionId) return;
             try {
               await this.#reporter!.onProgress(sessionId, {
                 currentNode,
