@@ -228,6 +228,7 @@ it.each([false, true])(
       else resolve({ mocked: false, productId: "old-product" });
     });
     expect(state.alert).not.toHaveBeenCalled();
+    expect(state.sync).not.toHaveBeenCalled();
   }
 );
 

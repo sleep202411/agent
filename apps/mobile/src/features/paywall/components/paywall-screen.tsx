@@ -582,6 +582,8 @@ function PaywallSession() {
     setBusy(true);
     try {
       const result = await purchaseProduct(product);
+      // Leaving this screen may still require fulfillment; replacing the account must not.
+      if (getAuthGeneration() !== sessionGeneration) return;
       if (result.wechatScan) {
         // QR UI only makes sense on this screen.
         if (!isCurrentSession()) return;
