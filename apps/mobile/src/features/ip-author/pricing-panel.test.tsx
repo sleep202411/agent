@@ -6,6 +6,7 @@ import { IpPricingPanel } from "./pricing-panel";
 const h = vi.hoisted(() => ({
   signedIn: true,
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   patch: vi.fn(),
@@ -52,7 +53,9 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("react-native", () => ({
   Linking: { openURL: h.open },
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ScrollView: ({ children, style }: { children: ReactNode; style?: { display: "none" } }) => (
+    <div style={style}>{children}</div>
+  ),
   ActivityIndicator: () => null,
   Pressable: ({
     children,
@@ -93,6 +96,7 @@ vi.mock("@/features/services/conversation-video", () => ({
   ConversationVideo: () => <div>Video preview</div>,
 }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
   useLocalSearchParams: () => ({ id: "11111111-1111-4111-8111-111111111111" }),
   useRouter: () => ({ push: h.push }),
   Stack: {
@@ -135,6 +139,7 @@ beforeEach(() => {
   h.records.clear();
   h.generation = 1;
   h.active = true;
+  h.focused = true;
   snapshot = {
     id,
     title: "Story",
@@ -252,7 +257,7 @@ it("requires refreshed review and confirmation before discarding an unresolved l
   expect(host.textContent).not.toContain("ipPricing.pending");
   expect(h.put).not.toHaveBeenCalled();
 });
-it("clears private details on revoked access and unmounts during inactivity", async () => {
+it("clears private details on revoked access and hides during inactivity", async () => {
   const { ApiRequestError } = await import("@/lib/api-client");
   await mount();
   await click("ipPricing.episodes");
@@ -261,7 +266,7 @@ it("clears private details on revoked access and unmounts during inactivity", as
   expect(host.textContent).not.toContain("Public episode");
   h.active = false;
   await mount();
-  expect(host.textContent).toBe("");
+  expect(host.querySelector<HTMLElement>("div")?.style.display).toBe("none");
 });
 
 it("loads after Strict Mode effect cleanup and restart", async () => {
@@ -274,4 +279,46 @@ it("loads after Strict Mode effect cleanup and restart", async () => {
   );
   await click("ipPricing.episodes");
   expect(host.textContent).toContain("Public episode");
+});
+
+it("keeps an unsaved price and schedule through backgrounding without sending a write", async () => {
+  await mount();
+  await click("ipPricing.bundle");
+  await type("ipPricing.amount", "100");
+  await click("ipPricing.schedule");
+  await type("ipPricing.originalAmount", "120");
+  h.active = false;
+  await mount();
+  expect(host.querySelector<HTMLElement>("div")?.style.display).toBe("none");
+  h.active = true;
+  await mount();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="ipPricing.amount"]')?.value).toBe(
+    "100"
+  );
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="ipPricing.originalAmount"]')?.value
+  ).toBe("120");
+  expect(h.put).not.toHaveBeenCalled();
+  await click("ipPricing.save");
+  expect(h.put).toHaveBeenCalledOnce();
+  expect(h.put.mock.calls[0][1].data).toMatchObject({
+    amount: "100",
+    originalAmount: "120",
+    expectedVersion: 1,
+  });
+});
+it("retires unsaved price fields on route exit", async () => {
+  await mount();
+  await click("ipPricing.bundle");
+  await type("ipPricing.amount", "999");
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  await click("ipPricing.bundle");
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="ipPricing.amount"]')?.value
+  ).not.toBe("999");
+  expect(h.put).not.toHaveBeenCalled();
 });

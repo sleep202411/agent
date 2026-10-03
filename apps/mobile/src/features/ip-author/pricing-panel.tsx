@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -42,11 +43,12 @@ function Button({
   );
 }
 export function IpPricingPanel(props: Props) {
-  return useScreenActive() && getAuthGeneration() === props.generation ? (
+  return useIsFocused() && getAuthGeneration() === props.generation ? (
     <Session key={`${props.ipId}:${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
 function Session({ ipId, userId, generation }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(ipId, true);
@@ -100,7 +102,7 @@ function Session({ ipId, userId, generation }: Props) {
   };
   const refresh = () => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setReviewed(false);
     setConfirm(false);
     setError(initial.error);
@@ -116,7 +118,7 @@ function Session({ ipId, userId, generation }: Props) {
   };
   const submit = (command: PricingCommand) => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setSaved(false);
     setError("");
     setReviewed(false);
@@ -156,6 +158,7 @@ function Session({ ipId, userId, generation }: Props) {
     snapshot?.episodes.filter((item) => ["published", "scheduled"].includes(item.status)) ?? [];
   return (
     <ScrollView
+      style={!active ? { display: "none" } : undefined}
       contentContainerStyle={{ padding: 16, gap: 12 }}
       keyboardShouldPersistTaps="handled"
     >
