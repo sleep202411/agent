@@ -338,6 +338,9 @@ function PaywallSession() {
     refresh: refreshCompute,
   } = useComputeWalletBalance();
   const [communityBalance, setCommunityBalance] = useState<string | null>(null);
+  const [communityError, setCommunityError] = useState<string | null>(null);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const communityRead = useRef(0);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -451,22 +454,41 @@ function PaywallSession() {
     if (preferred) setProductId(preferred.id);
   }, [apiCommunityMembership, membershipPlans, productId, setProductId]);
 
+  const refreshCommunity = useCallback(
+    async (signal?: AbortSignal) => {
+      if (signal?.aborted || !isCurrentSession()) return;
+      const request = ++communityRead.current;
+      const current = () =>
+        !signal?.aborted && isCurrentSession() && request === communityRead.current;
+      setCommunityLoading(true);
+      setCommunityError(null);
+      try {
+        const balance = await fetchCommunityPointBalance(signal);
+        if (current()) setCommunityBalance(balance);
+      } catch (cause) {
+        if (current()) {
+          setCommunityBalance(null);
+          setCommunityError(cause instanceof Error ? cause.message : String(cause));
+        }
+      } finally {
+        if (current()) setCommunityLoading(false);
+      }
+    },
+    [isCurrentSession]
+  );
   useEffect(() => {
     if (!communityPointsUseBillingApi(channel)) return;
-    let cancelled = false;
-    void fetchCommunityPointBalance().then((balance) => {
-      if (!cancelled && isCurrentSession()) setCommunityBalance(balance);
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      void refreshCommunity(controller.signal);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [channel, isCurrentSession]);
+    return () => controller.abort();
+  }, [channel, refreshCommunity]);
 
   const canRestore = channel === "apple_iap" || channel === "google_play_iap";
   const actionsLocked = busy || restoring;
   // React state disables the UI on the next render; serialize dispatch now.
   const paymentActionInFlight = useRef(false);
-  const walletRefreshGeneration = useRef(0);
   /** Cancels on-screen WeChat settle UI only — background follow keeps running. */
   const wechatFollowGeneration = useRef(0);
   const wechatPaidRef = useRef(false);
@@ -474,16 +496,9 @@ function PaywallSession() {
 
   const refreshWallets = useCallback(async () => {
     if (!isCurrentSession()) return;
-    const generation = walletRefreshGeneration.current;
-    try {
-      refreshCompute();
-      const community = await fetchCommunityPointBalance();
-      if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
-      setCommunityBalance(community);
-    } catch {
-      // The row refreshes again the next time this screen opens.
-    }
-  }, [isCurrentSession, refreshCompute]);
+    refreshCompute();
+    await refreshCommunity();
+  }, [isCurrentSession, refreshCompute, refreshCommunity]);
 
   // Closing the QR must not drop a payment that settles a moment later.
   // Nest reconciles WeChat on each order read. Follow continues off-screen;
@@ -543,7 +558,6 @@ function PaywallSession() {
 
   useEffect(
     () => () => {
-      walletRefreshGeneration.current += 1;
       wechatFollowGeneration.current += 1;
       // Leaving with the QR still open (or mid-settle): keep reconciling off-screen.
       const orderId = scanOrderRef.current;
@@ -750,11 +764,34 @@ function PaywallSession() {
           <View style={styles.pointsTop}>
             {tabs}
             {apiCommunity ? (
-              <CommunityAccountRow
-                balance={communityBalance == null ? "…" : formatAmount(communityBalance, locale)}
-                label={t("paywall.communityBalance")}
-                name={accountDisplayName(auth.user, t("paywall.category.communityPoints"))}
-              />
+              <View>
+                {communityError && (
+                  <View>
+                    <ThemedText type="small" accessibilityRole="alert">
+                      {communityError}
+                    </ThemedText>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={communityLoading}
+                      onPress={() => void refreshCommunity()}
+                      style={{ paddingVertical: 8 }}
+                    >
+                      <ThemedText type="small">{t("common.retry")}</ThemedText>
+                    </Pressable>
+                  </View>
+                )}
+                <CommunityAccountRow
+                  balance={
+                    communityBalance == null
+                      ? communityLoading
+                        ? "…"
+                        : "—"
+                      : formatAmount(communityBalance, locale)
+                  }
+                  label={t("paywall.communityBalance")}
+                  name={accountDisplayName(auth.user, t("paywall.category.communityPoints"))}
+                />
+              </View>
             ) : null}
             {computePoints ? (
               <View>

@@ -34,11 +34,11 @@ it.each([
   })),
 ])("keeps an unreadable wallet unknown: %j", async (response) => {
   vi.mocked(api.get).mockResolvedValue(response);
-  expect(await fetchCommunityPointBalance()).toBeNull();
+  await expect(fetchCommunityPointBalance()).rejects.toThrow("invalid wallet data");
 });
 it("does not turn a failed request into a zero balance", async () => {
   vi.mocked(api.get).mockRejectedValueOnce(new Error("offline"));
-  expect(await fetchCommunityPointBalance()).toBeNull();
+  await expect(fetchCommunityPointBalance()).rejects.toThrow("offline");
 });
 
 it("forwards cancellation and avoids a cached balance on return", async () => {

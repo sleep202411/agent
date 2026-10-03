@@ -431,3 +431,34 @@ it("recovers a failed compute balance read without starting a purchase", async (
   expect(host.textContent).toContain("42");
   expect(state.buy).not.toHaveBeenCalled();
 });
+
+it("recovers a failed community balance read without starting a purchase", async () => {
+  state.balance.mockRejectedValueOnce(Error("Community unavailable")).mockResolvedValueOnce("43");
+  await render();
+  expect(host.textContent).toContain("Community unavailable");
+  const retry = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "common.retry"
+  )!;
+  await act(async () => retry.click());
+  expect(host.textContent).not.toContain("Community unavailable");
+  expect(host.textContent).toContain("43");
+  expect(state.buy).not.toHaveBeenCalled();
+});
+
+it("does not overwrite a post-purchase balance with a late initial read", async () => {
+  state.buy.mockResolvedValueOnce({ mocked: false, productId: "points-sku" });
+  let finishInitial!: (value: string) => void;
+  state.balance
+    .mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finishInitial = resolve;
+        })
+    )
+    .mockResolvedValue("44");
+  await render();
+  await act(async () => payButton().click());
+  expect(host.textContent).toContain("44");
+  await act(async () => finishInitial("11"));
+  expect(host.textContent).toContain("44");
+});

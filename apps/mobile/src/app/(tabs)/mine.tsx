@@ -392,6 +392,23 @@ export default function MineScreen() {
               </View>
             </View>
 
+            {!!balances?.errors.length && (
+              <View style={{ gap: 4, paddingHorizontal: 16 }}>
+                {balances.errors.map((message, index) => (
+                  <ThemedText key={index} type="small" accessibilityRole="alert">
+                    {message}
+                  </ThemedText>
+                ))}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={balances.refresh}
+                  style={{ paddingVertical: 8 }}
+                >
+                  <ThemedText type="small">{t("common.retry")}</ThemedText>
+                </Pressable>
+              </View>
+            )}
+
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push("/referrals")}

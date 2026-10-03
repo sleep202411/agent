@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { fetchCommunityPointBalance } from "@/data/ip-api";
 import { fetchComputeWalletBalance } from "@/features/paywall/lib/compute-wallet";
 
-type Balances = { owner: string; community?: string; compute?: string };
+type Balances = { owner: string; community?: string; compute?: string; errors: string[] };
 /** Account/session identity must include the auth generation, not just login status. */
 export function usePersonalBalances(owner: string | undefined) {
   const active = useScreenActive();
-  const scope = useMemo(() => ({ owner, active }), [owner, active]);
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision((value) => value + 1), []);
+  const scope = useMemo(() => ({ owner, active, revision }), [owner, active, revision]);
   const [snapshot, setSnapshot] = useState<{ scope: typeof scope; balances: Balances }>();
   useEffect(() => {
     if (!owner || !active) return;
@@ -21,6 +23,11 @@ export function usePersonalBalances(owner: string | undefined) {
         scope,
         balances: {
           owner,
+          errors: [community, compute].flatMap((result) =>
+            result.status === "rejected"
+              ? [result.reason instanceof Error ? result.reason.message : String(result.reason)]
+              : []
+          ),
           community: community.status === "fulfilled" ? (community.value ?? undefined) : undefined,
           compute: compute.status === "fulfilled" ? (compute.value ?? undefined) : undefined,
         },
@@ -29,5 +36,7 @@ export function usePersonalBalances(owner: string | undefined) {
     return () => controller.abort();
   }, [owner, active, scope]);
   // A return visit must not briefly resurrect the previous balance while refreshing.
-  return owner && active && snapshot?.scope === scope ? snapshot.balances : undefined;
+  return owner && active && snapshot?.scope === scope
+    ? { ...snapshot.balances, refresh }
+    : undefined;
 }

@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { usePersonalBalances } from "./use-personal-balances";
@@ -15,8 +15,12 @@ vi.mock("@/data/ip-api", () => ({ fetchCommunityPointBalance: h.community }));
 vi.mock("@/features/paywall/lib/compute-wallet", () => ({ fetchComputeWalletBalance: h.compute }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
+let latest: ReturnType<typeof usePersonalBalances>;
 function Probe({ owner }: { owner?: string }) {
   const balances = usePersonalBalances(owner);
+  useEffect(() => {
+    latest = balances;
+  }, [balances]);
   return (
     <div>
       {balances?.community ?? "unknown"}/{balances?.compute ?? "unknown"}
@@ -119,3 +123,13 @@ it.each(["focused", "foreground"] as const)(
     expect(host.textContent).toBe("15/88");
   }
 );
+
+it("shows the failed wallet detail and retries without losing the other result", async () => {
+  h.community.mockRejectedValueOnce(Error("Community temporarily unavailable"));
+  await render("alice:1");
+  expect(latest?.errors).toEqual(["Community temporarily unavailable"]);
+  expect(latest?.compute).toBe("20");
+  await act(async () => latest?.refresh());
+  expect(latest?.errors).toEqual([]);
+  expect(host.textContent).toBe("10/20");
+});

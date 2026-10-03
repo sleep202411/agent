@@ -675,31 +675,27 @@ type WalletDto = {
 /** The signed-in user's spendable community-points balance (whole points, as a
  *  string). `GET /aurora/ip-commerce/wallet` (auth). Filters to the
  *  community_point/consumable account (NOT the withdrawable earnings pool).
- *  Returns null when the wallet cannot be read; a valid empty wallet is zero. */
-export async function fetchCommunityPointBalance(signal?: AbortSignal): Promise<string | null> {
-  try {
-    const res = await api.get<WalletDto>("/ip-commerce/wallet", {
-      ...AURORA,
-      signal,
-      cache: "no-store",
-    });
-    if (
-      !Array.isArray(res.accounts) ||
-      res.accounts.some(
-        (account) => !account || typeof account !== "object" || Array.isArray(account)
-      )
+ *  Throws when the wallet cannot be read; a valid empty wallet is zero. */
+export async function fetchCommunityPointBalance(signal?: AbortSignal): Promise<string> {
+  const res = await api.get<WalletDto>("/ip-commerce/wallet", {
+    ...AURORA,
+    signal,
+    cache: "no-store",
+  });
+  if (
+    !Array.isArray(res?.accounts) ||
+    res.accounts.some(
+      (account) => !account || typeof account !== "object" || Array.isArray(account)
     )
-      return null;
-    const account = res.accounts.find(
-      (a) => a?.currency === "community_point" && a.balanceKind === "consumable"
-    );
-    if (!account) return "0";
-    return typeof account.availableBalance === "string" && /^\d+$/.test(account.availableBalance)
-      ? account.availableBalance
-      : null;
-  } catch {
-    return null;
-  }
+  )
+    throw Error("Community balance is unavailable: invalid wallet data.");
+  const account = res.accounts.find(
+    (a) => a.currency === "community_point" && a.balanceKind === "consumable"
+  );
+  if (!account) return "0";
+  if (typeof account.availableBalance !== "string" || !/^\d+$/.test(account.availableBalance))
+    throw Error("Community balance is unavailable: invalid wallet data.");
+  return account.availableBalance;
 }
 
 export type PurchaseResult = { alreadyOwned: boolean; alreadyProcessed: boolean };
