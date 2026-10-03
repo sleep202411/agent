@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskFeedbackCreate } from "./task-feedback-create";
 const h = vi.hoisted(() => ({
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   put: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@/lib/durable-record", () => ({
   }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({
@@ -97,6 +99,7 @@ const click = (label: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   h.records.clear();
   h.get.mockResolvedValue({ items: [], nextCursor: null });
@@ -156,4 +159,43 @@ it("hides the private form after account generation changes", async () => {
   h.generation = 2;
   await mount();
   expect(host.textContent).toBe("");
+});
+
+it("retains unsubmitted scores and comment across background without posting", async () => {
+  await mount();
+  await click("4");
+  await act(async () => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Useful direction"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  h.active = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.active = true;
+  await mount();
+  expect(host.querySelector("input")!.value).toBe("Useful direction");
+  expect(
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "feedbackHistory.submit")!
+      .disabled
+  ).toBe(false);
+  expect(h.post).not.toHaveBeenCalled();
+  h.detail.mockResolvedValueOnce({ ...task, status: "in_progress" });
+  await click("feedbackHistory.submit");
+  expect(host.textContent).toContain("approved submission or feedback participants have changed");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("retires an unsubmitted feedback draft when the task route loses focus", async () => {
+  await mount();
+  await click("4");
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  expect(host.querySelector("input")!.value).toBe("");
+  expect(h.post).not.toHaveBeenCalled();
 });

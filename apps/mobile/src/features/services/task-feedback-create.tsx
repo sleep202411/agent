@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Pressable, TextInput, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -23,9 +24,9 @@ export function TaskFeedbackCreate({
   userId: string;
   generation: number;
 }) {
-  const active = useScreenActive();
+  const focused = useIsFocused();
   const target = feedbackTarget(task, userId);
-  return active && generation === getAuthGeneration() && target ? (
+  return focused && generation === getAuthGeneration() && target ? (
     <Form
       key={JSON.stringify([task.id, userId, generation, target.submissionId])}
       task={task}
@@ -46,6 +47,7 @@ function Form({
   generation: number;
   target: NonNullable<ReturnType<typeof feedbackTarget>>;
 }) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(task.id, true);
@@ -81,7 +83,7 @@ function Form({
   const locked = !!pending || op.busy || saved || !!initial.error;
   const submit = () => {
     const c = controller.current;
-    if (!c || c.signal.aborted) return;
+    if (!active || !c || c.signal.aborted) return;
     void op.run(
       async () => {
         const request = pending ?? {
@@ -109,6 +111,7 @@ function Form({
       (e) => setError(e instanceof Error ? e.message : String(e))
     );
   };
+  if (!active) return null;
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("feedbackHistory.create")}</ThemedText>
