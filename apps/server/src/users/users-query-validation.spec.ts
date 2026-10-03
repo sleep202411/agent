@@ -83,3 +83,17 @@ describe('query values must be scalar strings', () => {
     },
   );
 });
+
+it('routes a user ID with crew context without using contact lookup', async () => {
+  const { controller, service } = fixture();
+  await controller.byId(viewer, 'cookie', '273848', 'crew');
+  expect(service.lookupByUserId).toHaveBeenCalledWith(
+    '273848',
+    'cookie',
+    'crew',
+  );
+  expect(service.lookupByContact).not.toHaveBeenCalled();
+  await expect(
+    controller.byId(viewer, 'cookie', '273848', ['crew', 'other'] as never),
+  ).rejects.toMatchObject({ status: 400 });
+});

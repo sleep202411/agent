@@ -108,7 +108,9 @@ export class UsersController {
     @CurrentUser() viewer: AuthUser,
     @ViewerCookie() cookie: string,
     @Query('id') id?: string,
+    @Query('checkCrewId') checkCrewId?: string,
   ) {
+    assertScalarQuery(checkCrewId, 'checkCrewId');
     assertScalarQuery(id, 'id');
     const trimmed = (id ?? '').trim();
     if (!trimmed) {
@@ -125,7 +127,7 @@ export class UsersController {
       max: 60,
       windowSec: 60,
     });
-    const result = await this.svc.lookupByUserId(trimmed, cookie);
+    const result = await this.svc.lookupByUserId(trimmed, cookie, checkCrewId);
     if (!result) {
       throw new NotFoundException({ message: 'No user with that id' });
     }

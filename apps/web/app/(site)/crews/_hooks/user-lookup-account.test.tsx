@@ -106,7 +106,7 @@ it.each([404, 403, 503])(
     expect(view.current()).toEqual(
       status === 404
         ? { kind: "notFound" }
-        : { kind: "error", status, message: "Latest explanation" }
+        : { kind: "error", status, message: "Latest explanation", retry: expect.any(Function) }
     );
   }
 );
@@ -119,7 +119,7 @@ it("retains actionable lookup validation details", async () => {
   vi.mocked(crewApi.get).mockRejectedValue(error);
   const view = mount(() => useUserLookup({ query: "person@example.com" }));
   await settle();
-  expect(view.current()).toEqual({ kind: "error", status: 400, message: error.message });
+  expect(view.current()).toMatchObject({ kind: "error", status: 400, message: error.message });
   expect(error.message).toContain("Use a supported email address");
 });
 
@@ -152,4 +152,36 @@ it("cancels lookup and every display-name chunk after account replacement", asyn
       .findAll()
       .every((query) => query.state.data === undefined)
   ).toBe(true);
+});
+
+it("routes explicit numeric user IDs to by-id and preserves phone lookup", async () => {
+  vi.mocked(crewApi.get).mockResolvedValue({ userId: "273848", nickname: "Creator" });
+  let lookupBy: "contact" | "userId" = "userId";
+  const view = mount(() => useUserLookup({ query: "273848", checkCrewId: "crew", lookupBy }));
+  await settle();
+  expect(crewApi.get).toHaveBeenLastCalledWith(
+    "/users/by-id?id=273848&checkCrewId=crew",
+    expect.objectContaining({ signal: expect.any(AbortSignal) })
+  );
+  expect(view.current().kind).toBe("found");
+  lookupBy = "contact";
+  view.render();
+  await settle();
+  expect(crewApi.get).toHaveBeenLastCalledWith(
+    "/users/lookup?phone=273848&checkCrewId=crew",
+    expect.anything()
+  );
+});
+it("retries a failed ID lookup without changing the identifier", async () => {
+  vi.mocked(crewApi.get)
+    .mockRejectedValueOnce(new CrewApiError(503, { message: "User lookup service error" }))
+    .mockResolvedValueOnce({ userId: "273848" });
+  const view = mount(() => useUserLookup({ query: "273848", lookupBy: "userId" }));
+  await settle();
+  const current = view.current();
+  expect(current.kind).toBe("error");
+  if (current.kind !== "error") throw Error("Expected lookup failure");
+  act(() => current.retry?.());
+  await settle();
+  expect(view.current().kind).toBe("found");
 });

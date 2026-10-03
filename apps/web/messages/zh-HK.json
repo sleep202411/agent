@@ -4027,7 +4027,7 @@
     "inviteMember": "邀請成員",
     "addMemberDialogEyebrow": "STORYOS / 劇組",
     "addMemberDialogTitle": "邀請成員",
-    "addMemberDialogSubtitle": "通過對方註冊的手機號或電郵發送邀請；接受後才會取得劇組權限。",
+    "addMemberDialogSubtitle": "透過對方註冊的手機號碼、電郵或用戶 ID 發送邀請；接受後才會獲得劇組權限。",
     "addMemberContactLabel": "手機號 / 電郵",
     "addMemberContactPlaceholder": "13800000000 或 user@example.com",
     "addMemberAccessLabel": "權限範本",
@@ -4602,7 +4602,12 @@
     "createJobSalaryAmountError": "請輸入 0 至 100,000,000 之間的有效報酬金額，或留空。",
     "useTaskBrief": "使用任務說明",
     "publicBriefHelp": "發佈前請確認公開工作說明，包含交付內容、要求和驗收標準，最多10,000字。",
-    "publicBriefTooLong": "請將公開說明縮短至10,000字以內，完整任務說明不受影響。"
+    "publicBriefTooLong": "請將公開說明縮短至10,000字以內，完整任務說明不受影響。",
+    "addMemberLookupBy": "查詢方式",
+    "addMemberUserIdLabel": "用戶 ID",
+    "addMemberUserIdHint": "輸入對方的數字用戶 ID。",
+    "addMemberUserIdInvalid": "請輸入 1–18 位數字用戶 ID。",
+    "addMemberLookupRetry": "重試查詢"
   },
   "crewAssets": {
     "title": "劇組資產中心",

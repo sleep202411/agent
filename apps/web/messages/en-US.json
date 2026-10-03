@@ -4027,7 +4027,7 @@
     "inviteMember": "Invite Member",
     "addMemberDialogEyebrow": "STORYOS / CREW",
     "addMemberDialogTitle": "Invite Member",
-    "addMemberDialogSubtitle": "Send an invitation to their registered phone or email. Access begins after acceptance.",
+    "addMemberDialogSubtitle": "Invite by registered phone, email or User ID. Access begins after acceptance.",
     "addMemberContactLabel": "Phone or Email",
     "addMemberContactPlaceholder": "13800000000 or user@example.com",
     "addMemberAccessLabel": "Access preset",
@@ -4602,7 +4602,12 @@
     "createJobSalaryAmountError": "Enter a valid compensation amount from 0 to 100,000,000, or leave it blank.",
     "useTaskBrief": "Use task brief",
     "publicBriefHelp": "Review this public job description before publishing. Include the deliverables, requirements, and acceptance criteria. Maximum 10,000 characters.",
-    "publicBriefTooLong": "Shorten the public description to 10,000 characters; your full task brief is unchanged."
+    "publicBriefTooLong": "Shorten the public description to 10,000 characters; your full task brief is unchanged.",
+    "addMemberLookupBy": "Look up by",
+    "addMemberUserIdLabel": "User ID",
+    "addMemberUserIdHint": "Enter the teammate’s numeric User ID.",
+    "addMemberUserIdInvalid": "Enter a User ID containing 1–18 digits.",
+    "addMemberLookupRetry": "Retry lookup"
   },
   "crewAssets": {
     "title": "Crew Asset Center",
