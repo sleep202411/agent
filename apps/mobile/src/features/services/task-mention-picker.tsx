@@ -110,6 +110,8 @@ export function TaskMentionPicker({
       <ThemedText>{title ?? t("thread.mention")}</ThemedText>
       <TextInput
         accessibilityLabel={t("thread.findMember")}
+        placeholder={t("thread.findMember")}
+        placeholderTextColor={theme.textSecondary}
         value={query}
         onChangeText={setQuery}
         style={{ color: theme.text, padding: 12 }}
