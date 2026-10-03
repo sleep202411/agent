@@ -300,6 +300,18 @@ export class AiGenerationRepository {
     return row ? this.toDomain(row) : null;
   }
 
+  async findRetryForJob(
+    userId: string,
+    retryOfJobId: string,
+  ): Promise<AiJob | null> {
+    const row = await this.prisma.aiJob.findFirst({
+      where: { userId, retryOfJobId, deletedAt: null },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include: { outputs: this.outputsInclude(false) },
+    });
+    return row ? this.toDomain(row) : null;
+  }
+
   async findByIdempotency(
     userId: string,
     modelId: string,

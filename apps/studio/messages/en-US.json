@@ -1,4 +1,14 @@
 {
+  "generationSubmission": {
+    "pending": "Your previous generation request is not confirmed. Check its status or retry that original request before creating another job.",
+    "notFoundYet": "No matching job is visible yet. This does not confirm that the request failed.",
+    "lookupFailed": "Could not check the original request.",
+    "storageUnavailable": "Generation recovery storage is unavailable.",
+    "submissionFailed": "Generation submission failed.",
+    "check": "Check status",
+    "checking": "Checking…",
+    "retryOriginal": "Retry original request"
+  },
   "canvasDownload": {
     "failed": "The download could not start. Try again, or open the source to save it manually.",
     "openSource": "Open source",
@@ -3832,6 +3842,7 @@
           "loading": "Loading the storyboard…",
           "open": "Edit storyboard",
           "openError": "The storyboard could not be opened.",
+          "loadError": "Could not load storyboard",
           "linkTask": "Link task",
           "createTask": "Create task",
           "linkedTask": "Linked task",

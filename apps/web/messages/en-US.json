@@ -9034,6 +9034,18 @@
     "sbComposerCollapse": "Collapse composer",
     "sbComposerWebSearch": "Web search",
     "sbComposerAutoValidate": "Auto validate assets",
+    "sbPanoramaLoadFailed": "Could not load this panorama. Try again.",
+    "sbCanvasModelUnavailable": "This model is unavailable or has changed. Select a model and review its settings.",
+    "sbCanvasInvalidSettings": "Review these settings: {fields}.",
+    "sbCanvasReferenceUnavailable": "The selected image reference is unavailable. Choose a supported reference field or use no reference.",
+    "sbCanvasCatalogFailed": "Could not load generation models.",
+    "sbCanvasReferenceField": "Use linked image as",
+    "sbCanvasStartFrame": "First frame",
+    "sbCanvasEndFrame": "Last frame",
+    "sbCanvasReferenceImage": "Reference image",
+    "sbCanvasNoReference": "No reference",
+    "sbPanoramaEmpty": "No panorama yet. Enter a prompt to generate one.",
+    "sbPanoramaReferencePreview": "Reference preview",
     "sbPanoramaTitle": "720° panorama",
     "sbPanoramaOpenViewer": "Open panorama viewer",
     "sbPanoramaStyle": "Style",
@@ -10936,7 +10948,18 @@
     "searchHint": "Searches the conversations loaded in this list.",
     "details": "Application Details",
     "message": "Message",
-    "messagePlaceholder": "Type a message…"
+    "messagePlaceholder": "Type a message…",
+    "applicant": "Applicant",
+    "profileLoading": "Loading profile…",
+    "retryProfile": "Retry profile",
+    "qualifications": "Qualifications",
+    "noQualifications": "No qualifications listed",
+    "pastWork": "Past work",
+    "viewPortfolio": "View portfolio",
+    "worksLoading": "Loading work…",
+    "retryWorks": "Retry work",
+    "noPastWork": "No public work shared yet",
+    "untitledWork": "Untitled work"
   },
   "contentGpsOwner": {
     "title": "IP locations",
@@ -11316,7 +11339,15 @@
     "none": "Not linked",
     "loading": "Loading…",
     "more": "Load more",
-    "retry": "Retry"
+    "retry": "Retry",
+    "linkIp": "Link an IP",
+    "selectIp": "Select an IP",
+    "linkIpHint": "Choose an IP you manage to associate with this Crew.",
+    "noOwnedIps": "No editable IPs available.",
+    "linkedElsewhere": "This IP belongs to another Crew. Confirming moves its Crew association here.",
+    "confirmLink": "Confirm link",
+    "filmsHint": "Published interactive games appear here after their IP association is confirmed.",
+    "openStudio": "Open Studio"
   },
   "crewTaskContext": {
     "creator": "Featured creator",
@@ -11348,5 +11379,17 @@
       "vlog": "Vlog"
     },
     "filters": "Filters"
+  },
+  "generationSubmission": {
+    "pending": "Your previous generation request is not confirmed. Check its status or retry that original request before creating another job.",
+    "notFoundYet": "No matching job is visible yet. This does not confirm that the request failed.",
+    "lookupFailed": "Could not check the original request.",
+    "storageUnavailable": "Generation recovery storage is unavailable.",
+    "submissionFailed": "Generation submission failed.",
+    "check": "Check status",
+    "checking": "Checking…",
+    "retryOriginal": "Retry original request",
+    "targetRemoved": "Generation recovered. The original canvas item no longer exists.",
+    "signInRequired": "Sign in and select a workspace before generating."
   }
 }

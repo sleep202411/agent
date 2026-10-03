@@ -1,4 +1,14 @@
 {
+  "generationSubmission": {
+    "pending": "上一次生成請求尚未確認。請檢查狀態或重試原請求，再建立新任務。",
+    "notFoundYet": "暫未找到對應任務，這不代表請求已失敗。",
+    "lookupFailed": "無法檢查原請求。",
+    "storageUnavailable": "生成恢復儲存不可用。",
+    "submissionFailed": "生成提交失敗。",
+    "check": "檢查狀態",
+    "checking": "檢查中…",
+    "retryOriginal": "重試原請求"
+  },
   "canvasDownload": {
     "failed": "無法開始下載。請重試，或開啟來源檔案手動儲存。",
     "openSource": "開啟來源檔案",
@@ -3832,6 +3842,7 @@
           "loading": "分鏡載入中…",
           "open": "編輯分鏡",
           "openError": "無法打開分鏡。",
+          "loadError": "無法載入分鏡",
           "linkTask": "關聯任務",
           "createTask": "建立任務",
           "linkedTask": "已關聯任務",

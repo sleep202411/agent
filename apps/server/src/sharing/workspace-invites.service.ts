@@ -232,13 +232,13 @@ export class WorkspaceInvitesService {
         // Lock the invite row so a concurrent revoke/expiry cannot slip between
         // the status check and the membership insert (TOCTOU).
         const locked = await tx.$queryRaw<
-          { status: WorkspaceInviteStatus; expires_at: Date }[]
+          { status: WorkspaceInviteStatus; expires_at: Date | null }[]
         >`SELECT status, expires_at FROM workspace_invites WHERE id = ${invite.id}::uuid FOR UPDATE`;
         const row = locked[0];
         if (
           !row ||
           row.status !== WorkspaceInviteStatus.pending ||
-          row.expires_at.getTime() <= Date.now()
+          (row.expires_at !== null && row.expires_at.getTime() <= Date.now())
         ) {
           throw new GoneException({
             code: 'INVITE_NOT_ACTIVE',

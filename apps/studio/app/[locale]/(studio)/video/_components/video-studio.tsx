@@ -135,6 +135,7 @@ export function VideoStudio() {
       </section>
 
       <StudioComposer
+        submissionRecovery={feed.submissionRecovery}
         modality="video"
         catalog={catalog}
         prompt={gen.prompt}

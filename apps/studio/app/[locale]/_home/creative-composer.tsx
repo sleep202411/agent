@@ -265,6 +265,7 @@ function HomeGenerationComposer({
   });
   return (
     <StudioComposer
+      submissionRecovery={gen.feed.submissionRecovery}
       docked={false}
       submitOnEnter
       modality={modality}

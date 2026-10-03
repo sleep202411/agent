@@ -1,5 +1,7 @@
 "use client";
 
+import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
+
 import { Calendar } from "@/components/ui/calendar";
 import { enUS, zhCN, zhHK } from "date-fns/locale";
 import { CREW_CURRENCY } from "@/src/lib/crew-money";
@@ -874,17 +876,6 @@ function StateRing({ color }: { color?: string }) {
       <IconCircle className="size-1 fill-current" style={{ color: color ?? "#6f7680" }} />
     </span>
   );
-}
-
-function workflowStateLabel(
-  state: CrewTaskProjectDTO["workflowStates"][number],
-  t: ReturnType<typeof useTranslations>
-) {
-  return state.systemKey === "backlog"
-    ? t("backlog")
-    : state.systemKey
-      ? t(`status.${state.systemKey}`)
-      : state.name;
 }
 
 function dateStartIso(value: string | null): string | null {

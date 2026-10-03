@@ -1,6 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
+import { isUncertainSubmission } from "@/lib/canvas-authoring/canvas-job-recovery";
+import {
+  generationReceiptKey,
+  readGenerationReceipt,
+  saveGenerationReceipt,
+  clearGenerationReceipt,
+  type GenerationSubmissionReceipt,
+} from "@/lib/canvas-authoring/generation-submission-receipt";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -138,6 +147,11 @@ export interface SubmitFeedJob {
  */
 export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
   const queryClient = useQueryClient();
+  const recoveryText = useTranslations("generationSubmission");
+  const [pendingReceipt, setPendingReceipt] = useState<GenerationSubmissionReceipt | null>(null);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [checkingReceipt, setCheckingReceipt] = useState(false);
+  const submissionRun = useRef<object | null>(null);
   const [jobs, setJobs] = useState<FeedJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -147,6 +161,8 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
   const activeIdsRef = useRef<string[]>([]);
   const { user } = useAuth();
   const workspaceId = useProjectPayerWorkspace()?.id ?? null;
+  const receiptKey =
+    user?.id != null ? generationReceiptKey(String(user.id), workspaceId, sourceSurface) : null;
   const epoch = useMemo(
     () => ({ userId: user?.id, workspaceId, type, sourceSurface }),
     [user?.id, workspaceId, type, sourceSurface]
@@ -169,6 +185,96 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
       retryClaims.clear();
     };
   }, [epoch]);
+
+  const initializedReceiptScope = useRef<string | null | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (initializedReceiptScope.current === receiptKey) return;
+    submissionRun.current = null;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      initializedReceiptScope.current = receiptKey;
+      setCheckingReceipt(false);
+      setReceiptError(null);
+      try {
+        setPendingReceipt(receiptKey ? readGenerationReceipt(receiptKey) : null);
+      } catch (error) {
+        setPendingReceipt(null);
+        setReceiptError(normalizeFizzAiError(error, recoveryText("storageUnavailable")));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [receiptKey, recoveryText]);
+
+  const recoverSubmission = useCallback(
+    async (retryOriginal = false) => {
+      if (!isCurrent() || !receiptKey || submissionRun.current) return;
+      const run = {};
+      submissionRun.current = run;
+      setCheckingReceipt(true);
+      setReceiptError(null);
+      try {
+        const receipt = readGenerationReceipt(receiptKey);
+        if (!receipt) {
+          setPendingReceipt(null);
+          return;
+        }
+        const response = await listFizzAiJobs({
+          idempotencyKey: receipt.request.idempotencyKey,
+          documentBlockId: receipt.request.context.documentBlockId,
+          sourceSurface,
+          type,
+        });
+        if (!isCurrent()) return;
+        const job = response.jobs.find(
+          (item) =>
+            item.idempotencyKey === receipt.request.idempotencyKey &&
+            item.modelId === receipt.request.modelId
+        );
+        if (job) {
+          clearGenerationReceipt(receiptKey, receipt.request.idempotencyKey);
+          setPendingReceipt(null);
+          setJobs((previous) => mergeIntoList(previous, jobToFeedJob(job)));
+          void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
+        } else if (retryOriginal) {
+          // Explicitly retry the original command, never the edited composer or
+          // a new key. An empty lookup alone does not establish rejection.
+          const accepted = await submitFizzAiJob(receipt.request);
+          clearGenerationReceipt(receiptKey, receipt.request.idempotencyKey);
+          if (!isCurrent()) return;
+          setPendingReceipt(null);
+          setJobs((previous) =>
+            mergeIntoList(previous, {
+              localId: accepted.request_id,
+              jobId: accepted.request_id,
+              status:
+                generationStatusFromRaw(accepted.status) === "done"
+                  ? "generating"
+                  : generationStatusFromRaw(accepted.status),
+              stage: accepted.stage ?? "queued",
+              progress: accepted.progress ?? null,
+              queuePosition: accepted.queue_position ?? null,
+              etaSeconds: accepted.estimated_total_seconds ?? null,
+              prompt: receipt.prompt,
+              modelId: receipt.request.modelId,
+              input: receipt.request.input,
+              outputs: [],
+              createdAtMs: Date.parse(receipt.createdAt),
+            })
+          );
+          void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
+        } else setReceiptError(recoveryText("notFoundYet"));
+      } catch (error) {
+        if (isCurrent()) setReceiptError(normalizeFizzAiError(error, recoveryText("lookupFailed")));
+      } finally {
+        if (submissionRun.current === run) submissionRun.current = null;
+        if (isCurrent()) setCheckingReceipt(false);
+      }
+    },
+    [isCurrent, receiptKey, sourceSurface, type, queryClient, recoveryText]
+  );
 
   const reconcileHistory = useCallback(async () => {
     if (!isCurrent()) return;
@@ -313,18 +419,43 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
   /** Submit a generation; insert a card only after the server accepts it. */
   const submit = useCallback(
     async (params: SubmitFeedJob): Promise<{ ok: boolean; error?: string; jobId?: string }> => {
-      if (!isCurrent()) return { ok: false };
+      if (!isCurrent() || !receiptKey || submissionRun.current) return { ok: false };
+      const run = {};
+      submissionRun.current = run;
+      let receipt: GenerationSubmissionReceipt | null = null;
+      let sent = false;
       try {
-        const response = await submitFizzAiJob({
-          context: { documentBlockId: crypto.randomUUID(), sourceSurface },
+        const pending = readGenerationReceipt(receiptKey);
+        if (pending) {
+          setPendingReceipt(pending);
+          return { ok: false, error: recoveryText("pending") };
+        }
+        const request: FizzAiSubmitJobInput = {
+          context: {
+            workspaceId: workspaceId ?? undefined,
+            documentBlockId: crypto.randomUUID(),
+            sourceSurface,
+          },
           idempotencyKey: generationIdempotencyKey(sourceSurface),
           input: params.input,
           promptDocument: params.promptDocument,
           referenceBindings: params.referenceBindings,
           modelId: params.modelId,
           schemaVersion: params.schemaVersion,
-        });
+        };
+        receipt = {
+          version: 1,
+          request,
+          prompt: params.prompt,
+          createdAt: new Date().toISOString(),
+        };
+        saveGenerationReceipt(receiptKey, receipt);
+        sent = true;
+        const response = await submitFizzAiJob(request);
+        clearGenerationReceipt(receiptKey, request.idempotencyKey);
         if (!isCurrent()) return { ok: false };
+        setPendingReceipt(null);
+        setReceiptError(null);
         const raw = generationStatusFromRaw(response.status);
         setJobs((prev) =>
           mergeIntoList(prev, {
@@ -346,12 +477,27 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
         void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
         return { ok: true, jobId: response.request_id };
       } catch (error) {
+        let uncertain = isUncertainSubmission(error);
+        if (receipt && sent && !uncertain) {
+          try {
+            clearGenerationReceipt(receiptKey, receipt.request.idempotencyKey);
+          } catch {
+            uncertain = true;
+          }
+        }
         if (!isCurrent()) return { ok: false };
-        const message = normalizeFizzAiError(error, "Generation failed");
+        const message = normalizeFizzAiError(error, recoveryText("submissionFailed"));
+        if (receipt && sent && uncertain) setPendingReceipt(receipt);
+        else if (receipt && sent) {
+          setPendingReceipt(null);
+          setReceiptError(null);
+        } else if (!sent) setReceiptError(message);
         return { ok: false, error: message };
+      } finally {
+        if (submissionRun.current === run) submissionRun.current = null;
       }
     },
-    [isCurrent, queryClient, sourceSurface]
+    [isCurrent, receiptKey, queryClient, sourceSurface, workspaceId, recoveryText]
   );
 
   /** Retry a failed row: server-side when it has a jobId, else resubmit. */
@@ -412,6 +558,15 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
 
   return {
     jobs,
+    submissionRecovery: {
+      pending: !!pendingReceipt || !!receiptError,
+      prompt: pendingReceipt?.prompt,
+      checking: checkingReceipt,
+      error: receiptError,
+      canRetry: !!pendingReceipt,
+      check: () => recoverSubmission(false),
+      retryOriginal: () => recoverSubmission(true),
+    },
     historyLoading,
     historyError,
     refreshHistory: reconcileHistory,

@@ -1,4 +1,14 @@
 {
+  "generationSubmission": {
+    "pending": "上一次生成请求尚未确认。请检查状态或重试原请求，再创建新任务。",
+    "notFoundYet": "暂未找到对应任务，这不代表请求已失败。",
+    "lookupFailed": "无法检查原请求。",
+    "storageUnavailable": "生成恢复存储不可用。",
+    "submissionFailed": "生成提交失败。",
+    "check": "检查状态",
+    "checking": "检查中…",
+    "retryOriginal": "重试原请求"
+  },
   "canvasDownload": {
     "failed": "无法开始下载。请重试，或打开源文件手动保存。",
     "openSource": "打开源文件",
@@ -3832,6 +3842,7 @@
           "loading": "分镜加载中…",
           "open": "编辑分镜",
           "openError": "无法打开分镜。",
+          "loadError": "无法加载分镜",
           "linkTask": "关联任务",
           "createTask": "创建任务",
           "linkedTask": "已关联任务",

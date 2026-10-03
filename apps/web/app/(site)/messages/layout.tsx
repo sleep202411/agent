@@ -24,16 +24,16 @@ export default function MessagesLayout({ children }: { children: React.ReactNode
       active: !notifications && params.get("tab") !== "recruitment",
     },
     {
-      href: `/${locale}/messages?tab=notifications`,
-      label: t("notificationTab"),
-      Icon: IconBell,
-      active: notifications,
-    },
-    {
       href: `/${locale}/messages?tab=recruitment`,
       label: c("messagesOffersTab"),
       Icon: IconMessageCircle,
       active: params.get("tab") === "recruitment",
+    },
+    {
+      href: `/${locale}/messages?tab=notifications`,
+      label: t("notificationTab"),
+      Icon: IconBell,
+      active: notifications,
     },
   ];
 
@@ -50,7 +50,7 @@ export default function MessagesLayout({ children }: { children: React.ReactNode
           className="mt-2 flex flex-wrap gap-4 border-b border-border"
           aria-label={t("centerTitle")}
         >
-          {tabs.map(({ href, label, Icon, active }, index) => (
+          {tabs.map(({ href, label, Icon, active }) => (
             <Link
               key={href}
               href={href}
@@ -64,7 +64,7 @@ export default function MessagesLayout({ children }: { children: React.ReactNode
             >
               <Icon className="size-4" />
               {label}
-              {index === 1 && unread > 0 && (
+              {Icon === IconBell && unread > 0 && (
                 <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground">
                   {unread > 99 ? "99+" : unread}
                 </span>
