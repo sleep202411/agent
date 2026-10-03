@@ -570,9 +570,10 @@ function PaywallSession() {
       wechatFollowGeneration.current += 1;
       // Leaving with the QR still open (or mid-settle): keep reconciling off-screen.
       const orderId = scanOrderRef.current;
-      if (orderId) void followWechatOrderUntilSettled(orderId);
+      if (orderId && getAuthGeneration() === sessionGeneration)
+        void followWechatOrderUntilSettled(orderId);
     },
-    []
+    [sessionGeneration]
   );
 
   const buy = async () => {

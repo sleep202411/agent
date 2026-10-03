@@ -508,3 +508,19 @@ it("aborts a replaced account catalog and ignores its late result", async () => 
   expect(host.textContent).not.toContain("Old account price");
   expect(host.textContent).toContain("5000");
 });
+
+it("does not follow the previous account's open WeChat order during account replacement", async () => {
+  state.channel = "wechat";
+  state.buy.mockResolvedValueOnce({
+    mocked: false,
+    wechatScan: { orderId: "previous-account-order", codeUrl: "weixin://pay" },
+  });
+  await render();
+  await act(async () => payButton().click());
+  expect(host.textContent).toContain("previous-account-order");
+  state.generation = 2;
+  await render();
+  expect(state.follow).not.toHaveBeenCalled();
+  expect(state.alert).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("previous-account-order");
+});
