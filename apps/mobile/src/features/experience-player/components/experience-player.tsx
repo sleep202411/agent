@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   ExperienceRuntimeInvariantError,
@@ -17,6 +17,8 @@ import {
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
   EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+  EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
+  ExperienceCoreWorldModelRendererConfigSchema,
   ExperienceCoreChoiceRendererConfigSchema,
   ExperienceCoreTextRendererConfigSchema,
   ExperienceRuntimeManifestSchema,
@@ -51,6 +53,12 @@ import {
   ExperienceVideoRenderer,
   type ExperienceMediaPlaybackHandle,
 } from "./experience-video-renderer";
+import { assertWorldPreviewScope, type WorldPreviewScope } from "../world/world-preview-manifest";
+const ExperienceWorldRenderer = lazy(() =>
+  import("../world/experience-world-renderer").then((module) => ({
+    default: module.ExperienceWorldRenderer,
+  }))
+);
 const START_ACCENT = EXPERIENCE_START_ACCENT;
 
 export type { ExperiencePlayerAccess };
@@ -67,6 +75,7 @@ export interface ExperiencePlayerProps {
   nextChapterLabel?: string;
   loadTheme?: ExperienceThemeLoader;
   active?: boolean;
+  worldScope?: WorldPreviewScope;
 }
 
 /**
@@ -83,6 +92,7 @@ export function ExperiencePlayer({
   nextChapterLabel,
   loadTheme = defaultLoadExperienceTheme,
   active = true,
+  worldScope,
 }: ExperiencePlayerProps) {
   const [restartEpoch, setRestartEpoch] = useState(0);
   const [randomSeed, setRandomSeed] = useState(
@@ -95,12 +105,14 @@ export function ExperiencePlayer({
       return { ok: false as const, issues: parsed.error.issues };
     }
     try {
+      if (worldScope) assertWorldPreviewScope(parsed.data, worldScope);
       return {
         ok: true as const,
         manifest: parsed.data,
         controller: createExperienceRuntime(parsed.data, {
           randomSeed,
           canAccess: access?.canAccess,
+          worldStreaming: Boolean(worldScope),
         }),
       };
     } catch (error) {
@@ -112,7 +124,7 @@ export function ExperiencePlayer({
         issues: [{ path: [] as PropertyKey[], message: runtimeErrorMessage(error) }],
       };
     }
-  }, [access, randomSeed, restartEpoch, runtime]);
+  }, [access, randomSeed, restartEpoch, runtime, worldScope]);
 
   if (!prepared.ok) {
     return (
@@ -137,7 +149,7 @@ export function ExperiencePlayer({
 
   return (
     <ActiveExperienceRuntimePlayer
-      key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
+      key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}:${worldScope?.generation ?? ""}:${worldScope?.workspaceId ?? ""}:${worldScope?.projectId ?? ""}`}
       access={access}
       manifest={prepared.manifest}
       controller={prepared.controller}
@@ -148,6 +160,7 @@ export function ExperiencePlayer({
       nextChapterLabel={nextChapterLabel}
       loadTheme={loadTheme}
       active={active}
+      worldScope={worldScope}
       onRestart={() => {
         setRandomSeed(
           globalThis.crypto?.randomUUID?.() ?? `experience-player:${Date.now()}:${restartEpoch + 1}`
@@ -170,6 +183,7 @@ function ActiveExperienceRuntimePlayer({
   active,
   onRestart,
   access,
+  worldScope,
 }: {
   manifest: ExperienceRuntimeManifest;
   controller: ExperienceRuntimeController;
@@ -182,6 +196,7 @@ function ActiveExperienceRuntimePlayer({
   active: boolean;
   onRestart: () => void;
   access?: ExperiencePlayerAccess;
+  worldScope?: WorldPreviewScope;
 }) {
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
   const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -227,6 +242,8 @@ function ActiveExperienceRuntimePlayer({
     createExperienceTimelineCursor(runtimeState.currentSceneId)
   );
   const parkedGestureEventsRef = useRef<ExperienceRuntimeEvent[]>([]);
+  const worldEndHandlesRef = useRef(new Map<string, () => Promise<void>>());
+  const pendingWorldEndsRef = useRef(new Set<string>());
   const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
   const playbackEnabledRef = useRef(false);
   const defaultLocale = manifest.localization.defaultLocale;
@@ -254,7 +271,18 @@ function ActiveExperienceRuntimePlayer({
       setRuntimeState(result.state);
       applyAudioEffects(result.effects);
       result.effects.forEach((effect) => {
+        if (effect.kind === "scene.changed") {
+          worldEndHandlesRef.current.clear();
+          pendingWorldEndsRef.current.clear();
+          return;
+        }
         if (effect.kind !== "renderer.command") return;
+        if (effect.commandType === "end") {
+          const end = worldEndHandlesRef.current.get(effect.instanceId);
+          if (end) void end().catch((error) => setRuntimeError(runtimeErrorMessage(error)));
+          else pendingWorldEndsRef.current.add(effect.instanceId);
+          return;
+        }
         const handle = playbackHandlesRef.current.get(effect.instanceId);
         if (!handle) return;
         if (effect.commandType === "play") {
@@ -617,6 +645,19 @@ function ActiveExperienceRuntimePlayer({
     });
   }, [started, timelineHoldGate, accessPending, presenting]);
 
+  const registerWorldEndHandle = useCallback(
+    (instanceId: string, handle: (() => Promise<void>) | null) => {
+      if (!handle) {
+        worldEndHandlesRef.current.delete(instanceId);
+        return;
+      }
+      worldEndHandlesRef.current.set(instanceId, handle);
+      if (pendingWorldEndsRef.current.delete(instanceId))
+        void handle().catch((error) => setRuntimeError(runtimeErrorMessage(error)));
+    },
+    []
+  );
+
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
       if (!handle) {
@@ -741,6 +782,8 @@ function ActiveExperienceRuntimePlayer({
                 onPlaybackInterrupted={() => setViewerPaused(true)}
                 onPlaybackRefused={() => setViewerPaused(true)}
                 onPlaybackHandle={registerPlaybackHandle}
+                worldScope={worldScope}
+                onWorldEndHandle={registerWorldEndHandle}
               />
             </ScreenActiveGateContext.Provider>
           </View>
@@ -825,6 +868,8 @@ function RendererPanel({
   onPlaybackHandle,
   onPlaybackRefused,
   onPlaybackInterrupted,
+  worldScope,
+  onWorldEndHandle,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -844,8 +889,33 @@ function RendererPanel({
   onPlaybackRefused: () => void;
   onPlaybackInterrupted: () => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
+  worldScope?: WorldPreviewScope;
+  onWorldEndHandle: (instanceId: string, handle: (() => Promise<void>) | null) => void;
 }) {
   const defaultLocale = manifest.localization.defaultLocale;
+
+  if (renderer.rendererId === EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID && worldScope) {
+    const config = ExperienceCoreWorldModelRendererConfigSchema.parse(renderer.config);
+    return (
+      <Suspense
+        fallback={
+          <View style={styles.centerPad}>
+            <ThemedText type="small" style={styles.lightText}>
+              {copy.loadingMedia}
+            </ThemedText>
+          </View>
+        }
+      >
+        <ExperienceWorldRenderer
+          scope={{ ...worldScope, worldId: config.worldId }}
+          config={config}
+          onCompleted={() => onOutcome(renderer.instanceId, "world-completed", {})}
+          onError={(error) => onRuntimeError(runtimeErrorMessage(error))}
+          onEndHandle={(handle) => onWorldEndHandle(renderer.instanceId, handle)}
+        />
+      </Suspense>
+    );
+  }
 
   if (renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
     return (

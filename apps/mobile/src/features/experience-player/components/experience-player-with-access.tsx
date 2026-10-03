@@ -17,14 +17,24 @@ type HostProps = Omit<ExperiencePlayerProps, "access" | "runtime"> & {
 /**
  * Experience player + story-node community access (H5 commerce.community-points).
  */
-export function ExperiencePlayerWithAccess({ runtime, accessMode, ...rest }: HostProps) {
+export function ExperiencePlayerWithAccess({
+  runtime,
+  accessMode,
+  worldScope,
+  ...rest
+}: HostProps) {
   const preview = useStoryPreviewAccess(rest.locale);
   const commerce = useStoryCommunityAccess(runtime, rest.locale);
   const gate = accessMode === "preview" ? preview : commerce;
 
   return (
     <View style={styles.host}>
-      <ExperiencePlayer {...rest} runtime={runtime} access={gate.access} />
+      <ExperiencePlayer
+        {...rest}
+        runtime={runtime}
+        access={gate.access}
+        worldScope={accessMode === "preview" ? worldScope : undefined}
+      />
       {gate.dialog}
     </View>
   );

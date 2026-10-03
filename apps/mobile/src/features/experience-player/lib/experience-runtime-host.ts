@@ -8,6 +8,7 @@ import {
   EXPERIENCE_CORE_TEXT_RENDERER_ADAPTER,
   EXPERIENCE_CORE_CHOICE_RENDERER_ADAPTER,
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ADAPTER,
+  EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ADAPTER,
   EXPERIENCE_ENGINE_API_VERSION,
   EXPERIENCE_ENGINE_BUILT_IN_CAPABILITIES,
   ExperienceRendererRegistry,
@@ -18,6 +19,7 @@ import {
 export interface ExperienceRuntimeOptions {
   randomSeed?: string;
   canAccess?: ExperienceAccessCheck;
+  worldStreaming?: boolean;
 }
 
 /**
@@ -44,14 +46,15 @@ export function createExperienceRuntime(
 ): ExperienceRuntimeController {
   const rendererRegistry = new ExperienceRendererRegistry();
   // The shared adapter registry describes engine contracts, not native UI.
-  // Register only renderers this host paints; world-model streaming still needs
-  // a Mobile runtime integration and must not silently render an empty scene.
+  // World streaming is injected only by the authenticated private-preview host.
   [
     EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER,
     EXPERIENCE_CORE_TEXT_RENDERER_ADAPTER,
     EXPERIENCE_CORE_CHOICE_RENDERER_ADAPTER,
     EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ADAPTER,
   ].forEach((adapter) => rendererRegistry.register(adapter));
+  if (options.worldStreaming && manifest.channel === "preview")
+    rendererRegistry.register(EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ADAPTER);
   const capabilities = new Set(EXPERIENCE_ENGINE_BUILT_IN_CAPABILITIES);
   rendererRegistry.capabilities().forEach((capability) => capabilities.add(capability));
   EXPERIENCE_NATIVE_HOST_CAPABILITIES.forEach((capability) => capabilities.add(capability));
