@@ -65,6 +65,12 @@ export default function SettingsScreen() {
         authGate.requireAuth({ onAuthenticated: () => router.push("/account-security") }),
     },
     {
+      key: "creditRewards",
+      label: t("creditRewards.title"),
+      onPress: () =>
+        authGate.requireAuth({ onAuthenticated: () => router.push("/credit-rewards") }),
+    },
+    {
       key: "bindInvite",
       label: t("settings.bindInvite"),
       onPress: () => authGate.requireAuth({ onAuthenticated: () => router.push("/bind-invite") }),

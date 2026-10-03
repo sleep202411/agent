@@ -4714,5 +4714,19 @@
   "references.check.na": "不适用",
   "references.decision.approve": "批准并选用",
   "references.decision.reject": "拒绝",
-  "references.decision.request_changes": "要求修改"
+  "references.decision.request_changes": "要求修改",
+  "creditRewards.title": "算力奖励",
+  "creditRewards.voucher": "兑换礼券",
+  "creditRewards.hint": "输入兑换码，将算力积分领取到个人工作区。",
+  "creditRewards.code": "兑换码",
+  "creditRewards.redeem": "兑换",
+  "creditRewards.campaigns": "算力活动",
+  "creditRewards.empty": "暂无进行中的算力活动。",
+  "creditRewards.amount": "{amount} 算力积分",
+  "creditRewards.claim": "领取",
+  "creditRewards.claimed": "已领取",
+  "creditRewards.success": "已收到 {amount} 算力积分。",
+  "creditRewards.already": "这些积分已领取。",
+  "creditRewards.pending": "有一笔积分请求待确认。重试可查询结果；清除重试记录不会撤销已到账积分。",
+  "creditRewards.clear": "清除待重试记录"
 }

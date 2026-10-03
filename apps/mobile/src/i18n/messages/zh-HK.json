@@ -4714,5 +4714,19 @@
   "references.check.na": "不適用",
   "references.decision.approve": "批准並選用",
   "references.decision.reject": "拒絕",
-  "references.decision.request_changes": "要求修改"
+  "references.decision.request_changes": "要求修改",
+  "creditRewards.title": "算力獎勵",
+  "creditRewards.voucher": "兌換禮券",
+  "creditRewards.hint": "輸入兌換碼，將算力積分領取到個人工作區。",
+  "creditRewards.code": "兌換碼",
+  "creditRewards.redeem": "兌換",
+  "creditRewards.campaigns": "算力活動",
+  "creditRewards.empty": "暫無進行中的算力活動。",
+  "creditRewards.amount": "{amount} 算力積分",
+  "creditRewards.claim": "領取",
+  "creditRewards.claimed": "已領取",
+  "creditRewards.success": "已收到 {amount} 算力積分。",
+  "creditRewards.already": "這些積分已領取。",
+  "creditRewards.pending": "有一筆積分請求待確認。重試可查詢結果；清除重試記錄不會撤銷已到賬積分。",
+  "creditRewards.clear": "清除待重試記錄"
 }

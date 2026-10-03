@@ -4714,5 +4714,19 @@
   "references.check.na": "N/A",
   "references.decision.approve": "Approve and select",
   "references.decision.reject": "Reject",
-  "references.decision.request_changes": "Request changes"
+  "references.decision.request_changes": "Request changes",
+  "creditRewards.title": "Credit rewards",
+  "creditRewards.voucher": "Redeem a voucher",
+  "creditRewards.hint": "Enter a code to receive compute credits in your personal workspace.",
+  "creditRewards.code": "Voucher code",
+  "creditRewards.redeem": "Redeem",
+  "creditRewards.campaigns": "Credit campaigns",
+  "creditRewards.empty": "No active credit campaigns.",
+  "creditRewards.amount": "{amount} compute credits",
+  "creditRewards.claim": "Claim",
+  "creditRewards.claimed": "Claimed",
+  "creditRewards.success": "{amount} compute credits received.",
+  "creditRewards.already": "These credits have already been received.",
+  "creditRewards.pending": "A credit request needs confirmation. Retry to check its result. Clearing this retry does not undo credits already received.",
+  "creditRewards.clear": "Clear pending retry"
 }
