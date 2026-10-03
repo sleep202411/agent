@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SettingsScreen from "@/app/settings";
 const h = vi.hoisted(() => ({
+  region: "global",
+  push: vi.fn(),
   open: vi.fn(),
   legal: vi.fn(),
   auth: vi.fn(),
@@ -12,13 +14,18 @@ const h = vi.hoisted(() => ({
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: h.open }));
 vi.mock("@/lib/legal", () => ({ openLegal: h.legal }));
 vi.mock("@/config", () => ({
+  appEnv: {
+    get appRegion() {
+      return h.region;
+    },
+  },
   get webBaseUrl() {
     return h.base;
   },
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: h.push }),
 }));
 vi.mock("expo-symbols", () => ({ SymbolView: () => null }));
 vi.mock("@/auth", () => ({ useAuthGate: () => ({ requireAuth: h.auth }) }));
@@ -54,6 +61,7 @@ let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.resetAllMocks();
+  h.region = "global";
   h.locale = "en-US";
   h.base = "https://fizzdragon.com";
   host = document.createElement("div");
@@ -110,4 +118,15 @@ it("prevents duplicate browser launches and exposes failures for retry", async (
   await click("settings.faq");
   expect(h.open).toHaveBeenCalledTimes(2);
   expect(host.textContent).not.toContain("Browser unavailable");
+});
+
+it("offers KYC only in CN and defers navigation until authentication", async () => {
+  await mount();
+  expect(host.textContent).not.toContain("kyc.title");
+  h.region = "cn";
+  await mount();
+  await click("kyc.title");
+  expect(h.push).not.toHaveBeenCalled();
+  h.auth.mock.calls[0][0].onAuthenticated();
+  expect(h.push).toHaveBeenCalledWith("/kyc");
 });

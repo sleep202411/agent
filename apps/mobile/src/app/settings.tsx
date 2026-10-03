@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as WebBrowser from "expo-web-browser";
-import { webBaseUrl } from "@/config";
+import { appEnv, webBaseUrl } from "@/config";
 import { Stack, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -64,6 +64,15 @@ export default function SettingsScreen() {
       onPress: () =>
         authGate.requireAuth({ onAuthenticated: () => router.push("/account-security") }),
     },
+    ...(appEnv.appRegion === "cn"
+      ? [
+          {
+            key: "kyc",
+            label: t("kyc.title"),
+            onPress: () => authGate.requireAuth({ onAuthenticated: () => router.push("/kyc") }),
+          },
+        ]
+      : []),
     {
       key: "subscription",
       label: t("subscription.title"),

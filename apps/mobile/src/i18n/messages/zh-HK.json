@@ -4749,5 +4749,10 @@
   "subscription.cancel": "取消續訂",
   "subscription.refresh": "重新整理方案",
   "subscription.active": "有效",
-  "subscription.expired": "已過期"
+  "subscription.expired": "已過期",
+  "kyc.checkStatus": "檢查認證狀態",
+  "kyc.pendingRecovery": "有待確認的認證記錄。再次開始前，請先檢查結果。",
+  "kyc.restart": "開始新的認證",
+  "kyc.restartHint": "重新開始只會清除本機記錄，不會取消已提交給阿里雲的認證。",
+  "kyc.providerFailed": "認證頁面無法繼續。請重試頁面或檢查認證狀態。"
 }

@@ -4749,5 +4749,10 @@
   "subscription.cancel": "取消续订",
   "subscription.refresh": "刷新套餐",
   "subscription.active": "有效",
-  "subscription.expired": "已过期"
+  "subscription.expired": "已过期",
+  "kyc.checkStatus": "检查认证状态",
+  "kyc.pendingRecovery": "有待确认的认证记录。再次开始前，请先检查结果。",
+  "kyc.restart": "开始新的认证",
+  "kyc.restartHint": "重新开始只会清除本机记录，不会取消已提交给阿里云的认证。",
+  "kyc.providerFailed": "认证页面无法继续。请重试页面或检查认证状态。"
 }

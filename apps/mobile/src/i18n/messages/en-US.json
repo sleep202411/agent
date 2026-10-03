@@ -4749,5 +4749,10 @@
   "subscription.cancel": "Cancel renewal",
   "subscription.refresh": "Refresh plan",
   "subscription.active": "Active",
-  "subscription.expired": "Expired"
+  "subscription.expired": "Expired",
+  "kyc.checkStatus": "Check verification status",
+  "kyc.pendingRecovery": "A verification attempt is pending. Check its result before starting again.",
+  "kyc.restart": "Start a new attempt",
+  "kyc.restartHint": "Starting again clears this saved attempt only. It does not cancel verification already submitted to Aliyun.",
+  "kyc.providerFailed": "The verification page could not continue. Retry the page or check verification status."
 }
