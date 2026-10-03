@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   compute: vi.fn(),
   generation: 1,
   buy: vi.fn(),
+  restore: vi.fn(),
   push: vi.fn(),
   packs: vi.fn(),
   plans: vi.fn(),
@@ -98,7 +99,7 @@ vi.mock("../lib/billing-api", () => ({
 }));
 vi.mock("../lib/purchase", () => ({
   purchaseProduct: state.buy,
-  restorePurchases: vi.fn(),
+  restorePurchases: state.restore,
   isPurchaseCancelled: () => false,
 }));
 vi.mock("../lib/revenuecat-sync", () => ({
@@ -523,4 +524,46 @@ it("does not follow the previous account's open WeChat order during account repl
   expect(state.follow).not.toHaveBeenCalled();
   expect(state.alert).not.toHaveBeenCalled();
   expect(host.textContent).not.toContain("previous-account-order");
+});
+
+it("refreshes displayed balances after restoring purchases without buying again", async () => {
+  state.category = "community_membership";
+  state.restore.mockResolvedValueOnce({ mocked: false });
+  state.balance.mockResolvedValueOnce("10").mockResolvedValueOnce("55");
+  await render();
+  const restore = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "paywall.restore"
+  )!;
+  await act(async () => restore.click());
+  expect(state.balance).toHaveBeenCalledTimes(2);
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent?.includes("paywall.category.communityPoints"))!
+      .click()
+  );
+  expect(host.textContent).toContain("55");
+  expect(state.restore).toHaveBeenCalledTimes(1);
+  expect(state.buy).not.toHaveBeenCalled();
+  expect(state.alert).toHaveBeenCalledWith("paywall.restoreOkTitle", "paywall.restoreOkLive");
+});
+it("does not refresh or announce a restore completed for a retired account", async () => {
+  state.category = "community_membership";
+  let finish!: (value: { mocked: boolean }) => void;
+  state.restore.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  const restore = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "paywall.restore"
+  )!;
+  await act(async () => restore.click());
+  state.generation++;
+  await render();
+  const reads = state.balance.mock.calls.length;
+  await act(async () => finish({ mocked: false }));
+  expect(state.balance).toHaveBeenCalledTimes(reads);
+  expect(state.alert).not.toHaveBeenCalled();
 });

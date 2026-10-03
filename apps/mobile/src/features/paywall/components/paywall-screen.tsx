@@ -637,6 +637,8 @@ function PaywallSession() {
     try {
       const result = await restorePurchases();
       if (!isCurrentSession()) return;
+      await refreshWallets();
+      if (!isCurrentSession()) return;
       Alert.alert(
         t("paywall.restoreOkTitle"),
         result.mocked ? t("paywall.restoreOkMock") : t("paywall.restoreOkLive")
