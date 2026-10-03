@@ -52,14 +52,10 @@ import { useAppDispatch } from "@/src/store";
 import { touchCredits } from "@/src/store/slices/userSlice";
 import type { FizzDocument } from "../../../../_lib/api";
 import {
-  filterFizzAiInput,
   getFizzAiJob,
   listFizzAiCatalog,
   normalizeFizzAiError,
-  pickFizzAiModel,
   submitFizzAiJob,
-  type FizzAiCatalog,
-  type FizzAiGenerationMode,
   type FizzAiJobView,
 } from "../../../../_lib/generation-api";
 import { useStoryboard, type SaveState } from "../../_hooks/use-storyboard";
@@ -80,6 +76,7 @@ import {
   type StoryboardContent,
 } from "../../_data/storyboard-schema";
 import {
+  MOCK_PANORAMA_IMAGE_URL,
   MIN_CANVAS_ZOOM,
   NODE_COMPOSER_GAP,
   NODE_COMPOSER_HEIGHT,
@@ -90,6 +87,7 @@ import {
   SHOT_NODE_HEIGHT,
   SHOT_NODE_WIDTH,
 } from "./canvas-constants";
+import { currentCanvasGenerationModel, invalidCanvasGenerationFields } from "./canvas-generation";
 import { PanoramaNode, type PanoramaNodeData } from "./panorama-node";
 import {
   ShotNode,
@@ -237,21 +235,13 @@ function sameComposerLayout(a: NodeComposerLayout | undefined, b: NodeComposerLa
 }
 
 function sameComposerState(a: ShotComposerState | undefined, b: ShotComposerState): boolean {
-  return Boolean(
-    a &&
-    a.activeTool === b.activeTool &&
-    a.aspectRatio === b.aspectRatio &&
-    a.autoValidate === b.autoValidate &&
-    a.duration === b.duration &&
-    a.expanded === b.expanded &&
-    a.mode === b.mode &&
-    a.model === b.model &&
-    a.outputCount === b.outputCount &&
-    a.promptDraft === b.promptDraft &&
-    a.resolution === b.resolution &&
-    a.translateEnabled === b.translateEnabled &&
-    a.webSearch === b.webSearch &&
-    a.withAudio === b.withAudio
+  return (
+    !!a &&
+    a.prompt === b.prompt &&
+    a.modelId === b.modelId &&
+    a.schemaVersion === b.schemaVersion &&
+    a.referenceField === b.referenceField &&
+    JSON.stringify(a.settings) === JSON.stringify(b.settings)
   );
 }
 
@@ -303,14 +293,6 @@ function generationIdempotencyKey(prefix: string) {
     return `${prefix}:${crypto.randomUUID()}`;
   }
   return `${prefix}:${localId("job")}`;
-}
-
-function compactInput(input: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(input).filter(
-      ([, value]) => value !== undefined && value !== null && value !== ""
-    )
-  );
 }
 
 function generationStatusFromRaw(status: string | null | undefined): CanvasGenerationStatus {
@@ -450,14 +432,6 @@ function getActiveGenerationTargets(
   }
 
   return targets;
-}
-
-function preferredVideoModes(request: ShotGenerationRequest): FizzAiGenerationMode[] {
-  if (request.mode === "first-last") {
-    return ["first_last_frame_to_video", "image_to_video", "text_to_video"];
-  }
-  if (request.referenceUrl) return ["image_to_video", "first_last_frame_to_video", "text_to_video"];
-  return ["text_to_video", "image_to_video"];
 }
 
 function getInsetEdgePoint(
@@ -819,7 +793,6 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
   const [query, setQuery] = useState("");
   const [previewMediaId, setPreviewMediaId] = useState<string | null>(null);
   const dragEndRef = useRef<{ at: number; nodeId: string } | null>(null);
-  const aiCatalogRef = useRef<FizzAiCatalog | null>(null);
   const generationPollInFlightRef = useRef(false);
   const zoom = viewportState.zoom;
 
@@ -870,14 +843,14 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
       const prompt = node.prompt?.trim() || undefined;
       const createdAt = node.generation?.completedAt ?? node.generation?.submittedAt;
       for (const item of node.media ?? []) {
-        if (!item.url) continue;
+        if (!item.url || item.url === MOCK_PANORAMA_IMAGE_URL) continue;
         items.push({
           id: item.id,
           kind: "image",
           url: item.url,
           prompt,
           createdAt,
-          modelLabel: node.settings?.model,
+          modelLabel: node.settings?.modelId,
           width: item.width ?? null,
           height: item.height ?? null,
         });
@@ -887,13 +860,6 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
   }, [assetNodes, columnIds.description, columnIds.image, columnIds.video, shots]);
   const previewActive =
     previewMediaId != null && lightboxItems.some((item) => item.id === previewMediaId);
-
-  const loadAiCatalog = useCallback(async () => {
-    if (aiCatalogRef.current) return aiCatalogRef.current;
-    const catalog = await listFizzAiCatalog();
-    aiCatalogRef.current = catalog;
-    return catalog;
-  }, []);
 
   const updateComposerState = useCallback((shotId: string, state: ShotComposerState) => {
     setComposerStates((current) => {
@@ -968,22 +934,13 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
       );
 
       try {
-        const catalog = await loadAiCatalog();
-        const model = pickFizzAiModel(catalog, "video", preferredVideoModes(request));
-        if (!model) throw new Error(t("sbGenerationNoVideoModel"));
-
-        const rawInput = compactInput({
-          aspectRatio: request.aspectRatio,
-          aspect_ratio: request.aspectRatio,
-          durationSeconds: request.durationSeconds,
-          n: request.outputCount,
-          numOutputs: request.outputCount,
-          prompt: request.prompt,
-          seconds: request.durationSeconds,
-          startFrame: request.referenceUrl ? { url: request.referenceUrl } : undefined,
-          withAudio: request.withAudio,
-        });
-        const input = filterFizzAiInput(model, rawInput);
+        const catalog = await listFizzAiCatalog();
+        const model = currentCanvasGenerationModel(catalog, "video", request);
+        if (!model) throw new Error(t("sbCanvasModelUnavailable"));
+        const invalid = invalidCanvasGenerationFields(model, request.input);
+        if (invalid.length)
+          throw new Error(t("sbCanvasInvalidSettings", { fields: invalid.join(", ") }));
+        const input = request.input;
         const response = await submitFizzAiJob({
           context: {
             workspaceId: doc.workspaceId,
@@ -1024,16 +981,7 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
         throw new Error(message);
       }
     },
-    [
-      columnIds.video,
-      dispatch,
-      doc.id,
-      doc.projectId,
-      doc.workspaceId,
-      loadAiCatalog,
-      t,
-      updateShotCell,
-    ]
+    [columnIds.video, dispatch, doc.id, doc.projectId, doc.workspaceId, t, updateShotCell]
   );
 
   const submitPanoramaGeneration = useCallback(
@@ -1053,28 +1001,18 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
           stage: "submitting",
           status: "pending",
         }),
-        prompt: request.prompt,
+        prompt: typeof request.input.prompt === "string" ? request.input.prompt : "",
         status: "queued",
       });
 
       try {
-        const catalog = await loadAiCatalog();
-        const model = pickFizzAiModel(catalog, "image", ["text_to_image", "image_to_image"]);
-        if (!model) throw new Error(t("sbGenerationNoImageModel"));
-
-        const rawInput = compactInput({
-          aspectRatio: "2:1",
-          aspect_ratio: "2:1",
-          imageSize: "landscape_16_9",
-          input_reference: request.referenceUrl ? [{ url: request.referenceUrl }] : undefined,
-          n: request.outputCount,
-          numOutputs: request.outputCount,
-          prompt: request.prompt,
-          referenceImages: request.referenceUrl ? [{ url: request.referenceUrl }] : undefined,
-          resolution: request.resolution,
-          size: "2048x1024",
-        });
-        const input = filterFizzAiInput(model, rawInput);
+        const catalog = await listFizzAiCatalog();
+        const model = currentCanvasGenerationModel(catalog, "image", request);
+        if (!model) throw new Error(t("sbCanvasModelUnavailable"));
+        const invalid = invalidCanvasGenerationFields(model, request.input);
+        if (invalid.length)
+          throw new Error(t("sbCanvasInvalidSettings", { fields: invalid.join(", ") }));
+        const input = request.input;
         const response = await submitFizzAiJob({
           context: {
             workspaceId: doc.workspaceId,
@@ -1106,7 +1044,7 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
             stage: response.stage,
             status: mediaStatusFromGeneration(status),
           }),
-          prompt: request.prompt,
+          prompt: typeof request.input.prompt === "string" ? request.input.prompt : "",
           status,
         });
       } catch (error) {
@@ -1127,13 +1065,13 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
             stage: "failed",
             status: "failed",
           }),
-          prompt: request.prompt,
+          prompt: typeof request.input.prompt === "string" ? request.input.prompt : "",
           status: "failed",
         });
         throw new Error(message);
       }
     },
-    [dispatch, doc.id, doc.projectId, doc.workspaceId, loadAiCatalog, t, updateCanvasAssetNode]
+    [dispatch, doc.id, doc.projectId, doc.workspaceId, t, updateCanvasAssetNode]
   );
 
   const nodeData = useCallback(
@@ -1452,13 +1390,7 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
           media: [],
           sourceShotId,
           status: "idle",
-          settings: {
-            aspectRatio: "2:1",
-            model: "Fizz Image 2.0",
-            outputCount: 1,
-            quality: "standard",
-            resolution: "2K",
-          },
+          settings: {},
         },
         pos
       );

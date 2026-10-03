@@ -6,7 +6,7 @@ export const PANORAMA_NODE_HEIGHT = Math.round((PANORAMA_NODE_WIDTH * 9) / 16);
 export const MOCK_PANORAMA_IMAGE_URL = "/mock/fizzstudio/panorama-mountain-2to1.svg";
 
 export const NODE_COMPOSER_WIDTH = 640;
-export const NODE_COMPOSER_HEIGHT = 247;
+export const NODE_COMPOSER_HEIGHT = 360;
 export const NODE_COMPOSER_GAP = 16;
 export const NODE_COMPOSER_VIEWPORT_PADDING = 16;
 
