@@ -1,3 +1,5 @@
+import { useIsFocused } from "expo-router";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, TextInput, View } from "react-native";
 import type { TextGamePlaySession } from "@repo/shared/text-game";
@@ -9,19 +11,38 @@ import type { TextAdventureSession } from "./api/text-adventure-api";
 import { TextAdventureMedia } from "./text-adventure-media";
 import { Action } from "./text-adventure-editor";
 import { textAdventurePlayWorkflow, type PendingTextPlay } from "./text-adventure-play-workflow";
-export function TextAdventurePlayer({
-  gameId,
-  account,
-  onBack,
-  mode = "creator",
-  backLabel = "textAdventures.mobile.backToEditor",
-}: {
+type PlayerProps = {
   gameId: string;
   account: TextAdventureSession;
   onBack: () => void;
   backLabel?: MessageKey;
   mode?: "creator" | "public";
-}) {
+};
+export function TextAdventurePlayer(props: PlayerProps) {
+  const focused = useIsFocused();
+  return focused ? (
+    <PlayerDraft
+      key={`${props.gameId}:${props.account.userId}:${props.account.generation}:${props.mode}`}
+      {...props}
+    />
+  ) : null;
+}
+function PlayerDraft(props: PlayerProps) {
+  const active = useScreenActive();
+  const [action, setAction] = useState("");
+  // Keep only unsent text through backgrounding. Reads, streams and media retire
+  // and recover from the authoritative session when the app returns.
+  return active ? <ActivePlayer {...props} action={action} setAction={setAction} /> : null;
+}
+function ActivePlayer({
+  gameId,
+  account,
+  onBack,
+  mode = "creator",
+  backLabel = "textAdventures.mobile.backToEditor",
+  action,
+  setAction,
+}: PlayerProps & { action: string; setAction: (value: string) => void }) {
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme();
@@ -31,7 +52,6 @@ export function TextAdventurePlayer({
     [error, setError] = useState<string>(),
     [busy, setBusy] = useState(true),
     [loaded, setLoaded] = useState(false),
-    [action, setAction] = useState(""),
     [confirm, setConfirm] = useState<"restart" | "clear">();
   const abort = useRef<AbortController | null>(null),
     running = useRef(false);

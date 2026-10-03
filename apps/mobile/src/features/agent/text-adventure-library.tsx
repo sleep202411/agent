@@ -1,4 +1,3 @@
-import { useScreenActive } from "@/hooks/use-app-active";
 import { TextAdventurePlayer } from "./text-adventure-player";
 import { TextAdventurePreview } from "./text-adventure-preview";
 import { TextAdventureCreate } from "./text-adventure-create";
@@ -11,30 +10,29 @@ import { useTranslations } from "@/i18n";
 import { listTextAdventures, type TextAdventureSession } from "./api/text-adventure-api";
 import { Action, TextAdventureEditor } from "./text-adventure-editor";
 export function TextAdventureLibrary({ session }: { session: TextAdventureSession }) {
-  const active = useScreenActive();
   const [identity] = useState(session),
     [selected, setSelected] = useState<string>(),
     [playing, setPlaying] = useState(false),
     [preview, setPreview] = useState<string>(),
     [revision, setRevision] = useState(0);
   if (preview)
-    return active ? (
+    return (
       <TextAdventurePreview
         key={preview}
         gameId={preview}
         session={identity}
         onBack={() => setPreview(undefined)}
       />
-    ) : null;
+    );
   if (selected && playing)
-    return active ? (
+    return (
       <TextAdventurePlayer
         key={selected}
         gameId={selected}
         account={identity}
         onBack={() => setPlaying(false)}
       />
-    ) : null;
+    );
   if (selected)
     return (
       <TextAdventureEditor

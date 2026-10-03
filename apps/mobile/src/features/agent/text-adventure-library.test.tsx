@@ -8,9 +8,8 @@ vi.mock("./text-adventure-preview", () => ({
   TextAdventurePreview: ({ gameId }: { gameId: string }) => <span>Preview {gameId}</span>,
 }));
 vi.mock("./text-adventure-player", () => ({
-  TextAdventurePlayer: ({ onBack }: { onBack: () => void }) => (
-    <button onClick={onBack}>player back</button>
-  ),
+  TextAdventurePlayer: ({ onBack }: { onBack: () => void }) =>
+    h.active ? <button onClick={onBack}>player back</button> : null,
 }));
 vi.mock("./text-adventure-create", () => ({ TextAdventureCreate: () => null }));
 vi.mock("./api/text-adventure-api", () => ({ listTextAdventures: h.list }));

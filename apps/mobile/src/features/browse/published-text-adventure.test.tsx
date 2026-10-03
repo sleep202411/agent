@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   player: vi.fn(),
   media: vi.fn(),
 }));
+vi.mock("expo-router", () => ({ useIsFocused: () => true }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({
     status: h.status,
@@ -45,7 +46,7 @@ vi.mock("@/features/agent/text-adventure-media", () => ({
 vi.mock("@/features/agent/text-adventure-player", () => ({
   TextAdventurePlayer: (props: { onBack: () => void }) => {
     h.player(props);
-    return <button onClick={props.onBack}>player</button>;
+    return h.active ? <button onClick={props.onBack}>player</button> : null;
   },
 }));
 vi.mock("@/features/agent/text-adventure-editor", () => ({

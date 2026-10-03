@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import type { TextGameDetail } from "@repo/shared/text-game";
@@ -14,8 +15,8 @@ import { TextAdventureMedia } from "@/features/agent/text-adventure-media";
 import { TextAdventurePlayer } from "@/features/agent/text-adventure-player";
 import { Action } from "@/features/agent/text-adventure-editor";
 export function PublishedTextAdventure({ gameId }: { gameId: string }) {
-  const active = useScreenActive();
-  return active ? <PublishedTextAdventureDetail key={gameId} gameId={gameId} /> : null;
+  const focused = useIsFocused();
+  return focused ? <PublishedTextAdventureDetail key={gameId} gameId={gameId} /> : null;
 }
 function PublishedTextAdventureDetail({ gameId }: { gameId: string }) {
   const auth = useAuth(),
@@ -47,13 +48,7 @@ function PublishedTextAdventureDetail({ gameId }: { gameId: string }) {
     return () => c.abort();
   }, [gameId, revision]);
   const userId = String(auth.user?.userId ?? auth.user?.id ?? "");
-  if (
-    active &&
-    game &&
-    auth.status === "authenticated" &&
-    userId &&
-    playGeneration === auth.generation
-  )
+  if (game && auth.status === "authenticated" && userId && playGeneration === auth.generation)
     return (
       <TextAdventurePlayer
         key={`${gameId}:${userId}:${auth.generation}`}
@@ -69,6 +64,7 @@ function PublishedTextAdventureDetail({ gameId }: { gameId: string }) {
         }}
       />
     );
+  if (!active) return null;
   if (!game)
     return (
       <View style={{ padding: 16, gap: 12 }}>

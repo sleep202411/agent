@@ -9,8 +9,12 @@ const h = vi.hoisted(() => ({
   clear: vi.fn(),
   pending: null as unknown,
   generation: 1,
+  active: true,
+  focused: true,
   back: vi.fn(),
 }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("./text-adventure-media", () => ({
   TextAdventureMedia: () => null,
   TextAdventureMusic: () => null,
@@ -91,6 +95,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.pending = null;
   h.generation = 1;
+  h.active = true;
+  h.focused = true;
   h.refresh.mockResolvedValue({ session, pending: null });
   h.start.mockResolvedValue(session);
   host = document.createElement("div");
@@ -166,4 +172,64 @@ it("aborts the current session lookup on unmount", async () => {
   await render();
   await act(async () => root.render(null));
   expect(signal.aborted).toBe(true);
+});
+
+it("retains unsent text but reloads the session after backgrounding", async () => {
+  await render();
+  await type("Look behind the door");
+  const signal = h.refresh.mock.calls[0][0] as AbortSignal;
+  h.active = false;
+  await render();
+  expect(signal.aborted).toBe(true);
+  expect(host.querySelector("input")).toBeNull();
+  h.refresh.mockRejectedValueOnce(new Error("Session unavailable"));
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Session unavailable");
+  expect(h.send).not.toHaveBeenCalled();
+  await act(async () => button("thread.refresh").click());
+  expect(host.querySelector("input")?.value).toBe("Look behind the door");
+  expect(button("playtest.send").disabled).toBe(false);
+  expect(h.send).not.toHaveBeenCalled();
+});
+it("retires unsent text when the route leaves", async () => {
+  await render();
+  await type("Private action");
+  h.focused = false;
+  await render();
+  h.focused = true;
+  await render();
+  expect(host.querySelector("input")?.value).toBe("");
+});
+it("keeps recovered pending actions locked after foreground return", async () => {
+  await render();
+  await type("Look");
+  h.send.mockImplementation(async () => {
+    h.pending = { id: "pending", kind: "action", message: "Look" };
+    throw new Error("Connection lost");
+  });
+  await act(async () => button("playtest.send").click());
+  h.active = false;
+  await render();
+  h.refresh.mockResolvedValue({ session, pending: h.pending });
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")?.value).toBe("Look");
+  expect(button("playtest.send").disabled).toBe(true);
+  expect(h.send).toHaveBeenCalledOnce();
+});
+it("does not carry a draft into a new account generation", async () => {
+  await render();
+  await type("Private action");
+  h.generation = 2;
+  await act(async () =>
+    root.render(
+      <TextAdventurePlayer
+        gameId={session.gameId}
+        account={{ userId: "2", generation: 2 }}
+        onBack={h.back}
+      />
+    )
+  );
+  expect(host.querySelector("input")?.value).toBe("");
 });
