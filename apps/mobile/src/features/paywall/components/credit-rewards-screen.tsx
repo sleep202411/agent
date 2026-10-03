@@ -16,6 +16,8 @@ import {
 
 import { creditRewardCommands, type CreditRewardCommand } from "../lib/credit-rewards-commands";
 
+import { CreditCheckIn } from "./credit-check-in";
+
 export function CreditRewardsScreen() {
   const auth = useAuth(),
     gate = useAuthGate(),
@@ -189,6 +191,7 @@ function AccountCreditRewards({ generation, userId }: { generation: number; user
           </>
         )}
       </View>
+      <CreditCheckIn generation={generation} onClaim={wallet.refresh} />
       {recovery.error && (
         <ThemedText type="small" accessibilityRole="alert">
           {recovery.error}

@@ -53,6 +53,15 @@ vi.mock("react-native", () => ({
   ),
   TextInput: () => null,
 }));
+const checkIn = {
+  enabled: false,
+  rewards: [10, 20, 30],
+  checkedInToday: false,
+  streak: 0,
+  nextStreakDay: 1,
+  nextReward: 10,
+  todayReward: 10,
+};
 const id = "00000000-0000-4000-8000-000000000001";
 const campaign = {
   id,
@@ -80,7 +89,11 @@ beforeEach(() => {
   h.authenticated = true;
   h.records.clear();
   h.get.mockImplementation(async (path: string) =>
-    path.includes("campaigns") ? { items: [campaign] } : { accounts: [] }
+    path.includes("campaigns")
+      ? { items: [campaign] }
+      : path.includes("check-in")
+        ? checkIn
+        : { accounts: [] }
   );
   host = document.createElement("div");
   document.body.append(host);
@@ -157,4 +170,98 @@ it("does not leak a previous account's pending reward or success into its replac
   expect(host.textContent).not.toContain("creditRewards.pending");
   expect(h.records.get("1")).toContain(id);
   expect(h.records.has("2")).toBe(false);
+});
+
+it("hides disabled check-in and recovers a failed status read", async () => {
+  await render();
+  expect(host.textContent).not.toContain("creditCheckIn.title");
+  let fail = true;
+  h.get.mockImplementation(async (path: string) => {
+    if (path.includes("check-in")) {
+      if (fail) throw Error("Check-in unavailable");
+      return { ...checkIn, enabled: true };
+    }
+    return path.includes("campaigns") ? { items: [] } : { accounts: [] };
+  });
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Check-in unavailable");
+  fail = false;
+  await act(async () => button("common.retry").click());
+  expect(host.textContent).not.toContain("Check-in unavailable");
+  expect(button("creditCheckIn.claim").disabled).toBe(false);
+});
+it("serializes daily claims, supports retry, and refreshes status and balance", async () => {
+  let claimed = false;
+  h.get.mockImplementation(async (path: string) =>
+    path.includes("check-in")
+      ? { ...checkIn, enabled: true, checkedInToday: claimed }
+      : path.includes("campaigns")
+        ? { items: [] }
+        : { accounts: [] }
+  );
+  h.post.mockRejectedValueOnce(Error("Claim unavailable")).mockImplementationOnce(async () => {
+    claimed = true;
+    return {
+      granted: {
+        grantType: "compute_credits",
+        currency: "compute_point",
+        amount: "10",
+        workspaceId: id,
+      },
+      streakDay: 1,
+      alreadyCheckedIn: false,
+    };
+  });
+  await render();
+  await act(async () => {
+    button("creditCheckIn.claim").click();
+    button("creditCheckIn.claim").click();
+  });
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("Claim unavailable");
+  const before = h.get.mock.calls.filter(([path]) => path === "/billing/wallet-ledger").length;
+  await act(async () => button("creditCheckIn.claim").click());
+  expect(button("creditCheckIn.done").disabled).toBe(true);
+  expect(host.textContent).not.toContain("Claim unavailable");
+  expect(
+    h.get.mock.calls.filter(([path]) => path === "/billing/wallet-ledger").length
+  ).toBeGreaterThan(before);
+});
+it("retires a daily claim when its account changes", async () => {
+  h.get.mockImplementation(async (path: string) =>
+    path.includes("check-in")
+      ? { ...checkIn, enabled: true }
+      : path.includes("campaigns")
+        ? { items: [] }
+        : { accounts: [] }
+  );
+  let finish!: (v: unknown) => void;
+  h.post.mockReturnValue(
+    new Promise((r) => {
+      finish = r;
+    })
+  );
+  await render();
+  await act(async () => button("creditCheckIn.claim").click());
+  const signal = h.post.mock.calls[0][1].signal as AbortSignal;
+  h.generation++;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () =>
+    finish({
+      granted: {
+        grantType: "compute_credits",
+        currency: "compute_point",
+        amount: "10",
+        workspaceId: id,
+      },
+      streakDay: 1,
+      alreadyCheckedIn: false,
+    })
+  );
+  expect(host.textContent).not.toContain("creditRewards.success");
+  expect(button("creditCheckIn.claim").disabled).toBe(false);
 });

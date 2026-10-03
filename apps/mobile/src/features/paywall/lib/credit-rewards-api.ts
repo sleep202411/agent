@@ -57,3 +57,42 @@ export async function redeemCreditVoucher(code: string, generation: number, sign
   current(generation, signal);
   return z.object({ granted: grantSchema, alreadyRedeemed: z.boolean() }).parse(response);
 }
+
+const checkInStatusSchema = z.object({
+  enabled: z.boolean(),
+  rewards: z.array(z.number().int().nonnegative()).min(1),
+  checkedInToday: z.boolean(),
+  streak: z.number().int().nonnegative(),
+  nextStreakDay: z.number().int().positive(),
+  nextReward: z.number().int().nonnegative(),
+  todayReward: z.number().int().nonnegative(),
+});
+export type CreditCheckInStatus = z.infer<typeof checkInStatusSchema>;
+export async function getCreditCheckIn(generation: number, signal: AbortSignal) {
+  current(generation, signal);
+  const response = await api.get("/billing/check-in/status", {
+    service: "aurora",
+    cache: "no-store",
+    signal,
+  });
+  current(generation, signal);
+  return checkInStatusSchema.parse(response);
+}
+/** Server owns the UTC day and deduplicates current-day claims. */
+export async function claimCreditCheckIn(generation: number, signal: AbortSignal) {
+  current(generation, signal);
+  const response = await api.post("/billing/check-in", {
+    service: "aurora",
+    data: {},
+    signal,
+    retry: false,
+  });
+  current(generation, signal);
+  return z
+    .object({
+      granted: grantSchema,
+      streakDay: z.number().int().positive(),
+      alreadyCheckedIn: z.boolean(),
+    })
+    .parse(response);
+}

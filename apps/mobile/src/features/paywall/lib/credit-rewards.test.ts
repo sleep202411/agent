@@ -1,6 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import {
+  getCreditCheckIn,
+  claimCreditCheckIn,
   listCreditCampaigns,
   claimCreditCampaign,
   redeemCreditVoucher,
@@ -122,4 +124,28 @@ it("serializes taps and keeps pending recovery after cancellation", async () => 
   finish({ granted, alreadyClaimed: false });
   await expect(request).rejects.toThrow();
   expect(commands.read()).toEqual(command);
+});
+
+it("validates the server check-in cycle without inventing rewards", async () => {
+  vi.mocked(api.get).mockResolvedValueOnce({
+    enabled: true,
+    rewards: [],
+    checkedInToday: false,
+    streak: 0,
+    nextStreakDay: 1,
+    nextReward: 0,
+    todayReward: 0,
+  });
+  await expect(getCreditCheckIn(1, signal())).rejects.toThrow();
+});
+it("claims only the server's current day with no automatic replay", async () => {
+  vi.mocked(api.post).mockResolvedValue({ granted, streakDay: 7, alreadyCheckedIn: true });
+  expect((await claimCreditCheckIn(1, signal())).alreadyCheckedIn).toBe(true);
+  expect(api.post).toHaveBeenCalledWith(
+    "/billing/check-in",
+    expect.objectContaining({ data: {}, retry: false })
+  );
+  state.generation = 2;
+  await expect(claimCreditCheckIn(1, signal())).rejects.toThrow();
+  expect(api.post).toHaveBeenCalledTimes(1);
 });

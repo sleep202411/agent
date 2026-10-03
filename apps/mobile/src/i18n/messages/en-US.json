@@ -4728,5 +4728,10 @@
   "creditRewards.success": "{amount} compute credits received.",
   "creditRewards.already": "These credits have already been received.",
   "creditRewards.pending": "A credit request needs confirmation. Retry to check its result. Clearing this retry does not undo credits already received.",
-  "creditRewards.clear": "Clear pending retry"
+  "creditRewards.clear": "Clear pending retry",
+  "creditCheckIn.title": "Daily check-in",
+  "creditCheckIn.streak": "{days}-day streak",
+  "creditCheckIn.day": "Day {day}",
+  "creditCheckIn.claim": "Claim {amount} credits",
+  "creditCheckIn.done": "Checked in today"
 }

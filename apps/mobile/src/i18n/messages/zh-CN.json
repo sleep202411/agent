@@ -4728,5 +4728,10 @@
   "creditRewards.success": "已收到 {amount} 算力积分。",
   "creditRewards.already": "这些积分已领取。",
   "creditRewards.pending": "有一笔积分请求待确认。重试可查询结果；清除重试记录不会撤销已到账积分。",
-  "creditRewards.clear": "清除待重试记录"
+  "creditRewards.clear": "清除待重试记录",
+  "creditCheckIn.title": "每日签到",
+  "creditCheckIn.streak": "连续签到 {days} 天",
+  "creditCheckIn.day": "第 {day} 天",
+  "creditCheckIn.claim": "领取 {amount} 积分",
+  "creditCheckIn.done": "今日已签到"
 }

@@ -4728,5 +4728,10 @@
   "creditRewards.success": "已收到 {amount} 算力積分。",
   "creditRewards.already": "這些積分已領取。",
   "creditRewards.pending": "有一筆積分請求待確認。重試可查詢結果；清除重試記錄不會撤銷已到賬積分。",
-  "creditRewards.clear": "清除待重試記錄"
+  "creditRewards.clear": "清除待重試記錄",
+  "creditCheckIn.title": "每日簽到",
+  "creditCheckIn.streak": "連續簽到 {days} 天",
+  "creditCheckIn.day": "第 {day} 天",
+  "creditCheckIn.claim": "領取 {amount} 積分",
+  "creditCheckIn.done": "今日已簽到"
 }
