@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ApiRequestError } from "@/lib/api-client";
 import { CrewLinkedResources } from "./crew-linked-resources";
+vi.mock("./crew-link-ip", () => ({ CrewLinkIp: () => <span>Link IP entry</span> }));
 const h = vi.hoisted(() => ({
   status: "authenticated",
   generation: 1,

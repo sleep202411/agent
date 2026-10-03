@@ -1,3 +1,4 @@
+import { CrewLinkIp } from "./crew-link-ip";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -102,7 +103,10 @@ function Resources({
           )
         )
       ) : (
-        <ThemedText>{t("crewLinks.none")}</ThemedText>
+        <View>
+          <ThemedText>{t("crewLinks.none")}</ThemedText>
+          {signedIn && <CrewLinkIp key={revision} crewId={crewId} />}
+        </View>
       )}
       <ThemedText type="smallBold">{t("crewLinks.workspace")}</ThemedText>
       {!signedIn ? (

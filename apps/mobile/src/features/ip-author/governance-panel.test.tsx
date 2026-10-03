@@ -306,3 +306,71 @@ it("hides private forms after access loss, inactivity or authentication changes"
   await mount();
   expect(host.textContent).toBe("");
 });
+
+it("opens Crew linking with the requested permitted Crew without an automatic write", async () => {
+  await act(async () =>
+    root.render(
+      <IpGovernancePanel
+        ipId={id}
+        userId="alice"
+        generation={1}
+        initialKind="crew"
+        suggestedCrewId="new-crew"
+      />
+    )
+  );
+  expect(button("● Production team")).toBeDefined();
+  expect(host.textContent).toContain("crewLinks.linkedElsewhere");
+  expect(h.put).not.toHaveBeenCalled();
+  await click("ipGovernance.save");
+  expect(crewId).toBe("new-crew");
+});
+it("does not preselect a Crew outside the server's choices", async () => {
+  await act(async () =>
+    root.render(
+      <IpGovernancePanel
+        ipId={id}
+        userId="alice"
+        generation={1}
+        initialKind="crew"
+        suggestedCrewId="forbidden"
+      />
+    )
+  );
+  expect(button("● ipGovernance.existingCrew")).toBeDefined();
+  expect(button("ipGovernance.save").disabled).toBe(true);
+  expect(h.put).not.toHaveBeenCalled();
+});
+
+it("preserves a pending Crew write when returning from a different link entry", async () => {
+  h.put.mockRejectedValue(new Error("Response lost"));
+  await act(async () =>
+    root.render(
+      <IpGovernancePanel
+        ipId={id}
+        userId="alice"
+        generation={1}
+        initialKind="crew"
+        suggestedCrewId="new-crew"
+      />
+    )
+  );
+  await click("ipGovernance.save");
+  expect(h.put).toHaveBeenCalledTimes(1);
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await act(async () =>
+    root.render(
+      <IpGovernancePanel
+        ipId={id}
+        userId="alice"
+        generation={1}
+        initialKind="crew"
+        suggestedCrewId="other-crew"
+      />
+    )
+  );
+  expect(button("● Production team")).toBeDefined();
+  expect(host.textContent).toContain("ipGovernance.pending");
+  expect(h.put).toHaveBeenCalledTimes(1);
+});

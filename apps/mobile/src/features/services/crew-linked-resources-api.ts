@@ -74,3 +74,21 @@ export async function fetchLinkedFilms(
     throw Error("Linked film pagination changed. Refresh to reload.");
   return result;
 }
+
+export async function fetchCrewIpLinkAccess(
+  crewId: string,
+  userId: string,
+  generation: number,
+  signal: AbortSignal
+) {
+  id.parse(crewId);
+  current(generation, signal);
+  const member = z
+    .object({ userId: z.string(), permissions: z.array(z.string()) })
+    .parse(
+      await api.get(`/crews/${crewId}/members/me`, { service: "aurora", retry: false, signal })
+    );
+  current(generation, signal);
+  if (member.userId !== userId) throw Error("Crew membership account mismatch.");
+  return member.permissions.includes("production.manage");
+}

@@ -23,7 +23,13 @@ import {
 } from "./governance-api";
 import { IpProductionPanel } from "./production-panel";
 import type { ProductionKind } from "./production-api";
-type Props = { ipId: string; userId: string; generation: number };
+type Props = {
+  ipId: string;
+  userId: string;
+  generation: number;
+  initialKind?: GovernanceKind;
+  suggestedCrewId?: string;
+};
 function Button({
   label,
   onPress,
@@ -60,7 +66,9 @@ export function IpGovernancePanel(props: Props) {
 function Session(props: Props) {
   const t = useTranslations(),
     theme = useTheme();
-  const [kind, setKind] = useState<GovernanceKind | ProductionKind>("disclosures");
+  const [kind, setKind] = useState<GovernanceKind | ProductionKind>(
+    props.initialKind ?? "disclosures"
+  );
   return (
     <View style={{ flex: 1 }}>
       <View style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 8 }}>
@@ -88,7 +96,13 @@ function Session(props: Props) {
     </View>
   );
 }
-function Editor({ ipId, userId, generation, kind }: Props & { kind: GovernanceKind }) {
+function Editor({
+  ipId,
+  userId,
+  generation,
+  kind,
+  suggestedCrewId,
+}: Props & { kind: GovernanceKind }) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(`${ipId}:${kind}`, true);
@@ -116,7 +130,14 @@ function Editor({ ipId, userId, generation, kind }: Props & { kind: GovernanceKi
       .then((value) => {
         if (c.signal.aborted) return;
         setSnapshot(value);
-        setDraft(initial.pending ?? draftFrom(value));
+        const next = draftFrom(value);
+        if (
+          next.kind === "crew" &&
+          value.kind === "crew" &&
+          value.choices.some((item) => item.id === suggestedCrewId)
+        )
+          next.data = { crewId: suggestedCrewId! };
+        setDraft(initial.pending ?? next);
       })
       .catch((e) => {
         if (!c.signal.aborted) setError(String(e.message ?? e));
@@ -125,7 +146,7 @@ function Editor({ ipId, userId, generation, kind }: Props & { kind: GovernanceKi
         if (!c.signal.aborted) setLoading(false);
       });
     return () => c.abort();
-  }, [ipId, generation, kind, initial]);
+  }, [ipId, generation, kind, initial, suggestedCrewId]);
   const failure = (e: unknown) => {
     setError(String(e instanceof Error ? e.message : e));
     if (e instanceof ApiRequestError && [401, 403, 404].includes(e.status)) {
@@ -364,6 +385,18 @@ function Editor({ ipId, userId, generation, kind }: Props & { kind: GovernanceKi
               <ThemedText type="small" themeColor="textSecondary">
                 {t("ipGovernance.crewHint")}
               </ThemedText>
+              {suggestedCrewId && !snapshot.choices.some((item) => item.id === suggestedCrewId) && (
+                <ThemedText accessibilityRole="alert" type="small">
+                  {t("crewLinks.targetUnavailable")}
+                </ThemedText>
+              )}
+              {snapshot.data.crewId &&
+                draft.data.crewId &&
+                snapshot.data.crewId !== draft.data.crewId && (
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {t("crewLinks.linkedElsewhere")}
+                  </ThemedText>
+                )}
               {[
                 { id: null, name: t("ipGovernance.noCrew") },
                 ...(draft.data.crewId &&

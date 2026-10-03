@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
+  fetchCrewIpLinkAccess,
   fetchLinkedFilms,
   fetchLinkedIps,
   fetchLinkedWorkspace,
@@ -72,4 +73,23 @@ it("rejects cancelled or foreign account responses", async () => {
     return { items: [] };
   });
   await expect(fetchLinkedIps("crew", 1, signal())).rejects.toThrow("expired");
+});
+
+it("offers IP linking only to this account's production manager", async () => {
+  h.get.mockResolvedValue({ userId: "actor", permissions: ["tasks.manage"] });
+  expect(await fetchCrewIpLinkAccess("crew", "actor", 1, signal())).toBe(false);
+  h.get.mockResolvedValue({ userId: "actor", permissions: ["production.manage"] });
+  expect(await fetchCrewIpLinkAccess("crew", "actor", 1, signal())).toBe(true);
+  await expect(fetchCrewIpLinkAccess("crew", "other", 1, signal())).rejects.toThrow(
+    "account mismatch"
+  );
+});
+it("rejects IP-link access from an expired session", async () => {
+  h.get.mockImplementation(async () => {
+    h.generation = 2;
+    return { userId: "actor", permissions: ["production.manage"] };
+  });
+  await expect(fetchCrewIpLinkAccess("crew", "actor", 1, signal())).rejects.toThrow(
+    "session expired"
+  );
 });
