@@ -78,6 +78,33 @@ it.each(["global", "cn"])(
         pathPrefix: `${locale}/crew-invitations/`,
       })),
     });
+    // Android must deliver casting URLs to the app before +native-intent can
+    // validate their token. Exact paths avoid claiming other casting pages.
+    const casting = config.android.intentFilters.find((filter: { data?: { path?: string }[] }) =>
+      filter.data?.some((entry) => entry.path === "/casting/accept")
+    );
+    expect(casting).toBeDefined();
+    expect(casting.autoVerify).toBe(true);
+    expect(casting.action).toBe("VIEW");
+    expect(casting.category).toEqual(["BROWSABLE", "DEFAULT"]);
+    const paths = new Set(casting.data.map((entry: { path: string }) => entry.path));
+    expect(paths.size).toBe(8);
+    for (const path of [
+      "/casting/accept",
+      "/casting/accept/",
+      "/en-US/casting/accept",
+      "/en-US/casting/accept/",
+      "/zh-CN/casting/accept",
+      "/zh-CN/casting/accept/",
+      "/zh-HK/casting/accept",
+      "/zh-HK/casting/accept/",
+    ])
+      expect(paths.has(path)).toBe(true);
+    for (const entry of casting.data) {
+      expect(entry.scheme).toBe("https");
+      expect(entry.host).toBe(host);
+      expect(entry.pathPrefix).toBeUndefined();
+    }
     for (const variant of ["development", "preview"]) {
       vi.stubEnv("APP_VARIANT", variant);
       const dev = configure({ config: {} });
