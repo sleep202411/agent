@@ -4189,6 +4189,13 @@
     "start": "開始試玩",
     "restart": "重新開始",
     "regionLabel": "互動故事試玩",
+    "playback": {
+      "pause": "暫停",
+      "resume": "繼續播放",
+      "paused": "已暫停",
+      "continuePlaying": "點擊繼續播放",
+      "interrupted": "此裝置需要點擊才能繼續播放。"
+    },
     "videoLabel": "畫面 {nodeId} 的故事影片",
     "continue": "繼續",
     "noVisibleChoices": "目前故事狀態下沒有可用選擇。",
@@ -4198,15 +4205,7 @@
     "runtimeError": "試玩無法繼續",
     "mediaError": "無法播放凍結媒體資產 {assetId}。",
     "video": {
-      "play": "播放",
-      "pause": "暫停",
-      "mute": "靜音",
-      "unmute": "取消靜音",
-      "volume": "音量",
-      "enterFullscreen": "進入全屏",
-      "exitFullscreen": "退出全屏",
-      "seekForward": "快進",
-      "seekBackward": "快退"
+      "unmute": "取消靜音"
     },
     "emptySequence": "暫無影片",
     "loadingMedia": "正在載入影片",
@@ -4219,8 +4218,6 @@
       "backward": "向後移動",
       "left": "向左移動",
       "right": "向右移動",
-      "pause": "暫停世界",
-      "resume": "繼續世界",
       "finish": "結束世界體驗"
     }
   },

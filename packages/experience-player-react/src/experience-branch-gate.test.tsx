@@ -38,16 +38,13 @@ export const copy = {
   emptySequence: "No footage yet",
   loadingMedia: "Loading",
   regionLabel: "Experience player",
-  video: {
-    play: "Play",
+  video: { unmute: "Unmute" },
+  playback: {
     pause: "Pause",
-    mute: "Mute",
-    unmute: "Unmute",
-    volume: "Volume",
-    enterFullscreen: "Enter fullscreen",
-    exitFullscreen: "Exit fullscreen",
-    seekForward: "Seek forward",
-    seekBackward: "Seek backward",
+    resume: "Resume",
+    paused: "Paused",
+    continuePlaying: "Tap to continue",
+    interrupted: "This device needs a tap to keep playing.",
   },
 } as ExperiencePlayerCopy;
 

@@ -41,6 +41,75 @@ A manifest names one progressive file per clip; a frozen build clip is a
   start on that rendition); native HLS only negotiates; a progressive warm
   preloads on a detached element until it can play through.
 
+## Playback state
+
+The viewer's pause is a state of its own — `user`, `hidden` or `refused` —
+combined with the gates the story already has (access, the locked-scene gate,
+the timeline-control charge), never worked out from them.
+
+- **Holds.** One rule (`resolveExperiencePlaybackHolds`) decides what holds
+  story time, Web Audio and the clips, at render and between renders alike. A
+  pause or an access flow holds all three; a charge holds only its clip, since
+  its idle timeout is story time; the ending leaves Web Audio to its cues.
+- **Story time.** Everything that moves the story without media — the fixed
+  scene clock, stills, held frames, placeholders, the charge idle timeout,
+  press-hold frames — runs on `ExperienceStoryClock`, never on `window`, so one
+  pause freezes it all. Video time stops with its element.
+- **One play path.** Every play the player starts goes through `playHandle`
+  and one classifier (`resolveExperiencePlaybackRejection`). A `NotAllowedError`
+  that outlives the muted retry — WebKit plays an element only once a tap played
+  it, and Low Power Mode refuses every other play — pauses the story as
+  `refused`, for one tap; so does one from Web Audio, from a world stream, or
+  from a play Vidstack starts itself. Only a real failure shows the dialog.
+- **Pauses from outside.** A clip the system or the OS controls stop while it
+  plays pauses the story with it; a play the player did not ask for is stopped
+  again. A pause the browser makes as an element fails is the failure's, not an
+  interruption. A press or swipe in progress is dropped without a verdict, and
+  a renderer outcome that lands during a pause waits for the resume.
+- **Resume.** A tap, a click or Space resumes inside the user activation: every
+  staged clip is played first and synchronously — that play is what WebKit
+  grants an element on — then Web Audio, then the state. A clip the story holds
+  (its own pause command, an open charge) is played and paused at once:
+  granted, not started. A clip within a breath of its declared end is neither:
+  Vidstack would start it over, so a play that would continue it ends it
+  instead — the story hears the end it waits for, once — and an unlock leaves
+  it as it is. Sound a refusal muted comes back with the tap; sound the viewer
+  left off stays off. Web Audio follows what the story last asked of it, not
+  the state its context reports while a device is still starting.
+- **Controls.** The pause toggle (with the unmute pill under it) sits at the
+  film frame's top-right and the paused frame covers the picture; both turn with
+  the frame. Tapping anywhere on the paused frame resumes — the story under it
+  is inert — and after a refusal it asks for that tap and says why. The toggle
+  shows wherever the scene has time to stop, and steps aside while an available
+  interaction lies under it. Space toggles the film from the page or the
+  player, except where a control or a text scene takes Space, and over a world
+  stream; the toggle offers Space as its shortcut only where Space reaches it.
+  The controls take no focus from a pointer, so a resume gives focus back where
+  the viewer had it — or to the toggle, when the paused frame had it.
+- **Page and OS.** A page put away pauses a film with time to lose, and coming
+  back leaves it paused; a scene with time that opens behind a page already put
+  away — a purchase settling — is paused as it opens. The OS media controls
+  play and pause the story and cannot seek it; the player claims them back
+  whenever media is staged, since each Vidstack player takes them as it
+  connects and clears them as it goes.
+- **Host chrome.** A host with chrome along the top of the screen sets
+  `--experience-chrome-inset-top` (any CSS length) on an ancestor — how far down
+  all of that chrome reaches, and none of its own boxes taking taps; the frame
+  sets `--experience-frame-inset-top`, and the controls drop by what the first
+  leaves of the second. A turned frame or a fullscreen player ignores the host's.
+- **World streams.** A world renderer hands its element over with
+  `onMediaElement`, so it is played inside taps and held with the story, and
+  pauses its stream while `paused` is set. A stream that fails to resume says
+  so through `onError`, as raised; one that fails to hold only runs on.
+- **A lost file.** A progressive clip whose element loses its file mid-play — a
+  signed URL behind `/content` that expired over a long pause — is loaded again
+  from where it was. A reload that fails before it plays is the failure, as the
+  element first reported it — whether the element or the `<source>` it loads
+  through says so.
+
+An authoring host may pass `startSceneId`: every run, restarts included, starts
+at that scene instead of the story's entry.
+
 ## Landscape films on phones
 
 A cinematic landscape film is presented in landscape on a phone, decided by the

@@ -6,8 +6,6 @@ import {
   IconArrowLeft,
   IconArrowRight,
   IconArrowUp,
-  IconPlayerPause,
-  IconPlayerPlay,
   IconPlayerStop,
 } from "@tabler/icons-react";
 import type { ExperienceWorldModelRendererProps } from "@repo/experience-player-react";
@@ -32,8 +30,10 @@ const CONTROL_BUTTON =
 export function WorldModelExperienceRenderer({
   config,
   active,
+  paused,
   onCompleted,
   onError,
+  onMediaElement,
 }: ExperienceWorldModelRendererProps) {
   const t = useTranslations("experiencePlayer.world");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -56,6 +56,13 @@ export function WorldModelExperienceRenderer({
     onCompletedRef.current = onCompleted;
     onErrorRef.current = onError;
   }, [onCompleted, onError]);
+
+  // The player plays the stream's element inside the viewer's taps — the only
+  // play WebKit allows it under Low Power Mode — and holds it with the story.
+  useEffect(() => {
+    onMediaElement(videoRef.current);
+    return () => onMediaElement(null);
+  }, [onMediaElement]);
 
   useEffect(() => {
     if (!active || !videoRef.current || controllerRef.current) return;
@@ -96,8 +103,28 @@ export function WorldModelExperienceRenderer({
     onCompletedRef.current();
   }, [snapshot.error, snapshot.phase]);
 
+  // The stream holds with the story: the viewer's pause, a page put away, an
+  // access flow. A hold that fails is no failure of the story — the stream only
+  // runs on under the paused frame — so it raises no dialog. A release that
+  // fails leaves the stream stopped under a running story, which nothing would
+  // ever start again: that is said as the provider says it (a refusal to play
+  // without a tap pauses the story for one instead).
   useEffect(() => {
-    if (!active) return;
+    const controller = controllerRef.current;
+    if (!controller) return;
+    if (paused && snapshot.phase === "running") void controller.pause().catch(() => undefined);
+    else if (!paused && snapshot.phase === "paused") {
+      void controller.resume().catch((error) => onErrorRef.current(error));
+    }
+  }, [paused, snapshot.phase]);
+
+  const running = snapshot.phase === "running";
+
+  // Movement keys are the story's input, which holds while it is paused — and
+  // while the stream is not running, as the movement buttons do: a resume is
+  // still on its way just after the story resumes.
+  useEffect(() => {
+    if (!active || paused || !running) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
       const movement =
@@ -122,10 +149,9 @@ export function WorldModelExperienceRenderer({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [active, runControllerAction]);
+  }, [active, paused, runControllerAction, running]);
 
-  const running = snapshot.phase === "running";
-  const paused = snapshot.phase === "paused";
+  const streamPaused = snapshot.phase === "paused";
   const loading = snapshot.phase === "idle" || snapshot.phase === "starting";
 
   return (
@@ -200,30 +226,15 @@ export function WorldModelExperienceRenderer({
           </ControlButton>
         </div>
 
-        <div className="flex gap-2">
-          <ControlButton
-            label={paused ? t("resume") : t("pause")}
-            disabled={!running && !paused}
-            onClick={() =>
-              void runControllerAction(() =>
-                paused ? controllerRef.current?.resume() : controllerRef.current?.pause()
-              )
-            }
-          >
-            {paused ? (
-              <IconPlayerPlay className="size-5" />
-            ) : (
-              <IconPlayerPause className="size-5" />
-            )}
-          </ControlButton>
-          <ControlButton
-            label={t("finish")}
-            disabled={!running && !paused}
-            onClick={() => void runControllerAction(() => controllerRef.current?.end())}
-          >
-            <IconPlayerStop className="size-5" />
-          </ControlButton>
-        </div>
+        {/* Pausing belongs to the player's own toggle, which pauses the story
+            and the stream with it. */}
+        <ControlButton
+          label={t("finish")}
+          disabled={!running && !streamPaused}
+          onClick={() => void runControllerAction(() => controllerRef.current?.end())}
+        >
+          <IconPlayerStop className="size-5" />
+        </ControlButton>
       </div>
     </section>
   );

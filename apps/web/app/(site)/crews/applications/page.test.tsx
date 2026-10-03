@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { RecruitmentInbox as MyApplicationsPage } from "../../messages/_components/recruitment-inbox";
+vi.mock("@/src/lib/api", () => ({
+  api: { post: async () => ({ info: {}, level: [] }), postForm: async () => [] },
+}));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 const h = vi.hoisted(() => ({ user: "alice", get: vi.fn(), login: vi.fn() }));
 vi.mock("@/components/auth/auth-dialog-provider", () => ({

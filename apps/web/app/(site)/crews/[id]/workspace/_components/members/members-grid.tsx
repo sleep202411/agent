@@ -1,7 +1,6 @@
 "use client";
 
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
-import { ProjectAccountability } from "@/app/(site)/crews/_components/accountability/project-accountability";
 
 /**
  * Members tab content. Ownership, production positions and access policies
@@ -357,8 +356,6 @@ function MembersGridSession({
           </div>
         </section>
       )}
-
-      <ProjectAccountability crewId={crewId} members={members} />
 
       <CrewAgreementsDialog
         crewId={crewId}

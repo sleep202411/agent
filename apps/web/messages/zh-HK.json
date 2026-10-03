@@ -9448,21 +9448,20 @@
     "noVisibleChoices": "目前故事狀態下沒有可用選項。",
     "continue": "繼續",
     "regionLabel": "影遊播放器",
+    "playback": {
+      "pause": "暫停",
+      "resume": "繼續播放",
+      "paused": "已暫停",
+      "continuePlaying": "點擊繼續播放",
+      "interrupted": "此裝置需要點擊才能繼續播放。"
+    },
     "chapters": "章節",
     "loadErrorTitle": "目前體驗不可用",
     "loadErrorDescription": "已發佈版本未通過播放器完整性校驗，服務回傳的資訊如下。",
     "loadErrorUnknown": "無法載入已發佈的互動體驗。",
     "returnToGames": "返回遊戲列表",
     "video": {
-      "play": "播放",
-      "pause": "暫停",
-      "mute": "靜音",
-      "unmute": "取消靜音",
-      "volume": "音量",
-      "enterFullscreen": "進入全螢幕",
-      "exitFullscreen": "退出全螢幕",
-      "seekForward": "快進",
-      "seekBackward": "快退"
+      "unmute": "取消靜音"
     },
     "share": "分享",
     "shareCopied": "連結已複製",
@@ -10949,7 +10948,18 @@
     "searchHint": "搜尋目前列表中已載入的對話。",
     "details": "申請詳情",
     "message": "訊息",
-    "messagePlaceholder": "輸入訊息…"
+    "messagePlaceholder": "輸入訊息…",
+    "applicant": "申請人",
+    "profileLoading": "正在載入個人資料…",
+    "retryProfile": "重新載入資料",
+    "qualifications": "資質認證",
+    "noQualifications": "暫無資質認證",
+    "pastWork": "過往作品",
+    "viewPortfolio": "查看作品集",
+    "worksLoading": "正在載入作品…",
+    "retryWorks": "重新載入作品",
+    "noPastWork": "暫無公開作品",
+    "untitledWork": "未命名作品"
   },
   "contentGpsOwner": {
     "title": "IP地點",
@@ -11329,7 +11339,15 @@
     "none": "尚未關聯",
     "loading": "載入中…",
     "more": "載入更多",
-    "retry": "重試"
+    "retry": "重試",
+    "linkIp": "關聯 IP",
+    "selectIp": "選擇 IP",
+    "linkIpHint": "選擇您管理的 IP，將其關聯到此劇組。",
+    "noOwnedIps": "暫無可編輯的 IP。",
+    "linkedElsewhere": "此 IP 已關聯其他劇組。確認後將改為關聯此劇組。",
+    "confirmLink": "確認關聯",
+    "filmsHint": "互動遊戲發佈並確認 IP 關聯後會顯示在此處。",
+    "openStudio": "開啟 Studio"
   },
   "crewTaskContext": {
     "creator": "主創成員",

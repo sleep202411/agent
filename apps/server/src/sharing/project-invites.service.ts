@@ -215,13 +215,13 @@ export class ProjectInvitesService {
           await acquireSeatLock(tx, project.workspaceId);
         }
         const locked = await tx.$queryRaw<
-          { status: ProjectInviteStatus; expires_at: Date }[]
+          { status: ProjectInviteStatus; expires_at: Date | null }[]
         >`SELECT status, expires_at FROM project_invites WHERE id = ${invite.id}::uuid FOR UPDATE`;
         const row = locked[0];
         if (
           !row ||
           row.status !== ProjectInviteStatus.pending ||
-          row.expires_at.getTime() <= Date.now()
+          (row.expires_at !== null && row.expires_at.getTime() <= Date.now())
         ) {
           throw new GoneException({
             code: 'INVITE_NOT_ACTIVE',

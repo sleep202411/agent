@@ -4189,6 +4189,13 @@
     "start": "开始试玩",
     "restart": "重新开始",
     "regionLabel": "互动故事试玩",
+    "playback": {
+      "pause": "暂停",
+      "resume": "继续播放",
+      "paused": "已暂停",
+      "continuePlaying": "点击继续播放",
+      "interrupted": "此设备需要点击才能继续播放。"
+    },
     "videoLabel": "画面 {nodeId} 的故事视频",
     "continue": "继续",
     "noVisibleChoices": "当前故事状态下没有可用选择。",
@@ -4198,15 +4205,7 @@
     "runtimeError": "试玩无法继续",
     "mediaError": "无法播放冻结媒体资产 {assetId}。",
     "video": {
-      "play": "播放",
-      "pause": "暂停",
-      "mute": "静音",
-      "unmute": "取消静音",
-      "volume": "音量",
-      "enterFullscreen": "进入全屏",
-      "exitFullscreen": "退出全屏",
-      "seekForward": "快进",
-      "seekBackward": "快退"
+      "unmute": "取消静音"
     },
     "emptySequence": "暂无影片",
     "loadingMedia": "正在加载影片",
@@ -4219,8 +4218,6 @@
       "backward": "向后移动",
       "left": "向左移动",
       "right": "向右移动",
-      "pause": "暂停世界",
-      "resume": "继续世界",
       "finish": "结束世界体验"
     }
   },

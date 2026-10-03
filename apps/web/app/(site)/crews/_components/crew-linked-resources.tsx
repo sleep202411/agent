@@ -1,5 +1,8 @@
 "use client";
 
+import { CrewLinkIp } from "./crew-link-ip";
+import { CrewStudioWorkspacePicker } from "../[id]/workspace/_components/workbench/crew-studio-workspace-picker";
+import { IconArrowUpRight } from "@tabler/icons-react";
 import Link from "next/link";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useCrewLinkedIps } from "../_hooks/use-crew-linked-ips";
@@ -11,7 +14,13 @@ import { Button } from "@/components/ui/button";
 import { crewApi } from "../_hooks/api";
 
 type Films = { items: { id: string; title: string }[]; nextCursor: string | null };
-export function CrewLinkedResources({ crewId }: { crewId: string }) {
+export function CrewLinkedResources({
+  crewId,
+  canManage = false,
+}: {
+  crewId: string;
+  canManage?: boolean;
+}) {
   const t = useTranslations("crewLinks");
   const locale = useLocale();
   const { user } = useCurrentUser();
@@ -41,8 +50,8 @@ export function CrewLinkedResources({ crewId }: { crewId: string }) {
   return (
     <section className="space-y-5" aria-label={t("title")}>
       <h2 className="text-base font-semibold">{t("title")}</h2>
-      <div className="grid gap-5 md:grid-cols-3">
-        <section className="min-w-0 space-y-3 rounded-lg bg-white/[0.025] p-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <section className="min-w-0 space-y-3 rounded-xl border border-border bg-card p-5">
           <h3 className="text-sm font-semibold">{t("ip")}</h3>
           {ips.isError ? (
             <p role="alert" className="text-sm">
@@ -55,16 +64,20 @@ export function CrewLinkedResources({ crewId }: { crewId: string }) {
               <Link
                 key={ip.id}
                 href={`/${locale}/ips/${encodeURIComponent(ip.id)}`}
-                className="block text-sm text-primary underline underline-offset-4"
+                className="group flex items-center justify-between gap-2 rounded-md bg-white/5 px-3 py-2 text-sm text-foreground transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {t("openIp", { number: index + 1 })}
+                <span className="min-w-0 break-words">{t("openIp", { number: index + 1 })}</span>
+                <IconArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
               </Link>
             ))
           ) : (
-            <p className="text-sm text-muted-foreground">{t("none")}</p>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">{t("none")}</p>
+              {canManage && user && <CrewLinkIp crewId={crewId} userId={user.id} />}
+            </div>
           )}
         </section>
-        <section className="min-w-0 space-y-3 rounded-lg bg-white/[0.025] p-4">
+        <section className="min-w-0 space-y-3 rounded-xl border border-border bg-card p-5">
           <h3 className="text-sm font-semibold">{t("workspace")}</h3>
           {overview.isError ? (
             <p role="alert" className="text-sm">
@@ -77,15 +90,26 @@ export function CrewLinkedResources({ crewId }: { crewId: string }) {
               href={`${studio}/projects?ws=${encodeURIComponent(workspace.id)}`}
               target="_blank"
               rel="noreferrer"
-              className="block break-words text-sm text-primary underline underline-offset-4"
+              className="group flex items-center justify-between gap-2 rounded-md bg-white/5 px-3 py-2 text-sm text-foreground transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {workspace.name}
+              <span className="min-w-0 break-words">{workspace.name}</span>
+              <IconArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
             </a>
           ) : (
-            <p className="text-sm text-muted-foreground">{t("none")}</p>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">{t("none")}</p>
+              {overview.data?.capabilities.linkWorkspace && (
+                <CrewStudioWorkspacePicker
+                  crewId={crewId}
+                  value={null}
+                  legacyProject={overview.data?.studioProject ?? null}
+                  disabled={false}
+                />
+              )}
+            </div>
           )}
         </section>
-        <section className="min-w-0 space-y-3 rounded-lg bg-white/[0.025] p-4">
+        <section className="min-w-0 space-y-3 rounded-xl border border-border bg-card p-5">
           <h3 className="text-sm font-semibold">{t("films")}</h3>
           {films.isError ? (
             <p role="alert" className="text-sm">
@@ -99,16 +123,36 @@ export function CrewLinkedResources({ crewId }: { crewId: string }) {
               .map((film) => (
                 <a
                   key={film.id}
-                  href={`${studio}/story-studio/projects/${encodeURIComponent(film.id)}/canvas`}
+                  href={`${studio}/story-studio/projects/${encodeURIComponent(film.id)}/canvas?ws=${encodeURIComponent(workspace!.id)}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="block break-words text-sm text-primary underline underline-offset-4"
+                  className="group flex items-center justify-between gap-2 rounded-md bg-white/5 px-3 py-2 text-sm text-foreground transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  {film.title}
+                  <span className="min-w-0 break-words">{film.title}</span>
+                  <IconArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
                 </a>
               ))
           ) : (
-            <p className="text-sm text-muted-foreground">{t("none")}</p>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">{t("none")}</p>
+              {canManage && (
+                <>
+                  <p className="text-xs leading-relaxed text-muted-foreground">{t("filmsHint")}</p>
+                  {workspace && (
+                    <Button asChild variant="outline" color="muted" size="sm">
+                      <a
+                        href={`${studio}/projects?ws=${encodeURIComponent(workspace.id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {t("openStudio")}
+                        <IconArrowUpRight className="size-4" />
+                      </a>
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
           )}
           {films.hasNextPage && (
             <Button
