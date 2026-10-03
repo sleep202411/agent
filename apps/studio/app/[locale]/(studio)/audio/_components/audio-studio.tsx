@@ -84,6 +84,7 @@ export function AudioStudio() {
         </div>
       </section>
       <StudioComposer
+        submissionRecovery={feed.submissionRecovery}
         modality="audio"
         catalog={gen.catalog}
         prompt={gen.prompt}

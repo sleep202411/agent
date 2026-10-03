@@ -1,4 +1,6 @@
 "use client";
+
+import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
 import { CustomFieldControl, normalizeCustomFieldDraft } from "./task-custom-field-control";
 
 import { TaskDisputeControl } from "@/app/(site)/crews/_components/task-dispute-control";
@@ -490,7 +492,7 @@ export function TaskIssueDetail({
                     )
                     .map((state) => ({
                       value: state.id,
-                      label: state.systemKey ? t(`status.${state.systemKey}`) : state.name,
+                      label: workflowStateLabel(state, t),
                     }))}
                 />
               ) : (
@@ -2502,9 +2504,7 @@ function TaskStatusPill({ task }: { task: Pick<CrewTaskDTO, "status" | "workflow
       )}
     >
       <span className="size-2.5 rounded-full border-2 border-current" />
-      {task.workflowState.systemKey
-        ? t(`status.${task.workflowState.systemKey}`)
-        : task.workflowState.name}
+      {workflowStateLabel(task.workflowState, t)}
     </span>
   );
 }

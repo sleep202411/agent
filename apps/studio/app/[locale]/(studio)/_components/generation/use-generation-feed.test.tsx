@@ -11,6 +11,8 @@ import {
   retryFizzAiJob,
   type FizzAiJobView,
 } from "@/lib/canvas-authoring/generation-api";
+vi.mock("next-intl", () => ({ useTranslations: () => translate }));
+const translate = (key: string) => key;
 const state = vi.hoisted(() => ({
   user: "a",
   workspace: "one",
@@ -71,6 +73,7 @@ const render = () =>
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  sessionStorage.clear();
   state.callbacks = [];
   state.user = "a";
   state.workspace = "one";
@@ -237,4 +240,129 @@ it("clears history errors when the account changes", async () => {
   state.user = "replacement";
   await render();
   expect(feed.historyError).toBeNull();
+});
+
+it("retains a lost-response receipt and blocks edited/new submissions until lookup confirms the original", async () => {
+  vi.mocked(submitFizzAiJob).mockRejectedValueOnce(new Error("Response lost"));
+  await render();
+  await act(async () => {
+    await feed.submit(params);
+  });
+  const original = vi.mocked(submitFizzAiJob).mock.calls[0][0];
+  expect(feed.submissionRecovery.pending).toBe(true);
+  await act(async () => {
+    await feed.submit({ ...params, modelId: "another", input: { prompt: "new" } });
+  });
+  expect(submitFizzAiJob).toHaveBeenCalledTimes(1);
+  await act(async () => feed.submissionRecovery.check());
+  expect(feed.submissionRecovery.pending).toBe(true);
+  expect(feed.submissionRecovery.error).toBe("notFoundYet");
+  expect(submitFizzAiJob).toHaveBeenCalledTimes(1);
+  vi.mocked(listFizzAiJobs).mockResolvedValueOnce({
+    jobs: [
+      {
+        ...job,
+        id: "accepted",
+        status: "queued",
+        modelId: original.modelId,
+        idempotencyKey: original.idempotencyKey,
+      },
+    ],
+    nextCursor: null,
+  });
+  await act(async () => feed.submissionRecovery.check());
+  expect(feed.submissionRecovery.pending).toBe(false);
+  expect(feed.jobs[0].jobId).toBe("accepted");
+  expect(submitFizzAiJob).toHaveBeenCalledTimes(1);
+});
+
+it("replays only the original reviewed command after returning to the page", async () => {
+  vi.mocked(submitFizzAiJob).mockRejectedValueOnce(new Error("Response lost"));
+  await render();
+  await act(async () => {
+    await feed.submit(params);
+  });
+  const original = vi.mocked(submitFizzAiJob).mock.calls[0][0];
+  await act(async () => root.unmount());
+  root = createRoot(document.createElement("div"));
+  await render();
+  expect(feed.submissionRecovery.pending).toBe(true);
+  vi.mocked(submitFizzAiJob).mockResolvedValueOnce({
+    request_id: "accepted",
+    status: "queued",
+  } as Awaited<ReturnType<typeof submitFizzAiJob>>);
+  await act(async () => feed.submissionRecovery.retryOriginal());
+  expect(submitFizzAiJob).toHaveBeenLastCalledWith(original);
+  expect(feed.submissionRecovery.pending).toBe(false);
+  expect(feed.jobs[0].jobId).toBe("accepted");
+});
+
+it.each(["account", "workspace"])(
+  "isolates recovery and stale callbacks across %s changes",
+  async (change) => {
+    vi.mocked(submitFizzAiJob).mockRejectedValueOnce(new Error("Response lost"));
+    await render();
+    await act(async () => {
+      await feed.submit(params);
+    });
+    const previousRecovery = feed.submissionRecovery;
+    if (change === "account") state.user = "other";
+    else state.workspace = "other";
+    await render();
+    expect(feed.submissionRecovery.pending).toBe(false);
+    await act(async () => previousRecovery.retryOriginal());
+    expect(submitFizzAiJob).toHaveBeenCalledTimes(1);
+    state.user = "a";
+    state.workspace = "one";
+    await render();
+    expect(feed.submissionRecovery.pending).toBe(true);
+  }
+);
+
+it("retains uncertain recovery on lookup failure and does not send an unrecorded request", async () => {
+  await render();
+  const store = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("Storage full");
+  });
+  await act(async () => {
+    await feed.submit(params);
+  });
+  expect(submitFizzAiJob).not.toHaveBeenCalled();
+  expect(feed.submissionRecovery.pending).toBe(true);
+  store.mockRestore();
+  await act(async () => feed.submissionRecovery.check());
+  vi.mocked(submitFizzAiJob).mockRejectedValueOnce(new Error("Response lost"));
+  await act(async () => {
+    await feed.submit(params);
+  });
+  vi.mocked(listFizzAiJobs).mockRejectedValueOnce(new Error("Lookup unavailable"));
+  await act(async () => feed.submissionRecovery.retryOriginal());
+  expect(submitFizzAiJob).toHaveBeenCalledTimes(1);
+  expect(feed.submissionRecovery.pending).toBe(true);
+  expect(feed.submissionRecovery.error).toBe("Lookup unavailable");
+});
+
+it("clears a definite rejection for its original owner even after an account switch", async () => {
+  const { ApiRequestError } = await import("@/lib/api");
+  let reject!: (error: unknown) => void;
+  vi.mocked(submitFizzAiJob).mockImplementationOnce(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      })
+  );
+  await render();
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = feed.submit(params);
+  });
+  state.user = "other";
+  await render();
+  await act(async () => {
+    reject(new ApiRequestError(400, "Invalid prompt", 400));
+    await pending;
+  });
+  state.user = "a";
+  await render();
+  expect(feed.submissionRecovery.pending).toBe(false);
 });

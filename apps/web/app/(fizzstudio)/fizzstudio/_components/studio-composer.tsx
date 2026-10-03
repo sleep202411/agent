@@ -1,5 +1,7 @@
 "use client";
 
+import { SubmissionRecoveryNotice, type SubmissionRecovery } from "./submission-recovery-notice";
+
 import { createPortal } from "react-dom";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -135,6 +137,7 @@ export interface StudioComposerProps {
   prompt: string;
   submitting: boolean;
   submitError: string | null;
+  submissionRecovery?: SubmissionRecovery;
   priceEstimate: { sellPoints: number } | null;
   canSubmit: boolean;
   onPromptChange: (value: string) => void;
@@ -170,6 +173,7 @@ export function StudioComposer({
   prompt,
   submitting,
   submitError,
+  submissionRecovery,
   priceEstimate,
   canSubmit,
   onPromptChange,
@@ -473,6 +477,7 @@ export function StudioComposer({
                 {referenceCards.uploadError}
               </p>
             ) : null}
+            <SubmissionRecoveryNotice recovery={submissionRecovery} />
             {submitError ? (
               <p className="mt-1 text-xs font-medium text-[#ff8a8d]">{submitError}</p>
             ) : null}

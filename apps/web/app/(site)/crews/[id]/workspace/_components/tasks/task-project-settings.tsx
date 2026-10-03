@@ -1,5 +1,7 @@
 "use client";
 
+import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
+
 import { useLayoutEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import {
@@ -299,7 +301,7 @@ function WorkflowPanel({
                   >
                     <div className="flex items-center gap-2">
                       <span className="truncate text-[12px] font-medium">
-                        {state.systemKey ? t(`status.${state.systemKey}`) : state.name}
+                        {workflowStateLabel(state, t)}
                       </span>
                       {state.archived ? (
                         <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-[#858b95]">
@@ -384,7 +386,7 @@ function WorkflowPanel({
                   <div className="border-t border-white/[0.06] bg-black/10 px-3 py-3">
                     <p className="text-[10px] text-[#9298a2]">
                       {t("archiveWorkflowColumnPrompt", {
-                        name: state.systemKey ? t(`status.${state.systemKey}`) : state.name,
+                        name: workflowStateLabel(state, t),
                       })}
                     </p>
                     {taskCount > 0 ? (
@@ -400,9 +402,7 @@ function WorkflowPanel({
                               { value: "", label: t("selectWorkflowColumn") },
                               ...replacementCandidates.map((candidate) => ({
                                 value: candidate.id,
-                                label: candidate.systemKey
-                                  ? t(`status.${candidate.systemKey}`)
-                                  : candidate.name,
+                                label: workflowStateLabel(candidate, t),
                               })),
                             ]}
                           />
