@@ -12,6 +12,7 @@ import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
 import { TaskChildButton, TaskChildCreate } from "./task-child-create";
+import { useTaskAssignmentSession } from "./use-task-assignment-session";
 import { TaskAssignments } from "./task-assignments";
 import { useTaskScheduleSession } from "./use-task-schedule-session";
 import { TaskSchedule } from "./task-schedule";
@@ -94,6 +95,9 @@ function TaskContent({
     setRevision((v) => v + 1)
   );
   const workflowSession = useTaskWorkflowSession(taskId, generation, () =>
+    setRevision((v) => v + 1)
+  );
+  const assignmentSession = useTaskAssignmentSession(taskId, generation, () =>
     setRevision((v) => v + 1)
   );
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
@@ -201,6 +205,7 @@ function TaskContent({
             onRefresh={() => setRevision((v) => v + 1)}
           />
           <TaskAssignments
+            session={assignmentSession}
             key={`assignments:${revision}`}
             task={data}
             userId={userId}

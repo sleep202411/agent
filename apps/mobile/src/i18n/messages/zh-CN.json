@@ -1466,6 +1466,7 @@
   "taskCreate.invalid": "请检查标题、说明、日期、规划上限和自定义字段。请填写所有必填字段；截止时间不能早于开始时间。",
   "taskCreate.uncertain": "请求可能已创建任务。请返回任务列表核对后再创建，避免重复。",
   "taskCreate.submit": "创建任务",
+  "taskAssignments.latest": "最新保存的执行人及报酬。应用草稿前，请核对以下内容。",
   "taskAssignments.edit": "编辑负责人",
   "taskAssignments.reward": "报酬（选填）",
   "taskAssignments.help": "留空表示无报酬。保留已有币种；新增分工使用本区域币种。",

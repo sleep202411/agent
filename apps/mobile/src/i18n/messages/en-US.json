@@ -1466,6 +1466,7 @@
   "taskCreate.invalid": "Check the title, brief, dates, planning limits and custom fields. Complete all required fields; the due date must not precede the start date.",
   "taskCreate.uncertain": "The request may have created a task. Return to the task list and check before creating another.",
   "taskCreate.submit": "Create Task",
+  "taskAssignments.latest": "Latest saved assignees and rewards. Review these details before applying your draft.",
   "taskAssignments.edit": "Edit Assignments",
   "taskAssignments.reward": "Reward (optional)",
   "taskAssignments.help": "Blank means no reward. Existing currencies are retained; new assignments use the regional currency.",

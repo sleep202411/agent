@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskDetail } from "./task-detail";
+vi.mock("@/config", () => ({ appEnv: { siteRegion: "global" } }));
 vi.mock("./task-delivery-management", () => ({
   TaskDeliveryManagement: () => <div>delivery management</div>,
 }));
