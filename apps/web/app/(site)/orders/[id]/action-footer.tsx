@@ -67,6 +67,7 @@ function ActionFooterContent({ order, role }: { order: OrderDTO; role: "buyer" |
     null | { kind: "decline" } | { kind: "cancel" } | { kind: "request_revision" }
   >(null);
   const [reasonText, setReasonText] = useState("");
+  const reasonLimit = reasonDialog?.kind === "request_revision" ? 2000 : 500;
 
   const openReason = (kind: "decline" | "cancel" | "request_revision") => {
     if (!active.current || admitted.current || busy) return;
@@ -233,11 +234,11 @@ function ActionFooterContent({ order, role }: { order: OrderDTO; role: "buyer" |
           <Textarea
             autoFocus
             value={reasonText}
-            onChange={(e) => setReasonText(e.target.value.slice(0, 2000))}
+            onChange={(e) => setReasonText(e.target.value.slice(0, reasonLimit))}
             placeholder={t("reasonPlaceholder")}
             rows={4}
             className="my-2 max-h-40 overflow-y-auto"
-            maxLength={2000}
+            maxLength={reasonLimit}
           />
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>{t("reasonCancel")}</AlertDialogCancel>

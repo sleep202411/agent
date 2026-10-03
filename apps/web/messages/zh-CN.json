@@ -8183,6 +8183,20 @@
       "completedToast": "订单已完成。",
       "cancelledToast": "订单已取消。",
       "failed": "操作失败。"
+    },
+    "list": {
+      "title": "服务订单",
+      "signInRequired": "登录后查看您的订单。",
+      "role": "您的身份",
+      "allRoles": "购买与接单",
+      "buying": "我购买的",
+      "selling": "我承接的",
+      "status": "状态",
+      "allStatuses": "全部状态",
+      "empty": "没有符合筛选条件的订单。",
+      "unread": "{count} 条未读",
+      "loadMore": "加载更多",
+      "back": "返回订单"
     }
   },
   "fizzStudio": {

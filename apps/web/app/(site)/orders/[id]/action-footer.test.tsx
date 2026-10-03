@@ -132,3 +132,13 @@ it("suppresses a failed abandoned action", async () => {
   await act(async () => reject(new Error("Old error")));
   expect(mocks.error).not.toHaveBeenCalled();
 });
+it.each(actions.filter((action) => action.reason))(
+  "uses the server's reason limit for $key",
+  async (action) => {
+    await act(async () => render(action));
+    await prepare(action);
+    expect(document.querySelector("textarea")?.maxLength).toBe(
+      action.reason === "request_revision" ? 2000 : 500
+    );
+  }
+);

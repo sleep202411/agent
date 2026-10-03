@@ -10,6 +10,7 @@ import {
   type ContentReviewRecordSummary,
 } from "@/lib/content-review-api";
 import { formatReviewTimecode } from "@/lib/content-review-findings";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export const CONTENT_REVIEW_RECORDS_QUERY_KEY = "content-review-records";
@@ -24,15 +25,17 @@ export function ContentReviewHistory({
   formatSuggestion: (value: string | null | undefined) => string;
 }) {
   const t = useTranslations("studioModes.contentReview");
+  const common = useTranslations("common");
   const { user } = useAuth();
   const workspaceId = useActiveWorkspaceId();
   const query = useQuery({
-    queryKey: [CONTENT_REVIEW_RECORDS_QUERY_KEY, workspaceId],
+    queryKey: [CONTENT_REVIEW_RECORDS_QUERY_KEY, workspaceId, user?.id ?? null],
     queryFn: ({ signal }) => listContentReviewRecords(signal),
     enabled: Boolean(workspaceId && user),
     staleTime: 15_000,
   });
   const items = query.data ?? [];
+  if (!workspaceId || !user) return null;
 
   return (
     <section className="mt-8">
@@ -46,7 +49,22 @@ export function ContentReviewHistory({
           <span>{t("historyLoading")}</span>
         </div>
       ) : query.isError ? (
-        <p className="py-6 text-sm text-muted-foreground">{t("historyUnavailable")}</p>
+        <div role="alert" className="space-y-3 py-6">
+          <p className="break-words text-sm text-muted-foreground">
+            {query.error instanceof Error && query.error.message.trim()
+              ? query.error.message
+              : t("historyUnavailable")}
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            {query.isFetching ? common("loading") : common("retry")}
+          </Button>
+        </div>
       ) : items.length === 0 ? (
         <p className="py-6 text-sm text-muted-foreground">{t("historyEmpty")}</p>
       ) : (
@@ -101,7 +119,9 @@ function HistoryRow({
                 ? "text-red-400"
                 : suggestion === "review"
                   ? "text-amber-300"
-                  : "text-emerald-300"
+                  : suggestion === "pass"
+                    ? "text-emerald-300"
+                    : "text-muted-foreground"
             )}
           >
             {formatSuggestion(item.suggestion)}

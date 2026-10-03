@@ -113,13 +113,9 @@ async function uploadCourseFile(
     url?: unknown;
   } | null;
   if (!response.ok || !payload) {
-    throw new Error("文件上传失败");
+    throw new Error(payload?.msg?.trim() || `文件上传失败：${response.status}`);
   }
-  try {
-    return extractUploadPath(payload);
-  } catch {
-    throw new Error("文件上传失败");
-  }
+  return extractUploadPath(payload);
 }
 
 interface JavaCourseLocale {

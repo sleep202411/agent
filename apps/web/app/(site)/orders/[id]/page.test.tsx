@@ -89,7 +89,7 @@ it.each(["en-US", "zh-CN", "zh-HK"])(
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
       "Order service unavailable"
     );
-    expect(container.querySelector("a")?.getAttribute("href")).toBe(`/${locale}/messages`);
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(`/${locale}/orders`);
     let resolve!: (value: Response) => void;
     fetchMock.mockImplementationOnce(
       () =>
