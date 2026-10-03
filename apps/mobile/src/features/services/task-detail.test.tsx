@@ -1,4 +1,4 @@
-import { act, type ReactNode } from "react";
+import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskDetail } from "./task-detail";
@@ -43,6 +43,7 @@ const h = vi.hoisted(() => ({
   generation: 1,
   close: vi.fn(),
   web: vi.fn(),
+  timelineUnmount: vi.fn(),
 }));
 vi.mock("./task-schedule", () => ({ TaskSchedule: () => <div>schedule editor</div> }));
 vi.mock("./task-relationship-editor", () => ({
@@ -56,7 +57,15 @@ vi.mock("./task-feedback-create", () => ({ TaskFeedbackCreate: () => <div>task f
 vi.mock("./task-review", () => ({ TaskReview: () => <div>review</div> }));
 vi.mock("./task-delivery", () => ({ TaskDelivery: () => <div>delivery</div> }));
 vi.mock("./task-commitments", () => ({ TaskCommitments: () => <div>commitments</div> }));
-vi.mock("./task-timeline", () => ({ TaskTimeline: () => <div>timeline</div> }));
+vi.mock("./task-timeline", () => ({
+  TaskTimeline: function MockTimeline({ suspended }: { suspended: boolean }) {
+    const [draft, setDraft] = useState("");
+    useEffect(() => () => h.timelineUnmount(), []);
+    return suspended ? null : (
+      <input aria-label="comment" value={draft} onChange={(e) => setDraft(e.target.value)} />
+    );
+  },
+}));
 vi.mock("./task-detail-api", async (original) => ({
   ...(await original<typeof import("./task-detail-api")>()),
   fetchTaskDetail: h.fetch,
@@ -281,4 +290,30 @@ it("leaves the deleted task detail", async () => {
   await render();
   await act(async () => click("deleted task"));
   expect(h.close).toHaveBeenCalledOnce();
+});
+
+it("retains comment composition across detail failure/retry and cancelled child creation", async () => {
+  await render();
+  await act(async () => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Unsent note"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  h.fetch.mockRejectedValueOnce(new Error("Refresh failed"));
+  await act(async () => click("thread.refresh"));
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.timelineUnmount).not.toHaveBeenCalled();
+  await act(async () => click("inbox.retry"));
+  expect(host.querySelector("input")!.value).toBe("Unsent note");
+  await act(async () => click("add subtask"));
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => click("cancel child"));
+  expect(host.querySelector("input")!.value).toBe("Unsent note");
+  expect(h.timelineUnmount).not.toHaveBeenCalled();
+  h.focused = false;
+  await render();
+  expect(h.timelineUnmount).toHaveBeenCalledTimes(1);
 });

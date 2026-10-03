@@ -134,197 +134,214 @@ function TaskContent({
   const displays = useUserDisplays(String(generation), data?.assignees.map((a) => a.userId) ?? []);
   const date = (value: string | null) =>
     value ? new Date(value).toLocaleString(locale) : t("thread.taskUnset");
-  if (creatingChild && data)
-    return (
-      <TaskChildCreate
-        task={data}
-        userId={userId}
-        generation={generation}
-        onCreated={(id) => {
-          if (generation === getAuthGeneration()) {
-            setCreatingChild(false);
-            onOpenTask(id);
-          }
-        }}
-        onClose={() => {
-          setCreatingChild(false);
-          setRevision((value) => value + 1);
-        }}
-      />
-    );
   return (
-    <ScrollView
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ padding: 16, gap: 12 }}
-    >
-      <Pressable accessibilityRole="button" onPress={onClose} style={{ padding: 12 }}>
-        <ThemedText>
-          {backToTask ? t("taskRelations.backToTask") : (closeLabel ?? t("thread.backToChat"))}
-        </ThemedText>
-      </Pressable>
-      {!current && <ActivityIndicator accessibilityLabel={t("courses.loading")} />}
-      {current?.error && <ThemedText accessibilityRole="alert">{current.error}</ThemedText>}
-      {data && (
-        <>
-          <ThemedText type="smallBold">
-            TASK-{data.number} · {data.title}
-          </ThemedText>
+    <>
+      {creatingChild && data && (
+        <TaskChildCreate
+          task={data}
+          userId={userId}
+          generation={generation}
+          onCreated={(id) => {
+            if (generation === getAuthGeneration()) {
+              setCreatingChild(false);
+              onOpenTask(id);
+            }
+          }}
+          onClose={() => {
+            setCreatingChild(false);
+            setRevision((value) => value + 1);
+          }}
+        />
+      )}
+      <ScrollView
+        style={creatingChild ? { display: "none" } : undefined}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ padding: 16, gap: 12 }}
+      >
+        <Pressable accessibilityRole="button" onPress={onClose} style={{ padding: 12 }}>
           <ThemedText>
-            {t("thread.taskState")}: {taskWorkflowLabel(data.workflowState, t)}
+            {backToTask ? t("taskRelations.backToTask") : (closeLabel ?? t("thread.backToChat"))}
           </ThemedText>
-          <ThemedText>{data.description || t("thread.taskNoDescription")}</ThemedText>
-          <ThemedText>
-            {t("thread.taskStart")}: {date(data.startAt)}
-          </ThemedText>
-          <ThemedText>
-            {t("thread.taskDue")}: {date(data.dueAt)}
-            <TaskDeadline dueAt={data.dueAt} status={data.status} />
-          </ThemedText>
-          <ThemedText>{t("thread.taskAssignees")}</ThemedText>
-          {data.assignees.length === 0 && <ThemedText>{t("thread.taskUnset")}</ThemedText>}
-          {data.assignees.map((a) => (
-            <ThemedText key={a.userId}>{displays?.get(a.userId)?.nickname || a.userId}</ThemedText>
-          ))}
-          <View>
-            {data.labels.map((label) => (
-              <ThemedText key={label.id}>{label.name}</ThemedText>
+        </Pressable>
+        {!current && <ActivityIndicator accessibilityLabel={t("courses.loading")} />}
+        {current?.error && <ThemedText accessibilityRole="alert">{current.error}</ThemedText>}
+        {data && !creatingChild && (
+          <>
+            <ThemedText type="smallBold">
+              TASK-{data.number} · {data.title}
+            </ThemedText>
+            <ThemedText>
+              {t("thread.taskState")}: {taskWorkflowLabel(data.workflowState, t)}
+            </ThemedText>
+            <ThemedText>{data.description || t("thread.taskNoDescription")}</ThemedText>
+            <ThemedText>
+              {t("thread.taskStart")}: {date(data.startAt)}
+            </ThemedText>
+            <ThemedText>
+              {t("thread.taskDue")}: {date(data.dueAt)}
+              <TaskDeadline dueAt={data.dueAt} status={data.status} />
+            </ThemedText>
+            <ThemedText>{t("thread.taskAssignees")}</ThemedText>
+            {data.assignees.length === 0 && <ThemedText>{t("thread.taskUnset")}</ThemedText>}
+            {data.assignees.map((a) => (
+              <ThemedText key={a.userId}>
+                {displays?.get(a.userId)?.nickname || a.userId}
+              </ThemedText>
             ))}
-          </View>
-          <ThemedText>
-            {t("taskSchedule.priority")}: {t(`taskSchedule.${data.priority}`)}
-          </ThemedText>
-          {data.taskKind !== undefined && (
+            <View>
+              {data.labels.map((label) => (
+                <ThemedText key={label.id}>{label.name}</ThemedText>
+              ))}
+            </View>
             <ThemedText>
-              {t("taskKind.label")}:{" "}
-              {t(data.taskKind ? `taskKind.${data.taskKind}` : "taskKind.unset")}
+              {t("taskSchedule.priority")}: {t(`taskSchedule.${data.priority}`)}
             </ThemedText>
-          )}
-          <TaskCompensationSummary {...data} />
-          {data.estimatePoints !== undefined && (
+            {data.taskKind !== undefined && (
+              <ThemedText>
+                {t("taskKind.label")}:{" "}
+                {t(data.taskKind ? `taskKind.${data.taskKind}` : "taskKind.unset")}
+              </ThemedText>
+            )}
+            <TaskCompensationSummary {...data} />
+            {data.estimatePoints !== undefined && (
+              <ThemedText>
+                {t("taskPlanning.estimate")}: {data.estimatePoints ?? t("taskPlanning.unset")}
+              </ThemedText>
+            )}
             <ThemedText>
-              {t("taskPlanning.estimate")}: {data.estimatePoints ?? t("taskPlanning.unset")}
+              {t("taskPlanning.revisionsUsed")}: {data.revisionRoundsUsed} /{" "}
+              {data.revisionLimit ?? t("taskPlanning.unlimited")}
             </ThemedText>
-          )}
-          <ThemedText>
-            {t("taskPlanning.revisionsUsed")}: {data.revisionRoundsUsed} /{" "}
-            {data.revisionLimit ?? t("taskPlanning.unlimited")}
-          </ThemedText>
-          <TaskSchedule
-            session={scheduleSession}
-            key={`schedule:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskAssignments
-            session={assignmentSession}
-            key={`assignments:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((value) => value + 1)}
-          />
-          <TaskWorkflowEditor
-            session={workflowSession}
-            key={`workflow:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((n) => n + 1)}
-          />
-          <TaskPlanningEditor
-            session={planningSession}
-            key={`planning:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((n) => n + 1)}
-          />
-          <TaskDelete
-            key={`delete:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onDeleted={onClose}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskClosure
-            key={`closure:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskBrief
-            session={briefSession}
-            key={`brief:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskRelationshipEditor
-            session={relationshipSession}
-            key={`relationships:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskChildButton
-            key={`child:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onOpen={() => setCreatingChild(true)}
-          />
-          <TaskCustomFields
-            session={customFieldSession}
-            key={`fields:${revision}`}
-            task={data}
-            generation={generation}
-            userId={userId}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskRelations task={data} onOpenTask={onOpenTask} />
-          <TaskDeliveryManagement
-            session={deliverySession}
-            task={data}
-            generation={generation}
-            userId={userId}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskDelivery
-            key={`delivery:${revision}`}
-            taskId={taskId}
-            generation={generation}
-            submissions={data.submissions}
-          />
-          <TaskSubmit
-            key={`submit:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskReview
-            key={`review:${revision}`}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskCaseCreate crewId={crewId} taskId={taskId} userId={userId} generation={generation} />
-          <TaskFeedbackCreate task={data} userId={userId} generation={generation} />
-          <TaskCommitments
-            key={revision}
-            task={data}
-            userId={userId}
-            generation={generation}
-            onRefresh={() => setRevision((v) => v + 1)}
-          />
-          <TaskTimeline crewId={crewId} taskId={taskId} userId={userId} generation={generation} />
+            <TaskSchedule
+              session={scheduleSession}
+              key={`schedule:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+            <TaskAssignments
+              session={assignmentSession}
+              key={`assignments:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((value) => value + 1)}
+            />
+            <TaskWorkflowEditor
+              session={workflowSession}
+              key={`workflow:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((n) => n + 1)}
+            />
+            <TaskPlanningEditor
+              session={planningSession}
+              key={`planning:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((n) => n + 1)}
+            />
+            <TaskDelete
+              key={`delete:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onDeleted={onClose}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+            <TaskClosure
+              key={`closure:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+            <TaskBrief
+              session={briefSession}
+              key={`brief:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+            <TaskRelationshipEditor
+              session={relationshipSession}
+              key={`relationships:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+            <TaskChildButton
+              key={`child:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onOpen={() => setCreatingChild(true)}
+            />
+            <TaskCustomFields
+              session={customFieldSession}
+              key={`fields:${revision}`}
+              task={data}
+              generation={generation}
+              userId={userId}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+            <TaskRelations task={data} onOpenTask={onOpenTask} />
+            <TaskDeliveryManagement
+              session={deliverySession}
+              task={data}
+              generation={generation}
+              userId={userId}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+            <TaskDelivery
+              key={`delivery:${revision}`}
+              taskId={taskId}
+              generation={generation}
+              submissions={data.submissions}
+            />
+            <TaskSubmit
+              key={`submit:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+            <TaskReview
+              key={`review:${revision}`}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+            <TaskCaseCreate
+              crewId={crewId}
+              taskId={taskId}
+              userId={userId}
+              generation={generation}
+            />
+            <TaskFeedbackCreate task={data} userId={userId} generation={generation} />
+            <TaskCommitments
+              key={revision}
+              task={data}
+              userId={userId}
+              generation={generation}
+              onRefresh={() => setRevision((v) => v + 1)}
+            />
+          </>
+        )}
+        <TaskTimeline
+          suspended={!data || creatingChild}
+          crewId={crewId}
+          taskId={taskId}
+          userId={userId}
+          generation={generation}
+        />
+        {data && !creatingChild && (
           <Pressable
             accessibilityRole="button"
             onPress={() => onOpenWeb(taskId)}
@@ -332,16 +349,16 @@ function TaskContent({
           >
             <ThemedText>{t("thread.taskOpenWorkspace")}</ThemedText>
           </Pressable>
-        </>
-      )}
-      <Pressable
-        accessibilityRole="button"
-        disabled={!current}
-        onPress={() => setRevision((v) => v + 1)}
-        style={{ padding: 12 }}
-      >
-        <ThemedText>{t(current?.error ? "inbox.retry" : "thread.refresh")}</ThemedText>
-      </Pressable>
-    </ScrollView>
+        )}
+        <Pressable
+          accessibilityRole="button"
+          disabled={!current}
+          onPress={() => setRevision((v) => v + 1)}
+          style={{ padding: 12 }}
+        >
+          <ThemedText>{t(current?.error ? "inbox.retry" : "thread.refresh")}</ThemedText>
+        </Pressable>
+      </ScrollView>
+    </>
   );
 }
