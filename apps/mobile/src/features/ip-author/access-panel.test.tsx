@@ -5,6 +5,7 @@ import { IpAccessPanel } from "./access-panel";
 const h = vi.hoisted(() => ({
   signedIn: true,
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   patch: vi.fn(),
@@ -48,7 +49,13 @@ vi.mock("@/components/themed-text", () => ({
 }));
 vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ScrollView: ({
+    children,
+    style,
+  }: {
+    children: ReactNode;
+    style?: { display?: "none" | "flex" };
+  }) => <div style={{ display: style?.display }}>{children}</div>,
   ActivityIndicator: () => null,
   Pressable: ({
     children,
@@ -89,6 +96,7 @@ vi.mock("@/features/services/conversation-video", () => ({
   ConversationVideo: () => <div>Video preview</div>,
 }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
   useLocalSearchParams: () => ({ id: "11111111-1111-4111-8111-111111111111" }),
   useRouter: () => ({ push: h.push }),
   Stack: {
@@ -158,6 +166,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.signedIn = true;
   h.generation = 1;
   host = document.createElement("div");
@@ -315,7 +324,7 @@ it("hides private access data while inactive and after auth changes", async () =
   await mount();
   h.active = false;
   await mount();
-  expect(host.textContent).toBe("");
+  expect((host.firstElementChild as HTMLElement).style.display).toBe("none");
   h.active = true;
   h.generation = 2;
   await mount();
@@ -330,4 +339,58 @@ it("opens editing access from the contributors header only for authenticated use
   h.signedIn = false;
   await act(async () => root.render(<Route />));
   expect(button("ipAccess.heading")).toBeUndefined();
+});
+
+it("retains the lookup query and selected account through background without granting access", async () => {
+  vi.useFakeTimers();
+  await mount();
+  await type("ipContributors.lookup", "artist@example.com");
+  h.active = false;
+  await mount();
+  await act(async () => vi.advanceTimersByTimeAsync(401));
+  h.active = true;
+  await mount();
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="ipContributors.lookup"]')?.value
+  ).toBe("artist@example.com");
+  await act(async () => vi.advanceTimersByTimeAsync(401));
+  await click("Artist · 789");
+  h.active = false;
+  await mount();
+  expect(button("ipAccess.confirmGrant").disabled).toBe(true);
+  h.active = true;
+  await mount();
+  expect(host.textContent).toContain("Artist · 789");
+  expect(h.post).not.toHaveBeenCalled();
+  await click("ipAccess.confirmGrant");
+  expect(h.post).toHaveBeenCalledWith(
+    expect.stringContaining("/acl"),
+    expect.objectContaining({ data: { userId: "789", permission: "edit" } })
+  );
+});
+it("retains transfer confirmation through background but still checks current ownership", async () => {
+  await mount();
+  await click("ipAccess.transfer");
+  await click("☐ ipAccess.removeSelf");
+  h.active = false;
+  await mount();
+  h.active = true;
+  await mount();
+  expect(button("☑ ipAccess.removeSelf")).toBeDefined();
+  expect(h.post).not.toHaveBeenCalled();
+  readProfile(editor);
+  await click("ipAccess.confirmTransfer");
+  expect(h.post).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Only the IP owner");
+});
+it("retires unsent confirmation when leaving the route", async () => {
+  await mount();
+  await click("ipAccess.transfer");
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  expect(button("ipAccess.confirmTransfer")).toBeUndefined();
+  expect(h.post).not.toHaveBeenCalled();
 });

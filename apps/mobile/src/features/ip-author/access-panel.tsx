@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -40,11 +41,12 @@ function Button({
   );
 }
 export function IpAccessPanel(props: Props) {
-  return useScreenActive() && getAuthGeneration() === props.generation ? (
+  return useIsFocused() && getAuthGeneration() === props.generation ? (
     <Session key={`${props.ipId}:${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
 function Session({ ipId, userId, generation }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme(),
@@ -89,7 +91,7 @@ function Session({ ipId, userId, generation }: Props) {
       });
     return () => c.abort();
   }, [ipId, userId, generation]);
-  const frozen = op.busy || loading || !!pending || !!initial.error;
+  const frozen = !active || op.busy || loading || !!pending || !!initial.error;
   const failure = (e: unknown) => {
     setError(String(e instanceof Error ? e.message : e));
     if (e instanceof ApiRequestError && [401, 403, 404].includes(e.status)) {
@@ -100,7 +102,7 @@ function Session({ ipId, userId, generation }: Props) {
   };
   const refresh = () => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setChecked(false);
     setResolving(false);
     void op.run(
@@ -122,7 +124,7 @@ function Session({ ipId, userId, generation }: Props) {
   };
   const run = (command: AccessCommand) => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setError("");
     setSaved("");
     setChecked(false);
@@ -185,6 +187,7 @@ function Session({ ipId, userId, generation }: Props) {
       snapshot?.grants.some((item) => item.userId === selected.userId));
   return (
     <ScrollView
+      style={{ display: active ? "flex" : "none" }}
       contentContainerStyle={{ padding: 16, gap: 12 }}
       keyboardShouldPersistTaps="handled"
     >
