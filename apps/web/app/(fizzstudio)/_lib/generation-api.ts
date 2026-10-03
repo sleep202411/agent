@@ -150,6 +150,7 @@ export interface FizzAiStyleBinding {
 export interface FizzAiJobView {
   id: string;
   request_id?: string;
+  idempotencyKey?: string;
   type: FizzAiJobType;
   workspaceId?: string | null;
   projectId?: string | null;
@@ -749,6 +750,9 @@ export async function submitFizzAiJob(input: FizzAiSubmitJobInput): Promise<Fizz
   try {
     return await api.post<FizzAiSubmitResponse>("/aurora/ai/jobs", {
       timeout: 30_000,
+      headers: input.context.workspaceId
+        ? { "x-fizz-workspace-id": input.context.workspaceId }
+        : undefined,
       data: {
         context: input.context,
         idempotencyKey: input.idempotencyKey,
@@ -848,17 +852,25 @@ export async function getFizzAiJob(id: string): Promise<FizzAiJobView> {
 }
 
 export async function listFizzAiJobs(input: {
+  workspaceId?: string;
+  idempotencyKey?: string;
+  documentId?: string;
+  documentBlockId?: string;
   limit?: number;
   sourceSurface?: string;
   type?: FizzAiJobType;
 }): Promise<FizzAiJobListResponse> {
   const params = new URLSearchParams();
+  for (const key of ["idempotencyKey", "documentId", "documentBlockId"] as const) {
+    if (input[key]) params.set(key, input[key]);
+  }
   if (input.limit) params.set("limit", String(input.limit));
   if (input.sourceSurface) params.set("sourceSurface", input.sourceSurface);
   if (input.type) params.set("type", input.type);
   const query = params.toString();
   return api.get<FizzAiJobListResponse>(`/aurora/ai/jobs${query ? `?${query}` : ""}`, {
     timeout: 15_000,
+    headers: input.workspaceId ? { "x-fizz-workspace-id": input.workspaceId } : undefined,
   });
 }
 

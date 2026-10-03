@@ -89,7 +89,7 @@ function build() {
       callback(tx),
     ),
   };
-  const users = { lookupByContact: jest.fn() };
+  const users = { lookupByContact: jest.fn(), lookupByUserId: jest.fn() };
   const notifications = { send: jest.fn().mockResolvedValue({}) };
   const conversations = {
     openCrewConversation: jest.fn().mockResolvedValue({ id: 'conversation-1' }),
@@ -484,4 +484,58 @@ it('requires member-management permission before inviting someone for a producti
   ).rejects.toThrow('Member management required');
   expect(t.users.lookupByContact).not.toHaveBeenCalled();
   expect(t.tx.crewInvitation.create).not.toHaveBeenCalled();
+});
+
+it('resolves explicit user IDs again when creating invitations and rejects existing members', async () => {
+  const t = build();
+  t.users.lookupByUserId.mockResolvedValue({
+    userId: '273848',
+    isCrewMember: true,
+    isCrewOwner: false,
+  });
+  const input = CreateCrewInvitationSchema.parse({
+    account: '273848',
+    lookupBy: 'userId',
+  });
+  await expect(
+    t.service.create(CREW_ID, OWNER_ID, 'viewer-cookie', input),
+  ).rejects.toThrow('This user is already a crew member.');
+  expect(t.users.lookupByUserId).toHaveBeenCalledWith(
+    '273848',
+    'viewer-cookie',
+    CREW_ID,
+  );
+  expect(t.users.lookupByContact).not.toHaveBeenCalled();
+  expect(
+    CreateCrewInvitationSchema.safeParse({
+      account: 'user@example.com',
+      lookupBy: 'userId',
+    }).success,
+  ).toBe(false);
+  expect(
+    CreateCrewInvitationSchema.safeParse({ account: '1', lookupBy: 'userId' })
+      .success,
+  ).toBe(true);
+});
+
+it('creates an invitation for the explicitly resolved user ID', async () => {
+  const t = build();
+  t.users.lookupByUserId.mockResolvedValue({
+    userId: '273848',
+    isCrewMember: false,
+    isCrewOwner: false,
+  });
+  await t.service.create(CREW_ID, OWNER_ID, 'viewer-cookie', {
+    account: '273848',
+    lookupBy: 'userId',
+    policyKeys: [],
+    expiresInDays: 7,
+  });
+  expect(t.tx.crewInvitation.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: expect.objectContaining({ inviteeUserId: '273848' }) as unknown,
+    }),
+  );
+  expect(t.users.lookupByContact).not.toHaveBeenCalled();
+  expect(t.tx.crewMember.create).not.toHaveBeenCalled();
 });

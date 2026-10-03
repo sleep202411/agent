@@ -1,5 +1,8 @@
 "use client";
 
+import { SubmissionRecoveryNotice, type SubmissionRecovery } from "./submission-recovery-notice";
+
+import { createPortal } from "react-dom";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
@@ -123,6 +126,8 @@ export interface StudioComposerReferences {
 }
 
 export interface StudioComposerProps {
+  /** Flow-positioned canvas editor; settings open in a viewport dialog. */
+  embedded?: boolean;
   /** i18n namespace key map; defaults to the shared `fizzStudio.studioComposer` namespace. */
   models: FizzAiModel[];
   catalogLoading: boolean;
@@ -132,6 +137,7 @@ export interface StudioComposerProps {
   prompt: string;
   submitting: boolean;
   submitError: string | null;
+  submissionRecovery?: SubmissionRecovery;
   priceEstimate: { sellPoints: number } | null;
   canSubmit: boolean;
   onPromptChange: (value: string) => void;
@@ -158,6 +164,7 @@ type ComposerPanel = "settings" | "mode";
  * video upload cards + kind-aware @-mention, `modes` enables the mode chip.
  */
 export function StudioComposer({
+  embedded = false,
   models,
   catalogLoading,
   catalogError,
@@ -166,6 +173,7 @@ export function StudioComposer({
   prompt,
   submitting,
   submitError,
+  submissionRecovery,
   priceEstimate,
   canSubmit,
   onPromptChange,
@@ -194,7 +202,9 @@ export function StudioComposer({
     ? getModelLabel(models, selectedModelId)
     : catalogLoading
       ? t("loadingModels")
-      : t("noModelSelected");
+      : models.length > 0
+        ? t("selectModel")
+        : t("noModelSelected");
   const sizeToken = prettyChipToken(composerSizeToken(settings), t);
   const durationToken = composerDurationToken(settings, t);
   const resolutionToken = typeof settings.resolution === "string" ? settings.resolution : "";
@@ -286,7 +296,7 @@ export function StudioComposer({
 
   return (
     <>
-      {panel ? (
+      {panel && !embedded ? (
         <button
           type="button"
           aria-label={t("closePanel")}
@@ -294,7 +304,13 @@ export function StudioComposer({
           className="fixed inset-0 z-[39] cursor-default bg-black/55 duration-150 animate-in fade-in-0"
         />
       ) : null}
-      <div className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-[960px] lg:left-[72px] lg:right-6">
+      <div
+        className={
+          embedded
+            ? "relative z-40"
+            : "fixed inset-x-4 bottom-4 z-40 mx-auto max-w-[960px] lg:left-[72px] lg:right-6"
+        }
+      >
         {modeOpen && modes ? (
           <PanelDialog label={t("modePanelTitle")}>
             <FloatingPanel title={t("modePanelTitle")} onClose={() => setPanel(null)}>
@@ -312,7 +328,11 @@ export function StudioComposer({
           </PanelDialog>
         ) : null}
         {settingsOpen ? (
-          <PanelDialog label={t("settingsDialogLabel")}>
+          <PanelDialog
+            label={t("settingsDialogLabel")}
+            portal={embedded}
+            onClose={() => setPanel(null)}
+          >
             <ModelSettingsPanel
               models={models}
               isLoading={catalogLoading}
@@ -457,6 +477,7 @@ export function StudioComposer({
                 {referenceCards.uploadError}
               </p>
             ) : null}
+            <SubmissionRecoveryNotice recovery={submissionRecovery} />
             {submitError ? (
               <p className="mt-1 text-xs font-medium text-[#ff8a8d]">{submitError}</p>
             ) : null}
@@ -536,7 +557,17 @@ const FOCUSABLE_SELECTOR =
  * aria-modal, moves focus in on open, traps Tab inside, and restores focus to
  * the opener on close.
  */
-function PanelDialog({ label, children }: { label: string; children: ReactNode }) {
+function PanelDialog({
+  label,
+  children,
+  portal = false,
+  onClose,
+}: {
+  label: string;
+  children: ReactNode;
+  portal?: boolean;
+  onClose?: () => void;
+}) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -580,18 +611,39 @@ function PanelDialog({ label, children }: { label: string; children: ReactNode }
     };
   }, []);
 
-  return (
+  const dialog = (
     <div
       ref={containerRef}
       role="dialog"
       aria-modal="true"
       aria-label={label}
       tabIndex={-1}
-      className="outline-none"
+      className={
+        portal
+          ? "fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4 outline-none"
+          : "outline-none"
+      }
+      onClick={(event) => {
+        if (portal && event.target === event.currentTarget) onClose?.();
+      }}
+      onKeyDown={(event) => {
+        if (portal && event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose?.();
+        }
+      }}
     >
-      {children}
+      {portal ? (
+        <div className="relative max-h-[85vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-[#141416]">
+          {children}
+        </div>
+      ) : (
+        children
+      )}
     </div>
   );
+  return portal ? createPortal(dialog, document.body) : dialog;
 }
 
 function FloatingPanel({

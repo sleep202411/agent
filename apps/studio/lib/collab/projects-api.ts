@@ -127,17 +127,19 @@ export async function createWorkspace(
 /** Rename / edit a workspace Returns the updated ref. */
 export async function updateWorkspace(
   workspaceId: string,
-  input: { name?: string; description?: string | null }
+  input: { name?: string; description?: string | null },
+  signal?: AbortSignal
 ): Promise<WorkspaceRef> {
   const data = await api.patch<{ workspace: WorkspaceRef }>(`/aurora/workspaces/${workspaceId}`, {
     data: input,
+    signal,
   });
   return data.workspace;
 }
 
 /** Soft-delete a workspace (owner only). */
-export async function deleteWorkspace(workspaceId: string): Promise<void> {
-  await api.delete(`/aurora/workspaces/${workspaceId}`, { data: {} });
+export async function deleteWorkspace(workspaceId: string, signal?: AbortSignal): Promise<void> {
+  await api.delete(`/aurora/workspaces/${workspaceId}`, { data: {}, signal });
 }
 
 export async function listProjects(

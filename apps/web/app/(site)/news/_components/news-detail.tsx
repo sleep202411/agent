@@ -4,18 +4,19 @@ import Link from "next/link";
 import { IconArrowLeft } from "@tabler/icons-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { timeAgo } from "../_data/format";
 import type { NewsItem } from "../_data/types";
 
 export function NewsNotFound() {
   const t = useTranslations("news");
+  const locale = useLocale();
   return (
     <div className="mx-auto flex min-h-screen max-w-[800px] flex-col items-center justify-center gap-4 px-6 text-center">
       <h1 className="text-2xl font-bold text-foreground">{t("notFoundTitle")}</h1>
       <p className="text-sm text-muted-foreground">{t("notFoundDesc")}</p>
       <Link
-        href="/news"
+        href={`/${locale}/news`}
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
       >
         <IconArrowLeft className="size-4" /> {t("back")}
@@ -26,6 +27,7 @@ export function NewsNotFound() {
 
 export function NewsDetail({ item, all }: { item: NewsItem; all: NewsItem[] }) {
   const t = useTranslations("news");
+  const locale = useLocale();
   // "More from FizzDragon" — up to 4 other internal recent items.
   const others = all.filter((it) => it.id !== item.id && !it.isExternal).slice(0, 4);
 
@@ -34,7 +36,7 @@ export function NewsDetail({ item, all }: { item: NewsItem; all: NewsItem[] }) {
       <div className="mx-auto max-w-[860px] px-5 py-8 md:px-8 md:py-12">
         {/* Back link */}
         <Link
-          href="/news"
+          href={`/${locale}/news`}
           className="mb-8 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <IconArrowLeft className="size-4" /> {t("back")}
@@ -83,7 +85,7 @@ export function NewsDetail({ item, all }: { item: NewsItem; all: NewsItem[] }) {
               {others.map((it) => (
                 <Link
                   key={it.id}
-                  href={`/news/${it.id}`}
+                  href={`/${locale}/news/${it.id}`}
                   className="group flex flex-col transition-transform hover:-translate-y-1"
                 >
                   {it.cover && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { IconCheck, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { useTranslations } from "@/src/i18n/i18n";
-import { ApiRequestError } from "@/src/lib/api";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import {
   useCreateExperience,
   useUpdateExperience,
@@ -38,65 +38,81 @@ const EMPTY: ExperienceEntry = {
   description: "",
 };
 
-export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDialogProps) {
+export function ExperienceDialog(props: ExperienceDialogProps) {
+  const { user } = useCurrentUser();
+  if (!user) return null;
+  return (
+    <ExperienceEditSession
+      key={JSON.stringify([props.open, user.id, props.initial?.id])}
+      {...props}
+    />
+  );
+}
+
+function ExperienceEditSession({ open, onOpenChange, initial }: ExperienceDialogProps) {
+  const formId = useId();
   const t = useTranslations("profile");
   const tc = useTranslations("common");
 
-  const [draft, setDraft] = useState<ExperienceEntry>(EMPTY);
+  const [draft, setDraft] = useState<ExperienceEntry>(() => ({ ...EMPTY, ...initial }));
   const { mutateAsync: createEntry, isPending: creating } = useCreateExperience();
   const { mutateAsync: updateEntry, isPending: updating } = useUpdateExperience();
   const isPending = creating || updating;
-  const isEditing = !!initial?.id;
-
-  useEffect(() => {
-    if (!open) return;
-    setDraft(initial ?? EMPTY);
-  }, [open, initial]);
+  const isEditing = initial?.id !== undefined;
+  const active = useRef(false);
+  const submitting = useRef(false);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   const update = (patch: Partial<ExperienceEntry>) => setDraft((d) => ({ ...d, ...patch }));
 
   const handleSave = async () => {
+    if (submitting.current || !active.current) return;
     if (!draft.title.trim()) {
       toast.warning(t("experienceTitleRequired"));
       return;
     }
+    submitting.current = true;
     try {
       if (isEditing) {
         await updateEntry(draft);
       } else {
         await createEntry(draft);
       }
+      if (!active.current) return;
       toast.success(t("updateSuccess"));
       onOpenChange(false);
     } catch (err) {
-      // Surface the raw backend response so the underlying cause is
-      // never hidden by a generic "Failed to update profile" toast.
-      // For ApiRequestError we have status + body; for anything else
-      // (network drop, JSON parse fail, …) fall through to message.
-      if (err instanceof ApiRequestError) {
-        toast.error(`HTTP ${err.status}`, {
-          description: err.responseBody?.slice(0, 1000) || err.message,
-          duration: 10000,
-        });
-      } else {
-        toast.error(err instanceof Error ? err.message : String(err), {
-          duration: 10000,
-        });
-      }
+      if (active.current)
+        toast.error(err instanceof Error && err.message.trim() ? err.message : t("updateFailed"));
+    } finally {
+      submitting.current = false;
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!submitting.current) onOpenChange(next);
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEditing ? t("editExperience") : t("addExperience")}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 p-4">
+        <fieldset disabled={isPending} className="space-y-4 p-4">
           <Field>
-            <FieldLabel required>{t("experienceTitle")}</FieldLabel>
+            <FieldLabel required htmlFor={`${formId}-title`}>
+              {t("experienceTitle")}
+            </FieldLabel>
             <Input
+              id={`${formId}-title`}
               value={draft.title}
               onChange={(e) => update({ title: e.target.value })}
               placeholder={t("experienceTitle")}
@@ -105,8 +121,9 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
           </Field>
 
           <Field>
-            <FieldLabel>{t("experienceCompany")}</FieldLabel>
+            <FieldLabel htmlFor={`${formId}-organization`}>{t("experienceCompany")}</FieldLabel>
             <Input
+              id={`${formId}-organization`}
               value={draft.organization}
               onChange={(e) => update({ organization: e.target.value })}
               placeholder={t("experienceCompany")}
@@ -115,8 +132,9 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
           </Field>
 
           <Field>
-            <FieldLabel>{t("experienceLocation")}</FieldLabel>
+            <FieldLabel htmlFor={`${formId}-location`}>{t("experienceLocation")}</FieldLabel>
             <Input
+              id={`${formId}-location`}
               value={draft.location}
               onChange={(e) => update({ location: e.target.value })}
               placeholder={t("experienceLocation")}
@@ -126,17 +144,19 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
 
           <div className="grid grid-cols-2 gap-3">
             <Field>
-              <FieldLabel>{t("startDate")}</FieldLabel>
+              <FieldLabel htmlFor={`${formId}-startTime`}>{t("startDate")}</FieldLabel>
               <Input
                 type="date"
+                id={`${formId}-startTime`}
                 value={draft.startTime}
                 onChange={(e) => update({ startTime: e.target.value })}
               />
             </Field>
             <Field>
-              <FieldLabel>{t("endDateOptional")}</FieldLabel>
+              <FieldLabel htmlFor={`${formId}-endTime`}>{t("endDateOptional")}</FieldLabel>
               <Input
                 type="date"
+                id={`${formId}-endTime`}
                 value={draft.endTime ?? ""}
                 onChange={(e) => update({ endTime: e.target.value })}
               />
@@ -144,8 +164,9 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
           </div>
 
           <Field>
-            <FieldLabel>{t("experienceDescription")}</FieldLabel>
+            <FieldLabel htmlFor={`${formId}-description`}>{t("experienceDescription")}</FieldLabel>
             <Textarea
+              id={`${formId}-description`}
               value={draft.description}
               onChange={(e) => update({ description: e.target.value })}
               placeholder={t("experienceDescription")}
@@ -153,7 +174,7 @@ export function ExperienceDialog({ open, onOpenChange, initial }: ExperienceDial
               maxLength={2000}
             />
           </Field>
-        </div>
+        </fieldset>
 
         <DialogFooter>
           <Button

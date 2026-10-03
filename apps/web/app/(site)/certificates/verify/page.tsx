@@ -14,6 +14,7 @@ import {
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import {
   CertificateVerifyApiError,
+  certificateErrorDetail,
   verifyCertificate,
   type CertificateVerificationResult,
 } from "./_data/api";
@@ -258,6 +259,8 @@ function errorMessageFor(
   t: (key: string, params?: Record<string, string | number | Date>) => string
 ): string {
   if (err instanceof CertificateVerifyApiError) {
+    const detail = certificateErrorDetail(err.body);
+    if (detail) return detail;
     if (err.status === 400) return t("formatError");
     if (err.status === 429) return t("rateLimitedError");
   }

@@ -56,3 +56,32 @@ describe('user cache recovery', () => {
     expect(java.findByUserId).not.toHaveBeenCalled();
   });
 });
+
+it('rechecks membership and ownership for ID lookup even when profile is cached', async () => {
+  const prisma = {
+    crew: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue({ ownership: { member: { userId: '123' } } }),
+    },
+    crewMember: { findFirst: jest.fn().mockResolvedValue({ id: 'member' }) },
+  };
+  const java = { findByUserId: jest.fn() };
+  const redis = { get: jest.fn().mockResolvedValue(JSON.stringify(profile)) };
+  const service = new UsersService(
+    prisma as never,
+    java as never,
+    redis as never,
+  );
+  await expect(
+    service.lookupByUserId('123', 'cookie', 'crew'),
+  ).resolves.toMatchObject({ isCrewMember: true, isCrewOwner: true });
+  expect(java.findByUserId).not.toHaveBeenCalled();
+  prisma.crewMember.findFirst.mockResolvedValue(null as never);
+  prisma.crew.findFirst.mockResolvedValue({
+    ownership: { member: { userId: 'other' } },
+  });
+  await expect(
+    service.lookupByUserId('123', 'cookie', 'crew'),
+  ).resolves.toMatchObject({ isCrewMember: false, isCrewOwner: false });
+});

@@ -2111,6 +2111,8 @@
     "unknown": "Unknown role"
   },
   "news": {
+    "loadMore": "Load more articles",
+    "loadingMore": "Loading articles…",
     "title": "FizzDragon Newsroom",
     "subtitle": "Stories, interviews and announcements from the AI-native film studio.",
     "subscribePlaceholder": "Enter your email",
@@ -4025,7 +4027,7 @@
     "inviteMember": "Invite Member",
     "addMemberDialogEyebrow": "STORYOS / CREW",
     "addMemberDialogTitle": "Invite Member",
-    "addMemberDialogSubtitle": "Send an invitation to their registered phone or email. Access begins after acceptance.",
+    "addMemberDialogSubtitle": "Invite by registered phone, email or User ID. Access begins after acceptance.",
     "addMemberContactLabel": "Phone or Email",
     "addMemberContactPlaceholder": "13800000000 or user@example.com",
     "addMemberAccessLabel": "Access preset",
@@ -4600,7 +4602,12 @@
     "createJobSalaryAmountError": "Enter a valid compensation amount from 0 to 100,000,000, or leave it blank.",
     "useTaskBrief": "Use task brief",
     "publicBriefHelp": "Review this public job description before publishing. Include the deliverables, requirements, and acceptance criteria. Maximum 10,000 characters.",
-    "publicBriefTooLong": "Shorten the public description to 10,000 characters; your full task brief is unchanged."
+    "publicBriefTooLong": "Shorten the public description to 10,000 characters; your full task brief is unchanged.",
+    "addMemberLookupBy": "Look up by",
+    "addMemberUserIdLabel": "User ID",
+    "addMemberUserIdHint": "Enter the teammate’s numeric User ID.",
+    "addMemberUserIdInvalid": "Enter a User ID containing 1–18 digits.",
+    "addMemberLookupRetry": "Retry lookup"
   },
   "crewAssets": {
     "title": "Crew Asset Center",
@@ -6411,6 +6418,13 @@
     "identityOwnsFull": "Owns full IP"
   },
   "payment": {
+    "paymentConfirmedDesc": "Your payment has been confirmed.",
+    "paymentUnconfirmed": "Payment not yet confirmed",
+    "paymentUnconfirmedDesc": "Check the order again before starting another payment.",
+    "checkAgain": "Check again",
+    "missingOrder": "Order number missing",
+    "missingOrderDesc": "Open the payment confirmation link to check your order.",
+    "backToStudio": "Back to Studio",
     "upgrade": "Upgrade Plan",
     "credits": "Buy Credits",
     "wechatPay": "WeChat Pay",
@@ -8183,6 +8197,20 @@
       "completedToast": "Order completed.",
       "cancelledToast": "Order cancelled.",
       "failed": "Action failed."
+    },
+    "list": {
+      "title": "Service orders",
+      "signInRequired": "Sign in to view your orders.",
+      "role": "Your role",
+      "allRoles": "Buying and selling",
+      "buying": "Buying",
+      "selling": "Selling",
+      "status": "Status",
+      "allStatuses": "All statuses",
+      "empty": "No orders match these filters.",
+      "unread": "{count} unread",
+      "loadMore": "Load more",
+      "back": "Back to orders"
     }
   },
   "fizzStudio": {
@@ -9034,6 +9062,18 @@
     "sbComposerCollapse": "Collapse composer",
     "sbComposerWebSearch": "Web search",
     "sbComposerAutoValidate": "Auto validate assets",
+    "sbPanoramaLoadFailed": "Could not load this panorama. Try again.",
+    "sbCanvasModelUnavailable": "This model is unavailable or has changed. Select a model and review its settings.",
+    "sbCanvasInvalidSettings": "Review these settings: {fields}.",
+    "sbCanvasReferenceUnavailable": "The selected image reference is unavailable. Choose a supported reference field or use no reference.",
+    "sbCanvasCatalogFailed": "Could not load generation models.",
+    "sbCanvasReferenceField": "Use linked image as",
+    "sbCanvasStartFrame": "First frame",
+    "sbCanvasEndFrame": "Last frame",
+    "sbCanvasReferenceImage": "Reference image",
+    "sbCanvasNoReference": "No reference",
+    "sbPanoramaEmpty": "No panorama yet. Enter a prompt to generate one.",
+    "sbPanoramaReferencePreview": "Reference preview",
     "sbPanoramaTitle": "720° panorama",
     "sbPanoramaOpenViewer": "Open panorama viewer",
     "sbPanoramaStyle": "Style",
@@ -9436,21 +9476,20 @@
     "noVisibleChoices": "No available choices match the current story state.",
     "continue": "Continue",
     "regionLabel": "Interactive film player",
+    "playback": {
+      "pause": "Pause",
+      "resume": "Resume",
+      "paused": "Paused",
+      "continuePlaying": "Tap to continue",
+      "interrupted": "This device needs a tap to keep playing."
+    },
     "chapters": "Chapters",
     "loadErrorTitle": "This experience is not available",
     "loadErrorDescription": "The published release could not pass the player’s integrity checks. The service response is shown below.",
     "loadErrorUnknown": "The published experience could not be loaded.",
     "returnToGames": "Back to games",
     "video": {
-      "play": "Play",
-      "pause": "Pause",
-      "mute": "Mute",
-      "unmute": "Unmute",
-      "volume": "Volume",
-      "enterFullscreen": "Enter fullscreen",
-      "exitFullscreen": "Exit fullscreen",
-      "seekForward": "Seek forward",
-      "seekBackward": "Seek backward"
+      "unmute": "Unmute"
     },
     "share": "Share",
     "shareCopied": "Link copied",
@@ -9470,7 +9509,8 @@
       "unlock": "Unlock and continue",
       "unlocking": "Unlocking…",
       "failed": "Unable to unlock. Please try again."
-    }
+    },
+    "retryReport": "Retry saving report"
   },
   "games": {
     "back": "Back to IP plaza",
@@ -10961,7 +11001,18 @@
     "searchHint": "Searches the conversations loaded in this list.",
     "details": "Application Details",
     "message": "Message",
-    "messagePlaceholder": "Type a message…"
+    "messagePlaceholder": "Type a message…",
+    "applicant": "Applicant",
+    "profileLoading": "Loading profile…",
+    "retryProfile": "Retry profile",
+    "qualifications": "Qualifications",
+    "noQualifications": "No qualifications listed",
+    "pastWork": "Past work",
+    "viewPortfolio": "View portfolio",
+    "worksLoading": "Loading work…",
+    "retryWorks": "Retry work",
+    "noPastWork": "No public work shared yet",
+    "untitledWork": "Untitled work"
   },
   "contentGpsOwner": {
     "title": "IP locations",
@@ -11341,7 +11392,15 @@
     "none": "Not linked",
     "loading": "Loading…",
     "more": "Load more",
-    "retry": "Retry"
+    "retry": "Retry",
+    "linkIp": "Link an IP",
+    "selectIp": "Select an IP",
+    "linkIpHint": "Choose an IP you manage to associate with this Crew.",
+    "noOwnedIps": "No editable IPs available.",
+    "linkedElsewhere": "This IP belongs to another Crew. Confirming moves its Crew association here.",
+    "confirmLink": "Confirm link",
+    "filmsHint": "Published interactive games appear here after their IP association is confirmed.",
+    "openStudio": "Open Studio"
   },
   "crewTaskContext": {
     "creator": "Featured creator",
@@ -11373,5 +11432,17 @@
       "vlog": "Vlog"
     },
     "filters": "Filters"
+  },
+  "generationSubmission": {
+    "pending": "Your previous generation request is not confirmed. Check its status or retry that original request before creating another job.",
+    "notFoundYet": "No matching job is visible yet. This does not confirm that the request failed.",
+    "lookupFailed": "Could not check the original request.",
+    "storageUnavailable": "Generation recovery storage is unavailable.",
+    "submissionFailed": "Generation submission failed.",
+    "check": "Check status",
+    "checking": "Checking…",
+    "retryOriginal": "Retry original request",
+    "targetRemoved": "Generation recovered. The original canvas item no longer exists.",
+    "signInRequired": "Sign in and select a workspace before generating."
   }
 }

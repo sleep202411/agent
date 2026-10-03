@@ -6,6 +6,9 @@ import { CanvasProjectsGrid } from "./projects-grid";
 const state = vi.hoisted(() => ({
   query: new URLSearchParams(),
   workspaceId: "A",
+  workspaceError: null as Error | null,
+  workspaceFetching: false,
+  refreshWorkspace: vi.fn(),
   list: vi.fn(),
   callbacks: [] as {
     workspaceId: string;
@@ -24,7 +27,13 @@ vi.mock("@/i18n/navigation", () => ({
   Link: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("@/app/_components/workspace-context", () => ({
-  useWorkspace: () => ({ activeWorkspace: { id: state.workspaceId }, loading: false }),
+  useWorkspace: () => ({
+    activeWorkspace: state.workspaceId ? { id: state.workspaceId } : null,
+    loading: false,
+    error: state.workspaceError,
+    fetching: state.workspaceFetching,
+    refresh: state.refreshWorkspace,
+  }),
 }));
 vi.mock("@/lib/collab/projects-api", () => ({
   createProject: state.create,
@@ -66,6 +75,8 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.query = new URLSearchParams();
   state.workspaceId = "A";
+  state.workspaceError = null;
+  state.workspaceFetching = false;
   state.callbacks = [];
   state.list.mockResolvedValue([]);
   state.create.mockResolvedValue({ id: "created" });
@@ -226,4 +237,31 @@ it("keeps existing projects visible when a realtime refresh fails", async () => 
   );
   expect(host.textContent).toContain("Original");
   expect(host.textContent).toContain("Connection lost");
+});
+
+it("recovers workspace lookup failures before reading or creating canvases", async () => {
+  state.workspaceError = new Error("Workspace service unavailable");
+  await render();
+  expect(host.textContent).toContain("Workspace service unavailable");
+  expect(state.list).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("newCanvas");
+  act(() => host.querySelector("button")!.click());
+  expect(state.refreshWorkspace).toHaveBeenCalledOnce();
+  state.workspaceFetching = true;
+  await render();
+  expect(host.querySelector("button")!.disabled).toBe(true);
+  state.workspaceFetching = false;
+  state.workspaceError = null;
+  await render();
+  expect(state.list).toHaveBeenCalledWith("A");
+  expect(host.textContent).not.toContain("Workspace service unavailable");
+});
+it("offers workspace retry when an explicit target is unavailable", async () => {
+  state.query.set("ws", "missing");
+  state.workspaceId = "";
+  await render();
+  expect(host.textContent).toContain("workspaceUnavailable");
+  act(() => host.querySelector("button")!.click());
+  expect(state.refreshWorkspace).toHaveBeenCalledOnce();
+  expect(state.list).not.toHaveBeenCalled();
 });

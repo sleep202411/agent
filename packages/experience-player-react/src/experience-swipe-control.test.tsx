@@ -5,10 +5,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import { ExperienceFrameRotationContext } from "./experience-landscape-presentation";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
+import { ExperienceStoryClock, ExperienceStoryClockContext } from "./experience-story-clock";
 
 type Props = ComponentProps<typeof ExperienceSpatialLayer>;
 let container: HTMLDivElement;
 let root: Root;
+let clock: ExperienceStoryClock;
 const onEvents = vi.fn();
 const scene = {
   sceneId: "scene",
@@ -59,6 +61,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+  clock = new ExperienceStoryClock({ paused: false });
   onEvents.mockClear();
   render();
   container.querySelector("button")!.setPointerCapture = vi.fn();
@@ -73,24 +76,26 @@ afterEach(() => {
 function render(sceneTimeMs = 0, rotated = false) {
   act(() =>
     root.render(
-      <ExperienceFrameRotationContext.Provider value={rotated}>
-        <ExperienceSpatialLayer
-          manifest={
-            {
-              assets: [],
-              inputActions: [],
-              localization: { defaultLocale: "en-US" },
-            } as unknown as Props["manifest"]
-          }
-          scene={scene}
-          runtimeState={{} as Props["runtimeState"]}
-          sceneTimeMs={sceneTimeMs}
-          locale="en-US"
-          orientation="landscape"
-          onEvents={onEvents}
-          onRuntimeError={vi.fn()}
-        />
-      </ExperienceFrameRotationContext.Provider>
+      <ExperienceStoryClockContext.Provider value={clock}>
+        <ExperienceFrameRotationContext.Provider value={rotated}>
+          <ExperienceSpatialLayer
+            manifest={
+              {
+                assets: [],
+                inputActions: [],
+                localization: { defaultLocale: "en-US" },
+              } as unknown as Props["manifest"]
+            }
+            scene={scene}
+            runtimeState={{} as Props["runtimeState"]}
+            sceneTimeMs={sceneTimeMs}
+            locale="en-US"
+            orientation="landscape"
+            onEvents={onEvents}
+            onRuntimeError={vi.fn()}
+          />
+        </ExperienceFrameRotationContext.Provider>
+      </ExperienceStoryClockContext.Provider>
     )
   );
 }
@@ -172,6 +177,24 @@ it("abandons a swipe when focus leaves", () => {
   onEvents.mockClear();
   pointer("pointerup", 1, 50);
   expect(onEvents).not.toHaveBeenCalled();
+  pointer("pointerdown", 2);
+  pointer("pointerup", 2, 50);
+  expect(onEvents).toHaveBeenCalledWith([expect.objectContaining({ type: "gesture.completed" })]);
+});
+
+it("drops a swipe in progress when the story pauses, without a cancel", () => {
+  const button = container.querySelector("button")!;
+  button.releasePointerCapture = vi.fn();
+  pointer("pointerdown", 1);
+
+  act(() => clock.pause());
+  pointer("pointerup", 1, 50);
+
+  // A pause is not a cancel, and the lifted finger finds no swipe to judge.
+  expect(button.releasePointerCapture).toHaveBeenCalledWith(1);
+  expect(onEvents).not.toHaveBeenCalled();
+
+  act(() => clock.resume());
   pointer("pointerdown", 2);
   pointer("pointerup", 2, 50);
   expect(onEvents).toHaveBeenCalledWith([expect.objectContaining({ type: "gesture.completed" })]);

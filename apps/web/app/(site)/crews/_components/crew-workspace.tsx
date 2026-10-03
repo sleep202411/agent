@@ -417,6 +417,7 @@ export function CrewWorkspace({
                 isOwner={viewer.can("openings.manage")}
                 t={t}
                 onJumpRoles={() => selectTab("roles")}
+                canManageLinks={viewer.can("production.manage")}
               />
             ) : null}
 
@@ -631,7 +632,7 @@ function StandardWorkspaceSurface({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
         <div className="mx-auto w-full max-w-[1480px]">{children}</div>
       </div>
     </div>
@@ -681,6 +682,7 @@ interface OverviewTabProps {
   isOwner: boolean;
   t: ReturnType<typeof useTranslations>;
   onJumpRoles: () => void;
+  canManageLinks: boolean;
 }
 
 /** Cap for the "招募中预览" card grid — overview is a summary, not a
@@ -697,6 +699,7 @@ function OverviewTab({
   isOwner,
   t,
   onJumpRoles,
+  canManageLinks,
 }: OverviewTabProps) {
   // Same card components the Roles tab uses → visual + interactive
   // consistency. Overview shows only OPEN positions (preview semantics)
@@ -717,7 +720,7 @@ function OverviewTab({
 
   return (
     <div className="space-y-6">
-      <CrewLinkedResources crewId={crewId} />
+      <CrewLinkedResources crewId={crewId} canManage={canManageLinks} />
       {/* KPI tiles — same borderless cards. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KpiTile labelKey="wsMembers" value={memberCount} t={t} />

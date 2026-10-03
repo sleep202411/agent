@@ -101,7 +101,11 @@ export function GlobalNav() {
   const navItems: NavItem[] = [
     { href: "/ips", label: t("ipPlaza") },
     { href: "/games", label: t("games") },
-    { href: "/crews", label: t("studioHall") },
+    {
+      href: "/crews",
+      linkHref: localizePath("/crews?view=positions", locale),
+      label: t("studioHall"),
+    },
     { href: "/creators", label: t("creators") },
     {
       href: "/courses",
@@ -215,7 +219,7 @@ export function GlobalNav() {
 
       <nav
         className={navCx(
-          "fd-secret-glass-wrapper fd-secret-nav-shell hidden 2xl:flex js-header-nav"
+          "fd-secret-glass-wrapper fd-secret-nav-shell hidden md:flex js-header-nav"
         )}
         aria-label="Primary"
       >
@@ -266,7 +270,7 @@ export function GlobalNav() {
         </div>
       </nav>
 
-      <div className={navCx("fd-secret-right-cluster hidden 2xl:flex js-header-cta")}>
+      <div className={navCx("fd-secret-right-cluster hidden md:flex js-header-cta")}>
         <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
           <span className={navCx("fd-secret-glass-effect")} aria-hidden />
           <AppDownloadMenu className={navCx("fd-secret-glass-content fd-secret-cta")} />
@@ -315,7 +319,7 @@ export function GlobalNav() {
         )}
       </div>
 
-      <div className={navCx("fd-secret-mobile-button-wrap 2xl:hidden")}>
+      <div className={navCx("fd-secret-mobile-button-wrap md:hidden")}>
         <button
           type="button"
           onClick={toggleMobile}
@@ -338,7 +342,7 @@ export function GlobalNav() {
       </div>
 
       {mobileOpen ? (
-        <div className={navCx("fd-secret-mobile-drawer 2xl:hidden")}>
+        <div className={navCx("fd-secret-mobile-drawer md:hidden")}>
           <div className={navCx("fd-secret-glass-wrapper fd-secret-mobile-panel")}>
             <span className={navCx("fd-secret-glass-effect")} aria-hidden />
             <nav

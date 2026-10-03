@@ -4,7 +4,7 @@ import { createNoopPlaySessionReporter } from "../_lib/play-session-reporter.noo
 import { IconAlertTriangle, IconArrowLeft, IconLoader2, IconRefresh } from "@tabler/icons-react";
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type CSSProperties } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ExperienceRuntimePlayer } from "@/components/experience-runtime/experience-runtime-player";
 import { StoryPlaytestStateHud } from "./story-playtest-state-hud";
@@ -60,6 +60,29 @@ export function StoryProjectPlaytest({
     retry: false,
   });
   const playSessionReporter = useMemo(() => createNoopPlaySessionReporter(), []);
+  // The player keeps its frame controls clear of this header through
+  // `--experience-chrome-inset-top`: how far down the header's chrome reaches.
+  // The frame's top-right corner, where the controls sit, can fall under any of
+  // it — the refresh button when the picture spans the page, the state HUD
+  // when it is pillarboxed, the title on a narrow page — so the controls drop
+  // below all of it, measured again as the page or the HUD changes size. The
+  // header's own boxes take no taps: only its chrome stands over the film.
+  const [chromeInsetTop, setChromeInsetTop] = useState<number | null>(null);
+  const measureChromeInset = useCallback((header: HTMLElement | null) => {
+    const main = header?.closest("main");
+    if (!header || !main) return;
+    const update = () => {
+      const bottom = Math.max(
+        ...Array.from(header.children, (chrome) => chrome.getBoundingClientRect().bottom)
+      );
+      setChromeInsetTop(Math.ceil(bottom - main.getBoundingClientRect().top));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(main);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
 
   const loading = runtimeQuery.isLoading;
   const loadError = runtimeQuery.error;
@@ -131,7 +154,14 @@ export function StoryProjectPlaytest({
     : t("pageTitle");
 
   return (
-    <main className="relative isolate min-h-dvh min-w-0 flex-1 overflow-hidden bg-black text-white">
+    <main
+      className="relative isolate min-h-dvh min-w-0 flex-1 overflow-hidden bg-black text-white"
+      style={
+        chromeInsetTop === null
+          ? undefined
+          : ({ "--experience-chrome-inset-top": `${chromeInsetTop}px` } as CSSProperties)
+      }
+    >
       <div className="absolute inset-0">
         <ExperienceRuntimePlayer
           key={`${parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}:${source.kind === "draft" ? (source.sceneId ?? "entry") : "entry"}`}
@@ -147,7 +177,10 @@ export function StoryProjectPlaytest({
         />
       </div>
 
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-50 flex items-start justify-between gap-3 p-3 sm:p-4">
+      <header
+        ref={measureChromeInset}
+        className="pointer-events-none absolute inset-x-0 top-0 z-50 flex items-start justify-between gap-3 p-3 sm:p-4"
+      >
         <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-2xl bg-black/58 p-1.5 shadow-[0_14px_50px_rgb(0_0_0/0.38)] backdrop-blur-2xl">
           <Link
             href={`/story-studio/projects/${projectId}/canvas`}
@@ -162,7 +195,7 @@ export function StoryProjectPlaytest({
           </div>
         </div>
 
-        <div className="pointer-events-auto flex items-start gap-2">
+        <div className="pointer-events-none flex items-start gap-5">
           {stateRows.length > 0 ? (
             <StoryPlaytestStateHud
               values={sessionValues}
@@ -174,6 +207,7 @@ export function StoryProjectPlaytest({
             type="button"
             size="icon"
             variant="secondary"
+            className="pointer-events-auto"
             aria-label={t("refresh")}
             title={t("refresh")}
             onClick={() => void runtimeQuery.refetch()}

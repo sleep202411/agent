@@ -13,7 +13,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { StoryboardTaskPicker } from "./storyboard-task-picker";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useAuth } from "@/app/_components/auth-provider";
 import { toast } from "sonner";
 import { useRouter } from "@/i18n/navigation";
 import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
@@ -55,15 +56,28 @@ function clipCover(
  * Editors can upload a new clip or replace an existing one here; the timeline
  * editor remains the place for ordering, prompts, and generation.
  */
-export function StoryNodeStoryboardPanel({
-  projectId,
-  nodeId,
-  canEdit = false,
-}: {
+interface StoryNodeStoryboardPanelProps {
   projectId: string;
   nodeId: string;
   canEdit?: boolean;
-}) {
+}
+
+export function StoryNodeStoryboardPanel(props: StoryNodeStoryboardPanelProps) {
+  const { user } = useAuth();
+  const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
+  return (
+    <StoryboardPanelSession
+      key={JSON.stringify([user?.id, props.projectId, chapterId, props.nodeId])}
+      {...props}
+    />
+  );
+}
+
+function StoryboardPanelSession({
+  projectId,
+  nodeId,
+  canEdit = false,
+}: StoryNodeStoryboardPanelProps) {
   const t = useTranslations("storyStudio.canvas.inspector.storyboard");
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -74,6 +88,15 @@ export function StoryNodeStoryboardPanel({
   const pickerKey = JSON.stringify([projectId, nodeId]);
   const pickerOpen = pickerTarget === pickerKey;
   const [creatingTask, setCreatingTask] = useState(false);
+  const alive = useRef(true);
+  const openingRef = useRef(false);
+  const creatingRef = useRef(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   const storyboardQuery = useQuery({
     queryKey: storyProductionKeys.storyboard(projectId, chapterId),
@@ -88,10 +111,13 @@ export function StoryNodeStoryboardPanel({
     retry: false,
   });
 
-  const childItem = childrenQuery.data?.find((item: StoryboardChildItem) => item.nodeId === nodeId);
+  const childItem = childrenQuery.isError
+    ? undefined
+    : childrenQuery.data?.find((item: StoryboardChildItem) => item.nodeId === nodeId);
 
-  const sequence =
-    storyboardQuery.data?.find((candidate) => candidate.plotNodeId === nodeId) ?? null;
+  const sequence = !storyboardQuery.isError
+    ? (storyboardQuery.data?.find((candidate) => candidate.plotNodeId === nodeId) ?? null)
+    : null;
   const clips = sequence?.clips ?? [];
   const readyCount = clips.filter((clip) => clip.selectedMediaVersion !== null).length;
   const editorHref = `/story-studio/projects/${projectId}/edit?chapter=${encodeURIComponent(
@@ -99,36 +125,42 @@ export function StoryNodeStoryboardPanel({
   )}&node=${encodeURIComponent(nodeId)}`;
 
   const openEditor = async () => {
-    if (opening || !chapterId) return;
+    if (!alive.current || openingRef.current || !chapterId) return;
+    openingRef.current = true;
     setOpening(true);
     try {
       // A newborn Plot node may still be inside the canvas autosave window.
       // Crossing this barrier guarantees its canonical empty timeline exists
       // before the editor reads the shared Storyboard query.
       if (draftBarrier) await draftBarrier(async () => undefined);
+      if (!alive.current) return;
       await queryClient.invalidateQueries({
         queryKey: storyProductionKeys.storyboard(projectId, chapterId),
       });
-      router.push(editorHref);
+      if (alive.current) router.push(editorHref);
     } catch (error) {
-      toast.error(storyApiErrorMessage(error, t("openError")));
-      setOpening(false);
+      if (alive.current) toast.error(storyApiErrorMessage(error, t("openError")));
+    } finally {
+      openingRef.current = false;
+      if (alive.current) setOpening(false);
     }
   };
 
   const handleCreateTask = async () => {
-    if (creatingTask) return;
+    if (!alive.current || !canEdit || creatingRef.current) return;
+    creatingRef.current = true;
     setCreatingTask(true);
     try {
       await createStoryboardChild(projectId, nodeId, {});
       await queryClient.invalidateQueries({
         queryKey: ["storyboard-children", projectId],
       });
-      toast.success(t("createTask"));
+      if (alive.current) toast.success(t("createTask"));
     } catch (error) {
-      toast.error(storyApiErrorMessage(error, "Failed to create task"));
+      if (alive.current) toast.error(storyApiErrorMessage(error, "Failed to create task"));
     } finally {
-      setCreatingTask(false);
+      creatingRef.current = false;
+      if (alive.current) setCreatingTask(false);
     }
   };
 
@@ -145,10 +177,12 @@ export function StoryNodeStoryboardPanel({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[11px] font-semibold text-white/82">{t("title")}</span>
-          <span className="mt-0.5 block text-[9px] leading-4 text-white/34">
+          <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
             {storyboardQuery.isPending
               ? t("loading")
-              : t("summary", { count: clips.length, ready: readyCount })}
+              : storyboardQuery.isError
+                ? t("loadError")
+                : t("summary", { count: clips.length, ready: readyCount })}
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium text-white/62 transition group-hover:bg-white/[0.08] group-hover:text-white">
@@ -161,14 +195,42 @@ export function StoryNodeStoryboardPanel({
         </span>
       </button>
 
+      {storyboardQuery.isError && (
+        <div role="alert" className="mt-3 space-y-2 text-xs text-muted-foreground">
+          <p>{storyApiErrorMessage(storyboardQuery.error, t("loadError"))}</p>
+          <button
+            type="button"
+            disabled={storyboardQuery.isFetching}
+            onClick={() => void storyboardQuery.refetch()}
+            className="rounded-lg bg-white/[0.06] px-3 py-1.5 text-white/80 disabled:opacity-50"
+          >
+            {t("retryTasks")}
+          </button>
+        </div>
+      )}
+
       {/* Linked Task Status / Create Task Affordance */}
       <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
-        {childItem?.taskId ? (
+        {childrenQuery.isPending ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            {t("loading")}
+          </p>
+        ) : childrenQuery.isError ? (
+          <div role="alert" className="space-y-2 text-xs text-muted-foreground">
+            <p>{storyApiErrorMessage(childrenQuery.error, t("taskListError"))}</p>
+            <button
+              type="button"
+              disabled={childrenQuery.isFetching}
+              onClick={() => void childrenQuery.refetch()}
+              className="rounded-lg bg-white/[0.06] px-3 py-1.5 text-white/80 disabled:opacity-50"
+            >
+              {t("retryTasks")}
+            </button>
+          </div>
+        ) : childItem?.taskId ? (
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <span className="block text-[9px] font-medium tracking-wider text-white/40 uppercase">
-                {t("linkedTask")}
-              </span>
+              <span className="block text-xs text-muted-foreground">{t("linkedTask")}</span>
               <span className="mt-0.5 block truncate text-[11px] font-semibold text-white/88">
                 {childItem.title}
               </span>
@@ -213,7 +275,7 @@ export function StoryNodeStoryboardPanel({
         )}
       </div>
 
-      {pickerOpen && canEdit && !childItem?.taskId ? (
+      {pickerOpen && canEdit && childrenQuery.isSuccess && !childItem?.taskId ? (
         <StoryboardTaskPicker
           key={`${projectId}:${nodeId}`}
           projectId={projectId}

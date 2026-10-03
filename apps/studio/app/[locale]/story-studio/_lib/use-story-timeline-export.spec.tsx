@@ -7,6 +7,7 @@ import {
 } from "./use-story-timeline-export";
 
 const h = vi.hoisted(() => ({
+  userId: "alice",
   export: vi.fn(),
   upload: vi.fn(),
   save: vi.fn(),
@@ -15,6 +16,9 @@ const h = vi.hoisted(() => ({
   error: vi.fn(),
   warning: vi.fn(),
   supported: vi.fn(),
+}));
+vi.mock("@/app/_components/auth-provider", () => ({
+  useAuth: () => ({ user: { id: h.userId }, isCurrentAccount: (id: string) => id === h.userId }),
 }));
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: { count: number }) =>
@@ -59,11 +63,13 @@ function deferred<T>() {
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.resetAllMocks();
+  h.userId = "alice";
   h.export.mockResolvedValue(new Blob(["video"], { type: "video/mp4" }));
   h.upload.mockResolvedValue({ mediaAssetId: "asset" });
   h.save.mockResolvedValue({});
   h.supported.mockReturnValue(true);
   options = {
+    canEdit: true,
     sequence: sequence(),
     projectId: "project",
     chapterId: "chapter",
@@ -120,7 +126,7 @@ it("exports once on rapid clicks, uploads, then saves and notifies", async () =>
     { id: "clip", videoUrl: "https://example.test/a.mp4", duration: 1.234 },
   ]);
   expect(h.upload).toHaveBeenCalledTimes(1);
-  expect(h.save).toHaveBeenCalledWith("project", "asset");
+  expect(h.save).toHaveBeenCalledWith("project", "asset", expect.any(AbortSignal));
   expect(options.onComplete).toHaveBeenCalledWith("asset");
   expect(api.isExporting).toBe(false);
 });
@@ -138,7 +144,7 @@ it.each(["upload", "save"] as const)(
     expect(options.onComplete).toHaveBeenCalledTimes(1);
     expect(h.export).toHaveBeenCalledTimes(1);
     expect(h.upload).toHaveBeenCalledTimes(stage === "upload" ? 2 : 1);
-    expect(h.save).toHaveBeenLastCalledWith("project", "asset");
+    expect(h.save).toHaveBeenLastCalledWith("project", "asset", expect.any(AbortSignal));
   }
 );
 it("does not save a late upload after switching project", async () => {
@@ -150,7 +156,10 @@ it("does not save a late upload after switching project", async () => {
     work = api.handleExport();
   });
   const signal = h.upload.mock.calls[0][1].signal;
-  options = { ...options, projectId: "other" };
+  options = {
+    ...options,
+    projectId: "other",
+  };
   await render();
   expect(signal.aborted).toBe(true);
   expect(api.exportStage).toBe("idle");
@@ -164,7 +173,10 @@ it("does not save a late upload after switching project", async () => {
 it("regenerates a download after media changes within the same sequence", async () => {
   await render();
   await act(async () => api.downloadOnly());
-  options = { ...options, sequence: sequence("https://example.test/replaced.mp4") };
+  options = {
+    ...options,
+    sequence: sequence("https://example.test/replaced.mp4"),
+  };
   await render();
   await act(async () => api.downloadOnly());
   expect(h.export).toHaveBeenCalledTimes(2);
@@ -177,7 +189,10 @@ it("clears errors when switching project and when retrying a download", async ()
   await render();
   await act(async () => api.handleExport());
   expect(api.error).toBe("failed");
-  options = { ...options, projectId: "other" };
+  options = {
+    ...options,
+    projectId: "other",
+  };
   await render();
   expect(api.error).toBeNull();
   h.export.mockRejectedValueOnce(new Error("download failed"));
@@ -204,11 +219,17 @@ it("cancels an old attempt without interrupting its replacement", async () => {
   expect(h.save).toHaveBeenCalledTimes(1);
 });
 it("refuses empty or unsupported exports", async () => {
-  options = { ...options, sequence: null };
+  options = {
+    ...options,
+    sequence: null,
+  };
   await render();
   await act(async () => api.handleExport());
   expect(api.error).toBe("no_clips_with_media");
-  options = { ...options, sequence: sequence() };
+  options = {
+    ...options,
+    sequence: sequence(),
+  };
   h.supported.mockReturnValue(false);
   await render();
   await act(async () => api.handleExport());
@@ -219,13 +240,19 @@ it("refuses empty or unsupported exports", async () => {
 it("keeps the cache for identical media but invalidates it after a duration edit", async () => {
   await render();
   await act(async () => api.downloadOnly());
-  options = { ...options, sequence: sequence() };
+  options = {
+    ...options,
+    sequence: sequence(),
+  };
   await render();
   await act(async () => api.downloadOnly());
   expect(h.export).toHaveBeenCalledTimes(1);
   const edited = sequence()!;
   edited.clips[0]!.durationMs = 5000;
-  options = { ...options, sequence: edited };
+  options = {
+    ...options,
+    sequence: edited,
+  };
   await render();
   await act(async () => api.downloadOnly());
   expect(h.export).toHaveBeenCalledTimes(2);
@@ -241,7 +268,10 @@ it("abandons an in-flight export when its selected media is replaced", async () 
     work = api.handleExport();
   });
   const signal = h.export.mock.calls[0][1].signal;
-  options = { ...options, sequence: sequence("https://example.test/new.mp4") };
+  options = {
+    ...options,
+    sequence: sequence("https://example.test/new.mp4"),
+  };
   await render();
   expect(signal.aborted).toBe(true);
   await act(async () => {
@@ -259,7 +289,10 @@ it("ignores cached download and cancel callbacks retained from a previous projec
   const obsolete = api;
   h.download.mockClear();
   h.success.mockClear();
-  options = { ...options, projectId: "replacement" };
+  options = {
+    ...options,
+    projectId: "replacement",
+  };
   await render();
   const pending = deferred<Blob>();
   h.export.mockReturnValueOnce(pending.promise);
@@ -280,7 +313,7 @@ it("ignores cached download and cancel callbacks retained from a previous projec
     pending.resolve(new Blob(["new"]));
     await work;
   });
-  expect(h.save).toHaveBeenCalledWith("replacement", "asset");
+  expect(h.save).toHaveBeenCalledWith("replacement", "asset", expect.any(AbortSignal));
 });
 
 it("normalizes storage upload percentages to the export progress ratio", async () => {
@@ -306,7 +339,7 @@ it("normalizes storage upload percentages to the export progress ratio", async (
     pending.resolve({ mediaAssetId: "asset" });
     await work;
   });
-  expect(h.save).toHaveBeenCalledWith("project", "asset");
+  expect(h.save).toHaveBeenCalledWith("project", "asset", expect.any(AbortSignal));
 });
 
 it.each(["project", "chapter", "media", "duration"])(
@@ -318,18 +351,28 @@ it.each(["project", "chapter", "media", "duration"])(
     if (change === "project") options = { ...options, projectId: "replacement" };
     if (change === "chapter") options = { ...options, chapterId: "replacement" };
     if (change === "media")
-      options = { ...options, sequence: sequence("https://example.test/b.mp4") };
+      options = {
+        ...options,
+        sequence: sequence("https://example.test/b.mp4"),
+      };
     if (change === "duration") {
       const next = sequence()!;
       next.clips[0]!.durationMs = 5000;
-      options = { ...options, sequence: next };
+      options = {
+        ...options,
+        sequence: next,
+      };
     }
     h.upload.mockResolvedValueOnce({ mediaAssetId: "replacement-asset" });
     await render();
     await act(async () => api.handleExport());
     expect(h.export).toHaveBeenCalledTimes(2);
     expect(h.upload).toHaveBeenCalledTimes(2);
-    expect(h.save).toHaveBeenLastCalledWith(options.projectId, "replacement-asset");
+    expect(h.save).toHaveBeenLastCalledWith(
+      options.projectId,
+      "replacement-asset",
+      expect.any(AbortSignal)
+    );
   }
 );
 
@@ -388,10 +431,79 @@ it("recomputes completeness after adding a shot without media to a cached timeli
   h.success.mockClear();
   const next = sequence()!;
   next.clips.push({ ...next.clips[0]!, id: "missing", selectedMediaVersion: null });
-  options = { ...options, sequence: next };
+  options = {
+    ...options,
+    sequence: next,
+  };
   await render();
   await act(async () => api.downloadOnly());
   expect(h.export).toHaveBeenCalledTimes(2);
   expect(h.warning).toHaveBeenCalledWith("partialDownload:1");
   expect(h.success).not.toHaveBeenCalled();
+});
+
+it("keeps read-only export local without uploading project assets", async () => {
+  options.canEdit = false;
+  await render();
+  expect(api.canExport).toBe(false);
+  await act(async () => api.handleExport());
+  expect(h.export).not.toHaveBeenCalled();
+  await act(async () => api.downloadOnly());
+  expect(h.download).toHaveBeenCalledOnce();
+  expect(h.upload).not.toHaveBeenCalled();
+  expect(h.save).not.toHaveBeenCalled();
+});
+for (const departure of ["account", "permission"] as const) {
+  it(`stops pending encoding before upload on ${departure} change`, async () => {
+    const pending = deferred<Blob>();
+    h.export.mockReturnValue(pending.promise);
+    await render();
+    let running!: Promise<void>;
+    act(() => {
+      running = api.handleExport();
+    });
+    const signal = h.export.mock.calls[0][1].signal as AbortSignal;
+    if (departure === "account") h.userId = "bob";
+    else options.canEdit = false;
+    await render();
+    expect(signal.aborted).toBe(true);
+    await act(async () => {
+      pending.resolve(new Blob(["video"]));
+      await running;
+    });
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(h.save).not.toHaveBeenCalled();
+  });
+}
+
+it("cancels pending asset attachment after account departure", async () => {
+  const pending = deferred<object>();
+  h.save.mockReturnValue(pending.promise);
+  await render();
+  let running!: Promise<void>;
+  await act(async () => {
+    running = api.handleExport();
+  });
+  expect(h.save).toHaveBeenCalledOnce();
+  const signal = h.save.mock.calls[0][2] as AbortSignal;
+  h.userId = "bob";
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => {
+    pending.resolve({});
+    await running;
+  });
+  expect(h.success).not.toHaveBeenCalled();
+  expect(options.onComplete).not.toHaveBeenCalled();
+});
+
+it("passes image media as a timed still rather than a video source", async () => {
+  options.sequence = sequence("https://example.test/still.png");
+  options.sequence!.clips[0].selectedMediaVersion!.mediaKind = "image";
+  await render();
+  await act(async () => api.downloadOnly());
+  expect(h.export).toHaveBeenCalledWith(
+    [{ id: "clip", imageUrl: "https://example.test/still.png", duration: 1.234 }],
+    expect.anything()
+  );
 });

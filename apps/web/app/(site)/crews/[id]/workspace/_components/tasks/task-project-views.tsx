@@ -1,5 +1,7 @@
 "use client";
 
+import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
+
 import { TaskUnreadMarker } from "@/app/(site)/crews/_components/task-unread-marker";
 
 import { TaskDeadline } from "@/app/(site)/crews/_components/task-deadline";
@@ -737,17 +739,6 @@ function isManuallyMovable(state: CrewTaskWorkflowStateDTO) {
 
 function isCoreBoardColumn(state: CrewTaskWorkflowStateDTO) {
   return ["backlog", "open", "in_progress", "approved"].includes(state.systemKey ?? "");
-}
-
-function workflowStateLabel(
-  state: CrewTaskWorkflowStateDTO,
-  t: ReturnType<typeof useTranslations>
-) {
-  return state.systemKey === "backlog"
-    ? t("backlog")
-    : state.systemKey
-      ? t(`status.${state.systemKey}`)
-      : state.name;
 }
 
 function shortDate(value: string, locale?: string) {

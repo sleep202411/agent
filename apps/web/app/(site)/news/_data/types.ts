@@ -40,3 +40,9 @@ export interface NewsItem {
    */
   tags?: { id: string; label: string }[];
 }
+
+export const NEWS_PAGE_SIZE = 20;
+export interface NewsFeedPage {
+  items: NewsItem[];
+  hasMore: boolean;
+}

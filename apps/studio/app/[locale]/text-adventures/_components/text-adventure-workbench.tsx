@@ -77,16 +77,25 @@ import {
   toTextAdventureUpdateInput,
   type TextAdventureDraftForm,
 } from "../_lib/text-adventure-draft";
+import { TextAdventureAccount, useTextAdventureOwner } from "./text-adventure-account";
 import { TextAdventureStreamBody } from "./text-adventure-stream-body";
 
 type UploadTarget = "poster" | "document" | "stills" | "bgm" | null;
 type InspectorPanel = "basics" | "characters" | "stills";
 
 export function TextAdventureWorkbench({ adventureId }: { adventureId: string }) {
+  return (
+    <TextAdventureAccount>
+      {(userId) => <OwnedWorkbench key={adventureId} userId={userId} adventureId={adventureId} />}
+    </TextAdventureAccount>
+  );
+}
+
+function OwnedWorkbench({ adventureId, userId }: { adventureId: string; userId: string }) {
   const t = useTranslations("textAdventures");
   const query = useQuery({
-    queryKey: textAdventureKeys.detail(adventureId),
-    queryFn: () => getCreatorTextAdventure(adventureId),
+    queryKey: textAdventureKeys.detail(adventureId, userId),
+    queryFn: ({ signal }) => getCreatorTextAdventure(adventureId, signal),
   });
 
   if (query.isLoading) return <TextAdventureWorkbenchSkeleton />;
@@ -108,10 +117,11 @@ export function TextAdventureWorkbench({ adventureId }: { adventureId: string })
     );
   }
 
-  return <LoadedWorkbench key={query.data.gameId} initial={query.data} />;
+  return <LoadedWorkbench key={query.data.gameId} initial={query.data} userId={userId} />;
 }
 
-function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
+function LoadedWorkbench({ initial, userId }: { initial: TextGameDetail; userId: string }) {
+  const owner = useTextAdventureOwner(userId);
   const t = useTranslations("textAdventures");
   const locale = useLocale();
   const region = useSiteRegion();
@@ -162,30 +172,34 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
   }, [dirty, saving, transitioning, uploadTarget]);
 
   const syncGame = (next: TextGameDetail) => {
+    if (!owner.current()) return;
     const nextForm = textAdventureDraftFormFromDetail(next);
     setGame(next);
     setForm(nextForm);
     setBaseline(nextForm);
-    queryClient.setQueryData(textAdventureKeys.detail(next.gameId), next);
-    void queryClient.invalidateQueries({ queryKey: textAdventureKeys.list() });
+    queryClient.setQueryData(textAdventureKeys.detail(next.gameId, userId), next);
+    void queryClient.invalidateQueries({ queryKey: textAdventureKeys.list(userId) });
   };
 
   const saveForm = async (
     patch: Partial<TextAdventureDraftForm> = {},
     successMessage: string | null = t("editor.saved")
   ): Promise<TextGameDetail> => {
+    const operation = owner.begin();
     const nextForm = { ...form, ...patch };
     setSaving(true);
     try {
       const next = await updateCreatorTextAdventure(
         game.gameId,
-        toTextAdventureUpdateInput(nextForm, baseline)
+        toTextAdventureUpdateInput(nextForm, baseline),
+        operation.signal
       );
+      operation.assert();
       syncGame(next);
       if (successMessage) toast.success(successMessage);
       return next;
     } finally {
-      setSaving(false);
+      if (operation.current()) setSaving(false);
     }
   };
 
@@ -193,7 +207,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
     try {
       await saveForm(patch);
     } catch (error) {
-      toast.error(errorMessage(error, t("actions.unknownError")));
+      if (owner.current()) toast.error(errorMessage(error, t("actions.unknownError")));
     }
   };
 
@@ -202,17 +216,24 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
     file: File,
     kind: "episode_cover" | "agent_attachment_document" | "ai_reference_image" | "story_music_audio"
   ): Promise<string> => {
+    const operation = owner.begin();
     setUploadTarget(target);
     setUploadProgress(0);
     try {
       const result = await uploadFileViaSignedUrl(file, {
         kind,
-        onProgress: setUploadProgress,
+        signal: operation.signal,
+        onProgress: (value) => {
+          if (operation.current()) setUploadProgress(value);
+        },
       });
+      operation.assert();
       return result.url;
     } finally {
-      setUploadTarget(null);
-      setUploadProgress(0);
+      if (operation.current()) {
+        setUploadTarget(null);
+        setUploadProgress(0);
+      }
     }
   };
 
@@ -226,7 +247,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
       const posterUrl = await uploadOne("poster", file, "episode_cover");
       await saveForm({ posterUrl });
     } catch (error) {
-      toast.error(errorMessage(error, t("actions.unknownError")));
+      if (owner.current()) toast.error(errorMessage(error, t("actions.unknownError")));
     }
   };
 
@@ -243,7 +264,7 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
       const worldviewDocxUrl = await uploadOne("document", file, "agent_attachment_document");
       await saveForm({ worldviewDocxUrl }, t("editor.documentReparsed"));
     } catch (error) {
-      toast.error(errorMessage(error, t("actions.unknownError")));
+      if (owner.current()) toast.error(errorMessage(error, t("actions.unknownError")));
     }
   };
 
@@ -253,23 +274,28 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
       toast.error(t("editor.stillsImageOnly"));
       return;
     }
+    const operation = owner.begin();
     setUploadTarget("stills");
     try {
       const urls: string[] = [];
       for (let index = 0; index < files.length; index += 1) {
         const result = await uploadFileViaSignedUrl(files[index], {
           kind: "ai_reference_image",
+          signal: operation.signal,
           onProgress: (value) =>
             setUploadProgress(Math.round(((index + value / 100) / files.length) * 100)),
         });
+        operation.assert();
         urls.push(result.url);
       }
       await saveForm({ stillUrls: [...form.stillUrls, ...urls] });
     } catch (error) {
-      toast.error(errorMessage(error, t("actions.unknownError")));
+      if (owner.current()) toast.error(errorMessage(error, t("actions.unknownError")));
     } finally {
-      setUploadTarget(null);
-      setUploadProgress(0);
+      if (operation.current()) {
+        setUploadTarget(null);
+        setUploadProgress(0);
+      }
     }
   };
 
@@ -287,23 +313,26 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
       const bgmUrl = await uploadOne("bgm", file, "story_music_audio");
       await saveForm({ bgmUrl });
     } catch (error) {
-      toast.error(errorMessage(error, t("actions.unknownError")));
+      if (owner.current()) toast.error(errorMessage(error, t("actions.unknownError")));
     }
   };
 
   const transition = async (action: TextGameCreatorAction) => {
     if (!isTextGameCreatorActionAllowed(game.status, action)) return;
+    const operation = owner.begin();
     setTransitioning(true);
     try {
       let current = game;
       if (dirty && editable) current = await saveForm({}, null);
-      const next = await transitionCreatorTextAdventure(current.gameId, action);
+      operation.assert();
+      const next = await transitionCreatorTextAdventure(current.gameId, action, operation.signal);
+      operation.assert();
       syncGame(next);
       toast.success(action === "submit" ? t("publish.submitted") : t("publish.offlined"));
     } catch (error) {
-      toast.error(errorMessage(error, t("actions.unknownError")));
+      if (owner.current()) toast.error(errorMessage(error, t("actions.unknownError")));
     } finally {
-      setTransitioning(false);
+      if (operation.current()) setTransitioning(false);
     }
   };
 
@@ -450,7 +479,11 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
 
       <div className="grid min-h-[calc(100dvh-3.5rem)] flex-1 grid-cols-1 min-[1100px]:min-h-0 min-[1100px]:grid-cols-[minmax(0,1fr)_380px]">
         <section className="h-[calc(100dvh-3.5rem)] min-h-[620px] min-w-0 p-3 sm:p-5 min-[1100px]:h-full min-[1100px]:min-h-0 lg:p-6">
-          <TextAdventureConversation game={game} hasUnpublishedDraft={hasUnpublishedDraft} />
+          <TextAdventureConversation
+            userId={userId}
+            game={game}
+            hasUnpublishedDraft={hasUnpublishedDraft}
+          />
         </section>
 
         <aside
@@ -799,12 +832,15 @@ function LoadedWorkbench({ initial }: { initial: TextGameDetail }) {
 }
 
 function TextAdventureConversation({
+  userId,
   game,
   hasUnpublishedDraft,
 }: {
+  userId: string;
   game: TextGameDetail;
   hasUnpublishedDraft: boolean;
 }) {
+  const owner = useTextAdventureOwner(userId);
   const t = useTranslations("textAdventures");
   const locale = TextGameLocaleSchema.parse(useLocale());
   const queryClient = useQueryClient();
@@ -818,12 +854,22 @@ function TextAdventureConversation({
   const canPlay = game.publishedVersionId !== null;
 
   const sessionQuery = useQuery({
-    queryKey: textAdventureSessionKeys.detail(game.gameId, locale),
-    queryFn: () =>
-      loadOrStartTextAdventureSession(game.gameId, locale, {
-        onSession: (next) =>
-          queryClient.setQueryData(textAdventureSessionKeys.detail(game.gameId, locale), next),
-      }),
+    queryKey: textAdventureSessionKeys.detail(game.gameId, locale, userId),
+    queryFn: ({ signal }) =>
+      loadOrStartTextAdventureSession(
+        game.gameId,
+        locale,
+        {
+          onSession: (next) => {
+            if (!signal.aborted && owner.current())
+              queryClient.setQueryData(
+                textAdventureSessionKeys.detail(game.gameId, locale, userId),
+                next
+              );
+          },
+        },
+        signal
+      ),
     enabled: canPlay,
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
@@ -849,6 +895,7 @@ function TextAdventureConversation({
     const value = draft.trim();
     if (!value || !session || sendingRef.current || restartingRef.current) return;
 
+    const operation = owner.begin();
     const optimisticId = `pending-${Date.now()}`;
     const optimistic: TextGameMessage = {
       id: optimisticId,
@@ -860,7 +907,7 @@ function TextAdventureConversation({
     setDraft("");
     setSending(true);
     queryClient.setQueryData<TextGamePlaySession>(
-      textAdventureSessionKeys.detail(game.gameId, locale),
+      textAdventureSessionKeys.detail(game.gameId, locale, userId),
       (current) =>
         current
           ? {
@@ -880,60 +927,74 @@ function TextAdventureConversation({
     );
 
     try {
-      await sendTextAdventureAction(session.sessionId, value, locale, {
-        onUserMessage: (userMessage) => {
-          queryClient.setQueryData<TextGamePlaySession>(
-            textAdventureSessionKeys.detail(game.gameId, locale),
-            (current) =>
-              current
-                ? {
-                    ...current,
-                    messages: current.messages.map((item) =>
-                      item.id === optimisticId ? userMessage : item
-                    ),
-                  }
-                : current
-          );
+      await sendTextAdventureAction(
+        session.sessionId,
+        value,
+        locale,
+        {
+          onUserMessage: (userMessage) => {
+            if (!operation.current()) return;
+            queryClient.setQueryData<TextGamePlaySession>(
+              textAdventureSessionKeys.detail(game.gameId, locale, userId),
+              (current) =>
+                current
+                  ? {
+                      ...current,
+                      messages: current.messages.map((item) =>
+                        item.id === optimisticId ? userMessage : item
+                      ),
+                    }
+                  : current
+            );
+          },
+          onAssistantDelta: (text) => {
+            if (!operation.current()) return;
+            queryClient.setQueryData<TextGamePlaySession>(
+              textAdventureSessionKeys.detail(game.gameId, locale, userId),
+              (current) =>
+                current
+                  ? {
+                      ...current,
+                      messages: current.messages.map((item) =>
+                        item.id === TEXT_GAME_STREAMING_ASSISTANT_ID
+                          ? { ...item, content: `${item.content}${text}` }
+                          : item
+                      ),
+                    }
+                  : current
+            );
+          },
+          onAssistantDone: (assistantMessage) => {
+            if (!operation.current()) return;
+            queryClient.setQueryData<TextGamePlaySession>(
+              textAdventureSessionKeys.detail(game.gameId, locale, userId),
+              (current) =>
+                current
+                  ? {
+                      ...current,
+                      messages: current.messages.map((item) =>
+                        item.id === TEXT_GAME_STREAMING_ASSISTANT_ID ? assistantMessage : item
+                      ),
+                    }
+                  : current
+            );
+          },
         },
-        onAssistantDelta: (text) => {
-          queryClient.setQueryData<TextGamePlaySession>(
-            textAdventureSessionKeys.detail(game.gameId, locale),
-            (current) =>
-              current
-                ? {
-                    ...current,
-                    messages: current.messages.map((item) =>
-                      item.id === TEXT_GAME_STREAMING_ASSISTANT_ID
-                        ? { ...item, content: `${item.content}${text}` }
-                        : item
-                    ),
-                  }
-                : current
-          );
-        },
-        onAssistantDone: (assistantMessage) => {
-          queryClient.setQueryData<TextGamePlaySession>(
-            textAdventureSessionKeys.detail(game.gameId, locale),
-            (current) =>
-              current
-                ? {
-                    ...current,
-                    messages: current.messages.map((item) =>
-                      item.id === TEXT_GAME_STREAMING_ASSISTANT_ID ? assistantMessage : item
-                    ),
-                  }
-                : current
-          );
-        },
-      });
+        operation.signal
+      );
     } catch (error) {
+      if (!operation.current()) return;
       try {
-        const recovered = await getPlayingTextAdventureSession(game.gameId);
+        const recovered = await getPlayingTextAdventureSession(game.gameId, operation.signal);
+        operation.assert();
         if (recovered) {
-          queryClient.setQueryData(textAdventureSessionKeys.detail(game.gameId, locale), recovered);
+          queryClient.setQueryData(
+            textAdventureSessionKeys.detail(game.gameId, locale, userId),
+            recovered
+          );
         } else {
           queryClient.setQueryData<TextGamePlaySession>(
-            textAdventureSessionKeys.detail(game.gameId, locale),
+            textAdventureSessionKeys.detail(game.gameId, locale, userId),
             (current) =>
               current
                 ? {
@@ -948,37 +1009,57 @@ function TextAdventureConversation({
           setDraft(value);
         }
       } catch {
+        if (!operation.current()) return;
         setDraft(value);
       }
       toast.error(errorMessage(error, t("playtest.sendFailed")));
     } finally {
-      sendingRef.current = false;
-      setSending(false);
-      window.requestAnimationFrame(() => inputRef.current?.focus());
+      if (operation.current()) {
+        sendingRef.current = false;
+        setSending(false);
+        window.requestAnimationFrame(() => {
+          if (operation.current()) inputRef.current?.focus();
+        });
+      }
     }
   };
 
   const restart = async () => {
     if (!session || sendingRef.current || restartingRef.current) return;
+    const operation = owner.begin();
     restartingRef.current = true;
     setRestarting(true);
     const toastId = toast.loading(t("playtest.restarting"));
     try {
-      const next = await startTextAdventureSession(game.gameId, locale, {
-        onSession: (sessionNext) =>
-          queryClient.setQueryData(
-            textAdventureSessionKeys.detail(game.gameId, locale),
-            sessionNext
-          ),
-      });
-      queryClient.setQueryData(textAdventureSessionKeys.detail(game.gameId, locale), next);
+      const next = await startTextAdventureSession(
+        game.gameId,
+        locale,
+        {
+          onSession: (sessionNext) => {
+            if (!operation.current()) return;
+            queryClient.setQueryData(
+              textAdventureSessionKeys.detail(game.gameId, locale, userId),
+              sessionNext
+            );
+          },
+        },
+        operation.signal
+      );
+      operation.assert();
+      queryClient.setQueryData(textAdventureSessionKeys.detail(game.gameId, locale, userId), next);
       setDraft("");
       toast.success(t("playtest.restartComplete"), { id: toastId });
     } catch (error) {
+      if (!operation.current()) {
+        toast.dismiss(toastId);
+        return;
+      }
       toast.error(errorMessage(error, t("playtest.restartFailed")), { id: toastId });
     } finally {
-      restartingRef.current = false;
-      setRestarting(false);
+      if (operation.current()) {
+        restartingRef.current = false;
+        setRestarting(false);
+      }
     }
   };
 

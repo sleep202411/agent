@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiRequestError } from "@/lib/api";
+import { useAuth } from "@/app/_components/auth-provider";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 import { listWorkspaceMembers } from "@/lib/collab/sharing-api";
@@ -25,14 +25,15 @@ import { deleteWorkspace, updateWorkspace, type WorkspaceRef } from "@/lib/colla
 import { LetterAvatar, PageHeader, Panel } from "../_components/settings-ui";
 
 const errMsg = (e: unknown, fallback: string) =>
-  e instanceof ApiRequestError ? e.message : fallback;
+  e instanceof Error && e.message ? e.message : fallback;
 
 /** Active-workspace Overview — identity, team name, members, credits, danger zone. */
 export default function OverviewSettingsPage() {
   const t = useTranslations("settings");
-  const { activeWorkspace: ws, loading } = useWorkspace();
+  const { activeWorkspace: ws, loading, error, fetching, refresh } = useWorkspace();
+  const { user } = useAuth();
 
-  if (loading || !ws) {
+  if (loading) {
     return (
       <main className="mx-auto w-full max-w-3xl space-y-6 px-6 py-8">
         <Skeleton className="h-8 w-40 rounded-lg" />
@@ -42,6 +43,24 @@ export default function OverviewSettingsPage() {
     );
   }
 
+  if (!ws || error) {
+    return (
+      <main className="mx-auto w-full max-w-3xl space-y-6 px-6 py-8">
+        <PageHeader title={t("overview")} />
+        <ReadFailure
+          error={error}
+          fallback={t("workspaceUnavailable")}
+          busy={fetching}
+          retry={refresh}
+        />
+      </main>
+    );
+  }
+  return <WorkspaceOverview key={`${user?.id}:${ws.id}:${ws.role}`} ws={ws} />;
+}
+
+function WorkspaceOverview({ ws }: { ws: WorkspaceRef }) {
+  const t = useTranslations("settings");
   const canManage = ws.role === "owner" || ws.role === "admin";
   const isOwner = ws.role === "owner";
 
@@ -66,7 +85,7 @@ export default function OverviewSettingsPage() {
 
       <MembersPanel ws={ws} canManage={canManage} />
 
-      <CreditsSummaryPanel />
+      <CreditsSummaryPanel ws={ws} />
 
       {!ws.isDefault && isOwner && <DangerZone ws={ws} />}
     </main>
@@ -81,17 +100,24 @@ function TeamNamePanel({ ws, editable }: { ws: WorkspaceRef; editable: boolean }
   const [name, setName] = useState(ws.name);
   const [committed, setCommitted] = useState(ws.name);
   const dirty = name.trim().length > 0 && name.trim() !== committed;
+  const owner = useOperationOwner();
 
   const renameMut = useMutation({
-    mutationFn: () => updateWorkspace(ws.id, { name: name.trim() }),
+    mutationFn: () => {
+      if (!editable) throw new Error(t("couldntUpdateName"));
+      return updateWorkspace(ws.id, { name: name.trim() }, owner.signal());
+    },
     onSuccess: (updated) => {
+      if (!owner.current()) return;
       setCommitted(updated.name);
       setName(updated.name);
       refresh();
       void queryClient.invalidateQueries({ queryKey: ["fizzstudio", "workspaces"] });
       toast.success(t("workspaceNameUpdated"));
     },
-    onError: (e) => toast.error(errMsg(e, t("couldntUpdateName"))),
+    onError: (e) => {
+      if (owner.current()) toast.error(errMsg(e, t("couldntUpdateName")));
+    },
   });
 
   return (
@@ -100,7 +126,7 @@ function TeamNamePanel({ ws, editable }: { ws: WorkspaceRef; editable: boolean }
         className="flex items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (dirty && !renameMut.isPending) renameMut.mutate();
+          if (editable && dirty && !renameMut.isPending) renameMut.mutate();
         }}
       >
         <Input
@@ -124,9 +150,17 @@ function TeamNamePanel({ ws, editable }: { ws: WorkspaceRef; editable: boolean }
 function MembersPanel({ ws, canManage }: { ws: WorkspaceRef; canManage: boolean }) {
   const t = useTranslations("settings");
   const router = useRouter();
-  const { data: members } = useQuery({
-    queryKey: ["share-members", "workspace", ws.id] as const,
-    queryFn: () => listWorkspaceMembers(ws.id),
+  const { user } = useAuth();
+  const {
+    data: members,
+    error,
+    isPending,
+    isFetching,
+    refetch,
+  } = useQuery({
+    queryKey: ["share-members", "workspace", ws.id, user?.id] as const,
+    queryFn: ({ signal }) => listWorkspaceMembers(ws.id, signal),
+    enabled: Boolean(user),
   });
   const count = members?.length ?? 0;
 
@@ -135,45 +169,64 @@ function MembersPanel({ ws, canManage }: { ws: WorkspaceRef; canManage: boolean 
       title={members ? t("teamMembersWithCount", { count }) : t("teamMembers")}
       icon={<IconUsers className="size-4 text-muted-foreground" />}
     >
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5">
-          {(members ?? []).slice(0, 6).map((m) =>
-            m.avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element -- external avatar URL
-              <img
-                key={m.memberId}
-                src={m.avatar}
-                alt=""
-                className="size-8 rounded-full object-cover"
-              />
-            ) : (
-              <LetterAvatar key={m.memberId} name={m.nickname ?? m.userId} />
-            )
-          )}
-          {count === 0 && (
-            <span className="text-sm text-muted-foreground">{t("noMembersYet")}</span>
-          )}
+      {error ? (
+        <ReadFailure
+          error={error}
+          fallback={t("membersLoadFailed")}
+          busy={isFetching}
+          retry={() => void refetch()}
+        />
+      ) : isPending ? (
+        <Skeleton className="h-8 w-40 rounded-lg" />
+      ) : (
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            {(members ?? []).slice(0, 6).map((m) =>
+              m.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element -- external avatar URL
+                <img
+                  key={m.memberId}
+                  src={m.avatar}
+                  alt=""
+                  className="size-8 rounded-full object-cover"
+                />
+              ) : (
+                <LetterAvatar key={m.memberId} name={m.nickname ?? m.userId} />
+              )
+            )}
+            {count === 0 && (
+              <span className="text-sm text-muted-foreground">{t("noMembersYet")}</span>
+            )}
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {canManage && (
+              <Button onClick={() => router.push("/settings/members")}>{t("inviteMembers")}</Button>
+            )}
+            <Button variant="secondary" onClick={() => router.push("/settings/members")}>
+              {t("manageAccess")}
+            </Button>
+          </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          {canManage && (
-            <Button onClick={() => router.push("/settings/members")}>{t("inviteMembers")}</Button>
-          )}
-          <Button variant="secondary" onClick={() => router.push("/settings/members")}>
-            {t("manageAccess")}
-          </Button>
-        </div>
-      </div>
+      )}
     </Panel>
   );
 }
 
-function CreditsSummaryPanel() {
+function CreditsSummaryPanel({ ws }: { ws: WorkspaceRef }) {
   const t = useTranslations("settings");
   const router = useRouter();
-  const { data: balance } = useComputeWalletBalance();
+  const { data: balance, error, isFetching, refetch } = useComputeWalletBalance(true, ws.id);
 
   return (
     <Panel title={t("credits")} icon={<IconBolt className="size-4 text-muted-foreground" />}>
+      {error && (
+        <ReadFailure
+          error={error}
+          fallback={t("creditsLoadFailed")}
+          busy={isFetching}
+          retry={() => void refetch()}
+        />
+      )}
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-1.5 text-2xl font-semibold tabular-nums">
@@ -201,10 +254,12 @@ function DangerZone({ ws }: { ws: WorkspaceRef }) {
   const { workspaces, setActiveWorkspaceId, refresh } = useWorkspace();
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const owner = useOperationOwner();
 
   const deleteMut = useMutation({
-    mutationFn: () => deleteWorkspace(ws.id),
+    mutationFn: () => deleteWorkspace(ws.id, owner.signal()),
     onSuccess: () => {
+      if (!owner.current()) return;
       const next = workspaces.find((w) => w.isDefault);
       if (next) setActiveWorkspaceId(next.id);
       refresh();
@@ -213,7 +268,9 @@ function DangerZone({ ws }: { ws: WorkspaceRef }) {
       setConfirmOpen(false);
       router.push("/settings/overview");
     },
-    onError: (e) => toast.error(errMsg(e, t("couldntDeleteTeam"))),
+    onError: (e) => {
+      if (owner.current()) toast.error(errMsg(e, t("couldntDeleteTeam")));
+    },
   });
 
   return (
@@ -247,4 +304,51 @@ function DangerZone({ ws }: { ws: WorkspaceRef }) {
       </Dialog>
     </Panel>
   );
+}
+
+function ReadFailure({
+  error,
+  fallback,
+  busy,
+  retry,
+}: {
+  error: unknown;
+  fallback: string;
+  busy: boolean;
+  retry: () => void;
+}) {
+  const t = useTranslations("common");
+  return (
+    <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+      <span>{errMsg(error, fallback)}</span>
+      <Button variant="secondary" size="sm" disabled={busy} onClick={retry}>
+        {t("retry")}
+      </Button>
+    </div>
+  );
+}
+
+/** Requests and completion effects belong to the mounted account/workspace. */
+function useOperationOwner() {
+  const { user, isCurrentAccount } = useAuth();
+  const controller = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    const next = new AbortController();
+    controller.current = next;
+    return () => next.abort();
+  }, []);
+  const current = () =>
+    Boolean(
+      user?.id != null &&
+      isCurrentAccount(user.id) &&
+      controller.current &&
+      !controller.current.signal.aborted
+    );
+  return {
+    current,
+    signal: () => {
+      if (!current()) throw new DOMException("Workspace session changed", "AbortError");
+      return controller.current!.signal;
+    },
+  };
 }

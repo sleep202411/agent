@@ -134,3 +134,16 @@ it("aborts an abandoned status read on sign-out", async () => {
   await render();
   expect(signal.aborted).toBe(true);
 });
+
+it("keeps a failed status read visible and recovers to the claim flow", async () => {
+  h.status.mockRejectedValueOnce(new Error("Check-in unavailable"));
+  await render();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Check-in unavailable");
+  expect(host.textContent).not.toContain("checkIn.claim");
+  await act(async () => click());
+  await render();
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(host.textContent).toContain("checkIn.claim");
+  await act(async () => click());
+  expect(h.claim).toHaveBeenCalledOnce();
+});

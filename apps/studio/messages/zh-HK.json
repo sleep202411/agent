@@ -1,4 +1,14 @@
 {
+  "generationSubmission": {
+    "pending": "上一次生成請求尚未確認。請檢查狀態或重試原請求，再建立新任務。",
+    "notFoundYet": "暫未找到對應任務，這不代表請求已失敗。",
+    "lookupFailed": "無法檢查原請求。",
+    "storageUnavailable": "生成恢復儲存不可用。",
+    "submissionFailed": "生成提交失敗。",
+    "check": "檢查狀態",
+    "checking": "檢查中…",
+    "retryOriginal": "重試原請求"
+  },
   "canvasDownload": {
     "failed": "無法開始下載。請重試，或開啟來源檔案手動儲存。",
     "openSource": "開啟來源檔案",
@@ -1929,9 +1939,11 @@
       "claimed": "已領取",
       "success": "已到帳 {amount} 算力積分",
       "alreadyClaimed": "你已領取過此活動",
-      "error": "無法領取此活動"
+      "error": "無法領取此活動",
+      "loadError": "無法載入積分優惠。"
     },
     "checkIn": {
+      "loadError": "無法載入每日簽到。",
       "title": "每日簽到",
       "streak": "已連續簽到 {days} 天",
       "start": "簽到開啟連續獎勵",
@@ -1967,7 +1979,10 @@
     "couldntDeleteTeam": "無法刪除空間",
     "deleteTeamConfirmTitle": "刪除「{name}」？",
     "deleteTeamConfirmBody": "所有成員將失去存取權限，空間的專案將被封存。此操作無法復原。",
-    "workspace": "工作空間"
+    "workspace": "工作空間",
+    "workspaceUnavailable": "此工作空間暫不可用。請重試或選擇其他工作空間。",
+    "membersLoadFailed": "無法載入團隊成員。",
+    "creditsLoadFailed": "無法載入積分。"
   },
   "project": {
     "renameFailed": "無法重新命名專案",
@@ -3272,6 +3287,7 @@
         "unsupportedMedia": "片段只能使用圖片或影片媒體。"
       },
       "exportFilm": "合成成片",
+      "cancelExport": "取消匯出",
       "downloadFilm": "下載到本機"
     },
     "canvas": {
@@ -3338,7 +3354,7 @@
         "draftConflict": "故事有未合併的更新，請先處理衝突後再提交。",
         "projectLoading": "專案仍在載入。",
         "statusChecking": "正在查詢發佈狀態…",
-        "statusUnavailable": "暫時無法取得發佈狀態，請重新整理後再試。",
+        "statusUnavailable": "發佈狀態不可用。點擊狀態標記查看錯誤並重試。",
         "reviewingLocked": "目前專案已在審核中。",
         "publishedUpdateLocked": "提交更新前請先將專案下線。",
         "status": {
@@ -3407,7 +3423,8 @@
           "submitStatusInvalid": "Java 未確認該版本已進入審核。",
           "offlineFailed": "無法下線這部影遊。",
           "unexpected": "無法提交目前版本。"
-        }
+        },
+        "retryStatus": "重試取得發佈狀態"
       },
       "workingPreview": {
         "pageTitle": "故事試玩 · 影遊工作室",
@@ -3832,6 +3849,7 @@
           "loading": "分鏡載入中…",
           "open": "編輯分鏡",
           "openError": "無法打開分鏡。",
+          "loadError": "無法載入分鏡",
           "linkTask": "關聯任務",
           "createTask": "建立任務",
           "linkedTask": "已關聯任務",
@@ -4178,6 +4196,13 @@
     "start": "開始試玩",
     "restart": "重新開始",
     "regionLabel": "互動故事試玩",
+    "playback": {
+      "pause": "暫停",
+      "resume": "繼續播放",
+      "paused": "已暫停",
+      "continuePlaying": "點擊繼續播放",
+      "interrupted": "此裝置需要點擊才能繼續播放。"
+    },
     "videoLabel": "畫面 {nodeId} 的故事影片",
     "continue": "繼續",
     "noVisibleChoices": "目前故事狀態下沒有可用選擇。",
@@ -4187,15 +4212,7 @@
     "runtimeError": "試玩無法繼續",
     "mediaError": "無法播放凍結媒體資產 {assetId}。",
     "video": {
-      "play": "播放",
-      "pause": "暫停",
-      "mute": "靜音",
-      "unmute": "取消靜音",
-      "volume": "音量",
-      "enterFullscreen": "進入全屏",
-      "exitFullscreen": "退出全屏",
-      "seekForward": "快進",
-      "seekBackward": "快退"
+      "unmute": "取消靜音"
     },
     "emptySequence": "暫無影片",
     "loadingMedia": "正在載入影片",
@@ -4208,8 +4225,6 @@
       "backward": "向後移動",
       "left": "向左移動",
       "right": "向右移動",
-      "pause": "暫停世界",
-      "resume": "繼續世界",
       "finish": "結束世界體驗"
     }
   },

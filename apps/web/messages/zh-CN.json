@@ -2111,6 +2111,8 @@
     "unknown": "未知角色"
   },
   "news": {
+    "loadMore": "加载更多文章",
+    "loadingMore": "正在加载文章…",
     "title": "FizzDragon 新闻中心",
     "subtitle": "AI 原生电影工作室的故事、访谈与公告。",
     "subscribePlaceholder": "输入你的邮箱",
@@ -4025,7 +4027,7 @@
     "inviteMember": "邀请成员",
     "addMemberDialogEyebrow": "STORYOS / 剧组",
     "addMemberDialogTitle": "邀请成员",
-    "addMemberDialogSubtitle": "通过对方注册的手机号或邮箱发送邀请；接受后才会获得剧组权限。",
+    "addMemberDialogSubtitle": "通过对方注册的手机号、邮箱或用户 ID 发送邀请；接受后才会获得剧组权限。",
     "addMemberContactLabel": "手机号 / 邮箱",
     "addMemberContactPlaceholder": "13800000000 或 user@example.com",
     "addMemberAccessLabel": "权限模板",
@@ -4600,7 +4602,12 @@
     "createJobSalaryAmountError": "请输入 0 至 100,000,000 之间的有效报酬金额，或留空。",
     "useTaskBrief": "使用任务说明",
     "publicBriefHelp": "发布前请确认公开工作说明，包含交付内容、要求和验收标准，最多10,000字。",
-    "publicBriefTooLong": "请将公开说明缩短至10,000字以内，完整任务说明不受影响。"
+    "publicBriefTooLong": "请将公开说明缩短至10,000字以内，完整任务说明不受影响。",
+    "addMemberLookupBy": "查询方式",
+    "addMemberUserIdLabel": "用户 ID",
+    "addMemberUserIdHint": "输入对方的数字用户 ID。",
+    "addMemberUserIdInvalid": "请输入 1–18 位数字用户 ID。",
+    "addMemberLookupRetry": "重试查询"
   },
   "crewAssets": {
     "title": "剧组资产中心",
@@ -6411,6 +6418,13 @@
     "identityOwnsFull": "已购整套"
   },
   "payment": {
+    "paymentConfirmedDesc": "您的付款已确认。",
+    "paymentUnconfirmed": "付款尚未确认",
+    "paymentUnconfirmedDesc": "请先重新查询订单状态，再发起新的付款。",
+    "checkAgain": "重新查询",
+    "missingOrder": "缺少订单号",
+    "missingOrderDesc": "请打开付款确认链接以查询订单。",
+    "backToStudio": "返回工作室",
     "upgrade": "升级套餐",
     "credits": "积分充值",
     "wechatPay": "微信支付",
@@ -8183,6 +8197,20 @@
       "completedToast": "订单已完成。",
       "cancelledToast": "订单已取消。",
       "failed": "操作失败。"
+    },
+    "list": {
+      "title": "服务订单",
+      "signInRequired": "登录后查看您的订单。",
+      "role": "您的身份",
+      "allRoles": "购买与接单",
+      "buying": "我购买的",
+      "selling": "我承接的",
+      "status": "状态",
+      "allStatuses": "全部状态",
+      "empty": "没有符合筛选条件的订单。",
+      "unread": "{count} 条未读",
+      "loadMore": "加载更多",
+      "back": "返回订单"
     }
   },
   "fizzStudio": {
@@ -9034,6 +9062,18 @@
     "sbComposerCollapse": "收起面板",
     "sbComposerWebSearch": "联网搜索",
     "sbComposerAutoValidate": "自动校验素材",
+    "sbPanoramaLoadFailed": "无法加载此全景图，请重试。",
+    "sbCanvasModelUnavailable": "此模型不可用或已更改。请选择模型并检查设置。",
+    "sbCanvasInvalidSettings": "请检查这些设置：{fields}。",
+    "sbCanvasReferenceUnavailable": "所选图片参考不可用。请选择支持的参考字段或不使用参考图。",
+    "sbCanvasCatalogFailed": "无法加载生成模型。",
+    "sbCanvasReferenceField": "关联图片用途",
+    "sbCanvasStartFrame": "首帧",
+    "sbCanvasEndFrame": "尾帧",
+    "sbCanvasReferenceImage": "参考图片",
+    "sbCanvasNoReference": "不使用参考图",
+    "sbPanoramaEmpty": "暂无全景图。输入提示词以生成全景图。",
+    "sbPanoramaReferencePreview": "参考图预览",
     "sbPanoramaTitle": "720°全景图",
     "sbPanoramaOpenViewer": "打开全景查看器",
     "sbPanoramaStyle": "风格",
@@ -9436,21 +9476,20 @@
     "noVisibleChoices": "当前故事状态下没有可用选项。",
     "continue": "继续",
     "regionLabel": "影游播放器",
+    "playback": {
+      "pause": "暂停",
+      "resume": "继续播放",
+      "paused": "已暂停",
+      "continuePlaying": "点击继续播放",
+      "interrupted": "此设备需要点击才能继续播放。"
+    },
     "chapters": "章节",
     "loadErrorTitle": "当前体验不可用",
     "loadErrorDescription": "已发布版本未通过播放器完整性校验，服务返回的信息如下。",
     "loadErrorUnknown": "无法加载已发布的互动体验。",
     "returnToGames": "返回游戏列表",
     "video": {
-      "play": "播放",
-      "pause": "暂停",
-      "mute": "静音",
-      "unmute": "取消静音",
-      "volume": "音量",
-      "enterFullscreen": "进入全屏",
-      "exitFullscreen": "退出全屏",
-      "seekForward": "快进",
-      "seekBackward": "快退"
+      "unmute": "取消静音"
     },
     "share": "分享",
     "shareCopied": "链接已复制",
@@ -9470,7 +9509,8 @@
       "unlock": "解锁并继续",
       "unlocking": "解锁中…",
       "failed": "解锁失败，请重试。"
-    }
+    },
+    "retryReport": "重试保存游玩报告"
   },
   "games": {
     "back": "返回 IP 广场",
@@ -10961,7 +11001,18 @@
     "searchHint": "搜索当前列表中已加载的会话。",
     "details": "申请详情",
     "message": "消息",
-    "messagePlaceholder": "输入消息…"
+    "messagePlaceholder": "输入消息…",
+    "applicant": "申请人",
+    "profileLoading": "正在加载个人资料…",
+    "retryProfile": "重新加载资料",
+    "qualifications": "资质认证",
+    "noQualifications": "暂无资质认证",
+    "pastWork": "过往作品",
+    "viewPortfolio": "查看作品集",
+    "worksLoading": "正在加载作品…",
+    "retryWorks": "重新加载作品",
+    "noPastWork": "暂无公开作品",
+    "untitledWork": "未命名作品"
   },
   "contentGpsOwner": {
     "title": "IP地点",
@@ -11341,7 +11392,15 @@
     "none": "尚未关联",
     "loading": "加载中…",
     "more": "加载更多",
-    "retry": "重试"
+    "retry": "重试",
+    "linkIp": "关联 IP",
+    "selectIp": "选择 IP",
+    "linkIpHint": "选择您管理的 IP，将其关联到此剧组。",
+    "noOwnedIps": "暂无可编辑的 IP。",
+    "linkedElsewhere": "此 IP 已关联其他剧组。确认后将改为关联此剧组。",
+    "confirmLink": "确认关联",
+    "filmsHint": "互动游戏发布并确认 IP 关联后会显示在此处。",
+    "openStudio": "打开 Studio"
   },
   "crewTaskContext": {
     "creator": "主创成员",
@@ -11373,5 +11432,17 @@
       "vlog": "视频日志"
     },
     "filters": "筛选"
+  },
+  "generationSubmission": {
+    "pending": "上一次生成请求尚未确认。请检查状态或重试原请求，再创建新任务。",
+    "notFoundYet": "暂未找到对应任务，这不代表请求已失败。",
+    "lookupFailed": "无法检查原请求。",
+    "storageUnavailable": "生成恢复存储不可用。",
+    "submissionFailed": "生成提交失败。",
+    "check": "检查状态",
+    "checking": "检查中…",
+    "retryOriginal": "重试原请求",
+    "targetRemoved": "已找回生成任务。原画布项目已被删除。",
+    "signInRequired": "请先登录并选择工作空间，再生成内容。"
   }
 }

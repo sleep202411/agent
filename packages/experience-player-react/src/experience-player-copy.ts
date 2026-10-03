@@ -1,13 +1,19 @@
 export interface ExperiencePlayerVideoCopy {
-  play: string;
-  pause: string;
-  mute: string;
   unmute: string;
-  volume: string;
-  enterFullscreen: string;
-  exitFullscreen: string;
-  seekForward: string;
-  seekBackward: string;
+}
+
+/** The film frame's own playback controls: the pause toggle and the paused frame. */
+export interface ExperiencePlayerPlaybackCopy {
+  /** The toggle while the film plays. */
+  pause: string;
+  /** The toggle, and the paused frame, while the film is paused. */
+  resume: string;
+  /** Announced to assistive tech while the film is paused. */
+  paused: string;
+  /** The paused frame's button once the device would not play without a tap. */
+  continuePlaying: string;
+  /** The line under that button: why it is there. */
+  interrupted: string;
 }
 
 export interface ExperiencePlayerCopy {
@@ -21,6 +27,7 @@ export interface ExperiencePlayerCopy {
   playAgain: string;
   runtimeError: string;
   restart: string;
+  retryReport?: string;
   mediaError: (assetId: string) => string;
   videoLabel: (rendererInstanceId: string) => string;
   /**
@@ -35,4 +42,5 @@ export interface ExperiencePlayerCopy {
   continue: string;
   regionLabel: string;
   video: ExperiencePlayerVideoCopy;
+  playback: ExperiencePlayerPlaybackCopy;
 }

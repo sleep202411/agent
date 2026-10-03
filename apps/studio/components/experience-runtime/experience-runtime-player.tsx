@@ -3,11 +3,10 @@
 import { useMemo } from "react";
 import {
   ExperiencePlayer,
-  type ExperienceAccessCheckpoint,
   type ExperiencePlayerCopy,
   type ExperiencePlayerProps,
 } from "@repo/experience-player-react";
-import { initializeExperienceRuntime, type PlaySessionReporter } from "@repo/experience-engine";
+import type { PlaySessionReporter } from "@repo/experience-engine";
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useTranslations } from "next-intl";
 import type { StoryFrameProfile } from "@/lib/story-projects-api";
@@ -29,8 +28,8 @@ export function ExperienceRuntimePlayer({
   coverUrl?: string | null;
   /**
    * Authoring playtest hook: walk the compiled story from one chosen scene
-   * instead of the entry. Rendered as a restored initial state plus the same
-   * scene.entered event controller.start() dispatches.
+   * instead of the entry — on every run, so Restart and Play again come back
+   * to it too.
    */
   startSceneId?: string | null;
   onStateChange?: ExperiencePlayerProps["onStateChange"];
@@ -38,18 +37,15 @@ export function ExperienceRuntimePlayer({
 }) {
   const t = useTranslations("experiencePlayer");
   const { access, dialog } = useStoryPreviewAccess(locale);
-  const accessCheckpoint = useMemo<ExperienceAccessCheckpoint | undefined>(() => {
+  // A scene the runtime no longer has — a link to one since deleted — plays
+  // from the story's entry instead.
+  const startScene = useMemo(() => {
     if (!startSceneId) return undefined;
     const parsed = ExperienceRuntimeManifestSchema.safeParse(runtime);
     if (!parsed.success) return undefined;
-    if (!parsed.data.graph.nodes.some((node) => node.sceneId === startSceneId)) {
-      return undefined;
-    }
-    const initial = initializeExperienceRuntime(parsed.data);
-    return {
-      state: { ...initial, currentSceneId: startSceneId },
-      events: [{ type: "scene.entered", sourceId: startSceneId, payload: {} }],
-    };
+    return parsed.data.graph.nodes.some((node) => node.sceneId === startSceneId)
+      ? startSceneId
+      : undefined;
   }, [runtime, startSceneId]);
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
@@ -70,16 +66,13 @@ export function ExperienceRuntimePlayer({
       noVisibleChoices: t("noVisibleChoices"),
       continue: t("continue"),
       regionLabel: t("regionLabel"),
-      video: {
-        play: t("video.play"),
-        pause: t("video.pause"),
-        mute: t("video.mute"),
-        unmute: t("video.unmute"),
-        volume: t("video.volume"),
-        enterFullscreen: t("video.enterFullscreen"),
-        exitFullscreen: t("video.exitFullscreen"),
-        seekForward: t("video.seekForward"),
-        seekBackward: t("video.seekBackward"),
+      video: { unmute: t("video.unmute") },
+      playback: {
+        pause: t("playback.pause"),
+        resume: t("playback.resume"),
+        paused: t("playback.paused"),
+        continuePlaying: t("playback.continuePlaying"),
+        interrupted: t("playback.interrupted"),
       },
     }),
     [t]
@@ -97,7 +90,7 @@ export function ExperienceRuntimePlayer({
         }
         copy={copy}
         renderWorldModel={(props) => <WorldModelExperienceRenderer {...props} />}
-        accessCheckpoint={accessCheckpoint}
+        startSceneId={startScene}
         onStateChange={onStateChange}
         playSessionReporter={playSessionReporter}
       />

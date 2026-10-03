@@ -59,11 +59,17 @@ export function CanvasProjectsGrid() {
   const tc = useTranslations("common");
   const ts = useTranslations("project.sections");
   const router = useRouter();
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
+  const {
+    activeWorkspace,
+    loading: workspaceLoading,
+    error: workspaceError,
+    fetching: workspaceFetching,
+    refresh: refreshWorkspace,
+  } = useWorkspace();
   const searchParams = useSearchParams();
   const requestedWorkspaceId = searchParams.get("ws");
   const initialDescription = searchParams.get("prompt")?.trim() || undefined;
-  const workspaceId = activeWorkspace?.id ?? null;
+  const workspaceId = workspaceError || workspaceLoading ? null : (activeWorkspace?.id ?? null);
   const [projects, setProjects] = useState<ProjectRef[] | null>(null);
   const [renaming, setRenaming] = useState<ProjectRef | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -217,11 +223,17 @@ export function CanvasProjectsGrid() {
     }
   }, [renaming, renameValue, refresh, t]);
 
-  if (requestedWorkspaceId && !workspaceLoading && !activeWorkspace) {
+  if (!workspaceLoading && (workspaceError || (requestedWorkspaceId && !activeWorkspace))) {
     return (
-      <p role="alert" className="py-8 text-sm text-muted-foreground">
-        {t("workspaceUnavailable")}
-      </p>
+      <div
+        role="alert"
+        className="mt-6 flex items-center justify-between gap-4 rounded-xl bg-muted p-4 text-sm"
+      >
+        <span>{workspaceError?.message || t("workspaceUnavailable")}</span>
+        <Button variant="secondary" disabled={workspaceFetching} onClick={() => refreshWorkspace()}>
+          {tc("retry")}
+        </Button>
+      </div>
     );
   }
 

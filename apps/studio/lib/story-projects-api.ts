@@ -854,7 +854,8 @@ export async function listStoryReferenceSlots(projectId: string): Promise<StoryR
 export async function createStoryReferenceSlots(
   projectId: string,
   input: { slots: StoryReferenceSlotSpec[] },
-  idempotencyKey: string
+  idempotencyKey: string,
+  signal?: AbortSignal
 ): Promise<StoryReferenceSlot[]> {
   return api.post<StoryReferenceSlot[]>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots`,
@@ -862,6 +863,7 @@ export async function createStoryReferenceSlots(
       data: input,
       headers: storyIdempotencyHeaders(idempotencyKey),
       requestScope: "project",
+      signal,
     }
   );
 }
@@ -882,11 +884,12 @@ export async function updateStoryReferenceSlot(
   input: {
     expectedSlotVersion: number;
     slot: StoryReferenceSlotSpec;
-  }
+  },
+  signal?: AbortSignal
 ): Promise<StoryReferenceSlot> {
   return api.put<StoryReferenceSlot>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}`,
-    { data: input, requestScope: "project" }
+    { data: input, requestScope: "project", signal }
   );
 }
 
@@ -901,7 +904,8 @@ export async function createStoryReferenceVersion(
     promptSnapshot?: Record<string, unknown>;
     configSnapshot?: Record<string, unknown>;
   },
-  idempotencyKey: string
+  idempotencyKey: string,
+  signal?: AbortSignal
 ): Promise<StoryReferenceVersion> {
   return api.post<StoryReferenceVersion>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/versions`,
@@ -909,6 +913,7 @@ export async function createStoryReferenceVersion(
       data: input,
       headers: storyIdempotencyHeaders(idempotencyKey),
       requestScope: "project",
+      signal,
     }
   );
 }
@@ -922,11 +927,12 @@ export async function reviewStoryReferenceVersion(
     decision: StoryReviewDecision;
     checklist: StoryReferenceReviewChecklist;
     comment?: string;
-  }
+  },
+  signal?: AbortSignal
 ): Promise<{ reference: StoryReferenceVersion; review: StoryReview }> {
   return api.post<{ reference: StoryReferenceVersion; review: StoryReview }>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/versions/${encodeURIComponent(referenceVersionId)}/reviews`,
-    { data: input, requestScope: "project" }
+    { data: input, requestScope: "project", signal }
   );
 }
 
@@ -937,11 +943,12 @@ export async function approveStoryReferenceVersion(
     expectedSlotVersion: number;
     referenceVersionId: string;
     approveReviewId: string;
-  }
+  },
+  signal?: AbortSignal
 ): Promise<StoryReferenceSlot> {
   return api.post<StoryReferenceSlot>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/approval`,
-    { data: input, requestScope: "project" }
+    { data: input, requestScope: "project", signal }
   );
 }
 

@@ -82,7 +82,7 @@ vi.mock("@tanstack/react-query", () => ({
                     number: 1,
                     crew: { id: "crew-a", name: "Crew A" },
                     status: "open",
-                    workflowState: { name: "Open", systemKey: "open", semantic: "open" },
+                    workflowState: { name: "To do", systemKey: "open", semantic: "open" },
                     priority: "normal",
                     dueAt: null,
                   },

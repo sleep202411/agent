@@ -1,5 +1,7 @@
 "use client";
 
+import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
+
 import {
   Sheet,
   SheetContent,
@@ -75,9 +77,7 @@ export function TaskTrackingCard({
         <span
           className={`rounded-full px-3 py-1 text-xs ${task.status === "approved" ? "bg-green-500/10 text-green-400" : task.status === "submitted" ? "bg-sky-500/10 text-sky-400" : task.status === "revision_requested" ? "bg-red-500/10 text-red-400" : "bg-white/5 text-muted-foreground"}`}
         >
-          {task.workflowState.systemKey
-            ? taskT(`status.${task.workflowState.systemKey}`)
-            : task.workflowState.name}
+          {workflowStateLabel(task.workflowState, taskT)}
         </span>
         {task.canSubmit && action !== "submit" ? (
           <Button

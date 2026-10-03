@@ -9,10 +9,8 @@
  * portfolio-style content (services / works / certificates / IPs /
  * crews) and removes one tab from the bar entirely.
  *
- * Edit affordances: each ownable section carries a pencil that opens
- * the same ProfileEditDialog the hero "Edit profile" CTA used to. The
- * dialog is a multi-field surface so any pencil opens the whole sheet
- * — close-by-context, single source of truth.
+ * Profile, biography and education share the profile editor. Work
+ * experience owns its entry editor and deletion confirmation.
  *
  * No `sticky` modifier here: the rail can run longer than the viewport
  * once a creator fills in their resume, and a half-clipped sticky rail
@@ -23,7 +21,6 @@
 import { useMemo, useState } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
-  IconBriefcase,
   IconCertificate,
   IconCircleCheck,
   IconEdit,
@@ -38,13 +35,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { parseEducation, type EducationEntry } from "@/src/services/user";
-import {
-  useCreatorExperience,
-  type Creator,
-  type CreatorLevel,
-} from "@/app/(site)/creators/_hooks/use-creator";
+import { type Creator, type CreatorLevel } from "@/app/(site)/creators/_hooks/use-creator";
 import { useCreatorCertificates } from "@/app/(site)/creators/_hooks/use-certificates";
-import type { ExperienceEntry } from "@/app/(site)/profile/_hooks/use-profile-extras";
+import { CreatorExperience } from "./creator-experience";
 import { LevelApplyDialog } from "@/app/(site)/creators/_components/center/dialogs/level-apply-dialog";
 import { IpPublisherLogos } from "@/components/ip-commerce/ip-publisher-logos";
 import type { IpPublisherPublic } from "@/src/lib/ip-commerce/api";
@@ -56,7 +49,7 @@ interface CreatorLeftRailProps {
   /**
    * Owner clicked any per-section edit pencil — parent opens the
    * ProfileEditDialog. Every card that carries the pencil (profile
-   * info / bio / education / experience) shares the one callback
+   * info / bio / education) shares the one callback
    * because the dialog covers the whole profile, not per-field. The
    * info card qualifies through its verification row: that reads off
    * `contact`, which is one of the fields the dialog edits.
@@ -79,7 +72,6 @@ export function CreatorLeftRail({
   const t = useTranslations("creatorCenter");
   const securityT = useTranslations("accountSecurity");
   const locale = useLocale() as Locale;
-  const { data: experience } = useCreatorExperience(creator.id);
   const { data: certificates = [] } = useCreatorCertificates(creator.id);
   const [levelApplyOpen, setLevelApplyOpen] = useState(false);
   const joined = formatJoined(creator.joinedAt);
@@ -103,7 +95,6 @@ export function CreatorLeftRail({
 
   const bio = (creator.bio || "").trim();
   const education = parseEducation(creator.study);
-  const experiences = (experience ?? []).filter((e): e is ExperienceEntry => !!e);
   const levels = Array.isArray(creator.levels) ? creator.levels.filter((l) => !!l?.name) : [];
 
   const editAction = isOwner ? (
@@ -213,19 +204,7 @@ export function CreatorLeftRail({
         )}
       </RailCard>
 
-      <RailCard title={t("about.experienceHeading")} action={editAction}>
-        {experiences.length === 0 ? (
-          <EmptyHint
-            body={isOwner ? t("about.experienceEmptyOwner") : t("about.experienceEmptyVisitor")}
-          />
-        ) : (
-          <ul className="space-y-3.5">
-            {experiences.map((e, i) => (
-              <ExperienceRow key={String(e.id ?? i)} entry={e} />
-            ))}
-          </ul>
-        )}
-      </RailCard>
+      <CreatorExperience creatorId={creator.id} isOwner={isOwner} />
 
       {topCertificate ? (
         <RailCard title={t("certificates.railHeading")}>
@@ -381,35 +360,6 @@ function EducationRow({ entry }: { entry: EducationEntry }) {
           ) : null}
         </div>
         {range ? <div className="mt-0.5 text-[11px] text-muted-foreground">{range}</div> : null}
-      </div>
-    </li>
-  );
-}
-
-function ExperienceRow({ entry }: { entry: ExperienceEntry }) {
-  const range = formatRange(entry.startTime, entry.endTime);
-  return (
-    <li className="flex items-start gap-3">
-      <div className="mt-0.5 flex size-7 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-        <IconBriefcase className="size-3.5" />
-      </div>
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="text-sm font-medium text-foreground">{entry.title || "—"}</span>
-          {entry.organization ? (
-            <span className="text-xs text-muted-foreground">· {entry.organization}</span>
-          ) : null}
-        </div>
-        {(range || entry.location) && (
-          <div className="text-[11px] text-muted-foreground">
-            {[range, entry.location].filter(Boolean).join(" · ")}
-          </div>
-        )}
-        {entry.description ? (
-          <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-            {entry.description}
-          </p>
-        ) : null}
       </div>
     </li>
   );

@@ -94,7 +94,8 @@ function mediaPlayerWithVideoProvider(play: () => Promise<void>): MediaPlayerIns
   return {
     provider: {
       type: "video",
-      media: { play },
+      media: { play, paused: true, ended: false },
     },
+    state: { currentTime: 0, duration: 5, ended: false, seekableEnd: 5 },
   } as unknown as MediaPlayerInstance;
 }

@@ -10,15 +10,22 @@ import { Button } from "@/components/ui/button";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { cn } from "@/lib/utils";
 import { listCreatorTextAdventures, textAdventureKeys } from "../_lib/text-adventure-api";
+import { TextAdventureAccount } from "./text-adventure-account";
 import { TextAdventureCreateDialog } from "./text-adventure-create-dialog";
 
 export function TextAdventuresLibrary() {
+  return (
+    <TextAdventureAccount>{(userId) => <OwnedLibrary userId={userId} />}</TextAdventureAccount>
+  );
+}
+
+function OwnedLibrary({ userId }: { userId: string }) {
   const t = useTranslations("textAdventures");
   const locale = useLocale();
   const [createOpen, setCreateOpen] = useState(false);
   const query = useQuery({
-    queryKey: textAdventureKeys.list(),
-    queryFn: listCreatorTextAdventures,
+    queryKey: textAdventureKeys.list(userId),
+    queryFn: ({ signal }) => listCreatorTextAdventures(signal),
   });
 
   return (
@@ -150,7 +157,7 @@ export function TextAdventuresLibrary() {
         </section>
       ) : null}
 
-      <TextAdventureCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <TextAdventureCreateDialog userId={userId} open={createOpen} onOpenChange={setCreateOpen} />
     </main>
   );
 }

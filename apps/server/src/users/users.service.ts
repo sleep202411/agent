@@ -89,12 +89,13 @@ export class UsersService {
 
   /**
    * Look up a single user by their Java user id. Returns the safe
-   * public projection (`isCrewMember`/`isCrewOwner` always null —
-   * by-id lookups don't carry a crew context). Null on not-found.
+   * public projection with fresh membership flags when checkCrewId is supplied.
+   * Null on not-found.
    */
   async lookupByUserId(
     userId: string,
     cookie: string,
+    checkCrewId?: string,
   ): Promise<LookupUserDTO | null> {
     const trimmed = userId.trim();
     if (!trimmed) return null;
@@ -106,13 +107,7 @@ export class UsersService {
       if (!raw) return null;
       await this.writeCache(cacheKey, raw);
     }
-    return {
-      userId: raw.userId,
-      nickname: raw.nickname,
-      avatar: await resolveUserAvatar(raw.avatar, raw.userId),
-      isCrewMember: null,
-      isCrewOwner: null,
-    };
+    return this.enrichWithCrewContext(raw, checkCrewId);
   }
 
   /**

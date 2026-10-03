@@ -1,4 +1,5 @@
 "use client";
+import { SubmissionRecoveryNotice, type SubmissionRecovery } from "./submission-recovery-notice";
 
 import { useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
@@ -57,6 +58,7 @@ import { useAuth } from "@/app/_components/auth-provider";
  * Cmd/Ctrl+Enter submits; `@` mentions reference uploads.
  */
 export function StudioComposer({
+  submissionRecovery,
   modality,
   catalog,
   prompt,
@@ -83,6 +85,7 @@ export function StudioComposer({
   docked = true,
   submitOnEnter = false,
 }: {
+  submissionRecovery?: SubmissionRecovery;
   modality: "image" | "video" | "audio";
   catalog: FizzAiCatalog | undefined;
   prompt: string;
@@ -340,6 +343,8 @@ export function StudioComposer({
         title={t("validationBlockedTitle")}
         message={error}
       />
+
+      <SubmissionRecoveryNotice recovery={submissionRecovery} />
 
       {/* Controls row */}
       <div className="mt-3 flex flex-wrap items-center gap-1.5">

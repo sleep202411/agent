@@ -186,7 +186,7 @@ export function readPublicCourseProgress(courseId: number, episodeCount?: number
 export function usePublicCourseList(searchQuery = "") {
   const { user } = useCurrentUser();
   const locale = useLocale() as Locale;
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["public-courses", locale, user?.id ?? "guest"],
     queryFn: ({ signal }) => listPublicCourses(locale, signal),
   });
@@ -197,7 +197,7 @@ export function usePublicCourseList(searchQuery = "") {
     [courses, searchQuery]
   );
 
-  return { isLoading, error, courses, filteredCourses };
+  return { isLoading, error, courses, filteredCourses, refetch, isFetching };
 }
 
 export function usePublicCourseDetail(courseIdParam: string | undefined) {
@@ -281,6 +281,10 @@ export function usePublicCourseDetail(courseIdParam: string | undefined) {
     isLoading: detailQuery.isLoading,
     error: detailQuery.error,
     playError: playQuery.error,
+    isFetching: detailQuery.isFetching,
+    retryDetail: validId == null ? undefined : detailQuery.refetch,
+    isPlayFetching: playQuery.isFetching,
+    retryPlayback: playQuery.refetch,
     detail: detailView,
     currentTitle: currentVideo?.title ?? course?.title ?? "",
     seriesVideoIds: videos.map((video) => video.id),

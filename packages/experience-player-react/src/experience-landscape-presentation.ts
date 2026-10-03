@@ -94,6 +94,8 @@ export interface ExperienceLandscapePresentation {
   readonly portrait: boolean;
   /** Fullscreen and the landscape lock both hold: the screen itself is turned. */
   readonly locked: boolean;
+  /** The player holds the screen, whether or not the lock held: no host UI shows around it. */
+  readonly fullscreen: boolean;
   /**
    * Asks the browser to turn the screen: fullscreen on the player, then a
    * landscape lock. Must run inside the viewer's click — both need the user
@@ -131,6 +133,7 @@ export function useLandscapePresentation(): ExperienceLandscapePresentation {
   const [phone, setPhone] = useState(false);
   const [portrait, setPortrait] = useState(false);
   const [locked, setLocked] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const sessionRef = useRef<LandscapeSession | null>(null);
 
   useEffect(() => {
@@ -156,6 +159,7 @@ export function useLandscapePresentation(): ExperienceLandscapePresentation {
     const session = sessionRef.current;
     sessionRef.current = null;
     setLocked(false);
+    setFullscreen(false);
     if (session) releaseLandscapeSession(session);
   }, []);
 
@@ -173,6 +177,7 @@ export function useLandscapePresentation(): ExperienceLandscapePresentation {
           releaseLandscapeSession(session);
           return;
         }
+        setFullscreen(true);
         const orientation = lockableScreenOrientation();
         if (!orientation) return;
         session.orientationLock = true;
@@ -196,6 +201,7 @@ export function useLandscapePresentation(): ExperienceLandscapePresentation {
       session.fullscreen = false;
       releaseLandscapeSession(session);
       setLocked(false);
+      setFullscreen(false);
     };
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
@@ -203,7 +209,7 @@ export function useLandscapePresentation(): ExperienceLandscapePresentation {
 
   useEffect(() => exit, [exit]);
 
-  return { phone, portrait, locked, enter, exit };
+  return { phone, portrait, locked, fullscreen, enter, exit };
 }
 
 function requestFullscreen(shell: HTMLElement): Promise<void> | null {

@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceSettingsGate } from "../_components/workspace-settings-gate";
+
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
@@ -24,12 +26,26 @@ import { CurrentPlanPanel } from "../_components/current-plan-panel";
  */
 export default function UsageSettingsPage() {
   const t = useTranslations("settings");
+  return (
+    <WorkspaceSettingsGate title={t("usageTitle")}>
+      <UsageSettingsPageContent />
+    </WorkspaceSettingsGate>
+  );
+}
+function UsageSettingsPageContent() {
+  const t = useTranslations("settings");
+  const common = useTranslations("common");
   const { user } = useAuth();
   const workspace = useActiveWorkspace();
   const canManageBilling =
     workspace?.role === "owner" || workspace?.role === "admin" || workspace?.role === "billing";
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const { data: credits } = useComputeWalletBalance(Boolean(user));
+  const {
+    data: credits,
+    error,
+    isFetching,
+    refetch,
+  } = useComputeWalletBalance(Boolean(user && workspace), workspace?.id);
   const { data } = useMyEntitlement();
 
   const limits = data?.entitlement.limits;
@@ -59,6 +75,22 @@ export default function UsageSettingsPage() {
         title={t("computeCredits")}
         icon={<IconBolt className="size-4 text-muted-foreground" />}
       >
+        {error && (
+          <div
+            role="alert"
+            className="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground"
+          >
+            <span>{error.message || t("creditsLoadFailed")}</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
+              {common("retry")}
+            </Button>
+          </div>
+        )}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
             <div className="text-2xl font-semibold tabular-nums text-foreground">

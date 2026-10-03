@@ -47,6 +47,7 @@ describe("interactive-film API", () => {
     });
     expect(api.get).toHaveBeenCalledWith("/api/user/interactive-film/project%2Fone", {
       requestScope: "user",
+      signal: undefined,
     });
   });
 
@@ -84,6 +85,7 @@ describe("interactive-film API", () => {
     expect(api.post).toHaveBeenNthCalledWith(3, "/api/user/interactive-film/project%2Fone/status", {
       data: { action: "submit" },
       requestScope: "user",
+      signal: undefined,
     });
   });
 
@@ -95,6 +97,20 @@ describe("interactive-film API", () => {
     expect(api.post).toHaveBeenCalledWith("/api/user/interactive-film/project%2Fone/status", {
       data: { action: "offline" },
       requestScope: "user",
+      signal: undefined,
     });
+  });
+
+  it("stops submission after release upload when its owner is abandoned", async () => {
+    const controller = new AbortController();
+    vi.mocked(api.post).mockImplementationOnce(async () => {
+      controller.abort();
+      return {};
+    });
+    await expect(
+      submitInteractiveFilmRelease(PROJECT_ID, release, controller.signal)
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.get).not.toHaveBeenCalled();
   });
 });

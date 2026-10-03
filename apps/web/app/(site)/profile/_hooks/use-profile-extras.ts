@@ -96,7 +96,10 @@ export function useCreateExperience() {
     mutationFn: (entry: ExperienceEntry) =>
       api.post(EXPERIENCE_CREATE_URL, { data: trimmedExperience(entry) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: profileExtrasKeys.experience });
+      return Promise.all([
+        qc.invalidateQueries({ queryKey: profileExtrasKeys.experience }),
+        qc.invalidateQueries({ queryKey: ["creator", "experience"] }),
+      ]);
     },
   });
 }
@@ -109,7 +112,10 @@ export function useUpdateExperience() {
       return api.post(EXPERIENCE_UPDATE_URL, { data: trimmedExperience(entry) });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: profileExtrasKeys.experience });
+      return Promise.all([
+        qc.invalidateQueries({ queryKey: profileExtrasKeys.experience }),
+        qc.invalidateQueries({ queryKey: ["creator", "experience"] }),
+      ]);
     },
   });
 }
@@ -117,9 +123,13 @@ export function useUpdateExperience() {
 export function useDeleteExperience() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string | number) => api.post(`/user/resumer/delete/${id}`),
+    mutationFn: (id: string | number) =>
+      api.post(`/user/resumer/delete/${encodeURIComponent(String(id))}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: profileExtrasKeys.experience });
+      return Promise.all([
+        qc.invalidateQueries({ queryKey: profileExtrasKeys.experience }),
+        qc.invalidateQueries({ queryKey: ["creator", "experience"] }),
+      ]);
     },
   });
 }

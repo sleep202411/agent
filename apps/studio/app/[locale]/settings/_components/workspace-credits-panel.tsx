@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { IconBolt, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -12,16 +12,14 @@ import {
   useComputeWalletBalance,
 } from "@/app/_components/credits-badge";
 import { type WorkspaceRef } from "@/lib/collab/projects-api";
-import {
-  createComputeCustomRecharge,
-  isWechatScanUrl,
-  redirectToComputePayment,
-} from "@/lib/billing";
+import { isWechatScanUrl, redirectToComputePayment } from "@/lib/billing";
 import { WechatScanPayDialog } from "@/app/_components/wechat-scan-pay-dialog";
 import { useIsCnSite } from "@/app/_components/region-provider";
 import { FIELD_CONTROL } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
+import { useAuth } from "@/app/_components/auth-provider";
+import { useRechargeAttempt } from "@/lib/use-recharge-attempt";
 import { Panel } from "./settings-ui";
 
 const errMsg = (e: unknown, fallback: string) =>
@@ -31,6 +29,7 @@ const CAN_MANAGE_BILLING = new Set(["owner", "admin", "billing"]);
 
 /** Shared compute credits for the selected workspace. */
 export function WorkspaceCreditsPanel({ ws }: { ws: WorkspaceRef }) {
+  const { user } = useAuth();
   const t = useTranslations("settings");
   const tc = useTranslations("common");
   const tw = useTranslations("shell.credits");
@@ -91,7 +90,7 @@ export function WorkspaceCreditsPanel({ ws }: { ws: WorkspaceRef }) {
         </div>
 
         {canRecharge ? (
-          <RechargeControls workspaceId={ws.id} />
+          <RechargeControls key={`${user?.id}:${ws.id}`} workspaceId={ws.id} />
         ) : (
           <p className="text-sm text-muted-foreground">{t("onlyBillingAdminsCanTopUp")}</p>
         )}
@@ -101,6 +100,8 @@ export function WorkspaceCreditsPanel({ ws }: { ws: WorkspaceRef }) {
 }
 
 function RechargeControls({ workspaceId }: { workspaceId: string }) {
+  const attempt = useRechargeAttempt();
+  const locale = useLocale();
   const t = useTranslations("settings");
   const queryClient = useQueryClient();
   // Compute credits are a CUSTOM-amount recharge on every cell — the only per-cell
@@ -118,39 +119,37 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
   } | null>(null);
 
   const urls = () => {
-    const base = typeof window !== "undefined" ? `${window.location.origin}/settings/billing` : "";
+    const base =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/${locale}/settings/billing?ws=${encodeURIComponent(workspaceId)}`
+        : "";
     return { successUrl: base, backUrl: base };
   };
 
-  const afterStart = async (
-    result: Awaited<ReturnType<typeof createComputeCustomRecharge>>,
-    successMessage: string
-  ) => {
-    // WeChat returns a weixin:// code_url — render it as a QR + poll the order
-    // instead of navigating the browser to it.
-    const scanUrl = result.paymentIntent?.checkoutUrl;
-    if (isWechatScanUrl(scanUrl)) {
-      setWechatScan({ orderId: result.order.id, codeUrl: scanUrl, successMessage });
-      return;
-    }
-    const outcome = await redirectToComputePayment(result, urls());
-    if (outcome === "fulfilled") {
-      void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
-      toast.success(successMessage);
-    }
-    // "redirecting" → the browser is navigating to the provider; nothing to do.
-  };
-
   const customMut = useMutation({
-    mutationFn: () =>
-      createComputeCustomRecharge({
-        amountDollars: Number(amount),
-        workspaceId,
-        idempotencyKey: crypto.randomUUID(),
-        ...urls(),
-      }),
-    onSuccess: (result) => afterStart(result, t("creditsAddedGeneric")),
-    onError: (e) => toast.error(errMsg(e, t("couldntStartRecharge"))),
+    mutationFn: () => attempt.request({ amountDollars: Number(amount), workspaceId, ...urls() }),
+    onSuccess: async ({ result, urls: returnUrls }) => {
+      attempt.assertCurrent();
+      const successMessage = t("creditsAddedGeneric");
+      const scanUrl = result.paymentIntent?.checkoutUrl;
+      if (isWechatScanUrl(scanUrl)) {
+        attempt.complete();
+        setWechatScan({ orderId: result.order.id, codeUrl: scanUrl, successMessage });
+        return;
+      }
+      const outcome = await redirectToComputePayment(result, returnUrls, attempt.assertCurrent);
+      attempt.assertCurrent();
+      attempt.complete();
+      if (outcome === "fulfilled") {
+        void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
+        toast.success(successMessage);
+      }
+    },
+    onError: (error) => {
+      if (attempt.current() && !(error instanceof DOMException && error.name === "AbortError"))
+        toast.error(errMsg(error, t("couldntStartRecharge")));
+    },
+    onSettled: (_data, error) => attempt.finish(error),
   });
 
   const amountNum = Number(amount);
@@ -169,6 +168,7 @@ function RechargeControls({ workspaceId }: { workspaceId: string }) {
           codeUrl={wechatScan.codeUrl}
           onClose={() => setWechatScan(null)}
           onPaid={() => {
+            if (!attempt.current()) return;
             void queryClient.invalidateQueries({
               queryKey: computeWalletBalanceQueryKey,
             });

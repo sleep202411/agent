@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   IconAlertTriangle,
   IconCheck,
@@ -47,6 +47,7 @@ import {
   type MediaAssetSummary,
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
+import { useAuth } from "@/app/_components/auth-provider";
 import { cn } from "@/lib/utils";
 
 const REFERENCE_KINDS: StoryReferenceKind[] = [
@@ -68,7 +69,28 @@ const PASSING_REVIEW: StoryReferenceReviewChecklist = {
   safety: "pass",
 };
 
-export function StoryReferencePack({
+type ReferencePackProps = {
+  projectId: string;
+  workspaceId: string;
+  workbench: StoryWorkbench;
+  onRefresh: () => Promise<unknown>;
+  apiConnected: boolean;
+};
+
+export function StoryReferencePack(props: ReferencePackProps) {
+  const { user } = useAuth();
+  if (!user) return null;
+  const scope = JSON.stringify([
+    user.id,
+    props.projectId,
+    props.workspaceId,
+    props.apiConnected,
+    [...props.workbench.project.capabilities].sort(),
+  ]);
+  return <StoryReferencePackBody key={scope} {...props} />;
+}
+
+function StoryReferencePackBody({
   projectId,
   workspaceId,
   workbench,
@@ -103,19 +125,39 @@ export function StoryReferencePack({
   const selectedSlot = references.find((slot) => slot.id === selectedSlotId) ?? null;
   const existingAssets = useMemo(() => projectReferenceAssets(references), [references]);
 
-  const run = async (key: string, action: () => Promise<unknown>) => {
-    if (pendingKey) return false;
+  const lifetime = useRef<AbortController | null>(null);
+  const busy = useRef(false);
+  useLayoutEffect(() => {
+    const owner = new AbortController();
+    lifetime.current = owner;
+    return () => {
+      owner.abort();
+      if (lifetime.current === owner) lifetime.current = null;
+    };
+  }, []);
+
+  const run = async (key: string, action: (signal: AbortSignal) => Promise<unknown>) => {
+    const owner = lifetime.current;
+    if (!apiConnected || !owner || owner.signal.aborted || busy.current) return false;
+    busy.current = true;
     setPendingKey(key);
     setError(null);
     try {
-      await action();
+      await action(owner.signal);
+      owner.signal.throwIfAborted();
       await onRefresh();
+      owner.signal.throwIfAborted();
       return true;
     } catch (cause) {
-      setError(storyApiErrorMessage(cause, t("errors.action")));
+      if (!owner.signal.aborted) setError(storyApiErrorMessage(cause, t("errors.action")));
       return false;
     } finally {
-      setPendingKey(null);
+      if (!owner.signal.aborted) {
+        busy.current = false;
+        setPendingKey(null);
+        setUploadProgress(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
     }
   };
 
@@ -125,40 +167,52 @@ export function StoryReferencePack({
     variantId: string,
     source: "upload" | "import"
   ) => {
-    if (!apiConnected) return Promise.resolve(false);
-    return run(`version:${slot.id}`, () =>
+    if (!canProduce) return Promise.resolve(false);
+    return run(`version:${slot.id}`, (signal) =>
       createStoryReferenceVersion(
         projectId,
         slot.id,
         { expectedSlotVersion: slot.version, assetId, variantId, source },
-        globalThis.crypto.randomUUID()
+        globalThis.crypto.randomUUID(),
+        signal
       )
     );
   };
 
   const upload = async (slot: StoryReferenceSlot, file: File) => {
-    if (!apiConnected) return;
-    setUploadProgress(0);
-    setError(null);
-    try {
+    if (!canProduce) return;
+    await run(`upload:${slot.id}`, async (signal) => {
+      setUploadProgress(0);
       const asset = await uploadFileViaSignedUrl(file, {
         kind: "ai_reference_image",
         workspaceId,
-        onProgress: setUploadProgress,
+        signal,
+        onProgress: (progress) => {
+          if (!signal.aborted) setUploadProgress(progress);
+        },
       });
+      signal.throwIfAborted();
       setConfirmedUpload({
         id: asset.mediaAssetId,
         variantId: asset.variantId,
         previewUrl: asset.url,
       });
-      const attached = await attachAsset(slot, asset.mediaAssetId, asset.variantId, "upload");
-      if (attached) setConfirmedUpload(null);
-    } catch (cause) {
-      setError(storyApiErrorMessage(cause, t("errors.upload")));
-    } finally {
-      setUploadProgress(null);
+      await createStoryReferenceVersion(
+        projectId,
+        slot.id,
+        {
+          expectedSlotVersion: slot.version,
+          assetId: asset.mediaAssetId,
+          variantId: asset.variantId,
+          source: "upload",
+        },
+        globalThis.crypto.randomUUID(),
+        signal
+      );
+      signal.throwIfAborted();
+      setConfirmedUpload(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+    });
   };
 
   return (
@@ -192,7 +246,11 @@ export function StoryReferencePack({
           {t("apiUnavailable")}
         </div>
       ) : null}
-      {error ? <p className="mt-3 text-xs text-destructive">{error}</p> : null}
+      {error && !selectedSlot && !editorSlotId && !reviewTarget ? (
+        <p role="alert" className="mt-3 text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
 
       {references.length === 0 ? (
         <FrostedPanel className="mt-5 flex min-h-56 flex-col items-center justify-center p-8 text-center">
@@ -224,6 +282,11 @@ export function StoryReferencePack({
                 {t(`kind.${selectedSlot.kind}`)} · {selectedSlot.key}
               </DialogDescription>
             </DialogHeader>
+            {error && !editorSlotId && !reviewTarget ? (
+              <p role="alert" className="text-xs text-destructive">
+                {error}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="max-w-xl text-xs leading-5 text-white/44">
                 {selectedSlot.description || t("detail.noDescription")}
@@ -267,7 +330,7 @@ export function StoryReferencePack({
                 </div>
                 <Button
                   size="sm"
-                  disabled={!apiConnected || !canProduce || uploadProgress !== null}
+                  disabled={!apiConnected || !canProduce || pendingKey !== null}
                   onClick={() => fileInputRef.current?.click()}
                 >
                   {uploadProgress !== null ? (
@@ -310,7 +373,7 @@ export function StoryReferencePack({
                       <img
                         src={confirmedUpload.previewUrl}
                         alt=""
-                        className="aspect-square size-full object-cover"
+                        className="aspect-square w-full object-cover"
                       />
                       <span className="block truncate px-2 py-1.5 text-[9px] text-white/58">
                         {t("assets.retryAttach")}
@@ -343,6 +406,7 @@ export function StoryReferencePack({
       </Dialog>
 
       <SlotEditorDialog
+        error={error}
         key={editorSlotId ?? "closed"}
         open={editorSlotId !== null}
         slot={references.find((slot) => slot.id === editorSlotId) ?? null}
@@ -350,18 +414,24 @@ export function StoryReferencePack({
         busy={pendingKey === "slot"}
         onClose={() => setEditorSlotId(null)}
         onSubmit={(spec) => {
-          if (!apiConnected) return;
+          if (!apiConnected || !canProduce) return;
           const current = references.find((slot) => slot.id === editorSlotId);
-          void run("slot", () =>
+          void run("slot", (signal) =>
             current
-              ? updateStoryReferenceSlot(projectId, current.id, {
-                  expectedSlotVersion: current.version,
-                  slot: spec,
-                })
+              ? updateStoryReferenceSlot(
+                  projectId,
+                  current.id,
+                  {
+                    expectedSlotVersion: current.version,
+                    slot: spec,
+                  },
+                  signal
+                )
               : createStoryReferenceSlots(
                   projectId,
                   { slots: [spec] },
-                  globalThis.crypto.randomUUID()
+                  globalThis.crypto.randomUUID(),
+                  signal
                 )
           ).then((saved) => {
             if (saved) setEditorSlotId(null);
@@ -370,6 +440,7 @@ export function StoryReferencePack({
       />
 
       <ReferenceReviewDialog
+        error={error}
         open={reviewTarget !== null}
         busy={Boolean(reviewTarget && pendingKey === `review:${reviewTarget.versionId}`)}
         onClose={() => setReviewTarget(null)}
@@ -377,20 +448,32 @@ export function StoryReferencePack({
           const target = reviewTarget;
           const slot = references.find((candidate) => candidate.id === target?.slotId);
           const version = slot?.versions.find((candidate) => candidate.id === target?.versionId);
-          if (!target || !slot || !version || !apiConnected) return;
-          void run(`review:${version.id}`, async () => {
-            const result = await reviewStoryReferenceVersion(projectId, slot.id, version.id, {
-              expectedReviewRevision: version.reviewRevision,
-              decision,
-              checklist,
-              comment,
-            });
+          if (!target || !slot || !version || !apiConnected || !canReview) return;
+          void run(`review:${version.id}`, async (signal) => {
+            const result = await reviewStoryReferenceVersion(
+              projectId,
+              slot.id,
+              version.id,
+              {
+                expectedReviewRevision: version.reviewRevision,
+                decision,
+                checklist,
+                comment,
+              },
+              signal
+            );
+            signal.throwIfAborted();
             if (decision === "approve") {
-              await approveStoryReferenceVersion(projectId, slot.id, {
-                expectedSlotVersion: slot.version,
-                referenceVersionId: version.id,
-                approveReviewId: result.review.id,
-              });
+              await approveStoryReferenceVersion(
+                projectId,
+                slot.id,
+                {
+                  expectedSlotVersion: slot.version,
+                  referenceVersionId: version.id,
+                  approveReviewId: result.review.id,
+                },
+                signal
+              );
             }
           }).then((saved) => {
             if (saved) setReviewTarget(null);
@@ -516,6 +599,7 @@ function AssetPreview({
 }
 
 function SlotEditorDialog({
+  error,
   open,
   slot,
   nextRank,
@@ -523,6 +607,7 @@ function SlotEditorDialog({
   onClose,
   onSubmit,
 }: {
+  error: string | null;
   open: boolean;
   slot: StoryReferenceSlot | null;
   nextRank: number;
@@ -540,6 +625,11 @@ function SlotEditorDialog({
           <DialogTitle>{slot ? t("editor.editTitle") : t("editor.createTitle")}</DialogTitle>
           <DialogDescription>{t("editor.description")}</DialogDescription>
         </DialogHeader>
+        {error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        ) : null}
         <div className="grid grid-cols-2 gap-3">
           <label>
             <span className="text-[10px] font-semibold text-white/42">{t("editor.key")}</span>
@@ -625,11 +715,13 @@ function SlotEditorDialog({
 }
 
 function ReferenceReviewDialog({
+  error,
   open,
   busy,
   onClose,
   onSubmit,
 }: {
+  error: string | null;
   open: boolean;
   busy: boolean;
   onClose: () => void;
@@ -650,6 +742,11 @@ function ReferenceReviewDialog({
           <DialogTitle>{t("review.title")}</DialogTitle>
           <DialogDescription>{t("review.description")}</DialogDescription>
         </DialogHeader>
+        {error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        ) : null}
         <Select
           value={decision}
           onValueChange={(value) => setDecision(value as StoryReviewDecision)}

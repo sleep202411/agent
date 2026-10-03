@@ -50,9 +50,13 @@ function throwIfJavaEnvelope(raw: string, status: number): void {
 export async function readTextGameSse(
   path: string,
   body: unknown,
-  onFrame: (frame: TextGameSseFrame) => void
+  onFrame: (frame: TextGameSseFrame) => void,
+  signal?: AbortSignal
 ): Promise<void> {
+  signal?.throwIfAborted();
   const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", abort, { once: true });
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -73,6 +77,7 @@ export async function readTextGameSse(
         signal: controller.signal,
       });
     } catch (error) {
+      signal?.throwIfAborted();
       const timedOut = error instanceof DOMException && error.name === "AbortError";
       throw new ApiRequestError(
         "NETWORK_ERROR",
@@ -81,9 +86,11 @@ export async function readTextGameSse(
       );
     }
 
+    signal?.throwIfAborted();
     const contentType = response.headers.get("content-type") ?? "";
     if (!contentType.includes("text/event-stream")) {
       const raw = await response.text();
+      signal?.throwIfAborted();
       throwIfJavaEnvelope(raw, response.status);
       throw new ApiRequestError(
         `HTTP_${response.status}`,
@@ -95,6 +102,7 @@ export async function readTextGameSse(
 
     if (!response.ok || !response.body) {
       const raw = await response.text().catch(() => "");
+      signal?.throwIfAborted();
       throwIfJavaEnvelope(raw, response.status);
       throw new ApiRequestError(
         `HTTP_${response.status}`,
@@ -111,6 +119,7 @@ export async function readTextGameSse(
     try {
       while (true) {
         const { value, done } = await reader.read();
+        signal?.throwIfAborted();
         if (done) {
           completed = true;
           break;
@@ -127,6 +136,7 @@ export async function readTextGameSse(
               JSON.stringify(frame.data)
             );
           }
+          signal?.throwIfAborted();
           onFrame(frame);
         }
       }
@@ -144,6 +154,7 @@ export async function readTextGameSse(
     }
     throw error;
   } finally {
+    signal?.removeEventListener("abort", abort);
     clearTimeout(timer);
   }
 }

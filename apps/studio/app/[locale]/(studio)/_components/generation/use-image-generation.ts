@@ -126,7 +126,11 @@ function useStudioGeneration(modality: "image" | "audio") {
   }, [model, settings, activeUploads, prompt]);
 
   const uploadsPending = activeUploads.some((item) => item.uploading);
-  const canSubmit = Boolean(model && prompt.trim()) && !submitting && !uploadsPending;
+  const canSubmit =
+    Boolean(model && prompt.trim()) &&
+    !submitting &&
+    !feed.submissionRecovery?.pending &&
+    !uploadsPending;
 
   const submit = async (): Promise<{ ok: boolean }> => {
     if (!model || !canSubmit) return { ok: false };

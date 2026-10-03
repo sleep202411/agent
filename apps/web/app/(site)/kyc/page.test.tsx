@@ -21,7 +21,10 @@ vi.mock("@/src/hooks/use-kyc", () => ({
   useCertifyInit: () => ({ mutateAsync: s.init }),
   useCertifyQuery: () => ({ mutateAsync: s.query }),
 }));
-vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/src/i18n/i18n", () => ({
+  useLocale: () => "zh-CN",
+  useTranslations: () => (key: string) => key,
+}));
 vi.mock("sonner", () => ({ toast: { success: s.success, error: s.error, warning: s.error } }));
 let root: Root;
 let node: HTMLDivElement;
@@ -105,4 +108,11 @@ it("ignores a previous callback after a different verification response is selec
   await render();
   await act(async () => resolve({ status: "T" }));
   expect(s.success).not.toHaveBeenCalled();
+});
+
+it("returns a confirmed verification to the same locale", async () => {
+  s.query.mockResolvedValue({ status: "T" });
+  await render();
+  await act(async () => vi.advanceTimersByTime(1500));
+  expect(s.replace).toHaveBeenCalledWith("/zh-CN/profile");
 });

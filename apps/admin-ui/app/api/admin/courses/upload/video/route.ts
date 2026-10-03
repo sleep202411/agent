@@ -20,7 +20,8 @@ export async function POST(request: NextRequest) {
         : new File([blob], "video.mp4", { type: blob.type || "video/mp4" });
     const path = await uploadAdminCourseVideo(named);
     return Response.json({ path, data: path });
-  } catch {
-    return Response.json({ error: "文件上传失败" }, { status: 502 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message.trim() : "";
+    return Response.json({ error: message || "文件上传失败" }, { status: 502 });
   }
 }

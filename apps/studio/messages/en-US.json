@@ -1,4 +1,14 @@
 {
+  "generationSubmission": {
+    "pending": "Your previous generation request is not confirmed. Check its status or retry that original request before creating another job.",
+    "notFoundYet": "No matching job is visible yet. This does not confirm that the request failed.",
+    "lookupFailed": "Could not check the original request.",
+    "storageUnavailable": "Generation recovery storage is unavailable.",
+    "submissionFailed": "Generation submission failed.",
+    "check": "Check status",
+    "checking": "Checking…",
+    "retryOriginal": "Retry original request"
+  },
   "canvasDownload": {
     "failed": "The download could not start. Try again, or open the source to save it manually.",
     "openSource": "Open source",
@@ -1929,9 +1939,11 @@
       "claimed": "Claimed",
       "success": "{amount} credits added to your wallet",
       "alreadyClaimed": "You've already claimed this",
-      "error": "Could not claim this campaign"
+      "error": "Could not claim this campaign",
+      "loadError": "Could not load credit offers."
     },
     "checkIn": {
+      "loadError": "Unable to load daily check-in.",
       "title": "Daily check-in",
       "streak": "{days}-day streak",
       "start": "Check in to start a streak",
@@ -1967,7 +1979,10 @@
     "couldntDeleteTeam": "Couldn’t delete workspace",
     "deleteTeamConfirmTitle": "Delete “{name}”?",
     "deleteTeamConfirmBody": "All members lose access and the workspace’s projects are archived. This cannot be undone.",
-    "workspace": "Workspace"
+    "workspace": "Workspace",
+    "workspaceUnavailable": "This workspace is unavailable. Retry or choose another workspace.",
+    "membersLoadFailed": "Could not load team members.",
+    "creditsLoadFailed": "Could not load credits."
   },
   "project": {
     "renameFailed": "Couldn't rename the project",
@@ -3272,6 +3287,7 @@
         "unsupportedMedia": "A clip can only use image or video media."
       },
       "exportFilm": "Export film",
+      "cancelExport": "Cancel export",
       "downloadFilm": "Download film"
     },
     "canvas": {
@@ -3338,7 +3354,7 @@
         "draftConflict": "This story has a conflict. Resolve it before submitting.",
         "projectLoading": "The project is still loading.",
         "statusChecking": "Checking publication status…",
-        "statusUnavailable": "Publication status is unavailable. Try again after it refreshes.",
+        "statusUnavailable": "Publication status is unavailable. Open the status badge to see the error and retry.",
         "reviewingLocked": "This project is already in review.",
         "publishedUpdateLocked": "Take the project offline before submitting an update.",
         "status": {
@@ -3407,7 +3423,8 @@
           "submitStatusInvalid": "Java did not confirm that this version entered review.",
           "offlineFailed": "The interactive film could not be taken offline.",
           "unexpected": "The current version could not be submitted."
-        }
+        },
+        "retryStatus": "Retry publication status"
       },
       "workingPreview": {
         "pageTitle": "Story Playtest · Interactive Film Studio",
@@ -3832,6 +3849,7 @@
           "loading": "Loading the storyboard…",
           "open": "Edit storyboard",
           "openError": "The storyboard could not be opened.",
+          "loadError": "Could not load storyboard",
           "linkTask": "Link task",
           "createTask": "Create task",
           "linkedTask": "Linked task",
@@ -4178,6 +4196,13 @@
     "start": "Start experience",
     "restart": "Restart",
     "regionLabel": "Interactive story playtest",
+    "playback": {
+      "pause": "Pause",
+      "resume": "Resume",
+      "paused": "Paused",
+      "continuePlaying": "Tap to continue",
+      "interrupted": "This device needs a tap to keep playing."
+    },
     "videoLabel": "Story video for scene {nodeId}",
     "continue": "Continue",
     "noVisibleChoices": "No choice is currently available for this story state.",
@@ -4187,15 +4212,7 @@
     "runtimeError": "The playtest cannot continue",
     "mediaError": "Frozen media asset {assetId} could not be played.",
     "video": {
-      "play": "Play",
-      "pause": "Pause",
-      "mute": "Mute",
-      "unmute": "Unmute",
-      "volume": "Volume",
-      "enterFullscreen": "Enter fullscreen",
-      "exitFullscreen": "Exit fullscreen",
-      "seekForward": "Seek forward",
-      "seekBackward": "Seek backward"
+      "unmute": "Unmute"
     },
     "emptySequence": "No footage yet",
     "loadingMedia": "Loading footage",
@@ -4208,8 +4225,6 @@
       "backward": "Move backward",
       "left": "Move left",
       "right": "Move right",
-      "pause": "Pause world",
-      "resume": "Resume world",
       "finish": "Finish world experience"
     }
   },

@@ -469,15 +469,6 @@ function TaskCreationSession({
             ) : null}
             {
               <section>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-xs font-medium text-muted-foreground">{t("savedTasks")}</h3>
-                  <span className="text-xs text-muted-foreground">
-                    {t("savedCount", { count: savedTasks.length })}
-                  </span>
-                </div>
-                {!storageError && (pendingCount > 0 || unresolved) ? (
-                  <p className="mb-3 text-xs text-muted-foreground">{t("draftStorageHelp")}</p>
-                ) : null}
                 <div className="space-y-4">
                   {STAGED_CATEGORY_BARS.map((barKey) => {
                     const label =

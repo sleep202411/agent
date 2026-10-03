@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { IconCircleCheck, IconCircleX, IconLoader2 } from "@tabler/icons-react";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { backendApi } from "@/src/lib/api";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { axonPurchase } from "@/src/lib/axon";
 
-type PaymentStatus = "loading" | "success" | "failed";
+type PaymentStatus = "loading" | "success" | "failed" | "pending" | "error";
 
 interface OrderStatusResponse {
   status: number;
@@ -18,64 +18,80 @@ interface OrderStatusResponse {
 }
 
 export default function PaymentResultPage() {
-  const t = useTranslations("payment");
-  const router = useRouter();
   const searchParams = useSearchParams();
   const orderNo = searchParams?.get("order_id") ?? searchParams?.get("orderNo") ?? "";
-  const [status, setStatus] = useState<PaymentStatus>("loading");
-  const [order, setOrder] = useState<OrderStatusResponse | null>(null);
   const { user } = useCurrentUser();
-  const purchaseFiredRef = useRef(false);
+  const [purchases] = useState(() => new Set<string>());
+  return (
+    <PaymentResult
+      key={JSON.stringify([orderNo, user?.id])}
+      orderNo={orderNo}
+      user={user}
+      purchases={purchases}
+    />
+  );
+}
+
+function PaymentResult({
+  orderNo,
+  user,
+  purchases,
+}: {
+  orderNo: string;
+  user: ReturnType<typeof useCurrentUser>["user"];
+  purchases: Set<string>;
+}) {
+  const t = useTranslations("payment");
+  const locale = useLocale();
+  const router = useRouter();
+  const [status, setStatus] = useState<PaymentStatus>(orderNo ? "loading" : "error");
+  const [order, setOrder] = useState<OrderStatusResponse | null>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!orderNo) {
-      setStatus("failed");
-      return;
-    }
-
+    if (!orderNo) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let attempts = 0;
-    const maxAttempts = 10;
-
-    const checkStatus = async () => {
+    const poll = async () => {
       try {
         const result = await backendApi.get<OrderStatusResponse>(
-          `/api/payment/order/status/${orderNo}`
+          `/api/payment/order/status/${encodeURIComponent(orderNo)}`,
+          { signal: controller.signal }
         );
+        if (controller.signal.aborted) return;
         setOrder(result);
-
         if (result.status === 1) {
           setStatus("success");
-          return true;
-        }
-        if (result.status === -1 || result.status === 2) {
+        } else if (result.status === -1 || result.status === 2) {
           setStatus("failed");
-          return true;
+        } else if (++attempts < 10) {
+          timer = setTimeout(() => void poll(), 3000);
+        } else {
+          // A pending order is not evidence that payment failed.
+          setStatus("pending");
         }
-        return false;
-      } catch {
-        return false;
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setError(error instanceof Error ? error.message : "");
+        setStatus("error");
       }
     };
-
-    const poll = async () => {
-      const done = await checkStatus();
-      if (!done && attempts < maxAttempts) {
-        attempts++;
-        setTimeout(() => void poll(), 3000);
-      } else if (!done) {
-        setStatus("failed");
-      }
-    };
-
     void poll();
-  }, [orderNo]);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [orderNo, attempt]);
 
   // Fire the AppLovin `purchase` conversion exactly once, when the order
   // confirms. No-op on the CN build / when the pixel key is unset (axon.ts).
   useEffect(() => {
-    if (status !== "success" || purchaseFiredRef.current) return;
-    purchaseFiredRef.current = true;
+    if (status !== "success") return;
     const transactionId = order?.orderNo ?? orderNo;
+    if (purchases.has(transactionId)) return;
+    purchases.add(transactionId);
     const value = order?.amount ?? 0;
     const currency = order?.currency ?? "USD";
     axonPurchase({
@@ -87,7 +103,7 @@ export default function PaymentResultPage() {
         ? { user_id: user.id, email: user.email ? user.email.toLowerCase() : undefined }
         : undefined,
     });
-  }, [status, order, orderNo, user]);
+  }, [status, order, orderNo, user, purchases]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -106,17 +122,49 @@ export default function PaymentResultPage() {
               <IconCircleCheck className="size-10 text-green-500" />
             </div>
             <h1 className="mt-4 text-lg font-semibold text-foreground">{t("paymentSuccess")}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">{t("paymentSuccessDesc")}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{t("paymentConfirmedDesc")}</p>
             <p className="mt-4 text-xs text-muted-foreground">
               {t("orderNo")}: {orderNo}
             </p>
             <button
               type="button"
-              onClick={() => router.push("/art-studio")}
+              onClick={() => router.push(`/${locale}/art-studio`)}
               className="mt-6 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110"
             >
-              {t("backToCreatorCenter")}
+              {t("backToStudio")}
             </button>
+          </>
+        )}
+
+        {(status === "pending" || status === "error") && (
+          <>
+            <h1 className="text-lg font-semibold text-foreground">
+              {t(orderNo ? "paymentUnconfirmed" : "missingOrder")}
+            </h1>
+            <p
+              className="mt-2 break-words text-sm text-muted-foreground"
+              role={status === "error" ? "alert" : "status"}
+            >
+              {error || t(orderNo ? "paymentUnconfirmedDesc" : "missingOrderDesc")}
+            </p>
+            {orderNo && (
+              <>
+                <p className="mt-4 break-all text-xs text-muted-foreground">
+                  {t("orderNo")}: {orderNo}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    setStatus("loading");
+                    setAttempt((value) => value + 1);
+                  }}
+                  className="mt-6 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:brightness-110"
+                >
+                  {t("checkAgain")}
+                </button>
+              </>
+            )}
           </>
         )}
 
