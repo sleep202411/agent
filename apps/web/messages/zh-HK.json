@@ -9496,8 +9496,32 @@
       "label": "互動影遊",
       "currentVersion": "版本 {version}",
       "open": "開始遊玩",
+      "demo": "演示",
       "empty": "暫時還沒有已發佈的互動影遊。",
       "unavailable": "互動影遊目錄暫時不可用"
+    },
+    "store": {
+      "label": "互動影遊",
+      "trailerLabel": "預告片",
+      "mediaCounter": "{index} / {total}",
+      "playNow": "開始遊玩",
+      "continuePlaying": "繼續遊玩",
+      "restartFromBeginning": "從頭開始",
+      "freeToPlay": "免費遊玩",
+      "playingNow": "{count} 人正在遊玩",
+      "wishlist": "加入願望清單",
+      "wishlisted": "已在願望清單",
+      "share": "複製連結",
+      "shared": "連結已複製",
+      "shareFailed": "無法複製連結",
+      "releaseDate": "發行日期",
+      "updatedAt": "最近更新",
+      "developer": "開發團隊",
+      "publisher": "發行方",
+      "genres": "類型",
+      "languages": "語言",
+      "madeWith": "製作工具",
+      "aboutTitle": "關於本片"
     }
   },
   "textGame": {

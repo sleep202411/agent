@@ -9496,8 +9496,32 @@
       "label": "互动影游",
       "currentVersion": "版本 {version}",
       "open": "开始游玩",
+      "demo": "演示",
       "empty": "暂时还没有已发布的互动影游。",
       "unavailable": "互动影游目录暂时不可用"
+    },
+    "store": {
+      "label": "互动影游",
+      "trailerLabel": "预告片",
+      "mediaCounter": "{index} / {total}",
+      "playNow": "开始游玩",
+      "continuePlaying": "继续游玩",
+      "restartFromBeginning": "从头开始",
+      "freeToPlay": "免费游玩",
+      "playingNow": "{count} 人正在游玩",
+      "wishlist": "加入心愿单",
+      "wishlisted": "已在心愿单",
+      "share": "复制链接",
+      "shared": "链接已复制",
+      "shareFailed": "复制链接失败",
+      "releaseDate": "发行日期",
+      "updatedAt": "最近更新",
+      "developer": "开发团队",
+      "publisher": "发行方",
+      "genres": "类型",
+      "languages": "语言",
+      "madeWith": "制作工具",
+      "aboutTitle": "关于本片"
     }
   },
   "textGame": {

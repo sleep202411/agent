@@ -10849,3 +10849,28 @@ model CrewSavedPosition {
   @@index([userId, createdAt(sort: Desc)])
   @@map("crew_saved_positions")
 }
+
+/// Interactive-film play save (存档): one "current run" save slot per user,
+/// per game, per chapter. Chapters are independent runtime manifests, so a
+/// serial work keeps one slot each; the (userId, gameId, updatedAt desc)
+/// index backs the "continue where you last played" lookup. The save is
+/// never wiped by a republish — the web layer validates it against the
+/// live manifest on restore and discards it only if it fails.
+model StoryPlaySave {
+  userId         String   @map("user_id") @db.VarChar(64)
+  gameId         String   @map("game_id") @db.VarChar(128)
+  /// Empty string for single-chapter works (no chapter identity exists).
+  chapterId      String   @map("chapter_id") @db.VarChar(128)
+  /// Diagnostics only — restore gates on the live manifest, not this value.
+  contentVersion String   @map("content_version") @db.VarChar(128)
+  /// ExperienceRuntimeState snapshot, stored verbatim.
+  state          Json
+  /// Pending event batch parked at a paid gate; normally [].
+  events         Json
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([userId, gameId, chapterId])
+  @@index([userId, gameId, updatedAt(sort: Desc)], map: "story_play_saves_latest_idx")
+  @@map("story_play_saves")
+}

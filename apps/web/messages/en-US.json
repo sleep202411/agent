@@ -9496,8 +9496,32 @@
       "label": "Interactive film",
       "currentVersion": "Release {version}",
       "open": "Play",
+      "demo": "Demo",
       "empty": "No interactive films have been published yet.",
       "unavailable": "The interactive-film catalogue is unavailable"
+    },
+    "store": {
+      "label": "Interactive film",
+      "trailerLabel": "Trailer",
+      "mediaCounter": "{index} / {total}",
+      "playNow": "Play now",
+      "continuePlaying": "Continue playing",
+      "restartFromBeginning": "Start over",
+      "freeToPlay": "Free to play",
+      "playingNow": "{count} playing now",
+      "wishlist": "Add to wishlist",
+      "wishlisted": "In your wishlist",
+      "share": "Copy link",
+      "shared": "Link copied",
+      "shareFailed": "Could not copy the link",
+      "releaseDate": "Release date",
+      "updatedAt": "Last updated",
+      "developer": "Developer",
+      "publisher": "Publisher",
+      "genres": "Genres",
+      "languages": "Languages",
+      "madeWith": "Made with",
+      "aboutTitle": "About this film"
     }
   },
   "textGame": {
