@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -20,8 +21,13 @@ import { parseScheduleDate, scheduleDateText } from "./task-schedule-api";
 type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function EpisodeManagement(props: Props) {
   const active = useScreenActive();
-  if (!active || props.generation !== getAuthGeneration()) return null;
-  return <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />;
+  const focused = useIsFocused();
+  if (!focused || props.generation !== getAuthGeneration()) return null;
+  return (
+    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
+      <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
+    </View>
+  );
 }
 function Session(props: Props) {
   const t = useTranslations();
@@ -171,6 +177,7 @@ function Editor({
   generation: number;
   onClose: () => void;
 }) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(episode.id, true);
@@ -274,7 +281,7 @@ function Editor({
           style={{ padding: 12 }}
           disabled={locked || !input || !changed}
           onPress={() => {
-            if (sent.current || generation !== getAuthGeneration() || !input) return;
+            if (!active || sent.current || generation !== getAuthGeneration() || !input) return;
             const snapshot = input;
             void op.run(
               () => {
