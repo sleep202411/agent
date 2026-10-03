@@ -1479,6 +1479,7 @@
   "taskPlanning.clearCycle": "清除周期",
   "taskPlanning.clearEpisode": "清除集",
   "taskPlanning.empty": "暂无可用选项。",
+  "taskPlanning.latest": "最新保存的任务计划。应用草稿前，请核对以下内容。",
   "taskPlanning.edit": "编辑任务规划",
   "taskPlanning.save": "保存任务规划",
   "taskWorkflow.edit": "移动工作流列",

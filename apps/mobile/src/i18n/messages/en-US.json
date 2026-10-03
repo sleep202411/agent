@@ -1479,6 +1479,7 @@
   "taskPlanning.clearCycle": "Clear Cycle",
   "taskPlanning.clearEpisode": "Clear Episode",
   "taskPlanning.empty": "No available options.",
+  "taskPlanning.latest": "Latest saved planning. Review these details before applying your draft.",
   "taskPlanning.edit": "Edit Planning",
   "taskPlanning.save": "Save Planning",
   "taskWorkflow.edit": "Move Workflow Column",

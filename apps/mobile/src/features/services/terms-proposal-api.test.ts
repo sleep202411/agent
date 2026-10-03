@@ -128,7 +128,7 @@ it("rejects stale accounts before and after requests", async () => {
     "session expired"
   );
 });
-function contextMock(pages: unknown[]) {
+function contextMock(pages: unknown[], taskId: string | null = null) {
   let index = 0;
   vi.mocked(api.get).mockImplementation(async (path) => {
     if (path.endsWith("/positions")) return pages[index++];
@@ -144,17 +144,20 @@ function contextMock(pages: unknown[]) {
         items: [],
         nextBeforeVersion: null,
       };
-    return app;
+    return { ...app, taskId };
   });
 }
 it("resolves task linkage beyond the first position page", async () => {
-  contextMock([
-    { items: [{ id: "first", crewId: "crew", taskId: null }], nextCursor: "first" },
-    {
-      items: [{ id: "position", crewId: "crew", taskId: "00000000-0000-4000-8000-000000000002" }],
-      nextCursor: null,
-    },
-  ]);
+  contextMock(
+    [
+      { items: [{ id: "first", crewId: "crew", taskId: null }], nextCursor: "first" },
+      {
+        items: [{ id: "position", crewId: "crew", taskId: "00000000-0000-4000-8000-000000000002" }],
+        nextCursor: null,
+      },
+    ],
+    "00000000-0000-4000-8000-000000000002"
+  );
   expect(
     (await fetchProposalContext("crew", "app", 1, new AbortController().signal)).taskLinked
   ).toBe(true);

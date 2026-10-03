@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { useTaskPlanningSession } from "./use-task-planning-session";
 import { TaskPlanningEditor } from "./task-planning-editor";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({
@@ -295,4 +296,63 @@ it("loads compensation in display units and clears only the chosen term", async 
     expectedVersion: 4,
     rewardUsdMinor: null,
   });
+});
+
+function RefreshingPlanning({ value, visible }: { value: TaskDetail; visible: boolean }) {
+  const session = useTaskPlanningSession(value.id, 1, h.refresh);
+  return visible ? (
+    <TaskPlanningEditor
+      key={value.version}
+      task={value}
+      userId="1"
+      generation={1}
+      onRefresh={h.refresh}
+      session={session}
+    />
+  ) : null;
+}
+const refreshRender = (value = task, visible = true) =>
+  act(async () => root.render(<RefreshingPlanning value={value} visible={visible} />));
+it("retains planning changes across reload and requires review before adopting the new version", async () => {
+  await refreshRender();
+  await act(async () => button("taskPlanning.edit")!.click());
+  await act(async () => button("taskPlanning.clearCycle")!.click());
+  await refreshRender(task, false);
+  const latest = { ...task, version: 5 };
+  const snapshot = { ...(await h.fetch()), version: 5, estimatePoints: 13 };
+  h.fetch.mockResolvedValue(snapshot);
+  await refreshRender(latest);
+  expect(button("taskPlanning.save")!.disabled).toBe(true);
+  expect(host.textContent).toContain("taskPlanning.latest");
+  await act(async () => button("taskBrief.reviewLatest")!.click());
+  await act(async () => button("taskPlanning.save")!.click());
+  expect(h.update).toHaveBeenCalledExactlyOnceWith(snapshot, {
+    expectedVersion: 5,
+    cycleId: null,
+    estimatePoints: 8,
+  });
+});
+it("keeps a pending planning write locked through remount and preserves failure details", async () => {
+  let fail!: (e: Error) => void;
+  h.update.mockImplementation(
+    () =>
+      new Promise((_, reject) => {
+        fail = reject;
+      })
+  );
+  await refreshRender();
+  await act(async () => button("taskPlanning.edit")!.click());
+  await act(async () => button("taskPlanning.clearCycle")!.click());
+  await act(async () => button("taskPlanning.save")!.click());
+  await refreshRender(task, false);
+  h.fetch.mockResolvedValue({ ...(await h.fetch()) });
+  await refreshRender({ ...task });
+  expect(button("taskPlanning.save")!.disabled).toBe(true);
+  expect(button("myServices.cancel")!.disabled).toBe(true);
+  expect(button("taskBrief.reviewLatest")).toBeUndefined();
+  await act(async () => fail(new Error("Planning conflict")));
+  expect(host.textContent).toContain("Planning conflict");
+  expect(h.update).toHaveBeenCalledOnce();
+  await act(async () => button("taskBrief.reviewLatest")!.click());
+  expect(button("taskPlanning.save")!.disabled).toBe(false);
 });

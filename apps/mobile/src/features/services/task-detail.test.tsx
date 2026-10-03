@@ -56,7 +56,10 @@ vi.mock("./task-review", () => ({ TaskReview: () => <div>review</div> }));
 vi.mock("./task-delivery", () => ({ TaskDelivery: () => <div>delivery</div> }));
 vi.mock("./task-commitments", () => ({ TaskCommitments: () => <div>commitments</div> }));
 vi.mock("./task-timeline", () => ({ TaskTimeline: () => <div>timeline</div> }));
-vi.mock("./task-detail-api", () => ({ fetchTaskDetail: h.fetch }));
+vi.mock("./task-detail-api", async (original) => ({
+  ...(await original<typeof import("./task-detail-api")>()),
+  fetchTaskDetail: h.fetch,
+}));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("./user-displays", () => ({

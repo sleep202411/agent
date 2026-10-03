@@ -57,6 +57,7 @@ const app = {
   id: "app",
   crewId: "crew",
   positionId: "position",
+  taskId: null,
   applicantId: "creator",
   message: "Hello",
   portfolioUrl: null,
@@ -243,9 +244,7 @@ it("uses project-only bounded fees for task-linked positions", async () => {
 it("shows closed applications as read only", async () => {
   const previous = h.get.getMockImplementation()!;
   h.get.mockImplementation(async (path, options) =>
-    path === "/crews/crew/applications/app"
-      ? { ...app, status: "approved" }
-      : previous(path, options)
+    path === "/applications/app" ? { ...app, status: "approved" } : previous(path, options)
   );
   await render();
   expect(host.querySelector("textarea")).toBeNull();

@@ -1479,6 +1479,7 @@
   "taskPlanning.clearCycle": "清除週期",
   "taskPlanning.clearEpisode": "清除集",
   "taskPlanning.empty": "暫無可用選項。",
+  "taskPlanning.latest": "最新儲存的任務計劃。套用草稿前，請核對以下內容。",
   "taskPlanning.edit": "編輯任務規劃",
   "taskPlanning.save": "儲存任務規劃",
   "taskWorkflow.edit": "移動工作流程欄",

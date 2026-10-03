@@ -16,6 +16,7 @@ import { TaskAssignments } from "./task-assignments";
 import { useTaskScheduleSession } from "./use-task-schedule-session";
 import { TaskSchedule } from "./task-schedule";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
+import { useTaskPlanningSession } from "./use-task-planning-session";
 import { TaskPlanningEditor } from "./task-planning-editor";
 import { useTaskBriefSession } from "./use-task-brief-session";
 import { TaskBrief } from "./task-brief";
@@ -86,6 +87,9 @@ function TaskContent({
   const [creatingChild, setCreatingChild] = useState(false);
   const [revision, setRevision] = useState(0);
   const scheduleSession = useTaskScheduleSession(taskId, generation, () =>
+    setRevision((v) => v + 1)
+  );
+  const planningSession = useTaskPlanningSession(taskId, generation, () =>
     setRevision((v) => v + 1)
   );
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
@@ -207,6 +211,7 @@ function TaskContent({
             onRefresh={() => setRevision((n) => n + 1)}
           />
           <TaskPlanningEditor
+            session={planningSession}
             key={`planning:${revision}`}
             task={data}
             userId={userId}
