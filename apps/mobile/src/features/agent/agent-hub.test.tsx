@@ -209,7 +209,7 @@ it("creates explicitly in the selected editable workspace", async () => {
   );
   expect(h.create).toHaveBeenCalledWith({ workspaceId: "shared", title: "New", summary: null });
 });
-it("drops a revoked workspace selection on refresh", async () => {
+it("requires an explicit workspace choice after access is revoked on refresh", async () => {
   await render();
   await act(async () =>
     [...host.querySelectorAll("button")].find((b) => b.textContent === "Crew")!.click()
@@ -218,7 +218,10 @@ it("drops a revoked workspace selection on refresh", async () => {
     { id: "workspace", name: "Personal", isDefault: true, role: "owner" },
   ]);
   await act(async () => host.querySelector("button")!.click());
-  expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "workspace");
+  expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "shared");
+  expect(h.list).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("aiLab.workspaceUnavailable");
+  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Create")).toBe(false);
   expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Crew")).toBe(false);
 });
 it("opens invitation management from an authorized project", async () => {
@@ -257,7 +260,7 @@ it("opens workspace creation from the hub", async () => {
   expect(host.textContent).toContain("Workspace Settings");
 });
 
-it("selects the workspace requested by an accepted invite and falls back after revocation", async () => {
+it("keeps a revoked invite workspace explicit until the user chooses another", async () => {
   h.workspaceParam = "shared";
   await render();
   expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "shared");
@@ -265,7 +268,14 @@ it("selects the workspace requested by an accepted invite and falls back after r
     { id: "workspace", name: "Personal", isDefault: true, role: "owner" },
   ]);
   await act(async () => host.querySelector("button")!.click());
+  expect(h.list).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("aiLab.workspaceUnavailable");
+  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Create")).toBe(false);
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Personal")!.click()
+  );
   expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "workspace");
+  expect(host.textContent).not.toContain("aiLab.workspaceUnavailable");
 });
 
 it("opens native Text Adventures from the authenticated creation hub", async () => {

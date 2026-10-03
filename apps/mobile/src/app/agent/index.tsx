@@ -92,6 +92,7 @@ function AgentHubSession({
   const [projects, setProjects] = useState<StoryProjectSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [workspaceMissing, setWorkspaceMissing] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const loadedOnceRef = useRef(false);
   const [workspaces, setWorkspaces] = useState<StudioWorkspace[]>([]);
@@ -110,21 +111,22 @@ function AgentHubSession({
       const blocking = opts?.blocking ?? !loadedOnceRef.current;
       if (blocking) setLoading(true);
       setError(undefined);
+      setWorkspaceMissing(false);
       try {
         const choices = await loadAgentWorkspaces(controller.signal);
         if (!current()) return;
         const requestedId = opts?.workspaceId ?? selectedWorkspaceRef.current;
-        const selected =
-          choices.find((row) => row.id === requestedId) ??
-          choices.find((row) => row.isDefault) ??
-          choices[0];
+        const selected = requestedId
+          ? choices.find((row) => row.id === requestedId)
+          : (choices.find((row) => row.isDefault) ?? choices[0]);
         setWorkspaces(choices);
         setWorkspaceId(selected?.id);
-        selectedWorkspaceRef.current = selected?.id;
         if (!selected) {
           setProjects([]);
+          setWorkspaceMissing(!!requestedId);
           return;
         }
+        selectedWorkspaceRef.current = selected.id;
         if (requestedId !== selected.id) setProjects([]);
         const { projects: rows } = await loadAgentProjects(controller.signal, selected.id);
         if (!current()) return;
@@ -236,6 +238,8 @@ function AgentHubSession({
         onDone={(id) => {
           setWorkspaceSettings(undefined);
           setProjects([]);
+          selectedWorkspaceRef.current = id;
+          setWorkspaceId(id);
           void loadProjects({ blocking: true, workspaceId: id });
         }}
       />
@@ -487,10 +491,10 @@ function AgentHubSession({
           </View>
         ) : null}
 
-        {error ? (
+        {error || workspaceMissing ? (
           <View style={[styles.banner, { borderColor: theme.brand }]}>
             <ThemedText type="small" style={{ color: theme.brand }}>
-              {error}
+              {error ?? t("aiLab.workspaceUnavailable")}
             </ThemedText>
             <ThemedText type="small" themeColor="textSecondary" onPress={() => void loadProjects()}>
               {t("common.retry")}
