@@ -54,6 +54,7 @@ vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
   Pressable: ({

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Stack, useIsFocused } from "expo-router";
-import { ActivityIndicator, Pressable, ScrollView, TextInput } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, TextInput } from "react-native";
 import { z } from "zod";
 import { useAuth, useAuthGate, refreshCurrentUser } from "@/auth";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -269,14 +269,16 @@ export function KycSession({ userId, generation }: { userId: string; generation:
               }
             }}
           />
-          <KycAction
-            label={t("kyc.retry")}
-            onPress={() => {
-              setError("");
-              setProviderRevision((v) => v + 1);
-            }}
-            disabled={busy}
-          />
+          {Platform.OS !== "web" && (
+            <KycAction
+              label={t("kyc.retry")}
+              onPress={() => {
+                setError("");
+                setProviderRevision((v) => v + 1);
+              }}
+              disabled={busy}
+            />
+          )}
           <KycAction
             label={t("common.cancel")}
             onPress={() => {

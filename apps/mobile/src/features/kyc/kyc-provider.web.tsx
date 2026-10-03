@@ -102,6 +102,7 @@ export function KycProvider({
           backgroundColor: theme.backgroundElement,
           textDecoration: "none",
           fontSize: 14,
+          fontFamily: "system-ui, sans-serif",
         }}
       >
         {t("kyc.openProvider")}
