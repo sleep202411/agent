@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   sent: vi.fn(),
   generation: 1,
   active: true,
+  focused: true,
 }));
 vi.mock("./task-comment-outbox", () => ({
   taskCommentOutbox: () => ({ read: h.read, save: h.save, clear: h.clear }),
@@ -49,6 +50,7 @@ vi.mock("./task-comment-api", () => ({
 }));
 vi.mock("@/lib/client-request-key", () => ({ clientRequestKey: () => "stable" }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s }));
@@ -100,6 +102,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.read.mockReturnValue(null);
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   h.permission.mockResolvedValue({ allowed: true, canManage: false });
   h.discard.mockResolvedValue(undefined);
@@ -256,7 +259,7 @@ it("sends existing Crew files without text and retries the exact attachment set"
   expect(h.post.mock.calls).toEqual([request, request]);
   expect(host.textContent).not.toContain("Scene.mp4");
 });
-it("removes selected files without deleting assets and aborts the picker on background", async () => {
+it("removes selected files without deleting assets and hides the asset picker on background", async () => {
   const byText = (text: string) =>
     Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text)!;
   await render();
@@ -329,6 +332,7 @@ it("aborts in-flight upload on leaving, cleans a late same-account upload and ne
   const signal = h.upload.mock.calls[0][1];
   expect(host.querySelector("button")!.disabled).toBe(true);
   h.active = false;
+  h.focused = false;
   await render();
   expect(signal.aborted).toBe(true);
   await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Late" }));
@@ -414,4 +418,52 @@ it("does not send or lock composition when storage fails before submission", asy
   expect(h.post).not.toHaveBeenCalled();
   expect(host.querySelector("input")!.disabled).toBe(false);
   expect(host.textContent).toContain("Disk full");
+});
+
+it("retains text and finishes native file selection across a background handoff", async () => {
+  let finish!: (value: unknown) => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await act(async () => type("Keep this comment"));
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "thread.uploadFile")!.click()
+  );
+  const signal = h.upload.mock.calls[0][1] as AbortSignal;
+  h.active = false;
+  await render();
+  expect(signal.aborted).toBe(false);
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Selected.mp4" }));
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")!.value).toBe("Keep this comment");
+  expect(host.textContent).toContain("Selected.mp4");
+  expect(h.permission).toHaveBeenCalledTimes(2);
+  expect(h.upload).toHaveBeenCalledTimes(1);
+  expect(h.post).not.toHaveBeenCalled();
+  expect(h.discard).not.toHaveBeenCalled();
+});
+it("withholds preserved composition while fresh permission is pending or revoked", async () => {
+  await render();
+  await act(async () => type("Private draft"));
+  h.active = false;
+  await render();
+  let finish!: (value: unknown) => void;
+  h.permission.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => finish({ allowed: false }));
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.post).not.toHaveBeenCalled();
 });

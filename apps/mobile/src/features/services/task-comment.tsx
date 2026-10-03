@@ -1,5 +1,6 @@
 import { taskCommentOutbox } from "./task-comment-outbox";
-import { useEffect, useRef, useState } from "react";
+import { useIsFocused } from "expo-router";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -30,8 +31,8 @@ type Props = {
   onReplyAvailability?: (state: { allowed: boolean; locked: boolean; canManage?: boolean }) => void;
 };
 export function TaskComment(props: Props) {
-  const active = useScreenActive();
-  return active && props.generation === getAuthGeneration() ? (
+  const focused = useIsFocused();
+  return focused && props.generation === getAuthGeneration() ? (
     <Composer
       key={`${props.crewId}:${props.taskId}:${props.userId}:${props.generation}`}
       {...props}
@@ -48,13 +49,15 @@ function Composer({
   onClearReply,
   onReplyAvailability,
 }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme();
   const input = useRef<TextInput>(null);
   const op = useAuthFormOperation(taskId, true);
   const [revision, setRevision] = useState(0);
+  const accessScope = useMemo(() => ({ active, revision }), [active, revision]);
   const [access, setAccess] = useState<{
-    revision: number;
+    scope: typeof accessScope;
     allowed?: boolean;
     canManage?: boolean;
     error?: string;
@@ -100,20 +103,24 @@ function Composer({
   const [picking, setPicking] = useState(false);
   const [submittedReply, setSubmittedReply] = useState<Props["reply"]>(initial.pending?.reply);
   useEffect(() => {
+    if (!active) return;
     const controller = new AbortController();
     void fetchTaskCommentAccess(crewId, userId, controller.signal).then(
       (access) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setAccess({ revision, ...access });
+          setAccess({ scope: accessScope, ...access });
       },
       (cause) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setAccess({ revision, error: cause instanceof Error ? cause.message : String(cause) });
+          setAccess({
+            scope: accessScope,
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
       }
     );
     return () => controller.abort();
-  }, [crewId, userId, generation, revision]);
-  const current = access?.revision === revision ? access : undefined;
+  }, [crewId, userId, generation, active, accessScope]);
+  const current = access?.scope === accessScope ? access : undefined;
   const allowed = current?.allowed === true;
   const canManage = allowed && current?.canManage === true;
   useEffect(() => {
@@ -136,6 +143,7 @@ function Composer({
     if (allowed && reply && !attempted) input.current?.focus();
   }, [allowed, reply, attempted]);
   const visibleReply = attempted ? submittedReply : reply;
+  if (!active) return null;
   if (!current) return <ActivityIndicator accessibilityLabel={t("courses.loading")} />;
   if (current.error)
     return (
