@@ -5,6 +5,8 @@ import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AuthedWebView } from "./authed-web-view";
 import CrewApplicationsScreen from "@/app/crew-applications";
+import CommunityPayWebScreen from "@/app/pay/community";
+import { communityWebPath } from "@/features/paywall/lib/web-checkout";
 const state = vi.hoisted(() => ({
   token: { tokenName: "satoken", tokenValue: "fixture-token" } as {
     tokenName: string;
@@ -12,6 +14,8 @@ const state = vi.hoisted(() => ({
   } | null,
   props: null as any,
   focused: true,
+  locale: "en-US",
+  params: {} as { returnPath?: string | string[] },
   os: "ios",
   back: null as (() => boolean) | null,
   goBack: vi.fn(),
@@ -25,7 +29,7 @@ vi.mock("@/features/services/crew-applications", () => ({
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useIsFocused: () => state.focused,
-  useLocalSearchParams: () => ({}),
+  useLocalSearchParams: () => state.params,
 }));
 vi.mock("react-native", () => ({
   View: ({ children }: any) => <div>{children}</div>,
@@ -71,13 +75,18 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("@/config", () => ({ webBaseUrl: "https://app.example" }));
 vi.mock("@/constants/theme", () => ({ Spacing: {} }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("@/i18n", () => ({ useLocale: () => "en-US", useTranslations: () => (s: string) => s }));
+vi.mock("@/i18n", () => ({
+  useLocale: () => state.locale,
+  useTranslations: () => (s: string) => s,
+}));
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.token = { tokenName: "satoken", tokenValue: "fixture-token" };
   state.props = null;
   state.focused = true;
+  state.locale = "en-US";
+  state.params = {};
   state.os = "ios";
   state.back = null;
   state.goBack.mockClear();
@@ -317,4 +326,58 @@ it("ignores navigation events from a failed WebView after retry", async () => {
     })
   );
   expect(host.textContent).toContain("authedWeb.sessionNeeded");
+});
+
+it.each(["en-US", "zh-CN", "zh-HK"])(
+  "returns checkout to the originating IP with its query in %s",
+  async (locale) => {
+    state.locale = locale;
+    // Exercise the conversion used by openPaywall and the actual destination route.
+    const returnPath = communityWebPath(
+      `https://app.example/${locale}/ips/ip-123?episode=ep-2&watch=1`
+    );
+    const encoded = new URLSearchParams({ returnPath }).toString();
+    state.params = { returnPath: new URLSearchParams(encoded).get("returnPath")! };
+    await act(async () => root.render(<CommunityPayWebScreen />));
+    expect(state.props.source).toEqual({
+      uri: `https://app.example/${locale}/ips/ip-123?episode=ep-2&watch=1`,
+      headers: { Cookie: "satoken=fixture-token" },
+    });
+    expect(state.props.applicationNameForUserAgent).toBeUndefined();
+  }
+);
+
+it.each([
+  "https://other-region.example/en-US/ips/ip-123",
+  "https://app.example.attacker.test/en-US/ips/ip-123",
+  "https://app.example@attacker.test/en-US/ips/ip-123",
+  "http://app.example/en-US/ips/ip-123",
+  "javascript:alert(1)",
+])("keeps a foreign checkout return URL on the configured origin: %s", async (url) => {
+  state.params = { returnPath: communityWebPath(url) };
+  await act(async () => root.render(<CommunityPayWebScreen />));
+  expect(state.props.source.uri).toBe("https://app.example/en-US/");
+});
+
+it.each(["//attacker.test", "https://attacker.test", "javascript:alert(1)"])(
+  "rejects a direct external checkout route parameter: %s",
+  async (returnPath) => {
+    state.params = { returnPath };
+    await act(async () => root.render(<CommunityPayWebScreen />));
+    expect(state.props.source.uri).toBe("https://app.example/en-US/");
+  }
+);
+
+it("retains the checkout destination through sign-in without loading it as a guest", async () => {
+  state.params = { returnPath: ["/ips/ip-123?episode=ep-2", "//attacker.test"] };
+  state.token = null;
+  await act(async () => root.render(<CommunityPayWebScreen />));
+  expect(state.props).toBeNull();
+  expect(host.textContent).toContain("authedWeb.sessionNeeded");
+  state.token = { tokenName: "satoken", tokenValue: "fresh-session" };
+  await act(async () => root.render(<CommunityPayWebScreen />));
+  expect(state.props.source).toEqual({
+    uri: "https://app.example/en-US/ips/ip-123?episode=ep-2",
+    headers: { Cookie: "satoken=fresh-session" },
+  });
 });
