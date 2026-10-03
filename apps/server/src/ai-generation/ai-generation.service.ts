@@ -785,6 +785,34 @@ export class AiGenerationService {
 
   async retryJob(user: AuthUser, id: string): Promise<AiSubmitResponse> {
     const job = await this.getEditableJob(user, id);
+    // Existing retries may predate the stable key. Recover their trusted
+    // lineage too, rather than creating another job after an upgrade.
+    const priorRetry = await this.store.findRetryForJob(user.userId, job.id);
+    if (priorRetry) return this.toSubmitResponse(priorRetry);
+    // Retry advances a failed attempt once. Repeating this endpoint after a
+    // lost response must recover the same child; another failure is retried
+    // through that child's id. The repository serializes this key before billing.
+    const idempotencyKey = `retry:${job.id}`;
+    const existing = await this.store.findByIdempotency(
+      user.userId,
+      job.modelId,
+      idempotencyKey,
+    );
+    if (existing) {
+      if (existing.retryOfJobId !== job.id) {
+        throw new ConflictException({
+          code: 'RETRY_IDEMPOTENCY_CONFLICT',
+          msg: 'The retry request conflicts with an existing generation.',
+        });
+      }
+      return this.toSubmitResponse(existing);
+    }
+    if (!['failed', 'cancelled', 'expired'].includes(job.status)) {
+      throw new ConflictException({
+        code: 'JOB_NOT_RETRYABLE',
+        msg: 'Only a failed, cancelled, or expired generation can be retried.',
+      });
+    }
     return this.submitJob(
       user,
       {
@@ -807,7 +835,7 @@ export class AiGenerationService {
         promptDocument: job.promptDocument ?? undefined,
         referenceBindings: job.referenceSnapshot ?? undefined,
         styleBindings: job.styleSnapshot ?? undefined,
-        idempotencyKey: randomUUID(),
+        idempotencyKey,
       },
       undefined,
       {
