@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { IpCreateForm } from "./create-form";
 const h = vi.hoisted(() => ({
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   put: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("@/lib/durable-record", () => ({
   }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({
@@ -103,6 +105,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   host = document.createElement("div");
   document.body.append(host);
@@ -218,3 +221,63 @@ it("clears a rejected creation so its fields can be corrected", async () => {
     false
   );
 });
+
+it("preserves unsaved fields and document analysis through backgrounding", async () => {
+  let finish!: (value: unknown) => void;
+  h.analyze.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await mount();
+  await type("ipAuthor.title", "My title");
+  await click("☐ Drama");
+  await click("ipCreate.analyze");
+  h.active = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  await act(async () =>
+    finish({ name: "Suggestion", description: "Suggested summary", fileName: "brief.txt" })
+  );
+  h.active = true;
+  await mount();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="ipAuthor.title"]')?.value).toBe(
+    "My title"
+  );
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="ipAuthor.summary"]')?.value).toBe(
+    "Suggested summary"
+  );
+  expect(h.post).not.toHaveBeenCalled();
+  await click("ipCreate.submit");
+  expect(h.post).toHaveBeenCalledOnce();
+  expect(h.post.mock.calls[0][1].data).toMatchObject({
+    title: "My title",
+    summary: "Suggested summary",
+    genreCodes: ["drama"],
+  });
+});
+for (const exit of ["route", "account"] as const) {
+  it(`aborts document analysis on ${exit} exit`, async () => {
+    let finish!: (value: unknown) => void;
+    h.analyze.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    await mount();
+    await click("ipCreate.analyze");
+    const signal = h.analyze.mock.calls[0][1] as AbortSignal;
+    if (exit === "route") h.focused = false;
+    else h.generation = 2;
+    await mount();
+    expect(signal.aborted).toBe(true);
+    await act(async () =>
+      finish({ name: "Suggestion", description: "Summary", fileName: "brief.txt" })
+    );
+    expect(host.textContent).toBe("");
+    expect(h.post).not.toHaveBeenCalled();
+    expect(h.push).not.toHaveBeenCalled();
+  });
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { REGIONS, regionLabel } from "@repo/shared";
 import { ThemedText } from "@/components/themed-text";
@@ -15,12 +16,13 @@ import { createCommand, createIp, createOutbox, type CreateCommand } from "./cre
 import { analyzeIpDocument } from "./spark-api";
 type Props = { userId: string; generation: number; onCreated: (id: string) => void };
 export function IpCreateForm(props: Props) {
-  const active = useScreenActive();
-  return active && getAuthGeneration() === props.generation ? (
+  const focused = useIsFocused();
+  return focused && getAuthGeneration() === props.generation ? (
     <Session key={`${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
 function Session({ userId, generation, onCreated }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme();
@@ -83,7 +85,7 @@ function Session({ userId, generation, onCreated }: Props) {
   const frozen = op.busy || !!pending || !!initial.error;
   const analyze = () => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setError("");
     void analysis.run(
       () => analyzeIpDocument(generation, signal),
@@ -108,7 +110,7 @@ function Session({ userId, generation, onCreated }: Props) {
   };
   const submit = () => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     void op.run(
       async () => {
         const command = createCommand.parse(pending ?? draft);
@@ -135,6 +137,7 @@ function Session({ userId, generation, onCreated }: Props) {
       (e) => setError(String(e instanceof Error ? e.message : e))
     );
   };
+  if (!active) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
