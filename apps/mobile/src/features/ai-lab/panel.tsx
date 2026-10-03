@@ -60,7 +60,7 @@ import {
 import { generationDraft, type GenerationDraft } from "./draft";
 import {
   generationRetryOutbox,
-  retryGenerationOnce,
+  retryPendingGeneration,
   type GenerationRetry,
   cancelGeneration,
   generationCommand,
@@ -154,6 +154,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
   const [draft, setDraft] = useState<GenerationDraft | null>(initial.draft),
     [pending, setPending] = useState<GenerationCommand | null>(initial.pending ?? null),
     [retryPending, setRetryPending] = useState<GenerationRetry | null>(initial.retry ?? null),
+    [retryTarget, setRetryTarget] = useState<(GenerationRetry & { prompt: string }) | null>(null),
     [data, setData] = useState<Awaited<ReturnType<typeof loadGenerationCatalog>>>(),
     [skills, setSkills] = useState<ProjectSkills>(),
     [skillsOpen, setSkillsOpen] = useState(false),
@@ -168,7 +169,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState<"create" | "history">("create"),
     [confirm, setConfirm] = useState<
-      "generate" | "reset" | "clear" | "cancel" | "retry" | "clearRetry" | "discardUpload" | null
+      "generate" | "reset" | "clear" | "cancel" | "retry" | "discardUpload" | null
     >(null),
     [privateDenied, setPrivateDenied] = useState(false),
     [epoch, setEpoch] = useState(0);
@@ -660,9 +661,26 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
         <View style={{ gap: 8 }}>
           <ThemedText>{t("aiLab.retryPending")}</ThemedText>
           <Button
-            label={t("aiLab.clear")}
-            disabled={op.busy}
-            onPress={() => setConfirm("clearRetry")}
+            label={t("aiLab.recoverRetry")}
+            disabled={op.busy || !canGenerate}
+            onPress={() => {
+              run(
+                async () => {
+                  await assertProjectWrite();
+                  await retryPendingGeneration(
+                    retryPending,
+                    userId,
+                    generation,
+                    controller.current!.signal,
+                    storageScope
+                  );
+                },
+                () => {
+                  setRetryPending(null);
+                  setEpoch((x) => x + 1);
+                }
+              );
+            }}
           />
         </View>
       ) : null}
@@ -1238,7 +1256,17 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                   disabled={
                     op.busy || !canGenerate || !!pending || !!retryPending || !!draft?.upload
                   }
-                  onPress={() => setConfirm("retry")}
+                  onPress={() => {
+                    setRetryTarget({
+                      clientKey: uuid.v4(),
+                      jobId: selected.id,
+                      prompt: selected.prompt,
+                      workspaceId,
+                      projectId: project?.projectId,
+                      storyProjectId: project?.storyProjectId,
+                    });
+                    setConfirm("retry");
+                  }}
                 />
               ) : null}
               {!terminal(selected) ? (
@@ -1260,31 +1288,29 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                 ? "aiLab.confirmGenerate"
                 : confirm === "cancel"
                   ? "aiLab.confirmCancel"
-                  : confirm === "clear" || confirm === "clearRetry"
+                  : confirm === "clear"
                     ? "aiLab.confirmClear"
                     : confirm === "discardUpload"
                       ? "aiLab.confirmDiscardUpload"
                       : "aiLab.confirmReset"
             )}
           </ThemedText>
+          {confirm === "retry" && retryTarget ? (
+            <ThemedText type="small">{retryTarget.prompt}</ThemedText>
+          ) : null}
           <Button
             label={t("aiLab.confirm")}
             disabled={op.busy}
             onPress={() => {
               if (confirm === "generate") submit();
-              else if (confirm === "retry" && selected) {
-                const command = {
-                  clientKey: uuid.v4(),
-                  jobId: selected.id,
-                  workspaceId,
-                  projectId: project?.projectId,
-                  storyProjectId: project?.storyProjectId,
-                };
+              else if (confirm === "retry" && retryTarget) {
+                const command = retryTarget;
+                setRetryTarget(null);
                 setConfirm(null);
                 run(
                   async () => {
                     await assertProjectWrite();
-                    await retryGenerationOnce(
+                    await retryPendingGeneration(
                       command,
                       userId,
                       generation,
@@ -1297,14 +1323,6 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                     setEpoch((x) => x + 1);
                   }
                 );
-              } else if (confirm === "clearRetry" && retryPending) {
-                try {
-                  retryBox.clear(retryPending.clientKey);
-                  setRetryPending(null);
-                  setConfirm(null);
-                } catch (e) {
-                  fail(e);
-                }
               } else if (confirm === "cancel" && selected) {
                 const id = selected.id;
                 setConfirm(null);

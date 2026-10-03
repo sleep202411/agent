@@ -264,9 +264,8 @@ export async function cancelGeneration(
     throw new Error("The cancellation receipt does not match this job or project.");
   return value;
 }
-// POST /jobs/:id/retry mints a new key on every request. It must not be wrapped
-// in automatic retry/replay. Its UI needs a separate durable uncertain-result
-// state, unlike submitPendingGeneration's client-owned idempotent command.
+// The official retry route recovers one child per original job, including legacy
+// retry lineage. Persist the original target and retry only on explicit user action.
 
 const retryCommand = z
   .object({
@@ -293,8 +292,8 @@ export function generationRetryOutbox(
     durableRecord("ai-lab-retry", userId, generationStorageKey(storageScope, "pending"))
   );
 }
-/** The server creates a new key on each retry call: never replay an uncertain retry. */
-export async function retryGenerationOnce(
+/** Explicitly recover the original retry target using the server's stable lineage. */
+export async function retryPendingGeneration(
   command: GenerationRetry,
   userId: string,
   generation: number,
@@ -305,8 +304,10 @@ export async function retryGenerationOnce(
   if (storageScope && !matchesGenerationScope(command, storageScope))
     throw new Error("Retry does not match this workspace.");
   const box = generationRetryOutbox(userId, generation, storageScope);
-  if (box.read()) throw new Error("A previous generation retry needs review in job history.");
-  const intent = retryCommand.parse(command);
+  const intent = retryCommand.parse(command),
+    previous = box.read();
+  if (previous && JSON.stringify(previous) !== JSON.stringify(intent))
+    throw new Error("Recover the saved generation retry before choosing another job.");
   if (intent.workspaceId)
     await getGenerationJob(
       intent.jobId,

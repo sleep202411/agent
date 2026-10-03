@@ -345,6 +345,15 @@ it("keeps an uncertain retry visible after remount and disables further paid wri
   expect(host.textContent).toContain("aiLab.retryPending");
   expect(button("aiLab.generate").disabled).toBe(true);
   expect(h.post).toHaveBeenCalledTimes(1);
+  expect(button("aiLab.clear")).toBeUndefined();
+  await click("aiLab.recoverRetry");
+  expect(h.post).toHaveBeenCalledTimes(2);
+  expect(h.post.mock.calls.map(([path]) => path)).toEqual([
+    `/ai/jobs/${job.id}/retry`,
+    `/ai/jobs/${job.id}/retry`,
+  ]);
+  expect(host.textContent).not.toContain("aiLab.retryPending");
+  expect(input("Prompt").value).toBe("Lake");
 });
 it("preserves the draft when a new catalog schema requires explicit reset", async () => {
   await mount();
@@ -1240,4 +1249,33 @@ it("requires explicit removal of obsolete settings without erasing the prompt", 
   await click("aiLab.confirm");
   expect(h.post).toHaveBeenCalledOnce();
   expect(h.post.mock.calls[0][1].data.input).toEqual({ prompt: "Keep my words" });
+});
+
+it("keeps the confirmed retry target when another history row is selected", async () => {
+  const failed = {
+    ...job,
+    status: "failed",
+    error: { userMessage: "Provider failed", retryable: true },
+  };
+  const other = { ...failed, id: "22222222-2222-4222-8222-222222222222", prompt: "Other job" };
+  jobs = [failed, other];
+  const oldGet = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, ...args) => {
+    if (path === `/ai/jobs/${failed.id}`) return failed;
+    if (path === `/ai/jobs/${other.id}`) return other;
+    return oldGet(path, ...args);
+  });
+  await mount();
+  await click("aiLab.history");
+  await click("Image model · aiLab.status.failed");
+  await click("aiLab.retryJob");
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .filter((b) => b.textContent === "Image model · aiLab.status.failed")[1]
+      .click()
+  );
+  expect(host.textContent).toContain("Other job");
+  await click("aiLab.confirm");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(h.post.mock.calls[0][0]).toBe(`/ai/jobs/${failed.id}/retry`);
 });

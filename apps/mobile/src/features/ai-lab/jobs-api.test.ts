@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   generationRetryOutbox,
-  retryGenerationOnce,
+  retryPendingGeneration,
   cancelGeneration,
   generationCommand,
   generationOutbox,
@@ -163,19 +163,24 @@ it("keeps pending work on malformed receipts or aborted requests", async () => {
   expect(h.get).not.toHaveBeenCalled();
 });
 
-it("persists uncertain server retries and never replays them after restart", async () => {
+it("persists uncertain retries and explicitly recovers the same original job after restart", async () => {
   h.post.mockRejectedValueOnce(new Error("retry reply lost"));
   const command = { clientKey: key, jobId };
-  await expect(retryGenerationOnce(command, "alice", 1, signal())).rejects.toThrow(
+  await expect(retryPendingGeneration(command, "alice", 1, signal())).rejects.toThrow(
     "retry reply lost"
   );
   expect(generationRetryOutbox("alice", 1).read()).toEqual(command);
-  await expect(retryGenerationOnce(command, "alice", 1, signal())).rejects.toThrow("needs review");
-  expect(h.post).toHaveBeenCalledTimes(1);
+  await retryPendingGeneration(generationRetryOutbox("alice", 1).read()!, "alice", 1, signal());
+  expect(h.post).toHaveBeenCalledTimes(2);
+  expect(h.post.mock.calls.map(([path]) => path)).toEqual([
+    `/ai/jobs/${jobId}/retry`,
+    `/ai/jobs/${jobId}/retry`,
+  ]);
+  expect(generationRetryOutbox("alice", 1).read()).toBeNull();
   expect(generationRetryOutbox("bob", 1).read()).toBeNull();
 });
 it("clears only a validated retry receipt and sends no invented idempotency payload", async () => {
-  await retryGenerationOnce({ clientKey: key, jobId }, "alice", 1, signal());
+  await retryPendingGeneration({ clientKey: key, jobId }, "alice", 1, signal());
   expect(h.post.mock.calls[0][0]).toBe(`/ai/jobs/${jobId}/retry`);
   expect(h.post.mock.calls[0][1]).toMatchObject({ retry: false });
   expect(h.post.mock.calls[0][1]).not.toHaveProperty("data");
@@ -239,7 +244,7 @@ it("rejects history and detail from another workspace and checks scope before re
   await expect(getGenerationJob(jobId, 1, signal(), workspaceA)).rejects.toThrow("workspace");
   await expect(cancelGeneration(jobId, 1, signal(), workspaceA)).rejects.toThrow("workspace");
   await expect(
-    retryGenerationOnce(
+    retryPendingGeneration(
       { clientKey: key, jobId, workspaceId: workspaceA },
       "alice",
       1,
@@ -268,7 +273,7 @@ it("pins project billing/history/recovery and rejects cross-project receipts", a
   h.get.mockResolvedValue({ ...good, projectId: jobId });
   await expect(cancelGeneration(jobId, 1, signal(), scope)).rejects.toThrow("match");
   await expect(
-    retryGenerationOnce({ clientKey: key, jobId, ...scope }, "alice", 1, signal(), scope)
+    retryPendingGeneration({ clientKey: key, jobId, ...scope }, "alice", 1, signal(), scope)
   ).rejects.toThrow("match");
   expect(h.post).not.toHaveBeenCalled();
 });
@@ -288,4 +293,31 @@ it("isolates Story and Creative projects, preserves legacy records and refuses s
     "match"
   );
   expect(h.post).not.toHaveBeenCalled();
+});
+
+it("does not replace an uncertain retry with another job or command", async () => {
+  const original = { clientKey: key, jobId };
+  generationRetryOutbox("alice", 1).save(original);
+  for (const changed of [
+    { ...original, jobId: key },
+    { ...original, clientKey: jobId },
+  ]) {
+    await expect(retryPendingGeneration(changed, "alice", 1, signal())).rejects.toThrow(
+      "saved generation retry"
+    );
+  }
+  expect(h.post).not.toHaveBeenCalled();
+  expect(generationRetryOutbox("alice", 1).read()).toEqual(original);
+});
+it("retains the original retry after malformed receipts and session changes", async () => {
+  const original = { clientKey: key, jobId };
+  h.post.mockResolvedValueOnce({ request_id: "bad", status: "in_queue" });
+  await expect(retryPendingGeneration(original, "alice", 1, signal())).rejects.toThrow();
+  expect(generationRetryOutbox("alice", 1).read()).toEqual(original);
+  h.post.mockImplementationOnce(async () => {
+    h.generation = 2;
+    return { request_id: key, status: "in_queue" };
+  });
+  await expect(retryPendingGeneration(original, "alice", 1, signal())).rejects.toThrow("expired");
+  expect(generationRetryOutbox("alice", 2).read()).toEqual(original);
 });
