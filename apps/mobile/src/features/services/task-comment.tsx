@@ -21,6 +21,7 @@ import type { TaskMention } from "./task-mentions";
 import { clientRequestKey } from "@/lib/client-request-key";
 import { fetchTaskCommentAccess, postTaskComment, type TaskCommentInput } from "./task-comment-api";
 type Props = {
+  suspended?: boolean;
   crewId: string;
   taskId: string;
   userId: string;
@@ -40,6 +41,7 @@ export function TaskComment(props: Props) {
   ) : null;
 }
 function Composer({
+  suspended = false,
   crewId,
   taskId,
   userId,
@@ -49,7 +51,7 @@ function Composer({
   onClearReply,
   onReplyAvailability,
 }: Props) {
-  const active = useScreenActive();
+  const active = useScreenActive() && !suspended;
   const t = useTranslations(),
     theme = useTheme();
   const input = useRef<TextInput>(null);

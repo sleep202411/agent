@@ -116,18 +116,17 @@ export function TaskTimeline({
           )}
         </View>
       ))}
-      {!history.error && (
-        <TaskComment
-          crewId={crewId}
-          taskId={taskId}
-          userId={userId}
-          generation={generation}
-          onSent={history.refresh}
-          reply={reply}
-          onClearReply={() => setReply(undefined)}
-          onReplyAvailability={setReplyAccess}
-        />
-      )}
+      <TaskComment
+        suspended={history.loading || !!history.error}
+        crewId={crewId}
+        taskId={taskId}
+        userId={userId}
+        generation={generation}
+        onSent={history.refresh}
+        reply={reply}
+        onClearReply={() => setReply(undefined)}
+        onReplyAvailability={setReplyAccess}
+      />
       {history.loading && <ActivityIndicator />}
       {!history.loading && !history.error && history.items.length === 0 && (
         <ThemedText>{t("taskActivity.empty")}</ThemedText>

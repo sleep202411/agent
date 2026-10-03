@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
   focused: true,
+  suspended: false,
 }));
 vi.mock("./task-comment-outbox", () => ({
   taskCommentOutbox: () => ({ read: h.read, save: h.save, clear: h.clear }),
@@ -89,7 +90,14 @@ let host: HTMLDivElement, root: Root;
 const render = () =>
   act(async () =>
     root.render(
-      <TaskComment crewId="crew" taskId="task" userId="1" generation={1} onSent={h.sent} />
+      <TaskComment
+        suspended={h.suspended}
+        crewId="crew"
+        taskId="task"
+        userId="1"
+        generation={1}
+        onSent={h.sent}
+      />
     )
   );
 const click = () => host.querySelector("button")!.click();
@@ -103,6 +111,7 @@ beforeEach(() => {
   h.read.mockReturnValue(null);
   h.active = true;
   h.focused = true;
+  h.suspended = false;
   h.generation = 1;
   h.permission.mockResolvedValue({ allowed: true, canManage: false });
   h.discard.mockResolvedValue(undefined);
@@ -466,4 +475,30 @@ it("withholds preserved composition while fresh permission is pending or revoked
   await act(async () => finish({ allowed: false }));
   expect(host.querySelector("input")).toBeNull();
   expect(h.post).not.toHaveBeenCalled();
+});
+
+it("preserves a draft through timeline failure and refreshes permission before recovery", async () => {
+  await render();
+  await act(async () => type("Unsent timeline reply"));
+  h.suspended = true;
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.post).not.toHaveBeenCalled();
+  let resolveAccess!: (value: unknown) => void;
+  h.permission.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveAccess = resolve;
+      })
+  );
+  h.suspended = false;
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => resolveAccess({ allowed: true, canManage: false }));
+  expect(host.querySelector("input")!.value).toBe("Unsent timeline reply");
+  expect(h.permission).toHaveBeenCalledTimes(2);
+  expect(h.post).not.toHaveBeenCalled();
+  await act(async () => click());
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(h.post.mock.calls[0]![2].body).toBe("Unsent timeline reply");
 });
