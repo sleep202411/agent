@@ -8,6 +8,7 @@ import {
   IconCloudOff,
   IconCloudUpload,
   IconLoader2,
+  IconRefresh,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -23,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   getInteractiveFilmPublication,
@@ -223,6 +225,13 @@ function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) 
           status={status}
           loading={publicationQuery.isLoading}
           failed={publicationQuery.isError}
+          errorMessage={
+            publicationQuery.isError
+              ? storyApiErrorMessage(publicationQuery.error, t("publish.statusUnavailable"))
+              : null
+          }
+          retrying={publicationQuery.isFetching}
+          onRetry={() => void publicationQuery.refetch()}
           rejectReason={publication?.rejectReason ?? null}
         />
       ) : null}
@@ -339,14 +348,47 @@ function PublicationStatusBadge({
   status,
   loading,
   failed,
+  errorMessage,
+  retrying,
+  onRetry,
   rejectReason,
 }: {
   status: InteractiveFilmPublicationStatus | null;
   loading: boolean;
   failed: boolean;
+  errorMessage: string | null;
+  retrying: boolean;
+  onRetry: () => void;
   rejectReason: string | null;
 }) {
   const t = useTranslations("storyStudio.canvas.publish");
+  if (failed)
+    return (
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-white/[0.055] px-2 text-[10px] font-semibold text-white/70 hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-white/55"
+          >
+            <IconAlertTriangle className="size-3.5" />
+            {t("status.unavailable")}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-80 space-y-3">
+          <p role="alert" className="break-words text-sm text-white/80">
+            {errorMessage}
+          </p>
+          <Button type="button" variant="secondary" size="sm" disabled={retrying} onClick={onRetry}>
+            {retrying ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : (
+              <IconRefresh className="size-4" />
+            )}
+            {t("retryStatus")}
+          </Button>
+        </PopoverContent>
+      </Popover>
+    );
   const label = loading
     ? t("status.checking")
     : failed

@@ -3354,7 +3354,7 @@
         "draftConflict": "This story has a conflict. Resolve it before submitting.",
         "projectLoading": "The project is still loading.",
         "statusChecking": "Checking publication status…",
-        "statusUnavailable": "Publication status is unavailable. Try again after it refreshes.",
+        "statusUnavailable": "Publication status is unavailable. Open the status badge to see the error and retry.",
         "reviewingLocked": "This project is already in review.",
         "publishedUpdateLocked": "Take the project offline before submitting an update.",
         "status": {
@@ -3423,7 +3423,8 @@
           "submitStatusInvalid": "Java did not confirm that this version entered review.",
           "offlineFailed": "The interactive film could not be taken offline.",
           "unexpected": "The current version could not be submitted."
-        }
+        },
+        "retryStatus": "Retry publication status"
       },
       "workingPreview": {
         "pageTitle": "Story Playtest · Interactive Film Studio",

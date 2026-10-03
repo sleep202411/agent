@@ -3354,7 +3354,7 @@
         "draftConflict": "故事有未合併的更新，請先處理衝突後再提交。",
         "projectLoading": "專案仍在載入。",
         "statusChecking": "正在查詢發佈狀態…",
-        "statusUnavailable": "暫時無法取得發佈狀態，請重新整理後再試。",
+        "statusUnavailable": "發佈狀態不可用。點擊狀態標記查看錯誤並重試。",
         "reviewingLocked": "目前專案已在審核中。",
         "publishedUpdateLocked": "提交更新前請先將專案下線。",
         "status": {
@@ -3423,7 +3423,8 @@
           "submitStatusInvalid": "Java 未確認該版本已進入審核。",
           "offlineFailed": "無法下線這部影遊。",
           "unexpected": "無法提交目前版本。"
-        }
+        },
+        "retryStatus": "重試取得發佈狀態"
       },
       "workingPreview": {
         "pageTitle": "故事試玩 · 影遊工作室",
