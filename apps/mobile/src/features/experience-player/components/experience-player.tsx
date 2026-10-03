@@ -14,6 +14,7 @@ import {
   createExperienceTimelineCursor,
   evaluateExperienceCondition,
   isExperienceRendererVisible,
+  type PlaySessionReporter,
   type ExperienceEventQueueResult,
   type ExperienceRuntimeController,
   type ExperienceRuntimeEvent,
@@ -54,6 +55,7 @@ import {
   type ExperienceThemeLoader,
 } from "../lib/experience-theme-loader";
 import { localize, localizeVisible, resolvePlaybackLocale } from "../lib/localize";
+import { ExperienceReportStatus } from "./experience-report-status";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
 import { EXPERIENCE_START_ACCENT, ExperienceStartShell } from "./experience-start-shell";
 import {
@@ -83,6 +85,7 @@ export interface ExperiencePlayerProps {
   loadTheme?: ExperienceThemeLoader;
   active?: boolean;
   worldScope?: WorldPreviewScope;
+  reporter?: PlaySessionReporter;
 }
 
 /**
@@ -100,6 +103,7 @@ export function ExperiencePlayer({
   loadTheme = defaultLoadExperienceTheme,
   active = true,
   worldScope,
+  reporter,
 }: ExperiencePlayerProps) {
   const [restartEpoch, setRestartEpoch] = useState(0);
   const [randomSeed, setRandomSeed] = useState(
@@ -120,6 +124,7 @@ export function ExperiencePlayer({
           randomSeed,
           canAccess: access?.canAccess,
           worldStreaming: Boolean(worldScope),
+          reporter,
         }),
       };
     } catch (error) {
@@ -131,7 +136,7 @@ export function ExperiencePlayer({
         issues: [{ path: [] as PropertyKey[], message: runtimeErrorMessage(error) }],
       };
     }
-  }, [access, randomSeed, restartEpoch, runtime, worldScope]);
+  }, [access, randomSeed, restartEpoch, runtime, worldScope, reporter]);
 
   if (!prepared.ok) {
     return (
@@ -727,6 +732,10 @@ function ActiveExperienceRuntimePlayer({
             {endingSummary}
           </ThemedText>
         ) : null}
+        <ExperienceReportStatus
+          controller={controller}
+          retryLabel={copy.retryReport ?? copy.restart}
+        />
         <View style={styles.endingActions}>
           {onNextChapter && nextChapterLabel ? (
             <PrimaryButton label={nextChapterLabel} accent={accent} onPress={onNextChapter} />

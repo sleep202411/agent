@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { parseExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
 import { EXPERIENCE_ENGINE_API_VERSION, EXPERIENCE_API_VERSION } from "@repo/experience-engine";
 import { createExperienceRuntime } from "./experience-runtime-host";
@@ -114,3 +114,49 @@ it.each([true, false])(
     expect(() => createExperienceRuntime(manifest, {})).toThrow(/core.world-model/);
   }
 );
+
+it("queues completion behind session creation, retries saving, and starts a fresh replay", async () => {
+  let start!: (value: { sessionId: string }) => void;
+  const reporter = {
+    onStart: vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          start = resolve;
+        })
+      )
+      .mockResolvedValue({ sessionId: "second" }),
+    onProgress: vi.fn().mockResolvedValue(undefined),
+    onComplete: vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Save offline"))
+      .mockResolvedValue(undefined),
+  };
+  const controller = createExperienceRuntime(manifestFixture(), { reporter });
+  controller.start();
+  controller.emitRendererOutcome({
+    instanceId: "text.primary",
+    outcomeType: "text-completed",
+    payload: {},
+  });
+  expect(reporter.onComplete).not.toHaveBeenCalled();
+  start({ sessionId: "first" });
+  await vi.waitFor(() => expect(controller.getPlaySessionReportError()).toBe("Save offline"));
+  expect(controller.getCompletedPlaySessionId()).toBeNull();
+  controller.retryPlaySessionReport();
+  await vi.waitFor(() => expect(controller.getCompletedPlaySessionId()).toBe("first"));
+  expect(controller.getPlaySessionReportError()).toBeNull();
+  expect(reporter.onComplete).toHaveBeenLastCalledWith(
+    "first",
+    expect.objectContaining({ endingId: "ending.done" })
+  );
+  const replay = createExperienceRuntime(manifestFixture(), { reporter });
+  replay.start();
+  replay.emitRendererOutcome({
+    instanceId: "text.primary",
+    outcomeType: "text-completed",
+    payload: {},
+  });
+  await vi.waitFor(() => expect(replay.getCompletedPlaySessionId()).toBe("second"));
+  expect(reporter.onStart).toHaveBeenCalledTimes(2);
+});

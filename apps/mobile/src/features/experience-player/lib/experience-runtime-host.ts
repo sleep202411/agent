@@ -14,12 +14,14 @@ import {
   ExperienceRendererRegistry,
   ExperienceRuntimeController,
   type ExperienceAccessCheck,
+  type PlaySessionReporter,
 } from "@repo/experience-engine";
 
 export interface ExperienceRuntimeOptions {
   randomSeed?: string;
   canAccess?: ExperienceAccessCheck;
   worldStreaming?: boolean;
+  reporter?: PlaySessionReporter;
 }
 
 /**
@@ -67,6 +69,7 @@ export function createExperienceRuntime(
       capabilities,
     },
     canAccess: options.canAccess,
+    playSessionReporter: options.reporter,
     rendererRegistry,
     ...(options.randomSeed ? { randomSeed: options.randomSeed } : {}),
   });

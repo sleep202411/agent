@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAuth } from "@/auth";
+import { createPlaySessionReporter } from "@/features/experience-player/lib/play-session-reporter";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
@@ -40,6 +42,8 @@ function firstParam(value: string | string[] | undefined): string | undefined {
  */
 export default function PlayGameScreen() {
   const t = useTranslations();
+  const auth = useAuth();
+  const reporter = useMemo(() => createPlaySessionReporter(auth.generation), [auth.generation]);
   const locale = useLocale();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -79,6 +83,7 @@ export default function PlayGameScreen() {
       playAgain: t("play.playAgain"),
       runtimeError: t("play.runtimeError"),
       restart: t("play.restart"),
+      retryReport: t("play.retryReport"),
       noVisibleChoices: t("play.noVisibleChoices"),
       continue: t("play.continue"),
       pause: t("play.pause"),
@@ -230,7 +235,8 @@ export default function PlayGameScreen() {
       ) : published ? (
         <View style={styles.body}>
           <ExperiencePlayerWithAccess
-            key={playerKey}
+            key={`${playerKey}:${auth.generation}`}
+            reporter={reporter}
             accessMode="published"
             runtime={published.manifest}
             locale={locale}

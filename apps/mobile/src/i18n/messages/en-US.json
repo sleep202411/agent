@@ -4664,5 +4664,6 @@
   "play.world.left": "Move left",
   "play.world.right": "Move right",
   "play.world.finish": "Finish exploration",
-  "play.world.jump": "Jump"
+  "play.world.jump": "Jump",
+  "play.retryReport": "Retry saving report"
 }

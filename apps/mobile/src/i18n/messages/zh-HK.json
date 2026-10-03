@@ -4664,5 +4664,6 @@
   "play.world.left": "向左移動",
   "play.world.right": "向右移動",
   "play.world.finish": "結束探索",
-  "play.world.jump": "跳躍"
+  "play.world.jump": "跳躍",
+  "play.retryReport": "重試儲存遊玩報告"
 }

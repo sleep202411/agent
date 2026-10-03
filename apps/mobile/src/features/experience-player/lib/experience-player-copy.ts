@@ -14,6 +14,7 @@ export interface ExperiencePlayerCopy {
   playAgain: string;
   runtimeError: string;
   restart: string;
+  retryReport?: string;
   noVisibleChoices: string;
   continue: string;
   emptySequence: string;
