@@ -1,5 +1,11 @@
 "use client";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
+import {
+  useGenerationSubmission,
+  UncertainGenerationSubmissionError,
+} from "../../_hooks/use-generation-submission";
+
 import type { UploadKind } from "@repo/shared/media-upload";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,7 +43,6 @@ import {
   normalizeFizzAiError,
   referenceFieldConstraints,
   retryFizzAiJob,
-  submitFizzAiJob,
   type FizzAiGenerationStatus,
   type FizzAiJobView,
   type FizzAiModel,
@@ -135,6 +140,7 @@ interface VideoResultJob {
 
 export function VideoStudioPage() {
   const workspaceState = useFizzStudioWorkspace();
+  const { user } = useCurrentUser();
 
   return (
     <FizzStudioShell
@@ -144,7 +150,10 @@ export function VideoStudioPage() {
       sidebarVariant="enterprise"
       workspaceState={workspaceState}
     >
-      <VideoStudioSurface workspaceId={workspaceState.workspaceId} />
+      <VideoStudioSurface
+        key={JSON.stringify([user?.id, workspaceState.workspaceId])}
+        workspaceId={workspaceState.workspaceId}
+      />
     </FizzStudioShell>
   );
 }
@@ -167,6 +176,28 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [slotItems, setSlotItems] = useState<Record<string, UploadedSlotItem[]>>({});
   const [jobs, setJobs] = useState<VideoResultJob[]>([]);
+  const {
+    submit: submitGeneration,
+    isCurrent: submissionIsCurrent,
+    ready: submissionReady,
+    recovery,
+  } = useGenerationSubmission({
+    workspaceId,
+    surface: "fizzstudio-video-studio",
+    onRecovered: (job, receipt) => {
+      setJobs((previous) =>
+        mergeVideoJob(
+          previous.filter((row) => row.localId !== receipt.target.localId),
+          jobViewToVideoJob(job, t)
+        )
+      );
+      setSubmitError(null);
+      setActiveTab("history");
+      dispatch(touchCredits());
+      void queryClient.invalidateQueries({ queryKey: computeBillingKeys.all });
+    },
+  });
+
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
   const historyRequestSeqRef = useRef(0);
@@ -794,6 +825,7 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
           })
         );
         if (anyTerminal) {
+          if (!submissionIsCurrent()) return;
           dispatch(touchCredits());
           refreshComputeBilling();
         }
@@ -817,7 +849,8 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
 
   const submit = useCallback(async () => {
     const trimmedPrompt = prompt.trim();
-    if (!trimmedPrompt || !selectedModel || !canSubmit) return;
+    if (!submissionReady || !trimmedPrompt || !selectedModel || !canSubmit || recovery.pending)
+      return;
 
     setSubmitting(true);
     setSubmitError(null);
@@ -910,31 +943,50 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
     ]);
 
     try {
-      const response = await submitFizzAiJob({
-        context: {
-          projectId: "",
-          documentId: "",
-          documentBlockId: "",
-          sourceSurface: "fizzstudio-video-studio",
+      const response = await submitGeneration(
+        {
+          context: {
+            workspaceId,
+            projectId: "",
+            documentId: "",
+            documentBlockId: "",
+            sourceSurface: "fizzstudio-video-studio",
+          },
+          idempotencyKey: generationIdempotencyKey(`fizzstudio:video-studio:${workspaceId}`),
+          input,
+          promptDocument,
+          referenceBindings: referenceBindings.length > 0 ? referenceBindings : undefined,
+          modelId: selectedModel.id,
+          schemaVersion: selectedModel.schemaVersion,
         },
-        idempotencyKey: generationIdempotencyKey(`fizzstudio:video-studio:${workspaceId}`),
-        input,
-        promptDocument,
-        referenceBindings: referenceBindings.length > 0 ? referenceBindings : undefined,
-        modelId: selectedModel.id,
-        schemaVersion: selectedModel.schemaVersion,
-      });
+        "video",
+        { localId: localId }
+      );
+      if (!submissionIsCurrent()) return;
       dispatch(touchCredits());
       refreshComputeBilling();
       applySubmitResponse(setJobs, localId, response);
     } catch (error) {
+      if (!submissionIsCurrent()) return;
       const message = normalizeFizzAiError(error, t("results.failed"));
       setSubmitError(message);
-      markRowFailed(setJobs, localId, message);
+      if (error instanceof UncertainGenerationSubmissionError) {
+        setJobs((previous) =>
+          previous.map((row) =>
+            row.localId === localId
+              ? { ...row, stage: "submission_unconfirmed", error: message }
+              : row
+          )
+        );
+      } else markRowFailed(setJobs, localId, message);
     } finally {
-      setSubmitting(false);
+      if (submissionIsCurrent()) setSubmitting(false);
     }
   }, [
+    submitGeneration,
+    submissionIsCurrent,
+    submissionReady,
+    recovery.pending,
     canSubmit,
     dispatch,
     prompt,
@@ -952,7 +1004,7 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
 
   const retryJob = useCallback(
     (localId: string) => {
-      if (submitting) return;
+      if (submitting || recovery.pending) return;
       const failed = jobs.find((row) => row.localId === localId);
       if (!failed) return;
 
@@ -966,10 +1018,9 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
       } else {
         // Local fallback ONLY for rows that never reached the server —
         // rebuilt contract-complete from the stored input.
-        const model =
-          (failed.modelId ? modelById(videoModels, failed.modelId) : undefined) ?? selectedModel;
+        const model = failed.modelId ? modelById(videoModels, failed.modelId) : undefined;
         const retryInput = failed.input;
-        if (!model || !retryInput) {
+        if (!model || !retryInput || model.schemaVersion !== failed.schemaVersion) {
           setPrompt(failed.prompt);
           setSubmitError(t("results.retryUnavailable"));
           return;
@@ -979,22 +1030,27 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
         const referenceBindings = videoBindingsFromInput(retryInput);
         const promptDocument = buildPromptDocument(failed.prompt, referenceBindings);
         runRetry = () =>
-          submitFizzAiJob({
-            context: {
-              projectId: "",
-              documentId: "",
-              documentBlockId: "",
-              sourceSurface: "fizzstudio-video-studio",
+          submitGeneration(
+            {
+              context: {
+                workspaceId,
+                projectId: "",
+                documentId: "",
+                documentBlockId: "",
+                sourceSurface: "fizzstudio-video-studio",
+              },
+              idempotencyKey: generationIdempotencyKey(
+                `fizzstudio:video-studio-retry:${workspaceId}`
+              ),
+              input: retryInput,
+              promptDocument,
+              referenceBindings: referenceBindings.length > 0 ? referenceBindings : undefined,
+              modelId: model.id,
+              schemaVersion: model.schemaVersion,
             },
-            idempotencyKey: generationIdempotencyKey(
-              `fizzstudio:video-studio-retry:${workspaceId}`
-            ),
-            input: retryInput,
-            promptDocument,
-            referenceBindings: referenceBindings.length > 0 ? referenceBindings : undefined,
-            modelId: model.id,
-            schemaVersion: model.schemaVersion,
-          });
+            "video",
+            { localId: retryLocalId }
+          );
       }
 
       setSubmitting(true);
@@ -1026,19 +1082,51 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
       void (async () => {
         try {
           const response = await runRetry();
+          if (!submissionIsCurrent()) return;
           dispatch(touchCredits());
           refreshComputeBilling();
           applySubmitResponse(setJobs, retryLocalId, response);
         } catch (error) {
+          if (!submissionIsCurrent()) return;
           const message = normalizeFizzAiError(error, t("results.failed"));
           setSubmitError(message);
-          markRowFailed(setJobs, retryLocalId, message);
+          if (failed.jobId) {
+            // Keep the original server retry target if its response is lost.
+            // Repeating that endpoint recovers the same child; a fresh submit
+            // would lose its identity and could reserve another paid job.
+            setJobs((previous) =>
+              previous.map((row) =>
+                row.localId === retryLocalId ? { ...failed, error: message } : row
+              )
+            );
+            return;
+          }
+          if (error instanceof UncertainGenerationSubmissionError) {
+            setJobs((previous) =>
+              previous.map((row) =>
+                row.localId === retryLocalId
+                  ? { ...row, stage: "submission_unconfirmed", error: message }
+                  : row
+              )
+            );
+          } else markRowFailed(setJobs, retryLocalId, message);
         } finally {
-          setSubmitting(false);
+          if (submissionIsCurrent()) setSubmitting(false);
         }
       })();
     },
-    [dispatch, jobs, refreshComputeBilling, selectedModel, submitting, t, videoModels, workspaceId]
+    [
+      submitGeneration,
+      submissionIsCurrent,
+      recovery.pending,
+      dispatch,
+      jobs,
+      refreshComputeBilling,
+      submitting,
+      t,
+      videoModels,
+      workspaceId,
+    ]
   );
 
   return (
@@ -1095,6 +1183,7 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
       </section>
 
       <StudioComposer
+        submissionRecovery={recovery}
         models={videoModels}
         catalogLoading={catalogQuery.isLoading}
         catalogError={catalogQuery.isError}
@@ -1104,7 +1193,7 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
         submitting={submitting}
         submitError={submitError}
         priceEstimate={cost != null ? { sellPoints: cost } : null}
-        canSubmit={canSubmit}
+        canSubmit={submissionReady && canSubmit && !recovery.pending}
         onPromptChange={setPrompt}
         onSubmit={() => void submit()}
         onSelectModel={selectModel}

@@ -1,5 +1,11 @@
 "use client";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
+import {
+  useGenerationSubmission,
+  UncertainGenerationSubmissionError,
+} from "../../_hooks/use-generation-submission";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -36,7 +42,6 @@ import {
   maxReferenceImages,
   normalizeFizzAiError,
   retryFizzAiJob,
-  submitFizzAiJob,
   type FizzAiGenerationStatus,
   type FizzAiJobView,
   type FizzAiModel,
@@ -177,6 +182,7 @@ export function ImageStudioPage({
   modality?: StudioModality;
 } = {}) {
   const workspaceState = useFizzStudioWorkspace();
+  const { user } = useCurrentUser();
 
   return (
     <FizzStudioShell
@@ -186,7 +192,11 @@ export function ImageStudioPage({
       sidebarVariant="enterprise"
       workspaceState={workspaceState}
     >
-      <ImageStudioSurface modality={modality} workspaceId={workspaceState.workspaceId} />
+      <ImageStudioSurface
+        key={JSON.stringify([user?.id, workspaceState.workspaceId])}
+        modality={modality}
+        workspaceId={workspaceState.workspaceId}
+      />
     </FizzStudioShell>
   );
 }
@@ -212,6 +222,28 @@ function ImageStudioSurface({
   const [referenceUploadError, setReferenceUploadError] = useState<string | null>(null);
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [jobs, setJobs] = useState<ResultJob[]>([]);
+  const {
+    submit: submitGeneration,
+    isCurrent: submissionIsCurrent,
+    ready: submissionReady,
+    recovery,
+  } = useGenerationSubmission({
+    workspaceId,
+    surface: "fizzstudio-image-studio",
+    onRecovered: (job, receipt) => {
+      setJobs((previous) =>
+        mergeResultJob(
+          previous.filter((row) => row.localId !== receipt.target.localId),
+          jobViewToResultJob(job, t)
+        )
+      );
+      setSubmitError(null);
+      setActiveTab("history");
+      dispatch(touchCredits());
+      void queryClient.invalidateQueries({ queryKey: computeBillingKeys.all });
+    },
+  });
+
   const [historyLoading, setHistoryLoading] = useState(false);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
   const historyRequestSeqRef = useRef(0);
@@ -465,6 +497,7 @@ function ImageStudioSurface({
           })
         );
         if (anyTerminal) {
+          if (!submissionIsCurrent()) return;
           dispatch(touchCredits());
           refreshComputeBilling();
         }
@@ -486,7 +519,15 @@ function ImageStudioSurface({
 
   const submit = useCallback(async () => {
     const trimmedPrompt = prompt.trim();
-    if (!trimmedPrompt || !selectedModel || submitting || hasUploadingReferences) return;
+    if (
+      !submissionReady ||
+      !trimmedPrompt ||
+      !selectedModel ||
+      submitting ||
+      recovery.pending ||
+      hasUploadingReferences
+    )
+      return;
 
     setSubmitting(true);
     setSubmitError(null);
@@ -530,20 +571,26 @@ function ImageStudioSurface({
     ]);
 
     try {
-      const response = await submitFizzAiJob({
-        context: {
-          projectId: "",
-          documentId: "",
-          documentBlockId: "",
-          sourceSurface: "fizzstudio-image-studio",
+      const response = await submitGeneration(
+        {
+          context: {
+            workspaceId,
+            projectId: "",
+            documentId: "",
+            documentBlockId: "",
+            sourceSurface: "fizzstudio-image-studio",
+          },
+          idempotencyKey: generationIdempotencyKey(`fizzstudio:image-studio:${workspaceId}`),
+          input,
+          promptDocument,
+          referenceBindings,
+          modelId: selectedModel.id,
+          schemaVersion: selectedModel.schemaVersion,
         },
-        idempotencyKey: generationIdempotencyKey(`fizzstudio:image-studio:${workspaceId}`),
-        input,
-        promptDocument,
-        referenceBindings,
-        modelId: selectedModel.id,
-        schemaVersion: selectedModel.schemaVersion,
-      });
+        "image",
+        { localId: localId }
+      );
+      if (!submissionIsCurrent()) return;
       dispatch(touchCredits());
       refreshComputeBilling();
       const status = generationStatusFromRaw(response.status);
@@ -567,6 +614,7 @@ function ImageStudioSurface({
         )
       );
     } catch (error) {
+      if (!submissionIsCurrent()) return;
       const message = normalizeFizzAiError(error, t("results.failed"));
       setSubmitError(message);
       setJobs((prev) =>
@@ -574,8 +622,11 @@ function ImageStudioSurface({
           row.localId === localId
             ? {
                 ...row,
-                status: "failed",
-                stage: "failed",
+                status: error instanceof UncertainGenerationSubmissionError ? "queued" : "failed",
+                stage:
+                  error instanceof UncertainGenerationSubmissionError
+                    ? "submission_unconfirmed"
+                    : "failed",
                 error: message,
                 completedAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
@@ -584,9 +635,13 @@ function ImageStudioSurface({
         )
       );
     } finally {
-      setSubmitting(false);
+      if (submissionIsCurrent()) setSubmitting(false);
     }
   }, [
+    submitGeneration,
+    submissionIsCurrent,
+    submissionReady,
+    recovery.pending,
     dispatch,
     refreshComputeBilling,
     hasUploadingReferences,
@@ -660,7 +715,7 @@ function ImageStudioSurface({
 
   const retryJob = useCallback(
     (localId: string) => {
-      if (submitting) return;
+      if (submitting || recovery.pending) return;
       const failed = jobs.find((row) => row.localId === localId);
       if (!failed) return;
 
@@ -676,10 +731,9 @@ function ImageStudioSurface({
         const jobId = failed.jobId;
         runRetry = () => retryFizzAiJob(jobId);
       } else {
-        const model =
-          (failed.modelId ? modelById(imageModels, failed.modelId) : undefined) ?? selectedModel;
+        const model = failed.modelId ? modelById(imageModels, failed.modelId) : undefined;
         const retryInput = failed.input;
-        if (!model || !retryInput) {
+        if (!model || !retryInput || model.schemaVersion !== failed.schemaVersion) {
           setPrompt(failed.prompt);
           setSubmitError(t("results.retryUnavailable"));
           return;
@@ -691,22 +745,27 @@ function ImageStudioSurface({
         );
         const promptDocument = buildPromptDocument(failed.prompt, referenceBindings);
         runRetry = () =>
-          submitFizzAiJob({
-            context: {
-              projectId: "",
-              documentId: "",
-              documentBlockId: "",
-              sourceSurface: "fizzstudio-image-studio",
+          submitGeneration(
+            {
+              context: {
+                workspaceId,
+                projectId: "",
+                documentId: "",
+                documentBlockId: "",
+                sourceSurface: "fizzstudio-image-studio",
+              },
+              idempotencyKey: generationIdempotencyKey(
+                `fizzstudio:image-studio-retry:${workspaceId}`
+              ),
+              input: retryInput,
+              promptDocument,
+              referenceBindings: referenceBindings.length > 0 ? referenceBindings : undefined,
+              modelId: model.id,
+              schemaVersion: model.schemaVersion,
             },
-            idempotencyKey: generationIdempotencyKey(
-              `fizzstudio:image-studio-retry:${workspaceId}`
-            ),
-            input: retryInput,
-            promptDocument,
-            referenceBindings: referenceBindings.length > 0 ? referenceBindings : undefined,
-            modelId: model.id,
-            schemaVersion: model.schemaVersion,
-          });
+            "image",
+            { localId: retryLocalId }
+          );
       }
 
       setSubmitting(true);
@@ -743,6 +802,7 @@ function ImageStudioSurface({
       void (async () => {
         try {
           const response = await runRetry();
+          if (!submissionIsCurrent()) return;
           dispatch(touchCredits());
           refreshComputeBilling();
           const status = generationStatusFromRaw(response.status);
@@ -766,15 +826,31 @@ function ImageStudioSurface({
             )
           );
         } catch (error) {
+          if (!submissionIsCurrent()) return;
           const message = normalizeFizzAiError(error, t("results.failed"));
           setSubmitError(message);
+          if (failed.jobId) {
+            // Keep the original server retry target if its response is lost.
+            // Repeating that endpoint recovers the same child; a fresh submit
+            // would lose its identity and could reserve another paid job.
+            setJobs((previous) =>
+              previous.map((row) =>
+                row.localId === retryLocalId ? { ...failed, error: message } : row
+              )
+            );
+            return;
+          }
           setJobs((prev) =>
             prev.map((row) =>
               row.localId === retryLocalId
                 ? {
                     ...row,
-                    status: "failed",
-                    stage: "failed",
+                    status:
+                      error instanceof UncertainGenerationSubmissionError ? "queued" : "failed",
+                    stage:
+                      error instanceof UncertainGenerationSubmissionError
+                        ? "submission_unconfirmed"
+                        : "failed",
                     error: message,
                     completedAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
@@ -783,16 +859,18 @@ function ImageStudioSurface({
             )
           );
         } finally {
-          setSubmitting(false);
+          if (submissionIsCurrent()) setSubmitting(false);
         }
       })();
     },
     [
+      submitGeneration,
+      submissionIsCurrent,
+      recovery.pending,
       dispatch,
       imageModels,
       jobs,
       refreshComputeBilling,
-      selectedModel,
       settings,
       submitting,
       t,
@@ -820,6 +898,7 @@ function ImageStudioSurface({
       </section>
 
       <StudioComposer
+        submissionRecovery={recovery}
         models={imageModels}
         catalogLoading={catalogQuery.isLoading}
         catalogError={catalogQuery.isError}

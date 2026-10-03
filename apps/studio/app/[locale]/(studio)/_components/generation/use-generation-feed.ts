@@ -488,7 +488,10 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
         if (!isCurrent()) return { ok: false };
         const message = normalizeFizzAiError(error, recoveryText("submissionFailed"));
         if (receipt && sent && uncertain) setPendingReceipt(receipt);
-        else if (!sent) setReceiptError(message);
+        else if (receipt && sent) {
+          setPendingReceipt(null);
+          setReceiptError(null);
+        } else if (!sent) setReceiptError(message);
         return { ok: false, error: message };
       } finally {
         if (submissionRun.current === run) submissionRun.current = null;

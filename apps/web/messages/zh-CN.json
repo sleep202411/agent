@@ -11361,5 +11361,17 @@
       "vlog": "视频日志"
     },
     "filters": "筛选"
+  },
+  "generationSubmission": {
+    "pending": "上一次生成请求尚未确认。请检查状态或重试原请求，再创建新任务。",
+    "notFoundYet": "暂未找到对应任务，这不代表请求已失败。",
+    "lookupFailed": "无法检查原请求。",
+    "storageUnavailable": "生成恢复存储不可用。",
+    "submissionFailed": "生成提交失败。",
+    "check": "检查状态",
+    "checking": "检查中…",
+    "retryOriginal": "重试原请求",
+    "targetRemoved": "已找回生成任务。原画布项目已被删除。",
+    "signInRequired": "请先登录并选择工作空间，再生成内容。"
   }
 }
