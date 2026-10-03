@@ -431,3 +431,20 @@ it("opens guided setup directly after successful Crew creation", async () => {
   await act(async () => button("setup assignments").click());
   expect(button("pick")).toBeDefined();
 });
+it("opens the workspace editor directly from Crew resources", async () => {
+  await act(async () =>
+    root.render(
+      <CrewTaskBrowser
+        crewId="crew"
+        userId="1"
+        generation={1}
+        key="studio-entry"
+        initialSection="studio"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(button("close workspace")).toBeDefined();
+  await act(async () => button("close workspace").click());
+  expect(h.close).toHaveBeenCalledTimes(1);
+});

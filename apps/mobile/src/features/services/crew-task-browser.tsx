@@ -37,7 +37,7 @@ export function CrewTaskBrowser({
   initialSection,
 }: {
   initialTaskId?: string;
-  initialSection?: "members" | "setup";
+  initialSection?: "members" | "setup" | "studio";
   crewId: string;
   userId: string;
   generation: number;
@@ -58,7 +58,7 @@ export function CrewTaskBrowser({
   const [showProgress, setShowProgress] = useState(false);
   const [assetOrganization, setAssetOrganization] = useState(false);
   const [studioMedia, setStudioMedia] = useState(false);
-  const [studioWorkspace, setStudioWorkspace] = useState(false);
+  const [studioWorkspace, setStudioWorkspace] = useState(initialSection === "studio");
   const [managingWorkflows, setManagingWorkflows] = useState(false);
   const [managingCycles, setManagingCycles] = useState(false);
   const [managingLabels, setManagingLabels] = useState(false);
@@ -192,7 +192,8 @@ export function CrewTaskBrowser({
         crewId={crewId}
         userId={userId}
         generation={generation}
-        onClose={() => setStudioWorkspace(false)}
+        backLabel={initialSection === "studio" ? t("crewStudio.backToCrew") : undefined}
+        onClose={() => (initialSection === "studio" ? onClose() : setStudioWorkspace(false))}
       />
     );
   if (managingWorkflows)

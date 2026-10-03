@@ -121,10 +121,17 @@ function Resources({
         <ActivityIndicator />
       ) : workspace.error ? (
         <ThemedText accessibilityRole="alert">{workspace.error}</ThemedText>
-      ) : workspace.data ? (
-        link(workspace.data.name, `/agent?workspace=${encodeURIComponent(workspace.data.id)}`)
+      ) : workspace.data?.workspace ? (
+        link(
+          workspace.data.workspace.name,
+          `/agent?workspace=${encodeURIComponent(workspace.data.workspace.id)}`
+        )
       ) : (
-        <ThemedText>{t("crewLinks.none")}</ThemedText>
+        <View>
+          <ThemedText>{t("crewLinks.none")}</ThemedText>
+          {workspace.data?.canLink &&
+            link(t("crewStudio.title"), `/crew-tasks/${encodeURIComponent(crewId)}?section=studio`)}
+        </View>
       )}
       <ThemedText type="smallBold">{t("crewLinks.films")}</ThemedText>
       {!signedIn ? (
@@ -133,12 +140,12 @@ function Resources({
         <ActivityIndicator />
       ) : "error" in workspace || "error" in ips ? (
         <ThemedText>{t("crewLinks.filmsUnavailable")}</ThemedText>
-      ) : workspace.data && ips.data.length > 1 ? (
+      ) : workspace.data?.workspace && ips.data.length > 1 ? (
         <ThemedText>{t("crewLinks.filmsMultipleIps")}</ThemedText>
-      ) : workspace.data && ips.data.length === 1 ? (
+      ) : workspace.data?.workspace && ips.data.length === 1 ? (
         <Films
-          key={`${workspace.data.id}:${ips.data[0]!.id}:${revision}`}
-          workspaceId={workspace.data.id}
+          key={`${workspace.data.workspace.id}:${ips.data[0]!.id}:${revision}`}
+          workspaceId={workspace.data.workspace.id}
           ipId={ips.data[0]!.id}
           generation={generation}
         />

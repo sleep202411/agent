@@ -2313,6 +2313,7 @@
   "taskWorkflowManagement.noReplacement": "請先建立相同工作流程狀態的欄，再封存此欄。",
   "taskWorkflowManagement.deleteHelp": "永久刪除此封存欄並從已儲存檢視篩選條件中移除？如仍有任務引用（包括已刪除任務），則無法刪除。",
   "taskWorkflowManagement.recheck": "請返回欄列表重新整理並確認結果，再重試。",
+  "crewStudio.backToCrew": "返回劇組",
   "crewStudio.title": "Studio 工作空間",
   "crewStudio.help": "連結您管理的工作空間。每個工作空間只能連結一個劇組。",
   "crewStudio.current": "目前工作空間",

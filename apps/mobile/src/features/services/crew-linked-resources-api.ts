@@ -30,6 +30,7 @@ export async function fetchLinkedWorkspace(
     .object({
       page: z.object({ crewId: id }),
       studioWorkspace: z.object({ id: z.string().uuid(), name: z.string() }).nullable(),
+      capabilities: z.object({ linkWorkspace: z.boolean() }),
     })
     .parse(
       await api.get(`/crews/${crewId}/production-overview`, {
@@ -40,7 +41,7 @@ export async function fetchLinkedWorkspace(
     );
   current(generation, signal);
   if (result.page.crewId !== crewId) throw Error("Crew resource scope changed.");
-  return result.studioWorkspace;
+  return { workspace: result.studioWorkspace, canLink: result.capabilities.linkWorkspace };
 }
 export async function fetchLinkedFilms(
   workspaceId: string,

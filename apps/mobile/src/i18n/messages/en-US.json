@@ -2313,6 +2313,7 @@
   "taskWorkflowManagement.noReplacement": "Create another column with the same workflow status before archiving this column.",
   "taskWorkflowManagement.deleteHelp": "Permanently delete this archived column and remove it from saved view filters? Task references, including deleted tasks, prevent deletion.",
   "taskWorkflowManagement.recheck": "Return to the column list to refresh and verify the result before trying again.",
+  "crewStudio.backToCrew": "Back to Crew",
   "crewStudio.title": "Studio Workspace",
   "crewStudio.help": "Link a workspace you administer. Each workspace can be linked to only one Crew.",
   "crewStudio.current": "Current Workspace",

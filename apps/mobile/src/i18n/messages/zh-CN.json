@@ -2313,6 +2313,7 @@
   "taskWorkflowManagement.noReplacement": "请先创建相同工作流状态的列，再归档此列。",
   "taskWorkflowManagement.deleteHelp": "永久删除此归档列并从已保存视图筛选条件中移除？如仍有任务引用（包括已删除任务），则无法删除。",
   "taskWorkflowManagement.recheck": "请返回列列表刷新并确认结果，再重试。",
+  "crewStudio.backToCrew": "返回剧组",
   "crewStudio.title": "Studio 工作空间",
   "crewStudio.help": "关联您管理的工作空间。每个工作空间只能关联一个剧组。",
   "crewStudio.current": "当前工作空间",

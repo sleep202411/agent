@@ -60,7 +60,7 @@ beforeEach(() => {
   h.generation = 1;
   h.active = true;
   h.ips.mockResolvedValue([{ id: "ip" }]);
-  h.workspace.mockResolvedValue({ id: "ws", name: "Studio" });
+  h.workspace.mockResolvedValue({ workspace: { id: "ws", name: "Studio" }, canLink: false });
   h.films.mockResolvedValue({ items: [{ id: "film", title: "Film" }], nextCursor: null });
   host = document.createElement("div");
   root = createRoot(host);
@@ -185,7 +185,13 @@ it.each(["ips", "workspace"] as const)(
     expect(host.textContent).toContain("loading");
     expect(host.textContent).not.toContain("crewLinks.none");
     expect(h.films).not.toHaveBeenCalled();
-    await act(async () => finish(kind === "ips" ? [{ id: "ip" }] : { id: "ws", name: "Studio" }));
+    await act(async () =>
+      finish(
+        kind === "ips"
+          ? [{ id: "ip" }]
+          : { workspace: { id: "ws", name: "Studio" }, canLink: false }
+      )
+    );
     expect(host.textContent).toContain("Film");
   }
 );
@@ -210,4 +216,18 @@ it("shows not linked only after the film list is confirmed empty", async () => {
   await click("crewLinks.title");
   expect(host.textContent?.match(/crewLinks.none/g)).toHaveLength(1);
   expect(host.textContent).not.toContain("crewLinks.filmsUnavailable");
+});
+
+it("opens existing Studio workspace management when the server allows linking", async () => {
+  h.workspace.mockResolvedValue({ workspace: null, canLink: true });
+  await render();
+  await click("crewLinks.title");
+  await click("crewStudio.title");
+  expect(h.push).toHaveBeenCalledWith("/crew-tasks/crew?section=studio");
+});
+it("does not offer workspace linking when the server disallows it", async () => {
+  h.workspace.mockResolvedValue({ workspace: null, canLink: false });
+  await render();
+  await click("crewLinks.title");
+  expect(host.textContent).not.toContain("crewStudio.title");
 });

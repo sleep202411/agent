@@ -27,9 +27,14 @@ it("verifies the Crew identity of the linked workspace", async () => {
   h.get.mockResolvedValue({
     page: { crewId: "crew" },
     studioWorkspace: { id: ws, name: "Studio" },
+    capabilities: { linkWorkspace: true },
   });
-  expect((await fetchLinkedWorkspace("crew", 1, signal()))?.id).toBe(ws);
-  h.get.mockResolvedValue({ page: { crewId: "other" }, studioWorkspace: null });
+  expect((await fetchLinkedWorkspace("crew", 1, signal())).workspace?.id).toBe(ws);
+  h.get.mockResolvedValue({
+    page: { crewId: "other" },
+    studioWorkspace: null,
+    capabilities: { linkWorkspace: false },
+  });
   await expect(fetchLinkedWorkspace("crew", 1, signal())).rejects.toThrow("scope");
 });
 it("filters linked films by BOTH workspace and IP", async () => {
@@ -92,4 +97,17 @@ it("rejects IP-link access from an expired session", async () => {
   await expect(fetchCrewIpLinkAccess("crew", "actor", 1, signal())).rejects.toThrow(
     "session expired"
   );
+});
+it("retains the official capability when no workspace is linked", async () => {
+  h.get.mockResolvedValue({
+    page: { crewId: "crew" },
+    studioWorkspace: null,
+    capabilities: { linkWorkspace: true },
+  });
+  expect(await fetchLinkedWorkspace("crew", 1, signal())).toEqual({
+    workspace: null,
+    canLink: true,
+  });
+  h.get.mockResolvedValue({ page: { crewId: "crew" }, studioWorkspace: null });
+  await expect(fetchLinkedWorkspace("crew", 1, signal())).rejects.toThrow();
 });
