@@ -28,6 +28,17 @@ const state = vi.hoisted(() => ({
   failureStatus: null as number | null,
   missing: false,
   retry: vi.fn(),
+  saveWorkflow: vi.fn(),
+  workflow: {
+    id: "workflow-open",
+    name: "To do",
+    color: "#888888",
+    systemKey: "open" as const,
+    semantic: "open" as const,
+    version: 3,
+    archived: false,
+    position: 0,
+  },
 }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: state.account } }),
@@ -57,7 +68,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
     useReorderCrewTask: mutation,
     useUpdateCrewTask: mutation,
     useUpdateCrewTaskView: mutation,
-    useUpdateCrewTaskWorkflowState: mutation,
+    useUpdateCrewTaskWorkflowState: () => ({ mutateAsync: state.saveWorkflow, isPending: false }),
     useCrewProductionOverview: () => ({
       data: {
         project: { startDate: null },
@@ -119,12 +130,15 @@ vi.mock("./task-project-views", () => ({
   TaskProjectView: ({
     view,
     onOpenTask,
+    onEditWorkflowState,
   }: {
     view: { layout: string };
     onOpenTask: (id: string) => void;
+    onEditWorkflowState: (value: typeof state.workflow) => void;
   }) => (
     <div data-layout={view.layout}>
       <button onClick={() => onOpenTask("task-1")}>Open task</button>
+      <button onClick={() => onEditWorkflowState(state.workflow)}>Edit workflow fixture</button>
     </div>
   ),
 }));
@@ -177,6 +191,9 @@ afterEach(() => {
   state.failureStatus = null;
   state.missing = false;
   state.retry.mockClear();
+  state.saveWorkflow.mockReset();
+  state.workflow.name = "To do";
+  state.workflow.version = 3;
 });
 async function render(deeplinkTaskId?: string | null, reuse = false, production = false) {
   if (!reuse) {
@@ -462,5 +479,51 @@ it.each([401, 403, 404, 410])(
     await render("task-1", true);
     expect(document.body.textContent).toContain("Edit draft");
     expect(document.body.textContent).not.toContain("Private task draft");
+  }
+);
+
+it.each(["en-US", "zh-CN", "zh-HK"])(
+  "saves and reopens workflow edits in %s, retaining a rejected draft",
+  async (locale) => {
+    state.locale = locale;
+    state.owner = true;
+    state.layout = "board";
+    const messages = locale === "zh-CN" ? cn : locale === "zh-HK" ? hk : en;
+    const t = messages.crewTaskProject;
+    await render();
+    const click = async (label: string) =>
+      act(async () => {
+        [...document.querySelectorAll("button")]
+          .find((button) => button.textContent === label)!
+          .click();
+      });
+    await click("Edit workflow fixture");
+    const nameInput = () =>
+      document.querySelector<HTMLInputElement>(`input[placeholder="${t.workflowColumnName}"]`)!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        nameInput(),
+        "剪辑初审"
+      );
+      nameInput().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    state.saveWorkflow.mockRejectedValueOnce(new Error("Version conflict"));
+    await click(t.save);
+    expect(nameInput().value).toBe("剪辑初审");
+    state.saveWorkflow.mockImplementationOnce(
+      async ({ input }: { input: { name: string; expectedVersion: number } }) => {
+        state.workflow.name = input.name;
+        state.workflow.version++;
+      }
+    );
+    await click(t.save);
+    expect(state.saveWorkflow).toHaveBeenLastCalledWith({
+      stateId: "workflow-open",
+      input: { expectedVersion: 3, name: "剪辑初审", color: "#888888" },
+    });
+    expect(nameInput()).toBeNull();
+    await click("Edit workflow fixture");
+    expect(nameInput().value).toBe("剪辑初审");
+    expect(state.workflow.systemKey).toBe("open");
   }
 );
