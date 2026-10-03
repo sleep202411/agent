@@ -39,7 +39,7 @@ vi.mock("./task-child-create", () => ({
 vi.mock("./task-assignments", () => ({ TaskAssignments: () => null }));
 const h = vi.hoisted(() => ({
   fetch: vi.fn(),
-  active: true,
+  focused: true,
   generation: 1,
   close: vi.fn(),
   web: vi.fn(),
@@ -62,7 +62,8 @@ vi.mock("./task-detail-api", async (original) => ({
   fetchTaskDetail: h.fetch,
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("./user-displays", () => ({
   useUserDisplays: () => new Map([["1", { nickname: "Artist" }]]),
 }));
@@ -128,7 +129,7 @@ const click = (s: string) =>
     .click();
 beforeEach(() => {
   vi.resetAllMocks();
-  h.active = true;
+  h.focused = true;
   h.generation = 1;
   h.fetch.mockResolvedValue(detail);
   host = document.createElement("div");
@@ -180,10 +181,10 @@ it("aborts replaced/backgrounded requests and suppresses late private results", 
   expect(signal.aborted).toBe(true);
   await act(async () => finish({ ...detail, title: "Old secret" }));
   expect(host.textContent).not.toContain("Old secret");
-  h.active = false;
+  h.focused = false;
   await render("other");
   expect(host.textContent).toBe("");
-  h.active = true;
+  h.focused = true;
   h.generation = 2;
   await render("other");
   expect(host.textContent).toBe("");

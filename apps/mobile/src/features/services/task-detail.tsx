@@ -10,7 +10,7 @@ import { TaskCustomFields } from "./task-custom-fields";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
-import { useScreenActive } from "@/hooks/use-app-active";
+import { useIsFocused } from "expo-router";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
@@ -46,8 +46,8 @@ type Props = {
   onOpenWeb: (taskId: string) => void;
 };
 export function TaskDetail(props: Props) {
-  const active = useScreenActive();
-  return active && props.generation === getAuthGeneration() ? (
+  const focused = useIsFocused();
+  return focused && props.generation === getAuthGeneration() ? (
     <TaskNavigator key={`${props.crewId}:${props.taskId}:${props.generation}`} {...props} />
   ) : null;
 }
