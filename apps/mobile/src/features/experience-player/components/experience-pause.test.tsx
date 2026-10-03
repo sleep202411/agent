@@ -181,7 +181,7 @@ it("freezes fixed story time and holds a late media completion until explicit re
   await act(async () => {
     vi.advanceTimersByTime(1000);
   });
-  await click("Pause");
+  await pausePicture();
   await act(async () => {
     h.video.onCompleted();
     vi.advanceTimersByTime(20000);
@@ -214,7 +214,7 @@ it("returning from the background stays paused until the viewer resumes", async 
   });
   expect(h.unlock).toHaveBeenCalledTimes(unlocks);
   await click("Resume");
-  expect(container.querySelector('[aria-label="Pause"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="Pause"]')).toBeNull();
 });
 
 it("holds media without freezing the interaction, then releases a late completion once", async () => {
@@ -225,7 +225,7 @@ it("holds media without freezing the interaction, then releases a late completio
   expect(h.spatialPresenting).toBe(true);
   await act(async () => h.video.onCompleted());
   expect(h.outcome).not.toHaveBeenCalled();
-  await click("Pause");
+  await pausePicture();
   expect(h.spatialPresenting).toBe(false);
   await click("Resume");
   expect(h.mediaPresenting).toBe(false);
@@ -258,7 +258,7 @@ it("pauses on autoplay refusal and retries from the Resume tap", async () => {
   await click("Resume");
   expect(play).toHaveBeenCalledWith({ userGesture: true });
   await act(async () => h.hold(true));
-  await click("Pause");
+  await pausePicture();
   play.mockClear();
   await click("Resume");
   expect(play).not.toHaveBeenCalled();
@@ -324,7 +324,7 @@ it("does not pause after a drag or responder cancellation", async () => {
   });
   expect(h.mediaPresenting).toBe(true);
 });
-it("keeps world-stream picture gestures with the world renderer", async () => {
+it("keeps world-stream picture gestures with the world renderer and offers its Pause button", async () => {
   const manifest = {
     ...runtime,
     graph: {
@@ -342,6 +342,8 @@ it("keeps world-stream picture gestures with the world renderer", async () => {
   await render(true, manifest);
   await click("Start");
   expect(h.stage.onStartShouldSetResponder!(stageEvent())).toBe(false);
+  await click("Pause");
+  expect(container.querySelector('[aria-label="Resume"]')).not.toBeNull();
 });
 
 it("ignores a second finger added during a picture tap", async () => {
@@ -355,3 +357,11 @@ it("ignores a second finger added during a picture tap", async () => {
   expect(h.mediaPresenting).toBe(true);
   expect(container.textContent).not.toContain("Resume");
 });
+
+const pausePicture = () =>
+  act(async () => {
+    const event = stageEvent();
+    expect(h.stage.onStartShouldSetResponder!(event)).toBe(true);
+    h.stage.onResponderGrant!(event);
+    h.stage.onResponderRelease!(event);
+  });

@@ -905,7 +905,9 @@ function ActiveExperienceRuntimePlayer({
                 {copy.resume}
               </ThemedText>
             </Pressable>
-          ) : (
+          ) : scene.renderers.some(
+              (renderer) => renderer.rendererId === EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID
+            ) ? (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={copy.pause}
@@ -916,7 +918,7 @@ function ActiveExperienceRuntimePlayer({
                 {copy.pause}
               </ThemedText>
             </Pressable>
-          )
+          ) : null
         ) : null}
         {nodeGate ? <View pointerEvents="none" style={styles.nodeGate} /> : null}
         {retryAccess && started && !nodeGate ? (
