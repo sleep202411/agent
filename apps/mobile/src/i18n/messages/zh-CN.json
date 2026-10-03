@@ -4754,5 +4754,7 @@
   "kyc.pendingRecovery": "有待确认的认证记录。再次开始前，请先检查结果。",
   "kyc.restart": "开始新的认证",
   "kyc.restartHint": "重新开始只会清除本机记录，不会取消已提交给阿里云的认证。",
-  "kyc.providerFailed": "认证页面无法继续。请重试页面或检查认证状态。"
+  "kyc.providerFailed": "认证页面无法继续。请重试页面或检查认证状态。",
+  "kyc.openProvider": "打开认证页面",
+  "kyc.webReturnHint": "在新标签页完成认证，然后返回此处检查认证状态。"
 }

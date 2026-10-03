@@ -4754,5 +4754,7 @@
   "kyc.pendingRecovery": "有待確認的認證記錄。再次開始前，請先檢查結果。",
   "kyc.restart": "開始新的認證",
   "kyc.restartHint": "重新開始只會清除本機記錄，不會取消已提交給阿里雲的認證。",
-  "kyc.providerFailed": "認證頁面無法繼續。請重試頁面或檢查認證狀態。"
+  "kyc.providerFailed": "認證頁面無法繼續。請重試頁面或檢查認證狀態。",
+  "kyc.openProvider": "開啟認證頁面",
+  "kyc.webReturnHint": "在新分頁完成認證，然後返回此處檢查認證狀態。"
 }

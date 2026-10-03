@@ -4754,5 +4754,7 @@
   "kyc.pendingRecovery": "A verification attempt is pending. Check its result before starting again.",
   "kyc.restart": "Start a new attempt",
   "kyc.restartHint": "Starting again clears this saved attempt only. It does not cancel verification already submitted to Aliyun.",
-  "kyc.providerFailed": "The verification page could not continue. Retry the page or check verification status."
+  "kyc.providerFailed": "The verification page could not continue. Retry the page or check verification status.",
+  "kyc.openProvider": "Open verification",
+  "kyc.webReturnHint": "Complete verification in the new tab, then return here and check verification status."
 }
