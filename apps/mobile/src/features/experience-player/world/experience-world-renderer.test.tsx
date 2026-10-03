@@ -258,3 +258,29 @@ it("treats frame loss as failure instead of successful exploration completion", 
   expect(h.close).toHaveBeenCalledOnce();
   expect(props.onCompleted).not.toHaveBeenCalled();
 });
+
+it("leaves the embedded tap recovery visible and disables movement until playback resumes", async () => {
+  await act(async () => root.render(<ExperienceWorldRenderer {...props} />));
+  await flush();
+  const message = (blocked: boolean) =>
+    h.frame.onMessage(
+      JSON.stringify({
+        sessionId: "41111111-1111-4111-8111-111111111111",
+        type: "playback-blocked",
+        blocked,
+      })
+    );
+  await act(async () => message(true));
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="play.world.forward"]')!.disabled).toBe(
+    true
+  );
+  expect(host.textContent).not.toContain("play.world.connecting");
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="play.world.finish"]')!.disabled).toBe(
+    false
+  );
+  await act(async () => message(false));
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="play.world.forward"]')!.disabled).toBe(
+    false
+  );
+  expect(h.create).toHaveBeenCalledOnce();
+});

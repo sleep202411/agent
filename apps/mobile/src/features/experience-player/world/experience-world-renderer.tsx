@@ -1,12 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useEffectEvent,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useEffectEvent, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { uuid } from "expo-modules-core";
 import {
@@ -67,13 +59,16 @@ function WorldSceneSession({
   const t = useTranslations();
   const presenting = useGatedScreenActive();
   const [sessionId] = useState(() => uuid.v4());
-  const html = useMemo(() => worldRuntimeHtml(sessionId), [sessionId]);
+  const resumeLabel = t("play.resume");
+  // Keep this document stable for its session, including while app locale changes.
+  const [html] = useState(() => worldRuntimeHtml(sessionId, resumeLabel));
   const frame = useRef<WorldRuntimeFrameHandle>(null);
   const bridge = useRef<WorldRuntimeBridge | null>(null);
   const controller = useRef<WorldTravelController | null>(null);
   const [snapshot, setSnapshot] = useState(INITIAL);
   const [requested, setRequested] = useState(config.autoplay);
   const [attached, setAttached] = useState(false);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [pauseRevision, setPauseRevision] = useState(0);
   const instructionSent = useRef(false),
     completed = useRef(false),
@@ -134,6 +129,14 @@ function WorldSceneSession({
     config.worldId,
     config.maxExperienceSeconds,
   ]);
+
+  useEffect(() => {
+    if (!attached) return;
+    const transport = bridge.current;
+    void transport?.setPresentation(presenting).catch((error) => {
+      if (bridge.current === transport) reportError(error);
+    });
+  }, [attached, presenting]);
 
   useEffect(() => {
     if (!requested || !presenting || !attached || snapshot.phase !== "idle") return;
@@ -209,7 +212,8 @@ function WorldSceneSession({
         if (controller.current === travel) fail(error);
       });
   };
-  const running = presenting && snapshot.phase === "running";
+  const running = presenting && !playbackBlocked && snapshot.phase === "running";
+  const canFinish = presenting && ["starting", "running", "paused"].includes(snapshot.phase);
   const loading = requested && (snapshot.phase === "idle" || snapshot.phase === "starting");
   return (
     <View style={styles.surface}>
@@ -230,6 +234,12 @@ function WorldSceneSession({
                 message.data.type === "ready"
               )
                 setAttached(true);
+              if (
+                message.success &&
+                message.data.sessionId === sessionId &&
+                message.data.type === "playback-blocked"
+              )
+                setPlaybackBlocked(message.data.blocked);
             } catch {
               /* Bridge ignores malformed transport messages. */
             }
@@ -241,7 +251,7 @@ function WorldSceneSession({
           void controller.current?.dispose().catch(() => undefined);
         }}
       />
-      {loading ? (
+      {loading && !playbackBlocked ? (
         <View pointerEvents="none" style={styles.loading}>
           <ActivityIndicator color="#FFFFFF" />
           <ThemedText type="small" style={styles.text}>
@@ -306,10 +316,10 @@ function WorldSceneSession({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("play.world.finish")}
-            accessibilityState={{ disabled: !running }}
-            disabled={!running}
+            accessibilityState={{ disabled: !canFinish }}
+            disabled={!canFinish}
             onPress={() => run(end)}
-            style={[styles.button, !running && styles.disabled]}
+            style={[styles.button, !canFinish && styles.disabled]}
           >
             <IconPlayerStop size={20} color="#FFFFFF" />
           </Pressable>

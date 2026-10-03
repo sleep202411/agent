@@ -32,6 +32,7 @@ const look = z.enum([
   "down-right",
 ]);
 export const worldCommandSchema = z.discriminatedUnion("type", [
+  z.object({ ...envelope, type: z.literal("presentation"), active: z.boolean() }).strict(),
   z
     .object({
       ...envelope,
@@ -75,6 +76,7 @@ export const worldCommandSchema = z.discriminatedUnion("type", [
 ]);
 const sessionId = z.string().uuid();
 export const worldMessageSchema = z.discriminatedUnion("type", [
+  z.object({ sessionId, type: z.literal("playback-blocked"), blocked: z.boolean() }).strict(),
   z.object({ sessionId, type: z.literal("ready") }).strict(),
   z
     .object({

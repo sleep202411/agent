@@ -139,6 +139,10 @@ export class WorldRuntimeBridge implements WorldTravelRuntime {
     });
   }
 
+  async setPresentation(active: boolean) {
+    await this.request({ type: "presentation", active });
+  }
+
   can(action: WorldTravelAction) {
     if (this.closed) return false;
     if (action === "start") return this.status === "DISCONNECTED";

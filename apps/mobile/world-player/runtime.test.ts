@@ -34,7 +34,7 @@ beforeEach(async () => {
   });
   h.factory.mockResolvedValue(h.runtime);
   h.runtime.dispose.mockResolvedValue(undefined);
-  document.body.innerHTML = `<video></video><script data-initial type="application/json">${JSON.stringify({ sessionId })}</script>`;
+  document.body.innerHTML = `<video></video><button data-resume hidden>Resume</button><script data-initial type="application/json">${JSON.stringify({ sessionId })}</script>`;
   window.ReactNativeWebView = { postMessage: (raw) => replies.push(JSON.parse(raw)) };
   await import("./runtime");
   send({
@@ -181,4 +181,22 @@ it("disposes an SDK acquired after the playback document has closed", async () =
   send({ type: "start", requestId: "late-start" });
   await settle();
   expect(h.runtime.start).not.toHaveBeenCalled();
+});
+
+it("acknowledges a presentation hold while SDK startup is still pending", async () => {
+  let finish!: (value: unknown) => void;
+  h.runtime.start.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  send({ type: "start", requestId: "pending-start" });
+  await settle();
+  send({ type: "presentation", requestId: "hold", active: false });
+  expect(replies.find((r) => r.requestId === "hold")).toMatchObject({ type: "result" });
+  expect(replies.find((r) => r.requestId === "pending-start")).toBeUndefined();
+  finish({ providerTravelId: "travel", firstFrameUrl: null, maxExperienceSeconds: 90 });
+  await settle();
+  expect(h.runtime.start).toHaveBeenCalledOnce();
 });

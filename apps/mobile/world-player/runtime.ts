@@ -1,3 +1,4 @@
+import { attachWorldVideoPlayback } from "./video-playback";
 import { createHappyOysterRuntime } from "./happy-oyster-runtime";
 import { worldCommandSchema, type WorldMessage, type WorldCommand } from "./protocol";
 import type { WorldTravelRuntime } from "../src/features/experience-player/world/world-travel-runtime";
@@ -27,6 +28,12 @@ const errorValue = (error: unknown) => ({
   message: error instanceof Error ? error.message : String(error),
   name: error instanceof Error ? error.name : "Error",
 });
+const playback = attachWorldVideoPlayback(
+  video,
+  document.querySelector<HTMLButtonElement>("[data-resume]")!,
+  (blocked) => send({ type: "playback-blocked", blocked }),
+  (error) => send({ type: "error", ...errorValue(error) })
+);
 async function execute(command: WorldCommand): Promise<unknown> {
   if (command.type === "initialize") {
     if (initialized) throw new Error("World runtime is already initialized.");
@@ -53,23 +60,29 @@ async function execute(command: WorldCommand): Promise<unknown> {
   if (!runtime) throw new Error("World runtime is not initialized.");
   switch (command.type) {
     case "start":
+      playback.setStreaming(true);
       return runtime.start();
     case "move":
       return runtime.move(command.command);
     case "instruct":
       return runtime.instruct(command.content);
     case "pause":
+      playback.setStreaming(false);
       return runtime.pause();
     case "resume":
+      playback.setStreaming(true);
       return runtime.resume();
     case "rewind":
       return runtime.rewind(command.seconds);
     case "token":
       return runtime.updateToken(command.token);
     case "end":
+      playback.setStreaming(false);
       return runtime.end();
     case "dispose":
+      playback.setStreaming(false);
       await runtime.dispose();
+      playback.dispose();
       retired = true;
       return;
   }
@@ -87,6 +100,12 @@ const receive = (raw: string) => {
   // A transport replay must never start or move a paid session twice.
   if (seen.has(command.requestId)) return;
   seen.add(command.requestId);
+  // Presentation holds cannot wait behind a pending RTC startup or provider RPC.
+  if (command.type === "presentation") {
+    playback.setActive(command.active);
+    send({ type: "result", requestId: command.requestId });
+    return;
+  }
   queue = queue.then(async () => {
     try {
       if (retired) throw new Error("World runtime is closed.");
@@ -104,6 +123,7 @@ const receiveParent = (event: MessageEvent) => {
 window.addEventListener("message", receiveParent);
 window.addEventListener("pagehide", () => {
   retired = true;
+  playback.dispose();
   window.removeEventListener("message", receiveParent);
   void runtime?.dispose().catch(() => undefined);
 });
