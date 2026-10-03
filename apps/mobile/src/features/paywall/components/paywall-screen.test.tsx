@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   buy: vi.fn(),
   push: vi.fn(),
   packs: vi.fn(),
+  plans: vi.fn(),
   returnPath: "/ip/example",
   alert: vi.fn(),
   balance: vi.fn(),
@@ -89,7 +90,7 @@ vi.mock("../lib/paywall-store", () => ({
 }));
 vi.mock("../lib/billing-api", () => ({
   listCommunityPointPackages: state.packs,
-  listMembershipPrices: async () => [],
+  listMembershipPrices: state.plans,
   paywallBillingCurrency: () => "CNY",
   getBillingOrder: (...args: unknown[]) => state.getOrder(...args),
   isOrderDead: () => false,
@@ -146,6 +147,7 @@ beforeEach(() => {
   state.follow.mockResolvedValue("timeout");
   // Nest catalog is the only source for community packs (no hardcoded SKUs).
   state.packs.mockResolvedValue([FIXTURE_PACK]);
+  state.plans.mockResolvedValue([]);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -157,7 +159,11 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const render = () => act(async () => root.render(<PaywallScreen />));
-const PAY_LABELS = new Set(["paywall.buyNow", "paywall.confirming"]);
+const PAY_LABELS = new Set([
+  "paywall.buyNow",
+  "paywall.confirming",
+  "paywall.membership.subscribe",
+]);
 const payButton = () =>
   [...host.querySelectorAll("button")].find((item) =>
     PAY_LABELS.has(item.textContent?.replace(/\s+/g, "") ?? "")
@@ -461,4 +467,44 @@ it("does not overwrite a post-purchase balance with a late initial read", async 
   expect(host.textContent).toContain("44");
   await act(async () => finishInitial("11"));
   expect(host.textContent).toContain("44");
+});
+
+it.each(["community_points", "community_membership"])(
+  "retries a failed %s catalog without purchasing",
+  async (category) => {
+    state.category = category;
+    const request = category === "community_points" ? state.packs : state.plans;
+    request
+      .mockRejectedValueOnce(Error("Catalog temporarily unavailable"))
+      .mockResolvedValueOnce([{ ...FIXTURE_PACK, category }]);
+    await render();
+    expect(host.textContent).toContain("Catalog temporarily unavailable");
+    expect(payButton().disabled).toBe(true);
+    const retry = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "common.retry"
+    )!;
+    await act(async () => retry.click());
+    expect(host.textContent).not.toContain("Catalog temporarily unavailable");
+    expect(host.textContent).toContain("$50.00");
+    expect(payButton().disabled).toBe(false);
+    expect(state.buy).not.toHaveBeenCalled();
+  }
+);
+
+it("aborts a replaced account catalog and ignores its late result", async () => {
+  let resolve!: (value: unknown[]) => void;
+  state.packs.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  await render();
+  const signal = state.packs.mock.calls[0][1] as AbortSignal;
+  state.generation++;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => resolve([{ ...FIXTURE_PACK, name: "Old account price", id: "old" }]));
+  expect(host.textContent).not.toContain("Old account price");
+  expect(host.textContent).toContain("5000");
 });
