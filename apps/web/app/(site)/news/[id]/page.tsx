@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getNewsItem, getNewsList } from "../_data/news";
+import { NewsLoadError } from "../_components/news-load-error";
 import { NewsDetail, NewsNotFound } from "../_components/news-detail";
 import { JsonLd, buildArticle, buildBreadcrumbList, localeCanonicalUrl } from "@/src/lib/seo";
 
@@ -8,12 +9,11 @@ export default async function NewsDetailPage(props: { params: Promise<{ id: stri
   const { id } = await props.params;
   const numId = Number(id);
   const lang = (await headers()).get("x-locale") ?? "en-US";
-  // The detail endpoint carries the full body; the list does not. Fetch both:
-  // the single item for its body, the list for the "more news" rail (and as the
-  // source of truth for our hardcoded static articles, which have no detail
-  // endpoint). Prefer the live detail; fall back to the list card by id.
-  const [detail, all] = await Promise.all([getNewsItem(numId, lang), getNewsList(lang)]);
-  const item = detail ?? all.find((a) => a.id === numId);
+  const [detail, related] = await Promise.allSettled([getNewsItem(numId, lang), getNewsList(lang)]);
+  if (detail.status === "rejected")
+    return <NewsLoadError error={String(detail.reason?.message || detail.reason)} />;
+  const item = detail.value;
+  const all = related.status === "fulfilled" ? related.value : [];
 
   if (!item) {
     return <NewsNotFound />;
@@ -44,6 +44,9 @@ export default async function NewsDetailPage(props: { params: Promise<{ id: stri
     <>
       <JsonLd data={[article, breadcrumb]} />
       <NewsDetail item={item} all={all} />
+      {related.status === "rejected" && (
+        <NewsLoadError error={String(related.reason?.message || related.reason)} />
+      )}
     </>
   );
 }

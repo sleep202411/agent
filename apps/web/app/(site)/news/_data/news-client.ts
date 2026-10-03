@@ -76,14 +76,27 @@ export async function fetchNewsByTag(locale: string, tag: string): Promise<NewsI
     tag
   )}&pageSize=100`;
   const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`news upstream ${res.status}`);
-  const json = (await res.json()) as {
+  const raw = await res.text();
+  let json: {
     code?: number | string;
     success?: boolean;
+    message?: string;
+    msg?: string;
     data?: { list?: unknown };
-  };
-  if (json.success !== true && json.code !== 200) throw new Error("news upstream not ok");
-  const list = Array.isArray(json.data?.list) ? json.data!.list : [];
+  } | null = null;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    /* Preserve a plain-text upstream error. */
+  }
+  if (!res.ok || !json || (json.success !== true && json.code !== 200)) {
+    throw new Error(
+      json?.message || json?.msg || (!json && raw.trim()) || `News request failed (${res.status})`
+    );
+  }
+  if (!Array.isArray(json.data?.list))
+    throw new Error("News service returned an invalid article list.");
+  const list = json.data.list;
 
   const seen = new Set<number>();
   const out: NewsItem[] = [];

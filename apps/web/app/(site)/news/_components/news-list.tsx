@@ -10,23 +10,6 @@ import { articleHref, formatDate } from "../_data/format";
 import { fetchNewsByTag } from "../_data/news-client";
 import type { NewsItem } from "../_data/types";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-// Subscriber social-proof figure ticks up ~1万 (10,000) each month from a
-// June-2026 base of 120万, so it stays fresh without manual edits. Chinese
-// locales read it in 万 ("121"); others get the full number ("1,210,000").
-const SUBSCRIBER_BASE_WAN = 120;
-const SUBSCRIBER_ANCHOR = { year: 2026, month: 6 };
-
-function subscriberCountLabel(locale: string): string {
-  const now = new Date();
-  const months =
-    (now.getFullYear() - SUBSCRIBER_ANCHOR.year) * 12 +
-    (now.getMonth() + 1 - SUBSCRIBER_ANCHOR.month);
-  const wan = SUBSCRIBER_BASE_WAN + Math.max(0, months);
-  return locale.startsWith("zh") ? String(wan) : (wan * 10_000).toLocaleString("en-US");
-}
-
 // The "All" pill is inserted here on the frontend — the backend has no all-tag.
 // Selecting it clears the server-side `tag` filter. Sentinel id, never sent.
 const ALL_TAG_ID = "all";
@@ -45,8 +28,6 @@ export function NewsList({
 }) {
   const t = useTranslations("news");
   const locale = useLocale();
-  const subscriberCount = subscriberCountLabel(locale);
-  const [email, setEmail] = useState("");
 
   // Default to "All". Switching a real tag calls the backend (server action)
   // and swaps the list; "All" restores the server-rendered feed with no
@@ -73,28 +54,17 @@ export function NewsList({
           loadedTagRef.current = tagId;
           setDisplayedArticles(next);
         }
-      } catch {
+      } catch (error) {
         // A failed tag fetch — transient network, or a Server Action id mismatch
         // when the open page is from a previous deploy — must NOT bubble to the
         // error boundary and crash the whole page. Keep the current list; the
         // user can retry, and a reload picks up the current build.
         if (reqId === reqRef.current) {
           setActiveTagId(loadedTagRef.current);
-          toast.error(t("tFilterFailed"));
+          toast.error(error instanceof Error && error.message ? error.message : t("tFilterFailed"));
         }
       }
     });
-  };
-
-  const handleSubscribe = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = email.trim();
-    if (!EMAIL_RE.test(trimmed)) {
-      toast.error(t("tInvalidEmail"));
-      return;
-    }
-    toast.success(t("tSubscribed", { email: trimmed }));
-    setEmail("");
   };
 
   const featured = displayedArticles[0];
@@ -111,27 +81,6 @@ export function NewsList({
           </h1>
           <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground md:text-base">
             {t("subtitle")}
-          </p>
-          <form
-            onSubmit={handleSubscribe}
-            className="mx-auto mt-8 flex w-full max-w-md flex-col gap-2 sm:flex-row"
-          >
-            <input
-              type="email"
-              placeholder={t("subscribePlaceholder")}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="h-11 flex-1 rounded-xl border border-border bg-secondary/40 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
-            <button
-              type="submit"
-              className="h-11 shrink-0 rounded-xl bg-foreground px-5 text-sm font-semibold text-background transition-opacity hover:opacity-90"
-            >
-              {t("subscribe")}
-            </button>
-          </form>
-          <p className="mx-auto mt-3 max-w-md text-xs text-muted-foreground/70">
-            {t("subscribeSocialProof", { total: subscriberCount })}
           </p>
         </header>
 
@@ -241,7 +190,8 @@ function ArticleLink({
   className?: string;
   children: React.ReactNode;
 }) {
-  const href = articleHref(article);
+  const locale = useLocale();
+  const href = article.isExternal ? articleHref(article) : `/${locale}${articleHref(article)}`;
   if (article.isExternal) {
     return (
       <a href={href} target="_blank" rel="noreferrer" className={className}>
