@@ -18,8 +18,8 @@ import { readTextGameSse } from "./text-adventure-sse";
 
 export const textAdventureSessionKeys = {
   all: ["creator-text-adventure-session"] as const,
-  detail: (gameId: string, locale: TextGameLocale) =>
-    [...textAdventureSessionKeys.all, gameId, locale] as const,
+  detail: (gameId: string, locale: TextGameLocale, userId: string) =>
+    [...textAdventureSessionKeys.all, gameId, locale, userId] as const,
 };
 
 export type TextAdventureSessionStreamHandlers = {
@@ -44,12 +44,13 @@ function replaceAssistant(
 }
 
 export async function getPlayingTextAdventureSession(
-  gameId: string
+  gameId: string,
+  signal?: AbortSignal
 ): Promise<TextGamePlaySession | null> {
   const requestedGameId = TextGameIdSchema.parse(gameId);
   const data = await api.get<unknown>(
     `/api/player/text-game/${encodeURIComponent(requestedGameId)}/playing-session`,
-    { timeout: 45_000 }
+    { timeout: 45_000, ...(signal ? { signal } : {}) }
   );
   if (data == null) return null;
 
@@ -64,7 +65,8 @@ export async function getPlayingTextAdventureSession(
 export async function startTextAdventureSession(
   gameId: string,
   locale: TextGameLocale,
-  handlers?: TextAdventureSessionStreamHandlers
+  handlers?: TextAdventureSessionStreamHandlers,
+  signal?: AbortSignal
 ): Promise<TextGamePlaySession> {
   const requestedGameId = TextGameIdSchema.parse(gameId);
   const input = TextGameStartInputSchema.parse({ locale });
@@ -123,7 +125,8 @@ export async function startTextAdventureSession(
         };
         handlers?.onSession?.(session);
       }
-    }
+    },
+    signal
   );
 
   if (!session) {
@@ -135,11 +138,12 @@ export async function startTextAdventureSession(
 export async function loadOrStartTextAdventureSession(
   gameId: string,
   locale: TextGameLocale,
-  handlers?: TextAdventureSessionStreamHandlers
+  handlers?: TextAdventureSessionStreamHandlers,
+  signal?: AbortSignal
 ): Promise<TextGamePlaySession> {
   return (
-    (await getPlayingTextAdventureSession(gameId)) ??
-    startTextAdventureSession(gameId, locale, handlers)
+    (await getPlayingTextAdventureSession(gameId, signal)) ??
+    startTextAdventureSession(gameId, locale, handlers, signal)
   );
 }
 
@@ -151,7 +155,8 @@ export async function sendTextAdventureAction(
     onUserMessage?: (message: TextGameMessage) => void;
     onAssistantDelta?: (text: string) => void;
     onAssistantDone?: (message: TextGameMessage) => void;
-  }
+  },
+  signal?: AbortSignal
 ): Promise<TextGameChatResponse> {
   const requestedSessionId = TextGameSessionIdSchema.parse(sessionId);
   const input = TextGameChatInputSchema.parse({ message, locale });
@@ -194,7 +199,8 @@ export async function sendTextAdventureAction(
         };
         handlers?.onAssistantDone?.(assistantMessage);
       }
-    }
+    },
+    signal
   );
 
   if (!userMessage || !assistantMessage) {

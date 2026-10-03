@@ -15,16 +15,23 @@ import {
 import { useRouter } from "@/i18n/navigation";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { createCreatorTextAdventure, textAdventureKeys } from "../_lib/text-adventure-api";
+import { useTextAdventureOwner } from "./text-adventure-account";
 import { TextAdventureWorkbenchSkeleton } from "./text-adventure-workbench";
 
 type CreationPhase = "idle" | "uploading" | "creating" | "upload-error" | "create-error";
 
 interface TextAdventureCreateDialogProps {
+  userId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function TextAdventureCreateDialog({ open, onOpenChange }: TextAdventureCreateDialogProps) {
+export function TextAdventureCreateDialog({
+  userId,
+  open,
+  onOpenChange,
+}: TextAdventureCreateDialogProps) {
+  const owner = useTextAdventureOwner(userId);
   const t = useTranslations("textAdventures");
   const common = useTranslations("common");
   const router = useRouter();
@@ -32,6 +39,7 @@ export function TextAdventureCreateDialog({ open, onOpenChange }: TextAdventureC
   const initialInputRef = useRef<HTMLInputElement>(null);
   const recoveryInputRef = useRef<HTMLInputElement>(null);
   const uploadAbortRef = useRef<AbortController | null>(null);
+  const busy = useRef(false);
   const [phase, setPhase] = useState<CreationPhase>("idle");
   const [fileName, setFileName] = useState("");
   const [progress, setProgress] = useState(0);
@@ -64,23 +72,26 @@ export function TextAdventureCreateDialog({ open, onOpenChange }: TextAdventureC
   };
 
   const createFromUploadedDocument = async (worldviewDocxUrl: string) => {
+    const operation = owner.begin();
     setWorkbenchEntered(true);
     setPhase("creating");
     setError(null);
     onOpenChange(false);
     try {
-      const game = await createCreatorTextAdventure({ worldviewDocxUrl });
-      queryClient.setQueryData(textAdventureKeys.detail(game.gameId), game);
-      void queryClient.invalidateQueries({ queryKey: textAdventureKeys.list() });
+      const game = await createCreatorTextAdventure({ worldviewDocxUrl }, operation.signal);
+      if (!operation.current()) return;
+      queryClient.setQueryData(textAdventureKeys.detail(game.gameId, userId), game);
+      void queryClient.invalidateQueries({ queryKey: textAdventureKeys.list(userId) });
       router.replace(`/text-adventures/${game.gameId}`);
     } catch (reason) {
+      if (!operation.current()) return;
       setError(errorMessage(reason, t("actions.unknownError")));
       setPhase("create-error");
     }
   };
 
   const acceptFile = async (file: File) => {
-    if (phase === "uploading" || phase === "creating") return;
+    if (busy.current || phase === "uploading" || phase === "creating") return;
     if (!file.name.toLowerCase().endsWith(".docx")) {
       setError(t("create.docxOnly"));
       setPhase("upload-error");
@@ -92,7 +103,11 @@ export function TextAdventureCreateDialog({ open, onOpenChange }: TextAdventureC
       return;
     }
 
+    const operation = owner.begin();
+    busy.current = true;
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    operation.signal.addEventListener("abort", abort, { once: true });
     uploadAbortRef.current = controller;
     setFileName(file.name);
     setProgress(0);
@@ -105,12 +120,16 @@ export function TextAdventureCreateDialog({ open, onOpenChange }: TextAdventureC
         onProgress: setProgress,
       });
       uploadAbortRef.current = null;
-      void createFromUploadedDocument(uploaded.url);
+      if (!operation.current()) return;
+      await createFromUploadedDocument(uploaded.url);
     } catch (reason) {
       uploadAbortRef.current = null;
-      if (isUploadAbort(reason)) return;
+      if (isUploadAbort(reason) || !operation.current()) return;
       setError(errorMessage(reason, t("actions.unknownError")));
       setPhase("upload-error");
+    } finally {
+      busy.current = false;
+      operation.signal.removeEventListener("abort", abort);
     }
   };
 
@@ -244,7 +263,7 @@ export function TextAdventureCreateDialog({ open, onOpenChange }: TextAdventureC
               onClick={() => {
                 reset();
                 onOpenChange(false);
-                void queryClient.invalidateQueries({ queryKey: textAdventureKeys.list() });
+                void queryClient.invalidateQueries({ queryKey: textAdventureKeys.list(userId) });
               }}
             >
               {common("cancel")}

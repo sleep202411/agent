@@ -132,4 +132,32 @@ describe("analytics account and workspace ownership", () => {
     expect(memberSignal.aborted).toBe(true);
     expect(jobSignal.aborted).toBe(true);
   });
+  it.each(["wallet-ledger", "daily-usage", "member-usage"])(
+    "recovers %s without presenting a failed read as zero usage",
+    async (endpoint) => {
+      const original = state.get.getMockImplementation()!;
+      let failed = true;
+      state.get.mockImplementation((path: string, options: unknown) =>
+        path.endsWith(endpoint) && failed
+          ? Promise.reject(new Error("Usage service unavailable"))
+          : original(path, options)
+      );
+      await render();
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      });
+      expect(container.textContent).toContain("Usage service unavailable");
+      if (endpoint === "wallet-ledger") expect(container.textContent).not.toContain("totalJobs");
+      const button = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent === "retry"
+      );
+      expect(button).toBeTruthy();
+      failed = false;
+      await act(async () => button!.click());
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      });
+      expect(container.textContent).not.toContain("Usage service unavailable");
+    }
+  );
 });

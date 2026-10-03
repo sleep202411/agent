@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { useCertifyInit, useCertifyQuery } from "@/src/hooks/use-kyc";
 import { useUserInfo } from "@/src/hooks/use-user";
 
@@ -45,6 +45,7 @@ export default function KycPage() {
 }
 function KycForm() {
   const t = useTranslations("kyc");
+  const locale = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -115,7 +116,7 @@ function KycForm() {
           }
           toast.success(t("certificationSuccess"));
           redirectTimer.current = setTimeout(() => {
-            if (currentResponse()) router.replace("/profile");
+            if (currentResponse()) router.replace(`/${locale}/profile`);
           }, 1200);
         } else if (code === "1003") {
           toast.error(t("certificationCancelled"));
@@ -140,7 +141,7 @@ function KycForm() {
         }
       }
     })();
-  }, [searchParams, doQuery, router, t, userInfo?.id]);
+  }, [searchParams, doQuery, router, t, userInfo?.id, locale]);
 
   const handleVerify = async () => {
     const scope = owner.current;
@@ -166,7 +167,7 @@ function KycForm() {
     initClaim.current = claim;
     try {
       const metaInfo = JSON.stringify(window.getMetaInfo());
-      const returnUrl = `${window.location.origin}/kyc`;
+      const returnUrl = `${window.location.origin}/${locale}/kyc`;
 
       const result = await doInit({
         userName: realName.trim(),

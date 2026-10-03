@@ -6411,6 +6411,13 @@
     "identityOwnsFull": "Owns full IP"
   },
   "payment": {
+    "paymentConfirmedDesc": "Your payment has been confirmed.",
+    "paymentUnconfirmed": "Payment not yet confirmed",
+    "paymentUnconfirmedDesc": "Check the order again before starting another payment.",
+    "checkAgain": "Check again",
+    "missingOrder": "Order number missing",
+    "missingOrderDesc": "Open the payment confirmation link to check your order.",
+    "backToStudio": "Back to Studio",
     "upgrade": "Upgrade Plan",
     "credits": "Buy Credits",
     "wechatPay": "WeChat Pay",

@@ -6411,6 +6411,13 @@
     "identityOwnsFull": "已購整套"
   },
   "payment": {
+    "paymentConfirmedDesc": "您的付款已確認。",
+    "paymentUnconfirmed": "付款尚未確認",
+    "paymentUnconfirmedDesc": "請先重新查詢訂單狀態，再發起新的付款。",
+    "checkAgain": "重新查詢",
+    "missingOrder": "缺少訂單編號",
+    "missingOrderDesc": "請開啟付款確認連結以查詢訂單。",
+    "backToStudio": "返回工作室",
     "upgrade": "升級套餐",
     "credits": "積分充值",
     "wechatPay": "微信支付",

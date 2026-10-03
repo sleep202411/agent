@@ -59,6 +59,35 @@ function responseStream(contentType = "text/event-stream", data?: string, close 
 }
 
 describe("text adventure stream lifecycle", () => {
+  it("does not invalidate the replacement account from a departed request's late error body", async () => {
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal("window", { dispatchEvent });
+    let resolve!: (body: string) => void;
+    const text = vi.fn(
+      () =>
+        new Promise<string>((done) => {
+          resolve = done;
+        })
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        headers: new Headers({ "content-type": "application/json" }),
+        status: 401,
+        text,
+      }))
+    );
+    const owner = new AbortController();
+    const pending = expect(
+      readTextGameSse("/test", {}, vi.fn(), owner.signal)
+    ).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(text).toHaveBeenCalledOnce());
+    owner.abort();
+    resolve('{"code":401,"msg":"Session expired"}');
+    await pending;
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
   for (const contentType of ["text/event-stream", "application/json"]) {
     it(`times out a stalled ${contentType} body after headers`, async () => {
       vi.useFakeTimers();

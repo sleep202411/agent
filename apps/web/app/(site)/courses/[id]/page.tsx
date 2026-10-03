@@ -2,9 +2,8 @@
 
 import { useEffect } from "react";
 import { useParams } from "next/navigation";
-import { IconAlertCircle } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { CourseLoadError } from "../_components/CourseLoadError";
 import { Spinner } from "@/components/ui/spinner";
 import { useTranslations } from "@/src/i18n/i18n";
 import { usePublicCourseDetail } from "@/src/hooks/use-courses-public";
@@ -27,6 +26,10 @@ export default function CourseDetailPage() {
     seriesVideoIds,
     stableProgressKey,
     setCurrentVideo,
+    isFetching,
+    retryDetail,
+    isPlayFetching,
+    retryPlayback,
   } = usePublicCourseDetail(params.id);
 
   useEffect(() => {
@@ -47,26 +50,36 @@ export default function CourseDetailPage() {
 
       {error || (!isLoading && !detail) ? (
         <div className="flex min-h-[60vh] items-center justify-center px-5 lg:h-full lg:min-h-0">
-          <Alert variant="destructive" className="max-w-xl border-[#3a2230] bg-[#111119]">
-            <IconAlertCircle />
-            <AlertTitle>{t("loadFailedTitle")}</AlertTitle>
-            <AlertDescription>{t("loadFailedDescription")}</AlertDescription>
-          </Alert>
+          <CourseLoadError
+            error={error}
+            retry={retryDetail ? () => void retryDetail() : undefined}
+            busy={isFetching}
+          />
         </div>
       ) : null}
 
-      {!isLoading && detail ? (
+      {!isLoading && !error && detail ? (
         <div className="lg:grid lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_520px]">
-          <CourseVideoPlayer
-            key={detail.currentVideoId ?? detail.courseId}
-            courseId={detail.currentVideoId ?? detail.courseId}
-            seriesCourseId={detail.courseId}
-            seriesVideoIds={seriesVideoIds}
-            title={currentTitle || detail.title}
-            videoUrl={isCourseApiError(playError, 403) ? "" : detail.videoUrl}
-            posterUrl={detail.currentPosterUrl || undefined}
-            stableProgressKey={stableProgressKey}
-          />
+          {playError ? (
+            <div className="flex items-center justify-center p-5">
+              <CourseLoadError
+                error={playError}
+                retry={() => void retryPlayback()}
+                busy={isPlayFetching}
+              />
+            </div>
+          ) : (
+            <CourseVideoPlayer
+              key={detail.currentVideoId ?? detail.courseId}
+              courseId={detail.currentVideoId ?? detail.courseId}
+              seriesCourseId={detail.courseId}
+              seriesVideoIds={seriesVideoIds}
+              title={currentTitle || detail.title}
+              videoUrl={isCourseApiError(playError, 403) ? "" : detail.videoUrl}
+              posterUrl={detail.currentPosterUrl || undefined}
+              stableProgressKey={stableProgressKey}
+            />
+          )}
           <PublicCourseDetailPanel detail={detail} onVideoSelect={setCurrentVideo} />
         </div>
       ) : null}

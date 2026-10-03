@@ -13,6 +13,7 @@ import {
   IconUsers,
   IconVideo,
 } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { api } from "@/lib/api";
@@ -305,7 +306,9 @@ function AnalyticsView({ viewerId }: { viewerId: string | null }) {
 
   const maxModelCount = Math.max(1, ...modelRows.map((row) => row.count));
   const initialLoading = loading || !ws || ledger.isLoading || jobs.isLoading;
-  const hasLoadError = ledger.isError || jobs.isError;
+  const failedQueries = [ledger, jobs, projectsQuery, membersQuery].filter(
+    (query) => query.isError
+  );
 
   if (initialLoading) {
     return (
@@ -321,15 +324,26 @@ function AnalyticsView({ viewerId }: { viewerId: string | null }) {
     );
   }
 
+  if (failedQueries.length > 0) {
+    return (
+      <main className="mx-auto w-full max-w-4xl space-y-6 px-6 py-8">
+        <PageHeader title={t("usageAnalytics")} subtitle={t("usageAnalyticsSubtitle")} />
+        <Panel>
+          <AnalyticsRecovery
+            error={failedQueries[0]?.error}
+            busy={failedQueries.some((query) => query.isFetching)}
+            retry={() => {
+              for (const query of failedQueries) void query.refetch();
+            }}
+          />
+        </Panel>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-6 py-8">
       <PageHeader title={t("usageAnalytics")} subtitle={t("usageAnalyticsSubtitle")} />
-
-      {hasLoadError && (
-        <Panel>
-          <p className="text-sm text-muted-foreground">{t("usageAnalyticsLoadFailed")}</p>
-        </Panel>
-      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard
@@ -381,7 +395,17 @@ function AnalyticsView({ viewerId }: { viewerId: string | null }) {
         <p className="mb-3 text-xs text-muted-foreground">
           {t("dailyUsageWindow", { count: DAILY_USAGE_DAYS })}
         </p>
-        <DailyUsageChart axis={dailyAxis} />
+        {dailyUsage.isLoading ? (
+          <Skeleton className="h-40 rounded-lg" />
+        ) : dailyUsage.isError ? (
+          <AnalyticsRecovery
+            error={dailyUsage.error}
+            busy={dailyUsage.isFetching}
+            retry={() => void dailyUsage.refetch()}
+          />
+        ) : (
+          <DailyUsageChart axis={dailyAxis} />
+        )}
       </Panel>
 
       {canViewMemberUsage && (
@@ -572,7 +596,11 @@ function MemberUsagePanel({
           <Skeleton className="h-10 w-full rounded-lg" />
         </div>
       ) : usage.isError ? (
-        <p className="text-sm text-muted-foreground">{t("usageAnalyticsLoadFailed")}</p>
+        <AnalyticsRecovery
+          error={usage.error}
+          busy={usage.isFetching}
+          retry={() => void usage.refetch()}
+        />
       ) : rows.length === 0 ? (
         <EmptyState
           icon={<IconUsers className="size-5" />}
@@ -842,4 +870,27 @@ function ledgerReasonLabel(
       return reason || entryType;
     }
   }
+}
+
+function AnalyticsRecovery({
+  error,
+  busy,
+  retry,
+}: {
+  error: unknown;
+  busy: boolean;
+  retry: () => void;
+}) {
+  const t = useTranslations("settings");
+  const common = useTranslations("common");
+  return (
+    <div className="space-y-3" role="alert">
+      <p className="break-words text-sm text-muted-foreground">
+        {error instanceof Error && error.message ? error.message : t("usageAnalyticsLoadFailed")}
+      </p>
+      <Button size="sm" variant="secondary" disabled={busy} onClick={retry}>
+        {common("retry")}
+      </Button>
+    </div>
+  );
 }
