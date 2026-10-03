@@ -5,6 +5,7 @@ import { IpEpisodeMediaPanel } from "./episode-media-panel";
 vi.mock("./episode-video-duration", () => ({ probeEpisodeVideoDuration: async () => null }));
 const h = vi.hoisted(() => ({
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   del: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("@/lib/durable-record", () => ({
   }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({
@@ -136,6 +138,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   host = document.createElement("div");
   document.body.append(host);
@@ -285,3 +288,73 @@ it("hides private media after denied refresh and when inactive", async () => {
   await mount();
   expect(host.textContent).toBe("");
 });
+
+for (const action of ["ipMedia.uploadCover", "ipEpisodeMedia.replaceSource"]) {
+  it(`retains ${action} across the native picker background handoff`, async () => {
+    let finish!: (value: unknown) => void;
+    h.pick.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const previous = h.post.getMockImplementation()!;
+    if (action === "ipEpisodeMedia.replaceSource") {
+      h.post.mockImplementation(async (path: string, options: unknown) =>
+        path.endsWith("/media") ? { asset: { ...asset, kind: "video" } } : previous(path, options)
+      );
+      h.put.mockResolvedValue({
+        ip: {
+          ...snapshot,
+          version: 2,
+          episodes: [
+            { ...episode, mediaAsset: { id: assetId, url: "https://cdn.test/video.mp4" } },
+          ],
+        },
+      });
+    }
+    await mount();
+    await click(action);
+    h.active = false;
+    await mount();
+    expect(host.textContent).toBe("");
+    await act(async () =>
+      finish({
+        canceled: false,
+        assets: [{ uri: "file:///poster.png", name: "poster.png", mimeType: "image/png" }],
+      })
+    );
+    h.active = true;
+    await mount();
+    expect(host.textContent).toContain("ipMedia.saved");
+    expect(h.pick).toHaveBeenCalledOnce();
+    expect(h.storagePut).toHaveBeenCalledOnce();
+    expect(h.put).toHaveBeenCalledOnce();
+  });
+}
+for (const exit of ["route", "account"] as const) {
+  it(`ignores media selected after ${exit} exit`, async () => {
+    let finish!: (value: unknown) => void;
+    h.pick.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    await mount();
+    await click("ipMedia.uploadCover");
+    if (exit === "route") h.focused = false;
+    else h.generation = 2;
+    await mount();
+    await act(async () =>
+      finish({
+        canceled: false,
+        assets: [{ uri: "file:///poster.png", name: "poster.png", mimeType: "image/png" }],
+      })
+    );
+    expect(host.textContent).toBe("");
+    expect(h.storagePut).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+    expect(h.put).not.toHaveBeenCalled();
+  });
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { Image } from "expo-image";
 import { uuid } from "expo-modules-core";
 import { getDocumentAsync } from "expo-document-picker";
@@ -27,8 +28,8 @@ import {
 } from "./episode-media-api";
 type Props = { ipId: string; episodeId: string; userId: string; generation: number };
 export function IpEpisodeMediaPanel(props: Props) {
-  const active = useScreenActive();
-  return active && getAuthGeneration() === props.generation ? (
+  const focused = useIsFocused();
+  return focused && getAuthGeneration() === props.generation ? (
     <Session key={JSON.stringify(props)} {...props} />
   ) : null;
 }
@@ -53,6 +54,7 @@ function Button({
   );
 }
 function Session({ ipId, episodeId, userId, generation }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     op = useAuthFormOperation(`${ipId}:${episodeId}`, true);
   const [record] = useState(() => episodeMediaRecord(ipId, episodeId, userId, generation));
@@ -103,6 +105,7 @@ function Session({ ipId, episodeId, userId, generation }: Props) {
     }
   };
   const run = <T,>(request: (signal: AbortSignal) => Promise<T>, success: (value: T) => void) => {
+    if (!active) return;
     setError("");
     setSaved(false);
     setPreview(false);
@@ -226,6 +229,7 @@ function Session({ ipId, episodeId, userId, generation }: Props) {
     );
   const item = snapshot?.episodes.find((value) => value.id === episodeId),
     frozen = op.busy || loading || !!initial.error || storageFailed || !item;
+  if (!active) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       {(loading || op.busy) && <ActivityIndicator />}
