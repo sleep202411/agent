@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { ContentReviewCreate } from "./content-review-create";
 import { ContentReviewExport } from "./content-review-export";
 import { ContentReviewPlayback } from "./content-review-playback";
@@ -17,14 +18,15 @@ import {
 } from "./api/content-review-api";
 type Props = { workspaceId: string; generation: number; onClose: () => void };
 export function ContentReviewHistory(props: Props) {
-  const active = useScreenActive();
-  if (!active || props.generation !== getAuthGeneration()) return null;
+  const focused = useIsFocused();
+  if (!focused || props.generation !== getAuthGeneration()) return null;
   return <History key={`${props.workspaceId}:${props.generation}`} {...props} />;
 }
 function History({ workspaceId, generation, onClose }: Props) {
   const theme = useTheme(),
     t = useTranslations(),
-    locale = useLocale();
+    locale = useLocale(),
+    active = useScreenActive();
   const label = (key: string) => t(`contentReviewHistory.${key}` as MessageKey);
   const [recordId, setRecordId] = useState<string>(),
     [revision, setRevision] = useState(0);
@@ -35,7 +37,13 @@ function History({ workspaceId, generation, onClose }: Props) {
     record?: ContentReviewDetail;
     error?: string;
   }>();
+  const [previousActive, setPreviousActive] = useState(active);
+  if (previousActive !== active) {
+    setPreviousActive(active);
+    setSnapshot(undefined);
+  }
   useEffect(() => {
+    if (!active) return;
     const controller = new AbortController();
     const current = () => !controller.signal.aborted && generation === getAuthGeneration();
     if (recordId)
@@ -59,13 +67,13 @@ function History({ workspaceId, generation, onClose }: Props) {
         }
       );
     return () => controller.abort();
-  }, [workspaceId, generation, recordId, key]);
+  }, [workspaceId, generation, recordId, key, active]);
   const data = snapshot?.key === key ? snapshot : undefined;
   const record = data?.record;
   const box = { padding: 12, gap: 8, borderRadius: 8, backgroundColor: theme.backgroundElement };
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: theme.background }}
+      style={{ flex: 1, backgroundColor: theme.background, display: active ? "flex" : "none" }}
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       <Pressable
@@ -85,7 +93,7 @@ function History({ workspaceId, generation, onClose }: Props) {
       </Pressable>
       {!data && <ActivityIndicator />}
       {data?.error && <ThemedText accessibilityRole="alert">{data.error}</ThemedText>}
-      {data?.items && (
+      {!recordId && (
         <ContentReviewCreate
           workspaceId={workspaceId}
           generation={generation}
