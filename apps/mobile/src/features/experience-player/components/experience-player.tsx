@@ -734,6 +734,7 @@ function ActiveExperienceRuntimePlayer({
                 onOutcome={emitOutcome}
                 onRuntimeError={setRuntimeError}
                 onTimelineTimeMs={(positionMs) => advanceTimeline(renderer.instanceId, positionMs)}
+                onPlaybackInterrupted={() => setViewerPaused(true)}
                 onPlaybackRefused={() => setViewerPaused(true)}
                 onPlaybackHandle={registerPlaybackHandle}
               />
@@ -819,6 +820,7 @@ function RendererPanel({
   onTimelineTimeMs,
   onPlaybackHandle,
   onPlaybackRefused,
+  onPlaybackInterrupted,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -836,6 +838,7 @@ function RendererPanel({
   onRuntimeError: (message: string) => void;
   onTimelineTimeMs: (timeMs: number) => void;
   onPlaybackRefused: () => void;
+  onPlaybackInterrupted: () => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
 }) {
   const defaultLocale = manifest.localization.defaultLocale;
@@ -849,6 +852,7 @@ function RendererPanel({
         onTimelineTimeMs={onTimelineTimeMs}
         onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
         onRuntimeError={onRuntimeError}
+        onPlaybackInterrupted={onPlaybackInterrupted}
         onPlaybackRefused={onPlaybackRefused}
         onPlaybackHandle={onPlaybackHandle}
       />

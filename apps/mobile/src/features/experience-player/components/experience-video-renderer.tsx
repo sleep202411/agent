@@ -111,6 +111,7 @@ export function ExperienceVideoRenderer({
   onRuntimeError,
   onPlaybackHandle,
   onPlaybackRefused,
+  onPlaybackInterrupted,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -119,6 +120,7 @@ export function ExperienceVideoRenderer({
   onCompleted: () => void;
   onRuntimeError: (message: string) => void;
   onPlaybackRefused?: () => void;
+  onPlaybackInterrupted?: () => void;
   onPlaybackHandle?: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
 }) {
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
@@ -136,6 +138,7 @@ export function ExperienceVideoRenderer({
   const missingAssetRef = useRef<string | null>(null);
   /** Resume playback when the screen is presentable again if we paused for it. */
   const resumeWhenPresentingRef = useRef(false);
+  const expectedPauseRef = useRef(false);
   /** What the player was actually handed: local file or signed remote URL. */
   const playableUriRef = useRef<string | null>(null);
   const retriedIdentityRef = useRef<string | null>(null);
@@ -184,6 +187,7 @@ export function ExperienceVideoRenderer({
     if (isStill) {
       if (player.playing) {
         try {
+          expectedPauseRef.current = true;
           player.pause();
         } catch {
           // Player already released.
@@ -194,6 +198,7 @@ export function ExperienceVideoRenderer({
     if (!presenting) {
       if (player.playing) {
         resumeWhenPresentingRef.current = true;
+        expectedPauseRef.current = true;
         player.pause();
       }
       return;
@@ -218,6 +223,7 @@ export function ExperienceVideoRenderer({
     return () => {
       presentingRef.current = false;
       try {
+        expectedPauseRef.current = true;
         player.pause();
       } catch {
         // Player already released — nothing left to silence.
@@ -358,6 +364,7 @@ export function ExperienceVideoRenderer({
     if (!sourceUri || isStill) {
       if (isStill && player.playing) {
         try {
+          expectedPauseRef.current = true;
           player.pause();
         } catch {
           // Player already released.
@@ -365,6 +372,7 @@ export function ExperienceVideoRenderer({
       }
       return;
     }
+    expectedPauseRef.current = true;
     const abort = new AbortController();
     resumeWhenPresentingRef.current = false;
     playableUriRef.current = null;
@@ -424,6 +432,7 @@ export function ExperienceVideoRenderer({
       },
       pause: () => {
         try {
+          expectedPauseRef.current = true;
           player.pause();
         } catch {
           // Player already released.
@@ -449,8 +458,47 @@ export function ExperienceVideoRenderer({
     resumeWhenPresentingRef.current = true;
     onPlaybackRefused?.();
   });
+  const handlePlaybackInterruption = useEffectEvent(() => {
+    if (
+      !presentingRef.current ||
+      isStill ||
+      !shouldAutoplay ||
+      player.playing ||
+      player.status !== "readyToPlay"
+    )
+      return;
+    // A native pause may arrive before playToEnd. Leave normal ending/loop
+    // transitions to the existing completion path, including its iOS fallback.
+    const duration = player.duration || (durationMs ? durationMs / 1000 : 0);
+    if (duration > 0 && player.currentTime >= duration - 0.08) return;
+    resumeWhenPresentingRef.current = true;
+    onPlaybackInterrupted?.();
+  });
   const handleNativeEnd = useEffectEvent(() => handleEnd());
   useEffect(() => {
+    let interruptionTimer: ReturnType<typeof setTimeout> | undefined;
+    const playingSubscription = player.addListener(
+      "playingChange",
+      ({ isPlaying, oldIsPlaying }) => {
+        clearTimeout(interruptionTimer);
+        if (isPlaying) {
+          expectedPauseRef.current = false;
+          if (!presentingRef.current) {
+            expectedPauseRef.current = true;
+            player.pause();
+          }
+          return;
+        }
+        if (expectedPauseRef.current) {
+          expectedPauseRef.current = false;
+          return;
+        }
+        if (oldIsPlaying !== true) return;
+        // Allow an accompanying error/end event to settle before classifying a
+        // system interruption; never turn a decoding failure into a Resume loop.
+        interruptionTimer = setTimeout(() => handlePlaybackInterruption(), 0);
+      }
+    );
     const endSubscription = player.addListener("playToEnd", () => handleNativeEnd());
     const timeSubscription = player.addListener("timeUpdate", ({ currentTime }) => {
       reportTimeline(currentTime);
@@ -467,6 +515,8 @@ export function ExperienceVideoRenderer({
       }
     });
     return () => {
+      clearTimeout(interruptionTimer);
+      playingSubscription.remove();
       endSubscription.remove();
       timeSubscription.remove();
       statusSubscription.remove();

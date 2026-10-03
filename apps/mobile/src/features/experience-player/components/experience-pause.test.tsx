@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   video: {} as {
     onCompleted: () => void;
     onPlaybackRefused: () => void;
+    onPlaybackInterrupted: () => void;
     onPlaybackHandle: (id: string, handle: unknown) => void;
   },
 }));
@@ -250,4 +251,18 @@ it("pauses on autoplay refusal and retries from the Resume tap", async () => {
   play.mockClear();
   await click("Resume");
   expect(play).not.toHaveBeenCalled();
+});
+
+it("freezes the story and audio after a system playback interruption", async () => {
+  await render();
+  await click("Start");
+  await act(async () => h.video.onPlaybackInterrupted());
+  expect(container.querySelector('[aria-label="Resume"]')).not.toBeNull();
+  expect(h.suspend).toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTime(15000));
+  expect(h.dispatch).not.toHaveBeenCalledWith(
+    expect.arrayContaining([expect.objectContaining({ type: "scene.clock-ended" })])
+  );
+  await click("Resume");
+  expect(h.mediaPresenting).toBe(true);
 });

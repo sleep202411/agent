@@ -3,6 +3,7 @@ import HlsPlayer from "hls.js";
 import type { VideoSource } from "expo-video";
 
 type Events = {
+  playingChange: { isPlaying: boolean; oldIsPlaying?: boolean };
   playToEnd: Record<string, never>;
   timeUpdate: { currentTime: number };
   statusChange: { status: "readyToPlay" | "error"; error?: { message: string; name?: string } };
@@ -36,6 +37,13 @@ export class BrowserVideoController {
   }
   get duration() {
     return this.media?.duration ?? 0;
+  }
+  get status() {
+    return this.media?.error
+      ? "error"
+      : this.media && this.media.readyState >= 1
+        ? "readyToPlay"
+        : "loading";
   }
   get playing() {
     return this.media ? !this.media.paused : false;
@@ -136,18 +144,28 @@ export class BrowserVideoController {
         clearTimeout(timeout);
         resolve();
       };
+      let wasPlaying = false;
+      const playing = () => {
+        const isPlaying = !media.paused;
+        this.emit("playingChange", { isPlaying, oldIsPlaying: wasPlaying });
+        wasPlaying = isPlaying;
+      };
       const ended = () => this.emit("playToEnd", {});
       const time = () => this.emit("timeUpdate", { currentTime: media.currentTime });
       const error = () => fail(media.error?.message || "Video playback failed");
       const timeout = setTimeout(() => fail("Video loading timed out"), 30_000);
       this.rejectLoad = reject;
       media.addEventListener("loadedmetadata", ready);
+      media.addEventListener("play", playing);
+      media.addEventListener("pause", playing);
       media.addEventListener("ended", ended);
       media.addEventListener("timeupdate", time);
       media.addEventListener("error", error);
       this.cleanup = () => {
         clearTimeout(timeout);
         media.removeEventListener("loadedmetadata", ready);
+        media.removeEventListener("play", playing);
+        media.removeEventListener("pause", playing);
         media.removeEventListener("ended", ended);
         media.removeEventListener("timeupdate", time);
         media.removeEventListener("error", error);

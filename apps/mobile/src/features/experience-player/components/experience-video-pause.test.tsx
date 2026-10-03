@@ -11,6 +11,9 @@ const h = vi.hoisted(() => ({
   active: true,
   player: {
     playing: false,
+    status: "readyToPlay",
+    duration: 20,
+    currentTime: 5,
     pause: vi.fn(),
     play: vi.fn(),
     addListener: vi.fn(() => ({ remove: vi.fn() })),
@@ -37,6 +40,8 @@ const manifest = {
 const completed = vi.fn();
 const noop = () => {};
 const refused = vi.fn();
+const interrupted = vi.fn();
+let handle: { pause: () => void } | null;
 let root: Root;
 const render = (id = "empty") =>
   act(async () =>
@@ -51,6 +56,10 @@ const render = (id = "empty") =>
         }
         copy={{ emptySequence: "No footage" } as ExperiencePlayerCopy}
         onPlaybackRefused={refused}
+        onPlaybackInterrupted={interrupted}
+        onPlaybackHandle={(_id, value) => {
+          handle = value;
+        }}
         onCompleted={completed}
         onRuntimeError={noop}
         onTimelineTimeMs={noop}
@@ -66,6 +75,11 @@ beforeEach(() => {
   h.active = true;
   completed.mockClear();
   refused.mockClear();
+  interrupted.mockClear();
+  h.player.status = "readyToPlay";
+  h.player.currentTime = 5;
+  h.player.playing = false;
+  h.player.pause.mockClear();
   h.player.addListener.mockClear();
   root = createRoot(document.createElement("div"));
 });
@@ -107,4 +121,43 @@ it("routes browser autoplay refusal to pause without completing the scene", asyn
   );
   expect(refused).toHaveBeenCalledOnce();
   expect(completed).not.toHaveBeenCalled();
+});
+
+const playingEvent = async (isPlaying: boolean, oldIsPlaying: boolean) => {
+  const listener = (
+    h.player.addListener.mock.calls as unknown as [string, (event: unknown) => void][]
+  )
+    .filter(([event]) => event === "playingChange")
+    .at(-1)![1];
+  h.player.playing = isPlaying;
+  await act(async () => listener({ isPlaying, oldIsPlaying }));
+  await advance(1);
+};
+it("requests a story pause for an external stop without completing or seeking", async () => {
+  await render();
+  await playingEvent(true, false);
+  await playingEvent(false, true);
+  expect(interrupted).toHaveBeenCalledOnce();
+  expect(completed).not.toHaveBeenCalled();
+  expect(h.player.currentTime).toBe(5);
+});
+it.each(["intentional", "ended", "error", "loading"])(
+  "does not mistake %s playback stops for interruptions",
+  async (kind) => {
+    await render();
+    await playingEvent(true, false);
+    if (kind === "intentional") handle!.pause();
+    if (kind === "ended") h.player.currentTime = 20;
+    if (kind === "error" || kind === "loading") h.player.status = kind;
+    await playingEvent(false, true);
+    expect(interrupted).not.toHaveBeenCalled();
+  }
+);
+it("stops an unsolicited system resume while the story is paused", async () => {
+  await render();
+  h.active = false;
+  await render();
+  await playingEvent(true, false);
+  expect(h.player.pause).toHaveBeenCalled();
+  expect(interrupted).not.toHaveBeenCalled();
 });

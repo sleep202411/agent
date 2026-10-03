@@ -147,3 +147,22 @@ it("preserves autoplay refusal identity for recoverable pause without replacing 
   await Promise.resolve();
   expect(error).toHaveBeenCalledTimes(1);
 });
+
+it("forwards external play/pause transitions and detaches listeners on replacement", async () => {
+  const changed = vi.fn();
+  player.addListener("playingChange", changed);
+  const loading = player.replaceAsync("https://test/clip.mp4");
+  video.dispatchEvent(new Event("loadedmetadata"));
+  await loading;
+  vi.spyOn(video, "paused", "get").mockReturnValue(false);
+  video.dispatchEvent(new Event("play"));
+  vi.spyOn(video, "paused", "get").mockReturnValue(true);
+  video.dispatchEvent(new Event("pause"));
+  expect(changed.mock.calls.map(([event]) => event)).toEqual([
+    { isPlaying: true, oldIsPlaying: false },
+    { isPlaying: false, oldIsPlaying: true },
+  ]);
+  player.attach(null);
+  video.dispatchEvent(new Event("play"));
+  expect(changed).toHaveBeenCalledTimes(2);
+});
