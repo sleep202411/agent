@@ -1,3 +1,4 @@
+import { useTaskDeliverySession } from "./use-task-delivery-session";
 import { TaskDeliveryManagement } from "./task-delivery-management";
 import { TaskCompensationSummary } from "./task-compensation-summary";
 import { TaskDelete } from "./task-delete";
@@ -106,6 +107,9 @@ function TaskContent({
     setRevision((v) => v + 1)
   );
   const relationshipSession = useTaskRelationshipSession(taskId, generation, () =>
+    setRevision((v) => v + 1)
+  );
+  const deliverySession = useTaskDeliverySession(taskId, generation, () =>
     setRevision((v) => v + 1)
   );
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
@@ -284,6 +288,7 @@ function TaskContent({
           />
           <TaskRelations task={data} onOpenTask={onOpenTask} />
           <TaskDeliveryManagement
+            session={deliverySession}
             task={data}
             generation={generation}
             userId={userId}

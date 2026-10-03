@@ -4470,6 +4470,8 @@
   "scriptEditor.undo": "撤销",
   "scriptEditor.redo": "重做",
   "scriptEditor.frameError": "编辑器已停止。请重试以重新打开已保存的草稿。",
+  "taskDelivery.latestTemplate": "最新保存的交付要求",
+  "taskDelivery.withoutTemplate": "不使用模板",
   "taskDelivery.manage": "修改交付要求",
   "taskDelivery.moreCategories": "更多分类",
   "taskDelivery.saveTemplate": "保存交付要求",

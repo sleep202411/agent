@@ -4470,6 +4470,8 @@
   "scriptEditor.undo": "復原",
   "scriptEditor.redo": "重做",
   "scriptEditor.frameError": "編輯器已停止。請重試以重新開啟已儲存的草稿。",
+  "taskDelivery.latestTemplate": "最新儲存的交付要求",
+  "taskDelivery.withoutTemplate": "不使用範本",
   "taskDelivery.manage": "修改交付要求",
   "taskDelivery.moreCategories": "更多分類",
   "taskDelivery.saveTemplate": "儲存交付要求",

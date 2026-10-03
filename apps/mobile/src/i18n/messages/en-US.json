@@ -4470,6 +4470,8 @@
   "scriptEditor.undo": "Undo",
   "scriptEditor.redo": "Redo",
   "scriptEditor.frameError": "The editor stopped. Retry to reopen the saved draft.",
+  "taskDelivery.latestTemplate": "Latest saved delivery requirements",
+  "taskDelivery.withoutTemplate": "No template",
   "taskDelivery.manage": "Change delivery requirements",
   "taskDelivery.moreCategories": "More categories",
   "taskDelivery.saveTemplate": "Save delivery requirements",
