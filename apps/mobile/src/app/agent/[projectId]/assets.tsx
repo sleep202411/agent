@@ -2,7 +2,7 @@ import { StoryReferenceEntry } from "@/features/agent/components/story-reference
 import { AssetCreateSheet } from "@/features/agent/components/story-asset-create-sheet";
 import { useAuth } from "@/auth";
 import { getAuthGeneration } from "@/auth/auth-store";
-import { useScreenActive } from "@/hooks/use-app-active";
+import { useIsFocused } from "expo-router";
 import { useAssetMutations } from "@/features/agent/hooks/use-asset-mutations";
 import { StoryTimelineEntry } from "@/features/agent/components/story-timeline-editor";
 import { useEffect, useMemo, useState } from "react";
@@ -67,7 +67,7 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
   const [activeTab, setActiveTab] = useState<StoryAssetSpecKind>("character");
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
-  const active = useScreenActive();
+  const active = useIsFocused();
   const scope = useMemo(
     () => ({ projectId, chapterId, generation }),
     [projectId, chapterId, generation]

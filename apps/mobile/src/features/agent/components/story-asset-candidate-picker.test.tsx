@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { AssetCandidatePicker } from "./story-asset-candidate-picker";
 const h = vi.hoisted(() => ({
+  focused: true,
   load: vi.fn(),
   pick: vi.fn(),
   read: vi.fn(),
@@ -13,7 +14,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("@/auth", () => ({ useAuth: () => ({ generation: 1, user: { id: "user" } }) }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => 1 }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/lib/durable-record", () => ({ durableRecord: () => ({}) }));
 vi.mock("../api/story-timeline-media", () => ({ fetchTimelineCandidates: h.load }));
 vi.mock("../api/story-timeline-upload", () => ({
@@ -66,6 +67,7 @@ const image = { asset: { id: "image", kind: "image", previewUrl: null } };
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
   vi.resetAllMocks();
+  h.focused = true;
   h.read.mockReturnValue(null);
   h.load.mockResolvedValue([image, { asset: { id: "video", kind: "video" } }]);
   host = document.createElement("div");
@@ -129,4 +131,23 @@ it("shows fetch failures and permits retry", async () => {
   expect(host.textContent).toContain("Unavailable");
   await click("common.retry");
   expect(host.textContent).toContain("assetEdit.useImage 1");
+});
+
+it("retires an unfinished image pick when the route loses focus", async () => {
+  let finish!: (value: unknown) => void;
+  h.pick.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await click("assetEdit.uploadImage");
+  const signal = h.pick.mock.calls[0][0] as AbortSignal;
+  h.focused = false;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ asset: { id: "retired", kind: "image" } }));
+  expect(host.textContent).not.toContain("retired");
+  expect(h.select).not.toHaveBeenCalled();
 });

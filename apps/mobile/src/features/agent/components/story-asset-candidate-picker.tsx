@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import { useAuth } from "@/auth";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
-import { useScreenActive } from "@/hooks/use-app-active";
+import { useIsFocused } from "expo-router";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
@@ -24,7 +24,7 @@ export function AssetCandidatePicker({
   onClose: () => void;
 }) {
   const auth = useAuth(),
-    active = useScreenActive(),
+    active = useIsFocused(),
     theme = useTheme(),
     t = useTranslations();
   const userId = String(auth.user?.userId ?? auth.user?.id ?? "");
