@@ -6,6 +6,7 @@ import { IpTemplatesPanel } from "./templates-panel";
 const h = vi.hoisted(() => ({
   signedIn: true,
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   patch: vi.fn(),
@@ -95,6 +96,7 @@ vi.mock("@/features/services/conversation-video", () => ({
   ConversationVideo: () => <div>Video preview</div>,
 }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
   useLocalSearchParams: () => ({ id: "11111111-1111-4111-8111-111111111111" }),
   useRouter: () => ({ push: h.push }),
   Stack: {
@@ -156,6 +158,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   snapshot = { version: 1, templates: [template()] };
   h.get.mockImplementation(async (path) =>
@@ -304,3 +307,63 @@ it("hides private configuration on access loss, inactivity and auth change", asy
   await mount();
   expect(host.textContent).toBe("");
 });
+
+it("retains edited fields and the logo picker across backgrounding without saving implicitly", async () => {
+  let finish!: (value: unknown) => void;
+  h.pick.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await mount();
+  await change("ipTemplates.name", "Edited poster");
+  await click("ipTemplates.uploadLogo");
+  h.active = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  await act(async () =>
+    finish({
+      canceled: false,
+      assets: [{ uri: "file:///logo.png", name: "logo.png", mimeType: "image/png" }],
+    })
+  );
+  h.active = true;
+  await mount();
+  expect(input("ipTemplates.name").value).toBe("Edited poster");
+  expect(host.textContent).toContain("ipTemplates.logoAttached");
+  expect(h.pick).toHaveBeenCalledOnce();
+  expect(h.selected).toHaveBeenCalledOnce();
+  expect(h.put).not.toHaveBeenCalled();
+  await click("ipTemplates.save");
+  expect(h.put).toHaveBeenCalledOnce();
+  expect(h.put.mock.calls[0][1].data.templates[0]).toMatchObject({
+    name: "Edited poster",
+    logoAssetId: asset,
+  });
+});
+for (const exit of ["route", "account"] as const) {
+  it(`rejects a late logo selection after ${exit} exit`, async () => {
+    let finish!: (value: unknown) => void;
+    h.pick.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    await mount();
+    await click("ipTemplates.uploadLogo");
+    if (exit === "route") h.focused = false;
+    else h.generation = 2;
+    await mount();
+    await act(async () =>
+      finish({
+        canceled: false,
+        assets: [{ uri: "file:///logo.png", name: "logo.png", mimeType: "image/png" }],
+      })
+    );
+    expect(host.textContent).toBe("");
+    expect(h.post).not.toHaveBeenCalled();
+    expect(h.put).not.toHaveBeenCalled();
+  });
+}

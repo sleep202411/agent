@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -52,11 +53,12 @@ function Button({
   );
 }
 export function IpTemplatesPanel(props: Props) {
-  return useScreenActive() && getAuthGeneration() === props.generation ? (
+  return useIsFocused() && getAuthGeneration() === props.generation ? (
     <Session key={`${props.ipId}:${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
 function Session({ ipId, userId, generation }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(ipId, true);
@@ -149,7 +151,7 @@ function Session({ ipId, userId, generation }: Props) {
   }
   function refresh() {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setError(initial.error);
     setConfirm(null);
     setReviewed(false);
@@ -172,7 +174,7 @@ function Session({ ipId, userId, generation }: Props) {
   }
   function save(command: TemplatesCommand) {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setError("");
     setSaved(false);
     setReviewed(false);
@@ -194,7 +196,7 @@ function Session({ ipId, userId, generation }: Props) {
   }
   function logo(id: string, resume = false) {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setError("");
     void op.run(
       async () => {
@@ -235,6 +237,7 @@ function Session({ ipId, userId, generation }: Props) {
     backgroundColor: theme.backgroundElement,
     borderRadius: 8,
   };
+  if (!active) return null;
   return (
     <ScrollView
       contentContainerStyle={{ padding: 16, gap: 12 }}
