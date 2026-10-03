@@ -11,23 +11,47 @@ const state = vi.hoisted(() => ({
     tokenValue: string;
   } | null,
   props: null as any,
+  focused: true,
+  os: "ios",
+  back: null as (() => boolean) | null,
+  goBack: vi.fn(),
+  removeBack: vi.fn(),
 }));
 vi.mock("@/features/services/crew-applications", () => ({
   CrewApplications: ({ onWeb }: { onWeb: () => void }) => (
     <button onClick={onWeb}>advanced-web</button>
   ),
 }));
-vi.mock("expo-router", () => ({ Stack: { Screen: () => null }, useLocalSearchParams: () => ({}) }));
+vi.mock("expo-router", () => ({
+  Stack: { Screen: () => null },
+  useIsFocused: () => state.focused,
+  useLocalSearchParams: () => ({}),
+}));
 vi.mock("react-native", () => ({
   View: ({ children }: any) => <div>{children}</div>,
   ActivityIndicator: () => null,
   Pressable: ({ children, onPress }: any) => <button onClick={onPress}>{children}</button>,
-  Platform: { OS: "ios" },
-  BackHandler: {},
+  Platform: {
+    get OS() {
+      return state.os;
+    },
+  },
+  BackHandler: {
+    addEventListener: (_event: string, handler: () => boolean) => {
+      state.back = handler;
+      return {
+        remove: () => {
+          state.removeBack();
+          if (state.back === handler) state.back = null;
+        },
+      };
+    },
+  },
   StyleSheet: { create: (s: any) => s, absoluteFill: {} },
 }));
 vi.mock("react-native-webview", () => ({
   WebView: (props: any) => {
+    React.useImperativeHandle(props.ref, () => ({ goBack: state.goBack, stopLoading: vi.fn() }));
     state.props = props;
     return null;
   },
@@ -53,6 +77,11 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.token = { tokenName: "satoken", tokenValue: "fixture-token" };
   state.props = null;
+  state.focused = true;
+  state.os = "ios";
+  state.back = null;
+  state.goBack.mockClear();
+  state.removeBack.mockClear();
   host = document.createElement("div");
   root = createRoot(host);
 });
@@ -228,4 +257,33 @@ it("preserves the native transport error detail", async () => {
   await act(async () => state.props.onError({ nativeEvent: { description: "Connection lost" } }));
   expect(host.textContent).toContain("Connection lost");
   expect(host.textContent).toContain("authedWeb.retry");
+});
+
+it("handles Android back only while its route is focused and history is available", async () => {
+  state.os = "android";
+  await mount();
+  expect(state.back?.()).toBe(false);
+  await act(async () =>
+    state.props.onNavigationStateChange({
+      url: "https://app.example/en-US/referral/history",
+      canGoBack: true,
+    })
+  );
+  expect(state.back?.()).toBe(true);
+  expect(state.goBack).toHaveBeenCalledTimes(1);
+  state.focused = false;
+  await mount();
+  expect(state.removeBack).toHaveBeenCalledTimes(1);
+  expect(state.back).toBeNull();
+  state.focused = true;
+  await mount();
+  expect(state.back?.()).toBe(true);
+  expect(state.goBack).toHaveBeenCalledTimes(2);
+  await act(async () =>
+    state.props.onNavigationStateChange({
+      url: "https://app.example/en-US/referral",
+      canGoBack: false,
+    })
+  );
+  expect(state.back?.()).toBe(false);
 });

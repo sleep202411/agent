@@ -16,7 +16,7 @@
  * If the web side still bounces to /login (expired/revoked token), we stop
  * and show a native sign-in prompt instead of rendering the web login page.
  */
-import { Stack } from "expo-router";
+import { Stack, useIsFocused } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -80,6 +80,7 @@ export function AuthedWebView(props: AuthedWebViewProps) {
 }
 
 function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebViewProps) {
+  const focused = useIsFocused();
   const auth = useAuth();
   const authGate = useAuthGate();
   const locale = useLocale();
@@ -115,7 +116,7 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
 
   // Android hardware back walks the in-webview history before leaving.
   useEffect(() => {
-    if (Platform.OS !== "android") return;
+    if (Platform.OS !== "android" || !focused) return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
       if (canGoBackRef.current && webViewRef.current) {
         webViewRef.current.goBack();
@@ -124,7 +125,7 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
       return false;
     });
     return () => subscription.remove();
-  }, []);
+  }, [focused]);
 
   const onNavigationStateChange = useCallback((navState: WebViewNavigation) => {
     canGoBackRef.current = navState.canGoBack;
