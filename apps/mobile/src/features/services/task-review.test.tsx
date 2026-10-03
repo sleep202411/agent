@@ -1,7 +1,8 @@
-import { act, type ReactNode } from "react";
+import { act, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskReview } from "./task-review";
+import { useTaskReviewSession } from "./use-task-review-session";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({
   permission: vi.fn(),
@@ -183,4 +184,97 @@ it("aborts permission loading and suppresses late account results", async () => 
   expect(button("taskReview.approve")).toBeUndefined();
   await act(async () => root.render(null));
   expect(signal.aborted).toBe(true);
+});
+
+function Journey({ value = task }: { value?: TaskDetail }) {
+  const [snapshot, setSnapshot] = useState(value);
+  const [refresh, setRefresh] = useState(0);
+  const reload = () => {
+    setSnapshot({ ...value });
+    setRefresh((n) => n + 1);
+  };
+  const session = useTaskReviewSession(value.id, 1, reload);
+  return (
+    <>
+      <button onClick={reload}>Reload details</button>
+      <TaskReview
+        key={refresh}
+        task={snapshot}
+        userId="1"
+        generation={1}
+        onRefresh={reload}
+        session={session}
+      />
+    </>
+  );
+}
+it("keeps review input across a detail retry after an uncertain response", async () => {
+  h.review.mockRejectedValueOnce(new Error("Response interrupted"));
+  await act(async () => root.render(<Journey />));
+  await act(async () => type(0, "Fix the final audio"));
+  await act(async () => type(1, "2099-10-20 12:00"));
+  await act(async () => button("taskReview.requestRevision")!.click());
+  expect(button("taskReview.approve")!.disabled).toBe(true);
+  await act(async () => button("thread.refresh")!.click());
+  expect(host.querySelectorAll("input")[0]!.value).toBe("Fix the final audio");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("2099-10-20 12:00");
+  expect(h.review).toHaveBeenCalledTimes(1);
+  expect(button("taskReview.requestRevision")!.disabled).toBe(false);
+});
+it("keeps an in-flight review locked through an unrelated detail refresh", async () => {
+  let finish!: () => void;
+  h.review.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  await act(async () => root.render(<Journey />));
+  await act(async () => type(0, "Approved audio"));
+  await act(async () => button("taskReview.approve")!.click());
+  await act(async () => button("Reload details")!.click());
+  expect(button("taskReview.approve")!.disabled).toBe(true);
+  expect(host.querySelector("input")!.value).toBe("Approved audio");
+  await act(async () => button("taskReview.approve")!.click());
+  expect(h.review).toHaveBeenCalledTimes(1);
+  await act(async () => finish());
+  expect(host.querySelector("input")!.value).toBe("");
+});
+it("does not apply an older submission's note to a new delivery", async () => {
+  await render();
+  await act(async () => type(0, "Old delivery feedback"));
+  await render({ ...task, submissions: [{ ...submission, id: "new-submission" }] });
+  expect(host.querySelector("input")!.value).toBe("");
+  await act(async () => button("taskReview.approve")!.click());
+  expect(h.review.mock.calls[0][2]).toMatchObject({
+    expectedSubmissionId: "new-submission",
+    note: "",
+  });
+});
+it("retires review input on account generation change", async () => {
+  await render();
+  await act(async () => type(0, "Private review"));
+  h.generation = 2;
+  await act(async () =>
+    root.render(<TaskReview task={task} userId="2" generation={2} onRefresh={h.refresh} />)
+  );
+  expect(host.querySelector("input")!.value).toBe("");
+});
+
+it("requires another fresh read if an in-flight review fails after a refresh", async () => {
+  let fail!: (e: Error) => void;
+  h.review.mockImplementation(
+    () =>
+      new Promise<void>((_, reject) => {
+        fail = reject;
+      })
+  );
+  await act(async () => root.render(<Journey />));
+  await act(async () => button("taskReview.approve")!.click());
+  await act(async () => button("Reload details")!.click());
+  await act(async () => fail(new Error("Response lost")));
+  expect(button("taskReview.approve")!.disabled).toBe(true);
+  await act(async () => button("thread.refresh")!.click());
+  expect(button("taskReview.approve")!.disabled).toBe(false);
+  expect(h.review).toHaveBeenCalledTimes(1);
 });

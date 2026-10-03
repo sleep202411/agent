@@ -1,3 +1,4 @@
+import { useTaskReviewSession } from "./use-task-review-session";
 import { taskWorkflowLabel } from "./task-workflow-label";
 import { useTaskDeliverySession } from "./use-task-delivery-session";
 import { TaskDeliveryManagement } from "./task-delivery-management";
@@ -113,6 +114,7 @@ function TaskContent({
   const deliverySession = useTaskDeliverySession(taskId, generation, () =>
     setRevision((v) => v + 1)
   );
+  const reviewSession = useTaskReviewSession(taskId, generation, () => setRevision((v) => v + 1));
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
   const [result, setResult] = useState<{ revision: number; data?: Detail; error?: string }>();
   useEffect(() => {
@@ -312,6 +314,7 @@ function TaskContent({
               onRefresh={() => setRevision((v) => v + 1)}
             />
             <TaskReview
+              session={reviewSession}
               key={`review:${revision}`}
               task={data}
               userId={userId}
