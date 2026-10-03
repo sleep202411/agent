@@ -15,6 +15,7 @@ interface SignedUrlResponse {
 
 interface ConfirmResponse {
   mediaAssetId: string;
+  variantId?: string | null;
   storageKey: string;
   provider: "azure_blob" | "aliyun_oss" | "s3_compatible";
   url: string;
@@ -41,7 +42,11 @@ export async function confirmMobileMediaUpload(data: MediaConfirmation, signal?:
   const confirmed = await api.post<ConfirmResponse>("/media/confirm", { ...AURORA, data, signal });
   signal?.throwIfAborted();
   if (generation !== getAuthGeneration()) throw new Error("Upload account changed");
-  return { mediaAssetId: confirmed.mediaAssetId, url: confirmed.url };
+  return {
+    mediaAssetId: confirmed.mediaAssetId,
+    url: confirmed.url,
+    ...(typeof confirmed.variantId === "string" ? { variantId: confirmed.variantId } : {}),
+  };
 }
 
 export interface MobileUploadOptions {
@@ -56,7 +61,7 @@ export interface MobileUploadOptions {
 export async function uploadMobileMediaFile(
   file: MobileUploadFile,
   options: MobileUploadOptions
-): Promise<{ mediaAssetId: string; url: string }> {
+): Promise<{ mediaAssetId: string; url: string; variantId?: string }> {
   const generation = getAuthGeneration();
   UploadKindSchema.parse(options.kind);
   const assertCurrent = () => {

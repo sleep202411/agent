@@ -302,3 +302,21 @@ it("rejects an unsupported upload kind before file access or transport", async (
   expect(fetchMock).not.toHaveBeenCalled();
   expect(api.post).not.toHaveBeenCalled();
 });
+it("retains the original variant ID returned by media confirmation", async () => {
+  vi.mocked(api.post).mockReset().mockResolvedValue({
+    mediaAssetId: "asset",
+    variantId: "original-variant",
+    url: "https://cdn.example/image",
+  });
+  await expect(
+    confirmMobileMediaUpload({
+      kind: "ai_reference_image",
+      storageKey: "key",
+      contentType: "image/png",
+    })
+  ).resolves.toEqual({
+    mediaAssetId: "asset",
+    variantId: "original-variant",
+    url: "https://cdn.example/image",
+  });
+});
