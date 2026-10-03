@@ -85,7 +85,7 @@ function asPanoramaModel(value: string | undefined): (typeof PANORAMA_MODELS)[nu
 }
 
 function resolvePanoramaMedia(node: CanvasAssetNode): MediaItem | undefined {
-  const media = node.media ?? [];
+  const media = (node.media ?? []).filter((item) => item.url !== MOCK_PANORAMA_IMAGE_URL);
   return media.find((item) => item.preferred) ?? media[0];
 }
 
@@ -111,70 +111,16 @@ function resolveNodeTone(relation: PanoramaRelation) {
   };
 }
 
-function createFallbackPanoramaTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 2048;
-  canvas.height = 1024;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return new THREE.CanvasTexture(canvas);
-
-  const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  sky.addColorStop(0, "#1f4d83");
-  sky.addColorStop(0.42, "#243b59");
-  sky.addColorStop(0.7, "#17202c");
-  sky.addColorStop(1, "#0d1017");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  for (let layer = 0; layer < 4; layer += 1) {
-    const yBase = 470 + layer * 75;
-    ctx.beginPath();
-    ctx.moveTo(0, canvas.height);
-    for (let x = 0; x <= canvas.width + 120; x += 120) {
-      const peak = yBase + Math.sin(x * 0.008 + layer) * 42 - Math.random() * 60;
-      ctx.lineTo(x, peak);
-      ctx.lineTo(x + 60, peak - 90 - layer * 24);
-    }
-    ctx.lineTo(canvas.width, canvas.height);
-    ctx.closePath();
-    ctx.fillStyle = `rgba(${34 + layer * 20}, ${49 + layer * 18}, ${68 + layer * 20}, ${0.78 - layer * 0.12})`;
-    ctx.fill();
-  }
-
-  const haze = ctx.createRadialGradient(1040, 270, 40, 1040, 270, 900);
-  haze.addColorStop(0, "rgba(197,220,255,0.28)");
-  haze.addColorStop(0.4, "rgba(91,140,202,0.12)");
-  haze.addColorStop(1, "rgba(10,14,22,0)");
-  ctx.fillStyle = haze;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  for (let i = 0; i < 130; i += 1) {
-    ctx.fillStyle = `rgba(255,190,120,${0.18 + Math.random() * 0.22})`;
-    ctx.beginPath();
-    ctx.arc(
-      Math.random() * canvas.width,
-      440 + Math.random() * 360,
-      1 + Math.random() * 2.2,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 4;
-  texture.needsUpdate = true;
-  return texture;
-}
-
 function PanoramaThreeViewport({
   imageUrl,
   onPoseChange,
 }: {
-  imageUrl?: string;
+  imageUrl: string;
   onPoseChange: (pose: PanoramaPose) => void;
 }) {
+  const t = useTranslations("fizzStudio");
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const mountRef = useRef<HTMLDivElement>(null);
   const poseTickRef = useRef(0);
 
@@ -249,11 +195,9 @@ function PanoramaThreeViewport({
         },
         undefined,
         () => {
-          if (!disposed) applyTexture(createFallbackPanoramaTexture());
+          if (!disposed) setFailed(true);
         }
       );
-    } else {
-      applyTexture(createFallbackPanoramaTexture());
     }
 
     const emitPose = () => {
@@ -296,14 +240,34 @@ function PanoramaThreeViewport({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [imageUrl, onPoseChange]);
+  }, [imageUrl, onPoseChange, attempt]);
 
   return (
-    <div
-      ref={mountRef}
-      className="nodrag nopan nowheel absolute inset-0 cursor-grab overflow-hidden rounded-[inherit] active:cursor-grabbing"
-      data-fizz-panorama-canvas="true"
-    />
+    <>
+      <div
+        ref={mountRef}
+        className="nodrag nopan nowheel absolute inset-0 cursor-grab overflow-hidden rounded-[inherit] active:cursor-grabbing"
+        data-fizz-panorama-canvas="true"
+      />
+      {failed ? (
+        <div
+          role="alert"
+          className="nodrag nopan absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-[#242426] px-6 text-center text-sm text-white/80"
+        >
+          <p>{t("sbPanoramaLoadFailed")}</p>
+          <button
+            type="button"
+            className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/15"
+            onClick={() => {
+              setFailed(false);
+              setAttempt((value) => value + 1);
+            }}
+          >
+            {t("retry")}
+          </button>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -1059,9 +1023,14 @@ function PanoramaNodeImpl({ data, selected }: NodeProps) {
   const targetHandleHighlighted = active || d.targetHandleActive;
   const title = d.node.title || t("sbPanoramaTitle");
   const mediaUrl = media?.url;
-  const previewUrl = mediaUrl ?? d.referenceMedia?.url ?? MOCK_PANORAMA_IMAGE_URL;
+  const reference =
+    d.referenceMedia?.url !== MOCK_PANORAMA_IMAGE_URL ? d.referenceMedia : undefined;
+  const previewUrl = mediaUrl ?? reference?.url;
+  const previewMedia = mediaUrl ? media : reference;
   const dimensionLabel =
-    media?.url || previewUrl === MOCK_PANORAMA_IMAGE_URL ? "2048 x 1024" : "1024 x 1024";
+    previewMedia?.width && previewMedia?.height
+      ? `${previewMedia.width} x ${previewMedia.height}`
+      : "";
   const status = d.node.status ?? "idle";
   const failed = status === "failed" || status === "cancelled";
   const statusMessage = d.node.generation?.error || media?.error || t("sbGenerationFailed");
@@ -1140,7 +1109,19 @@ function PanoramaNodeImpl({ data, selected }: NodeProps) {
       </Handle>
 
       <div className="relative size-full overflow-hidden rounded-[11px] bg-[#242426]">
-        <PanoramaThreeViewport imageUrl={previewUrl} onPoseChange={setPose} />
+        {previewUrl ? (
+          <PanoramaThreeViewport key={previewUrl} imageUrl={previewUrl} onPoseChange={setPose} />
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-white/65">
+            <Icon360View className="size-8 text-white/40" aria-hidden />
+            <p>{t("sbPanoramaEmpty")}</p>
+          </div>
+        )}
+        {!mediaUrl && previewUrl ? (
+          <p className="absolute left-3 top-3 rounded-md bg-black/70 px-2 py-1 text-xs text-white/80">
+            {t("sbPanoramaReferencePreview")}
+          </p>
+        ) : null}
         <div
           aria-hidden="true"
           className="canvas-node-drag-handle pointer-events-none absolute inset-0 z-10 rounded-[inherit]"
@@ -1179,7 +1160,7 @@ function PanoramaNodeImpl({ data, selected }: NodeProps) {
             onClick={() => {
               if (media?.id) d.onOpenPreview?.(media.id);
             }}
-            disabled={!media?.id}
+            disabled={!media?.id || !mediaUrl}
             className="flex size-10 items-center justify-center rounded-lg border border-white/[0.08] bg-black/45 text-white/76 shadow-xl shadow-black/35 backdrop-blur-md transition-colors hover:bg-black/58 hover:text-white disabled:pointer-events-none disabled:opacity-40"
             aria-label={t("sbPanoramaOpenViewer")}
             title={t("sbPanoramaOpenViewer")}
@@ -1187,7 +1168,7 @@ function PanoramaNodeImpl({ data, selected }: NodeProps) {
             <IconExternalLink className="size-5" />
           </button>
         </div>
-        <PanoramaHud pose={pose} />
+        {previewUrl ? <PanoramaHud pose={pose} /> : null}
         {status === "queued" || status === "generating" ? (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/18 backdrop-blur-[1px]">
             <div className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/[0.16] bg-black/56 px-3 text-[13px] font-semibold text-white shadow-2xl shadow-black/35">

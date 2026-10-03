@@ -81,7 +81,6 @@ import {
 } from "../../_data/storyboard-schema";
 import {
   MIN_CANVAS_ZOOM,
-  MOCK_PANORAMA_IMAGE_URL,
   NODE_COMPOSER_GAP,
   NODE_COMPOSER_HEIGHT,
   NODE_COMPOSER_VIEWPORT_PADDING,
@@ -1450,16 +1449,9 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
       const nodeId = addCanvasAssetNode(
         {
           kind: "panorama",
-          media: [
-            {
-              id: localId("media"),
-              preferred: true,
-              status: "done",
-              url: MOCK_PANORAMA_IMAGE_URL,
-            },
-          ],
+          media: [],
           sourceShotId,
-          status: "done",
+          status: "idle",
           settings: {
             aspectRatio: "2:1",
             model: "Fizz Image 2.0",
