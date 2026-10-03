@@ -69,7 +69,7 @@ export default function CrewTaskCenter() {
                   key={value}
                   type="button"
                   aria-pressed={scope === value}
-                  className={`min-h-11 flex-1 rounded-lg px-3 text-sm ${scope === value ? "bg-primary text-white" : "text-muted-foreground"}`}
+                  className={`min-h-11 flex-1 rounded-lg px-3 text-sm lg:min-h-8 ${scope === value ? "bg-primary text-white" : "text-muted-foreground"}`}
                   onClick={() => {
                     setScope(value);
                     setCrewId("");

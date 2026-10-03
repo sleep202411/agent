@@ -632,7 +632,7 @@ function StandardWorkspaceSurface({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
         <div className="mx-auto w-full max-w-[1480px]">{children}</div>
       </div>
     </div>

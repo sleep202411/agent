@@ -139,7 +139,7 @@ export function PositionsTab() {
   const total = positions.isError ? 0 : (positions.data?.pages[0]?.total ?? 0);
 
   return (
-    <div className="grid grid-cols-1 gap-0 overflow-hidden rounded-xl bg-background lg:grid-cols-[230px_330px_minmax(0,1fr)] xl:grid-cols-[280px_400px_minmax(0,1fr)] 2xl:grid-cols-[320px_460px_minmax(0,1fr)]">
+    <div className="grid min-h-0 grid-cols-1 gap-0 overflow-hidden bg-background lg:flex-1 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[230px_330px_minmax(0,1fr)] xl:grid-cols-[280px_400px_minmax(0,1fr)] 2xl:grid-cols-[320px_460px_minmax(0,1fr)]">
       {/* ─── Sidebar ───────────────────────────────────── */}
       <div className="border-b border-white/10 p-3 lg:hidden">
         <Button
@@ -153,7 +153,7 @@ export function PositionsTab() {
       </div>
       <aside
         id="opening-filters"
-        className={`${filtersOpen ? "block" : "hidden"} space-y-5 border-r border-white/10 p-4 lg:block`}
+        className={`${filtersOpen ? "block" : "hidden"} space-y-5 border-r border-white/10 p-4 lg:block lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain`}
       >
         <Button
           variant={savedOnly ? "solid" : "outline"}
@@ -296,7 +296,7 @@ export function PositionsTab() {
       </aside>
 
       {/* ─── Main column ───────────────────────────────── */}
-      <section className="min-w-0 space-y-4 border-r border-white/10 py-4">
+      <section className="min-w-0 space-y-4 border-r border-white/10 py-4 lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
         <header className="flex flex-wrap items-center justify-between gap-3 px-4">
           <h2 className="text-base font-semibold text-foreground">
             {t("showingJobsCount", { count: total })}
@@ -384,7 +384,7 @@ export function PositionsTab() {
         tabIndex={-1}
         aria-live="polite"
         aria-label={t("viewDetails")}
-        className="min-w-0 scroll-mt-24 outline-none"
+        className="min-w-0 scroll-mt-24 outline-none lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain"
       >
         {selected ? (
           <OpeningDetails

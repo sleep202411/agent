@@ -101,7 +101,11 @@ export function GlobalNav() {
   const navItems: NavItem[] = [
     { href: "/ips", label: t("ipPlaza") },
     { href: "/games", label: t("games") },
-    { href: "/crews", label: t("studioHall") },
+    {
+      href: "/crews",
+      linkHref: localizePath("/crews?view=positions", locale),
+      label: t("studioHall"),
+    },
     { href: "/creators", label: t("creators") },
     {
       href: "/courses",
