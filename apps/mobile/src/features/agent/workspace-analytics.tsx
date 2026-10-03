@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { generationUsage } from "./workspace-analytics-summary";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -13,20 +14,58 @@ import {
 } from "./api/workspace-analytics-api";
 type Props = { workspaceId: string; generation: number; onClose: () => void };
 export function WorkspaceAnalyticsScreen(props: Props) {
-  const active = useScreenActive();
-  if (!active || props.generation !== getAuthGeneration()) return null;
+  const focused = useIsFocused();
+  if (!focused || props.generation !== getAuthGeneration()) return null;
   return <Analytics key={`${props.workspaceId}:${props.generation}`} {...props} />;
 }
-function Analytics({ workspaceId, generation, onClose }: Props) {
+type Section = "daily" | "jobs" | "ledger" | "members";
+function Analytics(props: Props) {
+  const active = useScreenActive();
+  const [projectId, setProjectId] = useState(""),
+    [range, setRange] = useState<7 | 30 | 90>(30),
+    [revision, setRevision] = useState(0);
+  const [section, setSection] = useState<Section>("daily");
+  const key = JSON.stringify([projectId, range, revision]);
+  if (!active) return null;
+  return (
+    <Report
+      key={key}
+      {...props}
+      projectId={projectId}
+      setProjectId={setProjectId}
+      range={range}
+      setRange={setRange}
+      section={section}
+      setSection={setSection}
+      refresh={() => setRevision((v) => v + 1)}
+    />
+  );
+}
+function Report({
+  workspaceId,
+  generation,
+  onClose,
+  projectId,
+  setProjectId,
+  range,
+  setRange,
+  section,
+  setSection,
+  refresh,
+}: Props & {
+  projectId: string;
+  setProjectId: (value: string) => void;
+  range: 7 | 30 | 90;
+  setRange: (value: 7 | 30 | 90) => void;
+  section: Section;
+  setSection: (value: Section) => void;
+  refresh: () => void;
+}) {
   const theme = useTheme(),
     t = useTranslations(),
     locale = useLocale();
   const label = (key: string) => t(`workspaceAnalytics.${key}` as MessageKey);
-  const [projectId, setProjectId] = useState(""),
-    [range, setRange] = useState<7 | 30 | 90>(30),
-    [revision, setRevision] = useState(0);
-  const [section, setSection] = useState<"daily" | "jobs" | "ledger" | "members">("daily");
-  const key = JSON.stringify([projectId, range, revision]);
+  const key = JSON.stringify([projectId, range]);
   const [snapshot, setSnapshot] = useState<{
     key: string;
     data?: WorkspaceAnalytics;
@@ -75,7 +114,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
         <ThemedText>{t("common.back")}</ThemedText>
       </Pressable>
       <ThemedText type="small">{label("historyLimit")}</ThemedText>
-      <Pressable accessibilityRole="button" onPress={() => setRevision((v) => v + 1)}>
+      <Pressable accessibilityRole="button" onPress={refresh}>
         <ThemedText>{label("refresh")}</ThemedText>
       </Pressable>
       {!current && <ActivityIndicator />}

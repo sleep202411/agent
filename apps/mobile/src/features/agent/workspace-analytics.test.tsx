@@ -2,7 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkspaceAnalyticsScreen } from "./workspace-analytics";
-const h = vi.hoisted(() => ({ generation: 1, active: true, load: vi.fn() }));
+const h = vi.hoisted(() => ({ generation: 1, active: true, focused: true, load: vi.fn() }));
 vi.mock("./api/workspace-analytics-api", async (original) => ({
   ...(await original<typeof import("./api/workspace-analytics-api")>()),
   loadWorkspaceAnalytics: h.load,
@@ -11,6 +11,7 @@ vi.mock("./api/studio-workspace-settings-api", () => ({}));
 vi.mock("./api/platform-projects-api", () => ({}));
 vi.mock("./api/studio-members-api", () => ({}));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
@@ -65,6 +66,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.generation = 1;
   h.active = true;
+  h.focused = true;
   h.load.mockResolvedValue(data());
   host = document.createElement("div");
   document.body.append(host);
@@ -116,4 +118,65 @@ it("aborts old workspace reads and ignores a late result after navigation", asyn
   await act(async () => resolve({ ...data(), workspace: { name: "Retired workspace" } }));
   expect(host.textContent).not.toContain("Retired workspace");
   expect(host.textContent).toContain("Team");
+});
+
+it("keeps project, range and tab through background while rechecking the report before display", async () => {
+  h.load.mockResolvedValue({ ...data(), projects: [{ id: "project", name: "Film" }] });
+  await mount();
+  await click("workspaceAnalytics.members");
+  await click("Film");
+  await click("90 workspaceAnalytics.days");
+  const before = h.load.mock.calls.at(-1)!;
+  h.active = false;
+  await mount();
+  expect((before[4] as AbortSignal).aborted).toBe(true);
+  expect(host.textContent).toBe("");
+  let resolve!: (value: unknown) => void;
+  h.load.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  h.active = true;
+  await mount();
+  expect(h.load).toHaveBeenLastCalledWith("team", 1, "project", 90, expect.any(AbortSignal));
+  expect(host.textContent).not.toContain("Team");
+  expect(host.textContent).toContain("loading");
+  await act(async () => resolve({ ...data(), projects: [{ id: "project", name: "Film" }] }));
+  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "workspaceAnalytics.members"
+  );
+  expect(
+    [...host.querySelectorAll('[role="radio"][aria-selected="true"]')].map(
+      (node) => node.textContent
+    )
+  ).toEqual(["Film", "90 workspaceAnalytics.days"]);
+});
+it("removes member data when foreground refresh loses permission", async () => {
+  await mount();
+  await click("workspaceAnalytics.members");
+  h.active = false;
+  await mount();
+  h.load.mockResolvedValue({ ...data(), memberUsage: undefined });
+  h.active = true;
+  await mount();
+  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "workspaceAnalytics.daily"
+  );
+  expect(host.textContent).not.toContain("workspaceAnalytics.members");
+});
+it("retires filters on route exit", async () => {
+  await mount();
+  await click("workspaceAnalytics.members");
+  await click("90 workspaceAnalytics.days");
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  expect(h.load).toHaveBeenLastCalledWith("team", 1, "", 30, expect.any(AbortSignal));
+  expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+    "workspaceAnalytics.daily"
+  );
 });
