@@ -49,6 +49,7 @@ export function WorkCreationRecovery({
             </Pressable>
           ))}
           {list.loading && <ActivityIndicator />}
+          {list.error && <ThemedText accessibilityRole="alert">{list.error}</ThemedText>}
           {list.failed
             ? button(t("profileEdit.retry"), list.retry)
             : !list.loading && list.hasMore

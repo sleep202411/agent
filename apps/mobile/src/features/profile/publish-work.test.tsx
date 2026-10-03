@@ -377,3 +377,30 @@ it("offers sign-in again after the guest dismisses the automatic login sheet", a
   await render();
   expect(input("publishWork.name")).toBeTruthy();
 });
+
+it("shows failed recovery-list detail and retries without repeating creation", async () => {
+  h.create.mockRejectedValueOnce(new Error("Lost response"));
+  h.page
+    .mockRejectedValueOnce(new Error("Owned works temporarily unavailable"))
+    .mockResolvedValueOnce({
+      works: [
+        {
+          id: "42",
+          title: "Recovered film",
+          introduction: "Story",
+          hasVideo: false,
+          isPrivate: false,
+        },
+      ],
+      hasMore: false,
+    });
+  await fill();
+  await act(async () => click("publishWork.next"));
+  await act(async () => click("publishWork.checkWorks"));
+  expect(host.textContent).toContain("Owned works temporarily unavailable");
+  await act(async () => click("profileEdit.retry"));
+  expect(host.textContent).toContain("Recovered film");
+  expect(host.textContent).not.toContain("Owned works temporarily unavailable");
+  expect(h.create).toHaveBeenCalledTimes(1);
+  expect(h.find).not.toHaveBeenCalled();
+});
