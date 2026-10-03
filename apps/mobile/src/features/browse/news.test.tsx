@@ -33,7 +33,9 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (v: unknown) => v },
   Platform: { OS: "web", select: (v: Record<string, unknown>) => v.web ?? v.default },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Pressable: () => null,
+  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
+    <button onClick={onPress}>{children}</button>
+  ),
   RefreshControl: ({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) => (
     <button onClick={onRefresh} data-refresh={refreshing}>
       refresh
@@ -58,7 +60,7 @@ vi.mock("@/components/ui", () => ({
   ChipRail: ({ onChange }: { onChange: (index: number) => void }) => (
     <button onClick={() => onChange(1)}>tag</button>
   ),
-  EmptyState: () => null,
+  EmptyState: ({ detail }: { detail: string }) => <span>{detail}</span>,
   ListFooter: () => <span>paging</span>,
   PosterImage: () => null,
   ScreenHeader: () => null,
@@ -130,8 +132,11 @@ it("keeps a failed next page retryable and preserves loaded records", async () =
   await act(async () => list.onEndReached());
   expect(list.data.map((a) => a.id)).toEqual(["a", "b"]);
   expect(host.textContent).not.toContain("paging");
-  h.feed.mockResolvedValueOnce(page("c", "d"));
+  expect(host.textContent).toContain("offline");
   await act(async () => list.onEndReached());
+  expect(h.feed).toHaveBeenCalledTimes(2);
+  h.feed.mockResolvedValueOnce(page("c", "d"));
+  await act(async () => click("common.retry"));
   expect(h.feed.mock.calls.slice(1).map((c) => c[1].page)).toEqual([2, 2]);
   expect(list.data.map((a) => a.id)).toEqual(["a", "b", "c", "d"]);
 });
@@ -152,4 +157,53 @@ it("does not release replacement pagination when the old request finishes", asyn
   expect(h.feed).toHaveBeenCalledTimes(4);
   await act(async () => next.resolve(page("t3", "t4")));
   expect(host.textContent).not.toContain("paging");
+});
+
+it("retries an initial load failure", async () => {
+  h.feed.mockRejectedValueOnce(new Error("News unavailable"));
+  await render();
+  expect(host.textContent).toContain("News unavailable");
+  await act(async () => click("common.retry"));
+  expect(list.data.map((a) => a.id)).toEqual(["a", "b"]);
+});
+it("preserves loaded articles and offers retry after refresh fails", async () => {
+  await render();
+  h.feed.mockRejectedValueOnce(new Error("Refresh offline"));
+  await act(async () => click("refresh"));
+  expect(list.data.map((a) => a.id)).toEqual(["a", "b"]);
+  expect(host.textContent).toContain("Refresh offline");
+  h.feed.mockResolvedValueOnce(page("new", "latest"));
+  await act(async () => click("common.retry"));
+  expect(list.data.map((a) => a.id)).toEqual(["new", "latest"]);
+  expect(host.textContent).not.toContain("Refresh offline");
+});
+it("retries the failed tag while preserving the previous list", async () => {
+  await render();
+  h.feed.mockRejectedValueOnce(new Error("Tag offline"));
+  await act(async () => click("tag"));
+  expect(list.data.map((a) => a.id)).toEqual(["a", "b"]);
+  expect(host.textContent).toContain("Tag offline");
+  h.feed.mockResolvedValueOnce(page("tagged"));
+  await act(async () => click("common.retry"));
+  expect(h.feed).toHaveBeenLastCalledWith(
+    "en-US",
+    expect.objectContaining({ tag: "tag", page: 1 })
+  );
+  expect(list.data.map((a) => a.id)).toEqual(["tagged"]);
+});
+
+it("does not show an abandoned page error over the new filter", async () => {
+  await render();
+  let fail!: (error: Error) => void;
+  h.feed.mockReturnValueOnce(
+    new Promise((_, reject) => {
+      fail = reject;
+    })
+  );
+  await act(async () => list.onEndReached());
+  h.feed.mockResolvedValueOnce(page("filtered"));
+  await act(async () => click("tag"));
+  await act(async () => fail(new Error("Old pagination failed")));
+  expect(host.textContent).not.toContain("Old pagination failed");
+  expect(list.data.map((a) => a.id)).toEqual(["filtered"]);
 });
