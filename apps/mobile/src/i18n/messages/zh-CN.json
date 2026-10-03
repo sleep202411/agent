@@ -3540,6 +3540,7 @@
   "aiLab.pending": "一项提交待确认，请先恢复再开始新的生成。",
   "aiLab.recover": "恢复提交",
   "aiLab.clear": "核对并清除待确认请求",
+  "aiLab.catalogChanged": "模型、可用设置、权限或价格已更改。请检查最新详情后再生成。",
   "aiLab.schemaChanged": "模型设置已变化，请核对目录并重置草稿后生成。",
   "aiLab.membership": "会员",
   "aiLab.on": "开",

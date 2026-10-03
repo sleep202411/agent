@@ -1154,3 +1154,50 @@ it("shows selected result metadata using its catalog model name without submitti
   expect(host.textContent).not.toContain("aiLab.resultDuration:");
   expect(h.post).not.toHaveBeenCalled();
 });
+
+it.each(["disabled", "schema", "price", "access"])(
+  "rechecks %s changes before creating a charged request",
+  async (kind) => {
+    await mount();
+    await click("Image preset");
+    await change("Prompt", "Keep this prompt");
+    const originalGet = h.get.getMockImplementation()!;
+    h.get.mockImplementation(async (path, ...args) => {
+      if (path !== "/ai/models") return originalGet(path, ...args);
+      return {
+        ...catalog,
+        models: [
+          {
+            ...model,
+            ...(kind === "disabled"
+              ? { enabled: false }
+              : kind === "schema"
+                ? { schemaVersion: "2" }
+                : kind === "access"
+                  ? { access: { allowed: false } }
+                  : {}),
+          },
+        ],
+        presets:
+          kind === "price"
+            ? [
+                {
+                  ...catalog.presets[0],
+                  billingPolicy: { mode: "charge", preflightCost: 8, displayCurrency: "points" },
+                },
+              ]
+            : catalog.presets,
+      };
+    });
+    await click("aiLab.generate");
+    await click("aiLab.confirm");
+    expect(h.post).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("aiLab.catalogChanged");
+    expect(input("Prompt").value).toBe("Keep this prompt");
+    if (kind === "price") {
+      await click("aiLab.generate");
+      await click("aiLab.confirm");
+      expect(h.post).toHaveBeenCalledOnce();
+    }
+  }
+);

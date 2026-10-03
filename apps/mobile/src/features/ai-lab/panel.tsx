@@ -556,6 +556,28 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       run(
         async () => {
           await assertProjectWrite();
+          if (!pending) {
+            const fresh = await loadGenerationCatalog(
+              generation,
+              controller.current!.signal,
+              workspaceId
+            );
+            const freshModel = fresh.catalog.models.find((item) => item.id === command.modelId);
+            const freshPreset = fresh.catalog.presets.find((item) => item.id === command.presetId);
+            setData(fresh);
+            if (
+              !freshModel ||
+              !freshPreset ||
+              !canUseGeneration(freshModel, freshPreset, fresh.rank) ||
+              freshModel.schemaVersion !== command.schemaVersion ||
+              JSON.stringify(freshModel.input_schema) !== JSON.stringify(model?.input_schema) ||
+              JSON.stringify(freshPreset.billingPolicy) !== JSON.stringify(preset?.billingPolicy) ||
+              freshPreset.campaignId !== command.campaignId ||
+              fresh.rank !== data?.rank
+            ) {
+              throw new Error(t("aiLab.catalogChanged"));
+            }
+          }
           if (project && !pending) {
             const fresh = await loadProjectSkills(project, generation, controller.current!.signal);
             if (!skills || skillSnapshot(fresh) !== skillSnapshot(skills)) {
