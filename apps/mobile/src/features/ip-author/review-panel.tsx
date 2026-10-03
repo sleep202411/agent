@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useIsFocused, useRouter } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -42,7 +42,7 @@ function Button({
   );
 }
 export function IpReviewPanel(props: Props) {
-  return useScreenActive() && getAuthGeneration() === props.generation ? (
+  return useIsFocused() && getAuthGeneration() === props.generation ? (
     <Session key={`${props.ipId}:${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
@@ -58,6 +58,7 @@ const statuses = [
   "archived",
 ] as const;
 function Session({ ipId, userId, generation }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     router = useRouter(),
@@ -106,7 +107,7 @@ function Session({ ipId, userId, generation }: Props) {
   };
   const refresh = () => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setConfirm(null);
     setReviewed(false);
     setError(initial.error);
@@ -122,7 +123,7 @@ function Session({ ipId, userId, generation }: Props) {
   };
   const submit = (command: ReviewCommand) => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setConfirm(null);
     setReviewed(false);
     setSaved(false);
@@ -146,6 +147,7 @@ function Session({ ipId, userId, generation }: Props) {
     frozen = busy || !!pending || !!initial.error,
     missing = snapshot ? missingReviewRequirements(snapshot) : [],
     status = statuses.find((value) => value === snapshot?.status);
+  if (!active) return null;
   return (
     <ScrollView
       contentContainerStyle={{ padding: 16, gap: 12 }}

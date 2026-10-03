@@ -6,6 +6,7 @@ import { IpReviewPanel } from "./review-panel";
 const h = vi.hoisted(() => ({
   signedIn: true,
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   patch: vi.fn(),
@@ -93,6 +94,7 @@ vi.mock("@/features/services/conversation-video", () => ({
   ConversationVideo: () => <div>Video preview</div>,
 }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
   useLocalSearchParams: () => ({ id: "11111111-1111-4111-8111-111111111111" }),
   useRouter: () => ({ push: h.push }),
   Stack: {
@@ -123,6 +125,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   snapshot = {
     id,
@@ -216,4 +219,57 @@ it("clears private readiness after access loss or inactivity", async () => {
   h.active = false;
   await mount();
   expect(host.textContent).toBe("");
+});
+
+const enterSummary = async () =>
+  act(async () => {
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="ipReview.summary"]')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Revised story and credits"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+it("retains the unsent summary while backgrounded and still requires confirmation", async () => {
+  await mount();
+  await enterSummary();
+  h.active = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.active = true;
+  await mount();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="ipReview.summary"]')?.value).toBe(
+    "Revised story and credits"
+  );
+  expect(h.post).not.toHaveBeenCalled();
+  await click("ipReview.submit");
+  expect(h.post).not.toHaveBeenCalled();
+  await click("ipReview.confirmSubmit");
+  expect(h.post).toHaveBeenCalledOnce();
+  expect(h.post.mock.calls[0][1].data.changeSummary).toBe("Revised story and credits");
+});
+it("rechecks review eligibility after returning from background", async () => {
+  await mount();
+  await enterSummary();
+  h.active = false;
+  await mount();
+  snapshot = { ...snapshot, status: "published", version: 2 };
+  h.active = true;
+  await mount();
+  await click("ipReview.submit");
+  await click("ipReview.confirmSubmit");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("retires unsent summary when the route is left", async () => {
+  await mount();
+  await enterSummary();
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="ipReview.summary"]')?.value
+  ).not.toBe("Revised story and credits");
+  expect(h.post).not.toHaveBeenCalled();
 });
