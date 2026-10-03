@@ -6,7 +6,7 @@ import { TextAdventurePreview } from "./text-adventure-preview";
 const h = vi.hoisted(() => ({
   status: "authenticated",
   generation: 1,
-  active: true,
+  focused: true,
   library: vi.fn(),
   player: vi.fn(),
   close: vi.fn(),
@@ -14,7 +14,7 @@ const h = vi.hoisted(() => ({
 vi.mock("@/auth", () => ({
   useAuth: () => ({ status: h.status, generation: h.generation, user: { id: "123" } }),
 }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("./text-adventure-library", () => ({
   TextAdventureLibrary: (props: unknown) => {
@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.status = "authenticated";
   h.generation = 1;
-  h.active = true;
+  h.focused = true;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -59,12 +59,12 @@ it("preserves the hub library entry and close navigation", async () => {
   await act(async () => host.querySelector("button")!.click());
   expect(h.close).toHaveBeenCalledOnce();
 });
-it("unmounts the library when the screen is inactive or signed out", async () => {
+it("unmounts the library when the route loses focus or signed out", async () => {
   await render();
-  h.active = false;
+  h.focused = false;
   await render();
   expect(host.textContent).not.toContain("library");
-  h.active = true;
+  h.focused = true;
   h.status = "anonymous";
   await render();
   expect(host.textContent).not.toContain("library");

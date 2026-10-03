@@ -2,7 +2,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TextAdventureLibrary } from "./text-adventure-library";
-const h = vi.hoisted(() => ({ list: vi.fn(), generation: 1 }));
+const h = vi.hoisted(() => ({ list: vi.fn(), generation: 1, active: true }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("./text-adventure-preview", () => ({
   TextAdventurePreview: ({ gameId }: { gameId: string }) => <span>Preview {gameId}</span>,
 }));
@@ -63,6 +64,7 @@ const button = (text: string) =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
   h.list.mockResolvedValue([
     { gameId: "tg_0123456789abcdef", name: "World", status: "draft", synopsis: "Story" },
   ]);
@@ -109,4 +111,28 @@ it("opens the saved preview from the library", async () => {
   await render();
   await act(async () => button("textAdventure.preview").click());
   expect(host.textContent).toContain("Preview tg_0123456789abcdef");
+});
+
+it("retains the selected editor across native picker background transitions", async () => {
+  await render();
+  await act(async () => button("World").click());
+  const editorButton = button("tg_");
+  h.active = false;
+  await render();
+  expect(button("tg_")).toBe(editorButton);
+  h.active = true;
+  await render();
+  expect(button("tg_")).toBe(editorButton);
+  expect(h.list).toHaveBeenCalledTimes(1);
+});
+it("suspends playtesting in the background and restores the selected player on return", async () => {
+  await render();
+  await act(async () => button("World").click());
+  await act(async () => button("playtest").click());
+  h.active = false;
+  await render();
+  expect(host.textContent).not.toContain("player back");
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("player back");
 });

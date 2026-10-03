@@ -2,6 +2,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TextAdventureMedia } from "./text-adventure-media";
+const h = vi.hoisted(() => ({ active: true }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/features/services/conversation-audio", () => ({
   ConversationAudio: ({ url }: { url: string }) => <span data-audio={url}>audio</span>,
 }));
@@ -17,6 +19,7 @@ vi.mock("react-native", () => ({
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
+  h.active = true;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -53,4 +56,19 @@ it("does not hand insecure or credential-bearing URLs to native media components
   expect(host.querySelector("[data-image]")).toBeNull();
   expect(host.querySelector("[data-audio]")).toBeNull();
   expect(host.textContent).toContain("thread.previewFailed");
+});
+
+it("releases the music preview while the editor is backgrounded", async () => {
+  const render = () =>
+    act(async () =>
+      root.render(<TextAdventureMedia stillUrls={[]} bgmUrl="https://cdn.example/music.mp3" />)
+    );
+  await render();
+  expect(host.querySelector("[data-audio]")).not.toBeNull();
+  h.active = false;
+  await render();
+  expect(host.querySelector("[data-audio]")).toBeNull();
+  h.active = true;
+  await render();
+  expect(host.querySelector("[data-audio]")).not.toBeNull();
 });

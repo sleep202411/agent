@@ -1,3 +1,4 @@
+import { useScreenActive } from "@/hooks/use-app-active";
 import { Image, ScrollView, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
@@ -12,11 +13,14 @@ function safeMediaUrl(url: string) {
 }
 export function TextAdventureMusic({ url }: { url: string }) {
   const t = useTranslations();
+  const active = useScreenActive();
   return (
     <View style={{ gap: 8 }}>
       <ThemedText>{t("textAdventures.editor.sections.music")}</ThemedText>
       {safeMediaUrl(url) ? (
-        <ConversationAudio key={url} url={url} />
+        active ? (
+          <ConversationAudio key={url} url={url} />
+        ) : null
       ) : (
         <ThemedText accessibilityRole="alert">{t("thread.previewFailed")}</ThemedText>
       )}
