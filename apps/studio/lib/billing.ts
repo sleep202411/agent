@@ -63,19 +63,23 @@ export interface MembershipBenefits {
   queuedJobs: number | null;
 }
 
-export function listMembershipPlans(input: {
-  productType: "membership_plan" | "team_membership_plan";
-  /**
-   * Membership pricing is one currency per cell: USD on .com, CNY on .cn.
-   * Never ask for a currency the catalog has no rows for — the API answers
-   * with price-less plans and the dialog degrades to "Contact Sales".
-   */
-  currency: "USD" | "CNY";
-}) {
+export function listMembershipPlans(
+  input: {
+    productType: "membership_plan" | "team_membership_plan";
+    /**
+     * Membership pricing is one currency per cell: USD on .com, CNY on .cn.
+     * Never ask for a currency the catalog has no rows for — the API answers
+     * with price-less plans and the dialog degrades to "Contact Sales".
+     */
+    currency: "USD" | "CNY";
+  },
+  signal?: AbortSignal
+) {
   return api.get<{ provider: string; plans: MembershipPlan[] }>(
     "/aurora/billing/membership-plans",
     {
       params: input,
+      signal,
     }
   );
 }
@@ -94,8 +98,12 @@ export interface BillingCheckoutResult {
   paymentIntent: { checkoutUrl: string | null } | null;
 }
 
-export function createBillingCheckout(input: CreateBillingCheckoutInput) {
-  return api.post<BillingCheckoutResult>("/aurora/billing/checkout", { data: input });
+export function createBillingCheckout(input: CreateBillingCheckoutInput, signal?: AbortSignal) {
+  return api.post<BillingCheckoutResult>("/aurora/billing/checkout", {
+    data: input,
+    signal,
+    requestScope: "user",
+  });
 }
 
 export interface BillingOrderView {
