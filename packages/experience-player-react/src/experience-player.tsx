@@ -1313,7 +1313,11 @@ function ActiveExperienceRuntimePlayer({
           </div>
           {/* The pause is part of the picture: the paused frame and the controls
               sit in the film frame and turn with it. Neither shows over an
-              access flow, the locked-scene gate, the ending or a failure. */}
+              access flow, the locked-scene gate, the ending or a failure.
+              The frame keeps no pause toggle of its own where the picture
+              offers one — a missed tap pauses, Space pauses — only over a
+              world stream, which takes its taps and its Space for moves, does
+              the toggle stand in the frame's corner. */}
           {holds.pauseUi && viewerPause !== null ? (
             <ExperiencePausedScrim
               ref={pausedFrameRef}
@@ -1327,7 +1331,7 @@ function ActiveExperienceRuntimePlayer({
               toggleRef={toggleRef}
               copy={copy}
               paused={viewerPause !== null}
-              toggleVisible={toggleVisible}
+              worldStream={hasWorldModelRenderer}
               unmuteVisible={soundBlocked && hasVideoRenderer && viewerPause === null}
               keyShortcut={spaceToggles && !hasTextRenderer}
               onToggle={togglePause}

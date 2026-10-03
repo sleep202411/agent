@@ -33,11 +33,14 @@ function keepFocus(event: MouseEvent<HTMLButtonElement>) {
 }
 
 /**
- * The film frame's own controls, at its top-right: the pause/resume toggle,
- * and the unmute pill under it when sound was refused. A column, right-aligned,
- * so the toggle never moves as the pill comes and goes and the cluster keeps to
- * the frame's right edge, out of whatever host chrome sits further left. The
- * bottom band belongs to the choices, and the top-left meets the host's menus.
+ * The film frame's own controls, at its top-right. Over a world stream —
+ * which takes the picture's taps and Space for its own moves — the pause
+ * toggle stands here, the one place it can. Elsewhere a missed tap on the
+ * picture pauses and Space pauses, so the frame keeps no toggle of its own,
+ * and what remains is the unmute pill under the corner when sound was
+ * refused. A column, right-aligned, so whatever shows keeps to the frame's
+ * right edge, out of whatever host chrome sits further left. The bottom band
+ * belongs to the choices, and the top-left meets the host's menus.
  *
  * They sit in the frame, so they turn with it when it is drawn sideways — on an
  * upright phone the frame's top-right is the screen's bottom-right, under the
@@ -54,7 +57,7 @@ export function ExperienceFrameControls({
   toggleRef,
   copy,
   paused,
-  toggleVisible,
+  worldStream,
   unmuteVisible,
   keyShortcut,
   onToggle,
@@ -64,8 +67,8 @@ export function ExperienceFrameControls({
   copy: ExperiencePlayerCopy;
   /** The viewer has the story paused. */
   paused: boolean;
-  /** The scene has time to stop, or the story is paused. A silent beat has nothing to pause. */
-  toggleVisible: boolean;
+  /** A world stream keeps its taps and Space: its pause stands in the corner. */
+  worldStream: boolean;
   /** The browser refused sound, so the clip plays muted until the viewer turns it on. */
   unmuteVisible: boolean;
   /** Space toggles the film as well. */
@@ -97,7 +100,7 @@ export function ExperienceFrameControls({
         className="pointer-events-none absolute right-0 flex flex-col items-end gap-[clamp(6px,1.2cqmin,12px)] p-[clamp(10px,2.4cqmin,24px)] data-[experience-gesture-covered]:invisible"
         style={{ top: CLUSTER_TOP, zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 2 }}
       >
-        {toggleVisible ? (
+        {worldStream ? (
           <button
             ref={toggleRef}
             type="button"
