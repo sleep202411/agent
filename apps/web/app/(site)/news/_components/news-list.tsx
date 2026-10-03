@@ -1,13 +1,13 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { IconArrowUpRight, IconExternalLink } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { articleHref, formatDate } from "../_data/format";
-import { fetchNewsByTag } from "../_data/news-client";
+import { fetchNewsPage } from "../_data/news-client";
 import type { NewsItem } from "../_data/types";
 
 // The "All" pill is inserted here on the frontend — the backend has no all-tag.
@@ -17,8 +17,10 @@ const ALL_TAG_ID = "all";
 export function NewsList({
   articles,
   tags = [],
+  initialHasMore = false,
 }: {
   articles: NewsItem[];
+  initialHasMore?: boolean;
   /**
    * Backend tag list (`/api/news/tags?onlyWithNews=true`) for the filter bar.
    * Empty = no bar. The "All" pill is prepended client-side; switching a real
@@ -29,42 +31,70 @@ export function NewsList({
   const t = useTranslations("news");
   const locale = useLocale();
 
-  // Default to "All". Switching a real tag calls the backend (server action)
-  // and swaps the list; "All" restores the server-rendered feed with no
-  // round-trip. `reqRef` drops stale responses so fast clicks can't race.
-  const [activeTagId, setActiveTagId] = useState<string>(ALL_TAG_ID);
-  const [displayedArticles, setDisplayedArticles] = useState<NewsItem[]>(articles);
-  const [isPending, startTransition] = useTransition();
-  const reqRef = useRef(0);
+  const [activeTagId, setActiveTagId] = useState(ALL_TAG_ID);
+  const [displayedArticles, setDisplayedArticles] = useState(articles);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [page, setPage] = useState(1);
+  const [isPending, setPending] = useState(false);
+  const request = useRef<AbortController | null>(null);
   const loadedTagRef = useRef(ALL_TAG_ID);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+      request.current = null;
+    },
+    []
+  );
 
+  const load = async (tagId: string, nextPage: number, append: boolean) => {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setPending(true);
+    try {
+      const next = await fetchNewsPage(locale, tagId, nextPage, controller.signal);
+      if (request.current !== controller || controller.signal.aborted) return;
+      loadedTagRef.current = tagId;
+      setDisplayedArticles((current) => {
+        if (!append) return next.items;
+        const seen = new Set(current.map((item) => item.id));
+        return [
+          ...current,
+          ...next.items.filter((item) => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          }),
+        ];
+      });
+      setHasMore(next.hasMore);
+      setPage(nextPage);
+    } catch (error) {
+      if (request.current === controller && !controller.signal.aborted) {
+        setActiveTagId(loadedTagRef.current);
+        toast.error(error instanceof Error && error.message ? error.message : t("tFilterFailed"));
+      }
+    } finally {
+      if (request.current === controller) {
+        request.current = null;
+        setPending(false);
+      }
+    }
+  };
   const selectTag = (tagId: string) => {
     if (tagId === activeTagId) return;
     setActiveTagId(tagId);
-    const reqId = ++reqRef.current;
     if (tagId === ALL_TAG_ID) {
+      request.current?.abort();
+      request.current = null;
+      setPending(false);
       loadedTagRef.current = ALL_TAG_ID;
       setDisplayedArticles(articles);
+      setHasMore(initialHasMore);
+      setPage(1);
       return;
     }
-    startTransition(async () => {
-      try {
-        const next = await fetchNewsByTag(locale, tagId);
-        if (reqId === reqRef.current) {
-          loadedTagRef.current = tagId;
-          setDisplayedArticles(next);
-        }
-      } catch (error) {
-        // A failed tag fetch — transient network, or a Server Action id mismatch
-        // when the open page is from a previous deploy — must NOT bubble to the
-        // error boundary and crash the whole page. Keep the current list; the
-        // user can retry, and a reload picks up the current build.
-        if (reqId === reqRef.current) {
-          setActiveTagId(loadedTagRef.current);
-          toast.error(error instanceof Error && error.message ? error.message : t("tFilterFailed"));
-        }
-      }
-    });
+    void load(tagId, 1, false);
   };
 
   const featured = displayedArticles[0];
@@ -138,6 +168,20 @@ export function NewsList({
                 </div>
               </section>
             )}
+          </div>
+        )}
+        {hasMore && (
+          <div className="mt-10 flex justify-center">
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                if (!request.current) void load(activeTagId, page + 1, true);
+              }}
+              className="rounded-full bg-secondary px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"
+            >
+              {isPending ? t("loadingMore") : t("loadMore")}
+            </button>
           </div>
         )}
       </div>

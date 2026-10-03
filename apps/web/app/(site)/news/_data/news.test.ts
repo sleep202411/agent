@@ -2,8 +2,8 @@ import { afterEach, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/src/env", () => ({ env: { BANNER_BASE_URL: "https://media.example.test" } }));
 vi.stubEnv("JAVA_CONTENT_URL", "https://content.example.test");
-const { getNewsList, getNewsItem, getNewsTags } = await import("./news");
-const { fetchNewsByTag } = await import("./news-client");
+const { getNewsList, getNewsItem, getNewsTags, getNewsPage } = await import("./news");
+const { fetchNewsPage } = await import("./news-client");
 afterEach(() => vi.unstubAllGlobals());
 function reply(body: unknown, status = 200) {
   vi.stubGlobal(
@@ -41,7 +41,35 @@ it("loads full articles and localized tags without caching failures", async () =
 });
 it("preserves filter request errors instead of replacing them with an empty feed", async () => {
   reply({ code: 500, msg: "Filter service unavailable" });
-  await expect(fetchNewsByTag("en-US", "tag")).rejects.toThrow("Filter service unavailable");
+  await expect(fetchNewsPage("en-US", "tag")).rejects.toThrow("Filter service unavailable");
   reply({ code: 200, data: {} });
-  await expect(fetchNewsByTag("en-US", "tag")).rejects.toThrow("invalid article list");
+  await expect(fetchNewsPage("en-US", "tag")).rejects.toThrow("invalid article list");
+});
+
+it("requests subsequent pages without sending the All sentinel and forwards cancellation", async () => {
+  reply({ code: 200, data: { list: [{ id: 21, title: "Older article" }] } });
+  const controller = new AbortController();
+  expect(await fetchNewsPage("zh-HK", "all", 2, controller.signal)).toMatchObject({
+    hasMore: false,
+    items: [{ id: 21 }],
+  });
+  expect(fetch).toHaveBeenCalledWith(
+    "/content/api/news?locale=zh-HK&page=2&pageSize=20",
+    expect.objectContaining({ signal: controller.signal })
+  );
+});
+it("uses raw page length for continuation even if malformed records are omitted", async () => {
+  reply({
+    code: 200,
+    data: {
+      list: Array.from({ length: 20 }, (_, id) => ({ id, title: id === 0 ? "" : "Article" })),
+    },
+  });
+  const page = await getNewsPage("en-US");
+  expect(page.hasMore).toBe(true);
+  expect(page.items).toHaveLength(19);
+  expect(fetch).toHaveBeenCalledWith(
+    expect.stringContaining("page=1&pageSize=20"),
+    expect.anything()
+  );
 });

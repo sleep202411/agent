@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { getNewsList, getNewsTags } from "./_data/news";
+import { getNewsPage, getNewsTags } from "./_data/news";
 import { NewsLoadError } from "./_components/news-load-error";
 import { NewsList } from "./_components/news-list";
 import { JsonLd, buildBreadcrumbList, buildItemList, localeCanonicalUrl } from "@/src/lib/seo";
@@ -7,12 +7,12 @@ import { JsonLd, buildBreadcrumbList, buildItemList, localeCanonicalUrl } from "
 export default async function NewsPage() {
   // proxy.ts sets x-locale on the rewritten request based on the URL prefix.
   const lang = (await headers()).get("x-locale") ?? "en-US";
-  // Fetch the full feed (All) + the backend tag list. The tag bar refetches by
-  // tag on switch (server action); this is the initial "All" render.
-  const [feed, filters] = await Promise.allSettled([getNewsList(lang), getNewsTags(lang)]);
+  // Fetch the first page (All) + the backend tag list. The tag bar refetches by
+  // tag on switch; this is the initial "All" render.
+  const [feed, filters] = await Promise.allSettled([getNewsPage(lang), getNewsTags(lang)]);
   if (feed.status === "rejected")
     return <NewsLoadError error={String(feed.reason?.message || feed.reason)} />;
-  const articles = feed.value;
+  const articles = feed.value.items;
   const tags = filters.status === "fulfilled" ? filters.value : [];
 
   // Cap at 50 — schema-data weight matters and ranking gain plateaus
@@ -42,7 +42,7 @@ export default async function NewsPage() {
       {filters.status === "rejected" && (
         <NewsLoadError error={String(filters.reason?.message || filters.reason)} />
       )}
-      <NewsList articles={articles} tags={tags} />
+      <NewsList key={lang} articles={articles} tags={tags} initialHasMore={feed.value.hasMore} />
     </>
   );
 }

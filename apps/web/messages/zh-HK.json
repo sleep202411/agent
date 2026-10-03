@@ -2111,6 +2111,8 @@
     "unknown": "未知角色"
   },
   "news": {
+    "loadMore": "載入更多文章",
+    "loadingMore": "正在載入文章…",
     "title": "FizzDragon 新聞中心",
     "subtitle": "AI 原生電影工作室的故事、訪談與公告。",
     "subscribePlaceholder": "輸入你的電郵",

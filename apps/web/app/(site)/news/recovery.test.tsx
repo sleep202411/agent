@@ -3,7 +3,12 @@ import { beforeEach, expect, it, vi } from "vitest";
 const s = vi.hoisted(() => ({ list: vi.fn(), tags: vi.fn(), item: vi.fn() }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-locale": "zh-CN" }) }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
-vi.mock("./_data/news", () => ({ getNewsList: s.list, getNewsTags: s.tags, getNewsItem: s.item }));
+vi.mock("./_data/news", () => ({
+  getNewsPage: async () => ({ items: await s.list(), hasMore: false }),
+  getNewsList: s.list,
+  getNewsTags: s.tags,
+  getNewsItem: s.item,
+}));
 vi.mock("./_components/news-load-error", () => ({
   NewsLoadError: ({ error }: { error: string }) => <p role="alert">{error}</p>,
 }));

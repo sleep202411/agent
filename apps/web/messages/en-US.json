@@ -2111,6 +2111,8 @@
     "unknown": "Unknown role"
   },
   "news": {
+    "loadMore": "Load more articles",
+    "loadingMore": "Loading articles…",
     "title": "FizzDragon Newsroom",
     "subtitle": "Stories, interviews and announcements from the AI-native film studio.",
     "subscribePlaceholder": "Enter your email",

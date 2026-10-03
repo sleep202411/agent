@@ -8,7 +8,7 @@
 
 import "server-only";
 import { env } from "@/src/env";
-import type { NewsItem } from "./types";
+import { NEWS_PAGE_SIZE, type NewsItem, type NewsFeedPage } from "./types";
 
 const SUPPORTED_LANGS = new Set(["en-US", "zh-CN", "zh-HK"]);
 
@@ -163,20 +163,26 @@ async function readNews(path: string, allowMissing = false): Promise<unknown> {
   return json!.data;
 }
 
-export async function getNewsList(rawLang: string, tag?: string): Promise<NewsItem[]> {
+export async function getNewsPage(rawLang: string, tag?: string): Promise<NewsFeedPage> {
   const lang = SUPPORTED_LANGS.has(rawLang) ? rawLang : "en-US";
   const filterTag = tag && tag !== ALL_TAG_ID ? tag.trim() : "";
   const data = await readNews(
-    `?locale=${encodeURIComponent(lang)}&pageSize=100${
+    `?locale=${encodeURIComponent(lang)}&page=1&pageSize=${NEWS_PAGE_SIZE}${
       filterTag ? `&tag=${encodeURIComponent(filterTag)}` : ""
     }`
   );
   if (!data || typeof data !== "object" || !Array.isArray((data as { list?: unknown }).list)) {
     throw new Error("News service returned an invalid article list.");
   }
-  return parseList(data).sort(
-    (a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime()
-  );
+  return {
+    items: parseList(data).sort(
+      (a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime()
+    ),
+    hasMore: (data as { list: unknown[] }).list.length >= NEWS_PAGE_SIZE,
+  };
+}
+export async function getNewsList(rawLang: string, tag?: string): Promise<NewsItem[]> {
+  return (await getNewsPage(rawLang, tag)).items;
 }
 
 export async function getNewsItem(id: number, rawLang: string): Promise<NewsItem | null> {
