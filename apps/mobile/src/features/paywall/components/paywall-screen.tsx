@@ -1010,6 +1010,7 @@ function PaywallSession() {
       )}
       {scan ? (
         <WechatScanPay
+          key={scan.orderId}
           orderId={scan.orderId}
           codeUrl={scan.codeUrl}
           amountLabel={scan.amountLabel}

@@ -641,6 +641,7 @@
   "paywall.channel.play": "通过 Google Play 支付。",
   "paywall.channel.wechat": "使用微信扫描二维码完成支付。",
   "paywall.wechat.title": "微信支付",
+  "paywall.wechat.statusError": "无法查询支付状态。请重试查询此订单。",
   "paywall.wechat.scan": "请截图后使用微信扫描二维码完成支付",
   "paywall.wechat.success": "积分已到账",
   "paywall.wechat.failed": "支付未完成",

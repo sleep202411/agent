@@ -641,6 +641,7 @@
   "paywall.channel.play": "Pay with Google Play Billing.",
   "paywall.channel.wechat": "Scan the WeChat QR code to pay.",
   "paywall.wechat.title": "WeChat Pay",
+  "paywall.wechat.statusError": "Could not check payment status. Retry to check this order again.",
   "paywall.wechat.scan": "Take a screenshot and scan the QR code with WeChat to pay.",
   "paywall.wechat.success": "Points credited.",
   "paywall.wechat.failed": "Payment was not completed",
