@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+  EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
   type ExperienceRuntimeManifest,
   type ExperienceThemeConfig,
 } from "@repo/shared/experience-runtime";
@@ -10,6 +11,8 @@ import { ExperiencePlayer } from "./experience-player";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 const h = vi.hoisted(() => ({
   active: true,
+  stage: {} as Record<string, (event: any) => any>,
+  tapGuard: null as ((guard: ((x: number, y: number) => boolean) | null) => void) | null,
   state: { currentSceneId: "scene" },
   unlock: vi.fn().mockResolvedValue(undefined),
   suspend: vi.fn().mockResolvedValue(undefined),
@@ -27,7 +30,10 @@ const h = vi.hoisted(() => ({
   },
 }));
 vi.mock("react-native", () => ({
-  View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  View: ({ children, ...props }: { children?: ReactNode; [key: string]: any }) => {
+    if (props.onStartShouldSetResponder) h.stage = props;
+    return <div>{children}</div>;
+  },
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   Pressable: ({
     children,
@@ -72,10 +78,13 @@ vi.mock("./experience-spatial-layer", async () => {
   return {
     ExperienceSpatialLayer: ({
       onTimelineHoldGateChange,
+      onGestureTapGuardChange,
     }: {
       onTimelineHoldGateChange: (hold: boolean) => void;
+      onGestureTapGuardChange: typeof h.tapGuard;
     }) => {
       h.hold = onTimelineHoldGateChange;
+      h.tapGuard = onGestureTapGuardChange;
       h.spatialPresenting = useContext(ScreenActiveGateContext);
       return null;
     },
@@ -130,11 +139,11 @@ const copy = { pause: "Pause", resume: "Resume", paused: "Paused" } as Experienc
 const loader = () => Promise.resolve({ tokens: {} } as ExperienceThemeConfig);
 let root: Root;
 let container: HTMLDivElement;
-const render = (active = true) =>
+const render = (active = true, manifest = runtime) =>
   act(async () =>
     root.render(
       <ExperiencePlayer
-        runtime={runtime}
+        runtime={manifest}
         locale="en-US"
         copy={copy}
         randomSeed="fixed"
@@ -154,6 +163,8 @@ const click = (label: string) =>
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
   h.active = true;
+  h.stage = {};
+  h.tapGuard = null;
   vi.clearAllMocks();
   h.dispatch.mockImplementation(() => ({ state: h.state, effects: [] }));
   h.outcome.mockImplementation(() => ({ state: h.state, effects: [] }));
@@ -265,4 +276,82 @@ it("freezes the story and audio after a system playback interruption", async () 
   );
   await click("Resume");
   expect(h.mediaPresenting).toBe(true);
+});
+
+const stageEvent = (x = 100, y = 100, fingers = 1) => ({
+  preventDefault: vi.fn(),
+  nativeEvent: { pageX: x, pageY: y, touches: Array.from({ length: fingers }, () => ({})) },
+});
+it("pauses a short unclaimed picture tap without advancing the film", async () => {
+  await render();
+  await click("Start");
+  const event = stageEvent();
+  expect(h.stage.onStartShouldSetResponder!(event)).toBe(true);
+  await act(async () => {
+    h.stage.onResponderGrant!(event);
+    h.stage.onResponderRelease!(event);
+  });
+  expect(event.preventDefault).toHaveBeenCalledOnce();
+  expect(h.mediaPresenting).toBe(false);
+  expect(h.spatialPresenting).toBe(false);
+  expect(h.outcome).not.toHaveBeenCalled();
+  await click("Resume");
+  expect(h.mediaPresenting).toBe(true);
+});
+it("leaves hotspot edge attempts, multiple fingers and background taps alone", async () => {
+  await render();
+  await click("Start");
+  h.tapGuard!((x, y) => x < 125 && y < 125);
+  expect(h.stage.onStartShouldSetResponder!(stageEvent())).toBe(false);
+  expect(h.stage.onStartShouldSetResponder!(stageEvent(200, 200, 2))).toBe(false);
+  h.active = false;
+  await render();
+  expect(h.stage.onStartShouldSetResponder!(stageEvent(200, 200))).toBe(false);
+});
+it("does not pause after a drag or responder cancellation", async () => {
+  await render();
+  await click("Start");
+  await act(async () => {
+    h.stage.onResponderGrant!(stageEvent());
+    h.stage.onResponderMove!(stageEvent(150));
+    h.stage.onResponderRelease!(stageEvent());
+  });
+  expect(h.mediaPresenting).toBe(true);
+  await act(async () => {
+    h.stage.onResponderGrant!(stageEvent());
+    h.stage.onResponderTerminate!(stageEvent());
+    h.stage.onResponderRelease!(stageEvent());
+  });
+  expect(h.mediaPresenting).toBe(true);
+});
+it("keeps world-stream picture gestures with the world renderer", async () => {
+  const manifest = {
+    ...runtime,
+    graph: {
+      ...runtime.graph,
+      nodes: [
+        {
+          ...runtime.graph.nodes[0],
+          renderers: [
+            { instanceId: "world", rendererId: EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID, layer: 0 },
+          ],
+        },
+      ],
+    },
+  } as ExperienceRuntimeManifest;
+  await render(true, manifest);
+  await click("Start");
+  expect(h.stage.onStartShouldSetResponder!(stageEvent())).toBe(false);
+});
+
+it("ignores a second finger added during a picture tap", async () => {
+  await render();
+  await click("Start");
+  await act(async () => {
+    h.stage.onResponderGrant!(stageEvent());
+    h.stage.onResponderStart!(stageEvent(100, 100, 2));
+    h.stage.onResponderRelease!(stageEvent());
+  });
+  expect(h.mediaPresenting).toBe(true);
+  expect(container.textContent).not.toContain("Resume");
 });

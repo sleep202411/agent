@@ -101,6 +101,7 @@ export function ExperienceSpatialLayer({
   onEvents,
   onRuntimeError,
   onTimelineHoldGateChange,
+  onGestureTapGuardChange,
 }: {
   manifest: ExperienceRuntimeManifest;
   scene: ExperienceScene;
@@ -113,6 +114,7 @@ export function ExperienceSpatialLayer({
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
   onRuntimeError: (message: string) => void;
   onTimelineHoldGateChange?: (gating: boolean) => void;
+  onGestureTapGuardChange?: (guard: ((x: number, y: number) => boolean) | null) => void;
 }) {
   const [viewportSize, setViewportSize] = useState<ExperienceSize | null>(null);
   const layerOriginRef = useRef({ x: 0, y: 0 });
@@ -275,6 +277,34 @@ export function ExperienceSpatialLayer({
     sceneTimeMs,
     settledGestureIds,
     viewportSize,
+  ]);
+
+  useEffect(() => {
+    // Use the same projected boxes as the visible native controls, with the
+    // official Web player's 24px grace margin for a finger grazing an edge.
+    const bounds = [...presentations, ...tapPresentations, ...swipePresentations]
+      .filter((item) => item.available)
+      .map((item) => hotspotBounds(item.geometry, item.transform));
+    onGestureTapGuardChange?.((pageX, pageY) => {
+      if (!viewportSize) return scene.gestures.length > 0;
+      const x = pageX - layerOriginRef.current.x;
+      const y = pageY - layerOriginRef.current.y;
+      return bounds.some(
+        (box) =>
+          x >= box.x - 24 &&
+          x <= box.x + box.width + 24 &&
+          y >= box.y - 24 &&
+          y <= box.y + box.height + 24
+      );
+    });
+    return () => onGestureTapGuardChange?.(null);
+  }, [
+    onGestureTapGuardChange,
+    presentations,
+    tapPresentations,
+    swipePresentations,
+    viewportSize,
+    scene.gestures,
   ]);
 
   useEffect(() => {

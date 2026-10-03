@@ -1,5 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+} from "react-native";
 import {
   ExperienceRuntimeInvariantError,
   ExperienceAccessRequiredError,
@@ -205,6 +212,14 @@ function ActiveExperienceRuntimePlayer({
   const [theme, setTheme] = useState<ExperienceThemeConfig | null>(null);
   const [started, setStarted] = useState(false);
   const [viewerPaused, setViewerPaused] = useState(false);
+  const stageTapRef = useRef<{ x: number; y: number; time: number; sceneId: string } | null>(null);
+  const gestureTapGuardRef = useRef<((x: number, y: number) => boolean) | null>(null);
+  const registerGestureTapGuard = useCallback(
+    (guard: ((x: number, y: number) => boolean) | null) => {
+      gestureTapGuardRef.current = guard;
+    },
+    []
+  );
   const screenActive = useScreenActive();
   const [lastScreenActive, setLastScreenActive] = useState(screenActive);
   if (lastScreenActive !== screenActive) {
@@ -751,13 +766,73 @@ function ActiveExperienceRuntimePlayer({
     );
   }
 
+  const canPauseFromPicture = () =>
+    presenting &&
+    !!scene &&
+    started &&
+    !endingId &&
+    !scene.renderers.some(
+      (renderer) => renderer.rendererId === EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID
+    );
+  const awayFromGesture = (event: GestureResponderEvent) =>
+    !gestureTapGuardRef.current?.(event.nativeEvent.pageX, event.nativeEvent.pageY);
+
   return (
     // Renderers own the media players, so the host pause reaches them by context
     // rather than through every layer of renderer props. Timeline-control hold
     // pauses via playback handles, not this gate — otherwise the still clock
     // and video presenting effect would fight the hold.
     <ScreenActiveGateContext.Provider value={presenting}>
-      <View style={styles.stage}>
+      <View
+        style={styles.stage}
+        // Bubble-phase responder negotiation leaves choices, hotspots, scrolling
+        // text and controls with their own responders. Never capture their taps.
+        onStartShouldSetResponder={(event) =>
+          canPauseFromPicture() && event.nativeEvent.touches.length === 1 && awayFromGesture(event)
+        }
+        onResponderGrant={(event) => {
+          stageTapRef.current = scene
+            ? {
+                x: event.nativeEvent.pageX,
+                y: event.nativeEvent.pageY,
+                time: Date.now(),
+                sceneId: scene.sceneId,
+              }
+            : null;
+        }}
+        onResponderStart={(event) => {
+          if (event.nativeEvent.touches.length !== 1) stageTapRef.current = null;
+        }}
+        onResponderMove={(event) => {
+          const start = stageTapRef.current;
+          if (
+            start &&
+            (event.nativeEvent.touches.length !== 1 ||
+              Math.hypot(event.nativeEvent.pageX - start.x, event.nativeEvent.pageY - start.y) > 8)
+          )
+            stageTapRef.current = null;
+        }}
+        onResponderRelease={(event) => {
+          const start = stageTapRef.current;
+          stageTapRef.current = null;
+          if (
+            start &&
+            start.sceneId === scene?.sceneId &&
+            Date.now() - start.time <= 500 &&
+            Math.hypot(event.nativeEvent.pageX - start.x, event.nativeEvent.pageY - start.y) <= 8 &&
+            canPauseFromPicture() &&
+            awayFromGesture(event)
+          ) {
+            // Suppress the touch compatibility click: the newly mounted Resume
+            // overlay must not consume the same tap that paused the picture.
+            event.preventDefault();
+            setViewerPaused(true);
+          }
+        }}
+        onResponderTerminate={() => {
+          stageTapRef.current = null;
+        }}
+      >
         {visibleRenderers.map((renderer) => (
           <View
             key={`${scene?.sceneId}:${sceneEpoch}:${renderer.instanceId}`}
@@ -801,6 +876,7 @@ function ActiveExperienceRuntimePlayer({
             onEvents={emitRuntimeEvents}
             onRuntimeError={setRuntimeError}
             onTimelineHoldGateChange={setTimelineHoldGate}
+            onGestureTapGuardChange={registerGestureTapGuard}
           />
         ) : null}
         {scene && !accessPending && !retryAccess ? (
