@@ -1,9 +1,9 @@
 package expo.modules.fizztimelineexport
 
+import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -18,12 +18,16 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.CancellationException
 
-/** All Transformer calls and ownership changes run on the main looper. */
+/** Transformer and job ownership stay on the main looper; media preparation has one worker. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class FizzTimelineExportModule : Module() {
-  private data class Job(val id: String, val transformer: Transformer, val output: File, val promise: Promise)
+  private data class Job(val id: String, val ids: List<String>, val output: File,
+    val preparation: TimelineExportPreparation, val promise: Promise,
+    var transformer: Transformer? = null, var cancelled: Boolean = false)
   private var job: Job? = null
+  private var destroyed = false
   private val outputs = mutableMapOf<String, File>()
   private val handler = Handler(Looper.getMainLooper())
 
@@ -31,81 +35,94 @@ class FizzTimelineExportModule : Module() {
     Name("FizzTimelineExport")
     Events("progress")
     AsyncFunction("render") { id: String, shots: List<Map<String, Any>>, promise: Promise ->
-      if (job != null) {
-        promise.reject("EXPORT_BUSY", "A timeline export is already running.", null)
+      if (job != null || destroyed) {
+        promise.reject("EXPORT_BUSY", "A timeline export is running or the encoder is closed.", null)
         return@AsyncFunction
       }
-      var output: File? = null
       try {
         UUID.fromString(id)
         require(shots.isNotEmpty()) { "No clips to export." }
-        val ids = shots.map { it["id"] as String }
+        val captured = shots.map { it.toMap() }
+        val ids = captured.map { it["id"] as String }
         require(ids.all { it.isNotBlank() } && ids.toSet().size == ids.size) { "Invalid clip identities." }
-        val items = shots.map { shot ->
-          val uri = Uri.parse(shot["url"] as String)
-          val milliseconds = (shot["durationMs"] as Number).toDouble()
-          require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null) { "Invalid media URL." }
-          require(milliseconds.isFinite() && milliseconds > 0 && milliseconds <= Long.MAX_VALUE.toDouble() && milliseconds % 1.0 == 0.0) { "Invalid clip duration." }
-          val kind = shot["kind"] as? String
-          require(kind == "video" || kind == "image") { "Invalid media kind." }
-          val media = MediaItem.Builder().setUri(uri)
-          if (kind == "image") {
-            media.setImageDurationMs(milliseconds.toLong())
-          } else {
-            media.setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(milliseconds.toLong()).build())
-          }
-          val edited = EditedMediaItem.Builder(media.build())
-          if (kind == "image") edited.setFrameRate(30)
-          edited.build()
-        }
         val context = requireNotNull(appContext.reactContext) { "Application context unavailable." }
         val directory = File(context.cacheDir, "fizz-timeline-export")
         require(directory.isDirectory || directory.mkdirs()) { "Cannot create export directory." }
-        val destination = File(directory, "${UUID.randomUUID()}.mp4")
-        output = destination
-        val composition = Composition.Builder(EditedMediaItemSequence.withAudioAndVideoFrom(items)).build()
-        val transformer = Transformer.Builder(context)
-          .setVideoMimeType(MimeTypes.VIDEO_H264)
-          .setAudioMimeType(MimeTypes.AUDIO_AAC)
-          .addListener(object : Transformer.Listener {
-            override fun onCompleted(composition: Composition, result: ExportResult) {
-              val owned = job?.takeIf { it.id == id } ?: return
-              job = null
-              if (!destination.isFile || destination.length() <= 0) {
-                destination.delete()
-                owned.promise.reject("EXPORT_EMPTY", "The encoder returned an empty file.", null)
-                return
-              }
-              val uri = Uri.fromFile(destination).toString()
-              outputs[uri] = destination
-              owned.promise.resolve(mapOf("artifact" to mapOf("uri" to uri, "contentType" to "video/mp4", "size" to destination.length()), "completedClipIds" to ids))
+        val owned = Job(id, ids, File(directory, "${UUID.randomUUID()}.mp4"),
+          TimelineExportPreparation(File(directory, "sources-${UUID.randomUUID()}")), promise)
+        job = owned
+        Thread({
+          try {
+            val items = owned.preparation.prepare(captured)
+            handler.post {
+              if (owned.cancelled || destroyed) fail(owned, CancellationException("Timeline export cancelled."))
+              else if (job === owned) start(context, owned, items)
+              else owned.preparation.directory.deleteRecursively()
             }
-            override fun onError(composition: Composition, result: ExportResult, exception: ExportException) {
-              val owned = job?.takeIf { it.id == id } ?: return
-              job = null
-              destination.delete()
-              owned.promise.reject(if (isSourceFailure(exception)) "EXPORT_SOURCE_FAILED" else "EXPORT_FAILED", exception.message ?: "Timeline encoding failed.", exception)
-            }
-          }).build()
-        job = Job(id, transformer, destination, promise)
-        transformer.start(composition, destination.absolutePath)
-        reportProgress(id)
+          } catch (error: Exception) {
+            handler.post { fail(owned, if (owned.cancelled) CancellationException("Timeline export cancelled.") else error) }
+          }
+        }, "FizzTimelinePreparation").start()
       } catch (error: Exception) {
-        job?.takeIf { it.id == id }?.transformer?.cancel()
-        if (job?.id == id) job = null
-        output?.delete()
-        promise.reject("EXPORT_FAILED", error.message ?: "Timeline encoding failed.", error)
+        val owned = job?.takeIf { it.id == id }
+        if (owned != null) fail(owned, error)
+        else promise.reject("EXPORT_FAILED", error.message ?: "Timeline encoding failed.", error)
       }
     }.runOnQueue(Queues.MAIN)
     AsyncFunction("cancel") { id: String -> cancel(id) }.runOnQueue(Queues.MAIN)
     AsyncFunction("release") { uri: String -> outputs.remove(uri)?.delete(); Unit }.runOnQueue(Queues.MAIN)
     OnDestroy {
       handler.post {
+        destroyed = true
         job?.let { cancel(it.id) }
         outputs.values.forEach { it.delete() }
         outputs.clear()
       }
     }
+  }
+
+  private fun start(context: Context, owned: Job, items: List<EditedMediaItem>) {
+    try {
+      val composition = Composition.Builder(EditedMediaItemSequence.withAudioAndVideoFrom(items)).build()
+      val transformer = Transformer.Builder(context)
+        .setVideoMimeType(MimeTypes.VIDEO_H264)
+        .setAudioMimeType(MimeTypes.AUDIO_AAC)
+        .addListener(object : Transformer.Listener {
+          override fun onCompleted(composition: Composition, result: ExportResult) {
+            if (job !== owned) return
+            if (!owned.output.isFile || owned.output.length() <= 0) {
+              fail(owned, IllegalStateException("The encoder returned an empty file."))
+              return
+            }
+            job = null
+            owned.preparation.directory.deleteRecursively()
+            val uri = Uri.fromFile(owned.output).toString()
+            outputs[uri] = owned.output
+            owned.promise.resolve(mapOf("artifact" to mapOf("uri" to uri, "contentType" to "video/mp4", "size" to owned.output.length()), "completedClipIds" to owned.ids))
+          }
+          override fun onError(composition: Composition, result: ExportResult, exception: ExportException) {
+            fail(owned, exception)
+          }
+        }).build()
+      owned.transformer = transformer
+      transformer.start(composition, owned.output.absolutePath)
+      reportProgress(owned)
+    } catch (error: Exception) { fail(owned, error) }
+  }
+
+  private fun fail(owned: Job, error: Exception) {
+    if (job !== owned) return
+    job = null
+    owned.transformer?.cancel()
+    owned.preparation.directory.deleteRecursively()
+    owned.output.delete()
+    val code = when {
+      error is CancellationException -> "EXPORT_CANCELLED"
+      error is TimelineExportPreparation.SourceFailure -> "EXPORT_SOURCE_FAILED"
+      error is ExportException && isSourceFailure(error) -> "EXPORT_SOURCE_FAILED"
+      else -> "EXPORT_FAILED"
+    }
+    owned.promise.reject(code, error.message ?: "Timeline encoding failed.", error)
   }
 
   // Keep device encoder, muxer, permission and unspecified failures fatal.
@@ -123,18 +140,19 @@ class FizzTimelineExportModule : Module() {
 
   private fun cancel(id: String) {
     val owned = job?.takeIf { it.id == id } ?: return
-    job = null
-    owned.transformer.cancel()
-    owned.output.delete()
-    owned.promise.reject("EXPORT_CANCELLED", "Timeline export cancelled.", null)
+    owned.cancelled = true
+    owned.preparation.cancel()
+    // During preparation, keep the job until its worker stops touching the files.
+    if (owned.transformer != null) fail(owned, CancellationException("Timeline export cancelled."))
   }
 
-  private fun reportProgress(id: String) {
-    val owned = job?.takeIf { it.id == id } ?: return
+  private fun reportProgress(owned: Job) {
+    if (job !== owned) return
+    val transformer = owned.transformer ?: return
     val holder = ProgressHolder()
-    if (owned.transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
-      sendEvent("progress", mapOf("id" to id, "ratio" to holder.progress / 100.0))
+    if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
+      sendEvent("progress", mapOf("id" to owned.id, "ratio" to holder.progress / 100.0))
     }
-    handler.postDelayed({ reportProgress(id) }, 250)
+    handler.postDelayed({ reportProgress(owned) }, 250)
   }
 }
