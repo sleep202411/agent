@@ -60,6 +60,7 @@ export function ExperienceRuntimePlayer({
       playAgain: t("playAgain"),
       runtimeError: t("runtimeError"),
       restart: t("restart"),
+      retryReport: t("retryReport"),
       mediaError: (assetId) => t("mediaError", { assetId }),
       videoLabel: () => t("videoLabel"),
       emptySequence: t("emptySequence"),

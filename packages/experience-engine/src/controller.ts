@@ -44,6 +44,24 @@ export class ExperienceRuntimeController {
   readonly #reporter?: PlaySessionReporter;
   #playSessionId: string | null = null;
   #reporting: Promise<void> = Promise.resolve();
+  #reportingStarted = false;
+  #completedPlaySessionId: string | null = null;
+  #reportError: string | null = null;
+  #retryReport: (() => Promise<void>) | null = null;
+  getPlaySessionReportError = (): string | null => this.#reportError;
+  retryPlaySessionReport = (): void => {
+    void this.#retryReport?.();
+  };
+  #reportListeners = new Set<() => void>();
+
+  getCompletedPlaySessionId = (): string | null => this.#completedPlaySessionId;
+
+  subscribePlaySessionReport = (listener: () => void): (() => void) => {
+    this.#reportListeners.add(listener);
+    return () => {
+      this.#reportListeners.delete(listener);
+    };
+  };
   #visitedNodeIds = new Set<string>();
 
   get playSessionId(): string | null {
@@ -62,71 +80,35 @@ export class ExperienceRuntimeController {
       : initializeExperienceRuntime(manifest, { randomSeed: options.randomSeed });
     this.#started = Boolean(options.restore);
 
-    // Phase 1b: restore a persisted sessionId across page refreshes (browser only).
-    try {
-      if (typeof sessionStorage !== "undefined") {
-        const stored = sessionStorage.getItem(this.#sessionStorageKey());
-        if (stored) this.#playSessionId = stored;
-
-        const storedVisited = sessionStorage.getItem(this.#visitedStorageKey());
-        if (storedVisited) {
-          const parsed = JSON.parse(storedVisited);
-          if (Array.isArray(parsed)) {
-            parsed.forEach((id) => {
-              if (typeof id === "string") this.#visitedNodeIds.add(id);
-            });
-          }
-        }
-      }
-    } catch {
-      // SSR or private mode — ignore.
-    }
+    // A controller owns one play. Never reuse a completed or another viewer's
+    // report session merely because the film/build matches browser storage.
   }
 
   state(): ExperienceRuntimeState {
     return structuredClone(this.#state);
   }
 
-  /**
-   * Phase 1b: sessionStorage key for the current film build. A new build or
-   * film gets a fresh key, so restored sessions never cross film boundaries.
-   */
-  #sessionStorageKey(): string {
-    return `play_session:${this.#manifest.gameId}:${this.#manifest.buildId}`;
-  }
-
-  #visitedStorageKey(): string {
-    return `play_session_visited:${this.#manifest.gameId}:${this.#manifest.buildId}`;
-  }
-
-  /**
-   * Phase 1b: on reporter failure, clear the persisted sessionId when the
-   * backend reports the session is gone (404/410), so the next start() will
-   * create a fresh session instead of silently no-op'ing forever.
-   */
   #handleReporterFailure(err: unknown, context: string): void {
     console.warn(`[ExperienceRuntimeController] Play session ${context} failed:`, err);
-    const e = err as {
-      status?: number;
-      statusCode?: number;
-      response?: { status?: number };
-    };
-    const status = e?.status ?? e?.statusCode ?? e?.response?.status;
-    if (status === 404 || status === 410) {
-      this.#playSessionId = null;
-      this.#visitedNodeIds.clear();
+  }
+
+  #startReporting(): void {
+    if (this.#reportingStarted || !this.#reporter) return;
+    this.#reportingStarted = true;
+    this.#reporting = (async () => {
       try {
-        if (typeof sessionStorage !== "undefined") {
-          sessionStorage.removeItem(this.#sessionStorageKey());
-          sessionStorage.removeItem(this.#visitedStorageKey());
-        }
-      } catch {
-        // ignore
+        const result = await this.#reporter!.onStart({
+          gameId: this.#manifest.gameId,
+          contentVersion: this.#manifest.contentVersion,
+          buildId: this.#manifest.buildId,
+          locale: this.#manifest.localization?.defaultLocale,
+          experienceType: "film",
+        });
+        this.#playSessionId = result?.sessionId ?? null;
+      } catch (error) {
+        this.#handleReporterFailure(error, "onStart");
       }
-      console.warn(
-        "[ExperienceRuntimeController] Play session no longer valid, will restart on next start()"
-      );
-    }
+    })();
   }
 
   /**
@@ -142,33 +124,6 @@ export class ExperienceRuntimeController {
       );
     }
     this.#started = true;
-
-    // Fire-and-forget session start — skipped if a sessionId was restored.
-    if (this.#reporter && !this.#playSessionId) {
-      this.#reporting = (async () => {
-        try {
-          const res = await this.#reporter!.onStart({
-            gameId: this.#manifest.gameId,
-            contentVersion: this.#manifest.contentVersion,
-            buildId: this.#manifest.buildId,
-            locale: this.#manifest.localization?.defaultLocale,
-            experienceType: "film",
-          });
-          if (res?.sessionId) {
-            this.#playSessionId = res.sessionId;
-            try {
-              if (typeof sessionStorage !== "undefined") {
-                sessionStorage.setItem(this.#sessionStorageKey(), res.sessionId);
-              }
-            } catch {
-              // ignore
-            }
-          }
-        } catch (err) {
-          console.warn("[ExperienceRuntimeController] Play session onStart failed:", err);
-        }
-      })();
-    }
 
     try {
       return this.dispatch([
@@ -200,21 +155,14 @@ export class ExperienceRuntimeController {
         error.events = structuredClone([...events]);
       throw error;
     }
+    // Restored access checkpoints also need a transport-owned report session.
+    // Start only after the runtime has accepted the events.
+    this.#startReporting();
     result.effects.forEach((effect) => {
       if (effect.kind === "scene.changed") {
         if (this.#reporter) {
           if (!this.#visitedNodeIds.has(effect.toSceneId)) {
             this.#visitedNodeIds.add(effect.toSceneId);
-            try {
-              if (typeof sessionStorage !== "undefined") {
-                sessionStorage.setItem(
-                  this.#visitedStorageKey(),
-                  JSON.stringify([...this.#visitedNodeIds])
-                );
-              }
-            } catch {
-              // ignore
-            }
             const currentNode = effect.toSceneId;
             this.#reporting = this.#reporting.then(async () => {
               const sessionId = this.#playSessionId;
@@ -234,11 +182,22 @@ export class ExperienceRuntimeController {
           this.#reporting = this.#reporting.then(async () => {
             const sessionId = this.#playSessionId;
             if (!sessionId) return;
-            try {
-              await this.#reporter!.onComplete(sessionId, { endingId, currentNode });
-            } catch (err) {
-              this.#handleReporterFailure(err, "onComplete");
-            }
+            const save = async (): Promise<void> => {
+              this.#retryReport = null;
+              const clearingError = this.#reportError !== null;
+              this.#reportError = null;
+              if (clearingError) this.#reportListeners.forEach((listener) => listener());
+              try {
+                await this.#reporter!.onComplete(sessionId, { endingId, currentNode });
+                this.#completedPlaySessionId = sessionId;
+              } catch (err) {
+                this.#reportError = err instanceof Error ? err.message : String(err);
+                this.#retryReport = save;
+                this.#handleReporterFailure(err, "onComplete");
+              }
+              this.#reportListeners.forEach((listener) => listener());
+            };
+            await save();
           });
         }
       } else if (effect.kind === "renderer.command") {

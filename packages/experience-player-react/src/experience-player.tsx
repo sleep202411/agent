@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type MouseEvent,
   type ReactNode,
@@ -345,6 +346,16 @@ function ActiveExperienceRuntimePlayer({
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
   onRestart: () => void;
 }) {
+  const completedPlaySessionId = useSyncExternalStore(
+    controller.subscribePlaySessionReport,
+    controller.getCompletedPlaySessionId,
+    controller.getCompletedPlaySessionId
+  );
+  const reportError = useSyncExternalStore(
+    controller.subscribePlaySessionReport,
+    controller.getPlaySessionReportError,
+    controller.getPlaySessionReportError
+  );
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
   useEffect(() => {
     onStateChange?.(runtimeState);
@@ -1458,8 +1469,20 @@ function ActiveExperienceRuntimePlayer({
               <IconRefresh className="size-4" />
               {copy.playAgain}
             </button>
+            {reportError ? (
+              <div role="alert" className="mt-4 text-sm text-white/80">
+                <p>{reportError}</p>
+                <button
+                  type="button"
+                  className={`${PRIMARY_BUTTON} mt-3`}
+                  onClick={controller.retryPlaySessionReport}
+                >
+                  {copy.retryReport ?? copy.restart}
+                </button>
+              </div>
+            ) : null}
             {endingExtra ? (
-              <div className="mt-6 w-full text-left">{endingExtra(controller.playSessionId)}</div>
+              <div className="mt-6 w-full text-left">{endingExtra(completedPlaySessionId)}</div>
             ) : null}
           </div>
         </div>

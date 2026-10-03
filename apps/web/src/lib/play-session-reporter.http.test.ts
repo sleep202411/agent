@@ -135,3 +135,10 @@ describe("createHttpPlaySessionReporter", () => {
     expect(mockedPost).not.toHaveBeenCalled();
   });
 });
+
+it("propagates a failed completion so the player cannot expose an unsaved report", async () => {
+  const failure = new Error("completion unavailable");
+  mockedPost.mockRejectedValueOnce(failure);
+  const reporter = createHttpPlaySessionReporter();
+  await expect(reporter.onComplete("session", { endingId: "end" })).rejects.toBe(failure);
+});

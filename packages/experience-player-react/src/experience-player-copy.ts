@@ -27,6 +27,7 @@ export interface ExperiencePlayerCopy {
   playAgain: string;
   runtimeError: string;
   restart: string;
+  retryReport?: string;
   mediaError: (assetId: string) => string;
   videoLabel: (rendererInstanceId: string) => string;
   /**

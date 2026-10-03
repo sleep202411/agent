@@ -9509,7 +9509,8 @@
       "unlock": "解锁并继续",
       "unlocking": "解锁中…",
       "failed": "解锁失败，请重试。"
-    }
+    },
+    "retryReport": "重试保存游玩报告"
   },
   "games": {
     "back": "返回 IP 广场",

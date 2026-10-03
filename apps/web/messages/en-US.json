@@ -9509,7 +9509,8 @@
       "unlock": "Unlock and continue",
       "unlocking": "Unlocking…",
       "failed": "Unable to unlock. Please try again."
-    }
+    },
+    "retryReport": "Retry saving report"
   },
   "games": {
     "back": "Back to IP plaza",

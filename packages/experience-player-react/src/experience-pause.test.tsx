@@ -654,6 +654,86 @@ describe("ExperiencePlayer paused state", () => {
     await start();
   };
 
+  it("shows a late report only after the ending completion is saved", async () => {
+    let resolveStart!: (value: { sessionId: string }) => void;
+    let resolveComplete!: () => void;
+    const pendingStart = new Promise<{ sessionId: string }>((resolve) => {
+      resolveStart = resolve;
+    });
+    const pendingComplete = new Promise<void>((resolve) => {
+      resolveComplete = resolve;
+    });
+    const reporter = {
+      onStart: vi.fn(() => pendingStart),
+      onProgress: vi.fn(async () => {}),
+      onComplete: vi.fn(() => pendingComplete),
+    };
+    const runtime = film({
+      nodes: [
+        textScene("scene.end", "The end", {
+          eventBindings: [on("scene.entered", undefined, [finish])],
+        }),
+      ],
+    });
+    await render(runtime, {
+      playSessionReporter: reporter,
+      endingExtra: (id) => (id ? <div data-report-id={id}>Saved report</div> : null),
+    });
+    await start();
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.querySelector("[data-report-id]")).toBeNull();
+    await act(async () => {
+      resolveStart({ sessionId: "late-report" });
+    });
+    await settle();
+    expect(reporter.onComplete).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[data-report-id]")).toBeNull();
+    await act(async () => {
+      resolveComplete();
+    });
+    await settle();
+    expect(container.querySelector("[data-report-id]")?.getAttribute("data-report-id")).toBe(
+      "late-report"
+    );
+  });
+
+  it("keeps a failed report save visible and retries the same session", async () => {
+    const reporter = {
+      onStart: vi.fn(async () => ({ sessionId: "retry-report" })),
+      onProgress: vi.fn(async () => {}),
+      onComplete: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Report service unavailable"))
+        .mockResolvedValueOnce(undefined),
+    };
+    const runtime = film({
+      nodes: [
+        textScene("scene.end", "The end", {
+          eventBindings: [on("scene.entered", undefined, [finish])],
+        }),
+      ],
+    });
+    await render(runtime, {
+      copy: { ...copy, retryReport: "Retry saving report" },
+      playSessionReporter: reporter,
+      endingExtra: (id) => (id ? <div data-report-id={id}>Saved report</div> : null),
+    });
+    await start();
+    expect(container.textContent).toContain("Report service unavailable");
+    expect(container.querySelector("[data-report-id]")).toBeNull();
+    await act(async () => {
+      button("Retry saving report")!.click();
+    });
+    await settle();
+    expect(reporter.onStart).toHaveBeenCalledTimes(1);
+    expect(reporter.onComplete).toHaveBeenCalledTimes(2);
+    expect(reporter.onComplete.mock.calls[1]?.[0]).toBe("retry-report");
+    expect(container.textContent).not.toContain("Report service unavailable");
+    expect(container.querySelector("[data-report-id]")?.getAttribute("data-report-id")).toBe(
+      "retry-report"
+    );
+  });
+
   const storyLayer = () => {
     const layer = container.querySelector<HTMLElement>("[data-experience-story-layer]");
     if (!layer) throw new Error("The stage has no story layer.");
