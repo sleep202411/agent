@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
     status: "readyToPlay",
     duration: 20,
     currentTime: 5,
+    replaceAsync: vi.fn().mockResolvedValue(undefined),
     pause: vi.fn(),
     play: vi.fn(),
     addListener: vi.fn(() => ({ remove: vi.fn() })),
@@ -29,7 +30,9 @@ vi.mock("./experience-video-platform", () => ({
   VideoView: () => null,
 }));
 vi.mock("@/hooks/use-app-active", () => ({ useGatedScreenActive: () => h.active }));
-vi.mock("../lib/experience-playback-delivery", () => ({ resolveExperienceVideoSource: vi.fn() }));
+vi.mock("../lib/experience-playback-delivery", () => ({
+  resolveExperienceVideoSource: vi.fn().mockResolvedValue({ uri: "file:///clip.mp4" }),
+}));
 vi.mock("./experience-still-segment", () => ({ ExperienceStillSegment: () => null }));
 vi.mock("@/config", () => ({ resolveExperienceAssetUrl: (s: string) => s }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -41,20 +44,48 @@ const completed = vi.fn();
 const noop = () => {};
 const refused = vi.fn();
 const interrupted = vi.fn();
-let handle: { pause: () => void } | null;
+let handle: {
+  pause: () => void;
+  play: (options?: { userGesture?: boolean }) => Promise<void>;
+} | null;
 let root: Root;
-const render = (id = "empty") =>
+const testCopy = { emptySequence: "No footage" } as ExperiencePlayerCopy;
+const render = (id = "empty", endBehavior?: Record<string, unknown>) =>
   act(async () =>
     root.render(
       <ExperienceVideoRenderer
-        manifest={manifest}
+        manifest={
+          endBehavior
+            ? ({
+                ...manifest,
+                assets: [
+                  {
+                    kind: "video",
+                    assetId: "clip",
+                    variants: [
+                      {
+                        orientation: "landscape",
+                        uri: "file:///clip.mp4",
+                        mediaType: "video/mp4",
+                        durationMs: 20000,
+                      },
+                    ],
+                  },
+                ],
+              } as unknown as ExperienceRuntimeManifest)
+            : manifest
+        }
         renderer={
           {
             instanceId: id,
-            config: { sequence: [], fit: "contain", autoplay: true },
+            config: {
+              sequence: endBehavior ? [{ clipId: "shot", assetId: "clip", endBehavior }] : [],
+              fit: "contain",
+              autoplay: true,
+            },
           } as unknown as ExperienceRendererInstance
         }
-        copy={{ emptySequence: "No footage" } as ExperiencePlayerCopy}
+        copy={testCopy}
         onPlaybackRefused={refused}
         onPlaybackInterrupted={interrupted}
         onPlaybackHandle={(_id, value) => {
@@ -80,6 +111,8 @@ beforeEach(() => {
   h.player.currentTime = 5;
   h.player.playing = false;
   h.player.pause.mockClear();
+  h.player.play.mockClear();
+  h.player.replaceAsync.mockClear();
   h.player.addListener.mockClear();
   root = createRoot(document.createElement("div"));
 });
@@ -160,4 +193,52 @@ it("stops an unsolicited system resume while the story is paused", async () => {
   await playingEvent(true, false);
   expect(h.player.pause).toHaveBeenCalled();
   expect(interrupted).not.toHaveBeenCalled();
+});
+
+it("resuming an ended clip completes it once instead of replaying it", async () => {
+  await render("video", { behavior: "advance" });
+  h.active = false;
+  await render("video", { behavior: "advance" });
+  h.player.currentTime = 19.95;
+  h.player.play.mockClear();
+  await act(async () => handle!.play({ userGesture: true }));
+  await act(async () => handle!.play({ userGesture: true }));
+  expect(completed).toHaveBeenCalledOnce();
+  expect(h.player.play).not.toHaveBeenCalled();
+  expect(h.player.currentTime).toBe(19.95);
+});
+it("resuming an ended hold-last-frame clip keeps its frame and hold duration", async () => {
+  const ending = { behavior: "hold-last-frame", durationMs: 2000 };
+  await render("video", ending);
+  h.active = false;
+  await render("video", ending);
+  h.player.currentTime = 20;
+  h.player.play.mockClear();
+  await act(async () => handle!.play({ userGesture: true }));
+  h.active = true;
+  await render("video", ending);
+  expect(h.player.play).not.toHaveBeenCalled();
+  expect(h.player.replaceAsync).toHaveBeenCalledOnce();
+  await advance(1999);
+  expect(completed).not.toHaveBeenCalled();
+  await advance(1);
+  expect(completed).toHaveBeenCalledOnce();
+});
+it("ordinary mid-clip resume still plays without advancing the story", async () => {
+  await render("video", { behavior: "advance" });
+  h.player.play.mockClear();
+  await act(async () => handle!.play({ userGesture: true }));
+  expect(h.player.play).toHaveBeenCalledOnce();
+  expect(completed).not.toHaveBeenCalled();
+});
+
+it("resumes a terminal loop rather than declaring it finished", async () => {
+  const ending = { behavior: "loop", assetId: "clip" };
+  await render("video", ending);
+  h.player.currentTime = 20;
+  await act(async () => handle!.play());
+  h.player.play.mockClear();
+  await act(async () => handle!.play({ userGesture: true }));
+  expect(h.player.play).toHaveBeenCalledOnce();
+  expect(completed).not.toHaveBeenCalled();
 });

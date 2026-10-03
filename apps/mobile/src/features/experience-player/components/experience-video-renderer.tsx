@@ -183,31 +183,6 @@ export function ExperienceVideoRenderer({
     presentingRef.current = presenting;
   }, [presenting]);
 
-  useEffect(() => {
-    if (isStill) {
-      if (player.playing) {
-        try {
-          expectedPauseRef.current = true;
-          player.pause();
-        } catch {
-          // Player already released.
-        }
-      }
-      return;
-    }
-    if (!presenting) {
-      if (player.playing) {
-        resumeWhenPresentingRef.current = true;
-        expectedPauseRef.current = true;
-        player.pause();
-      }
-      return;
-    }
-    if (!resumeWhenPresentingRef.current) return;
-    resumeWhenPresentingRef.current = false;
-    player.play();
-  }, [isStill, player, presenting]);
-
   /**
    * Silence the player before it is released. `useVideoPlayer` releases on
    * unmount, but iOS only tears the `AVPlayer` down once its last native
@@ -304,6 +279,47 @@ export function ExperienceVideoRenderer({
     setPlaybackState,
   ]);
 
+  const continuePlayback = useEffectEvent(() => {
+    resumeWhenPresentingRef.current = false;
+    if (terminalMode?.kind === "held") return;
+    const seconds =
+      Number.isFinite(player.duration) && player.duration > 0
+        ? player.duration
+        : durationMs
+          ? durationMs / 1000
+          : 0;
+    if (!isLooping && seconds > 0 && player.currentTime >= seconds - 0.08) {
+      handleEnd();
+      return;
+    }
+    player.play();
+  });
+
+  useEffect(() => {
+    if (isStill) {
+      if (player.playing) {
+        try {
+          expectedPauseRef.current = true;
+          player.pause();
+        } catch {
+          // Player already released.
+        }
+      }
+      return;
+    }
+    if (!presenting || !shouldAutoplay) {
+      if (player.playing) {
+        resumeWhenPresentingRef.current = true;
+        expectedPauseRef.current = true;
+        player.pause();
+      }
+      return;
+    }
+    if (!resumeWhenPresentingRef.current) return;
+    resumeWhenPresentingRef.current = false;
+    continuePlayback();
+  }, [isStill, player, presenting, shouldAutoplay]);
+
   // Video hold duration lives in an effect so a remount (React Strict Mode,
   // scene identity churn) reschedules it. Stills own the same beat on their
   // own clock — a parent timeout here was cleared on remount while the still
@@ -361,6 +377,7 @@ export function ExperienceVideoRenderer({
   });
 
   useEffect(() => {
+    if (terminalMode?.kind === "held") return;
     if (!sourceUri || isStill) {
       if (isStill && player.playing) {
         try {
@@ -413,6 +430,7 @@ export function ExperienceVideoRenderer({
     reloadEpoch,
     shouldAutoplay,
     sourceUri,
+    terminalMode?.kind,
   ]);
 
   useEffect(() => {
@@ -428,7 +446,7 @@ export function ExperienceVideoRenderer({
           resumeWhenPresentingRef.current = true;
           return;
         }
-        player.play();
+        continuePlayback();
       },
       pause: () => {
         try {
