@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { Image } from "expo-image";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
@@ -20,8 +21,8 @@ import {
 } from "./media-api";
 type Props = { ipId: string; userId: string; generation: number };
 export function IpMediaPanel(props: Props) {
-  const active = useScreenActive();
-  return active && getAuthGeneration() === props.generation ? (
+  const focused = useIsFocused();
+  return focused && getAuthGeneration() === props.generation ? (
     <Session key={JSON.stringify(props)} {...props} />
   ) : null;
 }
@@ -46,6 +47,7 @@ function Button({
   );
 }
 function Session({ ipId, userId, generation }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     op = useAuthFormOperation(ipId, true);
   const [record] = useState(() => mediaUploadRecord(ipId, userId, generation));
@@ -91,7 +93,7 @@ function Session({ ipId, userId, generation }: Props) {
   };
   const refresh = () => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     void op.run(
       () => fetchIpMedia(ipId, generation, signal),
       (value) => {
@@ -104,7 +106,7 @@ function Session({ ipId, userId, generation }: Props) {
   };
   const upload = (slot: MediaSlot) => {
     const signal = controller.current?.signal;
-    if (!snapshot || pending || initial.error || !signal) return;
+    if (!active || !snapshot || pending || initial.error || !signal) return;
     setError("");
     setSaved(false);
     setPreview(false);
@@ -136,7 +138,7 @@ function Session({ ipId, userId, generation }: Props) {
   };
   const resume = (rebase = false) => {
     const signal = controller.current?.signal;
-    if (!pending || !snapshot || !signal) return;
+    if (!active || !pending || !snapshot || !signal) return;
     setError("");
     setSaved(false);
     void op.run(
@@ -156,6 +158,7 @@ function Session({ ipId, userId, generation }: Props) {
       failure
     );
   };
+  if (!active) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       {loading && <ActivityIndicator />}
