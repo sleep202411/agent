@@ -3282,6 +3282,7 @@
         "unsupportedMedia": "A clip can only use image or video media."
       },
       "exportFilm": "Export film",
+      "cancelExport": "Cancel export",
       "downloadFilm": "Download film"
     },
     "canvas": {

@@ -128,6 +128,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
   }, [requestedPlotNodeId, storyboardQuery.data]);
 
   const timelineExport = useStoryTimelineExport({
+    canEdit: projectCanEdit,
     sequence: selectedSequence,
     projectId,
     chapterId,
@@ -385,7 +386,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
               onClick={() => timelineExport.cancel()}
               className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 text-xs font-medium text-white/68 transition-colors hover:bg-white/[0.12] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
             >
-              取消合成 {Math.round(timelineExport.exportProgress * 100)}%
+              {t("cancelExport")} {Math.round(timelineExport.exportProgress * 100)}%
             </button>
           ) : (
             <>

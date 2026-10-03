@@ -3282,6 +3282,7 @@
         "unsupportedMedia": "片段只能使用圖片或影片媒體。"
       },
       "exportFilm": "合成成片",
+      "cancelExport": "取消匯出",
       "downloadFilm": "下載到本機"
     },
     "canvas": {
