@@ -205,10 +205,12 @@ it("does not upload after a canceled picker or foreign-account completion", asyn
 it("keeps tag failures retryable and never creates before required fields", async () => {
   h.get.mockRejectedValueOnce(new Error("offline"));
   await render();
+  expect(host.textContent).toContain("offline");
   await act(async () => click("publishWork.next"));
   expect(h.create).not.toHaveBeenCalled();
   await act(async () => click("profileEdit.retry"));
   expect(host.textContent).toContain("Drama");
+  expect(host.textContent).not.toContain("offline");
 });
 it("hides publishing from signed-out deep links", async () => {
   h.authenticated = false;
@@ -244,7 +246,7 @@ it("does not expose editing for an unavailable foreign work", async () => {
   h.workId = "foreign";
   h.find.mockRejectedValue(new Error("not found"));
   await render();
-  expect(host.textContent).toContain("publishWork.loadFailed");
+  expect(host.textContent).toContain("not found");
   expect(host.querySelector("input")).toBeNull();
   expect(h.create).not.toHaveBeenCalled();
   expect(h.update).not.toHaveBeenCalled();

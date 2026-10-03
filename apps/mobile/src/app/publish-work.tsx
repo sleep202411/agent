@@ -71,7 +71,7 @@ function OwnedWorkForm({ workId }: { workId?: string }) {
   });
   const resolvedId = workId ?? recovery.draft?.workId;
   const [work, setWork] = useState<MyWork>();
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!resolvedId || recovery.error) return;
@@ -80,11 +80,14 @@ function OwnedWorkForm({ workId }: { workId?: string }) {
       .then((value) => {
         if (!controller.signal.aborted) setWork(value);
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setFailed(
+            cause instanceof Error && cause.message ? cause.message : t("publishWork.loadFailed")
+          );
       });
     return () => controller.abort();
-  }, [resolvedId, recovery.error, attempt]);
+  }, [resolvedId, recovery.error, attempt, t]);
   if (recovery.error) return <ThemedText accessibilityRole="alert">{recovery.error}</ThemedText>;
   const onRecovered = (draft: WorkDraft, owned: MyWork) => {
     setWork(owned);
@@ -105,11 +108,11 @@ function OwnedWorkForm({ workId }: { workId?: string }) {
   if (failed)
     return (
       <View style={{ padding: 16 }}>
-        <ThemedText accessibilityRole="alert">{t("publishWork.loadFailed")}</ThemedText>
+        <ThemedText accessibilityRole="alert">{failed}</ThemedText>
         <Pressable
           accessibilityRole="button"
           onPress={() => {
-            setFailed(false);
+            setFailed(undefined);
             setAttempt((n) => n + 1);
           }}
         >
@@ -140,7 +143,7 @@ function PublishForm({
     [description, setDescription] = useState(recovered?.description ?? initial?.introduction ?? ""),
     [selected, setSelected] = useState<number[]>(recovered?.tagIds ?? []);
   const [tags, setTags] = useState<WorkTag[]>(),
-    [tagError, setTagError] = useState(false),
+    [tagError, setTagError] = useState<string>(),
     [attempt, setAttempt] = useState(0);
   const [id, setId] = useState<string | undefined>(initial?.id),
     [video, setVideo] = useState(initial?.hasVideo ?? false),
@@ -167,11 +170,14 @@ function PublishForm({
       .then((value) => {
         if (!controller.signal.aborted) setTags(value);
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setTagError(true);
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setTagError(
+            cause instanceof Error && cause.message ? cause.message : t("profileEdit.failed")
+          );
       });
     return () => controller.abort();
-  }, [attempt, initial]);
+  }, [attempt, initial, t]);
   const next = () => {
     const request = scope.current;
     if (!request) return;
@@ -277,15 +283,18 @@ function PublishForm({
             <>
               <ThemedText>{t("publishWork.tags")}</ThemedText>
               {tagError ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    setTagError(false);
-                    setAttempt((n) => n + 1);
-                  }}
-                >
-                  <ThemedText>{t("profileEdit.retry")}</ThemedText>
-                </Pressable>
+                <View style={{ gap: 8 }}>
+                  <ThemedText accessibilityRole="alert">{tagError}</ThemedText>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setTagError(undefined);
+                      setAttempt((n) => n + 1);
+                    }}
+                  >
+                    <ThemedText>{t("profileEdit.retry")}</ThemedText>
+                  </Pressable>
+                </View>
               ) : !tags ? (
                 <ActivityIndicator />
               ) : (
