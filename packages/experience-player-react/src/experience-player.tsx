@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import {
@@ -92,7 +93,11 @@ import {
   type ExperiencePlaybackGates,
   type ExperienceViewerPauseReason,
 } from "./experience-playback-holds";
-import { ExperienceFrameControls, ExperiencePausedScrim } from "./experience-playback-controls";
+import {
+  ExperienceFrameControls,
+  ExperiencePausedScrim,
+  nearAvailableExperienceGesture,
+} from "./experience-playback-controls";
 import { resolveExperiencePlaybackRejection } from "./experience-playback-rejection";
 import { PRIMARY_BUTTON } from "./experience-player-styles";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
@@ -1128,6 +1133,29 @@ function ActiveExperienceRuntimePlayer({
     else resumeStoryRef.current("gesture");
   }, [pauseStory]);
 
+  // A tap on the picture pauses the film: the same pause the frame's toggle
+  // stands for, offered wherever the toggle is — the story running, a scene
+  // with time to stop, no access flow in the way. Only a missed tap is one: a
+  // choice, a hotspot or a control under the finger answered it and keeps it,
+  // and a tap that merely grazed a hotspot's edge is left for another try at
+  // it rather than freezing the film it missed. A world stream takes its taps
+  // for its own moves, as it takes Space; the pause stays with its toggle.
+  const pauseOnStageTap = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (viewerPauseRef.current !== null) return;
+      if (!holds.pauseUi || !toggleVisible || hasWorldModelRenderer) return;
+      const target = event.target as Element | null;
+      if (
+        target?.closest("button, a, input, textarea, select, [data-experience-gesture-available]")
+      ) {
+        return;
+      }
+      if (nearAvailableExperienceGesture(event.currentTarget, event.clientX, event.clientY)) return;
+      pauseStory("user");
+    },
+    [hasWorldModelRenderer, holds.pauseUi, pauseStory, toggleVisible]
+  );
+
   // Space, from the page or the player: a key press is a user activation, so
   // it resumes as a tap does. Listened to on the document, after React's own
   // handlers, so a control that takes Space for itself has already said so.
@@ -1233,6 +1261,7 @@ function ActiveExperienceRuntimePlayer({
       fullscreen={fullscreen}
       copy={copy}
       style={theme ? themeStyle(theme) : undefined}
+      onStageTap={pauseOnStageTap}
       stage={
         <ExperienceStoryClockContext.Provider value={storyClock}>
           {/* The story itself. Always rendered and never re-keyed, so a pause
@@ -2359,6 +2388,7 @@ function PlayerFrame({
   copy,
   style,
   stage,
+  onStageTap,
   children,
 }: {
   shellRef: React.RefObject<HTMLDivElement | null>;
@@ -2372,6 +2402,8 @@ function PlayerFrame({
   copy: ExperiencePlayerCopy;
   style?: CSSProperties;
   stage: React.ReactNode;
+  /** A tap the picture did not answer pauses the film; see `pauseOnStageTap`. */
+  onStageTap?: (event: MouseEvent<HTMLDivElement>) => void;
   children: React.ReactNode;
 }) {
   const shellSize = useShellSize(shellRef);
@@ -2420,6 +2452,7 @@ function PlayerFrame({
         <div
           data-experience-media-stage=""
           className="absolute left-1/2 top-1/2 isolate"
+          onClick={onStageTap}
           style={{
             ...stageStyle,
             ...chromeInsets,
