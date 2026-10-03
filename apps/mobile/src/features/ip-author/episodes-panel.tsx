@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
@@ -27,8 +28,8 @@ type Props = {
   onOpenMedia?: (episodeId: string) => void;
 };
 export function IpEpisodesPanel(props: Props) {
-  const active = useScreenActive();
-  return active && getAuthGeneration() === props.generation ? (
+  const focused = useIsFocused();
+  return focused && getAuthGeneration() === props.generation ? (
     <Session key={JSON.stringify(props)} {...props} />
   ) : null;
 }
@@ -63,6 +64,7 @@ type Draft = {
   sourceLocale: EpisodeSnapshot["sourceLocale"];
 };
 function Session({ ipId, userId, generation, onOpenMedia }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(ipId, true);
@@ -110,7 +112,7 @@ function Session({ ipId, userId, generation, onOpenMedia }: Props) {
   };
   const refresh = () => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     void op.run(
       () => fetchAuthorEpisodes(ipId, generation, signal),
       (value) => {
@@ -126,7 +128,7 @@ function Session({ ipId, userId, generation, onOpenMedia }: Props) {
   };
   const run = (input: EpisodeCommand) => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setError("");
     setSaved(false);
     setPreview(undefined);
@@ -193,6 +195,7 @@ function Session({ ipId, userId, generation, onOpenMedia }: Props) {
       })
     : null;
   const target = snapshot?.episodes.find((item) => item.id === draft?.episodeId);
+  if (!active) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       {(loading || op.busy) && <ActivityIndicator />}

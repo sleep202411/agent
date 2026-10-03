@@ -5,6 +5,7 @@ import { ApiRequestError } from "@/lib/api-client";
 import { IpProfileEditor } from "./profile-editor";
 const h = vi.hoisted(() => ({
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   put: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("@/lib/durable-record", () => ({
   }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({
@@ -115,6 +117,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   host = document.createElement("div");
   document.body.append(host);
@@ -235,4 +238,35 @@ it("hides private source content when the screen becomes inactive", async () => 
   h.active = false;
   await mount();
   expect(host.querySelectorAll("input")).toHaveLength(0);
+});
+
+it("retains unsaved edits across backgrounding and saves only on request", async () => {
+  h.put.mockResolvedValue({ ip: { ...ip, title: "Edited", version: 2 } });
+  await mount();
+  await type("ipAuthor.title", "Edited");
+  h.active = false;
+  await mount();
+  expect(host.querySelector("input")).toBeNull();
+  h.active = true;
+  await mount();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="ipAuthor.title"]')?.value).toBe(
+    "Edited"
+  );
+  expect(h.put).not.toHaveBeenCalled();
+  await click("ipAuthor.save");
+  expect(h.put).toHaveBeenCalledOnce();
+  expect(h.put.mock.calls[0][1].data.expectedVersion).toBe(1);
+});
+it("retires unsent editor state when the route is left", async () => {
+  await mount();
+  await type("ipAuthor.title", "Unsent");
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="ipAuthor.title"]')?.value
+  ).not.toBe("Unsent");
+  expect(h.put).not.toHaveBeenCalled();
 });

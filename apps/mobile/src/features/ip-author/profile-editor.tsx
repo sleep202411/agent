@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -22,8 +23,8 @@ import {
 } from "./profile-api";
 type Props = { ipId: string; userId: string; generation: number };
 export function IpProfileEditor(props: Props) {
-  const active = useScreenActive();
-  return active && getAuthGeneration() === props.generation ? (
+  const focused = useIsFocused();
+  return focused && getAuthGeneration() === props.generation ? (
     <Session key={JSON.stringify(props)} {...props} />
   ) : null;
 }
@@ -56,6 +57,7 @@ function Session(props: Props) {
   );
 }
 function Editor({ ipId, userId, generation, refresh }: Props & { refresh: () => void }) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(ipId, true);
@@ -105,7 +107,7 @@ function Editor({ ipId, userId, generation, refresh }: Props & { refresh: () => 
   const frozen = op.busy || !!pending || !!initial.error || needsReview;
   const submit = () => {
     const c = controller.current;
-    if (!draft || !c || c.signal.aborted || needsReview) return;
+    if (!active || !draft || !c || c.signal.aborted || needsReview) return;
     void op.run(
       async () => {
         const command = profileCommand.parse(pending ?? draft);
@@ -148,6 +150,7 @@ function Editor({ ipId, userId, generation, refresh }: Props & { refresh: () => 
     padding: 12,
     borderRadius: 8,
   };
+  if (!active) return null;
   return (
     <View style={{ gap: 12 }}>
       {loading ? <ActivityIndicator /> : null}

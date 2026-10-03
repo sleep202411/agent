@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { IpEpisodesPanel } from "./episodes-panel";
 const h = vi.hoisted(() => ({
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   openMedia: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("@/lib/durable-record", () => ({
   }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({
@@ -125,6 +127,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   host = document.createElement("div");
   document.body.append(host);
@@ -236,4 +239,36 @@ it("opens media management for the selected existing episode", async () => {
   await mount();
   await click("ipEpisodeMedia.heading");
   expect(h.openMedia).toHaveBeenCalledWith(episodeId);
+});
+
+it("retains unsaved edits across backgrounding and saves only on request", async () => {
+  await mount();
+  await click("ipEpisodes.edit");
+  await type("ipEpisodes.title", "Edited");
+  h.active = false;
+  await mount();
+  expect(host.querySelector("input")).toBeNull();
+  h.active = true;
+  await mount();
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="ipEpisodes.title"]')?.value).toBe(
+    "Edited"
+  );
+  expect(h.put).not.toHaveBeenCalled();
+  await click("ipEpisodes.save");
+  expect(h.put).toHaveBeenCalledOnce();
+  expect(h.put.mock.calls[0][1].data.expectedVersion).toBe(1);
+});
+it("retires unsent editor state when the route is left", async () => {
+  await mount();
+  await click("ipEpisodes.edit");
+  await type("ipEpisodes.title", "Unsent");
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="ipEpisodes.title"]')?.value
+  ).not.toBe("Unsent");
+  expect(h.put).not.toHaveBeenCalled();
 });
