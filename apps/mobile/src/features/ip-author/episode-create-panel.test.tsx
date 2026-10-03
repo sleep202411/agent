@@ -8,6 +8,7 @@ vi.mock("@/config", () => ({
 vi.mock("./episode-video-duration", () => ({ probeEpisodeVideoDuration: async () => null }));
 const h = vi.hoisted(() => ({
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   put: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock("@/lib/durable-record", () => ({
   }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({
@@ -133,6 +135,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   host = document.createElement("div");
   document.body.append(host);
@@ -244,3 +247,53 @@ it("hides private drafts when access is revoked or the screen leaves foreground"
   await mount();
   expect(host.textContent).toBe("");
 });
+
+it("retains the native picker across backgrounding without creating an episode automatically", async () => {
+  let finish!: (value: unknown) => void;
+  h.pick.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await mount();
+  await type("ipEpisodes.title", "Episode");
+  await type("ipEpisodes.summary", "Summary");
+  await click("ipEpisodeCreate.pick");
+  h.active = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  await act(async () =>
+    finish({ canceled: false, assets: [{ uri: "file:///video.mp4", name: "video.mp4" }] })
+  );
+  h.active = true;
+  await mount();
+  expect(host.textContent).toContain("ipEpisodeCreate.videoReady");
+  expect(h.pick).toHaveBeenCalledOnce();
+  expect(h.storagePut).toHaveBeenCalledOnce();
+  expect(h.post.mock.calls.filter((c) => c[0].endsWith("/episodes"))).toHaveLength(0);
+  await click("ipEpisodeCreate.create");
+  expect(host.textContent).toContain("ipEpisodeCreate.saved");
+});
+for (const exit of ["route", "account"] as const) {
+  it(`ignores a late picker result after ${exit} exit`, async () => {
+    let finish!: (value: unknown) => void;
+    h.pick.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    await mount();
+    await click("ipEpisodeCreate.pick");
+    if (exit === "route") h.focused = false;
+    else h.generation = 2;
+    await mount();
+    await act(async () =>
+      finish({ canceled: false, assets: [{ uri: "file:///video.mp4", name: "video.mp4" }] })
+    );
+    expect(host.textContent).toBe("");
+    expect(h.storagePut).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+  });
+}

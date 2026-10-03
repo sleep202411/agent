@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { getDocumentAsync } from "expo-document-picker";
 import { ThemedText } from "@/components/themed-text";
@@ -24,12 +25,13 @@ import {
 } from "./episode-create-api";
 type Props = { ipId: string; userId: string; generation: number };
 export function IpEpisodeCreatePanel(props: Props) {
-  const active = useScreenActive();
-  return active && getAuthGeneration() === props.generation ? (
+  const focused = useIsFocused();
+  return focused && getAuthGeneration() === props.generation ? (
     <Session key={JSON.stringify(props)} {...props} />
   ) : null;
 }
 function Session({ ipId, userId, generation }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(ipId, true);
@@ -80,6 +82,7 @@ function Session({ ipId, userId, generation }: Props) {
     }
   };
   const run = <T,>(work: (signal: AbortSignal) => Promise<T>, success: (value: T) => void) => {
+    if (!active) return;
     setError("");
     setSaved(false);
     void op.run(
@@ -209,6 +212,7 @@ function Session({ ipId, userId, generation }: Props) {
       isFreePreview: draft.isFreePreview,
       mediaAssetId: draft.media.mediaAssetId,
     }).success;
+  if (!active) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       {(loading || op.busy) && <ActivityIndicator />}
