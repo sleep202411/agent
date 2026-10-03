@@ -1433,6 +1433,8 @@
   "taskRelations.backToTask": "返回任务",
   "taskRelations.resolved": "已解除阻塞",
   "taskRelations.unresolved": "未解除阻塞",
+  "taskBrief.latest": "最新保存的任务说明。应用草稿前，请核对以下内容。",
+  "taskBrief.reviewLatest": "保留草稿并使用此版本",
   "taskBrief.edit": "编辑任务说明",
   "taskBrief.title": "标题",
   "taskBrief.description": "说明",

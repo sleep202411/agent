@@ -16,6 +16,7 @@ import { TaskAssignments } from "./task-assignments";
 import { TaskSchedule } from "./task-schedule";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
 import { TaskPlanningEditor } from "./task-planning-editor";
+import { useTaskBriefSession } from "./use-task-brief-session";
 import { TaskBrief } from "./task-brief";
 import { TaskRelationshipEditor } from "./task-relationship-editor";
 import { TaskRelations } from "./task-relations";
@@ -83,6 +84,7 @@ function TaskContent({
     locale = useLocale();
   const [creatingChild, setCreatingChild] = useState(false);
   const [revision, setRevision] = useState(0);
+  const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
   const [result, setResult] = useState<{ revision: number; data?: Detail; error?: string }>();
   useEffect(() => {
     const controller = new AbortController();
@@ -222,6 +224,7 @@ function TaskContent({
             onRefresh={() => setRevision((v) => v + 1)}
           />
           <TaskBrief
+            session={briefSession}
             key={`brief:${revision}`}
             task={data}
             userId={userId}

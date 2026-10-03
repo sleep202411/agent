@@ -47,6 +47,7 @@ vi.mock("./task-schedule", () => ({ TaskSchedule: () => <div>schedule editor</di
 vi.mock("./task-relationship-editor", () => ({
   TaskRelationshipEditor: () => <div>relationship editor</div>,
 }));
+vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
 vi.mock("./task-brief", () => ({ TaskBrief: () => <div>brief editor</div> }));
 vi.mock("./task-submit", () => ({ TaskSubmit: () => <div>submit</div> }));
 vi.mock("./task-case-create", () => ({ TaskCaseCreate: () => <div>task case</div> }));

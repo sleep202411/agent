@@ -1433,6 +1433,8 @@
   "taskRelations.backToTask": "Back to task",
   "taskRelations.resolved": "Resolved",
   "taskRelations.unresolved": "Unresolved",
+  "taskBrief.latest": "Latest saved brief. Review these details before applying your draft.",
+  "taskBrief.reviewLatest": "Keep draft and use this version",
   "taskBrief.edit": "Edit Task Brief",
   "taskBrief.title": "Title",
   "taskBrief.description": "Description",
