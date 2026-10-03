@@ -155,6 +155,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     [pending, setPending] = useState<GenerationCommand | null>(initial.pending ?? null),
     [retryPending, setRetryPending] = useState<GenerationRetry | null>(initial.retry ?? null),
     [retryTarget, setRetryTarget] = useState<(GenerationRetry & { prompt: string }) | null>(null),
+    [cancelTarget, setCancelTarget] = useState<{ id: string; prompt: string } | null>(null),
     [data, setData] = useState<Awaited<ReturnType<typeof loadGenerationCatalog>>>(),
     [skills, setSkills] = useState<ProjectSkills>(),
     [skillsOpen, setSkillsOpen] = useState(false),
@@ -1273,7 +1274,10 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                 <Button
                   label={t("aiLab.cancel")}
                   disabled={op.busy || !canGenerate}
-                  onPress={() => setConfirm("cancel")}
+                  onPress={() => {
+                    setCancelTarget({ id: selected.id, prompt: selected.prompt });
+                    setConfirm("cancel");
+                  }}
                 />
               ) : null}
             </View>
@@ -1297,6 +1301,9 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
           </ThemedText>
           {confirm === "retry" && retryTarget ? (
             <ThemedText type="small">{retryTarget.prompt}</ThemedText>
+          ) : null}
+          {confirm === "cancel" && cancelTarget ? (
+            <ThemedText type="small">{cancelTarget.prompt}</ThemedText>
           ) : null}
           <Button
             label={t("aiLab.confirm")}
@@ -1323,8 +1330,9 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                     setEpoch((x) => x + 1);
                   }
                 );
-              } else if (confirm === "cancel" && selected) {
-                const id = selected.id;
+              } else if (confirm === "cancel" && cancelTarget) {
+                const id = cancelTarget.id;
+                setCancelTarget(null);
                 setConfirm(null);
                 run(
                   async () => {

@@ -1279,3 +1279,32 @@ it("keeps the confirmed retry target when another history row is selected", asyn
   expect(h.post).toHaveBeenCalledTimes(1);
   expect(h.post.mock.calls[0][0]).toBe(`/ai/jobs/${failed.id}/retry`);
 });
+
+it("cancels the original confirmed job when history selection changes", async () => {
+  const other = { ...job, id: "22222222-2222-4222-8222-222222222222", prompt: "Other queued job" };
+  jobs = [job, other];
+  const oldGet = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, ...args) => {
+    if (path === `/ai/jobs/${job.id}`) return job;
+    if (path === `/ai/jobs/${other.id}`) return other;
+    return oldGet(path, ...args);
+  });
+  h.post.mockImplementation(async (path) => {
+    expect(path).toBe(`/ai/jobs/${job.id}/cancel`);
+    return { ...job, status: "cancelled", stage: "cancelled" };
+  });
+  await mount();
+  await click("aiLab.history");
+  await click("Image model · aiLab.status.in_queue");
+  await click("aiLab.cancel");
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .filter((b) => b.textContent === "Image model · aiLab.status.in_queue")[1]
+      .click()
+  );
+  expect(host.textContent).toContain("Other queued job");
+  expect(host.textContent).toContain("Lake");
+  await click("aiLab.confirm");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(h.post.mock.calls[0][0]).toBe(`/ai/jobs/${job.id}/cancel`);
+});
