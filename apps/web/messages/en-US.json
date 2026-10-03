@@ -10949,7 +10949,18 @@
     "searchHint": "Searches the conversations loaded in this list.",
     "details": "Application Details",
     "message": "Message",
-    "messagePlaceholder": "Type a message…"
+    "messagePlaceholder": "Type a message…",
+    "applicant": "Applicant",
+    "profileLoading": "Loading profile…",
+    "retryProfile": "Retry profile",
+    "qualifications": "Qualifications",
+    "noQualifications": "No qualifications listed",
+    "pastWork": "Past work",
+    "viewPortfolio": "View portfolio",
+    "worksLoading": "Loading work…",
+    "retryWorks": "Retry work",
+    "noPastWork": "No public work shared yet",
+    "untitledWork": "Untitled work"
   },
   "contentGpsOwner": {
     "title": "IP locations",
@@ -11329,7 +11340,15 @@
     "none": "Not linked",
     "loading": "Loading…",
     "more": "Load more",
-    "retry": "Retry"
+    "retry": "Retry",
+    "linkIp": "Link an IP",
+    "selectIp": "Select an IP",
+    "linkIpHint": "Choose an IP you manage to associate with this Crew.",
+    "noOwnedIps": "No editable IPs available.",
+    "linkedElsewhere": "This IP belongs to another Crew. Confirming moves its Crew association here.",
+    "confirmLink": "Confirm link",
+    "filmsHint": "Published interactive games appear here after their IP association is confirmed.",
+    "openStudio": "Open Studio"
   },
   "crewTaskContext": {
     "creator": "Featured creator",

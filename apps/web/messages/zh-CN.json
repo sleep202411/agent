@@ -10949,7 +10949,18 @@
     "searchHint": "搜索当前列表中已加载的会话。",
     "details": "申请详情",
     "message": "消息",
-    "messagePlaceholder": "输入消息…"
+    "messagePlaceholder": "输入消息…",
+    "applicant": "申请人",
+    "profileLoading": "正在加载个人资料…",
+    "retryProfile": "重新加载资料",
+    "qualifications": "资质认证",
+    "noQualifications": "暂无资质认证",
+    "pastWork": "过往作品",
+    "viewPortfolio": "查看作品集",
+    "worksLoading": "正在加载作品…",
+    "retryWorks": "重新加载作品",
+    "noPastWork": "暂无公开作品",
+    "untitledWork": "未命名作品"
   },
   "contentGpsOwner": {
     "title": "IP地点",
@@ -11329,7 +11340,15 @@
     "none": "尚未关联",
     "loading": "加载中…",
     "more": "加载更多",
-    "retry": "重试"
+    "retry": "重试",
+    "linkIp": "关联 IP",
+    "selectIp": "选择 IP",
+    "linkIpHint": "选择您管理的 IP，将其关联到此剧组。",
+    "noOwnedIps": "暂无可编辑的 IP。",
+    "linkedElsewhere": "此 IP 已关联其他剧组。确认后将改为关联此剧组。",
+    "confirmLink": "确认关联",
+    "filmsHint": "互动游戏发布并确认 IP 关联后会显示在此处。",
+    "openStudio": "打开 Studio"
   },
   "crewTaskContext": {
     "creator": "主创成员",
