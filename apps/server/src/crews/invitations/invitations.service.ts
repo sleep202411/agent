@@ -213,11 +213,14 @@ export class CrewInvitationsService {
       );
     }
     if (input.agreement) this.agreements.requireDispatchConfigured();
-    const target = await this.users.lookupByContact({
-      account: input.account,
-      cookie,
-      checkCrewId: crewId,
-    });
+    const target =
+      input.lookupBy === 'userId'
+        ? await this.users.lookupByUserId(input.account, cookie, crewId)
+        : await this.users.lookupByContact({
+            account: input.account,
+            cookie,
+            checkCrewId: crewId,
+          });
     if (!target) {
       throw new NotFoundException({
         message: 'No user matches that input.',

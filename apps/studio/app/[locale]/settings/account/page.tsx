@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { useAuth } from "@/app/_components/auth-provider";
+import { useWorkspace } from "@/app/_components/workspace-context";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
 import { PageHeader, Panel } from "../_components/settings-ui";
@@ -19,8 +20,16 @@ import { PageHeader, Panel } from "../_components/settings-ui";
  */
 export default function AccountSettingsPage() {
   const t = useTranslations("settings");
+  const common = useTranslations("common");
   const { user, signIn, signOut } = useAuth();
-  const { data: credits } = useComputeWalletBalance(Boolean(user));
+  const { workspaces } = useWorkspace();
+  const personalWorkspace = workspaces.find((ws) => ws.isDefault);
+  const {
+    data: credits,
+    error,
+    isFetching,
+    refetch,
+  } = useComputeWalletBalance(Boolean(user && personalWorkspace), personalWorkspace?.id);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   if (!user) {
@@ -94,6 +103,22 @@ export default function AccountSettingsPage() {
         title={t("computeCredits")}
         icon={<IconBolt className="size-4 text-muted-foreground" />}
       >
+        {error && (
+          <div
+            role="alert"
+            className="mb-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground"
+          >
+            <span>{error.message || t("creditsLoadFailed")}</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isFetching}
+              onClick={() => void refetch()}
+            >
+              {common("retry")}
+            </Button>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-3">
           <CreditStat label={t("available")} value={credits?.available} />
           <CreditStat label={t("held")} value={credits?.held} />

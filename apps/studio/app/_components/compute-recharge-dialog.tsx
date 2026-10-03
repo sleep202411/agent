@@ -22,11 +22,9 @@ import {
 import { useIsCnSite } from "@/app/_components/region-provider";
 import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import { ApiRequestError } from "@/lib/api";
-import {
-  createComputeCustomRecharge,
-  isWechatScanUrl,
-  redirectToComputePayment,
-} from "@/lib/billing";
+import { isWechatScanUrl, redirectToComputePayment } from "@/lib/billing";
+import { useAuth } from "./auth-provider";
+import { useRechargeAttempt } from "@/lib/use-recharge-attempt";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GlassRim } from "@/components/ui/glass-rim";
@@ -46,19 +44,27 @@ function suggestedRechargeAmount(required: number | null, available: bigint | nu
   return String(Math.min(5000, Math.max(10, needed)));
 }
 
-export function ComputeRechargeDialog({
-  available,
-  modelName,
-  onOpenChange,
-  open,
-  required,
-}: {
+type RechargeDialogProps = {
   available?: bigint | null;
   modelName?: string;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   required?: number | null;
-}) {
+};
+export function ComputeRechargeDialog(props: RechargeDialogProps) {
+  const { user } = useAuth();
+  const workspace = useProjectPayerWorkspace();
+  if (!props.open || user?.id == null || !workspace) return null;
+  return <RechargeDialogBody key={`${user.id}:${workspace.id}:${workspace.role}`} {...props} />;
+}
+function RechargeDialogBody({
+  available,
+  modelName,
+  onOpenChange,
+  open,
+  required,
+}: RechargeDialogProps) {
+  const attempt = useRechargeAttempt();
   const t = useTranslations("billing.rechargePrompt");
   const ts = useTranslations("settings");
   const queryClient = useQueryClient();
@@ -82,9 +88,10 @@ export function ComputeRechargeDialog({
   } | null>(null);
 
   const close = useCallback(() => {
+    attempt.cancel();
     setCustomAmount(null);
     onOpenChange(false);
-  }, [onOpenChange]);
+  }, [onOpenChange, attempt]);
 
   useEffect(() => {
     if (!open) return;
@@ -108,34 +115,40 @@ export function ComputeRechargeDialog({
   const amountValid = Number.isInteger(amountNum) && amountNum >= 10 && amountNum <= 5000;
   const estimatedCredits = amountValid ? Math.floor((amountNum * 100) / minorPerPoint) : null;
   const urls = () => {
-    const base =
-      typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : "";
+    const base = typeof window !== "undefined" ? window.location.href : "";
     return { successUrl: base, backUrl: base };
   };
 
   const recharge = useMutation({
     mutationFn: () =>
-      createComputeCustomRecharge({
+      attempt.request({
         amountDollars: amountNum,
-        workspaceId: billingWorkspace?.id ?? undefined,
-        idempotencyKey: crypto.randomUUID(),
+        workspaceId: billingWorkspace!.id,
         ...urls(),
       }),
-    onSuccess: async (result) => {
+    onSuccess: async ({ result, urls: returnUrls }) => {
+      attempt.assertCurrent();
       const successMessage = ts("creditsAddedGeneric");
       const scanUrl = result.paymentIntent?.checkoutUrl;
       if (isWechatScanUrl(scanUrl)) {
+        attempt.complete();
         setWechatScan({ orderId: result.order.id, codeUrl: scanUrl, successMessage });
         return;
       }
-      const outcome = await redirectToComputePayment(result, urls());
+      const outcome = await redirectToComputePayment(result, returnUrls, attempt.assertCurrent);
+      attempt.assertCurrent();
+      attempt.complete();
       if (outcome === "fulfilled") {
         void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
         toast.success(successMessage);
         close();
       }
     },
-    onError: (error) => toast.error(errMsg(error, ts("couldntStartRecharge"))),
+    onError: (error) => {
+      if (attempt.current() && !(error instanceof DOMException && error.name === "AbortError"))
+        toast.error(errMsg(error, ts("couldntStartRecharge")));
+    },
+    onSettled: (_data, error) => attempt.finish(error),
   });
 
   const quickAmounts = [10, 50, 100, 500];
@@ -300,6 +313,7 @@ export function ComputeRechargeDialog({
           codeUrl={wechatScan.codeUrl}
           onClose={() => setWechatScan(null)}
           onPaid={() => {
+            if (!attempt.current()) return;
             void queryClient.invalidateQueries({
               queryKey: computeWalletBalanceQueryKey,
             });

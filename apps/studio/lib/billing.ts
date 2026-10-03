@@ -63,19 +63,23 @@ export interface MembershipBenefits {
   queuedJobs: number | null;
 }
 
-export function listMembershipPlans(input: {
-  productType: "membership_plan" | "team_membership_plan";
-  /**
-   * Membership pricing is one currency per cell: USD on .com, CNY on .cn.
-   * Never ask for a currency the catalog has no rows for — the API answers
-   * with price-less plans and the dialog degrades to "Contact Sales".
-   */
-  currency: "USD" | "CNY";
-}) {
+export function listMembershipPlans(
+  input: {
+    productType: "membership_plan" | "team_membership_plan";
+    /**
+     * Membership pricing is one currency per cell: USD on .com, CNY on .cn.
+     * Never ask for a currency the catalog has no rows for — the API answers
+     * with price-less plans and the dialog degrades to "Contact Sales".
+     */
+    currency: "USD" | "CNY";
+  },
+  signal?: AbortSignal
+) {
   return api.get<{ provider: string; plans: MembershipPlan[] }>(
     "/aurora/billing/membership-plans",
     {
       params: input,
+      signal,
     }
   );
 }
@@ -94,8 +98,12 @@ export interface BillingCheckoutResult {
   paymentIntent: { checkoutUrl: string | null } | null;
 }
 
-export function createBillingCheckout(input: CreateBillingCheckoutInput) {
-  return api.post<BillingCheckoutResult>("/aurora/billing/checkout", { data: input });
+export function createBillingCheckout(input: CreateBillingCheckoutInput, signal?: AbortSignal) {
+  return api.post<BillingCheckoutResult>("/aurora/billing/checkout", {
+    data: input,
+    signal,
+    requestScope: "user",
+  });
 }
 
 export interface BillingOrderView {
@@ -181,16 +189,25 @@ export interface MyEntitlement {
 }
 
 /** The caller's current plan + the subscription that backs it (for renew/cancel). */
-export function getMyEntitlement(workspaceId?: string | null) {
+export function getMyEntitlement(workspaceId?: string | null, signal?: AbortSignal) {
   return api.get<MyEntitlement>("/aurora/billing/entitlement/me", {
+    signal,
+    requestScope: "user",
     headers: workspaceId ? { "x-fizz-workspace-id": workspaceId } : undefined,
   });
 }
 
 /** Cancel a recurring subscription. Access continues until currentPeriodEnd. */
-export function cancelSubscription(subscriptionId: string) {
+export function cancelSubscription(
+  subscriptionId: string,
+  workspaceId?: string | null,
+  signal?: AbortSignal
+) {
   return api.post<ActiveSubscription>(`/aurora/billing/subscriptions/${subscriptionId}/cancel`, {
     data: {},
+    requestScope: "user",
+    headers: workspaceId ? { "x-fizz-workspace-id": workspaceId } : undefined,
+    signal,
   });
 }
 
@@ -208,9 +225,11 @@ export interface RedeemVoucherResult {
  * Redeem a 兑换券 / gift code for compute credits. The server credits the active
  * user's personal-workspace pot and is idempotent (a retry never double-credits).
  */
-export function redeemVoucher(code: string) {
+export function redeemVoucher(code: string, signal?: AbortSignal) {
   return api.post<RedeemVoucherResult>("/aurora/billing/vouchers/redeem", {
     data: { code },
+    signal,
+    requestScope: "user",
   });
 }
 
@@ -250,8 +269,11 @@ export interface ActiveCampaign {
 }
 
 /** Active, in-window free-credits campaigns + whether the caller already claimed. */
-export function listActiveCampaigns() {
-  return api.get<{ items: ActiveCampaign[] }>("/aurora/billing/campaigns/active");
+export function listActiveCampaigns(signal?: AbortSignal) {
+  return api.get<{ items: ActiveCampaign[] }>("/aurora/billing/campaigns/active", {
+    signal,
+    requestScope: "user",
+  });
 }
 
 export interface CampaignClaimResult {
@@ -260,9 +282,11 @@ export interface CampaignClaimResult {
 }
 
 /** Claim a campaign's free credits (once per user; idempotent server-side). */
-export function claimCampaign(campaignId: string) {
+export function claimCampaign(campaignId: string, signal?: AbortSignal) {
   return api.post<CampaignClaimResult>(`/aurora/billing/campaigns/${campaignId}/claim`, {
     data: {},
+    signal,
+    requestScope: "user",
   });
 }
 
@@ -345,9 +369,14 @@ export interface CreateComputeCustomRechargeInput {
   backUrl: string;
 }
 
-export function createComputeCustomRecharge(input: CreateComputeCustomRechargeInput) {
+export function createComputeCustomRecharge(
+  input: CreateComputeCustomRechargeInput,
+  signal?: AbortSignal
+) {
   return api.post<ComputePaymentResult>("/aurora/billing/recharge-custom", {
     data: { ...input, currency: "compute_point" },
+    signal,
+    requestScope: "user",
   });
 }
 
@@ -361,8 +390,10 @@ export function createComputeCustomRecharge(input: CreateComputeCustomRechargeIn
  */
 export async function redirectToComputePayment(
   result: ComputePaymentResult,
-  urls: { successUrl: string; backUrl: string }
+  urls: { successUrl: string; backUrl: string },
+  assertCurrent: () => void = () => {}
 ): Promise<"fulfilled" | "redirecting"> {
+  assertCurrent();
   if (result.order.status === "fulfilled" && !result.paymentIntent) return "fulfilled";
 
   const pi = result.paymentIntent;
@@ -372,7 +403,9 @@ export async function redirectToComputePayment(
   }
   if (result.order.provider === "airwallex" && pi?.providerPaymentIntentId && pi.clientSecret) {
     const { init } = await import("@airwallex/components-sdk");
+    assertCurrent();
     const aw = await init({ env: result.env, enabledElements: ["payments"] });
+    assertCurrent();
     if (!aw.payments) throw new Error("Payment is unavailable right now.");
     await aw.payments.redirectToCheckout({
       env: result.env,

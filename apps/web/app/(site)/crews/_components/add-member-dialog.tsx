@@ -1,18 +1,17 @@
 "use client";
 
 /**
- * Add-member dialog — email/phone → live lookup → add.
+ * Add-member dialog — contact or user ID → live lookup → invitation.
  *
  * UX flow:
- *   1. User types/pastes an email or phone
- *   2. Debounce 400ms → GET /aurora/users/lookup?{email|phone}=…
- *      (the hook detects which mode and picks the right query param)
+ *   1. User selects contact or user ID and enters the corresponding value
+ *   2. Debounce 400ms → contact lookup or explicit by-id lookup
  *   3. Server returns profile PLUS membership context (isCrewMember,
  *      isCrewOwner) so the dialog renders a live preview card in
  *      one roundtrip
  *   4. Owners may grant additive access policies
  *   5. Submit → invitation. Membership is created only after acceptance.
- *      and the server resolves the contact again before inserting.
+ *      The server resolves the selected identifier again before inserting.
  */
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -97,6 +96,7 @@ function MemberInvitationForm({
   // Two ways in, one dialog: name an account, or mint a link. They share the
   // access vocabulary and nothing else, so they are siblings, not a wizard.
   const [mode, setMode] = useState<"account" | "link">("account");
+  const [lookupBy, setLookupBy] = useState<"contact" | "userId">("contact");
   const [queryInput, setQueryInput] = useState("");
   const [accessPreset, setAccessPreset] = useState<CrewInviteAccessPreset>("standard");
   const [agreementEnabled, setAgreementEnabled] = useState(false);
@@ -104,7 +104,7 @@ function MemberInvitationForm({
   const [signerName, setSignerName] = useState("");
   const [signerEmail, setSignerEmail] = useState("");
   const debouncedQuery = useDebouncedValue(queryInput, 400);
-  const lookup = useUserLookup({ query: debouncedQuery, checkCrewId: crewId });
+  const lookup = useUserLookup({ query: debouncedQuery, checkCrewId: crewId, lookupBy });
 
   const { mutateAsync: inviteMember } = useInviteCrewMember(crewId);
   const [submitting, setSubmitting] = useState(false);
@@ -174,6 +174,7 @@ function MemberInvitationForm({
     try {
       await inviteMember({
         account: debouncedQuery.trim(),
+        ...(lookupBy === "userId" ? { lookupBy } : {}),
         ...(positionCategory ? { positionCategory } : {}),
         policyKeys: canGrantPolicies ? policyKeysForAccessPreset(accessPreset) : [],
         ...(agreementEnabled
@@ -254,7 +255,28 @@ function MemberInvitationForm({
           ) : (
             <FieldGroup>
               <Field>
-                <FieldLabel required>{t("addMemberContactLabel")}</FieldLabel>
+                <FieldLabel required>
+                  {t(lookupBy === "userId" ? "addMemberUserIdLabel" : "addMemberContactLabel")}
+                </FieldLabel>
+                <Select
+                  value={lookupBy}
+                  onValueChange={(value) => {
+                    if (value === "contact" || value === "userId") {
+                      setLookupBy(value);
+                      setSignerName("");
+                      setSignerEmail("");
+                    }
+                  }}
+                  disabled={submitting}
+                >
+                  <SelectTrigger aria-label={t("addMemberLookupBy")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="contact">{t("addMemberContactLabel")}</SelectItem>
+                    <SelectItem value="userId">{t("addMemberUserIdLabel")}</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Input
                   value={queryInput}
                   onChange={(e) => {
@@ -265,13 +287,20 @@ function MemberInvitationForm({
                     }
                     setQueryInput(next);
                   }}
-                  placeholder={t("addMemberContactPlaceholder")}
+                  placeholder={t(
+                    lookupBy === "userId" ? "addMemberUserIdHint" : "addMemberContactPlaceholder"
+                  )}
                   maxLength={120}
                   disabled={submitting}
                   autoFocus
                 />
                 {lookupCurrent ? (
-                  <LookupPreview state={lookup} contact={debouncedQuery} t={t} />
+                  <LookupPreview
+                    state={lookup}
+                    contact={debouncedQuery}
+                    lookupBy={lookupBy}
+                    t={t}
+                  />
                 ) : null}
               </Field>
 
@@ -407,10 +436,12 @@ function MemberInvitationForm({
 // ─── Live preview card ─────────────────────────────────────
 
 function LookupPreview({
+  lookupBy,
   state,
   contact,
   t,
 }: {
+  lookupBy: "contact" | "userId";
   state: ReturnType<typeof useUserLookup>;
   contact: string;
   t: ReturnType<typeof useTranslations>;
@@ -422,13 +453,15 @@ function LookupPreview({
     // SHOULD have matched.
     if (trimmed.length < 3) {
       return (
-        <p className="mt-1.5 text-[11px] text-muted-foreground">{t("addMemberContactHint")}</p>
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          {t(lookupBy === "userId" ? "addMemberUserIdHint" : "addMemberContactHint")}
+        </p>
       );
     }
     return (
       <p className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-amber-400">
         <IconAlertCircle className="size-3" />
-        {t("addMemberContactInvalid")}
+        {t(lookupBy === "userId" ? "addMemberUserIdInvalid" : "addMemberContactInvalid")}
       </p>
     );
   }
@@ -463,6 +496,11 @@ function LookupPreview({
           <span className="text-[10px] text-muted-foreground">
             {state.message} {state.status ? `· HTTP ${state.status}` : ""}
           </span>
+          {state.retry ? (
+            <Button type="button" variant="outline" size="sm" onClick={state.retry}>
+              {t("addMemberLookupRetry")}
+            </Button>
+          ) : null}
         </div>
       </PreviewBox>
     );

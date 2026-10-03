@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type MouseEvent,
   type ReactNode,
@@ -345,6 +346,16 @@ function ActiveExperienceRuntimePlayer({
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
   onRestart: () => void;
 }) {
+  const completedPlaySessionId = useSyncExternalStore(
+    controller.subscribePlaySessionReport,
+    controller.getCompletedPlaySessionId,
+    controller.getCompletedPlaySessionId
+  );
+  const reportError = useSyncExternalStore(
+    controller.subscribePlaySessionReport,
+    controller.getPlaySessionReportError,
+    controller.getPlaySessionReportError
+  );
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
   useEffect(() => {
     onStateChange?.(runtimeState);
@@ -1313,7 +1324,11 @@ function ActiveExperienceRuntimePlayer({
           </div>
           {/* The pause is part of the picture: the paused frame and the controls
               sit in the film frame and turn with it. Neither shows over an
-              access flow, the locked-scene gate, the ending or a failure. */}
+              access flow, the locked-scene gate, the ending or a failure.
+              The frame keeps no pause toggle of its own where the picture
+              offers one — a missed tap pauses, Space pauses — only over a
+              world stream, which takes its taps and its Space for moves, does
+              the toggle stand in the frame's corner. */}
           {holds.pauseUi && viewerPause !== null ? (
             <ExperiencePausedScrim
               ref={pausedFrameRef}
@@ -1327,7 +1342,7 @@ function ActiveExperienceRuntimePlayer({
               toggleRef={toggleRef}
               copy={copy}
               paused={viewerPause !== null}
-              toggleVisible={toggleVisible}
+              worldStream={hasWorldModelRenderer}
               unmuteVisible={soundBlocked && hasVideoRenderer && viewerPause === null}
               keyShortcut={spaceToggles && !hasTextRenderer}
               onToggle={togglePause}
@@ -1454,8 +1469,20 @@ function ActiveExperienceRuntimePlayer({
               <IconRefresh className="size-4" />
               {copy.playAgain}
             </button>
+            {reportError ? (
+              <div role="alert" className="mt-4 text-sm text-white/80">
+                <p>{reportError}</p>
+                <button
+                  type="button"
+                  className={`${PRIMARY_BUTTON} mt-3`}
+                  onClick={controller.retryPlaySessionReport}
+                >
+                  {copy.retryReport ?? copy.restart}
+                </button>
+              </div>
+            ) : null}
             {endingExtra ? (
-              <div className="mt-6 w-full text-left">{endingExtra(controller.playSessionId)}</div>
+              <div className="mt-6 w-full text-left">{endingExtra(completedPlaySessionId)}</div>
             ) : null}
           </div>
         </div>

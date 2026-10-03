@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ExperienceStableIdSchema, parseExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
+import {
+  ExperienceStableIdSchema,
+  parseExperienceRuntimeManifest,
+} from "@repo/shared/experience-runtime";
 import {
   advanceExperienceTimeline,
   assertExperienceRuntimeCompatibility,
@@ -784,12 +787,14 @@ test("audio cue counters survive JSON restoration without inherited ID collision
     assert.equal(ExperienceStableIdSchema.parse(cueId), cueId);
     const manifest = {
       audio: {
-        cues: [{
-          cueId,
-          assetIds: ["audio.a", "audio.b"],
-          selection: "sequential",
-          playbackRate: { minimum: 1, maximum: 1 },
-        }],
+        cues: [
+          {
+            cueId,
+            assetIds: ["audio.a", "audio.b"],
+            selection: "sequential",
+            playbackRate: { minimum: 1, maximum: 1 },
+          },
+        ],
       },
     };
     let state = JSON.parse(JSON.stringify(createExperienceDeterministicRuntimeState()));
@@ -802,4 +807,163 @@ test("audio cue counters survive JSON restoration without inherited ID collision
     assert.equal(second.playbackOrdinal, 1);
     assert.equal(state.audioCuePlayCounts[cueId], 2);
   }
+});
+
+test("reports a fast ending after delayed session creation, in progress/completion order", async () => {
+  let resolveStart;
+  const pendingStart = new Promise((resolve) => {
+    resolveStart = resolve;
+  });
+  const events = [];
+  const registry = new ExperienceRendererRegistry();
+  registry.register({
+    rendererId: "core.text",
+    apiVersion: "1.0.0",
+    configSchemaVersion: "1.0.0",
+    capabilities: new Set(["core.text"]),
+    supportsCommand: () => false,
+    supportsOutcome: () => false,
+    assertConfig() {},
+    assertCommand() {},
+    assertOutcome() {},
+  });
+  const controller = new ExperienceRuntimeController(manifestFixture(), {
+    compatibility: {
+      engineApiVersion: "2.0.0",
+      experienceApiVersion: "1.0.0",
+      capabilities: new Set(["core.text"]),
+    },
+    rendererRegistry: registry,
+    playSessionReporter: {
+      onStart: () => pendingStart,
+      onProgress: async (sessionId, payload) => {
+        events.push(["progress", sessionId, payload]);
+      },
+      onComplete: async (sessionId, payload) => {
+        events.push(["complete", sessionId, payload]);
+      },
+    },
+  });
+  controller.start();
+  const result = controller.dispatch([
+    {
+      type: "interaction.completed",
+      sourceId: "interaction.test",
+      payload: { input: "hold", durationMs: 1650 },
+    },
+  ]);
+  assert.equal(result.state.status, "completed");
+  resolveStart({ sessionId: "session.delayed" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events, [
+    ["progress", "session.delayed", { currentNode: "scene.two" }],
+    ["complete", "session.delayed", { endingId: "ending.done", currentNode: "scene.two" }],
+  ]);
+});
+
+function reportingController(reporter, restore) {
+  const registry = new ExperienceRendererRegistry();
+  registry.register({
+    rendererId: "core.text",
+    apiVersion: "1.0.0",
+    configSchemaVersion: "1.0.0",
+    capabilities: new Set(["core.text"]),
+    supportsCommand: () => false,
+    supportsOutcome: () => false,
+    assertConfig() {},
+    assertCommand() {},
+    assertOutcome() {},
+  });
+  return new ExperienceRuntimeController(manifestFixture(), {
+    compatibility: {
+      engineApiVersion: "2.0.0",
+      experienceApiVersion: "1.0.0",
+      capabilities: new Set(["core.text"]),
+    },
+    rendererRegistry: registry,
+    playSessionReporter: reporter,
+    restore,
+  });
+}
+const finishReportingFilm = (controller) =>
+  controller.dispatch([
+    {
+      type: "interaction.completed",
+      sourceId: "interaction.test",
+      payload: { input: "hold", durationMs: 1650 },
+    },
+  ]);
+const flushReports = () => new Promise((resolve) => setImmediate(resolve));
+
+test("replay ignores old browser session IDs and registers a new reporting transport", async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  Object.defineProperty(globalThis, "sessionStorage", {
+    configurable: true,
+    value: { getItem: () => "old-completed-session" },
+  });
+  let starts = 0;
+  try {
+    const reporter = {
+      onStart: async () => ({ sessionId: `new-${++starts}` }),
+      onProgress: async () => {},
+      onComplete: async () => {},
+    };
+    for (let n = 1; n <= 2; n++) {
+      const controller = reportingController(reporter);
+      controller.start();
+      finishReportingFilm(controller);
+      await flushReports();
+      assert.equal(controller.getCompletedPlaySessionId(), `new-${n}`);
+    }
+  } finally {
+    if (previous) Object.defineProperty(globalThis, "sessionStorage", previous);
+    else delete globalThis.sessionStorage;
+  }
+});
+
+test("checkpoint continuation starts reporting without replaying scene entry", async () => {
+  const snapshot = initializeExperienceRuntime(manifestFixture());
+  let starts = 0;
+  const controller = reportingController(
+    {
+      onStart: async () => {
+        starts++;
+        return { sessionId: "resumed" };
+      },
+      onProgress: async () => {},
+      onComplete: async () => {},
+    },
+    snapshot
+  );
+  finishReportingFilm(controller);
+  await flushReports();
+  assert.equal(starts, 1);
+  assert.equal(controller.getCompletedPlaySessionId(), "resumed");
+  assert.equal(controller.state().values.session["player.energy"], 2);
+});
+
+test("notifies the ending report subscriber only after completion is saved", async () => {
+  let complete;
+  const completion = new Promise((resolve) => {
+    complete = resolve;
+  });
+  const controller = reportingController({
+    onStart: async () => ({ sessionId: "saved" }),
+    onProgress: async () => {},
+    onComplete: () => completion,
+  });
+  let notifications = 0;
+  const unsubscribe = controller.subscribePlaySessionReport(() => {
+    notifications++;
+  });
+  controller.start();
+  finishReportingFilm(controller);
+  await flushReports();
+  assert.equal(controller.getCompletedPlaySessionId(), null);
+  assert.equal(notifications, 0);
+  complete();
+  await flushReports();
+  assert.equal(controller.getCompletedPlaySessionId(), "saved");
+  assert.equal(notifications, 1);
+  unsubscribe();
 });

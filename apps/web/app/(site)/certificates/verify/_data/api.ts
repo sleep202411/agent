@@ -23,11 +23,7 @@ export class CertificateVerifyApiError extends Error {
     public readonly status: number,
     public readonly body: unknown
   ) {
-    super(
-      (body && typeof body === "object" && "message" in body
-        ? String((body as { message: unknown }).message)
-        : null) ?? `Certificate verification failed (${status})`
-    );
+    super(certificateErrorDetail(body) || `Certificate verification failed (${status})`);
     this.name = "CertificateVerifyApiError";
   }
 }
@@ -39,14 +35,25 @@ export async function verifyCertificate(certNo: string): Promise<CertificateVeri
   });
 
   if (!res.ok) {
-    let body: unknown;
+    const text = await res.text();
+    let body: unknown = text;
     try {
-      body = await res.json();
+      body = JSON.parse(text);
     } catch {
-      body = await res.text().catch(() => null);
+      // Preserve a non-JSON upstream error; a response body can only be read once.
     }
     throw new CertificateVerifyApiError(res.status, body);
   }
 
   return (await res.json()) as CertificateVerificationResult;
+}
+
+export function certificateErrorDetail(body: unknown): string | null {
+  if (typeof body === "string") return body.trim() || null;
+  if (!body || typeof body !== "object") return null;
+  const value = "message" in body ? body.message : "msg" in body ? body.msg : null;
+  if (typeof value === "string") return value.trim() || null;
+  if (Array.isArray(value))
+    return value.filter((item) => typeof item === "string").join("; ") || null;
+  return null;
 }

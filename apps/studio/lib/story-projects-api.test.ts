@@ -24,6 +24,11 @@ vi.mock("@/lib/api", () => ({
 
 import { api, ApiRequestError } from "@/lib/api";
 import {
+  createStoryReferenceSlots,
+  updateStoryReferenceSlot,
+  createStoryReferenceVersion,
+  reviewStoryReferenceVersion,
+  approveStoryReferenceVersion,
   archiveStoryChapter,
   addStoryCandidateAsset,
   createStoryProject,
@@ -363,3 +368,51 @@ function candidateAsset(): StoryCandidateAsset {
     addedAt: "2026-07-23T12:00:00.000Z",
   };
 }
+
+it("passes cancellation through every reference mutation without changing version guards", async () => {
+  const signal = new AbortController().signal;
+  const slot = {
+    key: "hero",
+    kind: "character" as const,
+    label: "Hero",
+    description: "",
+    required: true,
+    rank: 10,
+  };
+  await createStoryReferenceSlots("p", { slots: [slot] }, "create-key", signal);
+  await updateStoryReferenceSlot("p", "s", { expectedSlotVersion: 2, slot }, signal);
+  await createStoryReferenceVersion(
+    "p",
+    "s",
+    { expectedSlotVersion: 2, assetId: "a", variantId: "v", source: "upload" },
+    "attach-key",
+    signal
+  );
+  await reviewStoryReferenceVersion(
+    "p",
+    "s",
+    "v",
+    {
+      expectedReviewRevision: 3,
+      decision: "approve",
+      checklist: { technical: "pass", identityContinuity: "pass", rights: "pass", safety: "pass" },
+    },
+    signal
+  );
+  await approveStoryReferenceVersion(
+    "p",
+    "s",
+    { expectedSlotVersion: 2, referenceVersionId: "v", approveReviewId: "r" },
+    signal
+  );
+  for (const call of [
+    ...vi.mocked(api.post).mock.calls.slice(-4),
+    ...vi.mocked(api.put).mock.calls.slice(-1),
+  ])
+    expect(call[1]).toEqual(expect.objectContaining({ signal, requestScope: "project" }));
+  expect(vi.mocked(api.post).mock.calls.at(-1)?.[1]).toEqual(
+    expect.objectContaining({
+      data: { expectedSlotVersion: 2, referenceVersionId: "v", approveReviewId: "r" },
+    })
+  );
+});

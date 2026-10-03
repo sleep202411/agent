@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
 import {
@@ -81,13 +81,15 @@ function rgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-export function SubscriptionDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+type SubscriptionDialogProps = { open: boolean; onOpenChange: (open: boolean) => void };
+export function SubscriptionDialog(props: SubscriptionDialogProps) {
+  const { activeWorkspace } = useWorkspace();
+  if (!props.open) return null;
+  return (
+    <SubscriptionDialogBody key={`${activeWorkspace?.id}:${activeWorkspace?.role}`} {...props} />
+  );
+}
+function SubscriptionDialogBody({ open, onOpenChange }: SubscriptionDialogProps) {
   const t = useTranslations("billing");
   const tc = useTranslations("common");
   // The CELL (deployment) decides both behaviour and currency: .cn is a one-off
@@ -98,19 +100,44 @@ export function SubscriptionDialog({
   // and silently degrades every card to "Contact Sales".
   const isCn = useIsCnSite();
   const currency = isCn ? "CNY" : "USD";
-  const { user, signIn } = useAuth();
+  const { user, requireAuth, isCurrentAccount } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const signedIn = Boolean(user);
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
-  const [payingPriceId, setPayingPriceId] = useState<string | null>(null);
-  const [wechatScan, setWechatScan] = useState<{
+  const userId = user?.id;
+  const scope = `${userId}:${activeWorkspace?.id}`;
+  const owner = useRef<{
+    scope: string;
+    controller: AbortController;
+    busy: boolean;
+    attempt: { signature: string; key: string } | null;
+  } | null>(null);
+  useLayoutEffect(() => {
+    const next = { scope, controller: new AbortController(), busy: false, attempt: null };
+    owner.current = next;
+    return () => next.controller.abort();
+  }, [scope]);
+  const [paying, setPaying] = useState<{ scope: string; priceId: string } | null>(null);
+  const payingPriceId = paying?.scope === scope ? paying.priceId : null;
+  const [scan, setWechatScan] = useState<{
+    controller: AbortController;
+    scope: string;
+    userId: string | number;
     orderId: string;
     codeUrl: string;
   } | null>(null);
+  const wechatScan = scan?.scope === scope && !scan.controller.signal.aborted ? scan : null;
   const [reloadKey, setReloadKey] = useState(0);
   // The plan a signed-out visitor tried to buy — checkout resumes here once
   // the global login dialog succeeds. A ref: it drives no UI.
   const pendingPriceRef = useRef<MembershipPrice | null>(null);
+  const resumeAllowed = useRef(false);
+  const [loginFinished, setLoginFinished] = useState(0);
+  const close = useCallback(() => {
+    pendingPriceRef.current = null;
+    owner.current?.controller.abort();
+    onOpenChange(false);
+  }, [onOpenChange]);
 
   // Loading is derived: the latest fetch result carries the request key it
   // answered; a stale or absent key means the current tuple is still loading.
@@ -133,23 +160,24 @@ export function SubscriptionDialog({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onOpenChange(false);
+      if (event.key === "Escape") close();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onOpenChange, open]);
+  }, [close, open]);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    const controller = new AbortController();
     // One combined lineup: load individual + team plans together, merge, keep
     // active rows, and order by rank so it reads Basic → Standard → Pro → Team.
     Promise.all([
-      listMembershipPlans({ productType: "membership_plan", currency }),
-      listMembershipPlans({ productType: "team_membership_plan", currency }),
+      listMembershipPlans({ productType: "membership_plan", currency }, controller.signal),
+      listMembershipPlans({ productType: "team_membership_plan", currency }, controller.signal),
     ])
       .then(([individual, team]) => {
         if (cancelled) return;
@@ -166,6 +194,7 @@ export function SubscriptionDialog({
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [currency, open, plansKey, t]);
 
@@ -176,13 +205,29 @@ export function SubscriptionDialog({
         // Park the intent and raise the global login dialog; the effect
         // below resumes checkout once the session exists.
         pendingPriceRef.current = price;
-        signIn();
+        resumeAllowed.current = false;
+        requireAuth(() => {
+          if (pendingPriceRef.current !== price || owner.current?.controller.signal.aborted) return;
+          resumeAllowed.current = true;
+          setLoginFinished((value) => value + 1);
+        });
         return;
       }
       // Workspace plans belong to the actively selected workspace.
       const isTeamPrice = price.subjectType === "workspace";
 
-      setPayingPriceId(price.id);
+      const current = owner.current;
+      const isCurrent = () =>
+        Boolean(
+          current &&
+          owner.current === current &&
+          !current.controller.signal.aborted &&
+          userId != null &&
+          isCurrentAccount(userId)
+        );
+      if (!isCurrent() || current!.busy) return;
+      current!.busy = true;
+      setPaying({ scope, priceId: price.id });
       try {
         let workspaceId: string | undefined;
         if (isTeamPrice) {
@@ -192,18 +237,32 @@ export function SubscriptionDialog({
           }
           workspaceId = activeWorkspace.id;
         }
-        const baseUrl = `${window.location.origin}${window.location.pathname}`;
-        const result = await createBillingCheckout({
+        const success = new URL(window.location.href);
+        success.searchParams.set("payment", "success");
+        const back = new URL(window.location.href);
+        back.searchParams.set("payment", "cancelled");
+        const input = {
           priceId: price.id,
-          idempotencyKey: `studio-membership:${price.id}:${crypto.randomUUID()}`,
           quantity: 1,
           workspaceId,
-          successUrl: `${baseUrl}?payment=success`,
-          backUrl: `${baseUrl}?payment=cancelled`,
-        });
+          successUrl: success.href,
+          backUrl: back.href,
+        };
+        const signature = JSON.stringify(input);
+        if (current!.attempt?.signature !== signature)
+          current!.attempt = {
+            signature,
+            key: `studio-membership:${price.id}:${crypto.randomUUID()}`,
+          };
+        const result = await createBillingCheckout(
+          { ...input, idempotencyKey: current!.attempt.key },
+          current!.controller.signal
+        );
+        if (!isCurrent()) return;
         if (result.order.status === "fulfilled" && !result.paymentIntent) {
           toast.success(t("toast.membershipActivated"));
-          onOpenChange(false);
+          current!.attempt = null;
+          close();
           return;
         }
         const checkoutUrl = result.paymentIntent?.checkoutUrl;
@@ -214,28 +273,39 @@ export function SubscriptionDialog({
         // WeChat 扫码 returns a weixin:// code_url — render it as a QR + poll the
         // order instead of navigating the browser to it.
         if (isWechatScanUrl(checkoutUrl)) {
-          setWechatScan({ orderId: result.order.id, codeUrl: checkoutUrl });
+          current!.attempt = null;
+          setWechatScan({
+            controller: current!.controller,
+            scope,
+            userId: userId!,
+            orderId: result.order.id,
+            codeUrl: checkoutUrl,
+          });
           return;
         }
+        current!.attempt = null;
         window.location.href = checkoutUrl;
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : t("toast.paymentFailed"));
+        if (isCurrent())
+          toast.error(error instanceof Error ? error.message : t("toast.paymentFailed"));
       } finally {
-        setPayingPriceId(null);
+        current!.busy = false;
+        if (isCurrent()) setPaying(null);
       }
     },
-    [activeWorkspace, onOpenChange, signIn, signedIn, t]
+    [activeWorkspace, close, requireAuth, signedIn, t, scope, userId, isCurrentAccount]
   );
 
   // Resume the checkout a signed-out visitor started: once login lands the
   // parked plan goes straight back through subscribe().
   useEffect(() => {
-    if (!signedIn) return;
+    if (!signedIn || !resumeAllowed.current) return;
     const pending = pendingPriceRef.current;
     if (!pending) return;
     pendingPriceRef.current = null;
+    resumeAllowed.current = false;
     void subscribe(pending);
-  }, [signedIn, subscribe]);
+  }, [signedIn, subscribe, loginFinished]);
 
   // Closing the pricing dialog abandons any parked intent.
   useEffect(() => {
@@ -268,16 +338,18 @@ export function SubscriptionDialog({
             codeUrl={wechatScan.codeUrl}
             onClose={() => setWechatScan(null)}
             onPaid={() => {
+              if (!isCurrentAccount(wechatScan.userId) || owner.current?.controller.signal.aborted)
+                return;
               toast.success(t("toast.membershipActivated"));
               setWechatScan(null);
-              onOpenChange(false);
+              close();
             }}
           />
         )}
         <button
           type="button"
           aria-label={t("closeDialog")}
-          onClick={() => onOpenChange(false)}
+          onClick={close}
           className="fixed right-4 top-4 z-20 flex size-11 items-center justify-center rounded-full bg-popover text-muted-foreground shadow-2xl transition-colors hover:bg-secondary hover:text-foreground sm:right-6 sm:top-6"
         >
           <IconX className="size-5" stroke={1.9} />
@@ -356,6 +428,7 @@ export function SubscriptionDialog({
                         accent={accentForPlan(plan)}
                         interval={billingInterval}
                         paying={payingPriceId === price?.id}
+                        busy={Boolean(payingPriceId)}
                         onSubscribe={() => void subscribe(price)}
                       />
                     );
@@ -387,6 +460,7 @@ function PlanCard({
   price,
   accent,
   paying,
+  busy,
   interval,
   onSubscribe,
 }: {
@@ -394,6 +468,7 @@ function PlanCard({
   price: MembershipPrice | null;
   accent: PlanAccent | null;
   paying: boolean;
+  busy: boolean;
   interval: BillingInterval;
   onSubscribe: () => void;
 }) {
@@ -510,7 +585,7 @@ function PlanCard({
             <button
               type="button"
               onClick={onSubscribe}
-              disabled={paying}
+              disabled={busy}
               className={cn(
                 "flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-base font-semibold transition-all hover:brightness-110 disabled:pointer-events-none disabled:opacity-60",
                 accent

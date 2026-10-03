@@ -423,19 +423,28 @@ const CrewMemberPositionInputSchema = z
 export const CreateCrewInvitationSchema = z
   .object({
     positionCategory: presetPosition.optional(),
-    account: z
-      .string()
-      .trim()
-      .min(3)
-      .max(120)
-      .refine((v) => EMAIL_RE.test(v) || PHONE_RE.test(v), {
-        message: 'account must be a valid email or phone',
-      }),
+    account: z.string().trim().min(1).max(120),
+    lookupBy: z.enum(['contact', 'userId']).optional(),
     policyKeys: z.array(crewPolicyKey).max(CREW_POLICY_KEYS.length).default([]),
     expiresInDays: z.number().int().min(1).max(30).default(7),
     agreement: InvitationAgreementRequestSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    const valid =
+      input.lookupBy === 'userId'
+        ? /^\d{1,18}$/.test(input.account)
+        : EMAIL_RE.test(input.account) || PHONE_RE.test(input.account);
+    if (!valid)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['account'],
+        message:
+          input.lookupBy === 'userId'
+            ? 'account must be a numeric user ID (1–18 digits)'
+            : 'account must be a valid email or phone',
+      });
+  });
 export type CreateCrewInvitationInput = z.infer<
   typeof CreateCrewInvitationSchema
 >;

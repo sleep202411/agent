@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { IconAlertCircle, IconSparkles } from "@tabler/icons-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { IconSparkles } from "@tabler/icons-react";
+import { CourseLoadError } from "./_components/CourseLoadError";
 import { Spinner } from "@/components/ui/spinner";
 import { PlazaHero } from "@/components/layout/plaza-hero";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -28,7 +28,9 @@ export default function CoursesPage() {
     selectedPriceRange: null,
   });
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const { isLoading, error, courses, filteredCourses } = usePublicCourseList(filters.searchQuery);
+  const { isLoading, error, courses, filteredCourses, refetch, isFetching } = usePublicCourseList(
+    filters.searchQuery
+  );
 
   function handleFiltersChange(updates: Partial<PageFilters>) {
     setFilters((previous) => ({ ...previous, ...updates }));
@@ -66,11 +68,7 @@ export default function CoursesPage() {
             ) : null}
 
             {error ? (
-              <Alert variant="destructive" className="border-[#3a2230] bg-[#111119]">
-                <IconAlertCircle />
-                <AlertTitle>{t("loadFailedTitle")}</AlertTitle>
-                <AlertDescription>{t("loadFailedDescription")}</AlertDescription>
-              </Alert>
+              <CourseLoadError error={error} retry={() => void refetch()} busy={isFetching} />
             ) : null}
 
             {!isLoading && !error ? (

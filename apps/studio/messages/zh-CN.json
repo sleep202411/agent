@@ -1939,9 +1939,11 @@
       "claimed": "已领取",
       "success": "已到账 {amount} 算力积分",
       "alreadyClaimed": "你已领取过该活动",
-      "error": "无法领取该活动"
+      "error": "无法领取该活动",
+      "loadError": "无法加载积分优惠。"
     },
     "checkIn": {
+      "loadError": "无法加载每日签到。",
       "title": "每日签到",
       "streak": "已连续签到 {days} 天",
       "start": "签到开启连续奖励",
@@ -1977,7 +1979,10 @@
     "couldntDeleteTeam": "无法删除空间",
     "deleteTeamConfirmTitle": "删除“{name}”？",
     "deleteTeamConfirmBody": "所有成员将失去访问权限，空间的项目将被归档。此操作无法撤销。",
-    "workspace": "工作空间"
+    "workspace": "工作空间",
+    "workspaceUnavailable": "此工作空间暂不可用。请重试或选择其他工作空间。",
+    "membersLoadFailed": "无法加载团队成员。",
+    "creditsLoadFailed": "无法加载积分。"
   },
   "project": {
     "renameFailed": "无法重命名项目",
@@ -3282,6 +3287,7 @@
         "unsupportedMedia": "片段只能使用图片或视频媒体。"
       },
       "exportFilm": "合成成片",
+      "cancelExport": "取消导出",
       "downloadFilm": "下载到本地"
     },
     "canvas": {
@@ -3348,7 +3354,7 @@
         "draftConflict": "故事有未合并的更新，请先处理冲突后再提交。",
         "projectLoading": "项目还在加载。",
         "statusChecking": "正在查询发布状态…",
-        "statusUnavailable": "暂时无法获取发布状态，请刷新后重试。",
+        "statusUnavailable": "发布状态不可用。点击状态标记查看错误并重试。",
         "reviewingLocked": "当前项目已在审核中。",
         "publishedUpdateLocked": "提交更新前请先将项目下线。",
         "status": {
@@ -3417,7 +3423,8 @@
           "submitStatusInvalid": "Java 未确认该版本已进入审核。",
           "offlineFailed": "无法下线这部影游。",
           "unexpected": "无法提交当前版本。"
-        }
+        },
+        "retryStatus": "重试获取发布状态"
       },
       "workingPreview": {
         "pageTitle": "故事试玩 · 影游工作室",

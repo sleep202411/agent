@@ -2,8 +2,11 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   audio: false,
+  imageSample: vi.fn(),
+  imageClose: vi.fn(),
   frames: 1,
   timestamp: vi.fn(),
+  duration: vi.fn(),
   probe: vi.fn(),
   audioAdd: vi.fn(),
   audioClose: vi.fn(),
@@ -45,6 +48,12 @@ vi.mock("mediabunny", () => ({
     cancel = fixture.cancel;
     finalize = fixture.finalize;
   },
+  VideoSample: class {
+    constructor(image: unknown, init: unknown) {
+      fixture.imageSample(image, init);
+    }
+    close = fixture.close;
+  },
   VideoSampleSource: class {
     add = fixture.add;
   },
@@ -63,6 +72,14 @@ vi.mock("mediabunny", () => ({
         yield {
           timestamp: n / 10,
           label: this.track.label,
+          clone() {
+            return {
+              clone: this.clone,
+              setTimestamp: fixture.timestamp,
+              setDuration: fixture.duration,
+              close: fixture.close,
+            };
+          },
           setTimestamp: fixture.timestamp,
           close: fixture.close,
         };
@@ -396,4 +413,94 @@ it("marks audio failure as partial even when video frames were accepted", async 
     partial: true,
     issues: [{ index: 0, shotId: "one", reason: "encoding_failed" }],
   });
+});
+
+it("renders still images for the requested duration without opening a video decoder", async () => {
+  const bitmap = { close: fixture.imageClose };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(new Blob(["image"])))
+  );
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(async () => bitmap)
+  );
+  const report = vi.fn();
+  await exportTimelineToMp4(
+    [{ id: "still", imageUrl: "https://media.invalid/still.png", duration: 1.25 }],
+    { onReport: report }
+  );
+  expect(fixture.probe).not.toHaveBeenCalled();
+  expect(fixture.imageSample).toHaveBeenCalledTimes(38);
+  const frames = fixture.imageSample.mock.calls.map((call) => call[1]);
+  expect(frames[0].timestamp).toBe(0);
+  expect(frames.at(-1).timestamp + frames.at(-1).duration).toBeCloseTo(1.25);
+  expect(fixture.imageClose).toHaveBeenCalledOnce();
+  expect(report).toHaveBeenCalledWith(
+    expect.objectContaining({ completedShots: 1, partial: false })
+  );
+});
+it("preserves mixed shot ordering and releases image resources on encoder failure", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(new Blob(["image"])))
+  );
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(async () => ({ close: fixture.imageClose }))
+  );
+  fixture.add.mockRejectedValueOnce(new Error("Encoder unavailable"));
+  const report = vi.fn();
+  await exportTimelineToMp4(
+    [{ id: "still", imageUrl: "https://media.invalid/still.png", duration: 1 }, ...shots],
+    { onReport: report }
+  );
+  expect(fixture.imageClose).toHaveBeenCalledOnce();
+  expect(report).toHaveBeenCalledWith(
+    expect.objectContaining({ completedShots: 1, partial: true })
+  );
+});
+it("rejects a still without a timeline duration before requesting media", async () => {
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  await expect(
+    exportTimelineToMp4([{ id: "still", imageUrl: "https://media.invalid/still.png" }])
+  ).rejects.toThrow("positive timeline duration");
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+it("holds the last video frame when the timeline exceeds the source duration", async () => {
+  await exportTimelineToMp4([{ ...shots[0]!, duration: 1.25 }]);
+  expect(fixture.add).toHaveBeenCalledTimes(9);
+  expect(fixture.timestamp).toHaveBeenLastCalledWith(1 + 7 / 30);
+  expect(fixture.duration.mock.calls.at(-1)![0]).toBeCloseTo(1.25 - (1 + 7 / 30));
+  expect(fixture.close).toHaveBeenCalledTimes(10);
+});
+
+it("releases a still decoded after cancellation without encoding it", async () => {
+  let decoded!: (bitmap: { close: () => void }) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(new Blob(["image"])))
+  );
+  const decode = vi.fn(
+    () =>
+      new Promise((resolve) => {
+        decoded = resolve;
+      })
+  );
+  vi.stubGlobal("createImageBitmap", decode);
+  const controller = new AbortController();
+  const rejected = expect(
+    exportTimelineToMp4(
+      [{ id: "still", imageUrl: "https://media.invalid/still.png", duration: 1 }],
+      { signal: controller.signal }
+    )
+  ).rejects.toMatchObject({ name: "AbortError" });
+  await vi.waitFor(() => expect(decode).toHaveBeenCalledOnce());
+  controller.abort();
+  decoded({ close: fixture.imageClose });
+  await rejected;
+  expect(fixture.imageClose).toHaveBeenCalledOnce();
+  expect(fixture.add).not.toHaveBeenCalled();
 });

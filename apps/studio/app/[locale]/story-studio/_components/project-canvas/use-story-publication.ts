@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/app/_components/auth-provider";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -69,19 +70,43 @@ export function useStoryPublication({
 }: UseStoryPublicationOptions) {
   const t = useTranslations("storyStudio.canvas.publish");
   const queryClient = useQueryClient();
-  const [state, setState] = useState<StoryPublicationState>({ status: "closed" });
-  const runningRef = useRef(false);
+  const { user, isCurrentAccount } = useAuth();
+  const userId = user?.id ?? null;
 
   const missingCapabilities = useMemo(
     () => REQUIRED_CAPABILITIES.filter((capability) => !capabilities.includes(capability)),
     [capabilities]
   );
-  const canSubmit = missingCapabilities.length === 0;
+  const canSubmit = userId != null && missingCapabilities.length === 0;
+  const scope = useMemo(() => ({ projectId, userId, canSubmit }), [projectId, userId, canSubmit]);
+  const owner = useRef<{
+    scope: typeof scope;
+    controller: AbortController;
+    running: boolean;
+  } | null>(null);
+  useLayoutEffect(() => {
+    const next = { scope, controller: new AbortController(), running: false };
+    owner.current = next;
+    return () => {
+      next.controller.abort();
+      if (owner.current === next) owner.current = null;
+    };
+  }, [scope]);
+  const [result, setResult] = useState<{
+    scope: typeof scope;
+    state: StoryPublicationState;
+  } | null>(null);
+  const state: StoryPublicationState =
+    result?.scope === scope ? result.state : { status: "closed" };
+  const setState = useCallback(
+    (state: StoryPublicationState) => setResult({ scope, state }),
+    [scope]
+  );
   const disabledReason = missingCapabilities.length > 0 ? t("errors.permissionDenied") : null;
 
   const open = useCallback(() => {
-    if (runningRef.current) return;
-    if (missingCapabilities.length > 0) {
+    if (owner.current?.running) return;
+    if (!canSubmit) {
       setState({
         status: "failed",
         phase: "permission",
@@ -91,15 +116,15 @@ export function useStoryPublication({
       return;
     }
     setState({ status: "confirming" });
-  }, [missingCapabilities.length, t]);
+  }, [canSubmit, setState, t]);
 
   const close = useCallback(() => {
-    if (!runningRef.current) setState({ status: "closed" });
-  }, []);
+    if (!owner.current?.running) setState({ status: "closed" });
+  }, [setState]);
 
   const execute = useCallback(async () => {
-    if (runningRef.current) return;
-    if (missingCapabilities.length > 0) {
+    if (owner.current?.running) return;
+    if (!canSubmit) {
       open();
       return;
     }
@@ -113,43 +138,82 @@ export function useStoryPublication({
       return;
     }
 
-    runningRef.current = true;
+    const current = owner.current;
+    const isCurrent = () =>
+      Boolean(
+        current &&
+        owner.current === current &&
+        !current.controller.signal.aborted &&
+        userId != null &&
+        isCurrentAccount(userId)
+      );
+    if (!current || current.scope !== scope || !isCurrent()) return;
+    const assertCurrent = () => {
+      if (!isCurrent()) throw new DOMException("Publication abandoned", "AbortError");
+    };
+    current.running = true;
     let currentPhase: StoryPublicationActivePhase = "saving";
     let result: StoryPublicationFlowResult;
     try {
       result = await runStoryPublication({
-        saveDraftSnapshot: () =>
-          withSavedDraftSnapshot(async (expectedDraftRevision) => expectedDraftRevision),
-        prepareRelease: (expectedDraftRevision) =>
-          prepareInteractiveFilmRelease(projectId, {
-            expectedDraftRevision,
-            expectedVideoSnapshotHash,
-          }),
-        submitRelease: (release) => submitInteractiveFilmRelease(projectId, release),
+        saveDraftSnapshot: async () => {
+          assertCurrent();
+          return withSavedDraftSnapshot(async (expectedDraftRevision) => {
+            assertCurrent();
+            return expectedDraftRevision;
+          });
+        },
+        prepareRelease: (expectedDraftRevision) => {
+          assertCurrent();
+          return prepareInteractiveFilmRelease(
+            projectId,
+            {
+              expectedDraftRevision,
+              expectedVideoSnapshotHash,
+            },
+            current.controller.signal
+          );
+        },
+        submitRelease: (release) => {
+          assertCurrent();
+          return submitInteractiveFilmRelease(projectId, release, current.controller.signal);
+        },
         onPhaseChange: (phase) => {
+          assertCurrent();
           currentPhase = phase;
           setState({ status: phase });
         },
       });
     } catch (error) {
-      runningRef.current = false;
+      current.running = false;
+      if (!isCurrent()) return;
       setState(toPublicationFailure(error, currentPhase, t));
       return;
     }
 
-    queryClient.setQueryData(interactiveFilmPublicationQueryKey(projectId), result.publication);
+    if (!isCurrent()) return;
+    queryClient.setQueryData(
+      interactiveFilmPublicationQueryKey(projectId, userId),
+      result.publication
+    );
     const refreshes = [
       queryClient.invalidateQueries({ queryKey: ["story-studio", "workbench", projectId] }),
       queryClient.invalidateQueries({ queryKey: ["story-studio", "chapter-workbench", projectId] }),
       queryClient.invalidateQueries({ queryKey: ["story-studio", "script-workbench", projectId] }),
-      queryClient.invalidateQueries({ queryKey: interactiveFilmPublicationQueryKey(projectId) }),
+      queryClient.invalidateQueries({
+        queryKey: interactiveFilmPublicationQueryKey(projectId, userId),
+      }),
     ];
-    runningRef.current = false;
+    current.running = false;
     setState({ status: "succeeded", ...result });
     void Promise.allSettled(refreshes);
   }, [
     expectedVideoSnapshotHash,
-    missingCapabilities.length,
+    canSubmit,
+    scope,
+    userId,
+    isCurrentAccount,
+    setState,
     open,
     projectId,
     queryClient,

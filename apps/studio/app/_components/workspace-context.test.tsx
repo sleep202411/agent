@@ -158,3 +158,15 @@ describe("workspace links from notifications", () => {
     expect(projects.listWorkspaces).toHaveBeenCalledTimes(1);
   });
 });
+
+it("exposes failed workspace reads and refresh recovers the list", async () => {
+  vi.mocked(projects.ensureDefaultWorkspace).mockRejectedValueOnce(new Error("Workspace offline"));
+  await render("");
+  expect(context.loading).toBe(false);
+  expect(context.error?.message).toBe("Workspace offline");
+  expect(context.activeWorkspace).toBeNull();
+  await act(async () => context.refresh());
+  await render("");
+  expect(context.error).toBeNull();
+  expect(context.activeWorkspace?.id).toBe("personal");
+});

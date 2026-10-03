@@ -24,6 +24,7 @@ interface LookupArgs {
   /** Free-form input — email or phone. */
   query: string;
   checkCrewId?: string;
+  lookupBy?: "contact" | "userId";
 }
 
 export type LookupState =
@@ -31,7 +32,7 @@ export type LookupState =
   | { kind: "loading" }
   | { kind: "found"; user: LookupUserDTO }
   | { kind: "notFound" }
-  | { kind: "error"; message: string; status: number | null };
+  | { kind: "error"; message: string; status: number | null; retry?: () => void };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_RE = /^\+?\d[\d\s-]{5,32}$/;
@@ -46,9 +47,18 @@ function detect(raw: string): Detected {
   return null;
 }
 
-export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
+export function useUserLookup({
+  query,
+  checkCrewId,
+  lookupBy = "contact",
+}: LookupArgs): LookupState {
   const { user } = useCurrentUser();
-  const detected = detect(query);
+  const detected =
+    lookupBy === "userId"
+      ? /^\d{1,18}$/.test(query.trim())
+        ? { kind: "id", value: query.trim() }
+        : null
+      : detect(query);
   const enabled = detected !== null && Boolean(user);
 
   const q = useQuery({
@@ -65,10 +75,13 @@ export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
       if (!detected) throw new Error("Unreachable: query disabled");
       const params = new URLSearchParams({ [detected.kind]: detected.value });
       if (checkCrewId) params.set("checkCrewId", checkCrewId);
-      return crewApi.get<LookupUserDTO>(`/users/lookup?${params.toString()}`, {
-        signal,
-        cache: "no-store",
-      });
+      return crewApi.get<LookupUserDTO>(
+        `/users/${lookupBy === "userId" ? "by-id" : "lookup"}?${params.toString()}`,
+        {
+          signal,
+          cache: "no-store",
+        }
+      );
     },
     retry: false,
     staleTime: 5 * 60 * 1000,
@@ -79,12 +92,18 @@ export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
   if (q.error) {
     if (q.error instanceof CrewApiError) {
       if (q.error.status === 404) return { kind: "notFound" };
-      return { kind: "error", message: q.error.message, status: q.error.status };
+      return {
+        kind: "error",
+        message: q.error.message,
+        status: q.error.status,
+        retry: () => void q.refetch(),
+      };
     }
     return {
       kind: "error",
       message: q.error instanceof Error ? q.error.message : "Unknown error",
       status: null,
+      retry: () => void q.refetch(),
     };
   }
   if (q.data) return { kind: "found", user: q.data };

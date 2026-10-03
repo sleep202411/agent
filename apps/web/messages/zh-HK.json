@@ -2111,6 +2111,8 @@
     "unknown": "未知角色"
   },
   "news": {
+    "loadMore": "載入更多文章",
+    "loadingMore": "正在載入文章…",
     "title": "FizzDragon 新聞中心",
     "subtitle": "AI 原生電影工作室的故事、訪談與公告。",
     "subscribePlaceholder": "輸入你的電郵",
@@ -4025,7 +4027,7 @@
     "inviteMember": "邀請成員",
     "addMemberDialogEyebrow": "STORYOS / 劇組",
     "addMemberDialogTitle": "邀請成員",
-    "addMemberDialogSubtitle": "通過對方註冊的手機號或電郵發送邀請；接受後才會取得劇組權限。",
+    "addMemberDialogSubtitle": "透過對方註冊的手機號碼、電郵或用戶 ID 發送邀請；接受後才會獲得劇組權限。",
     "addMemberContactLabel": "手機號 / 電郵",
     "addMemberContactPlaceholder": "13800000000 或 user@example.com",
     "addMemberAccessLabel": "權限範本",
@@ -4600,7 +4602,12 @@
     "createJobSalaryAmountError": "請輸入 0 至 100,000,000 之間的有效報酬金額，或留空。",
     "useTaskBrief": "使用任務說明",
     "publicBriefHelp": "發佈前請確認公開工作說明，包含交付內容、要求和驗收標準，最多10,000字。",
-    "publicBriefTooLong": "請將公開說明縮短至10,000字以內，完整任務說明不受影響。"
+    "publicBriefTooLong": "請將公開說明縮短至10,000字以內，完整任務說明不受影響。",
+    "addMemberLookupBy": "查詢方式",
+    "addMemberUserIdLabel": "用戶 ID",
+    "addMemberUserIdHint": "輸入對方的數字用戶 ID。",
+    "addMemberUserIdInvalid": "請輸入 1–18 位數字用戶 ID。",
+    "addMemberLookupRetry": "重試查詢"
   },
   "crewAssets": {
     "title": "劇組資產中心",
@@ -6411,6 +6418,13 @@
     "identityOwnsFull": "已購整套"
   },
   "payment": {
+    "paymentConfirmedDesc": "您的付款已確認。",
+    "paymentUnconfirmed": "付款尚未確認",
+    "paymentUnconfirmedDesc": "請先重新查詢訂單狀態，再發起新的付款。",
+    "checkAgain": "重新查詢",
+    "missingOrder": "缺少訂單編號",
+    "missingOrderDesc": "請開啟付款確認連結以查詢訂單。",
+    "backToStudio": "返回工作室",
     "upgrade": "升級套餐",
     "credits": "積分充值",
     "wechatPay": "微信支付",
@@ -9495,7 +9509,8 @@
       "unlock": "解鎖並繼續",
       "unlocking": "解鎖中…",
       "failed": "解鎖失敗，請重試。"
-    }
+    },
+    "retryReport": "重試儲存遊玩報告"
   },
   "games": {
     "back": "返回 IP 廣場",

@@ -59,6 +59,7 @@ export function createHttpPlaySessionReporter(
         });
       } catch (err) {
         console.warn("[HttpPlaySessionReporter] onProgress failed:", err);
+        throw err;
       }
     },
 
@@ -75,6 +76,7 @@ export function createHttpPlaySessionReporter(
         });
       } catch (err) {
         console.warn("[HttpPlaySessionReporter] onComplete failed:", err);
+        throw err;
       }
     },
   };

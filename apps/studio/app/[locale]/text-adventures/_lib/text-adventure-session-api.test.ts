@@ -143,3 +143,26 @@ describe("creator text-adventure playtest session", () => {
     );
   });
 });
+
+it("does not start a session after an abandoned lookup resolves", async () => {
+  vi.clearAllMocks();
+  vi.stubGlobal("fetch", vi.fn());
+  const controller = new AbortController();
+  let resolve!: (value: null) => void;
+  vi.mocked(api.get).mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  const pending = loadOrStartTextAdventureSession(
+    session.gameId,
+    "en-US",
+    undefined,
+    controller.signal
+  );
+  controller.abort();
+  resolve(null);
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  expect(fetch).not.toHaveBeenCalled();
+});

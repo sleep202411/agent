@@ -165,6 +165,7 @@ export interface ApplyInput {
 }
 
 export interface CreateCrewInvitationInput {
+  lookupBy?: "contact" | "userId";
   positionCategory?: PresetPositionValue;
   account: string;
   policyKeys: CrewPolicyKey[];

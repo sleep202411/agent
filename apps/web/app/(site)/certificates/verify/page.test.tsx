@@ -97,3 +97,12 @@ it("rejects empty numbers without sending a request", async () => {
   expect(verifyCertificate).not.toHaveBeenCalled();
   expect(container.textContent).toContain("emptyError");
 });
+
+it("shows the upstream reason instead of replacing it with a generic error", async () => {
+  vi.mocked(verifyCertificate).mockRejectedValueOnce(
+    new CertificateVerifyApiError(429, { message: "Try again in 30 seconds" })
+  );
+  await enter("FD-A");
+  await submit();
+  expect(container.textContent).toContain("Try again in 30 seconds");
+});

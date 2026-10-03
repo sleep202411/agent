@@ -14,6 +14,8 @@ interface EntitlementContextValue {
   data: MyEntitlement | undefined;
   isLoading: boolean;
   isError: boolean;
+  isFetching: boolean;
+  retry: () => void;
   error: Error | null;
   queryKey: ReturnType<typeof myEntitlementQueryKey>;
 }
@@ -30,13 +32,10 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
   const workspaceId = useActiveWorkspaceId();
   const queryClient = useQueryClient();
   const userId = user?.id == null ? null : String(user.id);
-  const queryKey = useMemo(
-    () => myEntitlementQueryKey(userId, workspaceId),
-    [userId, workspaceId]
-  );
+  const queryKey = useMemo(() => myEntitlementQueryKey(userId, workspaceId), [userId, workspaceId]);
   const query = useQuery({
     queryKey,
-    queryFn: () => getMyEntitlement(workspaceId),
+    queryFn: ({ signal }) => getMyEntitlement(workspaceId, signal),
     enabled: Boolean(userId),
     staleTime: 30_000,
   });
@@ -55,15 +54,20 @@ export function EntitlementProvider({ children }: { children: React.ReactNode })
     return () => subscription.close();
   }, [queryClient, queryKey, userId, workspaceId]);
 
+  const refetch = query.refetch;
   const value = useMemo<EntitlementContextValue>(
     () => ({
       data: query.data,
       isLoading: query.isLoading,
       isError: query.isError,
+      isFetching: query.isFetching,
+      retry: () => {
+        void refetch();
+      },
       error: query.error,
       queryKey,
     }),
-    [query.data, query.error, query.isError, query.isLoading, queryKey]
+    [query.data, query.error, query.isError, query.isLoading, query.isFetching, refetch, queryKey]
   );
 
   return <EntitlementContext.Provider value={value}>{children}</EntitlementContext.Provider>;

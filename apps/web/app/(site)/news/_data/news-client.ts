@@ -13,7 +13,7 @@
  * inlined at build time so it is available client-side.
  */
 
-import type { NewsItem } from "./types";
+import { NEWS_PAGE_SIZE, type NewsItem, type NewsFeedPage } from "./types";
 
 const BANNER_HOST = (process.env.NEXT_PUBLIC_BANNER_BASE_URL ?? "").replace(/\/+$/, "");
 
@@ -71,19 +71,41 @@ function normalize(raw: UpstreamItem): NewsItem {
  * non-OK / malformed response — the caller (news-list) wraps this in try/catch
  * so a failure degrades to a toast, never a page crash.
  */
-export async function fetchNewsByTag(locale: string, tag: string): Promise<NewsItem[]> {
-  const url = `/content/api/news?locale=${encodeURIComponent(locale)}&tag=${encodeURIComponent(
-    tag
-  )}&pageSize=100`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`news upstream ${res.status}`);
-  const json = (await res.json()) as {
+export async function fetchNewsPage(
+  locale: string,
+  tag: string,
+  page = 1,
+  signal?: AbortSignal
+): Promise<NewsFeedPage> {
+  if (!Number.isSafeInteger(page) || page < 1) throw new Error("Invalid news page.");
+  const params = new URLSearchParams({
+    locale,
+    page: String(page),
+    pageSize: String(NEWS_PAGE_SIZE),
+  });
+  if (tag && tag !== "all") params.set("tag", tag);
+  const res = await fetch(`/content/api/news?${params}`, { cache: "no-store", signal });
+  const raw = await res.text();
+  let json: {
     code?: number | string;
     success?: boolean;
+    message?: string;
+    msg?: string;
     data?: { list?: unknown };
-  };
-  if (json.success !== true && json.code !== 200) throw new Error("news upstream not ok");
-  const list = Array.isArray(json.data?.list) ? json.data!.list : [];
+  } | null = null;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    /* Preserve a plain-text upstream error. */
+  }
+  if (!res.ok || !json || (json.success !== true && json.code !== 200)) {
+    throw new Error(
+      json?.message || json?.msg || (!json && raw.trim()) || `News request failed (${res.status})`
+    );
+  }
+  if (!Array.isArray(json.data?.list))
+    throw new Error("News service returned an invalid article list.");
+  const list = json.data.list;
 
   const seen = new Set<number>();
   const out: NewsItem[] = [];
@@ -96,5 +118,8 @@ export async function fetchNewsByTag(locale: string, tag: string): Promise<NewsI
     seen.add(item.id);
     out.push(normalize(item));
   }
-  return out.sort((a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime());
+  return {
+    items: out.sort((a, b) => new Date(b.createTime).getTime() - new Date(a.createTime).getTime()),
+    hasMore: list.length >= NEWS_PAGE_SIZE,
+  };
 }

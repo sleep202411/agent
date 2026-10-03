@@ -24,17 +24,21 @@ export interface InteractiveFilmPublication {
   rejectReason: string | null;
 }
 
-export function interactiveFilmPublicationQueryKey(projectId: string) {
-  return ["story-studio", "interactive-film-publication", projectId] as const;
+export function interactiveFilmPublicationQueryKey(
+  projectId: string,
+  userId: string | number | null
+) {
+  return ["story-studio", "interactive-film-publication", projectId, userId] as const;
 }
 
 export async function getInteractiveFilmPublication(
-  projectId: string
+  projectId: string,
+  signal?: AbortSignal
 ): Promise<InteractiveFilmPublication | null> {
   try {
     const value = await api.get<unknown>(
       `/api/user/interactive-film/${encodeURIComponent(projectId)}`,
-      { requestScope: "user" }
+      { requestScope: "user", signal }
     );
     return parsePublication(value, projectId);
   } catch (error) {
@@ -50,12 +54,13 @@ export async function prepareInteractiveFilmRelease(
   input: {
     expectedDraftRevision: number;
     expectedVideoSnapshotHash: string;
-  }
+  },
+  signal?: AbortSignal
 ): Promise<ExperienceReleaseRequest> {
   const parsed = ExperienceReleaseRequestSchema.safeParse(
     await api.post<unknown>(
       `/aurora/story-projects/${encodeURIComponent(projectId)}/release-candidate`,
-      { data: input, requestScope: "project", timeout: 8 * 60_000 }
+      { data: input, requestScope: "project", timeout: 8 * 60_000, signal }
     )
   );
   if (!parsed.success || parsed.data.gameId !== projectId || parsed.data.status !== "draft") {
@@ -66,30 +71,40 @@ export async function prepareInteractiveFilmRelease(
 
 export async function submitInteractiveFilmRelease(
   projectId: string,
-  release: ExperienceReleaseRequest
+  release: ExperienceReleaseRequest,
+  signal?: AbortSignal
 ): Promise<InteractiveFilmPublication> {
+  signal?.throwIfAborted();
   await api.post("/api/user/interactive-film/releases", {
     data: release,
     requestScope: "user",
+    signal,
     timeout: 2 * 60_000,
   });
+  signal?.throwIfAborted();
   await api.post(`/api/user/interactive-film/${encodeURIComponent(projectId)}/status`, {
     data: { action: "submit" },
     requestScope: "user",
+    signal,
   });
-  const publication = await getInteractiveFilmPublication(projectId);
+  signal?.throwIfAborted();
+  const publication = await getInteractiveFilmPublication(projectId, signal);
   if (!publication) throw new Error("Java did not return the submitted interactive film.");
   return publication;
 }
 
 export async function offlineInteractiveFilm(
-  projectId: string
+  projectId: string,
+  signal?: AbortSignal
 ): Promise<InteractiveFilmPublication> {
+  signal?.throwIfAborted();
   await api.post(`/api/user/interactive-film/${encodeURIComponent(projectId)}/status`, {
     data: { action: "offline" },
     requestScope: "user",
+    signal,
   });
-  const publication = await getInteractiveFilmPublication(projectId);
+  signal?.throwIfAborted();
+  const publication = await getInteractiveFilmPublication(projectId, signal);
   if (!publication) throw new Error("Java did not return the offline interactive film.");
   return publication;
 }

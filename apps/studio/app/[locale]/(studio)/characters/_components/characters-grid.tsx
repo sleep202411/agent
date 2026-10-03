@@ -39,7 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/app/_components/auth-provider";
-import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useWorkspace } from "@/app/_components/workspace-context";
 import { cn } from "@/lib/utils";
 import {
   characterMediaContentUrl,
@@ -163,10 +163,13 @@ function CardsSkeleton() {
 export function CharactersGrid() {
   const t = useTranslations("characters");
   const tc = useTranslations("common");
+  const settings = useTranslations("settings");
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, loading: authLoading, signIn } = useAuth();
-  const workspaceId = useActiveWorkspaceId();
+  const workspace = useWorkspace();
+  const workspaceId =
+    workspace.error || workspace.loading ? null : (workspace.activeWorkspace?.id ?? null);
   const query = useCharacters(user ? workspaceId : null);
   // Enrollment / provider-mirror changes reconcile the grid live.
   useCharactersRealtime();
@@ -222,7 +225,10 @@ export function CharactersGrid() {
     );
   }
 
-  if (query.isError) {
+  if (authLoading || workspace.loading) return <CardsSkeleton />;
+
+  const workspaceUnavailable = workspace.error || !workspace.activeWorkspace;
+  if (workspaceUnavailable || query.isError) {
     return (
       <FrostedPanel className="mt-6 flex flex-col items-center px-6 py-24 text-center">
         <div className="flex size-20 items-center justify-center rounded-full bg-destructive/10">
@@ -230,9 +236,19 @@ export function CharactersGrid() {
         </div>
         <p className="mt-6 text-sm font-medium">{t("loadFailedTitle")}</p>
         <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-          {query.error instanceof Error ? query.error.message : tc("error")}
+          {workspaceUnavailable
+            ? workspace.error?.message || settings("workspaceUnavailable")
+            : query.error instanceof Error
+              ? query.error.message
+              : tc("error")}
         </p>
-        <Button variant="secondary" size="lg" className="mt-6" onClick={() => void query.refetch()}>
+        <Button
+          variant="secondary"
+          size="lg"
+          className="mt-6"
+          disabled={workspaceUnavailable ? workspace.fetching : query.isFetching}
+          onClick={() => (workspaceUnavailable ? workspace.refresh() : void query.refetch())}
+        >
           {tc("retry")}
         </Button>
       </FrostedPanel>

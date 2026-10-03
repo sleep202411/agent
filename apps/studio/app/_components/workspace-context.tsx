@@ -46,6 +46,8 @@ interface WorkspaceContextValue {
   ) => Promise<WorkspaceRef>;
   refresh: () => void;
   loading: boolean;
+  error: Error | null;
+  fetching: boolean;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -93,7 +95,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [userKey]);
 
-  const { data: loadedWorkspaces = EMPTY_WORKSPACES, isLoading } = useQuery({
+  const {
+    data: loadedWorkspaces = EMPTY_WORKSPACES,
+    isLoading,
+    error,
+    isFetching,
+  } = useQuery({
     queryKey: [...WORKSPACES_QUERY_KEY, userKey] as const,
     // Ensure the default workspace exists, then list all memberships.
     queryFn: async ({ signal }) => {
@@ -202,6 +209,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       createWorkspace,
       refresh,
       loading: authLoading || (Boolean(user) && isLoading),
+      error: user ? error : null,
+      fetching: Boolean(user) && isFetching,
     }),
     [
       workspaces,
@@ -212,6 +221,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       authLoading,
       user,
       isLoading,
+      error,
+      isFetching,
     ]
   );
 

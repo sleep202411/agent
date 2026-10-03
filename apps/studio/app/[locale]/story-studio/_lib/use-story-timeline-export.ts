@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/app/_components/auth-provider";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import {
@@ -15,6 +16,7 @@ import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { addStoryCandidateAsset } from "@/lib/story-projects-api";
 
 export interface UseStoryTimelineExportOptions {
+  canEdit: boolean;
   sequence: StoryStoryboardSequence | null;
   projectId: string;
   chapterId: string | null;
@@ -30,23 +32,27 @@ export type StoryTimelineExportError =
 
 export function useStoryTimelineExport({
   sequence,
+  canEdit,
   projectId,
   chapterId,
   onComplete,
 }: UseStoryTimelineExportOptions) {
+  const { user, isCurrentAccount } = useAuth();
+  const userId = user ? String(user.id) : null;
   const t = useTranslations("storyStudio.timelineExport");
   const clips = sequence?.clips;
   const validShots = useMemo(() => {
     if (!clips?.length) return [];
     const result: ExportableShot[] = [];
     for (const clip of clips) {
-      const videoUrl = clip.selectedMediaVersion?.previewUrl;
-      if (!videoUrl) {
+      const media = clip.selectedMediaVersion;
+      const mediaUrl = media?.previewUrl;
+      if (!mediaUrl) {
         continue;
       }
       result.push({
         id: clip.id,
-        videoUrl,
+        ...(media?.mediaKind === "image" ? { imageUrl: mediaUrl } : { videoUrl: mediaUrl }),
         duration: clip.durationMs > 0 ? clip.durationMs / 1000 : undefined,
       });
     }
@@ -59,8 +65,8 @@ export function useStoryTimelineExport({
     clipIds: clips?.map((clip) => clip.id) ?? [],
   });
   const scope = useMemo(
-    () => ({ sequenceId: sequence?.id, projectId, chapterId, mediaKey }),
-    [sequence?.id, projectId, chapterId, mediaKey]
+    () => ({ sequenceId: sequence?.id, projectId, chapterId, mediaKey, userId, canEdit }),
+    [sequence?.id, projectId, chapterId, mediaKey, userId, canEdit]
   );
   type Recovery = { blob: Blob; incompleteShots: number; mediaAssetId?: string };
   type Owner = {
@@ -70,7 +76,7 @@ export function useStoryTimelineExport({
   };
   const owner = useRef<Owner | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const current: Owner = { scope, operation: null, recovery: null };
     owner.current = current;
     return () => {
@@ -99,7 +105,7 @@ export function useStoryTimelineExport({
   const isExporting = progress?.scope === scope && stage !== "idle";
   const exportProgress = progress?.scope === scope ? progress.ratio : 0;
 
-  const canExport = validShots.length > 0;
+  const canExport = Boolean(userId && canEdit && validShots.length > 0);
 
   const cancel = useCallback(() => {
     const owned = owner.current;
@@ -115,7 +121,14 @@ export function useStoryTimelineExport({
 
   const handleExport = useCallback(async () => {
     const owned = owner.current;
-    if (owned?.scope !== scope || owned.operation) return;
+    if (
+      owned?.scope !== scope ||
+      owned.operation ||
+      !canEdit ||
+      !userId ||
+      !isCurrentAccount(userId)
+    )
+      return;
 
     if (!validShots.length) {
       setError("no_clips_with_media");
@@ -135,7 +148,10 @@ export function useStoryTimelineExport({
     const signal = operation.signal;
 
     const current = () =>
-      owner.current === owned && owned.operation === operation && !signal.aborted;
+      owner.current === owned &&
+      owned.operation === operation &&
+      !signal.aborted &&
+      Boolean(userId && isCurrentAccount(userId));
 
     setStage("exporting");
     setProgress({ scope, ratio: 0 });
@@ -181,7 +197,7 @@ export function useStoryTimelineExport({
       }
 
       setStage("saving");
-      await addStoryCandidateAsset(projectId, mediaAssetId);
+      await addStoryCandidateAsset(projectId, mediaAssetId, signal);
       if (!current()) return;
       owned.recovery = null;
 
@@ -209,11 +225,22 @@ export function useStoryTimelineExport({
         setProgress(null);
       }
     }
-  }, [scope, validShots, missingShots, projectId, onComplete, setError, t]);
+  }, [
+    scope,
+    validShots,
+    missingShots,
+    projectId,
+    onComplete,
+    setError,
+    t,
+    canEdit,
+    userId,
+    isCurrentAccount,
+  ]);
 
   const downloadOnly = useCallback(async () => {
     const owned = owner.current;
-    if (owned?.scope !== scope) return;
+    if (owned?.scope !== scope || !userId || !isCurrentAccount(userId)) return;
     setError(null);
     if (lastBlob?.scope === scope && lastBlob.blob) {
       const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
@@ -247,7 +274,10 @@ export function useStoryTimelineExport({
     owned.operation = operation;
     const signal = operation.signal;
     const current = () =>
-      owner.current === owned && owned.operation === operation && !signal.aborted;
+      owner.current === owned &&
+      owned.operation === operation &&
+      !signal.aborted &&
+      Boolean(userId && isCurrentAccount(userId));
 
     setStage("exporting");
     setProgress({ scope, ratio: 0 });
@@ -284,7 +314,7 @@ export function useStoryTimelineExport({
         setProgress(null);
       }
     }
-  }, [scope, lastBlob, validShots, missingShots, projectId, setError, t]);
+  }, [scope, lastBlob, validShots, missingShots, projectId, setError, t, userId, isCurrentAccount]);
 
   return {
     isExporting,
