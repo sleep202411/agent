@@ -46,6 +46,7 @@ interface InboxListProps {
 export function InboxList({ activeId }: InboxListProps) {
   const t = useTranslations("messages");
   const tc = useTranslations("common");
+  const orders = useTranslations("orders");
   const locale = useLocale() as Locale;
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -101,9 +102,17 @@ export function InboxList({ activeId }: InboxListProps) {
   return (
     <aside className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 space-y-2 px-3 pb-3 pt-4">
-        <h2 className="px-1 font-heading text-base font-semibold text-foreground">
-          {t("inboxTitle")}
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="px-1 font-heading text-base font-semibold text-foreground">
+            {t("inboxTitle")}
+          </h2>
+          <Link
+            href={localizePath("/orders", locale)}
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            {orders("list.title")}
+          </Link>
+        </div>
         {/* Four filters in a 320px rail: let them scroll rather than
             wrap into a second row that shoves the list down. */}
         <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-secondary p-1 md:w-fit">

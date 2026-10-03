@@ -8183,6 +8183,20 @@
       "completedToast": "Order completed.",
       "cancelledToast": "Order cancelled.",
       "failed": "Action failed."
+    },
+    "list": {
+      "title": "Service orders",
+      "signInRequired": "Sign in to view your orders.",
+      "role": "Your role",
+      "allRoles": "Buying and selling",
+      "buying": "Buying",
+      "selling": "Selling",
+      "status": "Status",
+      "allStatuses": "All statuses",
+      "empty": "No orders match these filters.",
+      "unread": "{count} unread",
+      "loadMore": "Load more",
+      "back": "Back to orders"
     }
   },
   "fizzStudio": {

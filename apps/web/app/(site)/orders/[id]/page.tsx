@@ -47,11 +47,11 @@ export default function OrderDetailPage() {
   const [pane, setPane] = useState<Pane>("summary");
   const back = (
     <Link
-      href={localizePath("/messages", locale)}
+      href={localizePath("/orders", locale)}
       className="inline-flex items-center gap-2 rounded-md text-sm text-muted-foreground hover:text-foreground"
     >
       <IconArrowLeft className="size-4" aria-hidden="true" />
-      {t("backToInbox")}
+      {t("list.back")}
     </Link>
   );
   const loading = userLoading || (!!user && isLoading);
