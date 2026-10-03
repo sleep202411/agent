@@ -654,7 +654,7 @@
   text-transform: uppercase;
 }
 
-@media (max-width: 1535px) {
+@media (max-width: 767px) {
   .fd-secret-wordmark {
     position: fixed;
     left: 20px;
@@ -678,7 +678,7 @@
   }
 }
 
-@media (min-width: 1536px) {
+@media (min-width: 768px) {
   .fd-secret-header {
     inset-inline: 24px;
     top: 20px;
@@ -708,9 +708,9 @@
   }
 
   .fd-secret-right-cluster {
-    position: absolute;
-    right: 24px;
-    margin-left: 0;
+    position: static;
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .fd-secret-mobile-button-wrap {
@@ -745,7 +745,7 @@
   }
 }
 
-@media (min-width: 1536px) {
+@media (min-width: 1280px) {
   .fd-secret-header {
     inset-inline: 24px;
   }
@@ -787,7 +787,7 @@
   }
 }
 
-@media (min-width: 1536px) {
+@media (min-width: 768px) {
   .fd-secret-header .fd-secret-nav-shell,
   .fd-secret-header .fd-secret-nav-content {
     height: 56px;
@@ -825,5 +825,52 @@
 
   .fd-secret-header .fd-secret-account-bell :where(button) {
     width: 48px;
+  }
+}
+
+/* Keep desktop navigation visible on laptops without overlapping account actions. */
+@media (min-width: 768px) {
+  .fd-secret-header {
+    gap: 12px;
+  }
+
+  .fd-secret-nav-shell {
+    min-width: 0;
+  }
+
+  .fd-secret-nav-content {
+    overflow-x: auto;
+  }
+
+  .fd-secret-nav-wordmark,
+  .fd-secret-nav-list {
+    flex-shrink: 0;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .fd-secret-header .fd-secret-nav-wordmark {
+    width: 118px;
+    padding-inline: 12px;
+  }
+
+  .fd-secret-header .fd-secret-nav-wordmark img {
+    width: 94px;
+  }
+
+  .fd-secret-header .fd-secret-nav-list {
+    padding-inline: 4px;
+  }
+
+  .fd-secret-header .fd-secret-nav-link {
+    padding-inline: 8px;
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+
+  .fd-secret-header .fd-secret-cta {
+    min-width: 0;
+    padding-inline: 12px;
+    font-size: 11px;
   }
 }
