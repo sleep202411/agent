@@ -1977,7 +1977,10 @@
     "couldntDeleteTeam": "无法删除空间",
     "deleteTeamConfirmTitle": "删除“{name}”？",
     "deleteTeamConfirmBody": "所有成员将失去访问权限，空间的项目将被归档。此操作无法撤销。",
-    "workspace": "工作空间"
+    "workspace": "工作空间",
+    "workspaceUnavailable": "此工作空间暂不可用。请重试或选择其他工作空间。",
+    "membersLoadFailed": "无法加载团队成员。",
+    "creditsLoadFailed": "无法加载积分。"
   },
   "project": {
     "renameFailed": "无法重命名项目",

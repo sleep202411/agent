@@ -1977,7 +1977,10 @@
     "couldntDeleteTeam": "無法刪除空間",
     "deleteTeamConfirmTitle": "刪除「{name}」？",
     "deleteTeamConfirmBody": "所有成員將失去存取權限，空間的專案將被封存。此操作無法復原。",
-    "workspace": "工作空間"
+    "workspace": "工作空間",
+    "workspaceUnavailable": "此工作空間暫不可用。請重試或選擇其他工作空間。",
+    "membersLoadFailed": "無法載入團隊成員。",
+    "creditsLoadFailed": "無法載入積分。"
   },
   "project": {
     "renameFailed": "無法重新命名專案",

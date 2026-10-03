@@ -1977,7 +1977,10 @@
     "couldntDeleteTeam": "Couldn’t delete workspace",
     "deleteTeamConfirmTitle": "Delete “{name}”?",
     "deleteTeamConfirmBody": "All members lose access and the workspace’s projects are archived. This cannot be undone.",
-    "workspace": "Workspace"
+    "workspace": "Workspace",
+    "workspaceUnavailable": "This workspace is unavailable. Retry or choose another workspace.",
+    "membersLoadFailed": "Could not load team members.",
+    "creditsLoadFailed": "Could not load credits."
   },
   "project": {
     "renameFailed": "Couldn't rename the project",
