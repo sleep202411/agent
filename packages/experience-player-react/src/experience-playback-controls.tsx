@@ -226,6 +226,30 @@ const GLASS_RIM: CSSProperties = {
   maskComposite: "exclude",
 };
 
+/** How far a tap that missed everything still counts as aimed at a gesture. */
+const GESTURE_TAP_MARGIN_PX = 24;
+
+/**
+ * Whether a tap that hit no control was still aimed at a gesture the film
+ * offers on the picture right now: within a finger's width of its box, as the
+ * boxes stand on screen after any turn of the frame. The boxes are read, not
+ * the authored geometry, so it holds however the frame is drawn.
+ */
+export function nearAvailableExperienceGesture(stage: Element, x: number, y: number): boolean {
+  for (const gesture of stage.querySelectorAll("[data-experience-gesture-available]")) {
+    const area = gesture.getBoundingClientRect();
+    if (
+      x >= area.left - GESTURE_TAP_MARGIN_PX &&
+      x <= area.right + GESTURE_TAP_MARGIN_PX &&
+      y >= area.top - GESTURE_TAP_MARGIN_PX &&
+      y <= area.bottom + GESTURE_TAP_MARGIN_PX
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Whether an interaction the film offers right now lies under one of the cluster's controls. */
 function coveredByAvailableGesture(cluster: HTMLElement): boolean {
   const gestures = cluster

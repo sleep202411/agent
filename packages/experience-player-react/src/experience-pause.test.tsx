@@ -2208,4 +2208,133 @@ describe("ExperiencePlayer paused state", () => {
       });
     });
   });
+
+  // ── A tap on the picture ──────────────────────────────────────────────────
+
+  describe("a tap on the picture", () => {
+    /** A click with a place, as a finger's tap carries: the pause reads where it landed. */
+    const tapAt = async (target: Element, x: number, y: number) => {
+      await act(async () => {
+        target.dispatchEvent(
+          new MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y })
+        );
+      });
+      await settle();
+    };
+
+    it("pauses a playing film, and the paused frame's tap resumes it", async () => {
+      await startFilm(twoClipFilm(), ["/a.mp4"]);
+      expect(pausedFor()).toBeNull();
+
+      await tapAt(element("/a.mp4"), 640, 360);
+
+      expect(pausedFor()).toBe("user");
+      expect(storyLayer().hasAttribute("inert")).toBe(true);
+      expect(pausedFrame()).not.toBeNull();
+
+      await press(pausedFrame());
+      expect(pausedFor()).toBeNull();
+    });
+
+    it("keeps a choice's tap for the choice", async () => {
+      await startFilm(choiceFilm(), ["/a.mp4"]);
+      const option = [...container.querySelectorAll("button span")]
+        .find((item) => item.textContent === "Next scene")
+        ?.closest("button");
+      if (!option) throw new Error("The choice is not open.");
+
+      await press(option);
+
+      expect(pausedFor()).toBeNull();
+      expect(container.querySelector("[data-experience-paused-frame]")).toBeNull();
+      expect(container.textContent).toContain("Done");
+    });
+
+    it("keeps a hotspot's tap for the hotspot", async () => {
+      await startFilm(gestureFilm("tap"), ["/a.mp4"]);
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (
+        this: HTMLElement
+      ) {
+        if (this.hasAttribute("data-experience-gesture-available")) return box(512, 216, 256, 288);
+        return box(0, 0, 1280, 720);
+      });
+      await playedTo("/a.mp4", 0.2);
+
+      await press(container.querySelector<HTMLButtonElement>('button[aria-label="Go on"]'));
+
+      expect(pausedFor()).toBeNull();
+      expect(container.textContent).toContain("cleared");
+    });
+
+    it("pauses nothing for a graze of a hotspot's edge, and pauses for a clear miss", async () => {
+      await startFilm(gestureFilm("tap"), ["/a.mp4"]);
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (
+        this: HTMLElement
+      ) {
+        if (this.hasAttribute("data-experience-gesture-available")) return box(512, 216, 256, 288);
+        return box(0, 0, 1280, 720);
+      });
+      await playedTo("/a.mp4", 0.2);
+
+      // 8px beyond the hotspot's right edge: aimed at it, missed it — no pause.
+      await tapAt(element("/a.mp4"), 776, 360);
+      expect(pausedFor()).toBeNull();
+
+      // Far from it: the picture takes the tap.
+      await tapAt(element("/a.mp4"), 120, 620);
+      expect(pausedFor()).toBe("user");
+    });
+
+    it("leaves a silent reading beat as it is: there is nothing to pause", async () => {
+      await startFilm(silentFilm(), []);
+
+      await tapAt(container.querySelector("[data-experience-renderer='core.text']")!, 640, 360);
+
+      expect(pausedFor()).toBeNull();
+      expect(container.querySelector("[data-experience-paused-frame]")).toBeNull();
+    });
+
+    it("leaves a world stream's taps to the world", async () => {
+      const held: boolean[] = [];
+      const streamFilm = () =>
+        film({
+          capabilities: ["core.world-model"],
+          nodes: [
+            {
+              kind: "scene",
+              sceneId: "scene.world",
+              clock: { kind: "none" },
+              renderers: [
+                {
+                  instanceId: "world.primary",
+                  rendererId: "core.world-model",
+                  layer: 0,
+                  config: {
+                    projectId: "0197f4a2-0800-7000-8000-000000000001",
+                    worldId: "0197f4a2-0800-7000-8000-000000000002",
+                    maxExperienceSeconds: 90,
+                    autoplay: true,
+                  },
+                  bindings: {},
+                },
+              ],
+              anchors: [],
+              gestures: [],
+              timeline: { cues: [] },
+              eventBindings: [on("renderer.outcome", "world.primary", [finish], "world-completed")],
+            } as unknown as Node,
+          ],
+        });
+
+      await startFilm(streamFilm(), [], {
+        renderWorldModel: (props) => <StreamDouble {...props} held={held} />,
+      });
+      const stream = container.querySelector("[data-world-stream]")!;
+
+      await tapAt(stream, 640, 360);
+
+      expect(pausedFor()).toBeNull();
+      expect(container.querySelector("[data-experience-paused-frame]")).toBeNull();
+    });
+  });
 });
