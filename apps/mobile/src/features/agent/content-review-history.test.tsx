@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   generation: 1,
   list: vi.fn(),
   detail: vi.fn(),
+  comment: vi.fn(),
 }));
 vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
@@ -22,14 +23,34 @@ vi.mock("react-native", () => ({
   ScrollView: ({ children, style }: { children: ReactNode; style: React.CSSProperties }) => (
     <div style={style}>{children}</div>
   ),
-  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
-    <button onClick={onPress}>{children}</button>
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+  }: {
+    children: ReactNode;
+    onPress: () => void;
+    disabled?: boolean;
+  }) => (
+    <button onClick={onPress} disabled={disabled}>
+      {children}
+    </button>
   ),
+  TextInput: ({
+    value,
+    onChangeText,
+    editable,
+  }: {
+    value: string;
+    onChangeText: (value: string) => void;
+    editable: boolean;
+  }) => <input value={value} disabled={!editable} onChange={(e) => onChangeText(e.target.value)} />,
   ActivityIndicator: () => <span>Loading</span>,
 }));
 vi.mock("./api/content-review-api", () => ({
   listContentReviews: h.list,
   getContentReview: h.detail,
+  addContentReviewComment: h.comment,
 }));
 vi.mock("./content-review-create", () => ({
   ContentReviewCreate: function Creation() {
@@ -43,7 +64,7 @@ vi.mock("./content-review-create", () => ({
 }));
 vi.mock("./content-review-export", () => ({ ContentReviewExport: () => null }));
 vi.mock("./content-review-playback", () => ({ ContentReviewPlayback: () => null }));
-vi.mock("./content-review-comment", () => ({ ContentReviewComment: () => null }));
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
 const item = {
@@ -74,7 +95,7 @@ beforeEach(() => {
   h.focused = true;
   h.generation = 1;
   h.list.mockResolvedValue([item]);
-  h.detail.mockResolvedValue(record);
+  h.detail.mockImplementation(async () => ({ ...record }));
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -149,4 +170,59 @@ it("retires the creation session on workspace, account and route changes", async
   h.focused = true;
   await render("other");
   expect(host.textContent).not.toContain("Selected source");
+});
+
+const type = async (index: number, value: string) =>
+  act(async () => {
+    const input = host.querySelectorAll("input")[index]!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+it("preserves an unsent comment through report refresh and background without posting it", async () => {
+  await render();
+  await click("clip.mp4");
+  await type(0, "12");
+  await type(1, "Please check this frame");
+  await click("contentReviewHistory.refresh");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("Please check this frame");
+  h.active = false;
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  h.active = true;
+  await render();
+  expect(host.querySelectorAll("input")[0]!.value).toBe("12");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("Please check this frame");
+  expect(h.comment).not.toHaveBeenCalled();
+});
+it("retains an uncertain comment while requiring a fresh report before retry", async () => {
+  h.comment.mockRejectedValueOnce(Error("Comment response lost"));
+  await render();
+  await click("clip.mp4");
+  await type(1, "Check the audio");
+  await click("contentReviewHistory.addComment");
+  expect(host.querySelectorAll("input")[1]!.disabled).toBe(true);
+  await click("contentReviewHistory.refresh");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("Check the audio");
+  expect(host.querySelectorAll("input")[1]!.disabled).toBe(false);
+  expect(h.comment).toHaveBeenCalledTimes(1);
+});
+it("keeps a pending comment locked through refresh and a late uncertain failure", async () => {
+  let fail!: (error: Error) => void;
+  h.comment.mockImplementation(
+    () =>
+      new Promise((_, reject) => {
+        fail = reject;
+      })
+  );
+  await render();
+  await click("clip.mp4");
+  await type(1, "Pending comment");
+  await click("contentReviewHistory.addComment");
+  await click("contentReviewHistory.refresh");
+  expect(host.querySelectorAll("input")[1]!.disabled).toBe(true);
+  await act(async () => fail(Error("Response lost")));
+  expect(host.querySelectorAll("input")[1]!.disabled).toBe(true);
+  await click("contentReviewHistory.refresh");
+  expect(host.querySelectorAll("input")[1]!.disabled).toBe(false);
+  expect(h.comment).toHaveBeenCalledTimes(1);
 });

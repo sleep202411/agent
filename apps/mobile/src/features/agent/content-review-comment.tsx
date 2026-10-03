@@ -1,5 +1,5 @@
 import { CONTENT_REVIEW_MAX_DURATION_SECONDS } from "@repo/shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Pressable, TextInput, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -15,7 +15,7 @@ export function ContentReviewComment({
 }: {
   workspaceId: string;
   generation: number;
-  record: ContentReviewDetail;
+  record: ContentReviewDetail | undefined;
   onSaved: (record: ContentReviewDetail) => void;
   onAccessLost: (message: string) => void;
 }) {
@@ -25,7 +25,11 @@ export function ContentReviewComment({
     [body, setBody] = useState("");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
-    [uncertain, setUncertain] = useState(false);
+    [attemptedAt, setAttemptedAt] = useState<ContentReviewDetail>();
+  const latestRecord = useRef(record);
+  useLayoutEffect(() => {
+    if (record) latestRecord.current = record;
+  }, [record]);
   const active = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
@@ -39,11 +43,13 @@ export function ContentReviewComment({
   const valid =
     Number.isFinite(time) &&
     time >= 0 &&
-    time <= Math.min(record.durationSeconds, CONTENT_REVIEW_MAX_DURATION_SECONDS) &&
+    time <= Math.min(record?.durationSeconds ?? 0, CONTENT_REVIEW_MAX_DURATION_SECONDS) &&
     body.trim().length > 0 &&
     body.trim().length <= 2000;
+  const uncertain = attemptedAt !== undefined && attemptedAt === record;
   async function submit() {
-    if (active.current || uncertain || !valid || generation !== getAuthGeneration()) return;
+    if (!record || active.current || uncertain || !valid || generation !== getAuthGeneration())
+      return;
     const controller = new AbortController();
     active.current = controller;
     setBusy(true);
@@ -70,7 +76,7 @@ export function ContentReviewComment({
           return;
         }
         setError(message);
-        setUncertain(true);
+        setAttemptedAt(latestRecord.current ?? record);
       }
     } finally {
       if (active.current === controller) {
@@ -79,6 +85,7 @@ export function ContentReviewComment({
       }
     }
   }
+  if (!record) return null;
   return (
     <View
       style={{ gap: 8, padding: 12, borderRadius: 8, backgroundColor: theme.backgroundElement }}

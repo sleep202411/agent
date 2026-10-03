@@ -179,14 +179,20 @@ function History({ workspaceId, generation, onClose }: Props) {
             </View>
           ))}
           <ThemedText type="smallBold">{label("comments")}</ThemedText>
-          <ContentReviewComment
-            key={key}
-            workspaceId={workspaceId}
-            generation={generation}
-            record={record}
-            onAccessLost={(error) => setSnapshot({ key, error })}
-            onSaved={(updated) => setSnapshot({ key, record: updated })}
-          />
+        </>
+      )}
+      {recordId && (
+        <ContentReviewComment
+          key={recordId}
+          workspaceId={workspaceId}
+          generation={generation}
+          record={record}
+          onAccessLost={(error) => setSnapshot({ key, error })}
+          onSaved={() => setRevision((value) => value + 1)}
+        />
+      )}
+      {record && (
+        <>
           {!record.comments.length && <ThemedText>{label("empty")}</ThemedText>}
           {record.comments.map((comment) => (
             <View key={comment.id} style={box}>
