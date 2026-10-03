@@ -4733,5 +4733,21 @@
   "creditCheckIn.streak": "{days}-day streak",
   "creditCheckIn.day": "Day {day}",
   "creditCheckIn.claim": "Claim {amount} credits",
-  "creditCheckIn.done": "Checked in today"
+  "creditCheckIn.done": "Checked in today",
+  "subscription.title": "Current plan",
+  "subscription.free": "Free",
+  "subscription.month": "Monthly",
+  "subscription.year": "Yearly",
+  "subscription.once": "One-time",
+  "subscription.noRecurring": "No active recurring subscription is attached to this plan.",
+  "subscription.accessUntil": "Access until {date}",
+  "subscription.renews": "Renews on {date}",
+  "subscription.cancelled": "Renewal cancelled",
+  "subscription.confirm": "Cancel renewal? Your paid access remains valid until the end of the current period.",
+  "subscription.confirmCancel": "Confirm cancellation",
+  "subscription.keep": "Keep plan",
+  "subscription.cancel": "Cancel renewal",
+  "subscription.refresh": "Refresh plan",
+  "subscription.active": "Active",
+  "subscription.expired": "Expired"
 }

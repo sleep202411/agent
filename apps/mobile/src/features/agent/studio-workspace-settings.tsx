@@ -30,6 +30,7 @@ import {
   WorkspaceSettingsWriteError,
   type StudioWorkspaceSettings,
 } from "./api/studio-workspace-settings-api";
+import { SubscriptionPanel } from "@/features/paywall/components/subscription-panel";
 type Props = {
   workspaceId?: string;
   generation: number;
@@ -99,6 +100,7 @@ function Form({
     snapshot ? undefined : "aurora"
   );
   const avatarUrl = icon ? workspaceIconUrl(icon, appEnv.appRegion) : snapshot?.avatarUrl;
+  const [showPlan, setShowPlan] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false),
@@ -297,6 +299,26 @@ function Form({
       {uncertain && <ThemedText>{t("studioWorkspace.uncertain")}</ThemedText>}
       {done && <ThemedText>{t("studioWorkspace.done")}</ThemedText>}
       {snapshot && <Action label={t("studioWorkspace.reload")} disabled={busy} onPress={reload} />}
+      {snapshot?.accessScope === "workspace" && (
+        <>
+          <Action
+            label={t("subscription.title")}
+            disabled={busy}
+            onPress={() => setShowPlan((value) => !value)}
+          />
+          {showPlan && (
+            <SubscriptionPanel
+              generation={props.generation}
+              workspaceId={snapshot.id}
+              canManage={
+                ["owner", "admin", "billing"].includes(snapshot.role ?? "") &&
+                snapshot.status === "active" &&
+                !locked
+              }
+            />
+          )}
+        </>
+      )}
       {busy && <ActivityIndicator />}
       <Action label={t("crewTasks.back")} disabled={busy} onPress={props.onClose} />
     </ScrollView>

@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
   read: vi.fn(),
+  plan: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   remove: vi.fn(),
@@ -18,8 +19,8 @@ const h = vi.hoisted(() => ({
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s }));
-vi.mock("@/lib/api-client", () => ({ api: {} }));
+vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s, useLocale: () => "en-US" }));
+vi.mock("@/lib/api-client", () => ({ api: { get: h.plan } }));
 vi.mock("./api/studio-workspace-settings-api", async (original) => ({
   ...(await original<typeof import("./api/studio-workspace-settings-api")>()),
   fetchWorkspaceSettings: h.read,
@@ -184,3 +185,37 @@ it("does not offer icon edits to viewers", async () => {
   await render();
   expect(button("studioWorkspace.icon_ocean")).toBeUndefined();
 });
+
+it.each(["owner", "billing", "member"])(
+  "opens the workspace plan with %s permissions",
+  async (role) => {
+    h.read.mockResolvedValue({ ...row, role });
+    h.plan.mockResolvedValue({
+      entitlement: { planKey: "team", status: "active", expiresAt: null },
+      subscription: {
+        id,
+        status: "active",
+        planKey: "team",
+        productType: "team_membership_plan",
+        subjectType: "workspace",
+        currency: "USD",
+        amountMinor: "2999",
+        interval: "month",
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        canceledAt: null,
+        endedAt: null,
+      },
+    });
+    await render();
+    expect(h.plan).not.toHaveBeenCalled();
+    await click("subscription.title");
+    expect(h.plan).toHaveBeenCalledWith(
+      "/billing/entitlement/me",
+      expect.objectContaining({ headers: { "x-fizz-workspace-id": id } })
+    );
+    expect(!!button("subscription.cancel")).toBe(role !== "member");
+    await click("subscription.title");
+    expect(button("subscription.cancel")).toBeUndefined();
+  }
+);

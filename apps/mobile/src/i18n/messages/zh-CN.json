@@ -4733,5 +4733,21 @@
   "creditCheckIn.streak": "连续签到 {days} 天",
   "creditCheckIn.day": "第 {day} 天",
   "creditCheckIn.claim": "领取 {amount} 积分",
-  "creditCheckIn.done": "今日已签到"
+  "creditCheckIn.done": "今日已签到",
+  "subscription.title": "当前套餐",
+  "subscription.free": "免费",
+  "subscription.month": "每月",
+  "subscription.year": "每年",
+  "subscription.once": "一次性",
+  "subscription.noRecurring": "此套餐未关联有效的自动续订。",
+  "subscription.accessUntil": "可使用至 {date}",
+  "subscription.renews": "续订日期：{date}",
+  "subscription.cancelled": "已取消续订",
+  "subscription.confirm": "取消续订？已付费的使用权限将保留至当前周期结束。",
+  "subscription.confirmCancel": "确认取消",
+  "subscription.keep": "保留套餐",
+  "subscription.cancel": "取消续订",
+  "subscription.refresh": "刷新套餐",
+  "subscription.active": "有效",
+  "subscription.expired": "已过期"
 }

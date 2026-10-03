@@ -4733,5 +4733,21 @@
   "creditCheckIn.streak": "連續簽到 {days} 天",
   "creditCheckIn.day": "第 {day} 天",
   "creditCheckIn.claim": "領取 {amount} 積分",
-  "creditCheckIn.done": "今日已簽到"
+  "creditCheckIn.done": "今日已簽到",
+  "subscription.title": "目前方案",
+  "subscription.free": "免費",
+  "subscription.month": "每月",
+  "subscription.year": "每年",
+  "subscription.once": "一次性",
+  "subscription.noRecurring": "此方案未關聯有效的自動續訂。",
+  "subscription.accessUntil": "可使用至 {date}",
+  "subscription.renews": "續訂日期：{date}",
+  "subscription.cancelled": "已取消續訂",
+  "subscription.confirm": "取消續訂？已付費的使用權限將保留至目前週期結束。",
+  "subscription.confirmCancel": "確認取消",
+  "subscription.keep": "保留方案",
+  "subscription.cancel": "取消續訂",
+  "subscription.refresh": "重新整理方案",
+  "subscription.active": "有效",
+  "subscription.expired": "已過期"
 }

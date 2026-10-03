@@ -65,6 +65,11 @@ export default function SettingsScreen() {
         authGate.requireAuth({ onAuthenticated: () => router.push("/account-security") }),
     },
     {
+      key: "subscription",
+      label: t("subscription.title"),
+      onPress: () => authGate.requireAuth({ onAuthenticated: () => router.push("/subscription") }),
+    },
+    {
       key: "creditRewards",
       label: t("creditRewards.title"),
       onPress: () =>
