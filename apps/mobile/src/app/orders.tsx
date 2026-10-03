@@ -102,7 +102,11 @@ export default function OrdersScreen() {
               >
                 <ThemedText type="smallBold">{item.serviceTitle}</ThemedText>
                 <ThemedText>{t(`orders.status.${item.status}`)}</ThemedText>
-                <ThemedText>
+                <ThemedText type="small">
+                  {t(`orders.role.${item.counterpartyRole === "creator" ? "buyer" : "creator"}`)}
+                  {" · "}
+                  {t(`servicePackages.tier.${item.packageTier}`)}
+                  {" · "}
                   {displays?.get(item.counterpartyId)?.nickname?.trim() ||
                     `${t("inbox.person")} ${item.counterpartyId}`}
                 </ThemedText>

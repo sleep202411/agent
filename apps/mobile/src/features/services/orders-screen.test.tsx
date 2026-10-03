@@ -90,6 +90,9 @@ it("wires native filters and order navigation", async () => {
       {
         id: "a/b",
         serviceTitle: "Film",
+        counterpartyRole: "creator",
+        counterpartyId: "creator-1",
+        packageTier: "standard",
         status: "delivered",
         totalPrice: 12,
         currency: "USD",
@@ -99,6 +102,7 @@ it("wires native filters and order navigation", async () => {
     loading: false,
   });
   await render();
+  expect(host.textContent).toContain("orders.role.buyer · servicePackages.tier.standard");
   await act(async () =>
     Array.from(host.querySelectorAll("button"))
       .find((b) => b.textContent?.startsWith("Film"))!
