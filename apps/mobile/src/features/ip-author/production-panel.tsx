@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -38,8 +39,9 @@ function Button({
     </Pressable>
   );
 }
-/** Mounted inside the account/generation/foreground-gated Rights screen. */
+/** Mounted inside the account/generation/route-gated Rights screen. */
 export function IpProductionPanel({ ipId, userId, generation, kind }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(`${ipId}:${kind}`, true);
@@ -125,7 +127,7 @@ export function IpProductionPanel({ ipId, userId, generation, kind }: Props) {
   }, [ipId, generation, kind]);
   const refresh = (cursor?: string) => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setConfirm(false);
     setReviewed(false);
     setError(initial.error);
@@ -139,7 +141,7 @@ export function IpProductionPanel({ ipId, userId, generation, kind }: Props) {
   };
   const submit = (command: ProductionCommand) => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setError("");
     setSaved(false);
     setReviewed(false);

@@ -5,6 +5,7 @@ import { IpGovernancePanel } from "./governance-panel";
 const h = vi.hoisted(() => ({
   signedIn: true,
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   patch: vi.fn(),
@@ -50,7 +51,9 @@ vi.mock("@/components/themed-text", () => ({
 }));
 vi.mock("react-native", () => ({
   Linking: { openURL: h.open },
-  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  View: ({ children, style }: { children: ReactNode; style?: { display?: "none" | "flex" } }) => (
+    <div style={{ display: style?.display }}>{children}</div>
+  ),
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => null,
   Pressable: ({
@@ -92,6 +95,7 @@ vi.mock("@/features/services/conversation-video", () => ({
   ConversationVideo: () => <div>Video preview</div>,
 }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
   useLocalSearchParams: () => ({ id: "11111111-1111-4111-8111-111111111111" }),
   useRouter: () => ({ push: h.push }),
   Stack: {
@@ -141,6 +145,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   profile = {
     id,
@@ -300,7 +305,7 @@ it("hides private forms after access loss, inactivity or authentication changes"
   expect(host.textContent).toContain("Access removed");
   h.active = false;
   await mount();
-  expect(host.textContent).toBe("");
+  expect((host.firstElementChild as HTMLElement).style.display).toBe("none");
   h.active = true;
   h.generation = 2;
   await mount();
@@ -373,4 +378,56 @@ it("preserves a pending Crew write when returning from a different link entry", 
   expect(button("● Production team")).toBeDefined();
   expect(host.textContent).toContain("ipGovernance.pending");
   expect(h.put).toHaveBeenCalledTimes(1);
+});
+
+it("retains unsent disclosure and link edits across background without submitting", async () => {
+  await mount();
+  await type("ipGovernance.copyrightOwner", "New studio");
+  h.active = false;
+  await mount();
+  expect((host.firstElementChild as HTMLElement).style.display).toBe("none");
+  await click("ipGovernance.save");
+  expect(h.put).not.toHaveBeenCalled();
+  h.active = true;
+  await mount();
+  expect(input("ipGovernance.copyrightOwner").value).toBe("New studio");
+  await click("ipGovernance.save");
+  expect(profile.copyrightOwner).toBe("New studio");
+  await click("ipGovernance.links");
+  await click("ipGovernance.addLink");
+  await type("ipGovernance.label 1", "Watch");
+  await type("ipGovernance.url 1", "https://example.com/watch");
+  h.active = false;
+  await mount();
+  h.active = true;
+  await mount();
+  expect(input("ipGovernance.label 1").value).toBe("Watch");
+  expect(input("ipGovernance.url 1").value).toBe("https://example.com/watch");
+  await click("ipGovernance.save");
+  expect(links).toEqual([{ label: "Watch", url: "https://example.com/watch" }]);
+});
+it("retires unsent forms on route exit", async () => {
+  await mount();
+  await type("ipGovernance.copyrightOwner", "Unsent");
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  expect(input("ipGovernance.copyrightOwner").value).toBe("Alice");
+  expect(h.put).not.toHaveBeenCalled();
+});
+it("rechecks access before saving a draft retained through background", async () => {
+  const { ApiRequestError } = await import("@/lib/api-client");
+  await mount();
+  await type("ipGovernance.copyrightOwner", "Unsent");
+  h.active = false;
+  await mount();
+  h.get.mockRejectedValue(new ApiRequestError("FORBIDDEN", "Access removed", 403));
+  h.active = true;
+  await mount();
+  await click("ipGovernance.save");
+  expect(h.put).not.toHaveBeenCalled();
+  expect(input("ipGovernance.copyrightOwner")).toBeNull();
+  expect(host.textContent).toContain("Access removed");
 });

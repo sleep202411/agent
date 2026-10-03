@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useIsFocused } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -59,18 +60,19 @@ function draftFrom(value: GovernanceSnapshot): GovernanceCommand {
   } as GovernanceCommand;
 }
 export function IpGovernancePanel(props: Props) {
-  return useScreenActive() && getAuthGeneration() === props.generation ? (
+  return useIsFocused() && getAuthGeneration() === props.generation ? (
     <Session key={`${props.ipId}:${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
 function Session(props: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme();
   const [kind, setKind] = useState<GovernanceKind | ProductionKind>(
     props.initialKind ?? "disclosures"
   );
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
       <View style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 8 }}>
         {([...governanceKinds, "games", "stages"] as const).map((item) => (
           <Pressable
@@ -103,6 +105,7 @@ function Editor({
   kind,
   suggestedCrewId,
 }: Props & { kind: GovernanceKind }) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(`${ipId}:${kind}`, true);
@@ -158,7 +161,7 @@ function Editor({
   };
   const refresh = () => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setReviewed(false);
     setConfirm(null);
     void op.run(
@@ -175,7 +178,7 @@ function Editor({
   };
   const submit = (input: GovernanceCommand, rebase = false) => {
     const signal = controller.current?.signal;
-    if (!signal) return;
+    if (!active || !signal) return;
     setSaved(false);
     setError("");
     setReviewed(false);

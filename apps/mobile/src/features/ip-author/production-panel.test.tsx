@@ -5,6 +5,7 @@ import { IpGovernancePanel } from "./governance-panel";
 const h = vi.hoisted(() => ({
   signedIn: true,
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   patch: vi.fn(),
@@ -50,7 +51,9 @@ vi.mock("@/components/themed-text", () => ({
 }));
 vi.mock("react-native", () => ({
   Linking: { openURL: h.open },
-  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  View: ({ children, style }: { children: ReactNode; style?: { display?: "none" | "flex" } }) => (
+    <div style={{ display: style?.display }}>{children}</div>
+  ),
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => null,
   Pressable: ({
@@ -92,6 +95,7 @@ vi.mock("@/features/services/conversation-video", () => ({
   ConversationVideo: () => <div>Video preview</div>,
 }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
   useLocalSearchParams: () => ({ id: "11111111-1111-4111-8111-111111111111" }),
   useRouter: () => ({ push: h.push }),
   Stack: {
@@ -145,6 +149,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   games = [
     { gameId, title: "My game", version: 0, linked: false, linkedElsewhere: false },
@@ -289,5 +294,32 @@ it("hides private game rows when access is revoked or the screen becomes inactiv
   expect(host.textContent).not.toContain("My game");
   h.active = false;
   await mount();
-  expect(host.textContent).toBe("");
+  expect((host.firstElementChild as HTMLElement).style.display).toBe("none");
+});
+
+it("preserves the nested stage reason and selected tab across background", async () => {
+  await mount();
+  await click("ipGovernance.stages");
+  await click("○ ipProduction.production");
+  await type("Ready after editing");
+  h.active = false;
+  await mount();
+  expect((host.firstElementChild as HTMLElement).style.display).toBe("none");
+  h.active = true;
+  await mount();
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="ipProduction.reason"]')?.value
+  ).toBe("Ready after editing");
+  expect(h.post).not.toHaveBeenCalled();
+  await click("ipProduction.submit");
+  expect(h.post).toHaveBeenCalledWith(
+    expect.stringContaining("/stage-applications"),
+    expect.objectContaining({
+      data: expect.objectContaining({
+        stage: "production",
+        reason: "Ready after editing",
+        expectedVersion: 1,
+      }),
+    })
+  );
 });
