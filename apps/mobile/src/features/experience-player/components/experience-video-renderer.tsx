@@ -25,7 +25,7 @@ import {
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 
 type CoreVideoTerminalMode =
-  | { kind: "held" }
+  | { kind: "held"; frameTimeSeconds: number }
   | { kind: "loop"; assetId: string; clipStartTime?: number }
   | null;
 
@@ -85,6 +85,11 @@ async function loadAndPlayClip(
     return;
   }
   player.play();
+}
+
+/** Native player properties are mutable host state, not React render state. */
+function restoreHeldFrame(player: { currentTime: number }, seconds: number) {
+  player.currentTime = seconds;
 }
 
 function EmptyVideoSequencePlaceholder({ label }: { label: string }) {
@@ -247,7 +252,7 @@ export function ExperienceVideoRenderer({
       setPlaybackState({
         rendererInstanceId: renderer.instanceId,
         sequenceIndex,
-        terminalMode: { kind: "held" },
+        terminalMode: { kind: "held", frameTimeSeconds: player.currentTime },
       });
       return;
     }
@@ -273,6 +278,7 @@ export function ExperienceVideoRenderer({
     advanceSequence,
     clip,
     durationMs,
+    player,
     renderer.instanceId,
     sequenceIndex,
     terminalMode?.kind,
@@ -492,6 +498,16 @@ export function ExperienceVideoRenderer({
     resumeWhenPresentingRef.current = true;
     onPlaybackInterrupted?.();
   });
+  const handleNativePlay = useEffectEvent(() => {
+    expectedPauseRef.current = false;
+    // OS media controls can issue Play without React changing presentation.
+    // Re-read the current clip state so held frames/stills cannot restart.
+    if (!presentingRef.current || isStill || !shouldAutoplay) {
+      expectedPauseRef.current = true;
+      player.pause();
+      if (terminalMode?.kind === "held") restoreHeldFrame(player, terminalMode.frameTimeSeconds);
+    }
+  });
   const handleNativeEnd = useEffectEvent(() => handleEnd());
   useEffect(() => {
     let interruptionTimer: ReturnType<typeof setTimeout> | undefined;
@@ -500,11 +516,7 @@ export function ExperienceVideoRenderer({
       ({ isPlaying, oldIsPlaying }) => {
         clearTimeout(interruptionTimer);
         if (isPlaying) {
-          expectedPauseRef.current = false;
-          if (!presentingRef.current) {
-            expectedPauseRef.current = true;
-            player.pause();
-          }
+          handleNativePlay();
           return;
         }
         if (expectedPauseRef.current) {

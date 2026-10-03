@@ -50,7 +50,7 @@ let handle: {
 } | null;
 let root: Root;
 const testCopy = { emptySequence: "No footage" } as ExperiencePlayerCopy;
-const render = (id = "empty", endBehavior?: Record<string, unknown>) =>
+const render = (id = "empty", endBehavior?: Record<string, unknown>, mediaType = "video/mp4") =>
   act(async () =>
     root.render(
       <ExperienceVideoRenderer
@@ -66,7 +66,7 @@ const render = (id = "empty", endBehavior?: Record<string, unknown>) =>
                       {
                         orientation: "landscape",
                         uri: "file:///clip.mp4",
-                        mediaType: "video/mp4",
+                        mediaType,
                         durationMs: 20000,
                       },
                     ],
@@ -241,4 +241,43 @@ it("resumes a terminal loop rather than declaring it finished", async () => {
   await act(async () => handle!.play({ userGesture: true }));
   expect(h.player.play).toHaveBeenCalledOnce();
   expect(completed).not.toHaveBeenCalled();
+});
+
+it("rejects a system resume during a held final frame without resetting its timer", async () => {
+  const ending = { behavior: "hold-last-frame", durationMs: 2000 };
+  await render("video", ending);
+  h.player.currentTime = 20;
+  await act(async () => handle!.play());
+  await advance(1000);
+  // Native/browser media controls may rewind an ended clip before emitting Play.
+  h.player.currentTime = 0;
+  h.player.pause.mockClear();
+  await playingEvent(true, false);
+  expect(h.player.pause).toHaveBeenCalledOnce();
+  expect(interrupted).not.toHaveBeenCalled();
+  expect(h.player.currentTime).toBe(20);
+  await advance(998);
+  expect(completed).not.toHaveBeenCalled();
+  await advance(1);
+  expect(completed).toHaveBeenCalledOnce();
+  expect(h.player.replaceAsync).toHaveBeenCalledOnce();
+});
+
+it("allows a terminal loop to keep playing while the screen is active", async () => {
+  await render("video", { behavior: "loop", assetId: "clip" });
+  h.player.currentTime = 20;
+  await act(async () => handle!.play());
+  h.player.pause.mockClear();
+  await playingEvent(true, false);
+  expect(h.player.pause).not.toHaveBeenCalled();
+  expect(completed).not.toHaveBeenCalled();
+});
+
+it("keeps stale video playback stopped while a still image owns the scene", async () => {
+  await render("still", { behavior: "hold-last-frame", durationMs: 2000 }, "image/png");
+  h.player.pause.mockClear();
+  await playingEvent(true, false);
+  expect(h.player.pause).toHaveBeenCalledOnce();
+  expect(interrupted).not.toHaveBeenCalled();
+  expect(h.player.replaceAsync).not.toHaveBeenCalled();
 });
