@@ -29,6 +29,7 @@ export function CheckInCard({ compact = false }: { compact?: boolean }) {
 
 function AccountCheckInCard({ userId, compact }: { userId: string | number; compact: boolean }) {
   const t = useTranslations("settings");
+  const common = useTranslations("common");
   const { isCurrentAccount } = useAuth();
   const queryClient = useQueryClient();
   const [claiming, setClaiming] = useState(false);
@@ -41,12 +42,31 @@ function AccountCheckInCard({ userId, compact }: { userId: string | number; comp
     };
   }, []);
 
-  const { data } = useQuery({
+  const { data, error, isFetching, refetch } = useQuery({
     queryKey: [...CHECK_IN_STATUS_KEY, String(userId)],
     queryFn: ({ signal }) => getCheckInStatus(signal),
     staleTime: 30_000,
   });
 
+  if (error)
+    return (
+      <Panel title={t("checkIn.title")}>
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground"
+        >
+          <span>{error.message || t("checkIn.loadError")}</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {common("retry")}
+          </Button>
+        </div>
+      </Panel>
+    );
   if (!data?.enabled) return null;
 
   const todayIndex = (data.nextStreakDay - 1) % data.rewards.length;

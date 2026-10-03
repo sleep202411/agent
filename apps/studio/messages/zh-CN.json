@@ -1943,6 +1943,7 @@
       "loadError": "无法加载积分优惠。"
     },
     "checkIn": {
+      "loadError": "无法加载每日签到。",
       "title": "每日签到",
       "streak": "已连续签到 {days} 天",
       "start": "签到开启连续奖励",

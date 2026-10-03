@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceSettingsGate } from "../_components/workspace-settings-gate";
+
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
@@ -23,6 +25,14 @@ import { CurrentPlanPanel } from "../_components/current-plan-panel";
  * would unlock real bars later.)
  */
 export default function UsageSettingsPage() {
+  const t = useTranslations("settings");
+  return (
+    <WorkspaceSettingsGate title={t("usageTitle")}>
+      <UsageSettingsPageContent />
+    </WorkspaceSettingsGate>
+  );
+}
+function UsageSettingsPageContent() {
   const t = useTranslations("settings");
   const common = useTranslations("common");
   const { user } = useAuth();

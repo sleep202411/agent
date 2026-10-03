@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceSettingsGate } from "../_components/workspace-settings-gate";
+
 import { useAuth } from "@/app/_components/auth-provider";
 import { useQuery } from "@tanstack/react-query";
 import { usePathname } from "@/i18n/navigation";
@@ -14,11 +16,14 @@ import { useWorkspace } from "@/app/_components/workspace-context";
 import { PageHeader, Panel } from "../_components/settings-ui";
 
 export default function MembersSettingsPage() {
+  const t = useTranslations("settings");
   const project = settingsMemberProject(usePathname());
   return project ? (
     <ProjectMembers key={`${project.kind}:${project.id}`} project={project} />
   ) : (
-    <WorkspaceMembers />
+    <WorkspaceSettingsGate title={t("members")}>
+      <WorkspaceMembers />
+    </WorkspaceSettingsGate>
   );
 }
 

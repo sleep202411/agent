@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceSettingsGate } from "../_components/workspace-settings-gate";
+
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -222,6 +224,14 @@ function useAnalyticsData(workspaceId: string | undefined, viewerId: string | nu
 
 /** Workspace usage analytics backed by real wallet ledger + AI job history. */
 export default function AnalyticsSettingsPage() {
+  const t = useTranslations("settings");
+  return (
+    <WorkspaceSettingsGate title={t("usageAnalytics")}>
+      <AnalyticsSettingsPageContent />
+    </WorkspaceSettingsGate>
+  );
+}
+function AnalyticsSettingsPageContent() {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const viewerId = user?.id == null ? null : String(user.id);

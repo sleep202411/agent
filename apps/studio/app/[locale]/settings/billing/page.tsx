@@ -1,5 +1,7 @@
 "use client";
 
+import { WorkspaceSettingsGate } from "../_components/workspace-settings-gate";
+
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useBillingWorkspace } from "@/app/_components/workspace-context";
@@ -17,6 +19,14 @@ import { CurrentPlanPanel } from "../_components/current-plan-panel";
  * membership plans remain in the subscription dialog.
  */
 export default function BillingSettingsPage() {
+  const t = useTranslations("settings");
+  return (
+    <WorkspaceSettingsGate title={t("planAndBilling")}>
+      <BillingSettingsPageContent />
+    </WorkspaceSettingsGate>
+  );
+}
+function BillingSettingsPageContent() {
   const t = useTranslations("settings");
   // Payer-rule mirror: the page always shows/recharges the pot the user pays
   // from — team pot when a team is active, otherwise the user's OWN personal

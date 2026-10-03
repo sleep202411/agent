@@ -1943,6 +1943,7 @@
       "loadError": "無法載入積分優惠。"
     },
     "checkIn": {
+      "loadError": "無法載入每日簽到。",
       "title": "每日簽到",
       "streak": "已連續簽到 {days} 天",
       "start": "簽到開啟連續獎勵",

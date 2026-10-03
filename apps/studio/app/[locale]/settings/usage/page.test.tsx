@@ -10,6 +10,7 @@ vi.mock("@/app/_components/auth-provider", () => ({
 }));
 vi.mock("@/app/_components/workspace-context", () => ({
   useActiveWorkspace: () => ({ id: "fixture", role: state.role }),
+  useWorkspace: () => ({ activeWorkspace: { id: "fixture", role: state.role }, loading: false }),
 }));
 vi.mock("@/app/_components/entitlement-context", () => ({
   useMyEntitlement: () => ({ data: undefined }),

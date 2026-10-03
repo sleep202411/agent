@@ -1943,6 +1943,7 @@
       "loadError": "Could not load credit offers."
     },
     "checkIn": {
+      "loadError": "Unable to load daily check-in.",
       "title": "Daily check-in",
       "streak": "{days}-day streak",
       "start": "Check in to start a streak",
