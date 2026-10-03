@@ -1439,6 +1439,7 @@
   "taskBrief.title": "标题",
   "taskBrief.description": "说明",
   "taskBrief.save": "保存修改",
+  "taskSchedule.latest": "最新保存的任务安排。应用草稿前，请核对以下内容。",
   "taskSchedule.edit": "编辑任务日程",
   "taskSchedule.priority": "优先级",
   "taskSchedule.low": "低",

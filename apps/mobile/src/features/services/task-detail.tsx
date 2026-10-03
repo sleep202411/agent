@@ -13,6 +13,7 @@ import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
 import { TaskChildButton, TaskChildCreate } from "./task-child-create";
 import { TaskAssignments } from "./task-assignments";
+import { useTaskScheduleSession } from "./use-task-schedule-session";
 import { TaskSchedule } from "./task-schedule";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
 import { TaskPlanningEditor } from "./task-planning-editor";
@@ -84,6 +85,9 @@ function TaskContent({
     locale = useLocale();
   const [creatingChild, setCreatingChild] = useState(false);
   const [revision, setRevision] = useState(0);
+  const scheduleSession = useTaskScheduleSession(taskId, generation, () =>
+    setRevision((v) => v + 1)
+  );
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
   const [result, setResult] = useState<{ revision: number; data?: Detail; error?: string }>();
   useEffect(() => {
@@ -181,6 +185,7 @@ function TaskContent({
             {data.revisionLimit ?? t("taskPlanning.unlimited")}
           </ThemedText>
           <TaskSchedule
+            session={scheduleSession}
             key={`schedule:${revision}`}
             task={data}
             userId={userId}

@@ -1439,6 +1439,7 @@
   "taskBrief.title": "標題",
   "taskBrief.description": "說明",
   "taskBrief.save": "儲存修改",
+  "taskSchedule.latest": "最新儲存的任務安排。套用草稿前，請核對以下內容。",
   "taskSchedule.edit": "編輯任務日程",
   "taskSchedule.priority": "優先級",
   "taskSchedule.low": "低",

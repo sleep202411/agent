@@ -1439,6 +1439,7 @@
   "taskBrief.title": "Title",
   "taskBrief.description": "Description",
   "taskBrief.save": "Save Changes",
+  "taskSchedule.latest": "Latest saved schedule. Review these details before applying your draft.",
   "taskSchedule.edit": "Edit Task Schedule",
   "taskSchedule.priority": "Priority",
   "taskSchedule.low": "Low",
