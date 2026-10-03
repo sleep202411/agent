@@ -1,4 +1,4 @@
-import { act, type ReactNode } from "react";
+import { act, useLayoutEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { TimelineExportPanel } from "./story-timeline-export-panel";
@@ -224,4 +224,25 @@ it("exports image-only timelines using the full image rather than its thumbnail"
   ]);
   expect(h.upload).toHaveBeenCalledOnce();
   expect(host.textContent).not.toContain("clips omitted");
+});
+
+it("aborts export during layout cleanup before a replacement scope commits", async () => {
+  let signal!: AbortSignal;
+  h.render.mockImplementation((_shots: unknown, nextSignal: AbortSignal) => {
+    signal = nextSignal;
+    return new Promise(() => {});
+  });
+  await mount();
+  await click("timeline.exportSave");
+  let abortedAtReplacementLayout = false;
+  function Replacement() {
+    useLayoutEffect(() => {
+      abortedAtReplacementLayout = signal.aborted;
+    }, []);
+    return null;
+  }
+  await act(async () => root.render(<Replacement />));
+  expect(abortedAtReplacementLayout).toBe(true);
+  expect(h.dispose).toHaveBeenCalled();
+  expect(h.upload).not.toHaveBeenCalled();
 });

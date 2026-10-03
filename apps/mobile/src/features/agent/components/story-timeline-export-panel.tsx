@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
@@ -46,7 +46,7 @@ function ExportPanel({ scope, userId, sequence }: Props) {
     .filter((c) => (c.kind === "video" || c.kind === "image") && c.source && c.durationMs > 0)
     .map((c) => ({ id: c.id, kind: c.kind, url: c.source!, durationMs: c.durationMs }));
   const [omitted, setOmitted] = useState(clips.length - shots.length);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const owned = {
       encoder: createTimelineEncoder(),
       upload: recovery.upload,

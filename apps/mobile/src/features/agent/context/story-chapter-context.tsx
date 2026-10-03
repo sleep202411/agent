@@ -35,6 +35,8 @@ type StoryChapterContextValue = {
   publication: InteractiveFilmPublication | null;
   publicationLoading: boolean;
   publicationFailed: boolean;
+  publicationError: string | undefined;
+  refreshPublication: () => void;
   loading: boolean;
   error: string | undefined;
   refresh: () => void;
@@ -72,6 +74,9 @@ export function StoryChapterProvider({
   const [publication, setPublication] = useState<InteractiveFilmPublication | null>(null);
   const [publicationLoading, setPublicationLoading] = useState(true);
   const [publicationFailed, setPublicationFailed] = useState(false);
+  const [publicationError, setPublicationError] = useState<string>();
+  const [publicationRefreshKey, setPublicationRefreshKey] = useState(0);
+  const refreshPublication = useCallback(() => setPublicationRefreshKey((value) => value + 1), []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -168,19 +173,23 @@ export function StoryChapterProvider({
 
     let cancelled = false;
     const controller = new AbortController();
+    let pending = false;
     const load = async (silent: boolean) => {
+      if (pending) return;
+      pending = true;
       if (!silent) setPublicationLoading(true);
       try {
         const next = await getInteractiveFilmPublication(projectId, controller.signal);
         if (cancelled || controller.signal.aborted) return;
         setPublication(next);
         setPublicationFailed(false);
-      } catch {
+        setPublicationError(undefined);
+      } catch (error) {
         if (cancelled || controller.signal.aborted) return;
-        if (silent) return;
-        setPublication(null);
         setPublicationFailed(true);
+        setPublicationError(error instanceof Error ? error.message : String(error));
       } finally {
+        pending = false;
         if (!cancelled && !controller.signal.aborted && !silent) setPublicationLoading(false);
       }
     };
@@ -196,7 +205,7 @@ export function StoryChapterProvider({
       controller.abort();
       clearInterval(timer);
     };
-  }, [canRelease, projectId]);
+  }, [canRelease, projectId, publicationRefreshKey]);
 
   const value = useMemo(
     () => ({
@@ -210,6 +219,8 @@ export function StoryChapterProvider({
       publication: canRelease ? publication : null,
       publicationLoading: loading || (canRelease && publicationLoading),
       publicationFailed: canRelease && publicationFailed,
+      publicationError: canRelease ? publicationError : undefined,
+      refreshPublication,
       loading,
       error,
       refresh,
@@ -227,6 +238,8 @@ export function StoryChapterProvider({
       projectTitle,
       publication,
       publicationFailed,
+      publicationError,
+      refreshPublication,
       publicationLoading,
       refresh,
       videoSnapshotHash,

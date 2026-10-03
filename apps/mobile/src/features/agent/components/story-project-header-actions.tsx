@@ -100,6 +100,8 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     publication,
     publicationLoading,
     publicationFailed,
+    publicationError,
+    refreshPublication,
     setPublication,
   } = useStoryChapterContext();
 
@@ -122,7 +124,11 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const status = publication?.status ?? null;
   const rejectReason = publication?.rejectReason ?? null;
   const canSubmitStatus = status === null || status === "draft" || status === "offline";
-  const canOffline = canRelease && (status === "reviewing" || status === "published");
+  const canOffline =
+    canRelease &&
+    !publicationFailed &&
+    !publicationLoading &&
+    (status === "reviewing" || status === "published");
   const busy = submitting || offlining;
   const hasSnapshot =
     typeof draftRevision === "number" &&
@@ -265,7 +271,25 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     <View style={styles.row}>
       {canRelease ? (
         <View style={styles.publishGroup}>
-          {!publicationLoading && !publicationFailed ? (
+          {publicationFailed ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("agent.publish.retryStatus")}
+              disabled={publicationLoading}
+              hitSlop={6}
+              onPress={() =>
+                Alert.alert(t("agent.publish.statusUnavailable"), publicationError, [
+                  { text: t("agent.publish.cancel"), style: "cancel" },
+                  { text: t("agent.publish.retryStatus"), onPress: refreshPublication },
+                ])
+              }
+            >
+              <View style={styles.badge}>
+                <IconAlertTriangle color="rgba(255,255,255,0.72)" size={14} strokeWidth={1.8} />
+                <Text style={styles.badgeText}>{t("agent.publish.status.unavailable")}</Text>
+              </View>
+            </Pressable>
+          ) : !publicationLoading ? (
             rejectReason ? (
               <Pressable
                 accessibilityRole="button"

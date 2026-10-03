@@ -4,6 +4,8 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryProjectHeaderActions } from "./story-project-header-actions";
 const h = vi.hoisted(() => ({
   generation: 1,
+  failed: false,
+  retry: vi.fn(),
   alert: vi.fn(),
   prepare: vi.fn(),
   submit: vi.fn(),
@@ -29,7 +31,9 @@ vi.mock("@/features/agent/context/story-chapter-context", () => ({
     loading: false,
     publication: null,
     publicationLoading: false,
-    publicationFailed: false,
+    publicationFailed: h.failed,
+    publicationError: h.failed ? "Status read failed" : undefined,
+    refreshPublication: h.retry,
     setPublication: h.set,
   }),
 }));
@@ -71,6 +75,7 @@ async function confirmation() {
   return h.alert.mock.calls.at(-1)![2][1].onPress as () => void;
 }
 beforeEach(() => {
+  h.failed = false;
   vi.resetAllMocks();
   h.generation = 1;
   h.prepare.mockResolvedValue({ gameId: "film" });
@@ -129,4 +134,18 @@ it("aborts an in-flight preparation when the workspace unmounts", async () => {
   await act(async () => root.render(null));
   expect(signal.aborted).toBe(true);
   expect(h.submit).not.toHaveBeenCalled();
+});
+
+it("opens status failure details and offers explicit retry", async () => {
+  h.failed = true;
+  await act(async () => root.render(<StoryProjectHeaderActions projectId="project" />));
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="agent.publish.retryStatus"]')!.click()
+  );
+  const [title, message, actions] = h.alert.mock.calls.at(-1)!;
+  expect(title).toBe("agent.publish.statusUnavailable");
+  expect(message).toBe("Status read failed");
+  actions.find((action: { text: string }) => action.text === "agent.publish.retryStatus").onPress();
+  expect(h.retry).toHaveBeenCalledOnce();
+  expect(h.prepare).not.toHaveBeenCalled();
 });
