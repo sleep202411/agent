@@ -5,9 +5,11 @@ import { WorkspaceGenerationPanel, canReadGenerationWorkspace } from "./workspac
 const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
+  focused: true,
   load: vi.fn(),
   records: new Map<string, string>(),
 }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s }));
@@ -40,7 +42,9 @@ vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
-  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  View: ({ children, style }: { children: ReactNode; style?: { display?: "none" | "flex" } }) => (
+    <div style={{ display: style?.display }}>{children}</div>
+  ),
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => null,
   Pressable: ({
@@ -83,6 +87,7 @@ beforeEach(() => {
   h.records.clear();
   h.generation = 1;
   h.active = true;
+  h.focused = true;
   h.load.mockResolvedValue([personal, team]);
   host = document.createElement("div");
   root = createRoot(host);
@@ -123,8 +128,9 @@ it("fails closed on roster errors and after account or foreground changes", asyn
   expect(host.textContent).not.toContain("composer:");
   h.active = false;
   await mount();
-  expect(host.textContent).toBe("");
+  expect((host.firstElementChild as HTMLElement).style.display).toBe("none");
   h.active = true;
+  h.focused = true;
   h.generation = 2;
   await mount();
   expect(host.textContent).toBe("");
@@ -136,4 +142,23 @@ it("allows project-only workspaces to reach the project selector without implyin
     canReadGenerationWorkspace({ ...team, accessScope: "project_only", crewRole: "viewer" })
   ).toBe(true);
   expect(canReadGenerationWorkspace({ ...team, status: "archived" })).toBe(false);
+});
+
+it("keeps the workspace composer busy through background and retires it on route exit", async () => {
+  await mount();
+  await click("start write");
+  h.active = false;
+  await mount();
+  h.active = true;
+  await mount();
+  expect(button("aiLab.refreshWorkspaces").disabled).toBe(true);
+  expect(h.load).toHaveBeenCalledTimes(1);
+  await click("finish write");
+  expect(button("aiLab.refreshWorkspaces").disabled).toBe(false);
+  h.focused = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.focused = true;
+  await mount();
+  expect(h.load).toHaveBeenCalledTimes(2);
 });

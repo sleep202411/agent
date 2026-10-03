@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -19,11 +20,12 @@ export function canReadGenerationWorkspace(workspace: StudioWorkspace) {
   );
 }
 export function WorkspaceGenerationPanel(props: { userId: string; generation: number }) {
-  return useScreenActive() && props.generation === getAuthGeneration() ? (
+  return useIsFocused() && props.generation === getAuthGeneration() ? (
     <WorkspaceSession key={`${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
 function WorkspaceSession({ userId, generation }: { userId: string; generation: number }) {
+  const active = useScreenActive();
   const t = useTranslations();
   const [record] = useState(() => durableRecord("ai-lab-workspace", userId, "selection"));
   const [rows, setRows] = useState<StudioWorkspace[]>([]),
@@ -60,7 +62,7 @@ function WorkspaceSession({ userId, generation }: { userId: string; generation: 
   }, [generation, epoch, record]);
   const workspace = rows.find((w) => w.id === selected);
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
       <View style={{ paddingHorizontal: 16, paddingVertical: 8, gap: 6 }}>
         <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <Pressable

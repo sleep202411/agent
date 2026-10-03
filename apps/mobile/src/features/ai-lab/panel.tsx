@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import { uuid } from "expo-modules-core";
-import { router } from "expo-router";
+import { router, useIsFocused } from "expo-router";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -109,7 +109,7 @@ type PanelProps = {
   onBusyChange?: (busy: boolean) => void;
 };
 export function GenerationPanel(props: PanelProps) {
-  return useScreenActive() && props.generation === getAuthGeneration() ? (
+  return useIsFocused() && props.generation === getAuthGeneration() ? (
     <Session
       key={`${props.userId}:${props.generation}:${props.workspace?.id ?? "personal"}:${props.workspace?.role}:${props.workspace?.crewRole}:${props.project?.kind}:${props.project?.id}:${props.project?.canGenerate}`}
       {...props}
@@ -117,6 +117,7 @@ export function GenerationPanel(props: PanelProps) {
   ) : null;
 }
 function Session({ userId, generation, workspace, project, onBusyChange }: PanelProps) {
+  const active = useScreenActive();
   const locale = useLocale();
   const t = useTranslations(),
     theme = useTheme(),
@@ -224,14 +225,19 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     return () => c.abort();
   }, [generation, epoch, fail, workspaceId, project]);
   useEffect(() => {
-    const c = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    // Reset the displayed list when its media type changes.
+    // Retire old history only when its scope changes, not during a picker handoff.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setHistoryLoading(true);
     setJobs([]);
     setSelected(undefined);
     selection.current = null;
+  }, [mode, generation, jobScope]);
+  useEffect(() => {
+    if (!active) return;
+    const c = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Refresh history on foreground return without losing its selected detail.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistoryLoading(true);
     async function read() {
       try {
         const value = await listGenerationJobs(mode, generation, c.signal, jobScope);
@@ -265,7 +271,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       c.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [mode, generation, epoch, fail, jobScope]);
+  }, [active, mode, generation, epoch, fail, jobScope]);
   const preset = data?.catalog.presets.find((p) => p.id === draft?.presetId),
     model = data?.catalog.models.find((m) => m.id === draft?.modelId),
     schemaChanged = !!model && draft?.schemaVersion !== model.schemaVersion,
@@ -302,7 +308,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
   }
   function run(request: () => Promise<unknown>, success: () => void = () => {}) {
     const c = controller.current;
-    if (!c || c.signal.aborted) return;
+    if (!active || !c || c.signal.aborted) return;
     void op.run(
       request,
       () => {
@@ -618,6 +624,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     borderRadius: 8,
     padding: 12,
   };
+  if (!active) return null;
   if (privateDenied)
     return (
       <View style={{ padding: 16 }}>

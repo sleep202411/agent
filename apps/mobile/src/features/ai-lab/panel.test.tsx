@@ -12,6 +12,7 @@ vi.mock("expo-image", () => ({ Image: () => null }));
 const h = vi.hoisted(() => ({
   signedIn: true,
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   patch: vi.fn(),
@@ -113,6 +114,7 @@ vi.mock("@/features/services/conversation-video", () => ({
   ConversationVideo: () => <div>Video preview</div>,
 }));
 vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
   router: { push: h.push },
   useLocalSearchParams: () => ({ id: "11111111-1111-4111-8111-111111111111" }),
   useRouter: () => ({ push: h.push }),
@@ -220,6 +222,7 @@ beforeEach(() => {
   h.records.clear();
   h.generation = 1;
   h.active = true;
+  h.focused = true;
   jobs = [];
   host = document.createElement("div");
   root = createRoot(host);
@@ -307,7 +310,7 @@ it("loads a job and confirms cancellation through the official endpoint", async 
   await click("aiLab.confirm");
   expect(h.post.mock.calls[0][0]).toBe(`/ai/jobs/${job.id}/cancel`);
 });
-it("unmounts private work when backgrounded or account generation changes", async () => {
+it("hides private work when backgrounded and retires it on account changes", async () => {
   jobs = [job];
   await mount();
   await click("aiLab.history");
@@ -315,6 +318,7 @@ it("unmounts private work when backgrounded or account generation changes", asyn
   await mount();
   expect(host.textContent).toBe("");
   h.active = true;
+  h.focused = true;
   h.generation = 2;
   await mount();
   expect(host.textContent).toBe("");
@@ -1307,4 +1311,81 @@ it("cancels the original confirmed job when history selection changes", async ()
   await click("aiLab.confirm");
   expect(h.post).toHaveBeenCalledTimes(1);
   expect(h.post.mock.calls[0][0]).toBe(`/ai/jobs/${job.id}/cancel`);
+});
+
+it.each(["background", "route exit", "account change"])(
+  "handles a reference picker across %s",
+  async (transition) => {
+    let resolvePick!: (value: unknown) => void;
+    h.pick.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePick = resolve;
+        })
+    );
+    const put = vi.fn().mockResolvedValue({ ok: true });
+    h.selected.mockResolvedValue({ size: 100, put });
+    h.post
+      .mockResolvedValueOnce({
+        uploadUrl: "https://storage.test/upload",
+        method: "PUT",
+        headers: {},
+        storageKey: "staging/image",
+      })
+      .mockResolvedValueOnce({
+        mediaAssetId: "22222222-2222-4222-8222-222222222222",
+        storageKey: "final/image",
+        url: "https://storage.test/final.png",
+      });
+    await mount();
+    await click("Image preset");
+    await change("Prompt", "Keep this prompt");
+    await click("aiLab.uploadImage");
+    if (transition === "background") h.active = false;
+    else if (transition === "route exit") h.focused = false;
+    else h.generation = 2;
+    await mount();
+    expect(host.textContent).toBe("");
+    if (transition === "background") {
+      h.active = true;
+      await mount();
+    }
+    await act(async () =>
+      resolvePick({
+        canceled: false,
+        assets: [{ uri: "file:///image.png", name: "image.png", mimeType: "image/png" }],
+      })
+    );
+    if (transition === "background") {
+      expect(input("Prompt").value).toBe("Keep this prompt");
+      expect(input("References").value).toBe("https://storage.test/final.png");
+      expect(put).toHaveBeenCalledTimes(1);
+      expect(h.post.mock.calls.every(([path]) => path.startsWith("/media/"))).toBe(true);
+    } else {
+      expect(h.post).not.toHaveBeenCalled();
+      expect(put).not.toHaveBeenCalled();
+    }
+  }
+);
+
+it("pauses job polling during background and preserves selected history on return", async () => {
+  vi.useFakeTimers();
+  try {
+    jobs = [job];
+    await mount();
+    await click("aiLab.history");
+    await click("Image model · aiLab.status.in_queue");
+    expect(button("aiLab.cancel")).toBeDefined();
+    h.active = false;
+    await mount();
+    const reads = h.get.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(16000));
+    expect(h.get).toHaveBeenCalledTimes(reads);
+    h.active = true;
+    await mount();
+    expect(h.get.mock.calls.length).toBeGreaterThan(reads);
+    expect(button("aiLab.cancel")).toBeDefined();
+  } finally {
+    vi.useRealTimers();
+  }
 });
