@@ -11,7 +11,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useCallback, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,11 @@ const LABEL_CLASS = "@max-[1000px]:sr-only";
 /** Project publication status is read directly from Java by projectId. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
   const { user } = useAuth();
+  if (user?.id == null) return null;
+  return <AccountStoryProjectHeaderActions key={`${user.id}:${projectId}`} projectId={projectId} />;
+}
+function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) {
+  const { user, isCurrentAccount } = useAuth();
   const router = useRouter();
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
@@ -65,10 +70,10 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   });
   const workbench = workbenchQuery.data ?? null;
   const canRelease = Boolean(workbench?.project.capabilities.includes("story.release"));
-  const publicationKey = interactiveFilmPublicationQueryKey(projectId);
+  const publicationKey = interactiveFilmPublicationQueryKey(projectId, user?.id ?? null);
   const publicationQuery = useQuery({
     queryKey: publicationKey,
-    queryFn: () => getInteractiveFilmPublication(projectId),
+    queryFn: ({ signal }) => getInteractiveFilmPublication(projectId, signal),
     enabled: canRelease,
     retry: 1,
     staleTime: 15_000,
@@ -127,15 +132,54 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const canOffline = canRelease && (status === "reviewing" || status === "published");
   const canEdit = !workbench || workbench.project.capabilities.includes("story.edit");
 
+  const offlineOwner = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    offlineOwner.current = controller;
+    return () => {
+      controller.abort();
+      if (offlineOwner.current === controller) offlineOwner.current = null;
+    };
+  }, [canRelease]);
   const offlineMutation = useMutation({
-    mutationFn: () => offlineInteractiveFilm(projectId),
-    onSuccess: (next) => {
+    onMutate: () => offlineOwner.current,
+    mutationFn: async () => {
+      const controller = offlineOwner.current;
+      if (
+        !canOffline ||
+        !controller ||
+        controller.signal.aborted ||
+        user?.id == null ||
+        !isCurrentAccount(user.id)
+      )
+        throw new DOMException("Publication action abandoned", "AbortError");
+      const next = await offlineInteractiveFilm(projectId, controller.signal);
+      return { next, controller };
+    },
+    onSuccess: ({ next, controller }) => {
+      if (
+        controller !== offlineOwner.current ||
+        controller.signal.aborted ||
+        user?.id == null ||
+        !isCurrentAccount(user.id)
+      )
+        return;
       queryClient.setQueryData<InteractiveFilmPublication>(publicationKey, next);
       setOfflineIntent(false);
       toast.success(t("publish.offline.success"));
       void queryClient.invalidateQueries({ queryKey: publicationKey });
     },
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("publish.errors.offlineFailed"))),
+    onError: (error, _variables, controller) => {
+      if (
+        controller === offlineOwner.current &&
+        offlineOwner.current &&
+        !offlineOwner.current.signal.aborted &&
+        user?.id != null &&
+        isCurrentAccount(user.id) &&
+        !(error instanceof DOMException && error.name === "AbortError")
+      )
+        toast.error(storyApiErrorMessage(error, t("publish.errors.offlineFailed")));
+    },
   });
 
   const submitButton = (
