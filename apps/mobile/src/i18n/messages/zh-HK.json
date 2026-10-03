@@ -4656,5 +4656,13 @@
   "creatorStudio.basedIn": "所在城市",
   "creatorStudio.serves": "服務地區",
   "creatorStudio.delivery": "服務方式",
-  "creatorStudio.remote": "可提供遠端服務"
+  "creatorStudio.remote": "可提供遠端服務",
+  "play.world.stream": "世界畫面",
+  "play.world.connecting": "正在連接世界…",
+  "play.world.forward": "向前移動",
+  "play.world.backward": "向後移動",
+  "play.world.left": "向左移動",
+  "play.world.right": "向右移動",
+  "play.world.finish": "結束探索",
+  "play.world.jump": "跳躍"
 }

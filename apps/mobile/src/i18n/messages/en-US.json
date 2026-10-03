@@ -4656,5 +4656,13 @@
   "creatorStudio.basedIn": "Based in",
   "creatorStudio.serves": "Serves",
   "creatorStudio.delivery": "Service delivery",
-  "creatorStudio.remote": "Remote services available"
+  "creatorStudio.remote": "Remote services available",
+  "play.world.stream": "World stream",
+  "play.world.connecting": "Connecting to the world…",
+  "play.world.forward": "Move forward",
+  "play.world.backward": "Move backward",
+  "play.world.left": "Move left",
+  "play.world.right": "Move right",
+  "play.world.finish": "Finish exploration",
+  "play.world.jump": "Jump"
 }
