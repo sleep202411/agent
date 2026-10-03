@@ -3541,6 +3541,8 @@
   "aiLab.recover": "Recover submission",
   "aiLab.clear": "Review and clear pending request",
   "aiLab.catalogChanged": "The model, available settings, access, or pricing changed. Review the current details before generating.",
+  "aiLab.unsupportedSavedSettings": "These saved settings are no longer supported. Remove them before generating.",
+  "aiLab.removeSavedSetting": "Remove saved setting: {field}",
   "aiLab.schemaChanged": "Model settings changed. Review the catalog and reset this draft before generating.",
   "aiLab.membership": "Membership",
   "aiLab.on": "On",

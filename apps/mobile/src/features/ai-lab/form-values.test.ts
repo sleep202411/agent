@@ -64,3 +64,20 @@ it("uses declared conditional visibility, enablement, options and cross-field co
   expect(readOptions(conditional.properties.mode!)).toHaveLength(2);
   expect(() => prepareFormValues(conditional, { mode: "image" })).toThrow("Reference required");
 });
+
+it.each([0, false, "", null, ["old"], { nested: true }])(
+  "does not silently drop obsolete saved values: %j",
+  (value) => {
+    const raw = { prompt: "Lake", retired: value };
+    expect(() => prepareFormValues(schema, raw)).toThrow("Unsupported saved setting: retired");
+    expect(raw.retired).toEqual(value);
+  }
+);
+it("preserves extra values when the provider explicitly allows them", () => {
+  expect(
+    prepareFormValues(
+      { ...schema, additionalProperties: true },
+      { prompt: "Lake", seed: "0", extra: { nested: false } }
+    )
+  ).toEqual({ prompt: "Lake", seed: 0, extra: { nested: false } });
+});

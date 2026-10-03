@@ -3541,6 +3541,8 @@
   "aiLab.recover": "恢复提交",
   "aiLab.clear": "核对并清除待确认请求",
   "aiLab.catalogChanged": "模型、可用设置、权限或价格已更改。请检查最新详情后再生成。",
+  "aiLab.unsupportedSavedSettings": "以下已保存的设置不再受支持。请移除后再生成。",
+  "aiLab.removeSavedSetting": "移除已保存的设置：{field}",
   "aiLab.schemaChanged": "模型设置已变化，请核对目录并重置草稿后生成。",
   "aiLab.membership": "会员",
   "aiLab.on": "开",

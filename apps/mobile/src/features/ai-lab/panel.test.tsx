@@ -1201,3 +1201,43 @@ it.each(["disabled", "schema", "price", "access"])(
     }
   }
 );
+
+it("requires explicit removal of obsolete settings without erasing the prompt", async () => {
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Keep my words");
+  await change("Seed", "0");
+  const originalGet = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, ...args) =>
+    path === "/ai/models"
+      ? {
+          ...catalog,
+          models: [
+            {
+              ...model,
+              input_schema: {
+                ...model.input_schema,
+                properties: { prompt: model.input_schema.properties.prompt },
+              },
+            },
+          ],
+        }
+      : originalGet(path, ...args)
+  );
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("aiLab.unsupportedSavedSettings");
+  expect(host.textContent).toContain('seed: "0"');
+  await click("aiLab.generate");
+  expect(h.post).not.toHaveBeenCalled();
+  // Test translations return keys; each removal keeps the other values intact.
+  while (button("aiLab.removeSavedSetting")) {
+    await click("aiLab.removeSavedSetting");
+    expect(input("Prompt").value).toBe("Keep my words");
+  }
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post).toHaveBeenCalledOnce();
+  expect(h.post.mock.calls[0][1].data.input).toEqual({ prompt: "Keep my words" });
+});

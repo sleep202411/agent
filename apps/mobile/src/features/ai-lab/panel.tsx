@@ -30,7 +30,7 @@ import {
   canCreateStudioProject,
   type StudioWorkspace,
 } from "@/features/agent/api/studio-projects-api";
-import { prepareFormValues } from "./form-values";
+import { prepareFormValues, unsupportedFormFields } from "./form-values";
 import {
   buildReferenceContract,
   imageReferences,
@@ -274,6 +274,8 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       !!preset &&
       canUseGeneration(model, preset, data.rank) &&
       !schemaChanged;
+  const unsupportedFields =
+    model && draft ? unsupportedFormFields(model.input_schema, draft.values) : [];
   function requestChoose(presetId: string, modelId?: string) {
     if (draft && (draft.presetId !== presetId || (modelId && draft.modelId !== modelId))) {
       setNextChoice({ presetId, modelId });
@@ -776,6 +778,41 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
               ) : null}
             </>
           ) : null}
+          {draft && unsupportedFields.length > 0 && (
+            <View style={{ gap: 8 }}>
+              <ThemedText accessibilityRole="alert">
+                {t("aiLab.unsupportedSavedSettings")}
+              </ThemedText>
+              {unsupportedFields.map((name) => (
+                <View key={name} style={{ gap: 4 }}>
+                  <ThemedText type="small">
+                    {name}: {JSON.stringify(draft.values[name])}
+                  </ThemedText>
+                  <Button
+                    label={t("aiLab.removeSavedSetting").replace("{field}", name)}
+                    disabled={op.busy || !!pending || !!retryPending || !!draft.upload}
+                    onPress={() => {
+                      if (
+                        getAuthGeneration() !== generation ||
+                        op.busy ||
+                        pending ||
+                        retryPending ||
+                        draft.upload
+                      )
+                        return;
+                      const values = { ...draft.values };
+                      delete values[name];
+                      try {
+                        save({ ...draft, values });
+                      } catch (e) {
+                        fail(e);
+                      }
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+          )}
           {model && draft
             ? fieldDescriptors(model.input_schema, draft.values).map((descriptor) => {
                 const { name, field, enabled } = descriptor,

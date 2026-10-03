@@ -1,11 +1,24 @@
 import type { AiObjectSchema } from "@repo/shared";
 import { pruneInput, validateInput, type AiValidationMessages } from "./schema";
+/** Saved fields outside the provider's current contract require an explicit user decision. */
+export function unsupportedFormFields(schema: AiObjectSchema, raw: Record<string, unknown>) {
+  if (schema.additionalProperties === true) return [];
+  return Object.keys(raw).filter(
+    (name) =>
+      !Object.prototype.hasOwnProperty.call(schema.properties, name) && raw[name] !== undefined
+  );
+}
 /** Keep raw text in the draft, parse only for review/submission so typing is lossless. */
 export function prepareFormValues(
   schema: AiObjectSchema,
   raw: Record<string, unknown>,
   messages?: AiValidationMessages
 ) {
+  const unsupported = unsupportedFormFields(schema, raw);
+  if (unsupported.length)
+    throw new Error(
+      messages?.unsupportedOption(unsupported[0]!) ?? `Unsupported saved setting: ${unsupported[0]}`
+    );
   const values: Record<string, unknown> = { ...raw };
   for (const [name, field] of Object.entries(schema.properties)) {
     const value = raw[name];
@@ -33,5 +46,13 @@ export function prepareFormValues(
   }
   const issues = validateInput(schema, values, messages);
   if (issues.length) throw new Error(issues[0].message);
-  return pruneInput(schema, values);
+  const extras =
+    schema.additionalProperties === true
+      ? Object.fromEntries(
+          Object.entries(values).filter(
+            ([name]) => !Object.prototype.hasOwnProperty.call(schema.properties, name)
+          )
+        )
+      : {};
+  return { ...extras, ...pruneInput(schema, values) };
 }
