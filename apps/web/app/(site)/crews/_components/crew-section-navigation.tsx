@@ -57,7 +57,7 @@ export function CrewSectionNavigation({
   return (
     <div
       className={cn(
-        "mb-3 bg-background",
+        "mb-3 shrink-0 bg-background",
         sticky && "md:sticky md:top-[88px] md:z-30 lg:top-[96px]"
       )}
     >

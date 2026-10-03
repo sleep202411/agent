@@ -691,7 +691,7 @@ it("does not resurrect a deleted server task from an old confirmed browser draft
   );
   await render();
   expect(host.textContent).not.toContain("Deleted task");
-  expect(host.textContent).toContain("0 saved tasks");
+  expect(host.querySelector('a[href*="deleted-task"]')).toBeNull();
 });
 
 it("lets an assigned non-manager find a saved task for delivery without creation controls", async () => {

@@ -134,7 +134,7 @@ export function CrewWorkbenchShell({
         </Link>
         <div className="my-2 h-px bg-white/[0.075]" />
 
-        <nav className="flex min-h-0 flex-1 flex-col gap-0.5">
+        <nav className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain">
           {tabs
             .filter((tab) => ["overview", "tasks", "roles", "income"].includes(tab.id))
             .map((tab) => {

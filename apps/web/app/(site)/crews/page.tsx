@@ -62,6 +62,7 @@ export default function CrewsPage() {
       : user
         ? "mine"
         : "crews";
+  const workspaceView = view === "positions" || (view === "mine" && !!selectedCrew);
   const setView = (next: ViewMode) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("view", next);
@@ -147,8 +148,8 @@ export default function CrewsPage() {
   return (
     <div
       className={
-        view === "mine" && selectedCrew
-          ? "bg-background"
+        workspaceView
+          ? "bg-background lg:h-[calc(100dvh-4rem)] lg:min-h-0"
           : "min-h-[calc(100dvh-8rem)] bg-background"
       }
     >
@@ -160,10 +161,12 @@ export default function CrewsPage() {
       />
 
       <div
-        className={`mx-auto max-w-[1800px] px-4 pt-8 sm:px-6 ${view === "mine" && selectedCrew ? "pb-4" : "pb-6"}`}
+        className={`mx-auto max-w-[1800px] px-4 pt-4 sm:px-6 ${workspaceView ? "lg:flex lg:h-full lg:min-h-0 lg:flex-col" : "pb-6"}`}
       >
-        <div className="min-w-0">
-          <CrewSectionNavigation active={view} onViewChange={setView}>
+        <div
+          className={workspaceView ? "min-w-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col" : "min-w-0"}
+        >
+          <CrewSectionNavigation active={view} onViewChange={setView} sticky={!workspaceView}>
             <div className="ml-auto shrink-0 pb-2">
               <Button
                 type="button"
@@ -183,7 +186,7 @@ export default function CrewsPage() {
           </CrewSectionNavigation>
 
           {view === "mine" ? (
-            <section aria-label={tCrew("myCrewsTitle")}>
+            <section className="lg:min-h-0 lg:flex-1" aria-label={tCrew("myCrewsTitle")}>
               {!user ? (
                 <p className="py-12 text-center text-muted-foreground">{tCrew("myCrewsSignIn")}</p>
               ) : (
@@ -191,7 +194,7 @@ export default function CrewsPage() {
                   {myCrews.isPending ? (
                     <CardSkeleton count={1} />
                   ) : selectedCrew ? (
-                    <div className="h-[calc(100dvh-13rem)] min-h-[28rem] overflow-hidden rounded-xl">
+                    <div className="h-[calc(100dvh-13rem)] min-h-[28rem] overflow-hidden lg:h-full lg:min-h-0">
                       <CrewWorkspace
                         key={`${user.id}:${selectedCrew.id}`}
                         id={selectedCrew.id}
