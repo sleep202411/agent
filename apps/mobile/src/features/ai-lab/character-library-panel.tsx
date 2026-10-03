@@ -73,7 +73,7 @@ function Library(props: Viewer) {
       (rows) => {
         if (!c.signal.aborted) {
           setWorkspaces(rows);
-          setSelected(rows.find((w) => w.isDefault)?.id ?? rows[0]?.id);
+          setSelected((current) => current ?? rows.find((w) => w.isDefault)?.id ?? rows[0]?.id);
         }
       },
       (e) => {
@@ -93,7 +93,6 @@ function Library(props: Viewer) {
         label={t("likenessGrants.refresh")}
         onPress={() => {
           setWorkspaces(undefined);
-          setSelected(undefined);
           setError("");
           setEpoch((v) => v + 1);
         }}
@@ -105,6 +104,9 @@ function Library(props: Viewer) {
       ) : null}
       {workspaces?.length === 0 ? (
         <ThemedText>{t("likenessGrants.noWorkspaces")}</ThemedText>
+      ) : null}
+      {workspaces && selected && !workspace ? (
+        <ThemedText accessibilityRole="alert">{t("aiLab.workspaceUnavailable")}</ThemedText>
       ) : null}
       {workspaces?.map((w) => (
         <Button
