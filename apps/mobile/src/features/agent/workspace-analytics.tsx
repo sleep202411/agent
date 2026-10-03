@@ -48,6 +48,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
   }, [workspaceId, generation, projectId, range, key]);
   const current = snapshot?.key === key ? snapshot : undefined,
     data = current?.data;
+  const visibleSection = section === "members" && !data?.memberUsage ? "daily" : section;
   const points = (value: string) => new Intl.NumberFormat(locale).format(BigInt(value));
   const totals = data ? analyticsTotals(data.ledger) : undefined;
   const usage = data ? generationUsage(data) : undefined;
@@ -110,7 +111,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
               <Pressable
                 key={value}
                 accessibilityRole="tab"
-                accessibilityState={{ selected: section === value }}
+                accessibilityState={{ selected: visibleSection === value }}
                 style={box}
                 onPress={() => setSection(value)}
               >
@@ -118,7 +119,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
               </Pressable>
             ))}
           </View>
-          {(section === "daily" || section === "members") && (
+          {(visibleSection === "daily" || visibleSection === "members") && (
             <>
               <ThemedText type="smallBold">{label("project")}</ThemedText>
               <ScrollView horizontal>
@@ -136,7 +137,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
               </ScrollView>
             </>
           )}
-          {section === "daily" && (
+          {visibleSection === "daily" && (
             <>
               <ThemedText type="small">{label("dailyWindow")}</ThemedText>
               {daily.map((row) => (
@@ -157,7 +158,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
               ))}
             </>
           )}
-          {section === "jobs" && usage && (
+          {visibleSection === "jobs" && usage && (
             <View style={box}>
               <ThemedText type="smallBold">{label("models")}</ThemedText>
               {usage.models.map((model) => (
@@ -168,7 +169,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
               ))}
             </View>
           )}
-          {section === "jobs" &&
+          {visibleSection === "jobs" &&
             (data.jobs.length ? (
               data.jobs.map((job) => (
                 <View key={job.id} style={box}>
@@ -191,7 +192,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
             ) : (
               <ThemedText>{label("empty")}</ThemedText>
             ))}
-          {section === "ledger" &&
+          {visibleSection === "ledger" &&
             (data.ledger.length ? (
               data.ledger.map((entry) => (
                 <View key={entry.id} style={box}>
@@ -210,7 +211,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
             ) : (
               <ThemedText>{label("empty")}</ThemedText>
             ))}
-          {section === "members" && data.memberUsage && (
+          {visibleSection === "members" && data.memberUsage && (
             <>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 {([7, 30, 90] as const).map((days) => (
