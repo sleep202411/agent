@@ -1,3 +1,4 @@
+import { NextVideoControl } from "@/features/content-gps/next-video-control";
 import { useMemberView } from "@/features/ip-community/use-member-view";
 import { ChannelSubmissions } from "@/features/ip-community/channel-submissions";
 import { IpProductionStage } from "@/features/ip-community/ip-production-stage";
@@ -468,6 +469,8 @@ function IpDetailSession() {
             </>
           )}
         </View>
+
+        {playing && <NextVideoControl ipId={ip.id} />}
 
         <View style={styles.body}>
           {watch !== undefined && !playing && !resolvePlaybackEntry(ip, access, watch, episode) && (
