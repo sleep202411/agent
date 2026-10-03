@@ -4505,7 +4505,7 @@
   "timeline.exportResume": "繼續匯出上傳",
   "timeline.exportSave": "匯出並儲存影片",
   "timeline.exportCancel": "取消匯出",
-  "timeline.exportNoVideos": "此時間線沒有可匯出的影片。",
+  "timeline.exportNoMedia": "此時間線沒有可匯出的圖片或影片。",
   "timeline.exportDownload": "下載 / 分享影片",
   "plotImport.title": "匯入劇情樹",
   "plotImport.help": "選擇 Story Studio 劇情 JSON 檔案（最多 2 MB、500 個節點）。確認前請檢查章節及匯入方式。",

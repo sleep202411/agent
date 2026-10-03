@@ -198,3 +198,22 @@ it("stops isolation on a later encoder failure and frees earlier probe output", 
   expect(h.release).toHaveBeenCalledExactlyOnceWith(artifact.uri);
   expect(h.render).toHaveBeenCalledTimes(3);
 });
+it("forwards mixed media kinds and durations without reordering native work", async () => {
+  const mixed = [
+    {
+      id: "still",
+      kind: "image" as const,
+      url: "https://example.test/still.png",
+      durationMs: 3250,
+    },
+    ...shots,
+  ];
+  h.render.mockResolvedValue({ artifact, completedClipIds: ["still", "one"] });
+  const result = await createNativeTimelineEncoder().render(
+    mixed,
+    new AbortController().signal,
+    vi.fn()
+  );
+  expect(h.render).toHaveBeenCalledWith("job", mixed);
+  expect(result.completedClipIds).toEqual(["still", "one"]);
+});

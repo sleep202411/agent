@@ -199,3 +199,29 @@ it("keeps a visible omission count after saving partial output", async () => {
   expect(host.textContent).toContain("timeline.exportSaved");
   expect(h.upload).toHaveBeenCalledOnce();
 });
+
+it("exports image-only timelines using the full image rather than its thumbnail", async () => {
+  const stills = {
+    ...sequence,
+    clips: [
+      {
+        ...sequence.clips[0]!,
+        kind: "image",
+        selectedMediaVersion: {
+          mediaKind: "image",
+          previewUrl: "https://example.com/full.png",
+          thumbnailUrl: "https://example.com/thumb.png",
+        },
+      },
+    ],
+  } as unknown as TimelineSequence;
+  await act(async () =>
+    root.render(<TimelineExportPanel scope={scope} userId="user" sequence={stills} />)
+  );
+  await click("timeline.exportSave");
+  expect(h.render.mock.calls[0][0]).toEqual([
+    { id: "clip", kind: "image", url: "https://example.com/full.png", durationMs: 1000 },
+  ]);
+  expect(h.upload).toHaveBeenCalledOnce();
+  expect(host.textContent).not.toContain("clips omitted");
+});

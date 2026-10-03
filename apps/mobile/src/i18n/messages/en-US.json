@@ -4505,7 +4505,7 @@
   "timeline.exportResume": "Resume export upload",
   "timeline.exportSave": "Export and save video",
   "timeline.exportCancel": "Cancel export",
-  "timeline.exportNoVideos": "This timeline has no exportable video.",
+  "timeline.exportNoMedia": "This timeline has no exportable images or videos.",
   "timeline.exportDownload": "Download / share video",
   "plotImport.title": "Import plot tree",
   "plotImport.help": "Choose a Story Studio plot JSON file (up to 2 MB and 500 nodes). Review the chapter and import mode before confirming.",

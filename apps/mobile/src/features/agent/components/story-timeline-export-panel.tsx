@@ -41,10 +41,10 @@ function ExportPanel({ scope, userId, sequence }: Props) {
   const [error, setError] = useState<string | undefined>(recovery.error);
   const [saved, setSaved] = useState(false);
   const [pending, setPending] = useState(recovery.pending);
-  const clips = timelinePlaybackClips(sequence);
+  const clips = timelinePlaybackClips(sequence, true);
   const shots = clips
-    .filter((c) => c.kind === "video" && c.source && c.durationMs > 0)
-    .map((c) => ({ id: c.id, kind: "video" as const, url: c.source!, durationMs: c.durationMs }));
+    .filter((c) => (c.kind === "video" || c.kind === "image") && c.source && c.durationMs > 0)
+    .map((c) => ({ id: c.id, kind: c.kind, url: c.source!, durationMs: c.durationMs }));
   const [omitted, setOmitted] = useState(clips.length - shots.length);
   useEffect(() => {
     const owned = {
@@ -74,7 +74,7 @@ function ExportPanel({ scope, userId, sequence }: Props) {
         setStage("uploading");
         await owned.upload.resume(operation.signal);
       } else {
-        if (!shots.length) throw Error(t("timeline.exportNoVideos"));
+        if (!shots.length) throw Error(t("timeline.exportNoMedia"));
         if (!owned.result) {
           setStage("rendering");
           setProgress(0);

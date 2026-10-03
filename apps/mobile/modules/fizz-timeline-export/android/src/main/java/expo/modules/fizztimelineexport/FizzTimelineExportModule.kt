@@ -46,10 +46,17 @@ class FizzTimelineExportModule : Module() {
           val milliseconds = (shot["durationMs"] as Number).toDouble()
           require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null) { "Invalid media URL." }
           require(milliseconds.isFinite() && milliseconds > 0 && milliseconds <= Long.MAX_VALUE.toDouble() && milliseconds % 1.0 == 0.0) { "Invalid clip duration." }
+          val kind = shot["kind"] as? String
+          require(kind == "video" || kind == "image") { "Invalid media kind." }
           val media = MediaItem.Builder().setUri(uri)
-            .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(milliseconds.toLong()).build())
-            .build()
-          EditedMediaItem.Builder(media).build()
+          if (kind == "image") {
+            media.setImageDurationMs(milliseconds.toLong())
+          } else {
+            media.setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setEndPositionMs(milliseconds.toLong()).build())
+          }
+          val edited = EditedMediaItem.Builder(media.build())
+          if (kind == "image") edited.setFrameRate(30)
+          edited.build()
         }
         val context = requireNotNull(appContext.reactContext) { "Application context unavailable." }
         val directory = File(context.cacheDir, "fizz-timeline-export")

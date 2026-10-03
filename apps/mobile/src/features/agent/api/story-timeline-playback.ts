@@ -13,7 +13,7 @@ const media = z.object({
   thumbnailUrl: url.nullable().optional(),
 });
 /** Validate optional media independently: a missing/invalid source remains a visible empty clip. */
-export function timelinePlaybackClips(sequence: TimelineSequence) {
+export function timelinePlaybackClips(sequence: TimelineSequence, preferOriginalImage = false) {
   return [...sequence.clips]
     .sort((a, b) => a.rank - b.rank)
     .map((clip) => {
@@ -23,7 +23,9 @@ export function timelinePlaybackClips(sequence: TimelineSequence) {
         value?.mediaKind === clip.kind
           ? clip.kind === "video"
             ? value.previewUrl
-            : (value.thumbnailUrl ?? value.previewUrl)
+            : preferOriginalImage
+              ? (value.previewUrl ?? value.thumbnailUrl)
+              : (value.thumbnailUrl ?? value.previewUrl)
           : null;
       return {
         id: clip.id,

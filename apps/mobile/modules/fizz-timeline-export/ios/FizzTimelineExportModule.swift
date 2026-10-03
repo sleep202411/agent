@@ -18,6 +18,8 @@ public final class FizzTimelineExportModule: Module {
       self.jobID = id
       self.work = Task { @MainActor in
         var output: URL?
+        var intermediates: [URL] = []
+        defer { for url in intermediates { try? FileManager.default.removeItem(at: url) } }
         do {
           guard UUID(uuidString: id) != nil, !shots.isEmpty else { throw self.failure("Invalid export request.") }
           let composition = AVMutableComposition()
@@ -39,6 +41,9 @@ public final class FizzTimelineExportModule: Module {
                   milliseconds.doubleValue <= 9_007_199_254_740_991,
                   milliseconds.doubleValue.rounded() == milliseconds.doubleValue
             else { throw self.failure("Invalid timeline clip.") }
+            guard let kind = shot["kind"] as? String, kind == "video" || kind == "image" else {
+              throw self.failure("Invalid media kind.")
+            }
             requestedIDs.insert(clipID)
             // Read each source before mutating the composition. A failed source
             // must not leave video/audio ranges or canvas dimensions behind.
@@ -49,13 +54,23 @@ public final class FizzTimelineExportModule: Module {
             let bounds: CGRect
             let transform: CGAffineTransform
             do {
-              let asset = AVURLAsset(url: url)
+              var mediaURL = url
+              if kind == "image" {
+                let image = try await TimelineStillVideo.image(from: url, check: { try self.check(id) })
+                let temporary = FileManager.default.temporaryDirectory.appendingPathComponent("fizz-still-\(UUID().uuidString).mp4")
+                intermediates.append(temporary)
+                try await TimelineStillVideo.write(image,
+                  duration: CMTime(value: milliseconds.int64Value, timescale: 1000), to: temporary,
+                  check: { try self.check(id) })
+                mediaURL = temporary
+              }
+              let asset = AVURLAsset(url: mediaURL)
               let tracks = try await asset.loadTracks(withMediaType: .video)
               guard let track = tracks.first else { throw TimelineExportFailure.sourceFailure("A timeline clip has no video track.") }
               sourceVideo = track
               let duration = try await asset.load(.duration)
               guard duration.isNumeric, duration.seconds > 0 else { throw TimelineExportFailure.sourceFailure("Invalid source duration.") }
-              length = CMTimeMinimum(duration, CMTime(seconds: milliseconds.doubleValue / 1000, preferredTimescale: 600))
+              length = CMTimeMinimum(duration, CMTime(value: milliseconds.int64Value, timescale: 1000))
               let size = try await track.load(.naturalSize)
               transform = try await track.load(.preferredTransform)
               bounds = CGRect(origin: .zero, size: size).applying(transform)
