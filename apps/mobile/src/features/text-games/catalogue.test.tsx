@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   status: "anonymous",
   active: true,
 }));
+vi.mock("expo-router", () => ({ useIsFocused: () => true }));
 vi.mock("./api", () => ({ listPublicTextGames: h.list, getPublicTextGame: h.get }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({
