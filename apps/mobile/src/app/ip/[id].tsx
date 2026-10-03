@@ -1,3 +1,4 @@
+import { useMemberView } from "@/features/ip-community/use-member-view";
 import { ChannelSubmissions } from "@/features/ip-community/channel-submissions";
 import { IpProductionStage } from "@/features/ip-community/ip-production-stage";
 import { IpReportSheet } from "@/features/ip-community/ip-report-sheet";
@@ -439,7 +440,20 @@ function IpDetailSession() {
         <View style={[styles.backdrop, playing && styles.backdropPlaying]}>
           {playing ? (
             <View style={[styles.videoBox, { top: insets.top + 44 }]}>
-              <InlineVideo key={playing.url} url={playing.url} />
+              <InlineVideo
+                key={playing.url}
+                url={playing.url}
+                episode={(() => {
+                  const fullEpisode = ip.episodes.find(
+                    (entry) => entry.id === playing.targetEpisodeId
+                  );
+                  return fullEpisode?.mediaUrl === playing.url &&
+                    !accessBusy &&
+                    resolvePlan(access, fullEpisode) === undefined
+                    ? { ipId: ip.id, episodeId: fullEpisode.id }
+                    : undefined;
+                })()}
+              />
             </View>
           ) : (
             <>
@@ -783,7 +797,13 @@ function EngagementPill({
   );
 }
 
-function InlineVideo({ url }: { url: string }) {
+function InlineVideo({
+  url,
+  episode,
+}: {
+  url: string;
+  episode?: { ipId: string; episodeId: string };
+}) {
   const t = useTranslations();
   const resumeWhenPresentingRef = useRef(false);
   // Native player (expo-video) — autoplays, native controls incl. a fullscreen
@@ -822,6 +842,8 @@ function InlineVideo({ url }: { url: string }) {
   }, [player]);
 
   const { status } = useEvent(player, "statusChange", { status: player.status });
+  const { isPlaying } = useEvent(player, "playingChange", { isPlaying: player.playing });
+  useMemberView(episode, presenting && isPlaying && status === "readyToPlay");
   // `idle`/`loading` cover first open + mid-playback rebuffer; hide once
   // frames are ready. Playback errors stay on the native player UI.
   const showLoading = status === "idle" || status === "loading";
