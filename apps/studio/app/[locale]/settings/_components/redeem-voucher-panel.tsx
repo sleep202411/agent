@@ -8,6 +8,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { redeemVoucher } from "@/lib/billing";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
+import { useAuth } from "@/app/_components/auth-provider";
+import { useBillingActionOwner } from "./use-billing-action-owner";
 import { Panel } from "./settings-ui";
 
 /**
@@ -16,6 +18,12 @@ import { Panel } from "./settings-ui";
  * the header pill + this page reflect it immediately.
  */
 export function RedeemVoucherPanel() {
+  const { user } = useAuth();
+  if (user?.id == null) return null;
+  return <AccountVoucherPanel key={String(user.id)} userId={user.id} />;
+}
+function AccountVoucherPanel({ userId }: { userId: string | number }) {
+  const owner = useBillingActionOwner(userId);
   const t = useTranslations("settings");
   const queryClient = useQueryClient();
   const [code, setCode] = useState("");
@@ -25,9 +33,12 @@ export function RedeemVoucherPanel() {
     event.preventDefault();
     const trimmed = code.trim();
     if (!trimmed || submitting) return;
+    const signal = owner.begin();
+    if (!signal) return;
     setSubmitting(true);
     try {
-      const result = await redeemVoucher(trimmed);
+      const result = await redeemVoucher(trimmed, signal);
+      if (!owner.current()) return;
       const amount = Number(result.granted.amount).toLocaleString();
       toast.success(
         result.alreadyRedeemed
@@ -37,9 +48,11 @@ export function RedeemVoucherPanel() {
       setCode((current) => (current === code ? "" : current));
       await queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("redeemCode.error"));
+      if (owner.current())
+        toast.error(error instanceof Error ? error.message : t("redeemCode.error"));
     } finally {
-      setSubmitting(false);
+      owner.end();
+      if (owner.current()) setSubmitting(false);
     }
   }
 

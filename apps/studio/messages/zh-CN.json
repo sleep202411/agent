@@ -1939,7 +1939,8 @@
       "claimed": "已领取",
       "success": "已到账 {amount} 算力积分",
       "alreadyClaimed": "你已领取过该活动",
-      "error": "无法领取该活动"
+      "error": "无法领取该活动",
+      "loadError": "无法加载积分优惠。"
     },
     "checkIn": {
       "title": "每日签到",

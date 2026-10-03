@@ -1939,7 +1939,8 @@
       "claimed": "Claimed",
       "success": "{amount} credits added to your wallet",
       "alreadyClaimed": "You've already claimed this",
-      "error": "Could not claim this campaign"
+      "error": "Could not claim this campaign",
+      "loadError": "Could not load credit offers."
     },
     "checkIn": {
       "title": "Daily check-in",

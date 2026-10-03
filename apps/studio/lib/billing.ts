@@ -217,9 +217,11 @@ export interface RedeemVoucherResult {
  * Redeem a 兑换券 / gift code for compute credits. The server credits the active
  * user's personal-workspace pot and is idempotent (a retry never double-credits).
  */
-export function redeemVoucher(code: string) {
+export function redeemVoucher(code: string, signal?: AbortSignal) {
   return api.post<RedeemVoucherResult>("/aurora/billing/vouchers/redeem", {
     data: { code },
+    signal,
+    requestScope: "user",
   });
 }
 
@@ -259,8 +261,11 @@ export interface ActiveCampaign {
 }
 
 /** Active, in-window free-credits campaigns + whether the caller already claimed. */
-export function listActiveCampaigns() {
-  return api.get<{ items: ActiveCampaign[] }>("/aurora/billing/campaigns/active");
+export function listActiveCampaigns(signal?: AbortSignal) {
+  return api.get<{ items: ActiveCampaign[] }>("/aurora/billing/campaigns/active", {
+    signal,
+    requestScope: "user",
+  });
 }
 
 export interface CampaignClaimResult {
@@ -269,9 +274,11 @@ export interface CampaignClaimResult {
 }
 
 /** Claim a campaign's free credits (once per user; idempotent server-side). */
-export function claimCampaign(campaignId: string) {
+export function claimCampaign(campaignId: string, signal?: AbortSignal) {
   return api.post<CampaignClaimResult>(`/aurora/billing/campaigns/${campaignId}/claim`, {
     data: {},
+    signal,
+    requestScope: "user",
   });
 }
 

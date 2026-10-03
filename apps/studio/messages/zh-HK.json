@@ -1939,7 +1939,8 @@
       "claimed": "已領取",
       "success": "已到帳 {amount} 算力積分",
       "alreadyClaimed": "你已領取過此活動",
-      "error": "無法領取此活動"
+      "error": "無法領取此活動",
+      "loadError": "無法載入積分優惠。"
     },
     "checkIn": {
       "title": "每日簽到",
