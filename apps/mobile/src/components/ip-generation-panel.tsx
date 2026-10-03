@@ -123,7 +123,12 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   };
 
   // User compute balance
-  const balance = useComputeWalletBalance();
+  const {
+    balance,
+    error: balanceError,
+    loading: balanceLoading,
+    refresh: refreshBalance,
+  } = useComputeWalletBalance();
 
   // 1. Fetch available templates on mount
   useEffect(() => {
@@ -444,6 +449,21 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
                   <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>
                     {t("common.retry")}
                   </ThemedText>
+                </Pressable>
+              </View>
+            )}
+            {balanceError && (
+              <View>
+                <ThemedText type="small" accessibilityRole="alert">
+                  {balanceError}
+                </ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={balanceLoading}
+                  onPress={refreshBalance}
+                  style={{ paddingVertical: 8 }}
+                >
+                  <ThemedText>{t("common.retry")}</ThemedText>
                 </Pressable>
               </View>
             )}

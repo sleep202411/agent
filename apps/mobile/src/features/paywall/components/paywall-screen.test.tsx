@@ -5,6 +5,8 @@ import { PaywallScreen } from "./paywall-screen";
 
 const state = vi.hoisted(() => ({
   channel: "apple_iap",
+  category: "community_points",
+  compute: vi.fn(),
   generation: 1,
   buy: vi.fn(),
   push: vi.fn(),
@@ -28,7 +30,7 @@ vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ push: state.push }),
-  useLocalSearchParams: () => ({ category: "community_points", returnPath: state.returnPath }),
+  useLocalSearchParams: () => ({ category: state.category, returnPath: state.returnPath }),
 }));
 vi.mock("react-native", () => {
   const Box = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -57,7 +59,10 @@ vi.mock("react-native", () => {
   };
 });
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
-vi.mock("@/auth", () => ({ useAuth: () => ({ user: null, generation: state.generation }) }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("@/auth", () => ({
+  useAuth: () => ({ status: "authenticated", user: null, generation: state.generation }),
+}));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => state.generation }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
@@ -76,11 +81,11 @@ vi.mock("@/i18n", () => ({
 }));
 vi.mock("@/lib/navigation", () => ({ toHref: (path: string) => path }));
 vi.mock("@/data/ip-api", () => ({ fetchCommunityPointBalance: state.balance }));
-vi.mock("../lib/compute-wallet", () => ({ fetchComputeWalletBalance: async () => "0" }));
+vi.mock("../lib/compute-wallet", () => ({ fetchComputeWalletBalance: state.compute }));
 vi.mock("../lib/checkout-channel", () => ({ currentCheckoutChannel: () => state.channel }));
 vi.mock("../lib/paywall-store", () => ({
-  resolvePaywallCategory: () => "community_points",
-  PAYWALL_CATEGORIES: ["community_points"],
+  resolvePaywallCategory: () => state.category,
+  PAYWALL_CATEGORIES: ["community_points", "compute_points"],
 }));
 vi.mock("../lib/billing-api", () => ({
   listCommunityPointPackages: state.packs,
@@ -130,6 +135,8 @@ let host: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.channel = "apple_iap";
+  state.category = "community_points";
+  state.compute.mockResolvedValue("0");
   state.generation = 1;
   state.orderFulfilled = false;
   state.balance.mockResolvedValue("0");
@@ -409,3 +416,18 @@ vi.mock("@tabler/icons-react-native/IconCheck", () => ({ default: () => null }))
 vi.mock("@tabler/icons-react-native/IconCoins", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconCrown", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconSparkles", () => ({ default: () => null }));
+
+it("recovers a failed compute balance read without starting a purchase", async () => {
+  state.category = "compute_points";
+  state.compute.mockRejectedValueOnce(Error("Wallet unavailable")).mockResolvedValueOnce("42");
+  await render();
+  expect(host.textContent).toContain("Wallet unavailable");
+  const retry = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "common.retry"
+  )!;
+  expect(retry).toBeDefined();
+  await act(async () => retry.click());
+  expect(host.textContent).not.toContain("Wallet unavailable");
+  expect(host.textContent).toContain("42");
+  expect(state.buy).not.toHaveBeenCalled();
+});

@@ -51,7 +51,7 @@ import {
   yearlySavePercent,
 } from "../lib/catalog";
 import { currentCheckoutChannel, type CheckoutChannel } from "../lib/checkout-channel";
-import { fetchComputeWalletBalance } from "../lib/compute-wallet";
+import { useComputeWalletBalance } from "../lib/use-compute-wallet-balance";
 import {
   resolvePaywallCategory,
   PAYWALL_CATEGORIES,
@@ -331,7 +331,12 @@ function PaywallSession() {
   const insets = useSafeAreaInsets();
   const { selected, setSelected, productId, setProductId, computeAmount, setComputeAmount } =
     usePaywallSelection(initialCategory);
-  const [computeBalance, setComputeBalance] = useState<string | null>(null);
+  const {
+    balance: computeBalance,
+    error: computeError,
+    loading: computeLoading,
+    refresh: refreshCompute,
+  } = useComputeWalletBalance();
   const [communityBalance, setCommunityBalance] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -447,16 +452,6 @@ function PaywallSession() {
   }, [apiCommunityMembership, membershipPlans, productId, setProductId]);
 
   useEffect(() => {
-    let cancelled = false;
-    void fetchComputeWalletBalance().then((compute) => {
-      if (!cancelled && isCurrentSession()) setComputeBalance(compute);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isCurrentSession]);
-
-  useEffect(() => {
     if (!communityPointsUseBillingApi(channel)) return;
     let cancelled = false;
     void fetchCommunityPointBalance().then((balance) => {
@@ -481,17 +476,14 @@ function PaywallSession() {
     if (!isCurrentSession()) return;
     const generation = walletRefreshGeneration.current;
     try {
-      const [compute, community] = await Promise.all([
-        fetchComputeWalletBalance(),
-        fetchCommunityPointBalance(),
-      ]);
+      refreshCompute();
+      const community = await fetchCommunityPointBalance();
       if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
-      setComputeBalance(compute);
       setCommunityBalance(community);
     } catch {
       // The row refreshes again the next time this screen opens.
     }
-  }, [isCurrentSession]);
+  }, [isCurrentSession, refreshCompute]);
 
   // Closing the QR must not drop a payment that settles a moment later.
   // Nest reconciles WeChat on each order read. Follow continues off-screen;
@@ -765,12 +757,29 @@ function PaywallSession() {
               />
             ) : null}
             {computePoints ? (
-              <ComputeRechargePanel
-                amount={computeAmount}
-                balance={computeBalance}
-                locale={locale}
-                onChangeAmount={setComputeAmount}
-              />
+              <View>
+                {computeError && (
+                  <View>
+                    <ThemedText type="small" accessibilityRole="alert">
+                      {computeError}
+                    </ThemedText>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={computeLoading}
+                      onPress={refreshCompute}
+                      style={{ paddingVertical: 8 }}
+                    >
+                      <ThemedText>{t("common.retry")}</ThemedText>
+                    </Pressable>
+                  </View>
+                )}
+                <ComputeRechargePanel
+                  amount={computeAmount}
+                  balance={computeBalance}
+                  locale={locale}
+                  onChangeAmount={setComputeAmount}
+                />
+              </View>
             ) : null}
           </View>
           {apiCommunity ? (

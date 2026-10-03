@@ -41,7 +41,12 @@ vi.mock("@/constants/theme", () => ({ Spacing: {} }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/features/paywall/lib/use-compute-wallet-balance", () => ({
-  useComputeWalletBalance: () => 100,
+  useComputeWalletBalance: () => ({
+    balance: "100",
+    error: null,
+    loading: false,
+    refresh: vi.fn(),
+  }),
 }));
 vi.mock("./use-ip-generation-preview", () => ({
   useIpGenerationPreview: () => ({
