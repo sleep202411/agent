@@ -388,3 +388,45 @@ it.each([
     message: "Rejected",
   });
 });
+
+it.each(["message", "msg"])(
+  "preserves upstream %s validation lists through certificate verification",
+  async (field) => {
+    const { verifyCertificate } = await import("@/features/certificates/verify-api");
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          [field]: ["Certificate number is invalid", null, 123, "", "Issuer is required"],
+        }),
+        { status: 400 }
+      )
+    );
+    await expect(
+      verifyCertificate("FD-OPC-2605-8K3Q7P", new AbortController().signal)
+    ).rejects.toMatchObject({
+      status: 400,
+      message: "Certificate number is invalid; Issuer is required",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  }
+);
+it("preserves validation lists in rejected HTTP-success envelopes", async () => {
+  fetchMock.mockResolvedValue(
+    new Response(
+      JSON.stringify({ code: 400, message: ["Name is required", "Deadline is invalid"] })
+    )
+  );
+  await expect(api.post("/user/test", { retry: false })).rejects.toMatchObject({
+    code: 400,
+    message: "Name is required; Deadline is invalid",
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+it("keeps a useful fallback when a validation list has no message strings", async () => {
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify({ message: [null, 123, {}, "  "] }), { status: 400 })
+  );
+  await expect(
+    api.get("/certificates/verify", { service: "aurora", retry: false })
+  ).rejects.toMatchObject({ message: "HTTP 400" });
+});

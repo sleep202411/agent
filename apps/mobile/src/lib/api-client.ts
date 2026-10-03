@@ -160,6 +160,13 @@ function messageFromBody(body: unknown, fallback: string) {
 
   const record = body as Record<string, unknown>;
   const message = record.msg ?? record.message;
+  if (Array.isArray(message)) {
+    return (
+      message
+        .filter((item): item is string => typeof item === "string" && !!item.trim())
+        .join("; ") || fallback
+    );
+  }
   return typeof message === "string" && message.trim() ? message : fallback;
 }
 
