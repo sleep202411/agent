@@ -287,3 +287,34 @@ it("handles Android back only while its route is focused and history is availabl
   );
   expect(state.back?.()).toBe(false);
 });
+
+it("ignores navigation events from a failed WebView after retry", async () => {
+  state.os = "android";
+  await mount();
+  const retired = state.props;
+  await act(async () => retired.onError({ nativeEvent: { description: "Offline" } }));
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  const current = state.props;
+  await act(async () =>
+    retired.onNavigationStateChange({
+      url: "https://app.example/login",
+      canGoBack: true,
+    })
+  );
+  expect(host.textContent).not.toContain("authedWeb.sessionNeeded");
+  expect(state.back?.()).toBe(false);
+  await act(async () =>
+    current.onNavigationStateChange({
+      url: "https://app.example/en-US/referral/history",
+      canGoBack: true,
+    })
+  );
+  expect(state.back?.()).toBe(true);
+  await act(async () =>
+    current.onNavigationStateChange({
+      url: "https://app.example/login",
+      canGoBack: false,
+    })
+  );
+  expect(host.textContent).toContain("authedWeb.sessionNeeded");
+});

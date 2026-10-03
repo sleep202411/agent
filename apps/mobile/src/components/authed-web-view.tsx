@@ -127,15 +127,19 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
     return () => subscription.remove();
   }, [focused]);
 
-  const onNavigationStateChange = useCallback((navState: WebViewNavigation) => {
-    canGoBackRef.current = navState.canGoBack;
-    // The web side only redirects to /login when the token was rejected —
-    // surface the NATIVE sign-in instead of rendering the web login page.
-    if (isAppLoginUrl(navState.url)) {
-      webViewRef.current?.stopLoading();
-      setFailure("auth");
-    }
-  }, []);
+  const onNavigationStateChange = useCallback(
+    (navState: WebViewNavigation) => {
+      if (attempt !== currentAttempt.current) return;
+      canGoBackRef.current = navState.canGoBack;
+      // The web side only redirects to /login when the token was rejected —
+      // surface the NATIVE sign-in instead of rendering the web login page.
+      if (isAppLoginUrl(navState.url)) {
+        webViewRef.current?.stopLoading();
+        setFailure("auth");
+      }
+    },
+    [attempt]
+  );
 
   const retry = useCallback(() => {
     currentAttempt.current += 1;
