@@ -4665,5 +4665,8 @@
   "play.world.right": "Move right",
   "play.world.finish": "Finish exploration",
   "play.world.jump": "Jump",
-  "play.retryReport": "Retry saving report"
+  "play.retryReport": "Retry saving report",
+  "teamInvites.useUserId": "Use user ID",
+  "teamInvites.useContact": "Use email or phone",
+  "teamInvites.userId": "User ID (1–18 digits)"
 }

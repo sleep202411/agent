@@ -51,7 +51,7 @@ beforeEach(() => {
   h.get.mockImplementation(async (path: string) =>
     path.endsWith("/me")
       ? { userId: "actor", permissions: h.permissions }
-      : path === "/users/lookup"
+      : path === "/users/lookup" || path === "/users/by-id"
         ? { userId: "artist", nickname: "Artist", isCrewMember: false }
         : { items: [row], nextCursor: null, total: 1 }
   );
@@ -190,3 +190,25 @@ it("rechecks permission and verifies explicit revocation", async () => {
     )
   ).rejects.toThrow();
 });
+
+it("uses explicit ID lookup and preserves that mode in durable send recovery", async () => {
+  const data = { ...input, account: "42", lookupBy: "userId" as const };
+  h.post.mockRejectedValueOnce(new Error("Response lost"));
+  await expect(createTeamInvitation("crew", "actor", 1, data, "artist", signal())).rejects.toThrow(
+    "Response lost"
+  );
+  expect(h.get).toHaveBeenCalledWith(
+    "/users/by-id",
+    expect.objectContaining({ params: { id: "42", checkCrewId: "crew" } })
+  );
+  expect(teamInvitationPending("crew", "actor", 1).read()?.input).toEqual(data);
+});
+it.each(["artist@example.com", "+6512345678", "1234567890123456789"])(
+  "rejects invalid ID-mode input %s before lookup",
+  async (account) => {
+    await expect(
+      lookupTeamInvitee("crew", "actor", 1, account, signal(), "userId")
+    ).rejects.toThrow();
+    expect(h.get).not.toHaveBeenCalled();
+  }
+);

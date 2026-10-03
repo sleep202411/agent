@@ -105,7 +105,7 @@ beforeEach(() => {
           userId: "actor",
           permissions: ["members.invite", "members.manage", "members.permissions.manage"],
         }
-      : path === "/users/lookup"
+      : path === "/users/lookup" || path === "/users/by-id"
         ? { userId: "artist", nickname: "Artist", isCrewMember: false }
         : { items: [], nextCursor: null, total: 0 }
   );
@@ -197,4 +197,30 @@ it("requires confirmation to revoke and refreshes without replay after a lost re
   await act(async () => button("thread.refresh").click());
   expect(button("teamInvites.revoke")).toBeUndefined();
   expect(h.delete).toHaveBeenCalledTimes(1);
+});
+
+it("requires explicit ID mode and a fresh review after switching modes", async () => {
+  await render();
+  await fill("teamInvites.account", "42");
+  expect(button("teamInvites.lookup").disabled).toBe(true);
+  await act(async () => button("teamInvites.useUserId").click());
+  await fill("teamInvites.userId", "42");
+  await act(async () => button("teamInvites.lookup").click());
+  expect(h.get).toHaveBeenCalledWith(
+    "/users/by-id",
+    expect.objectContaining({ params: { id: "42", checkCrewId: "crew" } })
+  );
+  await act(async () => button("teamInvites.useContact").click());
+  expect(host.textContent).not.toContain("teamInvites.confirmHelp");
+  expect(button("teamInvites.lookup").disabled).toBe(true);
+  await act(async () => button("teamInvites.useUserId").click());
+  await fill("teamInvites.userId", "42");
+  await act(async () => button("teamInvites.lookup").click());
+  await act(async () => button("teamInvites.send").click());
+  expect(h.post).toHaveBeenCalledWith(
+    "/crews/crew/invitations",
+    expect.objectContaining({
+      data: { account: "42", lookupBy: "userId", policyKeys: [], expiresInDays: 7 },
+    })
+  );
 });

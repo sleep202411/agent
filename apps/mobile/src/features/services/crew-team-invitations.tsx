@@ -43,6 +43,7 @@ function Session(props: Props) {
   const [pending, setPending] = useState<TeamInvitationAttempt | null>(null),
     [clearArmed, setClearArmed] = useState(false),
     [revokeArmed, setRevokeArmed] = useState<string>();
+  const [lookupBy, setLookupBy] = useState<"contact" | "userId">("contact");
   const [account, setAccount] = useState(""),
     [position, setPosition] = useState<string | undefined>(props.initialPosition),
     [choosing, setChoosing] = useState(false),
@@ -151,6 +152,7 @@ function Session(props: Props) {
   const locked = busy || !!pending || storageError || !access;
   const input = teamInvitationInput.safeParse({
     account,
+    ...(lookupBy === "userId" ? { lookupBy } : {}),
     positionCategory: position,
     policyKeys: policies,
     expiresInDays: /^\d+$/.test(days) ? Number(days) : NaN,
@@ -170,7 +172,8 @@ function Session(props: Props) {
           props.userId,
           props.generation,
           input.data.account,
-          signal
+          signal,
+          input.data.lookupBy
         );
         if (valid())
           setReview({ input: input.data, userId: target.userId, nickname: target.nickname });
@@ -250,8 +253,17 @@ function Session(props: Props) {
           />
         </View>
       )}
+      <Action
+        label={t(lookupBy === "contact" ? "teamInvites.useUserId" : "teamInvites.useContact")}
+        disabled={locked}
+        onPress={() => {
+          setLookupBy(lookupBy === "contact" ? "userId" : "contact");
+          setAccount("");
+          resetReview();
+        }}
+      />
       <Field
-        label={t("teamInvites.account")}
+        label={t(lookupBy === "userId" ? "teamInvites.userId" : "teamInvites.account")}
         value={account}
         onChange={change(setAccount)}
         disabled={locked}

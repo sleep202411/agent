@@ -4665,5 +4665,8 @@
   "play.world.right": "向右移动",
   "play.world.finish": "结束探索",
   "play.world.jump": "跳跃",
-  "play.retryReport": "重试保存游玩报告"
+  "play.retryReport": "重试保存游玩报告",
+  "teamInvites.useUserId": "使用用户 ID",
+  "teamInvites.useContact": "使用邮箱或手机号",
+  "teamInvites.userId": "用户 ID（1–18 位数字）"
 }

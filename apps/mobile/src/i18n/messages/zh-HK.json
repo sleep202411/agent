@@ -4665,5 +4665,8 @@
   "play.world.right": "向右移動",
   "play.world.finish": "結束探索",
   "play.world.jump": "跳躍",
-  "play.retryReport": "重試儲存遊玩報告"
+  "play.retryReport": "重試儲存遊玩報告",
+  "teamInvites.useUserId": "使用用戶 ID",
+  "teamInvites.useContact": "使用電郵或電話號碼",
+  "teamInvites.userId": "用戶 ID（1–18 位數字）"
 }

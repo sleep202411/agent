@@ -6,17 +6,15 @@ import { durableRecord } from "@/lib/durable-record";
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const uuid = z.string().uuid();
 const policy = z.enum(["admin", "finance"]);
+function validRecipient(account: string, lookupBy?: "contact" | "userId") {
+  return lookupBy === "userId"
+    ? /^\d{1,18}$/.test(account)
+    : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account) || /^\+?\d[\d\s-]{5,32}$/.test(account);
+}
 export const teamInvitationInput = z
   .object({
-    account: z
-      .string()
-      .trim()
-      .min(3)
-      .max(120)
-      .refine(
-        (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || /^\+?\d[\d\s-]{5,32}$/.test(v),
-        "Enter a valid email address or phone number."
-      ),
+    account: z.string().trim().min(1).max(120),
+    lookupBy: z.enum(["contact", "userId"]).optional(),
     positionCategory: z.string().refine(isPresetPosition).optional(),
     policyKeys: z
       .array(policy)
@@ -31,7 +29,11 @@ export const teamInvitationInput = z
       })
       .optional(),
   })
-  .strict();
+  .strict()
+  .refine((input) => validRecipient(input.account, input.lookupBy), {
+    path: ["account"],
+    message: "Enter a valid contact or numeric user ID for the selected lookup mode.",
+  });
 export type TeamInvitationInput = z.infer<typeof teamInvitationInput>;
 export const teamInvitation = z.object({
   id: uuid,
@@ -148,16 +150,21 @@ export async function lookupTeamInvitee(
   userId: string,
   generation: number,
   account: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  lookupBy?: "contact" | "userId"
 ) {
-  const value = teamInvitationInput.shape.account.parse(account);
+  const value = z.string().trim().min(1).max(120).parse(account);
+  if (!validRecipient(value, lookupBy)) throw new Error("Invalid invitation recipient.");
   await teamInvitationAccess(crewId, userId, generation, signal);
   const target = z.object({ userId: id, nickname: z.string(), isCrewMember: z.boolean() }).parse(
-    await api.get("/users/lookup", {
+    await api.get(lookupBy === "userId" ? "/users/by-id" : "/users/lookup", {
       service: "aurora",
       signal,
       retry: false,
-      params: { account: value, checkCrewId: crewId },
+      params: {
+        ...(lookupBy === "userId" ? { id: value } : { account: value }),
+        checkCrewId: crewId,
+      },
     })
   );
   current(generation, signal);
@@ -177,7 +184,14 @@ export async function createTeamInvitation(
   const access = await teamInvitationAccess(crewId, userId, generation, signal);
   if ((data.positionCategory && !access.positions) || (data.policyKeys.length && !access.policies))
     throw new Error("Permission to assign the selected position or access has changed.");
-  const target = await lookupTeamInvitee(crewId, userId, generation, data.account, signal);
+  const target = await lookupTeamInvitee(
+    crewId,
+    userId,
+    generation,
+    data.account,
+    signal,
+    data.lookupBy
+  );
   if (target.userId !== reviewedUserId)
     throw new Error("The account lookup changed. Review the recipient again.");
   current(generation, signal);
