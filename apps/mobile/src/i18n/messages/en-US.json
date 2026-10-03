@@ -1482,6 +1482,7 @@
   "taskPlanning.latest": "Latest saved planning. Review these details before applying your draft.",
   "taskPlanning.edit": "Edit Planning",
   "taskPlanning.save": "Save Planning",
+  "taskWorkflow.latest": "Latest saved workflow status. Review it before applying your selection.",
   "taskWorkflow.edit": "Move Workflow Column",
   "taskWorkflow.save": "Save Workflow",
   "taskKind.label": "Task Kind",

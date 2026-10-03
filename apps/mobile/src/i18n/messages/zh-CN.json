@@ -1482,6 +1482,7 @@
   "taskPlanning.latest": "最新保存的任务计划。应用草稿前，请核对以下内容。",
   "taskPlanning.edit": "编辑任务规划",
   "taskPlanning.save": "保存任务规划",
+  "taskWorkflow.latest": "最新保存的工作流状态。应用所选状态前，请核对。",
   "taskWorkflow.edit": "移动工作流列",
   "taskWorkflow.save": "保存工作流",
   "taskKind.label": "任务类型",

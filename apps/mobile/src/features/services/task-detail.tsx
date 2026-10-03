@@ -15,6 +15,7 @@ import { TaskChildButton, TaskChildCreate } from "./task-child-create";
 import { TaskAssignments } from "./task-assignments";
 import { useTaskScheduleSession } from "./use-task-schedule-session";
 import { TaskSchedule } from "./task-schedule";
+import { useTaskWorkflowSession } from "./use-task-workflow-session";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
 import { useTaskPlanningSession } from "./use-task-planning-session";
 import { TaskPlanningEditor } from "./task-planning-editor";
@@ -90,6 +91,9 @@ function TaskContent({
     setRevision((v) => v + 1)
   );
   const planningSession = useTaskPlanningSession(taskId, generation, () =>
+    setRevision((v) => v + 1)
+  );
+  const workflowSession = useTaskWorkflowSession(taskId, generation, () =>
     setRevision((v) => v + 1)
   );
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
@@ -204,6 +208,7 @@ function TaskContent({
             onRefresh={() => setRevision((value) => value + 1)}
           />
           <TaskWorkflowEditor
+            session={workflowSession}
             key={`workflow:${revision}`}
             task={data}
             userId={userId}
