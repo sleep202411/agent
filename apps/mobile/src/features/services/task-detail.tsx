@@ -1,3 +1,4 @@
+import { useTaskSubmitSession } from "./use-task-submit-session";
 import { useTaskReviewSession } from "./use-task-review-session";
 import { taskWorkflowLabel } from "./task-workflow-label";
 import { useTaskDeliverySession } from "./use-task-delivery-session";
@@ -114,6 +115,7 @@ function TaskContent({
   const deliverySession = useTaskDeliverySession(taskId, generation, () =>
     setRevision((v) => v + 1)
   );
+  const submitSession = useTaskSubmitSession(taskId, generation, () => setRevision((v) => v + 1));
   const reviewSession = useTaskReviewSession(taskId, generation, () => setRevision((v) => v + 1));
   const briefSession = useTaskBriefSession(taskId, generation, () => setRevision((v) => v + 1));
   const [result, setResult] = useState<{ revision: number; data?: Detail; error?: string }>();
@@ -307,6 +309,7 @@ function TaskContent({
               submissions={data.submissions}
             />
             <TaskSubmit
+              session={submitSession}
               key={`submit:${revision}`}
               task={data}
               userId={userId}

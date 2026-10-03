@@ -1,32 +1,42 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type SetStateAction } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getAuthGeneration } from "@/auth/auth-store";
-import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
+import { useTaskSubmitSession, type TaskSubmitSession } from "./use-task-submit-session";
 import { useTheme } from "@/hooks/use-theme";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import { AssetFileUpload } from "@/features/crew-assets/file-upload";
 import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
-import type { CrewAsset } from "@/features/crew-assets/api";
 import type { TaskDetail } from "./task-detail-api";
 import { fetchTaskDeliveryTemplate, type DeliveryTemplate } from "./task-delivery-api";
 import {
   fetchTaskSubmitPermission,
   fetchDeliveryFolders,
-  submitTask,
   validateTaskSubmission,
   type DeliveryAnswers,
   type DeliveryFolder,
   type TaskSubmitInput,
 } from "./task-submit-api";
 
-export function TaskSubmit(props: {
+type Props = {
   task: TaskDetail;
   userId: string;
   generation: number;
   onRefresh: () => void;
-}) {
+  session?: TaskSubmitSession;
+};
+export function TaskSubmit(props: Props) {
+  if (props.session) return <SubmissionAccess {...props} session={props.session} />;
+  return (
+    <LocalSubmission key={`${props.task.id}:${props.userId}:${props.generation}`} {...props} />
+  );
+}
+function LocalSubmission(props: Props) {
+  const session = useTaskSubmitSession(props.task.id, props.generation, props.onRefresh);
+  return <SubmissionAccess {...props} session={session} />;
+}
+function SubmissionAccess(props: Props & { session: TaskSubmitSession }) {
   if (!["open", "in_progress", "revision_requested"].includes(props.task.status)) return null;
   return (
     <SubmissionForm key={`${props.task.id}:${props.task.version}:${props.generation}`} {...props} />
@@ -37,29 +47,38 @@ function SubmissionForm({
   userId,
   generation,
   onRefresh,
-}: {
-  task: TaskDetail;
-  userId: string;
-  generation: number;
-  onRefresh: () => void;
-}) {
+  session,
+}: Props & { session: TaskSubmitSession }) {
   const t = useTranslations(),
-    theme = useTheme(),
-    op = useAuthFormOperation(task.id, true);
+    theme = useTheme();
+  const { note, setNote, assets, setAssets, folder, setFolder } = session;
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
+  const observe = session.observe;
+  useLayoutEffect(() => observe(task), [observe, task]);
   const [context, setContext] = useState<{
     allowed: boolean;
     template: DeliveryTemplate | null;
     folders: DeliveryFolder[];
   }>();
-  const [error, setError] = useState<string>();
-  const [note, setNote] = useState(""),
-    [answers, setAnswers] = useState<DeliveryAnswers>({});
-  const [assets, setAssets] = useState<Pick<CrewAsset, "id" | "name">[]>([]);
-  const [folder, setFolder] = useState<DeliveryFolder>();
+  const [localError, setError] = useState<string>();
+  const error = localError ?? session.error;
+  const templateKey = context?.template
+    ? `${context.template.categoryId}:${context.template.version}`
+    : "none";
+  const answers = session.answersByTemplate[templateKey] ?? {};
+  const setAnswers = (update: SetStateAction<DeliveryAnswers>) =>
+    session.setAnswersByTemplate((previous) => ({
+      ...previous,
+      [templateKey]: typeof update === "function" ? update(previous[templateKey] ?? {}) : update,
+    }));
   const [picker, setPicker] = useState<"files" | "folders">();
   const [uploadField, setUploadField] = useState<string>();
-  const [attempted, setAttempted] = useState(false);
-  const attemptedRef = useRef(false);
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
@@ -83,7 +102,7 @@ function SubmissionForm({
     return () => controller.abort();
   }, [task, userId, generation]);
   if (context?.allowed === false) return null;
-  const locked = attempted || op.busy || uploadField !== undefined;
+  const locked = session.locked(task) || uploadField !== undefined;
   const blocked = task.blockedBy.some((dependency) => !dependency.resolved);
   const input: TaskSubmitInput = {
     note,
@@ -206,7 +225,7 @@ function SubmissionForm({
                     accessibilityLabel={`${t("thread.uploadFile")}: ${field.label}`}
                     disabled={locked || assets.length >= 100}
                     onPress={() => {
-                      if (!attemptedRef.current && generation === getAuthGeneration())
+                      if (!session.locked(task) && generation === getAuthGeneration())
                         setUploadField(field.key);
                     }}
                     style={{ padding: 12 }}
@@ -260,22 +279,15 @@ function SubmissionForm({
             disabled={locked || !valid || blocked}
             style={{ padding: 12 }}
             onPress={() => {
-              if (attemptedRef.current || !valid || blocked || generation !== getAuthGeneration())
+              if (session.locked(task) || !valid || blocked || generation !== getAuthGeneration())
                 return;
-              void op.run(
-                () => {
-                  attemptedRef.current = true;
-                  setAttempted(true);
-                  return submitTask(task, userId, input, context.template);
-                },
-                onRefresh,
-                (cause) => setError(cause instanceof Error ? cause.message : String(cause))
-              );
+              setError(undefined);
+              session.save(task, userId, input, context.template);
             }}
           >
             <ThemedText>{t("taskSubmit.submitAction")}</ThemedText>
           </Pressable>
-          {op.busy && <ActivityIndicator />}
+          {session.busy && <ActivityIndicator />}
         </>
       )}
       <Modal
@@ -293,7 +305,8 @@ function SubmissionForm({
               destination={folder?.name ?? t("studioMedia.root")}
               onClose={() => setUploadField(undefined)}
               onAttached={(asset) => {
-                if (attemptedRef.current || generation !== getAuthGeneration()) return;
+                if (!live.current || session.locked(task) || generation !== getAuthGeneration())
+                  return;
                 setAssets((current) =>
                   current.some((item) => item.id === asset.id) ? current : [...current, asset]
                 );
@@ -320,7 +333,8 @@ function SubmissionForm({
               remaining={100 - assets.length}
               onClose={() => setPicker(undefined)}
               onSelect={(selected) => {
-                if (generation !== getAuthGeneration() || attemptedRef.current) return;
+                if (!live.current || generation !== getAuthGeneration() || session.locked(task))
+                  return;
                 setAssets((current) =>
                   [
                     ...current,

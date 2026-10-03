@@ -1,7 +1,8 @@
-import { act, type ReactNode } from "react";
+import { act, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskSubmit } from "./task-submit";
+import { useTaskSubmitSession } from "./use-task-submit-session";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({
   permission: vi.fn(),
@@ -328,4 +329,120 @@ it("ignores a delivery upload callback after the account changes", async () => {
   await act(async () => button("finish upload")!.click());
   expect(host.textContent).not.toContain("Uploaded.mp4");
   expect(h.submit).not.toHaveBeenCalled();
+});
+
+function Journey() {
+  const [snapshot, setSnapshot] = useState(task);
+  const [revision, setRevision] = useState(0);
+  const refresh = () => {
+    setSnapshot({ ...task });
+    setRevision((n) => n + 1);
+  };
+  const session = useTaskSubmitSession(task.id, 1, refresh);
+  return (
+    <>
+      <button onClick={refresh}>Reload details</button>
+      <TaskSubmit
+        key={revision}
+        task={snapshot}
+        userId="1"
+        generation={1}
+        onRefresh={refresh}
+        session={session}
+      />
+    </>
+  );
+}
+const template = {
+  categoryId: id,
+  version: 2,
+  definition: {
+    name: "Delivery",
+    description: "",
+    prices: [],
+    fields: [{ key: "brief", label: "Brief", type: "text", required: true, instructions: "" }],
+  },
+};
+it("retains delivery inputs through an uncertain submission and detail reload", async () => {
+  h.template.mockResolvedValue(template);
+  h.folders.mockResolvedValue([
+    { id, parentId: null, name: "Deliveries", effectivePermission: "upload" },
+  ]);
+  h.submit.mockRejectedValue(new Error("Response interrupted"));
+  await act(async () => root.render(<Journey />));
+  await act(async () => type(0, "Delivery note"));
+  await act(async () => type(1, "Completed storyboard"));
+  await act(async () => button("crewAssets.choose · 0/100")!.click());
+  await act(async () => button("pick file")!.click());
+  await act(async () =>
+    button("taskSubmit.deliveryFolder: taskSubmit.automaticDeliveryFolder")!.click()
+  );
+  await act(async () => button("Deliveries")!.click());
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => button("thread.refresh")!.click());
+  expect(host.querySelectorAll("input")[0]!.value).toBe("Delivery note");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("Completed storyboard");
+  expect(button("Final.mp4 ×")).toBeDefined();
+  expect(button("taskSubmit.deliveryFolder: Deliveries")).toBeDefined();
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  expect(h.submit).toHaveBeenCalledTimes(1);
+});
+it("does not rebind delivery answers to a different template version", async () => {
+  h.template.mockResolvedValue(template);
+  await act(async () => root.render(<Journey />));
+  await act(async () => type(0, "Keep my note"));
+  await act(async () => type(1, "Original requirements"));
+  h.template.mockResolvedValue({ ...template, version: 3 });
+  await act(async () => button("Reload details")!.click());
+  expect(host.querySelectorAll("input")[0]!.value).toBe("Keep my note");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("");
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  h.template.mockResolvedValue(template);
+  await act(async () => button("Reload details")!.click());
+  expect(host.querySelectorAll("input")[1]!.value).toBe("Original requirements");
+});
+it("keeps pending submissions locked through reload and requires a new read after failure", async () => {
+  let fail!: (error: Error) => void;
+  h.submit.mockImplementation(
+    () =>
+      new Promise<void>((_, reject) => {
+        fail = reject;
+      })
+  );
+  await act(async () => root.render(<Journey />));
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  await act(async () => button("Reload details")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => fail(new Error("Response lost")));
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => button("thread.refresh")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  expect(h.submit).toHaveBeenCalledTimes(1);
+});
+it("ignores an upload callback from a retired form after refreshing details", async () => {
+  h.template.mockResolvedValue({
+    ...template,
+    definition: {
+      ...template.definition,
+      fields: [
+        { key: "video", label: "Video", type: "attachment", required: true, instructions: "" },
+      ],
+    },
+  });
+  await act(async () => root.render(<Journey />));
+  await act(async () => button("thread.uploadFile")!.click());
+  const old = h.uploadProps.mock.lastCall![0];
+  await act(async () => button("Reload details")!.click());
+  await act(async () => old.onAttached({ id, name: "Retired.mp4" }));
+  expect(host.textContent).not.toContain("Retired.mp4");
+});
+it("retires the submission draft when the account changes", async () => {
+  await render();
+  await act(async () => type(0, "Private delivery"));
+  h.generation = 2;
+  await act(async () =>
+    root.render(<TaskSubmit task={task} userId="2" generation={2} onRefresh={h.refresh} />)
+  );
+  expect(host.querySelector("input")!.value).toBe("");
 });
