@@ -1,10 +1,13 @@
-import { act, type ReactNode } from "react";
+import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryProjectHeaderActions } from "./story-project-header-actions";
 const h = vi.hoisted(() => ({
   generation: 1,
   failed: false,
+  active: true,
+  published: false,
+  capabilities: ["story.release", "story.edit", "story.build"],
   retry: vi.fn(),
   alert: vi.fn(),
   prepare: vi.fn(),
@@ -12,6 +15,7 @@ const h = vi.hoisted(() => ({
   offline: vi.fn(),
   set: vi.fn(),
 }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/auth", () => ({ useAuth: () => ({ generation: h.generation }) }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
@@ -25,11 +29,11 @@ vi.mock("@/features/agent/api/interactive-film-publication-api", () => ({
 }));
 vi.mock("@/features/agent/context/story-chapter-context", () => ({
   useStoryChapterContext: () => ({
-    capabilities: ["story.release", "story.edit", "story.build"],
+    capabilities: h.capabilities,
     draftRevision: 1,
     videoSnapshotHash: "a".repeat(64),
     loading: false,
-    publication: null,
+    publication: h.published ? { gameId: "film", status: "published", rejectReason: null } : null,
     publicationLoading: false,
     publicationFailed: h.failed,
     publicationError: h.failed ? "Status read failed" : undefined,
@@ -76,6 +80,9 @@ async function confirmation() {
 }
 beforeEach(() => {
   h.failed = false;
+  h.active = true;
+  h.published = false;
+  h.capabilities = ["story.release", "story.edit", "story.build"];
   vi.resetAllMocks();
   h.generation = 1;
   h.prepare.mockResolvedValue({ gameId: "film" });
@@ -148,4 +155,75 @@ it("opens status failure details and offers explicit retry", async () => {
   actions.find((action: { text: string }) => action.text === "agent.publish.retryStatus").onPress();
   expect(h.retry).toHaveBeenCalledOnce();
   expect(h.prepare).not.toHaveBeenCalled();
+});
+
+it("rejects the old confirmation when the retained header switches projects", async () => {
+  await mount();
+  const confirm = await confirmation();
+  await act(async () => root.render(<StoryProjectHeaderActions projectId="other" />));
+  await act(async () => confirm());
+  expect(h.prepare).not.toHaveBeenCalled();
+});
+it("retires confirmation after permission loss", async () => {
+  await mount();
+  const confirm = await confirmation();
+  h.capabilities = [];
+  await mount();
+  await act(async () => confirm());
+  expect(h.prepare).not.toHaveBeenCalled();
+});
+it("aborts preparation when the retained screen loses focus", async () => {
+  h.prepare.mockImplementation(() => new Promise(() => {}));
+  await mount();
+  const confirm = await confirmation();
+  await act(async () => confirm());
+  const signal = h.prepare.mock.calls[0][2] as AbortSignal;
+  h.active = false;
+  await mount();
+  expect(signal.aborted).toBe(true);
+});
+it("an abandoned operation cannot unlock another project's active request", async () => {
+  let rejectOld!: (error: Error) => void;
+  h.prepare
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectOld = reject;
+        })
+    )
+    .mockImplementation(() => new Promise(() => {}));
+  await mount();
+  const first = await confirmation();
+  await act(async () => first());
+  await act(async () => root.render(<StoryProjectHeaderActions projectId="other" />));
+  const next = await confirmation();
+  await act(async () => next());
+  await act(async () => rejectOld(Error("Retired request")));
+  await act(async () => next());
+  expect(h.prepare).toHaveBeenCalledTimes(2);
+  expect(h.alert.mock.calls.some((call) => call[1] === "Retired request")).toBe(false);
+});
+
+it("ignores an offline confirmation retained from another project", async () => {
+  h.published = true;
+  await mount();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="agent.publish.offline.action"]')!.click()
+  );
+  const confirm = h.alert.mock.calls.at(-1)![2][1].onPress;
+  await act(async () => root.render(<StoryProjectHeaderActions projectId="other" />));
+  await act(async () => confirm());
+  expect(h.offline).not.toHaveBeenCalled();
+});
+it("supports a fresh confirmation after Strict Mode effect replay", async () => {
+  await act(async () =>
+    root.render(
+      <StrictMode>
+        <StoryProjectHeaderActions projectId="film" />
+      </StrictMode>
+    )
+  );
+  const confirm = await confirmation();
+  await act(async () => confirm());
+  expect(h.submit).toHaveBeenCalledOnce();
 });

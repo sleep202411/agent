@@ -6,8 +6,9 @@ import {
   IconCloudUpload,
   IconLoader2,
 } from "@tabler/icons-react-native";
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "@/auth";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import {
@@ -91,6 +92,33 @@ export function StoryCreditsButton() {
 
 /** Project header actions: publication badge + submit + take offline + credits. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
+  const context = useStoryChapterContext();
+  const { generation } = useAuth();
+  const active = useScreenActive();
+  const identity = JSON.stringify([
+    projectId,
+    generation,
+    active,
+    ...(["story.release", "story.edit", "story.build"] as const).map((capability) =>
+      context.capabilities.includes(capability)
+    ),
+    context.draftRevision,
+    context.videoSnapshotHash,
+    context.publication?.status,
+    context.publicationFailed,
+    context.publicationLoading,
+    context.loading,
+  ]);
+  return <OwnedStoryProjectHeaderActions key={identity} projectId={projectId} active={active} />;
+}
+
+function OwnedStoryProjectHeaderActions({
+  projectId,
+  active,
+}: {
+  projectId: string;
+  active: boolean;
+}) {
   const t = useTranslations();
   const {
     capabilities,
@@ -108,13 +136,13 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const { generation } = useAuth();
   const life = useRef<AbortController | null>(null);
   const locked = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const controller = new AbortController();
     life.current = controller;
     return () => controller.abort();
   }, [projectId, generation]);
   const current = () =>
-    !!life.current && !life.current.signal.aborted && generation === getAuthGeneration();
+    active && !!life.current && !life.current.signal.aborted && generation === getAuthGeneration();
   const [submitting, setSubmitting] = useState(false);
   const [offlining, setOfflining] = useState(false);
 
