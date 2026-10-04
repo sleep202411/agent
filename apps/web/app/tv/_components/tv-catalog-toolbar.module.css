@@ -55,9 +55,11 @@
 .create:hover {
   background: #c91c21;
 }
-.plus {
-  font-size: 20px;
-  font-weight: 400;
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  grid-column: 2;
 }
 .toolbar button:focus-visible {
   outline: 2px solid white;
@@ -84,11 +86,11 @@
     padding: 0 12px;
   }
 }
-@media (max-width: 359px) {
+@media (max-width: 479px) {
   .toolbar {
     grid-template-columns: minmax(0, 1fr);
   }
-  .create {
+  .actions {
     grid-column: 1;
     grid-row: 2;
     justify-self: start;

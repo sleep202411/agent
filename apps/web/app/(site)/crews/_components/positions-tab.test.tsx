@@ -21,7 +21,15 @@ vi.mock("@/components/auth/auth-dialog-provider", () => ({
   useAuthDialog: () => ({ open: vi.fn() }),
 }));
 vi.mock("./opening-details", () => ({ OpeningDetails: () => <div /> }));
-vi.mock("@tanstack/react-query", () => ({ useInfiniteQuery: () => feed }));
+vi.mock("@tanstack/react-query", () => ({
+  useInfiniteQuery: () => feed,
+  useQuery: () => ({
+    data: [
+      { id: 13, name: "AI Producer" },
+      { id: 14, name: "Editor" },
+    ],
+  }),
+}));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
@@ -100,4 +108,13 @@ it("restarts recruitment discovery when its cursor is rejected", () => {
   );
   expect(feed.refetch).toHaveBeenCalledTimes(1);
   expect(feed.fetchNextPage).not.toHaveBeenCalled();
+});
+
+it("shows certification capabilities instead of the old rank filter", () => {
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() => root.render(<PositionsTab />));
+  expect(container.textContent).toContain("AI Producer");
+  expect(container.textContent).toContain("Editor");
+  expect(container.textContent).not.toContain("filterSeniority");
 });

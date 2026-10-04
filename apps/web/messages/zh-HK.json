@@ -2095,7 +2095,8 @@
     "importIssuesTitle": "情節樹未就緒",
     "importClearSelection": "清除選擇",
     "messagesOffersTab": "招募收件箱",
-    "taskDashboardTab": "任務工作台"
+    "taskDashboardTab": "任務工作台",
+    "filterCapabilities": "創作者能力"
   },
   "crewRoles": {
     "director": "導演",
@@ -11506,5 +11507,32 @@
       "actioned": "已採取措施",
       "dismissed": "已結案，未採取措施"
     }
+  },
+  "communityVideo": {
+    "title": "投稿影片",
+    "description": "上傳影片，提交給社區頻道審核。",
+    "video": "影片",
+    "name": "影片名稱",
+    "intro": "影片介紹",
+    "channel": "社區頻道",
+    "search": "搜尋社區頻道",
+    "selected": "已選擇：{{name}}",
+    "loading": "載入中…",
+    "retry": "重試",
+    "empty": "找不到社區頻道。",
+    "more": "載入更多",
+    "uploading": "上傳中 · {{progress}}%",
+    "submit": "提交審核",
+    "success": "影片已提交，等待頻道審核。",
+    "failed": "影片投稿失敗。",
+    "videos": "社區影片",
+    "moderation": "等待平台媒體審核。",
+    "pending": "待審核",
+    "approved": "已通過",
+    "rejected": "已拒絕",
+    "approve": "通過",
+    "reject": "拒絕",
+    "closed": "此頻道暫不接受投稿。",
+    "signIn": "登入後投稿影片"
   }
 }

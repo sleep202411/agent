@@ -1,3 +1,7 @@
+import {
+  ChannelVideosController,
+  ChannelVideosService,
+} from './channel-videos';
 import { IpStudiosService, IpStudiosController } from './ip-studios';
 import { CreatorServicesModule } from '../creator-services/creator-services.module';
 import { ContentGpsGeocodingService } from './content-gps-geocoding';
@@ -88,6 +92,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     AiGenerationModule,
   ],
   controllers: [
+    ChannelVideosController,
     IpStudiosController,
     ContentGpsSearchController,
     ContentGpsSuggestionsController,
@@ -116,6 +121,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     CreatorTrustController,
   ],
   providers: [
+    ChannelVideosService,
     IpStudiosService,
     ContentGpsSearchService,
     ContentGpsGeocodingService,
