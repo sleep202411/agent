@@ -38,6 +38,7 @@ function Session(props: Props) {
   const [spend, setSpend] = useState(false);
   const [expenses, setExpenses] = useState(false);
   const [compute, setCompute] = useState(false);
+  const [formRevision, setFormRevision] = useState(0);
   const [revision, setRevision] = useState(0),
     [access, setAccess] = useState<{ revision: number; allowed?: boolean; error?: string }>();
   const [view, setView] = useState<FinanceView>("earnings"),
@@ -133,15 +134,23 @@ function Session(props: Props) {
       </Pressable>
       {view === "earnings" ? (
         <EarningCreate
-          key={`earning-create:${revision}`}
+          key={`earning-create:${formRevision}`}
+          refreshKey={revision}
           {...props}
-          onSaved={() => setRevision((n) => n + 1)}
+          onSaved={() => {
+            setFormRevision((n) => n + 1);
+            setRevision((n) => n + 1);
+          }}
         />
       ) : (
         <PayoutCreate
-          key={`payout-create:${revision}`}
+          key={`payout-create:${formRevision}`}
+          refreshKey={revision}
           {...props}
-          onSaved={() => setRevision((n) => n + 1)}
+          onSaved={() => {
+            setFormRevision((n) => n + 1);
+            setRevision((n) => n + 1);
+          }}
         />
       )}
       {visible?.allowed && (

@@ -20,7 +20,13 @@ import {
   type NewEarning,
 } from "./earning-create-api";
 import { formatFinanceMoney } from "./crew-finance-api";
-type Props = { crewId: string; userId: string; generation: number; onSaved: () => void };
+type Props = {
+  crewId: string;
+  userId: string;
+  generation: number;
+  refreshKey?: number;
+  onSaved: () => void;
+};
 export function EarningCreate(props: Props) {
   return (
     <EarningCreateAccess
@@ -35,6 +41,12 @@ function EarningCreateAccess(props: Props) {
     [open, setOpen] = useState(false),
     [error, setError] = useState<string>();
   const [revision, setRevision] = useState(0);
+  const [lastRefreshKey, setLastRefreshKey] = useState(props.refreshKey);
+  if (lastRefreshKey !== props.refreshKey) {
+    setLastRefreshKey(props.refreshKey);
+    setAllowed(false);
+    setError(undefined);
+  }
   useEffect(() => {
     const controller = new AbortController();
     void fetchEarningCreateAccess(props.crewId, props.userId, controller.signal).then(
@@ -48,7 +60,7 @@ function EarningCreateAccess(props: Props) {
       }
     );
     return () => controller.abort();
-  }, [props.crewId, props.userId, props.generation, revision]);
+  }, [props.crewId, props.userId, props.generation, revision, props.refreshKey]);
   return (
     <>
       {error && (

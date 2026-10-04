@@ -75,9 +75,17 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const button = (name: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent === name)!;
-const render = () =>
+const render = (refreshKey = 0) =>
   act(async () =>
-    root.render(<EarningCreate crewId="crew" userId="manager" generation={1} onSaved={h.saved} />)
+    root.render(
+      <EarningCreate
+        refreshKey={refreshKey}
+        crewId="crew"
+        userId="manager"
+        generation={1}
+        onSaved={h.saved}
+      />
+    )
   );
 const click = (name: string) => act(async () => button(name).click());
 async function enter(label: string, value: string) {
@@ -301,5 +309,19 @@ it("keeps corrupt saved recovery intact and refuses a fresh earning", async () =
   expect(button("earningCreate.review")).toBeUndefined();
   expect(button("earningCreate.retry")).toBeDefined();
   expect(h.records.get("earning-create:manager:crew")).toBe("broken");
+  expect(h.decide).not.toHaveBeenCalled();
+});
+
+it("retains the open draft when refreshed create access is denied", async () => {
+  await render();
+  await click("earningCreate.add");
+  await enter("earningCreate.amount", "12");
+  h.access.mockResolvedValue(false);
+  await render(1);
+  expect(button("earningCreate.add")).toBeUndefined();
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="earningCreate.amount"]')!.value
+  ).toBe("12");
+  expect(h.access).toHaveBeenCalledTimes(2);
   expect(h.decide).not.toHaveBeenCalled();
 });

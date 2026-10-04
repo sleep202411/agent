@@ -8,8 +8,28 @@ vi.mock("./amendment-finance", () => ({
 vi.mock("./crew-spend", () => ({ CrewSpendSummary: () => <span>spending summary screen</span> }));
 vi.mock("./crew-expenses", () => ({ CrewExpenses: () => <span>expense history screen</span> }));
 vi.mock("./crew-compute", () => ({ CrewCompute: () => <span>compute request screen</span> }));
-vi.mock("./payout-create", () => ({ PayoutCreate: () => <span>payout creation entry</span> }));
-vi.mock("./earning-create", () => ({ EarningCreate: () => <span>earning creation entry</span> }));
+vi.mock("./payout-create", () => ({
+  PayoutCreate: () => {
+    const [draft, setDraft] = useState("");
+    return (
+      <label>
+        payout creation entry
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} />
+      </label>
+    );
+  },
+}));
+vi.mock("./earning-create", () => ({
+  EarningCreate: () => {
+    const [draft, setDraft] = useState("");
+    return (
+      <label>
+        earning creation entry
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} />
+      </label>
+    );
+  },
+}));
 vi.mock("./crew-finance-trend", () => ({ CrewFinanceTrend: () => <span>income trend</span> }));
 vi.mock("./crew-finance-detail", () => ({
   CrewFinanceDetail: ({ onClose }: { onClose: () => void }) => {
@@ -248,3 +268,32 @@ it("revalidates the visible ledger on foreground and hides stale records on fail
   await click("thread.refresh");
   expect(host.textContent).toContain("Reward");
 });
+
+it.each(["earnings", "payouts"])(
+  "preserves an unfinished %s form while foreground access refresh fails",
+  async (view) => {
+    await render();
+    if (view === "payouts") await click("crewFinance.payouts");
+    await act(async () => {
+      const input = host.querySelector("input")!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "unfinished finance draft"
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    h.active = false;
+    await render();
+    h.access.mockRejectedValueOnce(new Error("Access temporarily unavailable"));
+    h.active = true;
+    await render();
+    expect(host.textContent).toContain("Access temporarily unavailable");
+    expect(host.querySelector("input")!.value).toBe("unfinished finance draft");
+    await click("thread.refresh");
+    expect(host.querySelector("input")!.value).toBe("unfinished finance draft");
+    expect(host.textContent).toContain("Reward");
+    h.generation = 2;
+    await render();
+    expect(host.querySelector("input")).toBeNull();
+  }
+);
