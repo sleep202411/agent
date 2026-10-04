@@ -5147,5 +5147,19 @@
   "storyCanvas.remove": "Remove node",
   "storyCanvas.removeBody": "Remove this node and its connected wires? Their generation references will be cleared. Media in the library will be kept.",
   "storyCanvas.resumeAction": "Resume saved canvas change",
-  "storyCanvas.removeChanged": "This node or its connections changed on another device. Your pending change is kept; close to review the latest version or discard it to start again."
+  "storyCanvas.removeChanged": "This node or its connections changed on another device. Your pending change is kept; close to review the latest version or discard it to start again.",
+  "storyCanvas.create": "Create node",
+  "storyCanvas.resumeCreate": "Resume new node",
+  "storyCanvas.createType.prompt": "Image card",
+  "storyCanvas.createType.video": "Video card",
+  "storyCanvas.createType.audio": "Audio card",
+  "storyCanvas.createType.note": "Note",
+  "storyCanvas.createType.shot": "Storyboard shot",
+  "storyCanvas.createName": "Name (optional)",
+  "storyCanvas.noteText": "Note text",
+  "storyCanvas.promptText": "Prompt",
+  "storyCanvas.createShotHelp": "Adds a shot at the end of the storyboard.",
+  "storyCanvas.createNoteHelp": "Adds a note to the canvas.",
+  "storyCanvas.createGenerationHelp": "Uses current model defaults. Creating a card does not start generation.",
+  "storyCanvas.editNote": "Edit note"
 }

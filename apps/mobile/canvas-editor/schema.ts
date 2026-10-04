@@ -4,7 +4,7 @@ export const CANVAS_ROOTS = ["meta", "nodes", "edges", "groups", "assets"] as co
 export const canvasNodeEditSchema = z
   .object({
     nodeId: z.string().min(1),
-    kind: z.enum(["rename", "prompt", "remove"]),
+    kind: z.enum(["rename", "prompt", "text", "remove"]),
     value: z.string(),
   })
   .strict()

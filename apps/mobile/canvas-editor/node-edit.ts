@@ -23,7 +23,7 @@ export function editCanvasNode(state: string, raw: CanvasNodeEdit) {
     const generation = generationTypes.has(type),
       media = mediaTypes.has(type);
     if (
-      (!generation && !media) ||
+      (edit.kind === "text" ? type !== "note" : !generation && !media) ||
       (edit.kind === "prompt" && (!generation || data.get("locked") === true))
     )
       throw Error("This canvas node does not support that edit.");
@@ -32,8 +32,15 @@ export function editCanvasNode(state: string, raw: CanvasNodeEdit) {
       update = encodeCanvasBytes(bytes);
     });
     doc.transact(() => {
-      const field = edit.kind === "prompt" ? "prompt" : generation ? "name" : "label";
-      const value = edit.kind === "prompt" ? edit.value : edit.value.trim() || undefined;
+      const field =
+        edit.kind === "text"
+          ? "text"
+          : edit.kind === "prompt"
+            ? "prompt"
+            : generation
+              ? "name"
+              : "label";
+      const value = edit.kind === "rename" ? edit.value.trim() || undefined : edit.value;
       if (data.get(field) !== value) data.set(field, value);
       // Web media rename also renames every matching inventory entry.
       const mediaAssetId = data.get("mediaAssetId");

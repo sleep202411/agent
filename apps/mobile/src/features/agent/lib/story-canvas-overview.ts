@@ -18,9 +18,14 @@ export function canvasOverview(snapshot: CanvasSnapshot) {
     nodes: Object.values(snapshot.nodes).map((raw) => {
       const value = node.parse(raw);
       const title =
-        [value.data.label, value.data.title, value.data.name].find(
-          (v): v is string => typeof v === "string" && !!v.trim()
-        ) ?? value.type;
+        [
+          value.data.label,
+          value.data.title,
+          value.data.name,
+          value.type === "note" && typeof value.data.text === "string"
+            ? value.data.text.split("\n")[0]
+            : undefined,
+        ].find((v): v is string => typeof v === "string" && !!v.trim()) ?? value.type;
       const text =
         [value.data.prompt, value.data.text, value.data.content].find(
           (v): v is string => typeof v === "string" && !!v.trim()
@@ -32,6 +37,7 @@ export function canvasOverview(snapshot: CanvasSnapshot) {
         text,
         type: value.type,
         canRename: generation || ["image", "videoAsset", "audioAsset"].includes(value.type),
+        canEditText: value.type === "note",
         canEditPrompt: generation && value.data.locked !== true,
       };
     }),

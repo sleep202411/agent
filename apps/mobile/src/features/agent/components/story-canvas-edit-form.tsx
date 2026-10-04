@@ -43,9 +43,11 @@ export function StoryCanvasEditForm({
       if (draft) return { draft, resumed: true };
       const baseline = canvasEditBaseline(loaded.snapshot, edit);
       const data = (loaded.snapshot.nodes[edit.nodeId] as { data?: Record<string, unknown> }).data;
-      const title = [data?.name, data?.label].find(
-        (value): value is string => typeof value === "string" && !!value
-      );
+      const title = [
+        data?.name,
+        data?.label,
+        typeof data?.text === "string" ? data.text.split("\n")[0] : undefined,
+      ].find((value): value is string => typeof value === "string" && !!value);
       return {
         draft: {
           ...baseline,
@@ -127,9 +129,11 @@ export function StoryCanvasEditForm({
   const actionTitle =
     draft?.edit.kind === "remove"
       ? "storyCanvas.remove"
-      : draft?.edit.kind === "prompt"
-        ? "storyCanvas.editPrompt"
-        : "storyCanvas.rename";
+      : draft?.edit.kind === "text"
+        ? "storyCanvas.editNote"
+        : draft?.edit.kind === "prompt"
+          ? "storyCanvas.editPrompt"
+          : "storyCanvas.rename";
   const discard = () =>
     Alert.alert(t("storyCanvas.discard"), t("storyCanvas.discardBody"), [
       { text: t("common.cancel"), style: "cancel" },
@@ -181,10 +185,8 @@ export function StoryCanvasEditForm({
               <ThemedText type="small">{t("storyCanvas.removeBody")}</ThemedText>
             ) : (
               <TextInput
-                accessibilityLabel={t(
-                  draft.edit.kind === "prompt" ? "storyCanvas.editPrompt" : "storyCanvas.rename"
-                )}
-                multiline={draft.edit.kind === "prompt"}
+                accessibilityLabel={t(actionTitle)}
+                multiline={draft.edit.kind !== "rename"}
                 editable={phase === "idle" && !draft.command}
                 value={draft.edit.value}
                 onChangeText={(value) => {
@@ -204,7 +206,7 @@ export function StoryCanvasEditForm({
                   borderColor: theme.border,
                   borderRadius: 8,
                   padding: 12,
-                  minHeight: draft.edit.kind === "prompt" ? 150 : 48,
+                  minHeight: draft.edit.kind !== "rename" ? 150 : 48,
                   textAlignVertical: "top",
                 }}
               />

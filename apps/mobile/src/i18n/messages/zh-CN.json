@@ -5147,5 +5147,19 @@
   "storyCanvas.remove": "移除节点",
   "storyCanvas.removeBody": "移除此节点及其连接线？相关生成引用也会清除，素材库中的媒体将保留。",
   "storyCanvas.resumeAction": "继续未完成的画布修改",
-  "storyCanvas.removeChanged": "此节点或其连接已在其他设备上更改。未完成的修改已保留；请关闭查看最新版本，或放弃后重新操作。"
+  "storyCanvas.removeChanged": "此节点或其连接已在其他设备上更改。未完成的修改已保留；请关闭查看最新版本，或放弃后重新操作。",
+  "storyCanvas.create": "创建节点",
+  "storyCanvas.resumeCreate": "继续创建节点",
+  "storyCanvas.createType.prompt": "图像卡片",
+  "storyCanvas.createType.video": "视频卡片",
+  "storyCanvas.createType.audio": "音频卡片",
+  "storyCanvas.createType.note": "便笺",
+  "storyCanvas.createType.shot": "分镜镜头",
+  "storyCanvas.createName": "名称（可选）",
+  "storyCanvas.noteText": "便笺内容",
+  "storyCanvas.promptText": "提示词",
+  "storyCanvas.createShotHelp": "在分镜末尾添加一个镜头。",
+  "storyCanvas.createNoteHelp": "在画布中添加便笺。",
+  "storyCanvas.createGenerationHelp": "使用当前模型默认设置。创建卡片不会开始生成。",
+  "storyCanvas.editNote": "编辑便笺"
 }

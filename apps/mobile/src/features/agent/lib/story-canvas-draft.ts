@@ -48,6 +48,10 @@ export function canvasEditBaseline(
       }),
     };
   }
+  if (edit.kind === "text") {
+    if (node.type !== "note") throw Error("This canvas node does not support that edit.");
+    return { nodeType: node.type, baseValue: z.string().parse(node.data.text ?? "") };
+  }
   const generation = ["prompt", "video", "audio"].includes(node.type);
   if (
     (!generation && !["image", "videoAsset", "audioAsset"].includes(node.type)) ||

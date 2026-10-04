@@ -5147,5 +5147,19 @@
   "storyCanvas.remove": "移除節點",
   "storyCanvas.removeBody": "移除此節點及其連接線？相關生成引用亦會清除，素材庫中的媒體將保留。",
   "storyCanvas.resumeAction": "繼續未完成的畫布修改",
-  "storyCanvas.removeChanged": "此節點或其連接已在其他裝置上更改。未完成的修改已保留；請關閉查看最新版本，或放棄後重新操作。"
+  "storyCanvas.removeChanged": "此節點或其連接已在其他裝置上更改。未完成的修改已保留；請關閉查看最新版本，或放棄後重新操作。",
+  "storyCanvas.create": "建立節點",
+  "storyCanvas.resumeCreate": "繼續建立節點",
+  "storyCanvas.createType.prompt": "圖像卡片",
+  "storyCanvas.createType.video": "影片卡片",
+  "storyCanvas.createType.audio": "音訊卡片",
+  "storyCanvas.createType.note": "便箋",
+  "storyCanvas.createType.shot": "分鏡鏡頭",
+  "storyCanvas.createName": "名稱（選填）",
+  "storyCanvas.noteText": "便箋內容",
+  "storyCanvas.promptText": "提示詞",
+  "storyCanvas.createShotHelp": "在分鏡末尾新增一個鏡頭。",
+  "storyCanvas.createNoteHelp": "在畫布中新增便箋。",
+  "storyCanvas.createGenerationHelp": "使用目前模型預設設定。建立卡片不會開始生成。",
+  "storyCanvas.editNote": "編輯便箋"
 }

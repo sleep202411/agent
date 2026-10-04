@@ -12,6 +12,8 @@ import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCandidatesPanel } from "./story-candidates-panel";
 import { canvasDraftStore } from "../lib/story-canvas-draft";
 import { canvasOverview } from "../lib/story-canvas-overview";
+import { canvasCreateDraftStore } from "../lib/story-canvas-create-draft";
+import { StoryCanvasCreateForm } from "./story-canvas-create-form";
 import { StoryCanvasEditForm } from "./story-canvas-edit-form";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import type { CanvasNodeEdit } from "../../../../canvas-editor/schema";
@@ -63,6 +65,8 @@ export function StoryCanvasPanel({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [creating, setCreating] = useState(false),
+    [createRecovery, setCreateRecovery] = useState(false);
   const [attempt, setAttempt] = useState(0),
     [loading, setLoading] = useState(true),
     [error, setError] = useState<string>();
@@ -78,6 +82,7 @@ export function StoryCanvasPanel({
     [selected, setSelected] = useState<string>();
   const reload = () => {
     setRecovery(undefined);
+    setCreateRecovery(false);
     setOverview(undefined);
     setLoaded(undefined);
     setError(undefined);
@@ -124,6 +129,12 @@ export function StoryCanvasPanel({
                   userId
                 ).read();
                 setRecovery(draft?.edit);
+                setCreateRecovery(
+                  !!canvasCreateDraftStore(
+                    { ...scope, documentId: value.documentId },
+                    userId
+                  ).read()
+                );
               } catch (cause) {
                 setError(cause instanceof Error ? cause.message : String(cause));
               }
@@ -140,6 +151,17 @@ export function StoryCanvasPanel({
           <Pressable accessibilityRole="button" onPress={reload} style={{ paddingVertical: 10 }}>
             <ThemedText type="small">
               {t(error ? "common.retry" : "storyCanvas.refresh")}
+            </ThemedText>
+          </Pressable>
+        )}
+        {loaded && canEdit && !loading && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setCreating(true)}
+            style={{ paddingVertical: 10 }}
+          >
+            <ThemedText type="small">
+              {t(createRecovery ? "storyCanvas.resumeCreate" : "storyCanvas.create")}
             </ThemedText>
           </Pressable>
         )}
@@ -191,7 +213,9 @@ export function StoryCanvasPanel({
                       }}
                     >
                       <ThemedText type="smallBold">{node.title}</ThemedText>
-                      {!!node.text && <ThemedText type="small">{node.text}</ThemedText>}
+                      {!!node.text && node.text !== node.title && (
+                        <ThemedText type="small">{node.text}</ThemedText>
+                      )}
                       {canEdit && (
                         <View style={{ flexDirection: "row", gap: 16, flexWrap: "wrap" }}>
                           <Pressable
@@ -208,6 +232,15 @@ export function StoryCanvasPanel({
                               style={{ paddingVertical: 10 }}
                             >
                               <ThemedText type="small">{t("storyCanvas.rename")}</ThemedText>
+                            </Pressable>
+                          )}
+                          {node.canEditText && (
+                            <Pressable
+                              accessibilityRole="button"
+                              onPress={() => setEdit({ nodeId: node.id, kind: "text" })}
+                              style={{ paddingVertical: 10 }}
+                            >
+                              <ThemedText type="small">{t("storyCanvas.editNote")}</ThemedText>
                             </Pressable>
                           )}
                           {node.canEditPrompt && (
@@ -258,6 +291,20 @@ export function StoryCanvasPanel({
             userId={userId}
             mediaAssetId={selected}
             close={() => setSelected(undefined)}
+          />
+        )}
+        {creating && writeScope && canEdit && (
+          <StoryCanvasCreateForm
+            scope={writeScope}
+            userId={userId}
+            close={() => {
+              setCreating(false);
+              reload();
+            }}
+            saved={() => {
+              setCreating(false);
+              reload();
+            }}
           />
         )}
         {edit && loaded && writeScope && canEdit && (

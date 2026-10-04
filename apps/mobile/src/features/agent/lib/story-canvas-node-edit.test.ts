@@ -21,6 +21,29 @@ function seed(type = "prompt") {
   doc.getMap("nodes").set("n", node);
   return { doc, data, state: () => encodeCanvasBytes(Y.encodeStateAsUpdate(doc)) };
 }
+it("edits note text without trimming or changing other fields", () => {
+  const { doc, data, state } = seed("note");
+  try {
+    data.set("text", "Original note");
+    const next = editCanvasNode(state(), {
+      nodeId: "n",
+      kind: "text",
+      value: "  第一行\nSecond line  ",
+    });
+    expect(next.snapshot.nodes.n).toMatchObject({
+      data: { text: "  第一行\nSecond line  ", settings: { model: "model", ratio: "16:9" } },
+    });
+    expect(
+      editCanvasNode(next.state, { nodeId: "n", kind: "text", value: "  第一行\nSecond line  " })
+        .yjsUpdateBase64
+    ).toBeNull();
+    expect(() =>
+      editCanvasNode(next.state, { nodeId: "n", kind: "rename", value: "Unsupported" })
+    ).toThrow();
+  } finally {
+    doc.destroy();
+  }
+});
 it.each(["prompt", "video", "audio"])(
   "renames %s generation cards in the Web name field",
   (type) => {
