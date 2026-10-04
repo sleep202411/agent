@@ -508,6 +508,13 @@ export default function MineScreen() {
             <Pressable
               accessibilityRole="button"
               style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
+              onPress={() => router.push(toHref("/my-agreements"))}
+            >
+              <ThemedText type="smallBold">{t("myAgreements.title")}</ThemedText>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
               onPress={() => router.push(toHref("/task-feedback"))}
             >
               <ThemedText type="smallBold">{t("feedbackHistory.title")}</ThemedText>

@@ -1,4 +1,7 @@
 {
+  "myAgreements.title": "我的协议",
+  "myAgreements.description": "查看你在各剧组创建或收到的协议。",
+
   "privateCases.view.all": "全部",
   "privateCases.view.initiated": "我发起的",
   "privateCases.view.responses": "我需回应的",

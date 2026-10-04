@@ -1,4 +1,7 @@
 {
+  "myAgreements.title": "My agreements",
+  "myAgreements.description": "Agreements you created or received across your Crews.",
+
   "privateCases.view.all": "All",
   "privateCases.view.initiated": "Initiated",
   "privateCases.view.responses": "Responses",
