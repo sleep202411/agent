@@ -1,3 +1,9 @@
+import { StoryRepairEffectsEditor } from "./story-repair-effects-editor";
+import {
+  repairEffects,
+  replaceRepairEffects,
+  type EffectTarget,
+} from "../lib/story-repair-effects";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -87,6 +93,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const [nodeSearch, setNodeSearch] = useState("");
   const [mediaNode, setMediaNode] = useState<string>();
   const [conditionChoice, setConditionChoice] = useState<string>();
+  const [effectTarget, setEffectTarget] = useState<EffectTarget>();
   const [conditionRoute, setConditionRoute] = useState<{ index: number; route: StoryExitRoute }>();
   const [uncertain, setUncertain] = useState(false),
     [loading, setLoading] = useState(true),
@@ -342,6 +349,11 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 <ThemedText type="smallBold">
                   {typeof node.name === "string" ? node.name : node.nodeId}
                 </ThemedText>
+                <RepairAction
+                  label={t("storyEffects.onEnter")}
+                  disabled={busy || uncertain || conflict || showSaved}
+                  onPress={() => setEffectTarget({ nodeId: selected })}
+                />
                 {node.kind === "clip" ? (
                   <RepairAction
                     label={t("storyRepair.media")}
@@ -536,6 +548,15 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                     ) : null}
                     {branch.choiceId ? (
                       <RepairAction
+                        label={t("storyEffects.onChoice")}
+                        disabled={busy || uncertain || conflict || showSaved}
+                        onPress={() =>
+                          setEffectTarget({ nodeId: selected, choiceId: branch.choiceId! })
+                        }
+                      />
+                    ) : null}
+                    {branch.choiceId ? (
+                      <RepairAction
                         label={t("storyCondition.title")}
                         disabled={busy || uncertain || conflict || showSaved}
                         onPress={() => setConditionChoice(branch.choiceId!)}
@@ -672,6 +693,28 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
             setMediaNode(undefined);
             onSaved();
           }}
+        />
+      ) : null}
+      {effectTarget && content && loaded ? (
+        <StoryRepairEffectsEditor
+          key={`${effectTarget.nodeId}:${effectTarget.choiceId ?? "entry"}`}
+          content={content}
+          effects={repairEffects(content, effectTarget)}
+          userId={userId}
+          storageKey={`${scope.projectId}:${scope.chapterId}:${effectTarget.nodeId}:${effectTarget.choiceId ?? "entry"}`}
+          canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+          applyError={error}
+          onApply={(effects) =>
+            edit((value) =>
+              replaceRepairEffects(
+                value,
+                effectTarget,
+                repairEffects(content, effectTarget),
+                effects
+              )
+            )
+          }
+          onClose={() => setEffectTarget(undefined)}
         />
       ) : null}
       {conditionRoute && content && loaded ? (
