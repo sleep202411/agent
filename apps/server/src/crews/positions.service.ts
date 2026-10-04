@@ -222,7 +222,18 @@ export class PositionsService {
         ? { savedBy: { some: { userId: userId ?? '' } } }
         : {}),
       ...(query.crewId ? { crewId: query.crewId } : {}),
-      ...(query.skill ? { requiredSkills: { has: query.skill } } : {}),
+      ...(query.skills?.length || query.skill
+        ? {
+            requiredSkills: {
+              hasSome: [
+                ...new Set([
+                  ...(query.skills ?? []),
+                  ...(query.skill ? [query.skill] : []),
+                ]),
+              ],
+            },
+          }
+        : {}),
       ...(query.q
         ? {
             AND: [

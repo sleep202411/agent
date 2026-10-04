@@ -316,7 +316,7 @@ describe('position discovery search', () => {
     const { where } = f.crewPosition.findMany.mock.calls[0][0];
     expect(where).toMatchObject({
       crewId: 'crew-1',
-      requiredSkills: { has: 'storyboard' },
+      requiredSkills: { hasSome: ['storyboard'] },
       status: 'open',
       moderationStatus: 'ok',
       crew: {
@@ -388,5 +388,38 @@ describe('Salary discovery units', () => {
       positionType: 'editor',
       crew: { genres: { has: 'commercial' } },
     });
+  });
+});
+
+it('validates multiple capability names without splitting names on commas', () => {
+  expect(
+    ListPublicPositionsQuerySchema.parse({
+      skills: '["AI Producer","Editing, sound"]',
+    }).skills,
+  ).toEqual(['AI Producer', 'Editing, sound']);
+  expect(
+    ListPublicPositionsQuerySchema.safeParse({ skills: 'AI Producer' }).success,
+  ).toBe(false);
+  expect(
+    ListPublicPositionsQuerySchema.safeParse({
+      skills: JSON.stringify(Array(21).fill('Editing')),
+    }).success,
+  ).toBe(false);
+});
+
+it('applies every selected capability to both count and paginated search', async () => {
+  const f = build();
+  f.crewPosition.findMany.mockResolvedValue([]);
+  f.crewPosition.count.mockResolvedValue(0);
+  await f.service.listPublic(
+    ListPublicPositionsQuerySchema.parse({
+      skills: JSON.stringify(['AI Producer', 'Editor']),
+    }),
+  );
+  expect(f.crewPosition.findMany.mock.calls[0][0].where.requiredSkills).toEqual(
+    { hasSome: ['AI Producer', 'Editor'] },
+  );
+  expect(f.crewPosition.count.mock.calls[0][0].where.requiredSkills).toEqual({
+    hasSome: ['AI Producer', 'Editor'],
   });
 });

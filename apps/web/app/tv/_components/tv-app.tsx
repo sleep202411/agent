@@ -23,6 +23,7 @@ import { TvInfoBar } from "./tv-info-bar";
 import { TvEmptyState, TvErrorState, TvLoadingState } from "./tv-empty";
 import { TvRightRail } from "./tv-right-rail";
 
+import { CommunityVideoDialog } from "@/app/(site)/ips/_components/community-video-dialog";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
 import { TvCatalogToolbar } from "./tv-catalog-toolbar";
 
@@ -30,13 +31,20 @@ type TvEntryProps = { embedded?: boolean; initialIpId?: string; initialEpisodeId
 export function TvApp({ embedded = false, initialIpId, initialEpisodeId }: TvEntryProps) {
   const { user } = useCurrentUser();
   const [createOpen, setCreateOpen] = useState(false);
+  const [videoOpen, setVideoOpen] = useState(false);
   const tv = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
   const [mode, setMode] = useState<"videos" | "games">("videos");
   return (
     <div className="flex min-h-full min-w-0 max-w-full flex-col lg:h-full lg:min-h-0 bg-[#0c0e13] text-white">
-      <TvCatalogToolbar mode={mode} onModeChange={setMode} onCreate={() => setCreateOpen(true)} />
+      <TvCatalogToolbar
+        mode={mode}
+        onModeChange={setMode}
+        onCreate={() => setCreateOpen(true)}
+        onSubmitVideo={() => setVideoOpen(true)}
+      />
+      <CommunityVideoDialog open={videoOpen} onOpenChange={setVideoOpen} />
       <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
       {mode === "games" && !embedded && (
         <button
