@@ -2,8 +2,12 @@ import { act, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryChapterProvider, useStoryChapterContext } from "./story-chapter-context";
-const h = vi.hoisted(() => ({ publication: vi.fn() }));
-vi.mock("expo-router", () => ({ useLocalSearchParams: () => ({}) }));
+const h = vi.hoisted(() => ({
+  publication: vi.fn(),
+  workbench: vi.fn(),
+  params: {} as Record<string, string>,
+}));
+vi.mock("expo-router", () => ({ useGlobalSearchParams: () => h.params }));
 vi.mock("@/hooks/app-active", () => ({
   isAppActive: () => true,
   subscribeAppActive: () => () => {},
@@ -13,10 +17,7 @@ vi.mock("@/features/agent/api/interactive-film-publication-api", () => ({
 }));
 vi.mock("@/features/agent/api/studio-projects-api", () => ({
   storyProjectsApi: {
-    getWorkbench: async () => ({
-      chapter: { id: "chapter" },
-      project: { capabilities: ["story.release"] },
-    }),
+    getWorkbench: h.workbench,
     getBillingBalance: async () => null,
   },
 }));
@@ -32,6 +33,11 @@ function Consumer() {
 }
 beforeEach(() => {
   vi.useFakeTimers();
+  h.params = {};
+  h.workbench.mockReset().mockResolvedValue({
+    chapter: { id: "chapter" },
+    project: { capabilities: ["story.release"] },
+  });
   h.publication.mockReset();
   h.publication.mockResolvedValue(null);
   host = document.createElement("div");
@@ -90,4 +96,26 @@ it("does not start overlapping poll requests", async () => {
   await render();
   await act(async () => vi.advanceTimersByTimeAsync(90_000));
   expect(h.publication).toHaveBeenCalledTimes(1);
+});
+
+it("uses the focused child chapter and ignores another project's route", async () => {
+  const selected = "00000000-0000-4000-8000-000000000005";
+  const next = "00000000-0000-4000-8000-000000000006";
+  h.params = { projectId: "project", chapterId: selected };
+  h.workbench.mockImplementation(async () => ({
+    project: { capabilities: ["story.edit"] },
+    chapter: { id: "default" },
+    chapters: [{ id: selected }, { id: next }],
+  }));
+  await render();
+  expect(state.chapterId).toBe(selected);
+  expect(h.workbench).toHaveBeenLastCalledWith("project", selected);
+  h.params = { projectId: "another", chapterId: next };
+  await render();
+  expect(state.chapterId).toBe(selected);
+  expect(h.workbench).toHaveBeenCalledTimes(1);
+  h.params = { projectId: "project", chapterId: next };
+  await render();
+  expect(state.chapterId).toBe(next);
+  expect(h.workbench).toHaveBeenLastCalledWith("project", next);
 });

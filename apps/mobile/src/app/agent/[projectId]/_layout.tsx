@@ -6,7 +6,10 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { StoryChapterProvider } from "@/features/agent/context/story-chapter-context";
+import {
+  StoryChapterProvider,
+  useStoryChapterContext,
+} from "@/features/agent/context/story-chapter-context";
 import { StoryProjectHeaderActions } from "@/features/agent/components/story-project-header-actions";
 import { StoryProjectHeaderBack } from "@/features/agent/components/story-project-header-back";
 import { STORY_TAB_BAR_CONTENT_HEIGHT } from "@/features/agent/lib/story-tab-bar";
@@ -18,12 +21,19 @@ const NAV_BG = "#0A0A0A";
 const NAV_BORDER = "rgba(255,255,255,0.08)";
 const NAV_INACTIVE = "rgba(255,255,255,0.44)";
 
-function StoryProjectTabs({ projectId }: { projectId: string }) {
+function StoryProjectTabs({
+  projectId,
+  chapterId = "",
+}: {
+  projectId: string;
+  chapterId?: string;
+}) {
   const t = useTranslations();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = STORY_TAB_BAR_CONTENT_HEIGHT + insets.bottom;
   const showProjectActions = isAgentOsId(projectId);
+  const chapterParams = { projectId, ...(chapterId ? { chapterId } : {}) };
 
   return (
     <Tabs
@@ -68,6 +78,7 @@ function StoryProjectTabs({ projectId }: { projectId: string }) {
       <Tabs.Screen
         name="index"
         options={{
+          href: { pathname: "/agent/[projectId]", params: chapterParams },
           tabBarLabel: t("agent.tabs.chat"),
           tabBarIcon: ({ color }) => (
             <IconMessageCircle size={20} strokeWidth={1.6} color={color} />
@@ -77,6 +88,7 @@ function StoryProjectTabs({ projectId }: { projectId: string }) {
       <Tabs.Screen
         name="script"
         options={{
+          href: { pathname: "/agent/[projectId]/script", params: chapterParams },
           tabBarLabel: t("agent.tabs.script"),
           tabBarIcon: ({ color }) => <IconScript size={20} strokeWidth={1.6} color={color} />,
         }}
@@ -84,12 +96,18 @@ function StoryProjectTabs({ projectId }: { projectId: string }) {
       <Tabs.Screen
         name="assets"
         options={{
+          href: { pathname: "/agent/[projectId]/assets", params: chapterParams },
           tabBarLabel: t("agent.tabs.assets"),
           tabBarIcon: ({ color }) => <IconLayoutGrid size={20} strokeWidth={1.6} color={color} />,
         }}
       />
     </Tabs>
   );
+}
+
+function SelectedChapterTabs({ projectId }: { projectId: string }) {
+  const { chapterId } = useStoryChapterContext();
+  return <StoryProjectTabs projectId={projectId} chapterId={chapterId} />;
 }
 
 /** Story project workspace — native tab bar + shared chapter context. */
@@ -126,7 +144,7 @@ export default function StoryProjectLayout() {
 
   return (
     <StoryChapterProvider key={`${projectId}:${auth.generation}`} projectId={projectId}>
-      <StoryProjectTabs projectId={projectId} />
+      <SelectedChapterTabs projectId={projectId} />
     </StoryChapterProvider>
   );
 }

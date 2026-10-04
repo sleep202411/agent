@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { useGlobalSearchParams } from "expo-router";
 import {
   createContext,
   useCallback,
@@ -57,12 +57,19 @@ export function StoryChapterProvider({
   projectId: string;
   children: ReactNode;
 }) {
-  const { chapterId: chapterIdParam, title: titleParam } = useLocalSearchParams<{
+  const route = useGlobalSearchParams<{
+    projectId?: string | string[];
     chapterId?: string | string[];
     title?: string | string[];
   }>();
-  const chapterIdFromQuery = firstParam(chapterIdParam);
-  const previewTitle = firstParam(titleParam);
+  // This provider belongs to the parent tab layout; its local params omit
+  // the focused child route's query. Ignore global updates for other projects.
+  const [selection, setSelection] = useState({ chapterId: "", title: "" });
+  const focusedProject = firstParam(route.projectId) === projectId;
+  const chapterIdFromQuery = focusedProject ? firstParam(route.chapterId) : selection.chapterId;
+  const previewTitle = focusedProject ? firstParam(route.title) : selection.title;
+  if (selection.chapterId !== chapterIdFromQuery || selection.title !== previewTitle)
+    setSelection({ chapterId: chapterIdFromQuery, title: previewTitle });
   const [chapterId, setChapterId] = useState(
     isAgentOsId(chapterIdFromQuery) ? chapterIdFromQuery : ""
   );
