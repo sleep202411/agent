@@ -272,6 +272,106 @@ export const CreateStoryProjectSchema = z
   .strict();
 export type CreateStoryProjectInput = z.infer<typeof CreateStoryProjectSchema>;
 
+/**
+ * Publication introduction draft — v1 single-locale. Incomplete text can
+ * be saved; completeness is checked before review. `null` clears the draft.
+ * Media fields reference the
+ * project's candidate assets (ids), public URLs are resolved server-side at
+ * read time. Text structure may upgrade to record(locale→string) later.
+ */
+export const StoreListingSchema = z
+  .object({
+    description: z.string().trim().max(13000),
+    tags: z
+      .array(z.string().trim().min(1).max(40))
+      .max(12)
+      .refine((tags) => new Set(tags).size === tags.length, {
+        message: 'Tags must not contain duplicates.',
+      }),
+    developer: z.string().trim().max(60),
+    trailerAssetId: StoryUuidSchema.nullable(),
+    screenshotAssetIds: z
+      .array(StoryUuidSchema)
+      .max(8)
+      .refine((ids) => new Set(ids).size === ids.length, {
+        message: 'Screenshot assets must not contain duplicates.',
+      }),
+  })
+  .strict();
+export type StoreListing = z.infer<typeof StoreListingSchema>;
+
+/** Read saved introduction formats without discarding text or labels. */
+const LegacyTextStoreListingSchema = StoreListingSchema.omit({
+  description: true,
+}).extend({
+  tagline: z.string().trim().max(120),
+  shortDescription: z.string().trim().max(300),
+  aboutParagraphs: z.array(z.string().trim().max(2000)).max(6),
+});
+
+const LegacyStoredTextStoreListingSchema =
+  LegacyTextStoreListingSchema.transform(
+    ({ tagline, shortDescription, aboutParagraphs, ...listing }) => ({
+      ...listing,
+      description: combineStoredDescription(
+        tagline,
+        shortDescription,
+        aboutParagraphs,
+      ),
+    }),
+  ).pipe(StoreListingSchema);
+
+const LegacyStoredStoreListingSchema = LegacyTextStoreListingSchema.extend({
+  genres: z
+    .array(z.string().trim().min(1).max(40))
+    .max(4)
+    .refine((genres) => new Set(genres).size === genres.length, {
+      message: 'Genres must not contain duplicates.',
+    }),
+  tags: z
+    .array(z.string().trim().min(1).max(40))
+    .max(8)
+    .refine((tags) => new Set(tags).size === tags.length, {
+      message: 'Tags must not contain duplicates.',
+    }),
+})
+  .transform(
+    ({
+      genres,
+      tags,
+      tagline,
+      shortDescription,
+      aboutParagraphs,
+      ...listing
+    }) => ({
+      ...listing,
+      description: combineStoredDescription(
+        tagline,
+        shortDescription,
+        aboutParagraphs,
+      ),
+      tags: [...new Set([...genres, ...tags])],
+    }),
+  )
+  .pipe(StoreListingSchema);
+
+export const StoredStoreListingSchema = z.union([
+  StoreListingSchema,
+  LegacyStoredTextStoreListingSchema,
+  LegacyStoredStoreListingSchema,
+]);
+
+function combineStoredDescription(
+  tagline: string,
+  shortDescription: string,
+  aboutParagraphs: string[],
+): string {
+  return [tagline, shortDescription, ...aboutParagraphs]
+    .map((text) => text.trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 export const PatchStoryProjectSchema = z
   .object({
     expectedProjectVersion: NonNegativeVersionSchema,
@@ -281,6 +381,7 @@ export const PatchStoryProjectSchema = z
     defaultLocale: z.string().trim().min(2).max(16).optional(),
     visibility: StoryVisibilitySchema.optional(),
     tags: StoryTagsSchema.optional(),
+    storeListing: StoreListingSchema.nullable().optional(),
     frameProfile: StoryFrameProfileSchema.optional(),
     durationPreset: StoryDurationPresetSchema.optional(),
     visualStyle: StoryVisualStyleSchema.optional(),
@@ -569,6 +670,7 @@ export type CancelStoryBuildInput = z.infer<typeof CancelStoryBuildSchema>;
 
 export const PrepareStoryExperienceReleaseSchema = z
   .object({
+    expectedProjectVersion: NonNegativeVersionSchema,
     expectedDraftRevision: NonNegativeVersionSchema,
     expectedVideoSnapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
   })
@@ -691,6 +793,8 @@ export interface StoryProjectSummaryDto {
   defaultLocale: string;
   cover: MediaAssetSummaryDto | null;
   tags: string[];
+  /** Publication introduction draft; null when unset. */
+  storeListing: StoreListing | null;
   sourceIpId: string | null;
   projectVersion: number;
   draftRevision: number;

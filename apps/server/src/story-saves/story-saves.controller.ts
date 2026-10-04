@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Param,
   Put,
@@ -11,7 +12,11 @@ import {
 import type { z } from 'zod';
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
-import { SaveBodySchema, SaveSlotQuerySchema } from './story-saves.dto';
+import {
+  ClearSaveQuerySchema,
+  SaveBodySchema,
+  SaveSlotQuerySchema,
+} from './story-saves.dto';
 import { StorySavesService } from './story-saves.service';
 
 /**
@@ -25,11 +30,13 @@ export class StorySavesController {
 
   /** "Continue playing" pointer: the chapter the user last played. */
   @Get(':gameId/latest')
+  @Header('Cache-Control', 'private, no-store')
   async latest(@CurrentUser() user: AuthUser, @Param('gameId') gameId: string) {
     return { code: 200, data: await this.saves.latest(user.userId, gameId) };
   }
 
   @Get(':gameId/save')
+  @Header('Cache-Control', 'private, no-store')
   async chapter(
     @CurrentUser() user: AuthUser,
     @Param('gameId') gameId: string,
@@ -44,6 +51,7 @@ export class StorySavesController {
 
   @Put(':gameId/save')
   @HttpCode(200)
+  @Header('Cache-Control', 'private, no-store')
   async save(
     @CurrentUser() user: AuthUser,
     @Param('gameId') gameId: string,
@@ -60,15 +68,21 @@ export class StorySavesController {
 
   @Delete(':gameId/save')
   @HttpCode(200)
+  @Header('Cache-Control', 'private, no-store')
   async clear(
     @CurrentUser() user: AuthUser,
     @Param('gameId') gameId: string,
-    @Query(new ZodValidationPipe(SaveSlotQuerySchema))
-    query: z.infer<typeof SaveSlotQuerySchema>,
+    @Query(new ZodValidationPipe(ClearSaveQuerySchema))
+    query: z.infer<typeof ClearSaveQuerySchema>,
   ) {
     return {
       code: 200,
-      data: await this.saves.clear(user.userId, gameId, query.chapterId),
+      data: await this.saves.clear(
+        user.userId,
+        gameId,
+        query.chapterId,
+        query.expectedRevision,
+      ),
     };
   }
 }

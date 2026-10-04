@@ -564,6 +564,7 @@ function CandidateDialog({
                     candidate={candidate}
                     index={index}
                     current={current}
+                    canClear={Boolean(onClearSelection)}
                     pending={pending}
                     disabled={operationPending || blocked}
                     disabledReason={
@@ -599,6 +600,7 @@ function CandidatePickerCard({
   candidate,
   index,
   current,
+  canClear,
   pending,
   disabled,
   disabledReason,
@@ -607,6 +609,7 @@ function CandidatePickerCard({
   candidate: StoryCandidateAsset;
   index: number;
   current: boolean;
+  canClear: boolean;
   pending: boolean;
   disabled: boolean;
   disabledReason?: string;
@@ -628,14 +631,20 @@ function CandidatePickerCard({
       type="button"
       disabled={disabled}
       title={disabledReason}
-      aria-label={current ? t("clearAsset", { label }) : t("selectAsset", { label })}
+      aria-label={
+        current
+          ? canClear && !disabled
+            ? t("clearAsset", { label })
+            : `${label} · ${t("current")}`
+          : t("selectAsset", { label })
+      }
       onClick={onSelect}
       className={cn(
         "group cursor-pointer overflow-hidden rounded-[18px] bg-white/[0.045] text-left transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-        "hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-55"
+        "enabled:hover:bg-white/[0.08] disabled:cursor-not-allowed"
       )}
     >
-      <div className="relative aspect-video bg-black/28">
+      <div className="relative aspect-video bg-black/28 group-disabled:opacity-60">
         {asset.previewUrl && asset.kind === "image" ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={asset.previewUrl} alt={label} className="size-full object-cover" />
@@ -680,22 +689,26 @@ function CandidatePickerCard({
             ? ` · ${formatDuration(asset.durationSeconds)}`
             : ""}
         </p>
-        <p className="mt-1.5 flex min-h-3 items-center gap-1 text-[8px] leading-3 text-white/38">
-          {current ? (
+        <p className="mt-1.5 flex min-h-4 items-start gap-1 text-[10px] leading-4 text-white/70">
+          {disabled && disabledReason ? (
+            <span>{disabledReason}</span>
+          ) : current && canClear && !disabled ? (
             <>
               <span className="group-hover:hidden group-focus-visible:hidden">{t("current")}</span>
               <span className="hidden text-white/62 group-hover:inline group-focus-visible:inline">
                 {t("clear")}
               </span>
             </>
+          ) : current ? (
+            <span>{t("current")}</span>
           ) : metadataIncomplete ? (
             <>
               <IconAlertTriangle className="size-2.5 shrink-0" stroke={1.8} />
               <span className="truncate">{t("metadataIncomplete")}</span>
             </>
-          ) : (
+          ) : !disabled ? (
             <span className="opacity-0 transition group-hover:opacity-100">{t("select")}</span>
-          )}
+          ) : null}
         </p>
       </div>
     </button>

@@ -1,5 +1,6 @@
 "use client";
 import { usePlaySessionReporter } from "./use-play-session-reporter";
+import { useExperienceTransportVisibility } from "./use-experience-transport-visibility";
 
 import {
   useCallback,
@@ -12,6 +13,7 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type DOMAttributes,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -41,6 +43,8 @@ import {
   type ExperienceScene,
   type ExperienceThemeConfig,
   type ExperienceVideoAsset,
+  type ExperienceJourney,
+  type ExperienceJourneyWatchedMedia,
 } from "@repo/shared/experience-runtime";
 import {
   EXPERIENCE_CORE_RENDERER_ADAPTERS,
@@ -50,6 +54,7 @@ import {
   evaluateExperienceCondition,
   initializeExperienceRuntime,
   isExperienceRendererVisible,
+  isExperienceGestureAvailable,
   type ExperienceEventQueueResult,
   type ExperienceRuntimeController,
   type ExperienceRuntimeEvent,
@@ -63,6 +68,7 @@ import {
   IconLock,
   IconPlayerPlay,
   IconRefresh,
+  IconRoute,
 } from "@tabler/icons-react";
 import { classNames } from "./class-names";
 import {
@@ -104,6 +110,31 @@ import { PRIMARY_BUTTON } from "./experience-player-styles";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
 import { ExperienceStoryClock, ExperienceStoryClockContext } from "./experience-story-clock";
 import { useExperienceAudioHost } from "./use-experience-audio-host";
+import { ExperiencePlaybackTransportControls } from "./experience-transport-controls";
+import {
+  clampWatchedSeek,
+  scenePlaybackSignature,
+  mediaPlaybackSignature,
+  shouldAdvancePlaybackTimeline,
+  validateExperiencePlaybackCheckpoint,
+  type ExperiencePlaybackCheckpoint,
+  type ExperienceMediaCheckpoint,
+  type ExperienceCheckpointReason,
+  type ExperiencePlaybackRate,
+} from "./experience-playback-checkpoint";
+import { ExperienceJourneyMap } from "./experience-journey-map";
+import {
+  createExperienceJourney,
+  validateExperienceJourney,
+  recordExperienceJourney,
+  projectExperienceJourneyGraph,
+  createExperienceJourneyAnchor,
+  restoreExperienceJourneyAnchor,
+  experienceJourneyEndingNodeId,
+  getExperienceJourneyReplayAccess,
+  getExperienceJourneyActiveAccess,
+  rewindExperienceJourney,
+} from "./experience-journey-model";
 
 export type ExperiencePlayerFrameProfile = "auto" | ExperienceOrientation;
 
@@ -144,6 +175,8 @@ export interface ExperiencePlayerAccess {
 export interface ExperienceAccessCheckpoint {
   state: ExperienceRuntimeState;
   events: ExperienceRuntimeEvent[];
+  playback?: ExperiencePlaybackCheckpoint;
+  journey?: ExperienceJourney;
 }
 
 export interface ExperiencePlayerProps {
@@ -170,6 +203,13 @@ export interface ExperiencePlayerProps {
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
   /** Authoring hosts may observe session state without changing playback. */
   onStateChange?: (state: ExperienceRuntimeState) => void;
+  /** A consistent engine/presentation checkpoint, emitted only after Start. */
+  onCheckpoint?: (
+    checkpoint: ExperienceAccessCheckpoint,
+    reason: ExperienceCheckpointReason
+  ) => void;
+  /** Host save feedback is arranged below the corner controls, including in fullscreen. */
+  playbackStatus?: ReactNode;
   /** Keep the instance stable: the runtime is created with it, so a new one starts a new run. */
   playSessionReporter?: PlaySessionReporter;
   endingExtra?: (sessionId: string | null) => ReactNode;
@@ -199,6 +239,8 @@ export function ExperiencePlayer({
   startSceneId,
   onAccessCheckpoint,
   onStateChange,
+  onCheckpoint,
+  playbackStatus,
   playSessionReporter,
   endingExtra,
   adaptivePlayback,
@@ -234,6 +276,14 @@ export function ExperiencePlayer({
           : startSceneId
             ? sceneEntryCheckpoint(parsed.data, startSceneId, randomSeed)
             : undefined;
+      if (entryCheckpoint?.playback) {
+        validateExperiencePlaybackCheckpoint(
+          parsed.data,
+          entryCheckpoint.state.currentSceneId,
+          entryCheckpoint.playback
+        );
+      }
+      if (entryCheckpoint?.journey) validateExperienceJourney(parsed.data, entryCheckpoint.journey);
       return {
         ok: true as const,
         manifest: parsed.data,
@@ -291,6 +341,8 @@ export function ExperiencePlayer({
         entryCheckpoint={prepared.entryCheckpoint}
         onAccessCheckpoint={onAccessCheckpoint}
         onStateChange={onStateChange}
+        onCheckpoint={onCheckpoint}
+        playbackStatus={playbackStatus}
         manifest={prepared.manifest}
         controller={prepared.controller}
         delivery={delivery}
@@ -326,12 +378,19 @@ function ActiveExperienceRuntimePlayer({
   entryCheckpoint,
   onAccessCheckpoint,
   onStateChange,
+  onCheckpoint,
+  playbackStatus,
   endingExtra,
 }: {
   /** Where the run enters, in place of the story's entry: its state is already restored. */
   entryCheckpoint?: ExperienceAccessCheckpoint;
   onAccessCheckpoint?: (checkpoint: ExperienceAccessCheckpoint) => void;
   onStateChange?: (state: ExperienceRuntimeState) => void;
+  onCheckpoint?: (
+    checkpoint: ExperienceAccessCheckpoint,
+    reason: ExperienceCheckpointReason
+  ) => void;
+  playbackStatus?: ReactNode;
   endingExtra?: (sessionId: string | null) => ReactNode;
   access?: ExperiencePlayerAccess;
   previewAccess: boolean;
@@ -357,18 +416,72 @@ function ActiveExperienceRuntimePlayer({
     controller.getPlaySessionReportError
   );
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
+  const [initialJourney] = useState(() =>
+    entryCheckpoint?.journey
+      ? validateExperienceJourney(manifest, entryCheckpoint.journey)
+      : createExperienceJourney(manifest)
+  );
+  const journeyRef = useRef(initialJourney);
+  const [journeyForMap, setJourneyForMap] = useState(initialJourney);
+  const [journeyMapOpen, setJourneyMapOpen] = useState(false);
+  const journeyMapOpenRef = useRef(false);
+  const journeyWasPlayingRef = useRef(false);
+  const journeyMapCornerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const journeyMapTransportButtonRef = useRef<HTMLButtonElement | null>(null);
+  const journeyMapOriginRef = useRef<"corner" | "transport">("corner");
+  const restoreJourneyFocusRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!journeyMapOpen && restoreJourneyFocusRef.current) {
+      restoreJourneyFocusRef.current = false;
+      const origin =
+        journeyMapOriginRef.current === "transport"
+          ? journeyMapTransportButtonRef.current
+          : journeyMapCornerButtonRef.current;
+      (origin ?? journeyMapCornerButtonRef.current)?.focus({ preventScroll: true });
+    }
+  });
+  const [journeyReplayPending, setJourneyReplayPending] = useState(false);
+  const journeyReplayPendingRef = useRef(false);
+  const [journeyReplayError, setJourneyReplayError] = useState<string | null>(null);
+  const [journeyMapSuspended, setJourneyMapSuspended] = useState(false);
   useEffect(() => {
     onStateChange?.(runtimeState);
   }, [onStateChange, runtimeState]);
-  const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [initialPlayback] = useState(() => entryCheckpoint?.playback);
+  const [restoredPresentation, setRestoredPresentation] = useState(() => ({
+    epoch: 0,
+    playback: initialPlayback,
+  }));
+  const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(
+    () => new Set(initialPlayback?.openRendererIds)
+  );
+  const openRendererIdsRef = useRef(openRendererIds);
+  const settledGestureIdsRef = useRef<string[]>(initialPlayback?.settledGestureIds ?? []);
+  const [settledGestureIds, setSettledGestureIds] = useState(settledGestureIdsRef.current);
+  const mediaCheckpointsRef = useRef(
+    new Map(initialPlayback?.media.map((media) => [media.rendererInstanceId, media]))
+  );
+  const [mediaProgress, setMediaProgress] = useState<ExperienceMediaCheckpoint | null>(
+    initialPlayback?.media[0] ?? null
+  );
+  const [playbackRate, setPlaybackRate] = useState<ExperiencePlaybackRate>(
+    initialPlayback?.rate ?? 1
+  );
+  const playbackRateRef = useRef(playbackRate);
+  const effectivePlaybackRateRef = useRef<number>(playbackRate);
+  const pendingCheckpointEventsRef = useRef(entryCheckpoint?.events ?? []);
   const [sceneEpoch, setSceneEpoch] = useState(0);
-  const [sceneTimeMs, setSceneTimeMs] = useState(0);
+  const [sceneTimeMs, setSceneTimeMs] = useState(initialPlayback?.sceneTimeMs ?? 0);
+  const scenePositionRef = useRef(sceneTimeMs);
   const [decodedContentSize, setDecodedContentSize] = useState<{
     width: number;
     height: number;
   } | null>(null);
   const [theme, setTheme] = useState<ExperienceThemeConfig | null>(null);
   const [started, setStarted] = useState(false);
+  const startedRef = useRef(false);
+  const onCheckpointRef = useRef(onCheckpoint);
+  onCheckpointRef.current = onCheckpoint;
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const accessPendingRef = useRef(false);
@@ -376,7 +489,9 @@ function ActiveExperienceRuntimePlayer({
   const [retryAccess, setRetryAccess] = useState<(() => void) | null>(null);
   const [nodeGate, setNodeGate] = useState<ExperienceGraphNode | null>(null);
   const aliveRef = useRef(true);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // StrictMode replays child passive registrations before parent passive
+    // effects. Publish ownership during layout so ready handles are accepted.
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
@@ -388,20 +503,24 @@ function ActiveExperienceRuntimePlayer({
   // on is the user's call, never a decision read off the media's metadata.
   const [soundBlocked, setSoundBlocked] = useState(false);
   const timelineCursorRef = useRef<ExperienceTimelineCursor>(
-    createExperienceTimelineCursor(runtimeState.currentSceneId)
+    initialPlayback?.cursor ?? createExperienceTimelineCursor(runtimeState.currentSceneId)
   );
   // Gesture outcomes parked until the scene clock reaches their safe branch
   // frame. Branch routing must not cut mid-pose: the interaction resolves the
   // instant the input lands, but the cut waits for `branchAtMs` so the outgoing
   // clip plays its resolve beat first. Cleared when the scene changes — parked
   // events belong to the scene that emitted them.
-  const parkedGestureEventsRef = useRef<ExperienceRuntimeEvent[]>([]);
+  const parkedGestureEventsRef = useRef<ExperienceRuntimeEvent[]>(
+    initialPlayback?.parkedEvents ?? []
+  );
   const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
+  const playbackHandleEpochsRef = useRef(new Map<string, number>());
   // The renderers whose media is on an element and playable — the render-time
   // mirror of `playbackHandlesRef`, which is what lets Start wait for the entry
   // clip instead of pressing play on nothing.
   const [stagedHandleIds, setStagedHandleIds] = useState<ReadonlySet<string>>(() => new Set());
-  const playbackEnabledRef = useRef(false);
+  const playbackEnabledRef = useRef(initialPlayback?.playbackEnabled ?? false);
+  const fixedClockEndedRef = useRef(initialPlayback?.fixedClockEnded ?? false);
   // True while a timeline-control press-hold window is open, unresolved, and
   // not held — the host must keep the scene media paused so playback position
   // equals charge progress. Lifted from the spatial layer, which owns press
@@ -429,6 +548,66 @@ function ActiveExperienceRuntimePlayer({
   // Start, through a pause or an access flow, after the end — so nothing
   // scheduled behind the title card spends time the viewer never saw.
   const [storyClock] = useState(() => new ExperienceStoryClock({ paused: true }));
+  const playbackLocale = resolvePlaybackLocale(manifest, locale);
+  const {
+    unlock: unlockAudio,
+    suspend: suspendAudio,
+    applyEffects: applyAudioEffects,
+    checkpoint: checkpointAudio,
+    restore: restoreAudio,
+  } = useExperienceAudioHost(manifest, playbackLocale, setRuntimeError);
+  const buildCheckpoint = useCallback(
+    (events = pendingCheckpointEventsRef.current): ExperienceAccessCheckpoint => {
+      const state = controller.state();
+      const node = findGraphNode(manifest, state.currentSceneId);
+      const audio = checkpointAudio();
+      const playback: ExperiencePlaybackCheckpoint | undefined =
+        node?.kind === "scene"
+          ? {
+              version: 1,
+              sceneId: node.sceneId,
+              sceneSignature: scenePlaybackSignature(node),
+              sceneTimeMs: scenePositionRef.current,
+              fixedClockEnded: fixedClockEndedRef.current,
+              cursor: structuredClone(timelineCursorRef.current),
+              openRendererIds: [...openRendererIdsRef.current],
+              settledGestureIds: [...settledGestureIdsRef.current],
+              parkedEvents: structuredClone(parkedGestureEventsRef.current),
+              media: structuredClone([...mediaCheckpointsRef.current.values()]),
+              playbackEnabled: playbackEnabledRef.current,
+              rate: playbackRateRef.current,
+              ...(audio ? { audio } : {}),
+            }
+          : undefined;
+      return {
+        state,
+        events: structuredClone(events),
+        ...(playback ? { playback } : {}),
+        journey: journeyRef.current,
+      };
+    },
+    [controller, manifest, checkpointAudio]
+  );
+  const buildCheckpointRef = useRef(buildCheckpoint);
+  buildCheckpointRef.current = buildCheckpoint;
+  const lastProgressPublishedRef = useRef(0);
+  const checkpointQueuedRef = useRef<ExperienceCheckpointReason | null>(null);
+  const publishCheckpoint = useCallback((reason: ExperienceCheckpointReason) => {
+    if (!startedRef.current || !onCheckpointRef.current) return;
+    if (reason === "progress" && performance.now() - lastProgressPublishedRef.current < 250) return;
+    if (checkpointQueuedRef.current) {
+      if (reason !== "progress") checkpointQueuedRef.current = reason;
+      return;
+    }
+    checkpointQueuedRef.current = reason;
+    queueMicrotask(() => {
+      const queued = checkpointQueuedRef.current;
+      checkpointQueuedRef.current = null;
+      if (!queued || !aliveRef.current || !startedRef.current) return;
+      lastProgressPublishedRef.current = performance.now();
+      onCheckpointRef.current?.(buildCheckpointRef.current(), queued);
+    });
+  }, []);
   // What holds playback, decided once per render by one rule. Code between
   // renders decides with the same rule, from the gates of the last commit and
   // the two that change ahead of a render — the viewer pause and the access
@@ -442,6 +621,7 @@ function ActiveExperienceRuntimePlayer({
     retryAccess: retryAccess !== null,
     nodeGate: nodeGate !== null,
     chargeGate: timelineHoldGate,
+    journeyMap: journeyMapOpen,
   };
   const holds = resolveExperiencePlaybackHolds(playbackGates);
   const committedGatesRef = useRef(playbackGates);
@@ -454,6 +634,7 @@ function ActiveExperienceRuntimePlayer({
         ...committedGatesRef.current,
         viewerPause: viewerPauseRef.current,
         accessPending: accessPendingRef.current,
+        journeyMap: journeyMapOpenRef.current,
       }),
     []
   );
@@ -484,12 +665,6 @@ function ActiveExperienceRuntimePlayer({
       ? resolveImageUri(manifest.assets, manifest.metadata.coverAssetId, orientation)
       : undefined);
   const experienceProfile = manifest.metadata.experienceProfile ?? "cinematic";
-  const playbackLocale = resolvePlaybackLocale(manifest, locale);
-  const {
-    unlock: unlockAudio,
-    suspend: suspendAudio,
-    applyEffects: applyAudioEffects,
-  } = useExperienceAudioHost(manifest, playbackLocale, setRuntimeError);
 
   // Pauses the story for the viewer (see nextExperienceViewerPause for which
   // reason wins). Everything it holds is held here, synchronously, ahead of the
@@ -510,8 +685,9 @@ function ActiveExperienceRuntimePlayer({
       void suspendAudio().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
       debugTrace(`pause ${next}`);
       setViewerPause(next);
+      publishCheckpoint("pause");
     },
-    [holdsNow, storyClock, suspendAudio]
+    [holdsNow, storyClock, suspendAudio, publishCheckpoint]
   );
 
   // Web Audio refuses to start without a tap the way media does, and that is
@@ -562,6 +738,7 @@ function ActiveExperienceRuntimePlayer({
   const applyResult = useCallback(
     (result: ExperienceEventQueueResult) => {
       setRuntimeState(result.state);
+      pendingCheckpointEventsRef.current = [];
       applyAudioEffects(result.effects);
       // The story is over: there is nothing to resume, and Web Audio — which a
       // pause holds — has the ending's cues to play.
@@ -570,20 +747,23 @@ function ActiveExperienceRuntimePlayer({
         setViewerPause(null);
       }
       result.effects.forEach((effect) => {
+        if (effect.kind === "scene.changed") {
+          playbackEnabledRef.current = true;
+          return;
+        }
         if (effect.kind !== "renderer.command") return;
         const handle = playbackHandlesRef.current.get(effect.instanceId);
-        if (!handle) return;
         if (effect.commandType === "play") {
           playbackEnabledRef.current = true;
-          if (mayPlayNow()) playHandle(effect.instanceId, handle);
+          if (handle && mayPlayNow()) playHandle(effect.instanceId, handle);
           return;
         }
         if (effect.commandType === "pause") {
           playbackEnabledRef.current = false;
-          handle.pause();
+          handle?.pause();
           return;
         }
-        if (effect.commandType === "seek") {
+        if (handle && effect.commandType === "seek") {
           const timeMs = effect.payload.timeMs;
           if (typeof timeMs === "number") handle.seek(timeMs / 1_000);
         }
@@ -596,8 +776,8 @@ function ActiveExperienceRuntimePlayer({
           return true;
         }
       );
-      setOpenRendererIds((current) => {
-        let next = new Set(current);
+      {
+        let next = new Set(openRendererIdsRef.current);
         result.effects.forEach((effect) => {
           if (effect.kind === "scene.changed") {
             next = new Set();
@@ -605,9 +785,12 @@ function ActiveExperienceRuntimePlayer({
           if (effect.kind === "renderer.command" && effect.commandType === "open") {
             next.add(effect.instanceId);
           }
+          if (effect.kind === "renderer.command" && effect.commandType === "close")
+            next.delete(effect.instanceId);
         });
-        return next;
-      });
+        openRendererIdsRef.current = next;
+        setOpenRendererIds(next);
+      }
       // Scene resets must NOT depend on state-updater side effects: React 18
       // defers `setState(updater)` evaluation to render time when the batch
       // already holds an update, so counters bumped inside the updater read
@@ -618,14 +801,35 @@ function ActiveExperienceRuntimePlayer({
         setSceneEpoch((value) => value + sceneChangeEffects.length);
         sceneEntryRef.current += sceneChangeEffects.length;
         setSceneTimeMs(0);
+        scenePositionRef.current = 0;
+        fixedClockEndedRef.current = false;
+        settledGestureIdsRef.current = [];
+        setSettledGestureIds([]);
+        mediaCheckpointsRef.current.clear();
+        setMediaProgress(null);
         parkedGestureEventsRef.current = [];
         timelineCursorRef.current = createExperienceTimelineCursor(
           latestSceneId ?? result.state.currentSceneId
         );
         debugTrace(`scene -> ${latestSceneId ?? result.state.currentSceneId}`);
       }
+      const enteredNode = findGraphNode(manifest, result.state.currentSceneId);
+      const freshEntry = sceneChangeEffects.length > 0 || (!startedRef.current && !entryCheckpoint);
+      const anchor =
+        freshEntry &&
+        enteredNode?.kind === "scene" &&
+        enteredNode.renderers.length > 0 &&
+        !result.state.completedEndingId
+          ? createExperienceJourneyAnchor(manifest, buildCheckpointRef.current())
+          : undefined;
+      journeyRef.current = recordExperienceJourney(manifest, journeyRef.current, {
+        sceneId: result.state.currentSceneId,
+        effects: result.effects,
+        ...(anchor ? { anchor } : {}),
+      });
+      publishCheckpoint("transition");
     },
-    [applyAudioEffects, mayPlayNow, playHandle]
+    [applyAudioEffects, mayPlayNow, playHandle, publishCheckpoint, manifest, entryCheckpoint]
   );
 
   const run = useCallback(
@@ -641,7 +845,9 @@ function ActiveExperienceRuntimePlayer({
             accessPendingRef.current = true;
             setAccessPending(true);
             playbackHandlesRef.current.forEach((handle) => handle.pause());
-            onAccessCheckpoint?.({ state: controller.state(), events: error.events });
+            pendingCheckpointEventsRef.current = error.events;
+            onAccessCheckpoint?.(buildCheckpointRef.current(error.events));
+            publishCheckpoint("access");
             try {
               await suspendAudio();
               const alreadyOwned = access.checkAccess
@@ -701,7 +907,15 @@ function ActiveExperienceRuntimePlayer({
       };
       return attempt();
     },
-    [access, applyResult, controller, exitLandscape, manifest, onAccessCheckpoint, suspendAudio]
+    [
+      access,
+      applyResult,
+      exitLandscape,
+      manifest,
+      onAccessCheckpoint,
+      suspendAudio,
+      publishCheckpoint,
+    ]
   );
 
   useEffect(() => {
@@ -721,10 +935,39 @@ function ActiveExperienceRuntimePlayer({
   }, [loadTheme, manifest]);
 
   const currentNode = findGraphNode(manifest, runtimeState.currentSceneId);
-  const entryLocked = Boolean(
-    currentNode?.access && !previewAccess && !access?.canAccess(currentNode.access)
-  );
+  const entryRequirements = [
+    ...getExperienceJourneyActiveAccess(manifest, journeyRef.current),
+    ...(currentNode?.access ? [currentNode.access] : []),
+  ];
+  const entryLocked =
+    !previewAccess && entryRequirements.some((requirement) => !access?.canAccess(requirement));
   const scene = !entryLocked && currentNode?.kind === "scene" ? currentNode : null;
+  const interactionActive =
+    Boolean(
+      scene?.gestures.some(
+        (gesture) =>
+          !settledGestureIds.includes(gesture.gestureId) &&
+          isExperienceGestureAvailable(gesture, runtimeState, sceneTimeMs)
+      )
+    ) ||
+    parkedGestureEventsRef.current.length > 0 ||
+    timelineHoldGate;
+  const approachingInteraction = Boolean(
+    scene?.gestures.some(
+      (gesture) =>
+        !settledGestureIds.includes(gesture.gestureId) &&
+        gesture.activeWindow &&
+        gesture.activeWindow.startMs <= sceneTimeMs + 1_000 &&
+        gesture.activeWindow.endMs >= sceneTimeMs
+    )
+  );
+  // Interactive input keeps its authored duration, even if footage was accelerated.
+  const effectivePlaybackRate = interactionActive || approachingInteraction ? 1 : playbackRate;
+  effectivePlaybackRateRef.current = effectivePlaybackRate;
+  useLayoutEffect(() => {
+    storyClock.setRate(effectivePlaybackRate);
+    playbackHandlesRef.current.forEach((handle) => handle.setPlaybackRate(effectivePlaybackRate));
+  }, [effectivePlaybackRate, storyClock]);
   const endingId = runtimeState.completedEndingId ?? null;
   const ending = endingId
     ? (manifest.endings.find((candidate) => candidate.endingId === endingId) ?? null)
@@ -759,6 +1002,20 @@ function ActiveExperienceRuntimePlayer({
   const hasTextRenderer = rendererSlots.some(
     ({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID
   );
+  const transportAvailable = Boolean(
+    holds.pauseUi &&
+    mediaProgress &&
+    !hasWorldModelRenderer &&
+    !interactionActive &&
+    playbackEnabledRef.current &&
+    (!mediaProgress.terminalMode || mediaProgress.isStill) &&
+    !mediaProgress.completed
+  );
+  const transportChrome = useExperienceTransportVisibility({
+    available: transportAvailable,
+    paused: viewerPause !== null,
+  });
+  const consumeTransportWakeTap = transportChrome.consumeWakeTap;
   // What the frame's controls offer. The toggle shows wherever the scene has
   // time to stop — footage, a fixed clock, a world stream, sound — and while
   // the story is paused; a silent text or decision beat has nothing to pause.
@@ -799,9 +1056,14 @@ function ActiveExperienceRuntimePlayer({
   // negotiation and buffering this covers are exactly the wait it shows.
   const entryMediaPending =
     !started &&
-    rendererSlots.some(
-      ({ renderer }) => playsMediaOnStart(renderer) && !stagedHandleIds.has(renderer.instanceId)
-    );
+    rendererSlots.some(({ renderer }) => {
+      const saved =
+        sceneEpoch === 0
+          ? initialPlayback?.media.find((media) => media.rendererInstanceId === renderer.instanceId)
+          : undefined;
+      if (saved?.terminalMode?.kind === "held" || saved?.completed) return false;
+      return playsMediaOnStart(renderer) && !stagedHandleIds.has(renderer.instanceId);
+    });
   // A landscape film is turned for a phone: by the browser where it lets the
   // player take the screen, otherwise by drawing the frame sideways while the
   // phone is upright. Reading scenes keep their responsive stage either way.
@@ -856,6 +1118,7 @@ function ActiveExperienceRuntimePlayer({
 
   const advanceTimeline = useCallback(
     (rendererInstanceId: string | null, positionMs: number) => {
+      if (!startedRef.current) return;
       const currentState = controller.state();
       const activeNode = findGraphNode(manifest, currentState.currentSceneId);
       if (!activeNode || activeNode.kind !== "scene") return;
@@ -876,20 +1139,24 @@ function ActiveExperienceRuntimePlayer({
         `clock ${activeNode.sceneId} @${Math.round(positionMs)} from ${rendererInstanceId ?? "host"}`
       );
       setSceneTimeMs(positionMs);
-      const advanced = advanceExperienceTimeline(activeNode, timelineCursorRef.current, positionMs);
-      timelineCursorRef.current = advanced.cursor;
-      if (advanced.events.length > 0) run(() => controller.dispatch(advanced.events));
+      scenePositionRef.current = positionMs;
+      if (shouldAdvancePlaybackTimeline(timelineCursorRef.current, positionMs)) {
+        const advanced = advanceExperienceTimeline(
+          activeNode,
+          timelineCursorRef.current,
+          positionMs
+        );
+        timelineCursorRef.current = advanced.cursor;
+        if (advanced.events.length > 0) run(() => controller.dispatch(advanced.events));
+      }
       flushParkedGestureEvents(positionMs);
+      publishCheckpoint("progress");
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [controller, manifest, run]
+    [controller, manifest, run, publishCheckpoint]
   );
 
-  /**
-   * Releases parked gesture outcomes whose safe branch frame has arrived.
-   * Returns the events that should dispatch now; callers that only inspect
-   * (tests) can call it read-only via `peekParkedGestureEvents`.
-   */
+  /** Releases parked gesture outcomes whose safe branch frame has arrived. */
   const flushParkedGestureEvents = useCallback(
     (positionMs: number) => {
       if (parkedGestureEventsRef.current.length === 0) return;
@@ -951,7 +1218,11 @@ function ActiveExperienceRuntimePlayer({
     const entry =
       fixedClockEntryRef.current?.key === key
         ? fixedClockEntryRef.current
-        : { key, origin: storyClock.now(), ended: false };
+        : {
+            key,
+            origin: storyClock.now() - scenePositionRef.current,
+            ended: fixedClockEndedRef.current,
+          };
     fixedClockEntryRef.current = entry;
     let frame = 0;
     const tick = (storyNow: number) => {
@@ -963,6 +1234,7 @@ function ActiveExperienceRuntimePlayer({
       }
       if (entry.ended) return;
       entry.ended = true;
+      fixedClockEndedRef.current = true;
       emitRuntimeEvents([{ type: "scene.clock-ended", sourceId: clockScene.sceneId }]);
     };
     frame = storyClock.requestFrame(tick);
@@ -1048,6 +1320,7 @@ function ActiveExperienceRuntimePlayer({
         return;
       }
       playbackHandlesRef.current.set(instanceId, handle);
+      handle.setPlaybackRate(effectivePlaybackRateRef.current);
       claimMediaSession();
       // Held clips wait for their hold to lift, the charge gate's included.
       if (mayPlayNow()) playHandle(instanceId, handle);
@@ -1162,9 +1435,10 @@ function ActiveExperienceRuntimePlayer({
         return;
       }
       if (nearAvailableExperienceGesture(event.currentTarget, event.clientX, event.clientY)) return;
+      if (consumeTransportWakeTap()) return;
       pauseStory("user");
     },
-    [hasWorldModelRenderer, holds.pauseUi, pauseStory, toggleVisible]
+    [hasWorldModelRenderer, holds.pauseUi, pauseStory, toggleVisible, consumeTransportWakeTap]
   );
 
   // Space, from the page or the player: a key press is a user activation, so
@@ -1206,10 +1480,11 @@ function ActiveExperienceRuntimePlayer({
 
   const begin = () => {
     if (started || starting || !theme || entryMediaPending) return;
+    playbackEnabledRef.current = initialPlayback?.playbackEnabled ?? true;
     // Inside the click, before anything is awaited. The entry clip is not
     // paused again here: that pause would be delivered as its own task and land
     // after the real play() started.
-    unlockMedia(true);
+    if (!entryLocked && (!initialPlayback || initialPlayback.playbackEnabled)) unlockMedia(true);
     // Fullscreen and the orientation lock need this click's activation too.
     // Not awaited: the film starts alongside, and a refusal only means the
     // frame is drawn sideways instead (see shouldRotateFrame).
@@ -1217,21 +1492,89 @@ function ActiveExperienceRuntimePlayer({
     // AudioContext.resume() runs before unlock()'s first await, so inside it too.
     void unlockAudio().catch(reportAudioError);
     setStarting(true);
-    void run(() =>
-      entryCheckpoint ? controller.dispatch(entryCheckpoint.events) : controller.start()
-    )
+    let entryAudioRestored = false;
+    void run(() => {
+      // A save can carry state obtained behind an earlier gate, even when the
+      // current scene is public. Validate that branch before exposing it.
+      for (const requirement of entryRequirements) {
+        if (!canAccess(requirement)) {
+          const error = new ExperienceAccessRequiredError(requirement);
+          error.events = entryCheckpoint?.events ?? [];
+          throw error;
+        }
+      }
+      if (!entryAudioRestored && initialPlayback?.audio) {
+        restoreAudio(initialPlayback.audio);
+        entryAudioRestored = true;
+      }
+      return entryCheckpoint ? controller.dispatch(entryCheckpoint.events) : controller.start();
+    })
       .then((entered) => {
         if (!entered) {
           playbackHandlesRef.current.forEach((handle) => handle.pause());
           return;
         }
-        playbackEnabledRef.current = true;
         // The clip hold lifts with this, and its effect plays the entry clip
         // through `playHandle`: a refusal is a pause and a tap, not a dialog.
+        startedRef.current = true;
         setStarted(true);
+        publishCheckpoint("transition");
       })
       .finally(() => setStarting(false));
   };
+
+  const isCurrentPresentation = useCallback(
+    () =>
+      aliveRef.current &&
+      sceneEntryRef.current === sceneEpoch &&
+      controller.state().currentSceneId === runtimeState.currentSceneId,
+    [controller, runtimeState.currentSceneId, sceneEpoch]
+  );
+  const emitCurrentOutcome = useCallback(
+    (...args: Parameters<typeof emitOutcome>) => {
+      if (isCurrentPresentation()) emitOutcome(...args);
+    },
+    [isCurrentPresentation, emitOutcome]
+  );
+  const reportCurrentRuntimeError = useCallback(
+    (error: string) => {
+      if (isCurrentPresentation()) setRuntimeError(error);
+    },
+    [isCurrentPresentation]
+  );
+  const registerCurrentPlaybackHandle = useCallback(
+    (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
+      if (handle) {
+        if (!isCurrentPresentation()) return;
+        playbackHandleEpochsRef.current.set(instanceId, sceneEpoch);
+      } else {
+        // A delayed cleanup from an earlier entry cannot unregister the
+        // replacement element with the same renderer identifier.
+        if (playbackHandleEpochsRef.current.get(instanceId) !== sceneEpoch) return;
+        playbackHandleEpochsRef.current.delete(instanceId);
+      }
+      registerPlaybackHandle(instanceId, handle);
+    },
+    [isCurrentPresentation, registerPlaybackHandle, sceneEpoch]
+  );
+  const interruptCurrentPlayback = useCallback(
+    (instanceId: string) => {
+      if (isCurrentPresentation()) handlePlaybackInterrupted(instanceId);
+    },
+    [isCurrentPresentation, handlePlaybackInterrupted]
+  );
+  const refuseCurrentPlayback = useCallback(() => {
+    if (isCurrentPresentation()) refusePlayback();
+  }, [isCurrentPresentation, refusePlayback]);
+  const blockCurrentSound = useCallback(() => {
+    if (isCurrentPresentation()) handleSoundBlocked();
+  }, [isCurrentPresentation, handleSoundBlocked]);
+  const measureCurrentContent = useCallback(
+    (size: { width: number; height: number }) => {
+      if (isCurrentPresentation()) setDecodedContentSize(size);
+    },
+    [isCurrentPresentation]
+  );
 
   const renderSlot = ({ renderer, key }: (typeof rendererSlots)[number]) => (
     <CoreRenderer
@@ -1248,19 +1591,280 @@ function ActiveExperienceRuntimePlayer({
       orientation={orientation}
       copy={copy}
       muted={soundBlocked}
-      onTimelineTimeMs={(timeMs) => advanceTimeline(renderer.instanceId, timeMs)}
-      onOutcome={emitOutcome}
-      onRuntimeError={setRuntimeError}
-      onPlaybackHandle={registerPlaybackHandle}
-      onPlaybackInterrupted={handlePlaybackInterrupted}
-      onPlaybackRefused={refusePlayback}
-      onSoundBlocked={handleSoundBlocked}
-      onContentSize={setDecodedContentSize}
+      initialPlayback={
+        sceneEpoch === restoredPresentation.epoch &&
+        restoredPresentation.playback?.sceneId === runtimeState.currentSceneId
+          ? restoredPresentation.playback.media.find(
+              (media) => media.rendererInstanceId === renderer.instanceId
+            )
+          : undefined
+      }
+      watchedMedia={journeyRef.current.watchedMedia.filter(
+        (media) => media.sceneId === runtimeState.currentSceneId
+      )}
+      playbackRate={effectivePlaybackRate}
+      watchedAssetIds={runtimeState.watchedAssetIds}
+      onPlaybackProgress={(progress) => {
+        if (
+          sceneEntryRef.current !== sceneEpoch ||
+          controller.state().currentSceneId !== runtimeState.currentSceneId
+        )
+          return;
+        mediaCheckpointsRef.current.set(renderer.instanceId, progress);
+        if (startedRef.current)
+          journeyRef.current = recordExperienceJourney(manifest, journeyRef.current, {
+            watchedMedia: [
+              {
+                sceneId: runtimeState.currentSceneId,
+                rendererInstanceId: renderer.instanceId,
+                sequenceIndex: progress.sequenceIndex,
+                assetId: progress.assetId,
+                mediaSignature: progress.mediaSignature,
+                watchedUntilMs: progress.watchedUntilMs,
+              },
+            ],
+          });
+        // Only the scene's driving clip owns the progress controls.
+        if (
+          scene?.clock.kind !== "renderer" ||
+          scene.clock.rendererInstanceId === renderer.instanceId
+        )
+          setMediaProgress(progress);
+        publishCheckpoint("progress");
+      }}
+      onTimelineTimeMs={(timeMs) => {
+        if (
+          sceneEntryRef.current === sceneEpoch &&
+          controller.state().currentSceneId === runtimeState.currentSceneId
+        ) {
+          advanceTimeline(renderer.instanceId, timeMs);
+        }
+      }}
+      onOutcome={emitCurrentOutcome}
+      onRuntimeError={reportCurrentRuntimeError}
+      onPlaybackHandle={registerCurrentPlaybackHandle}
+      onPlaybackInterrupted={interruptCurrentPlayback}
+      onPlaybackRefused={refuseCurrentPlayback}
+      onSoundBlocked={blockCurrentSound}
+      onContentSize={measureCurrentContent}
       renderWorldModel={renderWorldModel}
     />
   );
 
   const gatePreview = nodeGate ? resolveLockedScenePreview(manifest, nodeGate, orientation) : null;
+  const transportBlocked =
+    interactionActive ||
+    !playbackEnabledRef.current ||
+    Boolean((mediaProgress?.terminalMode && !mediaProgress.isStill) || mediaProgress?.completed) ||
+    (holds.mediaHeld && viewerPause === null);
+  const seekWatchedPosition = (targetMs: number) => {
+    if (transportBlocked || !mediaProgress || !startedRef.current || accessPendingRef.current)
+      return;
+    const progress = mediaCheckpointsRef.current.get(mediaProgress.rendererInstanceId);
+    const handle = playbackHandlesRef.current.get(mediaProgress.rendererInstanceId);
+    if (!progress || !handle || (progress.terminalMode && !progress.isStill) || progress.completed)
+      return;
+    const target = clampWatchedSeek(targetMs, progress.durationMs, progress.watchedUntilMs);
+    const sceneTarget = Math.max(0, scenePositionRef.current - progress.positionMs + target);
+    // A still-unresolved window cannot be jumped over, even after rewinding.
+    if (
+      target > progress.positionMs &&
+      scene?.gestures.some(
+        (gesture) =>
+          !settledGestureIdsRef.current.includes(gesture.gestureId) &&
+          gesture.activeWindow &&
+          scenePositionRef.current < gesture.activeWindow.startMs &&
+          sceneTarget >= gesture.activeWindow.startMs
+      )
+    )
+      return;
+    const next = { ...progress, positionMs: target };
+    mediaCheckpointsRef.current.set(progress.rendererInstanceId, next);
+    setMediaProgress(next);
+    handle.seek(target / 1_000);
+    if (
+      scene?.clock.kind === "renderer" &&
+      scene.clock.rendererInstanceId === progress.rendererInstanceId
+    ) {
+      advanceTimeline(progress.rendererInstanceId, sceneTarget);
+    }
+    publishCheckpoint("seek");
+  };
+
+  const mapAvailable = started && !runtimeError && !accessPending && !retryAccess && !nodeGate;
+  const mapNodeDetails = useMemo(() => {
+    const details: Record<string, { title?: string; thumbnailUrl?: string }> = {};
+    for (const sceneId of journeyForMap.visitedNodeIds) {
+      const node = findGraphNode(manifest, sceneId);
+      if (node?.kind !== "scene") continue;
+      const textRenderer = node.renderers.find(
+        (renderer) => renderer.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID
+      );
+      const textConfig = ExperienceCoreTextRendererConfigSchema.safeParse(textRenderer?.config);
+      const choiceRenderer = node.renderers.find(
+        (renderer) => renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID
+      );
+      const choiceConfig = ExperienceCoreChoiceRendererConfigSchema.safeParse(
+        choiceRenderer?.config
+      );
+      const title =
+        textConfig.success && textConfig.data.title
+          ? localize(textConfig.data.title, playbackLocale, manifest.localization.defaultLocale)
+          : choiceConfig.success && choiceConfig.data.prompt
+            ? localize(
+                choiceConfig.data.prompt,
+                playbackLocale,
+                manifest.localization.defaultLocale
+              )
+            : undefined;
+      const videoRenderer = node.renderers.find(
+        (renderer) => renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID
+      );
+      const videoConfig = ExperienceCoreVideoRendererConfigSchema.safeParse(videoRenderer?.config);
+      const posterAssetId = videoConfig.success
+        ? (videoConfig.data.posterAssetId ?? videoConfig.data.sequence[0]?.posterAssetId)
+        : undefined;
+      const thumbnailUrl = posterAssetId
+        ? resolveImageUri(manifest.assets, posterAssetId, orientation)
+        : undefined;
+      details[sceneId] = { ...(title ? { title } : {}), ...(thumbnailUrl ? { thumbnailUrl } : {}) };
+    }
+    for (const edge of journeyForMap.traversedEdges) {
+      if (!("toEndingId" in edge)) continue;
+      const ending = manifest.endings.find((candidate) => candidate.endingId === edge.toEndingId);
+      if (ending)
+        details[experienceJourneyEndingNodeId(ending.endingId)] = {
+          title: localize(ending.title, playbackLocale, manifest.localization.defaultLocale),
+        };
+    }
+    return details;
+  }, [journeyForMap, manifest, orientation, playbackLocale]);
+  const openJourneyMap = (origin: "corner" | "transport") => {
+    if (!mapAvailable || journeyMapOpenRef.current) return;
+    journeyMapOriginRef.current = origin;
+    journeyWasPlayingRef.current = viewerPauseRef.current === null && !holdsNow().storyHeld;
+    pauseStory("user");
+    journeyMapOpenRef.current = true;
+    setJourneyMapOpen(true);
+    setJourneyForMap(journeyRef.current);
+    setJourneyReplayError(null);
+  };
+  const closeJourneyMap = () => {
+    if (journeyReplayPendingRef.current) return;
+    journeyMapOpenRef.current = false;
+    setJourneyMapOpen(false);
+    if (journeyWasPlayingRef.current) resumeStory("gesture");
+    restoreJourneyFocusRef.current = true;
+  };
+  const replayJourneyScene = async (sceneId: string) => {
+    if (journeyReplayPendingRef.current || accessPendingRef.current) return;
+    journeyReplayPendingRef.current = true;
+    setJourneyReplayPending(true);
+    setJourneyReplayError(null);
+    try {
+      const node = findGraphNode(manifest, sceneId);
+      if (!node || node.kind !== "scene") throw new Error("The selected scene is unavailable.");
+      // Exploration never grants access. Ask the current entitlement service
+      // before replacing any engine or presentation state.
+      for (const requirement of getExperienceJourneyReplayAccess(
+        manifest,
+        journeyRef.current,
+        sceneId
+      )) {
+        if (previewAccess) continue;
+        if (!access) throw new ExperienceAccessRequiredError(requirement);
+        const allowed = access.checkAccess
+          ? await access.checkAccess(requirement)
+          : access.canAccess(requirement);
+        if (!aliveRef.current) return;
+        if (!allowed) {
+          onAccessCheckpoint?.(buildCheckpointRef.current());
+          exitLandscape();
+          // The host's purchase dialog owns focus until it settles. Keep the
+          // story held, but unmount this dialog's independent focus trap.
+          setJourneyMapSuspended(true);
+          if (!(await access.requestAccess(requirement))) return;
+        }
+        if (!aliveRef.current) return;
+      }
+      const checkpoint = restoreExperienceJourneyAnchor(manifest, journeyRef.current, sceneId, {
+        canAccess,
+        watchedAssetIds: controller.state().watchedAssetIds,
+      });
+      const state = controller.restore(checkpoint.state);
+      journeyRef.current = rewindExperienceJourney(journeyRef.current, sceneId);
+      // Entry anchors are already settled; dispatching scene.entered again
+      // would apply state changes and awards twice.
+      playbackHandlesRef.current.forEach((handle) => handle.pause());
+      restoreAudio(checkpoint.playback?.audio);
+      pendingCheckpointEventsRef.current = checkpoint.events;
+      scenePositionRef.current = checkpoint.playback?.sceneTimeMs ?? 0;
+      setSceneTimeMs(scenePositionRef.current);
+      fixedClockEndedRef.current = checkpoint.playback?.fixedClockEnded ?? false;
+      timelineCursorRef.current =
+        checkpoint.playback?.cursor ?? createExperienceTimelineCursor(sceneId);
+      openRendererIdsRef.current = new Set(checkpoint.playback?.openRendererIds);
+      setOpenRendererIds(openRendererIdsRef.current);
+      settledGestureIdsRef.current = checkpoint.playback?.settledGestureIds ?? [];
+      setSettledGestureIds(settledGestureIdsRef.current);
+      parkedGestureEventsRef.current = checkpoint.playback?.parkedEvents ?? [];
+      mediaCheckpointsRef.current = new Map(
+        checkpoint.playback?.media.map((media) => [media.rendererInstanceId, media])
+      );
+      setMediaProgress(checkpoint.playback?.media[0] ?? null);
+      playbackEnabledRef.current = checkpoint.playback?.playbackEnabled ?? true;
+      setTimelineHoldGate(false);
+      setRetryAccess(null);
+      setRuntimeError(null);
+      const nextEpoch = ++sceneEntryRef.current;
+      setRestoredPresentation({ epoch: nextEpoch, playback: checkpoint.playback });
+      setSceneEpoch(nextEpoch);
+      setRuntimeState(state);
+      journeyMapOpenRef.current = false;
+      setJourneyMapOpen(false);
+      viewerPauseRef.current = null;
+      setViewerPause(null);
+      storyClock.resume();
+      void unlockAudio().catch(reportAudioError);
+      publishCheckpoint("transition");
+      restoreJourneyFocusRef.current = true;
+    } catch (error) {
+      if (aliveRef.current) setJourneyReplayError(runtimeErrorMessage(error));
+    } finally {
+      journeyReplayPendingRef.current = false;
+      if (aliveRef.current) setJourneyReplayPending(false);
+      if (aliveRef.current) setJourneyMapSuspended(false);
+    }
+  };
+  const mapButton = mapAvailable ? (
+    <button
+      type="button"
+      ref={journeyMapTransportButtonRef}
+      data-experience-journey-map-trigger="transport"
+      aria-label={copy.journeyMap.open}
+      title={copy.journeyMap.open}
+      aria-haspopup="dialog"
+      onClick={() => openJourneyMap("transport")}
+      className="pointer-events-auto grid size-11 shrink-0 place-items-center rounded-full text-white/90 outline-none hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/60"
+    >
+      <IconRoute className="size-5" aria-hidden="true" />
+    </button>
+  ) : null;
+  const cornerMapButton =
+    mapAvailable && !journeyMapOpen ? (
+      <button
+        type="button"
+        ref={journeyMapCornerButtonRef}
+        data-experience-journey-map-trigger="corner"
+        aria-label={copy.journeyMap.open}
+        aria-haspopup="dialog"
+        onClick={() => openJourneyMap("corner")}
+        className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full bg-black/65 px-4 text-sm font-semibold text-white shadow-lg ring-1 ring-white/15 outline-none backdrop-blur-md transition-colors hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-white/70 motion-reduce:transition-none"
+      >
+        <IconRoute className="size-5 shrink-0 text-[#E52227]" aria-hidden="true" />
+        {copy.journeyMap.open}
+      </button>
+    ) : null;
 
   return (
     <PlayerFrame
@@ -1273,6 +1877,17 @@ function ActiveExperienceRuntimePlayer({
       copy={copy}
       style={theme ? themeStyle(theme) : undefined}
       onStageTap={pauseOnStageTap}
+      activityHandlers={{
+        onPointerMove: transportChrome.onPointerMove,
+        onPointerDownCapture: transportChrome.onPointerDown,
+        onKeyDownCapture: transportChrome.onKeyDownCapture,
+      }}
+      cornerControls={
+        <>
+          {cornerMapButton}
+          {playbackStatus}
+        </>
+      }
       stage={
         <ExperienceStoryClockContext.Provider value={storyClock}>
           {/* The story itself. Always rendered and never re-keyed, so a pause
@@ -1298,7 +1913,7 @@ function ActiveExperienceRuntimePlayer({
             )}
             {scene && started && !endingId && !accessPending && !retryAccess ? (
               <ExperienceSpatialLayer
-                key={scene.sceneId}
+                key={`${scene.sceneId}:${sceneEpoch}`}
                 manifest={manifest}
                 scene={scene}
                 runtimeState={runtimeState}
@@ -1310,6 +1925,16 @@ function ActiveExperienceRuntimePlayer({
                 onEvents={emitRuntimeEvents}
                 onRuntimeError={setRuntimeError}
                 onTimelineHoldGateChange={setTimelineHoldGate}
+                initialSettledGestureIds={
+                  sceneEpoch === restoredPresentation.epoch
+                    ? restoredPresentation.playback?.settledGestureIds
+                    : undefined
+                }
+                onSettledGestureIdsChange={(ids) => {
+                  settledGestureIdsRef.current = [...ids];
+                  setSettledGestureIds([...ids]);
+                  publishCheckpoint("transition");
+                }}
               />
             ) : null}
             {/* Choices belong to the picture: they sit in the film frame, turn
@@ -1349,9 +1974,70 @@ function ActiveExperienceRuntimePlayer({
               onUnmute={enableSound}
             />
           ) : null}
+          {transportAvailable && mediaProgress ? (
+            <div
+              data-experience-controls-visible={transportChrome.visible ? "true" : "false"}
+              onFocusCapture={transportChrome.onFocusCapture}
+              onBlurCapture={transportChrome.onBlurCapture}
+              onPointerEnter={transportChrome.onPointerEnter}
+              onPointerLeave={transportChrome.onPointerLeave}
+              className={classNames(
+                "absolute right-0 bottom-0 left-0 transition-opacity duration-200 motion-reduce:transition-none",
+                transportChrome.visible
+                  ? "opacity-100"
+                  : "pointer-events-none opacity-0 [&_*]:pointer-events-none"
+              )}
+              style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 2 }}
+            >
+              <ExperiencePlaybackTransportControls
+                copy={copy.playback.transport}
+                positionMs={mediaProgress.positionMs}
+                durationMs={mediaProgress.durationMs}
+                seekLimitMs={mediaProgress.watchedUntilMs}
+                rate={effectivePlaybackRate}
+                disabled={transportBlocked}
+                disabledReason={copy.playback.transport.interactionBlocked}
+                onSeek={seekWatchedPosition}
+                onRate={(rate) => {
+                  if (transportBlocked || ![1, 1.25, 1.5, 2].includes(rate)) return;
+                  playbackRateRef.current = rate as ExperiencePlaybackRate;
+                  setPlaybackRate(rate as ExperiencePlaybackRate);
+                  const effective = approachingInteraction ? 1 : rate;
+                  effectivePlaybackRateRef.current = effective;
+                  storyClock.setRate(effective);
+                  playbackHandlesRef.current.forEach((handle) => handle.setPlaybackRate(effective));
+                  publishCheckpoint("pause");
+                }}
+                trailingControls={mapAvailable ? mapButton : null}
+              />
+            </div>
+          ) : null}
         </ExperienceStoryClockContext.Provider>
       }
     >
+      {journeyMapOpen && !journeyMapSuspended ? (
+        <div
+          className="pointer-events-auto absolute inset-0"
+          style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 30 }}
+        >
+          <ExperienceJourneyMap
+            graph={projectExperienceJourneyGraph(manifest, journeyForMap)}
+            nodeDetails={mapNodeDetails}
+            currentSceneId={
+              runtimeState.completedEndingId
+                ? experienceJourneyEndingNodeId(runtimeState.completedEndingId)
+                : runtimeState.currentSceneId
+            }
+            copy={copy.journeyMap}
+            onClose={closeJourneyMap}
+            onReplay={(sceneId) => {
+              void replayJourneyScene(sceneId);
+            }}
+            replayPending={journeyReplayPending}
+            error={journeyReplayError ?? undefined}
+          />
+        </div>
+      ) : null}
       {nodeGate ? (
         <div
           className="pointer-events-auto absolute inset-0 grid place-items-center bg-black p-6 text-center"
@@ -1521,6 +2207,11 @@ function CoreRenderer({
   orientation,
   copy,
   muted,
+  initialPlayback,
+  playbackRate,
+  onPlaybackProgress,
+  watchedAssetIds,
+  watchedMedia,
   onTimelineTimeMs,
   onOutcome,
   onRuntimeError,
@@ -1546,6 +2237,11 @@ function CoreRenderer({
   orientation: ExperienceOrientation;
   copy: ExperiencePlayerCopy;
   muted: boolean;
+  initialPlayback?: ExperienceMediaCheckpoint;
+  playbackRate: number;
+  onPlaybackProgress: (checkpoint: ExperienceMediaCheckpoint) => void;
+  watchedAssetIds: readonly string[];
+  watchedMedia: readonly ExperienceJourneyWatchedMedia[];
   onTimelineTimeMs: (timeMs: number) => void;
   onOutcome: (
     instanceId: string,
@@ -1580,9 +2276,15 @@ function CoreRenderer({
       <CoreVideoRenderer
         manifest={manifest}
         renderer={renderer}
+        entryKey={entryKey}
         orientation={orientation}
         copy={copy}
         muted={muted}
+        initialPlayback={initialPlayback}
+        playbackRate={playbackRate}
+        onPlaybackProgress={onPlaybackProgress}
+        watchedAssetIds={watchedAssetIds}
+        watchedMedia={watchedMedia}
         onTimelineTimeMs={onTimelineTimeMs}
         onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
         onRuntimeError={onRuntimeError}
@@ -1804,18 +2506,34 @@ type CoreVideoTerminalMode =
   | null;
 
 type CoreVideoPlaybackState = {
+  entryKey: string;
   rendererInstanceId: string;
   sequenceIndex: number;
   terminalMode: CoreVideoTerminalMode;
+  checkpoint?: ExperienceMediaCheckpoint;
 };
 
 interface CoreVideoCompletionTimer {
   readonly id: number;
   readonly rendererInstanceId: string;
+  readonly identity: string;
+  readonly dueAt: number;
+  readonly progressTimerId: number;
 }
 
-function initialCoreVideoPlaybackState(rendererInstanceId: string): CoreVideoPlaybackState {
-  return { rendererInstanceId, sequenceIndex: 0, terminalMode: null };
+function initialCoreVideoPlaybackState(
+  entryKey: string,
+  rendererInstanceId: string,
+  checkpoint?: ExperienceMediaCheckpoint
+): CoreVideoPlaybackState {
+  const saved = checkpoint?.rendererInstanceId === rendererInstanceId ? checkpoint : undefined;
+  return {
+    entryKey,
+    rendererInstanceId,
+    sequenceIndex: saved?.sequenceIndex ?? 0,
+    terminalMode: saved?.terminalMode ?? null,
+    checkpoint: saved,
+  };
 }
 
 function isEmptyVideoSequence(renderer: ExperienceRendererInstance): boolean {
@@ -1881,6 +2599,12 @@ function EmptyVideoSequencePlaceholder({
 }
 
 function CoreVideoRenderer({
+  entryKey,
+  initialPlayback,
+  playbackRate,
+  onPlaybackProgress,
+  watchedAssetIds,
+  watchedMedia,
   manifest,
   renderer,
   orientation,
@@ -1895,6 +2619,12 @@ function CoreVideoRenderer({
   onSoundBlocked,
   onContentSize,
 }: {
+  entryKey: string;
+  initialPlayback?: ExperienceMediaCheckpoint;
+  playbackRate: number;
+  onPlaybackProgress: (checkpoint: ExperienceMediaCheckpoint) => void;
+  watchedAssetIds: readonly string[];
+  watchedMedia: readonly ExperienceJourneyWatchedMedia[];
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   orientation: ExperienceOrientation;
@@ -1912,15 +2642,32 @@ function CoreVideoRenderer({
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
   const storyClock = useContext(ExperienceStoryClockContext);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
-    initialCoreVideoPlaybackState(renderer.instanceId)
+    initialCoreVideoPlaybackState(entryKey, renderer.instanceId, initialPlayback)
   );
   const activePlaybackState =
-    playbackState.rendererInstanceId === renderer.instanceId
+    playbackState.entryKey === entryKey && playbackState.rendererInstanceId === renderer.instanceId
       ? playbackState
-      : initialCoreVideoPlaybackState(renderer.instanceId);
+      : initialCoreVideoPlaybackState(entryKey, renderer.instanceId, initialPlayback);
   const { sequenceIndex, terminalMode } = activePlaybackState;
+  const initiallyCompleted = activePlaybackState.checkpoint?.completed === true;
   const completionTimerRef = useRef<CoreVideoCompletionTimer | null>(null);
   const completedRendererIdRef = useRef<string | null>(null);
+  const progressRef = useRef<{
+    identity: string;
+    checkpoint: ExperienceMediaCheckpoint;
+    observedAt: number;
+    observedPosition: number;
+    seeking: boolean;
+    sent: string | null;
+  } | null>(null);
+  const onPlaybackProgressRef = useRef(onPlaybackProgress);
+  onPlaybackProgressRef.current = onPlaybackProgress;
+  const onCompletedRef = useRef(onCompleted);
+  onCompletedRef.current = onCompleted;
+  const registeredHandleRef = useRef<{
+    identity: string;
+    handle: ExperienceMediaPlaybackHandle;
+  } | null>(null);
   const missingAssetRef = useRef<string | null>(null);
   const clip = config.sequence[sequenceIndex];
   const assetId = terminalMode?.kind === "loop" ? terminalMode.assetId : clip?.assetId;
@@ -1937,15 +2684,123 @@ function CoreVideoRenderer({
   );
   const playbackIdentity =
     terminalMode?.kind === "loop"
-      ? `${renderer.instanceId}:${sequenceIndex}:loop:${assetId}:${terminalMode.clipStartTime ?? 0}`
-      : `${renderer.instanceId}:${sequenceIndex}:sequence:${assetId}`;
+      ? `${entryKey}:${renderer.instanceId}:${sequenceIndex}:loop:${assetId}:${terminalMode.clipStartTime ?? 0}`
+      : `${entryKey}:${renderer.instanceId}:${sequenceIndex}:sequence:${assetId}`;
+  const knownWatchedUntilMs = assetId
+    ? (watchedMedia.find(
+        (entry) =>
+          entry.rendererInstanceId === renderer.instanceId &&
+          entry.sequenceIndex === sequenceIndex &&
+          entry.assetId === assetId &&
+          entry.mediaSignature === mediaPlaybackSignature(manifest, assetId)
+      )?.watchedUntilMs ?? 0)
+    : 0;
+  const emitProgress = useCallback(
+    (identity: string) => {
+      const progress = progressRef.current;
+      if (!progress || progress.identity !== identity) return;
+      const timer = completionTimerRef.current;
+      if (timer?.identity === identity)
+        progress.checkpoint.remainingHoldMs = Math.max(0, timer.dueAt - storyClock.now());
+      const serialized = JSON.stringify(progress.checkpoint);
+      if (progress.sent === serialized) return;
+      progress.sent = serialized;
+      onPlaybackProgressRef.current(structuredClone(progress.checkpoint));
+    },
+    [storyClock]
+  );
+  const recordPosition = useCallback(
+    (positionMs: number, natural = true) => {
+      const progress = progressRef.current;
+      if (!progress || progress.identity !== playbackIdentity || !Number.isFinite(positionMs))
+        return;
+      const checkpoint = progress.checkpoint;
+      if (checkpoint.durationMs <= 0) return;
+      const next = Math.max(0, Math.min(positionMs, checkpoint.durationMs || positionMs));
+      const now = storyClock.now();
+      const delta = next - progress.observedPosition;
+      // Only contiguous natural playback expands the seen range. A renderer
+      // command may seek forward, but that jump never earns skip permission.
+      if (
+        natural &&
+        !progress.seeking &&
+        delta >= 0 &&
+        progress.observedPosition <= checkpoint.watchedUntilMs + 1 &&
+        delta <= Math.max(0, now - progress.observedAt) + 250
+      ) {
+        checkpoint.watchedUntilMs = Math.max(checkpoint.watchedUntilMs, next);
+      }
+      progress.seeking = false;
+      progress.observedPosition = next;
+      progress.observedAt = now;
+      checkpoint.positionMs = next;
+      emitProgress(playbackIdentity);
+    },
+    [emitProgress, playbackIdentity, storyClock]
+  );
   const registerPlaybackHandle = useCallback(
-    (handle: ExperienceMediaPlaybackHandle | null) =>
-      onPlaybackHandle(
-        renderer.instanceId,
-        config.autoplay && terminalMode?.kind !== "held" ? handle : null
-      ),
-    [config.autoplay, onPlaybackHandle, renderer.instanceId, terminalMode?.kind]
+    (handle: ExperienceMediaPlaybackHandle | null) => {
+      if (!handle) {
+        if (registeredHandleRef.current?.identity !== playbackIdentity) return;
+        registeredHandleRef.current = null;
+        onPlaybackHandle(renderer.instanceId, null);
+        return;
+      }
+      if (progressRef.current?.identity !== playbackIdentity) return;
+      if (
+        !config.autoplay ||
+        (terminalMode?.kind === "held" && !progressRef.current.checkpoint.isStill) ||
+        progressRef.current.checkpoint.completed
+      ) {
+        registeredHandleRef.current = null;
+        onPlaybackHandle(renderer.instanceId, null);
+        return;
+      }
+      const registration = { identity: playbackIdentity, handle };
+      registeredHandleRef.current = registration;
+      const current = () =>
+        registeredHandleRef.current === registration &&
+        progressRef.current?.identity === playbackIdentity;
+      onPlaybackHandle(renderer.instanceId, {
+        ...handle,
+        playInGesture: () => (current() ? handle.playInGesture() : null),
+        play: () => (current() ? handle.play() : Promise.resolve()),
+        pause: () => {
+          if (current()) {
+            handle.pause();
+            emitProgress(playbackIdentity);
+          }
+        },
+        seek: (seconds) => {
+          if (!current() || !Number.isFinite(seconds) || seconds < 0) return;
+          const checkpoint = progressRef.current!.checkpoint;
+          const targetMs = Math.min(seconds * 1_000, checkpoint.durationMs);
+          if (checkpoint.isStill && checkpoint.terminalMode?.kind === "held") {
+            scheduleCompletionRef.current(Math.max(0, checkpoint.durationMs - targetMs));
+          }
+          recordPosition(targetMs, false);
+          progressRef.current!.seeking = true;
+          handle.seek(targetMs / 1_000);
+        },
+        setPlaybackRate: (rate) => {
+          if (current()) handle.setPlaybackRate(rate);
+        },
+        setMuted: (next) => {
+          if (current()) handle.setMuted(next);
+        },
+        ended: () => current() && handle.ended(),
+        element: () => (current() ? handle.element() : null),
+      });
+    },
+    [
+      config.autoplay,
+      emitProgress,
+      onPlaybackHandle,
+      playbackIdentity,
+      recordPosition,
+      renderer.instanceId,
+      terminalMode?.kind,
+    ]
   );
 
   const clearCompletionTimer = useCallback(
@@ -1953,6 +2808,7 @@ function CoreVideoRenderer({
       const timer = completionTimerRef.current;
       if (!timer || (rendererInstanceId && timer.rendererInstanceId !== rendererInstanceId)) return;
       storyClock.clearTimer(timer.id);
+      storyClock.clearTimer(timer.progressTimerId);
       completionTimerRef.current = null;
     },
     [storyClock]
@@ -1967,11 +2823,55 @@ function CoreVideoRenderer({
   // reset before any passive handle registration, while timer ownership makes a
   // late cleanup from the old scene unable to touch the new scene's timer.
   useLayoutEffect(() => {
-    completedRendererIdRef.current = null;
+    completedRendererIdRef.current = initiallyCompleted
+      ? `${entryKey}:${renderer.instanceId}`
+      : null;
     missingAssetRef.current = null;
     clearCompletionTimer();
     return () => clearCompletionTimer(renderer.instanceId);
-  }, [clearCompletionTimer, renderer.instanceId]);
+  }, [clearCompletionTimer, entryKey, initiallyCompleted, renderer.instanceId]);
+
+  useLayoutEffect(() => {
+    if (!assetId || progressRef.current?.identity === playbackIdentity) return;
+    const saved = activePlaybackState.checkpoint;
+    const isStill = Boolean(media?.variant.mediaType?.toLowerCase().startsWith("image/"));
+    const durationMs =
+      saved?.durationMs ?? (isStill ? stillDurationMs(clip!) : (media?.variant.durationMs ?? 0));
+    const checkpoint: ExperienceMediaCheckpoint = {
+      rendererInstanceId: renderer.instanceId,
+      sequenceIndex,
+      assetId,
+      mediaSignature: mediaPlaybackSignature(manifest, assetId),
+      positionMs:
+        saved?.positionMs ??
+        (terminalMode?.kind === "loop" ? (terminalMode.clipStartTime ?? 0) * 1_000 : 0),
+      watchedUntilMs: watchedAssetIds.includes(assetId)
+        ? durationMs
+        : Math.min(durationMs, Math.max(saved?.watchedUntilMs ?? 0, knownWatchedUntilMs)),
+      durationMs,
+      isStill,
+      terminalMode,
+      remainingHoldMs: saved?.remainingHoldMs ?? null,
+      completed: saved?.completed ?? false,
+    };
+    progressRef.current = {
+      identity: playbackIdentity,
+      checkpoint,
+      observedAt: storyClock.now(),
+      observedPosition: checkpoint.positionMs,
+      seeking: false,
+      sent: null,
+    };
+    emitProgress(playbackIdentity);
+    // The snapshot initializes a source once. Callback/manifest object changes
+    // must never move a running segment back to its saved position.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackIdentity]);
+
+  useEffect(
+    () => storyClock.subscribe(() => emitProgress(playbackIdentity)),
+    [emitProgress, playbackIdentity, storyClock]
+  );
 
   useEffect(() => {
     const missingAssetKey = `${renderer.instanceId}:${assetId}`;
@@ -1981,13 +2881,21 @@ function CoreVideoRenderer({
   }, [assetId, copy, media, onRuntimeError, renderer.instanceId]);
 
   const completeRenderer = () => {
-    if (completedRendererIdRef.current === renderer.instanceId) return;
-    completedRendererIdRef.current = renderer.instanceId;
-    onCompleted();
+    const key = `${entryKey}:${renderer.instanceId}`;
+    if (
+      completedRendererIdRef.current === key ||
+      progressRef.current?.identity !== playbackIdentity
+    )
+      return;
+    completedRendererIdRef.current = key;
+    progressRef.current.checkpoint.completed = true;
+    emitProgress(playbackIdentity);
+    onCompletedRef.current();
   };
   const advanceSequence = () => {
     if (sequenceIndex + 1 < config.sequence.length) {
       setPlaybackState({
+        entryKey,
         rendererInstanceId: renderer.instanceId,
         sequenceIndex: sequenceIndex + 1,
         terminalMode: null,
@@ -2000,24 +2908,63 @@ function CoreVideoRenderer({
   const scheduleCompletion = (durationMs: number) => {
     clearCompletionTimer();
     const rendererInstanceId = renderer.instanceId;
+    const dueAt = storyClock.now() + durationMs;
     const id = storyClock.setTimeout(() => {
       const timer = completionTimerRef.current;
       if (!timer || timer.id !== id || timer.rendererInstanceId !== rendererInstanceId) return;
       completionTimerRef.current = null;
+      storyClock.clearTimer(timer.progressTimerId);
+      if (progressRef.current?.identity === playbackIdentity) {
+        progressRef.current.checkpoint.remainingHoldMs = 0;
+        emitProgress(playbackIdentity);
+      }
       advanceSequence();
     }, durationMs);
-    completionTimerRef.current = { id, rendererInstanceId };
+    const progressTimerId = storyClock.setInterval(
+      () => emitProgress(playbackIdentity),
+      STILL_CLOCK_TICK_MS
+    );
+    completionTimerRef.current = {
+      id,
+      rendererInstanceId,
+      identity: playbackIdentity,
+      dueAt,
+      progressTimerId,
+    };
+    emitProgress(playbackIdentity);
   };
+  const scheduleCompletionRef = useRef(scheduleCompletion);
+  scheduleCompletionRef.current = scheduleCompletion;
+  useEffect(() => {
+    const saved = activePlaybackState.checkpoint;
+    if (terminalMode?.kind === "held" && saved?.remainingHoldMs != null && !saved.completed)
+      scheduleCompletionRef.current(saved.remainingHoldMs);
+    // Restore a terminal hold once per renderer entry, without repeating its end.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryKey, renderer.instanceId]);
   const handleEnd = () => {
-    if (!clip || terminalMode?.kind === "loop") return;
+    if (
+      !clip ||
+      terminalMode !== null ||
+      progressRef.current?.identity !== playbackIdentity ||
+      progressRef.current.checkpoint.completed
+    )
+      return;
     const behavior = clip.endBehavior;
     if (behavior.behavior === "advance") return advanceSequence();
     if (behavior.behavior === "hold-last-frame") {
       setPlaybackState({
+        entryKey,
         rendererInstanceId: renderer.instanceId,
         sequenceIndex,
         terminalMode: { kind: "held" },
+        checkpoint: {
+          ...progressRef.current.checkpoint,
+          terminalMode: { kind: "held" },
+          remainingHoldMs: behavior.durationMs ?? null,
+        },
       });
+      progressRef.current.checkpoint.terminalMode = { kind: "held" };
       if (behavior.durationMs !== undefined) {
         scheduleCompletion(behavior.durationMs);
       }
@@ -2025,6 +2972,7 @@ function CoreVideoRenderer({
     }
     if (behavior.behavior === "loop") {
       setPlaybackState({
+        entryKey,
         rendererInstanceId: renderer.instanceId,
         sequenceIndex,
         terminalMode: { kind: "loop", assetId: behavior.assetId },
@@ -2033,6 +2981,7 @@ function CoreVideoRenderer({
     }
     const durationSeconds = media?.variant.durationMs ? media.variant.durationMs / 1_000 : 0;
     setPlaybackState({
+      entryKey,
       rendererInstanceId: renderer.instanceId,
       sequenceIndex,
       terminalMode: {
@@ -2049,6 +2998,10 @@ function CoreVideoRenderer({
   // ever cropping. Everything else fills a fixed full-bleed frame.
   const native = config.fit === "native";
   const stillImage = Boolean(media.variant.mediaType?.toLowerCase().startsWith("image/"));
+  const initialPositionMs =
+    progressRef.current?.identity === playbackIdentity
+      ? progressRef.current.checkpoint.positionMs
+      : activePlaybackState.checkpoint?.positionMs;
   const player = stillImage ? (
     <ExperienceStillSegment
       uri={media.variant.uri}
@@ -2059,6 +3012,9 @@ function CoreVideoRenderer({
       playbackIdentity={playbackIdentity}
       onDisplayed={handleEnd}
       onTimelineTimeMs={onTimelineTimeMs}
+      initialPositionMs={initialPositionMs}
+      resumeDisplayed={terminalMode?.kind === "held"}
+      onPositionMs={recordPosition}
       onPlaybackHandle={registerPlaybackHandle}
     />
   ) : (
@@ -2071,11 +3027,32 @@ function CoreVideoRenderer({
       muted={muted}
       loop={terminalMode?.kind === "loop"}
       durationSeconds={media.variant.durationMs ? media.variant.durationMs / 1_000 : undefined}
+      initialTimeSeconds={initialPositionMs === undefined ? undefined : initialPositionMs / 1_000}
+      playbackRate={playbackRate}
       clipStartTime={terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined}
       poster={poster}
       fit={config.fit === "native" ? "contain" : config.fit}
       onEnd={handleEnd}
-      onTimeUpdate={(seconds) => onTimelineTimeMs(timelineOffsetMs + Math.round(seconds * 1_000))}
+      onTimeUpdate={(seconds) => {
+        recordPosition(Math.round(seconds * 1_000));
+        onTimelineTimeMs(timelineOffsetMs + Math.round(seconds * 1_000));
+      }}
+      onDurationChange={(seconds) => {
+        const progress = progressRef.current;
+        if (progress?.identity !== playbackIdentity) return;
+        progress.checkpoint.durationMs = Math.round(seconds * 1_000);
+        progress.checkpoint.positionMs = Math.min(
+          progress.checkpoint.positionMs,
+          progress.checkpoint.durationMs
+        );
+        progress.checkpoint.watchedUntilMs = watchedAssetIds.includes(assetId)
+          ? progress.checkpoint.durationMs
+          : Math.min(
+              Math.max(progress.checkpoint.watchedUntilMs, knownWatchedUntilMs),
+              progress.checkpoint.durationMs
+            );
+        emitProgress(playbackIdentity);
+      }}
       onPlaybackError={(message) => onRuntimeError(message?.trim() || copy.mediaError(assetId))}
       onPlaybackHandle={registerPlaybackHandle}
       onPlaybackInterrupted={onPlaybackInterrupted}
@@ -2138,6 +3115,9 @@ function ExperienceStillSegment({
   durationMs,
   timelineOffsetMs,
   playbackIdentity,
+  initialPositionMs = 0,
+  resumeDisplayed = false,
+  onPositionMs,
   onDisplayed,
   onTimelineTimeMs,
   onPlaybackHandle,
@@ -2148,6 +3128,9 @@ function ExperienceStillSegment({
   durationMs: number;
   timelineOffsetMs: number;
   playbackIdentity: string;
+  initialPositionMs?: number;
+  resumeDisplayed?: boolean;
+  onPositionMs: (positionMs: number, natural?: boolean) => void;
   onDisplayed: () => void;
   onTimelineTimeMs: (timeMs: number) => void;
   onPlaybackHandle: (handle: ExperienceMediaPlaybackHandle | null) => void;
@@ -2161,6 +3144,8 @@ function ExperienceStillSegment({
   onDisplayedRef.current = onDisplayed;
   const onTimelineTimeMsRef = useRef(onTimelineTimeMs);
   onTimelineTimeMsRef.current = onTimelineTimeMs;
+  const onPositionMsRef = useRef(onPositionMs);
+  onPositionMsRef.current = onPositionMs;
 
   const stopTicking = useCallback(() => {
     if (tickRef.current === null) return;
@@ -2172,16 +3157,49 @@ function ExperienceStillSegment({
   // handle the moment this clip enters its terminal hold, which is exactly
   // when the still is on screen and the scene clock must keep running. Only
   // the story clock reaches it from then on, so it ticks on story time.
-  useEffect(() => {
-    displayedRef.current = false;
-    elapsedMsRef.current = 0;
-    runningSinceRef.current = null;
+  useLayoutEffect(() => {
+    displayedRef.current = resumeDisplayed;
+    elapsedMsRef.current = Math.max(0, Math.min(initialPositionMs, durationMs));
+    runningSinceRef.current = resumeDisplayed ? storyClock.now() : null;
     return () => {
       stopTicking();
     };
+    // Initial resume state belongs to the source, never to a parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playbackIdentity, stopTicking]);
 
+  const startTicking = useCallback(() => {
+    stopTicking();
+    tickRef.current = storyClock.setInterval(() => {
+      const elapsed =
+        elapsedMsRef.current +
+        (runningSinceRef.current === null ? 0 : storyClock.now() - runningSinceRef.current);
+      const now = Math.min(elapsed, durationMs);
+      onPositionMsRef.current(now);
+      onTimelineTimeMsRef.current(timelineOffsetMs + now);
+      if (now >= durationMs) stopTicking();
+    }, STILL_CLOCK_TICK_MS);
+  }, [durationMs, stopTicking, storyClock, timelineOffsetMs]);
   useEffect(() => {
+    if (displayedRef.current && runningSinceRef.current !== null) startTicking();
+    return stopTicking;
+  }, [playbackIdentity, startTicking, stopTicking]);
+  useEffect(
+    () =>
+      storyClock.subscribe(() => {
+        if (runningSinceRef.current === null) return;
+        const now = Math.min(
+          elapsedMsRef.current + storyClock.now() - runningSinceRef.current,
+          durationMs
+        );
+        onPositionMsRef.current(now);
+        onTimelineTimeMsRef.current(timelineOffsetMs + now);
+      }),
+    [durationMs, storyClock, timelineOffsetMs]
+  );
+
+  useEffect(() => {
+    let disposed = false;
     const elapsed = () =>
       elapsedMsRef.current +
       (runningSinceRef.current === null ? 0 : storyClock.now() - runningSinceRef.current);
@@ -2193,39 +3211,52 @@ function ExperienceStillSegment({
       ended: () => false,
       element: () => null,
       play: async () => {
+        if (disposed) return;
         if (runningSinceRef.current === null) {
           runningSinceRef.current = storyClock.now();
-          stopTicking();
-          tickRef.current = storyClock.setInterval(() => {
-            const now = Math.min(elapsed(), durationMs);
-            onTimelineTimeMsRef.current(timelineOffsetMs + now);
-            if (now >= durationMs) stopTicking();
-          }, STILL_CLOCK_TICK_MS);
+          startTicking();
         }
         if (displayedRef.current) return;
         displayedRef.current = true;
-        onTimelineTimeMsRef.current(timelineOffsetMs);
+        onPositionMsRef.current(elapsedMsRef.current);
+        onTimelineTimeMsRef.current(timelineOffsetMs + elapsedMsRef.current);
         onDisplayedRef.current();
       },
       pause: () => {
-        if (runningSinceRef.current === null) return;
+        if (disposed || runningSinceRef.current === null) return;
         elapsedMsRef.current = elapsed();
+        onPositionMsRef.current(Math.min(elapsedMsRef.current, durationMs));
         runningSinceRef.current = null;
         stopTicking();
       },
       seek: (seconds) => {
+        if (disposed || !Number.isFinite(seconds) || seconds < 0) return;
         const target = Math.max(0, Math.min(seconds * 1_000, durationMs));
         elapsedMsRef.current = target;
         if (runningSinceRef.current !== null) runningSinceRef.current = storyClock.now();
+        onPositionMsRef.current(target, false);
         onTimelineTimeMsRef.current(timelineOffsetMs + target);
       },
       // A still carries no audio track, so muting is a no-op rather than an
       // error — the host mutes every registered handle uniformly.
       setMuted: () => undefined,
+      // The shared story clock drives still speed, including a terminal hold.
+      setPlaybackRate: () => undefined,
     };
     onPlaybackHandle(handle);
-    return () => onPlaybackHandle(null);
-  }, [durationMs, onPlaybackHandle, playbackIdentity, stopTicking, storyClock, timelineOffsetMs]);
+    return () => {
+      disposed = true;
+      onPlaybackHandle(null);
+    };
+  }, [
+    durationMs,
+    onPlaybackHandle,
+    playbackIdentity,
+    startTicking,
+    stopTicking,
+    storyClock,
+    timelineOffsetMs,
+  ]);
 
   return (
     <img src={uri} alt={title} className="absolute inset-0 size-full" style={{ objectFit: fit }} />
@@ -2416,6 +3447,8 @@ function PlayerFrame({
   style,
   stage,
   onStageTap,
+  activityHandlers,
+  cornerControls,
   children,
 }: {
   shellRef: React.RefObject<HTMLDivElement | null>;
@@ -2431,9 +3464,25 @@ function PlayerFrame({
   stage: React.ReactNode;
   /** A tap the picture did not answer pauses the film; see `pauseOnStageTap`. */
   onStageTap?: (event: MouseEvent<HTMLDivElement>) => void;
+  activityHandlers?: Pick<
+    DOMAttributes<HTMLDivElement>,
+    "onPointerMove" | "onPointerDownCapture" | "onKeyDownCapture"
+  >;
+  cornerControls: ReactNode;
   children: React.ReactNode;
 }) {
   const shellSize = useShellSize(shellRef);
+  const cornerRef = useRef<HTMLDivElement>(null);
+  const [cornerHeight, setCornerHeight] = useState(0);
+  useLayoutEffect(() => {
+    const element = cornerRef.current;
+    if (!element) return;
+    const measure = () => setCornerHeight(Math.ceil(element.getBoundingClientRect().height));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const aspect = STAGE_ASPECT[orientation];
   // Turned only once the shell has been measured, so the frame never spends a
   // paint rotated at the wrong size.
@@ -2454,6 +3503,8 @@ function PlayerFrame({
   }
   const chromeInsets: Record<`--${string}`, string> = {
     "--experience-frame-inset-top": `${frameInsetTop}px`,
+    "--experience-player-corner-height":
+      !turned && cornerHeight > 0 ? `calc(${cornerHeight}px + 1.5rem)` : "0px",
     ...(turned || fullscreen ? { "--experience-chrome-inset-top": "0px" } : {}),
   };
   return (
@@ -2466,6 +3517,7 @@ function PlayerFrame({
       data-experience-profile={experienceProfile}
       data-experience-stage-profile={stageProfile}
       className="relative isolate h-full min-h-[inherit] w-full bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
+      {...activityHandlers}
     >
       <div
         data-experience-landscape-viewport=""
@@ -2496,7 +3548,21 @@ function PlayerFrame({
       <div
         data-experience-viewport-overlay=""
         className="pointer-events-none absolute inset-0 isolate z-10"
+        style={
+          fullscreen ? ({ "--experience-chrome-inset-top": "0px" } as CSSProperties) : undefined
+        }
       >
+        <div
+          ref={cornerRef}
+          data-experience-corner-controls=""
+          className="absolute right-[max(0.75rem,env(safe-area-inset-right))] flex max-w-[calc(100%_-_1.5rem)] flex-col items-end gap-2"
+          style={{
+            top: "calc(max(var(--experience-chrome-inset-top, 0px), env(safe-area-inset-top)) + 0.75rem)",
+            zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 5,
+          }}
+        >
+          {cornerControls}
+        </div>
         {children}
       </div>
     </div>
@@ -2889,6 +3955,7 @@ function liveStreamPlaybackHandle(
     play: () => element.play(),
     pause: () => element.pause(),
     seek: () => undefined,
+    setPlaybackRate: () => undefined,
     setMuted: (muted) => {
       element.muted = muted;
     },

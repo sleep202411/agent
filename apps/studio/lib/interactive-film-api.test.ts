@@ -65,6 +65,7 @@ describe("interactive-film project gateway", () => {
   it("prepares the exact snapshot and submits its receipt through the project gateway", async () => {
     vi.mocked(api.post).mockResolvedValueOnce(release).mockResolvedValueOnce(reviewing);
     const prepared = await prepareInteractiveFilmRelease(PROJECT_ID, {
+      expectedProjectVersion: 5,
       expectedDraftRevision: 8,
       expectedVideoSnapshotHash: "a".repeat(64),
     });
@@ -77,6 +78,7 @@ describe("interactive-film project gateway", () => {
       expect.objectContaining({
         requestScope: "project",
         data: {
+          expectedProjectVersion: 5,
           expectedDraftRevision: 8,
           expectedVideoSnapshotHash: "a".repeat(64),
         },

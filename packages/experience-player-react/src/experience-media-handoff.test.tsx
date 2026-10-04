@@ -45,6 +45,7 @@ vi.mock("@vidstack/react", async () => {
     onCanPlay,
     onEnd,
     onTimeUpdate,
+    onDurationChange,
     onError,
     onHlsError,
     onPlay,
@@ -71,6 +72,7 @@ vi.mock("@vidstack/react", async () => {
     elementCallbacks.current = {
       onEnd,
       onTimeUpdate,
+      onDurationChange,
       onError,
       onHlsError,
       onPlay,
@@ -176,6 +178,7 @@ const providerLoad = vi.hoisted(() => vi.fn<(target: HTMLElement | null) => void
 interface ElementCallbacks {
   onEnd?: () => void;
   onTimeUpdate?: (detail: { currentTime: number }) => void;
+  onDurationChange?: (duration: number) => void;
   onError?: (detail: { message: string; code: number }) => void;
   onHlsError?: (detail: ErrorData) => void;
   onPlay?: () => void;
@@ -274,17 +277,21 @@ describe("ExperienceMediaPlayer cut cover", () => {
   const renderClip = async (
     clip: {
       uri: string;
+      type?: string;
       identity: string;
       clipStartTime?: number;
       durationSeconds?: number;
       loop?: boolean;
       poster?: string;
+      initialTimeSeconds?: number;
+      playbackRate?: number;
     },
     options: {
       frameReady?: boolean;
       delivery?: ExperiencePlaybackDelivery;
       onEnd?: () => void;
       onTimeUpdate?: (seconds: number) => void;
+      onDurationChange?: (seconds: number) => void;
       onContentSize?: (size: { width: number; height: number }) => void;
       onPlaybackError?: (message?: string) => void;
       onPlaybackInterrupted?: () => void;
@@ -297,7 +304,7 @@ describe("ExperienceMediaPlayer cut cover", () => {
         // delivery keeps the same tree, and with it the same element.
         <ExperiencePlaybackDeliveryContext.Provider value={options.delivery ?? null}>
           <ExperienceMediaPlayer
-            source={{ src: clip.uri, type: "video/mp4" }}
+            source={{ src: clip.uri, type: clip.type ?? "video/mp4" }}
             title="Clip"
             poster={clip.poster}
             autoPlay={false}
@@ -305,8 +312,11 @@ describe("ExperienceMediaPlayer cut cover", () => {
             loop={clip.loop ?? false}
             clipStartTime={clip.clipStartTime}
             durationSeconds={clip.durationSeconds}
+            initialTimeSeconds={clip.initialTimeSeconds}
+            playbackRate={clip.playbackRate}
             onEnd={options.onEnd ?? (() => {})}
             onTimeUpdate={options.onTimeUpdate ?? (() => {})}
+            onDurationChange={options.onDurationChange}
             onPlaybackError={options.onPlaybackError ?? (() => {})}
             onPlaybackHandle={onPlaybackHandle}
             onPlaybackInterrupted={options.onPlaybackInterrupted}
@@ -529,6 +539,110 @@ describe("ExperienceMediaPlayer cut cover", () => {
     await showClip("b");
     expect(first.element()).toBeNull();
     expect(registeredHandles().at(-1)!.element()).toBe(video());
+  });
+
+  it("rewinds and plays shared media on a new scene entry without another can-play event", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(async function (
+      this: HTMLMediaElement
+    ) {
+      Object.defineProperty(this, "paused", { value: false, configurable: true });
+    });
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(function (
+      this: HTMLMediaElement
+    ) {
+      Object.defineProperty(this, "paused", { value: true, configurable: true });
+    });
+    const { element, handle: first } = await pausedAt(36, { declared: 90 });
+    first.pause();
+
+    await renderClip({
+      uri: "/a.mp4",
+      identity: "scene-b:1:video.b:0:sequence:a",
+      initialTimeSeconds: 0,
+      durationSeconds: 90,
+    });
+    expect(video()).toBe(element);
+    expect(first.element()).toBeNull();
+    expect(element.currentTime).toBe(0);
+    const branchB = registeredHandles().at(-1)!;
+    await branchB.play();
+    element.currentTime = 14.226;
+    branchB.pause();
+
+    // Replaying A reuses B's native element and URI. The cached source does
+    // not fire can-play again, but A must seek and resume on its own handle.
+    await renderClip({
+      uri: "/a.mp4",
+      identity: "scene-a:2:video.a:0:sequence:a",
+      initialTimeSeconds: 0,
+      durationSeconds: 90,
+      playbackRate: 2,
+    });
+    const replayA = registeredHandles().at(-1)!;
+    expect(element.currentTime).toBe(0);
+    expect(element.paused).toBe(true);
+    replayA.seek(10);
+    expect(element.currentTime).toBe(10);
+    await replayA.play();
+    expect(element.paused).toBe(false);
+    expect(element.playbackRate).toBe(2);
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(pause).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts a shared URI at zero when the new entry has no saved media position", async () => {
+    const onDurationChange = vi.fn();
+    await pausedAt(14.226, { declared: 90 });
+    await renderClip(
+      { uri: "/a.mp4", identity: "scene-a:2:video.a:0:sequence:a" },
+      { onDurationChange }
+    );
+    expect(video().currentTime).toBe(0);
+    expect(onDurationChange).toHaveBeenCalledWith(90);
+  });
+
+  it("waits for fresh readiness after a real URI change even while old decoded data remains", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const { element } = await pausedAt(14.226, { declared: 90 });
+    await renderClip({
+      uri: "/b.mp4",
+      identity: "scene-b:1:video.b:0:sequence:b",
+      initialTimeSeconds: 2.455,
+      durationSeconds: 90,
+    });
+    const handle = registeredHandles().at(-1)!;
+    const pending = handle.play();
+    await Promise.resolve();
+    expect(play).not.toHaveBeenCalled();
+    expect(element.currentTime).toBe(14.226);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-ready="/b.mp4"]')!.click();
+      await pending;
+    });
+    expect(element.currentTime).toBe(2.455);
+    expect(play).toHaveBeenCalledOnce();
+  });
+
+  it("does not reuse readiness when the same URI switches its media loader", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const { element } = await pausedAt(14.226, { declared: 90 });
+    await renderClip({
+      uri: "/a.mp4",
+      type: "application/vnd.apple.mpegurl",
+      identity: "renderer:0:sequence:a",
+      initialTimeSeconds: 2.455,
+      durationSeconds: 90,
+    });
+    const pending = registeredHandles().at(-1)!.play();
+    await Promise.resolve();
+    expect(play).not.toHaveBeenCalled();
+    expect(element.currentTime).toBe(14.226);
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-ready="/a.mp4"]')!.click();
+      await pending;
+    });
+    expect(element.currentTime).toBe(2.455);
+    expect(play).toHaveBeenCalledOnce();
   });
 
   it("offers a handle only once the provider is on the element", async () => {
@@ -855,9 +969,101 @@ describe("ExperienceMediaPlayer cut cover", () => {
     old.pause();
     old.seek(20);
     old.setMuted(true);
+    old.setPlaybackRate(2);
     expect(pause).not.toHaveBeenCalled();
     expect(video.currentTime).toBe(3);
     expect(video.muted).toBe(false);
+    expect(video.playbackRate).toBe(1);
+  });
+
+  it("applies a saved position before readiness and never reapplies it on the same source", async () => {
+    const onTimeUpdate = vi.fn();
+    const clip = {
+      uri: "/saved.mp4",
+      identity: "renderer:0:sequence:saved",
+      initialTimeSeconds: 7.25,
+    };
+    await renderClip(clip, { onTimeUpdate });
+    const video = container.querySelector("video")!;
+    expect(video.currentTime).toBe(0);
+    await emit((callbacks) => callbacks.onTimeUpdate?.({ currentTime: 0 }));
+    expect(onTimeUpdate).not.toHaveBeenCalled();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-ready="/saved.mp4"]')!.click()
+    );
+    expect(video.currentTime).toBe(7.25);
+    video.currentTime = 9;
+    await renderClip(clip, { onTimeUpdate });
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-ready="/saved.mp4"]')!.click()
+    );
+    expect(video.currentTime).toBe(9);
+  });
+
+  it("queues early seeks per source and lets the latest seek override the initial checkpoint", async () => {
+    await renderClip({ uri: "/a.mp4", identity: "a", initialTimeSeconds: 4 });
+    const first = registeredHandles().at(-1)!;
+    first.seek(8.75);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-ready="/a.mp4"]')!.click()
+    );
+    expect(container.querySelector("video")!.currentTime).toBe(8.75);
+    await renderClip({ uri: "/b.mp4", identity: "b", initialTimeSeconds: 3 });
+    const video = container.querySelector("video")!;
+    video.currentTime = 0;
+    first.seek(20);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-ready="/b.mp4"]')!.click()
+    );
+    expect(video.currentTime).toBe(3);
+  });
+
+  it.each(["video/mp4", "application/vnd.apple.mpegurl"])(
+    "synchronizes %s playback speed while paused and across source changes without playing",
+    async (type) => {
+      const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+      const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+      await renderClip({ uri: "/a", type, identity: "a", playbackRate: 1.5 });
+      const video = container.querySelector("video")!;
+      expect(video.playbackRate).toBe(1.5);
+      registeredHandles().at(-1)!.setPlaybackRate(2);
+      expect(video.playbackRate).toBe(2);
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[data-ready="/a"]')!.click()
+      );
+      expect(video.playbackRate).toBe(2);
+      await renderClip({ uri: "/b", type, identity: "b", playbackRate: 2 });
+      expect(container.querySelector("video")).toBe(video);
+      video.playbackRate = 1;
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[data-ready="/b"]')!.click()
+      );
+      expect(video.playbackRate).toBe(2);
+      expect(play).not.toHaveBeenCalled();
+      expect(pause).not.toHaveBeenCalled();
+    }
+  );
+
+  it("reports finite metadata duration and prefers the declared story duration", async () => {
+    const onDurationChange = vi.fn();
+    await renderClip({ uri: "/a.mp4", identity: "a" }, { onDurationChange });
+    Object.defineProperty(container.querySelector("video")!, "duration", {
+      value: 12.5,
+      configurable: true,
+    });
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[data-ready="/a.mp4"]')!.click()
+    );
+    expect(onDurationChange).toHaveBeenLastCalledWith(12.5);
+    await emit((callbacks) => callbacks.onDurationChange?.(13));
+    expect(onDurationChange).toHaveBeenLastCalledWith(13);
+    const before = onDurationChange.mock.calls.length;
+    for (const invalid of [NaN, Infinity, 0, -1])
+      await emit((callbacks) => callbacks.onDurationChange?.(invalid));
+    expect(onDurationChange).toHaveBeenCalledTimes(before);
+    await renderClip({ uri: "/b.mp4", identity: "b", durationSeconds: 10 }, { onDurationChange });
+    await emit((callbacks) => callbacks.onDurationChange?.(14));
+    expect(onDurationChange).toHaveBeenLastCalledWith(10);
   });
 
   it("offers the host a handle for every source it covers", async () => {

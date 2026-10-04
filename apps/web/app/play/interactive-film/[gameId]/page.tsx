@@ -111,6 +111,7 @@ export default async function InteractiveFilmPage({ params, searchParams }: Rout
           randomSeed={randomUUID()}
           coverUrl={published.game.coverUrl}
           chapterId={published.activeChapterId ?? ""}
+          availableChapterIds={published.chapters.map((chapter) => chapter.chapterId)}
         />
         <ChapterMenu published={published} gameId={gameId} locale={locale} copy={playerCopy} />
         <PlayShareButton

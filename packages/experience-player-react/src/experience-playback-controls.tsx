@@ -21,7 +21,7 @@ const FROSTED_CONTROL =
 
 /** How far the cluster drops to clear the host's chrome: what that chrome leaves of the band above the picture. */
 const CLUSTER_TOP =
-  "max(0px, calc(var(--experience-chrome-inset-top, 0px) - var(--experience-frame-inset-top, 0px)))";
+  "max(0px, calc(var(--experience-chrome-inset-top, 0px) + var(--experience-player-corner-height, 0px) - var(--experience-frame-inset-top, 0px)))";
 
 /**
  * A pointer press on the frame's controls leaves focus where it was — on the

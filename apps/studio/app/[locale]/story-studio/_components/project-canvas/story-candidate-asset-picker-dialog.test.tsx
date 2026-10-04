@@ -162,6 +162,72 @@ describe("StoryCandidateAssetPickerDialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("shows why an already added candidate cannot be selected", async () => {
+    const onOpenChange = vi.fn();
+    const onSelect = vi.fn().mockResolvedValue(undefined);
+    const reason = "This image is already included in the screenshots.";
+    await renderDialog({
+      items: [imageCandidate],
+      allowedKinds: ["image"],
+      isSelectable: () => false,
+      unavailableReason: () => reason,
+      onOpenChange,
+      onSelect,
+    });
+
+    const added = buttonByLabel("Select Image 1");
+    expect(added.disabled).toBe(true);
+    expect(added.textContent).toContain(reason);
+    expect([...added.querySelectorAll("span")].some((node) => node.textContent === "Select")).toBe(
+      false
+    );
+    await click(added);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("shows the permission reason without offering selection", async () => {
+    const onSelect = vi.fn().mockResolvedValue(undefined);
+    const reason = "Only project owners and producers can change media.";
+    await renderDialog({
+      items: [imageCandidate],
+      allowedKinds: ["image"],
+      canSelect: false,
+      disabledReason: reason,
+      onSelect,
+    });
+
+    const unavailable = buttonByLabel("Select Image 1");
+    expect(unavailable.disabled).toBe(true);
+    expect(unavailable.textContent).toContain(reason);
+    expect(
+      [...unavailable.querySelectorAll("span")].some((node) => node.textContent === "Select")
+    ).toBe(false);
+    await click(unavailable);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("identifies current media without offering deselection when clearing is unavailable", async () => {
+    const onOpenChange = vi.fn();
+    const onSelect = vi.fn().mockResolvedValue(undefined);
+    await renderDialog({
+      items: [currentVideoCandidate],
+      allowedKinds: ["video"],
+      currentAssetId: currentVideoCandidate.asset.id,
+      onOpenChange,
+      onSelect,
+    });
+
+    const current = buttonByLabel("Video 1 · Current");
+    expect(current.disabled).toBe(true);
+    expect(current.textContent).toContain("Current");
+    expect(current.textContent).not.toContain("Deselect");
+    expect(document.querySelector('button[aria-label="Deselect Video 1"]')).toBeNull();
+    await click(current);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
   it("applies a candidate that is not currently selected", async () => {
     const onOpenChange = vi.fn();
     const onSelect = vi.fn().mockResolvedValue(undefined);

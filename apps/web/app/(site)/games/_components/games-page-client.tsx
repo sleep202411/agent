@@ -20,7 +20,6 @@ import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import { InteractiveFilmStoreDialog } from "./interactive-film-store-dialog";
-import { MOCK_STORE_CATALOG } from "../_data/interactive-film-store";
 
 export function GamesPageClient({
   textGames,
@@ -46,25 +45,6 @@ export function GamesPageClient({
     setStoreGame(game);
     setStoreOpen(true);
   };
-
-  // MOCK REVIEW SCAFFOLDING — fixture store entries surface as labelled demo
-  // cards at the top of the catalogue so the full store dialog can be reviewed
-  // before the store-detail API exists. Real catalogue games below them open
-  // the same dialog with their real metadata only. Remove together with
-  // `_data/interactive-film-store.ts`.
-  const demoGameIds = new Set(MOCK_STORE_CATALOG.map((entry) => entry.gameId));
-  const demoFilms: ExperienceGameSummary[] = MOCK_STORE_CATALOG.map((entry) => {
-    const content = entry.content[locale] ?? entry.content["en-US"];
-    return {
-      gameId: entry.gameId,
-      title: content.title,
-      subtitle: content.tagline,
-      coverUrl: entry.coverUrl,
-      currentVersion: "demo",
-      updatedAt: new Date(entry.releaseDate).toISOString(),
-    };
-  });
-  const films = [...demoFilms, ...interactiveFilms];
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
@@ -99,7 +79,7 @@ export function GamesPageClient({
             title={t("films.title")}
             count={
               !filmError && interactiveFilms.length > 0
-                ? t("films.count", { count: films.length })
+                ? t("films.count", { count: interactiveFilms.length })
                 : undefined
             }
           />
@@ -112,7 +92,7 @@ export function GamesPageClient({
           ) : null}
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {films.map((game) => (
+            {interactiveFilms.map((game) => (
               <Link
                 key={game.gameId}
                 href={localizePath(
@@ -151,11 +131,6 @@ export function GamesPageClient({
                       </div>
                     )}
                     <div className="absolute inset-0 bg-linear-to-t from-black/75 via-black/15 to-transparent" />
-                    {demoGameIds.has(game.gameId) ? (
-                      <span className="absolute top-3 left-3 rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-semibold tracking-wider text-white/85 uppercase backdrop-blur-md">
-                        {t("films.demo")}
-                      </span>
-                    ) : null}
                     <div className="absolute inset-x-3 bottom-3 text-white">
                       <p className="text-[10px] font-medium text-white/60">{t("films.label")}</p>
                       <h3 className="mt-0.5 line-clamp-2 text-sm font-bold leading-tight transition-colors group-hover:text-primary">

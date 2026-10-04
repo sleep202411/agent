@@ -32,9 +32,11 @@ export interface StoryCandidateAssetsController {
 export function useStoryCandidateAssets({
   projectId,
   canEdit,
+  enabled = true,
 }: {
   projectId: string;
   canEdit: boolean;
+  enabled?: boolean;
 }): StoryCandidateAssetsController {
   const t = useTranslations("storyStudio.canvas.creativeWorkbench.candidates");
   const queryClient = useQueryClient();
@@ -42,6 +44,7 @@ export function useStoryCandidateAssets({
   const query = useQuery({
     queryKey,
     queryFn: ({ signal }) => getStoryCandidateAssets(projectId, signal),
+    enabled,
     staleTime: 20_000,
   });
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());

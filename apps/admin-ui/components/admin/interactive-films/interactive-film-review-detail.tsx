@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element -- Java returns creator-managed media URLs */
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -31,6 +31,14 @@ import {
   type InteractiveFilmAdminAction,
 } from "@/lib/interactive-film-admin-contract";
 import type { InteractiveFilmPlaybackLoadResult } from "@/lib/interactive-film-playback-view";
+import {
+  areInteractiveFilmMaterialsReady,
+  interactiveFilmListingVersion,
+  type AdminInteractiveFilmListingLoadResult,
+} from "@/lib/interactive-film-listing-contract";
+import { requestAdminInteractiveFilmListing } from "@/lib/interactive-film-listing-client";
+import { useAdminOperation } from "../use-admin-operation";
+import { InteractiveFilmListingSection } from "./interactive-film-listing-section";
 import { InteractiveFilmPlaybackSection } from "./playback/playback-section";
 import {
   formatInteractiveFilmDate,
@@ -49,6 +57,7 @@ export function InteractiveFilmReviewDetail({
   gameId,
   initialGame,
   initialError,
+  initialListing,
   playback,
 }: {
   siteLabel: string;
@@ -56,10 +65,12 @@ export function InteractiveFilmReviewDetail({
   gameId: string;
   initialGame: AdminInteractiveFilmDetail | null;
   initialError: string | null;
+  initialListing: AdminInteractiveFilmListingLoadResult;
   /** HLS distribution read; `null` off the cn site, where the section does not exist. */
   playback: InteractiveFilmPlaybackLoadResult | null;
 }) {
   const router = useRouter();
+  const { busy, begin } = useAdminOperation();
   const [game, setGame] = useState(initialGame);
   const [error, setError] = useState<string | null>(initialError);
   const [success, setSuccess] = useState<string | null>(null);
@@ -68,23 +79,72 @@ export function InteractiveFilmReviewDetail({
   );
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [listingRefreshRevision, setListingRefreshRevision] = useState(0);
+  const [materials, setMaterials] = useState(() => ({
+    contentVersion: initialListing.contentVersion,
+    // Legacy releases use the existing Java review. A frozen cover must load
+    // in the review surface before its promotional snapshot is ready.
+    ready: initialListing.data?.listing === null && !initialListing.error,
+  }));
+  const materialsRef = useRef(materials);
+  const onMaterialsReadyChange = useCallback((contentVersion: string | null, ready: boolean) => {
+    const next = { contentVersion, ready };
+    materialsRef.current = next;
+    setMaterials((current) =>
+      current.contentVersion === contentVersion && current.ready === ready ? current : next
+    );
+  }, []);
   const rejectReasonCharacterCount = [...rejectReason].length;
 
   async function runAction(input: InteractiveFilmAdminAction) {
     if (!game || !isInteractiveFilmAdminActionAllowed(game.status, input.action)) {
-      const reason = new Error("当前作品状态不允许执行该审核动作，请刷新后重试。");
-      setError(reason.message);
-      throw reason;
+      setError("当前作品状态不允许执行该审核动作，请刷新后重试。");
+      return;
     }
+    const version = interactiveFilmListingVersion(game);
+    if (
+      input.action === "approve" &&
+      (!version || materials.contentVersion !== version || !materials.ready)
+    )
+      return;
+    const operation = begin();
+    if (!operation) return;
+    const signal = AbortSignal.any([operation.signal, AbortSignal.timeout(15_000)]);
     setPendingAction(input.action);
     setError(null);
     setSuccess(null);
     try {
+      if (input.action === "approve") {
+        const latest = await requestAdminInteractiveFilm(gameId, { method: "GET", signal });
+        if (!operation.current()) return;
+        if (latest.status !== "reviewing" || interactiveFilmListingVersion(latest) !== version) {
+          setGame(latest);
+          throw new Error(
+            "The submitted version has changed. Review the current release before approving it."
+          );
+        }
+        const latestMaterials = await requestAdminInteractiveFilmListing(gameId, version!, signal);
+        if (!operation.current()) return;
+        if (!areInteractiveFilmMaterialsReady(latestMaterials)) {
+          throw new Error("This release cannot be approved because its cover is unavailable.");
+        }
+      }
+      if (!operation.current()) return;
+      if (
+        input.action === "approve" &&
+        (materialsRef.current.contentVersion !== version || !materialsRef.current.ready)
+      ) {
+        throw new Error(
+          "The cover is unavailable for review. Load it before approving the release."
+        );
+      }
       const next = await requestAdminInteractiveFilm(gameId, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
+        signal,
       });
+      if (!operation.current()) return;
       setGame(next);
       setSuccess(actionSuccessMessage(input.action));
       if (input.action === "reject") {
@@ -93,19 +153,26 @@ export function InteractiveFilmReviewDetail({
       }
       router.refresh();
     } catch (reason) {
+      if (!operation.current()) return;
       setError(interactiveFilmErrorMessage(reason));
-      throw reason;
+      if (input.action === "approve") {
+        onMaterialsReadyChange(version, false);
+        setListingRefreshRevision((revision) => revision + 1);
+        // Reload after a candidate change or an uncertain response, without
+        // issuing another moderation action. An abandoned view stops here.
+        try {
+          const latest = await requestAdminInteractiveFilm(gameId, {
+            method: "GET",
+            signal: AbortSignal.any([operation.signal, AbortSignal.timeout(15_000)]),
+          });
+          if (operation.current()) setGame(latest);
+        } catch {
+          // Preserve the actionable failure if context refresh also fails.
+        }
+      }
     } finally {
-      setPendingAction(null);
-    }
-  }
-
-  async function runConfirmedAction(input: InteractiveFilmAdminAction) {
-    try {
-      await runAction(input);
-    } catch {
-      // Resolve the confirmation callback so it closes; the actionable Java
-      // error is already stored in the visible page banner.
+      if (operation.current()) setPendingAction(null);
+      operation.finish();
     }
   }
 
@@ -136,11 +203,8 @@ export function InteractiveFilmReviewDetail({
   const title = game.title;
   const reviewing = isInteractiveFilmAdminActionAllowed(game.status, "approve");
   const canOffline = isInteractiveFilmAdminActionAllowed(game.status, "offline");
-  const busy = pendingAction !== null;
-
-  async function approve() {
-    await runConfirmedAction({ action: "approve" });
-  }
+  const contentVersion = interactiveFilmListingVersion(game);
+  const canApproveMaterials = materials.contentVersion === contentVersion && materials.ready;
 
   async function reject() {
     const reason = rejectReason.trim();
@@ -148,14 +212,7 @@ export function InteractiveFilmReviewDetail({
       setError("驳回原因不能为空。");
       return;
     }
-    try {
-      await runAction({
-        action: "reject",
-        reason,
-      });
-    } catch {
-      // runAction keeps the actionable upstream error visible in this dialog.
-    }
+    await runAction({ action: "reject", reason });
   }
 
   return (
@@ -223,6 +280,13 @@ export function InteractiveFilmReviewDetail({
             </div>
           </section>
 
+          <InteractiveFilmListingSection
+            game={game}
+            initialListing={initialListing}
+            onReadyChange={onMaterialsReadyChange}
+            refreshRevision={listingRefreshRevision}
+          />
+
           <ReviewSection title="发布物核验" icon={<IconFileCode className="size-4" />}>
             <div className="grid gap-3 lg:grid-cols-2">
               <ManifestCard
@@ -241,8 +305,8 @@ export function InteractiveFilmReviewDetail({
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] leading-5 text-amber-800">
               <IconInfoCircle className="mt-0.5 size-4 shrink-0" />
               <p>
-                玩家接口只开放已发布版本。本页不会伪造未发布试玩；当前后端只提供版本与 Manifest
-                地址，请通过待审发布物完成核验。
+                Player APIs expose published releases only. Verify the submitted Manifest and its
+                frozen promotional materials before approval.
               </p>
             </div>
           </ReviewSection>
@@ -250,7 +314,12 @@ export function InteractiveFilmReviewDetail({
 
         <aside className="space-y-4 xl:sticky xl:top-16">
           <ReviewSection title="审核材料">
-            <ReviewCheck label="封面" ready={Boolean(game.coverUrl)} />
+            <ReviewCheck
+              label="Release materials"
+              ready={canApproveMaterials}
+              readyLabel="Ready to review"
+              missingLabel="Unavailable"
+            />
             <ReviewCheck label="待审版本" ready={Boolean(game.draftVersion)} />
             <ReviewCheck label="待审 Manifest" ready={Boolean(game.draftManifestUrl)} />
           </ReviewSection>
@@ -272,14 +341,19 @@ export function InteractiveFilmReviewDetail({
                   title="确认通过该影游？"
                   description={`通过后，《${title}》的待审版本会晋升为玩家可见的线上版本。`}
                   confirmLabel="通过并发布"
-                  onConfirm={approve}
+                  onConfirm={() => runAction({ action: "approve" })}
                   trigger={
-                    <Button className="w-full" disabled={busy}>
+                    <Button className="w-full" disabled={busy || !canApproveMaterials}>
                       <IconCheck className="size-4" />
                       通过并发布
                     </Button>
                   }
                 />
+                {!canApproveMaterials ? (
+                  <p className="text-[12px] leading-5 text-amber-700">
+                    Load the release materials before approving.
+                  </p>
+                ) : null}
                 <Button
                   variant="outline"
                   className="w-full"
@@ -304,7 +378,7 @@ export function InteractiveFilmReviewDetail({
                 description={`《${title}》将从玩家列表、详情和新开局中隐藏；已经开始的 Session 仍可继续上报。`}
                 confirmLabel="确认强制下架"
                 destructive
-                onConfirm={() => runConfirmedAction({ action: "offline" })}
+                onConfirm={() => runAction({ action: "offline" })}
                 trigger={
                   <Button variant="destructive" className="w-full" disabled={busy}>
                     强制下架
@@ -446,12 +520,22 @@ function Fact({ label, value, mono = false }: { label: string; value: string; mo
   );
 }
 
-function ReviewCheck({ label, ready }: { label: string; ready: boolean }) {
+function ReviewCheck({
+  label,
+  ready,
+  readyLabel = "已提供",
+  missingLabel = "缺失",
+}: {
+  label: string;
+  ready: boolean;
+  readyLabel?: string;
+  missingLabel?: string;
+}) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-[12px]">
       <span className="text-slate-600">{label}</span>
       <span className={ready ? "text-emerald-700" : "text-red-700"}>
-        {ready ? "已提供" : "缺失"}
+        {ready ? readyLabel : missingLabel}
       </span>
     </div>
   );

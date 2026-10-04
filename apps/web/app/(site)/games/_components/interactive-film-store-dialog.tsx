@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogClose,
@@ -10,14 +10,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  IconCheck,
-  IconHeart,
-  IconPlayerPlay,
-  IconShare2,
-  IconUsers,
-  IconX,
-} from "@tabler/icons-react";
+import { IconCheck, IconLoader2, IconPlayerPlay, IconShare2, IconX } from "@tabler/icons-react";
 import type { ExperienceGameSummary } from "@repo/shared/experience-runtime";
 import { useQuery } from "@tanstack/react-query";
 import type { Locale } from "@/src/i18n/config";
@@ -25,8 +18,9 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { fetchLatestSave } from "@/src/lib/story-saves";
+import { fetchStoreListing } from "@/src/lib/story-store";
 import { MediaCarousel } from "./media-carousel";
-import { findMockStoreEntry } from "../_data/interactive-film-store";
+import type { StoreMediaItem } from "../_data/store-media";
 
 /**
  * Steam-style store dialog for published interactive films. Clicking a film
@@ -35,10 +29,9 @@ import { findMockStoreEntry } from "../_data/interactive-film-store";
  * web content-detail rules — consumption layout, compact titles, hairline
  * structure, media carries the color, brand red only on the Play action.
  *
- * Rich store content (trailer, screenshots, about) comes from the mock
- * fixture while the store-detail API contract is pending; a game without a
- * mock entry renders only what the real catalogue provides. Signed-in
- * players with a save see "Continue playing" instead of "Play now".
+ * Introduction, trailer and screenshots come from the public release
+ * snapshot. Catalogue metadata remains useful when a work has no public
+ * introduction. Signed-in players with a save can continue their game.
  */
 
 export function InteractiveFilmStoreDialog({
@@ -50,64 +43,103 @@ export function InteractiveFilmStoreDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  if (!game) return null;
+  return (
+    <SelectedInteractiveFilmDialog
+      key={`${game.gameId}:${game.currentVersion}`}
+      game={game}
+      open={open}
+      onOpenChange={onOpenChange}
+    />
+  );
+}
+
+function SelectedInteractiveFilmDialog({
+  game,
+  open,
+  onOpenChange,
+}: {
+  game: ExperienceGameSummary;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const t = useTranslations("games.store");
+  const commonT = useTranslations("common");
   const locale = useLocale() as Locale;
   const { user } = useCurrentUser();
 
-  const entry = game ? findMockStoreEntry(game.gameId) : undefined;
-  const content = entry?.content[locale] ?? entry?.content["en-US"];
-  const title = content?.title ?? game?.title ?? "";
-  const shortDescription = content?.shortDescription ?? game?.subtitle ?? "";
-  const coverUrl = entry?.coverUrl ?? game?.coverUrl ?? null;
+  const listingQuery = useQuery({
+    queryKey: ["story-store", game.gameId, game.currentVersion],
+    queryFn: ({ signal }) => fetchStoreListing(game.gameId, signal),
+    enabled: open,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const listing = listingQuery.data;
+
+  const title = listing?.title ?? game.title;
+  const description = listing?.description ?? (listing === null ? (game.subtitle ?? "") : "");
+  // A snapshot's explicit null means its cover is no longer available; the
+  // catalogue URL must not restore media that the release reader withheld.
+  const coverUrl = listing ? listing.coverUrl : (game.coverUrl ?? null);
+  const tags = listing?.tags ?? [];
+  const developer = listing?.developer;
+  const mediaItems: StoreMediaItem[] = useMemo(() => {
+    if (!listing) return [];
+    return [
+      ...(listing.trailerUrl
+        ? [
+            {
+              kind: "video" as const,
+              url: listing.trailerUrl,
+              posterUrl: coverUrl,
+            },
+          ]
+        : []),
+      ...listing.screenshots.map((shot) => ({
+        kind: "image" as const,
+        url: shot.url,
+        alt: title,
+      })),
+    ];
+  }, [listing, coverUrl, title]);
 
   // Progress lookup for the Continue affordance — signed-in players only, so
   // anonymous browsing never trips the global 401 handler.
-  const { data: latestSave } = useQuery({
-    queryKey: ["story-saves", "latest", game?.gameId, user?.id ?? "anonymous"],
-    queryFn: () => fetchLatestSave(game!.gameId),
-    enabled: open && Boolean(game) && Boolean(user),
+  const saveQuery = useQuery({
+    queryKey: ["story-saves", "latest", game.gameId, user?.id ?? "anonymous"],
+    queryFn: () => fetchLatestSave(game.gameId),
+    enabled: open && Boolean(user),
     staleTime: 0,
     retry: false,
   });
-
-  if (!game) return null;
+  const latestSave = user ? saveQuery.data : null;
 
   const playHref = localizePath(
     `/play/interactive-film/${encodeURIComponent(game.gameId)}`,
     locale
   );
-  const continueHref =
-    latestSave && latestSave.chapterId
-      ? `${playHref}?chapter=${encodeURIComponent(latestSave.chapterId)}`
-      : playHref;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        aria-describedby={undefined}
         className="gap-0 bg-background p-0 text-sm text-foreground sm:max-w-5xl"
       >
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-white/[0.06] bg-background/92 px-5 py-4 backdrop-blur-md sm:px-6">
           <div className="min-w-0">
             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-medium tracking-[0.12em] text-muted-foreground uppercase">
               <span>{t("label")}</span>
-              {content?.genres.length ? (
-                <>
-                  <span aria-hidden className="text-muted-foreground/40">
-                    ·
-                  </span>
-                  <span>{content.genres.join(" / ")}</span>
-                </>
-              ) : null}
             </p>
             <DialogTitle className="mt-1.5 truncate text-xl font-bold tracking-tight sm:text-2xl">
               {title}
             </DialogTitle>
-            <DialogDescription className="sr-only">{shortDescription}</DialogDescription>
+            <DialogDescription className="sr-only">
+              {t("label")}: {title}
+            </DialogDescription>
           </div>
           <DialogClose
-            aria-label="Close"
+            aria-label={commonT("close")}
             className="grid size-9 shrink-0 place-items-center rounded-full bg-white/[0.06] text-muted-foreground transition hover:bg-white/[0.1] hover:text-foreground"
           >
             <IconX className="size-4.5" stroke={1.8} />
@@ -115,60 +147,59 @@ export function InteractiveFilmStoreDialog({
         </div>
 
         <div className="px-5 py-5 sm:px-6">
+          {listingQuery.isLoading ? (
+            <p role="status" className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+              <IconLoader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              {commonT("loading")}
+            </p>
+          ) : null}
+          {listingQuery.isError ? (
+            <ReadFailure
+              error={listingQuery.error}
+              pending={listingQuery.isFetching}
+              fallback={commonT("loadFailed")}
+              retryLabel={commonT("retry")}
+              onRetry={() => void listingQuery.refetch()}
+            />
+          ) : null}
           <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div>
-              {entry ? (
+              {mediaItems.length > 0 ? (
                 <MediaCarousel
-                  media={entry.media}
+                  key={mediaItems.map((item) => item.url).join("|")}
+                  media={mediaItems}
                   title={title}
                   trailerLabel={t("trailerLabel")}
                   counterLabel={(index, total) => t("mediaCounter", { index, total })}
                   imageAltFallback={title}
+                  errorLabel={t("mediaError")}
+                  retryLabel={commonT("retry")}
                 />
               ) : (
-                <CoverPlaceholder coverUrl={coverUrl} title={title} />
+                <CoverPlaceholder
+                  coverUrl={coverUrl}
+                  title={title}
+                  errorLabel={t("mediaError")}
+                  retryLabel={commonT("retry")}
+                />
               )}
             </div>
 
             <aside className="flex flex-col gap-5">
-              {shortDescription ? (
-                <p className="text-sm leading-relaxed text-foreground/80">{shortDescription}</p>
-              ) : null}
-
               <dl>
-                {entry && content ? (
-                  <InfoRow
-                    label={t("releaseDate")}
-                    value={new Intl.DateTimeFormat(locale, { dateStyle: "long" }).format(
-                      new Date(entry.releaseDate)
-                    )}
-                  />
-                ) : (
-                  <InfoRow
-                    label={t("updatedAt")}
-                    value={new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
-                      new Date(game.updatedAt)
-                    )}
-                  />
-                )}
-                {entry && content ? (
-                  <InfoRow label={t("developer")} value={entry.developer} />
-                ) : null}
-                {entry && content ? (
-                  <InfoRow label={t("publisher")} value={entry.publisher} />
-                ) : null}
-                {entry && content?.genres.length ? (
-                  <InfoRow label={t("genres")} value={content.genres.join(", ")} />
-                ) : null}
-                {entry && content ? (
-                  <InfoRow label={t("languages")} value={entry.languages.join(", ")} />
-                ) : null}
-                <InfoRow label={t("madeWith")} value="FizzDragon Studio" />
+                <InfoRow
+                  label={t("updatedAt")}
+                  value={new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(
+                    new Date(game.updatedAt)
+                  )}
+                />
+                {developer ? <InfoRow label={t("developer")} value={developer} /> : null}
+                <InfoRow label={t("madeWith")} value="FizzDragon" />
               </dl>
 
-              {content?.tags.length ? (
+              {tags.length ? (
                 <div className="flex flex-wrap gap-2">
-                  {content.tags.map((tag) => (
+                  {tags.map((tag) => (
                     <span
                       key={tag}
                       className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-muted-foreground"
@@ -184,24 +215,27 @@ export function InteractiveFilmStoreDialog({
           <PlayStrip
             gameId={game.gameId}
             playHref={playHref}
-            continueHref={continueHref}
             hasSave={Boolean(latestSave)}
             title={title}
             coverUrl={coverUrl}
-            freeToPlay={Boolean(content)}
-            playersNow={entry?.playersNow}
+            progressPending={Boolean(user) && saveQuery.isLoading}
           />
+          {user && saveQuery.isError ? (
+            <ReadFailure
+              error={saveQuery.error}
+              pending={saveQuery.isFetching}
+              fallback={commonT("loadFailed")}
+              retryLabel={commonT("retry")}
+              onRetry={() => void saveQuery.refetch()}
+            />
+          ) : null}
 
-          {content ? (
+          {description ? (
             <section className="mt-10" aria-labelledby="store-about">
               <SectionHeading id="store-about" title={t("aboutTitle")} />
-              <div className="mt-4 space-y-3.5">
-                {content.aboutParagraphs.map((paragraph) => (
-                  <p key={paragraph.slice(0, 32)} className="text-sm leading-7 text-foreground/75">
-                    {paragraph}
-                  </p>
-                ))}
-              </div>
+              <p className="mt-4 text-sm leading-7 whitespace-pre-wrap break-words text-foreground/75">
+                {description}
+              </p>
             </section>
           ) : null}
         </div>
@@ -210,13 +244,86 @@ export function InteractiveFilmStoreDialog({
   );
 }
 
-function CoverPlaceholder({ coverUrl, title }: { coverUrl: string | null; title: string }) {
+function ReadFailure({
+  error,
+  pending,
+  fallback,
+  retryLabel,
+  onRetry,
+}: {
+  error: unknown;
+  pending: boolean;
+  fallback: string;
+  retryLabel: string;
+  onRetry: () => void;
+}) {
+  const message = error instanceof Error ? error.message : fallback;
+  return (
+    <div role="alert" className="my-4 flex flex-wrap items-start justify-between gap-3">
+      <p className="min-w-0 flex-1 text-sm leading-6 break-words text-foreground/80">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        disabled={pending}
+        className="inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-xs font-medium transition hover:bg-white/[0.1] disabled:opacity-50"
+      >
+        {pending ? <IconLoader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
+        {retryLabel}
+      </button>
+    </div>
+  );
+}
+
+function CoverPlaceholder({
+  coverUrl,
+  title,
+  errorLabel,
+  retryLabel,
+  compact = false,
+}: {
+  coverUrl: string | null;
+  title: string;
+  errorLabel: string;
+  retryLabel: string;
+  compact?: boolean;
+}) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   if (!coverUrl) {
     return <div className="grid aspect-video w-full place-items-center rounded-2xl bg-secondary" />;
   }
+  if (failedUrl === coverUrl)
+    return (
+      <div
+        role="alert"
+        className={`flex aspect-video flex-col items-center justify-center gap-2 rounded-2xl bg-secondary px-3 text-center ${compact ? "text-[10px]" : "text-sm"}`}
+      >
+        <p>{errorLabel}</p>
+        <button
+          type="button"
+          data-cover-retry
+          className="rounded-md bg-white/[0.08] px-3 py-1.5 text-xs"
+          onClick={() => {
+            setFailedUrl(null);
+            setAttempt((value) => value + 1);
+          }}
+        >
+          {retryLabel}
+        </button>
+      </div>
+    );
   return (
     <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-black">
-      <Image src={coverUrl} alt={title} fill unoptimized sizes="640px" className="object-cover" />
+      <Image
+        key={`${coverUrl}:${attempt}`}
+        src={coverUrl}
+        alt={title}
+        fill
+        unoptimized
+        sizes={compact ? "144px" : "640px"}
+        className="object-cover"
+        onError={() => setFailedUrl(coverUrl)}
+      />
     </div>
   );
 }
@@ -243,26 +350,21 @@ function SectionHeading({ id, title }: { id: string; title: string }) {
 function PlayStrip({
   gameId,
   playHref,
-  continueHref,
   hasSave,
   title,
   coverUrl,
-  freeToPlay,
-  playersNow,
+  progressPending,
 }: {
   gameId: string;
   playHref: string;
-  /** Play link pre-pointed at the saved chapter when one exists. */
-  continueHref: string;
   hasSave: boolean;
   title: string;
   coverUrl: string | null;
-  freeToPlay: boolean;
-  playersNow?: number;
+  progressPending: boolean;
 }) {
   const t = useTranslations("games.store");
+  const commonT = useTranslations("common");
   const locale = useLocale() as Locale;
-  const [wishlisted, setWishlisted] = useState(false);
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number | null>(null);
 
@@ -298,68 +400,47 @@ function PlayStrip({
   return (
     <section className="mt-6 flex flex-col gap-4 rounded-2xl bg-white/[0.04] p-4 sm:flex-row sm:items-center sm:gap-5 sm:p-5">
       {coverUrl ? (
-        <div className="relative hidden aspect-video w-36 shrink-0 overflow-hidden rounded-lg bg-black sm:block">
-          <Image
-            src={coverUrl}
-            alt={title}
-            fill
-            unoptimized
-            sizes="144px"
-            className="object-cover"
+        <div className="hidden w-36 shrink-0 sm:block">
+          <CoverPlaceholder
+            coverUrl={coverUrl}
+            title={title}
+            compact
+            errorLabel={t("mediaError")}
+            retryLabel={commonT("retry")}
           />
         </div>
       ) : null}
 
       <div className="min-w-0">
         <h2 className="text-sm font-bold tracking-tight sm:text-base">{title}</h2>
-        <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
-          {freeToPlay ? (
-            <span className="font-semibold text-[#3fbf87]">{t("freeToPlay")}</span>
-          ) : null}
-          {typeof playersNow === "number" ? (
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <IconUsers className="size-3.5" stroke={1.8} />
-              {t("playingNow", { count: playersNow.toLocaleString(locale) })}
-            </span>
-          ) : null}
-        </p>
       </div>
 
       <div className="flex items-center gap-3 sm:ml-auto">
         {hasSave ? (
           <Link
             href={`${playHref}?restart=1`}
-            className="hidden h-11 items-center rounded-full bg-white/[0.06] px-5 text-sm font-medium text-muted-foreground transition hover:bg-white/[0.1] hover:text-foreground sm:inline-flex"
+            className="inline-flex h-11 items-center rounded-full bg-white/[0.06] px-4 text-xs font-medium text-muted-foreground transition hover:bg-white/[0.1] hover:text-foreground sm:px-5 sm:text-sm"
           >
             {t("restartFromBeginning")}
           </Link>
         ) : null}
-        <Link
-          href={hasSave ? continueHref : playHref}
-          className="inline-flex h-11 flex-1 items-center justify-center gap-2.5 rounded-full bg-primary px-7 text-sm font-semibold text-white transition hover:bg-[#f03a3f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:flex-none"
-        >
-          <IconPlayerPlay className="size-4.5 fill-current" stroke={0} />
-          {hasSave ? t("continuePlaying") : t("playNow")}
-        </Link>
-
-        <button
-          type="button"
-          onClick={() => setWishlisted((value) => !value)}
-          aria-pressed={wishlisted}
-          aria-label={wishlisted ? t("wishlisted") : t("wishlist")}
-          title={wishlisted ? t("wishlisted") : t("wishlist")}
-          className={`grid size-11 shrink-0 place-items-center rounded-full transition ${
-            wishlisted
-              ? "bg-primary/12 text-primary"
-              : "bg-white/[0.06] text-muted-foreground hover:bg-white/[0.1] hover:text-foreground"
-          }`}
-        >
-          <IconHeart
-            className="size-4.5"
-            stroke={1.8}
-            fill={wishlisted ? "currentColor" : "none"}
-          />
-        </button>
+        {progressPending ? (
+          <span
+            role="status"
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2.5 rounded-full bg-white/[0.06] px-7 text-sm text-muted-foreground sm:flex-none"
+          >
+            <IconLoader2 className="size-4 animate-spin" aria-hidden="true" />
+            {commonT("loading")}
+          </span>
+        ) : (
+          <Link
+            href={playHref}
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2.5 rounded-full bg-primary px-7 text-sm font-semibold text-white transition hover:bg-[#f03a3f] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:flex-none"
+          >
+            <IconPlayerPlay className="size-4.5 fill-current" stroke={0} />
+            {hasSave ? t("continuePlaying") : t("playNow")}
+          </Link>
+        )}
 
         <button
           type="button"

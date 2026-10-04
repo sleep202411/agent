@@ -3449,7 +3449,7 @@
           },
           "submitting": {
             "title": "提交平台",
-            "description": "正在上传版本并请求审核。"
+            "description": "正在提交当前版本并申请平台审核。"
           }
         },
         "actions": {
@@ -3485,7 +3485,13 @@
           "offlineFailed": "无法下线这部影游。",
           "unexpected": "无法提交当前版本。"
         },
-        "retryStatus": "重试获取发布状态"
+        "retryStatus": "重试获取发布状态",
+        "entry": "发布",
+        "withdraw": {
+          "title": "撤回本次提交？",
+          "description": "当前版本将退出审核，你保存的草稿会保留，可以修改后重新提交。",
+          "confirm": "撤回提交"
+        }
       },
       "workingPreview": {
         "pageTitle": "故事试玩 · 影游工作室",
@@ -4224,6 +4230,88 @@
       "saved": "成片已保存到项目资产库。",
       "downloadStarted": "已开始下载成片。",
       "failed": "成片导出失败，请重试。"
+    },
+    "publication": {
+      "title": "发布作品",
+      "loading": "正在加载发布资料…",
+      "signInRequired": "登录后可管理作品发布。",
+      "loadFailed": "无法加载当前项目。",
+      "retry": "重试",
+      "saving": "正在保存…",
+      "unsaved": "有未保存修改",
+      "saved": "草稿已保存",
+      "draftSaved": "草稿已保存",
+      "editDenied": "你可以查看宣传资料，只有项目编辑者可以修改。",
+      "invalidDraft": "请检查宣传资料的长度与格式。",
+      "saveFailed": "草稿保存失败。",
+      "conflict": "项目已更新，请刷新版本后再保存你的修改。",
+      "keepDraft": "刷新版本并保留我的修改",
+      "completeFields": "补全必填的宣传资料后即可提交。",
+      "completeChapters": "请为每个章节设置起始场景后再提交。",
+      "mediaChecking": "正在检查所选素材…",
+      "mediaUnavailable": "部分素材不可用，请选择已就绪且未被禁止使用的素材。",
+      "checksTitle": "提交前检查",
+      "checksDescription": "这里检查必填资料。提交时会进一步校验故事结构与素材。",
+      "chaptersIncomplete": "{count} 个章节尚未设置起始场景",
+      "chaptersReady": "{count} 个章节已设置起始场景",
+      "reviewFeedback": "审核反馈",
+      "viewPublished": "打开已发布作品",
+      "retrySubmission": "重新提交",
+      "submitted": "已提交审核，本次宣传资料已冻结。",
+      "submitHint": "提交时将保存最新宣传资料，并准备一个固定版本供审核。",
+      "saveDraft": "保存草稿",
+      "submit": "提交审核",
+      "withdraw": "撤回提交",
+      "offline": "下架作品",
+      "state": {
+        "reviewing": {
+          "title": "作品审核中",
+          "description": "本次提交已冻结。你可以继续编辑下一版草稿，或撤回本次提交后重新提交。"
+        },
+        "published": {
+          "title": "作品已发布",
+          "description": "保存修改只会更新草稿。需要提交新版本时，请先下架当前作品。"
+        },
+        "offline": {
+          "title": "作品已下架",
+          "description": "玩家暂时无法打开作品。修改完成后，可以重新提交审核。"
+        }
+      },
+      "details": {
+        "introTitle": "宣传资料",
+        "introDescription": "向玩家介绍你的作品，未填写完也可以随时保存草稿。",
+        "cover": "封面",
+        "coverEmpty": "尚未选择封面",
+        "coverHint": "选择能代表作品的清晰图片。",
+        "chooseCover": "选择封面",
+        "replaceCover": "更换封面",
+        "tags": "标签",
+        "tagsPlaceholder": "添加标签",
+        "mediaTitle": "预告片与截图",
+        "mediaDescription": "展示作品中的精彩片段。预告片与截图为选填。",
+        "trailer": "预告片",
+        "chooseTrailer": "选择预告片",
+        "replaceTrailer": "更换预告片",
+        "removeTrailer": "移除预告片",
+        "trailerEmpty": "从素材中选择预告片，或上传新视频",
+        "screenshots": "作品截图",
+        "screenshotCount": "{count}/8",
+        "addScreenshot": "添加截图",
+        "removeScreenshot": "移除第 {index} 张截图",
+        "screenshotAlreadyAdded": "已添加到作品截图",
+        "mediaNotReady": "素材尚未就绪，请选择其他素材。",
+        "mediaBlocked": "该素材已被屏蔽，不能用于发布。",
+        "unavailableMedia": "素材暂不可用",
+        "candidateLoadError": "无法加载项目素材。",
+        "retry": "重试",
+        "addValue": "添加{label}",
+        "removeValue": "移除{value}",
+        "mediaLoading": "正在加载素材…",
+        "description": "介绍",
+        "descriptionPlaceholder": "介绍故事、世界观与玩家将面临的选择，可换行分段。"
+      },
+      "signIn": "登录",
+      "closeDraftHint": "关闭后会保留未保存的修改，重新打开即可继续。"
     }
   },
   "storyStudioLanding": {
@@ -4242,6 +4330,27 @@
     "studioDescription": "AI 创意工作台"
   },
   "experiencePlayer": {
+    "journeyMap": {
+      "open": "情节地图",
+      "title": "情节地图",
+      "description": "查看已探索的场景和走过的路线。",
+      "close": "关闭情节地图",
+      "current": "当前位置",
+      "explored": "已探索",
+      "unexplored": "未探索",
+      "unexploredHint": "这段剧情尚未探索。继续游玩或尝试其他选择，发现更多故事。",
+      "replay": "从这里重玩",
+      "replaying": "正在返回场景…",
+      "replayHint": "将从此场景的起点重玩，并替换之后的剧情进度。",
+      "replayUnavailable": "此场景没有可用的起点存档。",
+      "empty": "情节地图暂不可用。",
+      "canvasLabel": "场景与剧情路线",
+      "centerCurrent": "定位当前场景",
+      "sceneLabel": "场景 {number}",
+      "endingLabel": "结局",
+      "truncated": "地图较大，部分连接未显示。",
+      "thumbnailUnavailable": "场景缩略图不可用"
+    },
     "communityAccess": {
       "title": "解锁内容",
       "price": "{amount} 社区积分",
@@ -4262,7 +4371,16 @@
       "resume": "继续播放",
       "paused": "已暂停",
       "continuePlaying": "点击继续播放",
-      "interrupted": "此设备需要点击才能继续播放。"
+      "interrupted": "此设备需要点击才能继续播放。",
+      "transport": {
+        "controlsLabel": "播放控制",
+        "rewind10": "后退 10 秒",
+        "forward10": "前进 10 秒",
+        "progressLabel": "片段进度",
+        "speedLabel": "播放倍速",
+        "watchedOnlyHint": "仅可跳转至已看过的位置。",
+        "interactionBlocked": "互动期间无法调整播放进度或倍速。"
+      }
     },
     "videoLabel": "画面 {nodeId} 的故事视频",
     "continue": "继续",

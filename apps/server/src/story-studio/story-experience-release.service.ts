@@ -3,7 +3,7 @@ import {
   Injectable,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { StoryExperiencePublicationStatus } from '@prisma/client';
+import { Prisma, StoryExperiencePublicationStatus } from '@prisma/client';
 import {
   EXPERIENCE_GAME_MANIFEST_SCHEMA_VERSION,
   EXPERIENCE_RUNTIME_SCHEMA_VERSION,
@@ -37,13 +37,18 @@ import {
 } from './story-build.service';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectsService } from './story-projects.service';
+import {
+  publicationListingSnapshot,
+  StoryPublicationListingSnapshotSchema,
+  type StoryPublicationListingSnapshot,
+} from './story-publication-listing';
 
 const RELEASE_BUILD_CONCURRENCY = 8;
 const CHAPTER_MANIFEST_UPLOAD_CONCURRENCY = 16;
 // A release Build is replayed by this key, including a failed one. Bump when
 // publishability rules change, otherwise the next submit returns the old
 // failure and never runs the new compiler.
-const RELEASE_BUILD_KEY_VERSION = 3;
+const RELEASE_BUILD_KEY_VERSION = 4;
 
 interface PreparedChapter {
   chapterId: string;
@@ -55,9 +60,8 @@ interface PreparedChapter {
 
 /**
  * Compiles the current Nest-owned Story Project into one immutable Java release
- * request. Java calls deliberately stay outside this service: Studio sends the
- * returned payload directly to Java and reads moderation state from Java by
- * projectId.
+ * request. Java calls stay in StoryPublicationService: it verifies this frozen
+ * receipt, uploads with the current actor's session and submits for moderation.
  */
 @Injectable()
 export class StoryExperienceReleaseService {
@@ -82,6 +86,12 @@ export class StoryExperienceReleaseService {
     const workbench = await this.projects.workbench(user, projectId, {});
     assertExpectedSnapshot(workbench, input);
     const coverUrl = requireReleaseCoverUrl(workbench);
+    const listingSnapshot = publicationListingSnapshot(workbench.project);
+    await this.projects.requireProjectMediaUseAccess(
+      user.userId,
+      projectId,
+      listingAssetIds(listingSnapshot),
+    );
 
     const chapters = await this.buildCurrentChapters(
       user,
@@ -124,6 +134,8 @@ export class StoryExperienceReleaseService {
         user.userId,
         chapter.buildId,
         request,
+        listingSnapshot,
+        input.expectedProjectVersion,
       );
       return request;
     }
@@ -183,6 +195,8 @@ export class StoryExperienceReleaseService {
       user.userId,
       request,
       chapters,
+      listingSnapshot,
+      input.expectedProjectVersion,
     );
     return request;
   }
@@ -278,9 +292,22 @@ export class StoryExperienceReleaseService {
     userId: string,
     buildId: string,
     request: ExperienceReleaseRequest,
+    listingSnapshot: StoryPublicationListingSnapshot,
+    expectedProjectVersion: number,
   ): Promise<void> {
     const requestHash = canonicalJsonHash(request);
     await this.prisma.$transaction(async (tx) => {
+      await assertCandidateProjectVersion(
+        tx,
+        projectId,
+        expectedProjectVersion,
+      );
+      await assertCandidateListingAssets(tx, listingSnapshot);
+      await this.projects.requireProjectMediaUseAccess(
+        userId,
+        projectId,
+        listingAssetIds(listingSnapshot),
+      );
       const receipt = await tx.storyExperienceDraftRelease.upsert({
         where: { buildId },
         create: {
@@ -289,6 +316,7 @@ export class StoryExperienceReleaseService {
           gameId: request.gameId,
           contentVersion: request.contentVersion,
           requestHash,
+          listingSnapshot,
           status: StoryExperiencePublicationStatus.pending,
           requestedByUserId: userId,
         },
@@ -306,7 +334,8 @@ export class StoryExperienceReleaseService {
         receipt.storyProjectId !== projectId ||
         receipt.gameId !== request.gameId ||
         receipt.contentVersion !== request.contentVersion ||
-        receipt.requestHash !== requestHash
+        receipt.requestHash !== requestHash ||
+        !matchesListingSnapshot(receipt.listingSnapshot, listingSnapshot)
       ) {
         throw releaseCorrupt(
           'The prepared candidate does not match its immutable Build receipt.',
@@ -320,9 +349,22 @@ export class StoryExperienceReleaseService {
     userId: string,
     request: ExperienceReleaseRequest,
     chapters: readonly PreparedChapter[],
+    listingSnapshot: StoryPublicationListingSnapshot,
+    expectedProjectVersion: number,
   ): Promise<void> {
     const requestHash = canonicalJsonHash(request);
     await this.prisma.$transaction(async (tx) => {
+      await assertCandidateProjectVersion(
+        tx,
+        projectId,
+        expectedProjectVersion,
+      );
+      await assertCandidateListingAssets(tx, listingSnapshot);
+      await this.projects.requireProjectMediaUseAccess(
+        userId,
+        projectId,
+        listingAssetIds(listingSnapshot),
+      );
       const receipt = await tx.storyExperienceGameRelease.upsert({
         where: {
           storyProjectId_contentVersion: {
@@ -335,6 +377,7 @@ export class StoryExperienceReleaseService {
           gameId: request.gameId,
           contentVersion: request.contentVersion,
           requestHash,
+          listingSnapshot,
           status: StoryExperiencePublicationStatus.pending,
           requestedSetCurrent: true,
           requestedByUserId: userId,
@@ -382,6 +425,7 @@ export class StoryExperienceReleaseService {
       if (
         receipt.gameId !== request.gameId ||
         receipt.requestHash !== requestHash ||
+        !matchesListingSnapshot(receipt.listingSnapshot, listingSnapshot) ||
         expectedChapters.join('|') !== actualChapters.join('|')
       ) {
         throw releaseCorrupt(
@@ -390,6 +434,17 @@ export class StoryExperienceReleaseService {
       }
     });
   }
+}
+
+function matchesListingSnapshot(
+  stored: Prisma.JsonValue | null,
+  expected: StoryPublicationListingSnapshot,
+): boolean {
+  const parsed = StoryPublicationListingSnapshotSchema.safeParse(stored);
+  return (
+    parsed.success &&
+    canonicalJsonHash(parsed.data) === canonicalJsonHash(expected)
+  );
 }
 
 function runtimeReleaseRequest(
@@ -475,6 +530,7 @@ function preparedChapter(
             ? `“${chapter.title}” changed before it could be submitted. Refresh and submit again.`
             : `“${chapter.title}” is still being prepared for review.`),
       chapterId: chapter.id,
+      chapterTitle: chapter.title,
       diagnostics,
     });
   }
@@ -507,6 +563,7 @@ function assertExpectedSnapshot(
   expected: PrepareStoryExperienceReleaseInput,
 ): void {
   if (
+    workbench.project.projectVersion === expected.expectedProjectVersion &&
     workbench.draft.revision === expected.expectedDraftRevision &&
     workbench.video.snapshotHash === expected.expectedVideoSnapshotHash
   ) {
@@ -564,4 +621,68 @@ function releaseCorrupt(message: string): ConflictException {
     code: 'STORY_RELEASE_CANDIDATE_CORRUPT',
     message,
   });
+}
+
+/** Lock the project while admitting its immutable introduction receipt. */
+async function assertCandidateProjectVersion(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  expectedProjectVersion: number,
+): Promise<void> {
+  const rows = await tx.$queryRaw<{ version: number }[]>(Prisma.sql`
+    SELECT version FROM story_projects
+    WHERE id = ${projectId}::uuid AND status = 'active' AND archived_at IS NULL
+    FOR SHARE
+  `);
+  if (rows[0]?.version !== expectedProjectVersion) {
+    throw new ConflictException({
+      code: 'STORY_RELEASE_SNAPSHOT_CONFLICT',
+      message:
+        'The project introduction changed while its review candidate was being prepared. Refresh and submit the latest version.',
+    });
+  }
+}
+
+async function assertCandidateListingAssets(
+  tx: Prisma.TransactionClient,
+  snapshot: StoryPublicationListingSnapshot,
+): Promise<void> {
+  const expected = new Map<string, 'image' | 'video'>([
+    [snapshot.coverAssetId, 'image'],
+    ...snapshot.listing.screenshotAssetIds.map((id) => [id, 'image'] as const),
+    ...(snapshot.listing.trailerAssetId
+      ? [[snapshot.listing.trailerAssetId, 'video'] as const]
+      : []),
+  ]);
+  const assets = await tx.mediaAsset.findMany({
+    where: {
+      id: { in: [...expected.keys()] },
+      status: 'ready',
+      moderationStatus: { not: 'blocked' },
+      deletedAt: null,
+    },
+    select: { id: true, kind: true },
+  });
+  const actual = new Map(assets.map((asset) => [asset.id, asset.kind]));
+  const unavailable = [...expected].find(
+    ([id, kind]) => actual.get(id) !== kind,
+  );
+  if (unavailable) {
+    throw new UnprocessableEntityException({
+      code: 'STORY_RELEASE_INTRODUCTION_MEDIA_INVALID',
+      message:
+        'The cover, trailer and screenshots must be ready, available assets before submitting for review.',
+      assetId: unavailable[0],
+    });
+  }
+}
+
+function listingAssetIds(snapshot: StoryPublicationListingSnapshot): string[] {
+  return [
+    snapshot.coverAssetId,
+    ...snapshot.listing.screenshotAssetIds,
+    ...(snapshot.listing.trailerAssetId
+      ? [snapshot.listing.trailerAssetId]
+      : []),
+  ];
 }

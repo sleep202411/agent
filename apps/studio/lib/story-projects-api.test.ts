@@ -325,6 +325,7 @@ function storyProject(): StoryProjectSummary {
     defaultLocale: "en-US",
     cover: null,
     tags: [],
+    storeListing: null,
     sourceIpId: null,
     projectVersion: 0,
     draftRevision: 0,

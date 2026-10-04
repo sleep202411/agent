@@ -239,7 +239,13 @@ test("dispatches one deterministic event route and preserves the previous state"
       eventName: "interaction.accepted",
       payload: { durationMs: 1_650 },
     },
-    { kind: "scene.changed", fromSceneId: "scene.one", toSceneId: "scene.two" },
+    {
+      kind: "scene.changed",
+      fromSceneId: "scene.one",
+      toSceneId: "scene.two",
+      bindingId: "advance.when-ready",
+      routeId: "ready",
+    },
   ]);
 
   const finished = dispatchExperienceEvent(manifest, result.state, { type: "scene.entered" });

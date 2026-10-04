@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
-import { transitionAdminInteractiveFilm } from "@/lib/admin-interactive-films";
+import {
+  getAdminInteractiveFilmDetail,
+  transitionAdminInteractiveFilm,
+} from "@/lib/admin-interactive-films";
 import { getAdminSession } from "@/lib/admin-session";
 import {
   parseInteractiveFilmAdminAction,
@@ -10,6 +13,23 @@ import {
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ gameId: string }> };
+
+export async function GET(_request: NextRequest, context: RouteContext) {
+  const denied = await moderationDeniedResponse();
+  if (denied) return denied;
+  const gameId = parseGameId(await context.params);
+  if (!gameId) return invalidGameIdResponse();
+  try {
+    const response = Response.json({
+      code: 200,
+      data: await getAdminInteractiveFilmDetail(gameId),
+    });
+    response.headers.set("cache-control", "private, no-store");
+    return response;
+  } catch (error) {
+    return upstreamErrorResponse(error);
+  }
+}
 
 export async function POST(request: NextRequest, context: RouteContext) {
   const denied = await moderationDeniedResponse();

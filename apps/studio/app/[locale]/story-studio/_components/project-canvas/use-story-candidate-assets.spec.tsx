@@ -12,6 +12,7 @@ import {
 } from "@/lib/story-projects-api";
 import {
   useStoryCandidateAssets,
+  storyCandidateAssetsQueryKey,
   type StoryCandidateAssetsController,
 } from "./use-story-candidate-assets";
 
@@ -46,11 +47,13 @@ describe("useStoryCandidateAssets", () => {
   let root: Root;
   let queryClient: QueryClient;
   let controller: StoryCandidateAssetsController | null;
+  let enabled: boolean | undefined;
 
   function Harness() {
     controller = useStoryCandidateAssets({
       projectId: PROJECT_ID,
       canEdit: true,
+      enabled,
     });
     return <span data-loading={String(controller.loading)} />;
   }
@@ -58,6 +61,7 @@ describe("useStoryCandidateAssets", () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     controller = null;
+    enabled = undefined;
     notifications.error.mockReset();
     vi.mocked(getStoryCandidateAssets).mockReset().mockResolvedValue([]);
     vi.mocked(addStoryCandidateAsset).mockReset();
@@ -76,6 +80,38 @@ describe("useStoryCandidateAssets", () => {
     await act(async () => root.unmount());
     queryClient.clear();
     container.remove();
+    vi.useRealTimers();
+  });
+
+  it("pauses automatic reads while closed and refreshes retained assets when reopened", async () => {
+    vi.useFakeTimers();
+    enabled = false;
+    vi.mocked(getStoryCandidateAssets).mockResolvedValue([candidateAsset()]);
+    await renderHarness();
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(getStoryCandidateAssets).not.toHaveBeenCalled();
+    expect(current().loading).toBe(false);
+
+    enabled = true;
+    await renderHarness();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(getStoryCandidateAssets).toHaveBeenCalledTimes(1);
+    expect(current().items.map((item) => item.asset.id)).toEqual([ASSET_ID]);
+
+    enabled = false;
+    await renderHarness();
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: storyCandidateAssetsQueryKey(PROJECT_ID) });
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(getStoryCandidateAssets).toHaveBeenCalledTimes(1);
+    expect(current().items.map((item) => item.asset.id)).toEqual([ASSET_ID]);
+
+    enabled = true;
+    await renderHarness();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(getStoryCandidateAssets).toHaveBeenCalledTimes(2);
+    expect(current().items.map((item) => item.asset.id)).toEqual([ASSET_ID]);
   });
 
   it("coalesces rapid duplicate additions before React can render pending state", async () => {
@@ -126,6 +162,11 @@ describe("useStoryCandidateAssets", () => {
   });
 
   async function mountHarness() {
+    await renderHarness();
+    await waitFor(() => !current().loading);
+  }
+
+  async function renderHarness() {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
@@ -133,7 +174,6 @@ describe("useStoryCandidateAssets", () => {
         </QueryClientProvider>
       );
     });
-    await waitFor(() => !current().loading);
   }
 
   function current(): StoryCandidateAssetsController {

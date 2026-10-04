@@ -44,6 +44,8 @@ const JAVA_STUDIO = requiredEnv("JAVA_STUDIO_URL");
 requiredEnv("NEXT_PUBLIC_SITE_REGION");
 
 const nextConfig: NextConfig = {
+  // Allow an isolated local instance without sharing the normal dev lock/cache.
+  distDir: process.env.STUDIO_DEV_DIST_DIR || ".next",
   // Self-contained server bundle for the Docker runner stage.
   output: "standalone",
   // Project Skill preview URLs are materialized by the Nest control plane from
