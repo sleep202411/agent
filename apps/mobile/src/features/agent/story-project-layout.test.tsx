@@ -34,6 +34,7 @@ vi.mock("@/features/agent/components/story-project-header-back", () => ({
   StoryProjectHeaderBack: () => null,
 }));
 vi.mock("@/features/agent/context/story-chapter-context", () => ({
+  useStoryChapterContext: () => ({ chapterId: "", requestedChapterId: "" }),
   StoryChapterProvider: ({ children }: { children: ReactNode }) => {
     useEffect(() => {
       h.mount(h.generation);
