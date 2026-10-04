@@ -1,3 +1,4 @@
+import { canvasPositionDraftStore } from "./story-canvas-position-draft";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import { pendingRequest } from "@/lib/pending-request";
@@ -29,7 +30,8 @@ export function canvasReconciliation(
         canvasDraftStore(scope, userId).read() ||
         canvasCreateDraftStore(scope, userId).read() ||
         canvasMediaDraftStore(scope, userId).read() ||
-        canvasGroupDraftStore(scope, userId).read()
+        canvasGroupDraftStore(scope, userId).read() ||
+        canvasPositionDraftStore(scope, userId).read()
       ),
   } as {
     storage: DurableRecord;
