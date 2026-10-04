@@ -1,4 +1,5 @@
-import { Stack, useLocalSearchParams } from "expo-router";
+import { toHref } from "@/lib/navigation";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
@@ -7,6 +8,7 @@ import { useTranslations } from "@/i18n";
 import { PrivateCases } from "@/features/services/private-cases";
 export default function PrivateCasesScreen() {
   const { caseId } = useLocalSearchParams<{ caseId?: string }>();
+  const router = useRouter();
   const auth = useAuth(),
     gate = useAuthGate(),
     theme = useTheme(),
@@ -22,6 +24,13 @@ export default function PrivateCasesScreen() {
           headerStyle: { backgroundColor: theme.background },
         }}
       />
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 16 }}
+        onPress={() => router.push(toHref("/content-reports"))}
+      >
+        <ThemedText>{t("contentReports.title")}</ThemedText>
+      </Pressable>
       {auth.status === "hydrating" ? (
         <ActivityIndicator />
       ) : auth.status !== "authenticated" ? (
