@@ -9,9 +9,9 @@ import {
 } from "@repo/shared/experience-runtime";
 
 import { getAuthGeneration } from "@/auth/auth-store";
-import { api, ApiRequestError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 
-const STUDIO = { service: "studio" as const };
+const PUBLICATION = { service: "aurora" as const, retry: false };
 
 export type InteractiveFilmPublicationStatus = "draft" | "reviewing" | "published" | "offline";
 
@@ -30,7 +30,7 @@ const STATUS_SET = new Set<InteractiveFilmPublicationStatus>([
 
 function parsePublication(value: unknown, projectId: string): InteractiveFilmPublication {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Java returned an invalid interactive-film publication.");
+    throw new Error("The publication service returned an invalid publication status.");
   }
   const record = value as Record<string, unknown>;
   const gameId = typeof record.gameId === "string" ? record.gameId.trim() : "";
@@ -40,7 +40,7 @@ function parsePublication(value: unknown, projectId: string): InteractiveFilmPub
     gameId !== projectId ||
     !STATUS_SET.has(status as InteractiveFilmPublicationStatus)
   ) {
-    throw new Error("Java returned an invalid interactive-film publication.");
+    throw new Error("The publication service returned an invalid publication status.");
   }
   const rejectRaw = record.rejectReason;
   const rejectReason = typeof rejectRaw === "string" && rejectRaw.trim() ? rejectRaw.trim() : null;
@@ -56,18 +56,16 @@ export async function getInteractiveFilmPublication(
   projectId: string,
   signal?: AbortSignal
 ): Promise<InteractiveFilmPublication | null> {
-  try {
-    const value = await api.get<unknown>(
-      `/api/user/interactive-film/${encodeURIComponent(projectId)}`,
-      { ...STUDIO, signal, timeout: 30_000 }
-    );
-    return parsePublication(value, projectId);
-  } catch (error) {
-    if (error instanceof ApiRequestError && (error.status === 404 || error.code === 404)) {
-      return null;
-    }
-    throw error;
-  }
+  const generation = getAuthGeneration();
+  signal?.throwIfAborted();
+  const value = await api.get<unknown>(
+    `/story-projects/${encodeURIComponent(projectId)}/publication`,
+    { ...PUBLICATION, signal, timeout: 30_000 }
+  );
+  signal?.throwIfAborted();
+  if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
+  // Only a successful authorized empty response means no release exists.
+  return value === null ? null : parsePublication(value, projectId);
 }
 
 export async function prepareInteractiveFilmRelease(
@@ -103,21 +101,17 @@ export async function submitInteractiveFilmRelease(
     if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
   };
   current();
-  await api.post("/api/user/interactive-film/releases", {
-    ...STUDIO,
-    data: release,
-    signal,
-    timeout: 2 * 60_000,
-  });
+  const value = await api.post<unknown>(
+    `/story-projects/${encodeURIComponent(projectId)}/publication/submit`,
+    {
+      ...PUBLICATION,
+      data: release,
+      signal,
+      timeout: 2 * 60_000,
+    }
+  );
   current();
-  await api.post(`/api/user/interactive-film/${encodeURIComponent(projectId)}/status`, {
-    ...STUDIO,
-    data: { action: "submit" },
-    signal,
-    timeout: 60_000,
-  });
-  current();
-  const publication = await getInteractiveFilmPublication(projectId, signal);
+  const publication = parsePublication(value, projectId);
   current();
   if (!publication || !["reviewing", "published"].includes(publication.status))
     throw new Error(
@@ -132,16 +126,18 @@ export async function offlineInteractiveFilm(
 ): Promise<InteractiveFilmPublication> {
   const generation = getAuthGeneration();
   signal?.throwIfAborted();
-  await api.post(`/api/user/interactive-film/${encodeURIComponent(projectId)}/status`, {
-    ...STUDIO,
-    data: { action: "offline" },
-    signal,
-    timeout: 60_000,
-  });
+  const value = await api.post<unknown>(
+    `/story-projects/${encodeURIComponent(projectId)}/publication/offline`,
+    {
+      ...PUBLICATION,
+      data: {},
+      signal,
+      timeout: 60_000,
+    }
+  );
   signal?.throwIfAborted();
   if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
-  const publication = await getInteractiveFilmPublication(projectId, signal);
-  if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
+  const publication = parsePublication(value, projectId);
   if (!publication || publication.status !== "offline")
     throw new Error(
       "Taking this film offline could not be verified. Refresh the publication status before trying again."

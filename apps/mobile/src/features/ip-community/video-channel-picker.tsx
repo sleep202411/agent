@@ -134,6 +134,7 @@ function Picker({ generation, locale }: { generation: number; locale: string }) 
               setPage(undefined);
             })}
             <ChannelVideoSubmit
+              embedded
               scope={{ ipId: selected.id, generation, locale }}
               onSubmitted={() => router.push(toHref(`/ip/${selected.id}`))}
             />

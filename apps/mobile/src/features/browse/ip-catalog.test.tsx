@@ -17,6 +17,7 @@ type ListProps = {
   ListFooterComponent: ReactNode;
 };
 let list: ListProps;
+vi.mock("@/features/ip-community/video-channel-picker", () => ({ VideoChannelPicker: () => null }));
 vi.mock("expo-router", () => ({
   router: { push: vi.fn() },
   useLocalSearchParams: () => ({}),

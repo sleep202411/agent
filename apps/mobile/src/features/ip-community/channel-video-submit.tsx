@@ -17,9 +17,11 @@ import { channelVideoDraftStorage, type ChannelVideoDraft } from "./channel-vide
 export function ChannelVideoSubmit({
   scope,
   onSubmitted,
+  embedded = false,
 }: {
   scope: ChannelScope;
   onSubmitted: () => void;
+  embedded?: boolean;
 }) {
   const auth = useAuth(),
     gate = useAuthGate(),
@@ -33,6 +35,7 @@ export function ChannelVideoSubmit({
       scope={scope}
       userId={userId}
       onSubmitted={onSubmitted}
+      embedded={embedded}
     />
   );
 }
@@ -40,10 +43,12 @@ function Form({
   scope,
   userId,
   onSubmitted,
+  embedded = false,
 }: {
   scope: ChannelScope;
   userId: string;
   onSubmitted: () => void;
+  embedded?: boolean;
 }) {
   const t = useTranslations(),
     theme = useTheme(),
@@ -61,7 +66,7 @@ function Form({
     restored.draft?.stage === "submit" ? restored.draft.input : restored.draft?.metadata;
   const [title, setTitle] = useState(initial?.title ?? ""),
     [description, setDescription] = useState(initial?.description ?? "");
-  const [expanded, setExpanded] = useState(!!restored.draft || restored.error !== null);
+  const [expanded, setExpanded] = useState(embedded || !!restored.draft || restored.error !== null);
   const [file, setFile] = useState<MobileUploadFile | null>(null);
   const [error, setError] = useState<string | null>(restored.error);
   const [busy, setBusy] = useState(false),
@@ -183,14 +188,16 @@ function Form({
   if (!active) return null;
   return (
     <View style={{ gap: 8 }}>
-      <Action
-        label={t(expanded ? "common.cancel" : "channelVideos.submit")}
-        disabled={busy}
-        onPress={() => {
-          setExpanded(!expanded);
-          setSuccess(false);
-        }}
-      />
+      {!embedded && (
+        <Action
+          label={t(expanded ? "common.cancel" : "channelVideos.submit")}
+          disabled={busy}
+          onPress={() => {
+            setExpanded(!expanded);
+            setSuccess(false);
+          }}
+        />
+      )}
       {success && <ThemedText type="small">{t("channelVideos.sent")}</ThemedText>}
       {expanded && (
         <>

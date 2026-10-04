@@ -1,94 +1,104 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
+  getInteractiveFilmPublication,
   submitInteractiveFilmRelease,
   offlineInteractiveFilm,
 } from "./interactive-film-publication-api";
 import type { ExperienceReleaseRequest } from "@repo/shared/experience-runtime";
 const h = vi.hoisted(() => ({ generation: 1, post: vi.fn(), get: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/lib/api-client", () => ({
-  api: { post: h.post, get: h.get },
-  ApiRequestError: class extends Error {},
-}));
-const release = {} as ExperienceReleaseRequest;
+vi.mock("@/lib/api-client", () => ({ api: { post: h.post, get: h.get } }));
+const release = { gameId: "film" } as ExperienceReleaseRequest;
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   h.generation = 1;
-  h.post.mockResolvedValue({});
-  h.get.mockResolvedValue({ gameId: "film", status: "reviewing" });
+  h.post.mockResolvedValue({ gameId: "film", status: "reviewing" });
 });
-it("stops before status submission if the account changes after uploading a release", async () => {
-  h.post.mockImplementationOnce(async () => {
-    h.generation = 2;
-    return {};
-  });
-  await expect(submitInteractiveFilmRelease("film", release)).rejects.toThrow("session expired");
-  expect(h.post).toHaveBeenCalledTimes(1);
-  expect(h.get).not.toHaveBeenCalled();
-});
-it("stops before reading publication if the account changes after status submission", async () => {
-  h.post.mockResolvedValueOnce({}).mockImplementationOnce(async () => {
-    h.generation = 2;
-    return {};
-  });
-  await expect(submitInteractiveFilmRelease("film", release)).rejects.toThrow("session expired");
-  expect(h.get).not.toHaveBeenCalled();
-});
-it("ignores a publication receipt from a previous session", async () => {
-  h.get.mockImplementationOnce(async () => {
-    h.generation = 2;
-    return { gameId: "film", status: "reviewing" };
-  });
-  await expect(submitInteractiveFilmRelease("film", release)).rejects.toThrow("session expired");
-});
-it("stops cancelled submissions between requests", async () => {
-  const c = new AbortController();
-  h.post.mockImplementationOnce(async () => {
-    c.abort();
-    return {};
-  });
-  await expect(submitInteractiveFilmRelease("film", release, c.signal)).rejects.toThrow();
-  expect(h.post).toHaveBeenCalledTimes(1);
-  expect(h.get).not.toHaveBeenCalled();
-});
-it("keeps normal same-session release submission intact", async () => {
+it("submits through project-authorized Server without direct Java writes", async () => {
   await expect(submitInteractiveFilmRelease("film", release)).resolves.toMatchObject({
     status: "reviewing",
   });
-  expect(h.post).toHaveBeenCalledTimes(2);
-  expect(h.get).toHaveBeenCalledOnce();
-});
-it("does not read offline receipts under another account", async () => {
-  h.post.mockImplementationOnce(async () => {
-    h.generation = 2;
-    return {};
-  });
-  await expect(offlineInteractiveFilm("film")).rejects.toThrow("session expired");
+  expect(h.post).toHaveBeenCalledOnce();
+  expect(h.post).toHaveBeenCalledWith(
+    "/story-projects/film/publication/submit",
+    expect.objectContaining({ service: "aurora", retry: false, data: release })
+  );
   expect(h.get).not.toHaveBeenCalled();
 });
-
-it.each(["draft", "offline"])("does not confirm submission from a %s receipt", async (status) => {
-  h.get.mockResolvedValue({ gameId: "film", status });
+it("takes a project offline through the authorized Server path", async () => {
+  h.post.mockResolvedValue({ gameId: "film", status: "offline" });
+  await offlineInteractiveFilm("film");
+  expect(h.post).toHaveBeenCalledWith(
+    "/story-projects/film/publication/offline",
+    expect.objectContaining({ service: "aurora", retry: false, data: {} })
+  );
+});
+it("only treats an authorized null read as unpublished", async () => {
+  h.get.mockResolvedValue(null);
+  expect(await getInteractiveFilmPublication("film")).toBeNull();
+  expect(h.get).toHaveBeenCalledWith(
+    "/story-projects/film/publication",
+    expect.objectContaining({ service: "aurora", retry: false })
+  );
+  const denied = Object.assign(new Error("Project not found"), { status: 404 });
+  h.get.mockRejectedValue(denied);
+  await expect(getInteractiveFilmPublication("film")).rejects.toBe(denied);
+});
+it.each(["read", "submit", "offline"])(
+  "rejects late %s responses after account changes",
+  async (kind) => {
+    const respond = async () => {
+      h.generation++;
+      return { gameId: "film", status: "offline" };
+    };
+    h.get.mockImplementation(respond);
+    h.post.mockImplementation(respond);
+    await expect(
+      kind === "read"
+        ? getInteractiveFilmPublication("film")
+        : kind === "submit"
+          ? submitInteractiveFilmRelease("film", release)
+          : offlineInteractiveFilm("film")
+    ).rejects.toThrow("session expired");
+  }
+);
+it("rejects cancelled mutation responses", async () => {
+  const c = new AbortController();
+  h.post.mockImplementation(async () => {
+    c.abort();
+    return { gameId: "film", status: "reviewing" };
+  });
+  await expect(submitInteractiveFilmRelease("film", release, c.signal)).rejects.toThrow();
+  expect(h.post).toHaveBeenCalledOnce();
+});
+it.each(["draft", "offline"])("does not confirm submission from %s receipt", async (status) => {
+  h.post.mockResolvedValue({ gameId: "film", status });
   await expect(submitInteractiveFilmRelease("film", release)).rejects.toThrow(
     "could not be verified"
   );
-  expect(h.post).toHaveBeenCalledTimes(2);
 });
-it("accepts a release already approved by the time status is read", async () => {
-  h.get.mockResolvedValue({ gameId: "film", status: "published" });
+it.each(["draft", "reviewing", "published"])(
+  "does not confirm offlining from %s receipt",
+  async (status) => {
+    h.post.mockResolvedValue({ gameId: "film", status });
+    await expect(offlineInteractiveFilm("film")).rejects.toThrow("could not be verified");
+  }
+);
+it("accepts immediately published receipt", async () => {
+  h.post.mockResolvedValue({ gameId: "film", status: "published" });
   await expect(submitInteractiveFilmRelease("film", release)).resolves.toMatchObject({
     status: "published",
   });
 });
-it.each(["draft", "reviewing", "published"])(
-  "does not confirm offlining from a %s receipt",
-  async (status) => {
-    h.get.mockResolvedValue({ gameId: "film", status });
-    await expect(offlineInteractiveFilm("film")).rejects.toThrow("could not be verified");
-    expect(h.post).toHaveBeenCalledTimes(1);
-  }
-);
-it("confirms a verified offline receipt", async () => {
-  h.get.mockResolvedValue({ gameId: "film", status: "offline" });
-  await expect(offlineInteractiveFilm("film")).resolves.toMatchObject({ status: "offline" });
+it("rejects cross-project receipts", async () => {
+  h.post.mockResolvedValue({ gameId: "other", status: "reviewing" });
+  await expect(submitInteractiveFilmRelease("film", release)).rejects.toThrow(
+    "invalid publication"
+  );
+});
+it("does not replay uncertain writes or replace authorization errors", async () => {
+  const error = new Error("Publication permission denied");
+  h.post.mockRejectedValue(error);
+  await expect(submitInteractiveFilmRelease("film", release)).rejects.toBe(error);
+  expect(h.post).toHaveBeenCalledOnce();
 });
