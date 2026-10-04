@@ -234,3 +234,55 @@ it("keeps the draft locked after foreground access failure until the user refres
   await mount();
   expect(host.textContent).toBe("");
 });
+
+it("resets pagination when changing views and retains the selection after reading a case", async () => {
+  const response = {
+    ...row,
+    id: id(9),
+    openedByUserId: "b",
+    respondentUserId: "a",
+    title: "Respond to case",
+  };
+  h.get.mockImplementation(
+    async (path: string, options: { params?: { view?: string; beforeId?: string } }) => {
+      if (path !== "/crew-disputes") return { ...history, ...response };
+      if (options.params?.view === "responses") return { items: [response], nextBeforeId: null };
+      return {
+        items: options.params?.beforeId ? [] : [row],
+        nextBeforeId: options.params?.beforeId ? null : id(1),
+      };
+    }
+  );
+  await mount();
+  await click("crewTaskCenter.loadMore");
+  await click("privateCases.view.responses");
+  expect(h.get).toHaveBeenLastCalledWith(
+    "/crew-disputes",
+    expect.objectContaining({ params: { limit: 20, view: "responses" } })
+  );
+  expect(host.textContent).not.toContain("Private case");
+  await click("Respond to case");
+  await click("privateCases.back");
+  expect(h.get).toHaveBeenLastCalledWith(
+    "/crew-disputes",
+    expect.objectContaining({ params: { limit: 20, view: "responses" } })
+  );
+  expect(host.textContent).toContain("Respond to case");
+  await click("privateCases.view.initiated");
+  expect(host.textContent).toContain("Private case");
+  expect(host.textContent).not.toContain("Respond to case");
+});
+it("ignores a late response from the previous view", async () => {
+  let resolve!: (value: unknown) => void;
+  h.get.mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  await mount();
+  await click("privateCases.view.responses");
+  expect(host.textContent).toContain("Case view mismatch");
+  await act(async () => resolve({ items: [row], nextBeforeId: null }));
+  expect(host.textContent).not.toContain("Private case");
+});

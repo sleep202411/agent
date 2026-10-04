@@ -18,6 +18,8 @@ export const privateCase = z.object({
   createdAt: date,
   updatedAt: date,
 });
+export const privateCaseView = z.enum(["all", "initiated", "responses"]);
+export type PrivateCaseView = z.infer<typeof privateCaseView>;
 export type PrivateCase = z.infer<typeof privateCase>;
 const event = z.object({
   id,
@@ -47,20 +49,33 @@ export async function fetchPrivateCases(
   userId: string,
   generation: number,
   beforeId: string | null,
-  signal: AbortSignal
+  signal: AbortSignal,
+  view: PrivateCaseView = "all"
 ) {
   current(generation, signal);
   user.parse(userId);
+  privateCaseView.parse(view);
   const page = z.object({ items: z.array(privateCase), nextBeforeId: id.nullable() }).parse(
     await api.get("/crew-disputes", {
       service: "aurora",
       signal,
       retry: false,
-      params: { limit: 20, ...(beforeId ? { beforeId: id.parse(beforeId) } : {}) },
+      params: {
+        limit: 20,
+        ...(view !== "all" ? { view } : {}),
+        ...(beforeId ? { beforeId: id.parse(beforeId) } : {}),
+      },
     })
   );
   current(generation, signal);
-  page.items.forEach((row) => participant(row, userId));
+  page.items.forEach((row) => {
+    participant(row, userId);
+    if (
+      (view === "initiated" && row.openedByUserId !== userId) ||
+      (view === "responses" && row.respondentUserId !== userId)
+    )
+      throw new Error("Case view mismatch.");
+  });
   if (
     new Set(page.items.map((row) => row.id)).size !== page.items.length ||
     (beforeId && page.nextBeforeId === beforeId)

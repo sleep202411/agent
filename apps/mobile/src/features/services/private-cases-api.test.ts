@@ -156,3 +156,19 @@ it("sends only explicitly selected attachments and keeps them in the durable ret
     writePrivateCase(id(1), "a", 1, { ...input, attachmentIds: Array(21).fill(id(8)) }, signal())
   ).rejects.toThrow();
 });
+
+it("queries the official participant view on every page and rejects mismatched rows", async () => {
+  h.get.mockResolvedValue({ items: [row], nextBeforeId: null });
+  await fetchPrivateCases("a", 1, id(8), signal(), "initiated");
+  expect(h.get).toHaveBeenLastCalledWith(
+    "/crew-disputes",
+    expect.objectContaining({ params: { limit: 20, view: "initiated", beforeId: id(8) } })
+  );
+  await fetchPrivateCases("b", 1, null, signal(), "responses");
+  await expect(fetchPrivateCases("a", 1, null, signal(), "responses")).rejects.toThrow(
+    "view mismatch"
+  );
+  await expect(fetchPrivateCases("b", 1, null, signal(), "initiated")).rejects.toThrow(
+    "view mismatch"
+  );
+});

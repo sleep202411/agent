@@ -1,4 +1,8 @@
 {
+  "privateCases.view.all": "All",
+  "privateCases.view.initiated": "Initiated",
+  "privateCases.view.responses": "Responses",
+
   "taskReview.reviewSubmission": "Review submission",
   "taskReview.reviewNotePlaceholder": "Write clear approval notes or revision instructions…",
   "taskReview.revisionLimitReached": "All included revision rounds have been used. Increase the limit in Edit task or approve this submission.",

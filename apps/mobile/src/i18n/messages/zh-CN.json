@@ -1,4 +1,8 @@
 {
+  "privateCases.view.all": "全部",
+  "privateCases.view.initiated": "我发起的",
+  "privateCases.view.responses": "我需回应的",
+
   "taskReview.reviewSubmission": "审核提交",
   "taskReview.reviewNotePlaceholder": "填写清晰的通过意见或修改要求…",
   "taskReview.revisionLimitReached": "约定的返修轮次已用完。请先在编辑任务中提高上限，或通过当前提交。",

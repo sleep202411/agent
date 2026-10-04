@@ -16,6 +16,7 @@ import {
   caseOutbox,
   writePrivateCase,
   type PrivateCase,
+  type PrivateCaseView,
   type CaseHistory,
   type CaseCommand,
 } from "./private-cases-api";
@@ -51,6 +52,7 @@ export function PrivateCases(props: Props) {
 }
 function Session(props: Props) {
   const t = useTranslations();
+  const theme = useTheme();
   const active = useScreenActive();
   const [lastActive, setLastActive] = useState(active);
   const [revision, setRevision] = useState(0);
@@ -59,6 +61,7 @@ function Session(props: Props) {
     if (active) setRevision((v) => v + 1);
   }
   const [selected, setSelected] = useState(props.initialCaseId);
+  const [view, setView] = useState<PrivateCaseView>("all");
   return (
     <View style={{ flex: 1, display: active ? "flex" : "none" }}>
       {selected ? (
@@ -67,12 +70,39 @@ function Session(props: Props) {
           <Detail key={selected} {...props} caseId={selected} />
         </View>
       ) : (
-        <Listing key={revision} {...props} onOpen={setSelected} />
+        <View style={{ flex: 1 }}>
+          <View
+            accessibilityRole="tablist"
+            style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 16 }}
+          >
+            {(["all", "initiated", "responses"] as const).map((value) => (
+              <Pressable
+                key={value}
+                accessibilityRole="tab"
+                aria-selected={view === value}
+                onPress={() => setView(value)}
+                style={{
+                  padding: 12,
+                  borderBottomWidth: 2,
+                  borderBottomColor: view === value ? theme.brand : "transparent",
+                }}
+              >
+                <ThemedText>{t(`privateCases.view.${value}`)}</ThemedText>
+              </Pressable>
+            ))}
+          </View>
+          <Listing key={`${revision}:${view}`} {...props} view={view} onOpen={setSelected} />
+        </View>
       )}
     </View>
   );
 }
-function Listing({ userId, generation, onOpen }: Props & { onOpen: (id: string) => void }) {
+function Listing({
+  userId,
+  generation,
+  onOpen,
+  view,
+}: Props & { onOpen: (id: string) => void; view: PrivateCaseView }) {
   const t = useTranslations();
   const [rows, setRows] = useState<PrivateCase[]>([]),
     [cursor, setCursor] = useState<string | null>(null),
@@ -82,7 +112,7 @@ function Listing({ userId, generation, onOpen }: Props & { onOpen: (id: string) 
     [error, setError] = useState("");
   useEffect(() => {
     const c = new AbortController();
-    void fetchPrivateCases(userId, generation, cursor, c.signal)
+    void fetchPrivateCases(userId, generation, cursor, c.signal, view)
       .then((page) => {
         if (c.signal.aborted) return;
         setRows((old) =>
@@ -103,7 +133,7 @@ function Listing({ userId, generation, onOpen }: Props & { onOpen: (id: string) 
         if (!c.signal.aborted) setLoading(false);
       });
     return () => c.abort();
-  }, [userId, generation, cursor, revision]);
+  }, [userId, generation, cursor, revision, view]);
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
       <ThemedText>{t("privateCases.privacy")}</ThemedText>
