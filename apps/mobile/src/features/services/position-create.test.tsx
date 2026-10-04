@@ -46,12 +46,14 @@ vi.mock("react-native", () => ({
     children,
     onPress,
     disabled,
+    accessibilityLabel,
   }: {
     children: ReactNode;
     onPress: () => void;
     disabled?: boolean;
+    accessibilityLabel?: string;
   }) => (
-    <button onClick={onPress} disabled={disabled}>
+    <button aria-label={accessibilityLabel} onClick={onPress} disabled={disabled}>
       {children}
     </button>
   ),
@@ -81,7 +83,9 @@ vi.mock("./crew-finance-api", () => ({
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const button = (key: string) =>
-  [...host.querySelectorAll("button")].find((b) => b.textContent === key)!;
+  [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === key || b.getAttribute("aria-label") === key
+  )!;
 const click = async (key: string) => {
   await act(async () => button(key).click());
 };
@@ -146,7 +150,10 @@ it("requires the description before publishing", async () => {
 it("publishes role, skills and salary in display units", async () => {
   await render();
   await type("positionCreate.description", "Direct the film");
-  await type("positionCreate.skills", "Editing, Lighting");
+  h.get.mockResolvedValueOnce({ skills: ["Editing", "Lighting"] });
+  await click("crewSkills.label · 0/20");
+  await click("Editing");
+  await click("Lighting");
   await type("positionCreate.min", "12.34");
   await type("positionCreate.max", "50");
   await click("positionCreate.publish");
@@ -363,4 +370,42 @@ it("keeps unchanged edits open without sending a write", async () => {
   expect(host.textContent).toContain("positionEdit.noChanges");
   expect(button("positionEdit.save")).toBeDefined();
   expect(h.patch).not.toHaveBeenCalled();
+});
+
+it("keeps selected qualification skills through foreground access refresh", async () => {
+  const screen = (active: boolean) =>
+    root.render(
+      <PositionCreate
+        crewId="crew"
+        userId="manager"
+        generation={1}
+        active={active}
+        onClose={h.close}
+      />
+    );
+  await act(async () => screen(true));
+  await type("positionCreate.description", "Direct the film");
+  h.get.mockResolvedValueOnce({ skills: ["Editing"] });
+  await click("crewSkills.label · 0/20");
+  await click("Editing");
+  await act(async () => screen(false));
+  await act(async () => screen(true));
+  await click("positionCreate.publish");
+  expect(h.post).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ data: expect.objectContaining({ requiredSkills: ["Editing"] }) })
+  );
+});
+
+it("removes an existing qualification skill without changing unrelated position terms", async () => {
+  await renderEdit();
+  h.get.mockResolvedValueOnce({ skills: ["Lighting"] });
+  await click("crewSkills.label");
+  await click("✓ Editing");
+  h.patch.mockResolvedValue({ ...editing, requiredSkills: [] });
+  await click("positionEdit.save");
+  expect(h.patch).toHaveBeenCalledWith("/crews/crew/positions/position", {
+    service: "aurora",
+    data: { requiredSkills: [] },
+  });
 });

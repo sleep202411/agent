@@ -1,3 +1,4 @@
+import { CrewSkillsField } from "./crew-skills-field";
 import {
   positionDraft,
   positionEditDraft,
@@ -51,7 +52,7 @@ export function PositionCreate(props: {
   const [role, setRole] = useState(initial?.positionType ?? props.initialPosition ?? "director"),
     [description, setDescription] = useState(initial?.description ?? ""),
     [count, setCount] = useState(String(initial?.targetCount ?? 1)),
-    [skills, setSkills] = useState(initial?.requiredSkills.join(", ") ?? ""),
+    [skills, setSkills] = useState<string[]>(initial?.requiredSkills ?? []),
     [location, setLocation] = useState(initial?.location ?? ""),
     [min, setMin] = useState(initial?.salary.min == null ? "" : String(initial.salary.min)),
     [max, setMax] = useState(initial?.salary.max == null ? "" : String(initial.salary.max)),
@@ -201,10 +202,7 @@ export function PositionCreate(props: {
         location: mode === "remote" ? null : location.trim() || null,
         employmentType: employment,
         experienceLevel: experience,
-        requiredSkills: skills
-          .split(/[,\n]/)
-          .map((s) => s.trim())
-          .filter(Boolean),
+        requiredSkills: skills,
         salary: {
           period,
           currency,
@@ -302,7 +300,12 @@ export function PositionCreate(props: {
           )}
           {field("positionCreate.description", description, setDescription, 1000, true)}
           {field("positionCreate.count", count, setCount, 2)}
-          {field("positionCreate.skills", skills, setSkills, 1300, true)}
+          <CrewSkillsField
+            value={skills}
+            onChange={setSkills}
+            generation={props.generation}
+            locked={locked}
+          />
           {choice("positionCreate.mode", mode, WORK_MODES, setMode, (v) =>
             t(`positionCreate.${v}`)
           )}
