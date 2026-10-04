@@ -88,3 +88,66 @@ export function replaceRepairEntry(content: RepairContent, nodeId: string): Repa
     throw Error("The selected entry node is no longer available.");
   return { ...content, graph: { ...content.graph, entryNodeId: nodeId } };
 }
+
+export function repairChoiceExit(content: RepairContent, nodeId: string) {
+  const exit = object(content.graph.nodes.find((node) => node.nodeId === nodeId)?.exit);
+  return exit?.kind === "choice" && Array.isArray(exit.choices) ? exit : null;
+}
+
+function replaceChoiceExit(
+  content: RepairContent,
+  nodeId: string,
+  change: (exit: Record<string, unknown>) => Record<string, unknown>
+): RepairContent {
+  const exit = repairChoiceExit(content, nodeId);
+  if (!exit) throw Error("The selected decision is no longer available.");
+  return {
+    ...content,
+    graph: {
+      ...content.graph,
+      nodes: content.graph.nodes.map((node) =>
+        node.nodeId === nodeId ? { ...node, exit: change(exit) } : node
+      ),
+    },
+  };
+}
+
+export function addRepairChoice(
+  content: RepairContent,
+  nodeId: string,
+  choiceId: string,
+  locale: string
+): RepairContent {
+  if (!/^[A-Za-z][A-Za-z0-9._:-]{0,119}$/.test(choiceId)) throw Error("Invalid choice identifier.");
+  return replaceChoiceExit(content, nodeId, (exit) => {
+    const choices = exit.choices as Record<string, unknown>[];
+    if (choices.length >= 6) throw Error("A decision can contain at most six choices.");
+    if (choices.some((choice) => choice.choiceId === choiceId))
+      throw Error("This choice already exists.");
+    return { ...exit, choices: [...choices, { choiceId, label: { [locale]: "" }, target: null }] };
+  });
+}
+
+export function updateRepairChoiceText(
+  content: RepairContent,
+  nodeId: string,
+  locale: string,
+  text: string,
+  index?: number
+): RepairContent {
+  return replaceChoiceExit(content, nodeId, (exit) => {
+    if (index === undefined) return { ...exit, prompt: { ...object(exit.prompt), [locale]: text } };
+    const choices = exit.choices as Record<string, unknown>[];
+    if (!choices[index]) throw Error("The selected choice is no longer available.");
+    return {
+      ...exit,
+      choices: choices.map((choice, i) =>
+        i === index ? { ...choice, label: { ...object(choice.label), [locale]: text } } : choice
+      ),
+    };
+  });
+}
+export function repairChoicePrompt(content: RepairContent, nodeId: string, locale: string): string {
+  const value = object(repairChoiceExit(content, nodeId)?.prompt)?.[locale];
+  return typeof value === "string" ? value : "";
+}

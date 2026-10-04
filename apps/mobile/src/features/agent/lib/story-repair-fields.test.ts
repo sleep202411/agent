@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
 import {
   repairBranches,
+  addRepairChoice,
+  updateRepairChoiceText,
+  repairChoicePrompt,
   repairTargets,
   replaceRepairTarget,
   replaceRepairEntry,
@@ -87,4 +90,23 @@ it("repairs the chapter entry without changing any nodes or accepting a foreign 
   expect(next.graph.nodes).toBe(content.graph.nodes);
   expect(content.graph.entryNodeId).toBe("clip:a");
   expect(() => replaceRepairEntry(content, "foreign")).toThrow();
+});
+it("adds a blank decision choice without changing existing branches or other locale labels", () => {
+  const next = addRepairChoice(content, "clip:a", "choice:new", "zh-CN");
+  expect(repairBranches(next, "clip:a", "zh-CN")).toHaveLength(2);
+  const labelled = updateRepairChoiceText(next, "clip:a", "zh-CN", "新选项", 1);
+  const prompted = updateRepairChoiceText(labelled, "clip:a", "zh-CN", "选择");
+  expect(repairChoicePrompt(prompted, "clip:a", "en-US")).toBe("Choose");
+  expect(repairChoicePrompt(prompted, "clip:a", "zh-CN")).toBe("选择");
+  expect(repairBranches(prompted, "clip:a", "zh-CN")[1].label).toBe("新选项");
+  expect(repairBranches(prompted, "clip:a", "en-US")[0].label).toBe("Go");
+  expect(content.graph.nodes[0].exit.choices).toHaveLength(1);
+});
+it("enforces the official six-choice limit and unique stable choice IDs", () => {
+  let next = content as Parameters<typeof addRepairChoice>[0];
+  for (let i = 1; i < 6; i++) next = addRepairChoice(next, "clip:a", `choice:${i}`, "en-US");
+  expect(() => addRepairChoice(next, "clip:a", "choice:overflow", "en-US")).toThrow();
+  expect(() => addRepairChoice(content, "clip:a", "c", "en-US")).toThrow();
+  expect(() => addRepairChoice(content, "clip:a", "bad id", "en-US")).toThrow();
+  expect(() => addRepairChoice(content, "clip:b", "choice:auto", "en-US")).toThrow();
 });

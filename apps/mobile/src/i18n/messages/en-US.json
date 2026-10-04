@@ -4873,5 +4873,8 @@
   "storyRepair.local": "Local repair",
   "storyRepair.remote": "Saved chapter",
   "storyRepair.entry": "Starting node",
-  "storyRepair.entryMissing": "Not set"
+  "storyRepair.entryMissing": "Not set",
+  "storyRepair.prompt": "Decision prompt",
+  "storyRepair.addChoice": "Add choice",
+  "storyRepair.choiceLabel": "Choice label"
 }

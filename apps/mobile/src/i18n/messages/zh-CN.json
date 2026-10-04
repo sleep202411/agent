@@ -4873,5 +4873,8 @@
   "storyRepair.local": "本地修复",
   "storyRepair.remote": "已保存章节",
   "storyRepair.entry": "起始节点",
-  "storyRepair.entryMissing": "未设置"
+  "storyRepair.entryMissing": "未设置",
+  "storyRepair.prompt": "选择提示",
+  "storyRepair.addChoice": "添加选项",
+  "storyRepair.choiceLabel": "选项文字"
 }

@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { uuid } from "expo-modules-core";
 import { ThemedText } from "@/components/themed-text";
@@ -17,6 +25,10 @@ import {
 import type { StoryPublicationDiagnostic } from "../api/story-publication-errors";
 import {
   repairBranches,
+  repairChoiceExit,
+  repairChoicePrompt,
+  addRepairChoice,
+  updateRepairChoiceText,
   repairTargets,
   replaceRepairTarget,
   replaceRepairEntry,
@@ -253,6 +265,43 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 <ThemedText type="smallBold">
                   {typeof node.name === "string" ? node.name : node.nodeId}
                 </ThemedText>
+                {repairChoiceExit(content, selected) ? (
+                  <>
+                    <ThemedText type="small">{t("storyRepair.prompt")}</ThemedText>
+                    <TextInput
+                      accessibilityLabel={t("storyRepair.prompt")}
+                      value={repairChoicePrompt(content, selected, locale)}
+                      editable={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+                      onChangeText={(text) =>
+                        edit((value) => updateRepairChoiceText(value, selected, locale, text))
+                      }
+                      style={{
+                        color: theme.text,
+                        minHeight: 44,
+                        borderColor: theme.border,
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        padding: 10,
+                      }}
+                    />
+                    <RepairAction
+                      label={t("storyRepair.addChoice")}
+                      disabled={
+                        !loaded.canEdit ||
+                        busy ||
+                        uncertain ||
+                        conflict ||
+                        showSaved ||
+                        repairBranches(content, selected, locale).length >= 6
+                      }
+                      onPress={() =>
+                        edit((value) =>
+                          addRepairChoice(value, selected, `choice:${uuid.v4()}`, locale)
+                        )
+                      }
+                    />
+                  </>
+                ) : null}
                 {repairBranches(content, selected, locale).map((branch) => (
                   <View
                     key={branch.index}
@@ -265,9 +314,30 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                     }}
                   >
                     <ThemedText type="smallBold">
-                      {branch.label ||
-                        t("storyRepair.branch").replace("{number}", String(branch.index + 1))}
+                      {t("storyRepair.branch").replace("{number}", String(branch.index + 1))}
                     </ThemedText>
+                    {repairChoiceExit(content, selected) ? (
+                      <TextInput
+                        accessibilityLabel={`${t("storyRepair.choiceLabel")} ${branch.index + 1}`}
+                        value={branch.label ?? ""}
+                        placeholder={t("storyRepair.choiceLabel")}
+                        placeholderTextColor={theme.textSecondary}
+                        editable={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+                        onChangeText={(text) =>
+                          edit((value) =>
+                            updateRepairChoiceText(value, selected, locale, text, branch.index)
+                          )
+                        }
+                        style={{
+                          color: theme.text,
+                          minHeight: 44,
+                          borderColor: theme.border,
+                          borderWidth: 1,
+                          borderRadius: 8,
+                          padding: 10,
+                        }}
+                      />
+                    ) : null}
                     {repairTargets(content, locale).map((target) => {
                       const checked = sameRepairTarget(branch.target, target.value);
                       return (
@@ -296,7 +366,8 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                     })}
                   </View>
                 ))}
-                {!repairBranches(content, selected, locale).length ? (
+                {!repairChoiceExit(content, selected) &&
+                !repairBranches(content, selected, locale).length ? (
                   <ThemedText>{t("storyRepair.noBranches")}</ThemedText>
                 ) : null}
               </>
