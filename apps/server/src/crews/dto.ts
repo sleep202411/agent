@@ -314,6 +314,24 @@ export const ListPublicPositionsQuerySchema = z
     q: z.string().trim().min(1).max(120).optional(),
     crewId: z.string().trim().min(1).max(100).optional(),
     skill: z.string().trim().min(1).max(80).optional(),
+    skills: z
+      .string()
+      .max(2000)
+      .transform((value, ctx) => {
+        try {
+          return z
+            .array(z.string().trim().min(1).max(80))
+            .max(20)
+            .parse(JSON.parse(value));
+        } catch {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'skills must be a JSON array of up to 20 skill names',
+          });
+          return z.NEVER;
+        }
+      })
+      .optional(),
     limit: z.coerce.number().int().min(1).max(60).default(36),
     cursor: z
       .string()

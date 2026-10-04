@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   IconPlus,
+  IconBolt,
   IconDeviceTv,
   IconRefresh,
   IconSearch,
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
+import { CommunityVideoDialog } from "./community-video-dialog";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
 import type {
   IpCommerceAsset,
@@ -39,6 +41,8 @@ const PAGE_SIZE = 20;
 
 export function IpPlazaClient() {
   const t = useTranslations("ip");
+  const videoT = useTranslations("communityVideo");
+  const [videoOpen, setVideoOpen] = useState(false);
   const commonT = useTranslations("common");
   const tvT = useTranslations("tv");
   const gpsT = useTranslations("contentGpsDiscovery");
@@ -373,15 +377,26 @@ export function IpPlazaClient() {
           <IconDeviceTv className="size-4" />
           {tvT("openTv")}
         </Link>
-        <Button
-          onClick={() => setCreateOpen(true)}
-          className="h-11 justify-center gap-2 rounded-2xl px-5 text-sm font-semibold shadow-lg shadow-black/40"
-        >
-          <IconPlus className="size-4" />
-          {t("createIP")}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="h-11 justify-center gap-2 rounded-2xl px-5 text-sm font-semibold shadow-lg shadow-black/40"
+          >
+            <IconBolt className="size-4" />
+            {t("createIP")}
+          </Button>
+          <Button
+            className="size-11 rounded-2xl"
+            aria-label={videoT("title")}
+            title={videoT("title")}
+            onClick={() => setVideoOpen(true)}
+          >
+            <IconPlus className="size-5" />
+          </Button>
+        </div>
       </div>
 
+      <CommunityVideoDialog open={videoOpen} onOpenChange={setVideoOpen} />
       <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );

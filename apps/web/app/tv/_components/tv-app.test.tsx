@@ -8,6 +8,9 @@ import type { IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { TvApp } from "./tv-app";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.mock("@/app/(site)/ips/_components/community-video-dialog", () => ({
+  CommunityVideoDialog: () => null,
+}));
 vi.mock("@/app/(site)/ip-studio/_components/new-ip-create-form", () => ({
   NewIpCreateDialog: () => null,
 }));

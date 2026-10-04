@@ -2095,7 +2095,8 @@
     "importIssuesTitle": "Draft not ready",
     "importClearSelection": "Clear selection",
     "messagesOffersTab": "Recruitment Inbox",
-    "taskDashboardTab": "Task Dashboard"
+    "taskDashboardTab": "Task Dashboard",
+    "filterCapabilities": "Creator capabilities"
   },
   "crewRoles": {
     "director": "Director",
@@ -11506,5 +11507,32 @@
       "actioned": "Action taken",
       "dismissed": "Closed without action"
     }
+  },
+  "communityVideo": {
+    "title": "Submit video",
+    "description": "Upload a video for review by a Community channel.",
+    "video": "Video",
+    "name": "Video title",
+    "intro": "Video description",
+    "channel": "Community channel",
+    "search": "Search Community channels",
+    "selected": "Selected: {{name}}",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "empty": "No Community channels found.",
+    "more": "Load more",
+    "uploading": "Uploading · {{progress}}%",
+    "submit": "Submit for review",
+    "success": "Your video was submitted for channel review.",
+    "failed": "Video submission failed.",
+    "videos": "Community videos",
+    "moderation": "Awaiting platform media review.",
+    "pending": "Pending review",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "approve": "Approve",
+    "reject": "Reject",
+    "closed": "This channel is not accepting submissions.",
+    "signIn": "Sign in to submit a video"
   }
 }

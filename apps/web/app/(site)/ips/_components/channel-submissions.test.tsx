@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ChannelSubmissions } from "./channel-submissions";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.mock("./channel-videos", () => ({ ChannelVideos: () => null }));
 const h = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),

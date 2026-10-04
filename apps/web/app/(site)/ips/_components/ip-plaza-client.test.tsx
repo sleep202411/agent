@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { IpPlazaClient } from "./ip-plaza-client";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.mock("./community-video-dialog", () => ({ CommunityVideoDialog: () => null }));
 const state = vi.hoisted(() => ({
   failed: false,
   nextFailed: false,
