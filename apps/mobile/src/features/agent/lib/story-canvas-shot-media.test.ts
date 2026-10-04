@@ -270,3 +270,89 @@ it("merges binding with concurrent dialogue while exact replay stays idempotent"
     doc.destroy();
   }
 });
+it("backfills a completed pending clip on the same reserved edge", () => {
+  const { doc, state } = fixture("video", {});
+  try {
+    const pending = editCanvasShotMedia(state(), {
+      action: "attach",
+      nodeId: "shot",
+      sourceId: "source",
+      edgeId,
+    });
+    Y.applyUpdate(
+      doc,
+      Uint8Array.from(atob(pending.yjsUpdateBase64!), (c) => c.charCodeAt(0))
+    );
+    const source = doc.getMap("nodes").get("source") as Y.Map<unknown>;
+    (source.get("data") as Y.Map<unknown>).set("generation", {
+      outputs: [{ url: "https://example.test/done", assetId: "new" }],
+    });
+    const refreshed = editCanvasShotMedia(state(), { action: "refresh", nodeId: "shot", edgeId });
+    expect(refreshed.snapshot.edges).toEqual(pending.snapshot.edges);
+    expect(refreshed.snapshot.nodes.shot).toHaveProperty("data.references.clip", [
+      expect.objectContaining({ edgeId, url: "https://example.test/done", assetId: "new" }),
+    ]);
+    expect(
+      editCanvasShotMedia(refreshed.state, { action: "refresh", nodeId: "shot", edgeId })
+        .yjsUpdateBase64
+    ).toBeNull();
+  } finally {
+    doc.destroy();
+  }
+});
+it("refreshes a bound URL while preserving metadata and preferred-frame identity", () => {
+  const { doc, state } = fixture();
+  try {
+    const attached = editCanvasShotMedia(state(), {
+      action: "attach",
+      nodeId: "shot",
+      sourceId: "source",
+      edgeId,
+    });
+    Y.applyUpdate(
+      doc,
+      Uint8Array.from(atob(attached.yjsUpdateBase64!), (c) => c.charCodeAt(0))
+    );
+    const source = doc.getMap("nodes").get("source") as Y.Map<unknown>;
+    (source.get("data") as Y.Map<unknown>).set("src", "https://example.test/new");
+    (source.get("data") as Y.Map<unknown>).set("mediaAssetId", "different");
+    const preferred = editCanvasShotMedia(state(), { action: "prefer", nodeId: "shot", edgeId });
+    const refreshed = editCanvasShotMedia(preferred.state, {
+      action: "refresh",
+      nodeId: "shot",
+      edgeId,
+    });
+    expect(refreshed.snapshot.nodes.shot).toHaveProperty("data.preferredFrameEdgeId", edgeId);
+    expect(refreshed.snapshot.nodes.shot).toHaveProperty("data.references.frame", [
+      { url: "manual", name: "Manual" },
+      expect.objectContaining({
+        edgeId,
+        url: "https://example.test/new",
+        assetId: "asset",
+        name: "Still",
+      }),
+    ]);
+  } finally {
+    doc.destroy();
+  }
+});
+it("leaves unresolved sources pending and rejects a removed refresh edge", () => {
+  const { doc, state } = fixture("video", {});
+  try {
+    const pending = editCanvasShotMedia(state(), {
+      action: "attach",
+      nodeId: "shot",
+      sourceId: "source",
+      edgeId,
+    });
+    expect(
+      editCanvasShotMedia(pending.state, { action: "refresh", nodeId: "shot", edgeId })
+        .yjsUpdateBase64
+    ).toBeNull();
+    expect(() =>
+      editCanvasShotMedia(state(), { action: "refresh", nodeId: "shot", edgeId })
+    ).toThrow("connection changed");
+  } finally {
+    doc.destroy();
+  }
+});

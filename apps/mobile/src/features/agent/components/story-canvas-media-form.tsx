@@ -389,6 +389,12 @@ function CanvasMediaRow({
       {canEdit &&
         (attached ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+            {item.edgeId && item.needsRefresh && (
+              <MediaAction
+                label={t("storyCanvas.media.refresh")}
+                onPress={() => onChoose({ action: "refresh", nodeId, edgeId: item.edgeId! })}
+              />
+            )}
             {item.edgeId && item.kind === "image" && !item.pending && !item.preferred && (
               <MediaAction
                 label={t("storyCanvas.media.prefer")}

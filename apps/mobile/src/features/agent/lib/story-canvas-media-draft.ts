@@ -37,9 +37,15 @@ export function canvasMediaBaseline(snapshot: CanvasSnapshot, raw: CanvasShotMed
       preferred: target.data.preferredFrameEdgeId ?? null,
     };
   } else {
+    const sourceId =
+      edit.action === "attach"
+        ? edit.sourceId
+        : z
+            .object({ source: z.string(), target: z.literal(edit.nodeId) })
+            .parse(snapshot.edges[edit.edgeId]).source;
     const source = z
-      .object({ id: z.literal(edit.sourceId), type: z.string(), data: z.record(z.unknown()) })
-      .parse(snapshot.nodes[edit.sourceId]);
+      .object({ id: z.literal(sourceId), type: z.string(), data: z.record(z.unknown()) })
+      .parse(snapshot.nodes[sourceId]);
     const sourceKeys = [
       "src",
       "mediaAssetId",

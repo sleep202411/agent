@@ -5208,5 +5208,6 @@
   "storyCanvas.media.unavailable": "Preview unavailable",
   "storyCanvas.media.full": "This shot’s media slot is full.",
   "storyCanvas.media.resume": "Resume media change",
-  "storyCanvas.media.automatic": "Use the first frame automatically"
+  "storyCanvas.media.automatic": "Use the first frame automatically",
+  "storyCanvas.media.refresh": "Refresh media connection"
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const identity = { nodeId: z.string().min(1), edgeId: z.string().min(1) };
 export const canvasShotMediaSchema = z.discriminatedUnion("action", [
+  z.object({ ...identity, action: z.literal("refresh") }).strict(),
   z
     .object({
       ...identity,

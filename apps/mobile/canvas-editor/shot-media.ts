@@ -71,16 +71,34 @@ export function editCanvasShotMedia(state: string, raw: CanvasShotMedia) {
       );
       if (target.data.get("preferredFrameEdgeId") === command.edgeId) changePreferred = true;
     } else {
-      if (command.sourceId === command.nodeId) throw Error("A node cannot connect to itself.");
-      if (edges.has(command.edgeId)) throw Error("Canvas connection ID already exists.");
-      const source = nodeData(nodes, command.sourceId);
+      const existingEdge = command.action === "refresh" ? edges.get(command.edgeId) : undefined;
+      if (
+        command.action === "refresh" &&
+        (!(existingEdge instanceof Y.Map) ||
+          existingEdge.get("id") !== command.edgeId ||
+          existingEdge.get("target") !== command.nodeId ||
+          typeof existingEdge.get("source") !== "string")
+      )
+        throw Error("The shot connection changed. Reload the document.");
+      const sourceId =
+        command.action === "attach"
+          ? command.sourceId
+          : ((existingEdge as Y.Map<unknown>).get("source") as string);
+      if (sourceId === command.nodeId) throw Error("A node cannot connect to itself.");
+      if (command.action === "attach" && edges.has(command.edgeId))
+        throw Error("Canvas connection ID already exists.");
+      const source = nodeData(nodes, sourceId);
       const kind = outputKind(source.type);
       if (!kind || kind === "audio")
         throw Error("A shot accepts image and video connections only.");
       const field = kind === "image" ? "frame" : "clip",
         limit = kind === "image" ? 24 : 1;
       const allRefs = Object.values(refs).flat();
-      if (allRefs.some((ref) => ref.sourceNodeId === command.sourceId))
+      const boundField =
+        command.action === "refresh"
+          ? Object.keys(refs).find((key) => refs[key].some((ref) => ref.edgeId === command.edgeId))
+          : undefined;
+      if (allRefs.some((ref) => ref.sourceNodeId === sourceId && ref.edgeId !== command.edgeId))
         throw Error("This source is already connected to the shot.");
       const bound = new Set(allRefs.flatMap((ref) => (ref.edgeId ? [ref.edgeId] : [])));
       let reserved = 0;
@@ -93,35 +111,48 @@ export function editCanvasShotMedia(state: string, raw: CanvasShotMedia) {
         )
           throw Error("Canvas connection data is invalid.");
         if (edge.get("target") !== command.nodeId) continue;
-        if (edge.get("source") === command.sourceId)
+        if (id !== command.edgeId && edge.get("source") === sourceId)
           throw Error("This source is already connected to the shot.");
         const pendingSource = nodes.get(edge.get("source") as string);
         if (
+          id !== command.edgeId &&
           !bound.has(id) &&
           pendingSource instanceof Y.Map &&
           outputKind(pendingSource.get("type")) === kind
         )
           reserved++;
       }
-      if ((refs[field]?.length ?? 0) + reserved >= limit)
+      if (
+        !boundField &&
+        (refs[field]?.filter((ref) => ref.edgeId !== command.edgeId).length ?? 0) + reserved >=
+          limit
+      )
         throw Error(`This shot accepts at most ${limit} ${kind} references.`);
-      newEdge = {
-        id: command.edgeId,
-        source: command.sourceId,
-        target: command.nodeId,
-        sourceHandle: "output",
-        targetHandle: "input",
-      };
+      if (command.action === "attach")
+        newEdge = {
+          id: command.edgeId,
+          source: sourceId,
+          target: command.nodeId,
+          sourceHandle: "output",
+          targetHandle: "input",
+        };
       const generated = generationTypes.has(String(source.type));
       const data = source.data.toJSON();
       const output = generated ? data.generation?.outputs?.[0] : data;
       const url = generated ? output?.url : output?.src;
       if (url != null && typeof url !== "string") throw Error("Canvas source URL is invalid.");
-      if (url && !url.startsWith("blob:")) {
+      if (url && !url.startsWith("blob:") && boundField) {
+        nextRefs = {
+          ...refs,
+          [boundField]: refs[boundField].map((ref) =>
+            ref.edgeId === command.edgeId ? { ...ref, url } : ref
+          ),
+        };
+      } else if (url && !url.startsWith("blob:")) {
         const reference: Record<string, unknown> = {
           id: command.edgeId,
           edgeId: command.edgeId,
-          sourceNodeId: command.sourceId,
+          sourceNodeId: sourceId,
           url,
           kind,
         };

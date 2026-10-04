@@ -73,3 +73,18 @@ it("refuses missing or non-shot targets", () => {
   expect(() => canvasMediaView(fixture(), "missing")).toThrow();
   expect(() => canvasMediaView(fixture(), "image")).toThrow("unavailable");
 });
+it("previews completed unbound sources and identifies stale bound URLs", () => {
+  const snapshot = fixture();
+  snapshot.edges.completed = { id: "completed", source: "another", target: "shot" };
+  snapshot.nodes.image.data.src = "https://example.test/replacement";
+  const view = canvasMediaView(snapshot, "shot");
+  expect(view.attached.find((item) => item.edgeId === "completed")).toMatchObject({
+    pending: true,
+    needsRefresh: true,
+    url: "https://example.test/video",
+  });
+  expect(view.attached.find((item) => item.edgeId === "bound")).toMatchObject({
+    needsRefresh: true,
+    url: "https://example.test/frame",
+  });
+});

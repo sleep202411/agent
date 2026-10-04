@@ -17,6 +17,7 @@ export type CanvasMediaItem = {
   url?: string;
   preferred?: boolean;
   pending?: boolean;
+  needsRefresh?: boolean;
 };
 function mediaUrl(value: unknown) {
   if (typeof value !== "string") return undefined;
@@ -70,6 +71,10 @@ export function canvasMediaView(snapshot: CanvasSnapshot, nodeId: string) {
               sourceId ??
               String(index + 1)),
         url: mediaUrl(ref.url),
+        needsRefresh:
+          !!edgeId &&
+          !!sources.find((source) => source.sourceId === sourceId)?.url &&
+          sources.find((source) => source.sourceId === sourceId)?.url !== mediaUrl(ref.url),
         preferred: field === "frame" && !!edgeId && shot.data.preferredFrameEdgeId === edgeId,
       };
     })
@@ -79,7 +84,15 @@ export function canvasMediaView(snapshot: CanvasSnapshot, nodeId: string) {
     const edge = z.object({ id: z.literal(id), source: z.string(), target: z.string() }).parse(raw);
     if (edge.target !== nodeId || bound.has(id)) continue;
     const source = sources.find((item) => item.sourceId === edge.source);
-    if (source) attached.push({ ...source, key: id, edgeId: id, url: undefined, pending: true });
+    if (source)
+      attached.push({
+        ...source,
+        key: id,
+        edgeId: id,
+        url: source.url,
+        pending: true,
+        needsRefresh: !!source.url,
+      });
   }
   const connected = new Set(attached.map((item) => item.sourceId));
   const frames = attached.filter((item) => item.kind === "image");
