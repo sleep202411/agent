@@ -1,0 +1,54 @@
+import { z } from "zod";
+import { canvasHostMessage, type CanvasRuntimeMessage } from "./protocol";
+import { materializeCanvas } from "./state";
+
+const { sessionId } = z
+  .object({ sessionId: z.string().uuid() })
+  .parse(JSON.parse(document.querySelector("[data-initial]")!.textContent!));
+const host = window as typeof window & {
+  ReactNativeWebView?: { postMessage(raw: string): void };
+  __fizzCanvasReceive?: (raw: string) => void;
+};
+const send = (message: CanvasRuntimeMessage) => {
+  const raw = JSON.stringify(message);
+  if (host.ReactNativeWebView) host.ReactNativeWebView.postMessage(raw);
+  else parent.postMessage(raw, "*");
+};
+let lastRequest = 0;
+function receive(raw: unknown) {
+  if (typeof raw !== "string") return;
+  let parsed;
+  try {
+    parsed = canvasHostMessage.safeParse(JSON.parse(raw));
+  } catch {
+    return;
+  }
+  if (
+    !parsed.success ||
+    parsed.data.sessionId !== sessionId ||
+    parsed.data.requestId <= lastRequest
+  )
+    return;
+  const message = parsed.data;
+  lastRequest = message.requestId;
+  const identity = {
+    sessionId,
+    requestId: message.requestId,
+    documentId: message.documentId,
+    sequence: message.sequence,
+  };
+  try {
+    send({ type: "loaded", ...identity, ...materializeCanvas(message.snapshot, message.updates) });
+  } catch (error) {
+    send({
+      type: "error",
+      ...identity,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+host.__fizzCanvasReceive = receive;
+window.addEventListener("message", (event) => {
+  if (event.source === parent) receive(event.data);
+});
+send({ type: "ready", sessionId });
