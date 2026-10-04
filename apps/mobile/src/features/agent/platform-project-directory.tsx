@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useIsFocused } from "expo-router";
 import {
   ActivityIndicator,
   BackHandler,
@@ -42,7 +43,8 @@ export function PlatformProjectDirectory(props: Props) {
 function Session({ workspace, generation, onClose }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
-    active = useScreenActive();
+    active = useScreenActive(),
+    focused = useIsFocused();
   const [revision, setRevision] = useState(0);
   const [collaboration, setCollaboration] = useState<{
     project: PlatformProject;
@@ -64,7 +66,8 @@ function Session({ workspace, generation, onClose }: Props) {
   const [uncertainAt, setUncertainAt] = useState<number>();
   const lock = useRef(false),
     alive = useRef(true),
-    pending = useRef<AbortController | null>(null);
+    pending = useRef<AbortController | null>(null),
+    coverPending = useRef<AbortController | null>(null);
   const current = () => alive.current && generation === getAuthGeneration();
   if (!active && detailReview) setDetailReview(undefined);
   useEffect(() => {
@@ -72,8 +75,12 @@ function Session({ workspace, generation, onClose }: Props) {
     return () => {
       alive.current = false;
       pending.current?.abort();
+      coverPending.current?.abort();
     };
   }, []);
+  useEffect(() => {
+    if (!focused) coverPending.current?.abort();
+  }, [focused]);
   useEffect(() => {
     if (!active) pending.current?.abort();
   }, [active]);
@@ -184,7 +191,8 @@ function Session({ workspace, generation, onClose }: Props) {
     setBusy(true);
     setError(undefined);
     const c = new AbortController();
-    pending.current = c;
+    if (action === "upload") coverPending.current = c;
+    else pending.current = c;
     try {
       if (action === "refresh") {
         setDetailReview(undefined);
@@ -201,7 +209,7 @@ function Session({ workspace, generation, onClose }: Props) {
           action === "remove"
             ? null
             : await uploadPlatformProjectCover(form.project, generation, c.signal);
-        if (action === "upload" && !assetId) return;
+        if (!current() || c.signal.aborted || (action === "upload" && !assetId)) return;
         const project = await updatePlatformProjectCover(
           form.project,
           assetId,

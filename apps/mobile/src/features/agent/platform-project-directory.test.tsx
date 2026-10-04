@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   read: vi.fn(),
   generation: 1,
   active: true,
+  focused: true,
   list: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -64,6 +65,7 @@ vi.mock("./studio-invites", () => ({
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s, getLocale: () => "en-US" }));
@@ -146,6 +148,7 @@ const input = (index: number, value: string) =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   h.list.mockResolvedValue([row]);
   h.create.mockResolvedValue(row);
@@ -371,3 +374,51 @@ it("keeps accepted refreshed metadata and permissions when reopening details", a
   expect(button("studioProjects.uploadCover")).toBeUndefined();
   expect(h.update).not.toHaveBeenCalled();
 });
+
+it("keeps pending cover selection through background without losing metadata", async () => {
+  let finish!: (id: string) => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      })
+  );
+  h.cover.mockResolvedValue({ ...row, version: row.version + 1, coverAssetId: id });
+  await render();
+  await click("studioProjects.details");
+  await input(0, "Unfinished title");
+  await click("studioProjects.uploadCover");
+  const signal = h.upload.mock.calls[0][2] as AbortSignal;
+  h.active = false;
+  await render();
+  expect(signal.aborted).toBe(false);
+  h.active = true;
+  await render();
+  await act(async () => finish(id));
+  expect(h.cover).toHaveBeenCalledTimes(1);
+  expect(host.querySelectorAll("input")[0].value).toBe("Unfinished title");
+  expect(h.update).not.toHaveBeenCalled();
+});
+it.each(["navigation", "account"])(
+  "rejects a late cover selection after %s changes",
+  async (reason) => {
+    let finish!: (id: string) => void;
+    h.upload.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        })
+    );
+    await render();
+    await click("studioProjects.details");
+    await click("studioProjects.uploadCover");
+    const signal = h.upload.mock.calls[0][2] as AbortSignal;
+    h.active = false;
+    if (reason === "navigation") h.focused = false;
+    else h.generation = 2;
+    await render();
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish(id));
+    expect(h.cover).not.toHaveBeenCalled();
+  }
+);
