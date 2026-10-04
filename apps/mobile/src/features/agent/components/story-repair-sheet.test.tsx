@@ -391,3 +391,5 @@ it("requires confirmation to remove a node and persists deletion before server s
   expect(command.input.content.graph).toEqual({ entryNodeId: null, nodes: [] });
   expect(h.save).not.toHaveBeenCalled();
 });
+
+vi.mock("./story-hotspot-placement", () => ({ StoryHotspotPlacement: () => null }));

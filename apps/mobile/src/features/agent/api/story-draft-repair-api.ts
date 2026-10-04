@@ -67,6 +67,7 @@ export async function loadStoryRepairDraft(scope: StoryRepairScope, signal: Abor
       project: z.object({
         id,
         defaultLocale: z.string().trim().min(1),
+        frameProfile: z.enum(["landscape_16_9", "portrait_9_16"]).optional(),
         capabilities: z.array(z.string()),
       }),
       chapter: z.object({ id }),
@@ -88,6 +89,7 @@ export async function loadStoryRepairDraft(scope: StoryRepairScope, signal: Abor
   return {
     draft: parseDraft(scope, response.draft),
     defaultLocale: response.project.defaultLocale,
+    frameProfile: response.project.frameProfile,
     canEdit: response.project.capabilities.includes("story.edit"),
     canGenerate: response.project.capabilities.includes("story.generate"),
   };

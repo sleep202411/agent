@@ -5000,5 +5000,14 @@
   "storyHotspot.seekMs": "跳转时间（毫秒）",
   "storyHotspot.remove": "移除热点",
   "storyHotspot.removeHelp": "移除此热点及其结果？应用并保存后生效。",
-  "storyHotspot.apply": "应用交互"
+  "storyHotspot.apply": "应用交互",
+  "storyHotspot.placement": "放置热点",
+  "storyHotspot.noFootage": "此场景尚无选定视频。可以先在项目画面中放置热点，之后再对照视频检查。",
+  "storyHotspot.noFrame": "项目画面比例不可用。请重新加载章节以可视化放置热点。",
+  "storyHotspot.draw": "绘制",
+  "storyHotspot.move": "移动",
+  "storyHotspot.resize": "调整大小",
+  "storyHotspot.placeHelp": "在画面上拖动可绘制、移动或调整当前热点。下方数值字段可用于精确调整。",
+  "storyHotspot.play": "播放",
+  "storyHotspot.previewTime": "预览位置（毫秒）"
 }

@@ -64,6 +64,7 @@ const render = (canEdit = true) =>
   act(async () =>
     root.render(
       <StoryRepairInteractionsEditor
+        scope={{ projectId: "project", chapterId: "chapter", generation: 1 }}
         content={content}
         nodeId="a"
         defaultLocale="en-US"
@@ -111,3 +112,5 @@ it("requires confirmation before removing a hotspot", async () => {
   expect(JSON.parse(h.raw!).rows).toEqual([]);
   expect(h.apply).not.toHaveBeenCalled();
 });
+
+vi.mock("./story-hotspot-placement", () => ({ StoryHotspotPlacement: () => null }));

@@ -5000,5 +5000,14 @@
   "storyHotspot.seekMs": "Seek time (ms)",
   "storyHotspot.remove": "Remove hotspot",
   "storyHotspot.removeHelp": "Remove this hotspot and its outcomes? Apply and save to keep this change.",
-  "storyHotspot.apply": "Apply interactions"
+  "storyHotspot.apply": "Apply interactions",
+  "storyHotspot.placement": "Place hotspot",
+  "storyHotspot.noFootage": "This scene has no selected video yet. You can place the hotspot in the project frame and check it against footage later.",
+  "storyHotspot.noFrame": "The project frame profile is unavailable. Reload the chapter to place hotspots visually.",
+  "storyHotspot.draw": "Draw",
+  "storyHotspot.move": "Move",
+  "storyHotspot.resize": "Resize",
+  "storyHotspot.placeHelp": "Drag on the frame to draw, move or resize the selected hotspot. Numeric fields below remain available for precision.",
+  "storyHotspot.play": "Play",
+  "storyHotspot.previewTime": "Preview position (ms)"
 }

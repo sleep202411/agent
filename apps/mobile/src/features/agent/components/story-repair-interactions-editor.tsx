@@ -15,11 +15,15 @@ import {
   type RepairInteraction,
 } from "../lib/story-repair-interactions";
 import { StoryRepairEffectsEditor } from "./story-repair-effects-editor";
+import { StoryHotspotPlacement } from "./story-hotspot-placement";
+import type { TimelineScope } from "../api/story-timeline-api";
 const draftSchema = z.object({ base: z.string(), rows: z.array(z.record(z.unknown())).max(100) });
 type Draft = z.infer<typeof draftSchema>;
 const obj = (v: unknown): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 export function StoryRepairInteractionsEditor({
+  scope,
+  frameProfile,
   content,
   nodeId,
   defaultLocale,
@@ -30,6 +34,8 @@ export function StoryRepairInteractionsEditor({
   onApply,
   onClose,
 }: {
+  scope: TimelineScope;
+  frameProfile?: "landscape_16_9" | "portrait_9_16";
   content: RepairContent;
   nodeId: string;
   defaultLocale: string;
@@ -205,6 +211,15 @@ export function StoryRepairInteractionsEditor({
             : null}
           {current ? (
             <>
+              <StoryHotspotPlacement
+                scope={scope}
+                nodeId={nodeId}
+                frameProfile={frameProfile}
+                value={current.rect}
+                disabled={disabled}
+                suspended={!!effectOutcome}
+                onChange={(rect) => update({ rect })}
+              />
               {[...new Set([defaultLocale, locale])].map((lang) => (
                 <View key={lang}>
                   {field(

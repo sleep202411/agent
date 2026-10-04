@@ -104,6 +104,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     canEdit: boolean;
     canGenerate?: boolean;
     defaultLocale: string;
+    frameProfile?: "landscape_16_9" | "portrait_9_16";
   }>();
   const [command, setCommand] = useState<StoryRepairCommand>();
   const [showSaved, setShowSaved] = useState(false);
@@ -219,6 +220,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
         canEdit: true,
         canGenerate: loaded.canGenerate,
         defaultLocale: loaded.defaultLocale,
+        frameProfile: loaded.frameProfile,
       });
       setError(undefined);
       onSaved();
@@ -988,6 +990,8 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
       {interactionNode && content && loaded ? (
         <StoryRepairInteractionsEditor
           key={interactionNode}
+          scope={scope}
+          frameProfile={loaded.frameProfile}
           content={content}
           nodeId={interactionNode}
           defaultLocale={loaded.defaultLocale}

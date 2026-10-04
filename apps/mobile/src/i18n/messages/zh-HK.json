@@ -5000,5 +5000,14 @@
   "storyHotspot.seekMs": "跳轉時間（毫秒）",
   "storyHotspot.remove": "移除熱點",
   "storyHotspot.removeHelp": "移除此熱點及其結果？套用並儲存後生效。",
-  "storyHotspot.apply": "套用互動"
+  "storyHotspot.apply": "套用互動",
+  "storyHotspot.placement": "放置熱點",
+  "storyHotspot.noFootage": "此場景尚無選定影片。可以先在專案畫面中放置熱點，之後再對照影片檢查。",
+  "storyHotspot.noFrame": "專案畫面比例無法使用。請重新載入章節以視覺化放置熱點。",
+  "storyHotspot.draw": "繪製",
+  "storyHotspot.move": "移動",
+  "storyHotspot.resize": "調整大小",
+  "storyHotspot.placeHelp": "在畫面上拖曳可繪製、移動或調整目前熱點。下方數值欄位可用於精確調整。",
+  "storyHotspot.play": "播放",
+  "storyHotspot.previewTime": "預覽位置（毫秒）"
 }
