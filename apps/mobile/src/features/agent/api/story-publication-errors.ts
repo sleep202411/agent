@@ -1,3 +1,5 @@
+import { StoryProductionStableKeySchema } from "@repo/shared";
+
 export type StoryPublicationErrorKind = "auth" | "permission" | "service";
 
 /** Gateway failures describe the upstream service, never the reader's project role. */
@@ -61,17 +63,23 @@ export function storyPublicationDiagnostics(error: unknown): StoryPublicationDia
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.chapterId)
       ? record.chapterId
       : null;
-  const issues = Array.isArray(record.diagnostics)
-    ? record.diagnostics.flatMap((item): StoryPublicationDiagnostic[] => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-        const entry = item as Record<string, unknown>;
-        const message = typeof entry.message === "string" ? entry.message.trim() : "";
-        if (!message) return [];
-        const nodeId =
-          typeof entry.nodeId === "string" && entry.nodeId.includes(":") ? entry.nodeId : null;
-        return [{ message, nodeId }];
-      })
-    : [];
+  const entries = [
+    ...(Array.isArray(record.diagnostics) ? record.diagnostics : []),
+    ...(Array.isArray(record.issues) ? record.issues : []),
+  ];
+  const issues = entries.flatMap((item): StoryPublicationDiagnostic[] => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const entry = item as Record<string, unknown>;
+    const message = typeof entry.message === "string" ? entry.message.trim() : "";
+    if (!message) return [];
+    const nodeId =
+      typeof entry.nodeId === "string" &&
+      entry.nodeId === entry.nodeId.trim() &&
+      StoryProductionStableKeySchema.safeParse(entry.nodeId).success
+        ? entry.nodeId
+        : null;
+    return [{ message, nodeId }];
+  });
   return { chapterId, issues };
 }
 

@@ -56,6 +56,54 @@ describe("release diagnostics", () => {
     });
     expect(storyPublicationActionDetail(error, "Fallback")).toBe("First problem\n\nSecond problem");
   });
+  it("preserves build preflight issues without guessing chapter or node from array paths", () => {
+    const error = Object.assign(
+      new Error("Complete and connect the saved story before building it."),
+      {
+        responseBody: JSON.stringify({
+          code: "STORY_BUILD_DRAFT_NOT_BUILDABLE",
+          issues: [
+            { code: "custom", path: ["graph", "nodes", 0, "next"], message: "Connect this scene." },
+            { code: "custom", path: ["graph", "entryNodeId"], message: "Select an opening scene." },
+            null,
+            { message: " " },
+          ],
+        }),
+      }
+    );
+    expect(storyPublicationDiagnostics(error)).toEqual({
+      chapterId: null,
+      issues: [
+        { message: "Connect this scene.", nodeId: null },
+        { message: "Select an opening scene.", nodeId: null },
+      ],
+    });
+    expect(storyPublicationActionDetail(error, "Fallback")).toBe(
+      "Complete and connect the saved story before building it.\n\nConnect this scene.\n\nSelect an opening scene."
+    );
+  });
+  it.each(["clip:one", "scene.opening", "city-gate"])(
+    "accepts official stable node key %s",
+    (nodeId) => {
+      expect(
+        storyPublicationDiagnostics({
+          responseBody: JSON.stringify({
+            chapterId,
+            diagnostics: [{ message: "Repair scene", nodeId }],
+          }),
+        })
+      ).toEqual({ chapterId, issues: [{ message: "Repair scene", nodeId }] });
+    }
+  );
+  it("combines both official detail arrays and deduplicates displayed messages", () => {
+    const error = Object.assign(new Error("Repair"), {
+      responseBody: JSON.stringify({
+        diagnostics: [{ message: "Repair" }],
+        issues: [{ message: "Repair" }, { message: "Missing target" }],
+      }),
+    });
+    expect(storyPublicationActionDetail(error, "Fallback")).toBe("Repair\n\nMissing target");
+  });
   it.each([undefined, null, "not JSON", "null", "[]", "1"])(
     "keeps the backend message when diagnostic data is malformed: %s",
     (responseBody) => {
@@ -75,7 +123,7 @@ describe("release diagnostics", () => {
           { message: " " },
           { message: 12 },
           { message: "Repair this", nodeId: 42 },
-          { message: "Another repair", nodeId: "not-a-node" },
+          { message: "Another repair", nodeId: "../node" },
         ],
       }),
     };

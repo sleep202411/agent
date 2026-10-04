@@ -377,3 +377,25 @@ it.each(["clip:a", null])(
     expect(host.textContent).toContain("Repair sheet");
   }
 );
+
+it("shows preflight validation issues without opening an unscoped chapter or submitting", async () => {
+  h.prepare.mockRejectedValue(
+    Object.assign(new Error("Complete the saved story"), {
+      status: 422,
+      responseBody: JSON.stringify({
+        code: "STORY_BUILD_DRAFT_NOT_BUILDABLE",
+        issues: [{ path: ["graph", "nodes", 0, "next"], message: "Connect this scene" }],
+      }),
+    })
+  );
+  await mount();
+  const confirm = await confirmation();
+  await act(async () => confirm());
+  const alert = h.alert.mock.calls.at(-1)!;
+  expect(alert[1]).toBe("Complete the saved story\n\nConnect this scene");
+  expect(alert[2].some((button: { text: string }) => button.text === "storyRepair.title")).toBe(
+    false
+  );
+  expect(h.submit).not.toHaveBeenCalled();
+  expect(h.retry).toHaveBeenCalledOnce();
+});
