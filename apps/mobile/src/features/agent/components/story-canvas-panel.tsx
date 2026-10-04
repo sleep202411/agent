@@ -8,6 +8,7 @@ import { useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
 import { useStoryChapterContext } from "../context/story-chapter-context";
 import type { CandidateScope } from "../api/story-candidates-api";
+import { StoryCanvasMediaSync } from "./story-canvas-media-sync";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCandidatesPanel } from "./story-candidates-panel";
 import { StoryCanvasMediaForm } from "./story-canvas-media-form";
@@ -80,9 +81,10 @@ export function StoryCanvasPanel({
   const [loaded, setLoaded] = useState<CanvasLoaded>();
   const [recovery, setRecovery] = useState<Pick<CanvasNodeEdit, "nodeId" | "kind">>();
   const [edit, setEdit] = useState<Pick<CanvasNodeEdit, "nodeId" | "kind">>();
+  const documentId = loaded?.documentId;
   const writeScope = useMemo(
-    () => (loaded ? { ...scope, documentId: loaded.documentId } : undefined),
-    [scope, loaded]
+    () => (documentId ? { ...scope, documentId } : undefined),
+    [scope, documentId]
   );
   const [tab, setTab] = useState<"nodes" | "media">("nodes"),
     [selected, setSelected] = useState<string>();
@@ -194,6 +196,24 @@ export function StoryCanvasPanel({
             <ThemedText type="small">{t("storyCanvas.resumeAction")}</ThemedText>
           </Pressable>
         )}
+        {writeScope &&
+          canEdit &&
+          !loading &&
+          !error &&
+          !edit &&
+          !creating &&
+          !mediaNode &&
+          !selected && (
+            <StoryCanvasMediaSync
+              scope={writeScope}
+              userId={userId}
+              onSnapshot={(value) => {
+                setOverview(canvasOverview(value.snapshot));
+                setLoaded(value);
+              }}
+              onSaved={reload}
+            />
+          )}
         {overview && (
           <>
             <View style={{ flexDirection: "row", gap: 16 }}>

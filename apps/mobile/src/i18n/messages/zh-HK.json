@@ -5209,5 +5209,6 @@
   "storyCanvas.media.full": "此鏡頭的媒體位置已滿。",
   "storyCanvas.media.resume": "繼續媒體修改",
   "storyCanvas.media.automatic": "自動使用第一張畫面",
+  "storyCanvas.media.retrySync": "重試媒體同步",
   "storyCanvas.media.refresh": "更新媒體連接"
 }

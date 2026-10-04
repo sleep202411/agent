@@ -18,7 +18,7 @@ export function StoryCanvasEncoder({
   onError,
 }: {
   loaded: CanvasLoaded;
-  edit: CanvasNodeEdit | CanvasNodeCreate | CanvasShotMedia;
+  edit: CanvasNodeEdit | CanvasNodeCreate | CanvasShotMedia | { action: "reconcileShotMedia" };
   generation: number;
   title: string;
   runtimeError: string;
@@ -81,7 +81,9 @@ export function StoryCanvasEncoder({
               sequence: loaded.sequence,
               snapshot: loaded.state,
               ...("action" in edit
-                ? { type: "shotMedia" as const, media: edit }
+                ? edit.action === "reconcileShotMedia"
+                  ? { type: "reconcileShotMedia" as const }
+                  : { type: "shotMedia" as const, media: edit }
                 : "kind" in edit
                   ? { type: "edit" as const, edit }
                   : { type: "create" as const, create: edit }),
