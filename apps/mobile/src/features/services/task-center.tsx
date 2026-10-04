@@ -9,7 +9,7 @@ import { useLocale, useTranslations, type MessageKey } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
 import { AuthedWebView } from "@/components/authed-web-view";
 import { TaskDetail } from "./task-detail";
-import { TaskDeadline } from "./task-deadline";
+import { TaskDeadline, TaskStateLabel } from "./task-deadline";
 import { useTaskUnread } from "./use-task-unread";
 import { useTaskCenter } from "./use-task-center";
 import type { CenterFilters, CenterTask } from "./task-center-api";
@@ -76,7 +76,7 @@ export function TaskCenterList({
   });
   const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [warningHours, setWarningHours] = useState(48);
+  const [warningHours, setWarningHours] = useState(72);
   const active = useScreenActive();
   const list = useTaskCenter(active && enabled, generation, filters);
   const unread = useTaskUnread(active && enabled, generation);
@@ -224,8 +224,13 @@ export function TaskCenterList({
             </ThemedText>
           )}
           <ThemedText type="small">
-            {taskWorkflowLabel(item.workflowState, t)} ·{" "}
-            {t(`taskSchedule.${item.priority}` as MessageKey)}
+            <TaskStateLabel
+              dueAt={item.dueAt}
+              status={item.status}
+              warningHours={warningHours}
+              label={taskWorkflowLabel(item.workflowState, t)}
+            />{" "}
+            · {t(`taskSchedule.${item.priority}` as MessageKey)}
           </ThemedText>
           {item.dueAt && (
             <ThemedText type="small">{new Date(item.dueAt).toLocaleString(locale)}</ThemedText>
