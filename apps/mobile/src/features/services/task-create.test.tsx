@@ -5,6 +5,9 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskCreate } from "./task-create";
 import { TaskChildCreate } from "./task-child-create";
 import type { TaskDetail } from "./task-detail-api";
+vi.mock("@/features/crew-assets/asset-picker", () => ({ CrewAssetPicker: () => null }));
+vi.mock("./task-contract", () => ({ TaskContract: () => null }));
+vi.mock("@/features/crew-assets/file-upload", () => ({ AssetFileUpload: () => null }));
 const h = vi.hoisted(() => ({
   access: vi.fn(),
   childContext: vi.fn(),
@@ -659,6 +662,7 @@ it("reopens a staged draft, preserves unchanged metadata and saves through stagi
   const initial = {
     positionRole: "Storyboard artist",
     requiredSkills: ["Editing"],
+    contractAssetNodeId: "11111111-1111-4111-8111-111111111111",
     title: "Reviewed draft",
     description: "Keep this",
     priority: "high" as const,

@@ -30,6 +30,7 @@ export type PlanningSnapshot = z.infer<typeof planningSnapshotSchema>;
 export const planningEditInput = z
   .object({
     ...taskCompensationShape,
+    contractAssetNodeId: z.string().uuid().nullable().optional(),
     requiredSkills: requiredSkillsSchema.optional(),
     positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     taskKind: taskKindSchema.nullable().optional(),
@@ -47,6 +48,7 @@ export const planningEditInput = z
   .strict()
   .refine(
     (data) =>
+      data.contractAssetNodeId !== undefined ||
       data.requiredSkills !== undefined ||
       data.positionRole !== undefined ||
       data.rewardUsdMinor !== undefined ||
@@ -73,6 +75,7 @@ export function planningChanges(
   draft: TaskPlanningDraft,
   taskKind: TaskKind | null = task.taskKind,
   values: {
+    contractAssetNodeId?: string | null;
     requiredSkills?: string[];
     positionRole?: string | null;
     estimatePoints: number | null;
@@ -94,6 +97,10 @@ export function planningChanges(
     )
     .safeParse({
       expectedVersion: task.version,
+      ...(values.contractAssetNodeId !== undefined &&
+      values.contractAssetNodeId !== (task.contractAssetNodeId ?? null)
+        ? { contractAssetNodeId: values.contractAssetNodeId }
+        : {}),
       ...(values.requiredSkills !== undefined &&
       !sameSkills(values.requiredSkills, task.requiredSkills)
         ? { requiredSkills: values.requiredSkills }
@@ -149,6 +156,10 @@ export async function updateTaskPlanning(
   const episodeId = data.episodeId === undefined ? task.episodeId : data.episodeId;
   const labels = data.labelIds ?? task.labels.map((label) => label.id);
   if (
+    (result.contractAssetNodeId ?? null) !==
+      (data.contractAssetNodeId === undefined
+        ? (task.contractAssetNodeId ?? null)
+        : data.contractAssetNodeId) ||
     !sameSkills(result.requiredSkills, data.requiredSkills ?? task.requiredSkills) ||
     (result.positionRole ?? null) !==
       (data.positionRole === undefined ? (task.positionRole ?? null) : data.positionRole) ||

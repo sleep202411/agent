@@ -314,3 +314,16 @@ it("creates selected skills and rejects a receipt that drops them", async () => 
   vi.mocked(api.post).mockResolvedValue(detail);
   await expect(createTask("crew", { ...input, requiredSkills })).rejects.toThrow("acknowledgement");
 });
+
+it("creates a linked contract and rejects a missing acknowledgement", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, contractAssetNodeId: id });
+  await createTask("crew", { ...input, contractAssetNodeId: id });
+  expect(api.post).toHaveBeenLastCalledWith(
+    "/crews/crew/tasks",
+    expect.objectContaining({ data: expect.objectContaining({ contractAssetNodeId: id }) })
+  );
+  vi.mocked(api.post).mockResolvedValue(detail);
+  await expect(createTask("crew", { ...input, contractAssetNodeId: id })).rejects.toThrow(
+    "acknowledgement"
+  );
+});

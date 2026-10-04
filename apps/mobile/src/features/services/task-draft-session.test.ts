@@ -387,6 +387,7 @@ it("edits a staged draft in place and persists all metadata without creating dup
         estimatePoints: 8,
         positionRole: "Storyboard artist",
         requiredSkills: ["Editing"],
+        contractAssetNodeId: "11111111-1111-4111-8111-111111111111",
       },
       review
     )
@@ -400,6 +401,7 @@ it("edits a staged draft in place and persists all metadata without creating dup
       estimatePoints: 8,
       positionRole: "Storyboard artist",
       requiredSkills: ["Editing"],
+      contractAssetNodeId: "11111111-1111-4111-8111-111111111111",
     },
   });
   await restored.createAll(() => true);

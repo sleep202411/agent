@@ -287,3 +287,19 @@ it("updates, clears and verifies required skills without order-only changes", as
     await expect(updateTaskPlanning(current, change.data!)).rejects.toThrow("acknowledgement");
   }
 });
+
+it("replaces and removes contracts while verifying the exact linked file", async () => {
+  const current = { ...snapshot, contractAssetNodeId: id };
+  for (const contractAssetNodeId of [other, null]) {
+    const change = planningChanges(current, planningDraft(current), current.taskKind, {
+      estimatePoints: current.estimatePoints,
+      revisionLimit: current.revisionLimit,
+      contractAssetNodeId,
+    });
+    expect(change.data).toEqual({ expectedVersion: 1, contractAssetNodeId });
+    vi.mocked(api.patch).mockResolvedValue({ ...current, version: 2, contractAssetNodeId });
+    await updateTaskPlanning(current, change.data!);
+    vi.mocked(api.patch).mockResolvedValue({ ...current, version: 2 });
+    await expect(updateTaskPlanning(current, change.data!)).rejects.toThrow("acknowledgement");
+  }
+});

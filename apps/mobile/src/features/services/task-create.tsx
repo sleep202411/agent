@@ -1,3 +1,4 @@
+import { TaskContractField } from "./task-contract-field";
 import { CrewSkillsField } from "./crew-skills-field";
 import { TaskCreationRequiredError } from "./task-creation-required";
 import { taskWorkflowLabel } from "./task-workflow-label";
@@ -154,6 +155,9 @@ function Editor({
   const initial = initialDraft?.input,
     editor = initialDraft?.review.editor;
   const custom = useTaskCreationCustomFields(crewId, generation, initial?.customFieldValues);
+  const [contractAssetNodeId, setContractAssetNodeId] = useState(
+    initial?.contractAssetNodeId ?? null
+  );
   const [requiredSkills, setRequiredSkills] = useState(initial?.requiredSkills ?? []);
   const [positionRole, setPositionRole] = useState(initial?.positionRole ?? "");
   const [taskKind, setTaskKind] = useState<TaskKind | null>(initial?.taskKind ?? null);
@@ -208,6 +212,7 @@ function Editor({
       customFieldValues: custom.values,
       title,
       description,
+      contractAssetNodeId,
       requiredSkills,
       positionRole: positionRole.trim() || null,
       priority,
@@ -397,6 +402,14 @@ function Editor({
         share={share}
         onReward={setReward}
         onShare={setShare}
+        locked={locked}
+      />
+      <TaskContractField
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        value={contractAssetNodeId}
+        onChange={setContractAssetNodeId}
         locked={locked}
       />
       <CrewSkillsField

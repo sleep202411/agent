@@ -1,4 +1,6 @@
 {
+  "taskContract.choose": "合約文件（可選）",
+  "taskContract.remove": "移除附件",
   "crewSkills.label": "創作者所需技能",
   "crewSkills.hint": "可多選已認證技能。申請人須滿足所有已選要求。",
   "crewSkills.loading": "正在載入技能…",

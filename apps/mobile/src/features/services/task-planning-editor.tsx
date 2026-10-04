@@ -1,3 +1,5 @@
+import { TaskContractField } from "./task-contract-field";
+import { TaskContract } from "./task-contract";
 import { CrewSkillsField } from "./crew-skills-field";
 import { TaskCompensationFields } from "./task-compensation-fields";
 import { compensationText } from "./task-compensation";
@@ -63,7 +65,13 @@ function Access({
   if (allowed === false) return null;
   if (session.editing && allowed)
     return (
-      <LoadEditor task={task} generation={generation} onRefresh={onRefresh} session={session} />
+      <LoadEditor
+        userId={userId}
+        task={task}
+        generation={generation}
+        onRefresh={onRefresh}
+        session={session}
+      />
     );
   return (
     <View style={{ gap: 8 }}>
@@ -92,7 +100,7 @@ function Access({
   );
 }
 
-function LoadEditor(props: Omit<Props, "userId"> & { session: TaskPlanningSession }) {
+function LoadEditor(props: Props & { session: TaskPlanningSession }) {
   const t = useTranslations();
   const initialize = props.session.initialize;
   const [snapshot, setSnapshot] = useState<PlanningSnapshot>(),
@@ -128,11 +136,13 @@ function LoadEditor(props: Omit<Props, "userId"> & { session: TaskPlanningSessio
   );
 }
 function Editor({
+  userId,
   snapshot,
   generation,
   onRefresh,
   session,
 }: {
+  userId: string;
   snapshot: PlanningSnapshot;
   generation: number;
   onRefresh: () => void;
@@ -197,6 +207,14 @@ function Editor({
         onShare={(v) => session.change("share", v)}
         locked={locked}
       />
+      <TaskContractField
+        crewId={snapshot.crewId}
+        userId={userId}
+        generation={generation}
+        value={draft.contractAssetNodeId}
+        onChange={(v) => session.change("contractAssetNodeId", v)}
+        locked={locked}
+      />
       <CrewSkillsField
         value={draft.requiredSkills}
         onChange={(v) => session.change("requiredSkills", v)}
@@ -226,6 +244,18 @@ function Editor({
       {canReview && (
         <View style={{ gap: 8 }}>
           <ThemedText>{t("taskPlanning.latest")}</ThemedText>
+          <ThemedText>
+            {t("taskContract.choose")}:{" "}
+            {snapshot.contractAssetNodeId ? t("taskContract.open") : t("thread.taskUnset")}
+          </ThemedText>
+          {snapshot.contractAssetNodeId && (
+            <TaskContract
+              crewId={snapshot.crewId}
+              userId={userId}
+              generation={generation}
+              assetId={snapshot.contractAssetNodeId}
+            />
+          )}
           <ThemedText>
             {t("crewSkills.label")}: {snapshot.requiredSkills?.join(", ") || t("thread.taskUnset")}
           </ThemedText>

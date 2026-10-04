@@ -4,6 +4,9 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { useTaskPlanningSession } from "./use-task-planning-session";
 import { TaskPlanningEditor } from "./task-planning-editor";
 import type { TaskDetail } from "./task-detail-api";
+vi.mock("@/features/crew-assets/asset-picker", () => ({ CrewAssetPicker: () => null }));
+vi.mock("./task-contract", () => ({ TaskContract: () => null }));
+vi.mock("@/features/crew-assets/file-upload", () => ({ AssetFileUpload: () => null }));
 const h = vi.hoisted(() => ({
   access: vi.fn(),
   fetch: vi.fn(),

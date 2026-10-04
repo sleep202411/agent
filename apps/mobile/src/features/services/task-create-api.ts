@@ -30,6 +30,7 @@ export const taskCreateInput = z
         "Duplicate custom fields"
       )
       .optional(),
+    contractAssetNodeId: z.string().uuid().nullable().optional(),
     requiredSkills: requiredSkillsSchema.optional(),
     positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     taskKind: taskKindSchema.nullable().optional(),
@@ -107,6 +108,8 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
       }));
   if (
     !customMatches ||
+    (data.contractAssetNodeId !== undefined &&
+      (result.contractAssetNodeId ?? null) !== data.contractAssetNodeId) ||
     (data.requiredSkills !== undefined &&
       !sameSkills(result.requiredSkills, data.requiredSkills)) ||
     (data.positionRole !== undefined && (result.positionRole ?? null) !== data.positionRole) ||

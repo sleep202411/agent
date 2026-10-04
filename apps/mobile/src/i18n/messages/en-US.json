@@ -1,4 +1,6 @@
 {
+  "taskContract.choose": "Contract file (optional)",
+  "taskContract.remove": "Remove attachment",
   "crewSkills.label": "Required creator skills",
   "crewSkills.hint": "Select all required verified skills. Applicants must meet every selected requirement.",
   "crewSkills.loading": "Loading skills…",
