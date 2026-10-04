@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({
   failed: false,
   active: true,
   published: false,
-  capabilities: ["story.release", "story.edit", "story.build"],
+  capabilities: ["story.read", "story.release", "story.edit", "story.build"],
   retry: vi.fn(),
   alert: vi.fn(),
   prepare: vi.fn(),
@@ -82,7 +82,7 @@ beforeEach(() => {
   h.failed = false;
   h.active = true;
   h.published = false;
-  h.capabilities = ["story.release", "story.edit", "story.build"];
+  h.capabilities = ["story.read", "story.release", "story.edit", "story.build"];
   vi.resetAllMocks();
   h.generation = 1;
   h.prepare.mockResolvedValue({ gameId: "film" });
@@ -248,4 +248,13 @@ it("refreshes status after an uncertain offline operation", async () => {
   await act(async () => confirm());
   expect(h.retry).toHaveBeenCalledOnce();
   expect(h.set).not.toHaveBeenCalled();
+});
+
+it("shows published status to readers without publish or offline controls", async () => {
+  h.capabilities = ["story.read"];
+  h.published = true;
+  await mount();
+  expect(host.textContent).toContain("agent.publish.status.published");
+  expect(host.querySelector('button[aria-label="agent.publish.action"]')).toBeNull();
+  expect(host.querySelector('button[aria-label="agent.publish.offline.action"]')).toBeNull();
 });

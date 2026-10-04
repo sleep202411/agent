@@ -37,7 +37,7 @@ beforeEach(() => {
   h.params = {};
   h.workbench.mockReset().mockResolvedValue({
     chapter: { id: "chapter" },
-    project: { capabilities: ["story.release"] },
+    project: { capabilities: ["story.read", "story.release"] },
   });
   h.publication.mockReset();
   h.publication.mockResolvedValue(null);
@@ -144,4 +144,16 @@ it("does not substitute another chapter when the selected chapter disappears", a
   expect(state.chapterId).toBe(selected);
   expect(state.capabilities).toEqual(["story.read"]);
   expect(state.error).toBeUndefined();
+});
+
+it("loads publication status for readers without granting release actions", async () => {
+  h.workbench.mockResolvedValue({
+    chapter: { id: "chapter" },
+    project: { capabilities: ["story.read"] },
+  });
+  h.publication.mockResolvedValue({ gameId: "project", status: "published", rejectReason: null });
+  await render();
+  expect(h.publication).toHaveBeenCalledOnce();
+  expect(state.publication?.status).toBe("published");
+  expect(state.capabilities).not.toContain("story.release");
 });

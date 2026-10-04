@@ -178,10 +178,10 @@ export function StoryChapterProvider({
     };
   }, [projectId, refreshKey]);
 
-  const canRelease = capabilities.includes("story.release");
+  const canReadPublication = capabilities.includes("story.read");
 
   useEffect(() => {
-    if (!canRelease) return;
+    if (!canReadPublication) return;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -217,7 +217,7 @@ export function StoryChapterProvider({
       controller.abort();
       clearInterval(timer);
     };
-  }, [canRelease, projectId, publicationRefreshKey]);
+  }, [canReadPublication, projectId, publicationRefreshKey]);
 
   const value = useMemo(
     () => ({
@@ -229,10 +229,10 @@ export function StoryChapterProvider({
       draftRevision,
       videoSnapshotHash,
       billingBalance,
-      publication: canRelease ? publication : null,
-      publicationLoading: loading || (canRelease && publicationLoading),
-      publicationFailed: canRelease && publicationFailed,
-      publicationError: canRelease ? publicationError : undefined,
+      publication: canReadPublication ? publication : null,
+      publicationLoading: loading || (canReadPublication && publicationLoading),
+      publicationFailed: canReadPublication && publicationFailed,
+      publicationError: canReadPublication ? publicationError : undefined,
       refreshPublication,
       loading,
       error,
@@ -241,7 +241,7 @@ export function StoryChapterProvider({
     }),
     [
       billingBalance,
-      canRelease,
+      canReadPublication,
       capabilities,
       chapterId,
       chapterIdFromQuery,

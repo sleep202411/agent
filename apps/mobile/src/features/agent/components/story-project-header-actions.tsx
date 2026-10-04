@@ -146,6 +146,7 @@ function OwnedStoryProjectHeaderActions({
   const [submitting, setSubmitting] = useState(false);
   const [offlining, setOfflining] = useState(false);
 
+  const canReadPublication = capabilities.includes("story.read");
   const canRelease = capabilities.includes("story.release");
   const canEdit = capabilities.includes("story.edit");
   const canBuild = capabilities.includes("story.build");
@@ -299,7 +300,7 @@ function OwnedStoryProjectHeaderActions({
 
   return (
     <View style={styles.row}>
-      {canRelease ? (
+      {canReadPublication ? (
         <View style={styles.publishGroup}>
           {publicationFailed ? (
             <Pressable
@@ -336,19 +337,21 @@ function OwnedStoryProjectHeaderActions({
               badge
             )
           ) : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t(submitActionKey(status, submitting, rejectReason))}
-            hitSlop={8}
-            onPress={onPublishPress}
-            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-          >
-            {submitting ? (
-              <ActivityIndicator color="rgba(255,255,255,0.72)" size="small" />
-            ) : (
-              <PublishIcon color="rgba(255,255,255,0.68)" size={18} strokeWidth={1.8} />
-            )}
-          </Pressable>
+          {canRelease && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t(submitActionKey(status, submitting, rejectReason))}
+              hitSlop={8}
+              onPress={onPublishPress}
+              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+            >
+              {submitting ? (
+                <ActivityIndicator color="rgba(255,255,255,0.72)" size="small" />
+              ) : (
+                <PublishIcon color="rgba(255,255,255,0.68)" size={18} strokeWidth={1.8} />
+              )}
+            </Pressable>
+          )}
           {canOffline ? (
             <Pressable
               accessibilityRole="button"
