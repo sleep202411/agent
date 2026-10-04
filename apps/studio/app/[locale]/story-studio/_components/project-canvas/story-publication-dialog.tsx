@@ -2,6 +2,7 @@
 
 import { IconAlertTriangle, IconCheck, IconCloudUpload, IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
+import { useAuth } from "@/app/_components/auth-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -37,6 +38,7 @@ export function StoryPublicationDialog({
   onLocateNode?: (nodeId: string) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.publish");
+  const { signIn } = useAuth();
   const pending = isStoryPublicationPending(state);
   const open = state.status !== "closed";
   const title = dialogTitle(state, t);
@@ -96,11 +98,18 @@ export function StoryPublicationDialog({
           ) : null}
 
           {state.status === "failed" ? (
-            <PublicationFailure
-              message={state.message}
-              issues={state.issues ?? []}
-              onLocateNode={onLocateNode}
-            />
+            <>
+              {state.errorKind ? (
+                <p className="mb-3 text-xs leading-5 text-white/65">
+                  {t(`actionError.${state.errorKind}`)}
+                </p>
+              ) : null}
+              <PublicationFailure
+                message={state.message}
+                issues={state.issues ?? []}
+                onLocateNode={onLocateNode}
+              />
+            </>
           ) : null}
 
           {state.status === "succeeded" ? (
@@ -144,6 +153,11 @@ export function StoryPublicationDialog({
             <Button type="button" variant="secondary" size="xl" onClick={onClose}>
               {t("actions.close")}
             </Button>
+            {state.errorKind === "auth" ? (
+              <Button type="button" variant="secondary" size="xl" onClick={signIn}>
+                {t("statusError.signIn")}
+              </Button>
+            ) : null}
             {state.phase !== "permission" ? (
               <Button
                 type="button"

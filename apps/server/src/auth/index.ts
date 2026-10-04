@@ -7,4 +7,8 @@ export {
   SkipEndUserAuth,
   ViewerCookie,
 } from './auth.decorator';
-export type { AuthUser, AuthenticatedRequest } from './auth.types';
+export type {
+  AuthUser,
+  AuthenticatedRequest,
+  AuthSessionContext,
+} from './auth.types';

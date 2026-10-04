@@ -5,7 +5,7 @@ import type { Request } from 'express';
  *
  * Fields mirror the Java `/user/query/user/info` response.
  * When we migrate to direct Redis session lookup, only
- * AuthService.validateToken() changes — this type stays stable.
+ * AuthService session validation changes — this type stays stable.
  */
 export interface AuthUser {
   userId: string;
@@ -18,11 +18,18 @@ export interface AuthUser {
   levelIds?: number[];
 }
 
+/** The selected user and their exact verified credential, for server use only. */
+export interface AuthSessionContext {
+  user: AuthUser;
+  /** Sensitive: never serialize or log this credential. */
+  cookie: string;
+}
+
 /**
  * Express Request augmented with auth info.
  */
 export interface AuthenticatedRequest extends Request {
   user: AuthUser;
-  /** Raw cookie string forwarded from the client */
+  /** Credential selected by AuthGuard for this authenticated user. */
   rawCookie: string;
 }

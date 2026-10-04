@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import request from 'supertest';
-import { AuthGuard, AuthService } from '../auth';
+import { AuthGuard, AuthService, type AuthUser } from '../auth';
 import {
   CrewApplicationAmendmentsController,
   CrewAmendmentSettlementQueueController,
@@ -28,7 +28,15 @@ describe('Amendment HTTP boundary', () => {
         CrewAmendmentSettlementQueueController,
       ],
       providers: [
-        { provide: AuthService, useValue: { validateToken } },
+        {
+          provide: AuthService,
+          useValue: {
+            validateSessionContext: async (cookie: string) => {
+              const user = (await validateToken(cookie)) as AuthUser | null;
+              return user ? { user, cookie } : null;
+            },
+          },
+        },
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: CrewApplicationAmendmentsService, useValue: svc },
       ],
