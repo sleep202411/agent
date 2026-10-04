@@ -14,6 +14,7 @@
   "contentReports.newReport": "發起投訴",
   "contentReports.search": "搜尋 IP 名稱或房間號",
   "contentReports.selectTarget": "選擇 IP",
+
   "contentReports.title": "內容投訴",
   "contentReports.initiated": "我發起的",
   "contentReports.responses": "我的內容處理結果",
@@ -32,19 +33,24 @@
   "contentReports.reason.privacy": "私隱洩露",
   "contentReports.reason.harassment": "騷擾或惡意內容",
   "contentReports.reason.other": "其他問題",
+
   "myContracts.title": "我的合約",
   "myContracts.agreements": "簽署協議",
   "myContracts.files": "合約檔案",
   "myContracts.description": "查看你有權存取的任務所關聯的合約檔案。",
   "myContracts.empty": "暫無關聯合約檔案。",
+
   "taskContract.open": "查看合約",
   "taskContract.refresh": "重新整理合約",
   "taskContract.unavailable": "此合約檔案已無法使用。",
+
   "myAgreements.title": "我的協議",
   "myAgreements.description": "查看你在各劇組建立或收到的協議。",
+
   "privateCases.view.all": "全部",
   "privateCases.view.initiated": "我發起的",
   "privateCases.view.responses": "我需回應的",
+
   "taskReview.reviewSubmission": "審核提交",
   "taskReview.reviewNotePlaceholder": "填寫清晰的通過意見或修改要求…",
   "taskReview.revisionLimitReached": "約定的返修輪次已用完。請先在編輯任務中提高上限，或通過當前提交。",
@@ -5010,7 +5016,7 @@
   "storyDuplicate.apply": "複製所選",
   "storyDuplicate.help": "選取要複製的場景或選擇節點。所選節點之間的連接指向副本，指向其他節點的連接會斷開，結局連接保留。場景媒體不會複製。選取場景時包含其附帶選擇。儲存前副本僅為草稿。",
   "storyHotspot.preview": "預覽",
-  "storyHotspot.previewHelp": "在輸入時段內點擊熱點，查看成功動作說明，與網頁端一致。此預覽不會模擬手勢、執行動作或套用狀態效果。",
+  "storyHotspot.previewHelp": "在輸入時段內點擊熱點，查看已設定的成功動作。此預覽不會執行手勢、動作或狀態效果。",
   "storyHotspot.previewInvalid": "請先填寫完整的熱點欄位。",
   "storyHotspot.previewOutcome": "預覽結果",
   "storyHotspot.previewContinue": "將繼續播放。",
