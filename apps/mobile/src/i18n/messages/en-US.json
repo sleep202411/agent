@@ -4957,5 +4957,7 @@
   "storyRepair.inspectNode": "Review node",
   "storyRepair.searchNodes": "Search nodes",
   "storyRepair.noMatchingNode": "No matching nodes in this chapter.",
-  "storyRepair.refineSearch": "Showing the first 50 matches. Refine your search to find another node."
+  "storyRepair.refineSearch": "Showing the first 50 matches. Refine your search to find another node.",
+  "storyNode.remove": "Remove node",
+  "storyNode.removeHelp": "Remove this node and its incoming links? Decisions attached to scenes are kept as separate nodes. Unused endings are removed. Save to apply this change."
 }

@@ -359,3 +359,35 @@ it("creates connected endings and removes them only after confirmation", async (
   expect(command.input.content.graph.nodes[0].exit.routes[0].target).toBeNull();
   expect(h.save).not.toHaveBeenCalled();
 });
+it("requires confirmation to remove a node and persists deletion before server save", async () => {
+  h.reconcile.mockResolvedValue({
+    ...result,
+    draft: {
+      ...draft,
+      content: {
+        storyBible: {},
+        graph: {
+          entryNodeId: "clip:a",
+          nodes: [
+            {
+              kind: "clip",
+              nodeId: "clip:a",
+              interactions: [],
+              exit: { kind: "auto", routes: [{ target: null }] },
+            },
+          ],
+        },
+      },
+    },
+  });
+  await render();
+  await click("storyNode.remove");
+  expect(h.records.size).toBe(0);
+  expect(h.save).not.toHaveBeenCalled();
+  const actions = h.alert.mock.calls.at(-1)![2];
+  expect(actions[0].style).toBe("cancel");
+  await act(async () => actions[1].onPress());
+  const command = JSON.parse([...h.records.values()][0]);
+  expect(command.input.content.graph).toEqual({ entryNodeId: null, nodes: [] });
+  expect(h.save).not.toHaveBeenCalled();
+});

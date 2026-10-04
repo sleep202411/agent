@@ -1,4 +1,5 @@
 import { createRepairNode, updateRepairNodeText } from "../lib/story-repair-nodes";
+import { deleteRepairNode } from "../lib/story-repair-delete-node";
 import {
   createRepairEnding,
   renameRepairEnding,
@@ -394,6 +395,25 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 <ThemedText type="smallBold">
                   {typeof node.name === "string" ? node.name : node.nodeId}
                 </ThemedText>
+                <RepairAction
+                  label={t("storyNode.remove")}
+                  disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}
+                  onPress={() =>
+                    Alert.alert(t("storyNode.remove"), t("storyNode.removeHelp"), [
+                      { text: t("common.cancel"), style: "cancel" },
+                      {
+                        text: t("storyNode.remove"),
+                        style: "destructive",
+                        onPress: () => {
+                          if (edit((value) => deleteRepairNode(value, selected))) {
+                            setSelected("");
+                            setChoosingNode(true);
+                          }
+                        },
+                      },
+                    ])
+                  }
+                />
                 <RepairAction
                   label={t("storyEffects.onEnter")}
                   disabled={busy || uncertain || conflict || showSaved}

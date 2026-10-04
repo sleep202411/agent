@@ -4957,5 +4957,7 @@
   "storyRepair.inspectNode": "查看節點",
   "storyRepair.searchNodes": "搜尋節點",
   "storyRepair.noMatchingNode": "此章節沒有符合的節點。",
-  "storyRepair.refineSearch": "顯示前 50 個符合的節點。請縮小搜尋範圍以尋找其他節點。"
+  "storyRepair.refineSearch": "顯示前 50 個符合的節點。請縮小搜尋範圍以尋找其他節點。",
+  "storyNode.remove": "移除節點",
+  "storyNode.removeHelp": "移除此節點及指向它的連接？場景附帶的選擇將保留為獨立節點，未使用的結局會被移除。儲存後生效。"
 }
