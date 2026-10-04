@@ -4,7 +4,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import type { CandidateScope } from "./story-candidates-api";
 
 /** Matches Web CANVAS_ROOT_SCHEMA and Server document-modes.ts. */
-export const STORY_CANVAS_ROOTS = ["meta", "nodes", "edges", "groups", "assets"] as const;
+export { CANVAS_ROOTS as STORY_CANVAS_ROOTS } from "../../../../canvas-editor/schema";
 const id = z.string().uuid();
 const sequence = z.number().int().nonnegative();
 const base64 = z
