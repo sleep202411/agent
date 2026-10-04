@@ -2,8 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskCreate } from "./task-create";
+import { TaskChildCreate } from "./task-child-create";
+import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({
   access: vi.fn(),
+  childContext: vi.fn(),
   defaults: vi.fn(),
   fields: vi.fn(),
   update: vi.fn(),
@@ -15,6 +18,7 @@ const h = vi.hoisted(() => ({
   active: true,
   suspended: false,
 }));
+vi.mock("./task-child-context", () => ({ fetchTaskChildContext: h.childContext }));
 vi.mock("./task-creation-defaults", () => ({ fetchTaskCreationDefaults: h.defaults }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
 vi.mock("./task-custom-fields-api", async (original) => ({
@@ -869,4 +873,64 @@ it("retains unstaged text while permission refresh suspends all editor controls"
   await render();
   expect(host.querySelector("input")!.value).toBe("Unstaged title");
   expect(h.update).not.toHaveBeenCalled();
+});
+
+it("keeps a child-task draft through backgrounding and refreshed parent context", async () => {
+  const parent: TaskDetail = {
+    id: "11111111-1111-4111-8111-111111111111",
+    crewId: "crew",
+    number: 7,
+    title: "Parent storyboard",
+    description: "",
+    status: "open",
+    version: 1,
+    priority: "normal",
+    workflowState: { name: "Open" },
+    revisionLimit: null,
+    revisionRoundsUsed: 0,
+    startAt: null,
+    dueAt: null,
+    parent: null,
+    children: [],
+    blockedBy: [],
+    blocking: [],
+    labels: [],
+    assignees: [],
+    submissions: [],
+  };
+  h.childContext.mockImplementation(async (task: TaskDetail) => ({ parent: task }));
+  const show = (task = parent) =>
+    act(async () =>
+      root.render(
+        <TaskChildCreate
+          task={task}
+          userId="1"
+          generation={1}
+          onCreated={h.refresh}
+          onClose={h.refresh}
+        />
+      )
+    );
+  await show();
+  await act(async () => {
+    type(0, "Child draft");
+    type(1, "Keep the detailed brief");
+  });
+  h.active = false;
+  await show();
+  expect(host.querySelector("input")).toBeNull();
+  h.active = true;
+  await show({ ...parent, version: 2, title: "Updated parent" });
+  expect(host.querySelectorAll("input")[0]!.value).toBe("Child draft");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("Keep the detailed brief");
+  expect(h.update).not.toHaveBeenCalled();
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({
+      parentId: parent.id,
+      title: "Child draft",
+      description: "Keep the detailed brief",
+    })
+  );
 });
