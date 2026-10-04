@@ -238,13 +238,16 @@ function AgentHubSession({
       <StoryLibraryEditor
         scope={editingStory}
         userId={userId}
+        workspaces={workspaces}
         onClose={() => {
           setEditingStory(undefined);
           void loadProjects();
         }}
-        onSaved={(archived) => {
-          if (archived) setEditingStory(undefined);
-          void loadProjects();
+        onSaved={(archived, movedWorkspaceId) => {
+          if (archived || movedWorkspaceId) setEditingStory(undefined);
+          void loadProjects(
+            movedWorkspaceId ? { blocking: true, workspaceId: movedWorkspaceId } : undefined
+          );
         }}
       />
     );

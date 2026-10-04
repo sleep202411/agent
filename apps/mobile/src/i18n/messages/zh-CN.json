@@ -5082,5 +5082,10 @@
   "storyProfile.visualStyles.retro-anime-key-visual": "复古动漫",
   "storyProfile.visualStyles.pixel-art-adventure": "像素艺术",
   "storyProfile.visualStyles.surreal-collage-dreamscape": "超现实拼贴",
-  "storyProfile.visualStyles.grindhouse-chapter-cinema": "复古类型片"
+  "storyProfile.visualStyles.grindhouse-chapter-cinema": "复古类型片",
+  "storyMove.title": "移动到工作区",
+  "storyMove.help": "将项目及其成员移动到另一工作区。现有积分和用量保留在原工作区。请先结束正在进行的生成任务和会话。",
+  "storyMove.empty": "没有其他由你担任所有者或管理员的工作区。",
+  "storyMove.confirm": "移动项目",
+  "storyMove.confirmHelp": "将此项目移动到「{workspace}」？"
 }

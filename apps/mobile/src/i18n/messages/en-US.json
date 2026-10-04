@@ -5082,5 +5082,10 @@
   "storyProfile.visualStyles.retro-anime-key-visual": "Retro anime",
   "storyProfile.visualStyles.pixel-art-adventure": "Pixel art",
   "storyProfile.visualStyles.surreal-collage-dreamscape": "Surreal collage",
-  "storyProfile.visualStyles.grindhouse-chapter-cinema": "Vintage genre cinema"
+  "storyProfile.visualStyles.grindhouse-chapter-cinema": "Vintage genre cinema",
+  "storyMove.title": "Move to workspace",
+  "storyMove.help": "Move this project and its members to another workspace. Existing credits and usage stay in their original workspace. Finish active generation and sessions first.",
+  "storyMove.empty": "No other workspace where you are an owner or admin is available.",
+  "storyMove.confirm": "Move project",
+  "storyMove.confirmHelp": "Move this project to {workspace}?"
 }

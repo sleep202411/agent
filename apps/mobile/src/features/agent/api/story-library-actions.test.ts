@@ -109,3 +109,108 @@ it("rejects account changes and cross-project receipts", async () => {
   await expect(client().load(signal())).rejects.toThrow("identity");
   expect(h.patch).not.toHaveBeenCalled();
 });
+
+const source = "00000000-0000-4000-8000-000000000002";
+const target = "00000000-0000-4000-8000-000000000003";
+const move = {
+  kind: "move" as const,
+  clientKey: id,
+  expectedProjectVersion: 3,
+  expectedWorkspaceId: source,
+  targetWorkspaceId: target,
+};
+function moveFixture() {
+  let p = { ...project, canMove: true, workspaceId: source };
+  h.get.mockImplementation(async (path) =>
+    path.startsWith("/workspaces/")
+      ? { workspace: { id: target, role: "admin", accessScope: "workspace", status: "active" } }
+      : p
+  );
+  h.post.mockImplementation(async () => {
+    p = { ...p, workspaceId: target, projectVersion: 4 };
+    return { projectId: id, workspaceId: target, projectVersion: 4 };
+  });
+}
+it("moves only with current project and destination permissions, then reads the moved project", async () => {
+  moveFixture();
+  const c = client();
+  expect((await c.save(move, signal())).workspaceId).toBe(target);
+  expect(h.post).toHaveBeenCalledWith(
+    `/story-projects/${id}/move`,
+    expect.objectContaining({
+      retry: false,
+      data: { expectedProjectVersion: 3, expectedWorkspaceId: source, targetWorkspaceId: target },
+    })
+  );
+  expect(c.read()).toBeNull();
+});
+it("reconciles a lost move response without moving twice and returns the destination", async () => {
+  moveFixture();
+  h.post.mockRejectedValueOnce(Error("Lost move reply"));
+  const c = client();
+  await expect(c.save(move, signal())).rejects.toThrow("Lost move reply");
+  h.get.mockResolvedValue({ ...project, canMove: true, workspaceId: target, projectVersion: 4 });
+  const result = await c.load(signal());
+  expect(result.movedWorkspaceId).toBe(target);
+  expect(c.read()).toBeNull();
+  expect(h.post).toHaveBeenCalledTimes(1);
+});
+it("rejects non-owner, changed source, same destination and newer project versions", async () => {
+  for (const change of [{ canMove: false }, { workspaceId: target }, { projectVersion: 4 }]) {
+    raw = null;
+    h.post.mockClear();
+    h.get.mockResolvedValue({ ...project, canMove: true, workspaceId: source, ...change });
+    await expect(client().save(move, signal())).rejects.toThrow();
+    expect(h.post).not.toHaveBeenCalled();
+  }
+  raw = null;
+  moveFixture();
+  await expect(client().save({ ...move, targetWorkspaceId: source }, signal())).rejects.toThrow(
+    "workspace changed"
+  );
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("rejects restricted, revoked and mismatched destination responses", async () => {
+  for (const change of [
+    { role: "editor" },
+    { accessScope: "project_only" },
+    { status: "suspended" },
+    { id: source },
+  ]) {
+    raw = null;
+    h.post.mockClear();
+    h.get.mockImplementation(async (path) =>
+      path.startsWith("/workspaces/")
+        ? {
+            workspace: {
+              id: target,
+              role: "owner",
+              accessScope: "workspace",
+              status: "active",
+              ...change,
+            },
+          }
+        : { ...project, canMove: true, workspaceId: source }
+    );
+    await expect(client().save(move, signal())).rejects.toThrow("owner or admin");
+    expect(h.post).not.toHaveBeenCalled();
+  }
+});
+it("retains a failed or unverifiable move for exact retry", async () => {
+  for (const response of [
+    { projectId: target, workspaceId: target, projectVersion: 4 },
+    { projectId: id, workspaceId: source, projectVersion: 4 },
+    { projectId: id, workspaceId: target, projectVersion: 3 },
+  ]) {
+    raw = null;
+    moveFixture();
+    h.post.mockResolvedValue(response);
+    await expect(client().save(move, signal())).rejects.toThrow("verified");
+    expect(client().read()).toEqual(move);
+  }
+  raw = null;
+  moveFixture();
+  h.post.mockRejectedValue(Error("Finish active generation first"));
+  await expect(client().save(move, signal())).rejects.toThrow("Finish active generation first");
+  expect(client().read()).toEqual(move);
+});

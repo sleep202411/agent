@@ -8,11 +8,12 @@ vi.mock("@/features/agent/components/story-library-editor", () => ({
     onSaved,
   }: {
     scope: { projectId: string };
-    onSaved: (archived: boolean) => void;
+    onSaved: (archived: boolean, workspaceId?: string) => void;
   }) => (
     <div>
       Editing {scope.projectId}
       <button onClick={() => onSaved(true)}>Archive fixture</button>
+      <button onClick={() => onSaved(false, "destination")}>Move fixture</button>
     </div>
   ),
 }));
@@ -330,4 +331,31 @@ it("does not expose Story management for read-only projects", async () => {
   });
   await render();
   expect(host.textContent).not.toContain("storyLibrary.title");
+});
+
+it("switches the Story library to the moved project's workspace", async () => {
+  h.list.mockResolvedValue({
+    workspaceId: "workspace",
+    projects: [{ id: "story", title: "Story", capabilities: ["story.read", "story.admin"] }],
+  });
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "storyLibrary.title")!
+      .click()
+  );
+  h.workspaces.mockResolvedValue([
+    { id: "workspace", name: "Source", isDefault: true },
+    { id: "destination", name: "Destination", role: "admin", accessScope: "workspace" },
+  ]);
+  h.list.mockResolvedValue({
+    workspaceId: "destination",
+    projects: [{ id: "story", title: "Moved Story", capabilities: ["story.read", "story.admin"] }],
+  });
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Move fixture")!.click()
+  );
+  expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "destination");
+  expect(host.textContent).toContain("Moved Story");
+  expect(host.textContent).not.toContain("Editing story");
 });

@@ -7,6 +7,8 @@ const id = z.string().uuid(),
   version = z.number().int().nonnegative();
 export const storyLibraryProjectSchema = z.object({
   id,
+  workspaceId: id.optional(),
+  canMove: z.boolean().optional(),
   title: z.string(),
   summary: z.string().nullable(),
   status: z.enum(["active", "archived"]),
@@ -17,11 +19,31 @@ const fields = z.object({
   title: z.string().trim().min(1).max(160),
   summary: z.string().trim().max(2000).nullable(),
 });
+export function canMoveToWorkspace(
+  workspace: { id: string; role?: string; accessScope?: string; status?: string },
+  source?: string
+) {
+  return (
+    workspace.id !== source &&
+    workspace.accessScope === "workspace" &&
+    ["owner", "admin"].includes(workspace.role ?? "") &&
+    (workspace.status === undefined || workspace.status === "active")
+  );
+}
 const commandSchema = z.discriminatedUnion("kind", [
   z
     .object({ kind: z.literal("edit"), clientKey: id, expectedProjectVersion: version, fields })
     .strict(),
   z.object({ kind: z.literal("archive"), clientKey: id, expectedProjectVersion: version }).strict(),
+  z
+    .object({
+      kind: z.literal("move"),
+      clientKey: id,
+      expectedProjectVersion: version,
+      expectedWorkspaceId: id,
+      targetWorkspaceId: id,
+    })
+    .strict(),
 ]);
 export type StoryLibraryCommand = z.infer<typeof commandSchema>;
 export type StoryLibraryProject = z.infer<typeof storyLibraryProjectSchema>;
@@ -59,9 +81,11 @@ export function storyLibraryActions(
     return p;
   };
   const matches = (p: StoryLibraryProject, c: StoryLibraryCommand) =>
-    c.kind === "archive"
-      ? p.status === "archived"
-      : p.status === "active" && p.title === c.fields.title && p.summary === c.fields.summary;
+    c.kind === "move"
+      ? p.workspaceId === c.targetWorkspaceId
+      : c.kind === "archive"
+        ? p.status === "archived"
+        : p.status === "active" && p.title === c.fields.title && p.summary === c.fields.summary;
   return {
     read: pending.read,
     discard: (key: string) => {
@@ -76,7 +100,12 @@ export function storyLibraryActions(
         project.projectVersion > command.expectedProjectVersion &&
         matches(project, command);
       if (applied) pending.clear(command!.clientKey);
-      return { project, pending: applied ? null : command, applied };
+      return {
+        project,
+        pending: applied ? null : command,
+        applied,
+        movedWorkspaceId: applied && command?.kind === "move" ? project.workspaceId : undefined,
+      };
     },
     async save(raw: StoryLibraryCommand, signal: AbortSignal) {
       if (saving) throw Error("A project update is in progress.");
@@ -92,11 +121,65 @@ export function storyLibraryActions(
         }
         if (
           p.status !== "active" ||
-          !p.capabilities.includes(c.kind === "archive" ? "story.admin" : "story.edit")
+          !p.capabilities.includes(c.kind === "edit" ? "story.edit" : "story.admin")
         )
           throw Error("This project action is not permitted.");
         if (p.projectVersion !== c.expectedProjectVersion)
           throw Error("The project changed. Reload and review your edits before saving.");
+        if (c.kind === "move") {
+          if (!p.canMove) throw Error("Only the project owner can move this project.");
+          if (
+            p.workspaceId !== c.expectedWorkspaceId ||
+            c.targetWorkspaceId === c.expectedWorkspaceId
+          )
+            throw Error("The project workspace changed. Reload before moving.");
+          const { workspace: destination } = z
+            .object({
+              workspace: z.object({
+                id,
+                role: z.string().optional(),
+                accessScope: z.string().optional(),
+                status: z.string().optional(),
+              }),
+            })
+            .parse(
+              await api.get(`/workspaces/${c.targetWorkspaceId}`, {
+                service: "aurora",
+                signal,
+                retry: false,
+              })
+            );
+          current(signal);
+          if (
+            destination.id !== c.targetWorkspaceId ||
+            !canMoveToWorkspace(destination, p.workspaceId)
+          )
+            throw Error("You must be an owner or admin of the destination workspace.");
+          const moved = z.object({ projectId: id, workspaceId: id, projectVersion: version }).parse(
+            await api.post(`/story-projects/${scope.projectId}/move`, {
+              service: "aurora",
+              signal,
+              retry: false,
+              data: {
+                expectedWorkspaceId: c.expectedWorkspaceId,
+                targetWorkspaceId: c.targetWorkspaceId,
+                expectedProjectVersion: c.expectedProjectVersion,
+              },
+            })
+          );
+          current(signal);
+          if (
+            moved.projectId !== scope.projectId ||
+            moved.workspaceId !== c.targetWorkspaceId ||
+            moved.projectVersion !== c.expectedProjectVersion + 1
+          )
+            throw Error("The project move could not be verified. Reload before retrying.");
+          const updated = await load(signal);
+          if (updated.projectVersion < moved.projectVersion || !matches(updated, c))
+            throw Error("The project moved again. Reload before continuing.");
+          pending.clear(c.clientKey);
+          return updated;
+        }
         const options = {
           service: "aurora" as const,
           signal,

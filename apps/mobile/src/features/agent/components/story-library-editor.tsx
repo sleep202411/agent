@@ -10,6 +10,7 @@ import { durableRecord } from "@/lib/durable-record";
 import { ThemedText } from "@/components/themed-text";
 import {
   storyLibraryActions,
+  canMoveToWorkspace,
   type StoryLibraryScope,
   type StoryLibraryProject,
   type StoryLibraryCommand,
@@ -31,11 +32,13 @@ export function StoryLibraryEditor({
   userId,
   onClose,
   onSaved,
+  workspaces = [],
 }: {
   scope: StoryLibraryScope;
   userId: string;
   onClose: () => void;
-  onSaved: (archived: boolean) => void;
+  onSaved: (archived: boolean, workspaceId?: string) => void;
+  workspaces?: { id: string; name: string; role?: string; accessScope?: string; status?: string }[];
 }) {
   const t = useTranslations(),
     theme = useTheme(),
@@ -45,6 +48,8 @@ export function StoryLibraryEditor({
       () => durableRecord("story-library-form", userId, scope.projectId),
       [scope.projectId, userId]
     );
+  const [moving, setMoving] = useState(false),
+    [destination, setDestination] = useState("");
   const [project, setProject] = useState<StoryLibraryProject>(),
     [form, setForm] = useState<Form>(),
     [pending, setPending] = useState<StoryLibraryCommand | null>(null),
@@ -81,7 +86,8 @@ export function StoryLibraryEditor({
         }
         setForm(draft);
         setError(undefined);
-        if (result.applied) notifySaved(result.project.status === "archived");
+        if (result.applied)
+          notifySaved(result.project.status === "archived", result.movedWorkspaceId);
       } catch (e) {
         if (alive()) setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -131,7 +137,10 @@ export function StoryLibraryEditor({
       setForm(fromProject(result));
       setPending(null);
       setError(undefined);
-      onSaved(result.status === "archived");
+      onSaved(
+        result.status === "archived",
+        command.kind === "move" ? result.workspaceId : undefined
+      );
     } catch (e) {
       if (current()) setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -235,6 +244,85 @@ export function StoryLibraryEditor({
                 })
               }
             />
+            {project.canMove && project.workspaceId ? (
+              <View style={{ gap: 8 }}>
+                <Action
+                  label={t("storyMove.title")}
+                  onPress={() => setMoving(!moving)}
+                  disabled={
+                    busy || loading || !!pending || dirty || conflict || project.status !== "active"
+                  }
+                />
+                {moving ? (
+                  <>
+                    <ThemedText type="small">{t("storyMove.help")}</ThemedText>
+                    {workspaces
+                      .filter((w) => canMoveToWorkspace(w, project.workspaceId))
+                      .map((w) => (
+                        <Pressable
+                          key={w.id}
+                          accessibilityRole="radio"
+                          accessibilityLabel={w.name}
+                          accessibilityState={{
+                            checked: destination === w.id,
+                            disabled: busy || !!pending || dirty || conflict,
+                          }}
+                          disabled={busy || !!pending || dirty || conflict}
+                          onPress={() => setDestination(w.id)}
+                          style={{
+                            minHeight: 44,
+                            padding: 10,
+                            borderWidth: 1,
+                            borderRadius: 8,
+                            borderColor: destination === w.id ? theme.brand : theme.border,
+                          }}
+                        >
+                          <ThemedText type="small">{w.name}</ThemedText>
+                        </Pressable>
+                      ))}
+                    {!workspaces.some((w) => canMoveToWorkspace(w, project.workspaceId)) ? (
+                      <ThemedText type="small">{t("storyMove.empty")}</ThemedText>
+                    ) : null}
+                    <Action
+                      label={t("storyMove.confirm")}
+                      disabled={
+                        busy ||
+                        loading ||
+                        !!pending ||
+                        dirty ||
+                        conflict ||
+                        !workspaces.some(
+                          (w) => w.id === destination && canMoveToWorkspace(w, project.workspaceId)
+                        )
+                      }
+                      onPress={() =>
+                        Alert.alert(
+                          t("storyMove.title"),
+                          t("storyMove.confirmHelp").replace(
+                            "{workspace}",
+                            workspaces.find((w) => w.id === destination)?.name ?? ""
+                          ),
+                          [
+                            { text: t("common.cancel"), style: "cancel" },
+                            {
+                              text: t("storyMove.confirm"),
+                              onPress: () =>
+                                void save({
+                                  kind: "move",
+                                  clientKey: uuid.v4(),
+                                  expectedWorkspaceId: project.workspaceId!,
+                                  targetWorkspaceId: destination,
+                                  expectedProjectVersion: project.projectVersion,
+                                }),
+                            },
+                          ]
+                        )
+                      }
+                    />
+                  </>
+                ) : null}
+              </View>
+            ) : null}
             {project.capabilities.includes("story.admin") ? (
               <>
                 <ThemedText type="small">{t("storyLibrary.archiveHelp")}</ThemedText>
