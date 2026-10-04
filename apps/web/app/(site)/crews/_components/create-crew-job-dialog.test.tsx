@@ -44,7 +44,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
 vi.mock("@/app/(site)/crews/_hooks/use-position-label", () => ({
   useTranslatedPresetPositions: () => [{ value: "director", label: "Director" }],
 }));
-vi.mock("@/components/ui/tag-input", () => ({ TagInput: () => null }));
+vi.mock("./required-skills-select", () => ({ RequiredSkillsSelect: () => null }));
 vi.mock("@/components/ui/select", () => ({
   Select: ({
     value,
@@ -449,13 +449,13 @@ it("preselects the saved task supplied by the publishing handoff", async () => {
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("copies the selected task brief only when explicitly requested, without publishing", async () => {
+it("prefills the linked task brief without publishing or overwriting later edits", async () => {
   await act(async () =>
     root.render(
       <CreateCrewJobDialog open onOpenChange={state.close} crewId="crew" initialTaskId="task-one" />
     )
   );
-  expect(container.querySelector("textarea")?.value).toBe("");
+  expect(container.querySelector("textarea")?.value).toBe("Storyboard requirements");
   const copy = [...container.querySelectorAll("button")].find(
     (button) => button.textContent === "useTaskBrief"
   )!;

@@ -126,6 +126,11 @@ vi.mock("./task-quick-create", () => ({
             title: initialInput ? "Revised Script" : "Storyboard",
             taskKind: presetTaskKind ?? "script",
             description: "Brief",
+            ...{
+              workflowStateId: "workflow-open",
+              rewardUsdMinor: 10000,
+              dueAt: "2099-10-03T00:00:00.000Z",
+            },
             priority: "normal",
             assignees: [],
             episodeId: presetEpisodeId,
@@ -217,6 +222,11 @@ async function stage() {
     input: {
       title: "Storyboard",
       description: "Brief",
+      ...{
+        workflowStateId: "workflow-open",
+        rewardUsdMinor: 10000,
+        dueAt: "2099-10-03T00:00:00.000Z",
+      },
       taskKind: "script",
       priority: "normal",
       assignees: [],
@@ -540,6 +550,11 @@ it("shows deadline and named assignee without staging or reward clutter", async 
           input: {
             title: "Detailed Script",
             description: "Brief",
+            ...{
+              workflowStateId: "workflow-open",
+              rewardUsdMinor: 10000,
+              dueAt: "2099-10-03T00:00:00.000Z",
+            },
             priority: "normal",
             taskKind: "script",
             dueAt: "2026-10-03T15:59:59Z",
@@ -760,6 +775,11 @@ it("reveals tasks arriving after loading without reopening a manually collapsed 
       assetCategory: "scripts",
       title: "Loaded script",
       description: "Brief",
+      ...{
+        workflowStateId: "workflow-open",
+        rewardUsdMinor: 10000,
+        dueAt: "2099-10-03T00:00:00.000Z",
+      },
       priority: "normal",
       taskKind: "script",
       assignees: [],
@@ -784,6 +804,11 @@ it("does not carry a recovered draft episode into a new category task", async ()
           input: {
             title: "Episode draft",
             description: "Brief",
+            ...{
+              workflowStateId: "workflow-open",
+              rewardUsdMinor: 10000,
+              dueAt: "2099-10-03T00:00:00.000Z",
+            },
             priority: "normal",
             taskKind: "script",
             assignees: [],

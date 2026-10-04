@@ -35,6 +35,84 @@ export class CrewAgreementsService {
     private readonly notifications: NotificationService,
   ) {}
 
+  /** Personal index: only agreements addressed to or created by this actor. */
+  async listMine(userId: string, query: ListCrewAgreementsQuery) {
+    const scope: Prisma.CrewAgreementWhereInput = {
+      OR: [{ memberUserId: userId }, { createdByUserId: userId }],
+      crew: {
+        deletedAt: null,
+        members: { some: { userId, status: 'active' } },
+      },
+      ...agreementViewWhere(query.view),
+    };
+    const cursor = query.cursor
+      ? await this.prisma.crewAgreement.findFirst({
+          where: { AND: [scope, { id: query.cursor }] },
+          select: { id: true, updatedAt: true },
+        })
+      : null;
+    if (query.cursor && !cursor)
+      throw new BadRequestException({
+        code: 'CREW_AGREEMENT_CURSOR_INVALID',
+        message: 'Restart the contracts list.',
+      });
+    const rows = await this.prisma.crewAgreement.findMany({
+      where: {
+        AND: [
+          scope,
+          ...(cursor
+            ? [
+                {
+                  OR: [
+                    { updatedAt: { lt: cursor.updatedAt } },
+                    { updatedAt: cursor.updatedAt, id: { lt: cursor.id } },
+                  ],
+                },
+              ]
+            : []),
+        ],
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      select: {
+        id: true,
+        title: true,
+        crewId: true,
+        memberUserId: true,
+        status: true,
+        updatedAt: true,
+        crew: { select: { name: true } },
+      },
+    });
+    const page = rows.slice(0, query.limit);
+    const permissions = new Map<string, string[]>();
+    for (const row of page) {
+      if (permissions.has(row.crewId)) continue;
+      const context = await this.authorization.resolve(row.crewId, userId);
+      permissions.set(row.crewId, context?.permissions ?? []);
+    }
+    return {
+      items: page
+        .filter((row) => {
+          const allowed = permissions.get(row.crewId) ?? [];
+          return (
+            allowed.includes('agreements.manage') ||
+            (row.memberUserId === userId &&
+              allowed.includes('agreements.view_own'))
+          );
+        })
+        .map((row) => ({
+          id: row.id,
+          title: row.title,
+          crewId: row.crewId,
+          status: row.status,
+          updatedAt: row.updatedAt,
+          crew: row.crew,
+        })),
+      nextCursor: rows.length > query.limit ? (page.at(-1)?.id ?? null) : null,
+    };
+  }
+
   async list(crewId: string, userId: string, query: ListCrewAgreementsQuery) {
     const context = await this.authorization.requireMembership(crewId, userId);
     const canManage = context.permissions.includes('agreements.manage');

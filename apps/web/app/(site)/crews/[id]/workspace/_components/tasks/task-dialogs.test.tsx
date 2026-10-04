@@ -52,6 +52,13 @@ function render(taskId: string, open = true) {
       />
     )
   );
+  act(() => fillLink("https://example.com/delivery"));
+}
+function fillLink(value: string) {
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="deliveryLink"]');
+  if (!input) return;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 function clickSubmit() {
   [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "submit")!.click();
@@ -145,7 +152,7 @@ it("locks the submitted draft and restores editing after failure", async () => {
   expect(document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.disabled).toBe(true);
   expect(submit).toHaveBeenCalledWith({
     taskId: "task-1",
-    note: "Review this output",
+    note: "https://example.com/delivery\n\nReview this output",
     assetNodeIds: ["asset-1"],
   });
   await act(async () => reject(new Error("Please retry")));
@@ -205,7 +212,7 @@ it("loads and submits attachments beyond the first page without losing earlier s
   await act(async () => clickSubmit());
   expect(submit).toHaveBeenCalledWith({
     taskId: "task-1",
-    note: "",
+    note: "https://example.com/delivery",
     assetNodeIds: ["asset-1", "asset-101"],
   });
 });
@@ -325,5 +332,26 @@ it("shows default delivery slots and persists the link with the submission note"
   await act(async () => clickSubmit());
   expect(submit).toHaveBeenCalledWith(
     expect.objectContaining({ note: "https://example.com/delivery\n\nFinal cut" })
+  );
+});
+
+it("explains missing and invalid links instead of silently disabling submission", async () => {
+  render("task-1");
+  act(() => fillLink(""));
+  expect(document.body.textContent).toContain("deliveryLinkRequired");
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  act(() => fillLink("test"));
+  expect(document.body.textContent).toContain("deliveryLinkInvalid");
+  expect(document.querySelector('[aria-label="deliveryLink"]')?.getAttribute("aria-invalid")).toBe(
+    "true"
+  );
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  act(() => fillLink("https://example.com/final"));
+  submit.mockResolvedValue({ id: "task-1" });
+  await act(async () => clickSubmit());
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({ note: "https://example.com/final" })
   );
 });

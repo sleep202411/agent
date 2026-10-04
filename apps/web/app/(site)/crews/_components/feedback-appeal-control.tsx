@@ -28,7 +28,7 @@ export function FeedbackAppealControl({
   return (
     <section className="space-y-2 pt-2" aria-label={t("appealFeedback")}>
       <p className="text-sm text-muted-foreground">{t("appealExplanation")}</p>
-      <Link className="text-primary underline" href={`/${locale}/crews/cases`}>
+      <Link className="text-primary underline" href={`/${locale}/resolution-center`}>
         {t("existingCases")}
       </Link>
       {mutation.error && <p role="alert">{mutation.error}</p>}
@@ -37,7 +37,7 @@ export function FeedbackAppealControl({
           <p>{t("appealSaved")}</p>
           <Link
             className="text-primary underline"
-            href={`/${locale}/crews/cases/${encodeURIComponent(mutation.saved.dispute.id)}`}
+            href={`/${locale}/resolution-center/${encodeURIComponent(mutation.saved.dispute.id)}`}
           >
             {t("viewCase")}
           </Link>

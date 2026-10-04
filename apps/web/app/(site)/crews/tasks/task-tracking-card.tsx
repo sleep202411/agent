@@ -1,4 +1,5 @@
 "use client";
+import { TaskContractLink } from "@/app/(site)/crews/_components/task-contract-link";
 
 import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
 
@@ -14,7 +15,7 @@ import { TaskFeedbackPanel } from "../_components/task-feedback-panel";
 import { TaskDeliveryProgress } from "../[id]/workspace/_components/tasks/task-delivery-progress";
 import { useState } from "react";
 import Link from "next/link";
-import { IconChevronDown, IconHistory, IconSend } from "@tabler/icons-react";
+import { IconChevronDown, IconHistory, IconSend, IconMail } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -23,7 +24,7 @@ import { CrewApiError } from "../_hooks/api";
 import { useCrewTask, useCrewTaskTimeline } from "../_hooks/use-tasks";
 import { displayNameOf, useUserDisplays } from "../_hooks/use-users";
 import type { CrewTaskPriority, CrewTaskStatus } from "../_hooks/types";
-import { TaskDeadline } from "../_components/task-deadline";
+import { TaskDeadline, TaskStateBadge } from "../_components/task-deadline";
 import { TaskUnreadMarker } from "../_components/task-unread-marker";
 import { SubmitTaskDialog } from "../[id]/workspace/_components/tasks/task-dialogs";
 import { TaskDeliverySummary } from "../[id]/workspace/_components/tasks/task-delivery-summary";
@@ -54,7 +55,7 @@ export function TaskTrackingCard({
   const taskT = useTranslations("crewTasks");
   const locale = useLocale() as Locale;
   const [expanded, setExpanded] = useState(false);
-  const [action, setAction] = useState<"submit" | "review" | null>(null);
+  const [action, setAction] = useState<"submit" | "review" | "feedback" | null>(null);
   return (
     <li className="min-w-0 rounded-lg bg-[#1e1e1e]">
       <div className="flex flex-wrap items-center gap-3 p-3">
@@ -74,11 +75,12 @@ export function TaskTrackingCard({
           </Link>
         </div>
         <TaskDeadline dueAt={task.dueAt} status={task.status} warningHours={warningHours} />
-        <span
-          className={`rounded-full px-3 py-1 text-xs ${task.status === "approved" ? "bg-green-500/10 text-green-400" : task.status === "submitted" ? "bg-sky-500/10 text-sky-400" : task.status === "revision_requested" ? "bg-red-500/10 text-red-400" : "bg-white/5 text-muted-foreground"}`}
-        >
-          {workflowStateLabel(task.workflowState, taskT)}
-        </span>
+        <TaskStateBadge
+          dueAt={task.dueAt}
+          status={task.status}
+          warningHours={warningHours}
+          label={workflowStateLabel(task.workflowState, taskT)}
+        />
         {task.canSubmit && action !== "submit" ? (
           <Button
             size="sm"
@@ -100,6 +102,12 @@ export function TaskTrackingCard({
             }}
           >
             {t("review")}
+          </Button>
+        ) : null}
+        {["submitted", "approved", "revision_requested"].includes(task.status) ? (
+          <Button size="sm" variant="ghost" color="muted" onClick={() => setAction("feedback")}>
+            <IconMail className="size-4" />
+            {t("feedback")}
           </Button>
         ) : null}
         <button
@@ -156,7 +164,7 @@ function TaskTrackingDetails({
   onCloseAction,
 }: {
   task: TrackingTask;
-  action: "submit" | "review" | null;
+  action: "submit" | "review" | "feedback" | null;
   onCloseAction: () => void;
 }) {
   const t = useTranslations("crewTaskCenter");
@@ -200,7 +208,7 @@ function TaskTrackingDetails({
         <p role="status">{t("loading")}</p>
       ) : detail.data ? (
         <>
-          {action && <TaskDeliveryProgress status={detail.data.status} />}
+          {action && action !== "feedback" && <TaskDeliveryProgress status={detail.data.status} />}
           {!action && detail.data.description ? (
             <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
               {detail.data.description}
@@ -218,13 +226,14 @@ function TaskTrackingDetails({
               onSubmitted={onCloseAction}
             />
           ) : null}
+          <TaskContractLink crewId={task.crew.id} assetId={detail.data.contractAssetNodeId} />
           <TaskDeliverySummary task={detail.data} />
           {action === "review" && task.canReview && detail.data.status === "submitted" ? (
             <div className="space-y-4">
               <TaskReviewForm task={detail.data} onReviewed={onCloseAction} />
-              <TaskFeedbackPanel task={detail.data} />
             </div>
           ) : null}
+          {action === "feedback" ? <TaskFeedbackPanel task={detail.data} /> : null}
         </>
       ) : null}
       <section aria-label={t("history")}>

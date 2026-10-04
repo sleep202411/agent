@@ -101,6 +101,7 @@ import type {
   CreateAdminIpTaxonomyTermInput,
   CreateAdminIpDiscoveryInput,
   CreateIpContentReportInput,
+  ListMyContentReportsQuery,
   RecordMemberViewInput,
   RecordIpViewInput,
   CreateIpPurchaseInput,
@@ -5393,8 +5394,70 @@ export class IpCommerceService {
     return { recorded: true, settlementPeriod };
   }
 
+  async listMyContentReports(user: AuthUser, query: ListMyContentReportsQuery) {
+    // Respondents see completed moderation outcomes on IPs they currently own;
+    // reporter identities and supporting evidence are never projected here.
+    const scope: Prisma.IpContentReportWhereInput =
+      query.view === 'initiated'
+        ? { reporterUserId: user.userId }
+        : {
+            ip: { createdById: user.userId, deletedAt: null },
+            status: { in: ['actioned', 'dismissed'] },
+          };
+    if (
+      query.cursor &&
+      !(await this.prisma.ipContentReport.findFirst({
+        where: { ...scope, id: query.cursor },
+        select: { id: true },
+      }))
+    ) {
+      throw new BadRequestException({
+        code: 'CONTENT_REPORT_CURSOR_INVALID',
+        msg: 'Restart the report list to refresh your access.',
+      });
+    }
+    const rows = await this.prisma.ipContentReport.findMany({
+      where: {
+        ...scope,
+        ...(query.cursor ? { id: { lt: query.cursor } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: query.limit + 1,
+      select: {
+        id: true,
+        targetType: true,
+        targetId: true,
+        reason: true,
+        status: true,
+        createdAt: true,
+        resolvedAt: true,
+        resolutionNote: true,
+        ...(query.view === 'initiated' ? { description: true } : {}),
+      },
+    });
+    return {
+      items: rows.slice(0, query.limit),
+      nextCursor: rows.length > query.limit ? rows[query.limit - 1].id : null,
+    };
+  }
+
   async reportContent(user: AuthUser, input: CreateIpContentReportInput) {
     const target = await this.resolveReportTarget(input);
+    if (
+      input.evidenceAssetId &&
+      !(await this.prisma.mediaAsset.findFirst({
+        where: {
+          id: input.evidenceAssetId,
+          createdByUserId: user.userId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      }))
+    )
+      throw new BadRequestException({
+        code: 'REPORT_EVIDENCE_UNAVAILABLE',
+        msg: 'The evidence file is unavailable for your account.',
+      });
     const report = await this.prisma.ipContentReport.create({
       data: {
         targetType: input.targetType as IpTargetType,

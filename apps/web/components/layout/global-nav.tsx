@@ -26,6 +26,9 @@ import { AppDownloadMenu, APP_DOWNLOADS } from "./app-download-menu";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconBook2,
+  IconScale,
+  IconFileText,
+  IconCoins,
   IconCheck,
   IconChevronRight,
   IconCopy,
@@ -442,6 +445,32 @@ export function GlobalNav() {
               <div className={navCx("fd-secret-mobile-section")}>
                 {user ? (
                   <>
+                    <div className={navCx("fd-secret-account-section")}>
+                      {(
+                        [
+                          { href: "/crews/income", label: "myIncome", icon: IconCoins },
+                          { href: "/contracts", label: "myContracts", icon: IconFileText },
+                          {
+                            href: "/resolution-center",
+                            label: "resolutionCenter",
+                            icon: IconScale,
+                          },
+                        ] as const
+                      ).map(({ href, label, icon: Icon }) => (
+                        <Link
+                          key={href}
+                          href={localizePath(href, locale)}
+                          className={navCx("fd-secret-account-row")}
+                        >
+                          <Icon className="size-5" />
+                          <span className="flex-1">{t(label)}</span>
+                          <IconChevronRight
+                            className={navCx("fd-secret-account-row-arrow size-4")}
+                          />
+                        </Link>
+                      ))}
+                    </div>
+
                     <CommunityCreditsChip layout="row" />
                     <Link
                       href={localizePath("/messages", locale)}
@@ -588,6 +617,26 @@ function SecretAccountMenu({
               <span className="flex-1">{commonT("myProfile")}</span>
               <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
             </Link>
+          </div>
+
+          <div className={navCx("fd-secret-account-section")}>
+            {(
+              [
+                { href: "/crews/income", label: "myIncome", icon: IconCoins },
+                { href: "/contracts", label: "myContracts", icon: IconFileText },
+                { href: "/resolution-center", label: "resolutionCenter", icon: IconScale },
+              ] as const
+            ).map(({ href, label, icon: Icon }) => (
+              <Link
+                key={href}
+                href={localizePath(href, locale)}
+                className={navCx("fd-secret-account-row")}
+              >
+                <Icon className="size-5" />
+                <span className="flex-1">{navT(label)}</span>
+                <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
+              </Link>
+            ))}
           </div>
 
           <CommunityCreditsChip layout="row" className={navCx("fd-secret-account-wallet")} />

@@ -153,7 +153,7 @@ export function PositionsTab() {
       </div>
       <aside
         id="opening-filters"
-        className={`${filtersOpen ? "block" : "hidden"} space-y-5 border-r border-white/10 p-4 lg:block lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain`}
+        className={`${filtersOpen ? "block" : "hidden"} space-y-3 text-xs border-r border-white/10 p-4 lg:block lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain`}
       >
         <Button
           variant={savedOnly ? "solid" : "outline"}
@@ -188,7 +188,7 @@ export function PositionsTab() {
             });
           }}
         >
-          <h3 className="text-sm font-semibold">
+          <h3 className="text-xs font-semibold">
             {filterT("salary", { currency: CREW_CURRENCY })}
           </h3>
           <div className="flex gap-2">

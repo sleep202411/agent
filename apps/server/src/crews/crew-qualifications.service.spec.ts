@@ -34,6 +34,14 @@ afterEach(() => {
   else process.env.CREW_QUALIFICATION_CATALOG_JSON = original;
 });
 describe('Current Java qualification admission', () => {
+  it('offers the same configured skills used by application eligibility', () => {
+    expect(service.catalog()).toEqual({ skills: ['editing', 'music'] });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('does not silently offer an empty catalog when configuration is missing', () => {
+    delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
+    expect(() => service.catalog()).toThrow('Configure this site');
+  });
   it('boots without a regional catalog but fails closed on qualified recruiting', async () => {
     // Catalog present: init succeeds.
     expect(() => service.onModuleInit()).not.toThrow();

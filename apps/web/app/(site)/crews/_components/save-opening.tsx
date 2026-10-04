@@ -1,4 +1,5 @@
 "use client";
+import { IconHeart, IconHeartFilled } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -34,7 +35,11 @@ function SaveSession({ positionId, userId }: { positionId: string; userId?: stri
   return (
     <div className="space-y-2">
       <Button
-        variant="outline"
+        variant="ghost"
+        color="muted"
+        aria-label={state.isError ? t("retry") : state.data?.saved ? t("saved") : t("save")}
+        title={state.isError ? t("retry") : state.data?.saved ? t("saved") : t("save")}
+        icon={state.data?.saved ? <IconHeartFilled className="text-primary" /> : <IconHeart />}
         disabled={save.isPending || Boolean(userId && state.isPending)}
         aria-pressed={state.data?.saved ?? false}
         onClick={() => {

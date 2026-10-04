@@ -1,4 +1,10 @@
 "use client";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { missingTaskFields } from "./task-required-fields";
+import { TaskDeliveryUpload } from "./task-delivery-upload";
+import { TaskContractLink } from "@/app/(site)/crews/_components/task-contract-link";
+import { useTranslatedPresetPositions } from "@/app/(site)/crews/_hooks/use-position-label";
+import { RequiredSkillsSelect } from "@/app/(site)/crews/_components/required-skills-select";
 
 import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
 
@@ -11,8 +17,6 @@ import {
   IconArrowsDiagonal,
   IconCalendar,
   IconCoin,
-  IconPercentage,
-  IconCheck,
   IconChevronRight,
   IconCircle,
   IconCube,
@@ -20,7 +24,6 @@ import {
   IconFlag3,
   IconMovie,
   IconSparkles,
-  IconTag,
   IconUserCircle,
   IconX,
 } from "@tabler/icons-react";
@@ -65,6 +68,7 @@ interface TaskQuickCreateProps {
   onCreated?: (task: CrewTaskDTO) => void;
   onPublishTask?: (taskId: string) => void;
   onStage?: (input: CreateCrewTaskInput) => void;
+  onCreateStaged?: (input: CreateCrewTaskInput) => Promise<CrewTaskDTO>;
   keyboardShortcut?: boolean;
   initialInput?: CreateCrewTaskInput;
 }
@@ -84,11 +88,23 @@ export function TaskQuickCreate({
   onCreated,
   onPublishTask,
   onStage,
+  onCreateStaged,
   keyboardShortcut = true,
   initialInput,
 }: TaskQuickCreateProps) {
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
+  const positions = useTranslatedPresetPositions();
+  const { user } = useCurrentUser();
+  const actorId = user?.id ?? null;
+  const [contractAssetNodeId, setContractAssetNodeId] = useState(
+    initialInput?.contractAssetNodeId ?? null
+  );
+  const [contractFilename, setContractFilename] = useState("");
+  const [contractUploading, setContractUploading] = useState(false);
+  const contractBusy = useRef(false);
+  const [contractUploadRevision, setContractUploadRevision] = useState(0);
+  const [positionRole, setPositionRole] = useState(initialInput?.positionRole ?? "");
   const locale = useLocale() as "en-US" | "zh-CN" | "zh-HK";
   const create = useCreateCrewTask(crewId);
   const episodes = useCrewEpisodes(crewId);
@@ -111,6 +127,9 @@ export function TaskQuickCreate({
     initialInput?.workflowStateId ?? null
   );
   const [assigneeUserId, setAssigneeUserId] = useState(initialInput?.assignees[0]?.userId ?? "");
+  const [requiredSkills, setRequiredSkills] = useState<string[]>(
+    initialInput?.requiredSkills ?? []
+  );
   const [labelIds, setLabelIds] = useState<string[]>(initialInput?.labelIds ?? []);
   const [cycleId, setCycleId] = useState<string | null>(
     initialInput ? (initialInput.cycleId ?? "") : null
@@ -132,15 +151,26 @@ export function TaskQuickCreate({
   const [draft, setDraft] = useState<CrewTaskDraftDTO | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  const [context, setContext] = useState({ open, crewId, parentId });
-  if (context.open !== open || context.crewId !== crewId || context.parentId !== parentId) {
-    setContext({ open, crewId, parentId });
+  const [context, setContext] = useState({ open, crewId, parentId, actorId });
+  if (
+    context.open !== open ||
+    context.crewId !== crewId ||
+    context.parentId !== parentId ||
+    context.actorId !== actorId
+  ) {
+    setContext({ open, crewId, parentId, actorId });
     setTitle(initialInput?.title ?? "");
     setDescription(initialInput?.description ?? "");
     setPriority(initialInput?.priority ?? "normal");
     setTaskKind(initialInput?.taskKind ?? presetTaskKind ?? "");
     setWorkflowStateId(initialInput?.workflowStateId ?? null);
     setAssigneeUserId(initialInput?.assignees[0]?.userId ?? "");
+    setRequiredSkills(initialInput?.requiredSkills ?? []);
+    setPositionRole(initialInput?.positionRole ?? "");
+    setContractAssetNodeId(initialInput?.contractAssetNodeId ?? null);
+    setContractFilename("");
+    setContractUploading(false);
+    setContractUploadRevision((revision) => revision + 1);
     setLabelIds(initialInput?.labelIds ?? []);
     setCycleId(initialInput ? (initialInput.cycleId ?? "") : null);
     setEpisodeId(initialInput?.episodeId ?? presetEpisodeId ?? null);
@@ -158,12 +188,13 @@ export function TaskQuickCreate({
   useEffect(() => {
     session.current += 1;
     operationInFlight.current = false;
+    contractBusy.current = false;
     resetCreate();
     resetDraft();
     return () => {
       session.current += 1;
     };
-  }, [open, crewId, parentId, resetCreate, resetDraft]);
+  }, [open, crewId, parentId, actorId, resetCreate, resetDraft]);
 
   const activeCycle = project.cycles.find((cycle) => cycle.status === "active") ?? null;
   const defaultCycleId = useMemo(() => {
@@ -230,6 +261,15 @@ export function TaskQuickCreate({
     draftRevision.current += 1;
     setTitle("");
     setDescription("");
+    setRequiredSkills([]);
+    setPositionRole("");
+    setContractAssetNodeId(null);
+    setContractFilename("");
+    contractBusy.current = false;
+    setContractUploading(false);
+    setContractUploadRevision((revision) => revision + 1);
+    setRewardUsd("");
+    setProfitShare("");
     setPriority("normal");
     setTaskKind("");
     setWorkflowStateId(null);
@@ -244,13 +284,20 @@ export function TaskQuickCreate({
   };
 
   const setOpen = (nextOpen: boolean) => {
-    if (!nextOpen && (create.isPending || draftTask.isPending)) return;
+    if (!nextOpen && (contractBusy.current || create.isPending || draftTask.isPending)) return;
     onOpenChange(nextOpen);
     if (!nextOpen) reset();
   };
 
   const generateDraft = async () => {
-    if (!open || operationInFlight.current || create.isPending || draftTask.isPending) return;
+    if (
+      !open ||
+      contractBusy.current ||
+      operationInFlight.current ||
+      create.isPending ||
+      draftTask.isPending
+    )
+      return;
     const prompt = [title.trim(), description.trim()].filter(Boolean).join("\n\n");
     if (!prompt) return;
     operationInFlight.current = true;
@@ -284,10 +331,29 @@ export function TaskQuickCreate({
   };
 
   const submit = async (recruit = false) => {
-    if (!open || operationInFlight.current || create.isPending || draftTask.isPending) return;
+    if (
+      !open ||
+      contractBusy.current ||
+      operationInFlight.current ||
+      create.isPending ||
+      draftTask.isPending
+    )
+      return;
     const nextTitle = title.trim();
     if (!nextTitle) {
       titleRef.current?.focus();
+      return;
+    }
+    const missing = missingTaskFields({
+      title: nextTitle,
+      taskKind: taskKind || null,
+      description,
+      workflowStateId: resolvedWorkflowStateId ?? undefined,
+      rewardUsdMinor: rewardUsd.trim() ? Number(rewardUsd) * 100 : null,
+      dueAt: dueDate || null,
+    });
+    if (missing.length) {
+      toast.error(t("requiredTaskFields", { fields: missing.map((field) => t(field)).join(", ") }));
       return;
     }
     if (!resolvedWorkflowStateId) return;
@@ -354,6 +420,9 @@ export function TaskQuickCreate({
         parentId: parentId ?? draft?.parentId ?? initialInput?.parentId ?? null,
         blockedByTaskIds: draft?.blockedByTaskIds ?? initialInput?.blockedByTaskIds ?? [],
         labelIds,
+        requiredSkills,
+        positionRole: positionRole || null,
+        contractAssetNodeId,
         assignees:
           !recruit && assigneeUserId
             ? initialInput?.assignees[0]?.userId === assigneeUserId
@@ -361,13 +430,14 @@ export function TaskQuickCreate({
               : [{ userId: assigneeUserId, currency: CREW_CURRENCY }]
             : [],
       };
-      if (onStage) {
+      if (onStage && !recruit) {
         staged = true;
         onStage(input);
         setOpen(false);
         return;
       }
-      const task = await create.mutateAsync(input);
+      const task =
+        onStage && onCreateStaged ? await onCreateStaged(input) : await create.mutateAsync(input);
       if (session.current !== requestedSession) return;
       toast.success(t("created"));
       onCreated?.(task);
@@ -393,7 +463,6 @@ export function TaskQuickCreate({
 
   const activeState = project.workflowStates.find((state) => state.id === resolvedWorkflowStateId);
   const projectLabel = crewName || projectT("title");
-  const selectedLabels = project.labels.filter((label) => labelIds.includes(label.id));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -441,12 +510,12 @@ export function TaskQuickCreate({
           </div>
         </div>
 
-        {onPublishTask && !onStage ? (
+        {onPublishTask && (!onStage || onCreateStaged) ? (
           <div className="mx-5 mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2">
             <Button
               size="sm"
               variant="outline"
-              disabled={create.isPending || draftTask.isPending}
+              disabled={contractUploading || create.isPending || draftTask.isPending}
               onClick={() => void submit(true)}
             >
               {projectT("workbench.publishOpening")}
@@ -463,6 +532,7 @@ export function TaskQuickCreate({
               value={taskKind}
               label={taskKind ? t(CREW_TASK_KIND_MESSAGE_KEYS[taskKind]) : t("taskKindLabel")}
               ariaLabel={t("taskKindLabel")}
+              required
               onChange={(value) => {
                 draftRevision.current += 1;
                 const next = value as CrewTaskKind | "";
@@ -481,21 +551,22 @@ export function TaskQuickCreate({
             />
             <SelectChip
               icon={<IconUserCircle className="size-3.5" />}
-              value={assigneeUserId}
+              value={positionRole}
               label={
-                assigneeUserId ? displayNameOf(assigneeUserId, displays) : t("chooseAssignees")
+                positions.find((role) => role.value === positionRole)?.label ??
+                (positionRole || t("positionRole"))
               }
-              ariaLabel={t("chooseAssignees")}
+              ariaLabel={t("positionRole")}
               onChange={(value) => {
                 draftRevision.current += 1;
-                setAssigneeUserId(value);
+                setPositionRole(value);
               }}
               options={[
-                { value: "", label: t("unassigned") },
-                ...members.map((member) => ({
-                  value: member.userId,
-                  label: displayNameOf(member.userId, displays),
-                })),
+                { value: "", label: t("positionRole") },
+                ...positions,
+                ...(positionRole && !positions.some((role) => role.value === positionRole)
+                  ? [{ value: positionRole, label: positionRole }]
+                  : []),
               ]}
             />
             <SelectChip
@@ -514,7 +585,9 @@ export function TaskQuickCreate({
             />
           </div>
           <label className="block space-y-2">
-            <span className="text-sm font-medium">{t("taskTitle")}</span>
+            <span className="text-sm font-medium">
+              {t("taskTitle")} <span aria-hidden="true">*</span>
+            </span>
             <textarea
               ref={titleRef}
               value={title}
@@ -533,12 +606,15 @@ export function TaskQuickCreate({
               maxLength={180}
               placeholder={t("titlePlaceholder")}
               aria-label={t("taskTitle")}
+              aria-required="true"
               className="block min-h-11 w-full resize-y rounded-md border border-white/15 bg-[#0b0c0f] p-3 text-sm text-white outline-none focus:border-primary"
             />
           </label>
           <div className="relative">
             <label className="block space-y-2">
-              <span className="text-sm font-medium">{t("taskBrief")}</span>
+              <span className="text-sm font-medium">
+                {t("taskBrief")} <span aria-hidden="true">*</span>
+              </span>
               <textarea
                 value={description}
                 onChange={(event) => {
@@ -550,6 +626,7 @@ export function TaskQuickCreate({
                 maxLength={10_000}
                 placeholder={t("descriptionPlaceholder")}
                 aria-label={t("taskBrief")}
+                aria-required="true"
                 className={cn(
                   "block min-h-36 w-full resize-y rounded-lg border-2 border-dashed border-white/15 bg-[#0b0c0f] p-3 text-sm leading-6 text-[#d5d5da] outline-none focus:border-primary",
                   expanded && "min-h-52"
@@ -577,6 +654,74 @@ export function TaskQuickCreate({
               ) : null}
             </div>
           </div>
+
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer">{t("assignExistingMember")}</summary>
+            <div className="mt-2 max-w-sm">
+              <SelectChip
+                icon={<IconUserCircle className="size-3.5" />}
+                value={assigneeUserId}
+                label={
+                  assigneeUserId ? displayNameOf(assigneeUserId, displays) : t("chooseAssignees")
+                }
+                ariaLabel={t("chooseAssignees")}
+                onChange={(value) => {
+                  draftRevision.current += 1;
+                  setAssigneeUserId(value);
+                }}
+                options={[
+                  { value: "", label: t("unassigned") },
+                  ...members.map((member) => ({
+                    value: member.userId,
+                    label: displayNameOf(member.userId, displays),
+                  })),
+                ]}
+              />
+            </div>
+          </details>
+
+          <section className="space-y-2" aria-label={t("contractOptional")}>
+            <h3 className="text-xs font-medium text-muted-foreground">{t("contractOptional")}</h3>
+            <TaskDeliveryUpload
+              key={`${actorId}:${crewId}:${parentId}:${open}:${contractUploadRevision}`}
+              crewId={crewId}
+              parentId={null}
+              label={t("contractOptional")}
+              disabled={create.isPending || draftTask.isPending}
+              onBusyChange={(busy) => {
+                contractBusy.current = busy;
+                setContractUploading(busy);
+              }}
+              onUploaded={(asset) => {
+                setContractAssetNodeId(asset.id);
+                setContractFilename(asset.name);
+              }}
+            />
+            {contractAssetNodeId ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {contractFilename ? <span className="break-all">{contractFilename}</span> : null}
+                <TaskContractLink crewId={crewId} assetId={contractAssetNodeId} />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  color="muted"
+                  disabled={contractUploading || create.isPending || draftTask.isPending}
+                  onClick={() => {
+                    setContractAssetNodeId(null);
+                    setContractFilename("");
+                  }}
+                >
+                  {t("removeContract")}
+                </Button>
+              </div>
+            ) : null}
+          </section>
+
+          <RequiredSkillsSelect
+            value={requiredSkills}
+            onChange={setRequiredSkills}
+            disabled={contractUploading || create.isPending || draftTask.isPending}
+          />
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <SelectChip
@@ -617,36 +762,15 @@ export function TaskQuickCreate({
                   })),
               ]}
             />
-            <div className="min-w-0 space-y-2">
-              <p className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
-                <IconTag className="size-3.5" />
-                {t("labels")}
-              </p>
-              <LabelChip
-                labels={project.labels}
-                selectedIds={labelIds}
-                onChange={setLabelIds}
-                label={
-                  selectedLabels.length > 0
-                    ? selectedLabels.map((item) => item.name).join(", ")
-                    : t("labels")
-                }
-              />
-            </div>
             {(
               [
                 { key: "rewardUsd", value: rewardUsd, set: setRewardUsd, max: 1_000_000_000 },
-                { key: "profitShare", value: profitShare, set: setProfitShare, max: 100 },
               ] as const
             ).map((field) => (
               <label key={field.key} className="block min-w-0 space-y-2">
                 <span className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
-                  {field.key === "rewardUsd" ? (
-                    <IconCoin className="size-3.5" />
-                  ) : (
-                    <IconPercentage className="size-3.5" />
-                  )}
-                  {projectT(`workbench.${field.key}`)}
+                  <IconCoin className="size-3.5" />
+                  {projectT(`workbench.${field.key}`)} <span aria-hidden="true">*</span>
                 </span>
                 <input
                   type="number"
@@ -655,6 +779,7 @@ export function TaskQuickCreate({
                   step="0.01"
                   value={field.value}
                   aria-label={projectT(`workbench.${field.key}`)}
+                  aria-required="true"
                   className="h-10 data-[size=default]:h-10 w-full min-w-0 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-white outline-none focus:border-primary"
                   onChange={(event) => {
                     draftRevision.current += 1;
@@ -666,7 +791,7 @@ export function TaskQuickCreate({
             <div className="min-w-0 space-y-2">
               <p className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
                 <IconCalendar className="size-3.5" />
-                {t("due")}
+                {t("due")} <span aria-hidden="true">*</span>
               </p>
               <DateChip
                 value={dueDate}
@@ -706,7 +831,12 @@ export function TaskQuickCreate({
           ) : null}
           <button
             type="button"
-            disabled={!resolvedWorkflowStateId || draftTask.isPending || create.isPending}
+            disabled={
+              contractUploading ||
+              !resolvedWorkflowStateId ||
+              draftTask.isPending ||
+              create.isPending
+            }
             onClick={() => void submit()}
             className="ml-5 inline-flex h-11 min-w-32 items-center justify-center rounded-lg bg-[#E52227] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#c91c21] disabled:cursor-not-allowed disabled:bg-[#34343a] disabled:text-[#777780]"
           >
@@ -731,7 +861,9 @@ function SelectChip({
   ariaLabel,
   onChange,
   options,
+  required,
 }: {
+  required?: boolean;
   icon: React.ReactNode;
   value: string;
   label: string;
@@ -744,6 +876,7 @@ function SelectChip({
       <p className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
         {icon}
         {ariaLabel}
+        {required ? <span aria-hidden="true">*</span> : null}
       </p>
       <TaskSelect
         value={value}
@@ -754,64 +887,6 @@ function SelectChip({
         className="h-10 data-[size=default]:h-10 w-full min-w-0 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-[#e8e9ec] hover:bg-white/5 dark:bg-[#101012]"
       />
     </div>
-  );
-}
-
-function LabelChip({
-  labels,
-  selectedIds,
-  onChange,
-  label,
-}: {
-  labels: CrewTaskProjectDTO["labels"];
-  selectedIds: string[];
-  onChange: (ids: string[]) => void;
-  label: string;
-}) {
-  const t = useTranslations("crewTasks");
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex h-10 min-w-0 w-full items-center gap-2 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
-          aria-label={t("labels")}
-        >
-          <span className="truncate">{label}</span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={8}
-        className="w-60 gap-1 rounded-xl border border-white/[0.09] bg-[#1b1b1f] p-1.5 shadow-[0_18px_50px_rgba(0,0,0,.52)] ring-0"
-      >
-        {labels.length > 0 ? (
-          labels.map((item) => {
-            const selected = selectedIds.includes(item.id);
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() =>
-                  onChange(
-                    selected
-                      ? selectedIds.filter((id) => id !== item.id)
-                      : [...selectedIds, item.id]
-                  )
-                }
-                className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[12px] text-[#c7c7ce] hover:bg-white/[0.06]"
-              >
-                <span className="size-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                {selected ? <IconCheck className="size-3.5 text-[#7f8cff]" /> : null}
-              </button>
-            );
-          })
-        ) : (
-          <p className="px-2 py-3 text-[11px] text-[#787881]">{t("noLabels")}</p>
-        )}
-      </PopoverContent>
-    </Popover>
   );
 }
 

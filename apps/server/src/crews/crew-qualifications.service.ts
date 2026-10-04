@@ -1,4 +1,6 @@
 import {
+  Controller,
+  Get,
   ForbiddenException,
   Injectable,
   ServiceUnavailableException,
@@ -73,6 +75,11 @@ export class CrewQualificationsService {
     //
     // TODO(#557): restore the fail-fast check once the regional Java Admin
     // catalog value is provisioned. See thread with Isaac 2026-09-27.
+  }
+
+  catalog() {
+    const { catalog } = readCatalog();
+    return { skills: Object.keys(catalog.skills).sort() };
   }
 
   async assertEligible(
@@ -186,4 +193,13 @@ function readCatalog() {
     skills.set(key, ids);
   }
   return { catalog, skills };
+}
+
+@Controller('crew-qualification-catalog')
+export class CrewQualificationCatalogController {
+  constructor(private readonly qualifications: CrewQualificationsService) {}
+  @Get()
+  catalog() {
+    return this.qualifications.catalog();
+  }
 }

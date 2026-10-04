@@ -1,4 +1,5 @@
 "use client";
+import { missingTaskFields } from "./task-required-fields";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -209,6 +210,11 @@ function TaskCreationSession({
   };
   async function createAll() {
     if (lock.current || !user?.id || !canManage || unresolved || !pendingCount) return;
+    const incomplete = pending.find((draft) => missingTaskFields(draft.input).length > 0);
+    if (incomplete) {
+      setError(t("completeDraftFields", { title: incomplete.input.title }));
+      return;
+    }
     const userId = user.id;
     lock.current = true;
     setBusy(true);
@@ -941,6 +947,54 @@ function TaskCreationSession({
           onCreated={() => {
             void tasks.refetch();
           }}
+          onCreateStaged={
+            editingId !== null
+              ? async (input) => {
+                  if (lock.current || !editing || editing.state !== "staged")
+                    throw new Error(t("failed"));
+                  lock.current = true;
+                  setBusy(true);
+                  const recorded = setDrafts((current) =>
+                    current.map((item) =>
+                      item.id === editingId ? { ...item, input, state: "creating" } : item
+                    )
+                  );
+                  if (!recorded) {
+                    setDrafts((current) =>
+                      current.map((item) =>
+                        item.id === editingId ? { ...item, state: "staged" } : item
+                      )
+                    );
+                    lock.current = false;
+                    setBusy(false);
+                    throw new Error(t("draftStorageFailed"));
+                  }
+                  try {
+                    const task = await create.mutateAsync(input);
+                    if (alive.current)
+                      setDrafts((current) =>
+                        current.map((item) =>
+                          item.id === editingId
+                            ? { ...item, input, state: "created", taskId: task.id }
+                            : item
+                        )
+                      );
+                    return task;
+                  } catch (cause) {
+                    if (alive.current)
+                      setDrafts((current) =>
+                        current.map((item) =>
+                          item.id === editingId ? { ...item, input, state: "uncertain" } : item
+                        )
+                      );
+                    throw cause;
+                  } finally {
+                    lock.current = false;
+                    if (alive.current) setBusy(false);
+                  }
+                }
+              : undefined
+          }
           onStage={
             editingId !== null
               ? (input) => {

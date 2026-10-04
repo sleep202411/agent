@@ -5,8 +5,16 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
-import { useLocale } from "@/src/i18n/i18n";
-import { crewApi } from "../_hooks/api";
+import Link from "next/link";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { crewApi, CrewApiError } from "../_hooks/api";
 import type { CrewApplicationDTO } from "../_hooks/types";
 
 /** Applying opens the private discussion. It never grants Crew membership. */
@@ -35,6 +43,8 @@ function ApplySession({
   signedIn: boolean;
 }) {
   const router = useRouter();
+  const t = useTranslations("crewSkills");
+  const [missing, setMissing] = useState<{ skills: string[]; rank: number } | null>(null);
   const locale = useLocale();
   const auth = useAuthDialog();
   const operation = useRef<AbortController | null>(null);
@@ -70,7 +80,24 @@ function ApplySession({
           `/${locale}/messages?tab=recruitment&application=${encodeURIComponent(application.id)}`
         );
     } catch (err) {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err));
+      if (!controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : String(err));
+        if (
+          err instanceof CrewApiError &&
+          err.body &&
+          typeof err.body === "object" &&
+          "code" in err.body &&
+          err.body.code === "CREW_QUALIFICATIONS_REQUIRED"
+        ) {
+          const body = err.body as { missingSkills?: unknown; requiredFdRank?: unknown };
+          setMissing({
+            skills: Array.isArray(body.missingSkills)
+              ? body.missingSkills.filter((skill): skill is string => typeof skill === "string")
+              : [],
+            rank: typeof body.requiredFdRank === "number" ? body.requiredFdRank : 0,
+          });
+        }
+      }
     } finally {
       if (!controller.signal.aborted) {
         operation.current = null;
@@ -83,6 +110,29 @@ function ApplySession({
       <Button disabled={disabled || pending} loading={pending} onClick={() => void apply()}>
         {label}
       </Button>
+      <Dialog
+        open={Boolean(missing)}
+        onOpenChange={(open) => {
+          if (!open) setMissing(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("qualificationTitle")}</DialogTitle>
+            <DialogDescription>{t("qualificationHint")}</DialogDescription>
+          </DialogHeader>
+          {missing?.skills.length ? <p className="text-sm">{missing.skills.join(", ")}</p> : null}
+          {missing && missing.rank > 0 ? (
+            <p className="text-sm">{t("minimumRank", { rank: missing.rank })}</p>
+          ) : null}
+          <Link
+            href={`/${locale}/courses`}
+            className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm text-white"
+          >
+            {t("academy")}
+          </Link>
+        </DialogContent>
+      </Dialog>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

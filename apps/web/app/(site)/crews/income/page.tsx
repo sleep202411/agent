@@ -14,8 +14,6 @@ import { EarningTrend } from "../_components/earning-trend";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { CrewSectionNavigation } from "../_components/crew-section-navigation";
-
 import { isCrewCursorError } from "../_hooks/api";
 
 import { PayoutHistory } from "./payout-history";
@@ -60,7 +58,6 @@ function PersonalIncomeSession() {
   const items = pages?.flatMap((page) => page.items) ?? [];
   return (
     <main className="mx-auto w-full max-w-[1800px] px-4 py-8 sm:px-6">
-      <CrewSectionNavigation active="income" />
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="space-y-2">
           <Link href={localizePath("/crews", locale)} className="text-sm text-muted-foreground">
@@ -69,21 +66,31 @@ function PersonalIncomeSession() {
           <h1 className="text-2xl font-semibold">{t("title")}</h1>
           <p className="text-sm text-muted-foreground">{t("description")}</p>
         </header>
-        <nav aria-label={t("incomeSources")} className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-          <button
-            type="button"
-            className="text-primary hover:underline"
-            onClick={() => (user ? setIncomePanel("referral") : open())}
+        <nav aria-label={t("incomeSources")} className="grid gap-3 md:grid-cols-3">
+          {(["referral", "work"] as const).map((source) => (
+            <button
+              key={source}
+              type="button"
+              onClick={() => (user ? setIncomePanel(source) : open())}
+              className="rounded-xl bg-white/[0.035] p-5 text-left transition-colors hover:bg-white/[0.07] focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <span className="block text-sm font-semibold">
+                {t(source === "referral" ? "referralIncome" : "workIncome")}
+              </span>
+              <span className="mt-2 block text-xs leading-5 text-muted-foreground">
+                {t(`${source}SourceHint`)}
+              </span>
+            </button>
+          ))}
+          <a
+            href="#production-ledger"
+            className="rounded-xl bg-white/[0.035] p-5 text-left transition-colors hover:bg-white/[0.07] focus-visible:outline-2 focus-visible:outline-ring"
           >
-            {t("referralIncome")}
-          </button>
-          <button
-            type="button"
-            className="text-primary hover:underline"
-            onClick={() => (user ? setIncomePanel("work") : open())}
-          >
-            {t("workIncome")}
-          </button>
+            <span className="block text-sm font-semibold">{t("productionSource")}</span>
+            <span className="mt-2 block text-xs leading-5 text-muted-foreground">
+              {t("productionSourceHint")}
+            </span>
+          </a>
         </nav>
         <Sheet
           open={Boolean(incomePanel)}
@@ -114,7 +121,11 @@ function PersonalIncomeSession() {
           </div>
         ) : (
           <>
-            <div className="flex flex-wrap items-center gap-3" aria-label={t("crewFilter")}>
+            <div
+              id="production-ledger"
+              className="scroll-mt-28 flex flex-wrap items-center gap-3"
+              aria-label={t("crewFilter")}
+            >
               <p>{crewId ? t("selectedCrew", { id: crewId }) : t("allCrews")}</p>
               {crewId && (
                 <Button variant="outline" onClick={() => selectCrew()}>

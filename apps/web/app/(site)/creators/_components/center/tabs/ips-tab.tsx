@@ -149,9 +149,10 @@ function NewIpCard({
           </div>
         )}
         {ip.channelType ? (
-          <span className="absolute left-2 top-2 rounded-full border border-white/10 bg-black/40 px-1 py-0.5 backdrop-blur-sm">
-            <ChannelBadge category={ip.channelType} />
-          </span>
+          <ChannelBadge
+            category={ip.channelType}
+            className="absolute left-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-white/90 backdrop-blur-sm"
+          />
         ) : null}
         {ip.genres[0] ? (
           <span className="absolute right-2 top-2 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm">
@@ -210,9 +211,10 @@ function PublicIpCard({ ip, locale }: { ip: IpCommerceIp; locale: Locale }) {
           </div>
         )}
         {ip.channelType ? (
-          <span className="absolute left-2 top-2 rounded-full border border-white/10 bg-black/40 px-1 py-0.5 backdrop-blur-sm">
-            <ChannelBadge category={ip.channelType} />
-          </span>
+          <ChannelBadge
+            category={ip.channelType}
+            className="absolute left-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-white/90 backdrop-blur-sm"
+          />
         ) : null}
         {ip.genres[0] ? (
           <span className="absolute right-2 top-2 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm">

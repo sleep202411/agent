@@ -179,6 +179,7 @@ function build() {
     updatedAt: new Date('2026-07-29T10:00:00.000Z'),
   });
   const tx = {
+    crewAssetNode: { findFirst: jest.fn().mockResolvedValue({ id: TASK_ID }) },
     crewTaskCommitment: { findFirst: jest.fn().mockResolvedValue(null) },
     crewParticipationRecord: { findFirst: jest.fn().mockResolvedValue(null) },
     $queryRaw: jest.fn().mockResolvedValue([]),
@@ -388,6 +389,68 @@ function build() {
 }
 
 describe('CrewTasksService', () => {
+  it('rejects missing or cross-crew contract assets before changing a task', async () => {
+    const t = build();
+    t.tx.crewAssetNode.findFirst.mockResolvedValue(null as never);
+    await expect(
+      t.service.update(TASK_ID, OWNER_ID, {
+        expectedVersion: 1,
+        contractAssetNodeId: TASK_ID,
+      }),
+    ).rejects.toThrow('The contract file is unavailable in this crew.');
+    expect(t.tx.crewAssetNode.findFirst).toHaveBeenCalledWith({
+      where: { id: TASK_ID, crewId: CREW_ID, status: 'active', kind: 'file' },
+      select: { id: true },
+    });
+    expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+  });
+  it('rejects a contract file the actor cannot view', async () => {
+    const t = build();
+    t.assetAccess.requireNodesPermission.mockRejectedValue(
+      new ForbiddenException('File access denied'),
+    );
+    await expect(
+      t.service.update(TASK_ID, OWNER_ID, {
+        expectedVersion: 1,
+        contractAssetNodeId: TASK_ID,
+      }),
+    ).rejects.toThrow('File access denied');
+    expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+  });
+  it.each([TASK_ID, null])(
+    'updates or detaches a contract while preserving task metadata (%s)',
+    async (assetId) => {
+      const t = build();
+      const current = task({
+        canvasProjectId: null,
+        metadata: { clipId: 'clip-1', contractAssetNodeId: 'old-file' },
+      });
+      t.prisma.crewTask.findUnique.mockResolvedValue(current);
+      t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+      t.tx.crewTask.update.mockResolvedValue(current);
+      await t.service.update(TASK_ID, OWNER_ID, {
+        expectedVersion: 1,
+        contractAssetNodeId: assetId,
+      });
+      const update = firstCallArgument<Prisma.CrewTaskUpdateArgs>(
+        t.tx.crewTask.update,
+      );
+      expect(update.data.metadata).toEqual({
+        clipId: 'clip-1',
+        contractAssetNodeId: assetId,
+      });
+      if (assetId)
+        expect(t.assetAccess.requireNodesPermission).toHaveBeenCalledWith(
+          CREW_ID,
+          [assetId],
+          OWNER_ID,
+          'view',
+          t.tx,
+        );
+      else expect(t.assetAccess.requireNodesPermission).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects past deadlines before creating a task', async () => {
     const t = build();
     await expect(
@@ -683,6 +746,15 @@ describe('CrewTasksService', () => {
     });
     expect(result.crews).toEqual([{ id: 'producer', name: 'Production' }]);
     expect(result.stats).toEqual({ dueSoon: 8, pendingReviews: 12 });
+    const warning = firstCallArgument<{
+      where: { dueAt: { gte: Date; lte: Date }; workflowState: unknown };
+    }>(t.prisma.crewTask.count);
+    expect(warning.where.workflowState).toEqual({
+      semantic: { notIn: ['approved', 'cancelled', 'submitted'] },
+    });
+    expect(
+      warning.where.dueAt.lte.getTime() - warning.where.dueAt.gte.getTime(),
+    ).toBe(72 * 60 * 60 * 1000);
     expect(result.items[0]).toMatchObject({
       canReview: true,
       canSubmit: false,
@@ -700,6 +772,30 @@ describe('CrewTasksService', () => {
       (t.prisma.crewTask.count.mock.calls as Array<[{ where: unknown }]>)[1][0]
         .where,
     ).not.toHaveProperty('id');
+  });
+
+  it('excludes tasks awaiting review from the task-center overdue filter', async () => {
+    const t = build();
+    t.prisma.crewTask.groupBy.mockResolvedValue([]);
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      { crewId: 'producer', crew: { name: 'Production' } },
+    ]);
+    t.roles.resolve.mockResolvedValue({
+      permissions: ['tasks.view', 'tasks.review'],
+    });
+    t.prisma.crewTask.findMany.mockResolvedValue([]);
+    t.prisma.crewTask.count.mockResolvedValue(0);
+    await t.service.listCenter(ASSIGNEE_ID, {
+      scope: 'managed',
+      status: 'overdue',
+      limit: 30,
+    });
+    const request = firstCallArgument<{ where: { workflowState: unknown } }>(
+      t.prisma.crewTask.findMany,
+    );
+    expect(request.where.workflowState).toEqual({
+      semantic: { notIn: ['approved', 'cancelled', 'submitted'] },
+    });
   });
   it('offers submission only with submit permission and assignment or management authority', async () => {
     const t = build();

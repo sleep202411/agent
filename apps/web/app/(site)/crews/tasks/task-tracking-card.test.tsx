@@ -154,6 +154,14 @@ it("does not show actions without permissions", () => {
     "history",
   ]);
 });
+it("opens feedback after approval without exposing delivery or approval actions", () => {
+  state.status = "approved";
+  render({ ...task, status: "approved", canSubmit: false, canReview: false });
+  click("feedback");
+  expect(document.body.textContent).toContain("Private feedback");
+  expect(document.body.textContent).not.toContain("Review form");
+  expect(document.querySelector('[data-inline="true"]')).toBeNull();
+});
 it("does not open delivery if the fresh task state no longer accepts it", () => {
   state.status = "approved";
   render();
