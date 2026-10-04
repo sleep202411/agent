@@ -5118,5 +5118,9 @@
   "storyCandidates.saved": "此素材已保存到项目候选列表。",
   "storyCandidates.retryUpdate": "重试更新",
   "storyCandidates.discard": "停止重试",
-  "storyCandidates.discardHelp": "仅清除本地待处理请求，不撤销服务器上的变更。请刷新查看当前候选列表。"
+  "storyCandidates.discardHelp": "仅清除本地待处理请求，不撤销服务器上的变更。请刷新查看当前候选列表。",
+  "storyCandidates.importCrew": "从剧组导入",
+  "storyCandidates.hideCrew": "收起剧组资产",
+  "storyCandidates.noCrew": "此项目尚未关联剧组。",
+  "storyCandidates.crewEmpty": "暂无可用的共享图片、视频或音频文件。"
 }

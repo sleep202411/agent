@@ -5118,5 +5118,9 @@
   "storyCandidates.saved": "This media is saved in this project’s candidates.",
   "storyCandidates.retryUpdate": "Retry update",
   "storyCandidates.discard": "Stop retrying",
-  "storyCandidates.discardHelp": "This clears the local pending request only. It does not undo any server change. Refresh to check the current candidate list."
+  "storyCandidates.discardHelp": "This clears the local pending request only. It does not undo any server change. Refresh to check the current candidate list.",
+  "storyCandidates.importCrew": "Import from Crew",
+  "storyCandidates.hideCrew": "Hide Crew assets",
+  "storyCandidates.noCrew": "This project has no linked Crew.",
+  "storyCandidates.crewEmpty": "No shared image, video or audio files are available."
 }
