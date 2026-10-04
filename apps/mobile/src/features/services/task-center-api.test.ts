@@ -90,3 +90,22 @@ it("does not turn permission failures into empty successful feeds", async () => 
   h.get.mockRejectedValue(cause);
   await expect(fetchTaskCenter(filters, null, 1, new AbortController().signal)).rejects.toBe(cause);
 });
+
+it("requests linked contracts and preserves their node IDs", async () => {
+  h.get.mockResolvedValue({ ...page(), items: [{ ...task, contractAssetNodeId: id }] });
+  expect(
+    (
+      await fetchTaskCenter(
+        { ...filters, hasContract: true },
+        null,
+        1,
+        new AbortController().signal
+      )
+    ).items[0]?.contractAssetNodeId
+  ).toBe(id);
+  expect(h.get.mock.calls[0][1].params.hasContract).toBe("true");
+  h.get.mockResolvedValue(page());
+  await expect(
+    fetchTaskCenter({ ...filters, hasContract: true }, null, 1, new AbortController().signal)
+  ).rejects.toThrow("Invalid task");
+});

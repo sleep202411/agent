@@ -4,6 +4,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { taskKindSchema } from "./task-kind-api";
 const uuid = z.string().uuid();
 export const centerFilters = z.object({
+  hasContract: z.boolean().optional(),
   scope: z.enum(["mine", "managed", "all"]),
   status: z.enum(["active", "all", "submitted", "revision_requested", "overdue", "approved"]),
   crewId: z.union([z.literal(""), uuid]),
@@ -18,6 +19,7 @@ const pageSchema = z.object({
     z.object({
       id: uuid,
       title: z.string(),
+      contractAssetNodeId: uuid.nullable().optional(),
       number: z.number().int(),
       taskKind: taskKindSchema.nullable(),
       crew,
@@ -67,6 +69,7 @@ export async function fetchTaskCenter(
         status: parsed.status,
         query: parsed.query,
         limit: 30,
+        ...(parsed.hasContract !== undefined ? { hasContract: String(parsed.hasContract) } : {}),
         ...(parsed.crewId ? { crewId: parsed.crewId } : {}),
         ...(parsed.taskKind ? { taskKind: parsed.taskKind } : {}),
         ...(cursor ? { cursor } : {}),
@@ -79,6 +82,7 @@ export async function fetchTaskCenter(
     page.items.some(
       (item) =>
         item.status !== item.workflowState.semantic ||
+        (parsed.hasContract === true && !item.contractAssetNodeId) ||
         (parsed.crewId && item.crew.id !== parsed.crewId) ||
         (parsed.taskKind && item.taskKind !== parsed.taskKind)
     ) ||

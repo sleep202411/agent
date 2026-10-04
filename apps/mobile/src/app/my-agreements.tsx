@@ -4,7 +4,7 @@ import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
-import { MyAgreements } from "@/features/services/my-agreements";
+import { MyContracts } from "@/features/services/my-contracts";
 export default function MyAgreementsScreen() {
   const auth = useAuth(),
     gate = useAuthGate(),
@@ -16,7 +16,7 @@ export default function MyAgreementsScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: t("myAgreements.title"),
+          headerTitle: t("myContracts.title"),
           headerTintColor: theme.text,
           headerStyle: { backgroundColor: theme.background },
         }}
@@ -32,7 +32,7 @@ export default function MyAgreementsScreen() {
           <ThemedText>{t("login.signIn")}</ThemedText>
         </Pressable>
       ) : (
-        <MyAgreements
+        <MyContracts
           key={`${auth.generation}:${userId}`}
           userId={userId}
           generation={auth.generation}

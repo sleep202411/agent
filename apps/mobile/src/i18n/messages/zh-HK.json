@@ -1,4 +1,10 @@
 {
+  "myContracts.title": "我的合約",
+  "myContracts.agreements": "簽署協議",
+  "myContracts.files": "合約檔案",
+  "myContracts.description": "查看你有權存取的任務所關聯的合約檔案。",
+  "myContracts.empty": "暫無關聯合約檔案。",
+
   "taskContract.open": "查看合約",
   "taskContract.refresh": "重新整理合約",
   "taskContract.unavailable": "此合約檔案已無法使用。",

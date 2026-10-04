@@ -1,4 +1,10 @@
 {
+  "myContracts.title": "My contracts",
+  "myContracts.agreements": "Agreements",
+  "myContracts.files": "Contract files",
+  "myContracts.description": "Contract files linked to tasks you can access.",
+  "myContracts.empty": "No linked contract files.",
+
   "taskContract.open": "View contract",
   "taskContract.refresh": "Refresh contract",
   "taskContract.unavailable": "This contract file is no longer available.",

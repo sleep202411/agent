@@ -1,4 +1,10 @@
 {
+  "myContracts.title": "我的合同",
+  "myContracts.agreements": "签署协议",
+  "myContracts.files": "合同文件",
+  "myContracts.description": "查看你有权访问的任务所关联的合同文件。",
+  "myContracts.empty": "暂无关联合同文件。",
+
   "taskContract.open": "查看合同",
   "taskContract.refresh": "刷新合同",
   "taskContract.unavailable": "此合同文件已不可用。",
