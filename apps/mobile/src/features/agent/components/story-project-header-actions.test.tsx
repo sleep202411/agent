@@ -35,6 +35,7 @@ vi.mock("@/features/agent/api/interactive-film-publication-api", () => ({
 }));
 vi.mock("@/features/agent/context/story-chapter-context", () => ({
   useStoryChapterContext: () => ({
+    chapterId: "11111111-1111-4111-8111-111111111111",
     capabilities: h.capabilities,
     draftRevision: 1,
     videoSnapshotHash: "a".repeat(64),
@@ -55,6 +56,7 @@ vi.mock("@tabler/icons-react-native", () => ({
   IconCloudOff: () => null,
   IconCloudUpload: () => null,
   IconLoader2: () => null,
+  IconSitemap: () => null,
 }));
 vi.mock("react-native", () => ({
   Alert: { alert: h.alert },
@@ -398,4 +400,15 @@ it("shows preflight validation issues without opening an unscoped chapter or sub
   );
   expect(h.submit).not.toHaveBeenCalled();
   expect(h.retry).toHaveBeenCalledOnce();
+});
+
+it("opens the current chapter graph without requiring publication or a release role", async () => {
+  h.capabilities = ["story.read"];
+  await mount();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('button[aria-label="storyNode.open"]')!.click()
+  );
+  expect(host.textContent).toContain("Repair sheet");
+  expect(h.prepare).not.toHaveBeenCalled();
+  expect(h.submit).not.toHaveBeenCalled();
 });

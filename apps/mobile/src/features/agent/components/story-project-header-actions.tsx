@@ -12,6 +12,7 @@ import {
   IconCloudOff,
   IconCloudUpload,
   IconLoader2,
+  IconSitemap,
 } from "@tabler/icons-react-native";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAuth, useAuthGate } from "@/auth";
@@ -192,6 +193,7 @@ function OwnedStoryProjectHeaderActions({
 }) {
   const t = useTranslations();
   const {
+    chapterId,
     capabilities,
     draftRevision,
     videoSnapshotHash,
@@ -392,6 +394,20 @@ function OwnedStoryProjectHeaderActions({
 
   return (
     <View style={styles.row}>
+      {canReadPublication && chapterId && !workbenchLoading ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("storyNode.open")}
+          hitSlop={8}
+          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+          onPress={() => {
+            if (active && generation === getAuthGeneration())
+              onDiagnostics({ chapterId, issues: [] });
+          }}
+        >
+          <IconSitemap size={18} color="rgba(255,255,255,0.68)" strokeWidth={1.8} />
+        </Pressable>
+      ) : null}
       {canReadPublication ? (
         <View style={styles.publishGroup}>
           {publicationFailed ? (

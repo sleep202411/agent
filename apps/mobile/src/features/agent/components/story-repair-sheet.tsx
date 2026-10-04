@@ -1,3 +1,4 @@
+import { createRepairNode, updateRepairNodeText } from "../lib/story-repair-nodes";
 import {
   createRepairEnding,
   renameRepairEnding,
@@ -273,6 +274,31 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 <RepairAction label={t("storyRepair.remote")} onPress={() => setShowSaved(true)} />
               </View>
             ) : null}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+              {(["clip", "decision"] as const).map((kind) => (
+                <RepairAction
+                  key={kind}
+                  label={t(kind === "clip" ? "storyNode.addScene" : "storyNode.addDecision")}
+                  disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}
+                  onPress={() => {
+                    let nodeId: string | undefined;
+                    const applied = edit((value) => {
+                      const created = createRepairNode(
+                        value,
+                        kind,
+                        locale,
+                        loaded.defaultLocale,
+                        uuid.v4(),
+                        [t("storyNode.optionOne"), t("storyNode.optionTwo")]
+                      );
+                      nodeId = created.nodeId;
+                      return created.content;
+                    });
+                    if (applied && nodeId) setSelected(nodeId);
+                  }}
+                />
+              ))}
+            </View>
             <RepairAction
               label={t("storyVariables.title")}
               onPress={() => setEditingVariables(true)}
@@ -374,10 +400,53 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                   onPress={() => setEffectTarget({ nodeId: selected })}
                 />
                 {node.kind === "clip" ? (
+                  <>
+                    {(["name", "description"] as const).map((field) => (
+                      <View key={field}>
+                        <ThemedText type="small">
+                          {t(field === "name" ? "storyNode.name" : "storyNode.description")}
+                        </ThemedText>
+                        <TextInput
+                          accessibilityLabel={t(
+                            field === "name" ? "storyNode.name" : "storyNode.description"
+                          )}
+                          value={typeof node[field] === "string" ? (node[field] as string) : ""}
+                          multiline={field === "description"}
+                          maxLength={field === "name" ? 120 : 4000}
+                          editable={
+                            loaded.canEdit && !busy && !uncertain && !conflict && !showSaved
+                          }
+                          onChangeText={(text) =>
+                            edit((value) => updateRepairNodeText(value, selected, field, text))
+                          }
+                          style={{
+                            color: theme.text,
+                            borderColor: theme.border,
+                            borderWidth: 1,
+                            borderRadius: 8,
+                            minHeight: 44,
+                            padding: 10,
+                          }}
+                        />
+                      </View>
+                    ))}
+                    {command &&
+                    !loaded.draft.content.graph.nodes.some((item) => item.nodeId === selected) ? (
+                      <ThemedText type="small">{t("storyNode.saveForMedia")}</ThemedText>
+                    ) : null}
+                  </>
+                ) : null}
+                {node.kind === "clip" ? (
                   <RepairAction
                     label={t("storyRepair.media")}
                     disabled={busy || uncertain || conflict || showSaved}
-                    onPress={() => setMediaNode(node.nodeId)}
+                    onPress={() => {
+                      if (
+                        loaded.draft.content.graph.nodes.some((item) => item.nodeId === node.nodeId)
+                      )
+                        setMediaNode(node.nodeId);
+                      else setError(t("storyNode.saveForMedia"));
+                    }}
                   />
                 ) : null}
                 {autoRoutes ? (
@@ -422,6 +491,34 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                         padding: 10,
                       }}
                     />
+                    {loaded.defaultLocale && loaded.defaultLocale !== locale ? (
+                      <View>
+                        <ThemedText type="small">
+                          {t("storyRepair.prompt")} ({loaded.defaultLocale})
+                        </ThemedText>
+                        <TextInput
+                          accessibilityLabel={`${t("storyRepair.prompt")} (${loaded.defaultLocale})`}
+                          value={repairChoicePrompt(content, selected, loaded.defaultLocale)}
+                          maxLength={4000}
+                          editable={
+                            loaded.canEdit && !busy && !uncertain && !conflict && !showSaved
+                          }
+                          onChangeText={(text) =>
+                            edit((value) =>
+                              updateRepairChoiceText(value, selected, loaded.defaultLocale, text)
+                            )
+                          }
+                          style={{
+                            color: theme.text,
+                            borderWidth: 1,
+                            borderColor: theme.border,
+                            borderRadius: 8,
+                            minHeight: 44,
+                            padding: 10,
+                          }}
+                        />
+                      </View>
+                    ) : null}
                     <RepairAction
                       label={t("storyRepair.addChoice")}
                       disabled={
@@ -477,6 +574,43 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                           padding: 10,
                         }}
                       />
+                    ) : null}
+                    {branch.choiceId && loaded.defaultLocale && loaded.defaultLocale !== locale ? (
+                      <View>
+                        <ThemedText type="small">
+                          {t("storyRepair.choiceLabel")} ({loaded.defaultLocale})
+                        </ThemedText>
+                        <TextInput
+                          accessibilityLabel={`${t("storyRepair.choiceLabel")} ${branch.index + 1} (${loaded.defaultLocale})`}
+                          value={
+                            repairBranches(content, selected, loaded.defaultLocale)[branch.index]
+                              ?.label ?? ""
+                          }
+                          maxLength={4000}
+                          editable={
+                            loaded.canEdit && !busy && !uncertain && !conflict && !showSaved
+                          }
+                          onChangeText={(text) =>
+                            edit((value) =>
+                              updateRepairChoiceText(
+                                value,
+                                selected,
+                                loaded.defaultLocale,
+                                text,
+                                branch.index
+                              )
+                            )
+                          }
+                          style={{
+                            color: theme.text,
+                            borderWidth: 1,
+                            borderColor: theme.border,
+                            borderRadius: 8,
+                            minHeight: 44,
+                            padding: 10,
+                          }}
+                        />
+                      </View>
                     ) : null}
                     {autoRoutes && branch.index < autoRoutes.length - 1 ? (
                       <>
