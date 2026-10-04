@@ -35,3 +35,50 @@ export function storyPublicationActionErrorKind(error: unknown): StoryPublicatio
     return storyPublicationErrorKind(error);
   return null;
 }
+
+export type StoryPublicationDiagnostic = { message: string; nodeId: string | null };
+export type StoryPublicationDiagnostics = {
+  chapterId: string | null;
+  issues: StoryPublicationDiagnostic[];
+};
+
+/** Read the official release error body without inventing a target chapter. */
+export function storyPublicationDiagnostics(error: unknown): StoryPublicationDiagnostics {
+  const empty: StoryPublicationDiagnostics = { chapterId: null, issues: [] };
+  if (!error || typeof error !== "object") return empty;
+  const raw = (error as { responseBody?: unknown }).responseBody;
+  if (typeof raw !== "string") return empty;
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return empty;
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return empty;
+  const record = body as Record<string, unknown>;
+  const chapterId =
+    typeof record.chapterId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.chapterId)
+      ? record.chapterId
+      : null;
+  const issues = Array.isArray(record.diagnostics)
+    ? record.diagnostics.flatMap((item): StoryPublicationDiagnostic[] => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+        const entry = item as Record<string, unknown>;
+        const message = typeof entry.message === "string" ? entry.message.trim() : "";
+        if (!message) return [];
+        const nodeId =
+          typeof entry.nodeId === "string" && entry.nodeId.includes(":") ? entry.nodeId : null;
+        return [{ message, nodeId }];
+      })
+    : [];
+  return { chapterId, issues };
+}
+
+/** Preserve the general error and every distinct actionable diagnostic. */
+export function storyPublicationActionDetail(error: unknown, fallback: string): string {
+  const detail = error instanceof Error && error.message.trim() ? error.message.trim() : fallback;
+  return [
+    ...new Set([detail, ...storyPublicationDiagnostics(error).issues.map((i) => i.message)]),
+  ].join("\n\n");
+}

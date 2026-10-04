@@ -1,4 +1,7 @@
-import { storyPublicationActionErrorKind } from "../api/story-publication-errors";
+import {
+  storyPublicationActionErrorKind,
+  storyPublicationActionDetail,
+} from "../api/story-publication-errors";
 import {
   IconAlertTriangle,
   IconBolt,
@@ -194,7 +197,7 @@ function OwnedStoryProjectHeaderActions({
 
   const showActionError = (title: string, error: unknown, fallback: string) => {
     const kind = storyPublicationActionErrorKind(error);
-    const detail = error instanceof Error && error.message.trim() ? error.message : fallback;
+    const detail = storyPublicationActionDetail(error, fallback);
     const message = kind ? `${t(`agent.publish.actionError.${kind}`)}\n\n${detail}` : detail;
     Alert.alert(title, message, [
       { text: t("agent.publish.cancel"), style: "cancel" },

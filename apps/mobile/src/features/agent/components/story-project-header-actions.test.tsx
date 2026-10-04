@@ -330,3 +330,24 @@ it("explains offline permission failures and refreshes status without repeating 
   expect(h.offline).toHaveBeenCalledOnce();
   expect(h.retry).toHaveBeenCalledOnce();
 });
+
+it("shows every actionable release diagnostic and does not submit a failed candidate", async () => {
+  h.prepare.mockRejectedValue(
+    Object.assign(new Error("Missing first video"), {
+      status: 422,
+      responseBody: JSON.stringify({
+        chapterId: "11111111-1111-4111-8111-111111111111",
+        diagnostics: [
+          { message: "Missing first video", nodeId: "clip:first" },
+          { message: "Choice target is missing", nodeId: "decision:second" },
+        ],
+      }),
+    })
+  );
+  await mount();
+  const confirm = await confirmation();
+  await act(async () => confirm());
+  expect(h.alert.mock.calls.at(-1)![1]).toBe("Missing first video\n\nChoice target is missing");
+  expect(h.submit).not.toHaveBeenCalled();
+  expect(h.retry).toHaveBeenCalledOnce();
+});
