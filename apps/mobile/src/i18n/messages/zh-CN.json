@@ -4855,5 +4855,8 @@
   "storyRoleGuide.capabilities.publish": "构建并提交发布审核",
   "storyRoleGuide.capabilities.manage": "管理成员与邀请链接",
   "storyRoleGuide.ownerNote": "所有者仅用于对照，此处不能邀请所有者或转让所有权。空间所有者和管理员也拥有项目管理权限。",
-  "storyRoleGuide.scopeNote": "邀请仅适用于此项目。项目角色会叠加已有空间权限，选择较低角色不会降低这些权限。参考素材审核与平台发布审核是不同的操作。"
+  "storyRoleGuide.scopeNote": "邀请仅适用于此项目。项目角色会叠加已有空间权限，选择较低角色不会降低这些权限。参考素材审核与平台发布审核是不同的操作。",
+  "agent.publish.actionError.auth": "登录已失效，请重新登录后再发布。",
+  "agent.publish.actionError.permission": "你的发布权限已变更，请联系项目拥有者确认你的角色。",
+  "agent.publish.actionError.service": "发布服务未能完成此操作，请重试；若问题持续，请联系支持。"
 }

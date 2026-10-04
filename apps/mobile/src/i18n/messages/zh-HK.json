@@ -4855,5 +4855,8 @@
   "storyRoleGuide.capabilities.publish": "構建並提交發佈審核",
   "storyRoleGuide.capabilities.manage": "管理成員與邀請連結",
   "storyRoleGuide.ownerNote": "擁有者僅用於對照，此處不能邀請擁有者或轉讓擁有權。空間擁有者和管理員也擁有專案管理權限。",
-  "storyRoleGuide.scopeNote": "邀請僅適用於此專案。專案角色會疊加已有空間權限，選擇較低角色不會降低這些權限。參考素材審核與平台發佈審核是不同的操作。"
+  "storyRoleGuide.scopeNote": "邀請僅適用於此專案。專案角色會疊加已有空間權限，選擇較低角色不會降低這些權限。參考素材審核與平台發佈審核是不同的操作。",
+  "agent.publish.actionError.auth": "登入已失效，請重新登入後再發佈。",
+  "agent.publish.actionError.permission": "你的發佈權限已變更，請聯絡項目擁有者確認你的角色。",
+  "agent.publish.actionError.service": "發佈服務未能完成此操作，請重試；若問題持續，請聯絡支援。"
 }

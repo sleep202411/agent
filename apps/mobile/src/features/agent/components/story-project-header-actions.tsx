@@ -1,3 +1,4 @@
+import { storyPublicationActionErrorKind } from "../api/story-publication-errors";
 import {
   IconAlertTriangle,
   IconBolt,
@@ -191,6 +192,25 @@ function OwnedStoryProjectHeaderActions({
                 ? t("agent.publish.notReady")
                 : null;
 
+  const showActionError = (title: string, error: unknown, fallback: string) => {
+    const kind = storyPublicationActionErrorKind(error);
+    const detail = error instanceof Error && error.message.trim() ? error.message : fallback;
+    const message = kind ? `${t(`agent.publish.actionError.${kind}`)}\n\n${detail}` : detail;
+    Alert.alert(title, message, [
+      { text: t("agent.publish.cancel"), style: "cancel" },
+      ...(kind === "auth"
+        ? [
+            {
+              text: t("agent.publish.signIn"),
+              onPress: () => {
+                if (current()) gate.openLogin();
+              },
+            },
+          ]
+        : []),
+    ]);
+  };
+
   const onPublishPress = () => {
     if (!canSubmit) {
       if (disabledReason) Alert.alert(t("agent.publish.action"), disabledReason);
@@ -222,11 +242,7 @@ function OwnedStoryProjectHeaderActions({
               Alert.alert(t("agent.publish.successTitle"), t("agent.publish.success"));
             } catch (error) {
               if (!current()) return;
-              const message =
-                error instanceof Error && error.message.trim()
-                  ? error.message
-                  : t("agent.publish.failed");
-              Alert.alert(t("agent.publish.action"), message);
+              showActionError(t("agent.publish.action"), error, t("agent.publish.failed"));
               void refreshPublication();
             } finally {
               locked.current = false;
@@ -258,11 +274,11 @@ function OwnedStoryProjectHeaderActions({
               Alert.alert(t("agent.publish.offline.action"), t("agent.publish.offline.success"));
             } catch (error) {
               if (!current()) return;
-              const message =
-                error instanceof Error && error.message.trim()
-                  ? error.message
-                  : t("agent.publish.offline.failed");
-              Alert.alert(t("agent.publish.offline.action"), message);
+              showActionError(
+                t("agent.publish.offline.action"),
+                error,
+                t("agent.publish.offline.failed")
+              );
               void refreshPublication();
             } finally {
               locked.current = false;

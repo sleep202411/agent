@@ -4855,5 +4855,8 @@
   "storyRoleGuide.capabilities.publish": "Build and submit for publication",
   "storyRoleGuide.capabilities.manage": "Manage members and invite links",
   "storyRoleGuide.ownerNote": "Owner is shown for comparison. You cannot invite someone as an owner or transfer ownership here. Workspace owners and admins also have project management access.",
-  "storyRoleGuide.scopeNote": "Invitations apply only to this project. Project roles add to existing workspace permissions; choosing a lower role will not reduce that access. Reference reviews are separate from platform publication review."
+  "storyRoleGuide.scopeNote": "Invitations apply only to this project. Project roles add to existing workspace permissions; choosing a lower role will not reduce that access. Reference reviews are separate from platform publication review.",
+  "agent.publish.actionError.auth": "Your session has expired. Sign in again before publishing.",
+  "agent.publish.actionError.permission": "Your publishing access has changed. Ask the project owner to check your role.",
+  "agent.publish.actionError.service": "The publication service could not complete this action. Retry, or contact support if this continues."
 }

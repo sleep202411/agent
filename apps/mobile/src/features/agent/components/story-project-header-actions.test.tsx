@@ -278,3 +278,55 @@ it("offers sign-in for authentication errors without starting a release", async 
   expect(h.login).toHaveBeenCalledOnce();
   expect(h.submit).not.toHaveBeenCalled();
 });
+
+it.each([
+  [401, "auth"],
+  [403, "permission"],
+  [503, "service"],
+] as const)(
+  "explains publication action failure %s without replaying writes",
+  async (status, kind) => {
+    h.submit.mockRejectedValue(Object.assign(new Error("Backend detail"), { status }));
+    await mount();
+    const confirm = await confirmation();
+    await act(async () => confirm());
+    const [, message, buttons] = h.alert.mock.calls.at(-1)!;
+    expect(message).toBe(`agent.publish.actionError.${kind}\n\nBackend detail`);
+    expect(h.submit).toHaveBeenCalledOnce();
+    expect(h.retry).toHaveBeenCalledOnce();
+    const login = buttons.find((b: { text: string }) => b.text === "agent.publish.signIn");
+    if (kind === "auth") {
+      await act(async () => login.onPress());
+      expect(h.login).toHaveBeenCalledOnce();
+      expect(h.submit).toHaveBeenCalledOnce();
+    } else expect(login).toBeUndefined();
+  }
+);
+
+it("keeps snapshot conflict repair details without generic service guidance", async () => {
+  h.prepare.mockRejectedValue(
+    Object.assign(new Error("Refresh the changed snapshot"), { status: 409 })
+  );
+  await mount();
+  const confirm = await confirmation();
+  await act(async () => confirm());
+  expect(h.alert.mock.calls.at(-1)![1]).toBe("Refresh the changed snapshot");
+  expect(h.submit).not.toHaveBeenCalled();
+});
+
+it("explains offline permission failures and refreshes status without repeating the mutation", async () => {
+  h.published = true;
+  h.offline.mockRejectedValue(Object.assign(new Error("Release role revoked"), { status: 403 }));
+  await mount();
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('button[aria-label="agent.publish.offline.action"]')!
+      .click()
+  );
+  await act(async () => h.alert.mock.calls.at(-1)![2][1].onPress());
+  expect(h.alert.mock.calls.at(-1)![1]).toBe(
+    "agent.publish.actionError.permission\n\nRelease role revoked"
+  );
+  expect(h.offline).toHaveBeenCalledOnce();
+  expect(h.retry).toHaveBeenCalledOnce();
+});
