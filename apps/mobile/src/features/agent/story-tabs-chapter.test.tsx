@@ -5,6 +5,7 @@ import Layout from "@/app/agent/[projectId]/_layout";
 const h = vi.hoisted(() => ({
   projectId: "00000000-0000-4000-8000-000000000002",
   chapterId: "00000000-0000-4000-8000-000000000005",
+  requestedChapterId: "00000000-0000-4000-8000-000000000005",
 }));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ projectId: h.projectId }),
@@ -28,7 +29,10 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("@/features/agent/context/story-chapter-context", () => ({
   StoryChapterProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
-  useStoryChapterContext: () => ({ chapterId: h.chapterId }),
+  useStoryChapterContext: () => ({
+    chapterId: h.chapterId,
+    requestedChapterId: h.requestedChapterId,
+  }),
 }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({ status: "authenticated", generation: 1 }),
@@ -82,4 +86,14 @@ it("keeps the selected chapter in every tab destination and updates it after sel
       chapterId,
     ]);
   }
+});
+
+it("preserves an unavailable chapter in tab links instead of opening the default", async () => {
+  root = createRoot(host);
+  h.chapterId = "";
+  await act(async () => root.render(<Layout />));
+  const links = [...host.querySelectorAll("a")].map((a) => new URL(a.href, "http://local"));
+  expect(links.map((u) => u.searchParams.get("chapterId"))).toEqual(
+    Array(3).fill(h.requestedChapterId)
+  );
 });

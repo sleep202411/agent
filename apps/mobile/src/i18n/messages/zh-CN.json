@@ -1094,6 +1094,7 @@
   "agent.assets.detail.close": "关闭",
   "agent.script.openError": "无法打开此文档——请检查链接或你的访问权限。",
   "agent.script.connecting": "加载剧本中",
+  "agent.chapterUnavailable": "此章节已不可用。请重试或返回项目列表。",
   "agent.script.empty": "写下你的剧本——流水线会从这里读取原文…",
   "agent.generation.loading": "正在加载生成进度…",
   "agent.generation.loadError": "无法加载这个生成批次。",

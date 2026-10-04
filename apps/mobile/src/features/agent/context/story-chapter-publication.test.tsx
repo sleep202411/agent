@@ -2,6 +2,7 @@ import { act, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryChapterProvider, useStoryChapterContext } from "./story-chapter-context";
+vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 const h = vi.hoisted(() => ({
   publication: vi.fn(),
   workbench: vi.fn(),
@@ -118,4 +119,29 @@ it("uses the focused child chapter and ignores another project's route", async (
   await render();
   expect(state.chapterId).toBe(next);
   expect(h.workbench).toHaveBeenLastCalledWith("project", next);
+});
+
+it("does not substitute another chapter when the selected chapter disappears", async () => {
+  const selected = "00000000-0000-4000-8000-000000000005";
+  h.params = { projectId: "project", chapterId: selected };
+  h.workbench.mockResolvedValue({
+    project: { capabilities: ["story.edit"] },
+    chapter: { id: "default" },
+    chapters: [{ id: "default" }],
+  });
+  await render();
+  expect(state.chapterId).toBe("");
+  expect(state.capabilities).toEqual([]);
+  expect(state.error).toBe("agent.chapterUnavailable");
+  expect(state.requestedChapterId).toBe(selected);
+  h.workbench.mockResolvedValue({
+    project: { capabilities: ["story.read"] },
+    chapter: { id: selected },
+    chapters: [{ id: selected }],
+  });
+  await act(async () => state.refresh());
+  expect(h.workbench).toHaveBeenLastCalledWith("project", selected);
+  expect(state.chapterId).toBe(selected);
+  expect(state.capabilities).toEqual(["story.read"]);
+  expect(state.error).toBeUndefined();
 });

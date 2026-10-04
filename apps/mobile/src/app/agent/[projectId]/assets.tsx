@@ -62,6 +62,7 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
     capabilities,
     loading: chapterLoading,
     error: chapterError,
+    refresh: refreshChapter,
   } = useStoryChapterContext();
   const [createKind, setCreateKind] = useState<StoryAssetSpecKind>();
   const [activeTab, setActiveTab] = useState<StoryAssetSpecKind>("character");
@@ -88,6 +89,7 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
 
   const refresh = () => {
     setLoading(true);
+    if (chapterError) refreshChapter();
     setRevision((n) => n + 1);
   };
   const mutation = useAssetMutations(
@@ -131,7 +133,7 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
     [activeTab, assets]
   );
   const topPad = STORY_HEADER_CONTENT_GAP;
-  const busy = chapterLoading || loading;
+  const busy = chapterLoading || (!chapterError && loading);
   const displayError = chapterError ?? error;
   const showGallery = !busy && !displayError;
 

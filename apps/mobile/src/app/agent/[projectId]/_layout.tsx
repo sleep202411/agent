@@ -106,8 +106,8 @@ function StoryProjectTabs({
 }
 
 function SelectedChapterTabs({ projectId }: { projectId: string }) {
-  const { chapterId } = useStoryChapterContext();
-  return <StoryProjectTabs projectId={projectId} chapterId={chapterId} />;
+  const { chapterId, requestedChapterId } = useStoryChapterContext();
+  return <StoryProjectTabs projectId={projectId} chapterId={chapterId || requestedChapterId} />;
 }
 
 /** Story project workspace — native tab bar + shared chapter context. */

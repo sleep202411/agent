@@ -1094,6 +1094,7 @@
   "agent.assets.detail.close": "關閉",
   "agent.script.openError": "無法開啟此文件——請檢查連結或你的存取權限。",
   "agent.script.connecting": "連線中…",
+  "agent.chapterUnavailable": "此章節已無法使用。請重試或返回項目列表。",
   "agent.script.empty": "寫下你的劇本——流水線會從這裡讀取原文…",
   "agent.generation.loading": "正在載入生成進度…",
   "agent.generation.loadError": "無法載入這個生成批次。",

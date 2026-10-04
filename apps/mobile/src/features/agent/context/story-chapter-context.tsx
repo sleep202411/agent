@@ -20,6 +20,7 @@ import {
   type StoryCapability,
 } from "@/features/agent/api/studio-projects-api";
 import { isAppActive, subscribeAppActive } from "@/hooks/app-active";
+import { useTranslations } from "@/i18n";
 
 /** Header remote reads — same cadence as H5 credits / publication badges. */
 const REMOTE_POLL_MS = 30_000;
@@ -28,6 +29,7 @@ type StoryChapterContextValue = {
   projectId: string;
   projectTitle: string;
   chapterId: string;
+  requestedChapterId: string;
   capabilities: StoryCapability[];
   draftRevision: number | null;
   videoSnapshotHash: string | null;
@@ -57,6 +59,7 @@ export function StoryChapterProvider({
   projectId: string;
   children: ReactNode;
 }) {
+  const chapterUnavailable = useTranslations()("agent.chapterUnavailable");
   const route = useGlobalSearchParams<{
     projectId?: string | string[];
     chapterId?: string | string[];
@@ -108,6 +111,8 @@ export function StoryChapterProvider({
         const chapterHint = isAgentOsId(chapterIdFromQuery) ? chapterIdFromQuery : undefined;
         const workbench = await storyProjectsApi.getWorkbench(projectId, chapterHint);
         if (cancelled) return;
+        if (chapterHint && !workbench.chapters?.some((chapter) => chapter.id === chapterHint))
+          throw new Error(chapterUnavailable);
         const resolvedChapter =
           (chapterHint &&
             workbench.chapters?.some((chapter) => chapter.id === chapterHint) &&
@@ -141,7 +146,7 @@ export function StoryChapterProvider({
     return () => {
       cancelled = true;
     };
-  }, [chapterIdFromQuery, previewTitle, projectId, refreshKey]);
+  }, [chapterIdFromQuery, previewTitle, projectId, refreshKey, chapterUnavailable]);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,6 +224,7 @@ export function StoryChapterProvider({
       projectId,
       projectTitle,
       chapterId,
+      requestedChapterId: chapterIdFromQuery,
       capabilities,
       draftRevision,
       videoSnapshotHash,
@@ -238,6 +244,7 @@ export function StoryChapterProvider({
       canRelease,
       capabilities,
       chapterId,
+      chapterIdFromQuery,
       draftRevision,
       error,
       loading,

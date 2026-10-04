@@ -1094,6 +1094,7 @@
   "agent.assets.detail.close": "Close",
   "agent.script.openError": "Couldn't open this document — check the link or your access.",
   "agent.script.connecting": "Connecting…",
+  "agent.chapterUnavailable": "This chapter is no longer available. Retry or return to the project list.",
   "agent.script.empty": "Write your script — the pipeline reads it from here…",
   "agent.generation.loading": "Loading generation progress…",
   "agent.generation.loadError": "This generation batch could not be loaded.",
