@@ -15,7 +15,15 @@ const content = {
   storyBible: { logline: "Keep", stateVariables: [variable] },
   graph: {
     entryNodeId: null,
-    nodes: [{ nodeId: "clip:a", onEnterEffects: [{ kind: "add", key: "state_1", amount: 1 }] }],
+    nodes: [
+      {
+        kind: "clip",
+        nodeId: "clip:a",
+        interactions: [],
+        exit: { kind: "auto", routes: [{ target: null }] },
+        onEnterEffects: [{ kind: "add", key: "state_1", amount: 1 }],
+      },
+    ],
   },
 };
 it("preserves graph references, localized names and stable keys when applying edits", () => {
@@ -59,9 +67,10 @@ it("enforces official count, type and default-language constraints", () => {
     )
   ).toThrow();
 });
-it("rejects stale edits and does not silently remove references during explicit deletion", () => {
+it("rejects stale edits and removes references during explicit deletion", () => {
   expect(() => replaceRepairVariables(content, [], [], "en-US")).toThrow();
   const next = replaceRepairVariables(content, [variable], [], "en-US");
   expect(readRepairVariables(next)).toEqual([]);
-  expect(next.graph).toBe(content.graph);
+  expect(next.graph.nodes[0]).not.toHaveProperty("onEnterEffects");
+  expect(content.graph.nodes[0].onEnterEffects).toHaveLength(1);
 });

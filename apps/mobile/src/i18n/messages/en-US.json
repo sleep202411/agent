@@ -4923,7 +4923,7 @@
   "storyVariables.initial": "Initial value",
   "storyVariables.note": "Notes",
   "storyVariables.remove": "Remove variable",
-  "storyVariables.removeHelp": "Conditions and state changes may still use this variable. Review them before publishing.",
+  "storyVariables.removeHelp": "Remove this variable and its conditions and state changes? Conditional routes with no conditions left are removed; choices with no visibility conditions left remain visible. Apply and save to keep this change.",
   "storyVariables.add": "Add variable",
   "storyVariables.apply": "Apply variables",
   "storyEffects.title": "State changes",

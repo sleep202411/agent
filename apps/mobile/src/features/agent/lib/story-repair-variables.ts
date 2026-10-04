@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { StoryStateKeySchema, MAX_STORY_STATE_VARIABLES } from "@repo/shared/story-stats";
 import type { RepairContent } from "./story-repair-fields";
+import { removeRepairVariableReferences } from "./story-repair-variable-references";
 export const repairVariableSchema = z
   .object({
     key: z.string().refine((value) => StoryStateKeySchema.safeParse(value).success),
@@ -38,13 +39,17 @@ export function replaceRepairVariables(
   value: unknown,
   defaultLocale: string
 ): RepairContent {
-  if (JSON.stringify(readRepairVariables(content)) !== JSON.stringify(expected))
+  const previous = readRepairVariables(content);
+  if (JSON.stringify(previous) !== JSON.stringify(expected))
     throw Error("State variables changed. Reopen the editor before applying changes.");
   const rows = repairVariableListSchema.parse(value);
   if (!defaultLocale.trim() || rows.some((v) => !v.name[defaultLocale]?.trim()))
     throw Error("Every state variable needs a name in the project's default language.");
+  const removed = new Set(
+    previous.filter((v) => !rows.some((next) => next.key === v.key)).map((v) => v.key)
+  );
   return {
-    ...content,
+    ...removeRepairVariableReferences(content, removed),
     storyBible: { ...(content.storyBible as Record<string, unknown>), stateVariables: rows },
   };
 }

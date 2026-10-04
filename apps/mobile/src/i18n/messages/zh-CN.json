@@ -4923,7 +4923,7 @@
   "storyVariables.initial": "初始值",
   "storyVariables.note": "备注",
   "storyVariables.remove": "移除变量",
-  "storyVariables.removeHelp": "条件和状态变化可能仍使用此变量。发布前请检查。",
+  "storyVariables.removeHelp": "移除此变量及使用它的条件和状态变更？条件变空的自动路线会被移除，可见条件变空的选项会保留并显示。应用并保存后生效。",
   "storyVariables.add": "添加变量",
   "storyVariables.apply": "应用变量",
   "storyEffects.title": "状态变化",
