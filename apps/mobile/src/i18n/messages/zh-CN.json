@@ -1762,6 +1762,7 @@
   "agreementActions.help_archive": "重试将已签署文件和审计记录保存到剧组档案。",
   "agreementActions.confirm": "确认操作",
   "agreementActions.refreshHelp": "请刷新协议，确认结果后再进行下一项操作。",
+  "agreementCreate.denied": "你已无权创建协议。",
   "agreementCreate.title": "创建协议",
   "agreementCreate.help": "选择在职剧组成员并核对收件人信息。确认后将通过 BoldSign 排队发送。",
   "agreementCreate.member": "剧组成员",

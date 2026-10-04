@@ -1762,6 +1762,7 @@
   "agreementActions.help_archive": "Retry saving the signed document and audit trail to the Crew archive.",
   "agreementActions.confirm": "Confirm Action",
   "agreementActions.refreshHelp": "Refresh the agreement to check the result before trying another action.",
+  "agreementCreate.denied": "You no longer have permission to create agreements.",
   "agreementCreate.title": "Create Agreement",
   "agreementCreate.help": "Choose an active Crew member and review the recipient details. Confirming queues delivery through BoldSign.",
   "agreementCreate.member": "Crew Member",

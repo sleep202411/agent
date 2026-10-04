@@ -1762,6 +1762,7 @@
   "agreementActions.help_archive": "重試將已簽署文件和審計記錄儲存到劇組檔案。",
   "agreementActions.confirm": "確認操作",
   "agreementActions.refreshHelp": "請重新整理協議，確認結果後再進行下一項操作。",
+  "agreementCreate.denied": "你已無權建立協議。",
   "agreementCreate.title": "建立協議",
   "agreementCreate.help": "選擇在職劇組成員並核對收件人資料。確認後將透過 BoldSign 排隊發送。",
   "agreementCreate.member": "劇組成員",

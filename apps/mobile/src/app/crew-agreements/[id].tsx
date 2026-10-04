@@ -1,10 +1,9 @@
 import { z } from "zod";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { CrewAgreements } from "@/features/services/crew-agreements";
-import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
@@ -13,7 +12,7 @@ export default function CrewAgreementsScreen() {
   const initialAgreementId = z.string().uuid().safeParse(agreement).success ? agreement : undefined;
   const auth = useAuth(),
     gate = useAuthGate(),
-    active = useScreenActive();
+    active = useIsFocused();
   const theme = useTheme(),
     t = useTranslations(),
     router = useRouter();
