@@ -7,11 +7,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StoryPublicationDialog } from "./story-publication-dialog";
 import type { StoryPublicationState } from "./use-story-publication";
 
+const signIn = vi.hoisted(() => vi.fn());
+vi.mock("@/app/_components/auth-provider", () => ({ useAuth: () => ({ signIn }) }));
+
 const messages = {
   common: { close: "Close" },
   storyStudio: {
     canvas: {
       publish: {
+        actionError: {
+          auth: "Sign in again before publishing.",
+          permission: "Ask the project owner to check your publishing role.",
+          service: "Retry the publication service.",
+        },
+        statusError: { signIn: "Sign in again" },
         title: "Submit current version for review?",
         description: "Send the latest saved story to platform review.",
         confirmation: {
@@ -55,6 +64,7 @@ describe("StoryPublicationDialog", () => {
   let root: Root;
 
   beforeEach(() => {
+    signIn.mockReset();
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -92,6 +102,20 @@ describe("StoryPublicationDialog", () => {
     expect(document.body.textContent).toContain("Add a current video to the entrance clip.");
     await click(buttonByText("Try again"));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it("offers sign-in recovery while preserving the exact session failure", async () => {
+    await renderDialog({
+      status: "failed",
+      phase: "submitting",
+      code: "SUBMIT_FAILED",
+      errorKind: "auth",
+      message: "Upstream session expired",
+    });
+    expect(document.body.textContent).toContain("Sign in again before publishing.");
+    expect(document.body.textContent).toContain("Upstream session expired");
+    await click(buttonByText("Sign in again"));
+    expect(signIn).toHaveBeenCalledOnce();
   });
 
   it("locates the plot node named by a publish failure", async () => {

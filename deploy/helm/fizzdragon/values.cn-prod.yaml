@@ -128,6 +128,10 @@ sharedEnv:
 serverSecrets:
   projectedName: fizzdragon-server-secrets
   mapping:
+    # Required by the project publication gateway. Provision the regional
+    # Java admin credential in this out-of-band Secret before server rollout.
+    - kv: java-admin-api-token
+      env: JAVA_ADMIN_API_TOKEN
     # CN v1: no Airwallex (billing not enabled on CN yet).
     - kv: admin-mfa-secret-key
       env: ADMIN_MFA_SECRET_KEY

@@ -1029,7 +1029,38 @@
       "title": "分享“{name}”",
       "descriptionWorkspace": "成员可以协作处理该团队中的所有项目。",
       "descriptionProject": "成员可以协作处理该项目。",
-      "descriptionStoryProject": "受邀成员可以访问此影游项目，不会因此获得空间内其他项目的访问权限。"
+      "descriptionStoryProject": "邀请成员加入此影游项目，并选择他们可以进行的操作。",
+      "storyRoles": {
+        "title": "各角色可以做什么",
+        "tableLabel": "影游项目角色权限对照",
+        "scrollHint": "左右滑动，比较各角色权限。",
+        "capability": "操作",
+        "selectedRole": "已选角色",
+        "selectedFor": "{source}：{role}",
+        "sources": {
+          "member": "成员邀请",
+          "link": "邀请链接"
+        },
+        "allowed": "可以",
+        "notAllowed": "不可以",
+        "descriptions": {
+          "owner": "完整项目管理",
+          "producer": "创作与发布",
+          "editor": "内容创作",
+          "reviewer": "反馈与素材审核",
+          "viewer": "仅查看"
+        },
+        "capabilities": {
+          "read": "查看项目",
+          "edit": "编辑剧本与画布",
+          "generate": "使用 AI 生成",
+          "review": "审核参考素材与评论",
+          "publish": "构建并提交发布审核",
+          "manage": "管理成员与邀请链接"
+        },
+        "ownerNote": "所有者仅用于对照，此处不能邀请所有者或转让所有权。空间所有者和管理员也拥有项目管理权限。",
+        "scopeNote": "邀请仅适用于此项目。项目角色会叠加已有空间权限，选择较低角色不会降低这些权限。参考素材审核与平台发布审核是不同的操作。"
+      }
     }
   },
   "auth": {
@@ -1135,6 +1166,10 @@
     "addMemberFailed": "无法添加成员",
     "changeRoleFailed": "无法更改角色",
     "removeMemberFailed": "无法移除成员",
+    "invitationMode": "邀请方式",
+    "inviteByAccount": "直接添加成员",
+    "inviteByLink": "通过链接邀请",
+    "existingInviteLinks": "现有邀请链接",
     "inviteLink": "邀请链接",
     "inviteLinkHint": "任何持有链接的人都可以以你选择的角色加入{scope}。可选择有效期，也可随时撤销。",
     "thisTeam": "此空间",
@@ -3359,7 +3394,7 @@
         "draftConflict": "故事有未合并的更新，请先处理冲突后再提交。",
         "projectLoading": "项目还在加载。",
         "statusChecking": "正在查询发布状态…",
-        "statusUnavailable": "发布状态不可用。点击状态标记查看错误并重试。",
+        "statusUnavailable": "发布服务未能确认状态，请重试；若问题持续，请联系支持。",
         "reviewingLocked": "当前项目已在审核中。",
         "publishedUpdateLocked": "提交更新前请先将项目下线。",
         "status": {
@@ -3369,6 +3404,27 @@
           "offline": "已下线",
           "checking": "查询中…",
           "unavailable": "状态不可用"
+        },
+        "actionError": {
+          "auth": "登录已失效，请重新登录后再发布。",
+          "permission": "你的发布权限已变更，请联系项目拥有者确认你的角色。",
+          "service": "发布服务未能完成此操作，请重试；若问题持续，请联系支持。"
+        },
+        "statusError": {
+          "auth": {
+            "label": "需要登录",
+            "guidance": "登录已失效，请重新登录后查看发布状态。"
+          },
+          "permission": {
+            "label": "需要访问权限",
+            "guidance": "你无法查看此项目的发布状态，请联系项目拥有者确认你的访问权限。"
+          },
+          "service": {
+            "label": "发布服务异常",
+            "guidance": "发布服务未能确认状态，请重试；若问题持续，请联系支持。"
+          },
+          "openDetails": "点击查看详细原因和恢复操作。",
+          "signIn": "重新登录"
         },
         "rejectionReason": "审核反馈：{reason}",
         "title": "提交当前版本审核？",
@@ -3421,7 +3477,7 @@
           "success": "影游已下线。"
         },
         "errors": {
-          "permissionDenied": "只有项目所有者可以提交审核或下线。",
+          "permissionDenied": "提交审核或下架需要发布权限，请联系项目拥有者将你设为制片人。",
           "saveFailed": "无法保存最新修改。",
           "prepareFailed": "无法准备发布版本。",
           "submitFailed": "无法将已准备的版本提交审核。",

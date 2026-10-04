@@ -41,9 +41,10 @@ export const SKIP_END_USER_AUTH_KEY = 'skipEndUserAuth';
 export const SkipEndUserAuth = () => SetMetadata(SKIP_END_USER_AUTH_KEY, true);
 
 /**
- * Parameter decorator to extract the raw forwarded cookie string —
+ * Parameter decorator to extract the selected authenticated credential —
  * used when proxying requests to Java services that need the
- * viewer's satoken (e.g. UsersController → Java /user/query/user).
+ * viewer's verified satoken (e.g. UsersController → Java /user/query/user).
+ * Duplicate or unrelated cookies are not forwarded when a satoken was selected.
  *
  * Returns "" when no cookie was sent.
  *

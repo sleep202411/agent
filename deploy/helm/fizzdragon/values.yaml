@@ -180,6 +180,10 @@ secrets:
 serverSecrets:
   projectedName: fizzdragon-server-secrets
   mapping:
+    # Required by the project publication gateway. Reuse the regional Java
+    # admin credential from Key Vault; only Nest and admin-ui receive it.
+    - kv: java-admin-api-token
+      env: JAVA_ADMIN_API_TOKEN
     - kv: airwallex-client-id
       env: AIRWALLEX_CLIENT_ID
     - kv: airwallex-api-key
@@ -424,6 +428,7 @@ server:
       provider: aks-com
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
+    JAVA_ADMIN_API_TOKEN_HEADER: X-Admin-Api-Token
     # Emergency pause: Java still calls register_bonus after disabling its
     # legacy 500-point grant. Nest answers successfully without minting points.
     REGISTRATION_COMPUTE_BONUS_PAUSED: "true"

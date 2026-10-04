@@ -1029,7 +1029,38 @@
       "title": "Share “{name}”",
       "descriptionWorkspace": "Members can collaborate on every project in this workspace.",
       "descriptionProject": "Members can collaborate on this project.",
-      "descriptionStoryProject": "People you add can access this story. Other projects in the workspace remain private to their members."
+      "descriptionStoryProject": "Invite people to this story project and choose what they can do.",
+      "storyRoles": {
+        "title": "What each role can do",
+        "tableLabel": "Story project role permissions",
+        "scrollHint": "Swipe horizontally to compare roles.",
+        "capability": "Capability",
+        "selectedRole": "Selected role",
+        "selectedFor": "{source}: {role}",
+        "sources": {
+          "member": "Member invitation",
+          "link": "Invite link"
+        },
+        "allowed": "Allowed",
+        "notAllowed": "Not allowed",
+        "descriptions": {
+          "owner": "Full project management",
+          "producer": "Creation and publishing",
+          "editor": "Content creation",
+          "reviewer": "Feedback and approvals",
+          "viewer": "Read only"
+        },
+        "capabilities": {
+          "read": "View the project",
+          "edit": "Edit scripts and canvas",
+          "generate": "Generate with AI",
+          "review": "Review references and comment",
+          "publish": "Build and submit for publication",
+          "manage": "Manage members and invite links"
+        },
+        "ownerNote": "Owner is shown for comparison. You cannot invite someone as an owner or transfer ownership here. Workspace owners and admins also have project management access.",
+        "scopeNote": "Invitations apply only to this project. Project roles add to existing workspace permissions; choosing a lower role will not reduce that access. Reference reviews are separate from platform publication review."
+      }
     }
   },
   "auth": {
@@ -1135,6 +1166,10 @@
     "addMemberFailed": "Couldn't add member",
     "changeRoleFailed": "Couldn't change role",
     "removeMemberFailed": "Couldn't remove member",
+    "invitationMode": "Invitation method",
+    "inviteByAccount": "Add directly",
+    "inviteByLink": "Invite by link",
+    "existingInviteLinks": "Existing invite links",
     "inviteLink": "Invite link",
     "inviteLinkHint": "Anyone with the link can join {scope} at the role you pick. Choose how long it stays valid — you can revoke it anytime.",
     "thisTeam": "this workspace",
@@ -3359,7 +3394,7 @@
         "draftConflict": "This story has a conflict. Resolve it before submitting.",
         "projectLoading": "The project is still loading.",
         "statusChecking": "Checking publication status…",
-        "statusUnavailable": "Publication status is unavailable. Open the status badge to see the error and retry.",
+        "statusUnavailable": "The publication service could not verify the status. Retry, or contact support if this continues.",
         "reviewingLocked": "This project is already in review.",
         "publishedUpdateLocked": "Take the project offline before submitting an update.",
         "status": {
@@ -3369,6 +3404,27 @@
           "offline": "Offline",
           "checking": "Checking…",
           "unavailable": "Status unavailable"
+        },
+        "actionError": {
+          "auth": "Your session has expired. Sign in again before publishing.",
+          "permission": "Your publishing access has changed. Ask the project owner to check your role.",
+          "service": "The publication service could not complete this action. Retry, or contact support if this continues."
+        },
+        "statusError": {
+          "auth": {
+            "label": "Sign in required",
+            "guidance": "Your session has expired. Sign in again to check publication status."
+          },
+          "permission": {
+            "label": "Access required",
+            "guidance": "You cannot read this project's publication status. Ask the project owner to check your access."
+          },
+          "service": {
+            "label": "Publication service error",
+            "guidance": "The publication service could not verify the status. Retry, or contact support if this continues."
+          },
+          "openDetails": "Click for details and recovery options.",
+          "signIn": "Sign in again"
         },
         "rejectionReason": "Review feedback: {reason}",
         "title": "Submit current version for review?",
@@ -3421,7 +3477,7 @@
           "success": "Interactive film taken offline."
         },
         "errors": {
-          "permissionDenied": "Only the project owner can submit or take this work offline.",
+          "permissionDenied": "Publishing access is required to submit or take this work offline. Ask the project owner to assign you the producer role.",
           "saveFailed": "The latest changes could not be saved.",
           "prepareFailed": "The release version could not be prepared.",
           "submitFailed": "The prepared version could not be submitted for review.",

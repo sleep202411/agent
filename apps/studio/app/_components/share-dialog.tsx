@@ -11,6 +11,7 @@ import {
 import type { ShareScope } from "@/lib/collab/sharing-api";
 import { MembersManager } from "./members-manager";
 import { CastingManager } from "./casting-manager";
+import { StoryProjectRolePermissionTable } from "./story-project-role-permission-table";
 
 /**
  * Focused share modal — used for per-project sharing (team members live on the
@@ -28,10 +29,17 @@ export function ShareDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const t = useTranslations("shell");
+  const isStory = scope.kind === "story-project";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent
+        className={
+          isStory
+            ? "flex max-h-[calc(100dvh-2rem)] min-w-0 flex-col overflow-hidden p-5 sm:max-w-4xl sm:p-6"
+            : "sm:max-w-md"
+        }
+      >
+        <DialogHeader className={isStory ? "shrink-0 pr-7" : undefined}>
           <DialogTitle>{t("share.title", { name: scope.name })}</DialogTitle>
           <DialogDescription>
             {scope.kind === "workspace"
@@ -41,7 +49,23 @@ export function ShareDialog({
                 : t("share.descriptionProject")}
           </DialogDescription>
         </DialogHeader>
-        <MembersManager scope={scope} canManage={canManage} />
+        <div
+          className={
+            isStory ? "min-h-0 min-w-0 overflow-y-auto overscroll-contain pr-1" : undefined
+          }
+        >
+          <MembersManager
+            scope={scope}
+            canManage={canManage}
+            renderRoleGuide={
+              isStory
+                ? (role, source) => (
+                    <StoryProjectRolePermissionTable selectedRole={role} source={source} />
+                  )
+                : undefined
+            }
+          />
+        </div>
         {/* Per-project only: cast a real person to lend their likeness without
             joining the project (director casting invites). */}
         {scope.kind === "project" && <CastingManager projectId={scope.id} canManage={canManage} />}

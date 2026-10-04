@@ -7,6 +7,7 @@ import type { StoryCapability } from "@/lib/story-projects-api";
 const h = vi.hoisted(() => ({
   user: "alice",
   prepare: vi.fn(),
+  read: vi.fn(),
   submit: vi.fn(),
   cache: vi.fn(),
   invalidate: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ setQueryData: h.cache, invalidateQueries: h.invalidate }),
 }));
 vi.mock("@/lib/interactive-film-api", () => ({
+  getInteractiveFilmPublication: h.read,
   prepareInteractiveFilmRelease: h.prepare,
   submitInteractiveFilmRelease: h.submit,
   interactiveFilmPublicationQueryKey: (id: string, user: string) => ["publication", id, user],
@@ -53,6 +55,7 @@ beforeEach(() => {
   projectId = "one";
   capabilities = ["story.edit", "story.build", "story.release"];
   save = (submit) => submit(3);
+  h.read.mockResolvedValue(null);
   h.prepare.mockResolvedValue({ gameId: "one" });
   h.submit.mockResolvedValue({ gameId: "one", status: "reviewing" });
   h.invalidate.mockResolvedValue(undefined);
@@ -95,6 +98,7 @@ it.each(["account", "project", "permission"])(
       await Promise.resolve();
     });
     const signal = h.prepare.mock.calls[0]![2] as AbortSignal;
+    const writesBeforeAbandonment = h.cache.mock.calls.length;
     if (change === "account") h.user = "bob";
     if (change === "project") projectId = "two";
     if (change === "permission") capabilities = [];
@@ -105,7 +109,7 @@ it.each(["account", "project", "permission"])(
       await run;
     });
     expect(h.submit).not.toHaveBeenCalled();
-    expect(h.cache).not.toHaveBeenCalled();
+    expect(h.cache).toHaveBeenCalledTimes(writesBeforeAbandonment);
     expect(hook.state.status).toBe("closed");
   }
 );
@@ -118,13 +122,14 @@ it("suppresses a late submission result after account replacement", async () => 
     run = hook.confirm();
     await Promise.resolve();
   });
+  const writesBeforeAbandonment = h.cache.mock.calls.length;
   h.user = "bob";
   await render();
   await act(async () => {
     submitted.resolve({ status: "reviewing" });
     await run;
   });
-  expect(h.cache).not.toHaveBeenCalled();
+  expect(h.cache).toHaveBeenCalledTimes(writesBeforeAbandonment);
   expect(h.invalidate).not.toHaveBeenCalled();
 });
 it("preserves a current failure and allows retry into the account-scoped cache", async () => {
@@ -154,5 +159,72 @@ it("prevents duplicate confirmation while preparation is pending", async () => {
     prepared.resolve({ gameId: "one" });
     await run;
   });
+  expect(h.submit).toHaveBeenCalledOnce();
+});
+
+it("does not save, prepare or submit when project status authorization fails, including retry", async () => {
+  h.read.mockRejectedValue(
+    Object.assign(Error("Missing project read capability"), {
+      status: 403,
+      code: "STORY_PERMISSION_DENIED",
+    })
+  );
+  const saved = vi.fn(save);
+  save = saved;
+  await render();
+  await act(async () => hook.confirm());
+  expect(hook.state).toMatchObject({
+    status: "failed",
+    errorKind: "permission",
+    message: "Missing project read capability",
+  });
+  await act(async () => hook.retry());
+  expect(h.read).toHaveBeenCalledTimes(2);
+  expect(saved).not.toHaveBeenCalled();
+  expect(h.prepare).not.toHaveBeenCalled();
+  expect(h.submit).not.toHaveBeenCalled();
+});
+it("checks authoritative publication status before preparing a stale draft", async () => {
+  h.read.mockResolvedValue({ gameId: "one", status: "published", rejectReason: null });
+  await render();
+  await act(async () => hook.confirm());
+  expect(hook.state).toMatchObject({ status: "failed", message: "publishedUpdateLocked" });
+  expect(h.prepare).not.toHaveBeenCalled();
+  expect(h.submit).not.toHaveBeenCalled();
+});
+it("retains pending while reconciling an uncertain submission and blocks retrying a completed review", async () => {
+  const reconciled = deferred();
+  const reviewing = { gameId: "one", status: "reviewing", rejectReason: null };
+  h.read
+    .mockResolvedValueOnce(null)
+    .mockReturnValueOnce(reconciled.promise)
+    .mockResolvedValue(reviewing);
+  h.submit.mockRejectedValueOnce(
+    Object.assign(Error("Gateway response interrupted"), {
+      status: 503,
+      code: "STORY_PUBLICATION_SERVICE_UNAVAILABLE",
+    })
+  );
+  await render();
+  let run!: Promise<void>;
+  await act(async () => {
+    run = hook.confirm();
+    await Promise.resolve();
+  });
+  expect(h.read).toHaveBeenCalledTimes(2);
+  expect(hook.isPending).toBe(true);
+  await act(async () => hook.retry());
+  expect(h.prepare).toHaveBeenCalledOnce();
+  await act(async () => {
+    reconciled.resolve(reviewing);
+    await run;
+  });
+  expect(hook.state).toMatchObject({
+    status: "failed",
+    errorKind: "service",
+    message: "Gateway response interrupted",
+  });
+  await act(async () => hook.retry());
+  expect(h.prepare).toHaveBeenCalledOnce();
   expect(h.submit).toHaveBeenCalledOnce();
 });
