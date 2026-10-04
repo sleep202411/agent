@@ -9,6 +9,8 @@ let ready = true;
 let presenting = true;
 let durationMs = 1000;
 let timelineOffsetMs = 2000;
+let initialPositionMs = 0;
+let initiallyCompleted = false;
 const onDisplayed = vi.fn();
 let onHoldComplete = vi.fn();
 const onTimelineTimeMs = vi.fn();
@@ -22,6 +24,8 @@ function Probe() {
     onDisplayed,
     onHoldComplete,
     onTimelineTimeMs,
+    initialPositionMs,
+    initiallyCompleted,
   });
   return null;
 }
@@ -43,7 +47,35 @@ afterEach(async () => {
   presenting = true;
   durationMs = 1000;
   timelineOffsetMs = 2000;
+  initialPositionMs = 0;
+  initiallyCompleted = false;
   onHoldComplete = vi.fn();
+});
+it("resumes a saved still after readiness and pause without repeating its display transition", async () => {
+  initialPositionMs = 750;
+  ready = false;
+  await render();
+  await advance(5000);
+  ready = true;
+  presenting = false;
+  await render();
+  await advance(5000);
+  expect(onHoldComplete).not.toHaveBeenCalled();
+  presenting = true;
+  await render();
+  expect(onTimelineTimeMs).toHaveBeenLastCalledWith(2750);
+  await advance(250);
+  expect(onHoldComplete).toHaveBeenCalledOnce();
+  expect(onDisplayed).not.toHaveBeenCalled();
+});
+it("does not complete a restored finished still a second time", async () => {
+  initialPositionMs = 1000;
+  initiallyCompleted = true;
+  await render();
+  await advance(10000);
+  expect(onHoldComplete).not.toHaveBeenCalled();
+  expect(onDisplayed).not.toHaveBeenCalled();
+  expect(vi.getTimerCount()).toBe(0);
 });
 it("waits for media readiness and completes exactly once at the timeline offset", async () => {
   ready = false;

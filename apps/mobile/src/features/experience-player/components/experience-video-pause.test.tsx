@@ -7,6 +7,7 @@ import type {
 } from "@repo/shared/experience-runtime";
 import { ExperienceVideoRenderer } from "./experience-video-renderer";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
+import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
 const h = vi.hoisted(() => ({
   active: true,
   player: {
@@ -49,6 +50,7 @@ let handle: {
   play: (options?: { userGesture?: boolean }) => Promise<void>;
 } | null;
 let root: Root;
+let checkpoint: ExperienceMediaCheckpoint | undefined;
 const testCopy = { emptySequence: "No footage" } as ExperiencePlayerCopy;
 const render = (id = "empty", endBehavior?: Record<string, unknown>, mediaType = "video/mp4") =>
   act(async () =>
@@ -86,6 +88,7 @@ const render = (id = "empty", endBehavior?: Record<string, unknown>, mediaType =
           } as unknown as ExperienceRendererInstance
         }
         copy={testCopy}
+        checkpoint={checkpoint}
         onPlaybackRefused={refused}
         onPlaybackInterrupted={interrupted}
         onPlaybackHandle={(_id, value) => {
@@ -104,6 +107,7 @@ const advance = (ms: number) =>
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   h.active = true;
+  checkpoint = undefined;
   completed.mockClear();
   refused.mockClear();
   interrupted.mockClear();
@@ -115,6 +119,78 @@ beforeEach(() => {
   h.player.replaceAsync.mockClear();
   h.player.addListener.mockClear();
   root = createRoot(document.createElement("div"));
+});
+it("loads a saved video position without restarting from zero", async () => {
+  checkpoint = {
+    rendererInstanceId: "saved",
+    sequenceIndex: 0,
+    terminalMode: null,
+    positionMs: 12000,
+    completed: false,
+  } as ExperienceMediaCheckpoint;
+  await render("saved", { behavior: "advance" });
+  expect(h.player.currentTime).toBe(12);
+  expect(h.player.play).toHaveBeenCalled();
+  expect(completed).not.toHaveBeenCalled();
+});
+it("restores a held video frame without playing and uses only the remaining hold", async () => {
+  checkpoint = {
+    rendererInstanceId: "saved",
+    sequenceIndex: 0,
+    terminalMode: { kind: "held" },
+    positionMs: 20000,
+    remainingHoldMs: 500,
+    completed: false,
+  } as ExperienceMediaCheckpoint;
+  await render("saved", { behavior: "hold-last-frame", durationMs: 3000 });
+  expect(h.player.replaceAsync).toHaveBeenCalledOnce();
+  expect(h.player.currentTime).toBe(20);
+  expect(h.player.play).not.toHaveBeenCalled();
+  await advance(499);
+  expect(completed).not.toHaveBeenCalled();
+  await advance(1);
+  expect(completed).toHaveBeenCalledOnce();
+});
+it("waits for a restored held frame to load before counting its remaining duration", async () => {
+  let loaded!: () => void;
+  h.player.replaceAsync.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        loaded = resolve;
+      })
+  );
+  checkpoint = {
+    rendererInstanceId: "saved",
+    sequenceIndex: 0,
+    terminalMode: { kind: "held" },
+    positionMs: 20000,
+    remainingHoldMs: 500,
+    completed: false,
+  } as ExperienceMediaCheckpoint;
+  await render("saved", { behavior: "hold-last-frame", durationMs: 3000 });
+  await advance(10000);
+  expect(completed).not.toHaveBeenCalled();
+  await act(async () => {
+    loaded();
+  });
+  await advance(499);
+  expect(completed).not.toHaveBeenCalled();
+  await advance(1);
+  expect(completed).toHaveBeenCalledOnce();
+});
+it("does not replay or complete a saved finished video", async () => {
+  checkpoint = {
+    rendererInstanceId: "saved",
+    sequenceIndex: 0,
+    terminalMode: { kind: "held" },
+    positionMs: 20000,
+    remainingHoldMs: 0,
+    completed: true,
+  } as ExperienceMediaCheckpoint;
+  await render("saved", { behavior: "hold-last-frame", durationMs: 3000 });
+  await advance(10000);
+  expect(h.player.play).not.toHaveBeenCalled();
+  expect(completed).not.toHaveBeenCalled();
 });
 afterEach(async () => {
   await act(async () => root.unmount());

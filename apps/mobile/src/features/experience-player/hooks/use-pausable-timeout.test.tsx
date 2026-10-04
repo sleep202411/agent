@@ -6,9 +6,10 @@ import { usePausableTimeout } from "./use-pausable-timeout";
 let root: Root;
 let running = true;
 let enabled = true;
+let initialRemainingMs: number | undefined;
 const done = vi.fn();
 function Harness() {
-  usePausableTimeout({ running, enabled, durationMs: 3000, onTimeout: done });
+  usePausableTimeout({ running, enabled, durationMs: 3000, onTimeout: done, initialRemainingMs });
   return null;
 }
 const render = () => act(async () => root.render(<Harness />));
@@ -20,7 +21,26 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   root = createRoot(document.createElement("div"));
   running = enabled = true;
+  initialRemainingMs = undefined;
   done.mockClear();
+});
+it("resumes the remaining hold and retains it over pauses", async () => {
+  initialRemainingMs = 500;
+  running = false;
+  await render();
+  await advance(10000);
+  running = true;
+  await render();
+  await advance(250);
+  running = false;
+  await render();
+  await advance(10000);
+  running = true;
+  await render();
+  await advance(249);
+  expect(done).not.toHaveBeenCalled();
+  await advance(1);
+  expect(done).toHaveBeenCalledOnce();
 });
 afterEach(async () => {
   await act(async () => root.unmount());

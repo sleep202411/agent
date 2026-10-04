@@ -23,6 +23,7 @@ import {
   EXPERIENCE_PLAY_ORIENTATION,
 } from "../lib/experience-media";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
+import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
 
 type CoreVideoTerminalMode =
   | { kind: "held"; frameTimeSeconds: number }
@@ -33,10 +34,23 @@ type CoreVideoPlaybackState = {
   rendererInstanceId: string;
   sequenceIndex: number;
   terminalMode: CoreVideoTerminalMode;
+  checkpoint?: ExperienceMediaCheckpoint;
 };
 
-function initialCoreVideoPlaybackState(rendererInstanceId: string): CoreVideoPlaybackState {
-  return { rendererInstanceId, sequenceIndex: 0, terminalMode: null };
+function initialCoreVideoPlaybackState(
+  rendererInstanceId: string,
+  checkpoint?: ExperienceMediaCheckpoint
+): CoreVideoPlaybackState {
+  const saved = checkpoint?.rendererInstanceId === rendererInstanceId ? checkpoint : undefined;
+  return {
+    rendererInstanceId,
+    sequenceIndex: saved?.sequenceIndex ?? 0,
+    terminalMode:
+      saved?.terminalMode?.kind === "held"
+        ? { kind: "held", frameTimeSeconds: saved.positionMs / 1000 }
+        : (saved?.terminalMode ?? null),
+    checkpoint: saved,
+  };
 }
 
 const EMPTY_SEQUENCE_HOLD_MS = 6_000;
@@ -117,6 +131,7 @@ export function ExperienceVideoRenderer({
   onPlaybackHandle,
   onPlaybackRefused,
   onPlaybackInterrupted,
+  checkpoint,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -127,19 +142,22 @@ export function ExperienceVideoRenderer({
   onPlaybackRefused?: () => void;
   onPlaybackInterrupted?: () => void;
   onPlaybackHandle?: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
+  checkpoint?: ExperienceMediaCheckpoint;
 }) {
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
-    initialCoreVideoPlaybackState(renderer.instanceId)
+    initialCoreVideoPlaybackState(renderer.instanceId, checkpoint)
   );
   // Reset sequence when the renderer instance changes (same component, new scene).
   const [playbackRendererId, setPlaybackRendererId] = useState(renderer.instanceId);
   if (renderer.instanceId !== playbackRendererId) {
     setPlaybackRendererId(renderer.instanceId);
-    setPlaybackState(initialCoreVideoPlaybackState(renderer.instanceId));
+    setPlaybackState(initialCoreVideoPlaybackState(renderer.instanceId, checkpoint));
   }
   const { sequenceIndex, terminalMode } = playbackState;
-  const completedRendererIdRef = useRef<string | null>(null);
+  const completedRendererIdRef = useRef<string | null>(
+    playbackState.checkpoint?.completed ? renderer.instanceId : null
+  );
   const missingAssetRef = useRef<string | null>(null);
   /** Resume playback when the screen is presentable again if we paused for it. */
   const resumeWhenPresentingRef = useRef(false);
@@ -150,6 +168,7 @@ export function ExperienceVideoRenderer({
   /** Where a re-signed reload should pick the shot back up. */
   const resumeAtSecondsRef = useRef<number | null>(null);
   const [reloadEpoch, setReloadEpoch] = useState(0);
+  const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
 
   const clip = config.sequence[sequenceIndex];
   const assetId = terminalMode?.kind === "loop" ? terminalMode.assetId : clip?.assetId;
@@ -172,7 +191,8 @@ export function ExperienceVideoRenderer({
   const isStill = isStillVideoVariant(media?.variant.mediaType);
   const isLooping = terminalMode?.kind === "loop";
   const clipStartTime = terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined;
-  const shouldAutoplay = config.autoplay && terminalMode?.kind !== "held";
+  const shouldAutoplay =
+    config.autoplay && terminalMode?.kind !== "held" && !playbackState.checkpoint?.completed;
   const durationMs = media?.variant.durationMs;
   const sequenceLength = config.sequence.length;
 
@@ -212,9 +232,11 @@ export function ExperienceVideoRenderer({
   }, [player]);
 
   useEffect(() => {
-    completedRendererIdRef.current = null;
+    completedRendererIdRef.current = playbackState.checkpoint?.completed
+      ? renderer.instanceId
+      : null;
     missingAssetRef.current = null;
-  }, [renderer.instanceId]);
+  }, [renderer.instanceId, playbackState.checkpoint]);
 
   useEffect(() => {
     const missingAssetKey = `${renderer.instanceId}:${assetId}`;
@@ -287,7 +309,8 @@ export function ExperienceVideoRenderer({
 
   const continuePlayback = useEffectEvent(() => {
     resumeWhenPresentingRef.current = false;
-    if (terminalMode?.kind === "held") return;
+    if (terminalMode?.kind === "held" || completedRendererIdRef.current === renderer.instanceId)
+      return;
     const seconds =
       Number.isFinite(player.duration) && player.duration > 0
         ? player.duration
@@ -336,9 +359,13 @@ export function ExperienceVideoRenderer({
       : undefined;
   usePausableTimeout({
     identity: `${renderer.instanceId}:${sequenceIndex}`,
-    enabled: videoHoldMs !== undefined,
-    running: presenting,
+    enabled: videoHoldMs !== undefined && !playbackState.checkpoint?.completed,
+    running:
+      presenting &&
+      (playbackState.checkpoint?.terminalMode?.kind !== "held" ||
+        loadedIdentity === playbackIdentity),
     durationMs: videoHoldMs ?? 0,
+    initialRemainingMs: playbackState.checkpoint?.remainingHoldMs ?? undefined,
     onTimeout: advanceSequence,
   });
 
@@ -383,7 +410,8 @@ export function ExperienceVideoRenderer({
   });
 
   useEffect(() => {
-    if (terminalMode?.kind === "held") return;
+    if (terminalMode?.kind === "held" && playbackState.checkpoint?.terminalMode?.kind !== "held")
+      return;
     if (!sourceUri || isStill) {
       if (isStill && player.playing) {
         try {
@@ -404,7 +432,9 @@ export function ExperienceVideoRenderer({
     void loadAndPlayClip(player, {
       sourceUri,
       isLooping,
-      clipStartTime: resumeAtSeconds ?? clipStartTime,
+      clipStartTime:
+        resumeAtSeconds ??
+        (playbackState.checkpoint ? playbackState.checkpoint.positionMs / 1000 : clipStartTime),
       shouldAutoplay,
       isPresenting: () => presentingRef.current,
       onDeferredAutoplay: () => {
@@ -414,14 +444,18 @@ export function ExperienceVideoRenderer({
         playableUriRef.current = playableUri;
       },
       signal: abort.signal,
-    }).catch((error: unknown) => {
-      if (abort.signal.aborted) return;
-      reportPlaybackError(
-        error instanceof Error && error.message.trim()
-          ? error.message
-          : copy.mediaError(assetId ?? "unknown")
-      );
-    });
+    })
+      .then(() => {
+        if (!abort.signal.aborted) setLoadedIdentity(playbackIdentity);
+      })
+      .catch((error: unknown) => {
+        if (abort.signal.aborted) return;
+        reportPlaybackError(
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : copy.mediaError(assetId ?? "unknown")
+        );
+      });
     return () => {
       abort.abort();
     };
@@ -437,6 +471,7 @@ export function ExperienceVideoRenderer({
     shouldAutoplay,
     sourceUri,
     terminalMode?.kind,
+    playbackState.checkpoint,
   ]);
 
   useEffect(() => {
@@ -567,6 +602,8 @@ export function ExperienceVideoRenderer({
       timelineOffsetMs={timelineOffsetMs}
       playbackIdentity={playbackIdentity}
       presenting={presenting}
+      initialPositionMs={playbackState.checkpoint?.positionMs}
+      initiallyCompleted={playbackState.checkpoint?.completed}
       onDisplayed={handleEnd}
       onHoldComplete={advanceSequence}
       onTimelineTimeMs={onTimelineTimeMs}

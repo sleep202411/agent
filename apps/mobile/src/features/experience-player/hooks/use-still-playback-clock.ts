@@ -12,6 +12,8 @@ export function useStillPlaybackClock({
   onDisplayed,
   onHoldComplete,
   onTimelineTimeMs,
+  initialPositionMs = 0,
+  initiallyCompleted = false,
 }: {
   identity: string;
   ready: boolean;
@@ -21,6 +23,8 @@ export function useStillPlaybackClock({
   onDisplayed: () => void;
   onHoldComplete: () => void;
   onTimelineTimeMs: (timeMs: number) => void;
+  initialPositionMs?: number;
+  initiallyCompleted?: boolean;
 }) {
   const elapsedMs = useRef(0);
   const runningSince = useRef<number | null>(null);
@@ -47,11 +51,18 @@ export function useStillPlaybackClock({
     }
   });
   const display = useEffectEvent(() => onDisplayed());
+  const initial = useEffectEvent(() => ({
+    position: Number.isFinite(initialPositionMs)
+      ? Math.max(0, Math.min(durationMs, initialPositionMs))
+      : 0,
+    completed: initiallyCompleted,
+  }));
   useEffect(() => {
-    elapsedMs.current = 0;
+    const restored = initial();
+    elapsedMs.current = restored.position;
     runningSince.current = null;
-    displayed.current = false;
-    completed.current = false;
+    displayed.current = restored.position > 0 || restored.completed;
+    completed.current = restored.completed;
     return stop;
   }, [identity]);
   useEffect(() => {

@@ -24,6 +24,8 @@ export function ExperienceStillSegment({
   onHoldComplete,
   onTimelineTimeMs,
   onLoadError,
+  initialPositionMs,
+  initiallyCompleted,
 }: {
   uri: string;
   fit: VideoContentFit;
@@ -35,6 +37,8 @@ export function ExperienceStillSegment({
   onHoldComplete: () => void;
   onTimelineTimeMs: (timeMs: number) => void;
   onLoadError: () => void;
+  initialPositionMs?: number;
+  initiallyCompleted?: boolean;
 }) {
   const [playableUri, setPlayableUri] = useState<string | null>(null);
   const [loadedMediaKey, setLoadedMediaKey] = useState<string | null>(null);
@@ -62,6 +66,8 @@ export function ExperienceStillSegment({
     onDisplayed,
     onHoldComplete,
     onTimelineTimeMs,
+    initialPositionMs,
+    initiallyCompleted,
   });
 
   useEffect(() => {

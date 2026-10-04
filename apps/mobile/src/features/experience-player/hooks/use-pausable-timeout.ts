@@ -7,18 +7,25 @@ export function usePausableTimeout({
   running,
   durationMs,
   onTimeout,
+  initialRemainingMs,
 }: {
   identity?: string;
   enabled: boolean;
   running: boolean;
   durationMs: number;
   onTimeout: () => void;
+  initialRemainingMs?: number;
 }) {
   const remaining = useRef(durationMs);
   const completed = useRef(false);
   const fire = useEffectEvent(onTimeout);
+  const initial = useEffectEvent(() => initialRemainingMs);
   useEffect(() => {
-    remaining.current = durationMs;
+    const restored = initial();
+    remaining.current =
+      restored !== undefined && Number.isFinite(restored)
+        ? Math.max(0, Math.min(durationMs, restored))
+        : durationMs;
     completed.current = false;
   }, [identity, enabled, durationMs]);
   useEffect(() => {
