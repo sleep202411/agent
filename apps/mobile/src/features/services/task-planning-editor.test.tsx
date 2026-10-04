@@ -356,3 +356,21 @@ it("keeps a pending planning write locked through remount and preserves failure 
   await act(async () => button("taskBrief.reviewLatest")!.click());
   expect(button("taskPlanning.save")!.disabled).toBe(false);
 });
+
+it("retains a position draft through background reload and saves the trimmed role", async () => {
+  const snapshot = await h.fetch();
+  h.fetch.mockResolvedValue({ ...snapshot, positionRole: "Writer" });
+  h.update.mockResolvedValue({});
+  await refreshRender();
+  await act(async () => button("taskPlanning.edit")!.click());
+  expect(host.querySelectorAll("input")[4]!.value).toBe("Writer");
+  await act(async () => typeNumber(4, " Storyboard artist "));
+  await refreshRender(task, false);
+  await refreshRender(task, true);
+  expect(host.querySelectorAll("input")[4]!.value).toBe(" Storyboard artist ");
+  await act(async () => button("taskPlanning.save")!.click());
+  expect(h.update).toHaveBeenCalledWith(expect.anything(), {
+    expectedVersion: 4,
+    positionRole: "Storyboard artist",
+  });
+});

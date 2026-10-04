@@ -1532,6 +1532,7 @@
   "taskPlanning.clearEpisode": "清除集",
   "taskPlanning.empty": "暂无可用选项。",
   "taskPlanning.latest": "最新保存的任务计划。应用草稿前，请核对以下内容。",
+  "taskPlanning.positionRole": "职位",
   "taskPlanning.edit": "编辑任务规划",
   "taskPlanning.save": "保存任务规划",
   "taskWorkflow.latest": "最新保存的工作流状态。应用所选状态前，请核对。",

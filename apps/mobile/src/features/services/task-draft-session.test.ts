@@ -378,12 +378,18 @@ it("edits a staged draft in place and persists all metadata without creating dup
   const store = disk();
   const s = createTaskDraftSession("crew", "user", h.generation, store);
   s.stage(input, review);
-  expect(s.edit(1, { ...input, title: "Revised", estimatePoints: 8 }, review)).toBe(true);
+  expect(
+    s.edit(
+      1,
+      { ...input, title: "Revised", estimatePoints: 8, positionRole: "Storyboard artist" },
+      review
+    )
+  ).toBe(true);
   const restored = createTaskDraftSession("crew", "user", h.generation, store);
   expect(restored.getSnapshot().drafts).toHaveLength(1);
   expect(restored.getSnapshot().drafts[0]).toMatchObject({
     id: 1,
-    input: { title: "Revised", estimatePoints: 8 },
+    input: { title: "Revised", estimatePoints: 8, positionRole: "Storyboard artist" },
   });
   await restored.createAll(() => true);
   expect(restored.edit(1, input, review)).toBe(false);

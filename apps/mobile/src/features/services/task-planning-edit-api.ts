@@ -29,6 +29,7 @@ export type PlanningSnapshot = z.infer<typeof planningSnapshotSchema>;
 export const planningEditInput = z
   .object({
     ...taskCompensationShape,
+    positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     taskKind: taskKindSchema.nullable().optional(),
     expectedVersion: z.number().int().positive(),
     estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
@@ -44,6 +45,7 @@ export const planningEditInput = z
   .strict()
   .refine(
     (data) =>
+      data.positionRole !== undefined ||
       data.rewardUsdMinor !== undefined ||
       data.profitShareBps !== undefined ||
       data.estimatePoints !== undefined ||
@@ -67,7 +69,8 @@ export function planningChanges(
   task: PlanningSnapshot,
   draft: TaskPlanningDraft,
   taskKind: TaskKind | null = task.taskKind,
-  numbers: {
+  values: {
+    positionRole?: string | null;
     estimatePoints: number | null;
     revisionLimit: number | null;
     rewardUsdMinor?: number | null;
@@ -87,19 +90,22 @@ export function planningChanges(
     )
     .safeParse({
       expectedVersion: task.version,
-      ...(numbers.rewardUsdMinor !== undefined &&
-      numbers.rewardUsdMinor !== (task.rewardUsdMinor ?? null)
-        ? { rewardUsdMinor: numbers.rewardUsdMinor }
+      ...(values.positionRole !== undefined && values.positionRole !== (task.positionRole ?? null)
+        ? { positionRole: values.positionRole }
         : {}),
-      ...(numbers.profitShareBps !== undefined &&
-      numbers.profitShareBps !== (task.profitShareBps ?? null)
-        ? { profitShareBps: numbers.profitShareBps }
+      ...(values.rewardUsdMinor !== undefined &&
+      values.rewardUsdMinor !== (task.rewardUsdMinor ?? null)
+        ? { rewardUsdMinor: values.rewardUsdMinor }
         : {}),
-      ...(numbers.estimatePoints !== task.estimatePoints
-        ? { estimatePoints: numbers.estimatePoints }
+      ...(values.profitShareBps !== undefined &&
+      values.profitShareBps !== (task.profitShareBps ?? null)
+        ? { profitShareBps: values.profitShareBps }
         : {}),
-      ...(numbers.revisionLimit !== task.revisionLimit
-        ? { revisionLimit: numbers.revisionLimit }
+      ...(values.estimatePoints !== task.estimatePoints
+        ? { estimatePoints: values.estimatePoints }
+        : {}),
+      ...(values.revisionLimit !== task.revisionLimit
+        ? { revisionLimit: values.revisionLimit }
         : {}),
       ...(taskKind !== task.taskKind ? { taskKind } : {}),
       ...(cycleId !== task.cycleId ? { cycleId } : {}),
@@ -135,6 +141,8 @@ export async function updateTaskPlanning(
   const episodeId = data.episodeId === undefined ? task.episodeId : data.episodeId;
   const labels = data.labelIds ?? task.labels.map((label) => label.id);
   if (
+    (result.positionRole ?? null) !==
+      (data.positionRole === undefined ? (task.positionRole ?? null) : data.positionRole) ||
     result.rewardUsdMinor !==
       (data.rewardUsdMinor === undefined ? task.rewardUsdMinor : data.rewardUsdMinor) ||
     result.profitShareBps !==

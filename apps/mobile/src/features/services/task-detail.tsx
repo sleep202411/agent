@@ -238,6 +238,11 @@ function TaskContent({
             <ThemedText>
               {t("taskSchedule.priority")}: {t(`taskSchedule.${data.priority}`)}
             </ThemedText>
+            {!!data.positionRole && (
+              <ThemedText>
+                {t("taskPlanning.positionRole")}: {data.positionRole}
+              </ThemedText>
+            )}
             {data.taskKind !== undefined && (
               <ThemedText>
                 {t("taskKind.label")}:{" "}

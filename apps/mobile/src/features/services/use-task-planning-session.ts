@@ -14,6 +14,7 @@ type Draft = ReturnType<typeof initialDraft> & { attemptedAt?: PlanningSnapshot;
 function initialDraft(snapshot: PlanningSnapshot) {
   return {
     snapshot,
+    positionRole: snapshot.positionRole ?? "",
     reward: compensationText(snapshot.rewardUsdMinor),
     share: compensationText(snapshot.profitShareBps),
     estimate: snapshot.estimatePoints == null ? "" : String(snapshot.estimatePoints),
@@ -25,6 +26,7 @@ function initialDraft(snapshot: PlanningSnapshot) {
 export function parsePlanningDraft(draft: Draft) {
   try {
     return planningChanges(draft.snapshot, draft.fields, draft.taskKind, {
+      positionRole: draft.positionRole.trim() || null,
       estimatePoints: parsePlanningNumber(draft.estimate, 1_000_000),
       revisionLimit: parsePlanningNumber(draft.revisionLimit, 100),
       rewardUsdMinor: parseCompensation(draft.reward, 100_000_000_000),
@@ -54,10 +56,16 @@ export function useTaskPlanningSession(taskId: string, generation: number, onRef
       if (current() && !op.busy) setEditing(true);
     },
     initialize,
-    change<K extends "reward" | "share" | "estimate" | "revisionLimit" | "taskKind" | "fields">(
-      field: K,
-      value: Draft[K] | ((previous: Draft[K]) => Draft[K])
-    ) {
+    change<
+      K extends
+        | "positionRole"
+        | "reward"
+        | "share"
+        | "estimate"
+        | "revisionLimit"
+        | "taskKind"
+        | "fields",
+    >(field: K, value: Draft[K] | ((previous: Draft[K]) => Draft[K])) {
       if (current() && !op.busy && !draft?.attemptedAt)
         setDraft(
           (old) =>

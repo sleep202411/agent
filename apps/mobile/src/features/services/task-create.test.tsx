@@ -657,6 +657,7 @@ it("preserves unfinished title and brief across backgrounding without submitting
 it("reopens a staged draft, preserves unchanged metadata and saves through staging only", async () => {
   const onStage = vi.fn();
   const initial = {
+    positionRole: "Storyboard artist",
     title: "Reviewed draft",
     description: "Keep this",
     priority: "high" as const,

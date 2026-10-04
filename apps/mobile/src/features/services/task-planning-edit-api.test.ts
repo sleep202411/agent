@@ -238,3 +238,30 @@ it("updates and clears compensation using a versioned snapshot and exact acknowl
   vi.mocked(api.patch).mockResolvedValue({ ...prior, version: 2 });
   await expect(updateTaskPlanning(prior, changes.data!)).rejects.toThrow("acknowledgement");
 });
+
+it("changes and clears a position, verifying both changed and preserved values", async () => {
+  const current = { ...snapshot, positionRole: "Writer" };
+  for (const positionRole of ["Storyboard artist", null]) {
+    const change = planningChanges(current, planningDraft(current), current.taskKind, {
+      estimatePoints: current.estimatePoints,
+      revisionLimit: current.revisionLimit,
+      positionRole,
+    });
+    expect(change.data).toEqual({ expectedVersion: 1, positionRole });
+    vi.mocked(api.patch).mockResolvedValue({ ...current, version: 2, positionRole });
+    await expect(updateTaskPlanning(current, change.data!)).resolves.toMatchObject({
+      positionRole,
+    });
+    vi.mocked(api.patch).mockResolvedValue({ ...current, version: 2 });
+    await expect(updateTaskPlanning(current, change.data!)).rejects.toThrow("acknowledgement");
+  }
+  vi.mocked(api.patch).mockResolvedValue({
+    ...current,
+    version: 2,
+    estimatePoints: 3,
+    positionRole: null,
+  });
+  await expect(
+    updateTaskPlanning(current, { expectedVersion: 1, estimatePoints: 3 })
+  ).rejects.toThrow("acknowledgement");
+});

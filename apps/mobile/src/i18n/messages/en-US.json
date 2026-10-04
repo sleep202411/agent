@@ -1532,6 +1532,7 @@
   "taskPlanning.clearEpisode": "Clear Episode",
   "taskPlanning.empty": "No available options.",
   "taskPlanning.latest": "Latest saved planning. Review these details before applying your draft.",
+  "taskPlanning.positionRole": "Position",
   "taskPlanning.edit": "Edit Planning",
   "taskPlanning.save": "Save Planning",
   "taskWorkflow.latest": "Latest saved workflow status. Review it before applying your selection.",

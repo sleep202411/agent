@@ -29,6 +29,7 @@ export const taskCreateInput = z
         "Duplicate custom fields"
       )
       .optional(),
+    positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     taskKind: taskKindSchema.nullable().optional(),
     estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
     revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
@@ -104,6 +105,7 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
       }));
   if (
     !customMatches ||
+    (data.positionRole !== undefined && (result.positionRole ?? null) !== data.positionRole) ||
     (data.rewardUsdMinor !== undefined && result.rewardUsdMinor !== data.rewardUsdMinor) ||
     (data.profitShareBps !== undefined && result.profitShareBps !== data.profitShareBps) ||
     result.crewId !== crewId ||

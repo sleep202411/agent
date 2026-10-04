@@ -140,7 +140,7 @@ function Editor({
   const t = useTranslations(),
     theme = useTheme();
   const draft = session.draft!;
-  const { reward, share, estimate, revisionLimit, taskKind, error } = draft;
+  const { reward, share, estimate, revisionLimit, taskKind, positionRole, error } = draft;
   const locked = session.busy || !!draft.attemptedAt;
   const stale = snapshot.version !== draft.snapshot.version;
   const canReview =
@@ -196,6 +196,15 @@ function Editor({
         onShare={(v) => session.change("share", v)}
         locked={locked}
       />
+      <ThemedText>{t("taskPlanning.positionRole")}</ThemedText>
+      <TextInput
+        accessibilityLabel={t("taskPlanning.positionRole")}
+        value={positionRole}
+        onChangeText={(v) => session.change("positionRole", v)}
+        maxLength={80}
+        editable={!locked}
+        style={{ color: theme.text, padding: 12 }}
+      />
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {(error || stale) && (
         <Pressable
@@ -210,6 +219,9 @@ function Editor({
       {canReview && (
         <View style={{ gap: 8 }}>
           <ThemedText>{t("taskPlanning.latest")}</ThemedText>
+          <ThemedText>
+            {t("taskPlanning.positionRole")}: {snapshot.positionRole ?? t("thread.taskUnset")}
+          </ThemedText>
           <ThemedText>
             {t("taskPlanning.estimate")}: {snapshot.estimatePoints ?? t("thread.taskUnset")}
           </ThemedText>

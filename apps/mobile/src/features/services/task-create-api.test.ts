@@ -278,3 +278,24 @@ it.each([
   await expect(createTask("crew", { ...input, ...change })).rejects.toThrow("required task fields");
   expect(api.post).not.toHaveBeenCalled();
 });
+
+it("saves a trimmed position and rejects a missing or incorrect receipt", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, positionRole: "Storyboard artist" });
+  await expect(
+    createTask("crew", { ...input, positionRole: " Storyboard artist " })
+  ).resolves.toMatchObject({ positionRole: "Storyboard artist" });
+  expect(vi.mocked(api.post).mock.calls[0]![1]).toMatchObject({
+    data: { positionRole: "Storyboard artist" },
+  });
+  for (const positionRole of [undefined, null, "Writer"]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, positionRole });
+    await expect(
+      createTask("crew", { ...input, positionRole: "Storyboard artist" })
+    ).rejects.toThrow("acknowledgement");
+  }
+});
+it("rejects invalid positions before creating a task", async () => {
+  for (const positionRole of [" ", "x".repeat(81)])
+    await expect(createTask("crew", { ...input, positionRole })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});

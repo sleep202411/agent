@@ -153,6 +153,7 @@ function Editor({
   const initial = initialDraft?.input,
     editor = initialDraft?.review.editor;
   const custom = useTaskCreationCustomFields(crewId, generation, initial?.customFieldValues);
+  const [positionRole, setPositionRole] = useState(initial?.positionRole ?? "");
   const [taskKind, setTaskKind] = useState<TaskKind | null>(initial?.taskKind ?? null);
   const [planning, setPlanning] = useState<TaskPlanningDraft>(
     editor?.planning ?? {
@@ -205,6 +206,7 @@ function Editor({
       customFieldValues: custom.values,
       title,
       description,
+      positionRole: positionRole.trim() || null,
       priority,
       taskKind,
       estimatePoints: parsePlanningNumber(estimate, 1_000_000),
@@ -393,6 +395,15 @@ function Editor({
         onReward={setReward}
         onShare={setShare}
         locked={locked}
+      />
+      <ThemedText>{t("taskPlanning.positionRole")}</ThemedText>
+      <TextInput
+        accessibilityLabel={t("taskPlanning.positionRole")}
+        value={positionRole}
+        onChangeText={setPositionRole}
+        maxLength={80}
+        editable={!locked}
+        style={{ color: theme.text, padding: 12 }}
       />
       <ThemedText>
         {t("taskCreate.assignees")} · {assignees.length}/30
