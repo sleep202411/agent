@@ -82,13 +82,25 @@ export default function AgentChatScreen() {
   const prefillDraft = params.prefill?.trim() ?? "";
   const projectId = params.projectId?.trim() ?? "";
   const chapterFromQuery = params.chapterId?.trim() ?? "";
-  const { chapterId: chapterFromContext } = useStoryChapterContext();
+  const {
+    chapterId: chapterFromContext,
+    loading: chapterLoading,
+    error: chapterError,
+    refresh: refreshChapter,
+  } = useStoryChapterContext();
   const chapterId = isAgentOsId(chapterFromQuery) ? chapterFromQuery : chapterFromContext;
   const workbenchMode = params.mode?.trim() || AGENT_OS_STORY_WORKBENCH_MODE;
   const projectOk = isAgentOsId(projectId);
+  const chapterReady =
+    projectOk &&
+    !chapterLoading &&
+    !chapterError &&
+    isAgentOsId(chapterFromContext) &&
+    (!isAgentOsId(chapterFromQuery) || chapterFromQuery === chapterFromContext);
+  const readyProjectId = chapterReady ? projectId : "";
 
   const live = useAgentOsSession({
-    projectId: projectOk ? projectId : "",
+    projectId: readyProjectId,
     workbenchMode,
     chapterId: isAgentOsId(chapterId) ? chapterId : undefined,
   });
@@ -100,7 +112,7 @@ export default function AgentChatScreen() {
     projectId,
     chapterId,
     workbenchMode,
-    configured: projectOk,
+    configured: !!chapterReady,
     query: initialQuery,
     prefill: prefillDraft,
     send: live.send,
@@ -117,9 +129,9 @@ export default function AgentChatScreen() {
     live.session.status === "waiting_for_external";
   const restoring = live.session.status === "restoring";
   const showStop = isExecuting && !waitingUser;
-  const authoringRun = useStoryAuthoringRun(projectId, chapterId, isExecuting || waitingUser);
+  const authoringRun = useStoryAuthoringRun(readyProjectId, chapterId, isExecuting || waitingUser);
   const storyApprovalRunId = pendingApproval ? storyAgentRunIdFromApproval(pendingApproval) : null;
-  const approvalRun = useStoryAgentRunById(projectId, storyApprovalRunId);
+  const approvalRun = useStoryAgentRunById(readyProjectId, storyApprovalRunId);
   const proposalRun =
     (storyApprovalRunId && approvalRun?.id === storyApprovalRunId ? approvalRun : null) ??
     (storyApprovalRunId && authoringRun?.id === storyApprovalRunId ? authoringRun : null);
@@ -147,8 +159,13 @@ export default function AgentChatScreen() {
     (showStop || waitingUser) &&
     (authoringActivityKey != null || live.activity != null) &&
     (!live.assistantStreaming || live.session.status === "waiting_for_external" || waitingUser);
-  const composerLocked = isExecuting || restoring || waitingUser;
-  const composerTurn = useAgentComposerTurn(projectId, workbenchMode, composerLocked, chapterId);
+  const composerLocked = !chapterReady || isExecuting || restoring || waitingUser;
+  const composerTurn = useAgentComposerTurn(
+    readyProjectId,
+    workbenchMode,
+    composerLocked,
+    chapterId
+  );
 
   const {
     scrollRef,
@@ -208,6 +225,30 @@ export default function AgentChatScreen() {
           <ThemedText type="small" themeColor="textSecondary" onPress={() => router.back()}>
             {t("agent.backToHub")}
           </ThemedText>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (!chapterReady) {
+    return (
+      <ThemedView style={styles.screen}>
+        <Stack.Screen options={{ headerTitle: "" }} />
+        <View style={[styles.missing, { paddingTop: topPad }]}>
+          {chapterError ? (
+            <>
+              <ThemedText accessibilityRole="alert">{chapterError}</ThemedText>
+              <Pressable
+                accessibilityRole="button"
+                onPress={refreshChapter}
+                style={{ padding: 12 }}
+              >
+                <ThemedText>{t("common.retry")}</ThemedText>
+              </Pressable>
+            </>
+          ) : (
+            <ActivityIndicator color={theme.brand} />
+          )}
         </View>
       </ThemedView>
     );

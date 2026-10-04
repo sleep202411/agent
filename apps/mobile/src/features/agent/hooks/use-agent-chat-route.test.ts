@@ -19,6 +19,7 @@ let chapterId = "chapter-a";
 let projectId = "project-a";
 let query = "";
 let prefill = "Initial draft";
+let configured = true;
 function Probe() {
   const observed = useAgentChatRoute({
     projectId,
@@ -26,7 +27,7 @@ function Probe() {
     query,
     prefill,
     workbenchMode: "story",
-    configured: true,
+    configured,
     send,
     restore,
   });
@@ -56,6 +57,7 @@ afterEach(async () => {
   projectId = "project-a";
   query = "";
   prefill = "Initial draft";
+  configured = true;
   vi.resetAllMocks();
 });
 it("restores on credential changes, clears private drafts and rejects retained edits", async () => {
@@ -92,6 +94,22 @@ it("does not duplicate query admission under StrictMode effect replay", async ()
   await render(true);
   expect(send).toHaveBeenCalledTimes(1);
   expect(restore).not.toHaveBeenCalled();
+});
+it("waits for chapter admission and consumes the query only after recovery", async () => {
+  configured = false;
+  query = "Generate story";
+  await render();
+  expect(send).not.toHaveBeenCalled();
+  expect(restore).not.toHaveBeenCalled();
+  configured = true;
+  await render();
+  expect(send).toHaveBeenCalledTimes(1);
+  configured = false;
+  await render();
+  configured = true;
+  await render();
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(restore).toHaveBeenCalledTimes(1);
 });
 it("keeps a failed initial query editable without overwriting newer text", async () => {
   query = "Failed query";
