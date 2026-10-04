@@ -89,10 +89,9 @@ function Opening({ crewId, positionId }: { crewId: string; positionId: string })
                 setApplicationError("");
                 void submit(
                   position.id,
-                  () => {
-                    Alert.alert(
-                      t("crewDetail.applySubmittedTitle"),
-                      t("crewDetail.applySubmittedBody")
+                  (applicationId) => {
+                    router.push(
+                      toHref(`/crew-applications?application=${encodeURIComponent(applicationId)}`)
                     );
                   },
                   (e) => {

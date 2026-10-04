@@ -229,8 +229,8 @@ export default function CrewDetailScreen() {
   const submitApply = async (positionId: string) => {
     await apply(
       positionId,
-      () => {
-        Alert.alert(t("crewDetail.applySubmittedTitle"), t("crewDetail.applySubmittedBody"));
+      (applicationId) => {
+        router.push(toHref(`/crew-applications?application=${encodeURIComponent(applicationId)}`));
       },
       (error) => {
         if (error instanceof ApiRequestError && error.status === 401) {

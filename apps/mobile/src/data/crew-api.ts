@@ -187,8 +187,4 @@ export async function blockCrew(crewId: string): Promise<void> {
   await api.post(`/crews/${crewId}/blocks`, { ...AURORA });
 }
 
-/** Apply to a crew position (auth'd). Backend dedups one pending application
- *  per position/user and notifies the crew owner; approval creates a member. */
-export async function applyToCrewPosition(crewId: string, positionId: string): Promise<void> {
-  await api.post(`/crews/${crewId}/positions/${positionId}/apply`, { ...AURORA, data: {} });
-}
+export { applyToCrewPosition } from "./crew-application-api";

@@ -5,6 +5,7 @@ import CrewDetail from "@/app/crew/[id]";
 vi.mock("@/lib/api-client", () => ({ ApiRequestError: class extends Error {} }));
 const h = vi.hoisted(() => ({
   read: vi.fn(),
+  push: vi.fn(),
   apply: vi.fn(),
   gate: vi.fn(),
   alert: vi.fn(),
@@ -18,7 +19,7 @@ const h = vi.hoisted(() => ({
 vi.mock("@/data/browse-service", () => ({ getCrewById: h.read, applyToCrewPosition: h.apply }));
 vi.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "crew" }),
-  useRouter: () => ({}),
+  useRouter: () => ({ push: h.push }),
   Stack: {
     Screen: ({ options }: any) => {
       h.header = options.headerRight;
@@ -207,7 +208,7 @@ it("offers every opening and submits the selected one beyond Android's alert lim
     ...crew("Film Crew"),
     roles: Array.from({ length: 8 }, (_, i) => ({ id: `role${i}`, title: `Role ${i}`, count: 1 })),
   });
-  h.apply.mockResolvedValue(undefined);
+  h.apply.mockResolvedValue("application");
   const host = document.createElement("div"),
     root = createRoot(host);
   try {
@@ -222,8 +223,9 @@ it("offers every opening and submits the selected one beyond Android's alert lim
     await act(async () =>
       [...modal.querySelectorAll("button")].find((b) => b.textContent === "Role 7")!.click()
     );
-    expect(h.apply).toHaveBeenCalledExactlyOnceWith("crew", "role7");
+    expect(h.apply).toHaveBeenCalledExactlyOnceWith("crew", "role7", expect.any(AbortSignal));
     expect(host.querySelector("[data-modal]")).toBeNull();
+    expect(h.push).toHaveBeenCalledWith("/crew-applications?application=application");
   } finally {
     await act(async () => root.unmount());
   }
@@ -258,6 +260,7 @@ it("uses refreshed openings after login and allows cancelling without an applica
     );
     expect(h.apply).not.toHaveBeenCalled();
     expect(host.querySelector("[data-modal]")).toBeNull();
+    expect(h.push).toHaveBeenCalledWith("/crew-applications?application=application");
   } finally {
     await act(async () => root.unmount());
   }
