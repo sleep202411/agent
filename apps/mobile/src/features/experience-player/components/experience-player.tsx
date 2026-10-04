@@ -61,10 +61,15 @@ import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import { createExperienceRuntime } from "../lib/experience-runtime-host";
 import {
   scenePlaybackSignature,
+  shouldAdvancePlaybackTimeline,
   type ExperienceCheckpointReason,
   type ExperienceMediaCheckpoint,
 } from "../lib/experience-playback-checkpoint";
-import type { ExperienceSaveCheckpoint } from "../lib/experience-save-checkpoint";
+import {
+  validateExperienceSaveCheckpoint,
+  type ExperienceSaveCheckpoint,
+} from "../lib/experience-save-checkpoint";
+import { getExperienceJourneyActiveAccess } from "@repo/experience-engine";
 import {
   loadExperienceTheme as defaultLoadExperienceTheme,
   type ExperienceThemeLoader,
@@ -101,6 +106,7 @@ export interface ExperiencePlayerProps {
   active?: boolean;
   worldScope?: WorldPreviewScope;
   reporter?: PlaySessionReporter;
+  entryCheckpoint?: ExperienceSaveCheckpoint;
   onCheckpoint?: (checkpoint: ExperienceSaveCheckpoint, reason: ExperienceCheckpointReason) => void;
 }
 
@@ -121,6 +127,7 @@ export function ExperiencePlayer({
   worldScope,
   reporter,
   onCheckpoint,
+  entryCheckpoint,
 }: ExperiencePlayerProps) {
   const [restartEpoch, setRestartEpoch] = useState(0);
   const [randomSeed, setRandomSeed] = useState(
@@ -134,11 +141,17 @@ export function ExperiencePlayer({
     }
     try {
       if (worldScope) assertWorldPreviewScope(parsed.data, worldScope);
+      const checkpoint =
+        restartEpoch === 0 && entryCheckpoint
+          ? validateExperienceSaveCheckpoint(parsed.data, entryCheckpoint)
+          : undefined;
       return {
         ok: true as const,
         manifest: parsed.data,
+        checkpoint,
         controller: createExperienceRuntime(parsed.data, {
           randomSeed,
+          restore: checkpoint?.state,
           canAccess: access?.canAccess,
           worldStreaming: Boolean(worldScope),
           reporter,
@@ -153,7 +166,7 @@ export function ExperiencePlayer({
         issues: [{ path: [] as PropertyKey[], message: runtimeErrorMessage(error) }],
       };
     }
-  }, [access, randomSeed, restartEpoch, runtime, worldScope, reporter]);
+  }, [access, randomSeed, restartEpoch, runtime, worldScope, reporter, entryCheckpoint]);
 
   if (!prepared.ok) {
     return (
@@ -191,6 +204,7 @@ export function ExperiencePlayer({
       active={active}
       worldScope={worldScope}
       onCheckpoint={onCheckpoint}
+      entryCheckpoint={prepared.checkpoint}
       onRestart={() => {
         setRandomSeed(
           globalThis.crypto?.randomUUID?.() ?? `experience-player:${Date.now()}:${restartEpoch + 1}`
@@ -215,6 +229,7 @@ function ActiveExperienceRuntimePlayer({
   access,
   worldScope,
   onCheckpoint,
+  entryCheckpoint,
 }: {
   manifest: ExperienceRuntimeManifest;
   controller: ExperienceRuntimeController;
@@ -229,12 +244,20 @@ function ActiveExperienceRuntimePlayer({
   access?: ExperiencePlayerAccess;
   worldScope?: WorldPreviewScope;
   onCheckpoint?: ExperiencePlayerProps["onCheckpoint"];
+  entryCheckpoint?: ExperienceSaveCheckpoint;
 }) {
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
-  const mediaCheckpointsRef = useRef(new Map<string, ExperienceMediaCheckpoint>());
-  const settledGestureIdsRef = useRef<string[]>([]);
-  const pendingCheckpointEventsRef = useRef<ExperienceRuntimeEvent[]>([]);
-  const fixedClockEndedRef = useRef(false);
+  const [initialPlayback] = useState(() => entryCheckpoint?.playback);
+  const mediaCheckpointsRef = useRef(
+    new Map<string, ExperienceMediaCheckpoint>(
+      initialPlayback?.media.map((item) => [item.rendererInstanceId, item])
+    )
+  );
+  const settledGestureIdsRef = useRef<string[]>(initialPlayback?.settledGestureIds ?? []);
+  const pendingCheckpointEventsRef = useRef<ExperienceRuntimeEvent[]>(
+    entryCheckpoint?.events ?? []
+  );
+  const fixedClockEndedRef = useRef(initialPlayback?.fixedClockEnded ?? false);
   const [checkpointRevision, setCheckpointRevision] = useState(0);
   const checkpointEpochRef = useRef(0);
   const [sceneEpoch, setSceneEpoch] = useState(0);
@@ -254,10 +277,13 @@ function ActiveExperienceRuntimePlayer({
     },
     [sceneEpoch]
   );
-  const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [sceneTimeMs, setSceneTimeMs] = useState(0);
+  const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(
+    () => new Set(initialPlayback?.openRendererIds)
+  );
+  const [sceneTimeMs, setSceneTimeMs] = useState(initialPlayback?.sceneTimeMs ?? 0);
   const [theme, setTheme] = useState<ExperienceThemeConfig | null>(null);
   const [started, setStarted] = useState(false);
+  const startedRef = useRef(false);
   const [viewerPaused, setViewerPaused] = useState(false);
   const stageTapRef = useRef<{ x: number; y: number; time: number; sceneId: string } | null>(null);
   const gestureTapGuardRef = useRef<((x: number, y: number) => boolean) | null>(null);
@@ -300,15 +326,19 @@ function ActiveExperienceRuntimePlayer({
     suspend: suspendAudio,
     applyEffects: applyAudioEffects,
     checkpoint: checkpointAudio,
+    restore: restoreAudio,
   } = useExperienceAudioHost(manifest, playbackLocale, setRuntimeError);
   const timelineCursorRef = useRef<ExperienceTimelineCursor>(
-    createExperienceTimelineCursor(runtimeState.currentSceneId)
+    initialPlayback?.cursor ?? createExperienceTimelineCursor(runtimeState.currentSceneId)
   );
-  const parkedGestureEventsRef = useRef<ExperienceRuntimeEvent[]>([]);
+  const parkedGestureEventsRef = useRef<ExperienceRuntimeEvent[]>(
+    initialPlayback?.parkedEvents ?? []
+  );
   const worldEndHandlesRef = useRef(new Map<string, () => Promise<void>>());
   const pendingWorldEndsRef = useRef(new Set<string>());
   const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
-  const playbackEnabledRef = useRef(false);
+  const [playbackEnabled, setPlaybackEnabled] = useState(initialPlayback?.playbackEnabled ?? false);
+  const playbackEnabledRef = useRef(playbackEnabled);
   const defaultLocale = manifest.localization.defaultLocale;
   const title = localize(manifest.metadata.title, locale, defaultLocale);
   const accent = themeColor(theme, "color.accent", START_ACCENT);
@@ -350,6 +380,7 @@ function ActiveExperienceRuntimePlayer({
         if (!handle) return;
         if (effect.commandType === "play") {
           playbackEnabledRef.current = true;
+          setPlaybackEnabled(true);
           if (presentingRef.current && !timelineHoldGateRef.current) {
             void handle
               .play()
@@ -359,6 +390,7 @@ function ActiveExperienceRuntimePlayer({
         }
         if (effect.commandType === "pause") {
           playbackEnabledRef.current = false;
+          setPlaybackEnabled(false);
           handle.pause();
           return;
         }
@@ -468,15 +500,17 @@ function ActiveExperienceRuntimePlayer({
           const ok = await attempt();
           if (!ok || !aliveRef.current) return;
           setRuntimeError(null);
-          if (!playbackEnabledRef.current) {
-            playbackEnabledRef.current = true;
+          if (!startedRef.current) {
+            playbackEnabledRef.current = initialPlayback?.playbackEnabled ?? true;
+            setPlaybackEnabled(playbackEnabledRef.current);
+            startedRef.current = true;
             setStarted(true);
           }
         })();
       };
       return attempt();
     },
-    [access, applyResult, controller, manifest, suspendAudio]
+    [access, applyResult, initialPlayback, manifest, suspendAudio]
   );
 
   useEffect(() => {
@@ -540,9 +574,15 @@ function ActiveExperienceRuntimePlayer({
       if (!activeNode || activeNode.kind !== "scene") return;
       if (!timelineReportDrivesScene(activeNode.clock, rendererInstanceId)) return;
       setSceneTimeMs(positionMs);
-      const advanced = advanceExperienceTimeline(activeNode, timelineCursorRef.current, positionMs);
-      timelineCursorRef.current = advanced.cursor;
-      if (advanced.events.length > 0) void run(() => controller.dispatch(advanced.events));
+      if (shouldAdvancePlaybackTimeline(timelineCursorRef.current, positionMs)) {
+        const advanced = advanceExperienceTimeline(
+          activeNode,
+          timelineCursorRef.current,
+          positionMs
+        );
+        timelineCursorRef.current = advanced.cursor;
+        if (advanced.events.length > 0) void run(() => controller.dispatch(advanced.events));
+      }
       flushParkedGestureEvents(positionMs);
     },
     [controller, manifest, run, flushParkedGestureEvents]
@@ -569,7 +609,13 @@ function ActiveExperienceRuntimePlayer({
   );
 
   const currentNode = findGraphNode(manifest, runtimeState.currentSceneId);
-  const entryLocked = Boolean(currentNode?.access && !access?.canAccess(currentNode.access));
+  const entryRequirements = [
+    ...(entryCheckpoint?.journey
+      ? getExperienceJourneyActiveAccess(manifest, entryCheckpoint.journey)
+      : []),
+    ...(currentNode?.access ? [currentNode.access] : []),
+  ];
+  const entryLocked = entryRequirements.some((requirement) => !access?.canAccess(requirement));
   const scene = !entryLocked && currentNode?.kind === "scene" ? currentNode : null;
   const endingId = runtimeState.completedEndingId ?? null;
   const ending = endingId
@@ -610,8 +656,10 @@ function ActiveExperienceRuntimePlayer({
   useEffect(() => {
     if (!clockScene || clockDurationMs === null || !started || endingId) return;
     let frame: number | null = null;
-    let ended = false;
-    const startedAt = performance.now();
+    let ended = fixedClockEndedRef.current;
+    if (ended) return;
+    const restoredTime = sceneEpoch === 0 ? (initialPlayback?.sceneTimeMs ?? 0) : 0;
+    const startedAt = performance.now() - restoredTime;
     let pausedTotal = 0;
     let pausedAt: number | null = presentingRef.current ? null : performance.now();
 
@@ -652,6 +700,7 @@ function ActiveExperienceRuntimePlayer({
       clockGateRef.current = null;
     };
   }, [
+    initialPlayback,
     advanceTimeline,
     clockDurationMs,
     clockScene,
@@ -749,12 +798,28 @@ function ActiveExperienceRuntimePlayer({
     void (async () => {
       try {
         await unlockAudio();
-        const ok = await run(() => controller.start());
+        let audioRestored = false;
+        const ok = await run(() => {
+          for (const requirement of entryRequirements) {
+            if (!access?.canAccess(requirement)) {
+              const error = new ExperienceAccessRequiredError(requirement);
+              error.events = entryCheckpoint?.events ?? [];
+              throw error;
+            }
+          }
+          if (!audioRestored && initialPlayback?.audio) {
+            restoreAudio(initialPlayback.audio);
+            audioRestored = true;
+          }
+          return entryCheckpoint ? controller.dispatch(entryCheckpoint.events) : controller.start();
+        });
         if (!ok) {
           await suspendAudio();
           return;
         }
-        playbackEnabledRef.current = true;
+        playbackEnabledRef.current = initialPlayback?.playbackEnabled ?? true;
+        setPlaybackEnabled(playbackEnabledRef.current);
+        startedRef.current = true;
         setStarted(true);
       } catch (error) {
         await suspendAudio();
@@ -962,7 +1027,9 @@ function ActiveExperienceRuntimePlayer({
             accessibilityElementsHidden={!presenting}
             importantForAccessibility={presenting ? "auto" : "no-hide-descendants"}
           >
-            <ScreenActiveGateContext.Provider value={presenting && !timelineHoldGate}>
+            <ScreenActiveGateContext.Provider
+              value={presenting && !timelineHoldGate && playbackEnabled}
+            >
               <RendererPanel
                 manifest={manifest}
                 renderer={renderer}
@@ -979,6 +1046,13 @@ function ActiveExperienceRuntimePlayer({
                 onPlaybackRefused={() => setViewerPaused(true)}
                 onPlaybackHandle={registerPlaybackHandle}
                 onPlaybackProgress={recordMediaCheckpoint}
+                checkpoint={
+                  sceneEpoch === 0
+                    ? initialPlayback?.media.find(
+                        (item) => item.rendererInstanceId === renderer.instanceId
+                      )
+                    : undefined
+                }
                 worldScope={worldScope}
                 onWorldEndHandle={registerWorldEndHandle}
               />
@@ -997,6 +1071,9 @@ function ActiveExperienceRuntimePlayer({
             orientation={EXPERIENCE_PLAY_ORIENTATION}
             onEvents={emitRuntimeEvents}
             onSettledGestureIdsChange={recordSettledGestures}
+            initialSettledGestureIds={
+              sceneEpoch === 0 ? initialPlayback?.settledGestureIds : undefined
+            }
             onRuntimeError={setRuntimeError}
             onTimelineHoldGateChange={setTimelineHoldGate}
             onGestureTapGuardChange={registerGestureTapGuard}
@@ -1072,6 +1149,7 @@ function RendererPanel({
   worldScope,
   onWorldEndHandle,
   onPlaybackProgress,
+  checkpoint,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -1094,6 +1172,7 @@ function RendererPanel({
   worldScope?: WorldPreviewScope;
   onWorldEndHandle: (instanceId: string, handle: (() => Promise<void>) | null) => void;
   onPlaybackProgress: (checkpoint: ExperienceMediaCheckpoint) => void;
+  checkpoint?: ExperienceMediaCheckpoint;
 }) {
   const defaultLocale = manifest.localization.defaultLocale;
 
@@ -1133,6 +1212,7 @@ function RendererPanel({
         onPlaybackRefused={onPlaybackRefused}
         onPlaybackHandle={onPlaybackHandle}
         onPlaybackProgress={onPlaybackProgress}
+        checkpoint={checkpoint}
       />
     );
   }

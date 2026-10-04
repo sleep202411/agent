@@ -9,6 +9,7 @@ import {
 } from "@repo/shared/experience-runtime";
 import { ExperiencePlayer } from "./experience-player";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
+import type { ExperienceSaveCheckpoint } from "../lib/experience-save-checkpoint";
 import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
 const h = vi.hoisted(() => ({
   active: true,
@@ -18,6 +19,10 @@ const h = vi.hoisted(() => ({
   unlock: vi.fn().mockResolvedValue(undefined),
   suspend: vi.fn().mockResolvedValue(undefined),
   effects: vi.fn(),
+  restoreAudio: vi.fn(),
+  start: vi.fn(),
+  restored: undefined as unknown,
+  initialGestures: undefined as readonly string[] | undefined,
   checkpointAudio: vi.fn(() => ({ playbacks: [], busGains: {} })),
   settled: null as null | ((ids: string[]) => void),
   dispatch: vi.fn(),
@@ -26,6 +31,7 @@ const h = vi.hoisted(() => ({
   spatialPresenting: true,
   hold: (_hold: boolean) => {},
   video: {} as {
+    checkpoint?: ExperienceMediaCheckpoint;
     onCompleted: () => void;
     onPlaybackRefused: () => void;
     onPlaybackInterrupted: () => void;
@@ -68,18 +74,26 @@ vi.mock("../hooks/use-experience-audio-host", () => ({
     suspend: h.suspend,
     applyEffects: h.effects,
     checkpoint: h.checkpointAudio,
+    restore: h.restoreAudio,
   }),
 }));
 vi.mock("../hooks/use-experience-preload", () => ({
   useExperiencePreload: () => ({ done: true }),
 }));
 vi.mock("../lib/experience-runtime-host", () => ({
-  createExperienceRuntime: () => ({
-    state: () => h.state,
-    start: () => ({ state: h.state, effects: [] }),
-    dispatch: h.dispatch,
-    emitRendererOutcome: h.outcome,
-  }),
+  createExperienceRuntime: (_manifest: unknown, options: { restore?: unknown }) => {
+    h.restored = options.restore;
+    return {
+      state: () => h.state,
+      start: h.start,
+      dispatch: h.dispatch,
+      emitRendererOutcome: h.outcome,
+    };
+  },
+}));
+vi.mock("../lib/experience-save-checkpoint", () => ({
+  validateExperienceSaveCheckpoint: (_manifest: unknown, checkpoint: unknown) =>
+    structuredClone(checkpoint),
 }));
 vi.mock("./experience-spatial-layer", async () => {
   const { useContext } = await import("react");
@@ -89,11 +103,14 @@ vi.mock("./experience-spatial-layer", async () => {
       onTimelineHoldGateChange,
       onGestureTapGuardChange,
       onSettledGestureIdsChange,
+      initialSettledGestureIds,
     }: {
       onTimelineHoldGateChange: (hold: boolean) => void;
       onGestureTapGuardChange: typeof h.tapGuard;
       onSettledGestureIdsChange: typeof h.settled;
+      initialSettledGestureIds?: readonly string[];
     }) => {
+      h.initialGestures = initialSettledGestureIds;
       h.hold = onTimelineHoldGateChange;
       h.tapGuard = onGestureTapGuardChange;
       h.settled = onSettledGestureIdsChange;
@@ -152,7 +169,12 @@ const loader = () => Promise.resolve({ tokens: {} } as ExperienceThemeConfig);
 let root: Root;
 let container: HTMLDivElement;
 const captured = vi.fn();
-const render = (active = true, manifest = runtime, capture = false) =>
+const render = (
+  active = true,
+  manifest = runtime,
+  capture = false,
+  entryCheckpoint?: ExperienceSaveCheckpoint
+) =>
   act(async () =>
     root.render(
       <ExperiencePlayer
@@ -163,6 +185,7 @@ const render = (active = true, manifest = runtime, capture = false) =>
         loadTheme={loader}
         active={active}
         onCheckpoint={capture ? captured : undefined}
+        entryCheckpoint={entryCheckpoint}
       />
     )
   );
@@ -181,6 +204,7 @@ beforeEach(() => {
   h.stage = {};
   h.tapGuard = null;
   vi.clearAllMocks();
+  h.start.mockImplementation(() => ({ state: h.state, effects: [] }));
   h.dispatch.mockImplementation(() => ({ state: h.state, effects: [] }));
   h.outcome.mockImplementation(() => ({ state: h.state, effects: [] }));
   container = document.createElement("div");
@@ -261,6 +285,82 @@ it("rejects late media and gesture updates after re-entering the same scene", as
     } as ExperienceMediaCheckpoint);
   });
   expect(captured.mock.calls.at(-1)![0].playback.media[0].positionMs).toBe(100);
+});
+const savedCheckpoint = (ended = false): ExperienceSaveCheckpoint =>
+  ({
+    state: h.state,
+    events: [{ type: "saved.pending" }],
+    playback: {
+      version: 1,
+      sceneId: "scene",
+      sceneSignature: "fixture",
+      sceneTimeMs: ended ? 10000 : 8000,
+      fixedClockEnded: ended,
+      cursor: { sceneId: "scene", positionMs: ended ? 10000 : 8000, firedOnceCueIds: [] },
+      openRendererIds: ["video"],
+      settledGestureIds: ["settled"],
+      parkedEvents: [],
+      media: [{ rendererInstanceId: "video", positionMs: 8000 }],
+      playbackEnabled: true,
+      rate: 1,
+      audio: { playbacks: [], busGains: {} },
+    },
+  }) as unknown as ExperienceSaveCheckpoint;
+it("restores presentation and pending events without replaying scene entry", async () => {
+  const saved = savedCheckpoint();
+  await render(true, runtime, true, saved);
+  expect(h.restored).toEqual(saved.state);
+  expect(h.start).not.toHaveBeenCalled();
+  expect(h.restoreAudio).not.toHaveBeenCalled();
+  await click("Start");
+  expect(h.start).not.toHaveBeenCalled();
+  expect(h.dispatch).toHaveBeenCalledWith(saved.events);
+  expect(h.restoreAudio).toHaveBeenCalledExactlyOnceWith(saved.playback!.audio);
+  expect(h.video.checkpoint).toEqual(saved.playback!.media[0]);
+  expect(h.initialGestures).toEqual(["settled"]);
+  expect(captured.mock.calls.at(-1)![0].playback).toMatchObject({
+    sceneTimeMs: 8000,
+    openRendererIds: ["video"],
+    settledGestureIds: ["settled"],
+  });
+  await act(async () => vi.advanceTimersByTime(1000));
+  expect(captured.mock.calls.at(-1)![0].playback.sceneTimeMs).toBeGreaterThanOrEqual(8900);
+  expect(h.dispatch).not.toHaveBeenCalledWith(
+    expect.arrayContaining([expect.objectContaining({ type: "scene.clock-ended" })])
+  );
+  await act(async () => vi.advanceTimersByTime(1100));
+  expect(h.dispatch).toHaveBeenCalledWith(
+    expect.arrayContaining([expect.objectContaining({ type: "scene.clock-ended" })])
+  );
+});
+it("does not dispatch an already completed saved fixed clock again", async () => {
+  await render(true, runtime, true, savedCheckpoint(true));
+  await click("Start");
+  await act(async () => vi.advanceTimersByTime(20000));
+  expect(h.dispatch).toHaveBeenCalledTimes(1);
+  expect(captured.mock.calls.at(-1)![0].playback.fixedClockEnded).toBe(true);
+});
+it("does not restore saved audio or dispatch events without access to the saved scene", async () => {
+  const locked = structuredClone(runtime);
+  Object.assign(locked.graph.nodes[0]!, {
+    access: { key: "paid-scene", kind: "community-points", amount: 5 },
+  });
+  await render(true, locked, true, savedCheckpoint());
+  await click("Start");
+  expect(h.restoreAudio).not.toHaveBeenCalled();
+  expect(h.dispatch).not.toHaveBeenCalled();
+  expect(h.start).not.toHaveBeenCalled();
+  expect(captured).not.toHaveBeenCalled();
+  expect(container.textContent).not.toContain("Film");
+});
+it("keeps saved renderer playback disabled while leaving interactions available", async () => {
+  const saved = savedCheckpoint();
+  saved.playback!.playbackEnabled = false;
+  await render(true, runtime, true, saved);
+  await click("Start");
+  expect(h.mediaPresenting).toBe(false);
+  expect(h.spatialPresenting).toBe(true);
+  expect(captured.mock.calls.at(-1)![0].playback.playbackEnabled).toBe(false);
 });
 afterEach(async () => {
   await act(async () => root.unmount());

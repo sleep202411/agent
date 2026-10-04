@@ -103,6 +103,7 @@ export function ExperienceSpatialLayer({
   onTimelineHoldGateChange,
   onGestureTapGuardChange,
   onSettledGestureIdsChange,
+  initialSettledGestureIds,
 }: {
   manifest: ExperienceRuntimeManifest;
   scene: ExperienceScene;
@@ -117,12 +118,15 @@ export function ExperienceSpatialLayer({
   onTimelineHoldGateChange?: (gating: boolean) => void;
   onGestureTapGuardChange?: (guard: ((x: number, y: number) => boolean) | null) => void;
   onSettledGestureIdsChange?: (ids: string[]) => void;
+  initialSettledGestureIds?: readonly string[];
 }) {
   const [viewportSize, setViewportSize] = useState<ExperienceSize | null>(null);
   const layerOriginRef = useRef({ x: 0, y: 0 });
   const presenting = useGatedScreenActive();
   const layerRef = useRef<View>(null);
-  const [settledGestureIds, setSettledGestureIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [settledGestureIds, setSettledGestureIds] = useState<ReadonlySet<string>>(
+    () => new Set(initialSettledGestureIds)
+  );
   const settledRef = useRef(settledGestureIds);
   const [gateStates, setGateStates] = useState<ReadonlyMap<string, boolean>>(() => new Map());
 
