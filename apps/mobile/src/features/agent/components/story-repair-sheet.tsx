@@ -28,6 +28,7 @@ import {
   repairChoiceExit,
   repairChoicePrompt,
   addRepairChoice,
+  arrangeRepairChoice,
   updateRepairChoiceText,
   repairTargets,
   replaceRepairTarget,
@@ -304,7 +305,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 ) : null}
                 {repairBranches(content, selected, locale).map((branch) => (
                   <View
-                    key={branch.index}
+                    key={branch.choiceId ?? branch.index}
                     style={{
                       gap: 6,
                       borderWidth: 1,
@@ -337,6 +338,68 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                           padding: 10,
                         }}
                       />
+                    ) : null}
+                    {branch.choiceId ? (
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+                        <RepairAction
+                          label={t("storyRepair.moveUp")}
+                          disabled={
+                            !loaded.canEdit ||
+                            busy ||
+                            uncertain ||
+                            conflict ||
+                            showSaved ||
+                            branch.index === 0
+                          }
+                          onPress={() =>
+                            edit((value) =>
+                              arrangeRepairChoice(value, selected, branch.choiceId!, "up")
+                            )
+                          }
+                        />
+                        <RepairAction
+                          label={t("storyRepair.moveDown")}
+                          disabled={
+                            !loaded.canEdit ||
+                            busy ||
+                            uncertain ||
+                            conflict ||
+                            showSaved ||
+                            branch.index === repairBranches(content, selected, locale).length - 1
+                          }
+                          onPress={() =>
+                            edit((value) =>
+                              arrangeRepairChoice(value, selected, branch.choiceId!, "down")
+                            )
+                          }
+                        />
+                        <RepairAction
+                          label={t("storyRepair.removeChoice")}
+                          disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}
+                          onPress={() =>
+                            Alert.alert(
+                              t("storyRepair.removeChoice"),
+                              t("storyRepair.removeChoiceHelp"),
+                              [
+                                { text: t("common.cancel"), style: "cancel" },
+                                {
+                                  text: t("storyRepair.removeChoice"),
+                                  style: "destructive",
+                                  onPress: () =>
+                                    edit((value) =>
+                                      arrangeRepairChoice(
+                                        value,
+                                        selected,
+                                        branch.choiceId!,
+                                        "remove"
+                                      )
+                                    ),
+                                },
+                              ]
+                            )
+                          }
+                        />
+                      </View>
                     ) : null}
                     {repairTargets(content, locale).map((target) => {
                       const checked = sameRepairTarget(branch.target, target.value);

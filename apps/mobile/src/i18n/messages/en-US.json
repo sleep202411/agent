@@ -4876,5 +4876,9 @@
   "storyRepair.entryMissing": "Not set",
   "storyRepair.prompt": "Decision prompt",
   "storyRepair.addChoice": "Add choice",
-  "storyRepair.choiceLabel": "Choice label"
+  "storyRepair.choiceLabel": "Choice label",
+  "storyRepair.moveUp": "Move up",
+  "storyRepair.moveDown": "Move down",
+  "storyRepair.removeChoice": "Remove choice",
+  "storyRepair.removeChoiceHelp": "Remove this choice, its condition and effects? Other choices and destination nodes are kept."
 }

@@ -4876,5 +4876,9 @@
   "storyRepair.entryMissing": "未设置",
   "storyRepair.prompt": "选择提示",
   "storyRepair.addChoice": "添加选项",
-  "storyRepair.choiceLabel": "选项文字"
+  "storyRepair.choiceLabel": "选项文字",
+  "storyRepair.moveUp": "上移",
+  "storyRepair.moveDown": "下移",
+  "storyRepair.removeChoice": "移除选项",
+  "storyRepair.removeChoiceHelp": "移除此选项及其条件和效果？其他选项和目标节点会保留。"
 }

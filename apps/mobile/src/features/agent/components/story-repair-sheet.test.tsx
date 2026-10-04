@@ -42,6 +42,7 @@ vi.mock("@/components/themed-text", () => ({
 }));
 vi.mock("react-native", () => ({
   Alert: { alert: h.alert },
+  TextInput: ({ value }: { value: string }) => <input value={value} readOnly />,
   ActivityIndicator: () => <span>Loading</span>,
   Modal: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -214,4 +215,49 @@ it("repairs a missing entry node and preserves branch edits in the same draft", 
   await act(async () => root.render(null));
   await render();
   expect(button("storyRepair.entry: A")).toBeDefined();
+});
+
+it("requires confirmation to remove a choice and keeps the other branch intact", async () => {
+  h.reconcile.mockResolvedValue({
+    ...result,
+    draft: {
+      ...draft,
+      content: {
+        graph: {
+          ...draft.content.graph,
+          nodes: [
+            {
+              nodeId: "clip:a",
+              name: "A",
+              exit: {
+                kind: "choice",
+                decisionId: "decision:a",
+                prompt: {},
+                choices: [
+                  { choiceId: "first", label: { "en-US": "First" }, target: null },
+                  { choiceId: "second", label: { "en-US": "Second" }, target: null },
+                ],
+              },
+            },
+            draft.content.graph.nodes[1],
+          ],
+        },
+      },
+    },
+  });
+  await render();
+  await click("storyRepair.moveDown");
+  expect(
+    JSON.parse([...h.records.values()][0]).input.content.graph.nodes[0].exit.choices[0].choiceId
+  ).toBe("second");
+  await click("storyRepair.removeChoice");
+  expect(
+    JSON.parse([...h.records.values()][0]).input.content.graph.nodes[0].exit.choices
+  ).toHaveLength(2);
+  await act(async () => h.alert.mock.calls.at(-1)![2][1].onPress());
+  expect(
+    JSON.parse([...h.records.values()][0]).input.content.graph.nodes[0].exit.choices.map(
+      (c: { choiceId: string }) => c.choiceId
+    )
+  ).toEqual(["first"]);
 });

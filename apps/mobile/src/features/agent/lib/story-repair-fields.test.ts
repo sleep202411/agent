@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   repairBranches,
   addRepairChoice,
+  arrangeRepairChoice,
   updateRepairChoiceText,
   repairChoicePrompt,
   repairTargets,
@@ -109,4 +110,21 @@ it("enforces the official six-choice limit and unique stable choice IDs", () => 
   expect(() => addRepairChoice(content, "clip:a", "c", "en-US")).toThrow();
   expect(() => addRepairChoice(content, "clip:a", "bad id", "en-US")).toThrow();
   expect(() => addRepairChoice(content, "clip:b", "choice:auto", "en-US")).toThrow();
+});
+it("moves complete choices by identity and removes only the requested choice", () => {
+  const original = addRepairChoice(content, "clip:a", "choice:second", "en-US");
+  const moved = arrangeRepairChoice(original, "clip:a", "c", "down");
+  expect(repairBranches(moved, "clip:a", "en-US").map((b) => b.choiceId)).toEqual([
+    "choice:second",
+    "c",
+  ]);
+  const rows = moved.graph.nodes[0].exit as { choices: unknown[] };
+  expect(rows.choices[1]).toBe(content.graph.nodes[0].exit.choices![0]);
+  const removed = arrangeRepairChoice(moved, "clip:a", "choice:second", "remove");
+  expect(repairBranches(removed, "clip:a", "en-US").map((b) => b.choiceId)).toEqual(["c"]);
+  expect(removed.graph.nodes[1]).toBe(content.graph.nodes[1]);
+  expect(() => arrangeRepairChoice(removed, "clip:a", "gone", "remove")).toThrow();
+  expect(
+    repairBranches(arrangeRepairChoice(removed, "clip:a", "c", "up"), "clip:a", "en-US")
+  ).toHaveLength(1);
 });

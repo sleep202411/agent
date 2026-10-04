@@ -42,6 +42,7 @@ export function repairBranches(content: RepairContent, nodeId: string, locale: s
     return [
       {
         index,
+        choiceId: typeof row.choiceId === "string" ? row.choiceId : null,
         label: typeof label?.[locale] === "string" ? (label[locale] as string) : null,
         target: row.target,
         conditional: row.when != null || row.condition != null,
@@ -150,4 +151,24 @@ export function updateRepairChoiceText(
 export function repairChoicePrompt(content: RepairContent, nodeId: string, locale: string): string {
   const value = object(repairChoiceExit(content, nodeId)?.prompt)?.[locale];
   return typeof value === "string" ? value : "";
+}
+
+export function arrangeRepairChoice(
+  content: RepairContent,
+  nodeId: string,
+  choiceId: string,
+  action: "up" | "down" | "remove"
+): RepairContent {
+  return replaceChoiceExit(content, nodeId, (exit) => {
+    const choices = exit.choices as Record<string, unknown>[];
+    const index = choices.findIndex((choice) => choice.choiceId === choiceId);
+    if (index < 0) throw Error("The selected choice is no longer available.");
+    if (action === "remove")
+      return { ...exit, choices: choices.filter((choice) => choice.choiceId !== choiceId) };
+    const target = index + (action === "up" ? -1 : 1);
+    if (target < 0 || target >= choices.length) return exit;
+    const next = [...choices];
+    [next[index], next[target]] = [next[target], next[index]];
+    return { ...exit, choices: next };
+  });
 }
