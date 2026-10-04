@@ -163,3 +163,16 @@ it("blocks duplicate saves and discard while a receipt is pending", async () => 
   await first;
   expect(pending.read()).toBeNull();
 });
+
+it("retains project-level creative constraints without changing the chapter draft", async () => {
+  const creativeProfile = {
+    frameProfile: "portrait_9_16",
+    durationPreset: "medium_15_30",
+    visualStyle: "ink-wash-cinema",
+    defaultLocale: "zh-CN",
+  };
+  h.get.mockResolvedValue(response({ project: { ...response().project, ...creativeProfile } }));
+  const result = await loadStoryRepairDraft(scope, signal());
+  expect(result.creativeProfile).toEqual(creativeProfile);
+  expect(result.draft.content).toEqual(content);
+});

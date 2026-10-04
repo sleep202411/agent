@@ -68,6 +68,8 @@ export async function loadStoryRepairDraft(scope: StoryRepairScope, signal: Abor
         id,
         defaultLocale: z.string().trim().min(1),
         frameProfile: z.enum(["landscape_16_9", "portrait_9_16"]).optional(),
+        durationPreset: z.string().nullable().optional(),
+        visualStyle: z.string().nullable().optional(),
         capabilities: z.array(z.string()),
       }),
       chapter: z.object({ id }),
@@ -90,6 +92,12 @@ export async function loadStoryRepairDraft(scope: StoryRepairScope, signal: Abor
     draft: parseDraft(scope, response.draft),
     defaultLocale: response.project.defaultLocale,
     frameProfile: response.project.frameProfile,
+    creativeProfile: {
+      frameProfile: response.project.frameProfile,
+      durationPreset: response.project.durationPreset,
+      visualStyle: response.project.visualStyle,
+      defaultLocale: response.project.defaultLocale,
+    },
     canEdit: response.project.capabilities.includes("story.edit"),
     canGenerate: response.project.capabilities.includes("story.generate"),
   };

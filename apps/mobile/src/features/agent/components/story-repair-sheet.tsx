@@ -1,3 +1,4 @@
+import { StoryCreativeProfileSummary, type StoryCreativeProfile } from "./story-creative-profile";
 import { StoryCoverEditor } from "./story-cover-editor";
 import { StoryRepairFoundation } from "./story-repair-foundation";
 import { updateRepairFoundation } from "../lib/story-repair-foundation";
@@ -118,6 +119,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     canEdit: boolean;
     canGenerate?: boolean;
     defaultLocale: string;
+    creativeProfile?: StoryCreativeProfile;
     frameProfile?: "landscape_16_9" | "portrait_9_16";
   }>();
   const [coverOpen, setCoverOpen] = useState(false);
@@ -261,6 +263,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
         canGenerate: loaded.canGenerate,
         defaultLocale: loaded.defaultLocale,
         frameProfile: loaded.frameProfile,
+        creativeProfile: loaded.creativeProfile,
       });
       setError(undefined);
       onSaved();
@@ -391,6 +394,9 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 {t("storyFoundation.title")}
               </ThemedText>
             </Pressable>
+            {foundationOpen && loaded.creativeProfile ? (
+              <StoryCreativeProfileSummary profile={loaded.creativeProfile} />
+            ) : null}
             {foundationOpen ? (
               <StoryRepairFoundation
                 content={content}
