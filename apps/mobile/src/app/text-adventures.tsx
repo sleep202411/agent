@@ -1,16 +1,15 @@
-import { Stack } from "expo-router";
+import { Stack, useIsFocused } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { TextAdventureLibrary } from "@/features/agent/text-adventure-library";
-import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
 export default function TextAdventureLibraryScreen() {
   const auth = useAuth(),
     gate = useAuthGate(),
-    active = useScreenActive();
+    focused = useIsFocused();
   const theme = useTheme(),
     t = useTranslations();
   const userId = String(auth.user?.userId ?? auth.user?.id ?? "");
@@ -34,7 +33,7 @@ export default function TextAdventureLibraryScreen() {
         >
           <ThemedText>{t("inbox.signIn")}</ThemedText>
         </Pressable>
-      ) : active && userId ? (
+      ) : focused && userId ? (
         <TextAdventureLibrary
           key={`${userId}:${auth.generation}`}
           session={{ userId, generation: auth.generation }}
