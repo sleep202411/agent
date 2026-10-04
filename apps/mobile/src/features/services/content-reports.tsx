@@ -1,3 +1,4 @@
+import { ContentReportCreate } from "./content-report-create";
 import { useEffect, useRef, useState } from "react";
 import { useIsFocused } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -25,9 +26,30 @@ function Session(props: Props) {
   const active = useScreenActive();
   const [view, setView] = useState<ReportView>("initiated");
   const [revision, setRevision] = useState(0);
+  const [creating, setCreating] = useState(false);
+  if (creating)
+    return (
+      <ContentReportCreate
+        {...props}
+        active={active}
+        onClose={() => setCreating(false)}
+        onSaved={() => {
+          setCreating(false);
+          setView("initiated");
+          setRevision((v) => v + 1);
+        }}
+      />
+    );
   if (!active) return null;
   return (
     <View style={{ flex: 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 16 }}
+        onPress={() => setCreating(true)}
+      >
+        <ThemedText>{t("contentReports.newReport")}</ThemedText>
+      </Pressable>
       <View
         accessibilityRole="tablist"
         style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 16 }}

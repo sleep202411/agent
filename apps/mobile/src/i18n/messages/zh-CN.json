@@ -1,4 +1,8 @@
 {
+  "contentReports.newReport": "发起投诉",
+  "contentReports.search": "搜索 IP 名称或房间号",
+  "contentReports.selectTarget": "选择 IP",
+
   "contentReports.title": "内容投诉",
   "contentReports.initiated": "我发起的",
   "contentReports.responses": "我的内容处理结果",

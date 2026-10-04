@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ContentReports } from "./content-reports";
+vi.mock("./content-report-create", () => ({ ContentReportCreate: () => null }));
 const h = vi.hoisted(() => ({
   active: true,
   focused: true,

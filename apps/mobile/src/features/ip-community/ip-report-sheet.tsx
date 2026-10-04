@@ -28,6 +28,7 @@ export function IpReportSheet({
   onChange,
   onSubmit,
   onClose,
+  allowBlock = true,
 }: {
   visible: boolean;
   submitting: boolean;
@@ -36,6 +37,7 @@ export function IpReportSheet({
   onChange: (value: Partial<ReportDraft>) => void;
   onSubmit: () => void;
   onClose: () => void;
+  allowBlock?: boolean;
 }) {
   const t = useTranslations(),
     theme = useTheme(),
@@ -124,28 +126,30 @@ export function IpReportSheet({
             <ThemedText type="small" themeColor="textSecondary" style={styles.count}>
               {draft.description?.length ?? 0}/2000
             </ThemedText>
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: draft.blockIp, disabled: locked }}
-              disabled={locked}
-              onPress={() => onChange({ blockIp: !draft.blockIp })}
-              style={[styles.control, { borderColor: theme.border }]}
-            >
-              <View
-                style={[
-                  styles.checkbox,
-                  {
-                    borderColor: theme.textSecondary,
-                    backgroundColor: draft.blockIp ? theme.brand : theme.background,
-                  },
-                ]}
+            {allowBlock && (
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: draft.blockIp, disabled: locked }}
+                disabled={locked}
+                onPress={() => onChange({ blockIp: !draft.blockIp })}
+                style={[styles.control, { borderColor: theme.border }]}
               >
-                {draft.blockIp && <ThemedText type="small">✓</ThemedText>}
-              </View>
-              <ThemedText type="small" style={styles.grow}>
-                {t("report.blockIp")}
-              </ThemedText>
-            </Pressable>
+                <View
+                  style={[
+                    styles.checkbox,
+                    {
+                      borderColor: theme.textSecondary,
+                      backgroundColor: draft.blockIp ? theme.brand : theme.background,
+                    },
+                  ]}
+                >
+                  {draft.blockIp && <ThemedText type="small">✓</ThemedText>}
+                </View>
+                <ThemedText type="small" style={styles.grow}>
+                  {t("report.blockIp")}
+                </ThemedText>
+              </Pressable>
+            )}
           </ScrollView>
           <View style={styles.actions}>
             <Pressable

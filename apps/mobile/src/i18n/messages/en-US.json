@@ -1,4 +1,8 @@
 {
+  "contentReports.newReport": "Initiate a complaint",
+  "contentReports.search": "Search by IP name or room number",
+  "contentReports.selectTarget": "Select an IP",
+
   "contentReports.title": "Content complaints",
   "contentReports.initiated": "Initiated by me",
   "contentReports.responses": "Outcomes for my content",
