@@ -609,7 +609,9 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                       value={repairChoicePrompt(content, selected, locale)}
                       editable={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
                       onChangeText={(text) =>
-                        edit((value) => updateRepairChoiceText(value, selected, locale, text))
+                        edit((value) => updateRepairChoiceText(value, selected, locale, text), {
+                          mergeKey: `prompt:${selected}:${locale}`,
+                        })
                       }
                       style={{
                         color: theme.text,
@@ -633,8 +635,10 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                             loaded.canEdit && !busy && !uncertain && !conflict && !showSaved
                           }
                           onChangeText={(text) =>
-                            edit((value) =>
-                              updateRepairChoiceText(value, selected, loaded.defaultLocale, text)
+                            edit(
+                              (value) =>
+                                updateRepairChoiceText(value, selected, loaded.defaultLocale, text),
+                              { mergeKey: `prompt:${selected}:${loaded.defaultLocale}` }
                             )
                           }
                           style={{
@@ -690,8 +694,10 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                         placeholderTextColor={theme.textSecondary}
                         editable={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
                         onChangeText={(text) =>
-                          edit((value) =>
-                            updateRepairChoiceText(value, selected, locale, text, branch.index)
+                          edit(
+                            (value) =>
+                              updateRepairChoiceText(value, selected, locale, text, branch.index),
+                            { mergeKey: `choice:${selected}:${branch.choiceId}:${locale}` }
                           )
                         }
                         style={{
@@ -720,14 +726,18 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                             loaded.canEdit && !busy && !uncertain && !conflict && !showSaved
                           }
                           onChangeText={(text) =>
-                            edit((value) =>
-                              updateRepairChoiceText(
-                                value,
-                                selected,
-                                loaded.defaultLocale,
-                                text,
-                                branch.index
-                              )
+                            edit(
+                              (value) =>
+                                updateRepairChoiceText(
+                                  value,
+                                  selected,
+                                  loaded.defaultLocale,
+                                  text,
+                                  branch.index
+                                ),
+                              {
+                                mergeKey: `choice:${selected}:${branch.choiceId}:${loaded.defaultLocale}`,
+                              }
                             )
                           }
                           style={{
@@ -952,8 +962,10 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                                     loaded.canEdit && !busy && !uncertain && !conflict && !showSaved
                                   }
                                   onChangeText={(title) =>
-                                    edit((value) =>
-                                      renameRepairEnding(value, endingId, language, title)
+                                    edit(
+                                      (value) =>
+                                        renameRepairEnding(value, endingId, language, title),
+                                      { mergeKey: `ending:${endingId}:${language}` }
                                     )
                                   }
                                   style={{
