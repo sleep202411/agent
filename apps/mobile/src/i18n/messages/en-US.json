@@ -4761,5 +4761,7 @@
   "kyc.restartHint": "Starting again clears this saved attempt only. It does not cancel verification already submitted to Aliyun.",
   "kyc.providerFailed": "The verification page could not continue. Retry the page or check verification status.",
   "kyc.openProvider": "Open verification",
-  "kyc.webReturnHint": "Complete verification in the new tab, then return here and check verification status."
+  "kyc.webReturnHint": "Complete verification in the new tab, then return here and check verification status.",
+  "taskCreate.requiredFields": "Add a description, task type, deadline and reward amount before creating this task. Enter 0 for an unpaid task.",
+  "taskCreate.rewardHelp": "A reward amount is required to create the task; enter 0 for an unpaid task. Profit share is optional. Up to two decimal places. These terms do not initiate payment or settlement."
 }

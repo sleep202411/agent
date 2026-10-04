@@ -1,3 +1,4 @@
+import { TaskCreationRequiredError } from "./task-creation-required";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -933,4 +934,15 @@ it("keeps a child-task draft through backgrounding and refreshed parent context"
       description: "Keep the detailed brief",
     })
   );
+});
+
+it("keeps a rejected incomplete creation editable without an uncertain-write warning", async () => {
+  h.update.mockRejectedValue(new TaskCreationRequiredError("Missing deadline"));
+  await render();
+  await act(async () => type(0, "Task"));
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(host.textContent).toContain("taskCreate.requiredFields");
+  expect(host.textContent).not.toContain("taskCreate.uncertain");
+  expect(button("taskCreate.submit")!.disabled).toBe(false);
+  expect(host.querySelector("input")!.disabled).toBe(false);
 });

@@ -1,3 +1,4 @@
+import { TaskCreationRequiredError } from "./task-creation-required";
 import { taskWorkflowLabel } from "./task-workflow-label";
 import { restoreTaskDraftEditor } from "./task-draft-editor-context";
 import { TaskCrewContext } from "./task-crew-context";
@@ -386,6 +387,7 @@ function Editor({
         onBlockersChange={setBlockers}
       />
       <TaskCompensationFields
+        rewardRequired
         reward={reward}
         share={share}
         onReward={setReward}
@@ -482,7 +484,13 @@ function Editor({
               return createTask(crewId, data);
             },
             (task) => onCreated(task.id),
-            (cause) => setError(cause instanceof Error ? cause.message : String(cause))
+            (cause) => {
+              if (cause instanceof TaskCreationRequiredError) {
+                attemptedRef.current = false;
+                setAttempted(false);
+                setValidationError(t("taskCreate.requiredFields"));
+              } else setError(cause instanceof Error ? cause.message : String(cause));
+            }
           );
         }}
       >

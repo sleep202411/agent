@@ -4761,5 +4761,7 @@
   "kyc.restartHint": "重新開始只會清除本機記錄，不會取消已提交給阿里雲的認證。",
   "kyc.providerFailed": "認證頁面無法繼續。請重試頁面或檢查認證狀態。",
   "kyc.openProvider": "開啟認證頁面",
-  "kyc.webReturnHint": "在新分頁完成認證，然後返回此處檢查認證狀態。"
+  "kyc.webReturnHint": "在新分頁完成認證，然後返回此處檢查認證狀態。",
+  "taskCreate.requiredFields": "建立任務前，請填寫任務描述、任務類型、截止日期和報酬金額。無報酬任務請填寫 0。",
+  "taskCreate.rewardHelp": "建立任務必須填寫報酬金額；無報酬任務請填 0。分潤比例可選，最多兩位小數。填寫不會觸發付款或結算。"
 }

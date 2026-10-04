@@ -8,12 +8,14 @@ export function TaskCompensationFields({
   onReward,
   onShare,
   locked,
+  rewardRequired = false,
 }: {
   reward: string;
   share: string;
   onReward: (value: string) => void;
   onShare: (value: string) => void;
   locked: boolean;
+  rewardRequired?: boolean;
 }) {
   const t = useTranslations(),
     theme = useTheme();
@@ -38,7 +40,9 @@ export function TaskCompensationFields({
           />
         </View>
       ))}
-      <ThemedText>{t("taskCompensation.help")}</ThemedText>
+      <ThemedText>
+        {t(rewardRequired ? "taskCreate.rewardHelp" : "taskCompensation.help")}
+      </ThemedText>
     </View>
   );
 }

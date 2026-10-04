@@ -34,7 +34,9 @@ const input: TaskDraftInput = {
   description: "Episode 1",
   priority: "normal",
   startAt: null,
-  dueAt: null,
+  dueAt: "2099-01-01T00:00:00Z",
+  taskKind: "script",
+  rewardUsdMinor: 0,
   parentId: null,
   blockedByTaskIds: [],
   assignees: [],
@@ -420,4 +422,17 @@ it("keeps an expired persisted draft editable without marking an unknown creatio
   expect(h.create).not.toHaveBeenCalled();
   expect(restored.getSnapshot().drafts[0]?.state).toBe("staged");
   expect(restored.getSnapshot().error).toContain("future deadline");
+});
+
+it("keeps incomplete saved drafts editable and rejects them before recording a write attempt", async () => {
+  const s = session();
+  s.stage({ ...input, dueAt: null, taskKind: null, rewardUsdMinor: null }, review);
+  await s.createAll(() => true);
+  expect(h.create).not.toHaveBeenCalled();
+  expect(s.getSnapshot().drafts[0]?.state).toBe("staged");
+  expect(s.getSnapshot().error).toContain("required task fields");
+  expect(s.edit(s.getSnapshot().drafts[0]!.id, input, review)).toBe(true);
+  await s.createAll(() => true);
+  expect(h.create).toHaveBeenCalledOnce();
+  expect(s.getSnapshot().drafts[0]?.state).toBe("created");
 });

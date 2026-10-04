@@ -5,6 +5,8 @@ vi.mock("@/lib/api-client", () => ({ api: { post: vi.fn() } }));
 
 const id = "11111111-1111-4111-8111-111111111111";
 const detail = {
+  taskKind: "script" as const,
+  rewardUsdMinor: 0,
   id,
   crewId: "crew",
   number: 1,
@@ -27,6 +29,8 @@ const detail = {
   assignees: [],
 };
 const input = {
+  taskKind: "script" as const,
+  rewardUsdMinor: 0,
   parentId: null,
   blockedByTaskIds: [],
   title: " Shot ",
@@ -41,7 +45,7 @@ beforeEach(() => {
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-30T00:00:00Z"));
 });
 afterEach(() => vi.restoreAllMocks());
-it("creates a task using the existing server defaults without granting rewards", async () => {
+it("creates a task with explicit type and zero reward", async () => {
   vi.mocked(api.post).mockResolvedValue(detail);
   await createTask("crew", input);
   expect(api.post).toHaveBeenCalledExactlyOnceWith("/crews/crew/tasks", {
@@ -166,9 +170,9 @@ it("validates task kind and requires matching creation acknowledgement", async (
     );
   }
   vi.mocked(api.post).mockResolvedValue({ ...detail, taskKind: null });
-  await expect(createTask("crew", { ...input, taskKind: null })).resolves.toMatchObject({
-    taskKind: null,
-  });
+  await expect(createTask("crew", { ...input, taskKind: null })).rejects.toThrow(
+    "required task fields"
+  );
 });
 
 it("preserves explicit zero and nullable planning limits and rejects mismatched acknowledgements", async () => {
@@ -261,5 +265,16 @@ it("rejects an expired deadline before issuing a non-idempotent creation", async
   await expect(createTask("crew", { ...input, dueAt: "2026-09-29T23:59:59Z" })).rejects.toThrow(
     "future deadline"
   );
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+it.each([
+  { description: " " },
+  { taskKind: null },
+  { dueAt: null },
+  { rewardUsdMinor: null },
+  { rewardUsdMinor: undefined },
+])("rejects missing production fields before sending: %j", async (change) => {
+  await expect(createTask("crew", { ...input, ...change })).rejects.toThrow("required task fields");
   expect(api.post).not.toHaveBeenCalled();
 });

@@ -1,3 +1,4 @@
+import { assertTaskCreationRequired } from "./task-creation-required";
 import { assertTaskCreationDeadline, TaskCreationDeadlineError } from "./task-creation-deadline";
 import { taskWorkflowSchema } from "./task-workflow-api";
 import { taskOption } from "./task-options";
@@ -253,7 +254,10 @@ export function createTaskDraftSession(
           const access = await fetchTaskCommentAccess(crewId, userId, new AbortController().signal);
           if (!current() || !isActive()) break;
           if (!access.canManage) throw new Error("Task management permission is required.");
-          if (row.kind === "task") assertTaskCreationDeadline(row.input.dueAt);
+          if (row.kind === "task") {
+            assertTaskCreationRequired(row.input);
+            assertTaskCreationDeadline(row.input.dueAt);
+          }
           change(row.id, { state: "creating" });
           if (!persist()) {
             change(row.id, { state: "staged" });
