@@ -1,4 +1,4 @@
-import { act, type ReactNode } from "react";
+import { act, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewFinance } from "./crew-finance";
@@ -12,9 +12,25 @@ vi.mock("./payout-create", () => ({ PayoutCreate: () => <span>payout creation en
 vi.mock("./earning-create", () => ({ EarningCreate: () => <span>earning creation entry</span> }));
 vi.mock("./crew-finance-trend", () => ({ CrewFinanceTrend: () => <span>income trend</span> }));
 vi.mock("./crew-finance-detail", () => ({
-  CrewFinanceDetail: () => <span>finance record detail</span>,
+  CrewFinanceDetail: ({ onClose }: { onClose: () => void }) => {
+    const [draft, setDraft] = useState("");
+    return (
+      <div>
+        finance record detail
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} />
+        <button onClick={onClose}>record back</button>
+      </div>
+    );
+  },
 }));
-const h = vi.hoisted(() => ({ generation: 1, access: vi.fn(), page: vi.fn(), close: vi.fn() }));
+const h = vi.hoisted(() => ({
+  generation: 1,
+  active: true,
+  focused: true,
+  access: vi.fn(),
+  page: vi.fn(),
+  close: vi.fn(),
+}));
 vi.mock("@/config/app-env", () => ({ isChinaRegion: false }));
 vi.mock("./crew-finance-api", async (original) => ({
   ...(await original<typeof import("./crew-finance-api")>()),
@@ -23,7 +39,8 @@ vi.mock("./crew-finance-api", async (original) => ({
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white" }) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({
@@ -89,6 +106,8 @@ const click = (name: string) => act(async () => button(name).click());
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
+  h.focused = true;
   h.access.mockResolvedValue(false);
   h.page.mockResolvedValue(page);
   host = document.createElement("div");
@@ -193,4 +212,39 @@ it("gates project spending entry on Crew ledger permission", async () => {
   await click("thread.refresh");
   await click("crewSpend.heading");
   expect(host.textContent).toContain("spending summary screen");
+});
+
+it("keeps the selected record mounted through background and refreshes ledger access on return", async () => {
+  await render();
+  await click("Reward · crewFinance.details");
+  await act(async () => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "nested draft"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")!.value).toBe("nested draft");
+  expect(h.access).toHaveBeenCalledTimes(1);
+  h.access.mockRejectedValueOnce(new Error("Ledger access denied"));
+  await click("record back");
+  expect(host.textContent).toContain("Ledger access denied");
+  expect(host.textContent).not.toContain("Reward");
+});
+it("revalidates the visible ledger on foreground and hides stale records on failure", async () => {
+  await render();
+  h.active = false;
+  await render();
+  h.access.mockRejectedValueOnce(new Error("Access check failed"));
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Access check failed");
+  expect(host.textContent).not.toContain("Reward");
+  await click("thread.refresh");
+  expect(host.textContent).toContain("Reward");
 });
