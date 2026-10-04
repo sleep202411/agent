@@ -33,6 +33,7 @@ import {
   type NewPosition,
 } from "./position-create-api";
 export function PositionCreate(props: {
+  active?: boolean;
   crewId: string;
   userId: string;
   generation: number;
@@ -83,7 +84,17 @@ export function PositionCreate(props: {
     [expanded, setExpanded] = useState<string>(),
     [attempted, setAttempted] = useState(false),
     [saved, setSaved] = useState<string>();
+  const [readError, setReadError] = useState<string>();
+  const [readRevision, setReadRevision] = useState(0);
+  const readKey = `${props.active !== false}:${readRevision}`;
+  const [previousReadKey, setPreviousReadKey] = useState(readKey);
+  if (previousReadKey !== readKey) {
+    setPreviousReadKey(readKey);
+    setAccess(undefined);
+    setReadError(undefined);
+  }
   useEffect(() => {
+    if (props.active === false) return;
     const c = new AbortController();
     void fetchPositionCreateAccess(props.crewId, props.userId, props.generation, c.signal).then(
       (value) => {
@@ -91,11 +102,11 @@ export function PositionCreate(props: {
       },
       (cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setReadError(cause instanceof Error ? cause.message : String(cause));
       }
     );
     return () => c.abort();
-  }, [props.crewId, props.userId, props.generation]);
+  }, [props.crewId, props.userId, props.generation, props.active, readRevision]);
   const locked = op.busy || attempted;
   const action = (label: string, onPress: () => void, disabled = false, selected = false) => (
     <Pressable
@@ -172,7 +183,8 @@ export function PositionCreate(props: {
     </View>
   );
   const submit = () => {
-    if (!access || locked || props.generation !== getAuthGeneration()) return;
+    if (props.active === false || !access || locked || props.generation !== getAuthGeneration())
+      return;
     let data: PositionEditDraft;
     try {
       if (
@@ -240,7 +252,8 @@ export function PositionCreate(props: {
       (cause) => setError(cause instanceof Error ? cause.message : String(cause))
     );
   };
-  if (picking)
+  if (props.active === false) return null;
+  if (picking && access)
     return (
       <TaskPicker
         crewId={props.crewId}
@@ -261,7 +274,8 @@ export function PositionCreate(props: {
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       <ThemedText>{t(props.editing ? "positionEdit.title" : "positionCreate.title")}</ThemedText>
-      {!access && !error && <ActivityIndicator />}
+      {!access && !readError && <ActivityIndicator />}
+      {readError && <ThemedText accessibilityRole="alert">{readError}</ThemedText>}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {saved && (
         <ThemedText>
@@ -351,6 +365,7 @@ export function PositionCreate(props: {
           )}
         </>
       )}
+      {!access && readError && action(t("common.retry"), () => setReadRevision((n) => n + 1))}
       {op.busy && <ActivityIndicator />}
       {action(props.closeLabel ?? t("nativeApplications.back"), props.onClose)}
     </ScrollView>
