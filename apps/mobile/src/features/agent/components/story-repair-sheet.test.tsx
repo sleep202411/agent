@@ -393,3 +393,20 @@ it("requires confirmation to remove a node and persists deletion before server s
 });
 
 vi.mock("./story-hotspot-placement", () => ({ StoryHotspotPlacement: () => null }));
+
+it("refreshes the parent after reconciling an applied save whose reply was lost", async () => {
+  await render();
+  await click("○ B");
+  h.save.mockRejectedValue(Error("Connection lost"));
+  h.read.mockReturnValue({ clientKey: "pending" });
+  await click("documentEditor.save");
+  expect(h.saved).not.toHaveBeenCalled();
+  h.reconcile.mockResolvedValue({ ...result, applied: true, draft: { ...draft, revision: 5 } });
+  await click("common.retry");
+  expect(h.saved).toHaveBeenCalledOnce();
+  expect([...h.records.values()][0]).toBe("null");
+  expect(h.save).toHaveBeenCalledOnce();
+  h.reconcile.mockResolvedValue({ ...result, draft: { ...draft, revision: 5 } });
+  await click("common.retry");
+  expect(h.saved).toHaveBeenCalledOnce();
+});

@@ -25,7 +25,7 @@ import {
   replaceRepairEffects,
   type EffectTarget,
 } from "../lib/story-repair-effects";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -127,6 +127,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     [error, setError] = useState<string>();
   const [revision, setRevision] = useState(0),
     [selected, setSelected] = useState(issues.find((i) => i.nodeId)?.nodeId ?? "");
+  const notifyReconciledSave = useEffectEvent(onSaved);
   const current = () =>
     !!life.current && !life.current.signal.aborted && scope.generation === getAuthGeneration();
   useEffect(() => {
@@ -144,6 +145,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
         setCommand(result.pending ?? (result.applied ? undefined : localCommand));
         setUncertain(!!result.pending);
         setError(undefined);
+        if (result.applied) notifyReconciledSave();
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
