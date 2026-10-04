@@ -1,3 +1,5 @@
+import { StoryRepairVariablesEditor } from "./story-repair-variables-editor";
+import { readRepairVariables, replaceRepairVariables } from "../lib/story-repair-variables";
 import { StoryRepairEffectsEditor } from "./story-repair-effects-editor";
 import {
   repairEffects,
@@ -85,6 +87,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     draft: StoryRepairDraft;
     canEdit: boolean;
     canGenerate?: boolean;
+    defaultLocale: string;
   }>();
   const [command, setCommand] = useState<StoryRepairCommand>();
   const [showSaved, setShowSaved] = useState(false);
@@ -93,6 +96,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const [nodeSearch, setNodeSearch] = useState("");
   const [mediaNode, setMediaNode] = useState<string>();
   const [conditionChoice, setConditionChoice] = useState<string>();
+  const [editingVariables, setEditingVariables] = useState(false);
   const [effectTarget, setEffectTarget] = useState<EffectTarget>();
   const [conditionRoute, setConditionRoute] = useState<{ index: number; route: StoryExitRoute }>();
   const [uncertain, setUncertain] = useState(false),
@@ -193,7 +197,12 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
       local.write("null");
       setCommand(undefined);
       setUncertain(false);
-      setLoaded({ draft: next, canEdit: true, canGenerate: loaded.canGenerate });
+      setLoaded({
+        draft: next,
+        canEdit: true,
+        canGenerate: loaded.canGenerate,
+        defaultLocale: loaded.defaultLocale,
+      });
       setError(undefined);
       onSaved();
     } catch (e) {
@@ -259,6 +268,11 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 <RepairAction label={t("storyRepair.remote")} onPress={() => setShowSaved(true)} />
               </View>
             ) : null}
+            <RepairAction
+              label={t("storyVariables.title")}
+              onPress={() => setEditingVariables(true)}
+              disabled={busy || uncertain || conflict || showSaved}
+            />
             <ThemedText type="small" themeColor="textSecondary">
               {t("storyRepair.help")}
             </ThemedText>
@@ -693,6 +707,27 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
             setMediaNode(undefined);
             onSaved();
           }}
+        />
+      ) : null}
+      {editingVariables && content && loaded ? (
+        <StoryRepairVariablesEditor
+          content={content}
+          defaultLocale={loaded.defaultLocale}
+          userId={userId}
+          storageKey={`${scope.projectId}:${scope.chapterId}`}
+          canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+          applyError={error}
+          onApply={(variables) =>
+            edit((value) =>
+              replaceRepairVariables(
+                value,
+                readRepairVariables(content),
+                variables,
+                loaded.defaultLocale
+              )
+            )
+          }
+          onClose={() => setEditingVariables(false)}
         />
       ) : null}
       {effectTarget && content && loaded ? (

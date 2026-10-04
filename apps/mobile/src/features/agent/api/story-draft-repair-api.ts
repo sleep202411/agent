@@ -64,7 +64,11 @@ export async function loadStoryRepairDraft(scope: StoryRepairScope, signal: Abor
   current(scope, signal);
   const response = z
     .object({
-      project: z.object({ id, capabilities: z.array(z.string()) }),
+      project: z.object({
+        id,
+        defaultLocale: z.string().trim().min(1),
+        capabilities: z.array(z.string()),
+      }),
       chapter: z.object({ id }),
       draft: z.unknown(),
     })
@@ -83,6 +87,7 @@ export async function loadStoryRepairDraft(scope: StoryRepairScope, signal: Abor
     throw Error("Story reading permission is required.");
   return {
     draft: parseDraft(scope, response.draft),
+    defaultLocale: response.project.defaultLocale,
     canEdit: response.project.capabilities.includes("story.edit"),
     canGenerate: response.project.capabilities.includes("story.generate"),
   };

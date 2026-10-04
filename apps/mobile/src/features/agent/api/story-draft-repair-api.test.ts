@@ -47,7 +47,7 @@ const store = {
 };
 const signal = () => new AbortController().signal;
 const response = (overrides = {}) => ({
-  project: { id: id(1), capabilities: ["story.read", "story.edit"] },
+  project: { defaultLocale: "en-US", id: id(1), capabilities: ["story.read", "story.edit"] },
   chapter: { id: id(2) },
   draft,
   ...overrides,
@@ -60,7 +60,9 @@ beforeEach(() => {
   h.put.mockResolvedValue({ ...draft, revision: 5, content: repaired, updatedBySessionId: id(3) });
 });
 it("loads exactly the requested chapter without stripping fields", async () => {
-  expect((await loadStoryRepairDraft(scope, signal())).draft.content).toEqual(content);
+  const loaded = await loadStoryRepairDraft(scope, signal());
+  expect(loaded.draft.content).toEqual(content);
+  expect(loaded.defaultLocale).toBe("en-US");
   expect(h.get.mock.calls[0][1]).toMatchObject({ params: { chapterId: id(2) }, retry: false });
 });
 it("persists before writing and verifies the full versioned receipt", async () => {
@@ -94,7 +96,9 @@ it("keeps local intent on remote conflicts without overwriting", async () => {
   expect((await pending.reconcile(signal())).applied).toBe(false);
 });
 it("allows read-only review but blocks writes after permission revocation", async () => {
-  h.get.mockResolvedValue(response({ project: { id: id(1), capabilities: ["story.read"] } }));
+  h.get.mockResolvedValue(
+    response({ project: { defaultLocale: "en-US", id: id(1), capabilities: ["story.read"] } })
+  );
   expect((await loadStoryRepairDraft(scope, signal())).canEdit).toBe(false);
   const pending = storyRepairPending(scope, "user", store);
   await expect(pending.save(command(), signal())).rejects.toThrow("editing permission");
@@ -102,10 +106,10 @@ it("allows read-only review but blocks writes after permission revocation", asyn
   expect(pending.read()).not.toBeNull();
 });
 it.each([
-  { project: { id: id(8), capabilities: ["story.read"] } },
+  { project: { defaultLocale: "en-US", id: id(8), capabilities: ["story.read"] } },
   { chapter: { id: id(8) } },
   { draft: { ...draft, chapterId: id(8) } },
-  { project: { id: id(1), capabilities: [] } },
+  { project: { defaultLocale: "en-US", id: id(1), capabilities: [] } },
 ])("rejects mismatched or inaccessible reads", async (overrides) => {
   h.get.mockResolvedValue(response(overrides));
   await expect(loadStoryRepairDraft(scope, signal())).rejects.toThrow();
