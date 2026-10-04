@@ -15,6 +15,7 @@ import {
   ExperienceRuntimeController,
   type ExperienceAccessCheck,
   type PlaySessionReporter,
+  type ExperienceRuntimeRestoreInput,
 } from "@repo/experience-engine";
 
 export interface ExperienceRuntimeOptions {
@@ -22,6 +23,7 @@ export interface ExperienceRuntimeOptions {
   canAccess?: ExperienceAccessCheck;
   worldStreaming?: boolean;
   reporter?: PlaySessionReporter;
+  restore?: ExperienceRuntimeRestoreInput;
 }
 
 /**
@@ -71,6 +73,7 @@ export function createExperienceRuntime(
     canAccess: options.canAccess,
     playSessionReporter: options.reporter,
     rendererRegistry,
+    ...(options.restore ? { restore: options.restore } : {}),
     ...(options.randomSeed ? { randomSeed: options.randomSeed } : {}),
   });
 }

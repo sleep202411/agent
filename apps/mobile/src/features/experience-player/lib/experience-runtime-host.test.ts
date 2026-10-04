@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import { parseExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
 import { EXPERIENCE_ENGINE_API_VERSION, EXPERIENCE_API_VERSION } from "@repo/experience-engine";
 import { createExperienceRuntime } from "./experience-runtime-host";
+import { validateExperienceSaveCheckpoint } from "./experience-save-checkpoint";
 const HASH = "a".repeat(64);
 const localized = (value: string) => ({ "en-US": value });
 function manifestFixture() {
@@ -95,6 +96,54 @@ function manifestFixture() {
 it("starts an ordinary text film with the actual native host", () => {
   const controller = createExperienceRuntime(manifestFixture(), {});
   expect(controller.start().state.currentSceneId).toBe("scene.text");
+});
+it("restores accepted state without repeating entry actions and keeps the persisted random seed", () => {
+  const manifest = manifestFixture();
+  const original = createExperienceRuntime(manifest, { randomSeed: "saved-seed" });
+  const state = original.start().state;
+  const accepted = validateExperienceSaveCheckpoint(manifest, { state, events: [] });
+  const resumed = createExperienceRuntime(manifest, {
+    restore: accepted.state,
+    randomSeed: "new-seed",
+  });
+  expect(resumed.state()).toEqual(state);
+  expect(() => resumed.start()).toThrow("already started");
+  expect(resumed.dispatch([]).effects).toEqual([]);
+  accepted.state.watchedAssetIds.push("changed");
+  expect(resumed.state().watchedAssetIds).toEqual([]);
+});
+it("rejects incompatible saved scenes and malformed checkpoint events or state", () => {
+  const manifest = manifestFixture();
+  const state = createExperienceRuntime(manifest, {}).start().state;
+  for (const patch of [
+    { currentSceneId: "removed" },
+    { status: "corrupted" },
+    { values: null },
+    { deterministicRuntime: { audioCuePlayCounts: { cue: -1 } } },
+  ]) {
+    expect(() =>
+      validateExperienceSaveCheckpoint(manifest, { state: { ...state, ...patch }, events: [] })
+    ).toThrow();
+  }
+  expect(() =>
+    validateExperienceSaveCheckpoint(manifest, { state, events: [{ payload: {} }] })
+  ).toThrow();
+  expect(() =>
+    validateExperienceSaveCheckpoint(manifest, { state, events: [], journey: {} })
+  ).toThrow();
+});
+it("does not restore an ending removed from the live publication", () => {
+  const manifest = manifestFixture();
+  const controller = createExperienceRuntime(manifest, {});
+  controller.start();
+  const state = controller.dispatch([
+    { type: "renderer.outcome", sourceId: "text.primary", qualifierId: "text-completed" },
+  ]).state;
+  expect(state.status).toBe("completed");
+  expect(validateExperienceSaveCheckpoint(manifest, { state, events: [] }).state).toEqual(state);
+  expect(() =>
+    validateExperienceSaveCheckpoint({ ...manifest, endings: [] }, { state, events: [] })
+  ).toThrow();
 });
 it.each([true, false])(
   "rejects an unimplemented world renderer before playback (declared capability: %s)",
