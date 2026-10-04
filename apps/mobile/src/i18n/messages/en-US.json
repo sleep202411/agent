@@ -5027,5 +5027,7 @@
   "storyPrice.title": "Community Points price",
   "storyPrice.help": "Set the price for entering this scene. Enter 0 for free access. Apply the price, then save the chapter.",
   "storyPrice.apply": "Apply price",
-  "storyPrice.invalid": "Enter a whole number from 0 to 2,147,483,647."
+  "storyPrice.invalid": "Enter a whole number from 0 to 2,147,483,647.",
+  "storyHistory.undo": "Undo",
+  "storyHistory.redo": "Redo"
 }

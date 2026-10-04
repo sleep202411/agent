@@ -9,6 +9,7 @@ vi.mock("./story-timeline-editor", () => ({
 }));
 const h = vi.hoisted(() => ({
   generation: 1,
+  failWrite: false,
   reconcile: vi.fn(),
   save: vi.fn(),
   read: vi.fn(),
@@ -30,7 +31,10 @@ vi.mock("expo-modules-core", () => ({
 vi.mock("@/lib/durable-record", () => ({
   durableRecord: (...parts: string[]) => ({
     read: () => h.records.get(parts.join("/")) ?? null,
-    write: (v: string) => h.records.set(parts.join("/"), v),
+    write: (v: string) => {
+      if (h.failWrite) throw Error("Device storage is full");
+      h.records.set(parts.join("/"), v);
+    },
   }),
 }));
 vi.mock("../api/story-draft-repair-api", () => ({
@@ -109,6 +113,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
   vi.resetAllMocks();
   h.records.clear();
+  h.failWrite = false;
   h.generation = 1;
   h.reconcile.mockResolvedValue(result);
   h.read.mockReturnValue(null);
@@ -409,4 +414,46 @@ it("refreshes the parent after reconciling an applied save whose reply was lost"
   h.reconcile.mockResolvedValue({ ...result, draft: { ...draft, revision: 5 } });
   await click("common.retry");
   expect(h.saved).toHaveBeenCalledOnce();
+});
+
+it("retains the undo step when durable storage fails and allows retry/redo", async () => {
+  await render();
+  await click("○ B");
+  h.failWrite = true;
+  await click("storyHistory.undo");
+  expect(host.textContent).toContain("Device storage is full");
+  expect(button("● B")).toBeDefined();
+  expect(button("storyHistory.undo").disabled).toBe(false);
+  h.failWrite = false;
+  await click("storyHistory.undo");
+  expect(button("○ B")).toBeDefined();
+  expect(button("storyHistory.redo").disabled).toBe(false);
+  await click("storyHistory.redo");
+  expect(button("● B")).toBeDefined();
+});
+it("undoes after a save using the new revision without rolling server revisions back", async () => {
+  await render();
+  await click("○ B");
+  h.save.mockImplementation(async (command) => ({
+    ...draft,
+    revision: command.input.expectedRevision + 1,
+    content: command.input.content,
+  }));
+  await click("documentEditor.save");
+  await click("storyHistory.undo");
+  await click("documentEditor.save");
+  expect(h.save.mock.calls.map(([command]) => command.input.expectedRevision)).toEqual([4, 5]);
+  expect(h.save.mock.calls[1][0].input.content).toEqual(draft.content);
+});
+it("blocks history during unknown saves and clears it after refresh", async () => {
+  await render();
+  await click("○ B");
+  h.save.mockRejectedValue(Error("Connection lost"));
+  h.read.mockReturnValue({ clientKey: "pending" });
+  await click("documentEditor.save");
+  expect(button("storyHistory.undo").disabled).toBe(true);
+  expect(button("storyHistory.redo").disabled).toBe(true);
+  h.read.mockReturnValue(null);
+  await click("common.retry");
+  expect(button("storyHistory.undo").disabled).toBe(true);
 });

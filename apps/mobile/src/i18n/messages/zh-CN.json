@@ -5027,5 +5027,7 @@
   "storyPrice.title": "社区积分价格",
   "storyPrice.help": "设置进入此场景所需的积分，填写 0 表示免费。应用价格后，请保存章节。",
   "storyPrice.apply": "应用价格",
-  "storyPrice.invalid": "请输入 0 至 2,147,483,647 之间的整数。"
+  "storyPrice.invalid": "请输入 0 至 2,147,483,647 之间的整数。",
+  "storyHistory.undo": "撤销",
+  "storyHistory.redo": "重做"
 }

@@ -5027,5 +5027,7 @@
   "storyPrice.title": "社區積分價格",
   "storyPrice.help": "設定進入此場景所需的積分，填寫 0 表示免費。套用價格後，請儲存章節。",
   "storyPrice.apply": "套用價格",
-  "storyPrice.invalid": "請輸入 0 至 2,147,483,647 之間的整數。"
+  "storyPrice.invalid": "請輸入 0 至 2,147,483,647 之間的整數。",
+  "storyHistory.undo": "復原",
+  "storyHistory.redo": "重做"
 }

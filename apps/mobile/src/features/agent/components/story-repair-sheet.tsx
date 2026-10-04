@@ -1,3 +1,9 @@
+import {
+  emptyRepairHistory,
+  captureRepairHistory,
+  stepRepairHistory,
+  type RepairHistory,
+} from "../lib/story-repair-history";
 import { StoryRepairPriceEditor } from "./story-repair-price-editor";
 import { replaceRepairPointPrice } from "../lib/story-repair-price";
 import { repairNodeLabels } from "../lib/story-repair-fields";
@@ -111,6 +117,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     defaultLocale: string;
     frameProfile?: "landscape_16_9" | "portrait_9_16";
   }>();
+  const [history, setHistory] = useState(emptyRepairHistory);
   const [command, setCommand] = useState<StoryRepairCommand>();
   const [showSaved, setShowSaved] = useState(false);
   const [choosingEntry, setChoosingEntry] = useState(false);
@@ -144,6 +151,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
         const saved = raw === null ? null : JSON.parse(raw);
         const localCommand = saved === null ? undefined : parseStoryRepairCommand(saved);
         if (result.applied) local.write("null");
+        setHistory(emptyRepairHistory());
         setLoaded(result);
         setCommand(result.pending ?? (result.applied ? undefined : localCommand));
         setUncertain(!!result.pending);
@@ -177,7 +185,10 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     ) ?? [];
   const conflict =
     !!command && !!loaded && command.input.expectedRevision !== loaded.draft.revision;
-  const edit = (change: (value: RepairContent) => RepairContent) => {
+  const edit = (
+    change: (value: RepairContent) => RepairContent,
+    options?: { mergeKey?: string; history?: RepairHistory }
+  ) => {
     if (
       !current() ||
       locked.current ||
@@ -189,12 +200,14 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     )
       return false;
     try {
+      const changed = change(content);
+      if (JSON.stringify(changed) === JSON.stringify(content)) return true;
       const next: StoryRepairCommand = command
         ? {
             ...command,
             input: {
               ...command.input,
-              content: change(content),
+              content: changed,
             },
           }
         : {
@@ -203,16 +216,28 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
               schemaVersion: "interactive-story-draft-v1",
               expectedRevision: loaded.draft.revision,
               sessionId: uuid.v4(),
-              content: change(content),
+              content: changed,
             },
           };
       local.write(JSON.stringify(next));
+      setHistory(options?.history ?? captureRepairHistory(history, content, options?.mergeKey));
       setCommand(next);
       setError(undefined);
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       return false;
+    }
+  };
+  const restoreHistory = (direction: "undo" | "redo") => {
+    if (!content) return;
+    const next = stepRepairHistory(history, content, direction);
+    if (!next) return;
+    if (
+      edit(() => next.content, { history: next.history }) &&
+      !next.content.graph.nodes.some((node) => node.nodeId === selected)
+    ) {
+      setSelected(next.content.graph.entryNodeId ?? next.content.graph.nodes[0]?.nodeId ?? "");
     }
   };
   const save = async () => {
@@ -291,6 +316,32 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
         <RepairAction label={t("common.retry")} onPress={refresh} disabled={busy || loading} />
         {!loading && loaded && content ? (
           <>
+            <View style={{ flexDirection: "row", gap: 16 }}>
+              <RepairAction
+                label={t("storyHistory.undo")}
+                onPress={() => restoreHistory("undo")}
+                disabled={
+                  !loaded.canEdit ||
+                  busy ||
+                  uncertain ||
+                  conflict ||
+                  showSaved ||
+                  !history.past.length
+                }
+              />
+              <RepairAction
+                label={t("storyHistory.redo")}
+                onPress={() => restoreHistory("redo")}
+                disabled={
+                  !loaded.canEdit ||
+                  busy ||
+                  uncertain ||
+                  conflict ||
+                  showSaved ||
+                  !history.future.length
+                }
+              />
+            </View>
             {command ? (
               <View style={{ flexDirection: "row", gap: 16 }}>
                 <RepairAction label={t("storyRepair.local")} onPress={() => setShowSaved(false)} />
@@ -493,7 +544,9 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                             loaded.canEdit && !busy && !uncertain && !conflict && !showSaved
                           }
                           onChangeText={(text) =>
-                            edit((value) => updateRepairNodeText(value, selected, field, text))
+                            edit((value) => updateRepairNodeText(value, selected, field, text), {
+                              mergeKey: `${selected}:${field}`,
+                            })
                           }
                           style={{
                             color: theme.text,
