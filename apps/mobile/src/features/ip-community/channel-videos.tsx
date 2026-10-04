@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
+import { ChannelVideoSubmit } from "./channel-video-submit";
 import { ZodError } from "zod";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
@@ -137,6 +138,7 @@ export function ChannelVideos({ scope }: { scope: ChannelScope }) {
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("channelVideos.title")}</ThemedText>
+      <ChannelVideoSubmit scope={scope} onSubmitted={() => void load()} />
       {(loading || pending) && (
         <ActivityIndicator accessibilityLabel={t("channelSubmissions.loading")} />
       )}

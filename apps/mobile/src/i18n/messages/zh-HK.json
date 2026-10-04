@@ -4826,5 +4826,11 @@
   "channelVideos.title": "頻道影片",
   "channelVideos.empty": "暫無影片。",
   "channelVideos.play": "播放影片",
-  "channelVideos.moderation": "平台審核期間影片暫不可播放。"
+  "channelVideos.moderation": "平台審核期間影片暫不可播放。",
+  "channelVideos.submit": "投稿影片",
+  "channelVideos.sent": "投稿已收到。",
+  "channelVideos.recover": "已儲存未完成的投稿。重試將繼續提交同一影片和資料。",
+  "channelVideos.videoTitle": "影片標題",
+  "channelVideos.description": "簡介（選填）",
+  "channelVideos.choose": "選擇影片（MP4、WebM 或 MOV；最大 2 GiB）"
 }

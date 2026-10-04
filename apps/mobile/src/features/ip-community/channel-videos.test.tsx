@@ -5,6 +5,7 @@ import { ChannelVideos } from "./channel-videos";
 vi.mock("@/features/services/conversation-video", () => ({
   ConversationVideo: () => <span>video-player</span>,
 }));
+vi.mock("./channel-video-submit", () => ({ ChannelVideoSubmit: () => null }));
 const h = vi.hoisted(() => ({
   generation: 1,
   active: true,

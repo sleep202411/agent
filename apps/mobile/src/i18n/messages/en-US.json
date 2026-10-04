@@ -4826,5 +4826,11 @@
   "channelVideos.title": "Channel videos",
   "channelVideos.empty": "No videos available.",
   "channelVideos.play": "Play video",
-  "channelVideos.moderation": "Video unavailable while platform moderation is pending."
+  "channelVideos.moderation": "Video unavailable while platform moderation is pending.",
+  "channelVideos.submit": "Submit a video",
+  "channelVideos.sent": "Submission received.",
+  "channelVideos.recover": "An unfinished submission was saved. Retry to continue with the same video and details.",
+  "channelVideos.videoTitle": "Video title",
+  "channelVideos.description": "Description (optional)",
+  "channelVideos.choose": "Choose video (MP4, WebM or MOV; up to 2 GiB)"
 }

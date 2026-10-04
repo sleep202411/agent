@@ -4826,5 +4826,11 @@
   "channelVideos.title": "频道视频",
   "channelVideos.empty": "暂无视频。",
   "channelVideos.play": "播放视频",
-  "channelVideos.moderation": "平台审核期间视频暂不可播放。"
+  "channelVideos.moderation": "平台审核期间视频暂不可播放。",
+  "channelVideos.submit": "投稿视频",
+  "channelVideos.sent": "投稿已收到。",
+  "channelVideos.recover": "已保存未完成的投稿。重试将继续提交同一视频和信息。",
+  "channelVideos.videoTitle": "视频标题",
+  "channelVideos.description": "简介（选填）",
+  "channelVideos.choose": "选择视频（MP4、WebM 或 MOV；最大 2 GiB）"
 }
