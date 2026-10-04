@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { canvasNodeEditSchema } from "./schema";
+import { canvasNodeEditSchema, canvasNodeCreateSchema } from "./schema";
 const id = z.string().uuid();
 export const encodedCanvasState = z
   .string()
@@ -25,6 +25,14 @@ export const canvasSnapshotSchema = z
   })
   .strict();
 export const canvasHostMessage = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("create"),
+      ...identity,
+      snapshot: encodedCanvasState,
+      create: canvasNodeCreateSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("load"),

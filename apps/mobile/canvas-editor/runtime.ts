@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { canvasHostMessage, type CanvasRuntimeMessage } from "./protocol";
 import { materializeCanvas } from "./state";
+import { createCanvasNode } from "./node-create";
 import { editCanvasNode } from "./node-edit";
 
 const { sessionId } = z
@@ -39,7 +40,9 @@ function receive(raw: unknown) {
     sequence: message.sequence,
   };
   try {
-    if (message.type === "edit") {
+    if (message.type === "create") {
+      send({ type: "edited", ...identity, ...createCanvasNode(message.snapshot, message.create) });
+    } else if (message.type === "edit") {
       send({ type: "edited", ...identity, ...editCanvasNode(message.snapshot, message.edit) });
     } else {
       send({

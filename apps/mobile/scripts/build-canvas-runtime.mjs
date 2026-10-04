@@ -15,6 +15,20 @@ const result = await build({
   minify: true,
   metafile: true,
   legalComments: "inline",
+  plugins: [
+    {
+      name: "canvas-shared-order",
+      setup(builder) {
+        // Bundle the shared ordering implementation directly. The package barrel
+        // evaluates unrelated protocol schemas, adding hundreds of KB to this
+        // offline runtime despite using only its two ordering helpers.
+        builder.onResolve({ filter: /^@repo\/shared$/ }, (args) => {
+          if (args.importer.endsWith("/canvas-editor/node-create.ts"))
+            return { path: join(root, "packages/shared/src/fractional-index.ts") };
+        });
+      },
+    },
+  ],
 });
 const text = result.outputFiles[0].text;
 output(

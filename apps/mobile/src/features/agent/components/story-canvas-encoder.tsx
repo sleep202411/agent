@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { uuid } from "expo-modules-core";
 import { getAuthGeneration } from "@/auth/auth-store";
-import type { CanvasNodeEdit } from "../../../../canvas-editor/schema";
+import type { CanvasNodeEdit, CanvasNodeCreate } from "../../../../canvas-editor/schema";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import { canvasRuntimeHtml, parseCanvasMessage } from "../lib/story-canvas-bridge";
 import { CanvasRuntimeFrame, type CanvasFrameHandle } from "./story-canvas-runtime-frame";
@@ -17,7 +17,7 @@ export function StoryCanvasEncoder({
   onError,
 }: {
   loaded: CanvasLoaded;
-  edit: CanvasNodeEdit;
+  edit: CanvasNodeEdit | CanvasNodeCreate;
   generation: number;
   title: string;
   runtimeError: string;
@@ -74,13 +74,14 @@ export function StoryCanvasEncoder({
             if (life.current!.sent) return;
             life.current!.sent = true;
             frame.current?.send({
-              type: "edit",
               sessionId,
               requestId: 1,
               documentId: loaded.documentId,
               sequence: loaded.sequence,
               snapshot: loaded.state,
-              edit,
+              ...("kind" in edit
+                ? { type: "edit" as const, edit }
+                : { type: "create" as const, create: edit }),
             });
             return;
           }
