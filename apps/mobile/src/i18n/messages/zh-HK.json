@@ -4899,6 +4899,7 @@
   "storyCondition.noVariables": "此章節沒有狀態變數。",
   "storyCondition.apply": "套用條件",
   "storyCondition.reload": "捨棄編輯並重新載入",
+  "storyCondition.applyFailed": "無法套用此修改。草稿已保留。請關閉此編輯器檢查故事，然後重試。",
   "storyCondition.invalidValue": "請輸入所選變數的有效值。",
   "storyCondition.operator.equals": "等於",
   "storyCondition.operator.not-equals": "不等於",

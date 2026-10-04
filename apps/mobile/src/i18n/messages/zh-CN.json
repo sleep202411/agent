@@ -4899,6 +4899,7 @@
   "storyCondition.noVariables": "此章节没有状态变量。",
   "storyCondition.apply": "应用条件",
   "storyCondition.reload": "放弃编辑并重新加载",
+  "storyCondition.applyFailed": "无法应用此修改。草稿已保留。请关闭此编辑器检查故事，然后重试。",
   "storyCondition.invalidValue": "请输入所选变量的有效值。",
   "storyCondition.operator.equals": "等于",
   "storyCondition.operator.not-equals": "不等于",

@@ -4899,6 +4899,7 @@
   "storyCondition.noVariables": "This chapter has no state variables.",
   "storyCondition.apply": "Apply condition",
   "storyCondition.reload": "Discard edits and reload",
+  "storyCondition.applyFailed": "Could not apply this edit. Your draft is kept. Close this editor to review the story, then try again.",
   "storyCondition.invalidValue": "Enter a valid value for the selected variable.",
   "storyCondition.operator.equals": "Equals",
   "storyCondition.operator.not-equals": "Does not equal",

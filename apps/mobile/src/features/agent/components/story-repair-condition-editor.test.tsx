@@ -58,7 +58,7 @@ beforeEach(() => {
   root = createRoot(host);
 });
 afterEach(() => act(() => root.unmount()));
-const render = (canEdit = true) =>
+const render = (canEdit = true, applyError?: string) =>
   act(async () =>
     root.render(
       <StoryRepairConditionEditor
@@ -67,6 +67,7 @@ const render = (canEdit = true) =>
         userId="user"
         storageKey="branch"
         canEdit={canEdit}
+        applyError={applyError}
         onApply={h.apply}
         onClose={h.close}
       />
@@ -82,6 +83,9 @@ it("persists comparisons and clears the editor draft only after a successful loc
   h.apply.mockReturnValue(false);
   await click("storyCondition.apply");
   expect(h.close).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("storyCondition.applyFailed");
+  await render(true, "Device storage is full");
+  expect(host.textContent).toContain("Device storage is full");
   expect(h.raw).not.toBe("null");
   h.apply.mockReturnValue(true);
   await click("storyCondition.apply");

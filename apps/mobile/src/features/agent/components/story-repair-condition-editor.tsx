@@ -42,6 +42,7 @@ type Props = {
   userId: string;
   storageKey: string;
   canEdit: boolean;
+  applyError?: string;
   onApply: (value: StoryCondition | undefined) => boolean;
   onClose: () => void;
 };
@@ -52,6 +53,7 @@ export function StoryRepairConditionEditor({
   userId,
   storageKey,
   canEdit,
+  applyError,
   onApply,
   onClose,
 }: Props) {
@@ -87,6 +89,7 @@ export function StoryRepairConditionEditor({
   });
   const [draft, setDraft] = useState(loaded.draft);
   const [error, setError] = useState<string | undefined>(loaded.error);
+  const [applyRejected, setApplyRejected] = useState(false);
   const variables = repairVariables(content, locale);
   const conflict = !!draft && draft.base !== base;
   const change = (next: Draft) => {
@@ -95,6 +98,7 @@ export function StoryRepairConditionEditor({
       record.write(JSON.stringify(next));
       setDraft(next);
       setError(undefined);
+      setApplyRejected(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -128,6 +132,8 @@ export function StoryRepairConditionEditor({
       if (onApply(value)) {
         record.write("null");
         onClose();
+      } else {
+        setApplyRejected(true);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -170,6 +176,11 @@ export function StoryRepairConditionEditor({
             {t("storyCondition.help")}
           </ThemedText>
           {error ? <ThemedText accessibilityRole="alert">{error}</ThemedText> : null}
+          {applyRejected ? (
+            <ThemedText accessibilityRole="alert">
+              {applyError || t("storyCondition.applyFailed")}
+            </ThemedText>
+          ) : null}
           {conflict ? <ThemedText>{t("storyCondition.conflict")}</ThemedText> : null}
           {!draft && !loaded.error ? (
             <>
@@ -199,6 +210,8 @@ export function StoryRepairConditionEditor({
                           if (onApply(undefined)) {
                             record.write("null");
                             onClose();
+                          } else {
+                            setApplyRejected(true);
                           }
                         } catch (e) {
                           setError(String(e));
@@ -364,6 +377,7 @@ export function StoryRepairConditionEditor({
                   record.write("null");
                   setDraft(initial);
                   setError(undefined);
+                  setApplyRejected(false);
                 } catch (e) {
                   setError(String(e));
                 }

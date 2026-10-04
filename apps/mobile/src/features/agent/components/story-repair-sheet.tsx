@@ -683,6 +683,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
           userId={userId}
           storageKey={`${scope.projectId}:${scope.chapterId}:${selected}:route:${JSON.stringify(conditionRoute.route)}:${autoRoutes?.slice(0, conditionRoute.index).filter((route) => JSON.stringify(route) === JSON.stringify(conditionRoute.route)).length ?? 0}`}
           canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+          applyError={error}
           onApply={(when) =>
             edit((value) =>
               replaceRepairAutoCondition(
@@ -709,6 +710,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
           userId={userId}
           storageKey={`${scope.projectId}:${scope.chapterId}:${selected}:${conditionChoice}`}
           canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+          applyError={error}
           onApply={(value) =>
             edit((currentContent) =>
               replaceChoiceCondition(currentContent, selected, conditionChoice, value)
