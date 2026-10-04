@@ -80,3 +80,45 @@ it("rejects missing nodes and locked prompts", () => {
     )
   ).toThrow("does not support");
 });
+it("keeps a prepared deletion recoverable even after its node disappeared", () => {
+  const deletion = {
+    edit: { nodeId: "n", kind: "remove" as const, value: "" },
+    ...canvasEditBaseline(snapshot, { nodeId: "n", kind: "remove" }),
+    command: { clientKey: "00000000-0000-4000-8000-000000000001", yjsUpdateBase64: "AAA=" },
+  };
+  canvasDraftStore(scope, "user", storage).write(deletion);
+  expect(canvasDraftStore(scope, "user", storage).read()).toEqual(deletion);
+});
+it("detects deletion dependency changes without conflicting on unrelated fields", () => {
+  const state = {
+    ...snapshot,
+    nodes: {
+      ...snapshot.nodes,
+      b: {
+        id: "b",
+        type: "prompt",
+        data: {
+          prompt: "Keep",
+          references: { images: [{ edgeId: "nb", url: "old" }] },
+        },
+      },
+    },
+    edges: { nb: { id: "nb", source: "n", target: "b" } },
+  };
+  const baseline = (s: typeof snapshot | typeof state) =>
+    canvasEditBaseline(s, { nodeId: "n", kind: "remove" }).baseValue;
+  const before = baseline(state);
+  state.nodes.b.data.prompt = "Unrelated edit";
+  expect(baseline(state)).toBe(before);
+  state.nodes.b.data.references.images[0].url = "Changed input";
+  expect(baseline(state)).not.toBe(before);
+  expect(baseline({ ...snapshot, edges: state.edges })).not.toBe(baseline(snapshot));
+});
+it("canonicalizes deletion baselines across object key ordering", () => {
+  const a = canvasEditBaseline(snapshot, { nodeId: "n", kind: "remove" });
+  const b = canvasEditBaseline(
+    { ...snapshot, nodes: { n: { data: snapshot.nodes.n.data, type: "prompt", id: "n" } } },
+    { nodeId: "n", kind: "remove" }
+  );
+  expect(a).toEqual(b);
+});

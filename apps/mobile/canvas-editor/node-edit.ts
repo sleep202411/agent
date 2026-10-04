@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { removeCanvasNode } from "./node-remove";
 import { canvasNodeEditSchema, type CanvasNodeEdit } from "./schema";
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
 
@@ -10,6 +11,7 @@ const mediaTypes = new Set(["image", "videoAsset", "audioAsset"]);
  * The returned update is a delta, never a replacement JSON snapshot. */
 export function editCanvasNode(state: string, raw: CanvasNodeEdit) {
   const edit = canvasNodeEditSchema.parse(raw);
+  if (edit.kind === "remove") return removeCanvasNode(state, edit.nodeId);
   return withCanvasState(state, [], (doc) => {
     const node = doc.getMap("nodes").get(edit.nodeId);
     if (!(node instanceof Y.Map) || node.get("id") !== edit.nodeId)

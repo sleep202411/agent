@@ -42,8 +42,16 @@ export function StoryCanvasEditForm({
       const draft = store.read();
       if (draft) return { draft, resumed: true };
       const baseline = canvasEditBaseline(loaded.snapshot, edit);
+      const data = (loaded.snapshot.nodes[edit.nodeId] as { data?: Record<string, unknown> }).data;
+      const title = [data?.name, data?.label].find(
+        (value): value is string => typeof value === "string" && !!value
+      );
       return {
-        draft: { ...baseline, edit: { ...edit, value: baseline.baseValue } } as CanvasDraft,
+        draft: {
+          ...baseline,
+          title,
+          edit: { ...edit, value: edit.kind === "remove" ? "" : baseline.baseValue },
+        } as CanvasDraft,
       };
     } catch (cause) {
       return { error: cause instanceof Error ? cause.message : String(cause) };
@@ -56,9 +64,12 @@ export function StoryCanvasEditForm({
   const target = draft
     ? (loaded.snapshot.nodes[draft.edit.nodeId] as { data?: Record<string, unknown> } | undefined)
     : undefined;
-  const targetName = [target?.data?.name, target?.data?.label, draft?.edit.nodeId].find(
-    (value): value is string => typeof value === "string" && !!value
-  );
+  const targetName = [
+    draft?.title,
+    target?.data?.name,
+    target?.data?.label,
+    draft?.edit.nodeId,
+  ].find((value): value is string => typeof value === "string" && !!value);
   const life = useRef<AbortController | null>(null),
     busy = useRef(false);
   useLayoutEffect(() => {
@@ -106,6 +117,19 @@ export function StoryCanvasEditForm({
       failed(cause);
     }
   };
+  const confirmSave = () => {
+    if (draft?.edit.kind !== "remove" || draft.command) return save();
+    Alert.alert(t("storyCanvas.remove"), t("storyCanvas.removeBody"), [
+      { text: t("common.cancel"), style: "cancel" },
+      { text: t("storyCanvas.remove"), style: "destructive", onPress: save },
+    ]);
+  };
+  const actionTitle =
+    draft?.edit.kind === "remove"
+      ? "storyCanvas.remove"
+      : draft?.edit.kind === "prompt"
+        ? "storyCanvas.editPrompt"
+        : "storyCanvas.rename";
   const discard = () =>
     Alert.alert(t("storyCanvas.discard"), t("storyCanvas.discardBody"), [
       { text: t("common.cancel"), style: "cancel" },
@@ -139,9 +163,7 @@ export function StoryCanvasEditForm({
         <View
           style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
         >
-          <ThemedText type="smallBold">
-            {t(draft?.edit.kind === "prompt" ? "storyCanvas.editPrompt" : "storyCanvas.rename")}
-          </ThemedText>
+          <ThemedText type="smallBold">{t(actionTitle)}</ThemedText>
           <Pressable accessibilityRole="button" onPress={close} style={{ padding: 12 }}>
             <ThemedText type="small">{t("agent.close")}</ThemedText>
           </Pressable>
@@ -155,44 +177,54 @@ export function StoryCanvasEditForm({
             <ThemedText type="small">
               {t(draft.command ? "storyCanvas.pending" : "storyCanvas.draftSaved")}
             </ThemedText>
-            <TextInput
-              accessibilityLabel={t(
-                draft.edit.kind === "prompt" ? "storyCanvas.editPrompt" : "storyCanvas.rename"
-              )}
-              multiline={draft.edit.kind === "prompt"}
-              editable={phase === "idle" && !draft.command}
-              value={draft.edit.value}
-              onChangeText={(value) => {
-                if (!current() || busy.current || draft.command) return;
-                const next = { ...draft, edit: { ...draft.edit, value } };
-                setDraft(next);
-                try {
-                  store.write(next);
-                  setError(undefined);
-                } catch (cause) {
-                  failed(cause);
-                }
-              }}
-              style={{
-                color: theme.text,
-                borderWidth: 1,
-                borderColor: theme.border,
-                borderRadius: 8,
-                padding: 12,
-                minHeight: draft.edit.kind === "prompt" ? 150 : 48,
-                textAlignVertical: "top",
-              }}
-            />
+            {draft.edit.kind === "remove" ? (
+              <ThemedText type="small">{t("storyCanvas.removeBody")}</ThemedText>
+            ) : (
+              <TextInput
+                accessibilityLabel={t(
+                  draft.edit.kind === "prompt" ? "storyCanvas.editPrompt" : "storyCanvas.rename"
+                )}
+                multiline={draft.edit.kind === "prompt"}
+                editable={phase === "idle" && !draft.command}
+                value={draft.edit.value}
+                onChangeText={(value) => {
+                  if (!current() || busy.current || draft.command) return;
+                  const next = { ...draft, edit: { ...draft.edit, value } };
+                  setDraft(next);
+                  try {
+                    store.write(next);
+                    setError(undefined);
+                  } catch (cause) {
+                    failed(cause);
+                  }
+                }}
+                style={{
+                  color: theme.text,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                  borderRadius: 8,
+                  padding: 12,
+                  minHeight: draft.edit.kind === "prompt" ? 150 : 48,
+                  textAlignVertical: "top",
+                }}
+              />
+            )}
             {phase !== "idle" ? (
               <ActivityIndicator />
             ) : (
               <Pressable
                 accessibilityRole="button"
-                onPress={save}
+                onPress={confirmSave}
                 style={{ padding: 12, borderRadius: 8, backgroundColor: theme.brand }}
               >
                 <ThemedText type="smallBold">
-                  {t(draft.command ? "common.retry" : "storyCanvas.save")}
+                  {t(
+                    draft.command
+                      ? "common.retry"
+                      : draft.edit.kind === "remove"
+                        ? "storyCanvas.remove"
+                        : "storyCanvas.save"
+                  )}
                 </ThemedText>
               </Pressable>
             )}
@@ -221,10 +253,23 @@ export function StoryCanvasEditForm({
             onResult={(value) => {
               if (!current()) return;
               try {
-                if (value.documentId !== scope.documentId) throw Error(t("storyCanvas.changed"));
+                if (value.documentId !== scope.documentId)
+                  throw Error(
+                    t(
+                      draft.edit.kind === "remove"
+                        ? "storyCanvas.removeChanged"
+                        : "storyCanvas.changed"
+                    )
+                  );
                 const baseline = canvasEditBaseline(value.snapshot, draft.edit);
                 if (baseline.nodeType !== draft.nodeType || baseline.baseValue !== draft.baseValue)
-                  throw Error(t("storyCanvas.changed"));
+                  throw Error(
+                    t(
+                      draft.edit.kind === "remove"
+                        ? "storyCanvas.removeChanged"
+                        : "storyCanvas.changed"
+                    )
+                  );
                 setFresh(value);
                 setPhase("encode");
               } catch (cause) {

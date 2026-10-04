@@ -10,6 +10,7 @@ import { useStoryChapterContext } from "../context/story-chapter-context";
 import type { CandidateScope } from "../api/story-candidates-api";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCandidatesPanel } from "./story-candidates-panel";
+import { canvasDraftStore } from "../lib/story-canvas-draft";
 import { canvasOverview } from "../lib/story-canvas-overview";
 import { StoryCanvasEditForm } from "./story-canvas-edit-form";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
@@ -67,6 +68,7 @@ export function StoryCanvasPanel({
     [error, setError] = useState<string>();
   const [overview, setOverview] = useState<ReturnType<typeof canvasOverview>>();
   const [loaded, setLoaded] = useState<CanvasLoaded>();
+  const [recovery, setRecovery] = useState<Pick<CanvasNodeEdit, "nodeId" | "kind">>();
   const [edit, setEdit] = useState<Pick<CanvasNodeEdit, "nodeId" | "kind">>();
   const writeScope = useMemo(
     () => (loaded ? { ...scope, documentId: loaded.documentId } : undefined),
@@ -75,6 +77,7 @@ export function StoryCanvasPanel({
   const [tab, setTab] = useState<"nodes" | "media">("nodes"),
     [selected, setSelected] = useState<string>();
   const reload = () => {
+    setRecovery(undefined);
     setOverview(undefined);
     setLoaded(undefined);
     setError(undefined);
@@ -116,6 +119,11 @@ export function StoryCanvasPanel({
               try {
                 setOverview(canvasOverview(value.snapshot));
                 setLoaded(value);
+                const draft = canvasDraftStore(
+                  { ...scope, documentId: value.documentId },
+                  userId
+                ).read();
+                setRecovery(draft?.edit);
               } catch (cause) {
                 setError(cause instanceof Error ? cause.message : String(cause));
               }
@@ -133,6 +141,15 @@ export function StoryCanvasPanel({
             <ThemedText type="small">
               {t(error ? "common.retry" : "storyCanvas.refresh")}
             </ThemedText>
+          </Pressable>
+        )}
+        {recovery && canEdit && !loading && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setEdit(recovery)}
+            style={{ paddingVertical: 10 }}
+          >
+            <ThemedText type="small">{t("storyCanvas.resumeAction")}</ThemedText>
           </Pressable>
         )}
         {overview && (
@@ -177,6 +194,13 @@ export function StoryCanvasPanel({
                       {!!node.text && <ThemedText type="small">{node.text}</ThemedText>}
                       {canEdit && (
                         <View style={{ flexDirection: "row", gap: 16, flexWrap: "wrap" }}>
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={() => setEdit({ nodeId: node.id, kind: "remove" })}
+                            style={{ paddingVertical: 10 }}
+                          >
+                            <ThemedText type="small">{t("storyCanvas.remove")}</ThemedText>
+                          </Pressable>
                           {node.canRename && (
                             <Pressable
                               accessibilityRole="button"

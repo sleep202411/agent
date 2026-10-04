@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import * as Y from "yjs";
+import { editCanvasNode } from "../../../../canvas-editor/node-edit";
 import { removeCanvasNode } from "../../../../canvas-editor/node-remove";
 import { encodeCanvasBytes, materializeCanvas } from "../../../../canvas-editor/state";
 
@@ -36,7 +37,7 @@ it("removes incoming/outgoing wires and only their references, retaining reusabl
   const { doc, state } = seed();
   try {
     const base = state(),
-      result = removeCanvasNode(base, "a");
+      result = editCanvasNode(base, { nodeId: "a", kind: "remove", value: "" });
     expect(Object.keys(result.snapshot.nodes)).toEqual(["b", "c", "d"]);
     expect(Object.keys(result.snapshot.edges)).toEqual(["cd"]);
     expect(result.snapshot.nodes.b).toMatchObject({

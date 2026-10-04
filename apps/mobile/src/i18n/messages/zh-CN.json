@@ -5143,5 +5143,9 @@
   "storyCanvas.draftSaved": "草稿保存在此设备上。",
   "storyCanvas.changed": "此字段已在其他设备上更改。草稿已保留；关闭后查看最新版本，或放弃草稿重新开始。",
   "storyCanvas.pendingMismatch": "另一次画布保存尚未确认。请先重新打开其草稿。",
-  "storyCanvas.resumeDraft": "正在继续此画布上已保存的草稿。"
+  "storyCanvas.resumeDraft": "正在继续此画布上已保存的草稿。",
+  "storyCanvas.remove": "移除节点",
+  "storyCanvas.removeBody": "移除此节点及其连接线？相关生成引用也会清除，素材库中的媒体将保留。",
+  "storyCanvas.resumeAction": "继续未完成的画布修改",
+  "storyCanvas.removeChanged": "此节点或其连接已在其他设备上更改。未完成的修改已保留；请关闭查看最新版本，或放弃后重新操作。"
 }

@@ -5143,5 +5143,9 @@
   "storyCanvas.draftSaved": "Your draft is kept on this device.",
   "storyCanvas.changed": "This field changed on another device. Your draft is kept; close to review the latest version or discard it to start again.",
   "storyCanvas.pendingMismatch": "A different canvas save is pending. Reopen its saved draft before continuing.",
-  "storyCanvas.resumeDraft": "Resuming the saved edit for this canvas."
+  "storyCanvas.resumeDraft": "Resuming the saved edit for this canvas.",
+  "storyCanvas.remove": "Remove node",
+  "storyCanvas.removeBody": "Remove this node and its connected wires? Their generation references will be cleared. Media in the library will be kept.",
+  "storyCanvas.resumeAction": "Resume saved canvas change",
+  "storyCanvas.removeChanged": "This node or its connections changed on another device. Your pending change is kept; close to review the latest version or discard it to start again."
 }
