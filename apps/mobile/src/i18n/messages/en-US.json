@@ -4858,5 +4858,18 @@
   "storyRoleGuide.scopeNote": "Invitations apply only to this project. Project roles add to existing workspace permissions; choosing a lower role will not reduce that access. Reference reviews are separate from platform publication review.",
   "agent.publish.actionError.auth": "Your session has expired. Sign in again before publishing.",
   "agent.publish.actionError.permission": "Your publishing access has changed. Ask the project owner to check your role.",
-  "agent.publish.actionError.service": "The publication service could not complete this action. Retry, or contact support if this continues."
+  "agent.publish.actionError.service": "The publication service could not complete this action. Retry, or contact support if this continues.",
+  "storyRepair.title": "Repair branch targets",
+  "storyRepair.help": "Review the affected node and choose where each existing branch leads. Other node settings stay intact.",
+  "storyRepair.nodeMissing": "This diagnostic has no available node in this chapter.",
+  "storyRepair.branch": "Branch {number}",
+  "storyRepair.noBranches": "This diagnostic cannot be resolved by changing a branch destination.",
+  "storyRepair.readOnly": "You can review this chapter, but your role cannot edit it.",
+  "storyRepair.conflict": "The saved chapter changed. Compare it with your local repair before discarding or trying again.",
+  "storyRepair.uncertain": "The save result is unknown. Retry to check the saved chapter, or Save to reconcile this exact repair.",
+  "storyRepair.savedLocally": "Your changes are saved on this device until you save them to the project.",
+  "storyRepair.discard": "Discard local repair",
+  "storyRepair.discardHelp": "This removes your local repair and reloads the saved chapter. It does not undo a repair already saved to the project.",
+  "storyRepair.local": "Local repair",
+  "storyRepair.remote": "Saved chapter"
 }

@@ -34,6 +34,7 @@ const commandSchema = z.object({
     content: contentSchema,
   }),
 });
+export const parseStoryRepairCommand = (value: unknown) => commandSchema.parse(value);
 export type StoryRepairDraft = z.infer<typeof draftSchema>;
 export type StoryRepairCommand = z.infer<typeof commandSchema>;
 export type StoryRepairScope = { projectId: string; chapterId: string; generation: number };

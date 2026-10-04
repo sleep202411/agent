@@ -4858,5 +4858,18 @@
   "storyRoleGuide.scopeNote": "邀请仅适用于此项目。项目角色会叠加已有空间权限，选择较低角色不会降低这些权限。参考素材审核与平台发布审核是不同的操作。",
   "agent.publish.actionError.auth": "登录已失效，请重新登录后再发布。",
   "agent.publish.actionError.permission": "你的发布权限已变更，请联系项目拥有者确认你的角色。",
-  "agent.publish.actionError.service": "发布服务未能完成此操作，请重试；若问题持续，请联系支持。"
+  "agent.publish.actionError.service": "发布服务未能完成此操作，请重试；若问题持续，请联系支持。",
+  "storyRepair.title": "修复分支目标",
+  "storyRepair.help": "查看出错节点并选择每个现有分支的去向。其他节点设置会保留。",
+  "storyRepair.nodeMissing": "该诊断在此章节中没有可用节点。",
+  "storyRepair.branch": "分支 {number}",
+  "storyRepair.noBranches": "此问题无法通过更改分支目标来解决。",
+  "storyRepair.readOnly": "你可以查看此章节，但当前角色无法编辑。",
+  "storyRepair.conflict": "已保存章节发生了变化。请比较本地修复后再决定放弃或重试。",
+  "storyRepair.uncertain": "保存结果未知。点击重试检查已保存章节，或点击保存核对此次修复。",
+  "storyRepair.savedLocally": "修改已保存在当前设备，保存到项目后才会生效。",
+  "storyRepair.discard": "放弃本地修复",
+  "storyRepair.discardHelp": "这会移除本地修复并重新加载已保存章节，不会撤销已经保存到项目的修复。",
+  "storyRepair.local": "本地修复",
+  "storyRepair.remote": "已保存章节"
 }

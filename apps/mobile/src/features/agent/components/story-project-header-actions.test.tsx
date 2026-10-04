@@ -1,3 +1,4 @@
+vi.mock("./story-repair-sheet", () => ({ StoryRepairSheet: () => <span>Repair sheet</span> }));
 import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -19,7 +20,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/auth", () => ({
-  useAuth: () => ({ generation: h.generation }),
+  useAuth: () => ({ generation: h.generation, user: { id: "user" } }),
   useAuthGate: () => ({ openLogin: h.login }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -350,4 +351,26 @@ it("shows every actionable release diagnostic and does not submit a failed candi
   expect(h.alert.mock.calls.at(-1)![1]).toBe("Missing first video\n\nChoice target is missing");
   expect(h.submit).not.toHaveBeenCalled();
   expect(h.retry).toHaveBeenCalledOnce();
+});
+
+it("keeps the repair action usable after the failed status refresh remounts publication controls", async () => {
+  h.prepare.mockRejectedValue(
+    Object.assign(new Error("Broken target"), {
+      status: 422,
+      responseBody: JSON.stringify({
+        chapterId: "11111111-1111-4111-8111-111111111111",
+        diagnostics: [{ message: "Broken target", nodeId: "clip:a" }],
+      }),
+    })
+  );
+  await mount();
+  const confirm = await confirmation();
+  await act(async () => confirm());
+  const repair = h.alert.mock.calls
+    .at(-1)![2]
+    .find((b: { text: string }) => b.text === "storyRepair.title").onPress;
+  h.failed = true;
+  await mount();
+  await act(async () => repair());
+  expect(host.textContent).toContain("Repair sheet");
 });

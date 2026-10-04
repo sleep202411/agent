@@ -4858,5 +4858,18 @@
   "storyRoleGuide.scopeNote": "邀請僅適用於此專案。專案角色會疊加已有空間權限，選擇較低角色不會降低這些權限。參考素材審核與平台發佈審核是不同的操作。",
   "agent.publish.actionError.auth": "登入已失效，請重新登入後再發佈。",
   "agent.publish.actionError.permission": "你的發佈權限已變更，請聯絡項目擁有者確認你的角色。",
-  "agent.publish.actionError.service": "發佈服務未能完成此操作，請重試；若問題持續，請聯絡支援。"
+  "agent.publish.actionError.service": "發佈服務未能完成此操作，請重試；若問題持續，請聯絡支援。",
+  "storyRepair.title": "修復分支目標",
+  "storyRepair.help": "查看出錯節點並選擇每個現有分支的去向。其他節點設定會保留。",
+  "storyRepair.nodeMissing": "此診斷在本章節中沒有可用節點。",
+  "storyRepair.branch": "分支 {number}",
+  "storyRepair.noBranches": "此問題無法透過更改分支目標來解決。",
+  "storyRepair.readOnly": "你可以查看此章節，但目前角色無法編輯。",
+  "storyRepair.conflict": "已儲存章節發生了變更。請比較本機修復後再決定放棄或重試。",
+  "storyRepair.uncertain": "儲存結果未知。點擊重試檢查已儲存章節，或點擊儲存核對此次修復。",
+  "storyRepair.savedLocally": "修改已儲存在目前裝置，儲存至專案後才會生效。",
+  "storyRepair.discard": "放棄本機修復",
+  "storyRepair.discardHelp": "這會移除本機修復並重新載入已儲存章節，不會撤銷已經儲存至專案的修復。",
+  "storyRepair.local": "本機修復",
+  "storyRepair.remote": "已儲存章節"
 }

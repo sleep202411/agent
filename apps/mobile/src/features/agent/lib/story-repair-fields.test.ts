@@ -1,0 +1,81 @@
+import { expect, it } from "vitest";
+import {
+  repairBranches,
+  repairTargets,
+  replaceRepairTarget,
+  sameRepairTarget,
+} from "./story-repair-fields";
+const content = {
+  storyBible: { endings: [{ endingId: "end", title: { "en-US": "The end" } }] },
+  graph: {
+    entryNodeId: "clip:a",
+    nodes: [
+      {
+        nodeId: "clip:a",
+        name: "A",
+        interactions: [{ keep: true }],
+        exit: {
+          kind: "choice",
+          prompt: { "en-US": "Choose" },
+          choices: [
+            {
+              choiceId: "c",
+              label: { "en-US": "Go" },
+              visibleWhen: { keep: true },
+              effects: [{ keep: true }],
+              target: null,
+            },
+          ],
+        },
+      },
+      {
+        nodeId: "clip:b",
+        name: "B",
+        exit: { kind: "auto", routes: [{ condition: { keep: true }, target: null }] },
+      },
+    ],
+  },
+};
+it("changes only the selected target and preserves conditions, effects and other nodes", () => {
+  const next = replaceRepairTarget(content, "clip:a", 0, { kind: "node", nodeId: "clip:b" });
+  expect(next.graph.nodes[1]).toBe(content.graph.nodes[1]);
+  expect(next.graph.nodes[0]).toEqual({
+    ...content.graph.nodes[0],
+    exit: {
+      ...content.graph.nodes[0].exit,
+      choices: [
+        { ...content.graph.nodes[0].exit.choices![0], target: { kind: "node", nodeId: "clip:b" } },
+      ],
+    },
+  });
+  expect(content.graph.nodes[0].exit.choices![0].target).toBeNull();
+});
+it("supports existing endings and retains conditional continuation data", () => {
+  const next = replaceRepairTarget(content, "clip:b", 0, { kind: "ending", endingId: "end" });
+  expect(repairBranches(next, "clip:b", "en-US")[0]).toMatchObject({
+    conditional: true,
+    target: { kind: "ending", endingId: "end" },
+  });
+  expect(repairTargets(next, "en-US").map((row) => row.label)).toEqual(["A", "B", "The end"]);
+});
+it("rejects a deleted source, branch or destination", () => {
+  expect(() =>
+    replaceRepairTarget(content, "gone", 0, { kind: "node", nodeId: "clip:b" })
+  ).toThrow();
+  expect(() =>
+    replaceRepairTarget(content, "clip:a", 9, { kind: "node", nodeId: "clip:b" })
+  ).toThrow();
+  expect(() =>
+    replaceRepairTarget(content, "clip:a", 0, { kind: "node", nodeId: "foreign" })
+  ).toThrow();
+});
+
+it("compares destination identity independently of JSON property order", () => {
+  expect(
+    sameRepairTarget({ nodeId: "clip:b", kind: "node" }, { kind: "node", nodeId: "clip:b" })
+  ).toBe(true);
+  expect(
+    sameRepairTarget({ endingId: "end", kind: "ending" }, { kind: "ending", endingId: "end" })
+  ).toBe(true);
+  expect(sameRepairTarget(null, { kind: "node", nodeId: "clip:b" })).toBe(false);
+});

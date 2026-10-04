@@ -1,6 +1,9 @@
+import { StoryRepairSheet } from "./story-repair-sheet";
 import {
   storyPublicationActionErrorKind,
   storyPublicationActionDetail,
+  storyPublicationDiagnostics,
+  type StoryPublicationDiagnostics,
 } from "../api/story-publication-errors";
 import {
   IconAlertTriangle,
@@ -10,7 +13,7 @@ import {
   IconCloudUpload,
   IconLoader2,
 } from "@tabler/icons-react-native";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAuth, useAuthGate } from "@/auth";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -97,8 +100,37 @@ export function StoryCreditsButton() {
 /** Project header actions: publication badge + submit + take offline + credits. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
   const context = useStoryChapterContext();
-  const { generation } = useAuth();
+  const { generation, user } = useAuth();
   const active = useScreenActive();
+  const [repair, setRepair] = useState<{
+    projectId: string;
+    generation: number;
+    diagnostics: StoryPublicationDiagnostics;
+  }>();
+  const scope = useMemo(
+    () => ({ projectId, chapterId: repair?.diagnostics.chapterId ?? "", generation }),
+    [projectId, repair?.diagnostics.chapterId, generation]
+  );
+  const parentToken = useMemo(
+    () => ({ projectId, generation, active }),
+    [projectId, generation, active]
+  );
+  const parentLife = useRef<{ token: typeof parentToken; controller: AbortController } | null>(
+    null
+  );
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    parentLife.current = { token: parentToken, controller };
+    return () => controller.abort();
+  }, [parentToken]);
+  const authGate = useAuthGate();
+  const currentParent = () =>
+    active &&
+    !!parentLife.current &&
+    parentLife.current.token === parentToken &&
+    !parentLife.current.controller.signal.aborted &&
+    generation === getAuthGeneration();
+  const userId = String(user?.userId ?? user?.id ?? "");
   const identity = JSON.stringify([
     projectId,
     generation,
@@ -113,15 +145,50 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     context.publicationLoading,
     context.loading,
   ]);
-  return <OwnedStoryProjectHeaderActions key={identity} projectId={projectId} active={active} />;
+  return (
+    <>
+      <OwnedStoryProjectHeaderActions
+        key={identity}
+        projectId={projectId}
+        active={active}
+        onDiagnostics={(diagnostics) => {
+          if (currentParent() && userId) setRepair({ projectId, generation, diagnostics });
+        }}
+        onSignIn={() => {
+          if (currentParent()) authGate.openLogin();
+        }}
+      />
+      {active &&
+      userId &&
+      repair?.projectId === projectId &&
+      repair.generation === generation &&
+      scope.chapterId &&
+      context.capabilities.includes("story.read") ? (
+        <StoryRepairSheet
+          scope={scope}
+          userId={userId}
+          issues={repair.diagnostics.issues}
+          onClose={() => setRepair(undefined)}
+          onSaved={() => {
+            context.refresh();
+            context.refreshPublication();
+          }}
+        />
+      ) : null}
+    </>
+  );
 }
 
 function OwnedStoryProjectHeaderActions({
   projectId,
   active,
+  onDiagnostics,
+  onSignIn,
 }: {
   projectId: string;
   active: boolean;
+  onDiagnostics: (diagnostics: StoryPublicationDiagnostics) => void;
+  onSignIn: () => void;
 }) {
   const t = useTranslations();
   const {
@@ -199,14 +266,18 @@ function OwnedStoryProjectHeaderActions({
     const kind = storyPublicationActionErrorKind(error);
     const detail = storyPublicationActionDetail(error, fallback);
     const message = kind ? `${t(`agent.publish.actionError.${kind}`)}\n\n${detail}` : detail;
+    const diagnostics = storyPublicationDiagnostics(error);
     Alert.alert(title, message, [
+      ...(diagnostics.chapterId && diagnostics.issues.some((issue) => issue.nodeId)
+        ? [{ text: t("storyRepair.title"), onPress: () => onDiagnostics(diagnostics) }]
+        : []),
       { text: t("agent.publish.cancel"), style: "cancel" },
       ...(kind === "auth"
         ? [
             {
               text: t("agent.publish.signIn"),
               onPress: () => {
-                if (current()) gate.openLogin();
+                onSignIn();
               },
             },
           ]
