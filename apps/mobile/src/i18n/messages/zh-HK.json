@@ -4839,5 +4839,21 @@
   "agent.publish.guidance.auth": "請重新登入以查看發佈狀態。",
   "agent.publish.guidance.permission": "你的專案權限可能已更改。請聯絡專案管理員確認權限。",
   "agent.publish.guidance.service": "發佈狀態暫不可用，請重試。",
-  "agent.publish.signIn": "登入"
+  "agent.publish.signIn": "登入",
+  "storyRoleGuide.title": "各角色可以做甚麼",
+  "storyRoleGuide.allowed": "可以",
+  "storyRoleGuide.notAllowed": "不可以",
+  "storyRoleGuide.descriptions.owner": "完整專案管理",
+  "storyRoleGuide.descriptions.producer": "創作與發佈",
+  "storyRoleGuide.descriptions.editor": "內容創作",
+  "storyRoleGuide.descriptions.reviewer": "回饋與素材審核",
+  "storyRoleGuide.descriptions.viewer": "僅查看",
+  "storyRoleGuide.capabilities.read": "查看專案",
+  "storyRoleGuide.capabilities.edit": "編輯劇本與畫布",
+  "storyRoleGuide.capabilities.generate": "使用 AI 生成",
+  "storyRoleGuide.capabilities.review": "審核參考素材與評論",
+  "storyRoleGuide.capabilities.publish": "構建並提交發佈審核",
+  "storyRoleGuide.capabilities.manage": "管理成員與邀請連結",
+  "storyRoleGuide.ownerNote": "擁有者僅用於對照，此處不能邀請擁有者或轉讓擁有權。空間擁有者和管理員也擁有專案管理權限。",
+  "storyRoleGuide.scopeNote": "邀請僅適用於此專案。專案角色會疊加已有空間權限，選擇較低角色不會降低這些權限。參考素材審核與平台發佈審核是不同的操作。"
 }

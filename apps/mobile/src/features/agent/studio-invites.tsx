@@ -1,3 +1,4 @@
+import { StoryRoleGuide } from "./story-role-guide";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -169,6 +170,7 @@ function Session({ scope, generation, onClose }: Props) {
               />
             ))}
           </View>
+          {scope.kind === "story-project" && <StoryRoleGuide role={role} />}
           <ThemedText type="small">{t("studioInvites.days")}</ThemedText>
           <TextInput
             accessibilityLabel={t("studioInvites.days")}

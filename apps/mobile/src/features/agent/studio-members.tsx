@@ -1,3 +1,4 @@
+import { StoryRoleGuide } from "./story-role-guide";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -164,6 +165,7 @@ function Session({ scope, generation, onClose }: Props) {
               />
             ))}
           </View>
+          {scope.kind === "story-project" && <StoryRoleGuide role={role} />}
           <Action
             label={t("studioMembers.add")}
             disabled={locked || !account.trim()}
@@ -234,6 +236,7 @@ function Session({ scope, generation, onClose }: Props) {
               />
             ))}
           </View>
+          {scope.kind === "story-project" && <StoryRoleGuide role={role} />}
           <Action
             label={t("studioMembers.save")}
             disabled={locked || (role === selected.role && selected.accessScope !== "project_only")}

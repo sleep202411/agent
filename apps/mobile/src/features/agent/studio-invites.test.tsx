@@ -153,3 +153,44 @@ it("offers project roles and submits the selected project's invite", async () =>
   await click("studioInvites.create");
   expect(h.create).toHaveBeenCalledWith(projectScope, 1, "admin", null, expect.any(AbortSignal));
 });
+
+it("explains Story roles without offering ownership or workspace admin invites", async () => {
+  const storyScope = { ...scope, kind: "story-project" as const };
+  await render(storyScope);
+  expect(host.textContent).toContain("storyRoleGuide.descriptions.viewer");
+  await click("storyRoleGuide.title");
+  expect(host.textContent).toContain("studioMembers.owner");
+  expect(host.textContent).toContain("storyRoleGuide.scopeNote");
+  for (const [role, allowed] of Object.entries({
+    owner: 6,
+    producer: 5,
+    editor: 3,
+    reviewer: 2,
+    viewer: 1,
+  })) {
+    const label = role === "owner" ? "studioMembers.owner" : `studioInvites.${role}`;
+    const section = [...host.querySelectorAll("span")].find(
+      (node) => node.textContent === label && node.parentElement?.tagName === "DIV"
+    )!.parentElement!;
+    expect(
+      [...section.querySelectorAll("span")].filter(
+        (node) => node.textContent === "storyRoleGuide.allowed"
+      )
+    ).toHaveLength(allowed);
+    expect(
+      [...section.querySelectorAll("span")].filter(
+        (node) => node.textContent === "storyRoleGuide.notAllowed"
+      )
+    ).toHaveLength(6 - allowed);
+  }
+  expect(button("studioInvites.admin")).toBeUndefined();
+  expect(button("studioMembers.owner")).toBeUndefined();
+  await click("studioInvites.reviewer");
+  await click("studioInvites.create");
+  expect(h.create).toHaveBeenCalledWith(storyScope, 1, "reviewer", null, expect.any(AbortSignal));
+});
+
+it("does not show Story-specific role explanations for a workspace", async () => {
+  await render();
+  expect(button("storyRoleGuide.title")).toBeUndefined();
+});

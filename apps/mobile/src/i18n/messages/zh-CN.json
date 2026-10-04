@@ -4839,5 +4839,21 @@
   "agent.publish.guidance.auth": "请重新登录以查看发布状态。",
   "agent.publish.guidance.permission": "你的项目权限可能已更改。请联系项目管理员确认权限。",
   "agent.publish.guidance.service": "发布状态暂不可用，请重试。",
-  "agent.publish.signIn": "登录"
+  "agent.publish.signIn": "登录",
+  "storyRoleGuide.title": "各角色可以做什么",
+  "storyRoleGuide.allowed": "可以",
+  "storyRoleGuide.notAllowed": "不可以",
+  "storyRoleGuide.descriptions.owner": "完整项目管理",
+  "storyRoleGuide.descriptions.producer": "创作与发布",
+  "storyRoleGuide.descriptions.editor": "内容创作",
+  "storyRoleGuide.descriptions.reviewer": "反馈与素材审核",
+  "storyRoleGuide.descriptions.viewer": "仅查看",
+  "storyRoleGuide.capabilities.read": "查看项目",
+  "storyRoleGuide.capabilities.edit": "编辑剧本与画布",
+  "storyRoleGuide.capabilities.generate": "使用 AI 生成",
+  "storyRoleGuide.capabilities.review": "审核参考素材与评论",
+  "storyRoleGuide.capabilities.publish": "构建并提交发布审核",
+  "storyRoleGuide.capabilities.manage": "管理成员与邀请链接",
+  "storyRoleGuide.ownerNote": "所有者仅用于对照，此处不能邀请所有者或转让所有权。空间所有者和管理员也拥有项目管理权限。",
+  "storyRoleGuide.scopeNote": "邀请仅适用于此项目。项目角色会叠加已有空间权限，选择较低角色不会降低这些权限。参考素材审核与平台发布审核是不同的操作。"
 }

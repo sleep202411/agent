@@ -4839,5 +4839,21 @@
   "agent.publish.guidance.auth": "Sign in again to check publication status.",
   "agent.publish.guidance.permission": "Your project access may have changed. Ask a project administrator to check your permissions.",
   "agent.publish.guidance.service": "Publication status is temporarily unavailable. Retry to check again.",
-  "agent.publish.signIn": "Sign in"
+  "agent.publish.signIn": "Sign in",
+  "storyRoleGuide.title": "What each role can do",
+  "storyRoleGuide.allowed": "Allowed",
+  "storyRoleGuide.notAllowed": "Not allowed",
+  "storyRoleGuide.descriptions.owner": "Full project management",
+  "storyRoleGuide.descriptions.producer": "Creation and publishing",
+  "storyRoleGuide.descriptions.editor": "Content creation",
+  "storyRoleGuide.descriptions.reviewer": "Feedback and approvals",
+  "storyRoleGuide.descriptions.viewer": "Read only",
+  "storyRoleGuide.capabilities.read": "View the project",
+  "storyRoleGuide.capabilities.edit": "Edit scripts and canvas",
+  "storyRoleGuide.capabilities.generate": "Generate with AI",
+  "storyRoleGuide.capabilities.review": "Review references and comment",
+  "storyRoleGuide.capabilities.publish": "Build and submit for publication",
+  "storyRoleGuide.capabilities.manage": "Manage members and invite links",
+  "storyRoleGuide.ownerNote": "Owner is shown for comparison. You cannot invite someone as an owner or transfer ownership here. Workspace owners and admins also have project management access.",
+  "storyRoleGuide.scopeNote": "Invitations apply only to this project. Project roles add to existing workspace permissions; choosing a lower role will not reduce that access. Reference reviews are separate from platform publication review."
 }
