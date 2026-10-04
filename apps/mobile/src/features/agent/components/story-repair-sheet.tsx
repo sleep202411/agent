@@ -1,3 +1,8 @@
+import {
+  createRepairEnding,
+  renameRepairEnding,
+  removeRepairEnding,
+} from "../lib/story-repair-endings";
 import { StoryRepairVariablesEditor } from "./story-repair-variables-editor";
 import { readRepairVariables, replaceRepairVariables } from "../lib/story-repair-variables";
 import { StoryRepairEffectsEditor } from "./story-repair-effects-editor";
@@ -638,6 +643,87 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                         />
                       </View>
                     ) : null}
+                    <RepairAction
+                      label={t("storyEnding.create")}
+                      disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}
+                      onPress={() =>
+                        edit((value) =>
+                          createRepairEnding(
+                            value,
+                            selected,
+                            branch.index,
+                            locale,
+                            loaded.defaultLocale,
+                            t("storyEnding.new")
+                          )
+                        )
+                      }
+                    />
+                    {repairTargets(content, locale)
+                      .filter(
+                        (target) =>
+                          target.value.kind === "ending" &&
+                          sameRepairTarget(branch.target, target.value)
+                      )
+                      .map((target) => {
+                        const endingId = (target.value as { kind: "ending"; endingId: string })
+                          .endingId;
+                        const endings = (
+                          content.storyBible as {
+                            endings: { endingId: string; title: Record<string, string> }[];
+                          }
+                        ).endings;
+                        const ending = endings.find((item) => item.endingId === endingId)!;
+                        return (
+                          <View key={endingId} style={{ gap: 8 }}>
+                            {[...new Set([loaded.defaultLocale, locale])].map((language) => (
+                              <View key={language}>
+                                <ThemedText type="small">
+                                  {t("storyEnding.title")} ({language})
+                                </ThemedText>
+                                <TextInput
+                                  accessibilityLabel={`${t("storyEnding.title")} (${language})`}
+                                  value={ending.title?.[language] ?? ""}
+                                  maxLength={4000}
+                                  editable={
+                                    loaded.canEdit && !busy && !uncertain && !conflict && !showSaved
+                                  }
+                                  onChangeText={(title) =>
+                                    edit((value) =>
+                                      renameRepairEnding(value, endingId, language, title)
+                                    )
+                                  }
+                                  style={{
+                                    color: theme.text,
+                                    minHeight: 44,
+                                    borderWidth: 1,
+                                    borderColor: theme.border,
+                                    borderRadius: 8,
+                                    padding: 10,
+                                  }}
+                                />
+                              </View>
+                            ))}
+                            <RepairAction
+                              label={t("storyEnding.remove")}
+                              disabled={
+                                !loaded.canEdit || busy || uncertain || conflict || showSaved
+                              }
+                              onPress={() =>
+                                Alert.alert(t("storyEnding.remove"), t("storyEnding.removeHelp"), [
+                                  { text: t("common.cancel"), style: "cancel" },
+                                  {
+                                    text: t("storyEnding.remove"),
+                                    style: "destructive",
+                                    onPress: () =>
+                                      edit((value) => removeRepairEnding(value, endingId)),
+                                  },
+                                ])
+                              }
+                            />
+                          </View>
+                        );
+                      })}
                     {repairTargets(content, locale).map((target) => {
                       const checked = sameRepairTarget(branch.target, target.value);
                       return (

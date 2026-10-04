@@ -340,3 +340,22 @@ it("browses another graph node without changing the entry or creating a repair d
   expect(host.textContent).toContain("Timeline: clip:b");
   expect(h.records.size).toBe(0);
 });
+
+it("creates connected endings and removes them only after confirmation", async () => {
+  h.reconcile.mockResolvedValue({
+    ...result,
+    defaultLocale: "en-US",
+    draft: { ...draft, content: { ...draft.content, storyBible: { endings: [] } } },
+  });
+  await render();
+  await click("storyEnding.create");
+  expect(button("● storyEnding.new")).toBeDefined();
+  const before = [...h.records.values()][0];
+  await click("storyEnding.remove");
+  expect([...h.records.values()][0]).toBe(before);
+  await act(async () => h.alert.mock.calls.at(-1)![2][1].onPress());
+  const command = JSON.parse([...h.records.values()][0]);
+  expect(command.input.content.storyBible.endings).toEqual([]);
+  expect(command.input.content.graph.nodes[0].exit.routes[0].target).toBeNull();
+  expect(h.save).not.toHaveBeenCalled();
+});
