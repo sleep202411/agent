@@ -27,6 +27,9 @@ export const canvasSnapshotSchema = z
   .strict();
 export const canvasHostMessage = z.discriminatedUnion("type", [
   z
+    .object({ type: z.literal("reconcileShotMedia"), ...identity, snapshot: encodedCanvasState })
+    .strict(),
+  z
     .object({
       type: z.literal("shotMedia"),
       ...identity,

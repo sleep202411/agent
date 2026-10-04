@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
 import * as Y from "yjs";
-import { editCanvasShotMedia } from "../../../../canvas-editor/shot-media";
+import {
+  editCanvasShotMedia,
+  reconcileCanvasShotMedia,
+} from "../../../../canvas-editor/shot-media";
 import { encodeCanvasBytes, materializeCanvas } from "../../../../canvas-editor/state";
 const edgeId = "00000000-0000-4000-8000-000000000001";
 function fixture(
@@ -352,6 +355,140 @@ it("leaves unresolved sources pending and rejects a removed refresh edge", () =>
     expect(() =>
       editCanvasShotMedia(state(), { action: "refresh", nodeId: "shot", edgeId })
     ).toThrow("connection changed");
+  } finally {
+    doc.destroy();
+  }
+});
+
+function wire(doc: Y.Doc, id: string, source: string, target = "shot") {
+  doc.getMap("edges").set(id, new Y.Map(Object.entries({ id, source, target })));
+}
+it("reconciles completed and regenerated shot media in one replayable update", () => {
+  const { doc, shot, add, state } = fixture();
+  try {
+    wire(doc, "old", "source");
+    shot.set("preferredFrameEdgeId", "old");
+    shot.set("references", {
+      frame: [{ edgeId: "old", sourceNodeId: "source", url: "old-url", assetId: "old-asset" }],
+    });
+    add("generated", "video", {
+      generation: { jobId: "job", outputs: [{ url: "https://example.test/clip" }] },
+    });
+    wire(doc, "pending", "generated");
+    const base = state();
+    const result = reconcileCanvasShotMedia(base);
+    expect(result.yjsUpdateBase64).not.toBeNull();
+    expect(result.snapshot.nodes.shot).toMatchObject({
+      data: {
+        dialogue: "Keep",
+        preferredFrameEdgeId: "old",
+        references: {
+          frame: [
+            {
+              edgeId: "old",
+              sourceNodeId: "source",
+              url: "https://example.test/image",
+              assetId: "old-asset",
+            },
+          ],
+          clip: [
+            expect.objectContaining({
+              edgeId: "pending",
+              sourceJobId: "job",
+              url: "https://example.test/clip",
+            }),
+          ],
+        },
+      },
+    });
+    expect(materializeCanvas(base, [result.yjsUpdateBase64!]).snapshot).toEqual(result.snapshot);
+    shot.set("dialogue", "Concurrent");
+    const merged = materializeCanvas(state(), [result.yjsUpdateBase64!, result.yjsUpdateBase64!]);
+    expect(merged.snapshot.nodes.shot).toHaveProperty("data.dialogue", "Concurrent");
+    expect(merged.snapshot.assets).toEqual(result.snapshot.assets);
+    expect(reconcileCanvasShotMedia(merged.state).yjsUpdateBase64).toBeNull();
+  } finally {
+    doc.destroy();
+  }
+});
+it("removes only rejected unbound wires and preserves source assets and other targets", () => {
+  const { doc, shot, add, state } = fixture();
+  try {
+    shot.set("references", { frame: Array.from({ length: 24 }, (_, i) => ({ url: String(i) })) });
+    add("audio", "audioAsset", { src: "https://example.test/audio" });
+    add("note", "note", { text: "Keep" });
+    wire(doc, "full", "source");
+    wire(doc, "audio-wire", "audio");
+    wire(doc, "missing", "gone");
+    wire(doc, "self", "shot");
+    wire(doc, "other", "source", "note");
+    const result = reconcileCanvasShotMedia(state());
+    expect(Object.keys(result.snapshot.edges)).toEqual(["other"]);
+    expect(Object.keys(result.snapshot.nodes)).toEqual(["shot", "source", "audio", "note"]);
+    expect(result.snapshot.assets.asset).toEqual({ id: "asset", url: "reusable" });
+    expect(result.snapshot.nodes.shot).toHaveProperty(
+      "data.references.frame",
+      shot.get("references") && (shot.get("references") as { frame: unknown[] }).frame
+    );
+  } finally {
+    doc.destroy();
+  }
+});
+it("keeps an existing binding when a duplicate pending wire is rejected", () => {
+  const { doc, shot, state } = fixture();
+  try {
+    shot.set("references", { frame: [{ edgeId: "bound", sourceNodeId: "source", url: "old" }] });
+    wire(doc, "bound", "source");
+    wire(doc, "duplicate", "source");
+    const result = reconcileCanvasShotMedia(state());
+    expect(Object.keys(result.snapshot.edges)).toEqual(["bound"]);
+    expect(result.snapshot.nodes.shot).toHaveProperty("data.references.frame", [
+      expect.objectContaining({ edgeId: "bound", url: "https://example.test/image" }),
+    ]);
+  } finally {
+    doc.destroy();
+  }
+});
+it("leaves missing bound sources and unresolved outputs unchanged", () => {
+  const { doc, shot, add, state } = fixture("prompt", {});
+  try {
+    shot.set("references", { frame: [{ edgeId: "gone", url: "retained" }] });
+    wire(doc, "gone", "missing-source");
+    wire(doc, "waiting", "source");
+    add("blob", "videoAsset", { src: "blob:local" });
+    wire(doc, "blob-wire", "blob");
+    expect(reconcileCanvasShotMedia(state()).yjsUpdateBase64).toBeNull();
+  } finally {
+    doc.destroy();
+  }
+});
+it("refreshes existing legacy bindings without revalidating their kind", () => {
+  const { doc, shot, state } = fixture("audioAsset", { src: "https://example.test/new" });
+  try {
+    shot.set("references", { legacy: [{ edgeId: "legacy", url: "old", name: "Keep" }] });
+    wire(doc, "legacy", "source");
+    const result = reconcileCanvasShotMedia(state());
+    expect(result.snapshot.nodes.shot).toHaveProperty("data.references.legacy", [
+      { edgeId: "legacy", url: "https://example.test/new", name: "Keep" },
+    ]);
+    expect(result.snapshot.edges.legacy).toBeDefined();
+  } finally {
+    doc.destroy();
+  }
+});
+it("returns no partial delta when a later malformed binding aborts reconciliation", () => {
+  const { doc, add, state } = fixture();
+  try {
+    wire(doc, "valid", "source");
+    add("bad-shot", "shot", { references: { frame: "invalid" } });
+    wire(doc, "invalid", "source", "bad-shot");
+    const before = state();
+    expect(() => reconcileCanvasShotMedia(before)).toThrow();
+    expect(state()).toEqual(before);
+    expect(materializeCanvas(before, []).snapshot.nodes.shot).toHaveProperty(
+      "data.references.frame",
+      [{ url: "manual", name: "Manual" }]
+    );
   } finally {
     doc.destroy();
   }

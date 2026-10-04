@@ -1,4 +1,4 @@
-import { editCanvasShotMedia } from "./shot-media";
+import { editCanvasShotMedia, reconcileCanvasShotMedia } from "./shot-media";
 import { z } from "zod";
 import { canvasHostMessage, type CanvasRuntimeMessage } from "./protocol";
 import { materializeCanvas } from "./state";
@@ -41,7 +41,9 @@ function receive(raw: unknown) {
     sequence: message.sequence,
   };
   try {
-    if (message.type === "shotMedia") {
+    if (message.type === "reconcileShotMedia") {
+      send({ type: "edited", ...identity, ...reconcileCanvasShotMedia(message.snapshot) });
+    } else if (message.type === "shotMedia") {
       send({
         type: "edited",
         ...identity,
