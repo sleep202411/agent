@@ -5111,7 +5111,12 @@
   "storyCandidates.empty": "No saved media in this category.",
   "storyCandidates.remove": "Remove from candidates",
   "storyCandidates.removeHelp": "Remove this media from the project’s candidate list? The media file and its existing uses will remain.",
-  "storyCandidates.pending": "A removal is awaiting confirmation. Refresh to check its status, or retry the removal.",
+  "storyCandidates.pending": "A candidate update is awaiting confirmation. Refresh to check its status, or retry.",
   "storyCandidates.retryRemove": "Retry removal",
-  "storyCandidates.refresh": "Refresh"
+  "storyCandidates.refresh": "Refresh",
+  "storyCandidates.save": "Save to candidates",
+  "storyCandidates.saved": "This media is saved in this project’s candidates.",
+  "storyCandidates.retryUpdate": "Retry update",
+  "storyCandidates.discard": "Stop retrying",
+  "storyCandidates.discardHelp": "This clears the local pending request only. It does not undo any server change. Refresh to check the current candidate list."
 }

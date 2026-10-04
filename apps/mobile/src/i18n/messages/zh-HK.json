@@ -5111,7 +5111,12 @@
   "storyCandidates.empty": "此分類暫無已儲存素材。",
   "storyCandidates.remove": "移出候選素材",
   "storyCandidates.removeHelp": "將此素材移出專案候選清單？素材檔案及現有使用不會被刪除。",
-  "storyCandidates.pending": "一次移除操作尚待確認。重新整理查看狀態，或重試移除。",
+  "storyCandidates.pending": "一次候選素材更新尚待確認。請重新整理查看狀態，或重試。",
   "storyCandidates.retryRemove": "重試移除",
-  "storyCandidates.refresh": "重新整理"
+  "storyCandidates.refresh": "重新整理",
+  "storyCandidates.save": "儲存為候選素材",
+  "storyCandidates.saved": "此素材已儲存到專案候選清單。",
+  "storyCandidates.retryUpdate": "重試更新",
+  "storyCandidates.discard": "停止重試",
+  "storyCandidates.discardHelp": "僅清除本機待處理請求，不復原伺服器上的變更。請重新整理查看目前候選清單。"
 }

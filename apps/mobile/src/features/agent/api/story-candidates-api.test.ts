@@ -1,8 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { storyCandidates } from "./story-candidates-api";
-const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), delete: vi.fn() }));
+const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), delete: vi.fn(), put: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/lib/api-client", () => ({ api: { get: h.get, delete: h.delete } }));
+vi.mock("@/lib/api-client", () => ({ api: { get: h.get, delete: h.delete, put: h.put } }));
 vi.mock("@/lib/durable-record", () => ({ durableRecord: vi.fn() }));
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const scope = { projectId: id(1), generation: 1 };
@@ -59,15 +59,18 @@ it("persists removal before dispatch and confirms its absence before clearing", 
   expect(await client().remove(command, signal())).toMatchObject({ items: [], pending: null });
   expect(client().pending()).toBeNull();
 });
-it("reconciles a lost reply after reopening without dispatching a second delete", async () => {
+it("retains a lost removal receipt even when the filtered list omits the media", async () => {
   h.delete.mockImplementation(async () => {
     rows = [];
     throw Error("Connection lost");
   });
   await expect(client().remove(command, signal())).rejects.toThrow("Connection lost");
   expect(client().pending()).toEqual(command);
-  expect((await client().load(signal())).pending).toBeNull();
-  expect(h.delete).toHaveBeenCalledOnce();
+  expect((await client().load(signal())).pending).toEqual(command);
+  h.delete.mockResolvedValue({ mediaAssetId: id(3) });
+  await client().remove(command, signal());
+  expect(client().pending()).toBeNull();
+  expect(h.delete).toHaveBeenCalledTimes(2);
 });
 it("keeps a failed removal and retries the same target", async () => {
   h.delete.mockRejectedValueOnce(Error("Offline"));
@@ -98,12 +101,12 @@ it("retains intent on mismatched receipts and removes it only after authoritativ
   await expect(client().remove(command, signal())).rejects.toThrow("verified");
   expect((await client().load(signal())).pending).toEqual(command);
   rows = [];
-  expect((await client().load(signal())).pending).toBeNull();
+  expect((await client().load(signal())).pending).toEqual(command);
 });
-it("does not trust a valid delete receipt while the candidate still exists", async () => {
+it("uses the authoritative matching delete receipt even if a concurrent addition is listed", async () => {
   h.delete.mockResolvedValue({ mediaAssetId: id(3) });
-  await expect(client().remove(command, signal())).rejects.toThrow("not been confirmed");
-  expect(client().pending()).toEqual(command);
+  await client().remove(command, signal());
+  expect(client().pending()).toBeNull();
 });
 it("prevents replacing an unresolved command", async () => {
   h.delete.mockRejectedValueOnce(Error("Offline"));
@@ -148,8 +151,11 @@ it("preserves intent if the panel closes after dispatch and reconciles on return
   });
   await expect(client().remove(command, c.signal)).rejects.toThrow();
   expect(client().pending()).toEqual(command);
-  expect((await client().load(signal())).pending).toBeNull();
-  expect(h.delete).toHaveBeenCalledOnce();
+  expect((await client().load(signal())).pending).toEqual(command);
+  h.delete.mockResolvedValue({ mediaAssetId: id(3) });
+  await client().remove(command, signal());
+  expect(client().pending()).toBeNull();
+  expect(h.delete).toHaveBeenCalledTimes(2);
 });
 it("serializes rapid removal requests", async () => {
   let finish!: (value: unknown) => void;
@@ -165,4 +171,60 @@ it("serializes rapid removal requests", async () => {
   finish(project);
   await first;
   expect(h.delete).toHaveBeenCalledOnce();
+});
+
+it("saves existing media with official PUT and preserves intent until membership is verified", async () => {
+  rows = [];
+  const add = { ...command, action: "add" as const };
+  h.put.mockImplementation(async (path, options) => {
+    expect(JSON.parse(raw!).intent).toEqual(add);
+    expect(path).toBe(`/story-projects/${id(1)}/candidate-assets/${id(3)}`);
+    expect(options).toMatchObject({ service: "aurora", retry: false });
+    rows = [candidate];
+    return candidate;
+  });
+  expect((await client().submit(add, signal())).pending).toBeNull();
+  expect(h.delete).not.toHaveBeenCalled();
+});
+it("reconciles a lost addition without adding again, including after editing permission is revoked", async () => {
+  rows = [];
+  h.put.mockImplementation(async () => {
+    rows = [candidate];
+    throw Error("Reply lost");
+  });
+  await expect(client().submit({ ...command, action: "add" }, signal())).rejects.toThrow(
+    "Reply lost"
+  );
+  project.capabilities = ["story.read"];
+  expect((await client().load(signal())).pending).toBeNull();
+  expect(h.put).toHaveBeenCalledOnce();
+});
+it("does not repeat already saved additions or permit new ones without edit permission", async () => {
+  await client().submit({ ...command, action: "add" }, signal());
+  expect(h.put).not.toHaveBeenCalled();
+  rows = [];
+  project.capabilities = ["story.read"];
+  await expect(client().submit({ ...command, action: "add" }, signal())).rejects.toThrow(
+    "editing permission"
+  );
+  expect(h.put).not.toHaveBeenCalled();
+});
+it("retains failed additions and permits explicit local cancellation without deleting media", async () => {
+  rows = [];
+  h.put.mockRejectedValue(Error("Media was blocked by moderation"));
+  await expect(client().submit({ ...command, action: "add" }, signal())).rejects.toThrow(
+    "blocked by moderation"
+  );
+  expect(client().pending()).toMatchObject({ action: "add" });
+  client().discard(command.clientKey);
+  expect(client().pending()).toBeNull();
+  expect(h.delete).not.toHaveBeenCalled();
+});
+it("rejects mismatched addition receipts and preserves exact target", async () => {
+  rows = [];
+  h.put.mockResolvedValue({ asset: { ...candidate.asset, id: id(9) } });
+  await expect(client().submit({ ...command, action: "add" }, signal())).rejects.toThrow(
+    "verified"
+  );
+  expect(client().pending()).toEqual({ ...command, action: "add" });
 });

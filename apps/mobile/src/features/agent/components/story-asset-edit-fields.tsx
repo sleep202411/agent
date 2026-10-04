@@ -13,7 +13,9 @@ export function StoryAssetEditFields({
   locked,
   submit,
   onGenerate,
+  onSaveCandidate,
 }: {
+  onSaveCandidate?: (mediaAssetId: string) => void;
   onGenerate?: (purpose: "primary" | "turnaround") => void;
   asset: StoryAssetSpec;
   locked: boolean;
@@ -133,6 +135,7 @@ export function StoryAssetEditFields({
         )}
       <StoryAssetMediaVersions
         asset={asset}
+        onSaveCandidate={onSaveCandidate}
         locked={locked || !name.trim() || !prompt.trim()}
         onSelect={patch}
       />

@@ -10,9 +10,11 @@ export function StoryAssetMediaVersions({
   asset,
   locked = false,
   onSelect,
+  onSaveCandidate,
 }: {
   asset: StoryAssetSpec;
   locked?: boolean;
+  onSaveCandidate?: (mediaAssetId: string) => void;
   onSelect?: (id: string | null) => void;
 }) {
   const t = useTranslations(),
@@ -57,6 +59,19 @@ export function StoryAssetMediaVersions({
                     contentFit="contain"
                   />
                 )}
+                {onSaveCandidate &&
+                  version.mediaStatus === "ready" &&
+                  version.mediaAssetId &&
+                  ["image", "video", "audio"].includes(version.mediaKind) && (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={locked}
+                      onPress={() => onSaveCandidate(version.mediaAssetId)}
+                      style={{ paddingVertical: 12, opacity: locked ? 0.5 : 1 }}
+                    >
+                      <ThemedText type="smallBold">{t("storyCandidates.save")}</ThemedText>
+                    </Pressable>
+                  )}
                 {onSelect && group.key === "primary" ? (
                   <Pressable
                     accessibilityRole="button"

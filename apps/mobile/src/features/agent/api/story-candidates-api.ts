@@ -6,11 +6,15 @@ import { pendingRequest } from "@/lib/pending-request";
 import { candidateSchema } from "./story-timeline-media";
 
 const id = z.string().uuid();
-const commandSchema = z.object({ clientKey: id, mediaAssetId: id }).strict();
-export type CandidateRemoval = z.infer<typeof commandSchema>;
+const commandSchema = z
+  .object({ clientKey: id, mediaAssetId: id, action: z.literal("add").optional() })
+  .strict();
+export type CandidateCommand = z.infer<typeof commandSchema>;
+export type CandidateRemoval = Omit<CandidateCommand, "action">;
 export type CandidateScope = { projectId: string; generation: number };
 
-/** Removes only the project's saved candidate relation, never the media itself. */
+/** Mutates only project candidate membership, never the media itself.
+ * Keep the original storage key so existing pending removals survive upgrades. */
 export function storyCandidates(
   scope: CandidateScope,
   userId: string,
@@ -46,45 +50,55 @@ export function storyCandidates(
     const state = await read(signal);
     const command = pending.read();
     const applied =
-      !!command && !state.items.some((item) => item.asset.id === command.mediaAssetId);
+      command?.action === "add" &&
+      state.items.some((item) => item.asset.id === command.mediaAssetId);
     if (applied) pending.clear(command!.clientKey);
     return { ...state, pending: applied ? null : command };
+  };
+  const submit = async (raw: CandidateCommand, signal: AbortSignal) => {
+    if (busy) throw Error("A candidate update is in progress.");
+    busy = true;
+    try {
+      current(signal);
+      const command = commandSchema.parse(raw);
+      const state = await load(signal);
+      if (state.pending && JSON.stringify(state.pending) !== JSON.stringify(command))
+        throw Error("Finish the pending candidate update first.");
+      if (
+        command.action === "add" &&
+        state.items.some((item) => item.asset.id === command.mediaAssetId)
+      )
+        return state;
+      if (!state.canEdit) throw Error("Story editing permission is required.");
+      pending.save(command);
+      const path = `/story-projects/${scope.projectId}/candidate-assets/${command.mediaAssetId}`;
+      const options = { service: "aurora" as const, signal, retry: false };
+      const receiptId =
+        command.action === "add"
+          ? candidateSchema.parse(await api.put(path, options)).asset.id
+          : z.object({ mediaAssetId: id }).parse(await api.delete(path, options)).mediaAssetId;
+      current(signal);
+      if (receiptId !== command.mediaAssetId)
+        throw Error("Candidate update could not be verified. Refresh to check its status.");
+      // The list hides blocked/unavailable media. Only DELETE's matching receipt
+      // proves removal; an absent list entry alone cannot reconcile a lost reply.
+      if (command.action !== "add") pending.clear(command.clientKey);
+      const next = await load(signal);
+      if (next.pending)
+        throw Error("Candidate update has not been confirmed. Refresh to check its status.");
+      return next;
+    } finally {
+      busy = false;
+    }
   };
   return {
     load,
     pending: pending.read,
-    async remove(raw: CandidateRemoval, signal: AbortSignal) {
+    submit,
+    remove: (raw: CandidateRemoval, signal: AbortSignal) => submit(raw, signal),
+    discard: (key: string) => {
       if (busy) throw Error("A candidate update is in progress.");
-      busy = true;
-      try {
-        current(signal);
-        const command = commandSchema.parse(raw);
-        const state = await load(signal);
-        if (state.pending && JSON.stringify(state.pending) !== JSON.stringify(command))
-          throw Error("Finish the pending candidate removal first.");
-        if (!state.items.some((item) => item.asset.id === command.mediaAssetId)) return state;
-        if (!state.canEdit) throw Error("Story editing permission is required.");
-        pending.save(command);
-        const receipt = z.object({ mediaAssetId: id }).parse(
-          await api.delete(
-            `/story-projects/${scope.projectId}/candidate-assets/${command.mediaAssetId}`,
-            {
-              service: "aurora",
-              signal,
-              retry: false,
-            }
-          )
-        );
-        current(signal);
-        if (receipt.mediaAssetId !== command.mediaAssetId)
-          throw Error("Candidate removal could not be verified. Refresh to check its status.");
-        const next = await load(signal);
-        if (next.pending)
-          throw Error("Candidate removal has not been confirmed. Refresh to check its status.");
-        return next;
-      } finally {
-        busy = false;
-      }
+      pending.clear(key);
     },
   };
 }

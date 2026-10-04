@@ -1,3 +1,4 @@
+import { StoryCandidatesPanel } from "./story-candidates-panel";
 import { StoryAssetMediaVersions } from "./story-asset-media-versions";
 import { StoryAssetEditFields } from "./story-asset-edit-fields";
 import type { AssetCommand } from "../api/story-asset-mutations";
@@ -43,6 +44,7 @@ export function StoryAssetSpecDetailSheet({
   const t = useTranslations();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [candidateId, setCandidateId] = useState<string>();
   const [purpose, setPurpose] = useState<"primary" | "turnaround">();
   const baseScope = generation?.scope,
     assetId = asset?.id;
@@ -61,10 +63,17 @@ export function StoryAssetSpecDetailSheet({
 
   const reference = asset.stableKey.startsWith("@") ? asset.stableKey : `@${asset.stableKey}`;
   const prompt = asset.imagePrompt?.trim() || "—";
+  const candidateOpen = !!(candidateId && generation && visible && editing);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable
+        style={styles.backdrop}
+        onPress={onClose}
+        accessibilityElementsHidden={candidateOpen}
+        importantForAccessibility={candidateOpen ? "no-hide-descendants" : "auto"}
+        aria-hidden={candidateOpen}
+      >
         <Pressable
           style={[
             styles.sheet,
@@ -146,6 +155,7 @@ export function StoryAssetSpecDetailSheet({
                   <StoryAssetEditFields
                     key={`${asset.id}:${asset.version}`}
                     asset={asset}
+                    onSaveCandidate={generation ? setCandidateId : undefined}
                     {...editing}
                     onGenerate={generation && !generation.locked ? setPurpose : undefined}
                   />
@@ -167,6 +177,14 @@ export function StoryAssetSpecDetailSheet({
           </Pressable>
         </Pressable>
       </Pressable>
+      {candidateId && generation && visible && editing && (
+        <StoryCandidatesPanel
+          scope={generation.scope}
+          userId={generation.userId}
+          mediaAssetId={candidateId}
+          close={() => setCandidateId(undefined)}
+        />
+      )}
     </Modal>
   );
 }

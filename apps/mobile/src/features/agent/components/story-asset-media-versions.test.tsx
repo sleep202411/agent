@@ -127,3 +127,30 @@ it("keeps unclassified official primary versions available", async () => {
   expect(host.textContent).toContain("✓ assetEdit.version 1");
   expect(host.textContent).not.toContain("assetEdit.turnaroundVersions");
 });
+
+it("saves the media asset identity, not the version id, only for ready reusable media", async () => {
+  const save = vi.fn();
+  const source = {
+    ...asset,
+    mediaVersions: [
+      { ...asset.mediaVersions[0], mediaAssetId: id(8), mediaKind: "image", mediaStatus: "ready" },
+      {
+        ...asset.mediaVersions[1],
+        mediaAssetId: id(9),
+        mediaKind: "image",
+        mediaStatus: "uploading",
+      },
+    ],
+  };
+  await act(async () =>
+    root.render(<StoryAssetMediaVersions asset={source} onSaveCandidate={save} />)
+  );
+  const buttons = [...host.querySelectorAll("button")];
+  expect(buttons).toHaveLength(1);
+  await act(async () => buttons[0].click());
+  expect(save).toHaveBeenCalledWith(id(8));
+  await act(async () =>
+    root.render(<StoryAssetMediaVersions asset={source} onSaveCandidate={save} locked />)
+  );
+  expect(host.querySelector("button")?.disabled).toBe(true);
+});

@@ -13,7 +13,7 @@ import {
   storyCandidates,
   type CandidateScope,
   type CandidateState,
-  type CandidateRemoval,
+  type CandidateCommand,
 } from "../api/story-candidates-api";
 
 export function StoryCandidatesEntry() {
@@ -48,10 +48,12 @@ export function StoryCandidatesPanel({
   scope,
   userId,
   close,
+  mediaAssetId,
 }: {
   scope: CandidateScope;
   userId: string;
   close: () => void;
+  mediaAssetId?: string;
 }) {
   const { projectId, generation } = scope;
   const client = useMemo(
@@ -86,14 +88,14 @@ export function StoryCandidatesPanel({
       c.abort();
     };
   }, [client, revision]);
-  const remove = async (command: CandidateRemoval) => {
+  const remove = async (command: CandidateCommand) => {
     const signal = life.current?.signal;
     if (!signal || signal.aborted || locked.current) return;
     locked.current = true;
     setBusy(true);
     setError(undefined);
     try {
-      const next = await client.remove(command, signal);
+      const next = await client.submit(command, signal);
       if (!signal.aborted) setState(next);
     } catch (e) {
       if (!signal.aborted) {
@@ -149,15 +151,50 @@ export function StoryCandidatesPanel({
             </Pressable>
           ))}
         </View>
+        {mediaAssetId &&
+          state &&
+          (state.items.some((item) => item.asset.id === mediaAssetId) ? (
+            <ThemedText type="small">{t("storyCandidates.saved")}</ThemedText>
+          ) : (
+            state.canEdit && (
+              <Action
+                label={t("storyCandidates.save")}
+                disabled={busy || !!state.pending}
+                run={() => void remove({ clientKey: uuid.v4(), mediaAssetId, action: "add" })}
+              />
+            )
+          ))}
         {busy && <ActivityIndicator />}
         {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
         {state?.pending && (
           <View>
             <ThemedText type="small">{t("storyCandidates.pending")}</ThemedText>
             <Action
-              label={t("storyCandidates.retryRemove")}
+              label={t("storyCandidates.retryUpdate")}
               run={() => void remove(state.pending!)}
               disabled={busy || !state.canEdit}
+            />
+            <Action
+              label={t("storyCandidates.discard")}
+              disabled={busy}
+              run={() =>
+                Alert.alert(t("storyCandidates.discard"), t("storyCandidates.discardHelp"), [
+                  { text: t("common.cancel"), style: "cancel" },
+                  {
+                    text: t("storyCandidates.discard"),
+                    onPress: () => {
+                      if (life.current?.signal.aborted || locked.current) return;
+                      try {
+                        client.discard(state.pending!.clientKey);
+                        setState((value) => value && { ...value, pending: null });
+                        setError(undefined);
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : String(e));
+                      }
+                    },
+                  },
+                ])
+              }
             />
           </View>
         )}
