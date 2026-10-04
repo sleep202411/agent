@@ -5032,5 +5032,20 @@
   "storyHistory.redo": "重做",
   "storyFoundation.title": "故事概览",
   "storyFoundation.logline": "一句话梗概",
-  "storyFoundation.synopsis": "故事梗概"
+  "storyFoundation.synopsis": "故事梗概",
+  "storyCover.title": "影游封面",
+  "storyCover.help": "选择项目图片或上传新图片。封面修改会立即保存。",
+  "storyCover.unavailable": "当前封面不可用，请选择其他图片。",
+  "storyCover.empty": "尚未选择封面。",
+  "storyCover.pending": "封面修改待确认。请刷新或重试，再选择其他图片。",
+  "storyCover.retrySave": "重试保存封面",
+  "storyCover.discard": "放弃待确认修改",
+  "storyCover.discardHelp": "保留服务器上的当前封面，并放弃此待确认请求？",
+  "storyCover.upload": "上传或恢复图片",
+  "storyCover.uploadPending": "有未完成的上传，请先恢复再选择其他文件。",
+  "storyCover.remove": "移除封面",
+  "storyCover.removeHelp": "移除此项目的封面？媒体文件将保留。",
+  "storyCover.choose": "项目图片",
+  "storyCover.noImages": "暂无可用图片，请上传一张图片作为封面。",
+  "storyCover.select": "使用图片 {number}"
 }

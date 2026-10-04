@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryRepairSheet } from "./story-repair-sheet";
+vi.mock("./story-cover-editor", () => ({ StoryCoverEditor: () => null }));
 vi.mock("./story-timeline-editor", () => ({
   TimelineEditor: ({ initialNodeId }: { initialNodeId: string }) => (
     <span>Timeline: {initialNodeId}</span>

@@ -5032,5 +5032,20 @@
   "storyHistory.redo": "Redo",
   "storyFoundation.title": "Story overview",
   "storyFoundation.logline": "Logline",
-  "storyFoundation.synopsis": "Synopsis"
+  "storyFoundation.synopsis": "Synopsis",
+  "storyCover.title": "Story cover",
+  "storyCover.help": "Choose a project image or upload a new one. Cover changes save immediately.",
+  "storyCover.unavailable": "The selected cover is unavailable. Choose another image.",
+  "storyCover.empty": "No cover selected.",
+  "storyCover.pending": "A cover change is awaiting verification. Reload or retry it before choosing another image.",
+  "storyCover.retrySave": "Retry cover save",
+  "storyCover.discard": "Discard pending change",
+  "storyCover.discardHelp": "Keep the current server cover and discard this pending request?",
+  "storyCover.upload": "Upload or resume image",
+  "storyCover.uploadPending": "An upload is pending. Resume it before selecting another file.",
+  "storyCover.remove": "Remove cover",
+  "storyCover.removeHelp": "Remove this project’s cover image? The media file will be kept.",
+  "storyCover.choose": "Project images",
+  "storyCover.noImages": "No ready images available. Upload an image to use as the cover.",
+  "storyCover.select": "Use image {number}"
 }

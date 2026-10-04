@@ -1,3 +1,4 @@
+import { StoryCoverEditor } from "./story-cover-editor";
 import { StoryRepairFoundation } from "./story-repair-foundation";
 import { updateRepairFoundation } from "../lib/story-repair-foundation";
 import {
@@ -119,6 +120,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     defaultLocale: string;
     frameProfile?: "landscape_16_9" | "portrait_9_16";
   }>();
+  const [coverOpen, setCoverOpen] = useState(false);
   const [foundationOpen, setFoundationOpen] = useState(false);
   const [history, setHistory] = useState(emptyRepairHistory);
   const [command, setCommand] = useState<StoryRepairCommand>();
@@ -400,6 +402,11 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 }
               />
             ) : null}
+            <RepairAction
+              label={t("storyCover.title")}
+              onPress={() => setCoverOpen(true)}
+              disabled={busy || uncertain}
+            />
             <RepairAction
               label={t("storyVariables.title")}
               onPress={() => setEditingVariables(true)}
@@ -1083,6 +1090,15 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
           </>
         ) : null}
       </ScrollView>
+      {coverOpen ? (
+        <StoryCoverEditor
+          key={`${scope.projectId}:${scope.generation}`}
+          scope={scope}
+          userId={userId}
+          onClose={() => setCoverOpen(false)}
+          onSaved={onSaved}
+        />
+      ) : null}
       {mediaNode && loaded ? (
         <TimelineEditor
           key={`${scope.chapterId}:${mediaNode}`}

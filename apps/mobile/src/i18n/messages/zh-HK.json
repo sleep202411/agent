@@ -5032,5 +5032,20 @@
   "storyHistory.redo": "重做",
   "storyFoundation.title": "故事概覽",
   "storyFoundation.logline": "一句話梗概",
-  "storyFoundation.synopsis": "故事梗概"
+  "storyFoundation.synopsis": "故事梗概",
+  "storyCover.title": "影遊封面",
+  "storyCover.help": "選擇專案圖片或上傳新圖片。封面修改會立即儲存。",
+  "storyCover.unavailable": "目前封面無法使用，請選擇其他圖片。",
+  "storyCover.empty": "尚未選擇封面。",
+  "storyCover.pending": "封面修改待確認。請重新整理或重試，再選擇其他圖片。",
+  "storyCover.retrySave": "重試儲存封面",
+  "storyCover.discard": "放棄待確認修改",
+  "storyCover.discardHelp": "保留伺服器上的目前封面，並放棄此待確認請求？",
+  "storyCover.upload": "上傳或恢復圖片",
+  "storyCover.uploadPending": "有未完成的上傳，請先恢復再選擇其他檔案。",
+  "storyCover.remove": "移除封面",
+  "storyCover.removeHelp": "移除此專案的封面？媒體檔案將保留。",
+  "storyCover.choose": "專案圖片",
+  "storyCover.noImages": "暫無可用圖片，請上傳一張圖片作為封面。",
+  "storyCover.select": "使用圖片 {number}"
 }
