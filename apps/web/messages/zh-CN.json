@@ -140,7 +140,8 @@
     "accountMenuCliSkill": "CLI & Skill",
     "accountMenuNotifications": "通知",
     "accountMenuStudioHome": "FizzStudio 首页",
-    "accountMenuComingSoon": "{label} 即将开放"
+    "accountMenuComingSoon": "{label} 即将开放",
+    "remove": "移除"
   },
   "tabs": {
     "script": "剧本",
@@ -299,7 +300,10 @@
     "appDownloadIos": "App Store",
     "appDownloadGooglePlay": "Google Play",
     "appQrLoading": "正在加载二维码…",
-    "appQrUnavailable": "请点击下方按钮下载"
+    "appQrUnavailable": "请点击下方按钮下载",
+    "resolutionCenter": "争议与调解中心",
+    "myIncome": "我的收入",
+    "myContracts": "我的合同"
   },
   "auth": {
     "close": "关闭",
@@ -424,7 +428,7 @@
     "ipsFundraising": "个 IP 正在融资",
     "ipsPresale": "个 IP 开放预售",
     "newThisWeek": "本周新增",
-    "createIP": "投稿",
+    "createIP": "创建 IP",
     "browseIPs": "浏览 IP",
     "enterStudio": "进入工作台",
     "catAll": "发现",
@@ -5263,7 +5267,8 @@
       "templateDraftHelp": "这些预览仅保存在此浏览器中。请在下方创建任务，或丢弃预览。新的导入会直接保存到任务列表。",
       "savedTasks": "任务",
       "openDelivery": "查看任务并提交交付",
-      "saveThenRecruit": "保存任务并继续填写招聘信息。"
+      "saveThenRecruit": "保存任务并继续填写招聘信息。",
+      "completeDraftFields": "创建任务前，请补全“{{title}}”的必填项。"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",
@@ -5818,7 +5823,20 @@
     "cleanVideo": "无字幕视频",
     "subtitleFile": "字幕文件",
     "sourceFiles": "原素材",
-    "episodeUnavailable": "该集不可用。请选择可用集数或“不关联集数”。"
+    "episodeUnavailable": "该集不可用。请选择可用集数或“不关联集数”。",
+    "deliveryLinkRequired": "请填写交付链接后提交任务。",
+    "deliveryLinkInvalid": "请输入完整的 http:// 或 https:// 交付链接。",
+    "deliveryLinkHint": "填写本次交付作品的链接。",
+    "removeDeliveryFile": "从本次提交中移除 {name}",
+    "deliveryUploadPending": "请等待文件上传并关联完成后再提交。",
+    "deliveryNoteTooLong": "交付链接和备注合计不得超过 5,000 个字符。",
+    "positionRole": "职位",
+    "assignExistingMember": "分配现有剧组成员（可选）",
+    "contractOptional": "合同文件（可选）",
+    "viewContract": "查看合同",
+    "removeContract": "移除附件",
+    "requiredReward": "报酬（USD）",
+    "requiredTaskFields": "请填写必填项：{{fields}}。"
   },
   "crewInvitations": {
     "signIn": "登录",
@@ -9978,9 +9996,10 @@
     "allCrews": "所有剧组",
     "categoryFilter": "类别",
     "allCategories": "所有类别",
-    "dueSoon": "24 小时内到期",
+    "dueSoon": "3天内到期",
     "pendingReviews": "待审核",
-    "filters": "筛选"
+    "filters": "筛选",
+    "feedback": "反馈"
   },
   "crewAccountability": {
     "commitments": "任务承诺与交接",
@@ -10130,7 +10149,9 @@
     "soon": "即将到期 · 剩余 {count} 小时",
     "upcoming": "剩余 {count} 小时",
     "warningWindow": "标记此时间内到期的任务",
-    "hours": "{count} 小时"
+    "hours": "{count} 小时",
+    "overdueLabel": "已逾期",
+    "urgentLabel": "紧急"
   },
   "crewPersonalIncome": {
     "title": "我的收入",
@@ -10164,7 +10185,11 @@
     "referralIncome": "引荐收入与奖励",
     "crewIncome": "剧组收入",
     "workIncome": "影视与故事收入",
-    "incomeSourcesHint": "各收入来源分别显示记录和计价单位，此处不合并计算。"
+    "incomeSourcesHint": "各收入来源分别显示记录和计价单位，此处不合并计算。",
+    "referralSourceHint": "查看推荐记录、佣金和支付状态。",
+    "workSourceHint": "查看已发布作品的收入。",
+    "productionSource": "制作订单",
+    "productionSourceHint": "查看任务报酬、结算和付款记录。"
   },
   "crewPersonalPayouts": {
     "title": "付款记录",
@@ -10617,7 +10642,7 @@
     "history": "我的任务评价"
   },
   "crewCases": {
-    "title": "争议与支持",
+    "title": "争议与调解中心",
     "privacy": "处理任务争议、交付问题和申诉。仅案件当事人和授权客服可查看；离开剧组后仍可访问。",
     "loading": "加载中…",
     "signIn": "请登录查看您的案件。",
@@ -10669,7 +10694,15 @@
     },
     "sharingCount": "发送后将共享 {count} 个已选证据文件。",
     "evidenceChanged": "已选证据不可用或已共享。请刷新证据并清空选择后再发送。",
-    "clearEvidence": "清空证据选择"
+    "clearEvidence": "清空证据选择",
+    "initiated": "我发起的",
+    "responses": "待我回应",
+    "newCase": "发起投诉",
+    "selectTaskHint": "请选择本次争议相关的任务。",
+    "mine": "我的任务",
+    "producer": "我管理的任务",
+    "relatedTask": "相关任务",
+    "moreTasks": "加载更多任务"
   },
   "crewTaskDispute": {
     "title": "发起任务争议",
@@ -11420,5 +11453,58 @@
     "retryOriginal": "重试原请求",
     "targetRemoved": "已找回生成任务。原画布项目已被删除。",
     "signInRequired": "请先登录并选择工作空间，再生成内容。"
+  },
+  "crewSkills": {
+    "label": "创作者所需技能",
+    "hint": "可多选已认证技能。申请人须满足所有已选要求。",
+    "loading": "正在加载技能…",
+    "retry": "重试",
+    "qualificationTitle": "完成所需技能认证",
+    "qualificationHint": "此任务需要已认证技能。请前往学院学习相关课程，并提交作业申请认证，解锁更多优质任务。",
+    "minimumRank": "所需 FD 等级：{rank}",
+    "academy": "前往学院"
+  },
+  "myContracts": {
+    "title": "我的合同",
+    "description": "查看你在当前剧组中创建或受邀签署的合同。",
+    "all": "全部",
+    "active": "进行中",
+    "signed": "已签署",
+    "attention": "需处理",
+    "loading": "正在加载合同…",
+    "signIn": "登录",
+    "retry": "重试",
+    "empty": "暂无符合条件的合同。",
+    "more": "加载更多",
+    "close": "关闭",
+    "agreements": "签约协议",
+    "files": "任务合同文件",
+    "filesDescription": "您有权访问的任务所附的合同文件。上传文件不代表已完成电子签署。",
+    "filesEmpty": "暂无任务合同文件。"
+  },
+  "contentReports": {
+    "title": "内容投诉",
+    "back": "调解中心",
+    "loading": "加载中…",
+    "signIn": "登录",
+    "initiated": "我发起的",
+    "responses": "我的内容处理结果",
+    "newReport": "发起投诉",
+    "responsesHint": "查看您当前拥有的 IP 的已完成审核结果。投诉人的身份与证据保持私密。",
+    "initiatedHint": "查看您针对平台内容提交的投诉及处理进度。",
+    "retry": "重试",
+    "reference": "编号：{{id}}",
+    "empty": "暂无相关投诉。",
+    "more": "加载更多",
+    "search": "搜索 IP 名称或房间号",
+    "target": "相关内容",
+    "selectTarget": "选择 IP",
+    "evidenceHint": "请说明问题，并提供相关证据链接。",
+    "status": {
+      "submitted": "已提交",
+      "triaged": "审核中",
+      "actioned": "已采取措施",
+      "dismissed": "已结案，未采取措施"
+    }
   }
 }

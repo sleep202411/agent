@@ -16,6 +16,8 @@ import {
   CreateCreatorIpContributorSchema,
   CreateCreatorIpEpisodeSchema,
   CreateIpContentReportSchema,
+  ListMyContentReportsSchema,
+  type ListMyContentReportsQuery,
   CreateIpPurchaseSchema,
   RecordMemberViewSchema,
   RecordIpViewSchema,
@@ -694,6 +696,18 @@ export class IpCommerceController {
     return {
       code: 200,
       data: await this.ipCommerce.recordMemberView(user, body),
+    };
+  }
+
+  @Get('me/reports')
+  async myContentReports(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListMyContentReportsSchema))
+    query: ListMyContentReportsQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listMyContentReports(user, query),
     };
   }
 

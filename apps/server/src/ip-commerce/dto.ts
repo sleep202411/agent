@@ -1171,6 +1171,17 @@ export const RecordIpViewSchema = z.preprocess(
 );
 export type RecordIpViewInput = z.infer<typeof RecordIpViewSchema>;
 
+export const ListMyContentReportsSchema = z
+  .object({
+    view: z.enum(['initiated', 'responses']).default('initiated'),
+    cursor: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .strict();
+export type ListMyContentReportsQuery = z.infer<
+  typeof ListMyContentReportsSchema
+>;
+
 export const CreateIpContentReportSchema = z
   .object({
     targetType: z.enum(['ip', 'episode']),

@@ -20,9 +20,9 @@ const REGION_UI: Record<"all" | "field" | "placeholder", LocaleMap> = {
   all: { "zh-CN": "全部地区", "en-US": "All regions", "zh-HK": "全部地區" },
   field: { "zh-CN": "地区", "en-US": "Region", "zh-HK": "地區" },
   placeholder: {
-    "zh-CN": "选择地区（可选）",
-    "en-US": "Select region (optional)",
-    "zh-HK": "選擇地區（可選）",
+    "zh-CN": "选择地区",
+    "en-US": "Select region",
+    "zh-HK": "選擇地區",
   },
 };
 

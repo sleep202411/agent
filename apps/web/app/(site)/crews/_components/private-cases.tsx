@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
-import { CrewSectionNavigation } from "./crew-section-navigation";
+
 import {
   isCaseParticipant,
   usePrivateCases,
@@ -21,10 +21,16 @@ import { usePrivateCaseWrite } from "../_hooks/use-private-case-write";
 export function PrivateCasesScreen({ caseId }: { caseId?: string }) {
   const { user, isLoading } = useCurrentUser();
   const t = useTranslations("crewCases");
+  const reportsT = useTranslations("contentReports");
+  const locale = useLocale();
   return (
     <main className="mx-auto w-full max-w-[1800px] space-y-4 px-4 py-6">
-      <CrewSectionNavigation active="cases" />
-      <h1 className="text-xl font-semibold">{t("title")}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">{t("title")}</h1>
+        <Button asChild variant="outline" color="muted">
+          <Link href={`/${locale}/resolution-center/content`}>{reportsT("title")}</Link>
+        </Button>
+      </div>
       <p className="text-sm text-muted-foreground">{t("privacy")}</p>
       {isLoading ? (
         <p>{t("loading")}</p>
@@ -39,7 +45,8 @@ export function PrivateCasesScreen({ caseId }: { caseId?: string }) {
   );
 }
 function CaseList({ userId }: { userId: string }) {
-  const query = usePrivateCases(userId);
+  const [view, setView] = useState<"initiated" | "responses">("initiated");
+  const query = usePrivateCases(userId, view);
   const t = useTranslations("crewCases"),
     locale = useLocale();
   const items = query.isSuccess
@@ -47,6 +54,28 @@ function CaseList({ userId }: { userId: string }) {
     : [];
   return (
     <section className="space-y-3">
+      <nav
+        className="flex flex-wrap items-center gap-2 border-b border-border pb-3"
+        aria-label={t("title")}
+      >
+        {(["initiated", "responses"] as const).map((tab) => (
+          <Button
+            key={tab}
+            variant={view === tab ? "solid" : "ghost"}
+            color="muted"
+            aria-pressed={view === tab}
+            onClick={() => setView(tab)}
+          >
+            {t(tab)}
+          </Button>
+        ))}
+        <Link
+          href={`/${locale}/resolution-center/new`}
+          className="ml-auto rounded-lg bg-primary px-4 py-2 text-sm text-white"
+        >
+          {t("newCase")}
+        </Link>
+      </nav>
       <Button variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
         {t("refresh")}
       </Button>
@@ -57,8 +86,8 @@ function CaseList({ userId }: { userId: string }) {
         {items.map((item) => (
           <li key={item.id} className="space-y-1 py-3">
             <Link
-              className="font-medium text-primary underline"
-              href={`/${locale}/crews/cases/${encodeURIComponent(item.id)}`}
+              className="font-medium text-foreground hover:text-primary"
+              href={`/${locale}/resolution-center/${encodeURIComponent(item.id)}`}
             >
               {item.title}
             </Link>
@@ -93,7 +122,10 @@ function CaseDetail({ userId, caseId }: { userId: string; caseId: string }) {
     : [];
   return (
     <section className="space-y-4">
-      <Link className="text-primary underline" href={`/${locale}/crews/cases`}>
+      <Link
+        className="text-sm text-muted-foreground hover:text-foreground"
+        href={`/${locale}/resolution-center`}
+      >
         {t("back")}
       </Link>
       <div>

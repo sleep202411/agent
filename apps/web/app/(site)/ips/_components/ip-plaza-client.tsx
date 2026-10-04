@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  IconBolt,
+  IconPlus,
   IconDeviceTv,
   IconRefresh,
   IconSearch,
@@ -377,7 +377,7 @@ export function IpPlazaClient() {
           onClick={() => setCreateOpen(true)}
           className="h-11 justify-center gap-2 rounded-2xl px-5 text-sm font-semibold shadow-lg shadow-black/40"
         >
-          <IconBolt className="size-4" />
+          <IconPlus className="size-4" />
           {t("createIP")}
         </Button>
       </div>

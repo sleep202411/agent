@@ -1,4 +1,5 @@
 "use client";
+import { RequiredSkillsSelect } from "./required-skills-select";
 
 /**
  * Publish-position dialog — 3-step wizard.
@@ -40,7 +41,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SwitchControl } from "@/components/ui/schema-field/switch-control";
-import { TagInput } from "@/components/ui/tag-input";
 import { cn } from "@/lib/utils";
 import { allowedCurrenciesForCell, defaultCurrencyForCell } from "@/src/lib/region/cell";
 import { useTranslatedPresetPositions } from "@/app/(site)/crews/_hooks/use-position-label";
@@ -237,6 +237,31 @@ function PositionForm({
     positionId: editingPosition?.id,
   });
   const pendingApplicantCount = applications.summary?.pending ?? 0;
+
+  const [importedTask, setImportedTask] = useState<string | null>(null);
+  const taskToImport = sourceTask.data;
+  if (
+    !isEdit &&
+    !sourceTask.isError &&
+    taskToImport &&
+    taskToImport.id === taskId &&
+    importedTask !== taskId
+  ) {
+    setImportedTask(taskId);
+    if (!positionType && taskToImport.positionRole) setPositionType(taskToImport.positionRole);
+    setDescription((current) => (current.trim() ? current : taskToImport.description));
+    setRequiredSkills((current) =>
+      current.length ? current : (taskToImport.requiredSkills ?? [])
+    );
+    const amount = taskToImport.rewardUsdMinor;
+    if (amount != null && !salaryMin && !salaryMax) {
+      setSalaryCurrency("USD");
+      setSalaryMin(String(amount / 100));
+      setSalaryMax(String(amount / 100));
+      setSalaryPeriod("project");
+    }
+    if (taskToImport.dueAt && !closeDate) setCloseDate(taskToImport.dueAt.slice(0, 10));
+  }
 
   // ─── Per-step validation ──────────
   const parsedCount = Number(count);
@@ -465,18 +490,11 @@ function PositionForm({
                 ) : null}
               </Field>
 
-              <Field>
-                <FieldLabel>{t("createJobRequiredSkillsLabel")}</FieldLabel>
-                <TagInput
-                  value={requiredSkills}
-                  onChange={setRequiredSkills}
-                  placeholder={t("createJobSkillsPlaceholder")}
-                  maxTags={20}
-                  maxLength={64}
-                  disabled={submitting}
-                />
-                <p className="mt-1 text-xs text-muted-foreground">{t("createJobSkillsHint")}</p>
-              </Field>
+              <RequiredSkillsSelect
+                value={requiredSkills}
+                onChange={setRequiredSkills}
+                disabled={submitting}
+              />
               {!isEdit && (canLinkTask || taskId) ? (
                 <Field>
                   <FieldLabel>{t("recruitmentTaskLabel")}</FieldLabel>

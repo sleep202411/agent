@@ -125,6 +125,58 @@ function build() {
 }
 
 describe('CrewAgreementsService', () => {
+  it('scopes personal contracts to the actor and rechecks current crew permissions', async () => {
+    const t = build();
+    t.prisma.crewAgreement.findMany.mockResolvedValue([
+      agreement({ crew: { name: 'Film' } }),
+    ]);
+    const page = await t.service.listMine(MEMBER_ID, {
+      limit: 30,
+      view: 'all',
+    });
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).not.toHaveProperty('signerEmail');
+    expect(t.prisma.crewAgreement.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            expect.objectContaining({
+              OR: [{ memberUserId: MEMBER_ID }, { createdByUserId: MEMBER_ID }],
+              crew: {
+                deletedAt: null,
+                members: { some: { userId: MEMBER_ID, status: 'active' } },
+              },
+            }),
+          ],
+        },
+      }),
+    );
+    t.authorization.resolve.mockResolvedValue({
+      crewId: CREW_ID,
+      memberId: 'member',
+      userId: MEMBER_ID,
+      isOwner: false,
+      policyKeys: [],
+      permissions: [],
+    });
+    expect(
+      (await t.service.listMine(MEMBER_ID, { limit: 30, view: 'all' })).items,
+    ).toEqual([]);
+  });
+
+  it('rejects a personal contract cursor outside the scoped list', async () => {
+    const t = build();
+    await expect(
+      t.service.listMine(MEMBER_ID, {
+        limit: 30,
+        view: 'signed',
+        cursor: AGREEMENT_ID,
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_AGREEMENT_CURSOR_INVALID' },
+    });
+    expect(t.prisma.crewAgreement.findMany).not.toHaveBeenCalled();
+  });
   it('validates bounded agreement list pagination and product views', () => {
     expect(ListCrewAgreementsQuerySchema.parse({})).toEqual({
       limit: 30,

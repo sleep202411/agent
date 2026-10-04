@@ -164,29 +164,25 @@ it.each([true, false])("recovers a next-page earnings failure (invalid cursor: %
 });
 
 it.each(["alice", null])(
-  "keeps all Crew destinations available on Income for user %s",
+  "shows account income sources outside Production navigation for user %s",
   (userId) => {
     state.user = userId ? { id: userId } : null;
     render();
-    const nav = container.querySelector('nav[aria-label="navigationLabel"]')!;
-    expect(nav).not.toBeNull();
-    expect([...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
-      "/en-US/crews?view=positions",
-      "/en-US/messages?tab=recruitment",
-      "/en-US/crews?view=mine",
-      "/en-US/crews/tasks",
-      "/en-US/crews/income",
-      "/en-US/crews?view=crews",
-    ]);
-    expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
-    expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("myIncomeTab");
+    expect(container.querySelector('nav[aria-label="navigationLabel"]')).toBeNull();
+    const sources = container.querySelector('nav[aria-label="incomeSources"]');
+    expect(sources?.textContent).toContain("referralIncome");
+    expect(sources?.textContent).toContain("workIncome");
+    expect(sources?.querySelector("a")?.getAttribute("href")).toBe("#production-ledger");
+    expect(container.querySelector('a[href="/en-US/crews"]')).not.toBeNull();
   }
 );
 
 it("opens income sources in a side panel and clears them when the account changes", () => {
   render();
   const source = (name: string) =>
-    [...container.querySelectorAll("button")].find((b) => b.textContent === name)!;
+    [...container.querySelectorAll("button")].find(
+      (b) => b.querySelector("span")?.textContent === name
+    )!;
   act(() => source("referralIncome").click());
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
     "Referral panel content"

@@ -97,7 +97,10 @@ import { StorageModule } from '../infra/storage/storage.module';
 import { WorkspacesModule } from '../workspaces';
 import { ApplicationsController } from './applications.controller';
 import { ApplicationsService } from './applications.service';
-import { CrewQualificationsService } from './crew-qualifications.service';
+import {
+  CrewQualificationsService,
+  CrewQualificationCatalogController,
+} from './crew-qualifications.service';
 import {
   CrewAssetsController,
   ProjectCrewAssetsController,
@@ -162,6 +165,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewQualificationCatalogController,
     EpisodeTaskTemplateController,
     CrewApplicationAmendmentsController,
     CrewAmendmentSettlementQueueController,

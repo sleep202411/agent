@@ -13,6 +13,7 @@
  * laser-focused on stats + business info.
  */
 import Link from "next/link";
+import { creatorQualificationKind } from "@/src/services/creator-qualification";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useRef } from "react";
@@ -73,7 +74,13 @@ export function CreatorHero({
   const t = useTranslations("creatorCenter");
   const name = (creator.name || "").trim() || "—";
   const bio = (creator.bio || "").trim();
-  const levels = Array.isArray(creator.levels) ? creator.levels.filter((l) => !!l?.name) : [];
+  const levels = (Array.isArray(creator.levels) ? creator.levels : [])
+    .filter((level) => level?.name && creatorQualificationKind(level))
+    .sort(
+      (left, right) =>
+        Number(creatorQualificationKind(right) === "producer") -
+        Number(creatorQualificationKind(left) === "producer")
+    );
 
   return (
     <section className="relative w-full">
@@ -109,10 +116,10 @@ export function CreatorHero({
               <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
                 {name}
               </h1>
-              {levels.slice(0, 3).map((l) => (
+              {levels.map((l) => (
                 <span
                   key={l.id}
-                  className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-medium text-primary"
+                  className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-xs font-medium text-foreground/80"
                 >
                   <IconCircleCheck className="size-3" />
                   {l.name}

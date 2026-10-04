@@ -243,9 +243,13 @@ it("lists only participant cases and paginates using case cursors", async () => 
   );
   await flush();
   expect(host.textContent).not.toContain("Hidden");
-  expect(host.querySelector('a[href="/en-US/crews/cases/case-a"]')).not.toBeNull();
+  expect(host.querySelector('a[href="/en-US/resolution-center/case-a"]')).not.toBeNull();
   await click("moreCases");
-  expect(h.get.mock.calls[1][1].query).toEqual({ limit: 20, beforeId: "case-a" });
+  expect(h.get.mock.calls[1][1].query).toEqual({
+    limit: 20,
+    beforeId: "case-a",
+    view: "initiated",
+  });
 });
 it.each([true, false])("does not query while unauthenticated/loading (%s)", async (loading) => {
   h.user = loading ? "alice" : null;
@@ -268,7 +272,7 @@ it("opens a feedback appeal with only generated ID and reason; retries exactly",
   ]);
   await click("retryWrite");
   expect(h.post.mock.calls[1]).toEqual(first);
-  expect(host.querySelector('a[href="/en-US/crews/cases/case-a"]')).not.toBeNull();
+  expect(host.querySelector('a[href="/en-US/resolution-center/case-a"]')).not.toBeNull();
   expect(host.querySelector("textarea")).toBeNull();
 });
 it("offers existing cases after an appeal conflict without automatic extra writes", async () => {
@@ -278,7 +282,7 @@ it("offers existing cases after an appeal conflict without automatic extra write
   await click("appealFeedback");
   expect(host.textContent).toContain("Case already open");
   expect(h.post).toHaveBeenCalledTimes(1);
-  expect(host.querySelector('a[href="/en-US/crews/cases"]')).not.toBeNull();
+  expect(host.querySelector('a[href="/en-US/resolution-center"]')).not.toBeNull();
 });
 
 it("keeps a confirmed event complete through failed refresh and restores only after a readable version", async () => {
@@ -320,4 +324,24 @@ it("clears the draft when navigating to another case", async () => {
   await message("Case B");
   await click("send");
   expect(h.post.mock.calls[0][0]).toBe("/crew-disputes/case-b/events");
+});
+
+it("switches case tabs with a fresh cursor and independent query", async () => {
+  h.get.mockResolvedValue({ items: [row], nextBeforeId: null });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={qc}>
+        <PrivateCasesScreen />
+      </QueryClientProvider>
+    )
+  );
+  await flush();
+  expect(h.get.mock.calls[0][1].query.view).toBe("initiated");
+  await click("responses");
+  await flush();
+  expect(h.get.mock.calls.at(-1)![1].query).toEqual({
+    limit: 20,
+    view: "responses",
+    beforeId: undefined,
+  });
 });

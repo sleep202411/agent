@@ -140,7 +140,8 @@
     "accountMenuCliSkill": "CLI & Skill",
     "accountMenuNotifications": "Notifications",
     "accountMenuStudioHome": "FizzStudio home",
-    "accountMenuComingSoon": "{label} is coming soon"
+    "accountMenuComingSoon": "{label} is coming soon",
+    "remove": "Remove"
   },
   "tabs": {
     "script": "Script",
@@ -299,7 +300,10 @@
     "appDownloadIos": "App Store",
     "appDownloadGooglePlay": "Google Play",
     "appQrLoading": "Loading QR code…",
-    "appQrUnavailable": "Use the download button below"
+    "appQrUnavailable": "Use the download button below",
+    "resolutionCenter": "Dispute and Resolution Center",
+    "myIncome": "My income",
+    "myContracts": "My contracts"
   },
   "auth": {
     "close": "Close",
@@ -424,7 +428,7 @@
     "ipsFundraising": "IPs fundraising",
     "ipsPresale": "IPs in pre-order",
     "newThisWeek": "New this week",
-    "createIP": "Contribute",
+    "createIP": "Create IP",
     "browseIPs": "Browse IPs",
     "enterStudio": "Enter Studio",
     "catAll": "Discover",
@@ -5263,7 +5267,8 @@
       "templateDraftHelp": "These previews are saved only in this browser. Create their tasks below, or discard them. New imports save directly to Tasks.",
       "savedTasks": "Tasks",
       "openDelivery": "Open task & submit delivery",
-      "saveThenRecruit": "Save this task and continue to the job form."
+      "saveThenRecruit": "Save this task and continue to the job form.",
+      "completeDraftFields": "Complete the required fields in “{{title}}” before creating tasks."
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
@@ -5818,7 +5823,20 @@
     "cleanVideo": "Video without subtitles",
     "subtitleFile": "Subtitle file",
     "sourceFiles": "Source files",
-    "episodeUnavailable": "This episode is unavailable. Choose an available episode or No episode."
+    "episodeUnavailable": "This episode is unavailable. Choose an available episode or No episode.",
+    "deliveryLinkRequired": "Enter a delivery link to submit this task.",
+    "deliveryLinkInvalid": "Enter a complete http:// or https:// delivery link.",
+    "deliveryLinkHint": "Link to the work being delivered.",
+    "removeDeliveryFile": "Remove {name} from this submission",
+    "deliveryUploadPending": "Wait for uploads to finish and attach before submitting.",
+    "deliveryNoteTooLong": "The delivery link and notes must total 5,000 characters or fewer.",
+    "positionRole": "Position",
+    "assignExistingMember": "Assign an existing crew member (optional)",
+    "contractOptional": "Contract file (optional)",
+    "viewContract": "View contract",
+    "removeContract": "Remove attachment",
+    "requiredReward": "Reward (USD)",
+    "requiredTaskFields": "Complete the required fields: {{fields}}."
   },
   "crewInvitations": {
     "signIn": "Sign in",
@@ -9978,9 +9996,10 @@
     "allCrews": "All productions",
     "categoryFilter": "Category",
     "allCategories": "All categories",
-    "dueSoon": "Due in 24 hours",
+    "dueSoon": "Due in 3 days",
     "pendingReviews": "Awaiting review",
-    "filters": "Filters"
+    "filters": "Filters",
+    "feedback": "Feedback"
   },
   "crewAccountability": {
     "commitments": "Commitment and handover",
@@ -10130,7 +10149,9 @@
     "soon": "Due soon · {count} h left",
     "upcoming": "{count} h left",
     "warningWindow": "Highlight deadlines within",
-    "hours": "{count} hours"
+    "hours": "{count} hours",
+    "overdueLabel": "Overdue",
+    "urgentLabel": "Urgent"
   },
   "crewPersonalIncome": {
     "title": "My income",
@@ -10164,7 +10185,11 @@
     "referralIncome": "Referral income and rewards",
     "crewIncome": "Crew income",
     "workIncome": "Film and story income",
-    "incomeSourcesHint": "Each income source shows its own records and units. These amounts are not added together."
+    "incomeSourcesHint": "Each income source shows its own records and units. These amounts are not added together.",
+    "referralSourceHint": "Review referrals, commissions, and payment status.",
+    "workSourceHint": "Review revenue from your published work.",
+    "productionSource": "Production orders",
+    "productionSourceHint": "Track task rewards, settlements, and payout history."
   },
   "crewPersonalPayouts": {
     "title": "Payout history",
@@ -10617,7 +10642,7 @@
     "history": "My Task Feedback"
   },
   "crewCases": {
-    "title": "Disputes & Support",
+    "title": "Dispute and Resolution Center",
     "privacy": "Private help with task disputes, delivery issues, and appeals. Only the recorded parties and authorized support staff can view a case. Your cases remain available after leaving a Crew.",
     "loading": "Loading…",
     "signIn": "Sign in to view your cases.",
@@ -10669,7 +10694,15 @@
     },
     "sharingCount": "Sending will share {count} selected evidence files.",
     "evidenceChanged": "Selected evidence is unavailable or already shared. Refresh evidence and clear the selection before sending.",
-    "clearEvidence": "Clear evidence selection"
+    "clearEvidence": "Clear evidence selection",
+    "initiated": "I initiated",
+    "responses": "Responses",
+    "newCase": "Submit a dispute",
+    "selectTaskHint": "Choose the task associated with this dispute.",
+    "mine": "My tasks",
+    "producer": "Tasks I manage",
+    "relatedTask": "Related task",
+    "moreTasks": "Load more tasks"
   },
   "crewTaskDispute": {
     "title": "Open task dispute",
@@ -11420,5 +11453,58 @@
     "retryOriginal": "Retry original request",
     "targetRemoved": "Generation recovered. The original canvas item no longer exists.",
     "signInRequired": "Sign in and select a workspace before generating."
+  },
+  "crewSkills": {
+    "label": "Required creator skills",
+    "hint": "Select all required verified skills. Applicants must meet every selected requirement.",
+    "loading": "Loading skills…",
+    "retry": "Retry",
+    "qualificationTitle": "Complete the required qualifications",
+    "qualificationHint": "This task requires verified skills. Complete the relevant Academy courses and submit your work for certification to unlock more opportunities.",
+    "minimumRank": "Required FD level: {rank}",
+    "academy": "Explore Academy"
+  },
+  "myContracts": {
+    "title": "My contracts",
+    "description": "Agreements you created or were invited to sign in your active Crews.",
+    "all": "All",
+    "active": "Active",
+    "signed": "Signed",
+    "attention": "Needs attention",
+    "loading": "Loading contracts…",
+    "signIn": "Sign in",
+    "retry": "Retry",
+    "empty": "No contracts in this view.",
+    "more": "Load more",
+    "close": "Close",
+    "agreements": "Agreements",
+    "files": "Task contract files",
+    "filesDescription": "Contract attachments from your accessible tasks. Uploading a file does not electronically sign it.",
+    "filesEmpty": "No task contract files yet."
+  },
+  "contentReports": {
+    "title": "Content complaints",
+    "back": "Resolution Center",
+    "loading": "Loading…",
+    "signIn": "Sign in",
+    "initiated": "Initiated by me",
+    "responses": "Outcomes for my content",
+    "newReport": "Initiate a complaint",
+    "responsesHint": "Completed moderation outcomes for IPs you currently own. Reporter identities and evidence remain private.",
+    "initiatedHint": "Track complaints you submitted about content on the platform.",
+    "retry": "Retry",
+    "reference": "Reference: {{id}}",
+    "empty": "No complaints in this view.",
+    "more": "Load more",
+    "search": "Search by IP name or room number",
+    "target": "Related content",
+    "selectTarget": "Select an IP",
+    "evidenceHint": "Describe the issue and include links to supporting evidence.",
+    "status": {
+      "submitted": "Submitted",
+      "triaged": "Under review",
+      "actioned": "Action taken",
+      "dismissed": "Closed without action"
+    }
   }
 }

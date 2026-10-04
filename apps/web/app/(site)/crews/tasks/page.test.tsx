@@ -219,7 +219,6 @@ it.each(["viewer", null])(
       "/zh-CN/messages?tab=recruitment",
       "/zh-CN/crews?view=mine",
       "/zh-CN/crews/tasks",
-      "/zh-CN/crews/income",
       "/zh-CN/crews?view=crews",
     ]);
     expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
@@ -228,8 +227,6 @@ it.each(["viewer", null])(
     expect([...dashboard.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
       "/zh-CN/messages?tab=recruitment",
       "/zh-CN/crews/tasks",
-      "/zh-CN/crews/feedback",
-      "/zh-CN/crews/cases",
     ]);
   }
 );

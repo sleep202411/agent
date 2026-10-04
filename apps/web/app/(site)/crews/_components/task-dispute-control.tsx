@@ -14,18 +14,39 @@ import { useCrewDetail } from "../_hooks/use-crew-detail";
 import { usePrivateCaseWrite } from "../_hooks/use-private-case-write";
 import type { CrewTaskDTO } from "../_hooks/types";
 
-export function TaskDisputeControl({ task }: { task: CrewTaskDTO }) {
+export function TaskDisputeControl({
+  task,
+  initiallyOpen = false,
+}: {
+  task: CrewTaskDTO;
+  initiallyOpen?: boolean;
+}) {
   const { user, isLoading } = useCurrentUser();
   if (!user || isLoading) return null;
-  return <DisputeSession key={JSON.stringify([user.id, task.id])} task={task} userId={user.id} />;
+  return (
+    <DisputeSession
+      key={JSON.stringify([user.id, task.id])}
+      task={task}
+      userId={user.id}
+      initiallyOpen={initiallyOpen}
+    />
+  );
 }
-function DisputeSession({ task, userId }: { task: CrewTaskDTO; userId: string }) {
+function DisputeSession({
+  task,
+  userId,
+  initiallyOpen,
+}: {
+  task: CrewTaskDTO;
+  userId: string;
+  initiallyOpen: boolean;
+}) {
   const t = useTranslations("crewTaskDispute"),
     casesT = useTranslations("crewCases"),
     locale = useLocale();
   const crew = useCrewDetail(task.crewId);
   const client = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [respondent, setRespondent] = useState("");
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
@@ -67,7 +88,7 @@ function DisputeSession({ task, userId }: { task: CrewTaskDTO; userId: string })
       {open && (
         <>
           <p className="text-sm text-muted-foreground">{t("description")}</p>
-          <Link className="text-primary underline" href={`/${locale}/crews/cases`}>
+          <Link className="text-primary underline" href={`/${locale}/resolution-center`}>
             {casesT("existingCases")}
           </Link>
           {mutation.error && <p role="alert">{mutation.error}</p>}
@@ -76,7 +97,7 @@ function DisputeSession({ task, userId }: { task: CrewTaskDTO; userId: string })
               <p>{t("saved")}</p>
               <Link
                 className="text-primary underline"
-                href={`/${locale}/crews/cases/${encodeURIComponent(mutation.saved.id)}`}
+                href={`/${locale}/resolution-center/${encodeURIComponent(mutation.saved.id)}`}
               >
                 {casesT("viewCase")}
               </Link>

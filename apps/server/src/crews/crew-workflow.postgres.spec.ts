@@ -519,6 +519,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Overdue reminder fixture',
             assignees: [{ userId: worker, currency: crewCurrency() }],
           }),
@@ -724,6 +730,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
             crewId,
             owner,
             CreateCrewTaskSchema.parse({
+              ...{
+                description: 'Deliver reviewable work',
+                taskKind: 'script',
+                dueAt: '2099-10-03T00:00:00.000Z',
+                rewardUsdMinor: 0,
+              },
               title: `Deadline ${status}`,
               assignees: [{ userId: worker, currency: crewCurrency() }],
             }),
@@ -743,6 +755,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Unassigned overdue',
           }),
         );
@@ -754,6 +772,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Future deadline',
             dueAt: new Date(Date.now() + 86400000).toISOString(),
             assignees: [{ userId: worker, currency: crewCurrency() }],
@@ -763,10 +787,21 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'No deadline',
             assignees: [{ userId: worker, currency: crewCurrency() }],
           }),
         );
+        // Historical tasks can predate the required-deadline create contract.
+        await db.crewTask.update({
+          where: { id: missing.id },
+          data: { dueAt: null },
+        });
         const view = await db.crewTaskView.create({
           data: defaultCrewTaskView(crewId, owner),
         });
@@ -922,6 +957,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Disputed task',
             assignees: [{ userId: worker, currency: crewCurrency() }],
           }),
@@ -1319,6 +1360,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Other task',
             assignees: [{ userId: worker, currency: crewCurrency() }],
           }),
@@ -1570,6 +1617,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Creator extension',
             dueAt,
             assignees: [{ userId: worker, currency: crewCurrency() }],
@@ -2020,6 +2073,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Recruit a task creator',
             assignees: [],
           }),
@@ -2595,7 +2654,15 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
             const otherTask = await tasks.create(
               otherCrewId,
               owner,
-              CreateCrewTaskSchema.parse({ title: 'Other Crew work' }),
+              CreateCrewTaskSchema.parse({
+                ...{
+                  description: 'Deliver reviewable work',
+                  taskKind: 'script',
+                  dueAt: '2099-10-03T00:00:00.000Z',
+                  rewardUsdMinor: 0,
+                },
+                title: 'Other Crew work',
+              }),
             );
             const otherPosition = await db.crewPosition.create({
               data: {
@@ -2990,6 +3057,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Assigned already',
             assignees: [{ userId: worker, currency: crewCurrency() }],
           }),
@@ -3013,6 +3086,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Concurrent recruitment',
             assignees: [],
           }),
@@ -3897,6 +3976,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           crewId,
           owner,
           CreateCrewTaskSchema.parse({
+            ...{
+              description: 'Deliver reviewable work',
+              taskKind: 'script',
+              dueAt: '2099-10-03T00:00:00.000Z',
+              rewardUsdMinor: 0,
+            },
             title: 'Existing production task',
             assignees: [{ userId: worker, currency: crewCurrency() }],
           }),
@@ -3993,6 +4078,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         crewId,
         owner,
         CreateCrewTaskSchema.parse({
+          ...{
+            description: 'Deliver reviewable work',
+            taskKind: 'script',
+            dueAt: '2099-10-03T00:00:00.000Z',
+            rewardUsdMinor: 0,
+          },
           title: 'Professional task',
           assignees: [{ userId: worker, currency: 'USD' }],
         }),
@@ -4187,6 +4278,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         crewId,
         owner,
         CreateCrewTaskSchema.parse({
+          ...{
+            description: 'Deliver reviewable work',
+            taskKind: 'script',
+            dueAt: '2099-10-03T00:00:00.000Z',
+            rewardUsdMinor: 0,
+          },
           title: 'Deliver Studio import',
           revisionLimit: 1,
           assignees: [{ userId: worker, currency: crewCurrency() }],
@@ -4320,6 +4417,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         crewId,
         owner,
         CreateCrewTaskSchema.parse({
+          ...{
+            description: 'Deliver reviewable work',
+            taskKind: 'script',
+            dueAt: '2099-10-03T00:00:00.000Z',
+            rewardUsdMinor: 0,
+          },
           title: 'Deliver animation',
           dueAt: '2100-01-01T00:00:00.000Z',
           labelIds: [label.id],

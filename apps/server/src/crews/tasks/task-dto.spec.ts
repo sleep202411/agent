@@ -6,9 +6,43 @@ import {
 } from '../dto';
 
 describe('crew task collaboration DTOs', () => {
+  it('retains the recruitment position and multiple required skills on create and update', () => {
+    const terms = {
+      positionRole: 'editor',
+      requiredSkills: ['Editing', 'Sound'],
+    };
+    expect(
+      CreateCrewTaskSchema.parse({
+        ...{
+          description: 'Deliver work',
+          taskKind: 'script',
+          dueAt: '2099-10-03T00:00:00.000Z',
+          rewardUsdMinor: 0,
+        },
+        title: 'Edit film',
+        ...terms,
+      }),
+    ).toMatchObject(terms);
+    expect(
+      UpdateCrewTaskSchema.parse({ expectedVersion: 2, ...terms }),
+    ).toMatchObject(terms);
+    expect(
+      UpdateCrewTaskSchema.parse({
+        expectedVersion: 2,
+        requiredSkills: [],
+        positionRole: null,
+      }),
+    ).toMatchObject({ requiredSkills: [], positionRole: null });
+  });
   it('allows an issue to be created unassigned and assigned later', () => {
     expect(
       CreateCrewTaskSchema.parse({
+        ...{
+          description: 'Deliver work',
+          taskKind: 'script',
+          dueAt: '2099-10-03T00:00:00.000Z',
+          rewardUsdMinor: 0,
+        },
         title: 'Paint the station background',
       }),
     ).toMatchObject({
@@ -16,7 +50,7 @@ describe('crew task collaboration DTOs', () => {
       assignees: [],
       blockedByTaskIds: [],
       customFieldValues: [],
-      description: '',
+      description: 'Deliver work',
       priority: 'normal',
     });
   });
@@ -24,6 +58,12 @@ describe('crew task collaboration DTOs', () => {
   it('accepts hierarchy, blockers, and typed custom values together', () => {
     expect(
       CreateCrewTaskSchema.parse({
+        ...{
+          description: 'Deliver work',
+          taskKind: 'script',
+          dueAt: '2099-10-03T00:00:00.000Z',
+          rewardUsdMinor: 0,
+        },
         title: 'Polish the approved environment',
         parentId: '019fae00-00be-74c1-a94d-47209790ff7c',
         blockedByTaskIds: ['019fae04-e99a-7797-a23d-efaa3e4489f9'],
@@ -59,12 +99,24 @@ describe('crew task collaboration DTOs', () => {
   it('validates the revision agreement and requires actionable revision notes', () => {
     expect(
       CreateCrewTaskSchema.parse({
+        ...{
+          description: 'Deliver work',
+          taskKind: 'script',
+          dueAt: '2099-10-03T00:00:00.000Z',
+          rewardUsdMinor: 0,
+        },
         title: 'Paint the station background',
         revisionLimit: 2,
       }),
     ).toMatchObject({ revisionLimit: 2 });
     expect(() =>
       CreateCrewTaskSchema.parse({
+        ...{
+          description: 'Deliver work',
+          taskKind: 'script',
+          dueAt: '2099-10-03T00:00:00.000Z',
+          rewardUsdMinor: 0,
+        },
         title: 'Paint the station background',
         revisionLimit: 101,
       }),
@@ -138,3 +190,23 @@ it('requires the reviewed submission identity', () => {
     }).success,
   ).toBe(false);
 });
+
+it.each(['description', 'taskKind', 'dueAt', 'rewardUsdMinor'])(
+  'requires %s on task creation',
+  (field) => {
+    const input: Record<string, unknown> = {
+      title: 'Task',
+      description: 'Brief',
+      taskKind: 'script',
+      dueAt: '2099-10-03T00:00:00.000Z',
+      rewardUsdMinor: 0,
+    };
+    delete input[field];
+    const parsed = CreateCrewTaskSchema.safeParse(input);
+    expect(parsed.success).toBe(false);
+    if (!parsed.success)
+      expect(parsed.error.issues.some((issue) => issue.path[0] === field)).toBe(
+        true,
+      );
+  },
+);
