@@ -1,3 +1,5 @@
+import { StoryRepairFoundation } from "./story-repair-foundation";
+import { updateRepairFoundation } from "../lib/story-repair-foundation";
 import {
   emptyRepairHistory,
   captureRepairHistory,
@@ -117,6 +119,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     defaultLocale: string;
     frameProfile?: "landscape_16_9" | "portrait_9_16";
   }>();
+  const [foundationOpen, setFoundationOpen] = useState(false);
   const [history, setHistory] = useState(emptyRepairHistory);
   const [command, setCommand] = useState<StoryRepairCommand>();
   const [showSaved, setShowSaved] = useState(false);
@@ -373,6 +376,30 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 />
               ))}
             </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("storyFoundation.title")}
+              accessibilityState={{ expanded: foundationOpen }}
+              aria-expanded={foundationOpen}
+              onPress={() => setFoundationOpen((value) => !value)}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <ThemedText type="smallBold">
+                {foundationOpen ? "▾ " : "▸ "}
+                {t("storyFoundation.title")}
+              </ThemedText>
+            </Pressable>
+            {foundationOpen ? (
+              <StoryRepairFoundation
+                content={content}
+                canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+                onChange={(field, text) =>
+                  edit((value) => updateRepairFoundation(value, field, text), {
+                    mergeKey: `foundation:${field}`,
+                  })
+                }
+              />
+            ) : null}
             <RepairAction
               label={t("storyVariables.title")}
               onPress={() => setEditingVariables(true)}

@@ -5029,5 +5029,8 @@
   "storyPrice.apply": "套用價格",
   "storyPrice.invalid": "請輸入 0 至 2,147,483,647 之間的整數。",
   "storyHistory.undo": "復原",
-  "storyHistory.redo": "重做"
+  "storyHistory.redo": "重做",
+  "storyFoundation.title": "故事概覽",
+  "storyFoundation.logline": "一句話梗概",
+  "storyFoundation.synopsis": "故事梗概"
 }

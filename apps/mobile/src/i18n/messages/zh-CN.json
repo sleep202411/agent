@@ -5029,5 +5029,8 @@
   "storyPrice.apply": "应用价格",
   "storyPrice.invalid": "请输入 0 至 2,147,483,647 之间的整数。",
   "storyHistory.undo": "撤销",
-  "storyHistory.redo": "重做"
+  "storyHistory.redo": "重做",
+  "storyFoundation.title": "故事概览",
+  "storyFoundation.logline": "一句话梗概",
+  "storyFoundation.synopsis": "故事梗概"
 }
