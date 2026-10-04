@@ -7,7 +7,7 @@ const draftSchema = z
     phase: z.enum(["creating", "updating", "uploading"]),
     workId: z.string().min(1).optional(),
     title: z.string().trim().min(1).max(80),
-    description: z.string().trim().min(1).max(500),
+    description: z.string().trim().max(500),
     tagIds: z.array(z.number().int().positive()).max(5),
   })
   .refine((value) => value.phase === "creating" || !!value.workId, "Existing work ID required");

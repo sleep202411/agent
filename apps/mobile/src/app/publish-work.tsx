@@ -329,13 +329,7 @@ function PublishForm({
           )}
           <Pressable
             accessibilityRole="button"
-            disabled={
-              op.busy ||
-              creationUnknown ||
-              !title.trim() ||
-              !description.trim() ||
-              (!initial && !selected.length)
-            }
+            disabled={op.busy || creationUnknown || !title.trim()}
             onPress={next}
           >
             <ThemedText>{t("publishWork.next")}</ThemedText>

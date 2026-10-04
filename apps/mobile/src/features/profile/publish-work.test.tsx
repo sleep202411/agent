@@ -404,3 +404,15 @@ it("shows failed recovery-list detail and retries without repeating creation", a
   expect(h.create).toHaveBeenCalledTimes(1);
   expect(h.find).not.toHaveBeenCalled();
 });
+
+it("preserves a title-only draft and reaches upload without requiring the tag service", async () => {
+  h.get.mockRejectedValue(new Error("Tag service unavailable"));
+  await render();
+  await act(async () => change("publishWork.name", "Title only"));
+  await act(async () => click("publishWork.next"));
+  expect(h.create).toHaveBeenCalledWith(
+    { title: "Title only", description: "", tagIds: [] },
+    expect.any(AbortSignal)
+  );
+  expect(host.textContent).toContain("publishWork.video");
+});
