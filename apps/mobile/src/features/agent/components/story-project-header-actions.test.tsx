@@ -353,24 +353,27 @@ it("shows every actionable release diagnostic and does not submit a failed candi
   expect(h.retry).toHaveBeenCalledOnce();
 });
 
-it("keeps the repair action usable after the failed status refresh remounts publication controls", async () => {
-  h.prepare.mockRejectedValue(
-    Object.assign(new Error("Broken target"), {
-      status: 422,
-      responseBody: JSON.stringify({
-        chapterId: "11111111-1111-4111-8111-111111111111",
-        diagnostics: [{ message: "Broken target", nodeId: "clip:a" }],
-      }),
-    })
-  );
-  await mount();
-  const confirm = await confirmation();
-  await act(async () => confirm());
-  const repair = h.alert.mock.calls
-    .at(-1)![2]
-    .find((b: { text: string }) => b.text === "storyRepair.title").onPress;
-  h.failed = true;
-  await mount();
-  await act(async () => repair());
-  expect(host.textContent).toContain("Repair sheet");
-});
+it.each(["clip:a", null])(
+  "keeps repair usable after publication controls remount for diagnostic node %s",
+  async (nodeId) => {
+    h.prepare.mockRejectedValue(
+      Object.assign(new Error("Broken target"), {
+        status: 422,
+        responseBody: JSON.stringify({
+          chapterId: "11111111-1111-4111-8111-111111111111",
+          diagnostics: [{ message: "Broken target", nodeId }],
+        }),
+      })
+    );
+    await mount();
+    const confirm = await confirmation();
+    await act(async () => confirm());
+    const repair = h.alert.mock.calls
+      .at(-1)![2]
+      .find((b: { text: string }) => b.text === "storyRepair.title").onPress;
+    h.failed = true;
+    await mount();
+    await act(async () => repair());
+    expect(host.textContent).toContain("Repair sheet");
+  }
+);

@@ -19,6 +19,8 @@ import {
   repairBranches,
   repairTargets,
   replaceRepairTarget,
+  replaceRepairEntry,
+  type RepairContent,
   sameRepairTarget,
 } from "../lib/story-repair-fields";
 
@@ -51,6 +53,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const [loaded, setLoaded] = useState<{ draft: StoryRepairDraft; canEdit: boolean }>();
   const [command, setCommand] = useState<StoryRepairCommand>();
   const [showSaved, setShowSaved] = useState(false);
+  const [choosingEntry, setChoosingEntry] = useState(false);
   const [uncertain, setUncertain] = useState(false),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
@@ -94,7 +97,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const node = content?.graph.nodes.find((n) => n.nodeId === selected);
   const conflict =
     !!command && !!loaded && command.input.expectedRevision !== loaded.draft.revision;
-  const edit = (index: number, target: ReturnType<typeof repairTargets>[number]["value"]) => {
+  const edit = (change: (value: RepairContent) => RepairContent) => {
     if (
       !current() ||
       locked.current ||
@@ -111,7 +114,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
             ...command,
             input: {
               ...command.input,
-              content: replaceRepairTarget(content, selected, index, target),
+              content: change(content),
             },
           }
         : {
@@ -120,7 +123,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
               schemaVersion: "interactive-story-draft-v1",
               expectedRevision: loaded.draft.revision,
               sessionId: uuid.v4(),
-              content: replaceRepairTarget(content, selected, index, target),
+              content: change(content),
             },
           };
       local.write(JSON.stringify(next));
@@ -209,6 +212,29 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
             <ThemedText type="small" themeColor="textSecondary">
               {t("storyRepair.help")}
             </ThemedText>
+            <RepairAction
+              label={`${t("storyRepair.entry")}: ${repairTargets(content, locale).find((target) => target.value.kind === "node" && target.value.nodeId === content.graph.entryNodeId)?.label ?? t("storyRepair.entryMissing")}`}
+              onPress={() => setChoosingEntry((value) => !value)}
+              disabled={busy}
+            />
+            {choosingEntry
+              ? content.graph.nodes.map((entry) => (
+                  <Pressable
+                    key={entry.nodeId}
+                    accessibilityRole="radio"
+                    aria-checked={content.graph.entryNodeId === entry.nodeId}
+                    accessibilityState={{ checked: content.graph.entryNodeId === entry.nodeId }}
+                    disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}
+                    onPress={() => edit((value) => replaceRepairEntry(value, entry.nodeId))}
+                    style={{ minHeight: 44, justifyContent: "center" }}
+                  >
+                    <ThemedText type="small">
+                      {content.graph.entryNodeId === entry.nodeId ? "● " : "○ "}
+                      {typeof entry.name === "string" && entry.name ? entry.name : entry.nodeId}
+                    </ThemedText>
+                  </Pressable>
+                ))
+              : null}
             {issues.map((issue, index) => (
               <View key={index}>
                 <RepairAction
@@ -254,7 +280,11 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                             disabled: !loaded.canEdit || busy || uncertain || conflict || showSaved,
                           }}
                           disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}
-                          onPress={() => edit(branch.index, target.value)}
+                          onPress={() =>
+                            edit((value) =>
+                              replaceRepairTarget(value, selected, branch.index, target.value)
+                            )
+                          }
                           style={{ minHeight: 44, justifyContent: "center" }}
                         >
                           <ThemedText type="small">

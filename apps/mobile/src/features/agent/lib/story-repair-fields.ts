@@ -81,3 +81,10 @@ export function replaceRepairTarget(
     },
   };
 }
+
+/** Match the official graph mutation without changing node contents or ordering. */
+export function replaceRepairEntry(content: RepairContent, nodeId: string): RepairContent {
+  if (!content.graph.nodes.some((node) => node.nodeId === nodeId))
+    throw Error("The selected entry node is no longer available.");
+  return { ...content, graph: { ...content.graph, entryNodeId: nodeId } };
+}

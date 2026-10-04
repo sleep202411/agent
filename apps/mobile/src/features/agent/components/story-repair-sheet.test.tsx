@@ -195,3 +195,23 @@ it("locks edits when storage cannot establish a failed save outcome", async () =
   expect(button("○ A").disabled).toBe(true);
   expect([...h.records.values()][0]).not.toBe("null");
 });
+
+it("repairs a missing entry node and preserves branch edits in the same draft", async () => {
+  h.reconcile.mockResolvedValue({
+    ...result,
+    draft: {
+      ...draft,
+      content: { ...draft.content, graph: { ...draft.content.graph, entryNodeId: null } },
+    },
+  });
+  await render();
+  await click("○ B");
+  await click("storyRepair.entry: storyRepair.entryMissing");
+  await click("○ A");
+  const local = JSON.parse([...h.records.values()][0]);
+  expect(local.input.content.graph.entryNodeId).toBe("clip:a");
+  expect(local.input.content.graph.nodes[0].exit.routes[0].target.nodeId).toBe("clip:b");
+  await act(async () => root.render(null));
+  await render();
+  expect(button("storyRepair.entry: A")).toBeDefined();
+});

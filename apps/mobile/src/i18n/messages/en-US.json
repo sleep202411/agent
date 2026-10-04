@@ -4859,8 +4859,8 @@
   "agent.publish.actionError.auth": "Your session has expired. Sign in again before publishing.",
   "agent.publish.actionError.permission": "Your publishing access has changed. Ask the project owner to check your role.",
   "agent.publish.actionError.service": "The publication service could not complete this action. Retry, or contact support if this continues.",
-  "storyRepair.title": "Repair branch targets",
-  "storyRepair.help": "Review the affected node and choose where each existing branch leads. Other node settings stay intact.",
+  "storyRepair.title": "Repair story graph",
+  "storyRepair.help": "Choose the chapter’s starting node or review the affected node’s branch destinations. Other node settings stay intact.",
   "storyRepair.nodeMissing": "This diagnostic has no available node in this chapter.",
   "storyRepair.branch": "Branch {number}",
   "storyRepair.noBranches": "This diagnostic cannot be resolved by changing a branch destination.",
@@ -4871,5 +4871,7 @@
   "storyRepair.discard": "Discard local repair",
   "storyRepair.discardHelp": "This removes your local repair and reloads the saved chapter. It does not undo a repair already saved to the project.",
   "storyRepair.local": "Local repair",
-  "storyRepair.remote": "Saved chapter"
+  "storyRepair.remote": "Saved chapter",
+  "storyRepair.entry": "Starting node",
+  "storyRepair.entryMissing": "Not set"
 }

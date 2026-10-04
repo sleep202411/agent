@@ -3,6 +3,7 @@ import {
   repairBranches,
   repairTargets,
   replaceRepairTarget,
+  replaceRepairEntry,
   sameRepairTarget,
 } from "./story-repair-fields";
 const content = {
@@ -78,4 +79,12 @@ it("compares destination identity independently of JSON property order", () => {
     sameRepairTarget({ endingId: "end", kind: "ending" }, { kind: "ending", endingId: "end" })
   ).toBe(true);
   expect(sameRepairTarget(null, { kind: "node", nodeId: "clip:b" })).toBe(false);
+});
+
+it("repairs the chapter entry without changing any nodes or accepting a foreign node", () => {
+  const next = replaceRepairEntry(content, "clip:b");
+  expect(next.graph.entryNodeId).toBe("clip:b");
+  expect(next.graph.nodes).toBe(content.graph.nodes);
+  expect(content.graph.entryNodeId).toBe("clip:a");
+  expect(() => replaceRepairEntry(content, "foreign")).toThrow();
 });

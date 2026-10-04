@@ -4859,8 +4859,8 @@
   "agent.publish.actionError.auth": "登入已失效，請重新登入後再發佈。",
   "agent.publish.actionError.permission": "你的發佈權限已變更，請聯絡項目擁有者確認你的角色。",
   "agent.publish.actionError.service": "發佈服務未能完成此操作，請重試；若問題持續，請聯絡支援。",
-  "storyRepair.title": "修復分支目標",
-  "storyRepair.help": "查看出錯節點並選擇每個現有分支的去向。其他節點設定會保留。",
+  "storyRepair.title": "修復故事圖",
+  "storyRepair.help": "選擇章節的起始節點，或檢查出錯節點的分支目標。其他節點設定會保留。",
   "storyRepair.nodeMissing": "此診斷在本章節中沒有可用節點。",
   "storyRepair.branch": "分支 {number}",
   "storyRepair.noBranches": "此問題無法透過更改分支目標來解決。",
@@ -4871,5 +4871,7 @@
   "storyRepair.discard": "放棄本機修復",
   "storyRepair.discardHelp": "這會移除本機修復並重新載入已儲存章節，不會撤銷已經儲存至專案的修復。",
   "storyRepair.local": "本機修復",
-  "storyRepair.remote": "已儲存章節"
+  "storyRepair.remote": "已儲存章節",
+  "storyRepair.entry": "起始節點",
+  "storyRepair.entryMissing": "未設定"
 }

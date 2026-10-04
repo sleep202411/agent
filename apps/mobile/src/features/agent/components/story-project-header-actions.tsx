@@ -268,7 +268,7 @@ function OwnedStoryProjectHeaderActions({
     const message = kind ? `${t(`agent.publish.actionError.${kind}`)}\n\n${detail}` : detail;
     const diagnostics = storyPublicationDiagnostics(error);
     Alert.alert(title, message, [
-      ...(diagnostics.chapterId && diagnostics.issues.some((issue) => issue.nodeId)
+      ...(diagnostics.chapterId && diagnostics.issues.length > 0
         ? [{ text: t("storyRepair.title"), onPress: () => onDiagnostics(diagnostics) }]
         : []),
       { text: t("agent.publish.cancel"), style: "cancel" },
