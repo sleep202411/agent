@@ -1,3 +1,4 @@
+import { VideoChannelPicker } from "@/features/ip-community/video-channel-picker";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
@@ -218,6 +219,7 @@ export default function AllIpsScreen() {
   const header = (
     <View style={styles.headerStack}>
       <ScreenHeader title={t("ips.title")} />
+      <VideoChannelPicker />
       <Pressable
         accessibilityRole="button"
         onPress={() => router.push(toHref("/content-gps"))}

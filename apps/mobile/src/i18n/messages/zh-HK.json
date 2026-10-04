@@ -4832,5 +4832,8 @@
   "channelVideos.recover": "已儲存未完成的投稿。重試將繼續提交同一影片和資料。",
   "channelVideos.videoTitle": "影片標題",
   "channelVideos.description": "簡介（選填）",
-  "channelVideos.choose": "選擇影片（MP4、WebM 或 MOV；最大 2 GiB）"
+  "channelVideos.choose": "選擇影片（MP4、WebM 或 MOV；最大 2 GiB）",
+  "channelVideos.changeChannel": "更換頻道",
+  "channelVideos.searchChannels": "搜尋社區頻道",
+  "channelVideos.noChannels": "未找到社區頻道。"
 }

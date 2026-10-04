@@ -4832,5 +4832,8 @@
   "channelVideos.recover": "已保存未完成的投稿。重试将继续提交同一视频和信息。",
   "channelVideos.videoTitle": "视频标题",
   "channelVideos.description": "简介（选填）",
-  "channelVideos.choose": "选择视频（MP4、WebM 或 MOV；最大 2 GiB）"
+  "channelVideos.choose": "选择视频（MP4、WebM 或 MOV；最大 2 GiB）",
+  "channelVideos.changeChannel": "更换频道",
+  "channelVideos.searchChannels": "搜索社区频道",
+  "channelVideos.noChannels": "未找到社区频道。"
 }
