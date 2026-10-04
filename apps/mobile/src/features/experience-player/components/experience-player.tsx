@@ -69,7 +69,11 @@ import {
   validateExperienceSaveCheckpoint,
   type ExperienceSaveCheckpoint,
 } from "../lib/experience-save-checkpoint";
-import { getExperienceJourneyActiveAccess } from "@repo/experience-engine";
+import {
+  getExperienceJourneyActiveAccess,
+  createExperienceJourney,
+  recordExperienceJourney,
+} from "../lib/experience-journey-model";
 import {
   loadExperienceTheme as defaultLoadExperienceTheme,
   type ExperienceThemeLoader,
@@ -253,7 +257,13 @@ function ActiveExperienceRuntimePlayer({
   entryCheckpoint?: ExperienceSaveCheckpoint;
 }) {
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [initialPlayback] = useState(() => entryCheckpoint?.playback);
+  const [journey, setJourney] = useState(
+    () => entryCheckpoint?.journey ?? createExperienceJourney(manifest)
+  );
+  const journeyRef = useRef(journey);
+  const startedRef = useRef(false);
   const mediaCheckpointsRef = useRef(
     new Map<string, ExperienceMediaCheckpoint>(
       initialPlayback?.media.map((item) => [item.rendererInstanceId, item])
@@ -270,10 +280,38 @@ function ActiveExperienceRuntimePlayer({
   const recordMediaCheckpoint = useCallback(
     (checkpoint: ExperienceMediaCheckpoint) => {
       if (sceneEpoch !== checkpointEpochRef.current) return;
+      try {
+        const currentScene = findGraphNode(manifest, runtimeState.currentSceneId);
+        if (
+          startedRef.current &&
+          currentScene?.kind === "scene" &&
+          currentScene.renderers.some(
+            (renderer) => renderer.instanceId === checkpoint.rendererInstanceId
+          )
+        ) {
+          const next = recordExperienceJourney(manifest, journeyRef.current, {
+            watchedMedia: [
+              {
+                sceneId: currentScene.sceneId,
+                rendererInstanceId: checkpoint.rendererInstanceId,
+                sequenceIndex: checkpoint.sequenceIndex,
+                assetId: checkpoint.assetId,
+                mediaSignature: checkpoint.mediaSignature,
+                watchedUntilMs: checkpoint.watchedUntilMs,
+              },
+            ],
+          });
+          journeyRef.current = next;
+          setJourney(next);
+        }
+      } catch (error) {
+        setRuntimeError(runtimeErrorMessage(error));
+        return;
+      }
       mediaCheckpointsRef.current.set(checkpoint.rendererInstanceId, structuredClone(checkpoint));
       setCheckpointRevision((value) => value + 1);
     },
-    [sceneEpoch]
+    [sceneEpoch, manifest, runtimeState.currentSceneId]
   );
   const recordSettledGestures = useCallback(
     (ids: string[]) => {
@@ -289,7 +327,6 @@ function ActiveExperienceRuntimePlayer({
   const [sceneTimeMs, setSceneTimeMs] = useState(initialPlayback?.sceneTimeMs ?? 0);
   const [theme, setTheme] = useState<ExperienceThemeConfig | null>(null);
   const [started, setStarted] = useState(false);
-  const startedRef = useRef(false);
   const [viewerPaused, setViewerPaused] = useState(false);
   const stageTapRef = useRef<{ x: number; y: number; time: number; sceneId: string } | null>(null);
   const gestureTapGuardRef = useRef<((x: number, y: number) => boolean) | null>(null);
@@ -308,7 +345,6 @@ function ActiveExperienceRuntimePlayer({
   const presentingRef = useRef(false);
   const deferredOutcomesRef = useRef<(() => void)[]>([]);
   const [starting, setStarting] = useState(false);
-  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [timelineHoldGate, setTimelineHoldGate] = useState(false);
   const timelineHoldGateRef = useRef(false);
   useEffect(() => {
@@ -367,6 +403,12 @@ function ActiveExperienceRuntimePlayer({
 
   const applyResult = useCallback(
     (result: ExperienceEventQueueResult) => {
+      const nextJourney = recordExperienceJourney(manifest, journeyRef.current, {
+        sceneId: result.state.currentSceneId,
+        effects: result.effects,
+      });
+      journeyRef.current = nextJourney;
+      setJourney(nextJourney);
       setRuntimeState(result.state);
       applyAudioEffects(result.effects);
       result.effects.forEach((effect) => {
@@ -439,7 +481,7 @@ function ActiveExperienceRuntimePlayer({
         );
       }
     },
-    [applyAudioEffects]
+    [applyAudioEffects, manifest]
   );
 
   const run = useCallback(
@@ -616,9 +658,7 @@ function ActiveExperienceRuntimePlayer({
 
   const currentNode = findGraphNode(manifest, runtimeState.currentSceneId);
   const entryRequirements = [
-    ...(entryCheckpoint?.journey
-      ? getExperienceJourneyActiveAccess(manifest, entryCheckpoint.journey)
-      : []),
+    ...getExperienceJourneyActiveAccess(manifest, journey),
     ...(currentNode?.access ? [currentNode.access] : []),
   ];
   const entryLocked = entryRequirements.some((requirement) => !access?.canAccess(requirement));
@@ -760,6 +800,7 @@ function ActiveExperienceRuntimePlayer({
     onCheckpoint(
       structuredClone({
         state: runtimeState,
+        journey: journeyRef.current,
         events: pendingCheckpointEventsRef.current,
         ...(currentScene?.kind === "scene"
           ? {

@@ -10,7 +10,10 @@ import {
 import { ExperiencePlayer } from "./experience-player";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import type { ExperienceSaveCheckpoint } from "../lib/experience-save-checkpoint";
-import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
+import {
+  mediaPlaybackSignature,
+  type ExperienceMediaCheckpoint,
+} from "../lib/experience-playback-checkpoint";
 const h = vi.hoisted(() => ({
   active: true,
   stage: {} as Record<string, (event: any) => any>,
@@ -153,7 +156,16 @@ const runtime = {
         kind: "scene",
         sceneId: "scene",
         renderers: [
-          { instanceId: "video", rendererId: EXPERIENCE_CORE_VIDEO_RENDERER_ID, layer: 0 },
+          {
+            instanceId: "video",
+            rendererId: EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+            layer: 0,
+            config: {
+              fit: "cover",
+              autoplay: true,
+              sequence: [{ clipId: "clip", assetId: "clip", endBehavior: { behavior: "advance" } }],
+            },
+          },
         ],
         clock: { kind: "fixed", durationMs: 10000 },
         timeline: { cues: [] },
@@ -161,9 +173,26 @@ const runtime = {
     ],
   },
   metadata: { title: { "en-US": "Fixture" } },
-  assets: [],
+  assets: [
+    { assetId: "clip", kind: "video", variants: [{ uri: "/clip.mp4", sha256: "a".repeat(64) }] },
+  ],
   localization: { locales: ["en-US"], defaultLocale: "en-US" },
 } as unknown as ExperienceRuntimeManifest;
+function progress(positionMs: number): ExperienceMediaCheckpoint {
+  return {
+    rendererInstanceId: "video",
+    sequenceIndex: 0,
+    assetId: "clip",
+    mediaSignature: mediaPlaybackSignature(runtime, "clip"),
+    positionMs,
+    watchedUntilMs: positionMs,
+    durationMs: 10000,
+    isStill: false,
+    terminalMode: null,
+    remainingHoldMs: null,
+    completed: false,
+  };
+}
 const copy = { pause: "Pause", resume: "Resume", paused: "Paused" } as ExperiencePlayerCopy;
 const loader = () => Promise.resolve({ tokens: {} } as ExperienceThemeConfig);
 let root: Root;
@@ -224,16 +253,14 @@ it("captures engine, audio, media and settled gestures only after Start, then re
       media: [],
     },
   });
-  const media = {
-    rendererInstanceId: "video",
-    assetId: "clip",
-    positionMs: 500,
-  } as ExperienceMediaCheckpoint;
+  const media = progress(500);
   await act(async () => {
     h.video.onPlaybackProgress(media);
     h.settled!(["gesture.one"]);
   });
   const snapshot = captured.mock.calls.at(-1)![0];
+  expect(snapshot.journey.visitedNodeIds).toEqual(["scene"]);
+  expect(snapshot.journey.watchedMedia[0].watchedUntilMs).toBe(500);
   expect(snapshot.playback).toMatchObject({ media: [media], settledGestureIds: ["gesture.one"] });
   media.positionMs = 1000;
   expect(snapshot.playback.media[0].positionMs).toBe(500);
@@ -255,22 +282,33 @@ it("rejects late media and gesture updates after re-entering the same scene", as
   const oldMedia = h.video.onPlaybackProgress;
   const oldGestures = h.settled!;
   await act(async () => {
-    oldMedia({ rendererInstanceId: "video", positionMs: 500 } as ExperienceMediaCheckpoint);
+    oldMedia(progress(500));
     oldGestures(["old-gesture"]);
   });
   h.outcome.mockImplementationOnce(() => ({
     state: { ...h.state },
-    effects: [{ kind: "scene.changed", fromSceneId: "scene", toSceneId: "scene" }],
+    effects: [
+      {
+        kind: "scene.changed",
+        fromSceneId: "scene",
+        toSceneId: "scene",
+        bindingId: "loop",
+        routeId: "again",
+      },
+    ],
   }));
   await act(async () => h.video.onCompleted());
   expect(captured.mock.calls.at(-1)![1]).toBe("transition");
+  expect(captured.mock.calls.at(-1)![0].journey.traversedEdges).toEqual([
+    { fromSceneId: "scene", bindingId: "loop", routeId: "again", toSceneId: "scene" },
+  ]);
   expect(captured.mock.calls.at(-1)![0].playback).toMatchObject({
     media: [],
     settledGestureIds: [],
     sceneTimeMs: 0,
   });
   await act(async () => {
-    oldMedia({ rendererInstanceId: "video", positionMs: 900 } as ExperienceMediaCheckpoint);
+    oldMedia(progress(900));
     oldGestures(["late-gesture"]);
   });
   await pausePicture();
@@ -279,12 +317,12 @@ it("rejects late media and gesture updates after re-entering the same scene", as
     settledGestureIds: [],
   });
   await act(async () => {
-    h.video.onPlaybackProgress({
-      rendererInstanceId: "video",
-      positionMs: 100,
-    } as ExperienceMediaCheckpoint);
+    h.video.onPlaybackProgress(progress(100));
   });
   expect(captured.mock.calls.at(-1)![0].playback.media[0].positionMs).toBe(100);
+  // Replaying resets the player position, but preserves legitimate viewing credit.
+  // The stale callback above must not increase it to 900.
+  expect(captured.mock.calls.at(-1)![0].journey.watchedMedia[0].watchedUntilMs).toBe(500);
 });
 const savedCheckpoint = (ended = false): ExperienceSaveCheckpoint =>
   ({
@@ -361,6 +399,16 @@ it("keeps saved renderer playback disabled while leaving interactions available"
   expect(h.mediaPresenting).toBe(false);
   expect(h.spatialPresenting).toBe(true);
   expect(captured.mock.calls.at(-1)![0].playback.playbackEnabled).toBe(false);
+});
+it("does not record a rejected renderer route as explored", async () => {
+  await render(true, runtime, true);
+  await click("Start");
+  h.outcome.mockImplementationOnce(() => {
+    throw new Error("Route refused");
+  });
+  await act(async () => h.video.onCompleted());
+  expect(captured.mock.calls.at(-1)![0].journey.traversedEdges).toEqual([]);
+  expect(captured.mock.calls.at(-1)![0].journey.visitedNodeIds).toEqual(["scene"]);
 });
 afterEach(async () => {
   await act(async () => root.unmount());
