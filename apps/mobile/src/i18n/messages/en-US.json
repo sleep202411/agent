@@ -4416,7 +4416,7 @@
   "openings.role": "Role",
   "openings.genre": "Genre",
   "openings.employment": "Employment",
-  "openings.seniority": "Qualification",
+  "openings.capabilities": "Certification capabilities",
   "openings.workMode": "Work mode",
   "openings.salary": "Salary",
   "openings.minimum": "Minimum salary",

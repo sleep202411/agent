@@ -2,7 +2,6 @@ import { z } from "zod";
 import {
   CREW_GENRES,
   EMPLOYMENT_TYPES,
-  EXPERIENCE_LEVELS,
   WORK_MODES,
   SALARY_PERIODS,
   isPresetPosition,
@@ -20,7 +19,7 @@ export const openingFilters = z
       .default(""),
     genre: z.union([z.literal(""), z.enum(CREW_GENRES)]).default(""),
     employment: z.array(z.enum(EMPLOYMENT_TYPES)).default([]),
-    seniority: z.array(z.enum(EXPERIENCE_LEVELS)).default([]),
+    skills: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
     workMode: z.array(z.enum(WORK_MODES)).default([]),
     sort: z.enum(["newest", "oldest"]).default("newest"),
     salaryMinMinor: minor.optional(),
@@ -76,8 +75,9 @@ export async function fetchOpenings(
     "salaryPeriod",
   ] as const)
     if (f[key] !== undefined && f[key] !== "") params[key] = f[key]!;
-  for (const key of ["employment", "seniority", "workMode"] as const)
+  for (const key of ["employment", "workMode"] as const)
     if (f[key].length) params[key] = [...new Set(f[key])].sort().join(",");
+  if (f.skills.length) params.skills = JSON.stringify([...new Set(f.skills)].sort());
   if (cursor) params.cursor = cursor;
   const page = savedPage.parse(
     await api.get("/positions", { service: "aurora", retry: false, signal, params })

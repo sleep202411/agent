@@ -15,7 +15,7 @@ it("serializes all official filters without requiring a signed-in viewer", async
     genre: "animation",
     positionType: "director",
     employment: ["full_time", "freelance"],
-    seniority: ["senior"],
+    skills: ["Editing, sound", "Director", "Director"],
     workMode: ["remote"],
     salaryMinMinor: "12000",
     salaryCurrency: "USD",
@@ -33,7 +33,7 @@ it("serializes all official filters without requiring a signed-in viewer", async
         genre: "animation",
         positionType: "director",
         employment: "freelance,full_time",
-        seniority: "senior",
+        skills: '["Director","Editing, sound"]',
         workMode: "remote",
         salaryMinMinor: "12000",
         salaryCurrency: "USD",
@@ -57,6 +57,9 @@ it.each(["-1", "1.001", "1e3", "01", "100000000000000", "NaN"])(
   }
 );
 it.each([
+  { skills: [""] },
+  { skills: ["x".repeat(81)] },
+  { skills: Array.from({ length: 21 }, (_, i) => `Skill ${i}`) },
   { workMode: ["unknown"] },
   { genre: "unknown" },
   { salaryMinMinor: "1" },

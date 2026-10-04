@@ -4,7 +4,6 @@ import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react
 import {
   CREW_GENRES,
   EMPLOYMENT_TYPES,
-  EXPERIENCE_LEVELS,
   WORK_MODES,
   SALARY_PERIODS,
   PRESET_POSITIONS,
@@ -18,6 +17,7 @@ import { useLocale, useTranslations, type MessageKey } from "@/i18n";
 import { isChinaRegion } from "@/config/app-env";
 import { toHref } from "@/lib/navigation";
 import { crewPositionLabel } from "@/lib/crew-position-label";
+import { fetchCertificationLevels } from "@/features/certificates/level-application-api";
 import {
   fetchOpenings,
   openingFilters,
@@ -52,6 +52,23 @@ function Openings({ generation }: { generation: number }) {
     [max, setMax] = useState(""),
     [period, setPeriod] = useState<(typeof SALARY_PERIODS)[number]>("project"),
     [error, setError] = useState("");
+  const [capabilities, setCapabilities] = useState<string[]>();
+  const [capabilityError, setCapabilityError] = useState("");
+  const [capabilityRevision, setCapabilityRevision] = useState(0);
+  useEffect(() => {
+    if (!expanded) return;
+    const controller = new AbortController();
+    void fetchCertificationLevels(generation, controller.signal).then(
+      (rows) => {
+        if (!controller.signal.aborted) setCapabilities([...new Set(rows.map((row) => row.name))]);
+      },
+      (cause) => {
+        if (!controller.signal.aborted)
+          setCapabilityError(cause instanceof Error ? cause.message : String(cause));
+      }
+    );
+    return () => controller.abort();
+  }, [expanded, generation, capabilityRevision]);
   const button = (label: string, onPress: () => void) => (
     <Pressable accessibilityRole="button" style={{ padding: 12, minHeight: 44 }} onPress={onPress}>
       <ThemedText>{label}</ThemedText>
@@ -85,7 +102,8 @@ function Openings({ generation }: { generation: number }) {
     values: readonly string[],
     selected: readonly string[],
     change: (value: string) => void,
-    labelOf: (v: string) => string
+    labelOf: (v: string) => string,
+    maxSelected?: number
   ) => (
     <View style={{ gap: 4 }}>
       <ThemedText type="smallBold">{label}</ThemedText>
@@ -95,6 +113,11 @@ function Openings({ generation }: { generation: number }) {
             key={value}
             accessibilityRole="button"
             accessibilityState={{ selected: selected.includes(value) }}
+            disabled={
+              !selected.includes(value) &&
+              maxSelected !== undefined &&
+              selected.length >= maxSelected
+            }
             onPress={() => change(value)}
             style={{
               padding: 12,
@@ -110,12 +133,14 @@ function Openings({ generation }: { generation: number }) {
       </ScrollView>
     </View>
   );
-  const toggle = (key: "employment" | "seniority" | "workMode", value: string) =>
+  const toggle = (key: "employment" | "skills" | "workMode", value: string) =>
     setDraft((f) => ({
       ...f,
       [key]: f[key].includes(value as never)
         ? f[key].filter((v) => v !== value)
-        : [...f[key], value],
+        : key === "skills" && f.skills.length >= 20
+          ? f.skills
+          : [...f[key], value],
     }));
   const apply = () => {
     try {
@@ -139,7 +164,11 @@ function Openings({ generation }: { generation: number }) {
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       {input(t("openings.search"), draft.q, (q) => setDraft((f) => ({ ...f, q })))}
       <View style={{ flexDirection: "row" }}>
-        {button(t("openings.filters"), () => setExpanded((v) => !v))}
+        {button(t("openings.filters"), () => {
+          setCapabilities(undefined);
+          setCapabilityError("");
+          setExpanded((v) => !v);
+        })}
         {button(t("openings.apply"), apply)}
       </View>
       {expanded ? (
@@ -165,12 +194,25 @@ function Openings({ generation }: { generation: number }) {
             (v) => toggle("employment", v),
             (v) => t(`positionCreate.${v}` as MessageKey)
           )}
+          {capabilityError ? (
+            <View>
+              <ThemedText accessibilityRole="alert">{capabilityError}</ThemedText>
+              {button(t("common.retry"), () => {
+                setCapabilities(undefined);
+                setCapabilityError("");
+                setCapabilityRevision((v) => v + 1);
+              })}
+            </View>
+          ) : capabilities === undefined ? (
+            <ActivityIndicator />
+          ) : null}
           {choices(
-            t("openings.seniority"),
-            EXPERIENCE_LEVELS,
-            draft.seniority,
-            (v) => toggle("seniority", v),
-            (v) => t(`positionCreate.${v}` as MessageKey)
+            t("openings.capabilities"),
+            capabilities ?? [],
+            draft.skills,
+            (v) => toggle("skills", v),
+            (v) => v,
+            20
           )}
           {choices(
             t("openings.workMode"),
