@@ -216,6 +216,8 @@ export function StoryRepairInteractionsEditor({
                 nodeId={nodeId}
                 frameProfile={frameProfile}
                 value={current.rect}
+                interaction={current}
+                content={content}
                 disabled={disabled}
                 suspended={!!effectOutcome}
                 onChange={(rect) => update({ rect })}

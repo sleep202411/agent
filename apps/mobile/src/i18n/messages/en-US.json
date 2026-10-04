@@ -5014,5 +5014,14 @@
   "storyDuplicate.attachedChoice": "Attached choice",
   "storyDuplicate.selected": "selected",
   "storyDuplicate.apply": "Duplicate selected",
-  "storyDuplicate.help": "Select scenes or decisions to copy. Links within the selection follow the copies; links to other nodes are disconnected. Ending links stay. Scene media is not copied. Selecting a scene includes its attached choice. Copies remain drafts until you save."
+  "storyDuplicate.help": "Select scenes or decisions to copy. Links within the selection follow the copies; links to other nodes are disconnected. Ending links stay. Scene media is not copied. Selecting a scene includes its attached choice. Copies remain drafts until you save.",
+  "storyHotspot.preview": "Preview",
+  "storyHotspot.previewHelp": "Tap the hotspot during its input window to see the configured success action. This preview does not execute gestures, actions or state effects.",
+  "storyHotspot.previewInvalid": "Finish the hotspot fields before previewing.",
+  "storyHotspot.previewOutcome": "Preview outcome",
+  "storyHotspot.previewContinue": "Would continue playback.",
+  "storyHotspot.previewPause": "Would pause playback.",
+  "storyHotspot.previewSeek": "Would seek to",
+  "storyHotspot.previewGoto": "Would go to",
+  "storyHotspot.previewMissingTarget": "The destination is unavailable."
 }

@@ -1,3 +1,5 @@
+import { StoryHotspotOutcomePreview } from "./story-hotspot-outcome-preview";
+import type { RepairContent } from "../lib/story-repair-fields";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -95,6 +97,8 @@ type PlacementProps = {
   nodeId: string;
   frameProfile?: "landscape_16_9" | "portrait_9_16";
   value: unknown;
+  interaction?: unknown;
+  content?: RepairContent;
   disabled: boolean;
   suspended?: boolean;
   onChange: (rect: HotspotRect) => boolean;
@@ -114,6 +118,8 @@ function PlacementSession({
   nodeId,
   frameProfile,
   value,
+  interaction,
+  content,
   disabled,
   suspended = false,
   onChange,
@@ -130,7 +136,7 @@ function PlacementSession({
     [time, setTime] = useState(0),
     [seekText, setSeekText] = useState("0"),
     [seek, setSeek] = useState({ ms: 0, revision: 0 });
-  const [mode, setMode] = useState<"draw" | "move" | "resize">("move"),
+  const [mode, setMode] = useState<"draw" | "move" | "resize" | "preview">("move"),
     [size, setSize] = useState({ width: 0, height: 0 }),
     [preview, setPreview] = useState<HotspotRect | null>(null);
   const drag = useRef<{
@@ -176,6 +182,7 @@ function PlacementSession({
     y: e.nativeEvent.locationY / size.height,
   });
   const canPlace =
+    mode !== "preview" &&
     !disabled &&
     active &&
     !!frameProfile &&
@@ -212,17 +219,26 @@ function PlacementSession({
       ) : (
         <>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-            {(["draw", "move", "resize"] as const).map((item) => (
+            {(
+              [
+                "draw",
+                "move",
+                "resize",
+                ...(interaction && content ? ["preview" as const] : []),
+              ] as const
+            ).map((item) => (
               <View key={item}>
                 {button(
                   `${item === mode ? "● " : "○ "}${t(`storyHotspot.${item}`)}`,
                   () => setMode(item),
-                  disabled
+                  disabled && item !== "preview"
                 )}
               </View>
             ))}
           </View>
-          <ThemedText type="small">{t("storyHotspot.placeHelp")}</ThemedText>
+          <ThemedText type="small">
+            {t(mode === "preview" ? "storyHotspot.previewHelp" : "storyHotspot.placeHelp")}
+          </ThemedText>
           <View
             style={{
               width: "100%",
@@ -251,6 +267,7 @@ function PlacementSession({
               }
               onStartShouldSetResponder={() => canPlace}
               onResponderGrant={(e) => {
+                if (mode === "preview") return;
                 setPlaying(false);
                 drag.current = {
                   start: point(e),
@@ -274,7 +291,7 @@ function PlacementSession({
                 setPreview(null);
               }}
             >
-              {shown ? (
+              {shown && mode !== "preview" ? (
                 <View
                   pointerEvents="none"
                   style={{
@@ -290,6 +307,15 @@ function PlacementSession({
                 />
               ) : null}
             </View>
+            {mode === "preview" && interaction && content ? (
+              <StoryHotspotOutcomePreview
+                key={JSON.stringify(interaction)}
+                value={interaction}
+                content={content}
+                time={time}
+                active={active}
+              />
+            ) : null}
           </View>
           {source ? (
             <>

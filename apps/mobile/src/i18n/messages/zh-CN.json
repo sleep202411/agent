@@ -5014,5 +5014,14 @@
   "storyDuplicate.attachedChoice": "附带选择",
   "storyDuplicate.selected": "项已选",
   "storyDuplicate.apply": "复制所选",
-  "storyDuplicate.help": "选择要复制的场景或选择节点。所选节点之间的连接指向副本，指向其他节点的连接会断开，结局连接保留。场景媒体不会复制。选择场景时包含其附带选择。保存前副本仅为草稿。"
+  "storyDuplicate.help": "选择要复制的场景或选择节点。所选节点之间的连接指向副本，指向其他节点的连接会断开，结局连接保留。场景媒体不会复制。选择场景时包含其附带选择。保存前副本仅为草稿。",
+  "storyHotspot.preview": "预览",
+  "storyHotspot.previewHelp": "在输入时间段内点击热点，查看已配置的成功动作。此预览不会执行手势、动作或状态效果。",
+  "storyHotspot.previewInvalid": "请先填写完整的热点字段。",
+  "storyHotspot.previewOutcome": "预览结果",
+  "storyHotspot.previewContinue": "将继续播放。",
+  "storyHotspot.previewPause": "将暂停播放。",
+  "storyHotspot.previewSeek": "将跳转至时间",
+  "storyHotspot.previewGoto": "将前往",
+  "storyHotspot.previewMissingTarget": "目标已不可用。"
 }
