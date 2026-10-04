@@ -22,6 +22,8 @@ import {
   type StoryRepairDraft,
   type StoryRepairScope,
 } from "../api/story-draft-repair-api";
+import { StoryRepairConditionEditor } from "./story-repair-condition-editor";
+import { replaceChoiceCondition } from "../lib/story-repair-conditions";
 import type { StoryPublicationDiagnostic } from "../api/story-publication-errors";
 import {
   repairBranches,
@@ -67,6 +69,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const [command, setCommand] = useState<StoryRepairCommand>();
   const [showSaved, setShowSaved] = useState(false);
   const [choosingEntry, setChoosingEntry] = useState(false);
+  const [conditionChoice, setConditionChoice] = useState<string>();
   const [uncertain, setUncertain] = useState(false),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
@@ -120,7 +123,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
       uncertain ||
       conflict
     )
-      return;
+      return false;
     try {
       const next: StoryRepairCommand = command
         ? {
@@ -142,8 +145,10 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
       local.write(JSON.stringify(next));
       setCommand(next);
       setError(undefined);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      return false;
     }
   };
   const save = async () => {
@@ -340,6 +345,13 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                       />
                     ) : null}
                     {branch.choiceId ? (
+                      <RepairAction
+                        label={t("storyCondition.title")}
+                        disabled={busy || uncertain || conflict || showSaved}
+                        onPress={() => setConditionChoice(branch.choiceId!)}
+                      />
+                    ) : null}
+                    {branch.choiceId ? (
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
                         <RepairAction
                           label={t("storyRepair.moveUp")}
@@ -458,6 +470,26 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
           </>
         ) : null}
       </ScrollView>
+      {conditionChoice && content && loaded ? (
+        <StoryRepairConditionEditor
+          key={`${selected}:${conditionChoice}`}
+          content={content}
+          condition={
+            (
+              repairChoiceExit(content, selected)?.choices as Record<string, unknown>[] | undefined
+            )?.find((choice) => choice.choiceId === conditionChoice)?.visibleWhen
+          }
+          userId={userId}
+          storageKey={`${scope.projectId}:${scope.chapterId}:${selected}:${conditionChoice}`}
+          canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+          onApply={(value) =>
+            edit((currentContent) =>
+              replaceChoiceCondition(currentContent, selected, conditionChoice, value)
+            )
+          }
+          onClose={() => setConditionChoice(undefined)}
+        />
+      ) : null}
     </View>
   );
 }
