@@ -3,6 +3,9 @@ import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryProjectHeaderActions } from "./story-project-header-actions";
+vi.mock("./story-chapters-sheet", () => ({
+  StoryChaptersSheet: () => <span>Chapter manager</span>,
+}));
 const h = vi.hoisted(() => ({
   generation: 1,
   failed: false,
@@ -411,4 +414,12 @@ it("opens the current chapter graph without requiring publication or a release r
   expect(host.textContent).toContain("Repair sheet");
   expect(h.prepare).not.toHaveBeenCalled();
   expect(h.submit).not.toHaveBeenCalled();
+});
+it("opens chapter management for readers without granting mutation permissions", async () => {
+  h.capabilities = ["story.read"];
+  await mount();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="storyChapters.title"]')!.click()
+  );
+  expect(host.textContent).toContain("Chapter manager");
 });

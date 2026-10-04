@@ -5087,5 +5087,18 @@
   "storyMove.help": "Move this project and its members to another workspace. Existing credits and usage stay in their original workspace. Finish active generation and sessions first.",
   "storyMove.empty": "No other workspace where you are an owner or admin is available.",
   "storyMove.confirm": "Move project",
-  "storyMove.confirmHelp": "Move this project to {workspace}?"
+  "storyMove.confirmHelp": "Move this project to {workspace}?",
+  "storyChapters.title": "Chapters",
+  "storyChapters.create": "New chapter",
+  "storyChapters.rename": "Rename",
+  "storyChapters.up": "Move up",
+  "storyChapters.down": "Move down",
+  "storyChapters.archive": "Archive chapter",
+  "storyChapters.archiveHelp": "Only empty chapters can be archived. Local graph edits must be saved or discarded first.",
+  "storyChapters.name": "Chapter title",
+  "storyChapters.discard": "Discard pending changes",
+  "storyChapters.discardHelp": "A previous request may already have succeeded. Review the chapter list before starting again. This removes only local pending edits.",
+  "storyChapters.unknownCreate": "Creation may have succeeded. Reload the list and choose the matching new chapter, or review it before starting again.",
+  "storyChapters.pending": "A chapter update is awaiting confirmation. Reload to check its result.",
+  "storyChapters.useExisting": "Use this chapter"
 }

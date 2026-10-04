@@ -5087,5 +5087,18 @@
   "storyMove.help": "将项目及其成员移动到另一工作区。现有积分和用量保留在原工作区。请先结束正在进行的生成任务和会话。",
   "storyMove.empty": "没有其他由你担任所有者或管理员的工作区。",
   "storyMove.confirm": "移动项目",
-  "storyMove.confirmHelp": "将此项目移动到「{workspace}」？"
+  "storyMove.confirmHelp": "将此项目移动到「{workspace}」？",
+  "storyChapters.title": "章节",
+  "storyChapters.create": "新建章节",
+  "storyChapters.rename": "重命名",
+  "storyChapters.up": "上移",
+  "storyChapters.down": "下移",
+  "storyChapters.archive": "归档章节",
+  "storyChapters.archiveHelp": "只能归档空章节。请先保存或放弃本地剧情修改。",
+  "storyChapters.name": "章节名称",
+  "storyChapters.discard": "放弃待处理修改",
+  "storyChapters.discardHelp": "之前的请求可能已成功。重新开始前请检查章节列表。这只会清除本地待处理修改。",
+  "storyChapters.unknownCreate": "章节可能已创建。请刷新列表并选择对应的新章节，或检查后重新开始。",
+  "storyChapters.pending": "章节修改尚待确认。请刷新以检查结果。",
+  "storyChapters.useExisting": "使用此章节"
 }

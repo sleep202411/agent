@@ -1,3 +1,4 @@
+import { StoryChaptersSheet } from "./story-chapters-sheet";
 import { StoryRepairSheet } from "./story-repair-sheet";
 import {
   storyPublicationActionErrorKind,
@@ -101,6 +102,8 @@ export function StoryCreditsButton() {
 /** Project header actions: publication badge + submit + take offline + credits. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
   const context = useStoryChapterContext();
+  const t = useTranslations();
+  const [chaptersOpen, setChaptersOpen] = useState(false);
   const { generation, user } = useAuth();
   const active = useScreenActive();
   const [repair, setRepair] = useState<{
@@ -112,6 +115,7 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     () => ({ projectId, chapterId: repair?.diagnostics.chapterId ?? "", generation }),
     [projectId, repair?.diagnostics.chapterId, generation]
   );
+  const chapterScope = useMemo(() => ({ projectId, generation }), [projectId, generation]);
   const parentToken = useMemo(
     () => ({ projectId, generation, active }),
     [projectId, generation, active]
@@ -148,6 +152,28 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   ]);
   return (
     <>
+      {active && userId && context.capabilities.includes("story.read") ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("storyChapters.title")}
+          onPress={() => setChaptersOpen(true)}
+          style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}
+        >
+          <Text style={{ color: "#f5f5f5", fontSize: 12 }}>{t("storyChapters.title")}</Text>
+        </Pressable>
+      ) : null}
+      {active && userId && chaptersOpen && context.capabilities.includes("story.read") ? (
+        <StoryChaptersSheet
+          scope={chapterScope}
+          userId={userId}
+          activeChapterId={context.chapterId}
+          onClose={() => setChaptersOpen(false)}
+          onChanged={() => {
+            context.refresh();
+            context.refreshPublication();
+          }}
+        />
+      ) : null}
       <OwnedStoryProjectHeaderActions
         key={identity}
         projectId={projectId}
