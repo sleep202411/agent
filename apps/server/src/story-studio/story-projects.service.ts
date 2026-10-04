@@ -59,7 +59,9 @@ import {
   type StoryBuildSummaryDto,
   type LockStoryRevisionInput,
   type MediaAssetSummaryDto,
+  StoredStoreListingSchema,
   type PatchStoryProjectInput,
+  type StoreListing,
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
@@ -640,9 +642,11 @@ export class StoryProjectsService {
         // og:image. A video could only ever have appeared on the studio's own
         // library card, so accepting one meant a creator could set a cover that
         // no player and no catalogue would ever show.
-        // No workspaceId here either — same reasoning as addCandidateAsset: the
-        // caller's right to edit this project is already settled, and uploads
-        // carry no workspace, so scoping by it only blocked legitimate covers.
+        // Personal uploads and explicitly shared references need the canonical
+        // consumption policy; project edit access alone does not grant media.
+        await this.requireProjectMediaUseAccess(user.userId, projectId, [
+          input.coverAssetId,
+        ]);
         const cover = await tx.mediaAsset.findFirst({
           where: {
             id: input.coverAssetId,
@@ -658,10 +662,18 @@ export class StoryProjectsService {
         if (!cover) {
           throw new UnprocessableEntityException({
             code: 'STORY_PROJECT_COVER_INVALID',
-            message:
-              'A project cover must be a ready image asset in this project workspace.',
+            message: 'A project cover must be a ready, available image asset.',
           });
         }
+      }
+      if (input.storeListing != null) {
+        await this.requireProjectMediaUseAccess(user.userId, projectId, [
+          ...(input.storeListing.trailerAssetId
+            ? [input.storeListing.trailerAssetId]
+            : []),
+          ...input.storeListing.screenshotAssetIds,
+        ]);
+        await this.assertStoreListingAssetsUsable(tx, input.storeListing);
       }
       return tx.storyProject.updateMany({
         where: {
@@ -683,6 +695,14 @@ export class StoryProjectsService {
             : {}),
           ...(input.tags !== undefined
             ? { tags: input.tags as Prisma.InputJsonArray }
+            : {}),
+          ...(input.storeListing !== undefined
+            ? {
+                storeListing:
+                  input.storeListing === null
+                    ? Prisma.DbNull
+                    : input.storeListing,
+              }
             : {}),
           ...(input.confirmCreativeProfile
             ? {
@@ -707,6 +727,54 @@ export class StoryProjectsService {
 
     const row = await this.loadProjectSummary(projectId);
     return this.toProjectSummary(row, user.userId);
+  }
+
+  /**
+   * Store-listing media must stay playable in the public store dialog: the
+   * trailer has to be a ready, unblocked video asset and every screenshot a
+   * ready, unblocked image. Deleted or moderated-out assets are rejected at
+   * save time (same reasoning as the cover guard) so the public read never
+   * has to silently drop a configured slide.
+   */
+  private async assertStoreListingAssetsUsable(
+    tx: Prisma.TransactionClient,
+    listing: StoreListing,
+  ): Promise<void> {
+    const usableWhere = {
+      status: MediaAssetStatus.ready,
+      moderationStatus: { not: MediaAssetModerationStatus.blocked },
+      deletedAt: null,
+    } as const;
+    const assetIds = [
+      ...(listing.trailerAssetId ? [listing.trailerAssetId] : []),
+      ...listing.screenshotAssetIds,
+    ];
+    if (assetIds.length === 0) return;
+    const assets = await tx.mediaAsset.findMany({
+      where: { id: { in: assetIds }, ...usableWhere },
+      select: { id: true, kind: true },
+    });
+    const byId = new Map(assets.map((asset) => [asset.id, asset.kind]));
+    if (
+      listing.trailerAssetId &&
+      byId.get(listing.trailerAssetId) !== MediaAssetKind.video
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'STORY_STORE_LISTING_TRAILER_INVALID',
+        message: 'The store trailer must be a ready, available video asset.',
+      });
+    }
+    const badScreenshot = listing.screenshotAssetIds.find(
+      (id) => byId.get(id) !== MediaAssetKind.image,
+    );
+    if (badScreenshot) {
+      throw new UnprocessableEntityException({
+        code: 'STORY_STORE_LISTING_SCREENSHOT_INVALID',
+        message:
+          'Every store screenshot must be a ready, available image asset.',
+        assetId: badScreenshot,
+      });
+    }
   }
 
   async archive(
@@ -1467,6 +1535,54 @@ export class StoryProjectsService {
     return rows.map(toCandidateAsset);
   }
 
+  /**
+   * Call after project authorization and before persisting any media reference.
+   * The canonical media policy already honors existing project references and
+   * Crew ACLs. A readable Studio document may additionally share an asset with
+   * this project's members; containment and document access are verified by the
+   * same policy. The proposed reference itself never grants access.
+   */
+  async requireProjectMediaUseAccess(
+    userId: string,
+    projectId: string,
+    assetIds: readonly string[],
+  ): Promise<void> {
+    let documents:
+      | Array<{ id: string; contentSnapshot: Prisma.JsonValue }>
+      | undefined;
+    for (const assetId of new Set(assetIds)) {
+      try {
+        await this.mediaAccess.requireUseAccessById(userId, assetId);
+      } catch (error) {
+        if (!(error instanceof ForbiddenException)) throw error;
+        documents ??= await this.prisma.studioDocument.findMany({
+          where: { storyProjectId: projectId },
+          select: { id: true, contentSnapshot: true },
+        });
+        let authorized = false;
+        for (const document of documents) {
+          // This is only a candidate filter. The policy checks actual document
+          // containment and the actor's current read permission before granting.
+          if (!JSON.stringify(document.contentSnapshot).includes(assetId)) {
+            continue;
+          }
+          try {
+            await this.mediaAccess.requireUseAccessById(userId, assetId, {
+              documentId: document.id,
+            });
+            authorized = true;
+            break;
+          } catch (contextError) {
+            if (!(contextError instanceof ForbiddenException)) {
+              throw contextError;
+            }
+          }
+        }
+        if (!authorized) throw error;
+      }
+    }
+  }
+
   async addCandidateAsset(
     user: AuthUser,
     projectId: string,
@@ -1475,22 +1591,9 @@ export class StoryProjectsService {
     await this.requireProject(user, projectId, 'story.edit');
 
     // Attaching media shares it with this project's present and future audience.
-    try {
-      await this.mediaAccess.requireUseAccessById(user.userId, mediaAssetId);
-    } catch (error) {
-      if (!(error instanceof ForbiddenException)) throw error;
-      const documents = await this.prisma.studioDocument.findMany({
-        where: { storyProjectId: projectId },
-        select: { id: true, contentSnapshot: true },
-      });
-      const document = documents.find((row) =>
-        JSON.stringify(row.contentSnapshot).includes(mediaAssetId),
-      );
-      if (!document) throw error;
-      await this.mediaAccess.requireUseAccessById(user.userId, mediaAssetId, {
-        documentId: document.id,
-      });
-    }
+    await this.requireProjectMediaUseAccess(user.userId, projectId, [
+      mediaAssetId,
+    ]);
     const candidate = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await this.permissions.requireProjectInTransaction(
@@ -2134,6 +2237,7 @@ export class StoryProjectsService {
       defaultLocale: row.defaultLocale,
       cover: row.cover ? toMediaAsset(row.cover) : null,
       tags: stringArray(row.tags),
+      storeListing: parseStoreListing(row.storeListing),
       sourceIpId: row.sourceIpId,
       projectVersion: row.version,
       draftRevision: row.draft?.revision ?? 0,
@@ -2596,6 +2700,14 @@ function stringArray(value: Prisma.JsonValue): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+/** Defensive read-back: a listing that fails its own schema serves as unset. */
+function parseStoreListing(
+  value: Prisma.JsonValue | null,
+): StoreListing | null {
+  const parsed = StoredStoreListingSchema.safeParse(value ?? null);
+  return parsed.success ? parsed.data : null;
 }
 
 function jsonRecordOrNull(

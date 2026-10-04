@@ -22,6 +22,63 @@ describe("ExperienceStoryClock", () => {
     vi.useRealTimers();
   });
 
+  it("keeps story time continuous while changing speed and rearms a pending timeout", () => {
+    const clock = new ExperienceStoryClock({ paused: false });
+    const origin = clock.now();
+    const fire = vi.fn();
+    clock.setTimeout(fire, 1_000);
+    vi.advanceTimersByTime(400);
+    clock.setRate(2);
+    expect(clock.now() - origin).toBe(400);
+    expect(clock.rate).toBe(2);
+    vi.advanceTimersByTime(299);
+    expect(fire).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(clock.now() - origin).toBe(1_000);
+    expect(fire).toHaveBeenCalledOnce();
+    clock.setRate(0.5);
+    vi.advanceTimersByTime(200);
+    expect(clock.now() - origin).toBe(1_100);
+  });
+
+  it("changes speed while paused without advancing or firing and resumes at that speed", () => {
+    const clock = new ExperienceStoryClock({ paused: false });
+    const origin = clock.now();
+    const fire = vi.fn();
+    clock.setTimeout(fire, 1_000);
+    vi.advanceTimersByTime(200);
+    clock.pause();
+    clock.setRate(2);
+    vi.advanceTimersByTime(5_000);
+    expect(clock.now() - origin).toBe(200);
+    expect(clock.paused).toBe(true);
+    expect(fire).not.toHaveBeenCalled();
+    clock.resume();
+    vi.advanceTimersByTime(399);
+    expect(fire).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(fire).toHaveBeenCalledOnce();
+  });
+
+  it("keeps interval cadence and frame timestamps at the selected speed", () => {
+    const clock = new ExperienceStoryClock({ paused: false });
+    const origin = clock.now();
+    const fire = vi.fn();
+    const frame = vi.fn();
+    clock.setInterval(fire, 200);
+    clock.setRate(2);
+    clock.requestFrame(frame);
+    vi.advanceTimersByTime(16);
+    expect(frame).toHaveBeenCalledWith(origin + 32);
+    vi.advanceTimersByTime(84);
+    expect(fire).toHaveBeenCalledOnce();
+    clock.setRate(0.5);
+    vi.advanceTimersByTime(399);
+    expect(fire).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(1);
+    expect(fire).toHaveBeenCalledTimes(2);
+  });
+
   it("freezes story time while paused and runs it on from there", () => {
     const clock = new ExperienceStoryClock({ paused: false });
     const origin = clock.now();

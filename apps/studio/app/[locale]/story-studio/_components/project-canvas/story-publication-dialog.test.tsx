@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StoryPublicationDialog } from "./story-publication-dialog";
+import {
+  StoryPublicationDialog,
+  StoryPublicationFailure,
+  StoryPublicationProgress,
+  StoryPublicationOfflineDialog,
+} from "./story-publication-dialog";
 import type { StoryPublicationState } from "./use-story-publication";
 
 const signIn = vi.hoisted(() => vi.fn());
@@ -54,6 +59,11 @@ const messages = {
           description: "Resolve the issue below, then try again.",
           locate: "Show on the plot tree",
         },
+        offline: {
+          title: "Take offline?",
+          description: "Remove the public version.",
+          confirm: "Take offline",
+        },
       },
     },
   },
@@ -87,31 +97,20 @@ describe("StoryPublicationDialog", () => {
     expect(onConfirm).toHaveBeenCalledOnce();
   });
 
-  it("shows the upstream failure and permits retry", async () => {
-    const onRetry = vi.fn();
-    await renderDialog(
-      {
-        status: "failed",
-        phase: "preparing",
-        code: "PREPARE_FAILED",
-        message: "Add a current video to the entrance clip.",
-      },
-      { onRetry }
+  it("keeps upstream failures on the page outside the confirmation dialog", async () => {
+    await renderContent(
+      <StoryPublicationFailure message="Add a current video to the entrance clip." issues={[]} />
     );
 
     expect(document.body.textContent).toContain("Add a current video to the entrance clip.");
-    await click(buttonByText("Try again"));
-    expect(onRetry).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("offers sign-in recovery while preserving the exact session failure", async () => {
-    await renderDialog({
-      status: "failed",
-      phase: "submitting",
-      code: "SUBMIT_FAILED",
-      errorKind: "auth",
-      message: "Upstream session expired",
-    });
+    await renderContent(
+      <StoryPublicationFailure message="Upstream session expired" issues={[]} errorKind="auth" />
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.body.textContent).toContain("Sign in again before publishing.");
     expect(document.body.textContent).toContain("Upstream session expired");
     await click(buttonByText("Sign in again"));
@@ -119,31 +118,50 @@ describe("StoryPublicationDialog", () => {
   });
 
   it("locates the plot node named by a publish failure", async () => {
-    const onLocateNode = vi.fn();
-    await renderDialog(
-      {
-        status: "failed",
-        phase: "preparing",
-        code: "PREPARE_FAILED",
-        message: "Clip 9 cannot be reached from the chapter start.",
-        issues: [
-          {
-            message: "Clip 9 cannot be reached from the chapter start.",
-            nodeId: "clip:scene-17",
-          },
-        ],
-      },
-      { onLocateNode }
+    const onLocateIssue = vi.fn();
+    const issue = {
+      message: "Clip 9 cannot be reached from the chapter start.",
+      nodeId: "clip:scene-17",
+      chapterId: "chapter-two",
+      chapterTitle: "Second Chapter",
+    };
+    await renderContent(
+      <StoryPublicationFailure
+        message={issue.message}
+        issues={[issue]}
+        onLocateIssue={onLocateIssue}
+      />
     );
 
     expect(document.body.textContent).toContain("Clip 9 cannot be reached from the chapter start.");
     await click(buttonByText("Show on the plot tree"));
-    expect(onLocateNode).toHaveBeenCalledWith("clip:scene-17");
+    expect(document.body.textContent).toContain("Second Chapter");
+    expect(onLocateIssue).toHaveBeenCalledWith(issue);
   });
 
-  it("cannot be dismissed while publication is active", async () => {
+  it("shows progress on the page while the final confirmation is closed", async () => {
+    await renderContent(
+      <>
+        <StoryPublicationDialog
+          state={{ status: "saving" }}
+          draftRevision={18}
+          canMutate={false}
+          disabledReason={null}
+          onClose={vi.fn()}
+          onConfirm={vi.fn()}
+        />
+        <StoryPublicationProgress phase="saving" />
+      </>
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).toContain("Save latest changes");
+  });
+
+  it("cannot dismiss the offline confirmation during its request", async () => {
     const onClose = vi.fn();
-    await renderDialog({ status: "saving" }, { onClose });
+    await renderContent(
+      <StoryPublicationOfflineDialog open pending onClose={onClose} onConfirm={vi.fn()} />
+    );
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -151,7 +169,7 @@ describe("StoryPublicationDialog", () => {
     });
 
     expect(onClose).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Save latest changes");
+    expect(buttonByText("Take offline").disabled).toBe(true);
   });
 
   it("keeps an already-open confirmation read-only while Agent authoring owns writes", async () => {
@@ -177,8 +195,6 @@ describe("StoryPublicationDialog", () => {
     callbacks: {
       onClose?: () => void;
       onConfirm?: () => void;
-      onRetry?: () => void;
-      onLocateNode?: (nodeId: string) => void;
       canMutate?: boolean;
       disabledReason?: string | null;
     } = {}
@@ -193,12 +209,20 @@ describe("StoryPublicationDialog", () => {
             disabledReason={callbacks.disabledReason ?? null}
             onClose={callbacks.onClose ?? vi.fn()}
             onConfirm={callbacks.onConfirm ?? vi.fn()}
-            onRetry={callbacks.onRetry ?? vi.fn()}
-            onLocateNode={callbacks.onLocateNode}
           />
         </NextIntlClientProvider>
       );
     });
+  }
+
+  async function renderContent(content: ReactNode) {
+    await act(async () =>
+      root.render(
+        <NextIntlClientProvider locale="en-US" messages={messages}>
+          {content}
+        </NextIntlClientProvider>
+      )
+    );
   }
 });
 

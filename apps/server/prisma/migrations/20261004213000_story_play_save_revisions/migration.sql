@@ -1,0 +1,4 @@
+ALTER TABLE "story_play_saves"
+  ADD COLUMN "playback" JSONB,
+  ADD COLUMN "revision" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN "cleared" BOOLEAN NOT NULL DEFAULT false;

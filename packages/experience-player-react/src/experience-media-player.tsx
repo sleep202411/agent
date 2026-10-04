@@ -32,6 +32,7 @@ export interface ExperienceMediaPlaybackHandle {
   play(): Promise<void>;
   pause(): void;
   seek(seconds: number): void;
+  setPlaybackRate(rate: number): void;
   /** Mute state applied straight to the element. The host calls this from the
    *  unmute click itself so the change rides the user activation instead of
    *  waiting for a render + effect. */
@@ -253,8 +254,11 @@ export function ExperienceMediaPlayer({
   loop,
   durationSeconds,
   clipStartTime,
+  initialTimeSeconds,
+  playbackRate = 1,
   onEnd,
   onTimeUpdate,
+  onDurationChange,
   onPlaybackError,
   onPlaybackHandle,
   onPlaybackInterrupted,
@@ -272,8 +276,12 @@ export function ExperienceMediaPlayer({
   loop: boolean;
   durationSeconds?: number;
   clipStartTime?: number;
+  /** Initial saved position, applied once when this source becomes playable. */
+  initialTimeSeconds?: number;
+  playbackRate?: number;
   onEnd: () => void;
   onTimeUpdate: (seconds: number) => void;
+  onDurationChange?: (seconds: number) => void;
   onPlaybackError: (message?: string) => void;
   onPlaybackHandle?: (handle: ExperienceMediaPlaybackHandle | null) => void;
   /** Something other than the player — the system, the OS media controls —
@@ -367,14 +375,36 @@ export function ExperienceMediaPlayer({
   // not undo that with a prop value React has not re-rendered yet — Chrome
   // pauses a video that is unmuted without user activation.
   const mutedRef = useRef(muted);
+  const playbackRateRef = useRef(playbackRate);
   const [rendered, setRendered] = useState<MediaClip | null>(clip);
   const [stillFrameHeld, setStillFrameHeld] = useState(false);
   const renderedDuration = rendered?.durationSeconds;
   const renderedLoop = rendered?.loop ?? false;
   const renderedIdentity = rendered?.identity ?? null;
   const renderedUri = rendered?.uri ?? null;
-  const readinessKey = rendered ? `${rendered.identity}\u0000${rendered.uri}` : null;
+  const renderedType = rendered?.playback.type ?? null;
+  const readinessKey = rendered
+    ? `${rendered.identity}\u0000${rendered.uri}\u0000${renderedType ?? ""}`
+    : null;
   const readinessRef = useRef<ExperienceMediaReadinessGate | null>(null);
+  const readyKeyRef = useRef<string | null>(null);
+  const readySourceRef = useRef<{
+    uri: string;
+    type: string | null;
+    media: HTMLMediaElement;
+  } | null>(null);
+  const initialSeekKeyRef = useRef<string | null>(null);
+  const pendingSeekRef = useRef<{ key: string; seconds: number } | null>(null);
+  const renderedContractRef = useRef({
+    duration: renderedDuration,
+    clipStartTime: rendered?.clipStartTime ?? 0,
+    onDurationChange,
+  });
+  renderedContractRef.current = {
+    duration: renderedDuration,
+    clipStartTime: rendered?.clipStartTime ?? 0,
+    onDurationChange,
+  };
   // Opened lazily: a clip still being negotiated on first mount has no key yet.
   if (!readinessRef.current && readinessKey !== null) {
     readinessRef.current = new ExperienceMediaReadinessGate(readinessKey);
@@ -449,17 +479,71 @@ export function ExperienceMediaPlayer({
     delivery?.markStaged(src);
   }, [delivery, src]);
   useLayoutEffect(() => {
+    if (readinessKey === null || initialSeekKeyRef.current === readinessKey) return;
+    initialSeekKeyRef.current = readinessKey;
+    pendingSeekRef.current =
+      initialTimeSeconds !== undefined &&
+      Number.isFinite(initialTimeSeconds) &&
+      initialTimeSeconds >= 0
+        ? { key: readinessKey, seconds: initialTimeSeconds }
+        : null;
+  }, [initialTimeSeconds, readinessKey]);
+  useLayoutEffect(() => {
     hlsRecoveryRef.current = null;
     failedRef.current = null;
     // A clip new to the element has not played, and waits for the host to play it.
     intentRef.current = "pause";
     reachedPlayingRef.current = false;
     endedKeyRef.current = null;
+    readyKeyRef.current = null;
     const readiness = readinessRef.current;
     if (!readiness || readinessKey === null) return;
     readiness.reset(readinessKey);
+    const readySource = readySourceRef.current;
+    const player = playerRef.current;
+    const media = providerMedia(player);
+    if (readySource?.uri !== renderedUri || readySource?.type !== renderedType)
+      readySourceRef.current = null;
+    // Replaying a different scene can keep the same native element and URI.
+    // Vidstack does not reload that source, so no new can-play event will open
+    // this entry's latch. Reuse only that exact, still-playable source; actual
+    // URI/provider changes continue waiting for their own readiness event.
+    if (
+      player &&
+      media &&
+      readySource?.uri === renderedUri &&
+      readySource.type === renderedType &&
+      readySource.media === media &&
+      !media.error &&
+      media.readyState >= media.HAVE_FUTURE_DATA
+    ) {
+      const contract = renderedContractRef.current;
+      synchronizePlayerContract(player, contract.duration, mutedRef.current);
+      applyPlayerPlaybackRate(player, playbackRateRef.current);
+      const seek = pendingSeekRef.current;
+      seekMediaPlayer(player, seek?.key === readinessKey ? seek.seconds : contract.clipStartTime);
+      pendingSeekRef.current = null;
+      readyKeyRef.current = readinessKey;
+      readiness.markReady(readinessKey);
+    }
     return () => readiness.cancel(readinessKey);
+  }, [readinessKey, renderedType, renderedUri]);
+  useEffect(() => {
+    if (readinessKey === null || readyKeyRef.current !== readinessKey) return;
+    // A parent renderer initializes its new entry in a layout effect. Report
+    // cached duration after that initialization, just as a fresh can-play does.
+    const contract = renderedContractRef.current;
+    emitValidDuration(
+      contract.onDurationChange,
+      contract.duration ?? providerMedia(playerRef.current)?.duration
+    );
   }, [readinessKey]);
+  useLayoutEffect(() => {
+    if (!Number.isFinite(playbackRate) || playbackRate <= 0) return;
+    playbackRateRef.current = playbackRate;
+    const player = playerRef.current;
+    if (player) applyPlayerPlaybackRate(player, playbackRate);
+  }, [playbackRate, providerAttached, readinessKey]);
   useEffect(() => {
     mutedRef.current = muted;
     const player = playerRef.current;
@@ -548,10 +632,19 @@ export function ExperienceMediaPlayer({
         pauseMediaPlayer(player);
       },
       seek: (seconds) => {
-        if (disposed) return;
+        if (disposed || !Number.isFinite(seconds) || seconds < 0) return;
         // Sought back from its end, the clip has an end ahead of it again.
         endedKeyRef.current = null;
-        seekMediaPlayer(player, seconds);
+        pendingSeekRef.current = { key: readinessKey, seconds };
+        if (readyKeyRef.current === readinessKey) {
+          seekMediaPlayer(player, seconds);
+          pendingSeekRef.current = null;
+        }
+      },
+      setPlaybackRate: (rate) => {
+        if (disposed || !Number.isFinite(rate) || rate <= 0) return;
+        playbackRateRef.current = rate;
+        applyPlayerPlaybackRate(player, rate);
       },
       setMuted: (nextMuted) => {
         if (disposed) return;
@@ -625,6 +718,7 @@ export function ExperienceMediaPlayer({
   const failRendered = (message: string) => {
     if (failedRef.current === readinessKey) return;
     failedRef.current = readinessKey;
+    readySourceRef.current = null;
     if (rendered.playback.delivery === "hls") delivery?.forget(rendered.playback.declaredSrc);
     readinessRef.current?.fail(readinessKey, new Error(message));
     if (!current) return;
@@ -673,6 +767,7 @@ export function ExperienceMediaPlayer({
       controls={false}
       autoPlay={autoPlay}
       muted={muted}
+      playbackRate={playbackRate}
       loop={rendered.loop}
       duration={renderedDuration}
       clipStartTime={rendered.clipStartTime ?? 0}
@@ -684,6 +779,7 @@ export function ExperienceMediaPlayer({
       preferNativeHLS={experiencePrefersNativeHls()}
       onProviderChange={(provider) => {
         (delivery ? delivery.configureProvider : configureStandaloneProvider)(provider);
+        if (provider === null) readySourceRef.current = null;
         setProviderAttached(provider !== null);
       }}
       onProviderLoaderChange={() => reloadProvider(providerRef.current)}
@@ -694,10 +790,33 @@ export function ExperienceMediaPlayer({
       keyDisabled
       logLevel="silent"
       onCanPlay={() => {
-        readinessRef.current?.markReady(readinessKey);
         const player = playerRef.current;
-        if (player) synchronizePlayerContract(player, renderedDuration, mutedRef.current);
-        if (live()) reportDecodedContentSize(playerRef.current, onContentSize);
+        if (player) {
+          synchronizePlayerContract(player, renderedDuration, mutedRef.current);
+          applyPlayerPlaybackRate(player, playbackRateRef.current);
+          const seek = pendingSeekRef.current;
+          if (seek?.key === readinessKey) {
+            seekMediaPlayer(player, seek.seconds);
+            pendingSeekRef.current = null;
+          }
+        }
+        const media = providerMedia(player);
+        if (media && failedRef.current !== readinessKey)
+          readySourceRef.current = { uri: rendered.uri, type: renderedType, media };
+        readyKeyRef.current = readinessKey;
+        readinessRef.current?.markReady(readinessKey);
+        if (live()) {
+          reportDecodedContentSize(player, onContentSize);
+          const duration = [
+            renderedDuration,
+            providerMedia(player)?.duration,
+            player?.state.duration,
+          ].find((seconds) => seconds !== undefined && Number.isFinite(seconds) && seconds > 0);
+          emitValidDuration(onDurationChange, duration);
+        }
+      }}
+      onDurationChange={(duration) => {
+        if (live()) emitValidDuration(onDurationChange, renderedDuration ?? duration);
       }}
       // Takes the still frame down, and the reason none of this is on a timer.
       // `playing` is the earliest event that means the element is presenting the
@@ -737,6 +856,7 @@ export function ExperienceMediaPlayer({
       }}
       onTimeUpdate={(detail) => {
         if (!live()) return;
+        if (pendingSeekRef.current?.key === readinessKey) return;
         // A clip loaded again reports nothing until it plays: loading starts the
         // element over before it picks up where it was, and the story must not
         // hear its clock go back.
@@ -1133,6 +1253,13 @@ function emitValidTimeUpdate(onTimeUpdate: (seconds: number) => void, seconds: n
   if (Number.isFinite(seconds) && seconds >= 0) onTimeUpdate(seconds);
 }
 
+function emitValidDuration(
+  onDurationChange: ((seconds: number) => void) | undefined,
+  seconds: number | undefined
+): void {
+  if (seconds !== undefined && Number.isFinite(seconds) && seconds > 0) onDurationChange?.(seconds);
+}
+
 function providerMedia(player: MediaPlayerInstance | null): HTMLMediaElement | null {
   if (!player) return null;
   const provider = player.provider;
@@ -1167,4 +1294,10 @@ function applyPlayerMuted(player: MediaPlayerInstance, muted: boolean): void {
   ) {
     provider.media.muted = muted;
   }
+}
+
+function applyPlayerPlaybackRate(player: MediaPlayerInstance, rate: number): void {
+  player.playbackRate = rate;
+  const media = providerMedia(player);
+  if (media) media.playbackRate = rate;
 }

@@ -7,6 +7,7 @@ import type {
   ExperienceRuntimeManifest,
 } from "@repo/shared/experience-runtime";
 import type { ExperienceRuntimeEffect } from "@repo/experience-engine";
+import type { ExperienceAudioCheckpoint } from "./experience-audio-checkpoint";
 
 type AudioEffect = Extract<ExperienceRuntimeEffect, { kind: `audio.${string}` }>;
 
@@ -18,7 +19,23 @@ type ActivePlayback = {
   gain: GainNode;
   startedAt: number;
   stopping: boolean;
+  effect: Extract<AudioEffect, { kind: "audio.play" }>;
+  offsetSeconds: number;
 };
+
+function playbackCheckpoint(
+  effect: Extract<AudioEffect, { kind: "audio.play" }>,
+  positionSeconds: number
+): ExperienceAudioCheckpoint["playbacks"][number] {
+  return {
+    cueId: effect.cueId,
+    assetId: effect.assetId,
+    playbackRate: effect.playbackRate,
+    playbackOrdinal: effect.playbackOrdinal,
+    ...(effect.playbackId ? { playbackId: effect.playbackId } : {}),
+    positionSeconds,
+  };
+}
 
 export function useExperienceAudioHost(
   manifest: ExperienceRuntimeManifest,
@@ -48,8 +65,12 @@ export function useExperienceAudioHost(
     );
     if (audioEffects.length > 0) hostRef.current?.enqueue(audioEffects);
   }, []);
+  const checkpoint = useCallback(() => hostRef.current?.checkpoint(), []);
+  const restore = useCallback((snapshot?: ExperienceAudioCheckpoint) => {
+    hostRef.current?.restore(snapshot);
+  }, []);
 
-  return { unlock, suspend, applyEffects };
+  return { unlock, suspend, applyEffects, checkpoint, restore };
 }
 
 class ExperienceAudioHost {
@@ -65,6 +86,10 @@ class ExperienceAudioHost {
   // What the story last asked of the context: held (suspended) or running.
   #held = true;
   #disposed = false;
+  #generation = 0;
+  readonly #pendingPlaybacks = new Map<string, Extract<AudioEffect, { kind: "audio.play" }>>();
+  readonly #pendingOffsets = new Map<string, number>();
+  readonly #suppressedPlaybacks = new Set<string>();
   readonly #downloads = new AbortController();
 
   constructor(
@@ -104,12 +129,114 @@ class ExperienceAudioHost {
   }
 
   enqueue(effects: readonly AudioEffect[]): void {
+    const generation = this.#generation;
+    for (const effect of effects) {
+      if (effect.kind === "audio.play")
+        this.#pendingPlaybacks.set(`${effect.cueId}:${effect.playbackOrdinal}`, effect);
+      else if (effect.kind === "audio.stop") {
+        for (const [key, playback] of this.#pendingPlaybacks) {
+          if (
+            effect.target === "cue"
+              ? playback.cueId === effect.targetId
+              : playback.playbackId === effect.targetId
+          )
+            this.#pendingPlaybacks.delete(key);
+        }
+        for (const [key, playback] of this.#active) {
+          if (
+            effect.target === "cue"
+              ? playback.cue.cueId === effect.targetId
+              : playback.publicId === effect.targetId
+          )
+            this.#suppressedPlaybacks.add(key);
+        }
+      } else if (effect.kind === "audio.fade-bus")
+        this.#busBaseGains.set(effect.busId, effect.gain);
+      else if (effect.kind === "audio.apply-snapshot") {
+        const snapshot = this.#manifest.audio?.snapshots.find(
+          (candidate) => candidate.snapshotId === effect.snapshotId
+        );
+        for (const [busId, gain] of Object.entries(snapshot?.busGains ?? {}))
+          this.#busBaseGains.set(busId, gain);
+      }
+    }
     this.#queue = this.#queue
       .then(async () => {
-        for (const effect of effects) await this.#apply(effect);
+        for (const effect of effects) {
+          if (generation !== this.#generation) return;
+          await this.#apply(effect, generation);
+        }
       })
       .catch((error: unknown) => {
-        if (!this.#disposed) this.#onError(runtimeErrorMessage(error));
+        if (!this.#disposed && generation === this.#generation)
+          this.#onError(runtimeErrorMessage(error));
+      });
+  }
+
+  checkpoint(): ExperienceAudioCheckpoint {
+    const playbacks = new Map<string, ExperienceAudioCheckpoint["playbacks"][number]>();
+    this.#pendingPlaybacks.forEach((effect, key) => {
+      playbacks.set(key, playbackCheckpoint(effect, this.#pendingOffsets.get(key) ?? 0));
+    });
+    this.#active.forEach((playback, key) => {
+      if (playback.stopping || this.#suppressedPlaybacks.has(key)) {
+        playbacks.delete(key);
+        return;
+      }
+      playbacks.set(
+        key,
+        playbackCheckpoint(
+          playback.effect,
+          playback.offsetSeconds +
+            Math.max(0, this.#context.currentTime - playback.startedAt) *
+              playback.effect.playbackRate
+        )
+      );
+    });
+    return { playbacks: [...playbacks.values()], busGains: Object.fromEntries(this.#busBaseGains) };
+  }
+
+  restore(snapshot?: ExperienceAudioCheckpoint): void {
+    const generation = ++this.#generation;
+    this.#pendingPlaybacks.clear();
+    this.#pendingOffsets.clear();
+    this.#suppressedPlaybacks.clear();
+    for (const playback of snapshot?.playbacks ?? []) {
+      const { positionSeconds, ...effect } = playback;
+      const key = `${effect.cueId}:${effect.playbackOrdinal}`;
+      this.#pendingPlaybacks.set(key, { kind: "audio.play", ...effect });
+      this.#pendingOffsets.set(key, positionSeconds);
+    }
+    this.#active.forEach((playback) => {
+      playback.source.onended = null;
+      try {
+        playback.source.stop();
+      } catch {
+        /* Already ended. */
+      }
+      disconnectAudioNode(playback.source);
+      disconnectAudioNode(playback.gain);
+    });
+    this.#active.clear();
+    this.#manifest.audio?.buses.forEach((bus) => {
+      this.#setBusGain(
+        bus.busId,
+        snapshot?.busGains[bus.busId] ?? (bus.defaultMuted ? 0 : bus.defaultGain),
+        0
+      );
+    });
+    // New branch audio must not wait for an abandoned branch's slow download.
+    this.#queue = Promise.resolve()
+      .then(async () => {
+        for (const playback of snapshot?.playbacks ?? []) {
+          if (generation !== this.#generation) return;
+          const { positionSeconds, ...effect } = playback;
+          await this.#play({ kind: "audio.play", ...effect }, generation, positionSeconds);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!this.#disposed && generation === this.#generation)
+          this.#onError(runtimeErrorMessage(error));
       });
   }
 
@@ -148,10 +275,10 @@ class ExperienceAudioHost {
     });
   }
 
-  async #apply(effect: AudioEffect): Promise<void> {
+  async #apply(effect: AudioEffect, generation = this.#generation): Promise<void> {
     if (this.#disposed) return;
     if (effect.kind === "audio.play") {
-      await this.#play(effect);
+      await this.#play(effect, generation);
       return;
     }
     if (effect.kind === "audio.stop") {
@@ -171,10 +298,23 @@ class ExperienceAudioHost {
     );
   }
 
-  async #play(effect: Extract<AudioEffect, { kind: "audio.play" }>): Promise<void> {
+  async #play(
+    effect: Extract<AudioEffect, { kind: "audio.play" }>,
+    generation = this.#generation,
+    offsetSeconds = 0
+  ): Promise<void> {
+    const key = `${effect.cueId}:${effect.playbackOrdinal}`;
+    const dropPending = () => {
+      if (generation !== this.#generation) return;
+      this.#pendingPlaybacks.delete(key);
+      this.#pendingOffsets.delete(key);
+    };
     const cue = this.#manifest.audio?.cues.find((candidate) => candidate.cueId === effect.cueId);
     if (!cue) throw new Error(`Unknown audio cue ${effect.cueId}`);
-    if (!this.#acceptConcurrency(cue, false)) return;
+    if (!this.#acceptConcurrency(cue, false)) {
+      dropPending();
+      return;
+    }
     const asset = this.#manifest.assets.find(
       (candidate): candidate is ExperienceAudioAsset =>
         candidate.assetId === effect.assetId && candidate.kind === "audio"
@@ -188,9 +328,18 @@ class ExperienceAudioHost {
       ) ??
       asset.variants[0];
     if (!variant) throw new Error(`Audio asset ${asset.assetId} has no playable variant`);
-    const buffer = await this.#loadBuffer(variant.uri, variant.sha256);
-    if (this.#disposed) return;
-    if (!this.#acceptConcurrency(cue)) return;
+    let buffer: AudioBuffer;
+    try {
+      buffer = await this.#loadBuffer(variant.uri, variant.sha256);
+    } catch (error) {
+      dropPending();
+      throw error;
+    }
+    if (this.#disposed || generation !== this.#generation) return;
+    if (!this.#acceptConcurrency(cue)) {
+      dropPending();
+      return;
+    }
 
     const source = this.#context.createBufferSource();
     const gain = this.#context.createGain();
@@ -207,7 +356,6 @@ class ExperienceAudioHost {
     } else {
       gain.gain.setValueAtTime(targetGain, now);
     }
-    const key = `${cue.cueId}:${effect.playbackOrdinal}`;
     const playback: ActivePlayback = {
       key,
       ...(effect.playbackId ? { publicId: effect.playbackId } : {}),
@@ -216,10 +364,21 @@ class ExperienceAudioHost {
       gain,
       startedAt: now,
       stopping: false,
+      effect,
+      offsetSeconds,
     };
     this.#active.set(key, playback);
     source.onended = () => this.#finishPlayback(key);
-    source.start();
+    const duration = buffer.duration;
+    const offset =
+      Number.isFinite(duration) && duration > 0
+        ? cue.loop
+          ? offsetSeconds % duration
+          : Math.min(offsetSeconds, duration)
+        : offsetSeconds;
+    source.start(0, offset);
+    this.#pendingPlaybacks.delete(key);
+    this.#pendingOffsets.delete(key);
     this.#refreshDucking();
   }
 
@@ -268,6 +427,9 @@ class ExperienceAudioHost {
     disconnectAudioNode(playback.source);
     disconnectAudioNode(playback.gain);
     this.#active.delete(key);
+    this.#pendingPlaybacks.delete(key);
+    this.#pendingOffsets.delete(key);
+    this.#suppressedPlaybacks.delete(key);
     this.#refreshDucking();
   }
 

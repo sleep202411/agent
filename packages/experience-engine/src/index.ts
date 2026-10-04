@@ -8,3 +8,4 @@ export * from "./core-renderer-adapters.js";
 export * from "./audio-runtime.js";
 export * from "./controller.js";
 export * from "./play-session-reporter.js";
+export * from "./journey.js";

@@ -1,9 +1,14 @@
-import { ConflictException, HttpException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+} from '@nestjs/common';
 import {
   MediaAssetKind,
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVariantStatus,
+  Prisma,
   StudioDocumentType,
   StoryDurationPreset,
   StoryFrameProfile,
@@ -21,6 +26,7 @@ import {
   type InteractiveStoryDraftContent,
 } from './dto';
 import { StoryProjectsService } from './story-projects.service';
+import { MediaAccessService } from '../media/media-access.service';
 import { storyVideoSnapshotHash } from './story-video-production.schema';
 
 const USER = { userId: 'user-1' };
@@ -260,7 +266,12 @@ function revisionRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function serviceWith(prisma: Record<string, unknown>) {
+function serviceWith(
+  prisma: Record<string, unknown>,
+  mediaAccess: Pick<MediaAccessService, 'requireUseAccessById'> = {
+    requireUseAccessById: jest.fn().mockResolvedValue(undefined),
+  },
+) {
   const access = {
     project: projectRow(),
     role: StoryProjectMemberRole.owner,
@@ -290,12 +301,36 @@ function serviceWith(prisma: Record<string, unknown>) {
       permissions as never,
       workspaces as never,
       writeGuard as never,
-      { requireUseAccessById: jest.fn().mockResolvedValue(undefined) } as never,
+      mediaAccess as never,
     ),
     permissions,
     workspaces,
     writeGuard,
   };
+}
+
+function privateMediaPolicy(
+  asset: Record<string, unknown>,
+  {
+    projectReference = false,
+    documentAccess = {},
+  }: { projectReference?: boolean; documentAccess?: unknown } = {},
+) {
+  return new MediaAccessService(
+    {
+      mediaAsset: { findFirst: jest.fn().mockResolvedValue(asset) },
+      characterMedia: { findFirst: jest.fn().mockResolvedValue(null) },
+      $queryRaw: jest.fn().mockResolvedValue([{ allowed: projectReference }]),
+    } as never,
+    {} as never,
+    {
+      requireWorkspaceRole: jest
+        .fn()
+        .mockRejectedValue(new ForbiddenException()),
+    } as never,
+    { canReadStudioReference: jest.fn().mockResolvedValue(false) } as never,
+    documentAccess as never,
+  );
 }
 
 function transactionMock<TClient>(client: TClient) {
@@ -317,6 +352,190 @@ async function apiError(operation: Promise<unknown>) {
 }
 
 describe('StoryProjectsService unified-story authoring boundary', () => {
+  it.each(['cover', 'trailer', 'screenshot'] as const)(
+    'rejects another user’s private %s even when its UUID points to ready media',
+    async (field) => {
+      const asset = {
+        ...candidateAssetRow().asset,
+        createdByUserId: 'other-user',
+        workspaceId: null,
+        visibility: 'private',
+        kind: field === 'trailer' ? 'video' : 'image',
+      };
+      const tx = {
+        mediaAsset: {
+          findFirst: jest.fn().mockResolvedValue(asset),
+          findMany: jest.fn().mockResolvedValue([asset]),
+        },
+        storyProject: { updateMany: jest.fn() },
+      };
+      const { service } = serviceWith(
+        {
+          $transaction: transactionMock(tx),
+          studioDocument: { findMany: jest.fn().mockResolvedValue([]) },
+        },
+        privateMediaPolicy(asset),
+      );
+      await expect(
+        service.patch(USER as never, PROJECT_ID, {
+          expectedProjectVersion: 0,
+          ...(field === 'cover'
+            ? { coverAssetId: MEDIA_ASSET_ID }
+            : {
+                storeListing: {
+                  description: 'A film',
+                  developer: '',
+                  tags: [],
+                  trailerAssetId: field === 'trailer' ? MEDIA_ASSET_ID : null,
+                  screenshotAssetIds:
+                    field === 'screenshot' ? [MEDIA_ASSET_ID] : [],
+                },
+              }),
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'MEDIA_ASSET_ACCESS_DENIED' },
+      });
+      expect(tx.storyProject.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['owner', 'public', 'project-reference'] as const)(
+    'allows a screenshot granted by the existing %s media policy',
+    async (grant) => {
+      const asset = {
+        ...candidateAssetRow().asset,
+        kind: 'image',
+        workspaceId: null,
+        visibility: grant === 'public' ? 'public' : 'private',
+        createdByUserId: grant === 'owner' ? USER.userId : 'other-user',
+      };
+      const listing = {
+        description: 'A film',
+        developer: '',
+        tags: [],
+        trailerAssetId: null,
+        screenshotAssetIds: [MEDIA_ASSET_ID],
+      };
+      const tx = {
+        mediaAsset: { findMany: jest.fn().mockResolvedValue([asset]) },
+        storyProject: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      };
+      const { service } = serviceWith(
+        {
+          $transaction: transactionMock(tx),
+          storyProject: {
+            findUnique: jest
+              .fn()
+              .mockResolvedValue(
+                summaryProject({ storeListing: listing, version: 1 }),
+              ),
+          },
+        },
+        privateMediaPolicy(asset, {
+          projectReference: grant === 'project-reference',
+        }),
+      );
+      await expect(
+        service.patch(USER as never, PROJECT_ID, {
+          expectedProjectVersion: 0,
+          storeListing: listing,
+        }),
+      ).resolves.toMatchObject({ storeListing: listing, projectVersion: 1 });
+      expect(tx.storyProject.updateMany).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('uses an authorized project document reference without trusting mere text containment', async () => {
+    const asset = {
+      ...candidateAssetRow().asset,
+      createdByUserId: 'other-user',
+      visibility: 'private',
+      workspaceId: null,
+    };
+    const documentAccess = {
+      requireDocumentRef: jest.fn((_user: string, id: string) =>
+        id === 'unreadable'
+          ? Promise.reject(new ForbiddenException())
+          : Promise.resolve({ id }),
+      ),
+      referencedAssetIds: jest
+        .fn()
+        .mockResolvedValue(new Set([MEDIA_ASSET_ID])),
+    };
+    const { service } = serviceWith(
+      {
+        studioDocument: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'unreadable', contentSnapshot: { assetId: MEDIA_ASSET_ID } },
+            { id: 'readable', contentSnapshot: { assetId: MEDIA_ASSET_ID } },
+          ]),
+        },
+      },
+      privateMediaPolicy(asset, { documentAccess }),
+    );
+    await expect(
+      service.requireProjectMediaUseAccess(USER.userId, PROJECT_ID, [
+        MEDIA_ASSET_ID,
+      ]),
+    ).resolves.toBeUndefined();
+    expect(documentAccess.requireDocumentRef).toHaveBeenCalledWith(
+      USER.userId,
+      'readable',
+      'read',
+    );
+    documentAccess.referencedAssetIds.mockResolvedValue(new Set());
+    await expect(
+      service.requireProjectMediaUseAccess(USER.userId, PROJECT_ID, [
+        MEDIA_ASSET_ID,
+      ]),
+    ).rejects.toMatchObject({
+      response: { code: 'MEDIA_ASSET_ACCESS_DENIED' },
+    });
+  });
+
+  it('honors current Crew asset permission and refuses a revoked grant despite a project reference', async () => {
+    const asset = {
+      ...candidateAssetRow().asset,
+      visibility: 'private',
+      metadata: { crewId: 'crew-1', uploadKind: 'crew_asset_file' },
+    };
+    const requireNodePermission = jest.fn().mockResolvedValue('view');
+    const referenceLookup = jest.fn().mockResolvedValue([{ allowed: true }]);
+    const mediaAccess = new MediaAccessService(
+      {
+        mediaAsset: { findFirst: jest.fn().mockResolvedValue(asset) },
+        crewAssetNode: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([{ id: 'node-1', crewId: 'crew-1' }]),
+        },
+        $queryRaw: referenceLookup,
+      } as never,
+      {} as never,
+      {} as never,
+      { requireNodePermission } as never,
+      {} as never,
+    );
+    const { service } = serviceWith(
+      { studioDocument: { findMany: jest.fn().mockResolvedValue([]) } },
+      mediaAccess,
+    );
+    await expect(
+      service.requireProjectMediaUseAccess(USER.userId, PROJECT_ID, [
+        MEDIA_ASSET_ID,
+      ]),
+    ).resolves.toBeUndefined();
+    requireNodePermission.mockRejectedValue(new ForbiddenException());
+    await expect(
+      service.requireProjectMediaUseAccess(USER.userId, PROJECT_ID, [
+        MEDIA_ASSET_ID,
+      ]),
+    ).rejects.toMatchObject({
+      response: { code: 'MEDIA_ASSET_ACCESS_DENIED' },
+    });
+    expect(referenceLookup).not.toHaveBeenCalled();
+  });
+
   /**
    * A cover must be a STILL: the player paints it behind the title screen from an
    * image asset, the catalogue tile renders it through next/image, and it is the
@@ -446,6 +665,40 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       }),
     ).resolves.toMatchObject({ cover: null, projectVersion: 1 });
     expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('clears nullable promotional materials using Prisma database null without checking media', async () => {
+    const tx = {
+      mediaAsset: { findFirst: jest.fn(), findMany: jest.fn() },
+      storyProject: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const mediaAccess = { requireUseAccessById: jest.fn() };
+    const { service } = serviceWith(
+      {
+        $transaction: transactionMock(tx),
+        storyProject: {
+          findUnique: jest
+            .fn()
+            .mockResolvedValue(
+              summaryProject({ storeListing: null, version: 1 }),
+            ),
+        },
+      },
+      mediaAccess,
+    );
+    await expect(
+      service.patch(USER as never, PROJECT_ID, {
+        expectedProjectVersion: 0,
+        storeListing: null,
+      }),
+    ).resolves.toMatchObject({ storeListing: null, projectVersion: 1 });
+    expect(tx.storyProject.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { storeListing: Prisma.DbNull, version: { increment: 1 } },
+      }),
+    );
+    expect(mediaAccess.requireUseAccessById).not.toHaveBeenCalled();
+    expect(tx.mediaAsset.findMany).not.toHaveBeenCalled();
   });
 
   it('changes the frame profile during setup before video or build production begins', async () => {

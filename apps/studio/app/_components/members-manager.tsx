@@ -554,8 +554,7 @@ function MembersManagerView({
                     : roleLabel(member.role)}
                 </span>
               </div>
-              {(scope.kind === "workspace" ||
-                (canManage && canChangeRoles && !member.isSelf)) &&
+              {(scope.kind === "workspace" || (canManage && canChangeRoles && !member.isSelf)) &&
                 !member.isOwner &&
                 member.accessScope !== "project_only" && (
                   <TooltipProvider>

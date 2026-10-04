@@ -45,6 +45,7 @@ export class ExperienceRuntimeController {
   #playSessionId: string | null = null;
   #reporting: Promise<void> = Promise.resolve();
   #reportingStarted = false;
+  #reportEpoch = 0;
   #completedPlaySessionId: string | null = null;
   #reportError: string | null = null;
   #retryReport: (() => Promise<void>) | null = null;
@@ -88,6 +89,30 @@ export class ExperienceRuntimeController {
     return structuredClone(this.#state);
   }
 
+  /** Rewind to accepted entry state without replaying scene-entry actions. */
+  restore(input: ExperienceRuntimeRestoreInput): ExperienceRuntimeState {
+    const state = restoreExperienceRuntime(this.#manifest, input);
+    const node = this.#manifest.graph.nodes.find(
+      (candidate) => candidate.sceneId === state.currentSceneId
+    );
+    if (node?.access && !this.#canAccess?.(node.access))
+      throw new ExperienceAccessRequiredError(node.access);
+    this.#state = state;
+    this.#started = true;
+    // Old async report completions belong to the previous branch. A rewound
+    // branch starts a new report session on its first accepted event.
+    this.#reportEpoch++;
+    this.#reporting = Promise.resolve();
+    this.#reportingStarted = false;
+    this.#playSessionId = null;
+    this.#completedPlaySessionId = null;
+    this.#reportError = null;
+    this.#retryReport = null;
+    this.#visitedNodeIds.clear();
+    this.#reportListeners.forEach((listener) => listener());
+    return this.state();
+  }
+
   #handleReporterFailure(err: unknown, context: string): void {
     console.warn(`[ExperienceRuntimeController] Play session ${context} failed:`, err);
   }
@@ -95,6 +120,7 @@ export class ExperienceRuntimeController {
   #startReporting(): void {
     if (this.#reportingStarted || !this.#reporter) return;
     this.#reportingStarted = true;
+    const epoch = this.#reportEpoch;
     this.#reporting = (async () => {
       try {
         const result = await this.#reporter!.onStart({
@@ -104,7 +130,7 @@ export class ExperienceRuntimeController {
           locale: this.#manifest.localization?.defaultLocale,
           experienceType: "film",
         });
-        this.#playSessionId = result?.sessionId ?? null;
+        if (epoch === this.#reportEpoch) this.#playSessionId = result?.sessionId ?? null;
       } catch (error) {
         this.#handleReporterFailure(error, "onStart");
       }
@@ -158,6 +184,7 @@ export class ExperienceRuntimeController {
     // Restored access checkpoints also need a transport-owned report session.
     // Start only after the runtime has accepted the events.
     this.#startReporting();
+    const epoch = this.#reportEpoch;
     result.effects.forEach((effect) => {
       if (effect.kind === "scene.changed") {
         if (this.#reporter) {
@@ -165,6 +192,7 @@ export class ExperienceRuntimeController {
             this.#visitedNodeIds.add(effect.toSceneId);
             const currentNode = effect.toSceneId;
             this.#reporting = this.#reporting.then(async () => {
+              if (epoch !== this.#reportEpoch) return;
               const sessionId = this.#playSessionId;
               if (!sessionId) return;
               try {
@@ -180,17 +208,21 @@ export class ExperienceRuntimeController {
           const endingId = effect.endingId;
           const currentNode = result.state.currentSceneId;
           this.#reporting = this.#reporting.then(async () => {
+            if (epoch !== this.#reportEpoch) return;
             const sessionId = this.#playSessionId;
             if (!sessionId) return;
             const save = async (): Promise<void> => {
+              if (epoch !== this.#reportEpoch) return;
               this.#retryReport = null;
               const clearingError = this.#reportError !== null;
               this.#reportError = null;
               if (clearingError) this.#reportListeners.forEach((listener) => listener());
               try {
                 await this.#reporter!.onComplete(sessionId, { endingId, currentNode });
+                if (epoch !== this.#reportEpoch) return;
                 this.#completedPlaySessionId = sessionId;
               } catch (err) {
+                if (epoch !== this.#reportEpoch) return;
                 this.#reportError = err instanceof Error ? err.message : String(err);
                 this.#retryReport = save;
                 this.#handleReporterFailure(err, "onComplete");
@@ -272,7 +304,9 @@ export class ExperienceRuntimeController {
               ? rawLabel
               : rawLabel?.[defaultLoc] || Object.values(rawLabel || {})[0] || choiceId;
           const currentNode = this.#state.currentSceneId;
+          const epoch = this.#reportEpoch;
           this.#reporting = this.#reporting.then(async () => {
+            if (epoch !== this.#reportEpoch) return;
             const sessionId = this.#playSessionId;
             if (!sessionId) return;
             try {

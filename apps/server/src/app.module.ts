@@ -43,6 +43,7 @@ import { QuotaModule } from './quota/quota.module';
 import { ReferralsModule } from './referrals/referrals.module';
 import { SparkModule } from './spark/spark.module';
 import { SharingModule } from './sharing/sharing.module';
+import { StorySavesModule } from './story-saves/story-saves.module';
 import { UsersModule } from './users/users.module';
 import { WorkspacesModule } from './workspaces';
 import { WorldModelModule } from './world-model/world-model.module';
@@ -103,6 +104,7 @@ const agentOsGatewayEnabled = (() => {
     CrewsModule,
     CreatorServicesModule,
     ReferralsModule,
+    StorySavesModule,
     ConversationsModule,
     OrdersModule,
     ProjectSectionsModule,

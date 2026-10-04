@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- focused service mocks intentionally inspect Prisma payloads. */
 import { ExperienceRuntimeManifestSchema } from '@repo/shared/experience-runtime';
+import { ForbiddenException } from '@nestjs/common';
 import { canonicalJsonHash } from './canonical-json';
 import type { StoryBuildDto, StoryWorkbenchDto } from './dto';
 import { StoryExperienceReleaseService } from './story-experience-release.service';
@@ -35,7 +36,11 @@ describe('StoryExperienceReleaseService', () => {
     const release = await dependencies.service.prepareProjectCandidate(
       { userId: USER_ID } as never,
       PROJECT_ID,
-      { expectedDraftRevision: 7, expectedVideoSnapshotHash: HASH },
+      {
+        expectedProjectVersion: 3,
+        expectedDraftRevision: 7,
+        expectedVideoSnapshotHash: HASH,
+      },
     );
 
     expect(release).toMatchObject({
@@ -60,6 +65,10 @@ describe('StoryExperienceReleaseService', () => {
           gameId: PROJECT_ID,
           contentVersion: FIRST_BUILD_ID,
           requestHash: canonicalJsonHash(release),
+          listingSnapshot: expect.objectContaining({
+            title: 'Interactive Film',
+            listing: expect.objectContaining({ developer: 'Creators' }),
+          }),
           status: 'pending',
         }),
       }),
@@ -68,7 +77,7 @@ describe('StoryExperienceReleaseService', () => {
       expect.anything(),
       PROJECT_ID,
       expect.anything(),
-      expect.stringMatching(/^story-review:v3:/),
+      expect.stringMatching(/^story-review:v4:/),
     );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -119,7 +128,11 @@ describe('StoryExperienceReleaseService', () => {
     const release = await dependencies.service.prepareProjectCandidate(
       { userId: USER_ID } as never,
       PROJECT_ID,
-      { expectedDraftRevision: 7, expectedVideoSnapshotHash: HASH },
+      {
+        expectedProjectVersion: 3,
+        expectedDraftRevision: 7,
+        expectedVideoSnapshotHash: HASH,
+      },
     );
 
     expect(release).toMatchObject({
@@ -148,11 +161,443 @@ describe('StoryExperienceReleaseService', () => {
         create: expect.objectContaining({
           storyProjectId: PROJECT_ID,
           requestHash: canonicalJsonHash(release),
+          listingSnapshot: expect.objectContaining({
+            title: 'Interactive Film',
+            listing: expect.objectContaining({ developer: 'Creators' }),
+          }),
           status: 'pending',
         }),
       }),
     );
   });
+
+  it('rejects stale introduction versions before building', async () => {
+    const dependencies = serviceDependencies({
+      workbench: workbenchFixture([
+        { id: 'chapter', title: 'Opening', rank: 0 },
+      ]),
+      builds: [],
+    });
+    await expect(
+      dependencies.service.prepareProjectCandidate(
+        { userId: USER_ID } as never,
+        PROJECT_ID,
+        {
+          expectedProjectVersion: 2,
+          expectedDraftRevision: 7,
+          expectedVideoSnapshotHash: HASH,
+        },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'STORY_RELEASE_SNAPSHOT_CONFLICT' },
+    });
+    expect(dependencies.buildService.createBuild).not.toHaveBeenCalled();
+  });
+
+  it('prepares a candidate with description and cover while retaining empty creator metadata', async () => {
+    const workbench = workbenchFixture([
+      { id: '019f60f4-b101-70d4-8000-000000000021', title: 'Opening', rank: 0 },
+    ]);
+    workbench.project.storeListing!.developer = '';
+    const manifest = manifestFixture(FIRST_BUILD_ID, 'production');
+    const draftUpsert = jest.fn(
+      ({ create }: { create: Record<string, unknown> }) =>
+        Promise.resolve({ id: 'receipt-empty-creator', ...create }),
+    );
+    const dependencies = serviceDependencies({
+      workbench,
+      builds: [buildFixture(FIRST_BUILD_ID, manifest)],
+      draftUpsert,
+    });
+    await expect(
+      dependencies.service.prepareProjectCandidate(
+        { userId: USER_ID } as never,
+        PROJECT_ID,
+        {
+          expectedProjectVersion: 3,
+          expectedDraftRevision: 7,
+          expectedVideoSnapshotHash: HASH,
+        },
+      ),
+    ).resolves.toMatchObject({
+      gameId: PROJECT_ID,
+      coverUrl: COVER_URL,
+      status: 'draft',
+    });
+    expect(draftUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          listingSnapshot: expect.objectContaining({
+            listing: expect.objectContaining({
+              description: workbench.project.storeListing!.description,
+              developer: '',
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(workbench.project.storeListing!.developer).toBe('');
+  });
+
+  it('requires a nonempty work description before building for review', async () => {
+    const workbench = workbenchFixture([
+      { id: 'chapter', title: 'Opening', rank: 0 },
+    ]);
+    workbench.project.storeListing!.description = ' \n\n ';
+    const dependencies = serviceDependencies({ workbench, builds: [] });
+    await expect(
+      dependencies.service.prepareProjectCandidate(
+        { userId: USER_ID } as never,
+        PROJECT_ID,
+        {
+          expectedProjectVersion: 3,
+          expectedDraftRevision: 7,
+          expectedVideoSnapshotHash: HASH,
+        },
+      ),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'STORY_RELEASE_INTRODUCTION_REQUIRED',
+        message: 'Add a work description before submitting for review.',
+        fields: ['description'],
+      },
+    });
+    expect(dependencies.buildService.createBuild).not.toHaveBeenCalled();
+  });
+
+  it('does not admit a candidate when introduction changes during its build', async () => {
+    const manifest = manifestFixture(FIRST_BUILD_ID, 'production');
+    const draftUpsert = jest.fn();
+    const dependencies = serviceDependencies({
+      workbench: workbenchFixture([
+        { id: 'chapter', title: 'Opening', rank: 0 },
+      ]),
+      builds: [buildFixture(FIRST_BUILD_ID, manifest)],
+      draftUpsert,
+      finalProjectVersion: 4,
+    });
+    await expect(
+      dependencies.service.prepareProjectCandidate(
+        { userId: USER_ID } as never,
+        PROJECT_ID,
+        {
+          expectedProjectVersion: 3,
+          expectedDraftRevision: 7,
+          expectedVideoSnapshotHash: HASH,
+        },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'STORY_RELEASE_SNAPSHOT_CONFLICT' },
+    });
+    expect(draftUpsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects unauthorized private assets left in an older saved introduction before building', async () => {
+    const workbench = workbenchFixture([
+      { id: 'chapter', title: 'Opening', rank: 0 },
+    ]);
+    workbench.project.storeListing!.screenshotAssetIds = [
+      '019f60f4-b101-70d4-8000-000000000098',
+    ];
+    workbench.project.storeListing!.trailerAssetId =
+      '019f60f4-b101-70d4-8000-000000000097';
+    const draftUpsert = jest.fn();
+    const dependencies = serviceDependencies({
+      workbench,
+      builds: [],
+      draftUpsert,
+      requireMediaUseAccess: jest.fn().mockRejectedValue(
+        new ForbiddenException({
+          code: 'MEDIA_ASSET_ACCESS_DENIED',
+          message: 'You do not have access to this media asset.',
+        }),
+      ),
+    });
+    await expect(
+      dependencies.service.prepareProjectCandidate(
+        { userId: USER_ID } as never,
+        PROJECT_ID,
+        {
+          expectedProjectVersion: 3,
+          expectedDraftRevision: 7,
+          expectedVideoSnapshotHash: HASH,
+        },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'MEDIA_ASSET_ACCESS_DENIED' },
+    });
+    expect(
+      dependencies.projects.requireProjectMediaUseAccess,
+    ).toHaveBeenCalledWith(USER_ID, PROJECT_ID, [
+      workbench.project.cover!.id,
+      ...workbench.project.storeListing!.screenshotAssetIds,
+      workbench.project.storeListing!.trailerAssetId,
+    ]);
+    expect(dependencies.buildService.createBuild).not.toHaveBeenCalled();
+    expect(draftUpsert).not.toHaveBeenCalled();
+  });
+
+  it.each([1, 2])(
+    'rechecks revoked media permission before freezing a %s-chapter candidate',
+    async (chapterCount) => {
+      const draftUpsert = jest.fn();
+      const gameUpsert = jest.fn();
+      const requireMediaUseAccess = jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValue(
+          new ForbiddenException({ code: 'MEDIA_ASSET_ACCESS_DENIED' }),
+        );
+      const dependencies = serviceDependencies({
+        workbench: workbenchFixture(
+          Array.from({ length: chapterCount }, (_, index) => ({
+            id: `019f60f4-b101-70d4-8000-00000000002${index + 1}`,
+            title: `Chapter ${index + 1}`,
+            rank: index,
+            entryNodeId: 'scene.entry',
+          })),
+        ),
+        builds: [FIRST_BUILD_ID, SECOND_BUILD_ID].map((id) =>
+          buildFixture(id, manifestFixture(id, 'production')),
+        ),
+        draftUpsert,
+        gameUpsert,
+        requireMediaUseAccess,
+      });
+      await expect(
+        dependencies.service.prepareProjectCandidate(
+          { userId: USER_ID } as never,
+          PROJECT_ID,
+          {
+            expectedProjectVersion: 3,
+            expectedDraftRevision: 7,
+            expectedVideoSnapshotHash: HASH,
+          },
+        ),
+      ).rejects.toMatchObject({
+        response: { code: 'MEDIA_ASSET_ACCESS_DENIED' },
+      });
+      expect(requireMediaUseAccess).toHaveBeenCalledTimes(2);
+      expect(dependencies.buildService.createBuild).toHaveBeenCalledTimes(
+        chapterCount,
+      );
+      expect(draftUpsert).not.toHaveBeenCalled();
+      expect(gameUpsert).not.toHaveBeenCalled();
+    },
+  );
+
+  it('blocks assets that became unavailable after draft saving', async () => {
+    const manifest = manifestFixture(FIRST_BUILD_ID, 'production');
+    const draftUpsert = jest.fn();
+    const dependencies = serviceDependencies({
+      workbench: workbenchFixture([
+        { id: 'chapter', title: 'Opening', rank: 0 },
+      ]),
+      builds: [buildFixture(FIRST_BUILD_ID, manifest)],
+      draftUpsert,
+      candidateAssets: [],
+    });
+    await expect(
+      dependencies.service.prepareProjectCandidate(
+        { userId: USER_ID } as never,
+        PROJECT_ID,
+        {
+          expectedProjectVersion: 3,
+          expectedDraftRevision: 7,
+          expectedVideoSnapshotHash: HASH,
+        },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'STORY_RELEASE_INTRODUCTION_MEDIA_INVALID' },
+    });
+    expect(draftUpsert).not.toHaveBeenCalled();
+  });
+
+  it('cannot replace the introduction attached to an existing candidate identity', async () => {
+    const manifest = manifestFixture(FIRST_BUILD_ID, 'production');
+    const draftUpsert = jest.fn(
+      ({ create }: { create: Record<string, unknown> }) =>
+        Promise.resolve({
+          id: 'receipt',
+          ...create,
+          listingSnapshot: {
+            ...(create.listingSnapshot as Record<string, unknown>),
+            title: 'Other title',
+          },
+        }),
+    );
+    const dependencies = serviceDependencies({
+      workbench: workbenchFixture([
+        { id: 'chapter', title: 'Opening', rank: 0 },
+      ]),
+      builds: [buildFixture(FIRST_BUILD_ID, manifest)],
+      draftUpsert,
+    });
+    await expect(
+      dependencies.service.prepareProjectCandidate(
+        { userId: USER_ID } as never,
+        PROJECT_ID,
+        {
+          expectedProjectVersion: 3,
+          expectedDraftRevision: 7,
+          expectedVideoSnapshotHash: HASH,
+        },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'STORY_RELEASE_CANDIDATE_CORRUPT' },
+    });
+    expect(draftUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.not.objectContaining({
+          listingSnapshot: expect.anything(),
+        }),
+      }),
+    );
+  });
+
+  it.each([
+    { kind: 'single', legacyGenres: false },
+    { kind: 'single', legacyGenres: true },
+    { kind: 'serial', legacyGenres: false },
+    { kind: 'serial', legacyGenres: true },
+  ] as const)(
+    'reuses an equivalent earlier $kind receipt (genres: $legacyGenres) while rejecting invalid or changed introductions',
+    async ({ kind, legacyGenres }) => {
+      for (const scenario of [
+        'equivalent',
+        'unknown-field',
+        'changed-content',
+        'changed-description',
+      ]) {
+        const chapters = [
+          {
+            id: '019f60f4-b101-70d4-8000-000000000021',
+            title: 'Opening',
+            rank: 0,
+            entryNodeId: 'scene.entry',
+          },
+          ...(kind === 'serial'
+            ? [
+                {
+                  id: '019f60f4-b101-70d4-8000-000000000022',
+                  title: 'Finale',
+                  rank: 1,
+                  entryNodeId: 'scene.entry',
+                },
+              ]
+            : []),
+        ];
+        const workbench = workbenchFixture(chapters);
+        workbench.project.storeListing!.tags = [
+          'Drama',
+          'Mystery',
+          'Multiple endings',
+        ];
+        let storedSnapshot: unknown;
+        let storedJson: string | undefined;
+        const upsert = jest.fn(
+          ({
+            create,
+          }: {
+            create: Record<string, unknown> & {
+              chapters?: { create: Array<Record<string, unknown>> };
+            };
+          }) => {
+            const snapshot = create.listingSnapshot as {
+              title: string;
+              defaultLocale: string;
+              coverAssetId: string;
+              listing: Record<string, unknown>;
+            };
+            const savedListing = { ...snapshot.listing };
+            delete savedListing.description;
+            storedSnapshot = {
+              ...snapshot,
+              listing: {
+                ...savedListing,
+                tagline: ' Find your story ',
+                shortDescription: 'Explore an interactive film.',
+                aboutParagraphs: [
+                  '',
+                  scenario === 'changed-description'
+                    ? 'Other story'
+                    : ' Choose how the story unfolds. ',
+                  ' ',
+                ],
+                ...(legacyGenres
+                  ? {
+                      genres: [' Drama ', 'Mystery'],
+                      tags: ['Mystery', 'Multiple endings'],
+                    }
+                  : { tags: ['Drama', 'Mystery', 'Multiple endings'] }),
+                ...(scenario === 'unknown-field'
+                  ? { unknownField: 'Unexpected' }
+                  : {}),
+                ...(scenario === 'changed-content'
+                  ? { developer: 'Other creator' }
+                  : {}),
+              },
+            };
+            storedJson = JSON.stringify(storedSnapshot);
+            return Promise.resolve({
+              id: 'existing-receipt',
+              ...create,
+              listingSnapshot: storedSnapshot,
+              ...(create.chapters ? { chapters: create.chapters.create } : {}),
+            });
+          },
+        );
+        const buildKind = kind === 'single' ? 'production' : 'preview';
+        const dependencies = serviceDependencies({
+          workbench,
+          builds: [
+            buildFixture(
+              FIRST_BUILD_ID,
+              manifestFixture(FIRST_BUILD_ID, buildKind),
+            ),
+            ...(kind === 'serial'
+              ? [
+                  buildFixture(
+                    SECOND_BUILD_ID,
+                    manifestFixture(SECOND_BUILD_ID, buildKind),
+                  ),
+                ]
+              : []),
+          ],
+          ...(kind === 'single'
+            ? { draftUpsert: upsert }
+            : { gameUpsert: upsert }),
+        });
+        const preparation = dependencies.service.prepareProjectCandidate(
+          { userId: USER_ID } as never,
+          PROJECT_ID,
+          {
+            expectedProjectVersion: 3,
+            expectedDraftRevision: 7,
+            expectedVideoSnapshotHash: HASH,
+          },
+        );
+        if (scenario === 'equivalent') {
+          await expect(preparation).resolves.toMatchObject({
+            gameId: PROJECT_ID,
+            status: 'draft',
+          });
+        } else {
+          await expect(preparation).rejects.toMatchObject({
+            response: { code: 'STORY_RELEASE_CANDIDATE_CORRUPT' },
+          });
+        }
+        expect(JSON.stringify(storedSnapshot)).toBe(storedJson);
+        expect(upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            update: expect.not.objectContaining({
+              listingSnapshot: expect.anything(),
+            }),
+          }),
+        );
+      }
+    },
+  );
 
   it('rejects review submission when the project has no public cover URL', async () => {
     const dependencies = serviceDependencies({
@@ -173,7 +618,11 @@ describe('StoryExperienceReleaseService', () => {
       dependencies.service.prepareProjectCandidate(
         { userId: USER_ID } as never,
         PROJECT_ID,
-        { expectedDraftRevision: 7, expectedVideoSnapshotHash: HASH },
+        {
+          expectedProjectVersion: 3,
+          expectedDraftRevision: 7,
+          expectedVideoSnapshotHash: HASH,
+        },
       ),
     ).rejects.toMatchObject({
       response: { code: 'STORY_RELEASE_COVER_REQUIRED' },
@@ -186,14 +635,23 @@ function serviceDependencies({
   builds,
   draftUpsert = jest.fn(),
   gameUpsert = jest.fn(),
+  finalProjectVersion = 3,
+  candidateAssets,
+  requireMediaUseAccess = jest.fn().mockResolvedValue(undefined),
 }: {
   workbench: StoryWorkbenchDto;
   builds: StoryBuildDto[];
   draftUpsert?: jest.Mock;
   gameUpsert?: jest.Mock;
+  finalProjectVersion?: number;
+  candidateAssets?: Array<{ id: string; kind: string }>;
+  requireMediaUseAccess?: jest.Mock;
 }) {
   const permissions = { requireProject: jest.fn().mockResolvedValue({}) };
-  const projects = { workbench: jest.fn().mockResolvedValue(workbench) };
+  const projects = {
+    workbench: jest.fn().mockResolvedValue(workbench),
+    requireProjectMediaUseAccess: requireMediaUseAccess,
+  };
   let buildIndex = 0;
   const buildService = {
     createBuild: jest.fn(() =>
@@ -215,6 +673,18 @@ function serviceDependencies({
     $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
       Promise.resolve(
         callback({
+          $queryRaw: jest
+            .fn()
+            .mockResolvedValue([{ version: finalProjectVersion }]),
+          mediaAsset: {
+            findMany: jest
+              .fn()
+              .mockResolvedValue(
+                candidateAssets ?? [
+                  { id: workbench.project.cover?.id, kind: 'image' },
+                ],
+              ),
+          },
           storyExperienceDraftRelease: { upsert: draftUpsert },
           storyExperienceGameRelease: { upsert: gameUpsert },
         }),
@@ -225,6 +695,7 @@ function serviceDependencies({
     buildService,
     permissions,
     manifests,
+    projects,
     service: new StoryExperienceReleaseService(
       permissions as never,
       projects as never,
@@ -248,12 +719,24 @@ function workbenchFixture(
     project: {
       id: PROJECT_ID,
       projectVersion: 3,
-      cover: coverUrl ? { previewUrl: coverUrl } : null,
+      cover: coverUrl
+        ? { id: '019f60f4-b101-70d4-8000-000000000099', previewUrl: coverUrl }
+        : null,
+      title: 'Interactive Film',
+      defaultLocale: 'en-US',
+      storeListing: {
+        description:
+          'Find your story\n\nExplore an interactive film.\n\nChoose how the story unfolds.',
+        developer: 'Creators',
+        tags: [],
+        trailerAssetId: null,
+        screenshotAssetIds: [],
+      },
     },
     draft: { revision: 7 },
     video: { snapshotHash: HASH },
     chapters: chapters.map((chapter) => ({ entryNodeId: null, ...chapter })),
-  } as StoryWorkbenchDto;
+  } as unknown as StoryWorkbenchDto;
 }
 
 function buildFixture(

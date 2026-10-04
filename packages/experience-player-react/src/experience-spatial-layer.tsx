@@ -101,6 +101,8 @@ export function ExperienceSpatialLayer({
   onEvents,
   onRuntimeError,
   onTimelineHoldGateChange,
+  initialSettledGestureIds,
+  onSettledGestureIdsChange,
   decodedContentSize = null,
 }: {
   manifest: ExperienceRuntimeManifest;
@@ -114,12 +116,18 @@ export function ExperienceSpatialLayer({
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
   onRuntimeError: (message: string) => void;
   onTimelineHoldGateChange?: (gating: boolean) => void;
+  initialSettledGestureIds?: readonly string[];
+  onSettledGestureIdsChange?: (ids: readonly string[]) => void;
   /** Used when a clip's manifest omits width and height. */
   decodedContentSize?: ExperienceSize | null;
 }) {
   const layerRef = useRef<HTMLDivElement>(null);
   const viewportSize = useElementSize(layerRef);
-  const [settledGestureIds, setSettledGestureIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [settledGestureIds, setSettledGestureIds] = useState<ReadonlySet<string>>(
+    () => new Set(initialSettledGestureIds)
+  );
+  const onSettledRef = useRef(onSettledGestureIdsChange);
+  onSettledRef.current = onSettledGestureIdsChange;
   const settledRef = useRef(settledGestureIds);
   // Timeline-control gate state per gesture, lifted from PressHoldControl so
   // the host can pause/resume the scene media. The host keys this layer by
@@ -144,6 +152,7 @@ export function ExperienceSpatialLayer({
     next.add(gestureId);
     settledRef.current = next;
     setSettledGestureIds(next);
+    onSettledRef.current?.([...next]);
     return true;
   }, []);
 
@@ -361,13 +370,14 @@ export function ExperienceSpatialLayer({
       if (
         gesture.holdFrame ||
         !gesture.activeWindow ||
-        sceneTimeMs < gesture.activeWindow.endMs ||
-        settledRef.current.has(gesture.gestureId) ||
-        !sceneHandlesGestureEvent(gesture.gestureId, "gesture.timed-out")
+        sceneTimeMs <= gesture.activeWindow.endMs ||
+        settledRef.current.has(gesture.gestureId)
       ) {
         return [];
       }
       if (!markGestureSettled(gesture.gestureId)) return [];
+      // Expired windows stay closed during replay even without a timeout action.
+      if (!sceneHandlesGestureEvent(gesture.gestureId, "gesture.timed-out")) return [];
       return [
         {
           type: "gesture.timed-out",

@@ -13,6 +13,7 @@ const manifest = {
     cues: [
       {
         cueId: "cue",
+        assetIds: ["asset", "replacement"],
         busId: "music",
         gain: 1,
         loop: false,
@@ -252,4 +253,67 @@ it("finishes a cue even if its source was already disconnected", async () => {
   expect(() => ended()).not.toThrow();
   await play(2);
   expect(sources[0]!.stop).not.toHaveBeenCalled();
+});
+
+it("restores historical audio at its saved position and stops the later branch", async () => {
+  await play(1);
+  clock += 4;
+  const anchor = latest.checkpoint()!;
+  expect(anchor.playbacks[0]!.positionSeconds).toBe(4);
+  await play(2, "replacement");
+  await act(async () => latest.restore(anchor));
+  expect(sources[1]!.stop).toHaveBeenCalledOnce();
+  expect(sources[2]!.start).toHaveBeenCalledWith(0, 4);
+  expect(latest.checkpoint()!.playbacks[0]!.assetId).toBe("asset");
+  expect(latest.checkpoint()!.playbacks[0]!.playbackOrdinal).toBe(1);
+});
+
+it("captures entry audio before asynchronous decoding completes", async () => {
+  let finish!: (value: ArrayBuffer) => void;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    arrayBuffer: () =>
+      new Promise<ArrayBuffer>((resolve) => {
+        finish = resolve;
+      }),
+  });
+  await play(1);
+  expect(latest.checkpoint()!.playbacks).toEqual([
+    { cueId: "cue", assetId: "asset", playbackRate: 1, playbackOrdinal: 1, positionSeconds: 0 },
+  ]);
+  await act(async () => {
+    finish(new ArrayBuffer(1));
+  });
+});
+
+it("does not start delayed outgoing audio after a branch restore", async () => {
+  let finish!: (value: ArrayBuffer) => void;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    arrayBuffer: () =>
+      new Promise<ArrayBuffer>((resolve) => {
+        finish = resolve;
+      }),
+  });
+  await play(1);
+  await act(async () => {
+    latest.restore();
+    finish(new ArrayBuffer(1));
+  });
+  expect(sources).toHaveLength(0);
+  expect(latest.checkpoint()!.playbacks).toEqual([]);
+});
+
+it("does not save rejected concurrent audio as a replayable track", async () => {
+  const definition = structuredClone(manifest);
+  definition.audio!.cues[0]!.concurrency!.overflowBehavior = "reject-new";
+  await act(async () => root.render(<Harness definition={definition} />));
+  await play(1);
+  await play(2);
+  expect(sources).toHaveLength(1);
+  const snapshot = latest.checkpoint()!;
+  expect(snapshot.playbacks.map((playback) => playback.playbackOrdinal)).toEqual([1]);
+  await act(async () => latest.restore(snapshot));
+  expect(sources).toHaveLength(2);
+  expect(latest.checkpoint()!.playbacks).toHaveLength(1);
 });
