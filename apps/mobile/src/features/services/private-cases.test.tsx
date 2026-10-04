@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { PrivateCases } from "./private-cases";
 const h = vi.hoisted(() => ({
   active: true,
+  focused: true,
   generation: 1,
   get: vi.fn(),
   put: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("@/lib/durable-record", () => ({
   }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({
@@ -126,6 +128,7 @@ const click = (label: string) =>
 beforeEach(() => {
   vi.clearAllMocks();
   h.active = true;
+  h.focused = true;
   h.generation = 1;
   h.records.clear();
   h.get.mockImplementation(async (path: string) =>
@@ -164,10 +167,9 @@ it("restores a pending message and retries the exact version/key after a lost re
   expect(host.textContent).toContain("Response lost");
   h.active = false;
   await mount();
-  expect(host.textContent).toBe("");
+  expect(host.querySelector("input")!.value).toBe("Please review");
   h.active = true;
   await mount();
-  await click("Private case");
   expect(host.querySelector("input")!.readOnly).toBe(true);
   expect(host.querySelector("input")!.value).toBe("Please review");
   await click("feedbackHistory.retry");
@@ -181,6 +183,54 @@ it("uses native evidence selection in the case and hides it after account change
   await click(`evidence:${id(1)}:0`);
   expect(host.textContent).toContain(`evidence:${id(1)}:1`);
   h.generation = 2;
+  await mount();
+  expect(host.textContent).toBe("");
+});
+
+it("keeps an unsent case message and evidence selected across background return", async () => {
+  await mount();
+  await click("Private case");
+  await click(`evidence:${id(1)}:0`);
+  await act(async () => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Unsent evidence explanation"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const reads = h.get.mock.calls.length;
+  h.active = false;
+  await mount();
+  h.active = true;
+  await mount();
+  expect(h.get.mock.calls.length).toBeGreaterThan(reads);
+  expect(host.querySelector("input")!.value).toBe("Unsent evidence explanation");
+  expect(host.textContent).toContain(`evidence:${id(1)}:1`);
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("keeps the draft locked after foreground access failure until the user refreshes", async () => {
+  await mount();
+  await click("Private case");
+  await act(async () => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Unsent message"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  h.active = false;
+  await mount();
+  h.get.mockRejectedValueOnce(Error("Case access denied"));
+  h.active = true;
+  await mount();
+  expect(host.textContent).toContain("Case access denied");
+  expect(host.querySelector("input")!.value).toBe("Unsent message");
+  expect(host.querySelector("input")!.readOnly).toBe(true);
+  await click("feedbackHistory.submit");
+  expect(h.post).not.toHaveBeenCalled();
+  h.focused = false;
   await mount();
   expect(host.textContent).toBe("");
 });

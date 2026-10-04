@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useIsFocused } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { uuid } from "expo-modules-core";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -40,8 +41,8 @@ function Action({
   );
 }
 export function PrivateCases(props: Props) {
-  const active = useScreenActive();
-  return active && props.generation === getAuthGeneration() ? (
+  const focused = useIsFocused();
+  return focused && props.generation === getAuthGeneration() ? (
     <Session
       key={JSON.stringify([props.userId, props.generation, props.initialCaseId])}
       {...props}
@@ -50,14 +51,25 @@ export function PrivateCases(props: Props) {
 }
 function Session(props: Props) {
   const t = useTranslations();
+  const active = useScreenActive();
+  const [lastActive, setLastActive] = useState(active);
+  const [revision, setRevision] = useState(0);
+  if (lastActive !== active) {
+    setLastActive(active);
+    if (active) setRevision((v) => v + 1);
+  }
   const [selected, setSelected] = useState(props.initialCaseId);
-  return selected ? (
-    <View style={{ flex: 1 }}>
-      <Action label={t("privateCases.back")} onPress={() => setSelected(undefined)} />
-      <Detail key={selected} {...props} caseId={selected} />
+  return (
+    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
+      {selected ? (
+        <View style={{ flex: 1 }}>
+          <Action label={t("privateCases.back")} onPress={() => setSelected(undefined)} />
+          <Detail key={selected} {...props} caseId={selected} />
+        </View>
+      ) : (
+        <Listing key={revision} {...props} onOpen={setSelected} />
+      )}
     </View>
-  ) : (
-    <Listing {...props} onOpen={setSelected} />
   );
 }
 function Listing({ userId, generation, onOpen }: Props & { onOpen: (id: string) => void }) {
@@ -132,12 +144,21 @@ function Listing({ userId, generation, onOpen }: Props & { onOpen: (id: string) 
 function Detail({ caseId, userId, generation }: Props & { caseId: string }) {
   const t = useTranslations(),
     locale = useLocale();
+  const active = useScreenActive();
+  const [lastActive, setLastActive] = useState(active);
   const [row, setRow] = useState<CaseHistory>(),
     [cursor, setCursor] = useState<number | null>(null),
     [revision, setRevision] = useState(0),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
+  if (lastActive !== active) {
+    setLastActive(active);
+    setLoading(true);
+    setError("");
+    setCursor(null);
+  }
   useEffect(() => {
+    if (!active) return;
     const c = new AbortController();
     void fetchPrivateCase(caseId, userId, generation, cursor, c.signal)
       .then((page) => {
@@ -155,7 +176,6 @@ function Detail({ caseId, userId, generation }: Props & { caseId: string }) {
       })
       .catch((e) => {
         if (!c.signal.aborted) {
-          setRow(undefined);
           setError(String(e.message ?? e));
         }
       })
@@ -163,7 +183,7 @@ function Detail({ caseId, userId, generation }: Props & { caseId: string }) {
         if (!c.signal.aborted) setLoading(false);
       });
     return () => c.abort();
-  }, [caseId, userId, generation, cursor, revision]);
+  }, [caseId, userId, generation, cursor, revision, active]);
   const refresh = () => {
     setRow(undefined);
     setError("");
@@ -177,7 +197,7 @@ function Detail({ caseId, userId, generation }: Props & { caseId: string }) {
       {loading && <ActivityIndicator />}
       {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {row && (
-        <>
+        <View style={{ display: active && !loading && !error ? "flex" : "none" }}>
           <ThemedText type="smallBold">{row.title}</ThemedText>
           <ThemedText>
             {t(`privateCases.${row.status}`)} · {row.version}
@@ -212,22 +232,25 @@ function Detail({ caseId, userId, generation }: Props & { caseId: string }) {
           <Discussion
             key={`${row.id}:${revision}`}
             row={row}
+            disabled={!active || loading || !!error}
             userId={userId}
             generation={generation}
             onRefresh={refresh}
           />
-        </>
+        </View>
       )}
     </ScrollView>
   );
 }
 function Discussion({
   row,
+  disabled,
   userId,
   generation,
   onRefresh,
 }: {
   row: PrivateCase;
+  disabled: boolean;
   userId: string;
   generation: number;
   onRefresh: () => void;
@@ -262,7 +285,7 @@ function Discussion({
   }, []);
   const send = () => {
     const c = controller.current;
-    if (!c || c.signal.aborted) return;
+    if (!c || c.signal.aborted || disabled) return;
     void op.run(
       async () => {
         const request = pending ?? {
@@ -293,7 +316,7 @@ function Discussion({
       }
     );
   };
-  const locked = op.busy || !!pending || saved || !!initial.error;
+  const locked = disabled || op.busy || !!pending || saved || !!initial.error;
   return (
     <View style={{ gap: 8 }}>
       <CaseEvidence
@@ -330,6 +353,7 @@ function Discussion({
           <Action
             label={t(pending ? "feedbackHistory.retry" : "feedbackHistory.submit")}
             disabled={
+              disabled ||
               op.busy ||
               uploadBusy ||
               !!initial.error ||
