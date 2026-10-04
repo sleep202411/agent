@@ -5122,5 +5122,6 @@
   "storyCandidates.importCrew": "Import from Crew",
   "storyCandidates.hideCrew": "Hide Crew assets",
   "storyCandidates.noCrew": "This project has no linked Crew.",
-  "storyCandidates.crewEmpty": "No shared image, video or audio files are available."
+  "storyCandidates.crewEmpty": "No shared image, video or audio files are available.",
+  "storyCandidates.preview": "Preview"
 }

@@ -8,6 +8,7 @@ import { useAuth } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
+import { StoryCandidatePlayback } from "./story-candidate-playback";
 import { CrewCandidateList } from "./story-crew-candidate-list";
 import { useStoryChapterContext } from "../context/story-chapter-context";
 import {
@@ -247,6 +248,16 @@ export function StoryCandidatesPanel({
                   source={{ uri: item.asset.previewUrl }}
                   contentFit="contain"
                   style={{ height: 140, width: "100%" }}
+                />
+              )}
+            {(item.asset.kind === "audio" || item.asset.kind === "video") &&
+              item.asset.status === "ready" &&
+              item.asset.moderationStatus !== "blocked" && (
+                <StoryCandidatePlayback
+                  scope={scope}
+                  mediaAssetId={item.asset.id}
+                  kind={item.asset.kind}
+                  name={`${t(`storyCandidates.${item.asset.kind}`)} ${index + 1}`}
                 />
               )}
             <ThemedText type="small" themeColor="textSecondary">

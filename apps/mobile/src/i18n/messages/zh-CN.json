@@ -5122,5 +5122,6 @@
   "storyCandidates.importCrew": "从剧组导入",
   "storyCandidates.hideCrew": "收起剧组资产",
   "storyCandidates.noCrew": "此项目尚未关联剧组。",
-  "storyCandidates.crewEmpty": "暂无可用的共享图片、视频或音频文件。"
+  "storyCandidates.crewEmpty": "暂无可用的共享图片、视频或音频文件。",
+  "storyCandidates.preview": "预览"
 }
