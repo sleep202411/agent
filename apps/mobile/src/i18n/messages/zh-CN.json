@@ -4907,5 +4907,11 @@
   "storyCondition.operator.less-than": "小于",
   "storyCondition.operator.at-most": "小于等于",
   "storyCondition.remove": "移除条件",
-  "storyCondition.removeHelp": "此选项将不再受该显示条件限制。将此更改应用到本地修复？"
+  "storyCondition.removeHelp": "此选项将不再受该显示条件限制。将此更改应用到本地修复？",
+  "storyRoute.help": "自动路线按顺序检查条件。没有条件匹配时使用最后的默认路线。",
+  "storyRoute.add": "添加条件路线",
+  "storyRoute.condition": "路线条件",
+  "storyRoute.fallback": "否则",
+  "storyRoute.remove": "移除路线",
+  "storyRoute.removeHelp": "移除此条件路线？默认路线和其他路线会保留。"
 }

@@ -4907,5 +4907,11 @@
   "storyCondition.operator.less-than": "Less than",
   "storyCondition.operator.at-most": "At most",
   "storyCondition.remove": "Remove condition",
-  "storyCondition.removeHelp": "This choice will no longer be hidden by this condition. Apply this change to your local repair?"
+  "storyCondition.removeHelp": "This choice will no longer be hidden by this condition. Apply this change to your local repair?",
+  "storyRoute.help": "Automatic routes are checked in order. The final fallback is used when no condition matches.",
+  "storyRoute.add": "Add conditional route",
+  "storyRoute.condition": "Route condition",
+  "storyRoute.fallback": "Otherwise",
+  "storyRoute.remove": "Remove route",
+  "storyRoute.removeHelp": "Remove this conditional route? The fallback and other routes will be kept."
 }

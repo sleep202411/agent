@@ -4907,5 +4907,11 @@
   "storyCondition.operator.less-than": "小於",
   "storyCondition.operator.at-most": "小於或等於",
   "storyCondition.remove": "移除條件",
-  "storyCondition.removeHelp": "此選項將不再受此顯示條件限制。將此變更套用至本機修復？"
+  "storyCondition.removeHelp": "此選項將不再受此顯示條件限制。將此變更套用至本機修復？",
+  "storyRoute.help": "自動路線按順序檢查條件。沒有條件符合時使用最後的預設路線。",
+  "storyRoute.add": "新增條件路線",
+  "storyRoute.condition": "路線條件",
+  "storyRoute.fallback": "否則",
+  "storyRoute.remove": "移除路線",
+  "storyRoute.removeHelp": "移除此條件路線？預設路線和其他路線會保留。"
 }

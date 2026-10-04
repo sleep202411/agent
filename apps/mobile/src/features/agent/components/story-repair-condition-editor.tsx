@@ -36,6 +36,7 @@ const draftSchema = z.object({
 });
 type Draft = z.infer<typeof draftSchema>;
 type Props = {
+  context?: "choice" | "route";
   content: RepairContent;
   condition: unknown;
   userId: string;
@@ -45,6 +46,7 @@ type Props = {
   onClose: () => void;
 };
 export function StoryRepairConditionEditor({
+  context = "choice",
   content,
   condition,
   userId,
@@ -160,7 +162,9 @@ export function StoryRepairConditionEditor({
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: 16, gap: 12 }}
         >
-          <ThemedText type="smallBold">{t("storyCondition.title")}</ThemedText>
+          <ThemedText type="smallBold">
+            {t(context === "route" ? "storyRoute.condition" : "storyCondition.title")}
+          </ThemedText>
           <Action label={t("agent.close")} onPress={onClose} />
           <ThemedText type="small" themeColor="textSecondary">
             {t("storyCondition.help")}
@@ -182,23 +186,27 @@ export function StoryRepairConditionEditor({
               label={t("storyCondition.remove")}
               disabled={!canEdit || conflict}
               onPress={() =>
-                Alert.alert(t("storyCondition.remove"), t("storyCondition.removeHelp"), [
-                  { text: t("common.cancel"), style: "cancel" },
-                  {
-                    text: t("storyCondition.remove"),
-                    style: "destructive",
-                    onPress: () => {
-                      try {
-                        if (onApply(undefined)) {
-                          record.write("null");
-                          onClose();
+                Alert.alert(
+                  t("storyCondition.remove"),
+                  t(context === "route" ? "storyRoute.removeHelp" : "storyCondition.removeHelp"),
+                  [
+                    { text: t("common.cancel"), style: "cancel" },
+                    {
+                      text: t("storyCondition.remove"),
+                      style: "destructive",
+                      onPress: () => {
+                        try {
+                          if (onApply(undefined)) {
+                            record.write("null");
+                            onClose();
+                          }
+                        } catch (e) {
+                          setError(String(e));
                         }
-                      } catch (e) {
-                        setError(String(e));
-                      }
+                      },
                     },
-                  },
-                ])
+                  ]
+                )
               }
             />
           ) : null}

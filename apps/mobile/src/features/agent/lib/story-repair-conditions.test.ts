@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
 import {
   buildRepairCondition,
+  addRepairAutoRoute,
+  repairAutoRoutes,
+  replaceRepairAutoCondition,
   flattenRepairCondition,
   moveRepairAutoRoute,
   repairVariables,
@@ -146,4 +149,35 @@ it("rejects invalid route destinations, types, counts and stale nodes without mu
   expect(() => replaceRepairAutoRoutes(content, "clip:a", [{ target: null }])).toThrow();
   expect(() => replaceRepairAutoRoutes(content, "gone", [{ target: null }])).toThrow();
   expect(JSON.stringify(content)).toBe(original);
+});
+it("adds conditional routes before the fallback and enforces the official limit", () => {
+  let next = addRepairAutoRoute(content, "clip:b");
+  const routes = repairAutoRoutes(next, "clip:b")!;
+  expect(routes).toEqual([{ when: { ...compare, value: 0 }, target: null }, { target: null }]);
+  for (let i = 2; i < 8; i++) next = addRepairAutoRoute(next, "clip:b");
+  expect(repairAutoRoutes(next, "clip:b")).toHaveLength(8);
+  expect(() => addRepairAutoRoute(next, "clip:b")).toThrow("eight routes");
+  expect(() => addRepairAutoRoute({ ...content, storyBible: {} }, "clip:b")).toThrow(
+    "state variable"
+  );
+});
+it("updates and removes the exact conditional route without changing the fallback", () => {
+  const next = addRepairAutoRoute(content, "clip:b");
+  const route = repairAutoRoutes(next, "clip:b")![0];
+  const updated = replaceRepairAutoCondition(next, "clip:b", 0, route, compare);
+  expect(repairAutoRoutes(updated, "clip:b")![0].when).toEqual(compare);
+  expect(() => replaceRepairAutoCondition(updated, "clip:b", 0, route, undefined)).toThrow(
+    "changed"
+  );
+  const removed = replaceRepairAutoCondition(
+    updated,
+    "clip:b",
+    0,
+    repairAutoRoutes(updated, "clip:b")![0],
+    undefined
+  );
+  expect(repairAutoRoutes(removed, "clip:b")).toEqual([{ target: null }]);
+  expect(() => replaceRepairAutoCondition(removed, "clip:b", 0, { target: null }, compare)).toThrow(
+    "changed"
+  );
 });

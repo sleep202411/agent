@@ -180,3 +180,55 @@ function replaceExit(
     },
   };
 }
+
+export function repairAutoRoutes(content: RepairContent, nodeId: string): StoryExitRoute[] | null {
+  const exit = object(content.graph.nodes.find((node) => node.nodeId === nodeId)?.exit);
+  if (exit?.kind !== "auto") return null;
+  const parsed = StoryAutoRoutesSchema.safeParse(exit.routes);
+  return parsed.success ? parsed.data : null;
+}
+
+export function addRepairAutoRoute(content: RepairContent, nodeId: string): RepairContent {
+  const routes = repairAutoRoutes(content, nodeId);
+  const variable = repairVariables(content, "en-US")[0];
+  if (!routes || !variable)
+    throw Error("A conditional route requires an available state variable.");
+  if (routes.length >= MAX_STORY_EXIT_ROUTES)
+    throw Error("An automatic exit supports at most eight routes.");
+  const when: StoryCondition = {
+    kind: "compare",
+    variableKey: variable.key,
+    operator: variable.valueType === "boolean" ? "equals" : "at-least",
+    value: variable.valueType === "boolean" ? true : 0,
+  };
+  return replaceRepairAutoRoutes(content, nodeId, [
+    ...routes.slice(0, -1),
+    { when, target: null },
+    routes[routes.length - 1],
+  ]);
+}
+
+/** Reject a stale editor instead of applying its condition to a reordered route. */
+export function replaceRepairAutoCondition(
+  content: RepairContent,
+  nodeId: string,
+  index: number,
+  expected: StoryExitRoute,
+  when: StoryCondition | undefined
+): RepairContent {
+  const routes = repairAutoRoutes(content, nodeId);
+  if (
+    !routes ||
+    index < 0 ||
+    index >= routes.length - 1 ||
+    JSON.stringify(routes[index]) !== JSON.stringify(expected)
+  )
+    throw Error("The selected route changed. Reopen its condition before editing.");
+  return replaceRepairAutoRoutes(
+    content,
+    nodeId,
+    when
+      ? routes.map((route, at) => (at === index ? { ...route, when } : route))
+      : routes.filter((_, at) => at !== index)
+  );
+}

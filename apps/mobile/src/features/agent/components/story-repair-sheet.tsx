@@ -23,7 +23,16 @@ import {
   type StoryRepairScope,
 } from "../api/story-draft-repair-api";
 import { StoryRepairConditionEditor } from "./story-repair-condition-editor";
-import { replaceChoiceCondition } from "../lib/story-repair-conditions";
+import type { StoryExitRoute } from "@repo/shared/story-stats";
+import {
+  replaceChoiceCondition,
+  repairAutoRoutes,
+  addRepairAutoRoute,
+  replaceRepairAutoRoutes,
+  moveRepairAutoRoute,
+  repairVariables,
+  replaceRepairAutoCondition,
+} from "../lib/story-repair-conditions";
 import type { StoryPublicationDiagnostic } from "../api/story-publication-errors";
 import {
   repairBranches,
@@ -70,6 +79,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const [showSaved, setShowSaved] = useState(false);
   const [choosingEntry, setChoosingEntry] = useState(false);
   const [conditionChoice, setConditionChoice] = useState<string>();
+  const [conditionRoute, setConditionRoute] = useState<{ index: number; route: StoryExitRoute }>();
   const [uncertain, setUncertain] = useState(false),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
@@ -111,6 +121,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     ? loaded?.draft.content
     : (command?.input.content ?? loaded?.draft.content);
   const node = content?.graph.nodes.find((n) => n.nodeId === selected);
+  const autoRoutes = content ? repairAutoRoutes(content, selected) : null;
   const conflict =
     !!command && !!loaded && command.input.expectedRevision !== loaded.draft.revision;
   const edit = (change: (value: RepairContent) => RepairContent) => {
@@ -271,6 +282,29 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 <ThemedText type="smallBold">
                   {typeof node.name === "string" ? node.name : node.nodeId}
                 </ThemedText>
+                {autoRoutes ? (
+                  <>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {t("storyRoute.help")}
+                    </ThemedText>
+                    {repairVariables(content, locale).length ? (
+                      <RepairAction
+                        label={t("storyRoute.add")}
+                        disabled={
+                          !loaded.canEdit ||
+                          busy ||
+                          uncertain ||
+                          conflict ||
+                          showSaved ||
+                          autoRoutes.length >= 8
+                        }
+                        onPress={() => edit((value) => addRepairAutoRoute(value, selected))}
+                      />
+                    ) : (
+                      <ThemedText type="small">{t("storyCondition.noVariables")}</ThemedText>
+                    )}
+                  </>
+                ) : null}
                 {repairChoiceExit(content, selected) ? (
                   <>
                     <ThemedText type="small">{t("storyRepair.prompt")}</ThemedText>
@@ -320,7 +354,9 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                     }}
                   >
                     <ThemedText type="smallBold">
-                      {t("storyRepair.branch").replace("{number}", String(branch.index + 1))}
+                      {autoRoutes && branch.index === autoRoutes.length - 1
+                        ? t("storyRoute.fallback")
+                        : t("storyRepair.branch").replace("{number}", String(branch.index + 1))}
                     </ThemedText>
                     {repairChoiceExit(content, selected) ? (
                       <TextInput
@@ -343,6 +379,93 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                           padding: 10,
                         }}
                       />
+                    ) : null}
+                    {autoRoutes && branch.index < autoRoutes.length - 1 ? (
+                      <>
+                        <RepairAction
+                          label={t("storyRoute.condition")}
+                          disabled={busy || uncertain || conflict || showSaved}
+                          onPress={() =>
+                            setConditionRoute({
+                              index: branch.index,
+                              route: autoRoutes[branch.index],
+                            })
+                          }
+                        />
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
+                          <RepairAction
+                            label={t("storyRepair.moveUp")}
+                            disabled={
+                              !loaded.canEdit ||
+                              busy ||
+                              uncertain ||
+                              conflict ||
+                              showSaved ||
+                              branch.index === 0
+                            }
+                            onPress={() =>
+                              edit((value) =>
+                                replaceRepairAutoRoutes(
+                                  value,
+                                  selected,
+                                  moveRepairAutoRoute(
+                                    repairAutoRoutes(value, selected)!,
+                                    branch.index,
+                                    branch.index - 1
+                                  )
+                                )
+                              )
+                            }
+                          />
+                          <RepairAction
+                            label={t("storyRepair.moveDown")}
+                            disabled={
+                              !loaded.canEdit ||
+                              busy ||
+                              uncertain ||
+                              conflict ||
+                              showSaved ||
+                              branch.index === autoRoutes.length - 2
+                            }
+                            onPress={() =>
+                              edit((value) =>
+                                replaceRepairAutoRoutes(
+                                  value,
+                                  selected,
+                                  moveRepairAutoRoute(
+                                    repairAutoRoutes(value, selected)!,
+                                    branch.index,
+                                    branch.index + 1
+                                  )
+                                )
+                              )
+                            }
+                          />
+                          <RepairAction
+                            label={t("storyRoute.remove")}
+                            disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}
+                            onPress={() =>
+                              Alert.alert(t("storyRoute.remove"), t("storyRoute.removeHelp"), [
+                                { text: t("common.cancel"), style: "cancel" },
+                                {
+                                  text: t("storyRoute.remove"),
+                                  style: "destructive",
+                                  onPress: () =>
+                                    edit((value) =>
+                                      replaceRepairAutoCondition(
+                                        value,
+                                        selected,
+                                        branch.index,
+                                        autoRoutes[branch.index],
+                                        undefined
+                                      )
+                                    ),
+                                },
+                              ])
+                            }
+                          />
+                        </View>
+                      </>
                     ) : null}
                     {branch.choiceId ? (
                       <RepairAction
@@ -470,6 +593,29 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
           </>
         ) : null}
       </ScrollView>
+      {conditionRoute && content && loaded ? (
+        <StoryRepairConditionEditor
+          context="route"
+          key={`${selected}:route:${conditionRoute.index}`}
+          content={content}
+          condition={conditionRoute.route.when}
+          userId={userId}
+          storageKey={`${scope.projectId}:${scope.chapterId}:${selected}:route:${JSON.stringify(conditionRoute.route)}:${autoRoutes?.slice(0, conditionRoute.index).filter((route) => JSON.stringify(route) === JSON.stringify(conditionRoute.route)).length ?? 0}`}
+          canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+          onApply={(when) =>
+            edit((value) =>
+              replaceRepairAutoCondition(
+                value,
+                selected,
+                conditionRoute.index,
+                conditionRoute.route,
+                when
+              )
+            )
+          }
+          onClose={() => setConditionRoute(undefined)}
+        />
+      ) : null}
       {conditionChoice && content && loaded ? (
         <StoryRepairConditionEditor
           key={`${selected}:${conditionChoice}`}

@@ -261,3 +261,34 @@ it("requires confirmation to remove a choice and keeps the other branch intact",
     )
   ).toEqual(["first"]);
 });
+
+it("adds and removes automatic routes while leaving the fallback in place", async () => {
+  h.reconcile.mockResolvedValue({
+    ...result,
+    draft: {
+      ...draft,
+      content: {
+        ...draft.content,
+        storyBible: { stateVariables: [{ key: "ready", valueType: "boolean", name: {} }] },
+      },
+    },
+  });
+  await render();
+  await click("storyRoute.add");
+  const routes = () =>
+    JSON.parse([...h.records.values()][0]).input.content.graph.nodes[0].exit.routes;
+  expect(routes()).toEqual([
+    {
+      when: { kind: "compare", variableKey: "ready", operator: "equals", value: true },
+      target: null,
+    },
+    { target: null },
+  ]);
+  expect(host.textContent).toContain("storyRoute.fallback");
+  expect(button("storyRepair.moveDown").disabled).toBe(true);
+  await click("storyRoute.remove");
+  expect(routes()).toHaveLength(2);
+  await act(async () => h.alert.mock.calls.at(-1)![2][1].onPress());
+  expect(routes()).toEqual([{ target: null }]);
+  expect(button("storyRoute.remove")).toBeUndefined();
+});
