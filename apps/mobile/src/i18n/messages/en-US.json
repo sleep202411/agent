@@ -5100,5 +5100,18 @@
   "storyChapters.discardHelp": "A previous request may already have succeeded. Review the chapter list before starting again. This removes only local pending edits.",
   "storyChapters.unknownCreate": "Creation may have succeeded. Reload the list and choose the matching new chapter, or review it before starting again.",
   "storyChapters.pending": "A chapter update is awaiting confirmation. Reload to check its result.",
-  "storyChapters.useExisting": "Use this chapter"
+  "storyChapters.useExisting": "Use this chapter",
+  "storyCandidates.title": "Saved candidate media",
+  "storyCandidates.help": "Media saved for this project. Images can be selected in asset details; images and videos can be used in Timeline.",
+  "storyCandidates.all": "All",
+  "storyCandidates.image": "Image",
+  "storyCandidates.video": "Video",
+  "storyCandidates.audio": "Audio",
+  "storyCandidates.other": "Media",
+  "storyCandidates.empty": "No saved media in this category.",
+  "storyCandidates.remove": "Remove from candidates",
+  "storyCandidates.removeHelp": "Remove this media from the project’s candidate list? The media file and its existing uses will remain.",
+  "storyCandidates.pending": "A removal is awaiting confirmation. Refresh to check its status, or retry the removal.",
+  "storyCandidates.retryRemove": "Retry removal",
+  "storyCandidates.refresh": "Refresh"
 }

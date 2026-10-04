@@ -5100,5 +5100,18 @@
   "storyChapters.discardHelp": "先前的請求可能已成功。重新開始前請檢查章節列表。這只會清除本機待處理修改。",
   "storyChapters.unknownCreate": "章節可能已建立。請重新整理列表並選擇對應的新章節，或檢查後重新開始。",
   "storyChapters.pending": "章節修改尚待確認。請重新整理以檢查結果。",
-  "storyChapters.useExisting": "使用此章節"
+  "storyChapters.useExisting": "使用此章節",
+  "storyCandidates.title": "已儲存候選素材",
+  "storyCandidates.help": "此專案儲存的素材。可在資產詳情中選擇圖片，在時間軸中使用圖片和影片。",
+  "storyCandidates.all": "全部",
+  "storyCandidates.image": "圖片",
+  "storyCandidates.video": "影片",
+  "storyCandidates.audio": "音訊",
+  "storyCandidates.other": "素材",
+  "storyCandidates.empty": "此分類暫無已儲存素材。",
+  "storyCandidates.remove": "移出候選素材",
+  "storyCandidates.removeHelp": "將此素材移出專案候選清單？素材檔案及現有使用不會被刪除。",
+  "storyCandidates.pending": "一次移除操作尚待確認。重新整理查看狀態，或重試移除。",
+  "storyCandidates.retryRemove": "重試移除",
+  "storyCandidates.refresh": "重新整理"
 }

@@ -5100,5 +5100,18 @@
   "storyChapters.discardHelp": "之前的请求可能已成功。重新开始前请检查章节列表。这只会清除本地待处理修改。",
   "storyChapters.unknownCreate": "章节可能已创建。请刷新列表并选择对应的新章节，或检查后重新开始。",
   "storyChapters.pending": "章节修改尚待确认。请刷新以检查结果。",
-  "storyChapters.useExisting": "使用此章节"
+  "storyChapters.useExisting": "使用此章节",
+  "storyCandidates.title": "已保存候选素材",
+  "storyCandidates.help": "此项目保存的素材。可在资产详情中选择图片，在时间线中使用图片和视频。",
+  "storyCandidates.all": "全部",
+  "storyCandidates.image": "图片",
+  "storyCandidates.video": "视频",
+  "storyCandidates.audio": "音频",
+  "storyCandidates.other": "素材",
+  "storyCandidates.empty": "此分类暂无已保存素材。",
+  "storyCandidates.remove": "移出候选素材",
+  "storyCandidates.removeHelp": "将此素材移出项目候选列表？素材文件及现有使用不会被删除。",
+  "storyCandidates.pending": "一次移除操作尚待确认。刷新查看状态，或重试移除。",
+  "storyCandidates.retryRemove": "重试移除",
+  "storyCandidates.refresh": "刷新"
 }
