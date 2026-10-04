@@ -381,7 +381,13 @@ it("edits a staged draft in place and persists all metadata without creating dup
   expect(
     s.edit(
       1,
-      { ...input, title: "Revised", estimatePoints: 8, positionRole: "Storyboard artist" },
+      {
+        ...input,
+        title: "Revised",
+        estimatePoints: 8,
+        positionRole: "Storyboard artist",
+        requiredSkills: ["Editing"],
+      },
       review
     )
   ).toBe(true);
@@ -389,7 +395,12 @@ it("edits a staged draft in place and persists all metadata without creating dup
   expect(restored.getSnapshot().drafts).toHaveLength(1);
   expect(restored.getSnapshot().drafts[0]).toMatchObject({
     id: 1,
-    input: { title: "Revised", estimatePoints: 8, positionRole: "Storyboard artist" },
+    input: {
+      title: "Revised",
+      estimatePoints: 8,
+      positionRole: "Storyboard artist",
+      requiredSkills: ["Editing"],
+    },
   });
   await restored.createAll(() => true);
   expect(restored.edit(1, input, review)).toBe(false);

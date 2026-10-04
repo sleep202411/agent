@@ -1,3 +1,4 @@
+import { requiredSkillsSchema } from "./crew-skills-api";
 import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
@@ -13,6 +14,7 @@ export const taskReference = taskOption.extend({
 export const taskDetailSchema = taskOption.extend({
   ...taskCompensationShape,
   contractAssetNodeId: z.string().uuid().nullable().optional(),
+  requiredSkills: requiredSkillsSchema.optional(),
   positionRole: z.string().trim().min(1).max(80).nullable().optional(),
   taskKind: taskKindSchema.nullable().optional(),
   estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),

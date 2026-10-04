@@ -299,3 +299,18 @@ it("rejects invalid positions before creating a task", async () => {
     await expect(createTask("crew", { ...input, positionRole })).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
+
+it("creates selected skills and rejects a receipt that drops them", async () => {
+  const requiredSkills = ["Editing", "Lighting"];
+  vi.mocked(api.post).mockResolvedValue({
+    ...detail,
+    requiredSkills: [...requiredSkills].reverse(),
+  });
+  await createTask("crew", { ...input, requiredSkills });
+  expect(api.post).toHaveBeenLastCalledWith(
+    "/crews/crew/tasks",
+    expect.objectContaining({ data: expect.objectContaining({ requiredSkills }) })
+  );
+  vi.mocked(api.post).mockResolvedValue(detail);
+  await expect(createTask("crew", { ...input, requiredSkills })).rejects.toThrow("acknowledgement");
+});

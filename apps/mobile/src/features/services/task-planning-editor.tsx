@@ -1,3 +1,4 @@
+import { CrewSkillsField } from "./crew-skills-field";
 import { TaskCompensationFields } from "./task-compensation-fields";
 import { compensationText } from "./task-compensation";
 import { useEffect, useState } from "react";
@@ -196,6 +197,12 @@ function Editor({
         onShare={(v) => session.change("share", v)}
         locked={locked}
       />
+      <CrewSkillsField
+        value={draft.requiredSkills}
+        onChange={(v) => session.change("requiredSkills", v)}
+        generation={generation}
+        locked={locked}
+      />
       <ThemedText>{t("taskPlanning.positionRole")}</ThemedText>
       <TextInput
         accessibilityLabel={t("taskPlanning.positionRole")}
@@ -219,6 +226,9 @@ function Editor({
       {canReview && (
         <View style={{ gap: 8 }}>
           <ThemedText>{t("taskPlanning.latest")}</ThemedText>
+          <ThemedText>
+            {t("crewSkills.label")}: {snapshot.requiredSkills?.join(", ") || t("thread.taskUnset")}
+          </ThemedText>
           <ThemedText>
             {t("taskPlanning.positionRole")}: {snapshot.positionRole ?? t("thread.taskUnset")}
           </ThemedText>

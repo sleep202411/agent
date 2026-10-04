@@ -1,3 +1,4 @@
+import { requiredSkillsSchema, sameSkills } from "./crew-skills-api";
 import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
@@ -29,6 +30,7 @@ export type PlanningSnapshot = z.infer<typeof planningSnapshotSchema>;
 export const planningEditInput = z
   .object({
     ...taskCompensationShape,
+    requiredSkills: requiredSkillsSchema.optional(),
     positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     taskKind: taskKindSchema.nullable().optional(),
     expectedVersion: z.number().int().positive(),
@@ -45,6 +47,7 @@ export const planningEditInput = z
   .strict()
   .refine(
     (data) =>
+      data.requiredSkills !== undefined ||
       data.positionRole !== undefined ||
       data.rewardUsdMinor !== undefined ||
       data.profitShareBps !== undefined ||
@@ -70,6 +73,7 @@ export function planningChanges(
   draft: TaskPlanningDraft,
   taskKind: TaskKind | null = task.taskKind,
   values: {
+    requiredSkills?: string[];
     positionRole?: string | null;
     estimatePoints: number | null;
     revisionLimit: number | null;
@@ -90,6 +94,10 @@ export function planningChanges(
     )
     .safeParse({
       expectedVersion: task.version,
+      ...(values.requiredSkills !== undefined &&
+      !sameSkills(values.requiredSkills, task.requiredSkills)
+        ? { requiredSkills: values.requiredSkills }
+        : {}),
       ...(values.positionRole !== undefined && values.positionRole !== (task.positionRole ?? null)
         ? { positionRole: values.positionRole }
         : {}),
@@ -141,6 +149,7 @@ export async function updateTaskPlanning(
   const episodeId = data.episodeId === undefined ? task.episodeId : data.episodeId;
   const labels = data.labelIds ?? task.labels.map((label) => label.id);
   if (
+    !sameSkills(result.requiredSkills, data.requiredSkills ?? task.requiredSkills) ||
     (result.positionRole ?? null) !==
       (data.positionRole === undefined ? (task.positionRole ?? null) : data.positionRole) ||
     result.rewardUsdMinor !==

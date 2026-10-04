@@ -265,3 +265,25 @@ it("changes and clears a position, verifying both changed and preserved values",
     updateTaskPlanning(current, { expectedVersion: 1, estimatePoints: 3 })
   ).rejects.toThrow("acknowledgement");
 });
+
+it("updates, clears and verifies required skills without order-only changes", async () => {
+  const current = { ...snapshot, requiredSkills: ["Editing", "Lighting"] };
+  const base = { estimatePoints: current.estimatePoints, revisionLimit: current.revisionLimit };
+  expect(
+    planningChanges(current, planningDraft(current), current.taskKind, {
+      ...base,
+      requiredSkills: ["Lighting", "Editing"],
+    }).success
+  ).toBe(false);
+  for (const requiredSkills of [["Editing"], []]) {
+    const change = planningChanges(current, planningDraft(current), current.taskKind, {
+      ...base,
+      requiredSkills,
+    });
+    expect(change.data).toEqual({ expectedVersion: 1, requiredSkills });
+    vi.mocked(api.patch).mockResolvedValue({ ...current, version: 2, requiredSkills });
+    await updateTaskPlanning(current, change.data!);
+    vi.mocked(api.patch).mockResolvedValue({ ...current, version: 2 });
+    await expect(updateTaskPlanning(current, change.data!)).rejects.toThrow("acknowledgement");
+  }
+});

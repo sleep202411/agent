@@ -238,6 +238,11 @@ function TaskContent({
             <ThemedText>
               {t("taskSchedule.priority")}: {t(`taskSchedule.${data.priority}`)}
             </ThemedText>
+            {!!data.requiredSkills?.length && (
+              <ThemedText>
+                {t("crewSkills.label")}: {data.requiredSkills.join(", ")}
+              </ThemedText>
+            )}
             {!!data.positionRole && (
               <ThemedText>
                 {t("taskPlanning.positionRole")}: {data.positionRole}

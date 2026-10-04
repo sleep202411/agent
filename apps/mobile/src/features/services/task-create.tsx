@@ -1,3 +1,4 @@
+import { CrewSkillsField } from "./crew-skills-field";
 import { TaskCreationRequiredError } from "./task-creation-required";
 import { taskWorkflowLabel } from "./task-workflow-label";
 import { restoreTaskDraftEditor } from "./task-draft-editor-context";
@@ -153,6 +154,7 @@ function Editor({
   const initial = initialDraft?.input,
     editor = initialDraft?.review.editor;
   const custom = useTaskCreationCustomFields(crewId, generation, initial?.customFieldValues);
+  const [requiredSkills, setRequiredSkills] = useState(initial?.requiredSkills ?? []);
   const [positionRole, setPositionRole] = useState(initial?.positionRole ?? "");
   const [taskKind, setTaskKind] = useState<TaskKind | null>(initial?.taskKind ?? null);
   const [planning, setPlanning] = useState<TaskPlanningDraft>(
@@ -206,6 +208,7 @@ function Editor({
       customFieldValues: custom.values,
       title,
       description,
+      requiredSkills,
       positionRole: positionRole.trim() || null,
       priority,
       taskKind,
@@ -394,6 +397,12 @@ function Editor({
         share={share}
         onReward={setReward}
         onShare={setShare}
+        locked={locked}
+      />
+      <CrewSkillsField
+        value={requiredSkills}
+        onChange={setRequiredSkills}
+        generation={generation}
         locked={locked}
       />
       <ThemedText>{t("taskPlanning.positionRole")}</ThemedText>

@@ -658,6 +658,7 @@ it("reopens a staged draft, preserves unchanged metadata and saves through stagi
   const onStage = vi.fn();
   const initial = {
     positionRole: "Storyboard artist",
+    requiredSkills: ["Editing"],
     title: "Reviewed draft",
     description: "Keep this",
     priority: "high" as const,

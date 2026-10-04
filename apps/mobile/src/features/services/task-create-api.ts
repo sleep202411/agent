@@ -1,3 +1,4 @@
+import { requiredSkillsSchema, sameSkills } from "./crew-skills-api";
 import { assertTaskCreationRequired } from "./task-creation-required";
 import { assertTaskCreationDeadline } from "./task-creation-deadline";
 import { taskCompensationShape } from "./task-compensation";
@@ -29,6 +30,7 @@ export const taskCreateInput = z
         "Duplicate custom fields"
       )
       .optional(),
+    requiredSkills: requiredSkillsSchema.optional(),
     positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     taskKind: taskKindSchema.nullable().optional(),
     estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
@@ -105,6 +107,8 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
       }));
   if (
     !customMatches ||
+    (data.requiredSkills !== undefined &&
+      !sameSkills(result.requiredSkills, data.requiredSkills)) ||
     (data.positionRole !== undefined && (result.positionRole ?? null) !== data.positionRole) ||
     (data.rewardUsdMinor !== undefined && result.rewardUsdMinor !== data.rewardUsdMinor) ||
     (data.profitShareBps !== undefined && result.profitShareBps !== data.profitShareBps) ||

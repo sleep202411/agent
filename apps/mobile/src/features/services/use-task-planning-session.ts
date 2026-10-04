@@ -14,6 +14,7 @@ type Draft = ReturnType<typeof initialDraft> & { attemptedAt?: PlanningSnapshot;
 function initialDraft(snapshot: PlanningSnapshot) {
   return {
     snapshot,
+    requiredSkills: snapshot.requiredSkills ?? [],
     positionRole: snapshot.positionRole ?? "",
     reward: compensationText(snapshot.rewardUsdMinor),
     share: compensationText(snapshot.profitShareBps),
@@ -26,6 +27,7 @@ function initialDraft(snapshot: PlanningSnapshot) {
 export function parsePlanningDraft(draft: Draft) {
   try {
     return planningChanges(draft.snapshot, draft.fields, draft.taskKind, {
+      requiredSkills: draft.requiredSkills,
       positionRole: draft.positionRole.trim() || null,
       estimatePoints: parsePlanningNumber(draft.estimate, 1_000_000),
       revisionLimit: parsePlanningNumber(draft.revisionLimit, 100),
@@ -58,6 +60,7 @@ export function useTaskPlanningSession(taskId: string, generation: number, onRef
     initialize,
     change<
       K extends
+        | "requiredSkills"
         | "positionRole"
         | "reward"
         | "share"

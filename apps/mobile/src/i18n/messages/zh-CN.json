@@ -1,4 +1,8 @@
 {
+  "crewSkills.label": "创作者所需技能",
+  "crewSkills.hint": "可多选已认证技能。申请人须满足所有已选要求。",
+  "crewSkills.loading": "正在加载技能…",
+  "crewSkills.retry": "重试",
   "contentReports.newReport": "发起投诉",
   "contentReports.search": "搜索 IP 名称或房间号",
   "contentReports.selectTarget": "选择 IP",

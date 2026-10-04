@@ -1,4 +1,8 @@
 {
+  "crewSkills.label": "Required creator skills",
+  "crewSkills.hint": "Select all required verified skills. Applicants must meet every selected requirement.",
+  "crewSkills.loading": "Loading skills…",
+  "crewSkills.retry": "Retry",
   "contentReports.newReport": "Initiate a complaint",
   "contentReports.search": "Search by IP name or room number",
   "contentReports.selectTarget": "Select an IP",
