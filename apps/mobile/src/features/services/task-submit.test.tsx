@@ -1,7 +1,7 @@
-import { act, useState, type ReactNode } from "react";
+import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { TaskSubmit } from "./task-submit";
+import { TaskSubmit, TaskSubmissionUpload } from "./task-submit";
 import { useTaskSubmitSession } from "./use-task-submit-session";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({
@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   refresh: vi.fn(),
   generation: 1,
   uploadProps: vi.fn(),
+  uploadUnmount: vi.fn(),
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock("./task-submit-api", async (original) => ({
@@ -76,6 +77,7 @@ vi.mock("@/features/crew-assets/file-upload", () => ({
     onAttached: (asset: { id: string; name: string }) => void;
     onClose: () => void;
   }) => {
+    useEffect(() => () => h.uploadUnmount(), []);
     h.uploadProps(props);
     return (
       <button
@@ -331,7 +333,8 @@ it("ignores a delivery upload callback after the account changes", async () => {
   expect(h.submit).not.toHaveBeenCalled();
 });
 
-function Journey() {
+function Journey({ hosted = false }: { hosted?: boolean }) {
+  const [hidden, setHidden] = useState(false);
   const [snapshot, setSnapshot] = useState(task);
   const [revision, setRevision] = useState(0);
   const refresh = () => {
@@ -342,14 +345,21 @@ function Journey() {
   return (
     <>
       <button onClick={refresh}>Reload details</button>
-      <TaskSubmit
-        key={revision}
-        task={snapshot}
-        userId="1"
-        generation={1}
-        onRefresh={refresh}
-        session={session}
-      />
+      <button onClick={() => setHidden((value) => !value)}>Toggle details</button>
+      {hosted && (
+        <TaskSubmissionUpload session={session} crewId={task.crewId} userId="1" generation={1} />
+      )}
+      {!hidden && (
+        <TaskSubmit
+          uploadHosted={hosted}
+          key={revision}
+          task={snapshot}
+          userId="1"
+          generation={1}
+          onRefresh={refresh}
+          session={session}
+        />
+      )}
     </>
   );
 }
@@ -445,4 +455,64 @@ it("retires the submission draft when the account changes", async () => {
     root.render(<TaskSubmit task={task} userId="2" generation={2} onRefresh={h.refresh} />)
   );
   expect(host.querySelector("input")!.value).toBe("");
+});
+
+const attachmentTemplate = {
+  ...template,
+  definition: {
+    ...template.definition,
+    fields: [
+      { key: "video", label: "Video", type: "attachment", required: true, instructions: "" },
+    ],
+  },
+};
+it("keeps a hosted upload alive while foreground refresh temporarily removes task details", async () => {
+  h.template.mockResolvedValue(attachmentTemplate);
+  await act(async () => root.render(<Journey hosted />));
+  await act(async () => type(0, "Keep delivery note"));
+  await act(async () => button("thread.uploadFile")!.click());
+  const upload = h.uploadProps.mock.lastCall![0];
+  await act(async () => button("Toggle details")!.click());
+  expect(h.uploadUnmount).not.toHaveBeenCalled();
+  await act(async () => {
+    upload.onAttached({ id, name: "Returned picker.mp4" });
+    upload.onClose();
+  });
+  expect(h.submit).not.toHaveBeenCalled();
+  await act(async () => button("Toggle details")!.click());
+  expect(host.querySelector("input")!.value).toBe("Keep delivery note");
+  expect(button("Returned picker.mp4 ×")).toBeDefined();
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  expect(h.submit.mock.lastCall![2].professionalDelivery.answers.video).toEqual([id]);
+});
+it("does not rebind a returning upload to a replacement template", async () => {
+  h.template.mockResolvedValue(attachmentTemplate);
+  await act(async () => root.render(<Journey hosted />));
+  await act(async () => button("thread.uploadFile")!.click());
+  const upload = h.uploadProps.mock.lastCall![0];
+  h.template.mockResolvedValue({ ...attachmentTemplate, version: 3 });
+  await act(async () => button("Reload details")!.click());
+  expect(h.uploadUnmount).not.toHaveBeenCalled();
+  await act(async () => {
+    upload.onAttached({ id, name: "Original template.mp4" });
+    upload.onClose();
+  });
+  expect(button("Original template.mp4 ×")).toBeDefined();
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  h.template.mockResolvedValue(attachmentTemplate);
+  await act(async () => button("Reload details")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  expect(h.submit).not.toHaveBeenCalled();
+});
+it("ignores hosted upload completion after leaving the task", async () => {
+  h.template.mockResolvedValue(attachmentTemplate);
+  await act(async () => root.render(<Journey hosted />));
+  await act(async () => button("thread.uploadFile")!.click());
+  const upload = h.uploadProps.mock.lastCall![0];
+  await act(async () => root.render(<div>Another task</div>));
+  expect(h.uploadUnmount).toHaveBeenCalledOnce();
+  await act(async () => upload.onAttached({ id, name: "Old.mp4" }));
+  await act(async () => root.render(<Journey hosted />));
+  expect(host.textContent).not.toContain("Old.mp4");
+  expect(h.submit).not.toHaveBeenCalled();
 });

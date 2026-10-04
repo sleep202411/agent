@@ -55,6 +55,7 @@ vi.mock("./task-relationship-editor", () => ({
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
 vi.mock("./task-brief", () => ({ TaskBrief: () => <div>brief editor</div> }));
 vi.mock("./task-submit", () => ({
+  TaskSubmissionUpload: () => null,
   TaskSubmit: ({ session }: { session: TaskSubmitSession }) => (
     <input
       aria-label="submission note"

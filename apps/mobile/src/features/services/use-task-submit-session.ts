@@ -11,8 +11,18 @@ import {
   type TaskSubmitInput,
 } from "./task-submit-api";
 
+export type TaskSubmissionUpload = {
+  sequence: number;
+  field: string;
+  templateKey: string;
+  parentId: string | null;
+  destination?: string;
+};
+
 /** Task-page ownership keeps input and pending writes alive during detail reloads. */
 export function useTaskSubmitSession(taskId: string, generation: number, onRefresh: () => void) {
+  const [upload, setUpload] = useState<TaskSubmissionUpload>();
+  const uploadSequence = useRef(0);
   const [note, setNote] = useState("");
   const [assets, setAssets] = useState<Pick<CrewAsset, "id" | "name">[]>([]);
   const [folder, setFolder] = useState<DeliveryFolder>();
@@ -24,8 +34,26 @@ export function useTaskSubmitSession(taskId: string, generation: number, onRefre
     latestSnapshot.current = task;
   }, []);
   const op = useAuthFormOperation(taskId, true);
-  const locked = (task: TaskDetail) => op.busy || attemptedAt === task;
+  const locked = (task: TaskDetail) => op.busy || attemptedAt === task || upload !== undefined;
   return {
+    upload,
+    setUpload,
+    beginUpload(task: TaskDetail, templateKey: string, field: string) {
+      if (
+        generation !== getAuthGeneration() ||
+        task.id !== taskId ||
+        locked(task) ||
+        assets.length >= 100
+      )
+        return;
+      setUpload({
+        sequence: ++uploadSequence.current,
+        field,
+        templateKey,
+        parentId: folder?.id ?? null,
+        destination: folder?.name,
+      });
+    },
     note,
     setNote,
     assets,

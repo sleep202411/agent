@@ -25,16 +25,103 @@ type Props = {
   generation: number;
   onRefresh: () => void;
   session?: TaskSubmitSession;
+  /** TaskDetail owns the upload modal across detail refreshes. */
+  uploadHosted?: boolean;
 };
 export function TaskSubmit(props: Props) {
-  if (props.session) return <SubmissionAccess {...props} session={props.session} />;
+  if (props.session) return <SubmissionWithUpload {...props} session={props.session} />;
   return (
     <LocalSubmission key={`${props.task.id}:${props.userId}:${props.generation}`} {...props} />
   );
 }
 function LocalSubmission(props: Props) {
   const session = useTaskSubmitSession(props.task.id, props.generation, props.onRefresh);
-  return <SubmissionAccess {...props} session={session} />;
+  return <SubmissionWithUpload {...props} session={session} />;
+}
+function SubmissionWithUpload(props: Props & { session: TaskSubmitSession }) {
+  return (
+    <>
+      <SubmissionAccess {...props} />
+      {!props.uploadHosted && (
+        <TaskSubmissionUpload
+          session={props.session}
+          crewId={props.task.crewId}
+          userId={props.userId}
+          generation={props.generation}
+        />
+      )}
+    </>
+  );
+}
+export function TaskSubmissionUpload(props: {
+  session: TaskSubmitSession;
+  crewId: string;
+  userId: string;
+  generation: number;
+}) {
+  return props.session.upload ? (
+    <SubmissionUploadDialog key={props.session.upload.sequence} {...props} />
+  ) : null;
+}
+function SubmissionUploadDialog({
+  session,
+  crewId,
+  userId,
+  generation,
+}: {
+  session: TaskSubmitSession;
+  crewId: string;
+  userId: string;
+  generation: number;
+}) {
+  const theme = useTheme(),
+    t = useTranslations();
+  const upload = session.upload!;
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
+  const close = () => {
+    if (live.current && generation === getAuthGeneration()) session.setUpload(undefined);
+  };
+  return (
+    <Modal visible animationType="slide" onRequestClose={close}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+        <AssetFileUpload
+          crewId={crewId}
+          userId={userId}
+          generation={generation}
+          parentId={upload.parentId}
+          destination={upload.destination ?? t("studioMedia.root")}
+          onClose={close}
+          onAttached={(asset) => {
+            if (!live.current || generation !== getAuthGeneration()) return;
+            session.setAssets((current) =>
+              current.some((item) => item.id === asset.id) ? current : [...current, asset]
+            );
+            // Bind to the template selected before opening the native picker, even if a
+            // foreground refresh loads a different delivery template in the meantime.
+            session.setAnswersByTemplate((current) => {
+              const answers = current[upload.templateKey] ?? {};
+              const previous = answers[upload.field];
+              return {
+                ...current,
+                [upload.templateKey]: {
+                  ...answers,
+                  [upload.field]: [
+                    ...new Set([...(Array.isArray(previous) ? previous : []), asset.id]),
+                  ],
+                },
+              };
+            });
+          }}
+        />
+      </SafeAreaView>
+    </Modal>
+  );
 }
 function SubmissionAccess(props: Props & { session: TaskSubmitSession }) {
   if (!["open", "in_progress", "revision_requested"].includes(props.task.status)) return null;
@@ -78,7 +165,6 @@ function SubmissionForm({
       [templateKey]: typeof update === "function" ? update(previous[templateKey] ?? {}) : update,
     }));
   const [picker, setPicker] = useState<"files" | "folders">();
-  const [uploadField, setUploadField] = useState<string>();
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
@@ -102,7 +188,7 @@ function SubmissionForm({
     return () => controller.abort();
   }, [task, userId, generation]);
   if (context?.allowed === false) return null;
-  const locked = session.locked(task) || uploadField !== undefined;
+  const locked = session.locked(task);
   const blocked = task.blockedBy.some((dependency) => !dependency.resolved);
   const input: TaskSubmitInput = {
     note,
@@ -226,7 +312,7 @@ function SubmissionForm({
                     disabled={locked || assets.length >= 100}
                     onPress={() => {
                       if (!session.locked(task) && generation === getAuthGeneration())
-                        setUploadField(field.key);
+                        session.beginUpload(task, templateKey, field.key);
                     }}
                     style={{ padding: 12 }}
                   >
@@ -290,40 +376,6 @@ function SubmissionForm({
           {session.busy && <ActivityIndicator />}
         </>
       )}
-      <Modal
-        visible={uploadField !== undefined}
-        animationType="slide"
-        onRequestClose={() => setUploadField(undefined)}
-      >
-        <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-          {uploadField !== undefined && (
-            <AssetFileUpload
-              crewId={task.crewId}
-              userId={userId}
-              generation={generation}
-              parentId={folder?.id ?? null}
-              destination={folder?.name ?? t("studioMedia.root")}
-              onClose={() => setUploadField(undefined)}
-              onAttached={(asset) => {
-                if (!live.current || session.locked(task) || generation !== getAuthGeneration())
-                  return;
-                setAssets((current) =>
-                  current.some((item) => item.id === asset.id) ? current : [...current, asset]
-                );
-                setAnswers((current) => {
-                  const previous = current[uploadField];
-                  return {
-                    ...current,
-                    [uploadField]: [
-                      ...new Set([...(Array.isArray(previous) ? previous : []), asset.id]),
-                    ],
-                  };
-                });
-              }}
-            />
-          )}
-        </SafeAreaView>
-      </Modal>
       <Modal visible={!!picker} animationType="slide" onRequestClose={() => setPicker(undefined)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
           {picker === "files" && (

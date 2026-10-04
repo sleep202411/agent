@@ -30,7 +30,7 @@ import { TaskBrief } from "./task-brief";
 import { useTaskRelationshipSession } from "./use-task-relationship-session";
 import { TaskRelationshipEditor } from "./task-relationship-editor";
 import { TaskRelations } from "./task-relations";
-import { TaskSubmit } from "./task-submit";
+import { TaskSubmit, TaskSubmissionUpload } from "./task-submit";
 import { TaskCaseCreate } from "./task-case-create";
 import { TaskFeedbackCreate } from "./task-feedback-create";
 import { TaskReview } from "./task-review";
@@ -153,6 +153,12 @@ function TaskContent({
     value ? new Date(value).toLocaleString(locale) : t("thread.taskUnset");
   return (
     <>
+      <TaskSubmissionUpload
+        session={submitSession}
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+      />
       {creatingChild && data && (
         <TaskChildCreate
           task={data}
@@ -322,6 +328,7 @@ function TaskContent({
               submissions={data.submissions}
             />
             <TaskSubmit
+              uploadHosted
               session={submitSession}
               key={`submit:${revision}`}
               task={data}
