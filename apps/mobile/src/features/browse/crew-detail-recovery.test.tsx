@@ -34,6 +34,7 @@ vi.mock("@/auth", () => ({
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 beforeEach(() => {
+  h.push.mockReset();
   h.read.mockReset();
   h.apply.mockReset();
   h.alert.mockReset();
@@ -260,7 +261,7 @@ it("uses refreshed openings after login and allows cancelling without an applica
     );
     expect(h.apply).not.toHaveBeenCalled();
     expect(host.querySelector("[data-modal]")).toBeNull();
-    expect(h.push).toHaveBeenCalledWith("/crew-applications?application=application");
+    expect(h.push).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
   }

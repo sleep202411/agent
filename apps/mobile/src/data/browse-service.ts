@@ -49,7 +49,8 @@ export {
   purchaseIpContent,
   type PurchaseResult,
 } from "./ip-api";
-export { applyToCrewPosition, blockCrew, reportCrew } from "./crew-api";
+export { blockCrew, reportCrew } from "./crew-api";
+export { applyToCrewPosition } from "./crew-application-api";
 
 export async function getIpDiscovery(): Promise<IpDiscovery> {
   return fetchIpDiscovery();

@@ -186,5 +186,3 @@ export async function reportCrew(crewId: string, reason: IpReportReason): Promis
 export async function blockCrew(crewId: string): Promise<void> {
   await api.post(`/crews/${crewId}/blocks`, { ...AURORA });
 }
-
-export { applyToCrewPosition } from "./crew-application-api";

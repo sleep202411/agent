@@ -4820,5 +4820,6 @@
   "crewDeadline.urgentLabel": "Urgent",
   "crewDeadline.overdueLabel": "Overdue",
   "studioWorkspace.uploadIcon": "Upload team icon",
-  "studioWorkspace.iconFileHint": "PNG, JPEG or WebP, up to 5 MB"
+  "studioWorkspace.iconFileHint": "PNG, JPEG or WebP, up to 5 MB",
+  "account.resolutionCenter": "Dispute and Resolution Center"
 }

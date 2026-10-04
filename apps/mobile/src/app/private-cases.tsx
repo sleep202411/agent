@@ -19,7 +19,7 @@ export default function PrivateCasesScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: t("feedbackHistory.cases"),
+          headerTitle: t("account.resolutionCenter"),
           headerTintColor: theme.text,
           headerStyle: { backgroundColor: theme.background },
         }}

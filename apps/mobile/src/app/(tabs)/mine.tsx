@@ -515,9 +515,9 @@ export default function MineScreen() {
             <Pressable
               accessibilityRole="button"
               style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/content-reports"))}
+              onPress={() => router.push(toHref("/private-cases"))}
             >
-              <ThemedText type="smallBold">{t("contentReports.title")}</ThemedText>
+              <ThemedText type="smallBold">{t("account.resolutionCenter")}</ThemedText>
             </Pressable>
             <Pressable
               accessibilityRole="button"
