@@ -83,7 +83,7 @@ const row = {
   id: id(3),
   projectId: id(1),
   chapterId: id(2),
-  plotNodeId: id(4),
+  plotNodeId: "clip:opening",
   title: "Scene",
   durationMs: 1000,
   version: 2,
@@ -114,9 +114,17 @@ const button = (key: string) =>
 const click = async (key: string) => {
   await act(async () => button(key).click());
 };
-const render = async (canEdit = true) => {
+const render = async (canEdit = true, initialNodeId?: string) => {
   await act(async () =>
-    root.render(<TimelineEditor scope={scope} userId="user" canEdit={canEdit} onClose={h.close} />)
+    root.render(
+      <TimelineEditor
+        scope={scope}
+        userId="user"
+        canEdit={canEdit}
+        initialNodeId={initialNodeId}
+        onClose={h.close}
+      />
+    )
   );
 };
 beforeEach(() => {
@@ -194,4 +202,29 @@ it("offers saved preview to viewers and removes it when an edit becomes unsaved"
   await click("timeline.add");
   expect(host.textContent).not.toContain("Saved preview");
   expect(button("timeline.showPreview")).toBeUndefined();
+});
+
+it("opens the exact graph-node timeline without selecting a different scene", async () => {
+  h.fetch.mockResolvedValue([
+    { ...row, id: id(8), plotNodeId: "clip:other", title: "Other", clips: [] },
+    row,
+  ]);
+  await render(true, "clip:opening");
+  expect([...host.querySelectorAll("input")].some((input) => input.value === "First")).toBe(true);
+});
+it("reports a missing diagnostic timeline without guessing another scene", async () => {
+  await render(true, "clip:missing");
+  expect(host.textContent).toContain("storyRepair.noTimeline");
+  expect(host.querySelectorAll("input")).toHaveLength(0);
+});
+it("preserves a pending timeline instead of replacing it with the diagnostic target", async () => {
+  h.read.mockReturnValue({
+    version: 1,
+    sequenceId: id(8),
+    clientKey: id(9),
+    input: { expectedVersion: 1, durationMs: 0, clips: [] },
+  });
+  await render(true, "clip:opening");
+  expect(host.textContent).toContain("timeline.pendingHelp");
+  expect([...host.querySelectorAll("input")].some((input) => input.value === "First")).toBe(false);
 });

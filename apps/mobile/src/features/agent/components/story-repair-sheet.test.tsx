@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryRepairSheet } from "./story-repair-sheet";
+vi.mock("./story-timeline-editor", () => ({
+  TimelineEditor: ({ initialNodeId }: { initialNodeId: string }) => (
+    <span>Timeline: {initialNodeId}</span>
+  ),
+}));
 const h = vi.hoisted(() => ({
   generation: 1,
   reconcile: vi.fn(),
@@ -291,4 +296,47 @@ it("adds and removes automatic routes while leaving the fallback in place", asyn
   await act(async () => h.alert.mock.calls.at(-1)![2][1].onPress());
   expect(routes()).toEqual([{ target: null }]);
   expect(button("storyRoute.remove")).toBeUndefined();
+});
+
+it("opens media repair with the graph node ID while retaining unsaved graph edits", async () => {
+  h.reconcile.mockResolvedValue({
+    ...result,
+    draft: {
+      ...draft,
+      content: {
+        ...draft.content,
+        graph: {
+          ...draft.content.graph,
+          nodes: draft.content.graph.nodes.map((node) => ({ ...node, kind: "clip" })),
+        },
+      },
+    },
+  });
+  await render();
+  await click("○ B");
+  await click("storyRepair.media");
+  expect(host.textContent).toContain("Timeline: clip:a");
+  expect([...h.records.values()][0]).toContain('"nodeId":"clip:b"');
+});
+it("browses another graph node without changing the entry or creating a repair draft", async () => {
+  h.reconcile.mockResolvedValue({
+    ...result,
+    draft: {
+      ...draft,
+      content: {
+        ...draft.content,
+        graph: {
+          ...draft.content.graph,
+          nodes: draft.content.graph.nodes.map((node) => ({ ...node, kind: "clip" })),
+        },
+      },
+    },
+  });
+  await render();
+  await click("storyRepair.inspectNode: A");
+  await click("B");
+  expect(button("storyRepair.entry: A")).toBeDefined();
+  await click("storyRepair.media");
+  expect(host.textContent).toContain("Timeline: clip:b");
+  expect(h.records.size).toBe(0);
 });

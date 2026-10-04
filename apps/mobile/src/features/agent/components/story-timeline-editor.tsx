@@ -89,12 +89,14 @@ export function TimelineEditor({
   userId,
   canEdit,
   canGenerate = false,
+  initialNodeId,
   onClose,
 }: {
   scope: TimelineScope;
   userId: string;
   canEdit: boolean;
   canGenerate?: boolean;
+  initialNodeId?: string;
   onClose: () => void;
 }) {
   const t = useTranslations(),
@@ -126,11 +128,20 @@ export function TimelineEditor({
           setSelected(saved.sequenceId);
           setDraft(saved.input);
         }
-        return fetchTimelines(scope, controller.signal);
+        const value = await fetchTimelines(scope, controller.signal);
+        return { value, hasPending: !!saved || !!media };
       })
       .then(
-        (value) => {
-          if (!controller.signal.aborted) setRows(value);
+        ({ value, hasPending }) => {
+          if (controller.signal.aborted) return;
+          setRows(value);
+          if (initialNodeId && !hasPending) {
+            const match = value.find((row) => row.plotNodeId === initialNodeId);
+            if (match) {
+              setSelected((current) => current || match.id);
+              setDraft((current) => current ?? timelineDraft(match));
+            }
+          }
         },
         (cause) => {
           if (!controller.signal.aborted)
@@ -141,7 +152,7 @@ export function TimelineEditor({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [scope, store, mediaStore, revision]);
+  }, [scope, store, mediaStore, revision, initialNodeId]);
   const locked = loading || op.busy || !!pending || !!mediaTarget || !!generationTarget || !canEdit;
   const confirmDiscard = (next: () => void) => {
     if (!dirty) return next();
@@ -272,6 +283,9 @@ export function TimelineEditor({
           </>
         )}
         {!loading && !rows.length && !pending && <ThemedText>{t("timeline.empty")}</ThemedText>}
+        {!loading && initialNodeId && !rows.some((row) => row.plotNodeId === initialNodeId) ? (
+          <ThemedText>{t("storyRepair.noTimeline")}</ThemedText>
+        ) : null}
         <Action
           label={t("timeline.refresh")}
           disabled={op.busy || !!pending || !!mediaTarget || !!generationTarget || loading}

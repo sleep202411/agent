@@ -22,6 +22,7 @@ import {
   type StoryRepairDraft,
   type StoryRepairScope,
 } from "../api/story-draft-repair-api";
+import { TimelineEditor } from "./story-timeline-editor";
 import { StoryRepairConditionEditor } from "./story-repair-condition-editor";
 import type { StoryExitRoute } from "@repo/shared/story-stats";
 import {
@@ -74,10 +75,17 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   );
   const life = useRef<AbortController | null>(null),
     locked = useRef(false);
-  const [loaded, setLoaded] = useState<{ draft: StoryRepairDraft; canEdit: boolean }>();
+  const [loaded, setLoaded] = useState<{
+    draft: StoryRepairDraft;
+    canEdit: boolean;
+    canGenerate?: boolean;
+  }>();
   const [command, setCommand] = useState<StoryRepairCommand>();
   const [showSaved, setShowSaved] = useState(false);
   const [choosingEntry, setChoosingEntry] = useState(false);
+  const [choosingNode, setChoosingNode] = useState(false);
+  const [nodeSearch, setNodeSearch] = useState("");
+  const [mediaNode, setMediaNode] = useState<string>();
   const [conditionChoice, setConditionChoice] = useState<string>();
   const [conditionRoute, setConditionRoute] = useState<{ index: number; route: StoryExitRoute }>();
   const [uncertain, setUncertain] = useState(false),
@@ -122,6 +130,12 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
     : (command?.input.content ?? loaded?.draft.content);
   const node = content?.graph.nodes.find((n) => n.nodeId === selected);
   const autoRoutes = content ? repairAutoRoutes(content, selected) : null;
+  const matchingNodes =
+    content?.graph.nodes.filter((candidate) =>
+      `${candidate.nodeId} ${typeof candidate.name === "string" ? candidate.name : ""}`
+        .toLowerCase()
+        .includes(nodeSearch.toLowerCase())
+    ) ?? [];
   const conflict =
     !!command && !!loaded && command.input.expectedRevision !== loaded.draft.revision;
   const edit = (change: (value: RepairContent) => RepairContent) => {
@@ -172,7 +186,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
       local.write("null");
       setCommand(undefined);
       setUncertain(false);
-      setLoaded({ draft: next, canEdit: true });
+      setLoaded({ draft: next, canEdit: true, canGenerate: loaded.canGenerate });
       setError(undefined);
       onSaved();
     } catch (e) {
@@ -264,6 +278,52 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                   </Pressable>
                 ))
               : null}
+            <RepairAction
+              label={`${t("storyRepair.inspectNode")}: ${typeof node?.name === "string" ? node.name : (node?.nodeId ?? t("storyRepair.entryMissing"))}`}
+              disabled={busy}
+              onPress={() => setChoosingNode((value) => !value)}
+            />
+            {choosingNode ? (
+              <View style={{ gap: 8 }}>
+                <TextInput
+                  accessibilityLabel={t("storyRepair.searchNodes")}
+                  placeholder={t("storyRepair.searchNodes")}
+                  placeholderTextColor={theme.textSecondary}
+                  value={nodeSearch}
+                  onChangeText={setNodeSearch}
+                  style={{
+                    minHeight: 44,
+                    color: theme.text,
+                    padding: 10,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                    borderRadius: 8,
+                  }}
+                />
+                {matchingNodes.length > 50 ? (
+                  <ThemedText type="small">{t("storyRepair.refineSearch")}</ThemedText>
+                ) : null}
+                <ScrollView
+                  nestedScrollEnabled
+                  style={{ maxHeight: 200 }}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {!matchingNodes.length ? (
+                    <ThemedText type="small">{t("storyRepair.noMatchingNode")}</ThemedText>
+                  ) : null}
+                  {matchingNodes.slice(0, 50).map((item) => (
+                    <RepairAction
+                      key={item.nodeId}
+                      label={typeof item.name === "string" && item.name ? item.name : item.nodeId}
+                      onPress={() => {
+                        setSelected(item.nodeId);
+                        setChoosingNode(false);
+                      }}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
             {issues.map((issue, index) => (
               <View key={index}>
                 <RepairAction
@@ -282,6 +342,13 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 <ThemedText type="smallBold">
                   {typeof node.name === "string" ? node.name : node.nodeId}
                 </ThemedText>
+                {node.kind === "clip" ? (
+                  <RepairAction
+                    label={t("storyRepair.media")}
+                    disabled={busy || uncertain || conflict || showSaved}
+                    onPress={() => setMediaNode(node.nodeId)}
+                  />
+                ) : null}
                 {autoRoutes ? (
                   <>
                     <ThemedText type="small" themeColor="textSecondary">
@@ -593,6 +660,20 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
           </>
         ) : null}
       </ScrollView>
+      {mediaNode && loaded ? (
+        <TimelineEditor
+          key={`${scope.chapterId}:${mediaNode}`}
+          scope={scope}
+          userId={userId}
+          initialNodeId={mediaNode}
+          canEdit={loaded.canEdit}
+          canGenerate={loaded.canGenerate}
+          onClose={() => {
+            setMediaNode(undefined);
+            onSaved();
+          }}
+        />
+      ) : null}
       {conditionRoute && content && loaded ? (
         <StoryRepairConditionEditor
           context="route"

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   PutStoryStoryboardTimelineSchema,
+  StoryProductionStableKeySchema,
   type PutStoryStoryboardTimelineInput,
 } from "@repo/shared";
 import { api } from "@/lib/api-client";
@@ -30,7 +31,13 @@ const sequenceSchema = z
     id,
     projectId: id,
     chapterId: id,
-    plotNodeId: id,
+    plotNodeId: z
+      .string()
+      .refine(
+        (value) =>
+          StoryProductionStableKeySchema.safeParse(value).success && value === value.trim(),
+        "Invalid graph node identifier."
+      ),
     title: z.string().nullable(),
     durationMs: z.number().int().nonnegative(),
     version: z.number().int().nonnegative(),
@@ -104,7 +111,10 @@ export async function fetchTimelines(scope: TimelineScope, signal: AbortSignal) 
     .array(z.unknown())
     .parse(raw)
     .map((value) => parseSequence(value, scope));
-  if (new Set(sequences.map((sequence) => sequence.id)).size !== sequences.length)
+  if (
+    new Set(sequences.map((sequence) => sequence.id)).size !== sequences.length ||
+    new Set(sequences.map((sequence) => sequence.plotNodeId)).size !== sequences.length
+  )
     throw Error("Duplicate timeline sequence returned.");
   return sequences;
 }

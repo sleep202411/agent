@@ -4913,5 +4913,11 @@
   "storyRoute.condition": "路線條件",
   "storyRoute.fallback": "否則",
   "storyRoute.remove": "移除路線",
-  "storyRoute.removeHelp": "移除此條件路線？預設路線和其他路線會保留。"
+  "storyRoute.removeHelp": "移除此條件路線？預設路線和其他路線會保留。",
+  "storyRepair.media": "查看場景媒體",
+  "storyRepair.noTimeline": "此圖節點在本章節中沒有分鏡序列。",
+  "storyRepair.inspectNode": "查看節點",
+  "storyRepair.searchNodes": "搜尋節點",
+  "storyRepair.noMatchingNode": "此章節沒有符合的節點。",
+  "storyRepair.refineSearch": "顯示前 50 個符合的節點。請縮小搜尋範圍以尋找其他節點。"
 }

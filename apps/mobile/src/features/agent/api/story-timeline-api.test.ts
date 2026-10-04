@@ -15,7 +15,7 @@ const sequence: TimelineSequence = {
   id: id(3),
   projectId: id(1),
   chapterId: id(2),
-  plotNodeId: id(4),
+  plotNodeId: "clip:opening",
   title: "Scene",
   durationMs: 3000,
   version: 7,
@@ -188,4 +188,28 @@ it("blocks writes after account changes and rejects late receipts", async () => 
   await expect(
     saveTimeline(scope, sequence.id, "timeline:request", timelineDraft(sequence))
   ).rejects.toThrow();
+});
+
+it.each(["clip:one", "scene.opening", "city-gate"])(
+  "accepts official stable plot IDs: %s",
+  async (plotNodeId) => {
+    h.get.mockResolvedValue([{ ...sequence, plotNodeId }]);
+    expect((await fetchTimelines(scope, new AbortController().signal))[0].plotNodeId).toBe(
+      plotNodeId
+    );
+  }
+);
+it.each(["", "../scene", "clip:one ", "scene..opening"])(
+  "rejects invalid graph IDs: %s",
+  async (plotNodeId) => {
+    h.get.mockResolvedValue([{ ...sequence, plotNodeId }]);
+    await expect(fetchTimelines(scope, new AbortController().signal)).rejects.toThrow();
+  }
+);
+
+it("rejects ambiguous duplicate graph-node timelines", async () => {
+  h.get.mockResolvedValue([sequence, { ...sequence, id: id(8) }]);
+  await expect(fetchTimelines(scope, new AbortController().signal)).rejects.toThrow(
+    "Duplicate timeline"
+  );
 });

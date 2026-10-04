@@ -84,6 +84,7 @@ export async function loadStoryRepairDraft(scope: StoryRepairScope, signal: Abor
   return {
     draft: parseDraft(scope, response.draft),
     canEdit: response.project.capabilities.includes("story.edit"),
+    canGenerate: response.project.capabilities.includes("story.generate"),
   };
 }
 

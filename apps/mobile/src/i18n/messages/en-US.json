@@ -4913,5 +4913,11 @@
   "storyRoute.condition": "Route condition",
   "storyRoute.fallback": "Otherwise",
   "storyRoute.remove": "Remove route",
-  "storyRoute.removeHelp": "Remove this conditional route? The fallback and other routes will be kept."
+  "storyRoute.removeHelp": "Remove this conditional route? The fallback and other routes will be kept.",
+  "storyRepair.media": "Review scene media",
+  "storyRepair.noTimeline": "This graph node has no storyboard sequence in this chapter.",
+  "storyRepair.inspectNode": "Review node",
+  "storyRepair.searchNodes": "Search nodes",
+  "storyRepair.noMatchingNode": "No matching nodes in this chapter.",
+  "storyRepair.refineSearch": "Showing the first 50 matches. Refine your search to find another node."
 }
