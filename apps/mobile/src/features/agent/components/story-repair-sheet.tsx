@@ -4,6 +4,11 @@ import {
   removeRepairAttachedChoice,
 } from "../lib/story-repair-nodes";
 import { deleteRepairNode } from "../lib/story-repair-delete-node";
+import { StoryRepairInteractionsEditor } from "./story-repair-interactions-editor";
+import {
+  readRepairInteractions,
+  replaceRepairInteractions,
+} from "../lib/story-repair-interactions";
 import {
   createRepairEnding,
   renameRepairEnding,
@@ -108,6 +113,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const [mediaNode, setMediaNode] = useState<string>();
   const [conditionChoice, setConditionChoice] = useState<string>();
   const [editingVariables, setEditingVariables] = useState(false);
+  const [interactionNode, setInteractionNode] = useState<string>();
   const [effectTarget, setEffectTarget] = useState<EffectTarget>();
   const [conditionRoute, setConditionRoute] = useState<{ index: number; route: StoryExitRoute }>();
   const [uncertain, setUncertain] = useState(false),
@@ -446,6 +452,11 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 ) : null}
                 {node.kind === "clip" ? (
                   <>
+                    <RepairAction
+                      label={t("storyHotspot.title")}
+                      disabled={busy || uncertain || conflict || showSaved}
+                      onPress={() => setInteractionNode(selected)}
+                    />
                     {(["name", "description"] as const).map((field) => (
                       <View key={field}>
                         <ThemedText type="small">
@@ -972,6 +983,29 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
             setMediaNode(undefined);
             onSaved();
           }}
+        />
+      ) : null}
+      {interactionNode && content && loaded ? (
+        <StoryRepairInteractionsEditor
+          key={interactionNode}
+          content={content}
+          nodeId={interactionNode}
+          defaultLocale={loaded.defaultLocale}
+          userId={userId}
+          storageKey={`${scope.projectId}:${scope.chapterId}:${interactionNode}`}
+          canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+          applyError={error}
+          onApply={(interactions) =>
+            edit((value) =>
+              replaceRepairInteractions(
+                value,
+                interactionNode,
+                readRepairInteractions(content, interactionNode),
+                interactions
+              )
+            )
+          }
+          onClose={() => setInteractionNode(undefined)}
         />
       ) : null}
       {editingVariables && content && loaded ? (
