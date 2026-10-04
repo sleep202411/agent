@@ -1,3 +1,5 @@
+import { StoryCanvasGroupForm } from "./story-canvas-group-form";
+import { canvasGroupDraftStore } from "../lib/story-canvas-group-draft";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -69,6 +71,8 @@ export function StoryCanvasPanel({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [grouping, setGrouping] = useState(false),
+    [groupRecovery, setGroupRecovery] = useState(false);
   const [mediaNode, setMediaNode] = useState<string>();
   const [mediaRecovery, setMediaRecovery] = useState<string>();
   const [expandedShot, setExpandedShot] = useState<string>();
@@ -89,6 +93,7 @@ export function StoryCanvasPanel({
   const [tab, setTab] = useState<"nodes" | "media">("nodes"),
     [selected, setSelected] = useState<string>();
   const reload = () => {
+    setGroupRecovery(false);
     setRecovery(undefined);
     setMediaRecovery(undefined);
     setCreateRecovery(false);
@@ -138,6 +143,9 @@ export function StoryCanvasPanel({
                   userId
                 ).read();
                 setRecovery(draft?.edit);
+                setGroupRecovery(
+                  !!canvasGroupDraftStore({ ...scope, documentId: value.documentId }, userId).read()
+                );
                 setMediaRecovery(
                   canvasMediaDraftStore({ ...scope, documentId: value.documentId }, userId).read()
                     ?.edit.nodeId
@@ -203,6 +211,7 @@ export function StoryCanvasPanel({
           !edit &&
           !creating &&
           !mediaNode &&
+          !grouping &&
           !selected && (
             <StoryCanvasMediaSync
               scope={writeScope}
@@ -214,6 +223,19 @@ export function StoryCanvasPanel({
               onSaved={reload}
             />
           )}
+        {loaded && !loading && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setGrouping(true)}
+            style={{ paddingVertical: 10 }}
+          >
+            <ThemedText type="small">
+              {t(
+                groupRecovery && canEdit ? "storyCanvas.groups.resume" : "storyCanvas.groups.title"
+              )}
+            </ThemedText>
+          </Pressable>
+        )}
         {overview && (
           <>
             <View style={{ flexDirection: "row", gap: 16 }}>
@@ -392,6 +414,22 @@ export function StoryCanvasPanel({
                   ))}
             </ScrollView>
           </>
+        )}
+        {grouping && loaded && writeScope && (
+          <StoryCanvasGroupForm
+            scope={writeScope}
+            userId={userId}
+            loaded={loaded}
+            canEdit={canEdit}
+            close={() => {
+              setGrouping(false);
+              reload();
+            }}
+            saved={() => {
+              setGrouping(false);
+              reload();
+            }}
+          />
         )}
         {selected && (
           <StoryCandidatesPanel

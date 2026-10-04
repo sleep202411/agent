@@ -7,6 +7,7 @@ import {
   type CanvasUpdateCommand,
   type CanvasWriteScope,
 } from "../api/story-canvas-update";
+import { canvasGroupDraftStore } from "./story-canvas-group-draft";
 import { canvasDraftStore } from "./story-canvas-draft";
 import { canvasCreateDraftStore } from "./story-canvas-create-draft";
 import { canvasMediaDraftStore } from "./story-canvas-media-draft";
@@ -27,7 +28,8 @@ export function canvasReconciliation(
       !!(
         canvasDraftStore(scope, userId).read() ||
         canvasCreateDraftStore(scope, userId).read() ||
-        canvasMediaDraftStore(scope, userId).read()
+        canvasMediaDraftStore(scope, userId).read() ||
+        canvasGroupDraftStore(scope, userId).read()
       ),
   } as {
     storage: DurableRecord;

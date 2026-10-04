@@ -1,3 +1,4 @@
+import type { CanvasGroupEdit } from "../../../../canvas-editor/group-schema";
 import type { CanvasShotMedia } from "../../../../canvas-editor/shot-media-schema";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
@@ -18,7 +19,12 @@ export function StoryCanvasEncoder({
   onError,
 }: {
   loaded: CanvasLoaded;
-  edit: CanvasNodeEdit | CanvasNodeCreate | CanvasShotMedia | { action: "reconcileShotMedia" };
+  edit:
+    | CanvasNodeEdit
+    | CanvasNodeCreate
+    | CanvasShotMedia
+    | CanvasGroupEdit
+    | { action: "reconcileShotMedia" };
   generation: number;
   title: string;
   runtimeError: string;
@@ -80,13 +86,15 @@ export function StoryCanvasEncoder({
               documentId: loaded.documentId,
               sequence: loaded.sequence,
               snapshot: loaded.state,
-              ...("action" in edit
-                ? edit.action === "reconcileShotMedia"
-                  ? { type: "reconcileShotMedia" as const }
-                  : { type: "shotMedia" as const, media: edit }
-                : "kind" in edit
-                  ? { type: "edit" as const, edit }
-                  : { type: "create" as const, create: edit }),
+              ...("operation" in edit
+                ? { type: "group" as const, group: edit }
+                : "action" in edit
+                  ? edit.action === "reconcileShotMedia"
+                    ? { type: "reconcileShotMedia" as const }
+                    : { type: "shotMedia" as const, media: edit }
+                  : "kind" in edit
+                    ? { type: "edit" as const, edit }
+                    : { type: "create" as const, create: edit }),
             });
             return;
           }
