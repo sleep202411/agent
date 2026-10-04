@@ -1182,6 +1182,22 @@ export type ListMyContentReportsQuery = z.infer<
   typeof ListMyContentReportsSchema
 >;
 
+export const ContentBlockParamsSchema = z
+  .object({ blockId: z.string().uuid() })
+  .strict();
+export type ContentBlockParams = z.infer<typeof ContentBlockParamsSchema>;
+
+export const ListMyContentBlocksSchema = z
+  .object({
+    locale: LocaleQuerySchema,
+    cursor: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .strict();
+export type ListMyContentBlocksQuery = z.infer<
+  typeof ListMyContentBlocksSchema
+>;
+
 export const CreateIpContentReportSchema = z
   .object({
     targetType: z.enum(['ip', 'episode']),

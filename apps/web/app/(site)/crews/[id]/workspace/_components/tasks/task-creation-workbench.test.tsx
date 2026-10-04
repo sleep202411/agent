@@ -504,9 +504,16 @@ it("isolates drafts by Crew and retains them when switching back", async () => {
 it("keeps the draft and does not send an unrecorded create when browser storage fails", async () => {
   await render();
   await stage();
-  const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-    throw new Error("Quota exceeded");
-  });
+  const storage = vi
+    .spyOn(
+      Object.hasOwn(window.localStorage, "setItem")
+        ? window.localStorage
+        : Object.getPrototypeOf(window.localStorage),
+      "setItem"
+    )
+    .mockImplementation(() => {
+      throw new Error("Quota exceeded");
+    });
   try {
     await click("Storyboard");
     await click("Save Draft");

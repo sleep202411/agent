@@ -138,7 +138,7 @@ it("opens a case with explicit participant, title, message and selected submissi
       submissionIds: ["submission"],
     },
   });
-  expect(host.querySelector('a[href="/en-US/crews/cases/case-a"]')).not.toBeNull();
+  expect(host.querySelector('a[href="/en-US/resolution-center/case-a"]')).not.toBeNull();
   expect(host.querySelector("textarea")).toBeNull();
 });
 it.each(["owner", "assignee", "former", "reviewer", "approver"])(
@@ -198,7 +198,7 @@ it("shows conflicts with an existing-case link and does not auto-submit", async 
   await prepare();
   await click("submit");
   expect(host.textContent).toContain("A dispute is already open");
-  expect(host.querySelector('a[href="/en-US/crews/cases"]')).not.toBeNull();
+  expect(host.querySelector('a[href="/en-US/resolution-center"]')).not.toBeNull();
   expect(h.post).toHaveBeenCalledTimes(1);
 });
 it("suppresses duplicate writes and late account-switch updates", async () => {

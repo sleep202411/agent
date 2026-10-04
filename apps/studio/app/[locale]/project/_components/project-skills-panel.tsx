@@ -214,7 +214,7 @@ export function ProjectSkillsPanel() {
     const mutationPending =
       installMutation.isPending || uninstallMutation.isPending || defaultsMutation.isPending;
     const supportedDefaults = DEFAULT_SCOPES.filter((scope) =>
-      selectedSkill.latestVersion?.capabilities.includes(scope)
+      (installation?.version ?? selectedSkill.latestVersion)?.capabilities.includes(scope)
     );
     return (
       <div className="flex min-h-0 flex-1 flex-col motion-safe:duration-150 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-3">

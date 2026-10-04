@@ -35,6 +35,7 @@
 
 import {
   ALL_FORMATS,
+  AudioSample,
   AudioSampleSink,
   AudioSampleSource,
   BufferTarget,
@@ -437,11 +438,44 @@ export async function exportTimelineToMp4(
               sample.close();
               break;
             }
+            let trimmed: AudioSample | null = null;
             try {
-              sample.setTimestamp(sample.timestamp + offset);
-              await audioSource.add(sample);
+              // Sink ranges select whole decoded samples; they do not crop PCM.
+              // Trim both encoder pre-roll and the final sample so audio cannot
+              // leak across the cut into the next clip.
+              const firstFrame = Math.max(
+                0,
+                Math.ceil(-sample.timestamp * sample.sampleRate - 1e-7)
+              );
+              const endFrame = Math.min(
+                sample.numberOfFrames,
+                Math.floor((effectiveDuration - sample.timestamp) * sample.sampleRate + 1e-7)
+              );
+              const frameCount = endFrame - firstFrame;
+              if (frameCount <= 0) continue;
+              let bounded = sample;
+              if (firstFrame > 0 || endFrame < sample.numberOfFrames) {
+                const data = new Float32Array(frameCount * sample.numberOfChannels);
+                sample.copyTo(data, {
+                  format: "f32",
+                  planeIndex: 0,
+                  frameOffset: firstFrame,
+                  frameCount,
+                });
+                trimmed = new AudioSample({
+                  data,
+                  format: "f32",
+                  numberOfChannels: sample.numberOfChannels,
+                  sampleRate: sample.sampleRate,
+                  timestamp: Math.max(0, sample.timestamp + firstFrame / sample.sampleRate),
+                });
+                bounded = trimmed;
+              }
+              bounded.setTimestamp(bounded.timestamp + offset);
+              await audioSource.add(bounded);
               shotAudioSamplesEncoded += 1;
             } finally {
+              trimmed?.close();
               sample.close();
             }
           }

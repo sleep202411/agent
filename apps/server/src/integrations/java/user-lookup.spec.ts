@@ -1,3 +1,5 @@
+import { UsersController } from '../../users/users.controller';
+import { UsersService } from '../../users/users.service';
 import { Logger } from '@nestjs/common';
 import { JavaUserLookupService } from './user-lookup.service';
 jest.mock('./java-config', () => ({
@@ -94,4 +96,34 @@ it('does not log request details echoed by a transport exception', async () => {
   const logs = JSON.stringify(errorLog.mock.calls);
   expect(logs).not.toContain(contact);
   expect(logs).not.toContain('fixture-secret');
+});
+
+it('sends the decoded public ID to the actual Java adapter and caches by raw ID', async () => {
+  response({
+    code: 200,
+    info: {
+      id: 18424,
+      nickName: 'Creator',
+      avatar: 'https://fixture.invalid/avatar.png',
+    },
+  });
+  const redis = { get: jest.fn().mockResolvedValue(null), setex: jest.fn() };
+  const users = new UsersService({} as never, service, redis as never);
+  const controller = new UsersController(users, { guard: jest.fn() } as never);
+  const result = await controller.byId(
+    { userId: 'viewer' } as never,
+    'fixture-cookie',
+    '273848',
+    undefined,
+    'public',
+  );
+  expect(result.userId).toBe('18424');
+  const calls = fetcher.mock.calls as Parameters<typeof fetch>[];
+  const request = calls[0]?.[0];
+  if (typeof request !== 'string')
+    throw new Error('Expected a Java URL string');
+  const url = new URL(request);
+  expect(url.pathname).toBe('/user/other/user/info');
+  expect(url.searchParams.get('UserId')).toBe('18424');
+  expect(redis.get).toHaveBeenCalledWith('user-lookup:byId:18424');
 });

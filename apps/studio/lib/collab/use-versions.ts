@@ -7,6 +7,8 @@ import type { DocumentProvider } from "./document-provider";
 export interface DocumentVersionsHandle {
   versions: VersionDto[];
   loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
 }
 
 /**
@@ -18,11 +20,11 @@ export function useDocumentVersions(
   documentId: string | null,
   provider: DocumentProvider | null
 ): DocumentVersionsHandle {
-  const { rows: versions, loading } = useDocumentFeed(
-    documentId,
-    provider,
-    "versions_changed",
-    listDocumentVersions
-  );
-  return { versions, loading };
+  const {
+    rows: versions,
+    loading,
+    error,
+    refetch,
+  } = useDocumentFeed(documentId, provider, "versions_changed", listDocumentVersions);
+  return { versions, loading, error, refetch };
 }

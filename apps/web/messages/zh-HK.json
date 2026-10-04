@@ -4610,8 +4610,8 @@
     "publicBriefTooLong": "請將公開說明縮短至10,000字以內，完整任務說明不受影響。",
     "addMemberLookupBy": "查詢方式",
     "addMemberUserIdLabel": "用戶 ID",
-    "addMemberUserIdHint": "輸入對方的數字用戶 ID。",
-    "addMemberUserIdInvalid": "請輸入 1–18 位數字用戶 ID。",
+    "addMemberUserIdHint": "輸入對方個人資料中顯示的用戶 ID。",
+    "addMemberUserIdInvalid": "請輸入對方個人資料中顯示的有效用戶 ID。",
     "addMemberLookupRetry": "重試查詢"
   },
   "crewAssets": {
@@ -11506,7 +11506,15 @@
       "triaged": "審核中",
       "actioned": "已採取措施",
       "dismissed": "已結案，未採取措施"
-    }
+    },
+    "blocked": "已封鎖內容",
+    "blockedHint": "管理你已隱藏的內容。取消封鎖後，內容可再次出現在推薦中。",
+    "blockedEmpty": "你尚未封鎖任何內容。",
+    "blockedIp": "暫不可用的 IP",
+    "blockedCreator": "已封鎖的創作者",
+    "unblock": "取消封鎖",
+    "unblocking": "正在取消…",
+    "blockedCrew": "已封鎖的劇組"
   },
   "communityVideo": {
     "title": "投稿影片",

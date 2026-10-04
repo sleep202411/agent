@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   audio: false,
+  audioTimestamp: 0,
+  audioFrames: 480,
   imageSample: vi.fn(),
   imageClose: vi.fn(),
   frames: 1,
@@ -17,79 +19,99 @@ const fixture = vi.hoisted(() => ({
   cancel: vi.fn(),
   finalize: vi.fn(),
 }));
-vi.mock("mediabunny", () => ({
-  ALL_FORMATS: [],
-  QUALITY_MEDIUM: 1,
-  UrlSource: class {},
-  Mp4OutputFormat: class {},
-  BufferTarget: class {
-    buffer = new ArrayBuffer(1);
-  },
-  Input: class {
-    getPrimaryVideoTrack() {
-      return fixture.probe();
-    }
-    getPrimaryAudioTrack() {
-      return Promise.resolve(fixture.audio ? {} : null);
-    }
-    computeDuration() {
-      return Promise.resolve(1);
-    }
-    dispose = fixture.dispose;
-  },
-  Output: class {
-    target: unknown;
-    constructor({ target }: { target: unknown }) {
-      this.target = target;
-    }
-    addVideoTrack() {}
-    addAudioTrack() {}
-    start = fixture.start;
-    cancel = fixture.cancel;
-    finalize = fixture.finalize;
-  },
-  VideoSample: class {
-    constructor(image: unknown, init: unknown) {
-      fixture.imageSample(image, init);
-    }
-    close = fixture.close;
-  },
-  VideoSampleSource: class {
-    add = fixture.add;
-  },
-  AudioSampleSource: class {
-    add = fixture.audioAdd;
-  },
-  AudioSampleSink: class {
-    async *samples() {
-      yield { timestamp: 0, setTimestamp: vi.fn(), close: fixture.audioClose };
-    }
-  },
-  VideoSampleSink: class {
-    constructor(private track: { label?: string }) {}
-    async *samples() {
-      for (let n = 0; n < fixture.frames; n++)
-        yield {
-          timestamp: n / 10,
-          label: this.track.label,
-          clone() {
-            return {
-              clone: this.clone,
-              setTimestamp: fixture.timestamp,
-              setDuration: fixture.duration,
-              close: fixture.close,
-            };
-          },
-          setTimestamp: fixture.timestamp,
-          close: fixture.close,
+vi.mock("mediabunny", async (importOriginal) => {
+  const { AudioSample } = await importOriginal<typeof import("mediabunny")>();
+  return {
+    AudioSample,
+    ALL_FORMATS: [],
+    QUALITY_MEDIUM: 1,
+    UrlSource: class {},
+    Mp4OutputFormat: class {},
+    BufferTarget: class {
+      buffer = new ArrayBuffer(1);
+    },
+    Input: class {
+      getPrimaryVideoTrack() {
+        return fixture.probe();
+      }
+      getPrimaryAudioTrack() {
+        return Promise.resolve(fixture.audio ? {} : null);
+      }
+      computeDuration() {
+        return Promise.resolve(1);
+      }
+      dispose = fixture.dispose;
+    },
+    Output: class {
+      target: unknown;
+      constructor({ target }: { target: unknown }) {
+        this.target = target;
+      }
+      addVideoTrack() {}
+      addAudioTrack() {}
+      start = fixture.start;
+      cancel = fixture.cancel;
+      finalize = fixture.finalize;
+    },
+    VideoSample: class {
+      constructor(image: unknown, init: unknown) {
+        fixture.imageSample(image, init);
+      }
+      close = fixture.close;
+    },
+    VideoSampleSource: class {
+      add = fixture.add;
+    },
+    AudioSampleSource: class {
+      add = fixture.audioAdd;
+    },
+    AudioSampleSink: class {
+      async *samples() {
+        const sample = new AudioSample({
+          data: Float32Array.from({ length: fixture.audioFrames * 2 }, (_, i) =>
+            i % 2 === 0 ? 0.25 : -0.5
+          ),
+          format: "f32",
+          numberOfChannels: 2,
+          sampleRate: 48000,
+          timestamp: fixture.audioTimestamp,
+        });
+        const close = sample.close.bind(sample);
+        sample.close = () => {
+          fixture.audioClose();
+          close();
         };
-    }
-  },
-}));
+        yield sample;
+      }
+    },
+    VideoSampleSink: class {
+      constructor(private track: { label?: string }) {}
+      async *samples() {
+        for (let n = 0; n < fixture.frames; n++)
+          yield {
+            timestamp: n / 10,
+            label: this.track.label,
+            clone() {
+              return {
+                clone: this.clone,
+                setTimestamp: fixture.timestamp,
+                setDuration: fixture.duration,
+                close: fixture.close,
+              };
+            },
+            setTimestamp: fixture.timestamp,
+            close: fixture.close,
+          };
+      }
+    },
+  };
+});
 import { exportTimelineToMp4, triggerBlobDownload } from "./timeline-export-mediabunny";
 beforeEach(() => {
   vi.resetAllMocks();
   fixture.audio = false;
+  fixture.audioTimestamp = 0;
+  fixture.audioFrames = 480;
   fixture.frames = 1;
   fixture.probe.mockResolvedValue({});
   vi.stubGlobal("VideoEncoder", class {});
@@ -503,4 +525,73 @@ it("releases a still decoded after cancellation without encoding it", async () =
   await rejected;
   expect(fixture.imageClose).toHaveBeenCalledOnce();
   expect(fixture.add).not.toHaveBeenCalled();
+});
+
+it("trims audio frames crossing a clip boundary before concatenating the next clip", async () => {
+  fixture.audio = true;
+  fixture.audioTimestamp = 0.99;
+  fixture.audioFrames = 960;
+  const encoded: { timestamp: number; duration: number; frames: number }[] = [];
+  fixture.audioAdd.mockImplementation(async (sample) => {
+    encoded.push({
+      timestamp: sample.timestamp,
+      duration: sample.duration,
+      frames: sample.numberOfFrames,
+    });
+  });
+  await exportTimelineToMp4([...shots, { ...shots[0]!, id: "two" }]);
+  expect(encoded).toHaveLength(2);
+  expect(encoded[0]!.frames).toBe(480);
+  expect(encoded[0]!.timestamp + encoded[0]!.duration).toBeCloseTo(1, 8);
+  expect(encoded[1]!.timestamp + encoded[1]!.duration).toBeCloseTo(2, 8);
+  expect(fixture.audioClose).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  { timestamp: -0.01, frames: 960, expectedFrames: 480, expectedTimestamp: 0 },
+  { timestamp: 0.1, frames: 480, expectedFrames: 480, expectedTimestamp: 0.1 },
+])(
+  "preserves stereo samples while bounding audio starting at $timestamp",
+  async ({ timestamp, frames, expectedFrames, expectedTimestamp }) => {
+    fixture.audio = true;
+    fixture.audioTimestamp = timestamp;
+    fixture.audioFrames = frames;
+    fixture.audioAdd.mockImplementation(async (sample) => {
+      expect(sample.timestamp).toBeCloseTo(expectedTimestamp, 8);
+      expect(sample.numberOfFrames).toBe(expectedFrames);
+      const data = new Float32Array(expectedFrames * 2);
+      sample.copyTo(data, { format: "f32", planeIndex: 0 });
+      expect([...data]).toEqual(
+        Array.from({ length: expectedFrames * 2 }, (_, i) => (i % 2 === 0 ? 0.25 : -0.5))
+      );
+    });
+    await exportTimelineToMp4(shots);
+    expect(fixture.audioAdd).toHaveBeenCalledOnce();
+    expect(fixture.audioClose).toHaveBeenCalledOnce();
+  }
+);
+
+it("closes the trimmed PCM and original sample when encoding fails", async () => {
+  fixture.audio = true;
+  fixture.audioTimestamp = 0.99;
+  fixture.audioFrames = 960;
+  let close: ReturnType<typeof vi.spyOn> | undefined;
+  fixture.audioAdd.mockImplementation(async (sample) => {
+    close = vi.spyOn(sample, "close");
+    throw new Error("audio encoder failed");
+  });
+  const onReport = vi.fn();
+  await exportTimelineToMp4(shots, { onReport });
+  expect(close).toHaveBeenCalledOnce();
+  expect(fixture.audioClose).toHaveBeenCalledOnce();
+  expect(onReport).toHaveBeenCalledWith(expect.objectContaining({ partial: true }));
+});
+
+it("discards audio entirely outside a clip without leaking resources", async () => {
+  fixture.audio = true;
+  fixture.audioTimestamp = -0.02;
+  fixture.audioFrames = 480;
+  await exportTimelineToMp4(shots);
+  expect(fixture.audioAdd).not.toHaveBeenCalled();
+  expect(fixture.audioClose).toHaveBeenCalledOnce();
 });

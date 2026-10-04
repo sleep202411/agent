@@ -56,7 +56,7 @@ export class AiActorsService {
   private async lockActor(tx: Prisma.TransactionClient, actorId: string) {
     await tx.$queryRaw`SELECT id FROM ai_actors WHERE id = ${actorId}::uuid FOR UPDATE`;
     const actor = await tx.aiActor.findUnique({ where: { id: actorId } });
-    if (!actor || !actor.active)
+    if (!actor || !actor.active || actor.archivedAt !== null)
       throw new NotFoundException('Actor is unavailable.');
     await tx.$queryRaw`SELECT id FROM media_assets WHERE id = ${actor.photoAssetId}::uuid FOR SHARE`;
     const photo = await tx.mediaAsset.findFirst({
@@ -212,7 +212,8 @@ export class AiActorsService {
       const before = input.id
         ? await tx.aiActor.findUnique({ where: { id: input.id } })
         : null;
-      if (input.id && !before) throw new NotFoundException('Actor not found.');
+      if (input.id && (!before || before.archivedAt !== null))
+        throw new NotFoundException('Actor not found.');
       const photo = await tx.mediaAsset.findFirst({
         where: { ...photoWhere, id: input.photoAssetId, visibility: undefined },
       });

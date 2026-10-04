@@ -102,6 +102,7 @@ function SparkDialogContent({ open, onOpenChange, projectId }: SparkDialogProps)
   const [tagIds, setTagIds] = useState<number[]>([]);
 
   const [analyzeStatus, setAnalyzeStatus] = useState<AnalyzeStatus>("idle");
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [analyzedFileName, setAnalyzedFileName] = useState("");
   const [aiFilledFields, setAiFilledFields] = useState<Set<AiField>>(new Set());
   const [dragOver, setDragOver] = useState(false);
@@ -177,6 +178,7 @@ function SparkDialogContent({ open, onOpenChange, projectId }: SparkDialogProps)
     operation.current = request;
     setAnalyzedFileName(file.name);
     setAnalyzeStatus("analyzing");
+    setAnalyzeError(null);
 
     try {
       const result = await analyze.mutateAsync({ file, signal: request.signal });
@@ -202,9 +204,11 @@ function SparkDialogContent({ open, onOpenChange, projectId }: SparkDialogProps)
       }
       setTagIds(Array.from(matched));
       setAnalyzeStatus("success");
-    } catch {
-      if (active.current && !request.signal.aborted && operation.current === request)
+    } catch (error) {
+      if (active.current && !request.signal.aborted && operation.current === request) {
+        setAnalyzeError(error instanceof Error ? error.message : null);
         setAnalyzeStatus("error");
+      }
     } finally {
       if (operation.current === request) operation.current = null;
     }
@@ -276,6 +280,7 @@ function SparkDialogContent({ open, onOpenChange, projectId }: SparkDialogProps)
         <div className="space-y-4 p-4">
           <Dropzone
             status={analyzeStatus}
+            errorMessage={analyzeError}
             dragOver={dragOver}
             fileName={analyzedFileName}
             t={tc}
@@ -387,6 +392,7 @@ function SparkDialogContent({ open, onOpenChange, projectId }: SparkDialogProps)
 
 interface DropzoneProps {
   status: AnalyzeStatus;
+  errorMessage: string | null;
   dragOver: boolean;
   fileName: string;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -401,6 +407,7 @@ interface DropzoneProps {
 
 function Dropzone({
   status,
+  errorMessage,
   dragOver,
   fileName,
   t,
@@ -446,7 +453,9 @@ function Dropzone({
   if (status === "error") {
     return (
       <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3.5 text-center">
-        <div className="mb-2 text-sm font-medium text-destructive">{t("dropzoneFailed")}</div>
+        <div className="mb-2 text-sm font-medium text-destructive">
+          {errorMessage || t("dropzoneFailed")}
+        </div>
         <div className="flex justify-center gap-2">
           <Button size="sm" variant="outline" onClick={onRetry}>
             <IconRefresh className="size-3.5" />

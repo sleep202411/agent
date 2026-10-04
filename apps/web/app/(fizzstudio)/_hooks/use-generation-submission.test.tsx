@@ -185,9 +185,11 @@ describe("Web generation command recovery", () => {
   });
   it("blocks POST if the recovery store is full or malformed", async () => {
     const view = setup();
-    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => {
-      throw new Error("Quota exceeded");
-    });
+    const write = vi
+      .spyOn(Object.getPrototypeOf(window.sessionStorage), "setItem")
+      .mockImplementationOnce(() => {
+        throw new Error("Quota exceeded");
+      });
     await act(async () => {
       await expect(view.result.current.submit(request, "image", {})).rejects.toThrow(
         "Quota exceeded"

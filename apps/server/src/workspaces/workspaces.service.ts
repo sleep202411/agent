@@ -44,6 +44,7 @@ import {
 import { enqueueProjectChanged } from './project-realtime';
 import { RealtimeRevokeService } from '../infra/realtime/realtime-revoke.service';
 import { createProjectSectionWithCanvas } from '../project-sections/project-section.persistence';
+import { lockMediaAssetReference } from '../media/media-asset-lifecycle-lock';
 
 type ProjectWithCanvasPreview = PlatformProject & {
   documents?: Array<{ contentSnapshot: unknown }>;
@@ -477,6 +478,7 @@ export class WorkspacesService {
       // A cover must be a ready image asset inside the project's own
       // workspace — binding a foreign/broken asset would 404 the thumbnail.
       if (input.coverAssetId != null) {
+        await lockMediaAssetReference(tx, input.coverAssetId);
         const coverAsset = await tx.mediaAsset.findFirst({
           where: {
             id: input.coverAssetId,

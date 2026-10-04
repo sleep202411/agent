@@ -20,6 +20,8 @@ export interface CollabDocHandle {
   status: ConnectionStatus;
   /** Realtime ping round-trip (ms); null when disconnected / not yet measured. */
   rtt: number | null;
+  error: string | null;
+  retry: (() => void) | null;
 }
 
 /**
@@ -40,6 +42,7 @@ export function useCollabDoc(
   } | null>(null);
   const provider = connection?.documentId === documentId ? (connection?.provider ?? null) : null;
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [error, setError] = useState<string | null>(null);
   const [rtt, setRtt] = useState<number | null>(null);
 
   useEffect(() => {
@@ -55,12 +58,15 @@ export function useCollabDoc(
     setConnection({ documentId, provider: next });
     setStatus(next.getStatus());
     setRtt(next.getRtt());
+    setError(next.getError());
     /* eslint-enable react-hooks/set-state-in-effect */
     const off = next.onStatus(setStatus);
     const offRtt = next.onRtt(setRtt);
+    const offError = next.onError(setError);
     return () => {
       off();
       offRtt();
+      offError();
       next.destroy();
     };
     // rootSchema is a stable module constant per mode; documentId drives the
@@ -84,5 +90,7 @@ export function useCollabDoc(
     // or torn down) — the status state can lag behind the provider lifecycle.
     status: provider ? status : "offline",
     rtt: provider ? rtt : null,
+    error: provider ? error : null,
+    retry: provider?.canRetry() ? () => provider.retry() : null,
   };
 }

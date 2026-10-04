@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcceptedInvite, InvitePreview } from "@/lib/collab/sharing-api";
 import InviteAcceptPage from "./page";
+import { ApiRequestError } from "@/lib/api";
 
 const state = vi.hoisted(() => ({
   user: { id: "member" } as { id: string } | null,
@@ -206,4 +207,30 @@ it("shows current workspace membership instead of accepting an admin invitation"
   expect(container.textContent).not.toContain("acceptInvitation");
   await click("enterWorkspace");
   expect(state.accept).not.toHaveBeenCalled();
+});
+
+describe("invitation preview recovery", () => {
+  it("preserves service errors and retries the same invitation before accepting", async () => {
+    state.preview
+      .mockRejectedValueOnce(new ApiRequestError(503, "Invitation service unavailable", 503))
+      .mockResolvedValue(preview(null));
+    await render();
+    expect(container.textContent).toContain("Invitation service unavailable");
+    expect(container.textContent).not.toContain("invalidBody");
+    expect(container.textContent).not.toContain("acceptInvitation");
+    await click("retry");
+    expect(state.preview).toHaveBeenCalledTimes(2);
+    expect(state.preview).toHaveBeenLastCalledWith("invite-token", expect.any(AbortSignal));
+    expect(container.textContent).toContain("acceptInvitation");
+    await click("acceptInvitation");
+    expect(state.replace).toHaveBeenCalledWith("/project/project?ws=project-workspace");
+  });
+  it("does not offer retry for a confirmed missing invitation", async () => {
+    state.preview.mockRejectedValue(new ApiRequestError(404, "Invite not found", 404));
+    await render();
+    expect(container.textContent).toContain("Invite not found");
+    expect(
+      [...container.querySelectorAll("button")].some((button) => button.textContent === "retry")
+    ).toBe(false);
+  });
 });

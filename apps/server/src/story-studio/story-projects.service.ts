@@ -3,6 +3,7 @@ import {
   crewStudioRoleForMember,
 } from '../workspaces/crew-studio-access';
 import { MediaAccessService } from '../media/media-access.service';
+import { lockMediaAssetReference } from '../media/media-asset-lifecycle-lock';
 import {
   BadRequestException,
   ConflictException,
@@ -643,6 +644,7 @@ export class StoryProjectsService {
         // No workspaceId here either — same reasoning as addCandidateAsset: the
         // caller's right to edit this project is already settled, and uploads
         // carry no workspace, so scoping by it only blocked legitimate covers.
+        await lockMediaAssetReference(tx, input.coverAssetId);
         const cover = await tx.mediaAsset.findFirst({
           where: {
             id: input.coverAssetId,
@@ -1499,6 +1501,8 @@ export class StoryProjectsService {
         projectId,
         'story.edit',
       );
+      // Serialize the readiness check and reference write with retirement.
+      await lockMediaAssetReference(tx, mediaAssetId);
       const asset = await tx.mediaAsset.findUnique({
         where: { id: mediaAssetId },
         select: {

@@ -345,6 +345,19 @@ export class AiGenerationService {
         limitSubject,
         perSubjectQueued: snapshot.policy.concurrency.perSubjectQueued,
         campaignLimit: this.campaignLimitFor(snapshot),
+        references: promptCompilation.snapshot.references.flatMap(
+          (reference) =>
+            reference.assetId
+              ? [
+                  {
+                    assetId: reference.assetId,
+                    refId: reference.refId,
+                    kind: reference.kind,
+                    characterId: reference.characterId,
+                  },
+                ]
+              : [],
+        ),
         beforeCreate: (tx, job) =>
           this.billingWallet.reserveForJobInTransaction({
             tx,
@@ -455,14 +468,6 @@ export class AiGenerationService {
     }
 
     const job = reservation.job;
-    // P0 reference usage ledger: one row per media asset this job consumed
-    // as a reference — plain uploads AND expanded character media. The job
-    // row + wallet hold already exist, so a ledger fault must not fail the
-    // submit; the write is idempotent and error-logged instead.
-    await this.recordReferenceUsageSafe(
-      job,
-      promptCompilation.snapshot.references,
-    );
     await this.recordTraceSafe(job, {
       eventType: 'job_submitted',
       occurredAt: job.queuedAt ?? job.createdAt,
@@ -1407,42 +1412,6 @@ export class AiGenerationService {
         completedAt: job.completedAt,
       },
     };
-  }
-
-  /**
-   * Reference usage ledger write (role=reference) for every binding that
-   * carries an assetId. Idempotent per (job, asset); errors are logged
-   * loudly but never fail a submit whose job + wallet hold already exist.
-   */
-  private async recordReferenceUsageSafe(
-    job: Pick<
-      AiJob,
-      'id' | 'userId' | 'workspaceId' | 'projectId' | 'sourceSurface'
-    >,
-    references: AiPromptReferenceBinding[],
-  ): Promise<void> {
-    const entries = references.flatMap((reference) =>
-      reference.assetId
-        ? [
-            {
-              assetId: reference.assetId,
-              refId: reference.refId,
-              kind: reference.kind,
-              characterId: reference.characterId,
-            },
-          ]
-        : [],
-    );
-    if (entries.length === 0) return;
-    try {
-      await this.store.recordReferenceUsage(job, entries);
-    } catch (err) {
-      this.logger.error(
-        `Failed to record reference usage for job ${job.id}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-    }
   }
 
   /**

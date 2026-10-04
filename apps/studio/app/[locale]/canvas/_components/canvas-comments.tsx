@@ -43,7 +43,10 @@ export function CommentsProvider({
   currentUserId?: string;
   children: React.ReactNode;
 }) {
-  const { threads, createThread, reply, resolve } = useDocumentComments(documentId, provider);
+  const { threads, loading, error, refetch, createThread, reply, resolve } = useDocumentComments(
+    documentId,
+    provider
+  );
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
   // First open thread per node (one ongoing thread per node in the UI).
@@ -67,7 +70,10 @@ export function CommentsProvider({
       {children}
       {activeNodeId && (
         <ThreadPanel
-          key={activeNodeId}
+          key={JSON.stringify([documentId, activeNodeId, currentUserId])}
+          loading={loading}
+          readError={error}
+          onRetry={refetch}
           thread={threadByNode.get(activeNodeId) ?? null}
           currentUserId={currentUserId}
           onClose={() => setActiveNodeId(null)}
@@ -125,6 +131,9 @@ export function CommentsLayer({ nodes }: { nodes: Node[] }) {
 }
 
 function ThreadPanel({
+  loading,
+  readError,
+  onRetry,
   thread,
   currentUserId,
   onClose,
@@ -132,6 +141,9 @@ function ThreadPanel({
   onReply,
   onResolve,
 }: {
+  loading: boolean;
+  readError: string | null;
+  onRetry: () => Promise<void>;
   thread: CommentThreadDto | null;
   currentUserId?: string;
   onClose: () => void;
@@ -143,15 +155,19 @@ function ThreadPanel({
   const tc = useTranslations("common");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   const submit = async () => {
     const body = draft.trim();
-    if (!body || busy) return;
+    if (!body || busy || loading || readError) return;
     setBusy(true);
+    setMutationError(null);
     try {
       if (thread) await onReply(body);
       else await onCreate(body);
-      setDraft("");
+      setDraft((value) => (value.trim() === body ? "" : value));
+    } catch (cause) {
+      setMutationError(cause instanceof Error ? cause.message : tc("error"));
     } finally {
       setBusy(false);
     }
@@ -173,7 +189,16 @@ function ThreadPanel({
             <button
               type="button"
               aria-label={t("comments.resolveThread")}
-              onClick={() => void onResolve()}
+              disabled={busy || loading || Boolean(readError)}
+              onClick={() => {
+                setBusy(true);
+                setMutationError(null);
+                void onResolve()
+                  .catch((cause: unknown) => {
+                    setMutationError(cause instanceof Error ? cause.message : tc("error"));
+                  })
+                  .finally(() => setBusy(false));
+              }}
               className="flex size-7 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white"
             >
               <IconCheck className="size-4" stroke={1.8} />
@@ -190,6 +215,28 @@ function ThreadPanel({
         </div>
       </div>
 
+      {(readError || mutationError) && (
+        <div className="space-y-2 px-3 pb-2">
+          <p role="alert" className="text-xs text-muted-foreground">
+            {readError || mutationError}
+          </p>
+          {readError && (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void onRetry()}
+              className="rounded-lg bg-muted px-3 py-1.5 text-xs"
+            >
+              {tc("retry")}
+            </button>
+          )}
+        </div>
+      )}
+      {loading && !thread && (
+        <p role="status" className="px-3 pb-2 text-xs text-muted-foreground">
+          {tc("loading")}
+        </p>
+      )}
       {thread && thread.comments.length > 0 && (
         <div className="flex flex-col gap-3 overflow-y-auto px-3 pb-2">
           {thread.comments.map((comment) => (
@@ -228,7 +275,7 @@ function ThreadPanel({
         <button
           type="button"
           aria-label={t("comments.send")}
-          disabled={!draft.trim() || busy}
+          disabled={!draft.trim() || busy || loading || Boolean(readError)}
           onClick={() => void submit()}
           className="flex size-9 items-center justify-center rounded-xl bg-white text-black transition-opacity hover:opacity-90 disabled:opacity-40"
         >

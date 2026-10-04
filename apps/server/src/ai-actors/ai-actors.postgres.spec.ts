@@ -18,12 +18,14 @@ suite('AI Actors PostgreSQL', () => {
     const target = new URL(url!);
     if (
       target.hostname !== '127.0.0.1' ||
-      target.port !== '55193' ||
-      target.pathname !== '/ai_actor_review' ||
+      !(
+        (target.port === '55193' && target.pathname === '/ai_actor_review') ||
+        (target.port === '55439' && target.pathname === '/task01')
+      ) ||
       target.search
     )
       throw new Error(
-        'Use the dedicated local ai_actor_review fixture on 127.0.0.1:55193.',
+        'Use an owned local fixture: ai_actor_review on port 55193 or task01 on port 55439.',
       );
     db = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
     const prisma = db as unknown as PrismaService;
@@ -164,5 +166,31 @@ suite('AI Actors PostgreSQL', () => {
     expect(
       (await db.aiActor.findUniqueOrThrow({ where: { id: actorId } })).name,
     ).toBe('Test performer');
+  });
+  it('rejects a stale edit after archival and keeps archived actors unusable', async () => {
+    await service.archive(actorId);
+    await expect(
+      service.save(admin, {
+        id: actorId,
+        name: 'Stale edit',
+        photoAssetId,
+        active: true,
+      }),
+    ).rejects.toThrow('Actor not found.');
+    const archived = await db.aiActor.findUniqueOrThrow({
+      where: { id: actorId },
+    });
+    expect(archived.active).toBe(false);
+    expect(archived.archivedAt).not.toBeNull();
+    expect(archived.name).toBe('Test performer');
+
+    // Historical inconsistent records must also remain unavailable by known ID.
+    await db.aiActor.update({ where: { id: actorId }, data: { active: true } });
+    await expect(service.unlock(editor, actorId, workspaceId)).rejects.toThrow(
+      'unavailable',
+    );
+    await expect(
+      service.use(editor, actorId, projectId, randomUUID()),
+    ).rejects.toThrow('unavailable');
   });
 });

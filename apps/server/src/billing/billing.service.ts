@@ -871,7 +871,8 @@ export class BillingService {
             members: [],
           };
         }
-        rawActorUserId = decodeUserId(matched.userId);
+        // Contact lookup already returns the raw Java ID, not a displayed ID.
+        rawActorUserId = matched.userId;
       } catch (err) {
         // Legacy MySQL is optional locally; without it phone/email lookup is
         // unavailable — fail the filter loudly so ops know why it's empty.
@@ -1014,7 +1015,9 @@ export class BillingService {
       Awaited<ReturnType<LegacyPointsService['findUsersByIds']>>[number]
     >();
     try {
-      const legacyUsers = await this.legacyPoints.findUsersByIds(rawUserIds);
+      const legacyUsers = await this.legacyPoints.findUsersByIds(
+        rawUserIds.map((id) => encodeUserId(id)),
+      );
       legacyByRawId = new Map(
         legacyUsers.map((user) => [decodeUserId(user.userId), user]),
       );

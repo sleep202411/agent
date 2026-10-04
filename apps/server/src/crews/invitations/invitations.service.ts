@@ -11,6 +11,7 @@ import {
   type CrewInvitation,
   type Message,
 } from '@prisma/client';
+import { parsePublicUserId } from '@repo/shared/user-id-codec';
 import { isCrewPolicyKey } from '@repo/shared/crew';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { PrismaService } from '../../infra/db/db.module';
@@ -213,9 +214,17 @@ export class CrewInvitationsService {
       );
     }
     if (input.agreement) this.agreements.requireDispatchConfigured();
+    const rawId =
+      input.lookupBy === 'userId' ? parsePublicUserId(input.account) : null;
+    if (input.lookupBy === 'userId' && rawId === null) {
+      throw new BadRequestException({
+        message: 'Invalid User ID',
+        field: 'account',
+      });
+    }
     const target =
       input.lookupBy === 'userId'
-        ? await this.users.lookupByUserId(input.account, cookie, crewId)
+        ? await this.users.lookupByUserId(rawId!, cookie, crewId)
         : await this.users.lookupByContact({
             account: input.account,
             cookie,

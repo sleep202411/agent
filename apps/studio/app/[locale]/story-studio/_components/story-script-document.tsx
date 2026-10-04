@@ -1,5 +1,6 @@
 "use client";
 
+import { DocumentSyncError } from "@/components/document-sync-error";
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Collaboration from "@tiptap/extension-collaboration";
@@ -39,14 +40,21 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
   const canEdit = workbenchQuery.data?.project.capabilities.includes("story.edit") ?? false;
 
   const documentQuery = useStoryScriptDocument(projectId, activeChapterId);
-  const { doc, status: connStatus } = useCollabDoc(
-    documentQuery.data?.id ?? null,
-    collabUser,
-    RICH_TEXT_DOC_ROOT_SCHEMA
-  );
+  const {
+    doc,
+    status: connStatus,
+    error: syncError,
+    retry: retrySync,
+  } = useCollabDoc(documentQuery.data?.id ?? null, collabUser, RICH_TEXT_DOC_ROOT_SCHEMA);
 
   return (
     <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+      <DocumentSyncError
+        error={syncError}
+        retry={retrySync}
+        retrying={connStatus === "connecting"}
+        className="mx-6 mt-3"
+      />
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         {documentQuery.isError ? (
           <div className="flex h-full items-center justify-center">
@@ -60,7 +68,7 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
             placeholder={t("scriptDoc.placeholder")}
           />
         ) : null}
-        {doc && connStatus !== "synced" && (
+        {doc && !syncError && connStatus !== "synced" && (
           <span className="pointer-events-none absolute right-6 bottom-4 text-xs text-white/62">
             {connStatus === "offline" ? projectT("offlineSaved") : projectT("connecting")}
           </span>

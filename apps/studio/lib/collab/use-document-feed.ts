@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ApiRequestError } from "@/lib/api";
 import type { DocumentProvider } from "./document-provider";
 
 /** Own each refresh by its document/provider lifetime and request order. */
@@ -16,7 +17,12 @@ export function useDocumentFeed<T>(
     request: number;
     controller: AbortController | null;
   } | null>(null);
-  const [state, setState] = useState<{ owner: typeof owner; rows: T[]; loading: boolean }>();
+  const [state, setState] = useState<{
+    owner: typeof owner;
+    rows: T[];
+    loading: boolean;
+    error: string | null;
+  }>();
   useLayoutEffect(() => {
     const next = { owner, request: 0, controller: null as AbortController | null };
     lifetime.current = next;
@@ -40,16 +46,25 @@ export function useDocumentFeed<T>(
       lifetime.current === currentLifetime &&
       request === currentLifetime.request &&
       !controller.signal.aborted;
+    setState((previous) => ({
+      owner,
+      rows: previous?.owner === owner ? previous.rows : [],
+      loading: true,
+      error: previous?.owner === owner ? previous.error : null,
+    }));
     try {
       const rows = await read(owner.documentId, controller.signal);
-      if (current()) setState({ owner, rows, loading: false });
-    } catch {
-      // Keep loaded rows; the next peer signal retries transient failures.
+      if (current()) setState({ owner, rows, loading: false, error: null });
+    } catch (cause) {
+      const denied =
+        cause instanceof ApiRequestError && [401, 403, 404, 410].includes(cause.status);
+      // Keep rows for transient failures, never after access or document loss.
       if (current())
         setState((previous) => ({
           owner,
-          rows: previous?.owner === owner ? previous.rows : [],
+          rows: !denied && previous?.owner === owner ? previous.rows : [],
           loading: false,
+          error: cause instanceof Error ? cause.message : String(cause),
         }));
     } finally {
       if (currentLifetime.controller === controller) currentLifetime.controller = null;
@@ -67,6 +82,7 @@ export function useDocumentFeed<T>(
   return {
     rows: state?.owner === owner ? state.rows : [],
     loading: state?.owner === owner ? state.loading : !!documentId,
+    error: state?.owner === owner ? state.error : null,
     refetch,
     isActive,
   };

@@ -52,7 +52,7 @@ it("fails closed for corrupt receipts or unavailable persistence", () => {
   sessionStorage.setItem(key, "{}");
   expect(() => readGenerationReceipt(key)).toThrow("saved generation receipt");
   sessionStorage.removeItem(key);
-  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+  vi.spyOn(Object.getPrototypeOf(window.sessionStorage), "setItem").mockImplementation(() => {
     throw new Error("Storage unavailable");
   });
   expect(() => saveGenerationReceipt(key, receipt)).toThrow("Storage unavailable");

@@ -25,7 +25,13 @@ import { StoryPermissionService } from '../story-studio/story-permission.service
 import { PlatformAuditLogService } from '../workspaces/audit-log.service';
 import { WorkspacePermissionService } from '../workspaces';
 import { DocumentCompactionService } from './document-compaction.service';
-import { encodeDocumentSnapshot } from './document-crdt';
+import { DocumentStateBuilder, encodeDocumentSnapshot } from './document-crdt';
+import { readDocumentCrdtState } from './document-persisted-state';
+import {
+  documentBinaryMediaSnapshot,
+  protectDocumentOperationMedia,
+  protectNewDocumentMedia,
+} from './document-media-retention';
 import { rootSchemaFor } from './document-modes';
 import { resolveSyncWindow } from './document-sync';
 import { StudioDocumentAccessService } from './studio-document-access.service';
@@ -102,6 +108,7 @@ export class DocumentsService {
     const initialState = encodeInitialState(input.type, input.contentSnapshot);
 
     const document = await this.prisma.$transaction(async (tx) => {
+      await protectNewDocumentMedia(tx, {}, initialState.snapshot);
       const created = await tx.studioDocument.create({
         data: {
           workspaceId: project.workspaceId,
@@ -474,34 +481,48 @@ export class DocumentsService {
       documentId,
       'edit',
     );
-    const result = await this.prisma.studioDocument.updateMany({
-      where: {
-        id: documentId,
-        deletedAt: null,
-        ...(input.expectedVersion == null
-          ? {}
-          : { version: input.expectedVersion }),
-      },
-      data: {
-        title: input.title,
-        slug: input.slug === undefined ? undefined : input.slug,
-        status:
-          input.status === undefined
-            ? undefined
-            : (input.status as StudioDocumentStatus),
-        contentSnapshot:
-          input.contentSnapshot === undefined
-            ? undefined
-            : (input.contentSnapshot as Prisma.InputJsonValue),
-        archivedAt:
-          input.status === 'archived'
-            ? new Date()
-            : input.status === 'active'
-              ? null
-              : undefined,
-        updatedById: user.userId,
-        version: { increment: 1 },
-      },
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)`;
+      if (input.contentSnapshot !== undefined) {
+        const current = await tx.studioDocument.findFirst({
+          where: { id: documentId, deletedAt: null },
+        });
+        if (!current) return { count: 0 };
+        await protectNewDocumentMedia(
+          tx,
+          current.contentSnapshot,
+          input.contentSnapshot,
+        );
+      }
+      return tx.studioDocument.updateMany({
+        where: {
+          id: documentId,
+          deletedAt: null,
+          ...(input.expectedVersion == null
+            ? {}
+            : { version: input.expectedVersion }),
+        },
+        data: {
+          title: input.title,
+          slug: input.slug === undefined ? undefined : input.slug,
+          status:
+            input.status === undefined
+              ? undefined
+              : (input.status as StudioDocumentStatus),
+          contentSnapshot:
+            input.contentSnapshot === undefined
+              ? undefined
+              : (input.contentSnapshot as Prisma.InputJsonValue),
+          archivedAt:
+            input.status === 'archived'
+              ? new Date()
+              : input.status === 'active'
+                ? null
+                : undefined,
+          updatedById: user.userId,
+          version: { increment: 1 },
+        },
+      });
     });
     if (result.count === 0) {
       throw new ConflictException({
@@ -673,6 +694,7 @@ export class DocumentsService {
         });
       }
 
+      await protectDocumentOperationMedia(tx, document, input);
       const sequence = document.currentSequence + 1;
       const created = await tx.studioDocumentOperation.create({
         data: {
@@ -743,6 +765,39 @@ export class DocumentsService {
           msg: 'Document not found.',
         });
       }
+      // A checkpoint captures acknowledged edits, not merely the last
+      // background compaction. Keep the JSON and binary defaults in sync.
+      let currentSnapshot = document.contentSnapshot;
+      let currentState = document.crdtState;
+      let currentMedia: unknown = document.contentSnapshot;
+      const schema = rootSchemaFor(document.type);
+      if (schema) {
+        const state = await readDocumentCrdtState(tx, documentId);
+        if (state.crdt_state || state.updates?.length) {
+          const builder = new DocumentStateBuilder(state.crdt_state, schema);
+          try {
+            for (const update of state.updates ?? [])
+              builder.apply(Buffer.from(update, 'base64'));
+            currentMedia = builder.retainedContent();
+            const merged = builder.finish();
+            currentSnapshot = merged.snapshot;
+            currentState = Buffer.from(merged.state);
+          } finally {
+            builder.destroy();
+          }
+        }
+      }
+      const versionState = input.crdtStateBase64
+        ? Buffer.from(input.crdtStateBase64, 'base64')
+        : currentState;
+      await protectNewDocumentMedia(
+        tx,
+        [currentSnapshot, currentMedia],
+        [
+          input.snapshot ?? currentSnapshot,
+          documentBinaryMediaSnapshot(document.type, versionState),
+        ],
+      );
       const last = await tx.studioDocumentVersion.findFirst({
         where: { documentId },
         orderBy: { versionNumber: 'desc' },
@@ -759,10 +814,8 @@ export class DocumentsService {
           sourceId: input.sourceId,
           snapshot:
             (input.snapshot as Prisma.InputJsonValue | undefined) ??
-            (document.contentSnapshot as Prisma.InputJsonValue),
-          crdtState: input.crdtStateBase64
-            ? Buffer.from(input.crdtStateBase64, 'base64')
-            : document.crdtState,
+            (currentSnapshot as Prisma.InputJsonValue),
+          crdtState: versionState,
           metadata: input.metadata as Prisma.InputJsonValue,
           createdById: user.userId,
         },

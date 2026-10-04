@@ -81,6 +81,33 @@ function rewardValueLabel(
   }
 }
 
+/** The bundle is authoritative; flat fields describe only its primary reward. */
+function rewardBundleLabel(
+  entry: ReferralMilestone | ReferralReward,
+  currency: string | null,
+  t: Parameters<typeof rewardValueLabel>[1],
+  locale: string
+): string | null {
+  if (!entry.items?.length) return rewardValueLabel(entry, t, locale);
+  return (
+    entry.items
+      .map((item) =>
+        rewardValueLabel(
+          {
+            payoutType: item.kind,
+            amountMinor: item.amountMinor,
+            days: item.days,
+            currency: item.currency ?? entry.currency ?? currency,
+          },
+          t,
+          locale
+        )
+      )
+      .filter((label): label is string => label !== null)
+      .join("\n") || null
+  );
+}
+
 const STATUS_KEY: Record<ReferralRewardStatus, string> = {
   pending: "statusPending",
   qualified: "statusQualified",
@@ -131,11 +158,20 @@ function AccountReferralDashboard({
     },
   });
 
-  const totalMinor = useMemo(
-    () =>
-      dashboard ? sumMinor(dashboard.totals.pendingMinor, dashboard.totals.confirmedMinor) : "0",
-    [dashboard]
-  );
+  const cashTotals = useMemo(() => {
+    if (!dashboard) return [];
+    return dashboard.cashTotals?.length
+      ? dashboard.cashTotals
+      : [{ currency: dashboard.currency, ...dashboard.totals }];
+  }, [dashboard]);
+
+  const cashLabel = (key: "pendingMinor" | "confirmedMinor" | "total") =>
+    cashTotals
+      .map((row) => {
+        const value = key === "total" ? sumMinor(row.pendingMinor, row.confirmedMinor) : row[key];
+        return row.currency ? formatMoney(value, row.currency, locale) : "—";
+      })
+      .join("\n");
 
   const copyInvite = useCallback(async () => {
     const text = dashboard?.inviteUrl;
@@ -231,26 +267,22 @@ function AccountReferralDashboard({
               <IconGift className="size-4" />
               {t("cashTotal")}
             </p>
-            <p className="mt-3 text-4xl font-semibold tabular-nums text-foreground">
-              {dashboard.currency ? formatMoney(totalMinor, dashboard.currency, locale) : "—"}
+            <p className="mt-3 whitespace-pre-line text-4xl font-semibold tabular-nums text-foreground">
+              {cashLabel("total")}
             </p>
             <p className="mt-2 text-xs text-muted-foreground">{t("heroHint")}</p>
 
             <div className="mt-6 grid grid-cols-3 gap-3">
               {(
                 [
-                  ["statPending", dashboard.totals.pendingMinor, true],
-                  ["statConfirmed", dashboard.totals.confirmedMinor, true],
+                  ["statPending", cashLabel("pendingMinor"), true],
+                  ["statConfirmed", cashLabel("confirmedMinor"), true],
                   ["statInvitees", String(dashboard.totals.inviteeCount), false],
                 ] as const
-              ).map(([key, value, isMoney]) => (
+              ).map(([key, value]) => (
                 <div key={key} className="rounded-2xl bg-white/[0.04] px-4 py-3">
-                  <p className="text-lg font-semibold tabular-nums text-foreground">
-                    {isMoney && dashboard.currency
-                      ? formatMoney(value, dashboard.currency, locale)
-                      : isMoney
-                        ? "—"
-                        : value}
+                  <p className="whitespace-pre-line text-lg font-semibold tabular-nums text-foreground">
+                    {value}
                   </p>
                   <p className="mt-1 text-[11px] text-muted-foreground">{t(key)}</p>
                 </div>
@@ -308,7 +340,7 @@ function AccountReferralDashboard({
           </div>
           <ol className="mt-4 space-y-2">
             {dashboard.milestones.map((milestone: ReferralMilestone) => {
-              const value = rewardValueLabel(milestone, t, locale);
+              const value = rewardBundleLabel(milestone, dashboard.currency, t, locale);
               return (
                 <li
                   key={milestone.id}
@@ -350,7 +382,7 @@ function AccountReferralDashboard({
                   </div>
                   {value ? (
                     // Indent under the text column when stacked (icon 32 + gap 16).
-                    <p className="pl-12 text-sm font-semibold tabular-nums text-foreground sm:shrink-0 sm:pl-0">
+                    <p className="whitespace-pre-line pl-12 text-sm font-semibold tabular-nums text-foreground sm:pl-0 sm:text-right">
                       {value}
                     </p>
                   ) : null}
@@ -375,7 +407,7 @@ function AccountReferralDashboard({
         ) : (
           <ul className="mt-4 divide-y divide-white/8 rounded-[8px] border border-white/10 bg-[#141416]">
             {dashboard.rewards.map((reward: ReferralReward) => {
-              const value = rewardValueLabel(reward, t, locale);
+              const value = rewardBundleLabel(reward, dashboard.currency, t, locale);
               const isClaiming = claim.isPending && claim.variables === reward.id;
               return (
                 <li
@@ -390,7 +422,7 @@ function AccountReferralDashboard({
                   </div>
                   <div className="flex items-center justify-between gap-4 sm:justify-end">
                     {value ? (
-                      <p className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                      <p className="whitespace-pre-line text-sm font-semibold tabular-nums text-foreground sm:text-right">
                         {value}
                       </p>
                     ) : null}

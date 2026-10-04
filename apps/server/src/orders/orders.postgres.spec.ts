@@ -132,6 +132,39 @@ jest.setTimeout(15000);
     }
     return result;
   }
+  it('preserves the complete revision brief through re-delivery and acceptance', async () => {
+    const order = await svc.submit(buyer, input());
+    await expect(svc.accept(order.id, buyer)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await svc.accept(order.id, owner);
+    await svc.deliver(order.id, owner);
+    const reason = '请保留每个镜头的修改要求。'.repeat(100);
+    const revised = await svc.requestRevision(order.id, buyer, { reason });
+    expect(revised.status).toBe('revision_requested');
+    const messages = await db.message.findMany({
+      where: { conversationId: order.conversationId, type: 'system' },
+    });
+    expect(messages.map((message) => message.payload)).toContainEqual({
+      kind: 'system',
+      system: {
+        kind: 'order.revision_requested',
+        params: { orderId: order.id, reason },
+      },
+    });
+    await svc.deliver(order.id, owner);
+    await expect(svc.acceptDelivery(order.id, owner)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await svc.acceptDelivery(order.id, buyer);
+    const reopened = await svc.detail(order.id, buyer);
+    expect(reopened.status).toBe('completed');
+    expect(reopened.completedAt).toBeInstanceOf(Date);
+    expect(reopened.packageSnapshot).toEqual(order.packageSnapshot);
+    await expect(
+      svc.requestRevision(order.id, buyer, { reason: 'Another edit' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
   it('counts system events consistently in order cards and conversation detail', async () => {
     const order = await svc.submit(buyer, input());
     await svc.accept(order.id, owner);

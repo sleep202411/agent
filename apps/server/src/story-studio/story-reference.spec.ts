@@ -1,4 +1,5 @@
 import {
+  Prisma,
   MediaAssetKind,
   MediaAssetModerationStatus,
   MediaAssetStatus,
@@ -343,6 +344,54 @@ describe('StoryReferenceService', () => {
       },
       data: { version: { increment: 1 } },
     });
+  });
+
+  it.each([
+    ['P2034', undefined, 3],
+    ['P2010', '40001', 3],
+    ['P2010', '40P01', 3],
+    ['P2010', '42P01', 1],
+    ['P2010', 'adapter-40001', 3],
+    ['P2010', 'adapter-40P01', 3],
+    ['P2010', 'adapter-42P01', 1],
+  ] as const)('bounds retries for %s / %s', async (code, sqlCode, attempts) => {
+    const error = new Prisma.PrismaClientKnownRequestError('Fixture conflict', {
+      code,
+      clientVersion: 'fixture',
+      meta: sqlCode?.startsWith('adapter-')
+        ? { driverAdapterError: { cause: { originalCode: sqlCode.slice(8) } } }
+        : sqlCode
+          ? { code: sqlCode }
+          : undefined,
+    });
+    const prisma = {
+      storyReferenceVersion: { findUnique: jest.fn().mockResolvedValue(null) },
+      $transaction: jest.fn().mockRejectedValue(error),
+    };
+    const service = new StoryReferenceService(
+      prisma as never,
+      permissions() as never,
+      writeGuard() as never,
+    );
+    const pending = service.createVersion(
+      USER as never,
+      PROJECT_ID,
+      SLOT_ID,
+      {
+        expectedSlotVersion: 0,
+        assetId: ASSET_ID,
+        variantId: VARIANT_ID,
+        source: 'upload',
+      },
+      'conflict-fixture',
+    );
+    if (attempts === 1) await expect(pending).rejects.toBe(error);
+    else
+      await expect(pending).rejects.toMatchObject({
+        status: 409,
+        response: { code: 'STORY_REFERENCE_WRITE_CONFLICT' },
+      });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(attempts);
   });
 
   it('rejects an asset/variant pair that does not satisfy the exact scope', async () => {

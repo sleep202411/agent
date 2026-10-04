@@ -679,11 +679,12 @@ export async function addStoryCandidateAsset(
 
 export async function removeStoryCandidateAsset(
   projectId: string,
-  mediaAssetId: string
+  mediaAssetId: string,
+  signal?: AbortSignal
 ): Promise<{ mediaAssetId: string }> {
   return api.delete<{ mediaAssetId: string }>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/candidate-assets/${encodeURIComponent(mediaAssetId)}`,
-    { requestScope: "project" }
+    { requestScope: "project", signal }
   );
 }
 

@@ -17,6 +17,10 @@ import {
   CreateCreatorIpEpisodeSchema,
   CreateIpContentReportSchema,
   ListMyContentReportsSchema,
+  ListMyContentBlocksSchema,
+  ContentBlockParamsSchema,
+  type ContentBlockParams,
+  type ListMyContentBlocksQuery,
   type ListMyContentReportsQuery,
   CreateIpPurchaseSchema,
   RecordMemberViewSchema,
@@ -720,6 +724,30 @@ export class IpCommerceController {
     return {
       code: 200,
       data: await this.ipCommerce.reportContent(user, body),
+    };
+  }
+
+  @Get('me/blocks')
+  async myContentBlocks(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListMyContentBlocksSchema))
+    query: ListMyContentBlocksQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listMyContentBlocks(user, query),
+    };
+  }
+
+  @Delete('me/blocks/:blockId')
+  async removeMyContentBlock(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(ContentBlockParamsSchema))
+    params: ContentBlockParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.removeMyContentBlock(user, params.blockId),
     };
   }
 

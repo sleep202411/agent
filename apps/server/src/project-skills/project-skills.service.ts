@@ -482,25 +482,6 @@ export class ProjectSkillsService {
     requestId?: string,
   ) {
     const context = await this.requireManage(user.userId, ownerKind, projectId);
-    const observed = await this.requireInstallation(context, installationId);
-    const version = body.versionId
-      ? await this.prisma.skillVersion.findFirst({
-          where: {
-            id: body.versionId,
-            skillId: observed.skillId,
-            status: { in: ['published', 'deprecated'] },
-          },
-        })
-      : observed.pinnedVersion;
-    if (!version) {
-      throw new NotFoundException({
-        code: 'PROJECT_SKILL_VERSION_NOT_FOUND',
-        msg: 'The requested Skill version was not found.',
-      });
-    }
-    this.assertCompatible(version.projectKinds, ownerKind);
-    const config = body.config ?? recordValue(observed.config);
-    this.assertConfig(version.configSchema, config);
     await this.ensureState(context);
     return this.executeIdempotent(
       context,
@@ -509,6 +490,29 @@ export class ProjectSkillsService {
       'update',
       { installationId, ...body },
       async (tx) => {
+        const observed = await this.requireInstallation(
+          context,
+          installationId,
+          tx,
+        );
+        const version = body.versionId
+          ? await tx.skillVersion.findFirst({
+              where: {
+                id: body.versionId,
+                skillId: observed.skillId,
+                status: { in: ['published', 'deprecated'] },
+              },
+            })
+          : observed.pinnedVersion;
+        if (!version) {
+          throw new NotFoundException({
+            code: 'PROJECT_SKILL_VERSION_NOT_FOUND',
+            msg: 'The requested Skill version was not found.',
+          });
+        }
+        this.assertCompatible(version.projectKinds, ownerKind);
+        const config = body.config ?? recordValue(observed.config);
+        this.assertConfig(version.configSchema, config);
         const projectRevision = await this.bumpProjectRevision(
           tx,
           context,
@@ -620,30 +624,6 @@ export class ProjectSkillsService {
     requestId?: string,
   ) {
     const context = await this.requireManage(user.userId, ownerKind, projectId);
-    const requestedIds = [...new Set(body.installationIds)];
-    const installations = await this.prisma.projectSkillInstallation.findMany({
-      where: {
-        ...installationOwnerWhere(ownerKind, projectId),
-        status: 'active',
-      },
-      include: { skill: true, pinnedVersion: true, activations: true },
-    });
-    const byId = new Map(installations.map((row) => [row.id, row]));
-    if (requestedIds.some((id) => !byId.has(id))) {
-      throw new BadRequestException({
-        code: 'PROJECT_SKILL_NOT_INSTALLED',
-        msg: 'Every default Skill must be actively installed in this project.',
-      });
-    }
-    for (const id of requestedIds) {
-      const row = byId.get(id)!;
-      if (!stringArray(row.pinnedVersion.capabilities).includes(scope)) {
-        throw new BadRequestException({
-          code: 'PROJECT_SKILL_SCOPE_INCOMPATIBLE',
-          msg: `${row.skill.name} does not support ${scope}.`,
-        });
-      }
-    }
     await this.ensureState(context);
     const workbenchMode = body.workbenchMode ?? '';
     const sourceSurface = body.sourceSurface ?? '';
@@ -654,6 +634,30 @@ export class ProjectSkillsService {
       'defaults_update',
       { scope, ...body },
       async (tx) => {
+        const requestedIds = [...new Set(body.installationIds)];
+        const installations = await tx.projectSkillInstallation.findMany({
+          where: {
+            ...installationOwnerWhere(ownerKind, projectId),
+            status: 'active',
+          },
+          include: { skill: true, pinnedVersion: true, activations: true },
+        });
+        const byId = new Map(installations.map((row) => [row.id, row]));
+        if (requestedIds.some((id) => !byId.has(id))) {
+          throw new BadRequestException({
+            code: 'PROJECT_SKILL_NOT_INSTALLED',
+            msg: 'Every default Skill must be actively installed in this project.',
+          });
+        }
+        for (const id of requestedIds) {
+          const row = byId.get(id)!;
+          if (!stringArray(row.pinnedVersion.capabilities).includes(scope)) {
+            throw new BadRequestException({
+              code: 'PROJECT_SKILL_SCOPE_INCOMPATIBLE',
+              msg: `${row.skill.name} does not support ${scope}.`,
+            });
+          }
+        }
         const projectRevision = await this.bumpProjectRevision(
           tx,
           context,
@@ -939,6 +943,15 @@ export class ProjectSkillsService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // Identical in-flight retries must wait for the original receipt before
+        // checking revisions or installation state. Match the ledger's scope.
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([
+            'project-skill-mutation',
+            context.workspaceId,
+            idempotencyKey,
+          ])}, 0))
+        `;
         const existing = await tx.projectSkillMutation.findUnique({
           where: {
             workspaceId_idempotencyKey: {

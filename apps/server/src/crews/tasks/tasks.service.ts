@@ -1,3 +1,4 @@
+import { readDocumentCrdtState } from '../../documents/document-persisted-state';
 import { validateTaskCustomFieldValues } from './task-custom-field-values';
 import { taskAssetCategory } from './task-asset-category';
 import { CloseCrewTaskSchema, type CloseCrewTaskInput } from '../dto';
@@ -4083,7 +4084,7 @@ export class CrewTasksService {
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtext(${`platform-document:${documentId}`})::bigint)
     `;
-    const document = await tx.studioDocument.findFirst({
+    let document = await tx.studioDocument.findFirst({
       where: {
         id: documentId,
         type: StudioDocumentType.canvas,
@@ -4104,38 +4105,26 @@ export class CrewTasksService {
         message: 'The task canvas does not use a mergeable CRDT dialect.',
       });
     }
-    const operations = await tx.studioDocumentOperation.findMany({
-      where: {
-        documentId,
-        sequence: {
-          gt: document.snapshotSequence,
-          lte: document.currentSequence,
-        },
-      },
-      orderBy: { sequence: 'asc' },
-      select: {
-        sequence: true,
-        operationType: true,
-        yjsUpdate: true,
-      },
-    });
-    const unsupported = operations.find(
-      (operation) =>
-        operation.operationType !== StudioDocumentOperationType.yjs_update ||
-        !operation.yjsUpdate,
-    );
-    if (unsupported) {
+    const saved = await readDocumentCrdtState(tx, documentId);
+    document = {
+      ...document,
+      crdtState: saved.crdt_state ? Buffer.from(saved.crdt_state) : null,
+      contentSnapshot: saved.content_snapshot,
+      snapshotSequence: saved.snapshot_sequence,
+      currentSequence: saved.current_sequence,
+    };
+    if (saved.unsupported_sequence !== null) {
       throw new ConflictException({
         code: 'CREW_TASK_CANVAS_OPERATION_UNMERGEABLE',
         message:
           'The canvas contains a non-CRDT operation and cannot be merged safely.',
-        sequence: unsupported.sequence,
+        sequence: saved.unsupported_sequence,
       });
     }
     if (
       !document.crdtState &&
       Object.keys(document.contentSnapshot as object).length > 0 &&
-      operations.length === 0
+      !saved.updates?.length
     ) {
       throw new ConflictException({
         code: 'CREW_TASK_CANVAS_STATE_MISSING',
@@ -4149,8 +4138,8 @@ export class CrewTasksService {
       schema,
     );
     try {
-      for (const operation of operations) {
-        builder.apply(new Uint8Array(operation.yjsUpdate!));
+      for (const update of saved.updates ?? []) {
+        builder.apply(Buffer.from(update, 'base64'));
       }
       const merged = builder.finish();
       const crdtState = Buffer.from(merged.state);

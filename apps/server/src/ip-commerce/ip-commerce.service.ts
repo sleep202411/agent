@@ -1,3 +1,4 @@
+import { lockMediaAssetReference } from '../media/media-asset-lifecycle-lock';
 import { createCrewTx } from '../crews/create-crew';
 import { hasCrewCreatePass } from '../integrations/java/user-level-gates';
 import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
@@ -102,6 +103,7 @@ import type {
   CreateAdminIpDiscoveryInput,
   CreateIpContentReportInput,
   ListMyContentReportsQuery,
+  ListMyContentBlocksQuery,
   RecordMemberViewInput,
   RecordIpViewInput,
   CreateIpPurchaseInput,
@@ -4841,7 +4843,13 @@ export class IpCommerceService {
     user: AuthUser,
     input: UpsertIpCollectionItemInput,
   ) {
-    const target = await this.resolveCollectionTarget(user, input);
+    // Removing a user's own bookmark must remain possible after publication
+    // is withdrawn or the viewer blocks its creator. No content access is granted.
+    const target = {
+      targetType: input.targetType as IpTargetType,
+      ipId: input.ipId,
+      episodeId: input.targetType === 'episode' ? input.episodeId : null,
+    };
     const now = new Date();
     const item = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
@@ -5443,34 +5451,39 @@ export class IpCommerceService {
 
   async reportContent(user: AuthUser, input: CreateIpContentReportInput) {
     const target = await this.resolveReportTarget(input);
-    if (
-      input.evidenceAssetId &&
-      !(await this.prisma.mediaAsset.findFirst({
-        where: {
-          id: input.evidenceAssetId,
-          createdByUserId: user.userId,
-          deletedAt: null,
+    const report = await this.prisma.$transaction(async (tx) => {
+      if (input.evidenceAssetId) {
+        await lockMediaAssetReference(tx, input.evidenceAssetId);
+      }
+      if (
+        input.evidenceAssetId &&
+        !(await tx.mediaAsset.findFirst({
+          where: {
+            id: input.evidenceAssetId,
+            createdByUserId: user.userId,
+            deletedAt: null,
+          },
+          select: { id: true },
+        }))
+      )
+        throw new BadRequestException({
+          code: 'REPORT_EVIDENCE_UNAVAILABLE',
+          msg: 'The evidence file is unavailable for your account.',
+        });
+      return tx.ipContentReport.create({
+        data: {
+          targetType: input.targetType as IpTargetType,
+          targetId: input.targetId,
+          ipId: target.ipId,
+          episodeId: target.episodeId,
+          reporterUserId: user.userId,
+          reason: input.reason,
+          status: IpReportStatus.submitted,
+          description: input.description,
+          evidenceAssetId: input.evidenceAssetId,
+          metadata: {},
         },
-        select: { id: true },
-      }))
-    )
-      throw new BadRequestException({
-        code: 'REPORT_EVIDENCE_UNAVAILABLE',
-        msg: 'The evidence file is unavailable for your account.',
       });
-    const report = await this.prisma.ipContentReport.create({
-      data: {
-        targetType: input.targetType as IpTargetType,
-        targetId: input.targetId,
-        ipId: target.ipId,
-        episodeId: target.episodeId,
-        reporterUserId: user.userId,
-        reason: input.reason,
-        status: IpReportStatus.submitted,
-        description: input.description,
-        evidenceAssetId: input.evidenceAssetId,
-        metadata: {},
-      },
     });
 
     return {
@@ -5483,6 +5496,73 @@ export class IpCommerceService {
         createdAt: report.createdAt.toISOString(),
       },
     };
+  }
+
+  async listMyContentBlocks(user: AuthUser, query: ListMyContentBlocksQuery) {
+    if (
+      query.cursor &&
+      !(await this.prisma.ipUserContentBlock.findFirst({
+        where: { id: query.cursor, userId: user.userId },
+        select: { id: true },
+      }))
+    ) {
+      throw new BadRequestException({
+        code: 'CONTENT_BLOCK_CURSOR_INVALID',
+        msg: 'Restart the blocked content list to refresh your access.',
+      });
+    }
+    const rows = await this.prisma.ipUserContentBlock.findMany({
+      where: {
+        userId: user.userId,
+        unblockedAt: null,
+        ...(query.cursor ? { id: { lt: query.cursor } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: query.limit + 1,
+      select: { id: true, targetType: true, targetId: true, createdAt: true },
+    });
+    const page = rows.slice(0, query.limit);
+    const ipIds = page
+      .filter((row) => row.targetType === 'ip')
+      .map((row) => row.targetId);
+    // A saved block is not permission to read unpublished content.
+    const ips = ipIds.length
+      ? await this.prisma.ip.findMany({
+          where: {
+            id: { in: ipIds },
+            deletedAt: null,
+            status: { in: PUBLIC_IP_STATUSES },
+            listingVisibility: { in: ['public', 'unlisted'] },
+          },
+          select: {
+            id: true,
+            sourceLocale: true,
+            localizations: { where: { archivedAt: null, status: 'published' } },
+          },
+        })
+      : [];
+    const titles = new Map(
+      ips.map((ip) => [
+        ip.id,
+        selectIpLocalization(ip, query.locale, true).value?.title ?? null,
+      ]),
+    );
+    return {
+      items: page.map((row) => ({
+        ...row,
+        title: titles.get(row.targetId) ?? null,
+      })),
+      nextCursor: rows.length > query.limit ? rows[query.limit - 1].id : null,
+    };
+  }
+
+  async removeMyContentBlock(user: AuthUser, blockId: string) {
+    // Remove the exact listed record, not a newer block for the same target.
+    const result = await this.prisma.ipUserContentBlock.updateMany({
+      where: { id: blockId, userId: user.userId, unblockedAt: null },
+      data: { unblockedAt: new Date() },
+    });
+    return { removed: result.count > 0 };
   }
 
   async blockContent(user: AuthUser, input: UpsertIpUserBlockInput) {

@@ -321,9 +321,11 @@ it.each(["account", "workspace"])(
 
 it("retains uncertain recovery on lookup failure and does not send an unrecorded request", async () => {
   await render();
-  const store = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-    throw new Error("Storage full");
-  });
+  const store = vi
+    .spyOn(Object.getPrototypeOf(window.sessionStorage), "setItem")
+    .mockImplementation(() => {
+      throw new Error("Storage full");
+    });
   await act(async () => {
     await feed.submit(params);
   });

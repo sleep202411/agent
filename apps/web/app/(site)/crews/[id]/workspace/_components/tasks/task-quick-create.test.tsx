@@ -460,6 +460,7 @@ describe("TaskQuickCreate", () => {
       expect.objectContaining({
         title: "Finish the first-act storyboard",
         description: "Deliver a reviewable storyboard.",
+        estimatePoints: null,
       })
     );
     expect(state.create.mock.calls[0]![0]).not.toHaveProperty("computeBudgetPoints");
@@ -884,6 +885,33 @@ it.each(["-1", "1000000001", "0.001"])(
     expect(state.create).not.toHaveBeenCalled();
   }
 );
+
+it("preserves a staged effort estimate when AI organizes the brief", async () => {
+  const stage = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, {
+    initialInput: {
+      title: "Script",
+      description: "Original brief",
+      priority: "normal",
+      assignees: [],
+      estimatePoints: 13,
+    },
+    onStage: stage,
+  });
+  await act(async () => {
+    click(button("Organize with AI"));
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  await act(async () => click(exactButton("Save Changes")));
+  expect(stage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "Finish the first-act storyboard",
+      description: "Deliver a reviewable storyboard.",
+      estimatePoints: 13,
+    })
+  );
+});
 
 it("rejects an expired deadline restored from a saved draft", async () => {
   const stage = vi.fn();

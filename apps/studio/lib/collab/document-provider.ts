@@ -82,6 +82,8 @@ export class DocumentProvider {
   /** Retain sent edits until acknowledgement; reconnects replay the same receipt. */
   private readonly unacknowledged = new Map<string, Extract<ClientFrame, { event: "operation" }>>();
   private status: ConnectionStatus = "connecting";
+  private error: string | null = null;
+  private readonly errorListeners = new Set<(error: string | null) => void>();
   private readonly statusListeners = new Set<(s: ConnectionStatus) => void>();
   // Round-trip latency of the app-level ping → heartbeat, for the connection
   // signal. null = not measured yet / disconnected.
@@ -111,6 +113,35 @@ export class DocumentProvider {
   }
 
   // ── public API ──────────────────────────────────────────────────────────
+
+  canRetry(): boolean {
+    return !this.destroyed && !this.accessRevoked;
+  }
+
+  getError(): string | null {
+    return this.error;
+  }
+
+  onError(listener: (error: string | null) => void): () => void {
+    this.errorListeners.add(listener);
+    return () => this.errorListeners.delete(listener);
+  }
+
+  /** Reconnect without replacing the CRDT or pending operation receipts. */
+  retry(): void {
+    if (this.destroyed || this.accessRevoked) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.stopPing();
+    this.teardownSocket();
+    this.connect();
+  }
+
+  private setError(error: string | null): void {
+    if (this.error === error) return;
+    this.error = error;
+    for (const listener of this.errorListeners) listener(error);
+  }
 
   getStatus(): ConnectionStatus {
     return this.status;
@@ -300,6 +331,17 @@ export class DocumentProvider {
           this.unacknowledged.delete(frame.data.operation.clientMutationId);
         }
         this.lastAckedSequence = Math.max(this.lastAckedSequence, frame.data.operation.sequence);
+        if (
+          this.error &&
+          this.ws?.readyState === WebSocket.OPEN &&
+          this.unacknowledged.size === 0
+        ) {
+          this.flushPendingUpdates();
+          if (this.unacknowledged.size === 0) {
+            this.setError(null);
+            this.setStatus("synced");
+          }
+        }
         break;
       case "document_operation":
         this.applyRemoteOperation(frame.data);
@@ -319,6 +361,14 @@ export class DocumentProvider {
         // toast comes from the notifications channel.
         if (frame.data.reason === "access_revoked" || frame.data.reason === "unauthorized") {
           this.accessRevoked = true;
+          this.setError(
+            frame.data.reason === "access_revoked"
+              ? "Your access to this document was revoked."
+              : "Your session is no longer authorized to access this document."
+          );
+          this.stopPing();
+          this.teardownSocket();
+          this.setStatus("offline");
         }
         break;
       case "heartbeat":
@@ -329,7 +379,12 @@ export class DocumentProvider {
       case "presence_state":
       case "presence_update":
       case "presence_left":
+        break;
       case "error":
+        this.setError(frame.data.message || frame.data.code);
+        this.stopPing();
+        this.teardownSocket();
+        this.setStatus("offline");
         break;
     }
   }
@@ -384,7 +439,9 @@ export class DocumentProvider {
 
     this.hasSynced = true;
     this.pendingSnapshotCrdt = null;
-    this.setStatus("synced");
+    // A successful handshake does not prove rejected edits were persisted.
+    if (this.error && this.unacknowledged.size === 0) this.setError(null);
+    this.setStatus(this.error ? "offline" : "synced");
     this.announceAwareness();
   }
 

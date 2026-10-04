@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
+import { extractFriendlyErrorMessage } from "@/src/lib/error-message";
 
 export interface NewIpSparkDraft {
   name?: string;
@@ -30,7 +31,10 @@ async function analyzeNewIpBrief(file: File): Promise<NewIpSparkDraft> {
       if (controller.signal.aborted) throw new Error("Analysis timed out");
       throw new Error("Network connection failed");
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const message = extractFriendlyErrorMessage(await res.text());
+      throw new Error(`HTTP ${res.status}${message ? ` — ${message}` : ""}`);
+    }
 
     const body = (await res.json()) as {
       code?: number;

@@ -303,3 +303,35 @@ describe('document-crdt', () => {
     );
   });
 });
+
+describe('retained collaborative content', () => {
+  it('retains out-of-order values through compaction, then releases deleted values', () => {
+    const mediaId = '11111111-1111-4111-8111-111111111111';
+    const source = new Y.Doc();
+    const node = new Y.Map<unknown>();
+    source.getMap('nodes').set('image', node);
+    const base = Y.encodeStateAsUpdate(source);
+    const vector = Y.encodeStateVector(source);
+    node.set('mediaAssetId', mediaId);
+    const dependent = Y.encodeStateAsUpdate(source, vector);
+    const pending = new DocumentStateBuilder(null, { nodes: 'map' });
+    const restored = new DocumentStateBuilder(null, { nodes: 'map' });
+    try {
+      pending.apply(dependent);
+      expect(JSON.stringify(pending.snapshot())).not.toContain(mediaId);
+      expect(JSON.stringify(pending.retainedContent())).toContain(mediaId);
+      restored.apply(pending.encodeState());
+      expect(JSON.stringify(restored.retainedContent())).toContain(mediaId);
+      restored.apply(base);
+      expect(JSON.stringify(restored.snapshot())).toContain(mediaId);
+      const beforeDelete = Y.encodeStateVector(source);
+      node.delete('mediaAssetId');
+      restored.apply(Y.encodeStateAsUpdate(source, beforeDelete));
+      expect(JSON.stringify(restored.retainedContent())).not.toContain(mediaId);
+    } finally {
+      source.destroy();
+      pending.destroy();
+      restored.destroy();
+    }
+  });
+});

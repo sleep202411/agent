@@ -136,6 +136,8 @@ export type ReferralRewardItemKind =
   | 'membership_community';
 
 export interface ReferralRewardItemDTO {
+  /** Cash currency snapshotted when earned; null for non-cash benefits. */
+  currency?: string | null;
   kind: ReferralRewardItemKind;
   /** Cash minor units OR point count, as a string (JSON BigInt safe). */
   amountMinor: string;
@@ -182,6 +184,12 @@ export interface ReferralMilestoneDTO {
 }
 
 export interface ReferralDashboardDTO {
+  cashTotals?: Array<{
+    currency: string | null;
+    pendingMinor: string;
+    confirmedMinor: string;
+    reversedMinor: string;
+  }>;
   programAvailable: boolean;
   inviteCode: string | null;
   inviteUrl: string | null;

@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiRequestError } from "@/lib/api";
 import { useDocumentComments } from "./use-comments";
 import { useDocumentVersions } from "./use-versions";
 import type { DocumentProvider } from "./document-provider";
@@ -29,6 +30,7 @@ for (const kind of ["comments", "versions"] as const) {
     let event: ((data: unknown) => void) | undefined;
     let provider: DocumentProvider;
     let retainedReply: ((threadId: string, body: string) => Promise<void>) | undefined;
+    let feed: { error: string | null; refetch: () => Promise<void> };
     function Harness({ id }: { id: string | null }) {
       const comments = useDocumentComments(
         kind === "comments" ? id : null,
@@ -38,6 +40,7 @@ for (const kind of ["comments", "versions"] as const) {
         kind === "versions" ? id : null,
         kind === "versions" ? provider : null
       );
+      feed = kind === "comments" ? comments : versions;
       retainedReply = comments.reply;
       const rows = kind === "comments" ? comments.threads : versions.versions;
       return <div>{rows.map((row) => row.id).join(",")}</div>;
@@ -77,6 +80,25 @@ for (const kind of ["comments", "versions"] as const) {
       await act(async () => root.render(<Harness id="b" />));
       expect(pendingSignal.aborted).toBe(true);
       expect(signal.aborted).toBe(false);
+    });
+    it("exposes read failures and clears them after explicit retry", async () => {
+      const list = kind === "comments" ? mocks.listComments : mocks.listVersions;
+      list.mockRejectedValueOnce(new Error("Document service unavailable"));
+      await act(async () => root.render(<Harness id="a" />));
+      expect(feed.error).toBe("Document service unavailable");
+      list.mockResolvedValueOnce([{ id: "recovered" }]);
+      await act(async () => feed.refetch());
+      expect(feed.error).toBeNull();
+      expect(container.textContent).toBe("recovered");
+    });
+    it("clears previously loaded entries when access is revoked", async () => {
+      const list = kind === "comments" ? mocks.listComments : mocks.listVersions;
+      await act(async () => root.render(<Harness id="a" />));
+      await act(async () => finish[0]?.([{ id: "private" }]));
+      list.mockRejectedValueOnce(new ApiRequestError("denied", "Permission revoked", 403));
+      await act(async () => event?.({ type: `${kind}_changed` }));
+      expect(container.textContent).toBe("");
+      expect(feed.error).toBe("Permission revoked");
     });
     if (kind === "comments")
       it("rejects retained replies after document replacement", async () => {

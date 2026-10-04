@@ -10,7 +10,8 @@
  *   GET /aurora/users/by-id?id=<id>
  *     Resolve a single Java user id → safe public projection
  *     ({ userId, nickname, avatar }). Used for one-off owner /
- *     applicant displays. Rate-limited 60/min per viewer.
+ *     applicant displays. idFormat=public decodes displayed creator IDs.
+ *     Rate-limited 60/min per viewer.
  *
  *   GET /aurora/users/by-ids?ids=1,2,3
  *     Batch resolve up to 50 ids in parallel. Used by the crew
@@ -34,6 +35,7 @@ import {
   NotFoundException,
   Query,
 } from '@nestjs/common';
+import { parsePublicUserId } from '@repo/shared/user-id-codec';
 import { CurrentUser, ViewerCookie } from '../auth';
 import type { AuthUser } from '../auth';
 import { RateLimitService } from '../common/throttle/rate-limit.service';
@@ -109,14 +111,20 @@ export class UsersController {
     @ViewerCookie() cookie: string,
     @Query('id') id?: string,
     @Query('checkCrewId') checkCrewId?: string,
+    @Query('idFormat') idFormat?: string,
   ) {
     assertScalarQuery(checkCrewId, 'checkCrewId');
     assertScalarQuery(id, 'id');
+    assertScalarQuery(idFormat, 'idFormat');
+    if (idFormat !== undefined && idFormat !== 'raw' && idFormat !== 'public') {
+      throw new BadRequestException({ message: 'Invalid idFormat' });
+    }
     const trimmed = (id ?? '').trim();
     if (!trimmed) {
       throw new BadRequestException({ message: 'id required' });
     }
-    if (!/^\d{1,18}$/.test(trimmed)) {
+    const rawId = idFormat === 'public' ? parsePublicUserId(trimmed) : trimmed;
+    if (!rawId || !/^\d{1,18}$/.test(rawId)) {
       throw new BadRequestException({
         message: 'id must be a positive integer',
       });
@@ -127,7 +135,7 @@ export class UsersController {
       max: 60,
       windowSec: 60,
     });
-    const result = await this.svc.lookupByUserId(trimmed, cookie, checkCrewId);
+    const result = await this.svc.lookupByUserId(rawId, cookie, checkCrewId);
     if (!result) {
       throw new NotFoundException({ message: 'No user with that id' });
     }

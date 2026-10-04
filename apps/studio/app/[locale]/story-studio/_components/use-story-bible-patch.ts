@@ -3,7 +3,7 @@
 import { useAuth } from "@/app/_components/auth-provider";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   putStoryDraft,
@@ -41,24 +41,58 @@ export function useStoryBiblePatch(projectId: string) {
   const workbench = workbenchQuery.data ?? null;
   const canEdit = workbench?.project.capabilities.includes("story.edit") ?? false;
 
-  const [bibleOverlay, setBibleOverlay] = useState<StoryBibleWriterPatch | null>(null);
-  const overlayRef = useRef<StoryBibleWriterPatch | null>(null);
-  const draftHeadRef = useRef<{ revision: number; content: InteractiveStoryDraftContent } | null>(
-    null
+  // The dock survives chapter changes. Keep queued edits, revisions and retry
+  // callbacks together so a delayed save can only write its original chapter.
+  const save = useMemo(
+    () => ({
+      key: JSON.stringify(workbenchQueryKey),
+      overlayRef: { current: null as StoryBibleWriterPatch | null },
+      draftHeadRef: {
+        current: null as { revision: number; content: InteractiveStoryDraftContent } | null,
+      },
+      sessionIdRef: { current: crypto.randomUUID() },
+      saveTimerRef: { current: null as ReturnType<typeof setTimeout> | null },
+      savingRef: { current: false },
+      failedSavesRef: { current: 0 },
+      writerRef: { current: null as typeof foundationWriter },
+      flushRef: { current: async () => {} },
+    }),
+    [workbenchQueryKey]
   );
+  const {
+    overlayRef,
+    draftHeadRef,
+    sessionIdRef,
+    saveTimerRef,
+    savingRef,
+    failedSavesRef,
+    writerRef,
+    flushRef,
+  } = save;
+  const [bibleOverlays, setBibleOverlays] = useState<Map<typeof save, StoryBibleWriterPatch>>(
+    () => new Map()
+  );
+  const setBibleOverlay = (value: StoryBibleWriterPatch | null) =>
+    setBibleOverlays((previous) => {
+      const next = new Map(previous);
+      if (value) next.set(save, value);
+      else next.delete(save);
+      return next;
+    });
+  const bibleOverlay = bibleOverlays.get(save) ?? null;
+  const currentUserRef = useRef(user?.id);
+  useLayoutEffect(() => {
+    currentUserRef.current = user?.id;
+  }, [user?.id]);
+  const ownerUserId = user?.id;
   useEffect(() => {
-    if (workbench) {
-      draftHeadRef.current = {
-        revision: workbench.draft.revision,
-        content: workbench.draft.content,
-      };
-    }
-  }, [workbench]);
-  const sessionIdRef = useRef<string | null>(null);
-  sessionIdRef.current ??= crypto.randomUUID();
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savingRef = useRef(false);
-  const failedSavesRef = useRef(0);
+    draftHeadRef.current = workbench
+      ? {
+          revision: workbench.draft.revision,
+          content: workbench.draft.content,
+        }
+      : null;
+  }, [workbench, draftHeadRef]);
 
   const scheduleBibleSave = () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -68,15 +102,21 @@ export function useStoryBiblePatch(projectId: string) {
     }, FOUNDATION_SAVE_DEBOUNCE_MS);
   };
 
-  const writerRef = useRef(foundationWriter);
   useEffect(() => {
     writerRef.current = foundationWriter;
-  }, [foundationWriter]);
+  }, [foundationWriter, writerRef]);
 
   const flushBibleOverlay = async () => {
     const head = draftHeadRef.current;
     const overlay = overlayRef.current;
-    if (!head || !overlay || savingRef.current || !activeChapterId) return;
+    if (
+      !head ||
+      !overlay ||
+      savingRef.current ||
+      !activeChapterId ||
+      currentUserRef.current !== ownerUserId
+    )
+      return;
     const writer = writerRef.current;
     if (writer) {
       overlayRef.current = null;
@@ -105,16 +145,28 @@ export function useStoryBiblePatch(projectId: string) {
       );
     } catch (error) {
       failedSavesRef.current += 1;
+      if (currentUserRef.current !== ownerUserId) return;
       toast.error(storyApiErrorMessage(error, t("filmFoundation.saveError")));
-      await workbenchQuery.refetch();
+      const refreshed = await workbenchQuery.refetch();
+      // A departed chapter no longer rerenders this hook. Carry its refreshed
+      // head into its own retry instead of relying on the active chapter effect.
+      if (!refreshed.isError && refreshed.data) {
+        draftHeadRef.current = {
+          revision: refreshed.data.draft.revision,
+          content: refreshed.data.draft.content,
+        };
+      }
     } finally {
       savingRef.current = false;
-      if (overlayRef.current && failedSavesRef.current < FOUNDATION_SAVE_MAX_RETRIES) {
+      if (
+        currentUserRef.current === ownerUserId &&
+        overlayRef.current &&
+        failedSavesRef.current < FOUNDATION_SAVE_MAX_RETRIES
+      ) {
         scheduleBibleSave();
       }
     }
   };
-  const flushRef = useRef(flushBibleOverlay);
   useEffect(() => {
     flushRef.current = flushBibleOverlay;
   });
@@ -124,7 +176,7 @@ export function useStoryBiblePatch(projectId: string) {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (overlayRef.current) void flushRef.current();
     },
-    []
+    [flushRef, overlayRef, saveTimerRef]
   );
 
   const patchBible = (patch: StoryBibleWriterPatch) => {

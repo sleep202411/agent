@@ -14,6 +14,7 @@
 
 "use client";
 
+import { parsePublicUserId } from "@repo/shared/user-id-codec";
 import { useMemo } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useQuery } from "@tanstack/react-query";
@@ -55,7 +56,7 @@ export function useUserLookup({
   const { user } = useCurrentUser();
   const detected =
     lookupBy === "userId"
-      ? /^\d{1,18}$/.test(query.trim())
+      ? parsePublicUserId(query) !== null
         ? { kind: "id", value: query.trim() }
         : null
       : detect(query);
@@ -74,6 +75,7 @@ export function useUserLookup({
     queryFn: async ({ signal }) => {
       if (!detected) throw new Error("Unreachable: query disabled");
       const params = new URLSearchParams({ [detected.kind]: detected.value });
+      if (lookupBy === "userId") params.set("idFormat", "public");
       if (checkCrewId) params.set("checkCrewId", checkCrewId);
       return crewApi.get<LookupUserDTO>(
         `/users/${lookupBy === "userId" ? "by-id" : "lookup"}?${params.toString()}`,

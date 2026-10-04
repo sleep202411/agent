@@ -4,7 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { BriefEditor } from "./brief-editor";
-const state = vi.hoisted(() => ({ read: vi.fn(), canEdit: true }));
+const state = vi.hoisted(() => ({
+  read: vi.fn(),
+  canEdit: true,
+  syncError: null as string | null,
+  status: "synced",
+  retrySync: vi.fn(),
+}));
 let doc: Y.Doc;
 vi.mock("@/app/_components/auth-provider", () => ({
   useAuth: () => ({ user: { id: "alice" }, loading: false }),
@@ -16,13 +22,21 @@ vi.mock("@/lib/collab/projects-api", () => ({
   ensureModeDocument: (...args: unknown[]) => state.read(...args),
 }));
 vi.mock("@/lib/collab/use-collab-doc", () => ({
-  useCollabDoc: (id: string | null) => ({ doc: id ? doc : null, status: "synced" }),
+  useCollabDoc: (id: string | null) => ({
+    doc: id ? doc : null,
+    status: state.status,
+    error: state.syncError,
+    retry: state.retrySync,
+  }),
 }));
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 let root: Root, host: HTMLDivElement, client: QueryClient;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   state.canEdit = true;
+  state.syncError = null;
+  state.status = "synced";
+  state.retrySync.mockReset();
   state.read.mockReset().mockResolvedValue({ id: "brief" });
   doc = new Y.Doc();
   doc.getText("content").insert(0, "Existing brief");
@@ -68,4 +82,24 @@ it("shows a loading state while resolving and keeps viewers read-only", async ()
   await act(async () => resolve({ id: "brief" }));
   await render();
   expect(host.querySelector("textarea")?.readOnly).toBe(true);
+});
+
+it("keeps the brief and actual save error visible through retry", async () => {
+  state.syncError = "Storage unavailable";
+  state.status = "offline";
+  await render();
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Storage unavailable");
+  expect(host.querySelector("textarea")?.value).toBe("Existing brief");
+  expect(host.textContent).not.toContain("offlineSaved");
+  await act(async () => host.querySelector("button")!.click());
+  expect(state.retrySync).toHaveBeenCalledOnce();
+  state.status = "connecting";
+  await render();
+  expect(host.querySelector("button")?.disabled).toBe(true);
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe("Storage unavailable");
+  state.syncError = null;
+  state.status = "synced";
+  await render();
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(host.querySelector("textarea")?.value).toBe("Existing brief");
 });

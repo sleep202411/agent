@@ -6,6 +6,7 @@ import { ProfessionalDeliveryInput } from './tasks/task-delivery-template';
  * (positionType validation, headcount bounds, salary range).
  */
 import { z } from 'zod';
+import { parsePublicUserId } from '@repo/shared/user-id-codec';
 import {
   ALL_CURRENCIES,
   CREW_GENRES,
@@ -451,7 +452,7 @@ export const CreateCrewInvitationSchema = z
   .superRefine((input, ctx) => {
     const valid =
       input.lookupBy === 'userId'
-        ? /^\d{1,18}$/.test(input.account)
+        ? parsePublicUserId(input.account) !== null
         : EMAIL_RE.test(input.account) || PHONE_RE.test(input.account);
     if (!valid)
       ctx.addIssue({
@@ -459,7 +460,7 @@ export const CreateCrewInvitationSchema = z
         path: ['account'],
         message:
           input.lookupBy === 'userId'
-            ? 'account must be a numeric user ID (1–18 digits)'
+            ? 'account must be a valid displayed User ID'
             : 'account must be a valid email or phone',
       });
   });

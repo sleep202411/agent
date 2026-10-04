@@ -89,7 +89,6 @@ import {
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { storyGenerationOptions } from "../_stores/story-production-settings-store";
 import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
-import { useStoryTimelineExport } from "../_lib/use-story-timeline-export";
 import {
   StoryCandidateAssetPickerDialog,
   type StoryCandidateAssetUploadState,
@@ -127,15 +126,6 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     return sequences[0] ?? null;
   }, [requestedPlotNodeId, storyboardQuery.data]);
 
-  const timelineExport = useStoryTimelineExport({
-    canEdit: projectCanEdit,
-    sequence: selectedSequence,
-    projectId,
-    chapterId,
-    onComplete: () => {
-      void storyboardQuery.refetch();
-    },
-  });
   const selectedNodeTitle = useMemo(() => {
     const plotNodeId = selectedSequence?.plotNodeId;
     if (!plotNodeId) return "";
@@ -380,34 +370,6 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {timelineExport.isExporting ? (
-            <button
-              type="button"
-              onClick={() => timelineExport.cancel()}
-              className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 text-xs font-medium text-white/68 transition-colors hover:bg-white/[0.12] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-            >
-              {t("cancelExport")} {Math.round(timelineExport.exportProgress * 100)}%
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                disabled={!timelineExport.canExport}
-                onClick={() => void timelineExport.handleExport()}
-                className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 text-xs font-medium text-white/68 transition-colors hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-              >
-                {t("exportFilm")}
-              </button>
-              <button
-                type="button"
-                disabled={timelineExport.validShotsCount === 0}
-                onClick={() => void timelineExport.downloadOnly()}
-                className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 text-xs font-medium text-white/68 transition-colors hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
-              >
-                {t("downloadFilm")}
-              </button>
-            </>
-          )}
           <span
             className="hidden items-center gap-1.5 text-[11px] text-white/45 sm:inline-flex"
             aria-live="polite"

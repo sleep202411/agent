@@ -162,3 +162,25 @@ it.each(["reopen", "success"])("starts a new inquiry intent after %s", async (mo
     mocks.send.mock.calls[0]![0].firstMessageClientKey
   );
 });
+
+it("preserves the inquiry while revalidation pauses and resumes sending", async () => {
+  await act(async () => render());
+  await fill();
+  await act(async () =>
+    root.render(
+      <ContactCreatorDialog
+        service={{ id: "service-1", title: "Service", category: "other", coverPath: "" }}
+        open
+        onOpenChange={close}
+        revalidating
+      />
+    )
+  );
+  expect(send().disabled).toBe(true);
+  await act(async () => send().click());
+  expect(mocks.send).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")!.value).toBe("Alice draft");
+  await act(async () => render());
+  expect(send().disabled).toBe(false);
+  expect(container.querySelector("textarea")!.value).toBe("Alice draft");
+});

@@ -124,6 +124,7 @@ function makeService() {
     },
   };
   const prisma = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
     referralProgram: {
       findUnique: jest.fn(),
       findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'prog-1' }),
@@ -1544,4 +1545,72 @@ describe('formatBpsPercent', () => {
   ])('%d bps → %s', (bps, expected) => {
     expect(formatBpsPercent(bps)).toBe(expected);
   });
+});
+
+it('returns each earned bundle item with its snapshotted cash currency', async () => {
+  const { service, prisma } = makeService();
+  prisma.referralProgram.findUnique.mockResolvedValue(programRow());
+  prisma.referralReward.findMany
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([
+      {
+        id: 'bundle',
+        title: 'Bundle',
+        subtitle: null,
+        payoutType: 'points_compute',
+        amountMinor: 50n,
+        days: 0,
+        currency: null,
+        status: 'accrued',
+        createdAt: new Date(),
+        availableAt: null,
+        items: [
+          {
+            payoutType: 'points_compute',
+            amountMinor: 50n,
+            days: 0,
+            currency: null,
+          },
+          { payoutType: 'cash', amountMinor: 1250n, days: 0, currency: 'EUR' },
+        ],
+      },
+    ]);
+  const dashboard = await service.getDashboard(REFERRER);
+  expect(dashboard.rewards[0].items).toEqual([
+    { kind: 'points_compute', amountMinor: '50', days: 0, currency: null },
+    { kind: 'cash', amountMinor: '1250', days: 0, currency: 'EUR' },
+  ]);
+});
+
+it('keeps dashboard cash totals separate by currency and preserves default-currency totals', async () => {
+  const { service, prisma } = makeService();
+  prisma.referralProgram.findUnique.mockResolvedValue(programRow());
+  prisma.$queryRaw.mockResolvedValue([
+    { status: 'pending', currency: 'USD', amount: '75' },
+    { status: 'accrued', currency: 'USD', amount: '1250' },
+    { status: 'paid_out', currency: 'USD', amount: '200' },
+    { status: 'reversed', currency: 'USD', amount: '300' },
+    { status: 'qualified', currency: 'EUR', amount: '400' },
+  ]);
+  const dashboard = await service.getDashboard(REFERRER);
+  expect(dashboard.cashTotals).toEqual([
+    {
+      currency: 'USD',
+      pendingMinor: '75',
+      confirmedMinor: '1450',
+      reversedMinor: '300',
+      inviteeCount: 0,
+    },
+    {
+      currency: 'EUR',
+      pendingMinor: '400',
+      confirmedMinor: '0',
+      reversedMinor: '0',
+      inviteeCount: 0,
+    },
+  ]);
+  const regional = dashboard.cashTotals?.find(
+    (row) => row.currency === dashboard.currency,
+  );
+  expect(dashboard.totals.confirmedMinor).toBe(regional?.confirmedMinor ?? '0');
 });

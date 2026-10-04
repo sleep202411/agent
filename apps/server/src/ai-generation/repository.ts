@@ -10,7 +10,7 @@
  * (DB row created, upload completed, app crashed before final commit)
  * is idempotent — same outputIndex resolves to the same row.
  */
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   MediaAssetKind,
   MediaAssetModerationStatus,
@@ -32,6 +32,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
+import { lockMediaAssetReference } from '../media/media-asset-lifecycle-lock';
 import { newShortId } from '../common/id';
 import { ensureOriginalMediaPlacement } from '../infra/storage/media-asset-placement';
 import type { StorageProviderId } from '../infra/storage/storage.types';
@@ -88,6 +89,12 @@ export interface ReserveQueuedJobOptions {
     perUserLimit?: number;
     totalLimit?: number;
   };
+  references: Array<{
+    assetId: string;
+    refId: string;
+    kind: string;
+    characterId?: string;
+  }>;
   beforeCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
   /**
    * Product-plane rows that own an AI job may be inserted here after the
@@ -404,8 +411,31 @@ export class AiGenerationRepository {
         await this.waitingInQueueWith(tx, options.queueName)
       ).length;
       const job = options.buildJob(queuePosition);
+      const references = options.references;
+      const assetIds = [
+        ...new Set(references.map((reference) => reference.assetId)),
+      ].sort();
+      for (const assetId of assetIds)
+        await lockMediaAssetReference(tx, assetId);
+      if (assetIds.length) {
+        const available = await tx.mediaAsset.count({
+          where: {
+            id: { in: assetIds },
+            status: MediaAssetStatus.ready,
+            deletedAt: null,
+            moderationStatus: { not: MediaAssetModerationStatus.blocked },
+          },
+        });
+        if (available !== assetIds.length)
+          throw new BadRequestException({
+            code: 'AI_REFERENCE_MEDIA_UNAVAILABLE',
+            message:
+              'A reference file is no longer available. Choose another file before generating.',
+          });
+      }
       await options.beforeCreate?.(tx, job);
       await tx.aiJob.create({ data: this.toRow(job) });
+      await this.recordReferenceUsage(job, references, tx);
       await options.afterCreate?.(tx, job);
       const repositioned = await this.recomputeQueuePositionsWith(
         tx,
@@ -1709,9 +1739,10 @@ export class AiGenerationRepository {
    * output usage writes above — same surface derivation, same
    * `idempotencyKey` uniqueness — but uses `skipDuplicates` instead of
    * delete-and-recreate because references are frozen at submit (a retry
-   * is a NEW job, so re-submits land distinct rows).
+   * is a NEW job, so re-submits land distinct rows). The ledger commits with
+   * job admission and its billing reservation; a failure rolls them all back.
    */
-  async recordReferenceUsage(
+  private async recordReferenceUsage(
     job: Pick<
       AiJob,
       'id' | 'userId' | 'workspaceId' | 'projectId' | 'sourceSurface'
@@ -1722,20 +1753,21 @@ export class AiGenerationRepository {
       kind: string;
       characterId?: string;
     }>,
+    tx: Prisma.TransactionClient,
   ): Promise<void> {
     const byAssetId = new Map(
       references.map((reference) => [reference.assetId, reference]),
     );
     if (byAssetId.size === 0) return;
     const assetIds = [...byAssetId.keys()];
-    const variants = await this.prisma.mediaAssetVariant.findMany({
+    const variants = await tx.mediaAssetVariant.findMany({
       where: { assetId: { in: assetIds }, variantKey: 'original' },
       select: { id: true, assetId: true },
     });
     const variantByAssetId = new Map(
       variants.map((variant) => [variant.assetId, variant.id]),
     );
-    await this.prisma.mediaAssetUsage.createMany({
+    await tx.mediaAssetUsage.createMany({
       data: [...byAssetId.values()].map((reference) => ({
         assetId: reference.assetId,
         variantId: variantByAssetId.get(reference.assetId) ?? null,

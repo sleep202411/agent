@@ -15,8 +15,10 @@ import {
   StoryReferenceVersionStatus,
   StoryReviewDecision,
 } from '@prisma/client';
+import { z } from 'zod';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
+import { lockMediaAssetReference } from '../media/media-asset-lifecycle-lock';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { canonicalJsonHash } from './canonical-json';
 import {
@@ -234,133 +236,139 @@ export class StoryReferenceService {
       return toReferenceVersionDto(replay);
     }
 
-    const row = await this.prisma.$transaction(
-      async (tx) => {
-        await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-        await lockReferenceSlot(tx, slotId);
-        const duplicate = await tx.storyReferenceVersion.findUnique({
-          where: { submissionKey },
-          include: REFERENCE_VERSION_INCLUDE,
-        });
-        if (duplicate) {
-          assertVersionReplayMatches(
-            duplicate,
-            projectId,
-            slotId,
-            requestFingerprint,
-          );
-          return duplicate;
-        }
+    const row = await retryReferenceWrite(() =>
+      this.prisma.$transaction(
+        async (tx) => {
+          await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+          await lockReferenceSlot(tx, slotId);
+          const duplicate = await tx.storyReferenceVersion.findUnique({
+            where: { submissionKey },
+            include: REFERENCE_VERSION_INCLUDE,
+          });
+          if (duplicate) {
+            assertVersionReplayMatches(
+              duplicate,
+              projectId,
+              slotId,
+              requestFingerprint,
+            );
+            return duplicate;
+          }
 
-        const slot = await tx.storyReferenceSlot.findFirst({
-          where: {
-            id: slotId,
-            storyProjectId: projectId,
-            archivedAt: null,
-          },
-        });
-        if (!slot) throw referenceSlotNotFound();
-        assertSlotVersion(slot.version, input.expectedSlotVersion);
+          const slot = await tx.storyReferenceSlot.findFirst({
+            where: {
+              id: slotId,
+              storyProjectId: projectId,
+              archivedAt: null,
+            },
+          });
+          if (!slot) throw referenceSlotNotFound();
+          assertSlotVersion(slot.version, input.expectedSlotVersion);
 
-        const [reference] = await tx.$queryRaw<Array<{ allowed: boolean }>>`
+          await lockMediaAssetReference(tx, input.assetId);
+          const [reference] = await tx.$queryRaw<Array<{ allowed: boolean }>>`
           SELECT story_project_references_media(${projectId}::uuid, ${input.assetId}::uuid) AS allowed
         `;
-        const variant = await tx.mediaAssetVariant.findFirst({
-          where: {
-            id: input.variantId,
-            assetId: input.assetId,
-            status: MediaAssetVariantStatus.ready,
-            deletedAt: null,
-            checksumSha256: { not: null },
-            placements: {
-              some: {
-                status: MediaObjectPlacementStatus.active,
-                deletedAt: null,
-              },
-            },
-            asset: {
-              ...(reference?.allowed
-                ? {}
-                : { workspaceId: scope.project.workspaceId }),
-              kind: MediaAssetKind.image,
-              status: MediaAssetStatus.ready,
-              moderationStatus: {
-                not: MediaAssetModerationStatus.blocked,
-              },
-              deletedAt: null,
-            },
-          },
-          include: { asset: { include: REFERENCE_ASSET_INCLUDE } },
-        });
-        if (!variant?.checksumSha256 || !resolveMediaPublicUrl(variant.asset)) {
-          throw referenceAssetInvalid();
-        }
-
-        if (input.source === 'ai_job') {
-          const output = await tx.aiJobOutput.findFirst({
+          const variant = await tx.mediaAssetVariant.findFirst({
             where: {
-              id: input.aiJobOutputId,
-              jobId: input.aiJobId,
+              id: input.variantId,
               assetId: input.assetId,
+              status: MediaAssetVariantStatus.ready,
               deletedAt: null,
-              job: {
-                OR: [
-                  { workspaceId: scope.project.workspaceId },
-                  { storyProjectId: projectId },
-                ],
+              checksumSha256: { not: null },
+              placements: {
+                some: {
+                  status: MediaObjectPlacementStatus.active,
+                  deletedAt: null,
+                },
+              },
+              asset: {
+                ...(reference?.allowed
+                  ? {}
+                  : { workspaceId: scope.project.workspaceId }),
+                kind: MediaAssetKind.image,
+                status: MediaAssetStatus.ready,
+                moderationStatus: {
+                  not: MediaAssetModerationStatus.blocked,
+                },
                 deletedAt: null,
               },
             },
-            select: { id: true },
+            include: { asset: { include: REFERENCE_ASSET_INCLUDE } },
           });
-          if (!output) throw referenceAiOutputInvalid();
-        }
+          if (
+            !variant?.checksumSha256 ||
+            !resolveMediaPublicUrl(variant.asset)
+          ) {
+            throw referenceAssetInvalid();
+          }
 
-        const latest = await tx.storyReferenceVersion.aggregate({
-          where: { referenceSlotId: slotId },
-          _max: { versionNumber: true },
-        });
-        const created = await tx.storyReferenceVersion.create({
-          data: {
-            storyProjectId: projectId,
-            referenceSlotId: slotId,
-            versionNumber: (latest._max.versionNumber ?? 0) + 1,
-            submissionKey,
-            requestFingerprint,
-            source: input.source,
-            status: StoryReferenceVersionStatus.ready,
-            assetId: input.assetId,
-            variantId: input.variantId,
-            sourceRecipeSnapshot: input.sourceRecipeSnapshot as
-              | Prisma.InputJsonObject
-              | undefined,
-            checksumSha256: variant.checksumSha256,
-            ...(input.source === 'ai_job'
-              ? {
-                  aiJobId: input.aiJobId,
-                  aiJobOutputId: input.aiJobOutputId,
-                }
-              : {}),
-            createdByUserId: user.userId,
-            readyAt: new Date(),
-          },
-          include: REFERENCE_VERSION_INCLUDE,
-        });
-        const claimed = await tx.storyReferenceSlot.updateMany({
-          where: {
-            id: slotId,
-            storyProjectId: projectId,
-            archivedAt: null,
-            version: input.expectedSlotVersion,
-          },
-          data: { version: { increment: 1 } },
-        });
-        if (claimed.count !== 1) {
-          throw slotVersionConflict(input.expectedSlotVersion, slot.version);
-        }
-        return created;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+          if (input.source === 'ai_job') {
+            const output = await tx.aiJobOutput.findFirst({
+              where: {
+                id: input.aiJobOutputId,
+                jobId: input.aiJobId,
+                assetId: input.assetId,
+                deletedAt: null,
+                job: {
+                  OR: [
+                    { workspaceId: scope.project.workspaceId },
+                    { storyProjectId: projectId },
+                  ],
+                  deletedAt: null,
+                },
+              },
+              select: { id: true },
+            });
+            if (!output) throw referenceAiOutputInvalid();
+          }
+
+          const latest = await tx.storyReferenceVersion.aggregate({
+            where: { referenceSlotId: slotId },
+            _max: { versionNumber: true },
+          });
+          const created = await tx.storyReferenceVersion.create({
+            data: {
+              storyProjectId: projectId,
+              referenceSlotId: slotId,
+              versionNumber: (latest._max.versionNumber ?? 0) + 1,
+              submissionKey,
+              requestFingerprint,
+              source: input.source,
+              status: StoryReferenceVersionStatus.ready,
+              assetId: input.assetId,
+              variantId: input.variantId,
+              sourceRecipeSnapshot: input.sourceRecipeSnapshot as
+                | Prisma.InputJsonObject
+                | undefined,
+              checksumSha256: variant.checksumSha256,
+              ...(input.source === 'ai_job'
+                ? {
+                    aiJobId: input.aiJobId,
+                    aiJobOutputId: input.aiJobOutputId,
+                  }
+                : {}),
+              createdByUserId: user.userId,
+              readyAt: new Date(),
+            },
+            include: REFERENCE_VERSION_INCLUDE,
+          });
+          const claimed = await tx.storyReferenceSlot.updateMany({
+            where: {
+              id: slotId,
+              storyProjectId: projectId,
+              archivedAt: null,
+              version: input.expectedSlotVersion,
+            },
+            data: { version: { increment: 1 } },
+          });
+          if (claimed.count !== 1) {
+            throw slotVersionConflict(input.expectedSlotVersion, slot.version);
+          }
+          return created;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
     );
     return toReferenceVersionDto(row);
   }
@@ -924,4 +932,51 @@ function corruptReferenceData(resource: string): InternalServerErrorException {
     code: 'STORY_REFERENCE_DATA_CORRUPT',
     message: `Stored Story reference ${resource} is invalid.`,
   });
+}
+
+/** Serializable snapshots can be invalidated while waiting for retirement.
+ * Re-run the complete DB-only mutation so availability and replay are fresh.
+ */
+async function retryReferenceWrite<T>(write: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await write();
+    } catch (error) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        !(
+          error.code === 'P2034' ||
+          (error.code === 'P2010' &&
+            isReferenceSerializationFailure(error.meta))
+        )
+      )
+        throw error;
+      if (attempt < 2) continue;
+      throw new ConflictException({
+        code: 'STORY_REFERENCE_WRITE_CONFLICT',
+        msg: 'The reference changed while saving. Refresh and try again.',
+      });
+    }
+  }
+}
+
+function isReferenceSerializationFailure(meta: unknown): boolean {
+  const parsed = z
+    .object({
+      code: z.string().optional(),
+      driverAdapterError: z
+        .object({
+          cause: z.object({
+            originalCode: z.string().optional(),
+          }),
+        })
+        .optional(),
+    })
+    .safeParse(meta);
+  return (
+    parsed.success &&
+    [parsed.data.code, parsed.data.driverAdapterError?.cause.originalCode].some(
+      (code) => code === '40001' || code === '40P01',
+    )
+  );
 }

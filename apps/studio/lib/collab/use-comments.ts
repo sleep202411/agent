@@ -18,6 +18,8 @@ const COMMENTS_CHANGED = "comments_changed";
 export interface DocumentCommentsHandle {
   threads: CommentThreadDto[];
   loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
   createThread: (input: CreateThreadInput) => Promise<void>;
   reply: (threadId: string, body: string) => Promise<void>;
   resolve: (threadId: string) => Promise<void>;
@@ -35,6 +37,7 @@ export function useDocumentComments(
   const {
     rows: threads,
     loading,
+    error,
     refetch,
     isActive,
   } = useDocumentFeed(documentId, provider, COMMENTS_CHANGED, listCommentThreads);
@@ -74,5 +77,5 @@ export function useDocumentComments(
     [documentId, refetch, notifyPeers, isActive]
   );
 
-  return { threads, loading, createThread, reply, resolve };
+  return { threads, loading, error, refetch, createThread, reply, resolve };
 }

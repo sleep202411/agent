@@ -1,3 +1,4 @@
+import { encodeUserId } from '@repo/shared/user-id-codec';
 import { CrewInvitationStatus } from '@prisma/client';
 import {
   CreateCrewInvitationSchema,
@@ -489,7 +490,7 @@ it('requires member-management permission before inviting someone for a producti
 it('resolves explicit user IDs again when creating invitations and rejects existing members', async () => {
   const t = build();
   t.users.lookupByUserId.mockResolvedValue({
-    userId: '273848',
+    userId: '18424',
     isCrewMember: true,
     isCrewOwner: false,
   });
@@ -501,7 +502,7 @@ it('resolves explicit user IDs again when creating invitations and rejects exist
     t.service.create(CREW_ID, OWNER_ID, 'viewer-cookie', input),
   ).rejects.toThrow('This user is already a crew member.');
   expect(t.users.lookupByUserId).toHaveBeenCalledWith(
-    '273848',
+    '18424',
     'viewer-cookie',
     CREW_ID,
   );
@@ -521,7 +522,7 @@ it('resolves explicit user IDs again when creating invitations and rejects exist
 it('creates an invitation for the explicitly resolved user ID', async () => {
   const t = build();
   t.users.lookupByUserId.mockResolvedValue({
-    userId: '273848',
+    userId: '18424',
     isCrewMember: false,
     isCrewOwner: false,
   });
@@ -533,9 +534,35 @@ it('creates an invitation for the explicitly resolved user ID', async () => {
   });
   expect(t.tx.crewInvitation.create).toHaveBeenCalledWith(
     expect.objectContaining({
-      data: expect.objectContaining({ inviteeUserId: '273848' }) as unknown,
+      data: expect.objectContaining({ inviteeUserId: '18424' }) as unknown,
     }),
   );
   expect(t.users.lookupByContact).not.toHaveBeenCalled();
   expect(t.tx.crewMember.create).not.toHaveBeenCalled();
 });
+
+it.each(['18424', '1234567', '90000001'])(
+  'invites the raw Java account decoded from its displayed ID: %s',
+  async (rawId) => {
+    const t = build();
+    t.users.lookupByUserId.mockResolvedValue({
+      userId: rawId,
+      isCrewMember: false,
+    });
+    const input = CreateCrewInvitationSchema.parse({
+      account: encodeUserId(rawId),
+      lookupBy: 'userId',
+    });
+    await t.service.create(CREW_ID, OWNER_ID, 'viewer-cookie', input);
+    expect(t.users.lookupByUserId).toHaveBeenCalledWith(
+      rawId,
+      'viewer-cookie',
+      CREW_ID,
+    );
+    expect(t.tx.crewInvitation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ inviteeUserId: rawId }) as unknown,
+      }),
+    );
+  },
+);

@@ -93,3 +93,11 @@ export function decodeUserId(opaque: string | null | undefined): string {
 export function creatorHref(userId: string | number | null | undefined): string {
   return `/creators/${encodeUserId(userId)}`;
 }
+
+/** Decode a displayed ID at a public-input boundary; internal Java IDs stay raw. */
+export function parsePublicUserId(value: string): string | null {
+  const input = value.trim();
+  if (!/^\d{1,18}$/.test(input) && !/^u_[a-z0-9]{3,16}$/i.test(input)) return null;
+  const decoded = decodeUserId(input);
+  return /^\d{1,18}$/.test(decoded) ? decoded : null;
+}

@@ -1,3 +1,4 @@
+import { encodeUserId } from "@repo/shared/user-id-codec";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -160,7 +161,7 @@ it("routes explicit numeric user IDs to by-id and preserves phone lookup", async
   const view = mount(() => useUserLookup({ query: "273848", checkCrewId: "crew", lookupBy }));
   await settle();
   expect(crewApi.get).toHaveBeenLastCalledWith(
-    "/users/by-id?id=273848&checkCrewId=crew",
+    "/users/by-id?id=273848&idFormat=public&checkCrewId=crew",
     expect.objectContaining({ signal: expect.any(AbortSignal) })
   );
   expect(view.current().kind).toBe("found");
@@ -184,4 +185,20 @@ it("retries a failed ID lookup without changing the identifier", async () => {
   act(() => current.retry?.());
   await settle();
   expect(view.current().kind).toBe("found");
+});
+
+it("accepts large displayed IDs and rejects malformed ones without lookup", async () => {
+  vi.mocked(crewApi.get).mockResolvedValue({ userId: "90000001" });
+  let query = encodeUserId("90000001");
+  const view = mount(() => useUserLookup({ query, lookupBy: "userId" }));
+  await settle();
+  expect(crewApi.get).toHaveBeenLastCalledWith(
+    `/users/by-id?id=${query}&idFormat=public`,
+    expect.anything()
+  );
+  query = "u_invalid";
+  view.render();
+  await settle();
+  expect(view.current().kind).toBe("idle");
+  expect(crewApi.get).toHaveBeenCalledTimes(1);
 });
