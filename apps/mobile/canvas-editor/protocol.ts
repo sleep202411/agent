@@ -1,3 +1,4 @@
+import { canvasShotMediaSchema } from "./shot-media-schema";
 import { z } from "zod";
 import { canvasNodeEditSchema, canvasNodeCreateSchema } from "./schema";
 const id = z.string().uuid();
@@ -25,6 +26,14 @@ export const canvasSnapshotSchema = z
   })
   .strict();
 export const canvasHostMessage = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("shotMedia"),
+      ...identity,
+      snapshot: encodedCanvasState,
+      media: canvasShotMediaSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("create"),

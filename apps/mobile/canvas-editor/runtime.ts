@@ -1,3 +1,4 @@
+import { editCanvasShotMedia } from "./shot-media";
 import { z } from "zod";
 import { canvasHostMessage, type CanvasRuntimeMessage } from "./protocol";
 import { materializeCanvas } from "./state";
@@ -40,7 +41,13 @@ function receive(raw: unknown) {
     sequence: message.sequence,
   };
   try {
-    if (message.type === "create") {
+    if (message.type === "shotMedia") {
+      send({
+        type: "edited",
+        ...identity,
+        ...editCanvasShotMedia(message.snapshot, message.media),
+      });
+    } else if (message.type === "create") {
       send({ type: "edited", ...identity, ...createCanvasNode(message.snapshot, message.create) });
     } else if (message.type === "edit") {
       send({ type: "edited", ...identity, ...editCanvasNode(message.snapshot, message.edit) });

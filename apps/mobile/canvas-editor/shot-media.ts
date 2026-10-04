@@ -2,26 +2,8 @@ import * as Y from "yjs";
 import { z } from "zod";
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
 
-const identity = { nodeId: z.string().min(1), edgeId: z.string().min(1) };
-export const canvasShotMediaSchema = z.discriminatedUnion("action", [
-  z
-    .object({
-      ...identity,
-      edgeId: z.string().uuid(),
-      action: z.literal("attach"),
-      sourceId: z.string().min(1),
-    })
-    .strict(),
-  z.object({ ...identity, action: z.literal("detach") }).strict(),
-  z
-    .object({
-      nodeId: identity.nodeId,
-      action: z.literal("prefer"),
-      edgeId: z.string().min(1).optional(),
-    })
-    .strict(),
-]);
-export type CanvasShotMedia = z.infer<typeof canvasShotMediaSchema>;
+import { canvasShotMediaSchema, type CanvasShotMedia } from "./shot-media-schema";
+export { canvasShotMediaSchema, type CanvasShotMedia } from "./shot-media-schema";
 const referencesSchema = z.record(
   z.array(
     z

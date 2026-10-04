@@ -1,3 +1,4 @@
+import type { CanvasShotMedia } from "../../../../canvas-editor/shot-media-schema";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -17,7 +18,7 @@ export function StoryCanvasEncoder({
   onError,
 }: {
   loaded: CanvasLoaded;
-  edit: CanvasNodeEdit | CanvasNodeCreate;
+  edit: CanvasNodeEdit | CanvasNodeCreate | CanvasShotMedia;
   generation: number;
   title: string;
   runtimeError: string;
@@ -79,9 +80,11 @@ export function StoryCanvasEncoder({
               documentId: loaded.documentId,
               sequence: loaded.sequence,
               snapshot: loaded.state,
-              ...("kind" in edit
-                ? { type: "edit" as const, edit }
-                : { type: "create" as const, create: edit }),
+              ...("action" in edit
+                ? { type: "shotMedia" as const, media: edit }
+                : "kind" in edit
+                  ? { type: "edit" as const, edit }
+                  : { type: "create" as const, create: edit }),
             });
             return;
           }
