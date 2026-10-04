@@ -9,10 +9,20 @@ const h = vi.hoisted(() => ({
   submit: vi.fn(),
   clear: vi.fn(),
   close: vi.fn(),
+  resolveCrew: vi.fn(),
   generation: 1,
+  active: true,
   uploadRead: vi.fn(),
   uploadPick: vi.fn(),
   uploadResume: vi.fn(),
+}));
+vi.mock("../api/story-crew-candidate-selection", () => ({ resolveCrewCandidate: h.resolveCrew }));
+vi.mock("./story-crew-candidate-list", () => ({
+  CrewCandidateList: ({ add, disabled }: { add: (id: string) => void; disabled: boolean }) => (
+    <button disabled={disabled} onClick={() => add("crew-media")}>
+      Crew choice
+    </button>
+  ),
 }));
 vi.mock("../api/story-timeline-media", () => ({
   fetchTimelineCandidates: h.fetch,
@@ -37,7 +47,7 @@ vi.mock("@/lib/api-client", () => ({ api: {} }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/auth", () => ({ useAuth: () => ({}) }));
 vi.mock("../context/story-chapter-context", () => ({ useStoryChapterContext: () => ({}) }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("expo-modules-core", () => ({
   uuid: { v4: () => "00000000-0000-4000-8000-000000000009" },
 }));
@@ -130,6 +140,7 @@ const render = async (canEdit = true) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
   h.read.mockReturnValue(null);
   h.uploadRead.mockReturnValue(null);
   h.fetch.mockResolvedValue([candidate]);
@@ -230,4 +241,53 @@ it("cancels the active upload when leaving the picker", async () => {
   expect(signal?.aborted).toBe(false);
   await act(async () => root.render(null));
   expect(signal?.aborted).toBe(true);
+});
+
+it("imports a Crew candidate before durably binding its media ID to the clip", async () => {
+  h.resolveCrew.mockResolvedValue(candidate);
+  await render();
+  await click("storyCandidates.importCrew");
+  await click("Crew choice");
+  expect(h.resolveCrew).toHaveBeenCalledWith(
+    scope,
+    "user",
+    "crew-media",
+    ["image", "video"],
+    id(9),
+    expect.any(AbortSignal)
+  );
+  expect(h.submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      input: expect.objectContaining({ sourceMediaAssetId: id(6), kind: "video" }),
+    })
+  );
+});
+it("does not create a binding command when Crew import is uncertain", async () => {
+  h.resolveCrew.mockRejectedValue(Error("Import interrupted"));
+  await render();
+  await click("storyCandidates.importCrew");
+  await click("Crew choice");
+  expect(h.save).not.toHaveBeenCalled();
+  expect(h.submit).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Import interrupted");
+});
+
+it("does not bind a late Crew import after leaving the screen", async () => {
+  let finish!: (value: unknown) => void;
+  h.resolveCrew.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await click("storyCandidates.importCrew");
+  await click("Crew choice");
+  const signal = h.resolveCrew.mock.calls[0][5] as AbortSignal;
+  h.active = false;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(candidate));
+  expect(h.save).not.toHaveBeenCalled();
+  expect(h.submit).not.toHaveBeenCalled();
 });

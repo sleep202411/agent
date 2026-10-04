@@ -1,3 +1,6 @@
+import { uuid } from "expo-modules-core";
+import { CrewCandidateList } from "./story-crew-candidate-list";
+import { resolveCrewCandidate } from "../api/story-crew-candidate-selection";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { Image } from "expo-image";
@@ -38,6 +41,7 @@ export function AssetCandidatePicker({
   );
   const op = useAuthFormOperation(projectId, active);
   const abort = useRef<AbortController | null>(null);
+  const [crewOpen, setCrewOpen] = useState(false);
   const [items, setItems] = useState<TimelineCandidate[]>([]),
     [pending, setPending] = useState<TimelineUploadCheckpoint | null>(null),
     [error, setError] = useState<string>(),
@@ -91,6 +95,19 @@ export function AssetCandidatePicker({
       }
     );
   };
+  const chooseCrew = (mediaAssetId: string) => {
+    if (locked || loading || pending) return;
+    void op.run(
+      async () => {
+        const c = new AbortController();
+        abort.current = c;
+        setError(undefined);
+        return resolveCrewCandidate(scope, userId, mediaAssetId, ["image"], uuid.v4(), c.signal);
+      },
+      (candidate) => onSelect(candidate.asset.id),
+      (e) => setError(e instanceof Error ? e.message : String(e))
+    );
+  };
   const button = (label: string, run: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
@@ -137,6 +154,22 @@ export function AssetCandidatePicker({
             },
           ])
         )}
+      {button(
+        t(crewOpen ? "storyCandidates.hideCrew" : "storyCandidates.importCrew"),
+        () => setCrewOpen((value) => !value),
+        locked || loading || !!pending
+      )}
+      {crewOpen && active && (
+        <CrewCandidateList
+          key={`${projectId}:${auth.generation}`}
+          scope={scope}
+          filter="image"
+          savedIds={[]}
+          disabled={locked || loading || op.busy || !!pending}
+          add={chooseCrew}
+          selectionLabel={t("assetEdit.useImage")}
+        />
+      )}
       {!loading && !items.length && <ThemedText>{t("assetEdit.noCandidates")}</ThemedText>}
       {items.map((item, index) => (
         <View key={item.asset.id} style={{ gap: 4 }}>

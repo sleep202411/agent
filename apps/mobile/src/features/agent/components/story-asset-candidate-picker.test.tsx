@@ -11,6 +11,15 @@ const h = vi.hoisted(() => ({
   clear: vi.fn(),
   select: vi.fn(),
   close: vi.fn(),
+  resolveCrew: vi.fn(),
+}));
+vi.mock("../api/story-crew-candidate-selection", () => ({ resolveCrewCandidate: h.resolveCrew }));
+vi.mock("./story-crew-candidate-list", () => ({
+  CrewCandidateList: ({ add, disabled }: { add: (id: string) => void; disabled: boolean }) => (
+    <button disabled={disabled} onClick={() => add("crew-media")}>
+      Crew choice
+    </button>
+  ),
 }));
 vi.mock("@/auth", () => ({ useAuth: () => ({ generation: 1, user: { id: "user" } }) }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => 1 }));
@@ -20,6 +29,7 @@ vi.mock("../api/story-timeline-media", () => ({ fetchTimelineCandidates: h.load 
 vi.mock("../api/story-timeline-upload", () => ({
   timelineUpload: () => ({ read: h.read, pick: h.pick, resume: h.resume, clear: h.clear }),
 }));
+vi.mock("expo-modules-core", () => ({ uuid: { v4: () => "key" } }));
 vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
@@ -150,4 +160,28 @@ it("retires an unfinished image pick when the route loses focus", async () => {
   await act(async () => finish({ asset: { id: "retired", kind: "image" } }));
   expect(host.textContent).not.toContain("retired");
   expect(h.select).not.toHaveBeenCalled();
+});
+
+it("imports a Crew image before selecting its confirmed media ID", async () => {
+  h.resolveCrew.mockResolvedValue(image);
+  await render();
+  await click("storyCandidates.importCrew");
+  await click("Crew choice");
+  expect(h.resolveCrew).toHaveBeenCalledWith(
+    expect.anything(),
+    "user",
+    "crew-media",
+    ["image"],
+    "key",
+    expect.any(AbortSignal)
+  );
+  expect(h.select).toHaveBeenCalledWith("image");
+});
+it("retains the picker and does not bind after failed import", async () => {
+  h.resolveCrew.mockRejectedValue(Error("Import interrupted"));
+  await render();
+  await click("storyCandidates.importCrew");
+  await click("Crew choice");
+  expect(h.select).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Import interrupted");
 });

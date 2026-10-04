@@ -1,3 +1,5 @@
+import { CrewCandidateList } from "./story-crew-candidate-list";
+import { resolveCrewCandidate } from "../api/story-crew-candidate-selection";
 import { ConversationVideo } from "@/features/services/conversation-video";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -34,13 +36,25 @@ export function TimelineMediaPicker({
   const t = useTranslations(),
     theme = useTheme();
   const active = useScreenActive();
+  const crewOperation = useMemo(
+    () => ({
+      identity: `${scope.projectId}:${scope.chapterId}:${scope.generation}:${active}`,
+      controller: new AbortController(),
+    }),
+    [scope.projectId, scope.chapterId, scope.generation, active]
+  );
+  useEffect(() => () => crewOperation.controller.abort(), [crewOperation]);
+  const [crewOpen, setCrewOpen] = useState(false);
   const [preview, setPreview] = useState<string>();
   const store = useMemo(() => timelineMediaPending(scope, userId), [scope, userId]);
   const uploads = useMemo(() => timelineUpload(scope, userId), [scope, userId]);
   const uploadAbort = useRef<AbortController | null>(null);
-  useEffect(() => () => uploadAbort.current?.abort(), [uploads]);
+  useEffect(() => () => uploadAbort.current?.abort(), [uploads, active]);
   const [uploadPending, setUploadPending] = useState<TimelineUploadCheckpoint | null>(null);
-  const op = useAuthFormOperation(`${sequenceId}:${clip?.id ?? "recovery"}`, true);
+  const op = useAuthFormOperation(
+    `${crewOperation.identity}:${sequenceId}:${clip?.id ?? "recovery"}`,
+    active
+  );
   const [items, setItems] = useState<TimelineCandidate[]>([]),
     [pending, setPending] = useState<TimelineMediaCommand | null>(null),
     [loading, setLoading] = useState(true),
@@ -69,11 +83,23 @@ export function TimelineMediaPicker({
       });
     return () => c.abort();
   }, [scope, store, uploads, revision]);
-  const submit = (candidate?: TimelineCandidate) => {
-    if (!canEdit) return;
+  const submit = (candidate?: TimelineCandidate, crewId?: string) => {
+    if (!canEdit || !active || (crewId && (loading || uploadPending))) return;
     void op.run(
       async () => {
+        setError(undefined);
         let command = pending;
+        if (!command && crewId) {
+          candidate = await resolveCrewCandidate(
+            scope,
+            userId,
+            crewId,
+            ["image", "video"],
+            uuid.v4(),
+            crewOperation.controller.signal
+          );
+          crewOperation.controller.signal.throwIfAborted();
+        }
         if (!command) {
           if (!clip?.id || !candidate || !["image", "video"].includes(candidate.asset.kind))
             throw Error("Select a saved clip and project image or video.");
@@ -133,7 +159,7 @@ export function TimelineMediaPicker({
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
-      disabled={disabled || op.busy}
+      disabled={disabled || op.busy || !active}
       onPress={onPress}
       style={{ paddingVertical: 12, opacity: disabled || op.busy ? 0.5 : 1 }}
     >
@@ -206,6 +232,23 @@ export function TimelineMediaPicker({
                 },
               ])
             )}
+          {canEdit &&
+            button(
+              t(crewOpen ? "storyCandidates.hideCrew" : "storyCandidates.importCrew"),
+              () => setCrewOpen((value) => !value),
+              loading || !!uploadPending
+            )}
+          {crewOpen && active && canEdit && (
+            <CrewCandidateList
+              key={`${scope.projectId}:${scope.generation}`}
+              scope={scope}
+              filter="visual"
+              savedIds={[]}
+              disabled={loading || op.busy || !clip?.id || !!uploadPending}
+              add={(id) => submit(undefined, id)}
+              selectionLabel={t("timeline.useMedia")}
+            />
+          )}
           {!loading && !items.length && <ThemedText>{t("timeline.noProjectMedia")}</ThemedText>}
           {items.map((item) => (
             <View

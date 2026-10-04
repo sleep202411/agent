@@ -8,7 +8,7 @@ import { useAuth } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
-import { loadStoryCrewCandidates } from "../api/story-crew-candidates";
+import { CrewCandidateList } from "./story-crew-candidate-list";
 import { useStoryChapterContext } from "../context/story-chapter-context";
 import {
   storyCandidates,
@@ -173,7 +173,7 @@ export function StoryCandidatesPanel({
               run={() => setCrewOpen((value) => !value)}
             />
             {crewOpen && (
-              <CrewCandidates
+              <CrewCandidateList
                 key={`${projectId}:${generation}`}
                 scope={scope}
                 filter={filter}
@@ -304,82 +304,5 @@ function Action({
     >
       <ThemedText type="smallBold">{label}</ThemedText>
     </Pressable>
-  );
-}
-
-function CrewCandidates({
-  scope,
-  savedIds,
-  filter,
-  disabled,
-  add,
-}: {
-  scope: CandidateScope;
-  savedIds: string[];
-  filter: "all" | "image" | "video" | "audio";
-  disabled: boolean;
-  add: (id: string) => void;
-}) {
-  const t = useTranslations(),
-    theme = useTheme();
-  const [result, setResult] = useState<Awaited<ReturnType<typeof loadStoryCrewCandidates>>>();
-  const [error, setError] = useState<string>();
-  const [revision, setRevision] = useState(0);
-  const { projectId, generation } = scope;
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadStoryCrewCandidates({ projectId, generation }, controller.signal)
-      .then((value) => {
-        if (!controller.signal.aborted) setResult(value);
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
-      });
-    return () => controller.abort();
-  }, [projectId, generation, revision]);
-  const items =
-    result?.items.filter((item) => filter === "all" || item.media?.kind === filter) ?? [];
-  return (
-    <View style={{ gap: 8 }}>
-      {!result && !error && <ActivityIndicator />}
-      {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      {result && (
-        <ThemedText type="smallBold">{result.crew?.name ?? t("storyCandidates.noCrew")}</ThemedText>
-      )}
-      {result?.crew && !items.length && (
-        <ThemedText type="small">{t("storyCandidates.crewEmpty")}</ThemedText>
-      )}
-      {items.map((item) => (
-        <View
-          key={item.id}
-          style={{ padding: 12, borderRadius: 8, backgroundColor: theme.backgroundElement }}
-        >
-          <ThemedText type="smallBold">{item.name}</ThemedText>
-          <ThemedText type="small" themeColor="textSecondary">
-            {item.media!.contentType}
-          </ThemedText>
-          {savedIds.includes(item.media!.id) ? (
-            <ThemedText type="small">{t("storyCandidates.saved")}</ThemedText>
-          ) : (
-            <Action
-              label={t("storyCandidates.save")}
-              disabled={disabled}
-              run={() => add(item.media!.id)}
-            />
-          )}
-        </View>
-      ))}
-      {(result || error) && (
-        <Action
-          label={t(error ? "common.retry" : "storyCandidates.refresh")}
-          disabled={disabled}
-          run={() => {
-            setResult(undefined);
-            setError(undefined);
-            setRevision((value) => value + 1);
-          }}
-        />
-      )}
-    </View>
   );
 }
