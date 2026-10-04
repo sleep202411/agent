@@ -9,6 +9,7 @@ import {
 } from "@repo/shared/experience-runtime";
 import { ExperiencePlayer } from "./experience-player";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
+import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
 const h = vi.hoisted(() => ({
   active: true,
   stage: {} as Record<string, (event: any) => any>,
@@ -17,6 +18,8 @@ const h = vi.hoisted(() => ({
   unlock: vi.fn().mockResolvedValue(undefined),
   suspend: vi.fn().mockResolvedValue(undefined),
   effects: vi.fn(),
+  checkpointAudio: vi.fn(() => ({ playbacks: [], busGains: {} })),
+  settled: null as null | ((ids: string[]) => void),
   dispatch: vi.fn(),
   outcome: vi.fn(),
   mediaPresenting: true,
@@ -27,6 +30,7 @@ const h = vi.hoisted(() => ({
     onPlaybackRefused: () => void;
     onPlaybackInterrupted: () => void;
     onPlaybackHandle: (id: string, handle: unknown) => void;
+    onPlaybackProgress: (value: ExperienceMediaCheckpoint) => void;
   },
 }));
 vi.mock("react-native", () => ({
@@ -59,7 +63,12 @@ vi.mock("@/hooks/use-app-active", async () => {
   return { useScreenActive: () => h.active, ScreenActiveGateContext: createContext(true) };
 });
 vi.mock("../hooks/use-experience-audio-host", () => ({
-  useExperienceAudioHost: () => ({ unlock: h.unlock, suspend: h.suspend, applyEffects: h.effects }),
+  useExperienceAudioHost: () => ({
+    unlock: h.unlock,
+    suspend: h.suspend,
+    applyEffects: h.effects,
+    checkpoint: h.checkpointAudio,
+  }),
 }));
 vi.mock("../hooks/use-experience-preload", () => ({
   useExperiencePreload: () => ({ done: true }),
@@ -79,12 +88,15 @@ vi.mock("./experience-spatial-layer", async () => {
     ExperienceSpatialLayer: ({
       onTimelineHoldGateChange,
       onGestureTapGuardChange,
+      onSettledGestureIdsChange,
     }: {
       onTimelineHoldGateChange: (hold: boolean) => void;
       onGestureTapGuardChange: typeof h.tapGuard;
+      onSettledGestureIdsChange: typeof h.settled;
     }) => {
       h.hold = onTimelineHoldGateChange;
       h.tapGuard = onGestureTapGuardChange;
+      h.settled = onSettledGestureIdsChange;
       h.spatialPresenting = useContext(ScreenActiveGateContext);
       return null;
     },
@@ -139,7 +151,8 @@ const copy = { pause: "Pause", resume: "Resume", paused: "Paused" } as Experienc
 const loader = () => Promise.resolve({ tokens: {} } as ExperienceThemeConfig);
 let root: Root;
 let container: HTMLDivElement;
-const render = (active = true, manifest = runtime) =>
+const captured = vi.fn();
+const render = (active = true, manifest = runtime, capture = false) =>
   act(async () =>
     root.render(
       <ExperiencePlayer
@@ -149,6 +162,7 @@ const render = (active = true, manifest = runtime) =>
         randomSeed="fixed"
         loadTheme={loader}
         active={active}
+        onCheckpoint={capture ? captured : undefined}
       />
     )
   );
@@ -163,6 +177,7 @@ const click = (label: string) =>
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
   h.active = true;
+  h.state = { currentSceneId: "scene" };
   h.stage = {};
   h.tapGuard = null;
   vi.clearAllMocks();
@@ -170,6 +185,82 @@ beforeEach(() => {
   h.outcome.mockImplementation(() => ({ state: h.state, effects: [] }));
   container = document.createElement("div");
   root = createRoot(container);
+});
+it("captures engine, audio, media and settled gestures only after Start, then records pause", async () => {
+  await render(true, runtime, true);
+  expect(captured).not.toHaveBeenCalled();
+  await click("Start");
+  expect(captured.mock.calls.at(-1)![0]).toMatchObject({
+    state: h.state,
+    events: [],
+    playback: {
+      sceneId: "scene",
+      sceneTimeMs: 0,
+      audio: { playbacks: [], busGains: {} },
+      media: [],
+    },
+  });
+  const media = {
+    rendererInstanceId: "video",
+    assetId: "clip",
+    positionMs: 500,
+  } as ExperienceMediaCheckpoint;
+  await act(async () => {
+    h.video.onPlaybackProgress(media);
+    h.settled!(["gesture.one"]);
+  });
+  const snapshot = captured.mock.calls.at(-1)![0];
+  expect(snapshot.playback).toMatchObject({ media: [media], settledGestureIds: ["gesture.one"] });
+  media.positionMs = 1000;
+  expect(snapshot.playback.media[0].positionMs).toBe(500);
+  await pausePicture();
+  expect(captured.mock.calls.at(-1)![1]).toBe("pause");
+  expect(captured.mock.calls.at(-1)![0].playback.media[0].positionMs).toBe(500);
+});
+it("does not include media belonging to a different renderer", async () => {
+  await render(true, runtime, true);
+  await click("Start");
+  await act(async () => {
+    h.video.onPlaybackProgress({ rendererInstanceId: "old-scene" } as ExperienceMediaCheckpoint);
+  });
+  expect(captured.mock.calls.at(-1)![0].playback.media).toEqual([]);
+});
+it("rejects late media and gesture updates after re-entering the same scene", async () => {
+  await render(true, runtime, true);
+  await click("Start");
+  const oldMedia = h.video.onPlaybackProgress;
+  const oldGestures = h.settled!;
+  await act(async () => {
+    oldMedia({ rendererInstanceId: "video", positionMs: 500 } as ExperienceMediaCheckpoint);
+    oldGestures(["old-gesture"]);
+  });
+  h.outcome.mockImplementationOnce(() => ({
+    state: { ...h.state },
+    effects: [{ kind: "scene.changed", fromSceneId: "scene", toSceneId: "scene" }],
+  }));
+  await act(async () => h.video.onCompleted());
+  expect(captured.mock.calls.at(-1)![1]).toBe("transition");
+  expect(captured.mock.calls.at(-1)![0].playback).toMatchObject({
+    media: [],
+    settledGestureIds: [],
+    sceneTimeMs: 0,
+  });
+  await act(async () => {
+    oldMedia({ rendererInstanceId: "video", positionMs: 900 } as ExperienceMediaCheckpoint);
+    oldGestures(["late-gesture"]);
+  });
+  await pausePicture();
+  expect(captured.mock.calls.at(-1)![0].playback).toMatchObject({
+    media: [],
+    settledGestureIds: [],
+  });
+  await act(async () => {
+    h.video.onPlaybackProgress({
+      rendererInstanceId: "video",
+      positionMs: 100,
+    } as ExperienceMediaCheckpoint);
+  });
+  expect(captured.mock.calls.at(-1)![0].playback.media[0].positionMs).toBe(100);
 });
 afterEach(async () => {
   await act(async () => root.unmount());

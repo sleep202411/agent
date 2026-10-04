@@ -1,4 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Pressable,
   ScrollView,
@@ -51,6 +60,12 @@ import type { ExperiencePlayerAccess } from "../lib/experience-player-access";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import { createExperienceRuntime } from "../lib/experience-runtime-host";
 import {
+  scenePlaybackSignature,
+  type ExperienceCheckpointReason,
+  type ExperienceMediaCheckpoint,
+} from "../lib/experience-playback-checkpoint";
+import type { ExperienceSaveCheckpoint } from "../lib/experience-save-checkpoint";
+import {
   loadExperienceTheme as defaultLoadExperienceTheme,
   type ExperienceThemeLoader,
 } from "../lib/experience-theme-loader";
@@ -86,6 +101,7 @@ export interface ExperiencePlayerProps {
   active?: boolean;
   worldScope?: WorldPreviewScope;
   reporter?: PlaySessionReporter;
+  onCheckpoint?: (checkpoint: ExperienceSaveCheckpoint, reason: ExperienceCheckpointReason) => void;
 }
 
 /**
@@ -104,6 +120,7 @@ export function ExperiencePlayer({
   active = true,
   worldScope,
   reporter,
+  onCheckpoint,
 }: ExperiencePlayerProps) {
   const [restartEpoch, setRestartEpoch] = useState(0);
   const [randomSeed, setRandomSeed] = useState(
@@ -173,6 +190,7 @@ export function ExperiencePlayer({
       loadTheme={loadTheme}
       active={active}
       worldScope={worldScope}
+      onCheckpoint={onCheckpoint}
       onRestart={() => {
         setRandomSeed(
           globalThis.crypto?.randomUUID?.() ?? `experience-player:${Date.now()}:${restartEpoch + 1}`
@@ -196,6 +214,7 @@ function ActiveExperienceRuntimePlayer({
   onRestart,
   access,
   worldScope,
+  onCheckpoint,
 }: {
   manifest: ExperienceRuntimeManifest;
   controller: ExperienceRuntimeController;
@@ -209,10 +228,33 @@ function ActiveExperienceRuntimePlayer({
   onRestart: () => void;
   access?: ExperiencePlayerAccess;
   worldScope?: WorldPreviewScope;
+  onCheckpoint?: ExperiencePlayerProps["onCheckpoint"];
 }) {
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
-  const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(() => new Set());
+  const mediaCheckpointsRef = useRef(new Map<string, ExperienceMediaCheckpoint>());
+  const settledGestureIdsRef = useRef<string[]>([]);
+  const pendingCheckpointEventsRef = useRef<ExperienceRuntimeEvent[]>([]);
+  const fixedClockEndedRef = useRef(false);
+  const [checkpointRevision, setCheckpointRevision] = useState(0);
+  const checkpointEpochRef = useRef(0);
   const [sceneEpoch, setSceneEpoch] = useState(0);
+  const recordMediaCheckpoint = useCallback(
+    (checkpoint: ExperienceMediaCheckpoint) => {
+      if (sceneEpoch !== checkpointEpochRef.current) return;
+      mediaCheckpointsRef.current.set(checkpoint.rendererInstanceId, structuredClone(checkpoint));
+      setCheckpointRevision((value) => value + 1);
+    },
+    [sceneEpoch]
+  );
+  const recordSettledGestures = useCallback(
+    (ids: string[]) => {
+      if (sceneEpoch !== checkpointEpochRef.current) return;
+      settledGestureIdsRef.current = [...ids];
+      setCheckpointRevision((value) => value + 1);
+    },
+    [sceneEpoch]
+  );
+  const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sceneTimeMs, setSceneTimeMs] = useState(0);
   const [theme, setTheme] = useState<ExperienceThemeConfig | null>(null);
   const [started, setStarted] = useState(false);
@@ -257,6 +299,7 @@ function ActiveExperienceRuntimePlayer({
     unlock: unlockAudio,
     suspend: suspendAudio,
     applyEffects: applyAudioEffects,
+    checkpoint: checkpointAudio,
   } = useExperienceAudioHost(manifest, playbackLocale, setRuntimeError);
   const timelineCursorRef = useRef<ExperienceTimelineCursor>(
     createExperienceTimelineCursor(runtimeState.currentSceneId)
@@ -345,6 +388,10 @@ function ActiveExperienceRuntimePlayer({
         return next;
       });
       if (sceneChangeEffects.length > 0) {
+        checkpointEpochRef.current += sceneChangeEffects.length;
+        mediaCheckpointsRef.current.clear();
+        settledGestureIdsRef.current = [];
+        fixedClockEndedRef.current = false;
         setSceneEpoch((value) => value + sceneChangeEffects.length);
         setSceneTimeMs(0);
         setTimelineHoldGate(false);
@@ -363,10 +410,12 @@ function ActiveExperienceRuntimePlayer({
       const attempt = async (): Promise<boolean> => {
         try {
           applyResult(operation());
+          pendingCheckpointEventsRef.current = [];
           setRetryAccess(null);
           return true;
         } catch (error) {
           if (error instanceof ExperienceAccessRequiredError && access) {
+            pendingCheckpointEventsRef.current = structuredClone(error.events);
             accessPendingRef.current = true;
             setAccessPending(true);
             playbackHandlesRef.current.forEach((handle) => handle.pause());
@@ -513,6 +562,7 @@ function ActiveExperienceRuntimePlayer({
       }
       const immediate = events.filter((event) => !parked.includes(event));
       parkedGestureEventsRef.current.push(...parked);
+      setCheckpointRevision((value) => value + 1);
       if (immediate.length > 0) void run(() => controller.dispatch(immediate));
     },
     [controller, manifest, run]
@@ -576,6 +626,7 @@ function ActiveExperienceRuntimePlayer({
       }
       if (ended) return;
       ended = true;
+      fixedClockEndedRef.current = true;
       emitRuntimeEvents([{ type: "scene.clock-ended", sourceId: clockScene.sceneId }]);
     };
 
@@ -629,6 +680,67 @@ function ActiveExperienceRuntimePlayer({
     // Failing to hand the session back on the way out costs the viewer nothing.
     suspendAudio().catch(() => undefined);
   }, [presenting, started, suspendAudio, unlockAudio]);
+
+  const checkpointSceneRef = useRef<string | null>(null);
+  const emittedCheckpointEpochRef = useRef<number | null>(null);
+  const emitCheckpoint = useEffectEvent(() => {
+    if (!started || !onCheckpoint) return;
+    const currentScene = findGraphNode(manifest, runtimeState.currentSceneId);
+    const media = [...mediaCheckpointsRef.current.values()].filter(
+      (item) =>
+        currentScene?.kind === "scene" &&
+        currentScene.renderers.some((renderer) => renderer.instanceId === item.rendererInstanceId)
+    );
+    const reason: ExperienceCheckpointReason = accessPending
+      ? "access"
+      : !presenting
+        ? "pause"
+        : checkpointSceneRef.current !== runtimeState.currentSceneId ||
+            emittedCheckpointEpochRef.current !== sceneEpoch
+          ? "transition"
+          : "progress";
+    checkpointSceneRef.current = runtimeState.currentSceneId;
+    emittedCheckpointEpochRef.current = sceneEpoch;
+    const audio = checkpointAudio();
+    onCheckpoint(
+      structuredClone({
+        state: runtimeState,
+        events: pendingCheckpointEventsRef.current,
+        ...(currentScene?.kind === "scene"
+          ? {
+              playback: {
+                version: 1 as const,
+                sceneId: currentScene.sceneId,
+                sceneSignature: scenePlaybackSignature(currentScene),
+                sceneTimeMs,
+                fixedClockEnded: fixedClockEndedRef.current,
+                cursor: timelineCursorRef.current,
+                openRendererIds: [...openRendererIds],
+                settledGestureIds: settledGestureIdsRef.current,
+                parkedEvents: parkedGestureEventsRef.current,
+                media,
+                playbackEnabled: playbackEnabledRef.current,
+                rate: 1 as const,
+                ...(audio ? { audio } : {}),
+              },
+            }
+          : {}),
+      }),
+      reason
+    );
+  });
+  useEffect(() => {
+    emitCheckpoint();
+  }, [
+    started,
+    runtimeState,
+    sceneTimeMs,
+    openRendererIds,
+    presenting,
+    accessPending,
+    checkpointRevision,
+    sceneEpoch,
+  ]);
 
   const handleStart = () => {
     if (starting || started) return;
@@ -866,6 +978,7 @@ function ActiveExperienceRuntimePlayer({
                 onPlaybackInterrupted={() => setViewerPaused(true)}
                 onPlaybackRefused={() => setViewerPaused(true)}
                 onPlaybackHandle={registerPlaybackHandle}
+                onPlaybackProgress={recordMediaCheckpoint}
                 worldScope={worldScope}
                 onWorldEndHandle={registerWorldEndHandle}
               />
@@ -874,7 +987,7 @@ function ActiveExperienceRuntimePlayer({
         ))}
         {scene && started && !endingId && !accessPending && !retryAccess ? (
           <ExperienceSpatialLayer
-            key={scene.sceneId}
+            key={`${scene.sceneId}:${sceneEpoch}`}
             manifest={manifest}
             scene={scene}
             runtimeState={runtimeState}
@@ -883,6 +996,7 @@ function ActiveExperienceRuntimePlayer({
             viewerLocale={locale}
             orientation={EXPERIENCE_PLAY_ORIENTATION}
             onEvents={emitRuntimeEvents}
+            onSettledGestureIdsChange={recordSettledGestures}
             onRuntimeError={setRuntimeError}
             onTimelineHoldGateChange={setTimelineHoldGate}
             onGestureTapGuardChange={registerGestureTapGuard}
@@ -957,6 +1071,7 @@ function RendererPanel({
   onPlaybackInterrupted,
   worldScope,
   onWorldEndHandle,
+  onPlaybackProgress,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -978,6 +1093,7 @@ function RendererPanel({
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
   worldScope?: WorldPreviewScope;
   onWorldEndHandle: (instanceId: string, handle: (() => Promise<void>) | null) => void;
+  onPlaybackProgress: (checkpoint: ExperienceMediaCheckpoint) => void;
 }) {
   const defaultLocale = manifest.localization.defaultLocale;
 
@@ -1016,6 +1132,7 @@ function RendererPanel({
         onPlaybackInterrupted={onPlaybackInterrupted}
         onPlaybackRefused={onPlaybackRefused}
         onPlaybackHandle={onPlaybackHandle}
+        onPlaybackProgress={onPlaybackProgress}
       />
     );
   }

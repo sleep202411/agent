@@ -102,6 +102,7 @@ export function ExperienceSpatialLayer({
   onRuntimeError,
   onTimelineHoldGateChange,
   onGestureTapGuardChange,
+  onSettledGestureIdsChange,
 }: {
   manifest: ExperienceRuntimeManifest;
   scene: ExperienceScene;
@@ -115,6 +116,7 @@ export function ExperienceSpatialLayer({
   onRuntimeError: (message: string) => void;
   onTimelineHoldGateChange?: (gating: boolean) => void;
   onGestureTapGuardChange?: (guard: ((x: number, y: number) => boolean) | null) => void;
+  onSettledGestureIdsChange?: (ids: string[]) => void;
 }) {
   const [viewportSize, setViewportSize] = useState<ExperienceSize | null>(null);
   const layerOriginRef = useRef({ x: 0, y: 0 });
@@ -151,14 +153,18 @@ export function ExperienceSpatialLayer({
     return () => onTimelineHoldGateChange?.(false);
   }, [onTimelineHoldGateChange]);
 
-  const markGestureSettled = useCallback((gestureId: string) => {
-    if (settledRef.current.has(gestureId)) return false;
-    const next = new Set(settledRef.current);
-    next.add(gestureId);
-    settledRef.current = next;
-    setSettledGestureIds(next);
-    return true;
-  }, []);
+  const markGestureSettled = useCallback(
+    (gestureId: string) => {
+      if (settledRef.current.has(gestureId)) return false;
+      const next = new Set(settledRef.current);
+      next.add(gestureId);
+      settledRef.current = next;
+      setSettledGestureIds(next);
+      onSettledGestureIdsChange?.([...next]);
+      return true;
+    },
+    [onSettledGestureIdsChange]
+  );
 
   const sceneHandlesGestureEvent = useCallback(
     (gestureId: string, eventType: "gesture.cancelled" | "gesture.timed-out") =>
