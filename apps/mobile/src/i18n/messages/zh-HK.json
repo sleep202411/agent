@@ -5193,5 +5193,20 @@
   "storyCanvas.shot.option.crane": "升降",
   "storyCanvas.shot.reorder": "調整鏡頭順序",
   "storyCanvas.shot.position": "鏡頭位置",
-  "storyCanvas.shot.positionHelp": "選擇目標位置。名稱顯示目前順序。"
+  "storyCanvas.shot.positionHelp": "選擇目標位置。名稱顯示目前順序。",
+  "storyCanvas.media.title": "鏡頭媒體",
+  "storyCanvas.media.attach": "連接來源",
+  "storyCanvas.media.detach": "移除連接",
+  "storyCanvas.media.prefer": "設為首選畫面",
+  "storyCanvas.media.detachBody": "從鏡頭中移除此連接？來源媒體仍會保留。",
+  "storyCanvas.media.attached": "已連接媒體",
+  "storyCanvas.media.sources": "畫布來源",
+  "storyCanvas.media.frame": "畫面",
+  "storyCanvas.media.clip": "影片",
+  "storyCanvas.media.preferred": "首選畫面",
+  "storyCanvas.media.pending": "等待來源媒體",
+  "storyCanvas.media.unavailable": "預覽不可用",
+  "storyCanvas.media.full": "此鏡頭的媒體位置已滿。",
+  "storyCanvas.media.resume": "繼續媒體修改",
+  "storyCanvas.media.automatic": "自動使用第一張畫面"
 }

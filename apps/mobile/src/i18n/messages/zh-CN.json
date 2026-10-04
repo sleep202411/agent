@@ -5193,5 +5193,20 @@
   "storyCanvas.shot.option.crane": "升降",
   "storyCanvas.shot.reorder": "调整镜头顺序",
   "storyCanvas.shot.position": "镜头位置",
-  "storyCanvas.shot.positionHelp": "选择目标位置。名称显示当前顺序。"
+  "storyCanvas.shot.positionHelp": "选择目标位置。名称显示当前顺序。",
+  "storyCanvas.media.title": "镜头媒体",
+  "storyCanvas.media.attach": "连接来源",
+  "storyCanvas.media.detach": "移除连接",
+  "storyCanvas.media.prefer": "设为首选画面",
+  "storyCanvas.media.detachBody": "从镜头中移除此连接？来源媒体仍会保留。",
+  "storyCanvas.media.attached": "已连接媒体",
+  "storyCanvas.media.sources": "画布来源",
+  "storyCanvas.media.frame": "画面",
+  "storyCanvas.media.clip": "视频",
+  "storyCanvas.media.preferred": "首选画面",
+  "storyCanvas.media.pending": "等待来源媒体",
+  "storyCanvas.media.unavailable": "预览不可用",
+  "storyCanvas.media.full": "此镜头的媒体位置已满。",
+  "storyCanvas.media.resume": "继续媒体修改",
+  "storyCanvas.media.automatic": "自动使用第一张画面"
 }

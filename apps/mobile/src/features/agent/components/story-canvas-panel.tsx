@@ -10,6 +10,8 @@ import { useStoryChapterContext } from "../context/story-chapter-context";
 import type { CandidateScope } from "../api/story-candidates-api";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCandidatesPanel } from "./story-candidates-panel";
+import { StoryCanvasMediaForm } from "./story-canvas-media-form";
+import { canvasMediaDraftStore } from "../lib/story-canvas-media-draft";
 import { canvasDraftStore } from "../lib/story-canvas-draft";
 import { CANVAS_SHOT_FIELDS, isCanvasShotOption } from "../../../../canvas-editor/shot-fields";
 import { canvasOverview } from "../lib/story-canvas-overview";
@@ -66,6 +68,8 @@ export function StoryCanvasPanel({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [mediaNode, setMediaNode] = useState<string>();
+  const [mediaRecovery, setMediaRecovery] = useState<string>();
   const [expandedShot, setExpandedShot] = useState<string>();
   const [creating, setCreating] = useState(false),
     [createRecovery, setCreateRecovery] = useState(false);
@@ -84,6 +88,7 @@ export function StoryCanvasPanel({
     [selected, setSelected] = useState<string>();
   const reload = () => {
     setRecovery(undefined);
+    setMediaRecovery(undefined);
     setCreateRecovery(false);
     setOverview(undefined);
     setLoaded(undefined);
@@ -131,6 +136,10 @@ export function StoryCanvasPanel({
                   userId
                 ).read();
                 setRecovery(draft?.edit);
+                setMediaRecovery(
+                  canvasMediaDraftStore({ ...scope, documentId: value.documentId }, userId).read()
+                    ?.edit.nodeId
+                );
                 setCreateRecovery(
                   !!canvasCreateDraftStore(
                     { ...scope, documentId: value.documentId },
@@ -165,6 +174,15 @@ export function StoryCanvasPanel({
             <ThemedText type="small">
               {t(createRecovery ? "storyCanvas.resumeCreate" : "storyCanvas.create")}
             </ThemedText>
+          </Pressable>
+        )}
+        {mediaRecovery && canEdit && !loading && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setMediaNode(mediaRecovery)}
+            style={{ paddingVertical: 10 }}
+          >
+            <ThemedText type="small">{t("storyCanvas.media.resume")}</ThemedText>
           </Pressable>
         )}
         {recovery && canEdit && !loading && (
@@ -235,6 +253,15 @@ export function StoryCanvasPanel({
                           >
                             <ThemedText type="small">{t("storyCanvas.shot.details")}</ThemedText>
                           </Pressable>
+                          {expandedShot === node.id && (
+                            <Pressable
+                              accessibilityRole="button"
+                              onPress={() => setMediaNode(node.id)}
+                              style={{ paddingVertical: 10 }}
+                            >
+                              <ThemedText type="small">{t("storyCanvas.media.title")}</ThemedText>
+                            </Pressable>
+                          )}
                           {expandedShot === node.id && canEdit && (
                             <Pressable
                               accessibilityRole="button"
@@ -352,6 +379,23 @@ export function StoryCanvasPanel({
             userId={userId}
             mediaAssetId={selected}
             close={() => setSelected(undefined)}
+          />
+        )}
+        {mediaNode && loaded && writeScope && (
+          <StoryCanvasMediaForm
+            scope={writeScope}
+            userId={userId}
+            loaded={loaded}
+            nodeId={mediaNode}
+            canEdit={canEdit}
+            close={() => {
+              setMediaNode(undefined);
+              reload();
+            }}
+            saved={() => {
+              setMediaNode(undefined);
+              reload();
+            }}
           />
         )}
         {creating && writeScope && canEdit && (

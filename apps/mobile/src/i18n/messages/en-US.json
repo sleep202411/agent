@@ -5193,5 +5193,20 @@
   "storyCanvas.shot.option.crane": "Crane",
   "storyCanvas.shot.reorder": "Reorder shot",
   "storyCanvas.shot.position": "Shot position",
-  "storyCanvas.shot.positionHelp": "Choose the destination position. Names show the current order."
+  "storyCanvas.shot.positionHelp": "Choose the destination position. Names show the current order.",
+  "storyCanvas.media.title": "Shot media",
+  "storyCanvas.media.attach": "Attach source",
+  "storyCanvas.media.detach": "Remove connection",
+  "storyCanvas.media.prefer": "Use as preferred frame",
+  "storyCanvas.media.detachBody": "Remove this connection from the shot? The source media will remain available.",
+  "storyCanvas.media.attached": "Attached media",
+  "storyCanvas.media.sources": "Canvas sources",
+  "storyCanvas.media.frame": "Frame",
+  "storyCanvas.media.clip": "Clip",
+  "storyCanvas.media.preferred": "Preferred frame",
+  "storyCanvas.media.pending": "Waiting for source media",
+  "storyCanvas.media.unavailable": "Preview unavailable",
+  "storyCanvas.media.full": "This shot’s media slot is full.",
+  "storyCanvas.media.resume": "Resume media change",
+  "storyCanvas.media.automatic": "Use the first frame automatically"
 }

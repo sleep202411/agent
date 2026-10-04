@@ -1,0 +1,101 @@
+import { z } from "zod";
+import type { CanvasSnapshot } from "../../../../canvas-editor/protocol";
+const kinds: Record<string, "image" | "video"> = {
+  image: "image",
+  panorama: "image",
+  prompt: "image",
+  video: "video",
+  videoAsset: "video",
+};
+const nodeSchema = z.object({ id: z.string(), type: z.string(), data: z.record(z.unknown()) });
+export type CanvasMediaItem = {
+  key: string;
+  edgeId?: string;
+  sourceId?: string;
+  name: string;
+  kind: "image" | "video";
+  url?: string;
+  preferred?: boolean;
+  pending?: boolean;
+};
+function mediaUrl(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return ["https:", "http:"].includes(url.protocol) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+export function canvasMediaView(snapshot: CanvasSnapshot, nodeId: string) {
+  const shot = nodeSchema.parse(snapshot.nodes[nodeId]);
+  if (shot.id !== nodeId || shot.type !== "shot") throw Error("Canvas shot is unavailable.");
+  const refs = z.record(z.array(z.record(z.unknown()))).parse(shot.data.references ?? {});
+  const sources: CanvasMediaItem[] = Object.values(snapshot.nodes).flatMap((raw) => {
+    if (!raw || typeof raw !== "object" || !Object.hasOwn(kinds, (raw as { type: string }).type))
+      return [];
+    const node = nodeSchema.parse(raw);
+    const generation = ["prompt", "video"].includes(node.type);
+    const output = generation
+      ? (node.data.generation as { outputs?: { url?: unknown }[] } | undefined)?.outputs?.[0]
+      : undefined;
+    const name =
+      [node.data.label, node.data.name, node.data.prompt].find(
+        (v): v is string => typeof v === "string" && !!v.trim()
+      ) ?? node.id;
+    return [
+      {
+        key: node.id,
+        sourceId: node.id,
+        kind: kinds[node.type],
+        name,
+        url: mediaUrl(generation ? output?.url : node.data.src),
+        pending: !mediaUrl(generation ? output?.url : node.data.src),
+      },
+    ];
+  });
+  const attached: CanvasMediaItem[] = ["frame", "clip"].flatMap((field) =>
+    (refs[field] ?? []).map((ref, index) => {
+      const edgeId = typeof ref.edgeId === "string" ? ref.edgeId : undefined;
+      const sourceId = typeof ref.sourceNodeId === "string" ? ref.sourceNodeId : undefined;
+      return {
+        key: `${field}:${index}`,
+        edgeId,
+        sourceId,
+        kind: field === "frame" ? ("image" as const) : ("video" as const),
+        name:
+          typeof ref.name === "string" && ref.name
+            ? ref.name
+            : (sources.find((source) => source.sourceId === sourceId)?.name ??
+              sourceId ??
+              String(index + 1)),
+        url: mediaUrl(ref.url),
+        preferred: field === "frame" && !!edgeId && shot.data.preferredFrameEdgeId === edgeId,
+      };
+    })
+  );
+  const bound = new Set(attached.map((item) => item.edgeId));
+  for (const [id, raw] of Object.entries(snapshot.edges)) {
+    const edge = z.object({ id: z.literal(id), source: z.string(), target: z.string() }).parse(raw);
+    if (edge.target !== nodeId || bound.has(id)) continue;
+    const source = sources.find((item) => item.sourceId === edge.source);
+    if (source) attached.push({ ...source, key: id, edgeId: id, url: undefined, pending: true });
+  }
+  const connected = new Set(attached.map((item) => item.sourceId));
+  const frames = attached.filter((item) => item.kind === "image");
+  const clips = attached.filter((item) => item.kind === "video");
+  const explicit = frames.some((item) => item.preferred);
+  if (!explicit && frames[0] && !frames[0].pending) frames[0].preferred = true;
+  return {
+    title: typeof shot.data.label === "string" && shot.data.label ? shot.data.label : nodeId,
+    explicitPreferred:
+      typeof shot.data.preferredFrameEdgeId === "string" && !!shot.data.preferredFrameEdgeId,
+    attached,
+    sources: sources
+      .filter((item) => !connected.has(item.sourceId))
+      .map((item) => ({
+        ...item,
+        available: item.kind === "image" ? frames.length < 24 : clips.length < 1,
+      })),
+  };
+}
