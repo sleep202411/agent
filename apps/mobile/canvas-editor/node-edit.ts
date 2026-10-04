@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { isCanvasShotField, canvasShotValue } from "./shot-fields";
 import { removeCanvasNode } from "./node-remove";
 import { canvasNodeEditSchema, type CanvasNodeEdit } from "./schema";
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
@@ -20,10 +21,15 @@ export function editCanvasNode(state: string, raw: CanvasNodeEdit) {
       data = node.get("data");
     if (typeof type !== "string" || !(data instanceof Y.Map))
       throw Error("Canvas node data is invalid.");
+    const shotField = isCanvasShotField(edit.kind) ? edit.kind : undefined;
     const generation = generationTypes.has(type),
       media = mediaTypes.has(type);
     if (
-      (edit.kind === "text" ? type !== "note" : !generation && !media) ||
+      (shotField
+        ? type !== "shot"
+        : edit.kind === "text"
+          ? type !== "note"
+          : !generation && !media) ||
       (edit.kind === "prompt" && (!generation || data.get("locked") === true))
     )
       throw Error("This canvas node does not support that edit.");
@@ -33,14 +39,19 @@ export function editCanvasNode(state: string, raw: CanvasNodeEdit) {
     });
     doc.transact(() => {
       const field =
-        edit.kind === "text"
+        shotField ??
+        (edit.kind === "text"
           ? "text"
           : edit.kind === "prompt"
             ? "prompt"
             : generation
               ? "name"
-              : "label";
-      const value = edit.kind === "rename" ? edit.value.trim() || undefined : edit.value;
+              : "label");
+      const value = shotField
+        ? canvasShotValue(shotField, edit.value)
+        : edit.kind === "rename"
+          ? edit.value.trim() || undefined
+          : edit.value;
       if (data.get(field) !== value) data.set(field, value);
       // Web media rename also renames every matching inventory entry.
       const mediaAssetId = data.get("mediaAssetId");

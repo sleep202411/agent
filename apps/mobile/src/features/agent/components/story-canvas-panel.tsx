@@ -11,6 +11,7 @@ import type { CandidateScope } from "../api/story-candidates-api";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCandidatesPanel } from "./story-candidates-panel";
 import { canvasDraftStore } from "../lib/story-canvas-draft";
+import { CANVAS_SHOT_FIELDS, isCanvasShotOption } from "../../../../canvas-editor/shot-fields";
 import { canvasOverview } from "../lib/story-canvas-overview";
 import { canvasCreateDraftStore } from "../lib/story-canvas-create-draft";
 import { StoryCanvasCreateForm } from "./story-canvas-create-form";
@@ -65,6 +66,7 @@ export function StoryCanvasPanel({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [expandedShot, setExpandedShot] = useState<string>();
   const [creating, setCreating] = useState(false),
     [createRecovery, setCreateRecovery] = useState(false);
   const [attempt, setAttempt] = useState(0),
@@ -215,6 +217,51 @@ export function StoryCanvasPanel({
                       <ThemedText type="smallBold">{node.title}</ThemedText>
                       {!!node.text && node.text !== node.title && (
                         <ThemedText type="small">{node.text}</ThemedText>
+                      )}
+                      {node.type === "shot" && (
+                        <>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityState={{ expanded: expandedShot === node.id }}
+                            onPress={() =>
+                              setExpandedShot(expandedShot === node.id ? undefined : node.id)
+                            }
+                            style={{ paddingVertical: 10 }}
+                          >
+                            <ThemedText type="small">{t("storyCanvas.shot.details")}</ThemedText>
+                          </Pressable>
+                          {expandedShot === node.id &&
+                            CANVAS_SHOT_FIELDS.map((field) => {
+                              const data = (
+                                loaded?.snapshot.nodes[node.id] as {
+                                  data?: Record<string, unknown>;
+                                }
+                              )?.data;
+                              const value = data?.[field];
+                              const display =
+                                value == null || value === ""
+                                  ? t("storyCanvas.shot.unset")
+                                  : isCanvasShotOption(field, value)
+                                    ? t(`storyCanvas.shot.option.${value}`)
+                                    : String(value);
+                              return (
+                                <Pressable
+                                  key={field}
+                                  accessibilityRole="button"
+                                  disabled={!canEdit}
+                                  onPress={() => setEdit({ nodeId: node.id, kind: field })}
+                                  style={{ paddingVertical: 8, gap: 4 }}
+                                >
+                                  <ThemedText type="smallBold">
+                                    {t(`storyCanvas.shot.${field}`)}
+                                  </ThemedText>
+                                  <ThemedText type="small" numberOfLines={2}>
+                                    {display}
+                                  </ThemedText>
+                                </Pressable>
+                              );
+                            })}
+                        </>
                       )}
                       {canEdit && (
                         <View style={{ flexDirection: "row", gap: 16, flexWrap: "wrap" }}>

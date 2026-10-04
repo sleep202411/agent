@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isCanvasShotField } from "../../../../canvas-editor/shot-fields";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import { canvasNodeEditSchema, type CanvasNodeEdit } from "../../../../canvas-editor/schema";
@@ -46,6 +47,19 @@ export function canvasEditBaseline(
         targets,
         groups: snapshot.groups,
       }),
+    };
+  }
+  if (isCanvasShotField(edit.kind)) {
+    if (node.type !== "shot") throw Error("This canvas node does not support that edit.");
+    const value = node.data[edit.kind];
+    return {
+      nodeType: node.type,
+      baseValue:
+        value == null
+          ? ""
+          : edit.kind === "durationSeconds"
+            ? String(z.number().finite().parse(value))
+            : z.string().parse(value),
     };
   }
   if (edit.kind === "text") {

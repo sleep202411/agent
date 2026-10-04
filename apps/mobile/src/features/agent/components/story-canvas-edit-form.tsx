@@ -14,6 +14,11 @@ import {
   type CanvasWriteScope,
   type CanvasUpdateCommand,
 } from "../api/story-canvas-update";
+import {
+  isCanvasShotField,
+  canvasShotValue,
+  CANVAS_SHOT_OPTIONS,
+} from "../../../../canvas-editor/shot-fields";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
@@ -105,6 +110,19 @@ export function StoryCanvasEditForm({
     setError(undefined);
     try {
       store.write(draft);
+      if (isCanvasShotField(draft.edit.kind)) {
+        try {
+          canvasShotValue(draft.edit.kind, draft.edit.value);
+        } catch {
+          throw Error(
+            t(
+              draft.edit.kind === "durationSeconds"
+                ? "storyCanvas.shot.invalidDuration"
+                : "storyCanvas.shot.invalidOption"
+            )
+          );
+        }
+      }
       const pending = client.read();
       if (
         pending &&
@@ -126,8 +144,22 @@ export function StoryCanvasEditForm({
       { text: t("storyCanvas.remove"), style: "destructive", onPress: save },
     ]);
   };
-  const actionTitle =
-    draft?.edit.kind === "remove"
+  const shotField = draft && isCanvasShotField(draft.edit.kind) ? draft.edit.kind : undefined;
+  const shotOptions = shotField ? CANVAS_SHOT_OPTIONS[shotField] : undefined;
+  const changeValue = (value: string) => {
+    if (!current() || !draft || busy.current || draft.command) return;
+    const next = { ...draft, edit: { ...draft.edit, value } };
+    setDraft(next);
+    try {
+      store.write(next);
+      setError(undefined);
+    } catch (cause) {
+      failed(cause);
+    }
+  };
+  const actionTitle = shotField
+    ? (`storyCanvas.shot.${shotField}` as const)
+    : draft?.edit.kind === "remove"
       ? "storyCanvas.remove"
       : draft?.edit.kind === "text"
         ? "storyCanvas.editNote"
@@ -183,30 +215,48 @@ export function StoryCanvasEditForm({
             </ThemedText>
             {draft.edit.kind === "remove" ? (
               <ThemedText type="small">{t("storyCanvas.removeBody")}</ThemedText>
+            ) : shotOptions ? (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {(["", ...shotOptions] as const).map((value) => (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="button"
+                    disabled={phase !== "idle" || !!draft.command}
+                    accessibilityState={{
+                      selected: draft.edit.value === value,
+                      disabled: phase !== "idle" || !!draft.command,
+                    }}
+                    onPress={() => changeValue(value)}
+                    style={{
+                      padding: 12,
+                      borderWidth: 1,
+                      borderRadius: 8,
+                      borderColor: draft.edit.value === value ? theme.brand : theme.border,
+                    }}
+                  >
+                    <ThemedText type="small">
+                      {t(value ? `storyCanvas.shot.option.${value}` : "storyCanvas.shot.unset")}
+                    </ThemedText>
+                  </Pressable>
+                ))}
+              </View>
             ) : (
               <TextInput
                 accessibilityLabel={t(actionTitle)}
-                multiline={draft.edit.kind !== "rename"}
+                multiline={!["rename", "label", "durationSeconds"].includes(draft.edit.kind)}
+                keyboardType={draft.edit.kind === "durationSeconds" ? "decimal-pad" : "default"}
                 editable={phase === "idle" && !draft.command}
                 value={draft.edit.value}
-                onChangeText={(value) => {
-                  if (!current() || busy.current || draft.command) return;
-                  const next = { ...draft, edit: { ...draft.edit, value } };
-                  setDraft(next);
-                  try {
-                    store.write(next);
-                    setError(undefined);
-                  } catch (cause) {
-                    failed(cause);
-                  }
-                }}
+                onChangeText={changeValue}
                 style={{
                   color: theme.text,
                   borderWidth: 1,
                   borderColor: theme.border,
                   borderRadius: 8,
                   padding: 12,
-                  minHeight: draft.edit.kind !== "rename" ? 150 : 48,
+                  minHeight: ["rename", "label", "durationSeconds"].includes(draft.edit.kind)
+                    ? 48
+                    : 150,
                   textAlignVertical: "top",
                 }}
               />
