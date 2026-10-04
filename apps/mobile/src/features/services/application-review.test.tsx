@@ -2,7 +2,10 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ApplicationReview } from "./application-review";
-vi.mock("expo-router", () => ({ router: { push: (path: string) => h.push(path) } }));
+vi.mock("expo-router", () => ({
+  useIsFocused: () => true,
+  router: { push: (path: string) => h.push(path) },
+}));
 vi.mock("@/lib/navigation", () => ({ toHref: (path: string) => path }));
 vi.mock("./application-amendments", () => ({
   ApplicationAmendments: ({ onClose }: { onClose: () => void }) => (

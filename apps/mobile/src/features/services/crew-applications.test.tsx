@@ -39,7 +39,7 @@ const h = vi.hoisted(() => ({
   web: vi.fn(),
   push: vi.fn(),
 }));
-vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
+vi.mock("expo-router", () => ({ useIsFocused: () => true, useRouter: () => ({ push: h.push }) }));
 vi.mock("./application-terms-api", () => ({
   fetchMyApplications: h.list,
   fetchApplicationTerms: h.terms,

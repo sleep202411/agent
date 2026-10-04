@@ -1,5 +1,5 @@
 import { useUserDisplays } from "./user-displays";
-import { router } from "expo-router";
+import { router, useIsFocused } from "expo-router";
 import { toHref } from "@/lib/navigation";
 import { ApplicationAmendments } from "./application-amendments";
 import { TermsProposalScreen } from "./terms-proposal";
@@ -29,11 +29,20 @@ type Props = {
   onWeb: () => void;
 };
 export function ApplicationReview(props: Props) {
+  const focused = useIsFocused();
+  return focused && props.generation === getAuthGeneration() ? (
+    <ReviewSession
+      key={`${props.userId}:${props.generation}:${props.crewId}:${props.initialApplicationId ?? ""}`}
+      {...props}
+    />
+  ) : null;
+}
+function ReviewSession(props: Props) {
   const [selected, setSelected] = useState<string | undefined>(props.initialApplicationId),
     [status, setStatus] = useState<ReviewStatus>("pending"),
     [cursor, setCursor] = useState<string | null>(null),
     [revision, setRevision] = useState(0);
-  if (props.active === false || props.generation !== getAuthGeneration()) return null;
+  if (props.generation !== getAuthGeneration()) return null;
   if (selected)
     return (
       <Review
@@ -47,6 +56,7 @@ export function ApplicationReview(props: Props) {
         }}
       />
     );
+  if (props.active === false) return null;
   return (
     <ReviewList
       key={`${status}:${cursor}:${revision}`}
@@ -164,6 +174,7 @@ function Review(props: Props & { applicationId: string }) {
   if (interviewApplicant)
     return (
       <ApplicationInterview
+        active={props.active}
         applicationId={props.applicationId}
         applicantId={interviewApplicant}
         reviewer
@@ -175,6 +186,7 @@ function Review(props: Props & { applicationId: string }) {
         }}
       />
     );
+  if (props.active === false) return null;
   return (
     <ReviewDetail
       key={revision}

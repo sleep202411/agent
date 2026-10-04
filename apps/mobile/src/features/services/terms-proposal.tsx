@@ -16,6 +16,7 @@ import {
   type TermsProposal,
 } from "./terms-proposal-api";
 type Props = {
+  active?: boolean;
   crewId: string;
   applicationId: string;
   userId: string;
@@ -44,6 +45,7 @@ function ProposalSession(
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.applicationId, true);
+  const [readRevision, setReadRevision] = useState(0);
   const [context, setContext] = useState<Awaited<ReturnType<typeof fetchProposalContext>>>();
   const [history, setHistory] = useState<Awaited<ReturnType<typeof fetchApplicationTerms>>>();
   const [error, setError] = useState<string>(),
@@ -55,7 +57,16 @@ function ProposalSession(
   const [retry, setRetry] = useState<TermsProposal>(),
     [denied, setDenied] = useState(false),
     [saved, setSaved] = useState(false);
+  const readKey = `${props.active !== false}:${readRevision}`;
+  const [lastReadKey, setLastReadKey] = useState(readKey);
+  if (lastReadKey !== readKey) {
+    setLastReadKey(readKey);
+    setError(undefined);
+    setContext(undefined);
+    setHistory(undefined);
+  }
   useEffect(() => {
+    if (props.active === false) return;
     const c = new AbortController();
     void (async () => {
       const value = await fetchProposalContext(
@@ -77,10 +88,24 @@ function ProposalSession(
         setError(cause instanceof Error ? cause.message : String(cause));
     });
     return () => c.abort();
-  }, [props.crewId, props.applicationId, props.generation, props.before]);
+  }, [
+    props.crewId,
+    props.applicationId,
+    props.generation,
+    props.before,
+    props.active,
+    readRevision,
+  ]);
   const locked = op.busy || !!retry || denied || saved;
   const write = () => {
-    if (!context || denied || saved || props.generation !== getAuthGeneration()) return;
+    if (
+      props.active === false ||
+      !context ||
+      denied ||
+      saved ||
+      props.generation !== getAuthGeneration()
+    )
+      return;
     const feeAmount = proposalMinor(fee),
       shareBp = proposalMinor(share);
     const parsed = termsProposal.safeParse(
@@ -178,6 +203,7 @@ function ProposalSession(
       />
     </View>
   );
+  if (props.active === false) return null;
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -262,6 +288,7 @@ function ProposalSession(
             )}
         </>
       )}
+      {!context && error && action(t("common.retry"), () => setReadRevision((n) => n + 1))}
       {op.busy && <ActivityIndicator />}
       {action(t(saved ? "crewTerms.refresh" : "crewTerms.discardDraft"), props.onRefresh, !!retry)}
       {action(t("nativeApplications.back"), props.onClose)}

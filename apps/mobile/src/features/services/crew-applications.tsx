@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useRouter, useIsFocused } from "expo-router";
 import { toHref } from "@/lib/navigation";
 import { useUserDisplays } from "./user-displays";
 import { ApplicationReview } from "./application-review";
@@ -25,6 +25,7 @@ import {
 import { PositionInvitations } from "./position-invitations";
 import { ApplicationInterview } from "./application-interview";
 type Props = {
+  active?: boolean;
   userId: string;
   generation: number;
   onWeb: () => void;
@@ -32,7 +33,8 @@ type Props = {
 };
 export function CrewApplications(props: Props) {
   const active = useScreenActive();
-  return props.generation === getAuthGeneration() ? (
+  const focused = useIsFocused();
+  return focused && props.generation === getAuthGeneration() ? (
     <Applications
       key={`${props.userId}:${props.generation}:${props.initialApplicationId ?? ""}`}
       {...props}
@@ -46,8 +48,6 @@ function Applications(props: Props & { active: boolean }) {
   const [invitations, setInvitations] = useState(false);
   const [revision, setRevision] = useState(0),
     [selected, setSelected] = useState<Application>();
-  // Retain navigation intent, but remount private reads after foreground return.
-  if (!props.active) return null;
   if (requested)
     return (
       <RequestedApplication
@@ -56,7 +56,7 @@ function Applications(props: Props & { active: boolean }) {
         onClose={() => setRequested(undefined)}
       />
     );
-  if (invitations)
+  if (invitations && props.active)
     return (
       <PositionInvitations
         {...props}
@@ -88,6 +88,7 @@ function Applications(props: Props & { active: boolean }) {
         }}
       />
     );
+  if (!props.active) return null;
   return (
     <ApplicationPage
       key={`${revision}:${scope}`}
@@ -133,6 +134,7 @@ function RequestedApplication(props: Props & { applicationId: string; onClose: (
     ) : (
       <ApplicationReview {...props} crewId={thread.crewId} initialApplicationId={thread.id} />
     );
+  if (props.active === false) return null;
   return (
     <View style={{ padding: 16, gap: 12 }}>
       {error ? (
@@ -322,12 +324,14 @@ function TermsReview(props: Props & { application: Application; onClose: () => v
   if (interview)
     return (
       <ApplicationInterview
+        active={props.active}
         applicationId={props.application.id}
         userId={props.userId}
         generation={props.generation}
         onClose={() => setInterview(false)}
       />
     );
+  if (props.active === false) return null;
   return (
     <TermsPage
       key={`${revision}:${before}`}

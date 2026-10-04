@@ -21,6 +21,7 @@ import {
   type AmendmentDecision,
 } from "./application-amendments-api";
 type Props = {
+  active?: boolean;
   crewId: string;
   applicationId: string;
   applicantId: string;
@@ -59,6 +60,7 @@ function Session(
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.applicationId, true);
+  const [readRevision, setReadRevision] = useState(0);
   const [context, setContext] = useState<Awaited<ReturnType<typeof fetchAmendmentContext>>>(),
     [page, setPage] = useState<Awaited<ReturnType<typeof fetchApplicationAmendments>>>();
   const [error, setError] = useState<string>(),
@@ -73,7 +75,16 @@ function Session(
     [denied, setDenied] = useState(false),
     [saved, setSaved] = useState<ApplicationAmendment>(),
     [decision, setDecision] = useState<Extract<Request, { kind: "decision" }>>();
+  const readKey = `${props.active !== false}:${readRevision}`;
+  const [lastReadKey, setLastReadKey] = useState(readKey);
+  if (lastReadKey !== readKey) {
+    setLastReadKey(readKey);
+    setError(undefined);
+    setContext(undefined);
+    setPage(undefined);
+  }
   useEffect(() => {
+    if (props.active === false) return;
     const c = new AbortController();
     void (async () => {
       const ctx = await fetchAmendmentContext(
@@ -110,13 +121,22 @@ function Session(
     props.reviewer,
     props.generation,
     props.cursor,
+    props.active,
+    readRevision,
   ]);
   const effective = context?.terms.items.find(
     (r) => r.version === context.terms.currentVersion && r.confirmedAt
   );
   const locked = op.busy || !!retry || denied || !!saved;
   const write = (request: Request) => {
-    if (!context || props.generation !== getAuthGeneration() || denied || saved) return;
+    if (
+      props.active === false ||
+      !context ||
+      props.generation !== getAuthGeneration() ||
+      denied ||
+      saved
+    )
+      return;
     void op.run(
       () => {
         setError(undefined);
@@ -142,7 +162,8 @@ function Session(
     );
   };
   const send = () => {
-    if (!context || !effective || !draft || !context.canPropose || locked) return;
+    if (props.active === false || !context || !effective || !draft || !context.canPropose || locked)
+      return;
     const share = proposalMinor(draft.share);
     const parsed = amendmentProposal.safeParse({
       id: uuid.v4(),
@@ -198,6 +219,7 @@ function Session(
     context.taskVersion !== null &&
     props.cursor === null &&
     !page?.items.some((r) => ["pending", "awaiting_settlement"].includes(r.status));
+  if (props.active === false) return null;
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -220,7 +242,7 @@ function Session(
           {t("crewAmendments.saved")} · {t(`crewAmendments.status.${saved.status}`)}
         </ThemedText>
       )}
-      {retry && (
+      {retry && context && (
         <>
           <ThemedText>{t("crewAmendments.retryHelp")}</ThemedText>
           {action(t("crewAmendments.retry"), () => write(retry))}
@@ -324,7 +346,7 @@ function Session(
           </View>
         );
       })}
-      {decision && !saved && !retry && (
+      {decision && context && page && !saved && !retry && (
         <>
           <ThemedText>
             {t("nativeAmendments.confirmDecision")
@@ -335,6 +357,7 @@ function Session(
           {action(t("report.cancel"), () => setDecision(undefined), locked)}
         </>
       )}
+      {!context && error && action(t("common.retry"), () => setReadRevision((n) => n + 1))}
       {op.busy && <ActivityIndicator />}
       {page?.nextCursor &&
         action(
