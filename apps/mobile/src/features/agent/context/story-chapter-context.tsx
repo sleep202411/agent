@@ -1,3 +1,7 @@
+import {
+  storyPublicationErrorKind,
+  type StoryPublicationErrorKind,
+} from "@/features/agent/api/story-publication-errors";
 import { useGlobalSearchParams } from "expo-router";
 import {
   createContext,
@@ -38,6 +42,7 @@ type StoryChapterContextValue = {
   publicationLoading: boolean;
   publicationFailed: boolean;
   publicationError: string | undefined;
+  publicationErrorKind: StoryPublicationErrorKind | undefined;
   refreshPublication: () => void;
   loading: boolean;
   error: string | undefined;
@@ -85,6 +90,7 @@ export function StoryChapterProvider({
   const [publicationLoading, setPublicationLoading] = useState(true);
   const [publicationFailed, setPublicationFailed] = useState(false);
   const [publicationError, setPublicationError] = useState<string>();
+  const [publicationErrorKind, setPublicationErrorKind] = useState<StoryPublicationErrorKind>();
   const [publicationRefreshKey, setPublicationRefreshKey] = useState(0);
   const refreshPublication = useCallback(() => setPublicationRefreshKey((value) => value + 1), []);
   const [loading, setLoading] = useState(true);
@@ -196,9 +202,11 @@ export function StoryChapterProvider({
         setPublication(next);
         setPublicationFailed(false);
         setPublicationError(undefined);
+        setPublicationErrorKind(undefined);
       } catch (error) {
         if (cancelled || controller.signal.aborted) return;
         setPublicationFailed(true);
+        setPublicationErrorKind(storyPublicationErrorKind(error));
         setPublicationError(error instanceof Error ? error.message : String(error));
       } finally {
         pending = false;
@@ -233,6 +241,7 @@ export function StoryChapterProvider({
       publicationLoading: loading || (canReadPublication && publicationLoading),
       publicationFailed: canReadPublication && publicationFailed,
       publicationError: canReadPublication ? publicationError : undefined,
+      publicationErrorKind: canReadPublication ? publicationErrorKind : undefined,
       refreshPublication,
       loading,
       error,
@@ -253,6 +262,7 @@ export function StoryChapterProvider({
       publication,
       publicationFailed,
       publicationError,
+      publicationErrorKind,
       refreshPublication,
       publicationLoading,
       refresh,

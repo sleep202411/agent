@@ -7,7 +7,7 @@ import {
   IconLoader2,
 } from "@tabler/icons-react-native";
 import { useLayoutEffect, useRef, useState } from "react";
-import { useAuth } from "@/auth";
+import { useAuth, useAuthGate } from "@/auth";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
@@ -129,11 +129,13 @@ function OwnedStoryProjectHeaderActions({
     publicationLoading,
     publicationFailed,
     publicationError,
+    publicationErrorKind,
     refreshPublication,
     setPublication,
   } = useStoryChapterContext();
 
   const { generation } = useAuth();
+  const gate = useAuthGate();
   const life = useRef<AbortController | null>(null);
   const locked = useRef(false);
   useLayoutEffect(() => {
@@ -309,10 +311,22 @@ function OwnedStoryProjectHeaderActions({
               disabled={publicationLoading}
               hitSlop={6}
               onPress={() =>
-                Alert.alert(t("agent.publish.statusUnavailable"), publicationError, [
-                  { text: t("agent.publish.cancel"), style: "cancel" },
-                  { text: t("agent.publish.retryStatus"), onPress: refreshPublication },
-                ])
+                Alert.alert(
+                  t("agent.publish.statusUnavailable"),
+                  [
+                    t(`agent.publish.guidance.${publicationErrorKind ?? "service"}`),
+                    publicationError,
+                  ]
+                    .filter(Boolean)
+                    .join("\n\n"),
+                  [
+                    { text: t("agent.publish.cancel"), style: "cancel" },
+                    ...(publicationErrorKind === "auth"
+                      ? [{ text: t("agent.publish.signIn"), onPress: () => gate.openLogin() }]
+                      : []),
+                    { text: t("agent.publish.retryStatus"), onPress: refreshPublication },
+                  ]
+                )
               }
             >
               <View style={styles.badge}>

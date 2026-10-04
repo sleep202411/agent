@@ -4835,5 +4835,9 @@
   "channelVideos.choose": "Choose video (MP4, WebM or MOV; up to 2 GiB)",
   "channelVideos.changeChannel": "Change channel",
   "channelVideos.searchChannels": "Search community channels",
-  "channelVideos.noChannels": "No community channels found."
+  "channelVideos.noChannels": "No community channels found.",
+  "agent.publish.guidance.auth": "Sign in again to check publication status.",
+  "agent.publish.guidance.permission": "Your project access may have changed. Ask a project administrator to check your permissions.",
+  "agent.publish.guidance.service": "Publication status is temporarily unavailable. Retry to check again.",
+  "agent.publish.signIn": "Sign in"
 }

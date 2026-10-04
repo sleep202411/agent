@@ -5,6 +5,8 @@ import { StoryProjectHeaderActions } from "./story-project-header-actions";
 const h = vi.hoisted(() => ({
   generation: 1,
   failed: false,
+  errorKind: "service" as "auth" | "permission" | "service",
+  login: vi.fn(),
   active: true,
   published: false,
   capabilities: ["story.read", "story.release", "story.edit", "story.build"],
@@ -16,7 +18,10 @@ const h = vi.hoisted(() => ({
   set: vi.fn(),
 }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
-vi.mock("@/auth", () => ({ useAuth: () => ({ generation: h.generation }) }));
+vi.mock("@/auth", () => ({
+  useAuth: () => ({ generation: h.generation }),
+  useAuthGate: () => ({ openLogin: h.login }),
+}));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/features/agent/api/story-production-api", () => ({
@@ -36,6 +41,7 @@ vi.mock("@/features/agent/context/story-chapter-context", () => ({
     publication: h.published ? { gameId: "film", status: "published", rejectReason: null } : null,
     publicationLoading: false,
     publicationFailed: h.failed,
+    publicationErrorKind: h.errorKind,
     publicationError: h.failed ? "Status read failed" : undefined,
     refreshPublication: h.retry,
     setPublication: h.set,
@@ -80,6 +86,7 @@ async function confirmation() {
 }
 beforeEach(() => {
   h.failed = false;
+  h.errorKind = "service";
   h.active = true;
   h.published = false;
   h.capabilities = ["story.read", "story.release", "story.edit", "story.build"];
@@ -151,7 +158,7 @@ it("opens status failure details and offers explicit retry", async () => {
   );
   const [title, message, actions] = h.alert.mock.calls.at(-1)!;
   expect(title).toBe("agent.publish.statusUnavailable");
-  expect(message).toBe("Status read failed");
+  expect(message).toContain("Status read failed");
   actions.find((action: { text: string }) => action.text === "agent.publish.retryStatus").onPress();
   expect(h.retry).toHaveBeenCalledOnce();
   expect(h.prepare).not.toHaveBeenCalled();
@@ -257,4 +264,17 @@ it("shows published status to readers without publish or offline controls", asyn
   expect(host.textContent).toContain("agent.publish.status.published");
   expect(host.querySelector('button[aria-label="agent.publish.action"]')).toBeNull();
   expect(host.querySelector('button[aria-label="agent.publish.offline.action"]')).toBeNull();
+});
+
+it("offers sign-in for authentication errors without starting a release", async () => {
+  h.failed = true;
+  h.errorKind = "auth";
+  await mount();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="agent.publish.retryStatus"]')!.click()
+  );
+  const actions = h.alert.mock.calls.at(-1)![2];
+  actions.find((action: { text: string }) => action.text === "agent.publish.signIn").onPress();
+  expect(h.login).toHaveBeenCalledOnce();
+  expect(h.submit).not.toHaveBeenCalled();
 });

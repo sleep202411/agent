@@ -4835,5 +4835,9 @@
   "channelVideos.choose": "選擇影片（MP4、WebM 或 MOV；最大 2 GiB）",
   "channelVideos.changeChannel": "更換頻道",
   "channelVideos.searchChannels": "搜尋社區頻道",
-  "channelVideos.noChannels": "未找到社區頻道。"
+  "channelVideos.noChannels": "未找到社區頻道。",
+  "agent.publish.guidance.auth": "請重新登入以查看發佈狀態。",
+  "agent.publish.guidance.permission": "你的專案權限可能已更改。請聯絡專案管理員確認權限。",
+  "agent.publish.guidance.service": "發佈狀態暫不可用，請重試。",
+  "agent.publish.signIn": "登入"
 }

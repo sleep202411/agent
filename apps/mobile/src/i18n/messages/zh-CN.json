@@ -4835,5 +4835,9 @@
   "channelVideos.choose": "选择视频（MP4、WebM 或 MOV；最大 2 GiB）",
   "channelVideos.changeChannel": "更换频道",
   "channelVideos.searchChannels": "搜索社区频道",
-  "channelVideos.noChannels": "未找到社区频道。"
+  "channelVideos.noChannels": "未找到社区频道。",
+  "agent.publish.guidance.auth": "请重新登录以查看发布状态。",
+  "agent.publish.guidance.permission": "你的项目权限可能已更改。请联系项目管理员确认权限。",
+  "agent.publish.guidance.service": "发布状态暂不可用，请重试。",
+  "agent.publish.signIn": "登录"
 }
