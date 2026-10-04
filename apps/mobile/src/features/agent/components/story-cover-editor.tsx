@@ -208,6 +208,18 @@ export function StoryCoverEditor({
                           candidate,
                           ...rows.filter((row) => row.asset.id !== candidate.asset.id),
                         ]);
+                        const updated = await client.save(
+                          {
+                            clientKey: uuid.v4(),
+                            expectedProjectVersion: project.projectVersion,
+                            coverAssetId: candidate.asset.id,
+                          },
+                          signal
+                        );
+                        if (current()) {
+                          setProject(updated);
+                          onSaved();
+                        }
                       }
                     })
                   }
