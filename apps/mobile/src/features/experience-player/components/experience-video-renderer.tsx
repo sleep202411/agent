@@ -23,7 +23,11 @@ import {
   EXPERIENCE_PLAY_ORIENTATION,
 } from "../lib/experience-media";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
-import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
+import {
+  clampWatchedSeek,
+  mediaPlaybackSignature,
+  type ExperienceMediaCheckpoint,
+} from "../lib/experience-playback-checkpoint";
 
 type CoreVideoTerminalMode =
   | { kind: "held"; frameTimeSeconds: number }
@@ -132,6 +136,7 @@ export function ExperienceVideoRenderer({
   onPlaybackRefused,
   onPlaybackInterrupted,
   checkpoint,
+  onPlaybackProgress,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -143,6 +148,7 @@ export function ExperienceVideoRenderer({
   onPlaybackInterrupted?: () => void;
   onPlaybackHandle?: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
   checkpoint?: ExperienceMediaCheckpoint;
+  onPlaybackProgress?: (checkpoint: ExperienceMediaCheckpoint) => void;
 }) {
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
@@ -207,6 +213,12 @@ export function ExperienceVideoRenderer({
   useEffect(() => {
     presentingRef.current = presenting;
   }, [presenting]);
+  const progressRef = useRef<ExperienceMediaCheckpoint | null>(null);
+  const observedPositionRef = useRef(0);
+  const progressListenerRef = useRef(onPlaybackProgress);
+  useLayoutEffect(() => {
+    progressListenerRef.current = onPlaybackProgress;
+  }, [onPlaybackProgress]);
 
   /**
    * Silence the player before it is released. `useVideoPlayer` releases on
@@ -248,6 +260,12 @@ export function ExperienceVideoRenderer({
   const completeRenderer = useCallback(() => {
     if (completedRendererIdRef.current === renderer.instanceId) return;
     completedRendererIdRef.current = renderer.instanceId;
+    if (progressRef.current) {
+      progressRef.current.completed = true;
+      if (progressRef.current.terminalMode?.kind === "held")
+        progressRef.current.remainingHoldMs = 0;
+      progressListenerRef.current?.(structuredClone(progressRef.current));
+    }
     onCompleted();
   }, [onCompleted, renderer.instanceId]);
 
@@ -357,7 +375,7 @@ export function ExperienceVideoRenderer({
     !isStill && terminalMode?.kind === "held" && clip?.endBehavior.behavior === "hold-last-frame"
       ? clip.endBehavior.durationMs
       : undefined;
-  usePausableTimeout({
+  const remainingHold = usePausableTimeout({
     identity: `${renderer.instanceId}:${sequenceIndex}`,
     enabled: videoHoldMs !== undefined && !playbackState.checkpoint?.completed,
     running:
@@ -368,8 +386,81 @@ export function ExperienceVideoRenderer({
     initialRemainingMs: playbackState.checkpoint?.remainingHoldMs ?? undefined,
     onTimeout: advanceSequence,
   });
+  const emitProgress = useCallback(() => {
+    const value = progressRef.current;
+    if (!value) return;
+    if (value.terminalMode?.kind === "held" && !value.isStill)
+      value.remainingHoldMs = remainingHold();
+    progressListenerRef.current?.(structuredClone(value));
+  }, [remainingHold]);
+  const initializeProgress = useEffectEvent(() => {
+    if (!assetId || !media) {
+      progressRef.current = null;
+      return;
+    }
+    const saved = playbackState.checkpoint;
+    const old = progressRef.current;
+    const previous =
+      old?.rendererInstanceId === renderer.instanceId &&
+      old.sequenceIndex === sequenceIndex &&
+      old.assetId === assetId
+        ? old
+        : saved;
+    const duration = isStill && clip ? stillClipDurationMs(clip) : (durationMs ?? 0);
+    const position = previous?.assetId === assetId ? previous.positionMs : 0;
+    progressRef.current = {
+      rendererInstanceId: renderer.instanceId,
+      sequenceIndex,
+      assetId,
+      mediaSignature: mediaPlaybackSignature(manifest, assetId),
+      positionMs: position,
+      watchedUntilMs: previous?.assetId === assetId ? previous.watchedUntilMs : 0,
+      durationMs: Math.max(duration, position),
+      isStill,
+      terminalMode: terminalMode?.kind === "held" ? { kind: "held" } : terminalMode,
+      remainingHoldMs:
+        terminalMode?.kind === "held" ? (saved?.remainingHoldMs ?? videoHoldMs ?? null) : null,
+      completed: saved?.completed ?? false,
+    };
+    observedPositionRef.current = position;
+  });
+  useEffect(() => {
+    initializeProgress();
+  }, [playbackIdentity, terminalMode?.kind]);
+  const observeProgress = useCallback(
+    (positionMs: number) => {
+      const value = progressRef.current;
+      if (!value || !Number.isFinite(positionMs)) return;
+      const duration =
+        !isStill && Number.isFinite(player.duration) && player.duration > 0
+          ? player.duration * 1000
+          : value.durationMs;
+      value.durationMs = Math.max(0, duration);
+      const next = Math.max(0, Math.min(positionMs, value.durationMs));
+      const previous = observedPositionRef.current;
+      if (
+        presentingRef.current &&
+        previous <= value.watchedUntilMs + 1 &&
+        next >= previous &&
+        next - previous <= 1500
+      )
+        value.watchedUntilMs = Math.max(value.watchedUntilMs, next);
+      value.positionMs = next;
+      observedPositionRef.current = next;
+      emitProgress();
+    },
+    [emitProgress, isStill, player]
+  );
+
+  useEffect(() => {
+    emitProgress();
+    if (!presenting || videoHoldMs === undefined) return;
+    const timer = setInterval(() => emitProgress(), 250);
+    return () => clearInterval(timer);
+  }, [presenting, videoHoldMs, playbackIdentity, terminalMode?.kind, emitProgress]);
 
   const reportTimeline = useEffectEvent((currentTime: number) => {
+    observeProgress(currentTime * 1000);
     onTimelineTimeMs(timelineOffsetMs + Math.round(currentTime * 1_000));
     if (isStill || terminalMode?.kind === "loop" || terminalMode?.kind === "held") return;
     const totalSeconds =
@@ -493,12 +584,19 @@ export function ExperienceVideoRenderer({
         try {
           expectedPauseRef.current = true;
           player.pause();
+          observeProgress(player.currentTime * 1000);
         } catch {
           // Player already released.
         }
       },
       seek: (seconds) => {
-        player.currentTime = Math.max(0, seconds);
+        const progress = progressRef.current;
+        const positionMs = progress
+          ? clampWatchedSeek(seconds * 1000, progress.durationMs, progress.watchedUntilMs)
+          : 0;
+        player.currentTime = positionMs / 1000;
+        observedPositionRef.current = positionMs;
+        observeProgress(positionMs);
       },
     };
     onPlaybackHandle(renderer.instanceId, handle);
@@ -507,6 +605,7 @@ export function ExperienceVideoRenderer({
     config.autoplay,
     isStill,
     onPlaybackHandle,
+    observeProgress,
     playbackIdentity,
     player,
     renderer.instanceId,
@@ -606,7 +705,10 @@ export function ExperienceVideoRenderer({
       initiallyCompleted={playbackState.checkpoint?.completed}
       onDisplayed={handleEnd}
       onHoldComplete={advanceSequence}
-      onTimelineTimeMs={onTimelineTimeMs}
+      onTimelineTimeMs={(timeMs) => {
+        observeProgress(timeMs - timelineOffsetMs);
+        onTimelineTimeMs(timeMs);
+      }}
       onLoadError={() => onRuntimeError(copy.mediaError(assetId))}
     />
   ) : (

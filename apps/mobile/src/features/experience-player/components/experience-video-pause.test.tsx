@@ -10,6 +10,7 @@ import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
 const h = vi.hoisted(() => ({
   active: true,
+  stillProps: null as null | { onTimelineTimeMs: (timeMs: number) => void },
   player: {
     playing: false,
     status: "readyToPlay",
@@ -34,7 +35,12 @@ vi.mock("@/hooks/use-app-active", () => ({ useGatedScreenActive: () => h.active 
 vi.mock("../lib/experience-playback-delivery", () => ({
   resolveExperienceVideoSource: vi.fn().mockResolvedValue({ uri: "file:///clip.mp4" }),
 }));
-vi.mock("./experience-still-segment", () => ({ ExperienceStillSegment: () => null }));
+vi.mock("./experience-still-segment", () => ({
+  ExperienceStillSegment: (props: NonNullable<typeof h.stillProps>) => {
+    h.stillProps = props;
+    return null;
+  },
+}));
 vi.mock("@/config", () => ({ resolveExperienceAssetUrl: (s: string) => s }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const manifest = {
@@ -45,9 +51,11 @@ const completed = vi.fn();
 const noop = () => {};
 const refused = vi.fn();
 const interrupted = vi.fn();
+const progress = vi.fn();
 let handle: {
   pause: () => void;
   play: (options?: { userGesture?: boolean }) => Promise<void>;
+  seek: (seconds: number) => void;
 } | null;
 let root: Root;
 let checkpoint: ExperienceMediaCheckpoint | undefined;
@@ -89,6 +97,7 @@ const render = (id = "empty", endBehavior?: Record<string, unknown>, mediaType =
         }
         copy={testCopy}
         checkpoint={checkpoint}
+        onPlaybackProgress={progress}
         onPlaybackRefused={refused}
         onPlaybackInterrupted={interrupted}
         onPlaybackHandle={(_id, value) => {
@@ -105,12 +114,16 @@ const advance = (ms: number) =>
     vi.advanceTimersByTime(ms);
   });
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+  vi.useFakeTimers({
+    toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"],
+  });
   h.active = true;
   checkpoint = undefined;
+  h.stillProps = null;
   completed.mockClear();
   refused.mockClear();
   interrupted.mockClear();
+  progress.mockClear();
   h.player.status = "readyToPlay";
   h.player.currentTime = 5;
   h.player.playing = false;
@@ -119,6 +132,67 @@ beforeEach(() => {
   h.player.replaceAsync.mockClear();
   h.player.addListener.mockClear();
   root = createRoot(document.createElement("div"));
+});
+it("captures independent media snapshots and clamps seeks to watched footage", async () => {
+  await render("saved", { behavior: "advance" });
+  const update = (
+    h.player.addListener.mock.calls as unknown as [string, (event: unknown) => void][]
+  ).find(([name]) => name === "timeUpdate")![1];
+  await act(async () => {
+    update({ currentTime: 0.25 });
+  });
+  const first = progress.mock.calls.at(-1)![0] as ExperienceMediaCheckpoint;
+  expect(first).toMatchObject({
+    rendererInstanceId: "saved",
+    assetId: "clip",
+    positionMs: 250,
+    watchedUntilMs: 250,
+    completed: false,
+  });
+  await act(async () => {
+    update({ currentTime: 0.5 });
+  });
+  expect(first.positionMs).toBe(250);
+  await act(async () => {
+    handle!.seek(15);
+  });
+  expect(h.player.currentTime).toBe(0.5);
+  expect(progress.mock.calls.at(-1)![0].watchedUntilMs).toBe(500);
+  await act(async () => {
+    update({ currentTime: 10 });
+  });
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ positionMs: 10000, watchedUntilMs: 500 });
+});
+it("captures a decreasing held-frame timer and marks its terminal completion", async () => {
+  checkpoint = {
+    rendererInstanceId: "saved",
+    sequenceIndex: 0,
+    assetId: "clip",
+    terminalMode: { kind: "held" },
+    positionMs: 20000,
+    watchedUntilMs: 20000,
+    remainingHoldMs: 500,
+    completed: false,
+  } as ExperienceMediaCheckpoint;
+  await render("saved", { behavior: "hold-last-frame", durationMs: 3000 });
+  expect(progress.mock.calls.at(-1)![0].remainingHoldMs).toBe(500);
+  await advance(250);
+  expect(progress.mock.calls.at(-1)![0].remainingHoldMs).toBe(250);
+  await advance(250);
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ completed: true, remainingHoldMs: 0 });
+});
+it("captures a still's elapsed position on its authored hold duration", async () => {
+  await render("still", { behavior: "hold-last-frame", durationMs: 3000 }, "image/png");
+  await act(async () => {
+    h.stillProps!.onTimelineTimeMs(250);
+  });
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({
+    rendererInstanceId: "still",
+    isStill: true,
+    positionMs: 250,
+    watchedUntilMs: 250,
+    durationMs: 3000,
+  });
 });
 it("loads a saved video position without restarting from zero", async () => {
   checkpoint = {

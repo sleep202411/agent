@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef } from "react";
 
 /** A story timeout accrues only while presented; disabling starts a new window. */
 export function usePausableTimeout({
@@ -18,6 +18,7 @@ export function usePausableTimeout({
 }) {
   const remaining = useRef(durationMs);
   const completed = useRef(false);
+  const runningSince = useRef<number | null>(null);
   const fire = useEffectEvent(onTimeout);
   const initial = useEffectEvent(() => initialRemainingMs);
   useEffect(() => {
@@ -31,13 +32,27 @@ export function usePausableTimeout({
   useEffect(() => {
     if (!enabled || !running || completed.current) return;
     const started = performance.now();
+    runningSince.current = started;
     const timer = setTimeout(() => {
       completed.current = true;
+      remaining.current = 0;
+      runningSince.current = null;
       fire();
     }, remaining.current);
     return () => {
       clearTimeout(timer);
-      remaining.current = Math.max(0, remaining.current - (performance.now() - started));
+      if (runningSince.current !== null)
+        remaining.current = Math.max(0, remaining.current - (performance.now() - started));
+      runningSince.current = null;
     };
   }, [identity, enabled, running, durationMs]);
+  return useCallback(
+    () =>
+      Math.max(
+        0,
+        remaining.current -
+          (runningSince.current === null ? 0 : performance.now() - runningSince.current)
+      ),
+    []
+  );
 }
