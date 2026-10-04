@@ -3,9 +3,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StudioWorkspaceSettingsScreen } from "./studio-workspace-settings";
 import { WorkspaceSettingsWriteError } from "./api/studio-workspace-settings-api";
+vi.mock("./workspace-icon-upload", () => ({ pickWorkspaceIcon: h.upload }));
 vi.mock("expo-image", () => ({ Image: () => <span /> }));
 vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
 const h = vi.hoisted(() => ({
+  upload: vi.fn(),
   generation: 1,
   active: true,
   read: vi.fn(),
@@ -219,3 +221,64 @@ it.each(["owner", "billing", "member"])(
     expect(button("subscription.cancel")).toBeUndefined();
   }
 );
+it("locks creation while uploading and saves the confirmed custom icon", async () => {
+  let finish!: (url: string) => void;
+  h.upload.mockReturnValue(
+    new Promise<string>((resolve) => {
+      finish = resolve;
+    })
+  );
+  await render(true);
+  await input(0, "Custom team");
+  await click("studioWorkspace.uploadIcon");
+  expect(button("studioWorkspace.create")!.disabled).toBe(true);
+  expect(button("crewTasks.back")!.disabled).toBe(true);
+  await act(async () => finish("https://cdn.test/icon.png"));
+  await click("studioWorkspace.create");
+  expect(h.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: "Custom team",
+      customIcon: "https://cdn.test/icon.png",
+      icon: undefined,
+    }),
+    1
+  );
+});
+it("preserves entered details and the existing icon after upload failure", async () => {
+  h.upload.mockRejectedValue(new Error("Storage unavailable"));
+  await render();
+  await input(0, "Draft name");
+  await click("studioWorkspace.uploadIcon");
+  expect(host.textContent).toContain("Storage unavailable");
+  await click("studioWorkspace.save");
+  expect(h.update).toHaveBeenCalledWith(
+    row,
+    expect.objectContaining({ name: "Draft name", icon: undefined, customIcon: undefined }),
+    1,
+    expect.any(AbortSignal)
+  );
+});
+it("aborts background uploads and ignores a late result", async () => {
+  let finish!: (url: string) => void;
+  h.upload.mockReturnValue(
+    new Promise<string>((resolve) => {
+      finish = resolve;
+    })
+  );
+  await render();
+  await click("studioWorkspace.uploadIcon");
+  const signal = h.upload.mock.calls[0][1];
+  h.active = false;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish("https://cdn.test/late.png"));
+  h.active = true;
+  await render();
+  await click("studioWorkspace.save");
+  expect(h.update).toHaveBeenCalledWith(
+    row,
+    expect.objectContaining({ customIcon: undefined }),
+    1,
+    expect.any(AbortSignal)
+  );
+});

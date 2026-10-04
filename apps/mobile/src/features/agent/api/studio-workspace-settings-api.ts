@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { appEnv } from "@/config/app-env";
-import { workspaceIconPresets, workspaceIconUrl } from "../workspace-icons";
+import { workspaceIconPresets, workspaceIconUrl, workspaceUploadedIcon } from "../workspace-icons";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 const workspaceSchema = z.object({
@@ -19,6 +19,7 @@ export const workspaceDraftSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500),
   icon: z.enum(workspaceIconPresets).optional(),
+  customIcon: workspaceUploadedIcon.optional(),
 });
 export type StudioWorkspaceDraft = z.infer<typeof workspaceDraftSchema>;
 export function canEditWorkspace(workspace: StudioWorkspaceSettings) {
@@ -52,10 +53,14 @@ export class WorkspaceSettingsWriteError extends Error {
   }
 }
 export async function createStudioWorkspace(draft: StudioWorkspaceDraft, generation: number) {
-  const { icon, ...details } = workspaceDraftSchema.parse(draft);
+  const { icon, customIcon, ...details } = workspaceDraftSchema.parse(draft);
   const input = {
     ...details,
-    ...(icon ? { avatarUrl: workspaceIconUrl(icon, appEnv.appRegion) } : {}),
+    ...(customIcon
+      ? { avatarUrl: customIcon }
+      : icon
+        ? { avatarUrl: workspaceIconUrl(icon, appEnv.appRegion) }
+        : {}),
   };
   current(generation);
   try {
@@ -95,10 +100,14 @@ export async function updateStudioWorkspace(
   generation: number,
   signal?: AbortSignal
 ) {
-  const { icon, ...details } = workspaceDraftSchema.parse(draft);
+  const { icon, customIcon, ...details } = workspaceDraftSchema.parse(draft);
   const input = {
     ...details,
-    ...(icon ? { avatarUrl: workspaceIconUrl(icon, appEnv.appRegion) } : {}),
+    ...(customIcon
+      ? { avatarUrl: customIcon }
+      : icon
+        ? { avatarUrl: workspaceIconUrl(icon, appEnv.appRegion) }
+        : {}),
   };
   const fresh = await reviewed(snapshot, generation, false, signal);
   current(generation, signal);

@@ -4818,5 +4818,7 @@
   "taskCreate.requiredFields": "Add a description, task type, deadline and reward amount before creating this task. Enter 0 for an unpaid task.",
   "taskCreate.rewardHelp": "A reward amount is required to create the task; enter 0 for an unpaid task. Profit share is optional. Up to two decimal places. These terms do not initiate payment or settlement.",
   "crewDeadline.urgentLabel": "Urgent",
-  "crewDeadline.overdueLabel": "Overdue"
+  "crewDeadline.overdueLabel": "Overdue",
+  "studioWorkspace.uploadIcon": "Upload team icon",
+  "studioWorkspace.iconFileHint": "PNG, JPEG or WebP, up to 5 MB"
 }

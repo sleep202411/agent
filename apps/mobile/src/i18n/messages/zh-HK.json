@@ -4818,5 +4818,7 @@
   "taskCreate.requiredFields": "建立任務前，請填寫任務描述、任務類型、截止日期和報酬金額。無報酬任務請填寫 0。",
   "taskCreate.rewardHelp": "建立任務必須填寫報酬金額；無報酬任務請填 0。分潤比例可選，最多兩位小數。填寫不會觸發付款或結算。",
   "crewDeadline.urgentLabel": "緊急",
-  "crewDeadline.overdueLabel": "已逾期"
+  "crewDeadline.overdueLabel": "已逾期",
+  "studioWorkspace.uploadIcon": "上傳團隊圖標",
+  "studioWorkspace.iconFileHint": "PNG、JPEG 或 WebP，最大 5 MB"
 }

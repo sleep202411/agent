@@ -140,3 +140,26 @@ it("uses the China Studio host for China workspace icons", async () => {
     data: { ...draft, avatarUrl },
   });
 });
+
+it("writes a confirmed custom icon and verifies its receipt", async () => {
+  const customIcon = "https://cdn.example.test/icon.png";
+  h.patch.mockResolvedValue({ workspace: { ...row, ...draft, avatarUrl: customIcon, version: 4 } });
+  await updateStudioWorkspace(row, { ...draft, customIcon }, 1);
+  expect(h.patch).toHaveBeenCalledWith(
+    `/workspaces/${id}`,
+    expect.objectContaining({ data: { ...draft, avatarUrl: customIcon, expectedVersion: 3 } })
+  );
+  h.patch.mockResolvedValue({
+    workspace: { ...row, ...draft, avatarUrl: "https://cdn.example.test/other.png", version: 4 },
+  });
+  await expect(updateStudioWorkspace(row, { ...draft, customIcon }, 1)).rejects.toThrow(
+    "receipt mismatch"
+  );
+});
+it.each(["http://cdn.test/icon.png", "file:///icon.png", "https://user:pass@cdn.test/icon.png"])(
+  "rejects an unsafe custom icon %s before writing",
+  async (customIcon) => {
+    await expect(createStudioWorkspace({ ...draft, customIcon }, 1)).rejects.toThrow();
+    expect(h.post).not.toHaveBeenCalled();
+  }
+);

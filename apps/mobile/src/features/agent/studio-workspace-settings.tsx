@@ -1,3 +1,4 @@
+import { pickWorkspaceIcon } from "./workspace-icon-upload";
 import { Image } from "expo-image";
 import { appEnv } from "@/config/app-env";
 import {
@@ -99,7 +100,11 @@ function Form({
   const [icon, setIcon] = useState<WorkspaceIconPreset | undefined>(
     snapshot ? undefined : "aurora"
   );
-  const avatarUrl = icon ? workspaceIconUrl(icon, appEnv.appRegion) : snapshot?.avatarUrl;
+  const [customIcon, setCustomIcon] = useState<string>();
+  const [uploading, setUploading] = useState(false);
+  const iconUpload = useRef<AbortController | null>(null);
+  const avatarUrl =
+    customIcon ?? (icon ? workspaceIconUrl(icon, appEnv.appRegion) : snapshot?.avatarUrl);
   const [showPlan, setShowPlan] = useState(false);
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState<string>();
@@ -117,24 +122,56 @@ function Form({
     return () => {
       alive.current = false;
       pending.current?.abort();
+      iconUpload.current?.abort();
     };
   }, []);
   useEffect(() => {
-    if (!active) pending.current?.abort();
+    if (!active) {
+      pending.current?.abort();
+      iconUpload.current?.abort();
+    }
   }, [active]);
   useEffect(() => {
     if (!active) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (!operation.current) onClose();
+      if (!operation.current && !iconUpload.current) onClose();
       return true;
     });
     return () => sub.remove();
   }, [active, onClose]);
   const editable = !snapshot || canEditWorkspace(snapshot);
-  const locked = busy || uncertain || done;
-  const valid = workspaceDraftSchema.safeParse({ name, description, icon }).success;
+  const locked = busy || uploading || uncertain || done;
+  const valid = workspaceDraftSchema.safeParse({ name, description, icon, customIcon }).success;
+  async function uploadIcon() {
+    if (iconUpload.current || locked || !editable || !active || !current()) return;
+    const c = new AbortController();
+    iconUpload.current = c;
+    setUploading(true);
+    setError(undefined);
+    try {
+      const url = await pickWorkspaceIcon(props.generation, c.signal);
+      if (current() && !c.signal.aborted && url) {
+        setCustomIcon(url);
+        setIcon(undefined);
+      }
+    } catch (e) {
+      if (current() && !c.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (iconUpload.current === c) {
+        iconUpload.current = null;
+        if (current()) setUploading(false);
+      }
+    }
+  }
   async function submit(remove: boolean) {
-    if (operation.current || locked || !active || !current() || (!remove && (!editable || !valid)))
+    if (
+      iconUpload.current ||
+      operation.current ||
+      locked ||
+      !active ||
+      !current() ||
+      (!remove && (!editable || !valid))
+    )
       return;
     if (remove && (!snapshot || !canDeleteWorkspace(snapshot) || confirmation !== snapshot.name))
       return;
@@ -148,12 +185,15 @@ function Form({
       else if (snapshot)
         await updateStudioWorkspace(
           snapshot,
-          { name, description, icon },
+          { name, description, icon, customIcon },
           props.generation,
           c.signal
         );
       else {
-        const created = await createStudioWorkspace({ name, description, icon }, props.generation);
+        const created = await createStudioWorkspace(
+          { name, description, icon, customIcon },
+          props.generation
+        );
         if (current()) {
           setDone(true);
           if (!c.signal.aborted) props.onDone(created.id);
@@ -205,7 +245,10 @@ function Form({
                 accessibilityLabel={t(`studioWorkspace.icon_${preset}`)}
                 accessibilityState={{ checked: selected, disabled: locked }}
                 disabled={locked}
-                onPress={() => setIcon(preset)}
+                onPress={() => {
+                  setCustomIcon(undefined);
+                  setIcon(preset);
+                }}
                 style={{
                   padding: 8,
                   borderRadius: 8,
@@ -224,6 +267,17 @@ function Form({
             );
           })}
         </View>
+      )}
+      {editable && (
+        <>
+          <Action
+            label={t("studioWorkspace.uploadIcon")}
+            disabled={locked}
+            onPress={() => void uploadIcon()}
+          />
+          <ThemedText type="small">{t("studioWorkspace.iconFileHint")}</ThemedText>
+          {uploading && <ActivityIndicator />}
+        </>
       )}
       <ThemedText>{t("studioWorkspace.name")}</ThemedText>
       <TextInput
@@ -298,12 +352,14 @@ function Form({
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {uncertain && <ThemedText>{t("studioWorkspace.uncertain")}</ThemedText>}
       {done && <ThemedText>{t("studioWorkspace.done")}</ThemedText>}
-      {snapshot && <Action label={t("studioWorkspace.reload")} disabled={busy} onPress={reload} />}
+      {snapshot && (
+        <Action label={t("studioWorkspace.reload")} disabled={busy || uploading} onPress={reload} />
+      )}
       {snapshot?.accessScope === "workspace" && (
         <>
           <Action
             label={t("subscription.title")}
-            disabled={busy}
+            disabled={busy || uploading}
             onPress={() => setShowPlan((value) => !value)}
           />
           {showPlan && (
@@ -320,7 +376,7 @@ function Form({
         </>
       )}
       {busy && <ActivityIndicator />}
-      <Action label={t("crewTasks.back")} disabled={busy} onPress={props.onClose} />
+      <Action label={t("crewTasks.back")} disabled={busy || uploading} onPress={props.onClose} />
     </ScrollView>
   );
 }

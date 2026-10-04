@@ -1,3 +1,11 @@
+import { z } from "zod";
+export const workspaceUploadedIcon = z
+  .string()
+  .url()
+  .refine((value) => {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  });
 export const workspaceIconPresets = [
   "aurora",
   "sunset",

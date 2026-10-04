@@ -4818,5 +4818,7 @@
   "taskCreate.requiredFields": "创建任务前，请填写任务描述、任务类型、截止日期和报酬金额。无报酬任务请填写 0。",
   "taskCreate.rewardHelp": "创建任务必须填写报酬金额；无报酬任务请填 0。分润比例可选，最多两位小数。填写不会触发付款或结算。",
   "crewDeadline.urgentLabel": "紧急",
-  "crewDeadline.overdueLabel": "已逾期"
+  "crewDeadline.overdueLabel": "已逾期",
+  "studioWorkspace.uploadIcon": "上传团队图标",
+  "studioWorkspace.iconFileHint": "PNG、JPEG 或 WebP，最大 5 MB"
 }

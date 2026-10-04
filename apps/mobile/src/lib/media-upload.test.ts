@@ -320,3 +320,16 @@ it("retains the original variant ID returned by media confirmation", async () =>
     url: "https://cdn.example/image",
   });
 });
+it("uses the official workspace icon kind for reservation and image confirmation", async () => {
+  await uploadMobileMediaFile(
+    { ...file, name: "icon.png", type: "image/png" },
+    {
+      kind: "workspace_icon",
+      maxBytes: 5 * 1024 * 1024,
+    }
+  );
+  expect(vi.mocked(api.post).mock.calls.map(([, options]) => options?.data)).toEqual([
+    { kind: "workspace_icon", contentType: "image/png", fileName: "icon.png", sizeBytes: 4 },
+    { kind: "workspace_icon", contentType: "image/png", storageKey: "issued-key" },
+  ]);
+});
