@@ -1901,6 +1901,12 @@ function ActiveExperienceRuntimePlayer({
             data-experience-paused={viewerPause ?? undefined}
             inert={viewerPause !== null}
             className="absolute inset-0"
+            style={
+              {
+                "--experience-choice-control-clearance":
+                  transportAvailable && mediaProgress ? "52px" : "0px",
+              } as CSSProperties
+            }
           >
             {scene ? (
               rendererSlots
@@ -3302,26 +3308,26 @@ function CoreChoiceRenderer({
   // held sideways and a desktop monitor show the same composition, scaled.
   // `cqmin` is the frame's short side — its height for a landscape film — so a
   // portrait film keeps the same proportions; every clamp keeps the text legible
-  // and the tap target at least 40px.
+  // and the tap target at least 44px.
   return (
     <div
       role="group"
       aria-labelledby={promptText ? promptId : undefined}
       data-experience-choice-overlay=""
-      className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-linear-to-t from-black/80 via-black/45 to-transparent px-[clamp(12px,3cqw,40px)] pt-[clamp(40px,16cqmin,180px)] pb-[clamp(14px,6cqmin,56px)]"
+      className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-linear-to-t from-black/80 via-black/45 to-transparent px-[clamp(12px,3cqw,40px)] pt-[clamp(24px,10cqmin,96px)] pb-[max(clamp(10px,2.5cqmin,22px),var(--experience-choice-control-clearance,0px))]"
       style={{ zIndex: renderer.layer }}
     >
       <div className="pointer-events-auto w-full max-w-[86cqw]">
         {promptText ? (
           <p
             id={promptId}
-            className="mb-[0.9em] text-center text-[length:clamp(12px,2.4cqmin,20px)] leading-[1.45] font-medium tracking-[0.04em] text-balance text-white/70"
+            className="mb-[0.75em] text-center text-[length:clamp(12px,2cqmin,16px)] leading-[1.45] font-medium tracking-[0.04em] text-balance text-white/70"
           >
             {promptText}
           </p>
         ) : null}
         {choices.length > 0 ? (
-          <div className="flex flex-row items-stretch justify-center gap-[clamp(8px,1.6cqw,20px)]">
+          <div className="flex flex-row items-stretch justify-center gap-[clamp(8px,1.2cqw,16px)]">
             {choices.map((choice, index) => {
               const requirement = manifest.graph.nodes
                 .flatMap((node) => node.eventBindings)
@@ -3352,7 +3358,7 @@ function CoreChoiceRenderer({
                   className={classNames(
                     // Inner proportions are in `em` of the label, so the badge,
                     // the price and the corners scale with the clamped text.
-                    "group flex min-h-[clamp(40px,9cqmin,76px)] min-w-0 max-w-[57cqmin] flex-1 basis-0 items-center gap-[0.8em] rounded-[1.05em] border px-[clamp(10px,2cqw,28px)] py-[0.45em] text-left text-[length:clamp(13px,2.8cqmin,24px)] leading-[1.3] font-medium text-white",
+                    "group flex min-h-[clamp(44px,7cqmin,56px)] min-w-0 max-w-[clamp(140px,40cqmin,420px)] flex-1 basis-0 items-center gap-[0.75em] rounded-[1.05em] border px-[clamp(10px,1.5cqw,20px)] py-[0.45em] text-left text-[length:clamp(13px,2.2cqmin,18px)] leading-[1.3] font-medium text-white",
                     "bg-white/10 shadow-[0_10px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl",
                     "transition-[background-color,border-color,transform] duration-200",
                     "hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none active:scale-[0.99]",
