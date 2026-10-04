@@ -1,4 +1,7 @@
 {
+  "crewSkills.qualificationTitle": "完成所需技能認證",
+  "crewSkills.qualificationHint": "此任務需要已認證技能。請前往學院學習相關課程，並提交作業申請認證，解鎖更多優質任務。",
+  "crewSkills.minimumRank": "所需 FD 等級：{rank}",
   "positionCreate.useTaskBrief": "使用任務說明",
   "positionCreate.publicBriefHelp": "發佈前請確認公開工作說明，包含交付內容、要求和驗收標準，最多10,000字。",
   "positionCreate.taskUsdReward": "任務報酬以美元計價。請使用本站支援的幣種填寫招聘薪酬。",

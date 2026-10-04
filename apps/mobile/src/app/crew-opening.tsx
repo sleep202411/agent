@@ -1,3 +1,4 @@
+import { crewApplicationError } from "@/features/browse/crew-qualification-error";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Alert, Pressable, ScrollView } from "react-native";
@@ -44,6 +45,7 @@ function Opening({ crewId, positionId }: { crewId: string; positionId: string })
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchCrewOpening>>>();
   const [isMember, setIsMember] = useState(false);
   const [error, setError] = useState("");
+  const [applicationError, setApplicationError] = useState("");
   const [refresh, setRefresh] = useState(0);
   const { applying, submit } = useCrewApplication(crewId);
   useEffect(() => {
@@ -83,7 +85,8 @@ function Opening({ crewId, positionId }: { crewId: string; positionId: string })
             { text: t("report.cancel"), style: "cancel" },
             {
               text: t("crewDetail.applyConfirmAction"),
-              onPress: () =>
+              onPress: () => {
+                setApplicationError("");
                 void submit(
                   position.id,
                   () => {
@@ -93,9 +96,10 @@ function Opening({ crewId, positionId }: { crewId: string; positionId: string })
                     );
                   },
                   (e) => {
-                    setError(e instanceof Error ? e.message : t("crewDetail.applyFailed"));
+                    setApplicationError(crewApplicationError(e, t));
                   }
-                ),
+                );
+              },
             },
           ]
         );
@@ -189,6 +193,9 @@ function Opening({ crewId, positionId }: { crewId: string; positionId: string })
             </ThemedText>
           ) : null}
           <SaveOpening positionId={position.id} />
+          {applicationError ? (
+            <ThemedText accessibilityRole="alert">{applicationError}</ThemedText>
+          ) : null}
           {button(
             isMember
               ? t("crewOpening.member")

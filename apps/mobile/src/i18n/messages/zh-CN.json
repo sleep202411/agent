@@ -1,4 +1,7 @@
 {
+  "crewSkills.qualificationTitle": "完成所需技能认证",
+  "crewSkills.qualificationHint": "此任务需要已认证技能。请前往学院学习相关课程，并提交作业申请认证，解锁更多优质任务。",
+  "crewSkills.minimumRank": "所需 FD 等级：{rank}",
   "positionCreate.useTaskBrief": "使用任务说明",
   "positionCreate.publicBriefHelp": "发布前请确认公开工作说明，包含交付内容、要求和验收标准，最多10,000字。",
   "positionCreate.taskUsdReward": "任务报酬以美元计价。请使用本站支持的币种填写招聘薪酬。",

@@ -1,3 +1,4 @@
+import { crewApplicationError } from "@/features/browse/crew-qualification-error";
 import { CrewLinkedResources } from "@/features/services/crew-linked-resources";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
@@ -236,7 +237,7 @@ export default function CrewDetailScreen() {
           authGate.openLogin({ onAuthenticated: () => void submitApply(positionId) });
           return;
         }
-        const detail = error instanceof ApiRequestError ? error.message : undefined;
+        const detail = crewApplicationError(error, t);
         Alert.alert(t("crewDetail.applyFailed"), detail);
       }
     );
