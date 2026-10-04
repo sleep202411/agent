@@ -17,8 +17,8 @@ type GuardRequest = Request &
  * Global NestJS guard that validates the session cookie on every request.
  *
  * - Extracts `cookie` header from the incoming request
- * - Calls AuthService.validateToken() to verify with Java backend
- * - Attaches AuthUser to `request.user` and raw cookie to `request.rawCookie`
+ * - Calls AuthService.validateSessionContext() to verify with Java backend
+ * - Attaches the selected user and matching credential to the request
  * - Rejects with 401 if token is invalid
  *
  * Endpoints decorated with @Public() allow anonymous traffic, but still
@@ -60,15 +60,15 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('No session cookie');
     }
 
-    const user = await this.authService.validateToken(cookie);
-    if (!user) {
+    const session = await this.authService.validateSessionContext(cookie);
+    if (!session) {
       if (isPublic) return true;
       throw new UnauthorizedException('Invalid or expired session');
     }
 
     // Attach to request for downstream use
-    request.user = user;
-    request.rawCookie = cookie;
+    request.user = session.user;
+    request.rawCookie = session.cookie;
 
     return true;
   }

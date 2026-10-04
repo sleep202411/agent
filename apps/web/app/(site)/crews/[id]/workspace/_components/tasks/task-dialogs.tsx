@@ -5,7 +5,7 @@ import { TaskDeliveryProgress } from "./task-delivery-progress";
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { useTaskDeliveryTemplate, TaskDeliveryFields } from "./task-delivery-template";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { IconFile, IconGitBranch, IconSend } from "@tabler/icons-react";
 import { toast } from "sonner";
 
@@ -53,6 +53,24 @@ export function SubmitTaskDialog({
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState("");
   const [deliveryLink, setDeliveryLink] = useState("");
+  const deliveryErrorId = useId();
+  const [slotAssets, setSlotAssets] = useState<Record<string, Array<{ id: string; name: string }>>>(
+    {}
+  );
+  const needsDeliveryLink = !template.data && !template.isPending && !template.isError;
+  const validDeliveryLink = (() => {
+    try {
+      const url = new URL(deliveryLink.trim());
+      return ["https:", "http:"].includes(url.protocol) && Boolean(url.hostname);
+    } catch {
+      return false;
+    }
+  })();
+  const deliveryLinkError =
+    needsDeliveryLink && !validDeliveryLink
+      ? t(deliveryLink.trim() ? "deliveryLinkInvalid" : "deliveryLinkRequired")
+      : null;
+  const noteTooLong = [deliveryLink.trim(), note].filter(Boolean).join("\n\n").length > 5000;
   const [deliveryFolderId, setDeliveryFolderId] = useState("");
   const folders = useCrewAssetFolders(crewId, open);
   const [assetIds, setAssetIds] = useState<string[]>([]);
@@ -104,6 +122,7 @@ export function SubmitTaskDialog({
     setAnswers({});
     setDeliveryFolderId("");
     setUploadedAssets([]);
+    setSlotAssets({});
     setUploading({});
   }
   const generation = useRef(0);
@@ -126,6 +145,7 @@ export function SubmitTaskDialog({
       setAnswers({});
       setDeliveryFolderId("");
       setUploadedAssets([]);
+      setSlotAssets({});
       setUploading({});
       uploadingRef.current = {};
     }
@@ -141,8 +161,8 @@ export function SubmitTaskDialog({
       template.isPending ||
       template.isError ||
       missingRequiredFields.length > 0 ||
-      [deliveryLink.trim(), note].filter(Boolean).join("\n\n").length > 5000 ||
-      (Boolean(deliveryLink.trim()) && !/^https?:\/\/\S+$/i.test(deliveryLink.trim()))
+      noteTooLong ||
+      Boolean(deliveryLinkError)
     )
       return;
     const requestGeneration = generation.current;
@@ -260,9 +280,14 @@ export function SubmitTaskDialog({
         {!template.data && !template.isPending && !template.isError && (
           <>
             <label className="block space-y-2 rounded-lg border border-border p-4 text-sm">
-              {t("deliveryLink")}
+              <span>
+                {t("deliveryLink")} <span aria-hidden="true">*</span>
+              </span>
               <Input
                 type="url"
+                required
+                aria-invalid={Boolean(deliveryLink.trim() && deliveryLinkError)}
+                aria-describedby={deliveryErrorId}
                 aria-label={t("deliveryLink")}
                 placeholder="https://…"
                 value={deliveryLink}
@@ -270,6 +295,9 @@ export function SubmitTaskDialog({
                 maxLength={1500}
                 onChange={(event) => setDeliveryLink(event.target.value)}
               />
+              <p id={deliveryErrorId} className="text-xs text-muted-foreground">
+                {deliveryLinkError ?? t("deliveryLinkHint")}
+              </p>
             </label>
             <div className="grid gap-3 sm:grid-cols-2">
               {(["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"] as const).map(
@@ -295,8 +323,41 @@ export function SubmitTaskDialog({
                           asset,
                         ]);
                         setAssetIds((current) => [...new Set([...current, asset.id])]);
+                        setSlotAssets((current) => ({
+                          ...current,
+                          [slot]: [
+                            ...(current[slot] ?? []).filter((item) => item.id !== asset.id),
+                            asset,
+                          ],
+                        }));
                       }}
                     />
+                    {(slotAssets[slot] ?? [])
+                      .filter((asset) => assetIds.includes(asset.id))
+                      .map((asset) => (
+                        <div key={asset.id} className="flex min-w-0 items-center gap-2 text-xs">
+                          <IconFile className="size-4 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 break-all">{asset.name}</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            color="muted"
+                            disabled={saving || hasUploads}
+                            aria-label={t("removeDeliveryFile", { name: asset.name })}
+                            onClick={() => {
+                              setSlotAssets((current) => ({
+                                ...current,
+                                [slot]: (current[slot] ?? []).filter(
+                                  (item) => item.id !== asset.id
+                                ),
+                              }));
+                              setAssetIds((current) => current.filter((id) => id !== asset.id));
+                            }}
+                          >
+                            {common("remove")}
+                          </Button>
+                        </div>
+                      ))}
                   </div>
                 )
               )}
@@ -441,6 +502,16 @@ export function SubmitTaskDialog({
           )}
         </details>
       </DialogBody>
+      {hasUploads ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t("deliveryUploadPending")}
+        </p>
+      ) : null}
+      {noteTooLong ? (
+        <p role="alert" className="text-xs text-destructive">
+          {t("deliveryNoteTooLong")}
+        </p>
+      ) : null}
       <DialogFooter>
         <Button variant="outline" color="muted" onClick={() => close(false)}>
           {t("cancel")}
@@ -452,8 +523,8 @@ export function SubmitTaskDialog({
             template.isPending ||
             template.isError ||
             missingRequiredFields.length > 0 ||
-            [deliveryLink.trim(), note].filter(Boolean).join("\n\n").length > 5000 ||
-            (Boolean(deliveryLink.trim()) && !/^https?:\/\/\S+$/i.test(deliveryLink.trim()))
+            noteTooLong ||
+            Boolean(deliveryLinkError)
           }
           loading={saving}
           onClick={() => void submit()}

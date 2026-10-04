@@ -180,6 +180,10 @@ secrets:
 serverSecrets:
   projectedName: fizzdragon-server-secrets
   mapping:
+    # Required by the project publication gateway. Reuse the regional Java
+    # admin credential from Key Vault; only Nest and admin-ui receive it.
+    - kv: java-admin-api-token
+      env: JAVA_ADMIN_API_TOKEN
     - kv: airwallex-client-id
       env: AIRWALLEX_CLIENT_ID
     - kv: airwallex-api-key
@@ -295,7 +299,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: f290ff8ad5219b5256ad6620e89b0df5da3577d0
+    tag: b2b287653569ecc0e96e96e4383876c81f3a0dab
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -321,7 +325,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: f290ff8ad5219b5256ad6620e89b0df5da3577d0
+    tag: c3694eff8cdf13ae73d15014236dbd000c57ddfd
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -402,7 +406,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: f290ff8ad5219b5256ad6620e89b0df5da3577d0
+    tag: b2b287653569ecc0e96e96e4383876c81f3a0dab
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -424,6 +428,7 @@ server:
       provider: aks-com
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
+    JAVA_ADMIN_API_TOKEN_HEADER: X-Admin-Api-Token
     # Emergency pause: Java still calls register_bonus after disabling its
     # legacy 500-point grant. Nest answers successfully without minting points.
     REGISTRATION_COMPUTE_BONUS_PAUSED: "true"

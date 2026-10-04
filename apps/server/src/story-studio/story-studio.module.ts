@@ -20,6 +20,9 @@ import { StoryProjectsService } from './story-projects.service';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
 import { StoryAgentRunModule } from './story-agent-run.module';
+import { StoryPublicationController } from './story-publication.controller';
+import { StoryPublicationService } from './story-publication.service';
+import { StoryPublicationJavaService } from './story-publication-java.service';
 
 @Module({
   imports: [
@@ -38,6 +41,7 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryReferenceController,
     StoryBuildController,
     StoryWorkingPreviewController,
+    StoryPublicationController,
   ],
   providers: [
     StoryProjectMoveService,
@@ -48,6 +52,8 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryExperienceReleaseService,
     StoryChapterManifestStorageService,
     StoryWorkingPreviewService,
+    StoryPublicationService,
+    StoryPublicationJavaService,
   ],
   exports: [StoryProjectsService, StoryAccessModule, StoryAgentRunModule],
 })

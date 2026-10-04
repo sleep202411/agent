@@ -2,14 +2,7 @@
 
 import { useAuth } from "@/app/_components/auth-provider";
 
-import {
-  IconAlertTriangle,
-  IconCheck,
-  IconCloudOff,
-  IconCloudUpload,
-  IconLoader2,
-  IconRefresh,
-} from "@tabler/icons-react";
+import { IconCheck, IconCloudOff, IconCloudUpload, IconLoader2 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
@@ -24,10 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  getInteractiveFilmPublication,
   interactiveFilmPublicationQueryKey,
   offlineInteractiveFilm,
   type InteractiveFilmPublication,
@@ -35,6 +26,12 @@ import {
 } from "@/lib/interactive-film-api";
 import { getStoryWorkbench, storyApiErrorMessage } from "@/lib/story-projects-api";
 import { storyChapterWorkbenchQueryKey } from "../_lib/use-story-chapter-workbench";
+import { useStoryPublicationStatus } from "../_lib/use-story-publication-status";
+import {
+  storyPublicationErrorKind,
+  storyPublicationActionErrorKind,
+} from "../_lib/story-publication-errors";
+import { StoryPublicationStatus } from "./project-canvas/story-publication-status";
 import { StoryPublicationDialog } from "./project-canvas/story-publication-dialog";
 import {
   useStoryPublication,
@@ -45,14 +42,14 @@ import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 const LABEL_CLASS = "@max-[1000px]:sr-only";
 
-/** Project publication status is read directly from Java by projectId. */
+/** Project collaborators read status through the project-authorized gateway. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
   const { user } = useAuth();
   if (user?.id == null) return null;
   return <AccountStoryProjectHeaderActions key={`${user.id}:${projectId}`} projectId={projectId} />;
 }
 function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) {
-  const { user, isCurrentAccount } = useAuth();
+  const { user, isCurrentAccount, signIn } = useAuth();
   const router = useRouter();
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
@@ -73,16 +70,12 @@ function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const workbench = workbenchQuery.data ?? null;
   const canRelease = Boolean(workbench?.project.capabilities.includes("story.release"));
   const publicationKey = interactiveFilmPublicationQueryKey(projectId, user?.id ?? null);
-  const publicationQuery = useQuery({
-    queryKey: publicationKey,
-    queryFn: ({ signal }) => getInteractiveFilmPublication(projectId, signal),
-    enabled: canRelease,
-    retry: 1,
-    staleTime: 15_000,
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: true,
-  });
-  const publication = publicationQuery.data ?? null;
+  const canRead = Boolean(workbench?.project.capabilities.includes("story.read"));
+  const publicationQuery = useStoryPublicationStatus(projectId, canRead);
+  const publication = canRead ? (publicationQuery.data ?? null) : null;
+  const statusErrorReason = publicationQuery.isError
+    ? `${t(`publish.statusError.${storyPublicationErrorKind(publicationQuery.error)}.guidance`)} ${storyApiErrorMessage(publicationQuery.error, t("publish.statusError.service.guidance"))}`
+    : null;
   const status = publication?.status ?? null;
 
   const draftRevision = liveDraft?.revision ?? workbench?.draft.revision ?? null;
@@ -117,7 +110,7 @@ function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) 
       : publicationQuery.isLoading
         ? t("publish.statusChecking")
         : publicationQuery.isError
-          ? t("publish.statusUnavailable")
+          ? statusErrorReason
           : status === "reviewing"
             ? t("publish.reviewingLocked")
             : status === "published"
@@ -131,7 +124,8 @@ function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) 
     : (submitDisabledReason ??
       enabledSubmitTooltip(t, submitActionKind(status, publication), projectTitle));
   const submitDisabled = !canSubmit || submission.isPending;
-  const canOffline = canRelease && (status === "reviewing" || status === "published");
+  const canOffline =
+    canRelease && !publicationQuery.isError && (status === "reviewing" || status === "published");
   const canEdit = !workbench || workbench.project.capabilities.includes("story.edit");
 
   const offlineOwner = useRef<AbortController | null>(null);
@@ -142,7 +136,7 @@ function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) 
       controller.abort();
       if (offlineOwner.current === controller) offlineOwner.current = null;
     };
-  }, [canRelease]);
+  }, [canRelease, projectId, user?.id]);
   const offlineMutation = useMutation({
     onMutate: () => offlineOwner.current,
     mutationFn: async () => {
@@ -179,8 +173,11 @@ function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) 
         user?.id != null &&
         isCurrentAccount(user.id) &&
         !(error instanceof DOMException && error.name === "AbortError")
-      )
-        toast.error(storyApiErrorMessage(error, t("publish.errors.offlineFailed")));
+      ) {
+        const kind = storyPublicationActionErrorKind(error);
+        const detail = storyApiErrorMessage(error, t("publish.errors.offlineFailed"));
+        toast.error(kind ? `${t(`publish.actionError.${kind}`)} ${detail}` : detail);
+      }
     },
   });
 
@@ -220,19 +217,14 @@ function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) 
 
   return (
     <>
-      {canRelease ? (
-        <PublicationStatusBadge
-          status={status}
-          loading={publicationQuery.isLoading}
-          failed={publicationQuery.isError}
-          errorMessage={
-            publicationQuery.isError
-              ? storyApiErrorMessage(publicationQuery.error, t("publish.statusUnavailable"))
-              : null
-          }
-          retrying={publicationQuery.isFetching}
+      {canRead ? (
+        <StoryPublicationStatus
+          publication={publication}
+          pending={publicationQuery.isPending}
+          error={publicationQuery.error}
+          refetching={publicationQuery.isFetching}
           onRetry={() => void publicationQuery.refetch()}
-          rejectReason={publication?.rejectReason ?? null}
+          onSignIn={signIn}
         />
       ) : null}
       <Tooltip>
@@ -344,73 +336,6 @@ function AccountStoryProjectHeaderActions({ projectId }: { projectId: string }) 
   );
 }
 
-function PublicationStatusBadge({
-  status,
-  loading,
-  failed,
-  errorMessage,
-  retrying,
-  onRetry,
-  rejectReason,
-}: {
-  status: InteractiveFilmPublicationStatus | null;
-  loading: boolean;
-  failed: boolean;
-  errorMessage: string | null;
-  retrying: boolean;
-  onRetry: () => void;
-  rejectReason: string | null;
-}) {
-  const t = useTranslations("storyStudio.canvas.publish");
-  if (failed)
-    return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-white/[0.055] px-2 text-[10px] font-semibold text-white/70 hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-white/55"
-          >
-            <IconAlertTriangle className="size-3.5" />
-            {t("status.unavailable")}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-80 space-y-3">
-          <p role="alert" className="break-words text-sm text-white/80">
-            {errorMessage}
-          </p>
-          <Button type="button" variant="secondary" size="sm" disabled={retrying} onClick={onRetry}>
-            {retrying ? (
-              <IconLoader2 className="size-4 animate-spin" />
-            ) : (
-              <IconRefresh className="size-4" />
-            )}
-            {t("retryStatus")}
-          </Button>
-        </PopoverContent>
-      </Popover>
-    );
-  const label = loading
-    ? t("status.checking")
-    : failed
-      ? t("status.unavailable")
-      : publicationStatusLabel(status, t);
-  const badge = (
-    <span className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-white/[0.055] px-2 text-[10px] font-semibold text-white/48">
-      {rejectReason ? <IconAlertTriangle className="size-3.5 text-destructive" /> : null}
-      {label}
-    </span>
-  );
-  if (!rejectReason) return badge;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{badge}</TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={8} className="max-w-80">
-        {t("rejectionReason", { reason: rejectReason })}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 type PublishCanvasT = ReturnType<typeof useTranslations<"storyStudio.canvas">>;
 
 function submitActionKind(
@@ -435,23 +360,4 @@ function enabledSubmitTooltip(
   if (kind === "resubmit") return t("publish.resubmitTooltip", { title });
   if (kind === "update") return t("publish.updateTooltip", { title });
   return t("publish.submitTooltip", { title });
-}
-
-type PublishT = ReturnType<typeof useTranslations<"storyStudio.canvas.publish">>;
-
-function publicationStatusLabel(
-  status: InteractiveFilmPublicationStatus | null,
-  t: PublishT
-): string {
-  switch (status) {
-    case "reviewing":
-      return t("status.reviewing");
-    case "published":
-      return t("status.published");
-    case "offline":
-      return t("status.offline");
-    case null:
-    case "draft":
-      return t("status.draft");
-  }
 }

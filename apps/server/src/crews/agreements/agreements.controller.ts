@@ -29,6 +29,15 @@ type RawBodyRequest = Request & { rawBody?: Buffer };
 export class CrewAgreementsController {
   constructor(private readonly agreements: CrewAgreementsService) {}
 
+  @Get('me/crew-agreements')
+  mine(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListCrewAgreementsQuerySchema))
+    query: ListCrewAgreementsQuery,
+  ) {
+    return this.agreements.listMine(user.userId, query);
+  }
+
   @Get('crews/:crewId/agreements')
   list(
     @Param('crewId') crewId: string,

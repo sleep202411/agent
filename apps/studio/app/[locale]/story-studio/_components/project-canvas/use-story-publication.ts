@@ -5,6 +5,7 @@ import { useAuth } from "@/app/_components/auth-provider";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  getInteractiveFilmPublication,
   interactiveFilmPublicationQueryKey,
   prepareInteractiveFilmRelease,
   submitInteractiveFilmRelease,
@@ -21,6 +22,10 @@ import {
   type StoryPublicationErrorCode,
   type StoryPublicationFlowResult,
 } from "./story-publication-flow";
+import {
+  storyPublicationActionErrorKind,
+  type StoryPublicationErrorKind,
+} from "../../_lib/story-publication-errors";
 
 export type SavedDraftSnapshotRunner = <T>(
   submit: (expectedDraftRevision: number) => Promise<T>
@@ -47,6 +52,7 @@ export type StoryPublicationState =
       code: StoryPublicationFailureCode;
       message: string;
       issues?: StoryPublicationIssue[];
+      errorKind?: StoryPublicationErrorKind | null;
     };
 
 export interface UseStoryPublicationOptions {
@@ -151,6 +157,13 @@ export function useStoryPublication({
     const assertCurrent = () => {
       if (!isCurrent()) throw new DOMException("Publication abandoned", "AbortError");
     };
+    const refreshPublicationStatus = async () => {
+      assertCurrent();
+      const publication = await getInteractiveFilmPublication(projectId, current.controller.signal);
+      assertCurrent();
+      queryClient.setQueryData(interactiveFilmPublicationQueryKey(projectId, userId), publication);
+      return publication;
+    };
     current.running = true;
     let currentPhase: StoryPublicationActivePhase = "saving";
     let result: StoryPublicationFlowResult;
@@ -158,6 +171,13 @@ export function useStoryPublication({
       result = await runStoryPublication({
         saveDraftSnapshot: async () => {
           assertCurrent();
+          const publication = await refreshPublicationStatus();
+          assertCurrent();
+          if (publication?.status === "reviewing" || publication?.status === "published") {
+            throw new Error(
+              t(publication.status === "reviewing" ? "reviewingLocked" : "publishedUpdateLocked")
+            );
+          }
           return withSavedDraftSnapshot(async (expectedDraftRevision) => {
             assertCurrent();
             return expectedDraftRevision;
@@ -185,6 +205,18 @@ export function useStoryPublication({
         },
       });
     } catch (error) {
+      if (
+        error instanceof StoryPublicationFlowError &&
+        error.phase === "submitting" &&
+        isCurrent()
+      ) {
+        try {
+          // A failed gateway response may follow a completed submission.
+          await refreshPublicationStatus();
+        } catch {
+          // Retain the action error; every retry checks status before another write.
+        }
+      }
       current.running = false;
       if (!isCurrent()) return;
       setState(toPublicationFailure(error, currentPhase, t));
@@ -248,6 +280,7 @@ function toPublicationFailure(
       phase: currentPhase,
       code: "UNEXPECTED",
       message: storyApiErrorMessage(error, t("errors.unexpected")),
+      errorKind: storyPublicationActionErrorKind(error),
     };
   }
   const fallback = publicationErrorFallback(error.code, t);
@@ -263,6 +296,7 @@ function toPublicationFailure(
         ? fallback
         : storyApiErrorMessage(error.upstreamError, fallback)),
     issues,
+    errorKind: storyPublicationActionErrorKind(error.upstreamError),
   };
 }
 

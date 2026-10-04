@@ -1,4 +1,5 @@
 "use client";
+import { TaskContractLink } from "@/app/(site)/crews/_components/task-contract-link";
 
 import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
 import { CustomFieldControl, normalizeCustomFieldDraft } from "./task-custom-field-control";
@@ -377,6 +378,7 @@ export function TaskIssueDetail({
             </section>
 
             {canSubmit ? submissionForm : null}
+            <TaskContractLink crewId={task.crewId} assetId={task.contractAssetNodeId} />
             <TaskDeliverySummary task={task} />
             <details className="my-3">
               <summary className="cursor-pointer text-xs text-muted-foreground">

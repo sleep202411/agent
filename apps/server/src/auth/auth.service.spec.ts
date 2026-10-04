@@ -49,6 +49,59 @@ describe('AuthService.validateToken — multi-satoken (stale-cookie tolerance)',
     expect(calls).toEqual(['satoken=STALE', 'satoken=FRESH']);
   });
 
+  it('returns the user with only the fresh credential that actually validated', async () => {
+    await expect(
+      svc.validateSessionContext('locale=zh-CN; satoken=STALE; satoken=FRESH'),
+    ).resolves.toEqual({
+      user: { userId: '42', nickName: 'Fresh' },
+      cookie: 'satoken=FRESH',
+    });
+    expect(calls).toEqual(['satoken=STALE', 'satoken=FRESH']);
+  });
+
+  it('keeps the cached selected account and forwarding credential together when both candidates are valid', async () => {
+    jest
+      .spyOn(
+        svc as unknown as {
+          validateSatoken: (cookie: string) => Promise<AuthUser | null>;
+        },
+        'validateSatoken',
+      )
+      .mockImplementation((cookie) => {
+        calls.push(cookie);
+        return Promise.resolve({
+          userId: cookie === 'satoken=ACCOUNT_A' ? 'account-a' : 'account-b',
+        });
+      });
+    await svc.validateToken('satoken=ACCOUNT_B');
+    await expect(
+      svc.validateSessionContext(
+        'locale=en-US; satoken=ACCOUNT_A; satoken=ACCOUNT_B',
+      ),
+    ).resolves.toEqual({
+      user: { userId: 'account-b' },
+      cookie: 'satoken=ACCOUNT_B',
+    });
+    expect(calls).toEqual(['satoken=ACCOUNT_B']);
+    await expect(
+      svc.validateSessionContext('satoken=ACCOUNT_A; satoken=ACCOUNT_B', {
+        bypassCache: true,
+      }),
+    ).resolves.toEqual({
+      user: { userId: 'account-a' },
+      cookie: 'satoken=ACCOUNT_A',
+    });
+  });
+
+  it('preserves the verified cookie fallback when no satoken is present', async () => {
+    await expect(
+      svc.validateSessionContext('sessionid=FRESH'),
+    ).resolves.toEqual({
+      user: { userId: '42', nickName: 'Fresh' },
+      cookie: 'sessionid=FRESH',
+    });
+  });
+
   it('returns null when no satoken validates', async () => {
     const user = await svc.validateToken('satoken=STALE1; satoken=STALE2');
     expect(user).toBeNull();

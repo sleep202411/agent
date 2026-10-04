@@ -1,11 +1,10 @@
 "use client";
 
 import { useAuth } from "@/app/_components/auth-provider";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  IconCheck,
   IconCopy,
   IconDotsVertical,
   IconLink,
@@ -20,7 +19,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -33,6 +31,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiRequestError } from "@/lib/api";
 import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import {
@@ -77,7 +76,13 @@ async function copyToClipboard(text: string): Promise<boolean> {
  * table); all color/styling follows the studio DESIGN.md (dark, zero-chroma,
  * no borders).
  */
-export function MembersManager({ scope, canManage }: { scope: ShareScope; canManage: boolean }) {
+type MembersManagerProps = {
+  scope: ShareScope;
+  canManage: boolean;
+  renderRoleGuide?: (role: AssignableShareRole | null, source: "member" | "link") => ReactNode;
+};
+
+export function MembersManager({ scope, canManage, renderRoleGuide }: MembersManagerProps) {
   const { user } = useAuth();
   const viewerId = user?.id == null ? null : String(user.id);
   return (
@@ -86,6 +91,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
       scope={scope}
       canManage={canManage}
       viewerId={viewerId}
+      renderRoleGuide={renderRoleGuide}
     />
   );
 }
@@ -93,9 +99,8 @@ function MembersManagerView({
   scope,
   canManage,
   viewerId,
-}: {
-  scope: ShareScope;
-  canManage: boolean;
+  renderRoleGuide,
+}: MembersManagerProps & {
   viewerId: string | null;
 }) {
   const t = useTranslations("workspace");
@@ -129,6 +134,7 @@ function MembersManagerView({
   const roleOptions = rolesForScope(scope);
   const [account, setAccount] = useState("");
   const [role, setRole] = useState<AssignableShareRole>(defaultRoleForScope(scope));
+  const [invitationMode, setInvitationMode] = useState<"member" | "link">("member");
   const [search, setSearch] = useState("");
   const invalidate = async () => {
     await Promise.all([
@@ -234,7 +240,7 @@ function MembersManagerView({
 
   // ── Invite links ──────────────────────────────────────────────────────────
   const [linkRole, setLinkRole] = useState<AssignableShareRole>(defaultRoleForScope(scope));
-  const [linkExpiry, setLinkExpiry] = useState<"never" | "7" | "30">("never");
+  const [linkExpiry, setLinkExpiry] = useState<"never" | "7" | "30">("7");
   const [created, setCreated] = useState<CreatedInvite | null>(null);
   const invitesKey = ["share-invites", scope.kind, scope.id, viewerId] as const;
   const invitesQuery = useQuery({
@@ -306,45 +312,199 @@ function MembersManagerView({
   return (
     <div className="min-w-0 space-y-3">
       {canManage && (
-        <form
-          className="flex items-center gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (account.trim() && !addMut.isPending) addMut.mutate();
-          }}
+        <Tabs
+          value={invitationMode}
+          onValueChange={(value) => setInvitationMode(value as "member" | "link")}
         >
-          <Input
-            placeholder={t("addByEmailOrPhone")}
-            disabled={pending}
-            value={account}
-            onChange={(event) => setAccount(event.target.value)}
-            className="flex-1"
-          />
-          <Select
-            disabled={pending}
-            value={role}
-            onValueChange={(value) => setRole(value as AssignableShareRole)}
+          <TabsList
+            variant="segmented"
+            className="w-full sm:w-fit"
+            aria-label={t("invitationMode")}
           >
-            <SelectTrigger
-              size="default"
-              className="h-9 min-w-28 bg-input/30 text-sm"
-              aria-label={t("role")}
+            <TabsTrigger value="member" disabled={pending}>
+              <IconUserPlus className="size-4" />
+              {t("inviteByAccount")}
+            </TabsTrigger>
+            <TabsTrigger value="link" disabled={pending}>
+              <IconLink className="size-4" />
+              {t("inviteByLink")}
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="member">
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (account.trim() && !pending) addMut.mutate();
+              }}
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper" align="start">
-              {roleOptions.map((r) => (
-                <SelectItem key={r} value={r}>
-                  {roleLabel(r)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button type="submit" disabled={!account.trim() || addMut.isPending}>
-            <IconUserPlus className="size-4" />
-            {t("add")}
-          </Button>
-        </form>
+              <Input
+                placeholder={t("addByEmailOrPhone")}
+                aria-label={t("addByEmailOrPhone")}
+                disabled={pending || accessDenied}
+                value={account}
+                onChange={(event) => setAccount(event.target.value)}
+                className="min-w-0 basis-full sm:flex-1 sm:basis-0"
+              />
+              <Select
+                disabled={pending || accessDenied}
+                value={role}
+                onValueChange={(value) => setRole(value as AssignableShareRole)}
+              >
+                <SelectTrigger
+                  size="default"
+                  className="h-9 min-w-28 bg-input/30 text-sm"
+                  aria-label={t("role")}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  {roleOptions.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {roleLabel(r)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button type="submit" disabled={!account.trim() || pending || accessDenied}>
+                <IconUserPlus className="size-4" />
+                {t("add")}
+              </Button>
+            </form>
+          </TabsContent>
+          <TabsContent value="link" className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {t("inviteLinkHint", {
+                scope: scope.kind === "workspace" ? t("thisTeam") : t("thisProject"),
+              })}
+            </p>
+
+            {created && (
+              <div className="flex items-center gap-2 rounded-lg bg-input/30 px-2.5 py-1.5">
+                <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                  {inviteUrl(created.token)}
+                </code>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={pending || accessDenied}
+                  onClick={() => copyMut.mutate()}
+                >
+                  <IconCopy className="size-4" />
+                  {tc("copy")}
+                </Button>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                disabled={pending || accessDenied}
+                value={linkRole}
+                onValueChange={(value) => setLinkRole(value as AssignableShareRole)}
+              >
+                <SelectTrigger
+                  size="default"
+                  className="h-9 min-w-28 bg-input/30 text-sm"
+                  aria-label={t("inviteLinkRole")}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  {roleOptions.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {roleLabel(r)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                disabled={pending || accessDenied}
+                value={linkExpiry}
+                onValueChange={(value) => setLinkExpiry(value as "never" | "7" | "30")}
+              >
+                <SelectTrigger
+                  size="default"
+                  className="h-9 min-w-32 bg-input/30 text-sm"
+                  aria-label={t("inviteLinkExpiryLabel")}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  <SelectItem value="never">{t("inviteLinkExpiryNever")}</SelectItem>
+                  <SelectItem value="7">{t("inviteLinkExpiryDays", { days: 7 })}</SelectItem>
+                  <SelectItem value="30">{t("inviteLinkExpiryDays", { days: 30 })}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={pending || accessDenied}
+                onClick={() => createLinkMut.mutate()}
+              >
+                <IconLink className="size-4" />
+                {t("createLink")}
+              </Button>
+            </div>
+
+            {invitesQuery.isError && (
+              <div role="alert" className="space-y-2 text-sm">
+                <p>{invitesQuery.error.message}</p>
+                <Button variant="secondary" size="sm" onClick={() => void invitesQuery.refetch()}>
+                  {tc("retry")}
+                </Button>
+              </div>
+            )}
+            {invitesQuery.isLoading && <Skeleton className="h-11 w-full rounded-lg" />}
+            {invites && invites.length > 0 && (
+              <div
+                className="max-h-48 space-y-0.5 overflow-y-auto"
+                role="region"
+                aria-label={t("existingInviteLinks")}
+              >
+                <Separator className="mb-2" />
+                <p className="pb-1 text-xs font-medium">{t("existingInviteLinks")}</p>
+                {invites.map((inv) => (
+                  <div
+                    key={inv.inviteId}
+                    className="flex items-center gap-3 rounded-lg px-1.5 py-1.5"
+                  >
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                      <IconLink className="size-4" />
+                    </span>
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm text-foreground">
+                        {t("roleLink", { role: roleLabel(inv.role) })}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {inv.expiresAt == null
+                          ? t("neverExpires")
+                          : (() => {
+                              const days = expiryDays(inv.expiresAt);
+                              return days <= 0 ? t("expired") : t("expiresInDays", { days });
+                            })()}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={pending || accessDenied}
+                      onClick={() => revokeLinkMut.mutate(inv.inviteId)}
+                      className="flex size-7 items-center justify-center rounded-md text-white/55 outline-none transition-colors hover:bg-white/[0.08] hover:text-white"
+                      aria-label={t("revokeLink")}
+                    >
+                      <IconTrash className="size-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      )}
+
+      {renderRoleGuide?.(
+        canManage ? (invitationMode === "member" ? role : linkRole) : null,
+        invitationMode
       )}
 
       {(members?.length ?? 0) > 6 && (
@@ -394,7 +554,7 @@ function MembersManagerView({
                     : roleLabel(member.role)}
                 </span>
               </div>
-              {scope.kind === "workspace" &&
+              {(scope.kind === "workspace" || (canManage && canChangeRoles && !member.isSelf)) &&
                 !member.isOwner &&
                 member.accessScope !== "project_only" && (
                   <TooltipProvider>
@@ -406,7 +566,7 @@ function MembersManagerView({
                         >
                           <Select
                             value={member.role}
-                            disabled={!canChangeRoles || pending}
+                            disabled={!canChangeRoles || pending || accessDenied}
                             onValueChange={(value) => {
                               if (canChangeRoles)
                                 roleMut.mutate({
@@ -417,7 +577,7 @@ function MembersManagerView({
                           >
                             <SelectTrigger
                               size="sm"
-                              className="h-8 min-w-24 bg-input/30 text-xs disabled:cursor-not-allowed"
+                              className="h-8 min-w-24 shrink-0 bg-input/30 text-xs disabled:cursor-not-allowed"
                               aria-label={t("changeMemberRole", {
                                 name: member.nickname ?? member.userId,
                               })}
@@ -456,19 +616,6 @@ function MembersManagerView({
                     <IconDotsVertical className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {scope.kind !== "workspace" &&
-                      roleOptions.map((r) => (
-                        <DropdownMenuItem
-                          key={r}
-                          onSelect={() =>
-                            roleMut.mutate({ memberId: member.memberId, nextRole: r })
-                          }
-                        >
-                          <IconCheck className={`size-4 ${member.role === r ? "" : "opacity-0"}`} />
-                          {roleLabel(r)}
-                        </DropdownMenuItem>
-                      ))}
-                    {scope.kind !== "workspace" && <DropdownMenuSeparator />}
                     <DropdownMenuItem
                       variant="destructive"
                       onSelect={() => removeMut.mutate(member.memberId)}
@@ -487,127 +634,6 @@ function MembersManagerView({
           ))
         )}
       </div>
-
-      {canManage && (
-        <div className="space-y-3 pt-1">
-          <Separator />
-          <div>
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <IconLink className="size-4 text-muted-foreground" />
-              {t("inviteLink")}
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t("inviteLinkHint", {
-                scope: scope.kind === "workspace" ? t("thisTeam") : t("thisProject"),
-              })}
-            </p>
-          </div>
-
-          {created && (
-            <div className="flex items-center gap-2 rounded-lg bg-input/30 px-2.5 py-1.5">
-              <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                {inviteUrl(created.token)}
-              </code>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={pending}
-                onClick={() => copyMut.mutate()}
-              >
-                <IconCopy className="size-4" />
-                {tc("copy")}
-              </Button>
-            </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              disabled={pending}
-              value={linkRole}
-              onValueChange={(value) => setLinkRole(value as AssignableShareRole)}
-            >
-              <SelectTrigger
-                size="default"
-                className="h-9 min-w-28 bg-input/30 text-sm"
-                aria-label={t("inviteLinkRole")}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper" align="start">
-                {roleOptions.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {roleLabel(r)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              disabled={pending}
-              value={linkExpiry}
-              onValueChange={(value) => setLinkExpiry(value as "never" | "7" | "30")}
-            >
-              <SelectTrigger
-                size="default"
-                className="h-9 min-w-32 bg-input/30 text-sm"
-                aria-label={t("inviteLinkExpiryLabel")}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent position="popper" align="start">
-                <SelectItem value="never">{t("inviteLinkExpiryNever")}</SelectItem>
-                <SelectItem value="7">{t("inviteLinkExpiryDays", { days: 7 })}</SelectItem>
-                <SelectItem value="30">{t("inviteLinkExpiryDays", { days: 30 })}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={createLinkMut.isPending}
-              onClick={() => createLinkMut.mutate()}
-            >
-              <IconLink className="size-4" />
-              {t("createLink")}
-            </Button>
-          </div>
-
-          {invites && invites.length > 0 && (
-            <div className="space-y-0.5">
-              {invites.map((inv) => (
-                <div
-                  key={inv.inviteId}
-                  className="flex items-center gap-3 rounded-lg px-1.5 py-1.5"
-                >
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                    <IconLink className="size-4" />
-                  </span>
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm text-foreground">
-                      {t("roleLink", { role: roleLabel(inv.role) })}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {inv.expiresAt == null
-                        ? t("neverExpires")
-                        : (() => {
-                            const days = expiryDays(inv.expiresAt);
-                            return days <= 0 ? t("expired") : t("expiresInDays", { days });
-                          })()}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => revokeLinkMut.mutate(inv.inviteId)}
-                    className="flex size-7 items-center justify-center rounded-md text-white/55 outline-none transition-colors hover:bg-white/[0.08] hover:text-white"
-                    aria-label={t("revokeLink")}
-                  >
-                    <IconTrash className="size-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

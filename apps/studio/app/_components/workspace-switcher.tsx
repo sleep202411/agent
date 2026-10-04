@@ -36,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FIELD_BUTTON, FIELD_CONTROL, FIELD_CONTROL_TEXTAREA } from "@/components/ui/field";
 import type { WorkspaceRef } from "@/lib/collab/projects-api";
+import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { useWorkspace } from "./workspace-context";
 import { useComputeWalletBalance } from "./credits-badge";
 
@@ -140,12 +141,18 @@ function WorkspaceSwitcherView({ collapsed }: { collapsed: boolean }) {
   const [teamDescription, setTeamDescription] = useState("");
   const [teamIcon, setTeamIcon] = useState<string | null>("aurora");
   const [busy, setBusy] = useState(false);
+  const [customIcon, setCustomIcon] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const pendingIcon = useRef<AbortController | null>(null);
+  const iconInput = useRef<HTMLInputElement>(null);
   const mounted = useRef(false);
   const pendingCreate = useRef<AbortController | null>(null);
   useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      pendingIcon.current?.abort();
+      pendingIcon.current = null;
       pendingCreate.current?.abort();
       pendingCreate.current = null;
     };
@@ -163,6 +170,10 @@ function WorkspaceSwitcherView({ collapsed }: { collapsed: boolean }) {
   }
 
   const resetCreate = () => {
+    pendingIcon.current?.abort();
+    pendingIcon.current = null;
+    setUploadProgress(null);
+    setCustomIcon(null);
     pendingCreate.current?.abort();
     pendingCreate.current = null;
     setBusy(false);
@@ -172,18 +183,56 @@ function WorkspaceSwitcherView({ collapsed }: { collapsed: boolean }) {
     setTeamIcon("aurora");
   };
 
+  const uploadIcon = async (file: File) => {
+    if (busy || !creating) return;
+    if (
+      !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
+      file.size === 0 ||
+      file.size > 5 * 1024 * 1024
+    ) {
+      toast.error(t("iconFileInvalid"));
+      return;
+    }
+    pendingIcon.current?.abort();
+    const operation = new AbortController();
+    pendingIcon.current = operation;
+    const current = () => mounted.current && pendingIcon.current === operation;
+    setUploadProgress(0);
+    try {
+      const result = await uploadFileViaSignedUrl(file, {
+        kind: "workspace_icon",
+        signal: operation.signal,
+        onProgress: (percent) => {
+          if (current()) setUploadProgress(percent);
+        },
+      });
+      if (!current()) return;
+      setCustomIcon(result.url);
+      setTeamIcon(null);
+    } catch (error) {
+      if (current()) toast.error(error instanceof Error ? error.message : t("iconUploadFailed"));
+    } finally {
+      if (current()) {
+        pendingIcon.current = null;
+        setUploadProgress(null);
+      }
+    }
+  };
+
   const onCreateTeam = async () => {
     const name = teamName.trim();
-    if (!name || !creating || !mounted.current || pendingCreate.current) return;
+    if (!name || !creating || !mounted.current || pendingCreate.current || pendingIcon.current)
+      return;
     const operation = new AbortController();
     pendingCreate.current = operation;
     const current = () => mounted.current && pendingCreate.current === operation;
     setBusy(true);
     try {
       const avatarUrl =
-        teamIcon && typeof window !== "undefined"
+        customIcon ??
+        (teamIcon && typeof window !== "undefined"
           ? `${window.location.origin}${presetUrl(teamIcon)}`
-          : undefined;
+          : undefined);
       await createWorkspace(name, teamDescription, avatarUrl, operation.signal);
       if (!current()) return;
       resetCreate();
@@ -423,15 +472,33 @@ function WorkspaceSwitcherView({ collapsed }: { collapsed: boolean }) {
               <div className="space-y-2">
                 <span className="text-sm font-medium">{t("teamIcon")}</span>
                 <div className="flex flex-wrap items-center gap-2">
-                  {/* Upload needs the storage backend (deferred) — honest disabled. */}
+                  <input
+                    ref={iconInput}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="sr-only"
+                    aria-label={t("uploadIcon")}
+                    disabled={busy}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      if (file) void uploadIcon(file);
+                    }}
+                  />
                   <button
                     type="button"
-                    disabled
-                    title={t("uploadComingSoon")}
-                    aria-label={t("uploadIconComingSoon")}
-                    className="flex size-11 cursor-not-allowed items-center justify-center rounded-full bg-input/30 text-muted-foreground opacity-50"
+                    disabled={busy}
+                    title={t("iconFileHint")}
+                    aria-label={t("uploadIcon")}
+                    onClick={() => iconInput.current?.click()}
+                    className="flex size-11 items-center justify-center overflow-hidden rounded-full bg-input/30 text-muted-foreground"
                   >
-                    <IconUpload className="size-4" stroke={1.8} />
+                    {customIcon ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- confirmed workspace icon
+                      <img src={customIcon} alt="" className="size-full object-cover" />
+                    ) : (
+                      <IconUpload className="size-4" stroke={1.8} />
+                    )}
                   </button>
                   {TEAM_ICON_PRESETS.map((id) => (
                     <button
@@ -440,7 +507,13 @@ function WorkspaceSwitcherView({ collapsed }: { collapsed: boolean }) {
                       aria-label={t("presetIconLabel", { name: id })}
                       aria-pressed={teamIcon === id}
                       disabled={busy}
-                      onClick={() => setTeamIcon(id)}
+                      onClick={() => {
+                        pendingIcon.current?.abort();
+                        pendingIcon.current = null;
+                        setUploadProgress(null);
+                        setCustomIcon(null);
+                        setTeamIcon(id);
+                      }}
                       className={cn(
                         "size-11 overflow-hidden rounded-full transition",
                         teamIcon === id
@@ -453,6 +526,11 @@ function WorkspaceSwitcherView({ collapsed }: { collapsed: boolean }) {
                     </button>
                   ))}
                 </div>
+                {uploadProgress !== null && (
+                  <p role="status" className="text-xs text-muted-foreground">
+                    {t("iconUploading", { percent: Math.round(uploadProgress) })}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -464,7 +542,7 @@ function WorkspaceSwitcherView({ collapsed }: { collapsed: boolean }) {
             <Button
               className={FIELD_BUTTON}
               onClick={() => void onCreateTeam()}
-              disabled={!teamName.trim() || busy}
+              disabled={!teamName.trim() || busy || uploadProgress !== null}
             >
               {t("createWorkspace")}
             </Button>

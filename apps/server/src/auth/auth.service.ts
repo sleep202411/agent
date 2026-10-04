@@ -9,7 +9,7 @@ import {
 import { get as httpsGet } from 'node:https';
 import { describeUnknown, isRecord, scalarString } from '../common/values';
 import { parseJavaLevelIds } from '../integrations/java/user-level-gates';
-import type { AuthUser } from './auth.types';
+import type { AuthSessionContext, AuthUser } from './auth.types';
 import { EmergencyAccessBlockService } from './emergency-access-block.service';
 
 type JavaAuthResponse = {
@@ -35,7 +35,7 @@ type NodeGet = (
  * Current implementation: calls Java backend `/user/query/user/info`
  * with the client's cookie to validate the session.
  *
- * Future migration path: replace validateToken() internals with
+ * Future migration path: replace session validation internals with
  * direct Redis sa-token session lookup. The public interface stays
  * the same — all consumers receive an AuthUser.
  */
@@ -154,6 +154,15 @@ export class AuthService {
     cookie: string,
     options?: { bypassCache?: boolean },
   ): Promise<AuthUser | null> {
+    const session = await this.validateSessionContext(cookie, options);
+    return session?.user ?? null;
+  }
+
+  /** Keep the authenticated user and selected forwarding credential together. */
+  async validateSessionContext(
+    cookie: string,
+    options?: { bypassCache?: boolean },
+  ): Promise<AuthSessionContext | null> {
     if (this.stopping || !cookie) return null;
 
     // A browser can carry MULTIPLE `satoken` cookies for fizzdragon.com — the
@@ -187,7 +196,7 @@ export class AuthService {
         const cached = this.cachedUser(candidate.cacheKey);
         if (cached) {
           await this.emergencyAccessBlock.assertAllowed(cached);
-          return cached;
+          return { user: cached, cookie: candidate.cookie };
         }
       }
     }
@@ -202,7 +211,7 @@ export class AuthService {
           `Auth validated via 1 of ${satokenValues.length} satoken candidates (stale-cookie skip) tokenFingerprint=${candidate.fingerprint}`,
         );
       }
-      return user;
+      return { user, cookie: candidate.cookie };
     }
     return null;
   }

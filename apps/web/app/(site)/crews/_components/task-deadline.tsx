@@ -8,11 +8,11 @@ export function taskDeadlineState(
   dueAt: string | null,
   status: string,
   now: number,
-  warningHours = 48
+  warningHours = 72
 ) {
   const due = dueAt ? Date.parse(dueAt) : NaN;
   if (!Number.isFinite(due)) return null;
-  if (status === "approved" || status === "cancelled")
+  if (status === "approved" || status === "cancelled" || status === "submitted")
     return { state: "closed" as const, hours: 0 };
   const remaining = due - now;
   const hours = Math.max(1, Math.ceil(Math.abs(remaining) / 3_600_000));
@@ -31,7 +31,7 @@ export function taskDeadlineState(
 export function TaskDeadline({
   dueAt,
   status,
-  warningHours = 48,
+  warningHours = 72,
 }: {
   dueAt: string | null;
   status: string;
@@ -68,5 +68,52 @@ export function TaskDeadline({
       {date}
       {value.state !== "closed" ? ` · ${t(value.state, { count: value.hours })}` : ""}
     </time>
+  );
+}
+
+/** Deadline signals take precedence over an active workflow label, never over a closed task. */
+export function TaskStateBadge({
+  dueAt,
+  status,
+  label,
+  warningHours = 72,
+}: {
+  dueAt: string | null;
+  status: string;
+  label: string;
+  warningHours?: number;
+}) {
+  const t = useTranslations("crewDeadline");
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  // Submitted work is awaiting review, not an overdue delivery.
+  const deadline =
+    status === "submitted" ? null : taskDeadlineState(dueAt, status, now, warningHours);
+  const overdue = deadline?.state === "overdue";
+  const urgent = deadline?.state === "soon";
+  return (
+    <span
+      className={cn(
+        "rounded-full px-3 py-1 text-xs",
+        overdue || status === "revision_requested"
+          ? "bg-red-500/10 text-red-400"
+          : urgent
+            ? "bg-amber-500/10 text-amber-300"
+            : status === "approved"
+              ? "bg-green-500/10 text-green-400"
+              : "bg-white/5 text-muted-foreground"
+      )}
+    >
+      {overdue
+        ? t("overdueLabel")
+        : status === "revision_requested"
+          ? label
+          : urgent
+            ? t("urgentLabel")
+            : label}
+    </span>
   );
 }

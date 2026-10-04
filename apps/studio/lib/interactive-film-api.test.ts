@@ -29,41 +29,41 @@ const release = {
   status: "draft" as const,
   setCurrent: true,
 };
-const reviewing = {
-  gameId: PROJECT_ID,
-  status: "reviewing",
-};
+const reviewing = { gameId: PROJECT_ID, status: "reviewing" };
 
-describe("interactive-film API", () => {
+describe("interactive-film project gateway", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("queries Java directly by projectId", async () => {
+  it("reads publication through project authorization without ambient workspace scope", async () => {
     vi.mocked(api.get).mockResolvedValueOnce(reviewing);
-
-    await expect(getInteractiveFilmPublication(PROJECT_ID)).resolves.toEqual({
+    const signal = new AbortController().signal;
+    await expect(getInteractiveFilmPublication(PROJECT_ID, signal)).resolves.toEqual({
       gameId: PROJECT_ID,
       status: "reviewing",
       rejectReason: null,
     });
-    expect(api.get).toHaveBeenCalledWith("/api/user/interactive-film/project%2Fone", {
-      requestScope: "user",
-      signal: undefined,
+    expect(api.get).toHaveBeenCalledWith("/aurora/story-projects/project%2Fone/publication", {
+      requestScope: "project",
+      signal,
     });
   });
 
-  it("treats Java 404 as a project without a release", async () => {
-    vi.mocked(api.get).mockRejectedValueOnce(new ApiRequestError(404, "Not found", 404));
-
+  it("accepts only a successful null result as no published version", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(null);
     await expect(getInteractiveFilmPublication(PROJECT_ID)).resolves.toBeNull();
   });
 
-  it("prepares in Nest, then uploads and submits directly to Java", async () => {
-    vi.mocked(api.post)
-      .mockResolvedValueOnce(release)
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({});
-    vi.mocked(api.get).mockResolvedValueOnce(reviewing);
+  it.each([401, 403, 404, 502])(
+    "preserves HTTP %s failures instead of treating them as drafts",
+    async (status) => {
+      const error = new ApiRequestError(status, "Exact upstream detail", status);
+      vi.mocked(api.get).mockRejectedValueOnce(error);
+      await expect(getInteractiveFilmPublication(PROJECT_ID)).rejects.toBe(error);
+    }
+  );
 
+  it("prepares the exact snapshot and submits its receipt through the project gateway", async () => {
+    vi.mocked(api.post).mockResolvedValueOnce(release).mockResolvedValueOnce(reviewing);
     const prepared = await prepareInteractiveFilmRelease(PROJECT_ID, {
       expectedDraftRevision: 8,
       expectedVideoSnapshotHash: "a".repeat(64),
@@ -71,46 +71,56 @@ describe("interactive-film API", () => {
     await expect(submitInteractiveFilmRelease(PROJECT_ID, prepared)).resolves.toMatchObject({
       status: "reviewing",
     });
-
     expect(api.post).toHaveBeenNthCalledWith(
       1,
       "/aurora/story-projects/project%2Fone/release-candidate",
-      expect.objectContaining({ requestScope: "project" })
+      expect.objectContaining({
+        requestScope: "project",
+        data: {
+          expectedDraftRevision: 8,
+          expectedVideoSnapshotHash: "a".repeat(64),
+        },
+      })
     );
     expect(api.post).toHaveBeenNthCalledWith(
       2,
-      "/api/user/interactive-film/releases",
-      expect.objectContaining({ data: release, requestScope: "user" })
+      "/aurora/story-projects/project%2Fone/publication/submit",
+      expect.objectContaining({ data: release, requestScope: "project" })
     );
-    expect(api.post).toHaveBeenNthCalledWith(3, "/api/user/interactive-film/project%2Fone/status", {
-      data: { action: "submit" },
-      requestScope: "user",
-      signal: undefined,
-    });
+    expect(api.post).toHaveBeenCalledTimes(2);
+    expect(api.get).not.toHaveBeenCalled();
   });
 
-  it("takes the Java project offline and refreshes its state", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({});
-    vi.mocked(api.get).mockResolvedValueOnce({ gameId: PROJECT_ID, status: "offline" });
-
+  it("takes the project offline and uses the gateway's authoritative response", async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ gameId: PROJECT_ID, status: "offline" });
     await expect(offlineInteractiveFilm(PROJECT_ID)).resolves.toMatchObject({ status: "offline" });
-    expect(api.post).toHaveBeenCalledWith("/api/user/interactive-film/project%2Fone/status", {
-      data: { action: "offline" },
-      requestScope: "user",
-      signal: undefined,
-    });
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/story-projects/project%2Fone/publication/offline",
+      {
+        data: {},
+        requestScope: "project",
+        signal: undefined,
+      }
+    );
+    expect(api.get).not.toHaveBeenCalled();
   });
 
-  it("stops submission after release upload when its owner is abandoned", async () => {
+  it("rejects a gateway response for another project", async () => {
+    vi.mocked(api.post).mockResolvedValueOnce({ gameId: "other-project", status: "reviewing" });
+    await expect(submitInteractiveFilmRelease(PROJECT_ID, release)).rejects.toThrow(
+      "invalid publication status"
+    );
+  });
+
+  it("discards submission responses after the account owner is abandoned", async () => {
     const controller = new AbortController();
     vi.mocked(api.post).mockImplementationOnce(async () => {
       controller.abort();
-      return {};
+      return reviewing;
     });
     await expect(
       submitInteractiveFilmRelease(PROJECT_ID, release, controller.signal)
     ).rejects.toMatchObject({ name: "AbortError" });
-    expect(api.post).toHaveBeenCalledTimes(1);
-    expect(api.get).not.toHaveBeenCalled();
+    expect(api.post).toHaveBeenCalledOnce();
   });
 });

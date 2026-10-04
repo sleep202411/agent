@@ -180,6 +180,62 @@ BoldSign 确认 `Sent` 后，合同绑定成员可调用
 达到上限后 UI 会显示归档失败，管理员可调用
 `POST /crew-agreements/:agreementId/archive/retry` 重新入队。Webhook 不承担外部文件 IO。
 
+## Story project publication gateway
+
+Authenticated Studio clients use the project gateway instead of Java's
+creator-only management GET/status endpoints:
+
+- `GET /aurora/story-projects/:projectId/publication`: requires `story.read`;
+  returns `{ code: 200, data: null | { gameId, status, rejectReason } }`.
+  Only Java's actual not-found business response becomes `null`.
+- `POST /aurora/story-projects/:projectId/publication/submit`: requires
+  `story.release` (owner/producer). The body is the exact prepared draft
+  `ExperienceReleaseRequest`. Its project, request hash, ready builds and its immutable
+  release receipt are verified before Java is contacted. Upload forwards
+  the current actor's own session; existing Java authorship is retained.
+- `POST /aurora/story-projects/:projectId/publication/offline`, body `{}`:
+  requires `story.release`; withdraws review or takes a published work offline.
+
+Nest authorizes project access and calls the existing Java admin GET/status
+contract with the regional server-only `JAVA_ADMIN_API_TOKEN`. Studio cannot
+choose a Java endpoint or status action. Only read, submit and offline are
+implemented; approve, reject, force-offline and unrelated admin operations are
+not exposed. Upload uses the selected authenticated actor's own session, never
+an owner's borrowed session. Existing Java authorship is retained. No Java
+source change is required for this integration.
+
+`JAVA_STUDIO_URL` and `JAVA_ADMIN_API_TOKEN` are required at server readiness.
+An optional `JAVA_ADMIN_API_TOKEN_HEADER` overrides `X-Admin-Api-Token` with a
+dedicated HTTP header name. Supply the regional value from the existing secret
+store to the server Secret; never expose it through public environment variables,
+client bundles, response payloads or audit records. Do not copy production
+credentials into local development configuration. The COM and CN credentials
+are configured independently. Known credential values are removed from
+upstream error text before it reaches clients or audit logs.
+
+The gateway records the actual actor and requested/completed/failed operation
+in the platform audit log. Project mutation advisory locks serialize the
+gateway across Nest replicas. Capabilities are checked again before each write,
+along with the prepared candidate, exact builds and current media availability.
+Every write requires a live lock transaction; a shared deadline stops further
+requests after timeout. Java remains the moderation authority. Its business
+code/message are retained except for known credentials. Service credential
+rejections are 502, while an expired actor upload session is 401.
+
+Java's existing status API has no expected-version CAS. Older clients that
+still call Java directly and external moderation operations do not participate
+in the Nest advisory lock. The gateway checks the candidate version before and
+after submission and recognizes a retry of the same reviewing version. This
+does not make a Java write atomic or undo an already accepted request. A
+dedicated Java credential and conditional/idempotent transitions would further
+restrict authority and external races; they are separate Java enhancements,
+not prerequisites for the project-permission repair.
+
+Release the server before the migrated Studio client, then validate member
+reads, a non-author producer submission, editor write denial, revoked access,
+service/session failures and retry behavior independently on COM and CN.
+Local fixture tests do not establish the two deployments' runtime configuration.
+
 ## Java 对接：积分桥接接口（`/internal/points`）
 
 > 📄 **完整对接文档已独立成文，以它为准、并直接发给 Java：**

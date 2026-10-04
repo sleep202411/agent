@@ -431,6 +431,10 @@ export type BatchUpdateCrewTasksInput = z.infer<
 >;
 
 export const CrewTaskCenterQuerySchema = z.object({
+  hasContract: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
   scope: z.enum(['all', 'mine', 'managed']).default('all'),
   status: z
     .enum([

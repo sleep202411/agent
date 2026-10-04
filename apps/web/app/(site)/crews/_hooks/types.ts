@@ -524,6 +524,9 @@ export interface CrewTaskDTO {
   priority: CrewTaskPriority;
   startAt: string | null;
   dueAt: string | null;
+  requiredSkills?: string[];
+  positionRole?: string | null;
+  contractAssetNodeId?: string | null;
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints: number | null;
@@ -671,6 +674,9 @@ export interface UpdateCrewTaskInput {
   priority?: CrewTaskPriority;
   startAt?: string | null;
   dueAt?: string | null;
+  requiredSkills?: string[];
+  positionRole?: string | null;
+  contractAssetNodeId?: string | null;
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints?: number | null;
@@ -712,6 +718,9 @@ export interface CreateCrewTaskInput {
   priority: CrewTaskPriority;
   startAt?: string | null;
   dueAt?: string | null;
+  requiredSkills?: string[];
+  positionRole?: string | null;
+  contractAssetNodeId?: string | null;
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints?: number | null;

@@ -136,6 +136,7 @@ const UPLOAD_KIND_LABEL = {
   episode_cover: 'Episode cover image',
   ip_banner: 'IP banner',
   news_cover: 'News cover image',
+  workspace_icon: 'Workspace icon',
   ai_reference_image: 'Reference image',
   agent_attachment_image: 'Image attachment',
   agent_attachment_document: 'Document attachment',
@@ -265,6 +266,14 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     assetKind: MediaAssetKind.image,
     ttlSeconds: 900,
     keySegment: 'ip-banner',
+  },
+  workspace_icon: {
+    contentTypes: IMAGE_CONTENT_TYPES,
+    maxBytes: 5 * MiB,
+    assetKind: MediaAssetKind.image,
+    ttlSeconds: 900,
+    keySegment: 'workspace-icon-image-staging',
+    verifiedImageFinalKeySegment: 'workspace-icon-image-final',
   },
   news_cover: {
     contentTypes: IMAGE_CONTENT_TYPES,

@@ -25,7 +25,7 @@ interface TaskPage {
 
 export default function CrewTaskCenter() {
   const deadlineT = useTranslations("crewDeadline");
-  const [warningHours, setWarningHours] = useState(48);
+  const [warningHours, setWarningHours] = useState(72);
   const t = useTranslations("crewTaskCenter");
   const taskT = useTranslations("crewTasks");
   const { user, isLoading: authLoading } = useCurrentUser();
@@ -163,7 +163,7 @@ export default function CrewTaskCenter() {
               <dl className="space-y-3 rounded-xl bg-white/5 p-4 text-sm">
                 <div className="flex items-center justify-between gap-3">
                   <dt>{t("dueSoon")}</dt>
-                  <dd className="font-semibold text-red-400">{summary.stats.dueSoon}</dd>
+                  <dd className="font-semibold text-amber-300">{summary.stats.dueSoon}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <dt>{t("pendingReviews")}</dt>

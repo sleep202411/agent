@@ -140,7 +140,8 @@
     "accountMenuCliSkill": "CLI & Skill",
     "accountMenuNotifications": "通知",
     "accountMenuStudioHome": "FizzStudio 首頁",
-    "accountMenuComingSoon": "{label} 即將開放"
+    "accountMenuComingSoon": "{label} 即將開放",
+    "remove": "移除"
   },
   "tabs": {
     "script": "劇本",
@@ -299,7 +300,10 @@
     "appDownloadIos": "App Store",
     "appDownloadGooglePlay": "Google Play",
     "appQrLoading": "正在載入二維碼…",
-    "appQrUnavailable": "請點擊下方按鈕下載"
+    "appQrUnavailable": "請點擊下方按鈕下載",
+    "resolutionCenter": "爭議與調解中心",
+    "myIncome": "我的收入",
+    "myContracts": "我的合約"
   },
   "auth": {
     "close": "關閉",
@@ -424,7 +428,7 @@
     "ipsFundraising": "個 IP 正在融資",
     "ipsPresale": "個 IP 開放預售",
     "newThisWeek": "本週新增",
-    "createIP": "投稿",
+    "createIP": "建立 IP",
     "browseIPs": "瀏覽 IP",
     "enterStudio": "進入工作台",
     "catAll": "發現",
@@ -2091,7 +2095,8 @@
     "importIssuesTitle": "情節樹未就緒",
     "importClearSelection": "清除選擇",
     "messagesOffersTab": "招募收件箱",
-    "taskDashboardTab": "任務工作台"
+    "taskDashboardTab": "任務工作台",
+    "filterCapabilities": "創作者能力"
   },
   "crewRoles": {
     "director": "導演",
@@ -5263,7 +5268,8 @@
       "templateDraftHelp": "這些預覽僅儲存在此瀏覽器中。請在下方建立任務，或捨棄預覽。新的匯入會直接儲存到任務列表。",
       "savedTasks": "任務",
       "openDelivery": "查看任務並提交交付",
-      "saveThenRecruit": "儲存任務並繼續填寫招聘資訊。"
+      "saveThenRecruit": "儲存任務並繼續填寫招聘資訊。",
+      "completeDraftFields": "建立任務前，請補全「{{title}}」的必填項。"
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",
@@ -5818,7 +5824,20 @@
     "cleanVideo": "無字幕影片",
     "subtitleFile": "字幕檔案",
     "sourceFiles": "原素材",
-    "episodeUnavailable": "該集不可用。請選擇可用集數或「不關聯集數」。"
+    "episodeUnavailable": "該集不可用。請選擇可用集數或「不關聯集數」。",
+    "deliveryLinkRequired": "請填寫交付連結後提交任務。",
+    "deliveryLinkInvalid": "請輸入完整的 http:// 或 https:// 交付連結。",
+    "deliveryLinkHint": "填寫本次交付作品的連結。",
+    "removeDeliveryFile": "從本次提交中移除 {name}",
+    "deliveryUploadPending": "請等待檔案上傳並關聯完成後再提交。",
+    "deliveryNoteTooLong": "交付連結和備註合計不得超過 5,000 個字元。",
+    "positionRole": "職位",
+    "assignExistingMember": "分配現有劇組成員（可選）",
+    "contractOptional": "合約文件（可選）",
+    "viewContract": "查看合約",
+    "removeContract": "移除附件",
+    "requiredReward": "報酬（USD）",
+    "requiredTaskFields": "請填寫必填項：{{fields}}。"
   },
   "crewInvitations": {
     "signIn": "登入",
@@ -10002,9 +10021,10 @@
     "allCrews": "所有劇組",
     "categoryFilter": "類別",
     "allCategories": "所有類別",
-    "dueSoon": "24 小時內到期",
+    "dueSoon": "3天內到期",
     "pendingReviews": "待審核",
-    "filters": "篩選"
+    "filters": "篩選",
+    "feedback": "回饋"
   },
   "crewAccountability": {
     "commitments": "任務承諾與交接",
@@ -10154,7 +10174,9 @@
     "soon": "即將到期 · 剩餘 {count} 小時",
     "upcoming": "剩餘 {count} 小時",
     "warningWindow": "標記此時間內到期的任務",
-    "hours": "{count} 小時"
+    "hours": "{count} 小時",
+    "overdueLabel": "已逾期",
+    "urgentLabel": "緊急"
   },
   "crewPersonalIncome": {
     "title": "我的收入",
@@ -10188,7 +10210,11 @@
     "referralIncome": "引薦收入與獎勵",
     "crewIncome": "劇組收入",
     "workIncome": "影視與故事收入",
-    "incomeSourcesHint": "各收入來源分別顯示記錄和計價單位，此處不合併計算。"
+    "incomeSourcesHint": "各收入來源分別顯示記錄和計價單位，此處不合併計算。",
+    "referralSourceHint": "查看推薦紀錄、佣金和支付狀態。",
+    "workSourceHint": "查看已發佈作品的收入。",
+    "productionSource": "製作訂單",
+    "productionSourceHint": "查看任務報酬、結算和付款紀錄。"
   },
   "crewPersonalPayouts": {
     "title": "付款記錄",
@@ -10641,7 +10667,7 @@
     "history": "我的任務評價"
   },
   "crewCases": {
-    "title": "爭議與支援",
+    "title": "爭議與調解中心",
     "privacy": "處理任務爭議、交付問題和申訴。僅案件當事人和授權客服可查看；離開劇組後仍可存取。",
     "loading": "載入中…",
     "signIn": "請登入查看您的案件。",
@@ -10693,7 +10719,15 @@
     },
     "sharingCount": "傳送後將共享 {count} 個已選證據檔案。",
     "evidenceChanged": "已選證據無法使用或已共享。請重新整理證據並清空選擇後再傳送。",
-    "clearEvidence": "清空證據選擇"
+    "clearEvidence": "清空證據選擇",
+    "initiated": "我發起的",
+    "responses": "待我回應",
+    "newCase": "發起投訴",
+    "selectTaskHint": "請選擇本次爭議相關的任務。",
+    "mine": "我的任務",
+    "producer": "我管理的任務",
+    "relatedTask": "相關任務",
+    "moreTasks": "載入更多任務"
   },
   "crewTaskDispute": {
     "title": "發起任務爭議",
@@ -11444,5 +11478,85 @@
     "retryOriginal": "重試原請求",
     "targetRemoved": "已找回生成任務。原畫布項目已被刪除。",
     "signInRequired": "請先登入並選擇工作空間，再生成內容。"
+  },
+  "crewSkills": {
+    "label": "創作者所需技能",
+    "hint": "可多選已認證技能。申請人須滿足所有已選要求。",
+    "loading": "正在載入技能…",
+    "retry": "重試",
+    "qualificationTitle": "完成所需技能認證",
+    "qualificationHint": "此任務需要已認證技能。請前往學院學習相關課程，並提交作業申請認證，解鎖更多優質任務。",
+    "minimumRank": "所需 FD 等級：{rank}",
+    "academy": "前往學院"
+  },
+  "myContracts": {
+    "title": "我的合約",
+    "description": "查看你在目前劇組中建立或受邀簽署的合約。",
+    "all": "全部",
+    "active": "進行中",
+    "signed": "已簽署",
+    "attention": "需處理",
+    "loading": "正在載入合約…",
+    "signIn": "登入",
+    "retry": "重試",
+    "empty": "暫無符合條件的合約。",
+    "more": "載入更多",
+    "close": "關閉",
+    "agreements": "簽約協議",
+    "files": "任務合同文件",
+    "filesDescription": "您有權存取的任務所附的合同文件。上傳文件不代表已完成電子簽署。",
+    "filesEmpty": "暫無任務合同文件。"
+  },
+  "contentReports": {
+    "title": "內容投訴",
+    "back": "調解中心",
+    "loading": "載入中…",
+    "signIn": "登入",
+    "initiated": "我發起的",
+    "responses": "我的內容處理結果",
+    "newReport": "發起投訴",
+    "responsesHint": "查看您目前擁有的 IP 的已完成審核結果。投訴人的身分與證據保持私密。",
+    "initiatedHint": "查看您針對平台內容提交的投訴及處理進度。",
+    "retry": "重試",
+    "reference": "編號：{{id}}",
+    "empty": "暫無相關投訴。",
+    "more": "載入更多",
+    "search": "搜尋 IP 名稱或房間號",
+    "target": "相關內容",
+    "selectTarget": "選擇 IP",
+    "evidenceHint": "請說明問題，並提供相關證據連結。",
+    "status": {
+      "submitted": "已提交",
+      "triaged": "審核中",
+      "actioned": "已採取措施",
+      "dismissed": "已結案，未採取措施"
+    }
+  },
+  "communityVideo": {
+    "title": "投稿影片",
+    "description": "上傳影片，提交給社區頻道審核。",
+    "video": "影片",
+    "name": "影片名稱",
+    "intro": "影片介紹",
+    "channel": "社區頻道",
+    "search": "搜尋社區頻道",
+    "selected": "已選擇：{{name}}",
+    "loading": "載入中…",
+    "retry": "重試",
+    "empty": "找不到社區頻道。",
+    "more": "載入更多",
+    "uploading": "上傳中 · {{progress}}%",
+    "submit": "提交審核",
+    "success": "影片已提交，等待頻道審核。",
+    "failed": "影片投稿失敗。",
+    "videos": "社區影片",
+    "moderation": "等待平台媒體審核。",
+    "pending": "待審核",
+    "approved": "已通過",
+    "rejected": "已拒絕",
+    "approve": "通過",
+    "reject": "拒絕",
+    "closed": "此頻道暫不接受投稿。",
+    "signIn": "登入後投稿影片"
   }
 }

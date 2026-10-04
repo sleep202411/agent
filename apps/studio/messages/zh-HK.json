@@ -1029,7 +1029,38 @@
       "title": "分享“{name}”",
       "descriptionWorkspace": "成員可以協作處理此團隊中的所有專案。",
       "descriptionProject": "成員可以協作處理此專案。",
-      "descriptionStoryProject": "受邀成員可以存取此影遊專案，不會因此獲得空間內其他專案的存取權限。"
+      "descriptionStoryProject": "邀請成員加入此影遊專案，並選擇他們可以進行的操作。",
+      "storyRoles": {
+        "title": "各角色可以做甚麼",
+        "tableLabel": "影遊專案角色權限對照",
+        "scrollHint": "左右滑動，比較各角色權限。",
+        "capability": "操作",
+        "selectedRole": "已選角色",
+        "selectedFor": "{source}：{role}",
+        "sources": {
+          "member": "成員邀請",
+          "link": "邀請連結"
+        },
+        "allowed": "可以",
+        "notAllowed": "不可以",
+        "descriptions": {
+          "owner": "完整專案管理",
+          "producer": "創作與發佈",
+          "editor": "內容創作",
+          "reviewer": "回饋與素材審核",
+          "viewer": "僅查看"
+        },
+        "capabilities": {
+          "read": "查看專案",
+          "edit": "編輯劇本與畫布",
+          "generate": "使用 AI 生成",
+          "review": "審核參考素材與評論",
+          "publish": "構建並提交發佈審核",
+          "manage": "管理成員與邀請連結"
+        },
+        "ownerNote": "擁有者僅用於對照，此處不能邀請擁有者或轉讓擁有權。空間擁有者和管理員也擁有專案管理權限。",
+        "scopeNote": "邀請僅適用於此專案。專案角色會疊加已有空間權限，選擇較低角色不會降低這些權限。參考素材審核與平台發佈審核是不同的操作。"
+      }
     }
   },
   "auth": {
@@ -1135,6 +1166,10 @@
     "addMemberFailed": "無法新增成員",
     "changeRoleFailed": "無法變更角色",
     "removeMemberFailed": "無法移除成員",
+    "invitationMode": "邀請方式",
+    "inviteByAccount": "直接新增成員",
+    "inviteByLink": "透過連結邀請",
+    "existingInviteLinks": "現有邀請連結",
     "inviteLink": "邀請連結",
     "inviteLinkHint": "任何持有連結的人都可以你所選擇的角色加入{scope}。可選擇有效期，也可隨時撤銷。",
     "thisTeam": "此空間",
@@ -1180,7 +1215,12 @@
     "teamCreated": "空間「{name}」已建立",
     "createWorkspaceFailed": "無法建立空間",
     "contactOwnerRole": "請聯絡工作區擁有者修改角色。",
-    "changeMemberRole": "修改 {name} 的角色"
+    "changeMemberRole": "修改 {name} 的角色",
+    "uploadIcon": "上傳團隊圖標",
+    "iconFileHint": "PNG、JPEG 或 WebP，最大 5 MB",
+    "iconFileInvalid": "請選擇不超過 5 MB 的 PNG、JPEG 或 WebP 圖片。",
+    "iconUploadFailed": "圖標上傳失敗",
+    "iconUploading": "正在上傳圖標… {percent}%"
   },
   "billing": {
     "dialogLabel": "選擇你的 FizzStudio 方案",
@@ -3354,7 +3394,7 @@
         "draftConflict": "故事有未合併的更新，請先處理衝突後再提交。",
         "projectLoading": "專案仍在載入。",
         "statusChecking": "正在查詢發佈狀態…",
-        "statusUnavailable": "發佈狀態不可用。點擊狀態標記查看錯誤並重試。",
+        "statusUnavailable": "發佈服務未能確認狀態，請重試；若問題持續，請聯絡支援。",
         "reviewingLocked": "目前專案已在審核中。",
         "publishedUpdateLocked": "提交更新前請先將專案下線。",
         "status": {
@@ -3364,6 +3404,27 @@
           "offline": "已下線",
           "checking": "查詢中…",
           "unavailable": "狀態不可用"
+        },
+        "actionError": {
+          "auth": "登入已失效，請重新登入後再發佈。",
+          "permission": "你的發佈權限已變更，請聯絡項目擁有者確認你的角色。",
+          "service": "發佈服務未能完成此操作，請重試；若問題持續，請聯絡支援。"
+        },
+        "statusError": {
+          "auth": {
+            "label": "需要登入",
+            "guidance": "登入已失效，請重新登入後查看發佈狀態。"
+          },
+          "permission": {
+            "label": "需要存取權限",
+            "guidance": "你無法查看此項目的發佈狀態，請聯絡項目擁有者確認你的存取權限。"
+          },
+          "service": {
+            "label": "發佈服務異常",
+            "guidance": "發佈服務未能確認狀態，請重試；若問題持續，請聯絡支援。"
+          },
+          "openDetails": "點擊查看詳細原因和恢復操作。",
+          "signIn": "重新登入"
         },
         "rejectionReason": "審核意見：{reason}",
         "title": "提交目前版本審核？",
@@ -3416,7 +3477,7 @@
           "success": "影遊已下線。"
         },
         "errors": {
-          "permissionDenied": "只有專案擁有者可以提交審核或下線。",
+          "permissionDenied": "提交審核或下架需要發佈權限，請聯絡項目擁有者將你設為製片人。",
           "saveFailed": "無法儲存最新修改。",
           "prepareFailed": "無法準備發佈版本。",
           "submitFailed": "無法將已準備的版本提交審核。",

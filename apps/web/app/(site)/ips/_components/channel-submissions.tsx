@@ -1,4 +1,5 @@
 "use client";
+import { ChannelVideos } from "./channel-videos";
 import { useState } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -219,6 +220,7 @@ function ChannelContents({
           {t(query.isFetchNextPageError ? "retry" : "more")}
         </Button>
       )}
+      <ChannelVideos ipId={ipId} open={data.open} />
     </section>
   );
 }

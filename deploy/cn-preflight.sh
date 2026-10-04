@@ -41,9 +41,10 @@ need_command() {
   command -v "$1" >/dev/null 2>&1 && ok "$1 available" || fail "$1 is required"
 }
 secret_has_key() {
-  local name="$1" key="$2" value
-  value="$(kubectl get secret "$name" -n "$NAMESPACE" -o "jsonpath={.data.${key}}" 2>/dev/null || true)"
-  if [ -n "$value" ]; then
+  local name="$1" key="$2" present
+  # Return presence only; keep the encoded credential out of shell variables.
+  present="$(kubectl get secret "$name" -n "$NAMESPACE" -o "go-template={{if index .data \"$key\"}}present{{end}}" 2>/dev/null || true)"
+  if [ "$present" = present ]; then
     ok "Secret $name contains $key"
   else
     fail "Secret $name is missing non-empty key $key"
@@ -109,6 +110,7 @@ else
   secret_has_key fizzdragon-secrets DATABASE_URL
   [ "$PHASE" = migration ] || secret_has_key fizzdragon-secrets REDIS_URL
   if has_service server && [ "$PHASE" = deploy ]; then
+    secret_has_key fizzdragon-server-secrets JAVA_ADMIN_API_TOKEN
     secret_has_key fizzdragon-server-secrets REALTIME_WS_SECRET
     secret_has_key fizzdragon-server-secrets ABLY_API_KEY
     # These are required by the selected CN write path and enabled providers.

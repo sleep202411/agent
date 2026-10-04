@@ -31,16 +31,16 @@ export type PrivateCaseHistory = PrivateCase & {
 export function isCaseParticipant(item: PrivateCase, userId: string) {
   return item.openedByUserId === userId || item.respondentUserId === userId;
 }
-export function usePrivateCases(userId: string) {
+export function usePrivateCases(userId: string, view: "all" | "initiated" | "responses" = "all") {
   return useInfiniteQuery({
-    queryKey: ["crew-cases", userId, "list"],
+    queryKey: ["crew-cases", userId, "list", view],
     retry: false,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       crewApi.get<{ items: PrivateCase[]; nextBeforeId: string | null }>("/crew-disputes", {
         signal,
         cache: "no-store",
-        query: { limit: 20, beforeId: pageParam },
+        query: { limit: 20, beforeId: pageParam, view },
       }),
     getNextPageParam: (page) => page.nextBeforeId ?? undefined,
   });

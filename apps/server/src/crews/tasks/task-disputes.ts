@@ -62,6 +62,7 @@ export const DisputeUpdate = z
 const Page = z
   .object({
     beforeId: z.string().uuid().optional(),
+    view: z.enum(['all', 'initiated', 'responses']).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
   })
   .strict();
@@ -473,7 +474,16 @@ export class CrewTaskDisputesService {
     this.authorize(null, actor);
     const scope: Prisma.CrewTaskDisputeWhereInput =
       actor.kind === 'user'
-        ? { OR: [{ openedByUserId: actor.id }, { respondentUserId: actor.id }] }
+        ? page.view === 'initiated'
+          ? { openedByUserId: actor.id }
+          : page.view === 'responses'
+            ? { respondentUserId: actor.id }
+            : {
+                OR: [
+                  { openedByUserId: actor.id },
+                  { respondentUserId: actor.id },
+                ],
+              }
         : {};
     const cursor = page.beforeId
       ? await this.db.crewTaskDispute.findFirst({

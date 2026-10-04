@@ -5,6 +5,7 @@ import { assertRecruitedTaskAssignees } from '../task-recruitment';
 import { assertDeliveryTemplateEditable } from './task-delivery-template';
 import {
   overdueTaskPredicate,
+  TASK_ADVANCE_WARNING_MS,
   revisionDeadline,
   taskDeadlineRisk,
 } from './task-deadline';
@@ -1654,6 +1655,9 @@ export class CrewTasksService {
         members: { some: { userId, status: 'active' } },
       },
       ...(query.scope === 'mine' ? { assignees: { some: { userId } } } : {}),
+      ...(query.hasContract
+        ? { metadata: { path: ['contractAssetNodeId'], not: Prisma.AnyNull } }
+        : {}),
       ...(query.query
         ? { title: { contains: query.query, mode: 'insensitive' } }
         : {}),
@@ -1673,7 +1677,7 @@ export class CrewTasksService {
       query.status === 'all'
         ? {}
         : query.status === 'overdue'
-          ? { workflowState: { semantic: active }, dueAt: { lt: now } }
+          ? overdueTaskPredicate(now)
           : {
               workflowState: {
                 semantic: query.status === 'active' ? active : query.status,
@@ -1698,6 +1702,7 @@ export class CrewTasksService {
           },
           priority: true,
           dueAt: true,
+          metadata: true,
           crew: { select: { id: true, name: true } },
           assignees: { where: { userId }, select: { userId: true } },
         },
@@ -1705,10 +1710,10 @@ export class CrewTasksService {
       this.prisma.crewTask.count({
         where: {
           ...filtered,
-          workflowState: { semantic: active },
+          ...overdueTaskPredicate(now),
           dueAt: {
             gte: now,
-            lt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+            lte: new Date(now.getTime() + TASK_ADVANCE_WARNING_MS),
           },
         },
       }),
@@ -1721,11 +1726,12 @@ export class CrewTasksService {
     ]);
     const items = rows
       .slice(0, query.limit)
-      .map(({ workflowState, assignees, ...task }) => {
+      .map(({ workflowState, assignees, metadata, ...task }) => {
         const permissions = accessByCrew.get(task.crew.id) ?? [];
         const status = workflowState.semantic;
         return {
           ...task,
+          contractAssetNodeId: taskContractAssetId(metadata),
           workflowState,
           status,
           canSubmit:
@@ -1746,6 +1752,30 @@ export class CrewTasksService {
       ),
       stats: { dueSoon, pendingReviews },
     };
+  }
+
+  private async assertContractAsset(
+    tx: Prisma.TransactionClient,
+    crewId: string,
+    userId: string,
+    assetId: string | null | undefined,
+  ) {
+    if (!assetId) return;
+    const node = await tx.crewAssetNode.findFirst({
+      where: { id: assetId, crewId, status: 'active', kind: 'file' },
+      select: { id: true },
+    });
+    if (!node)
+      throw new BadRequestException({
+        message: 'The contract file is unavailable in this crew.',
+      });
+    await this.assetAccess.requireNodesPermission(
+      crewId,
+      [assetId],
+      userId,
+      CrewAssetPermission.view,
+      tx,
+    );
   }
 
   private async assertTaskListCursor(
@@ -2137,6 +2167,12 @@ export class CrewTasksService {
         where: { crewId },
         _max: { number: true, rank: true },
       });
+      await this.assertContractAsset(
+        tx,
+        crewId,
+        userId,
+        input.contractAssetNodeId,
+      );
       const crewMembers = await tx.crewMember.findMany({
         where: {
           crewId,
@@ -2169,6 +2205,9 @@ export class CrewTasksService {
           dueAt: input.dueAt ? new Date(input.dueAt) : null,
           estimatePoints: input.estimatePoints,
           metadata: {
+            requiredSkills: [...new Set(input.requiredSkills ?? [])],
+            positionRole: input.positionRole ?? null,
+            contractAssetNodeId: input.contractAssetNodeId ?? null,
             compensation: {
               rewardUsdMinor: input.rewardUsdMinor ?? null,
               profitShareBps: input.profitShareBps ?? null,
@@ -2742,7 +2781,28 @@ export class CrewTasksService {
           });
         }
 
+        await this.assertContractAsset(
+          tx,
+          locked.crewId,
+          userId,
+          input.contractAssetNodeId,
+        );
         const priorMetadata = (locked.metadata ?? {}) as Prisma.JsonObject;
+        recordChange(
+          'contractAssetNodeId',
+          priorMetadata.contractAssetNodeId ?? null,
+          input.contractAssetNodeId,
+        );
+        recordChange(
+          'positionRole',
+          priorMetadata.positionRole ?? null,
+          input.positionRole,
+        );
+        recordChange(
+          'requiredSkills',
+          priorMetadata.requiredSkills ?? [],
+          input.requiredSkills,
+        );
         const priorCompensation = (priorMetadata.compensation ??
           {}) as Prisma.JsonObject;
         recordChange(
@@ -2776,18 +2836,35 @@ export class CrewTasksService {
             estimatePoints: input.estimatePoints,
             metadata:
               input.rewardUsdMinor !== undefined ||
-              input.profitShareBps !== undefined
+              input.profitShareBps !== undefined ||
+              input.requiredSkills !== undefined ||
+              input.positionRole !== undefined ||
+              input.contractAssetNodeId !== undefined
                 ? {
                     ...priorMetadata,
-                    compensation: {
-                      ...priorCompensation,
-                      ...(input.rewardUsdMinor !== undefined
-                        ? { rewardUsdMinor: input.rewardUsdMinor }
-                        : {}),
-                      ...(input.profitShareBps !== undefined
-                        ? { profitShareBps: input.profitShareBps }
-                        : {}),
-                    },
+                    ...(input.contractAssetNodeId !== undefined
+                      ? { contractAssetNodeId: input.contractAssetNodeId }
+                      : {}),
+                    ...(input.positionRole !== undefined
+                      ? { positionRole: input.positionRole }
+                      : {}),
+                    ...(input.requiredSkills !== undefined
+                      ? { requiredSkills: [...new Set(input.requiredSkills)] }
+                      : {}),
+                    ...(input.rewardUsdMinor !== undefined ||
+                    input.profitShareBps !== undefined
+                      ? {
+                          compensation: {
+                            ...priorCompensation,
+                            ...(input.rewardUsdMinor !== undefined
+                              ? { rewardUsdMinor: input.rewardUsdMinor }
+                              : {}),
+                            ...(input.profitShareBps !== undefined
+                              ? { profitShareBps: input.profitShareBps }
+                              : {}),
+                          },
+                        }
+                      : {}),
                   }
                 : undefined,
             computeBudgetPoints: input.computeBudgetPoints,
@@ -5081,6 +5158,20 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     dueAt: task.dueAt?.toISOString() ?? null,
     deadlineRisk: taskDeadlineRisk(task.workflowState.semantic, task.dueAt),
     ...taskCompensation(task.metadata),
+    contractAssetNodeId: taskContractAssetId(task.metadata),
+    positionRole:
+      typeof (task.metadata as Prisma.JsonObject | null)?.positionRole ===
+      'string'
+        ? ((task.metadata as Prisma.JsonObject).positionRole as string)
+        : null,
+    requiredSkills: Array.isArray(
+      (task.metadata as Prisma.JsonObject | null)?.requiredSkills,
+    )
+      ? (
+          (task.metadata as Prisma.JsonObject)
+            .requiredSkills as Prisma.JsonArray
+        ).filter((skill): skill is string => typeof skill === 'string')
+      : [],
     estimatePoints: task.estimatePoints,
     computeBudgetPoints: task.computeBudgetPoints,
     computeUsedPoints,
@@ -5416,4 +5507,11 @@ function mapTaskLabelWriteError(error: unknown): Error {
     });
   }
   return error instanceof Error ? error : new Error('Task label write failed.');
+}
+
+function taskContractAssetId(
+  metadata: Prisma.JsonValue | null | undefined,
+): string | null {
+  const value = (metadata as Prisma.JsonObject | null)?.contractAssetNodeId;
+  return typeof value === 'string' ? value : null;
 }

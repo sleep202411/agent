@@ -5,7 +5,7 @@
  *
  * Three-column discovery layout:
  *   left   server-backed multi-select filters for employment type,
- *          seniority and work mode
+ *          certification capabilities and work mode
  *   middle selectable jobs; right selected job details and application CTA
  *
  * Filtering, sorting and cursor pagination are server-owned. The client keeps
@@ -16,7 +16,7 @@
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { IconBriefcase, IconCoin, IconMapPin, IconUserCircle } from "@tabler/icons-react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -37,13 +37,12 @@ import {
   CREW_GENRES,
   SALARY_PERIODS,
   EMPLOYMENT_TYPES,
-  EXPERIENCE_LEVELS,
   WORK_MODES,
   ZERO_DECIMAL_CURRENCIES,
   type EmploymentType,
-  type ExperienceLevel,
   type WorkMode,
 } from "@repo/shared/crew";
+import { listUserLevelOptions } from "@/src/services/user-level-apply";
 import { crewApi, isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 
 interface PositionWithCrew {
@@ -87,13 +86,18 @@ export function PositionsTab() {
   const [savedOnly, setSavedOnly] = useState(false);
   const openingT = useTranslations("crewOpening");
   const [employment, setEmployment] = useState<Set<EmploymentType>>(new Set());
-  const [seniority, setSeniority] = useState<Set<ExperienceLevel>>(new Set());
+  const [skills, setSkills] = useState<Set<string>>(new Set());
+  const capabilities = useQuery({
+    queryKey: ["user-level-options"],
+    queryFn: listUserLevelOptions,
+    retry: false,
+  });
   const [workMode, setWorkMode] = useState<Set<WorkMode>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sort, setSort] = useState<SortMode>("newest");
 
   const employmentQuery = useMemo(() => [...employment].sort().join(","), [employment]);
-  const seniorityQuery = useMemo(() => [...seniority].sort().join(","), [seniority]);
+  const skillsQuery = useMemo(() => JSON.stringify([...skills].sort()), [skills]);
   const workModeQuery = useMemo(() => [...workMode].sort().join(","), [workMode]);
   const positions = useInfiniteQuery({
     queryKey: [
@@ -106,7 +110,7 @@ export function PositionsTab() {
       genre,
       budget,
       employmentQuery,
-      seniorityQuery,
+      skillsQuery,
       workModeQuery,
       sort,
     ] as const,
@@ -122,7 +126,7 @@ export function PositionsTab() {
           saved: savedOnly ? "true" : undefined,
           cursor: pageParam,
           employment: employmentQuery,
-          seniority: seniorityQuery,
+          skills: skillsQuery,
           workMode: workModeQuery,
           sort,
         },
@@ -153,7 +157,7 @@ export function PositionsTab() {
       </div>
       <aside
         id="opening-filters"
-        className={`${filtersOpen ? "block" : "hidden"} space-y-5 border-r border-white/10 p-4 lg:block lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain`}
+        className={`${filtersOpen ? "block" : "hidden"} space-y-3 text-xs border-r border-white/10 p-4 lg:block lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain`}
       >
         <Button
           variant={savedOnly ? "solid" : "outline"}
@@ -188,7 +192,7 @@ export function PositionsTab() {
             });
           }}
         >
-          <h3 className="text-sm font-semibold">
+          <h3 className="text-xs font-semibold">
             {filterT("salary", { currency: CREW_CURRENCY })}
           </h3>
           <div className="flex gap-2">
@@ -259,7 +263,7 @@ export function PositionsTab() {
             setBudget({});
             setSalaryError("");
             setEmployment(new Set());
-            setSeniority(new Set());
+            setSkills(new Set());
             setWorkMode(new Set());
             setSavedOnly(false);
           }}
@@ -275,14 +279,24 @@ export function PositionsTab() {
           selected={employment}
           onToggle={(v) => setEmployment((prev) => toggle(prev, v as EmploymentType))}
         />
+        {capabilities.isPending ? <p role="status">{tc("loading")}</p> : null}
+        {capabilities.error ? (
+          <div role="alert">
+            <p>{capabilities.error.message}</p>
+            <Button variant="outline" size="sm" onClick={() => void capabilities.refetch()}>
+              {tc("retry")}
+            </Button>
+          </div>
+        ) : null}
         <FilterSection
-          label={t("filterSeniority")}
-          options={EXPERIENCE_LEVELS.map((v) => ({
-            value: v,
-            label: tw(`experience${capitalize(v)}`),
+          label={t("filterCapabilities")}
+          maxSelected={20}
+          options={[...new Set((capabilities.data ?? []).map((item) => item.name))].map((name) => ({
+            value: name,
+            label: name,
           }))}
-          selected={seniority}
-          onToggle={(v) => setSeniority((prev) => toggle(prev, v as ExperienceLevel))}
+          selected={skills}
+          onToggle={(v) => setSkills((prev) => toggle(prev, v))}
         />
         <FilterSection
           label={t("filterWorkMode")}
@@ -310,7 +324,7 @@ export function PositionsTab() {
           <EmptyState
             message={
               employment.size ||
-              seniority.size ||
+              skills.size ||
               workMode.size ||
               category ||
               genre ||
@@ -527,11 +541,13 @@ function FilterSection<T extends string>({
   options,
   selected,
   onToggle,
+  maxSelected,
 }: {
   label: string;
   options: { value: T; label: string }[];
   selected: Set<T>;
   onToggle: (value: T) => void;
+  maxSelected?: number;
 }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-4">
@@ -545,6 +561,7 @@ function FilterSection<T extends string>({
                 <input
                   type="checkbox"
                   checked={on}
+                  disabled={!on && maxSelected !== undefined && selected.size >= maxSelected}
                   onChange={() => onToggle(o.value)}
                   className="size-4 cursor-pointer accent-primary"
                 />

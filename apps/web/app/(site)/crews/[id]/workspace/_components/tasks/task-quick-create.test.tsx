@@ -22,6 +22,33 @@ const state = vi.hoisted(() => ({
   resetCreate: vi.fn(),
 }));
 
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: "local-creator" } }),
+}));
+vi.mock("./task-delivery-upload", () => ({
+  TaskDeliveryUpload: ({
+    onUploaded,
+    onBusyChange,
+  }: {
+    onUploaded: (file: { id: string; name: string }) => void;
+    onBusyChange: (busy: boolean) => void;
+  }) => (
+    <>
+      <button onClick={() => onBusyChange(true)}>Start contract upload</button>
+      <button
+        onClick={() => {
+          onBusyChange(false);
+          onUploaded({ id: "contract-file", name: "Terms.pdf" });
+        }}
+      >
+        Finish contract upload
+      </button>
+    </>
+  ),
+}));
+vi.mock("@/app/(site)/crews/_components/required-skills-select", () => ({
+  RequiredSkillsSelect: () => null,
+}));
 vi.mock("@/components/ui/calendar", () => ({
   Calendar: ({ selected, onSelect }: { selected?: Date; onSelect: (date?: Date) => void }) => (
     <input
@@ -161,6 +188,7 @@ function renderQuickCreate(
     activeView?: CrewTaskViewDTO;
     presetEpisodeId?: string;
     onStage?: (input: CreateCrewTaskInput) => void;
+    onCreateStaged?: (input: CreateCrewTaskInput) => Promise<CrewTaskDTO>;
     onPublishTask?: (taskId: string) => void;
   } = {}
 ) {
@@ -174,6 +202,7 @@ function renderQuickCreate(
       <TaskQuickCreate
         open
         onOpenChange={onOpenChange}
+        presetTaskKind="script"
         crewId="crew-1"
         members={[member]}
         project={taskProject}
@@ -183,6 +212,16 @@ function renderQuickCreate(
       />
     )
   );
+  if (context.open === false) return;
+  const brief = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task brief"]');
+  if (brief && !brief.value) act(() => fill(brief, "Deliver a reviewable task."));
+  const reward = document.querySelector<HTMLInputElement>('input[aria-label="Reward (USD)"]');
+  if (reward && !reward.value) act(() => fill(reward, "100"));
+  if (!context.initialInput?.dueAt) {
+    act(() => click(document.querySelector('button[aria-label="Due date"]')!));
+    const date = document.querySelector<HTMLInputElement>('input[aria-label="Calendar selection"]');
+    if (date) act(() => fill(date, "2099-10-03"));
+  }
 }
 
 function click(element: Element) {
@@ -368,7 +407,7 @@ describe("TaskQuickCreate", () => {
     expect(state.create).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Review episode one animatic",
-        description: "",
+        description: "Deliver a reviewable task.",
         priority: "normal",
         workflowStateId: "workflow-open",
         assignees: [],
@@ -459,7 +498,7 @@ describe("TaskQuickCreate", () => {
       expect(state.create).toHaveBeenCalledWith(
         expect.objectContaining({
           title: label === "Task title" ? "Newer user text" : "Original prompt",
-          description: label === "Task brief" ? "Newer user text" : "",
+          description: label === "Task brief" ? "Newer user text" : "Deliver a reviewable task.",
         })
       );
     }
@@ -701,6 +740,10 @@ describe("TaskQuickCreate", () => {
     const dateInput = document.querySelector<HTMLInputElement>('input[type="date"]')!;
     act(() => fill(dateInput, date));
     await act(async () => click(exactButton("Create")));
+    if (!date) {
+      expect(state.create).not.toHaveBeenCalled();
+      return;
+    }
     expect(state.create).toHaveBeenCalledWith(
       expect.objectContaining({
         dueAt: date ? new Date(`${date}T23:59:59`).toISOString() : null,
@@ -793,7 +836,7 @@ it("reopens a staged task, saves edits and preserves unexposed planning fields",
     profitShareBps: 250,
     revisionLimit: 2,
     startAt: "2026-10-01T02:00:00.000Z",
-    dueAt: "2026-10-03T15:59:59.000Z",
+    dueAt: "2099-10-03T15:59:59.000Z",
     blockedByTaskIds: ["previous"],
     customFieldValues: [{ fieldId: "brief", value: "Keep me" }],
   };
@@ -813,31 +856,28 @@ it("reopens a staged task, saves edits and preserves unexposed planning fields",
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("saves separate USD reward and profit share terms before staging", async () => {
+it("saves the reward without exposing the removed profit-share control", async () => {
   const stage = vi.fn();
   renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
   act(() => {
     fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Paid script");
     fill(document.querySelector<HTMLInputElement>('input[aria-label="Reward (USD)"]')!, "30.25");
-    fill(document.querySelector<HTMLInputElement>('input[aria-label="Profit share (%)"]')!, "2.5");
+    expect(document.querySelector('input[aria-label="Profit share (%)"]')).toBeNull();
   });
   await act(async () => click(exactButton("Add task")));
   expect(stage).toHaveBeenCalledWith(
-    expect.objectContaining({ rewardUsdMinor: 3025, profitShareBps: 250 })
+    expect.objectContaining({ rewardUsdMinor: 3025, profitShareBps: null })
   );
 });
 
-it.each(["-1", "100.01", "0.001"])(
-  "rejects invalid profit share %s before staging",
+it.each(["-1", "1000000001", "0.001"])(
+  "rejects invalid reward %s before staging",
   async (value) => {
     const stage = vi.fn();
     renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
     act(() => {
       fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Paid script");
-      fill(
-        document.querySelector<HTMLInputElement>('input[aria-label="Profit share (%)"]')!,
-        value
-      );
+      fill(document.querySelector<HTMLInputElement>('input[aria-label="Reward (USD)"]')!, value);
     });
     await act(async () => click(exactButton("Add task")));
     expect(stage).not.toHaveBeenCalled();
@@ -933,6 +973,78 @@ it("blocks a stale episode instead of silently assigning a different episode", a
     fill(
       document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
       "Episode task"
+    )
+  );
+  await act(async () => click(exactButton("Create")));
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+it("recruits a staged draft through the durable workbench creation path", async () => {
+  const publish = vi.fn(),
+    stage = vi.fn();
+  const createStaged = vi.fn().mockResolvedValue({ id: "staged-created" });
+  renderQuickCreate(vi.fn(), vi.fn(), project, {
+    onPublishTask: publish,
+    onStage: stage,
+    onCreateStaged: createStaged,
+  });
+  act(() =>
+    fill(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      "Recruit editor"
+    )
+  );
+  await act(async () => click(exactButton("Recruit Creators")));
+  expect(createStaged).toHaveBeenCalledTimes(1);
+  expect(createStaged).toHaveBeenCalledWith(
+    expect.objectContaining({ title: "Recruit editor", assignees: [] })
+  );
+  expect(state.create).not.toHaveBeenCalled();
+  expect(stage).not.toHaveBeenCalled();
+  expect(publish).toHaveBeenCalledWith("staged-created");
+});
+
+it("attaches the uploaded contract and blocks creation while it uploads", async () => {
+  renderQuickCreate();
+  act(() =>
+    fill(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      "Contract task"
+    )
+  );
+  await act(async () => click(exactButton("Start contract upload")));
+  expect(exactButton("Create").disabled).toBe(true);
+  await act(async () => click(exactButton("Finish contract upload")));
+  expect(document.body.textContent).toContain("Terms.pdf");
+  await act(async () => click(exactButton("Create")));
+  expect(state.create).toHaveBeenCalledWith(
+    expect.objectContaining({ contractAssetNodeId: "contract-file" })
+  );
+});
+it("clears interrupted upload state when switching crews", async () => {
+  renderQuickCreate();
+  await act(async () => click(exactButton("Start contract upload")));
+  renderQuickCreate(vi.fn(), vi.fn(), project, { crewId: "crew-2" });
+  act(() =>
+    fill(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      "New crew task"
+    )
+  );
+  expect(exactButton("Create").disabled).toBe(false);
+  await act(async () => click(exactButton("Create")));
+  expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ contractAssetNodeId: null }));
+});
+
+it.each(["Task brief", "Reward (USD)"])("blocks an empty required %s", async (label) => {
+  renderQuickCreate();
+  act(() =>
+    fill(document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!, "Task")
+  );
+  act(() =>
+    fill(
+      document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[aria-label="${label}"]`)!,
+      ""
     )
   );
   await act(async () => click(exactButton("Create")));

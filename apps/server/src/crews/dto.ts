@@ -314,6 +314,24 @@ export const ListPublicPositionsQuerySchema = z
     q: z.string().trim().min(1).max(120).optional(),
     crewId: z.string().trim().min(1).max(100).optional(),
     skill: z.string().trim().min(1).max(80).optional(),
+    skills: z
+      .string()
+      .max(2000)
+      .transform((value, ctx) => {
+        try {
+          return z
+            .array(z.string().trim().min(1).max(80))
+            .max(20)
+            .parse(JSON.parse(value));
+        } catch {
+          ctx.addIssue({
+            code: 'custom',
+            message: 'skills must be a JSON array of up to 20 skill names',
+          });
+          return z.NEVER;
+        }
+      })
+      .optional(),
     limit: z.coerce.number().int().min(1).max(60).default(36),
     cursor: z
       .string()
@@ -595,6 +613,12 @@ export const CreateCrewTaskSchema = z
       .max(100_000_000_000)
       .nullable()
       .optional(),
+    positionRole: z.string().trim().min(1).max(80).nullable().optional(),
+    contractAssetNodeId: z.string().uuid().nullable().optional(),
+    requiredSkills: z
+      .array(z.string().trim().min(1).max(64))
+      .max(20)
+      .optional(),
     profitShareBps: z.number().int().min(0).max(10_000).nullable().optional(),
     computeBudgetPoints: z
       .number()
@@ -626,6 +650,22 @@ export const CreateCrewTaskSchema = z
       ])
       .nullable()
       .optional(),
+  })
+  .superRefine((input, ctx) => {
+    const required = {
+      description: input.description.trim(),
+      taskKind: input.taskKind,
+      dueAt: input.dueAt,
+      rewardUsdMinor: input.rewardUsdMinor,
+    };
+    for (const [field, value] of Object.entries(required)) {
+      if (value == null || value === '')
+        ctx.addIssue({
+          code: 'custom',
+          path: [field],
+          message: `${field} is required`,
+        });
+    }
   })
   .refine(
     (input) =>
@@ -713,6 +753,12 @@ export const UpdateCrewTaskSchema = z
       .min(0)
       .max(100_000_000_000)
       .nullable()
+      .optional(),
+    positionRole: z.string().trim().min(1).max(80).nullable().optional(),
+    contractAssetNodeId: z.string().uuid().nullable().optional(),
+    requiredSkills: z
+      .array(z.string().trim().min(1).max(64))
+      .max(20)
       .optional(),
     profitShareBps: z.number().int().min(0).max(10_000).nullable().optional(),
     computeBudgetPoints: z

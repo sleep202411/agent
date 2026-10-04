@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import sitemap from "./sitemap";
+import { staticSitemap as sitemap } from "./sitemap";
 import { isProtectedPath } from "@/src/lib/auth/protected-paths";
 import { locales } from "@/src/i18n/config";
 

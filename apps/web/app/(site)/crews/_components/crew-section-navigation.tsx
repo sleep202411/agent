@@ -2,13 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
-import {
-  IconBriefcase,
-  IconCoins,
-  IconListCheck,
-  IconUsers,
-  IconMessageCircle,
-} from "@tabler/icons-react";
+import { IconBriefcase, IconListCheck, IconUsers, IconMessageCircle } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
@@ -27,14 +21,11 @@ const sections = [
   },
   { id: "mine", label: "myCrewsTitle", icon: IconUsers, href: "/crews?view=mine" },
   { id: "tasks", label: "taskDashboardTab", icon: IconListCheck, href: "/crews/tasks" },
-  { id: "income", label: "myIncomeTab", icon: IconCoins, href: "/crews/income" },
   { id: "crews", label: "allCrewsTitle", icon: IconUsers, href: "/crews?view=crews" },
 ] as const;
 const dashboardSections = [
   { id: "applications", label: "myApplicationsTab", href: "/messages?tab=recruitment" },
   { id: "tasks", label: "myTasksTab", href: "/crews/tasks" },
-  { id: "feedback", label: "myFeedbackTab", href: "/crews/feedback" },
-  { id: "cases", label: "myCasesTab", href: "/crews/cases" },
 ] as const;
 
 /** Keep the same section navigation above the lobby, task center and income. */

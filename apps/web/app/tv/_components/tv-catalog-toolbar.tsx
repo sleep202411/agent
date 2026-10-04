@@ -1,6 +1,7 @@
 "use client";
 
 import { useTranslations } from "@/src/i18n/i18n";
+import { IconBolt, IconPlus } from "@tabler/icons-react";
 import styles from "./tv-catalog-toolbar.module.css";
 
 type CatalogMode = "videos" | "games";
@@ -9,12 +10,15 @@ export function TvCatalogToolbar({
   mode,
   onModeChange,
   onCreate,
+  onSubmitVideo,
 }: {
   mode: CatalogMode;
   onModeChange: (mode: CatalogMode) => void;
   onCreate: () => void;
+  onSubmitVideo?: () => void;
 }) {
   const t = useTranslations("tvGames");
+  const videoT = useTranslations("communityVideo");
   const channels = useTranslations("channels");
   return (
     <div className={styles.toolbar}>
@@ -31,12 +35,23 @@ export function TvCatalogToolbar({
           </button>
         ))}
       </div>
-      <button type="button" onClick={onCreate} className={styles.create}>
-        <span aria-hidden="true" className={styles.plus}>
-          +
-        </span>
-        {channels("create")}
-      </button>
+      <div className={styles.actions}>
+        <button type="button" onClick={onCreate} className={styles.create}>
+          <IconBolt aria-hidden="true" className="size-4" />
+          {channels("create")}
+        </button>
+        {onSubmitVideo ? (
+          <button
+            type="button"
+            onClick={onSubmitVideo}
+            aria-label={videoT("title")}
+            title={videoT("title")}
+            className={styles.create}
+          >
+            <IconPlus aria-hidden="true" className="size-4" />
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

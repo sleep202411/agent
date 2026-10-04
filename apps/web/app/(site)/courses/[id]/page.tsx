@@ -1,88 +1,55 @@
-"use client";
+import { cache } from "react";
+import { headers } from "next/headers";
+import type { Metadata } from "next";
+import { locales, defaultLocale } from "@/src/i18n/config";
+import { JsonLd, buildCourse, localeCanonicalUrl } from "@/src/lib/seo";
+import { readPublicCourse } from "@/src/lib/seo/public-content";
+import CourseDetailClient from "./course-detail-client";
 
-import { useEffect } from "react";
-import { useParams } from "next/navigation";
-import { toast } from "sonner";
-import { CourseLoadError } from "../_components/CourseLoadError";
-import { Spinner } from "@/components/ui/spinner";
-import { useTranslations } from "@/src/i18n/i18n";
-import { usePublicCourseDetail } from "@/src/hooks/use-courses-public";
-import { isCourseApiError } from "@/src/services/courses";
-import { CourseVideoPlayer } from "../_components/CourseVideoPlayer";
-import { PublicCourseDetailPanel } from "../_components/PublicCourseDetailPanel";
-
-/**
- * Course detail — playlist + signed play URL from `/project/courses`.
- */
-export default function CourseDetailPage() {
-  const t = useTranslations("courses");
-  const params = useParams<{ id: string }>();
-  const {
-    isLoading,
-    error,
-    playError,
-    detail,
-    currentTitle,
-    seriesVideoIds,
-    stableProgressKey,
-    setCurrentVideo,
-    isFetching,
-    retryDetail,
-    isPlayFetching,
-    retryPlayback,
-  } = usePublicCourseDetail(params.id);
-
-  useEffect(() => {
-    if (isCourseApiError(playError, 403)) {
-      toast.error(t("accessDenied"), {
-        id: `course-video-no-permission-${detail?.currentVideoId}`,
-      });
-    }
-  }, [detail?.currentVideoId, playError, t]);
-
+const courseForRequest = cache(readPublicCourse);
+async function requestLocale() {
+  const locale = (await headers()).get("x-locale");
+  return locales.find((value) => value === locale) ?? defaultLocale;
+}
+type Props = { params: Promise<{ id: string }> };
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params;
+  const locale = await requestLocale();
+  const course = await courseForRequest(id, locale);
+  if (!course) return {};
+  return {
+    title: course.title,
+    description: course.description,
+    alternates: { canonical: localeCanonicalUrl(`/courses/${course.id}`, locale) },
+    openGraph: { title: course.title, description: course.description, type: "website" },
+  };
+}
+export default async function CourseDetailPage({ params }: Props) {
+  const { id } = await params;
+  const locale = await requestLocale();
+  const course = await courseForRequest(id, locale);
   return (
-    <main className="bg-[#08080d] text-white lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
-      {isLoading ? (
-        <div className="flex min-h-[60vh] items-center justify-center lg:h-full lg:min-h-0">
-          <Spinner className="size-7 text-[#ff5967]" />
-        </div>
-      ) : null}
-
-      {error || (!isLoading && !detail) ? (
-        <div className="flex min-h-[60vh] items-center justify-center px-5 lg:h-full lg:min-h-0">
-          <CourseLoadError
-            error={error}
-            retry={retryDetail ? () => void retryDetail() : undefined}
-            busy={isFetching}
-          />
-        </div>
-      ) : null}
-
-      {!isLoading && !error && detail ? (
-        <div className="lg:grid lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_520px]">
-          {playError ? (
-            <div className="flex items-center justify-center p-5">
-              <CourseLoadError
-                error={playError}
-                retry={() => void retryPlayback()}
-                busy={isPlayFetching}
-              />
-            </div>
-          ) : (
-            <CourseVideoPlayer
-              key={detail.currentVideoId ?? detail.courseId}
-              courseId={detail.currentVideoId ?? detail.courseId}
-              seriesCourseId={detail.courseId}
-              seriesVideoIds={seriesVideoIds}
-              title={currentTitle || detail.title}
-              videoUrl={isCourseApiError(playError, 403) ? "" : detail.videoUrl}
-              posterUrl={detail.currentPosterUrl || undefined}
-              stableProgressKey={stableProgressKey}
-            />
-          )}
-          <PublicCourseDetailPanel detail={detail} onVideoSelect={setCurrentVideo} />
-        </div>
-      ) : null}
-    </main>
+    <>
+      {course && (
+        <JsonLd
+          data={buildCourse({
+            url: localeCanonicalUrl(`/courses/${course.id}`, locale),
+            inLanguage: locale,
+            name: course.title,
+            description: course.description,
+          })}
+        />
+      )}
+      <CourseDetailClient
+        preview={
+          course ? (
+            <section className="w-full px-6 py-8">
+              <h1 className="text-2xl font-semibold">{course.title}</h1>
+              <p className="mt-3 whitespace-pre-line text-sm text-white/70">{course.description}</p>
+            </section>
+          ) : undefined
+        }
+      />
+    </>
   );
 }
