@@ -1,3 +1,4 @@
+import { ConversationFile } from "@/features/services/conversation-file";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
@@ -61,7 +62,12 @@ export function CrewCandidateList({
           key={item.id}
           style={{ padding: 12, borderRadius: 8, backgroundColor: theme.backgroundElement }}
         >
-          <ThemedText type="smallBold">{item.name}</ThemedText>
+          <ConversationFile
+            mediaAssetId={item.media!.id}
+            name={item.name}
+            mediaKind={item.media!.kind}
+            contentType={item.media!.contentType}
+          />
           <ThemedText type="small" themeColor="textSecondary">
             {item.media!.contentType}
           </ThemedText>
