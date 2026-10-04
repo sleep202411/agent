@@ -5123,5 +5123,15 @@
   "storyCandidates.hideCrew": "Hide Crew assets",
   "storyCandidates.noCrew": "This project has no linked Crew.",
   "storyCandidates.crewEmpty": "No shared image, video or audio files are available.",
-  "storyCandidates.preview": "Preview"
+  "storyCandidates.preview": "Preview",
+  "storyCanvas.title": "Canvas overview",
+  "storyCanvas.loadError": "Could not load the canvas. Please retry.",
+  "storyCanvas.refresh": "Refresh",
+  "storyCanvas.nodes": "Nodes",
+  "storyCanvas.media": "Media",
+  "storyCanvas.empty": "Nothing here yet.",
+  "storyCanvas.image": "Image",
+  "storyCanvas.video": "Video",
+  "storyCanvas.audio": "Audio",
+  "storyCanvas.saveCandidate": "Save to candidate media"
 }

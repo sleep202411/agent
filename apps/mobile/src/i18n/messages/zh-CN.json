@@ -5123,5 +5123,15 @@
   "storyCandidates.hideCrew": "收起剧组资产",
   "storyCandidates.noCrew": "此项目尚未关联剧组。",
   "storyCandidates.crewEmpty": "暂无可用的共享图片、视频或音频文件。",
-  "storyCandidates.preview": "预览"
+  "storyCandidates.preview": "预览",
+  "storyCanvas.title": "画布概览",
+  "storyCanvas.loadError": "无法加载画布，请重试。",
+  "storyCanvas.refresh": "刷新",
+  "storyCanvas.nodes": "节点",
+  "storyCanvas.media": "媒体",
+  "storyCanvas.empty": "暂无内容。",
+  "storyCanvas.image": "图片",
+  "storyCanvas.video": "视频",
+  "storyCanvas.audio": "音频",
+  "storyCanvas.saveCandidate": "保存为候选素材"
 }

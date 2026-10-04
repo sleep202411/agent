@@ -5123,5 +5123,15 @@
   "storyCandidates.hideCrew": "收起劇組資產",
   "storyCandidates.noCrew": "此專案尚未關聯劇組。",
   "storyCandidates.crewEmpty": "暫無可用的共享圖片、影片或音訊檔案。",
-  "storyCandidates.preview": "預覽"
+  "storyCandidates.preview": "預覽",
+  "storyCanvas.title": "畫布概覽",
+  "storyCanvas.loadError": "無法載入畫布，請重試。",
+  "storyCanvas.refresh": "重新整理",
+  "storyCanvas.nodes": "節點",
+  "storyCanvas.media": "媒體",
+  "storyCanvas.empty": "暫無內容。",
+  "storyCanvas.image": "圖片",
+  "storyCanvas.video": "影片",
+  "storyCanvas.audio": "音訊",
+  "storyCanvas.saveCandidate": "儲存為候選素材"
 }
