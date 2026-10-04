@@ -52,7 +52,7 @@ const salary = z
 export const newPosition = z
   .object({
     positionType: z.string().refine(isPresetPosition),
-    description: z.string().trim().min(1).max(1000),
+    description: z.string().trim().min(1).max(10000),
     targetCount: z.number().int().min(1).max(99),
     workMode: z.enum(WORK_MODES),
     location: z.string().trim().min(1).max(128).nullable(),

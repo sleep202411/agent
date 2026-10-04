@@ -1,4 +1,7 @@
 {
+  "positionCreate.useTaskBrief": "Use task brief",
+  "positionCreate.publicBriefHelp": "Review this public job description before publishing. Include the deliverables, requirements, and acceptance criteria. Maximum 10,000 characters.",
+  "positionCreate.taskUsdReward": "The task reward is in USD. Enter recruitment compensation in a currency supported on this site.",
   "taskContract.choose": "Contract file (optional)",
   "taskContract.remove": "Remove attachment",
   "crewSkills.label": "Required creator skills",

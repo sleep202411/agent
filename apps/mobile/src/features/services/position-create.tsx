@@ -1,3 +1,5 @@
+import { fetchTaskDetail, type TaskDetail } from "./task-detail-api";
+import { isPresetPosition } from "@repo/shared/crew";
 import { CrewSkillsField } from "./crew-skills-field";
 import {
   positionDraft,
@@ -80,6 +82,10 @@ export function PositionCreate(props: {
     [visibility, setVisibility] = useState<"public" | "private">(
       initial?.recruitmentVisibility ?? "public"
     );
+  const [roleChosen, setRoleChosen] = useState(!!initial || !!props.initialPosition);
+  const [source, setSource] = useState<{ id: string; data?: TaskDetail; error?: string }>();
+  const [sourceRevision, setSourceRevision] = useState(0);
+  const [importedTask, setImportedTask] = useState<string>();
   const [task, setTask] = useState<TaskOption>(),
     [picking, setPicking] = useState(false),
     [expanded, setExpanded] = useState<string>(),
@@ -108,6 +114,57 @@ export function PositionCreate(props: {
     );
     return () => c.abort();
   }, [props.crewId, props.userId, props.generation, props.active, readRevision]);
+  useEffect(() => {
+    if (!task || props.editing || props.active === false || !access?.canLinkTask) return;
+    const controller = new AbortController();
+    void fetchTaskDetail(props.crewId, task.id, controller.signal).then(
+      (data) => {
+        if (!controller.signal.aborted && props.generation === getAuthGeneration())
+          setSource({ id: task.id, data });
+      },
+      (cause) => {
+        if (!controller.signal.aborted && props.generation === getAuthGeneration())
+          setSource({ id: task.id, error: cause instanceof Error ? cause.message : String(cause) });
+      }
+    );
+    return () => controller.abort();
+  }, [
+    task,
+    props.crewId,
+    props.generation,
+    props.active,
+    props.editing,
+    access?.canLinkTask,
+    sourceRevision,
+  ]);
+  const taskSource = task && source?.id === task.id ? source : undefined;
+  const importPending = !!task && !props.editing && !taskSource?.data;
+  if (
+    props.active !== false &&
+    props.generation === getAuthGeneration() &&
+    access?.canLinkTask &&
+    !props.editing &&
+    !op.busy &&
+    !attempted &&
+    taskSource?.data &&
+    importedTask !== task?.id
+  ) {
+    const data = taskSource.data;
+    setImportedTask(task!.id);
+    if (!roleChosen && data.positionRole && isPresetPosition(data.positionRole)) {
+      setRole(data.positionRole);
+      setRoleChosen(true);
+    }
+    setDescription((current) => (current.trim() ? current : data.description));
+    setSkills((current) => (current.length ? current : (data.requiredSkills ?? [])));
+    if (data.rewardUsdMinor != null && !min && !max && positionCurrencies.includes("USD")) {
+      setCurrency("USD");
+      setMin(String(data.rewardUsdMinor / 100));
+      setMax(String(data.rewardUsdMinor / 100));
+      setPeriod("project");
+    }
+    if (data.dueAt && !closeDate) setCloseDate(data.dueAt.slice(0, 10));
+  }
   const locked = op.busy || attempted;
   const action = (label: string, onPress: () => void, disabled = false, selected = false) => (
     <Pressable
@@ -184,7 +241,13 @@ export function PositionCreate(props: {
     </View>
   );
   const submit = () => {
-    if (props.active === false || !access || locked || props.generation !== getAuthGeneration())
+    if (
+      props.active === false ||
+      !access ||
+      locked ||
+      importPending ||
+      props.generation !== getAuthGeneration()
+    )
       return;
     let data: PositionEditDraft;
     try {
@@ -260,6 +323,8 @@ export function PositionCreate(props: {
         title={t("positionCreate.task")}
         closeLabel={t("nativeApplications.back")}
         onSelect={(value) => {
+          setSource(undefined);
+          setImportedTask(undefined);
           setTask(value);
           setPicking(false);
         }}
@@ -294,11 +359,23 @@ export function PositionCreate(props: {
               "positionCreate.role",
               role,
               PRESET_POSITIONS.map((p) => p.value),
-              setRole,
+              (value) => {
+                setRole(value);
+                setRoleChosen(true);
+              },
               (v) => crewPositionLabel(v, t)
             )
           )}
-          {field("positionCreate.description", description, setDescription, 1000, true)}
+          {field("positionCreate.description", description, setDescription, 10000, true)}
+          {!props.editing &&
+            taskSource?.data &&
+            access.canLinkTask &&
+            action(
+              t("positionCreate.useTaskBrief"),
+              () => setDescription(taskSource.data!.description),
+              locked || !!description.trim()
+            )}
+          <ThemedText>{t("positionCreate.publicBriefHelp")}</ThemedText>
           {field("positionCreate.count", count, setCount, 2)}
           <CrewSkillsField
             value={skills}
@@ -338,6 +415,23 @@ export function PositionCreate(props: {
                 () => setPicking(true),
                 locked
               )}
+              {task && importPending && !taskSource?.error && <ActivityIndicator />}
+              {taskSource?.error && (
+                <>
+                  <ThemedText accessibilityRole="alert">{taskSource.error}</ThemedText>
+                  {action(
+                    t("common.retry"),
+                    () => {
+                      setSource(undefined);
+                      setSourceRevision((n) => n + 1);
+                    },
+                    locked
+                  )}
+                </>
+              )}
+              {taskSource?.data?.rewardUsdMinor != null && !positionCurrencies.includes("USD") && (
+                <ThemedText>{t("positionCreate.taskUsdReward")}</ThemedText>
+              )}
               {task &&
                 action(
                   t("positionCreate.clearTask"),
@@ -364,7 +458,7 @@ export function PositionCreate(props: {
           {action(
             t(props.editing ? "positionEdit.save" : "positionCreate.publish"),
             submit,
-            locked
+            locked || importPending
           )}
         </>
       )}

@@ -145,3 +145,10 @@ it("guards account changes before admission and after response", async () => {
   });
   await expect(createPosition("crew", "manager", 1, input)).rejects.toThrow("session expired");
 });
+
+it("accepts the complete official 10,000-character public brief without truncation", () => {
+  expect(newPosition.parse({ ...input, description: "x".repeat(10000) }).description).toHaveLength(
+    10000
+  );
+  expect(newPosition.safeParse({ ...input, description: "x".repeat(10001) }).success).toBe(false);
+});

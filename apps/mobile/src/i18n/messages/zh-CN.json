@@ -1,4 +1,7 @@
 {
+  "positionCreate.useTaskBrief": "使用任务说明",
+  "positionCreate.publicBriefHelp": "发布前请确认公开工作说明，包含交付内容、要求和验收标准，最多10,000字。",
+  "positionCreate.taskUsdReward": "任务报酬以美元计价。请使用本站支持的币种填写招聘薪酬。",
   "taskContract.choose": "合同文件（可选）",
   "taskContract.remove": "移除附件",
   "crewSkills.label": "创作者所需技能",

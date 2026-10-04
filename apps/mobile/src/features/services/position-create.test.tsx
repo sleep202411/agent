@@ -22,12 +22,14 @@ vi.mock("./task-picker", () => ({
   ),
 }));
 const h = vi.hoisted(() => ({
+  source: vi.fn(),
   generation: 1,
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
   close: vi.fn(),
 }));
+vi.mock("./task-detail-api", () => ({ fetchTaskDetail: h.source }));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post, patch: h.patch } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white", border: "gray" }) }));
@@ -128,6 +130,12 @@ const receipt = (data: import("./position-create-api").NewPosition) => ({
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.source.mockResolvedValue({
+    description: "Task brief",
+    requiredSkills: [],
+    rewardUsdMinor: null,
+    dueAt: null,
+  });
   h.get.mockResolvedValue({
     userId: "manager",
     permissions: ["openings.manage", "tasks.manage", "tasks.view"],
@@ -408,4 +416,93 @@ it("removes an existing qualification skill without changing unrelated position 
     service: "aurora",
     data: { requiredSkills: [] },
   });
+});
+
+it("imports the linked task brief, role, skills, fixed USD reward and deadline", async () => {
+  h.source.mockResolvedValue({
+    description: "Full task brief",
+    positionRole: "editor",
+    requiredSkills: ["Editing"],
+    rewardUsdMinor: 12345,
+    dueAt: "2028-10-15T10:00:00Z",
+  });
+  await render();
+  await click("positionCreate.task");
+  await click("Pick true");
+  await click("positionCreate.publish");
+  expect(h.post.mock.calls[0]![1].data).toMatchObject({
+    description: "Full task brief",
+    positionType: "editor",
+    requiredSkills: ["Editing"],
+    salary: { currency: "USD", min: 123.45, max: 123.45, period: "project" },
+    closeDate: "2028-10-15",
+  });
+});
+it("does not overwrite entered terms when the task read completes later", async () => {
+  let resolve!: (v: object) => void;
+  h.source.mockImplementation(() => new Promise((r) => (resolve = r)));
+  await render();
+  await click("positionCreate.task");
+  await click("Pick true");
+  expect(button("positionCreate.publish").disabled).toBe(true);
+  await type("positionCreate.description", "My edited brief");
+  await type("positionCreate.min", "42");
+  await type("positionCreate.closeDate", "2028-11-20");
+  await act(async () =>
+    resolve({
+      description: "Imported brief",
+      requiredSkills: [],
+      rewardUsdMinor: 10000,
+      dueAt: "2028-10-15T00:00:00Z",
+    })
+  );
+  await click("positionCreate.publish");
+  expect(h.post.mock.calls[0]![1].data).toMatchObject({
+    description: "My edited brief",
+    salary: { min: 42, max: null },
+    closeDate: "2028-11-20",
+  });
+});
+it("keeps the linked task on a failed read and retries before allowing publication", async () => {
+  h.source.mockRejectedValueOnce(Error("Task unavailable"));
+  await render();
+  await click("positionCreate.task");
+  await click("Pick true");
+  expect(host.textContent).toContain("Task unavailable");
+  expect(button("positionCreate.publish").disabled).toBe(true);
+  await click("common.retry");
+  await click("positionCreate.publish");
+  expect(h.source).toHaveBeenCalledTimes(2);
+  expect(h.post).toHaveBeenCalledOnce();
+});
+it("ignores a late task import after unlinking", async () => {
+  let resolve!: (v: object) => void;
+  h.source.mockImplementation(() => new Promise((r) => (resolve = r)));
+  await render();
+  await click("positionCreate.task");
+  await click("Pick true");
+  await click("positionCreate.clearTask");
+  await act(async () =>
+    resolve({
+      description: "Do not import",
+      requiredSkills: ["Editing"],
+      rewardUsdMinor: 10000,
+      dueAt: null,
+    })
+  );
+  expect(
+    (host.querySelector('[aria-label="positionCreate.description"]') as HTMLTextAreaElement).value
+  ).toBe("");
+});
+
+it("allows explicitly restoring an emptied task brief without overwriting text", async () => {
+  await render();
+  await click("positionCreate.task");
+  await click("Pick true");
+  expect(button("positionCreate.useTaskBrief").disabled).toBe(true);
+  await type("positionCreate.description", "");
+  await click("positionCreate.useTaskBrief");
+  expect(
+    (host.querySelector('[aria-label="positionCreate.description"]') as HTMLTextAreaElement).value
+  ).toBe("Task brief");
 });
