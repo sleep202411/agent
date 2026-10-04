@@ -1,3 +1,4 @@
+import { editCanvasPositions } from "./position-edit";
 import { editCanvasGroup } from "./group-edit";
 import { editCanvasShotMedia, reconcileCanvasShotMedia } from "./shot-media";
 import { z } from "zod";
@@ -42,7 +43,9 @@ function receive(raw: unknown) {
     sequence: message.sequence,
   };
   try {
-    if (message.type === "group") {
+    if (message.type === "moveNodes") {
+      send({ type: "edited", ...identity, ...editCanvasPositions(message.snapshot, message.move) });
+    } else if (message.type === "group") {
       send({ type: "edited", ...identity, ...editCanvasGroup(message.snapshot, message.group) });
     } else if (message.type === "reconcileShotMedia") {
       send({ type: "edited", ...identity, ...reconcileCanvasShotMedia(message.snapshot) });

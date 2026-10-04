@@ -83,9 +83,28 @@ it("applies group commands through the shipped runtime with exact replay and sta
     ).toHaveProperty("color", "cyan");
     const moved = run({ operation: "move", groupId, delta: { x: 15, y: -10 } });
     expect(moved.snapshot.nodes.a).toHaveProperty("position", { x: 25, y: 10 });
+    host.__fizzCanvasReceive!(
+      JSON.stringify({
+        type: "moveNodes",
+        sessionId,
+        documentId,
+        requestId: ++requestId,
+        sequence: 1,
+        snapshot: state,
+        move: { action: "moveNodes", positions: [{ nodeId: "a", x: 77, y: -33 }] },
+      })
+    );
+    const positioned = canvasRuntimeMessage.parse(received.at(-1));
+    expect(positioned.type).toBe("edited");
+    if (positioned.type !== "edited") throw Error("Position command failed");
+    expect(positioned.snapshot.nodes.a).toHaveProperty("position", { x: 77, y: -33 });
+    expect(
+      materializeCanvas(state, [positioned.yjsUpdateBase64!, positioned.yjsUpdateBase64!]).snapshot
+    ).toEqual(positioned.snapshot);
+    state = positioned.state;
     const ungrouped = run({ operation: "ungroup", groupId });
     expect(ungrouped.snapshot.groups).toEqual({});
-    expect(ungrouped.snapshot.nodes).toEqual(moved.snapshot.nodes);
+    expect(ungrouped.snapshot.nodes).toEqual(positioned.snapshot.nodes);
     host.__fizzCanvasReceive!(
       JSON.stringify({
         type: "group",

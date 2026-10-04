@@ -1,3 +1,4 @@
+import type { CanvasPositionEdit } from "../../../../canvas-editor/position-schema";
 import type { CanvasGroupEdit } from "../../../../canvas-editor/group-schema";
 import type { CanvasShotMedia } from "../../../../canvas-editor/shot-media-schema";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +25,7 @@ export function StoryCanvasEncoder({
     | CanvasNodeCreate
     | CanvasShotMedia
     | CanvasGroupEdit
+    | CanvasPositionEdit
     | { action: "reconcileShotMedia" };
   generation: number;
   title: string;
@@ -89,9 +91,11 @@ export function StoryCanvasEncoder({
               ...("operation" in edit
                 ? { type: "group" as const, group: edit }
                 : "action" in edit
-                  ? edit.action === "reconcileShotMedia"
-                    ? { type: "reconcileShotMedia" as const }
-                    : { type: "shotMedia" as const, media: edit }
+                  ? edit.action === "moveNodes"
+                    ? { type: "moveNodes" as const, move: edit }
+                    : edit.action === "reconcileShotMedia"
+                      ? { type: "reconcileShotMedia" as const }
+                      : { type: "shotMedia" as const, media: edit }
                   : "kind" in edit
                     ? { type: "edit" as const, edit }
                     : { type: "create" as const, create: edit }),

@@ -1,3 +1,4 @@
+import { canvasPositionEditSchema } from "./position-schema";
 import { canvasGroupEditSchema } from "./group-schema";
 import { canvasShotMediaSchema } from "./shot-media-schema";
 import { z } from "zod";
@@ -27,6 +28,14 @@ export const canvasSnapshotSchema = z
   })
   .strict();
 export const canvasHostMessage = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("moveNodes"),
+      ...identity,
+      snapshot: encodedCanvasState,
+      move: canvasPositionEditSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("group"),
