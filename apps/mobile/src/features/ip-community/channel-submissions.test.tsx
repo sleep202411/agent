@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ChannelSubmissions } from "./channel-submissions";
+vi.mock("./channel-videos", () => ({ ChannelVideos: () => null }));
 const h = vi.hoisted(() => ({
   generation: 1,
   active: true,

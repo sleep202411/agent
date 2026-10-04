@@ -4822,5 +4822,9 @@
   "crewDeadline.overdueLabel": "已逾期",
   "studioWorkspace.uploadIcon": "上傳團隊圖標",
   "studioWorkspace.iconFileHint": "PNG、JPEG 或 WebP，最大 5 MB",
-  "account.resolutionCenter": "爭議與調解中心"
+  "account.resolutionCenter": "爭議與調解中心",
+  "channelVideos.title": "頻道影片",
+  "channelVideos.empty": "暫無影片。",
+  "channelVideos.play": "播放影片",
+  "channelVideos.moderation": "平台審核期間影片暫不可播放。"
 }

@@ -4822,5 +4822,9 @@
   "crewDeadline.overdueLabel": "Overdue",
   "studioWorkspace.uploadIcon": "Upload team icon",
   "studioWorkspace.iconFileHint": "PNG, JPEG or WebP, up to 5 MB",
-  "account.resolutionCenter": "Dispute and Resolution Center"
+  "account.resolutionCenter": "Dispute and Resolution Center",
+  "channelVideos.title": "Channel videos",
+  "channelVideos.empty": "No videos available.",
+  "channelVideos.play": "Play video",
+  "channelVideos.moderation": "Video unavailable while platform moderation is pending."
 }

@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
+import { ChannelVideos } from "./channel-videos";
 import { ZodError } from "zod";
 import { useAuth, useAuthGate } from "@/auth";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -232,6 +233,7 @@ function Panel({ scope, signedIn }: { scope: ChannelScope; signedIn: boolean }) 
       )}
       {page?.community && (
         <>
+          <ChannelVideos scope={scope} />
           <ThemedText type="small" themeColor="textSecondary">
             {t(page.open ? "channelSubmissions.open" : "channelSubmissions.closed")}
           </ThemedText>
