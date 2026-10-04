@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TimelineEditor } from "./story-timeline-editor";
+vi.mock("./story-candidates-panel", () => ({
+  StoryCandidatesPanel: ({ mediaAssetId, close }: { mediaAssetId: string; close: () => void }) => (
+    <button onClick={close}>{mediaAssetId}</button>
+  ),
+}));
 vi.mock("./story-timeline-export-panel", () => ({ TimelineExportPanel: () => null }));
 vi.mock("./story-timeline-preview", () => ({ TimelinePreview: () => <span>Saved preview</span> }));
 vi.mock("./story-timeline-generation-panel", () => ({
@@ -227,4 +232,56 @@ it("preserves a pending timeline instead of replacing it with the diagnostic tar
   await render(true, "clip:opening");
   expect(host.textContent).toContain("timeline.pendingHelp");
   expect([...host.querySelectorAll("input")].some((input) => input.value === "First")).toBe(false);
+});
+
+it("saves the selected media identity and preserves edited timeline fields on return", async () => {
+  h.fetch.mockResolvedValue([
+    {
+      ...row,
+      clips: [
+        {
+          ...row.clips[0],
+          selectedMediaVersion: { mediaAssetId: id(7), mediaKind: "image", mediaStatus: "ready" },
+        },
+      ],
+    },
+  ]);
+  await render();
+  await click("Scene");
+  await click("timeline.showPreview");
+  expect(host.textContent).toContain("Saved preview");
+  await click("storyCandidates.save");
+  expect(host.textContent).not.toContain("Saved preview");
+  await click(id(7));
+  expect(host.textContent).toContain("Saved preview");
+  const input = [...host.querySelectorAll("input")].find((field) => field.value === "First")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Unsaved clip"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("storyCandidates.save");
+  await click(id(7));
+  expect([...host.querySelectorAll("input")].some((field) => field.value === "Unsaved clip")).toBe(
+    true
+  );
+  expect(h.submit).not.toHaveBeenCalled();
+});
+it("does not expose candidate saving to read-only viewers", async () => {
+  h.fetch.mockResolvedValue([
+    {
+      ...row,
+      clips: [
+        {
+          ...row.clips[0],
+          selectedMediaVersion: { mediaAssetId: id(7), mediaKind: "image", mediaStatus: "ready" },
+        },
+      ],
+    },
+  ]);
+  await render(false);
+  await click("Scene");
+  expect(host.textContent).not.toContain("storyCandidates.save");
 });

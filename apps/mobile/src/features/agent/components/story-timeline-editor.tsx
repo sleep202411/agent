@@ -1,3 +1,5 @@
+import { StoryCandidatesPanel } from "./story-candidates-panel";
+import { timelineCandidateId } from "../api/story-timeline-candidate";
 import { TimelineExportPanel } from "./story-timeline-export-panel";
 import { TimelineGenerationPanel } from "./story-timeline-generation-panel";
 import { TimelinePreview } from "./story-timeline-preview";
@@ -103,6 +105,7 @@ export function TimelineEditor({
     theme = useTheme();
   const store = useMemo(() => timelinePending(scope, userId), [scope, userId]);
   const mediaStore = useMemo(() => timelineMediaPending(scope, userId), [scope, userId]);
+  const [candidateId, setCandidateId] = useState<string>();
   const [generationTarget, setGenerationTarget] = useState<string>();
   const [preview, setPreview] = useState(false);
   const [mediaTarget, setMediaTarget] = useState<{ sequenceId: string; clipId: string }>();
@@ -233,6 +236,9 @@ export function TimelineEditor({
       }}
     >
       <ScrollView
+        accessibilityElementsHidden={!!candidateId && canEdit}
+        importantForAccessibility={candidateId && canEdit ? "no-hide-descendants" : "auto"}
+        aria-hidden={!!candidateId && canEdit}
         contentContainerStyle={{
           padding: 20,
           paddingTop: 48,
@@ -369,7 +375,9 @@ export function TimelineEditor({
                   label={t(preview ? "timeline.hidePreview" : "timeline.showPreview")}
                   onPress={() => setPreview((v) => !v)}
                 />
-                {preview && <TimelinePreview sequence={rows.find((row) => row.id === selected)!} />}
+                {preview && !(candidateId && canEdit) && (
+                  <TimelinePreview sequence={rows.find((row) => row.id === selected)!} />
+                )}
                 {canEdit && (
                   <TimelineExportPanel
                     scope={scope}
@@ -449,6 +457,24 @@ export function TimelineEditor({
                     ),
                   true
                 )}
+                {canEdit &&
+                  timelineCandidateId(
+                    rows.find((row) => row.id === selected),
+                    clip.id
+                  ) && (
+                    <Action
+                      label={t("storyCandidates.save")}
+                      disabled={locked}
+                      onPress={() =>
+                        setCandidateId(
+                          timelineCandidateId(
+                            rows.find((row) => row.id === selected),
+                            clip.id
+                          )
+                        )
+                      }
+                    />
+                  )}
                 <Action
                   label={t("timeline.replaceMedia")}
                   disabled={locked || dirty || !clip.id}
@@ -519,6 +545,14 @@ export function TimelineEditor({
           </>
         )}
       </ScrollView>
+      {candidateId && canEdit && (
+        <StoryCandidatesPanel
+          scope={scope}
+          userId={userId}
+          mediaAssetId={candidateId}
+          close={() => setCandidateId(undefined)}
+        />
+      )}
     </Modal>
   );
 }
