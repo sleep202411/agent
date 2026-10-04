@@ -1,4 +1,8 @@
 {
+  "taskContract.open": "查看合約",
+  "taskContract.refresh": "重新整理合約",
+  "taskContract.unavailable": "此合約檔案已無法使用。",
+
   "myAgreements.title": "我的協議",
   "myAgreements.description": "查看你在各劇組建立或收到的協議。",
 

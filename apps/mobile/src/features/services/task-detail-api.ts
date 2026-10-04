@@ -12,6 +12,7 @@ export const taskReference = taskOption.extend({
 });
 export const taskDetailSchema = taskOption.extend({
   ...taskCompensationShape,
+  contractAssetNodeId: z.string().uuid().nullable().optional(),
   taskKind: taskKindSchema.nullable().optional(),
   estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
   crewId: z.string().min(1),

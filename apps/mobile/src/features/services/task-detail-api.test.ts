@@ -87,3 +87,12 @@ it("preserves the workflow display identity for task and related-task labels", a
   expect(result.workflowState).toEqual(workflowState);
   expect(result.parent?.workflowState).toEqual(workflowState);
 });
+
+it("preserves the linked contract node and rejects malformed identities", async () => {
+  vi.mocked(api.get).mockResolvedValue({ ...detail, contractAssetNodeId: id });
+  expect(
+    (await fetchTaskDetail("crew", id, new AbortController().signal)).contractAssetNodeId
+  ).toBe(id);
+  vi.mocked(api.get).mockResolvedValue({ ...detail, contractAssetNodeId: "invalid" });
+  await expect(fetchTaskDetail("crew", id, new AbortController().signal)).rejects.toThrow();
+});

@@ -1,3 +1,4 @@
+import { TaskContract } from "./task-contract";
 import { useTaskSubmitSession } from "./use-task-submit-session";
 import { useTaskReviewSession } from "./use-task-review-session";
 import { taskWorkflowLabel } from "./task-workflow-label";
@@ -207,6 +208,14 @@ function TaskContent({
               {t("thread.taskState")}: {taskWorkflowLabel(data.workflowState, t)}
             </ThemedText>
             <ThemedText>{data.description || t("thread.taskNoDescription")}</ThemedText>
+            {data.contractAssetNodeId && (
+              <TaskContract
+                crewId={crewId}
+                userId={userId}
+                generation={generation}
+                assetId={data.contractAssetNodeId}
+              />
+            )}
             <ThemedText>
               {t("thread.taskStart")}: {date(data.startAt)}
             </ThemedText>

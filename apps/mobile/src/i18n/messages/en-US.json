@@ -1,4 +1,8 @@
 {
+  "taskContract.open": "View contract",
+  "taskContract.refresh": "Refresh contract",
+  "taskContract.unavailable": "This contract file is no longer available.",
+
   "myAgreements.title": "My agreements",
   "myAgreements.description": "Agreements you created or received across your Crews.",
 

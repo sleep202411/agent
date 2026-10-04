@@ -40,6 +40,9 @@ vi.mock("./task-child-create", () => ({
   ),
 }));
 vi.mock("./task-assignments", () => ({ TaskAssignments: () => null }));
+vi.mock("./task-contract", () => ({
+  TaskContract: ({ assetId }: { assetId: string }) => <span>contract:{assetId}</span>,
+}));
 const h = vi.hoisted(() => ({
   fetch: vi.fn(),
   focused: true,
@@ -560,4 +563,12 @@ it("rereads review permission on return and discards an older submission's revie
   h.active = true;
   await render();
   expect(reviewNote()!.value).toBe("");
+});
+
+it("shows the current linked contract and removes it after the link is cleared", async () => {
+  h.fetch.mockResolvedValueOnce({ ...detail, contractAssetNodeId: "linked-file" });
+  await render();
+  expect(host.textContent).toContain("contract:linked-file");
+  await act(async () => click("thread.refresh"));
+  expect(host.textContent).not.toContain("contract:linked-file");
 });

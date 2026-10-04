@@ -1,4 +1,8 @@
 {
+  "taskContract.open": "查看合同",
+  "taskContract.refresh": "刷新合同",
+  "taskContract.unavailable": "此合同文件已不可用。",
+
   "myAgreements.title": "我的协议",
   "myAgreements.description": "查看你在各剧组创建或收到的协议。",
 
