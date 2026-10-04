@@ -143,6 +143,7 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     ...(["story.release", "story.edit", "story.build"] as const).map((capability) =>
       context.capabilities.includes(capability)
     ),
+    context.projectVersion,
     context.draftRevision,
     context.videoSnapshotHash,
     context.publication?.status,
@@ -221,6 +222,7 @@ function OwnedStoryProjectHeaderActions({
   const {
     chapterId,
     capabilities,
+    projectVersion,
     draftRevision,
     videoSnapshotHash,
     loading: workbenchLoading,
@@ -230,6 +232,7 @@ function OwnedStoryProjectHeaderActions({
     publicationError,
     publicationErrorKind,
     refreshPublication,
+    refresh,
     setPublication,
   } = useStoryChapterContext();
 
@@ -261,6 +264,9 @@ function OwnedStoryProjectHeaderActions({
     (status === "reviewing" || status === "published");
   const busy = submitting || offlining;
   const hasSnapshot =
+    typeof projectVersion === "number" &&
+    Number.isSafeInteger(projectVersion) &&
+    projectVersion >= 0 &&
     typeof draftRevision === "number" &&
     typeof videoSnapshotHash === "string" &&
     /^[a-f0-9]{64}$/.test(videoSnapshotHash);
@@ -324,7 +330,14 @@ function OwnedStoryProjectHeaderActions({
         text: t("agent.publish.confirm"),
         onPress: () => {
           void (async () => {
-            if (!current() || locked.current || draftRevision == null || !videoSnapshotHash) return;
+            if (
+              !current() ||
+              locked.current ||
+              projectVersion == null ||
+              draftRevision == null ||
+              !videoSnapshotHash
+            )
+              return;
             locked.current = true;
             const signal = life.current!.signal;
             setSubmitting(true);
@@ -332,6 +345,7 @@ function OwnedStoryProjectHeaderActions({
               const release = await prepareInteractiveFilmRelease(
                 projectId,
                 {
+                  expectedProjectVersion: projectVersion,
                   expectedDraftRevision: draftRevision,
                   expectedVideoSnapshotHash: videoSnapshotHash,
                 },
@@ -345,6 +359,7 @@ function OwnedStoryProjectHeaderActions({
             } catch (error) {
               if (!current()) return;
               showActionError(t("agent.publish.action"), error, t("agent.publish.failed"));
+              refresh();
               void refreshPublication();
             } finally {
               locked.current = false;

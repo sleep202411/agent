@@ -63,6 +63,7 @@ export type StoryProjectProductionSummary = {
 };
 
 export type StoryProjectSummary = {
+  projectVersion?: number;
   capabilities?: StoryCapability[];
   id: string;
   workspaceId: string;

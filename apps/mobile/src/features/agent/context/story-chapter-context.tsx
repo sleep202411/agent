@@ -35,6 +35,7 @@ type StoryChapterContextValue = {
   chapterId: string;
   requestedChapterId: string;
   capabilities: StoryCapability[];
+  projectVersion: number | null;
   draftRevision: number | null;
   videoSnapshotHash: string | null;
   billingBalance: StoryBillingBalance | null;
@@ -83,6 +84,7 @@ export function StoryChapterProvider({
   );
   const [projectTitle, setProjectTitle] = useState(previewTitle);
   const [capabilities, setCapabilities] = useState<StoryCapability[]>([]);
+  const [projectVersion, setProjectVersion] = useState<number | null>(null);
   const [draftRevision, setDraftRevision] = useState<number | null>(null);
   const [videoSnapshotHash, setVideoSnapshotHash] = useState<string | null>(null);
   const [billingBalance, setBillingBalance] = useState<StoryBillingBalance | null>(null);
@@ -132,6 +134,12 @@ export function StoryChapterProvider({
         setChapterId(resolvedChapter);
         setProjectTitle(workbench.project?.title?.trim() || previewTitle);
         setCapabilities(workbench.project?.capabilities ?? []);
+        const version = workbench.project?.projectVersion;
+        setProjectVersion(
+          typeof version === "number" && Number.isSafeInteger(version) && version >= 0
+            ? version
+            : null
+        );
         setDraftRevision(
           typeof workbench.draft?.revision === "number" ? workbench.draft.revision : null
         );
@@ -142,6 +150,7 @@ export function StoryChapterProvider({
         if (!previewTitle) setProjectTitle("");
         setCapabilities([]);
         setDraftRevision(null);
+        setProjectVersion(null);
         setVideoSnapshotHash(null);
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -234,6 +243,7 @@ export function StoryChapterProvider({
       chapterId,
       requestedChapterId: chapterIdFromQuery,
       capabilities,
+      projectVersion,
       draftRevision,
       videoSnapshotHash,
       billingBalance,
@@ -254,6 +264,7 @@ export function StoryChapterProvider({
       capabilities,
       chapterId,
       chapterIdFromQuery,
+      projectVersion,
       draftRevision,
       error,
       loading,

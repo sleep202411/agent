@@ -1,13 +1,14 @@
-vi.mock("./story-repair-sheet", () => ({ StoryRepairSheet: () => <span>Repair sheet</span> }));
 import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryProjectHeaderActions } from "./story-project-header-actions";
+vi.mock("./story-repair-sheet", () => ({ StoryRepairSheet: () => <span>Repair sheet</span> }));
 vi.mock("./story-chapters-sheet", () => ({
   StoryChaptersSheet: () => <span>Chapter manager</span>,
 }));
 const h = vi.hoisted(() => ({
   generation: 1,
+  projectVersion: 7 as number | null,
   failed: false,
   errorKind: "service" as "auth" | "permission" | "service",
   login: vi.fn(),
@@ -15,6 +16,7 @@ const h = vi.hoisted(() => ({
   published: false,
   capabilities: ["story.read", "story.release", "story.edit", "story.build"],
   retry: vi.fn(),
+  refresh: vi.fn(),
   alert: vi.fn(),
   prepare: vi.fn(),
   submit: vi.fn(),
@@ -40,6 +42,7 @@ vi.mock("@/features/agent/context/story-chapter-context", () => ({
   useStoryChapterContext: () => ({
     chapterId: "11111111-1111-4111-8111-111111111111",
     capabilities: h.capabilities,
+    projectVersion: h.projectVersion,
     draftRevision: 1,
     videoSnapshotHash: "a".repeat(64),
     loading: false,
@@ -49,6 +52,7 @@ vi.mock("@/features/agent/context/story-chapter-context", () => ({
     publicationErrorKind: h.errorKind,
     publicationError: h.failed ? "Status read failed" : undefined,
     refreshPublication: h.retry,
+    refresh: h.refresh,
     setPublication: h.set,
   }),
 }));
@@ -98,6 +102,7 @@ beforeEach(() => {
   h.capabilities = ["story.read", "story.release", "story.edit", "story.build"];
   vi.resetAllMocks();
   h.generation = 1;
+  h.projectVersion = 7;
   h.prepare.mockResolvedValue({ gameId: "film" });
   h.submit.mockResolvedValue({ gameId: "film", status: "reviewing" });
   host = document.createElement("div");
@@ -422,4 +427,52 @@ it("opens chapter management for readers without granting mutation permissions",
     host.querySelector<HTMLButtonElement>('[aria-label="storyChapters.title"]')!.click()
   );
   expect(host.textContent).toContain("Chapter manager");
+});
+
+it("includes the captured project version when preparing publication", async () => {
+  await mount();
+  const confirm = await confirmation();
+  await act(async () => confirm());
+  expect(h.prepare).toHaveBeenCalledWith(
+    "film",
+    {
+      expectedProjectVersion: 7,
+      expectedDraftRevision: 1,
+      expectedVideoSnapshotHash: "a".repeat(64),
+    },
+    expect.any(AbortSignal)
+  );
+});
+it("does not prepare a release without a valid project version", async () => {
+  h.projectVersion = null;
+  await mount();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('button[aria-label="agent.publish.action"]')!.click()
+  );
+  expect(h.prepare).not.toHaveBeenCalled();
+  expect(h.alert.mock.calls.at(-1)?.[1]).toBe("agent.publish.notReady");
+});
+
+it("retires a retained confirmation when the project version changes", async () => {
+  await mount();
+  const confirm = await confirmation();
+  h.projectVersion = 8;
+  await mount();
+  await act(async () => confirm());
+  expect(h.prepare).not.toHaveBeenCalled();
+});
+
+it("refreshes the workbench after a snapshot conflict without replaying the release", async () => {
+  h.prepare.mockRejectedValueOnce(
+    Object.assign(Error("Project changed"), {
+      status: 409,
+      code: "STORY_RELEASE_SNAPSHOT_CONFLICT",
+    })
+  );
+  await mount();
+  const confirm = await confirmation();
+  await act(async () => confirm());
+  expect(h.refresh).toHaveBeenCalledOnce();
+  expect(h.prepare).toHaveBeenCalledOnce();
+  expect(h.submit).not.toHaveBeenCalled();
 });

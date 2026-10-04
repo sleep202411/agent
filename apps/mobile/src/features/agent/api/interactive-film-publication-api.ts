@@ -71,11 +71,14 @@ export async function getInteractiveFilmPublication(
 export async function prepareInteractiveFilmRelease(
   projectId: string,
   input: {
+    expectedProjectVersion: number;
     expectedDraftRevision: number;
     expectedVideoSnapshotHash: string;
   },
   signal?: AbortSignal
 ): Promise<ExperienceReleaseRequest> {
+  const generation = getAuthGeneration();
+  signal?.throwIfAborted();
   const parsed = ExperienceReleaseRequestSchema.safeParse(
     await api.post<unknown>(`/story-projects/${encodeURIComponent(projectId)}/release-candidate`, {
       service: "aurora",
@@ -84,6 +87,8 @@ export async function prepareInteractiveFilmRelease(
       timeout: 8 * 60_000,
     })
   );
+  signal?.throwIfAborted();
+  if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
   if (!parsed.success || parsed.data.gameId !== projectId || parsed.data.status !== "draft") {
     throw new Error("Story Studio returned an invalid interactive-film release candidate.");
   }

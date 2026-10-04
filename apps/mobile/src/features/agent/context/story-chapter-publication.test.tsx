@@ -157,3 +157,14 @@ it("loads publication status for readers without granting release actions", asyn
   expect(state.publication?.status).toBe("published");
   expect(state.capabilities).not.toContain("story.release");
 });
+
+it("exposes the workbench version and clears it when a refresh lacks a valid version", async () => {
+  h.workbench.mockResolvedValueOnce({
+    chapter: { id: "chapter" },
+    project: { projectVersion: 12, capabilities: ["story.read"] },
+  });
+  await render();
+  expect(state.projectVersion).toBe(12);
+  await act(async () => state.refresh());
+  expect(state.projectVersion).toBeNull();
+});
