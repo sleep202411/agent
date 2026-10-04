@@ -1180,7 +1180,12 @@
     "teamCreated": "Workspace \"{name}\" created",
     "createWorkspaceFailed": "Couldn't create the workspace",
     "contactOwnerRole": "Contact the workspace owner to change roles.",
-    "changeMemberRole": "Change role for {name}"
+    "changeMemberRole": "Change role for {name}",
+    "uploadIcon": "Upload team icon",
+    "iconFileHint": "PNG, JPEG or WebP, up to 5 MB",
+    "iconFileInvalid": "Choose a PNG, JPEG or WebP image up to 5 MB.",
+    "iconUploadFailed": "Icon upload failed",
+    "iconUploading": "Uploading icon… {percent}%"
   },
   "billing": {
     "dialogLabel": "Choose your FizzStudio plan",

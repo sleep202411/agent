@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Catalog from "./page";
-import Detail from "./[id]/page";
+import Detail from "./[id]/course-detail-client";
 const s = vi.hoisted(() => ({ list: vi.fn(), detail: vi.fn(), play: vi.fn() }));
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "7" }) }));
 vi.mock("@/src/i18n/i18n", () => ({

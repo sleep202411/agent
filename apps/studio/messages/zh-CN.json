@@ -1180,7 +1180,12 @@
     "teamCreated": "空间“{name}”已创建",
     "createWorkspaceFailed": "无法创建空间",
     "contactOwnerRole": "请联系工作区所有者修改角色。",
-    "changeMemberRole": "修改 {name} 的角色"
+    "changeMemberRole": "修改 {name} 的角色",
+    "uploadIcon": "上传团队图标",
+    "iconFileHint": "PNG、JPEG 或 WebP，最大 5 MB",
+    "iconFileInvalid": "请选择不超过 5 MB 的 PNG、JPEG 或 WebP 图片。",
+    "iconUploadFailed": "图标上传失败",
+    "iconUploading": "正在上传图标… {percent}%"
   },
   "billing": {
     "dialogLabel": "选择你的 FizzStudio 方案",

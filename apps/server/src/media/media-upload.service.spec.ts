@@ -904,3 +904,50 @@ describe('generic upload stored-size metadata', () => {
     expect(f.createAsset).toHaveBeenCalled();
   });
 });
+
+describe('workspace icon uploads', () => {
+  it('enforces image types and the 5 MB cap before issuing a URL', async () => {
+    const fixture = serviceFixture();
+    for (const override of [
+      { contentType: 'image/svg+xml' },
+      { sizeBytes: 5 * 1024 * 1024 + 1 },
+    ]) {
+      await expect(
+        fixture.service.prepareUpload(USER_ID, {
+          ...uploadInput(),
+          kind: 'workspace_icon',
+          ...override,
+        }),
+      ).rejects.toThrow();
+    }
+    expect(fixture.storage.createUploadUrl).not.toHaveBeenCalled();
+  });
+  it('verifies personal icon bytes before returning a durable image for workspace creation', async () => {
+    const fixture = serviceFixture();
+    const issued = await fixture.service.prepareUpload(USER_ID, {
+      ...uploadInput(),
+      kind: 'workspace_icon',
+    });
+    expect(issued.storageKey).toContain('/personal/');
+    await expect(
+      fixture.service.confirmUpload(USER_ID, {
+        kind: 'workspace_icon',
+        contentType: 'image/png',
+        storageKey: issued.storageKey,
+      }),
+    ).resolves.toMatchObject({
+      storageKey: expect.stringContaining('/workspace-icon-image-final/'),
+    });
+    expect(fixture.uploadedImages.probe).toHaveBeenCalledWith(
+      expect.anything(),
+      { expectedContentType: 'image/png', maxBytes: 5 * 1024 * 1024 },
+    );
+    await expect(
+      fixture.service.confirmUpload('another-user', {
+        kind: 'workspace_icon',
+        contentType: 'image/png',
+        storageKey: issued.storageKey,
+      }),
+    ).rejects.toThrow();
+  });
+});

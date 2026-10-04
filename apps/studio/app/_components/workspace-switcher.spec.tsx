@@ -3,7 +3,14 @@ import { act, type PropsWithChildren } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceSwitcher } from "./workspace-switcher";
-const state = vi.hoisted(() => ({ id: "a", create: vi.fn(), success: vi.fn(), error: vi.fn() }));
+const state = vi.hoisted(() => ({
+  upload: vi.fn(),
+  id: "a",
+  create: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+}));
+vi.mock("@/lib/media-upload", () => ({ uploadFileViaSignedUrl: state.upload }));
 vi.mock("next-intl", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
@@ -54,6 +61,7 @@ describe("workspace creation ownership", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     state.id = "a";
     state.create.mockReset();
+    state.upload.mockReset();
     state.success.mockReset();
     state.error.mockReset();
     container = document.createElement("div");
@@ -143,5 +151,82 @@ describe("workspace creation ownership", () => {
     await act(async () => resolve());
     expect(state.success).not.toHaveBeenCalled();
     expect(container.querySelector("[data-dialog]")).toBeNull();
+  });
+  const chooseIcon = async (file = new File(["image"], "icon.png", { type: "image/png" })) => {
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+  };
+  it("uploads before creation, keeps the form on error and saves the confirmed icon on retry", async () => {
+    state.upload.mockRejectedValueOnce(new Error("Storage unavailable"));
+    state.upload.mockResolvedValueOnce({ url: "https://cdn.example/icon.png" });
+    await render();
+    await open();
+    await fill("Custom team");
+    await chooseIcon();
+    expect(state.error).toHaveBeenCalledWith("Storage unavailable");
+    expect(container.querySelector<HTMLInputElement>("#team-name")!.value).toBe("Custom team");
+    await chooseIcon();
+    await act(async () => submit().click());
+    expect(state.create).toHaveBeenCalledWith(
+      "Custom team",
+      "",
+      "https://cdn.example/icon.png",
+      expect.any(AbortSignal)
+    );
+  });
+  it("rejects invalid files before requesting storage", async () => {
+    await render();
+    await open();
+    await chooseIcon(new File(["<svg/>"], "icon.svg", { type: "image/svg+xml" }));
+    expect(state.upload).not.toHaveBeenCalled();
+    expect(state.error).toHaveBeenCalledWith("iconFileInvalid");
+  });
+  it("aborts an old upload on account change and ignores its late result", async () => {
+    let resolve!: (value: { url: string }) => void;
+    state.upload.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        })
+    );
+    await render();
+    await open();
+    await fill("Old");
+    await chooseIcon();
+    expect(submit().disabled).toBe(true);
+    const signal = state.upload.mock.calls[0][1].signal;
+    state.id = "b";
+    await render();
+    expect(signal.aborted).toBe(true);
+    await open();
+    await fill("New");
+    await act(async () => resolve({ url: "https://cdn.example/old.png" }));
+    await act(async () => submit().click());
+    expect(state.create.mock.calls[0][2]).toContain("/team-icons/aurora.svg");
+  });
+  it("cancels an in-flight icon when a preset replaces it", async () => {
+    let resolve!: (value: { url: string }) => void;
+    state.upload.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        })
+    );
+    await render();
+    await open();
+    await fill("Preset team");
+    await chooseIcon();
+    const signal = state.upload.mock.calls[0][1].signal;
+    await act(async () =>
+      container
+        .querySelector<HTMLImageElement>('img[src="/team-icons/slate.svg"]')!
+        .closest("button")!
+        .click()
+    );
+    expect(signal.aborted).toBe(true);
+    await act(async () => resolve({ url: "https://cdn.example/late.png" }));
+    await act(async () => submit().click());
+    expect(state.create.mock.calls[0][2]).toContain("/team-icons/slate.svg");
   });
 });
