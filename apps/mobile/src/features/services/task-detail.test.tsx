@@ -426,3 +426,61 @@ it("keeps a returning Task Center draft through access failure and retry", async
   await renderCenter();
   expect(host.textContent).toBe("");
 });
+
+it("refreshes direct task entries on foreground without replacing their draft session", async () => {
+  await render();
+  await composeSubmission();
+  h.active = false;
+  await render();
+  h.fetch.mockRejectedValueOnce(new Error("Access revoked while away"));
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Access revoked while away");
+  expect(host.textContent).not.toContain("Private brief");
+  expect(noteInput()).toBeNull();
+  await act(async () => click("inbox.retry"));
+  expect(noteInput()!.value).toBe("Keep my delivery draft");
+  expect(h.fetch).toHaveBeenCalledTimes(3);
+});
+
+it("rejects a late pre-return read after a new foreground read starts", async () => {
+  let finish!: (value: unknown) => void;
+  h.fetch.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  const oldSignal = h.fetch.mock.calls[0][2];
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(oldSignal.aborted).toBe(true);
+  expect(h.fetch).toHaveBeenCalledTimes(2);
+  await act(async () => finish({ ...detail, title: "Retired response" }));
+  expect(host.textContent).not.toContain("Retired response");
+  expect(host.textContent).toContain("Scene");
+});
+
+it("keeps child creation context mounted while its parent revalidates on return", async () => {
+  await render();
+  await act(async () => click("add subtask"));
+  h.active = false;
+  await render();
+  let finish!: (value: unknown) => void;
+  h.fetch.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("cancel child");
+  await act(async () => finish({ ...detail, title: "Updated parent" }));
+  expect(host.textContent).toContain("cancel child");
+  await act(async () => click("cancel child"));
+  expect(host.textContent).toContain("Private brief");
+});

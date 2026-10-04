@@ -16,10 +16,6 @@ import type { CenterFilters, CenterTask } from "./task-center-api";
 export function TaskCenter({ userId, generation }: { userId: string; generation: number }) {
   const active = useScreenActive();
   const focused = useIsFocused();
-  const [activity, setActivity] = useState({ active, revision: 0 });
-  if (activity.active !== active) {
-    setActivity({ active, revision: activity.revision + (active ? 1 : 0) });
-  }
   const [selected, select] = useState<CenterTask>();
   const [webTask, setWebTask] = useState<string>();
   const t = useTranslations();
@@ -43,7 +39,6 @@ export function TaskCenter({ userId, generation }: { userId: string; generation:
       <TaskDetail
         crewId={selected.crew.id}
         taskId={selected.id}
-        refreshKey={activity.revision}
         userId={userId}
         generation={generation}
         onClose={() => select(undefined)}

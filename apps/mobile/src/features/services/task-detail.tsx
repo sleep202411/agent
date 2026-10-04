@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useIsFocused } from "expo-router";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
@@ -45,8 +46,6 @@ type Props = {
   userId: string;
   onClose: () => void;
   closeLabel?: string;
-  /** Revalidate a returning host without discarding task-owned drafts. */
-  refreshKey?: number;
   onOpenWeb: (taskId: string) => void;
 };
 export function TaskDetail(props: Props) {
@@ -56,26 +55,36 @@ export function TaskDetail(props: Props) {
   ) : null;
 }
 function TaskNavigator(props: Props) {
+  const active = useScreenActive();
+  const [activity, setActivity] = useState({ active, revision: 0 });
+  // Every host uses the same foreground read boundary, while the task sessions
+  // (including native uploads) remain mounted through app interruptions.
+  if (activity.active !== active) {
+    setActivity({ active, revision: activity.revision + (active ? 1 : 0) });
+  }
   const [history, setHistory] = useState([props.taskId]);
   const taskId = history[history.length - 1]!;
   return (
-    <TaskContent
-      {...props}
-      key={taskId}
-      taskId={taskId}
-      backToTask={history.length > 1}
-      onOpenTask={(id) =>
-        setHistory((current) => {
-          const index = current.indexOf(id);
-          return index >= 0 ? current.slice(0, index + 1) : [...current, id];
-        })
-      }
-      onClose={() =>
-        history.length > 1
-          ? setHistory((current) => (current.length > 1 ? current.slice(0, -1) : current))
-          : props.onClose()
-      }
-    />
+    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
+      <TaskContent
+        {...props}
+        key={taskId}
+        refreshKey={activity.revision}
+        taskId={taskId}
+        backToTask={history.length > 1}
+        onOpenTask={(id) =>
+          setHistory((current) => {
+            const index = current.indexOf(id);
+            return index >= 0 ? current.slice(0, index + 1) : [...current, id];
+          })
+        }
+        onClose={() =>
+          history.length > 1
+            ? setHistory((current) => (current.length > 1 ? current.slice(0, -1) : current))
+            : props.onClose()
+        }
+      />
+    </View>
   );
 }
 function TaskContent({
@@ -92,10 +101,11 @@ function TaskContent({
 }: Props & {
   onOpenTask: (id: string) => void;
   backToTask: boolean;
+  refreshKey: number;
 }) {
   const t = useTranslations(),
     locale = useLocale();
-  const [creatingChild, setCreatingChild] = useState(false);
+  const [creatingChild, setCreatingChild] = useState<Detail>();
   const [revision, setRevision] = useState(0);
   const scheduleSession = useTaskScheduleSession(taskId, generation, () =>
     setRevision((v) => v + 1)
@@ -159,19 +169,19 @@ function TaskContent({
         userId={userId}
         generation={generation}
       />
-      {creatingChild && data && (
+      {creatingChild && (
         <TaskChildCreate
-          task={data}
+          task={creatingChild}
           userId={userId}
           generation={generation}
           onCreated={(id) => {
             if (generation === getAuthGeneration()) {
-              setCreatingChild(false);
+              setCreatingChild(undefined);
               onOpenTask(id);
             }
           }}
           onClose={() => {
-            setCreatingChild(false);
+            setCreatingChild(undefined);
             setRevision((value) => value + 1);
           }}
         />
@@ -303,7 +313,7 @@ function TaskContent({
               task={data}
               userId={userId}
               generation={generation}
-              onOpen={() => setCreatingChild(true)}
+              onOpen={() => setCreatingChild(data)}
             />
             <TaskCustomFields
               session={customFieldSession}
@@ -361,7 +371,7 @@ function TaskContent({
           </>
         )}
         <TaskTimeline
-          suspended={!data || creatingChild}
+          suspended={!data || !!creatingChild}
           crewId={crewId}
           taskId={taskId}
           userId={userId}
