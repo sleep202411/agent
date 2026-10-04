@@ -1,3 +1,4 @@
+import { editCanvasGroup } from "./group-edit";
 import { editCanvasShotMedia, reconcileCanvasShotMedia } from "./shot-media";
 import { z } from "zod";
 import { canvasHostMessage, type CanvasRuntimeMessage } from "./protocol";
@@ -41,7 +42,9 @@ function receive(raw: unknown) {
     sequence: message.sequence,
   };
   try {
-    if (message.type === "reconcileShotMedia") {
+    if (message.type === "group") {
+      send({ type: "edited", ...identity, ...editCanvasGroup(message.snapshot, message.group) });
+    } else if (message.type === "reconcileShotMedia") {
       send({ type: "edited", ...identity, ...reconcileCanvasShotMedia(message.snapshot) });
     } else if (message.type === "shotMedia") {
       send({
