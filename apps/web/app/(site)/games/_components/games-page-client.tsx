@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState, type MouseEvent } from "react";
 import {
   IconArrowUpRight,
   IconBook2,
@@ -9,12 +10,16 @@ import {
   IconPlayerPlay,
 } from "@tabler/icons-react";
 import type { ComponentType } from "react";
-import type { ExperienceGameListResponse } from "@repo/shared/experience-runtime";
+import type {
+  ExperienceGameListResponse,
+  ExperienceGameSummary,
+} from "@repo/shared/experience-runtime";
 import type { TextGameSummary } from "@repo/shared/text-game";
 import { PlazaHero } from "@/components/layout/plaza-hero";
 import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
+import { InteractiveFilmStoreDialog } from "./interactive-film-store-dialog";
 
 export function GamesPageClient({
   textGames,
@@ -29,6 +34,17 @@ export function GamesPageClient({
 }) {
   const locale = useLocale() as Locale;
   const t = useTranslations("games");
+
+  // Clicking an interactive film opens the Steam-style store preview first;
+  // the card keeps the direct player URL as its href so modified clicks
+  // (cmd/ctrl/middle) and "open in new tab" still jump straight into the film.
+  const [storeGame, setStoreGame] = useState<ExperienceGameSummary | null>(null);
+  const [storeOpen, setStoreOpen] = useState(false);
+
+  const openStore = (game: ExperienceGameSummary) => {
+    setStoreGame(game);
+    setStoreOpen(true);
+  };
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
@@ -83,6 +99,19 @@ export function GamesPageClient({
                   `/play/interactive-film/${encodeURIComponent(game.gameId)}`,
                   locale
                 )}
+                onClick={(event: MouseEvent<HTMLAnchorElement>) => {
+                  if (
+                    event.button !== 0 ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey
+                  ) {
+                    return;
+                  }
+                  event.preventDefault();
+                  openStore(game);
+                }}
                 className="group block focus-visible:outline-none"
               >
                 <article>
@@ -197,6 +226,14 @@ export function GamesPageClient({
           </div>
         </section>
       </main>
+
+      <InteractiveFilmStoreDialog
+        game={storeGame}
+        open={storeOpen}
+        onOpenChange={(open) => {
+          if (!open) setStoreOpen(false);
+        }}
+      />
     </div>
   );
 }

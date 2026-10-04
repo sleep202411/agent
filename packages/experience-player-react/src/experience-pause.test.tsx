@@ -14,6 +14,7 @@ import {
   type ExperienceWorldModelRendererProps,
 } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
+import { journeyMapTestCopy } from "./experience-journey-test-copy";
 
 /**
  * The paused state, driven through the real player. Only Vidstack is stubbed —
@@ -94,6 +95,7 @@ vi.mock("./experience-media-warm", () => ({ warmExperienceMedia: vi.fn(() => Pro
 const HASH = "a".repeat(64);
 
 const copy = {
+  journeyMap: journeyMapTestCopy,
   invalidManifest: "Invalid manifest",
   manifestRoot: "Manifest",
   interactiveFilm: "Interactive film",
@@ -113,6 +115,15 @@ const copy = {
   regionLabel: "Experience player",
   video: { unmute: "Unmute" },
   playback: {
+    transport: {
+      controlsLabel: "Playback controls",
+      rewind10: "Back 10 seconds",
+      forward10: "Forward 10 seconds",
+      progressLabel: "Clip progress",
+      speedLabel: "Playback speed",
+      watchedOnlyHint: "You can seek only within footage you have watched.",
+      interactionBlocked: "Playback controls are unavailable during an interaction.",
+    },
     pause: "Pause",
     resume: "Resume",
     paused: "Paused",
@@ -987,6 +998,75 @@ describe("ExperiencePlayer paused state", () => {
       expect(container.textContent).toContain("The world session expired.");
     });
 
+    it("ignores abandoned world callbacks after replaying the same scene", async () => {
+      let stream!: ExperienceWorldModelRendererProps;
+      const states = vi.fn<NonNullable<ExperiencePlayerProps["onStateChange"]>>();
+      const held: boolean[] = [];
+      await startFilm(worldFilm(), [], {
+        onStateChange: states,
+        renderWorldModel: (props) => {
+          stream = props;
+          return <StreamDouble {...props} held={held} />;
+        },
+      });
+      const abandoned = { onCompleted: stream.onCompleted, onError: stream.onError };
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(`button[aria-label="${copy.journeyMap.open}"]`)!
+          .click();
+      });
+      await settle();
+      const replay = document.body.querySelector<HTMLButtonElement>(
+        '[data-journey-node="scene.world"] button'
+      );
+      expect(replay).not.toBeNull();
+      await act(async () => {
+        replay!.click();
+      });
+      await settle();
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+      const current = stream;
+      expect(current.onCompleted).not.toBe(abandoned.onCompleted);
+      expect(states.mock.lastCall?.[0]).toMatchObject({
+        currentSceneId: "scene.world",
+        status: "active",
+      });
+
+      await act(async () => {
+        abandoned.onCompleted();
+      });
+      await settle();
+      expect(states.mock.lastCall?.[0]).toMatchObject({
+        currentSceneId: "scene.world",
+        status: "active",
+      });
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+
+      await act(async () => {
+        abandoned.onError(new Error("Abandoned world stream failed."));
+      });
+      await settle();
+      expect(container.querySelector('[role="alertdialog"]')).toBeNull();
+      expect(container.textContent).not.toContain("Abandoned world stream failed.");
+
+      await act(async () => {
+        abandoned.onError(domException("NotAllowedError"));
+      });
+      await settle();
+      expect(pausedFor()).toBeNull();
+
+      await act(async () => {
+        current.onCompleted();
+      });
+      await settle();
+      expect(states.mock.lastCall?.[0]).toMatchObject({
+        currentSceneId: "scene.world",
+        status: "completed",
+        completedEndingId: "ending.done",
+      });
+      expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    });
+
     it("plays the stream's element inside the tap that recovers it, and holds it with the story", async () => {
       const held: boolean[] = [];
       refuseWith = domException("NotAllowedError");
@@ -1506,6 +1586,125 @@ describe("ExperiencePlayer paused state", () => {
     await settle();
   };
 
+  describe("the story map's two entrances", () => {
+    const journeyTrigger = (source: "corner" | "transport") =>
+      container.querySelector<HTMLButtonElement>(
+        `[data-experience-journey-map-trigger="${source}"]`
+      );
+    const closeMap = () =>
+      document.body.querySelector<HTMLButtonElement>(
+        `button[aria-label="${copy.journeyMap.close}"]`
+      );
+
+    it.each(["corner", "transport"] as const)(
+      "returns focus to the %s entrance and resumes the film after closing",
+      async (source) => {
+        await startFilm(twoClipFilm(), ["/a.mp4"]);
+        await playedTo("/a.mp4", 0.5);
+        expect(journeyTrigger("corner")).not.toBeNull();
+        expect(journeyTrigger("transport")).not.toBeNull();
+        const trigger = journeyTrigger(source)!;
+        trigger.focus();
+        play.mockClear();
+        vi.mocked(HTMLMediaElement.prototype.pause).mockClear();
+
+        await press(trigger);
+
+        expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+        expect(pausedFor()).toBe("user");
+        expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+        expect(play).not.toHaveBeenCalled();
+        expect(journeyTrigger("corner")).toBeNull();
+        expect(journeyTrigger("transport")).toBeNull();
+
+        await press(closeMap());
+
+        expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+        expect(pausedFor()).toBeNull();
+        expect(play).toHaveBeenCalled();
+        expect(journeyTrigger(source)).not.toBeNull();
+        expect(document.activeElement).toBe(journeyTrigger(source));
+        expect(container.querySelector('[data-video-source="/a.mp4"]')).not.toBeNull();
+        expect(container.querySelector('[data-video-source="/b.mp4"]')).toBeNull();
+      }
+    );
+
+    it.each(["corner", "transport"] as const)(
+      "keeps the viewer's pause when the map opened from the %s entrance closes",
+      async (source) => {
+        await startFilm(twoClipFilm(), ["/a.mp4"]);
+        await playedTo("/a.mp4", 0.5);
+        await press(mediaStage());
+        expect(pausedFor()).toBe("user");
+        const trigger = journeyTrigger(source)!;
+        expect(trigger).not.toBeNull();
+        trigger.focus();
+        play.mockClear();
+
+        await press(trigger);
+        await press(closeMap());
+
+        expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+        expect(pausedFor()).toBe("user");
+        expect(play).not.toHaveBeenCalled();
+        expect(document.activeElement).toBe(journeyTrigger(source));
+        expect(pausedFrame()).not.toBeNull();
+      }
+    );
+
+    it("falls back to the corner entrance after replay leaves the transport bar behind", async () => {
+      const original = choiceFilm().graph.nodes[0]!;
+      if (original.kind !== "scene") throw new Error("The choice fixture needs a scene.");
+      const runtime = film({
+        assets: [videoAsset("asset.a", "/a.mp4")],
+        capabilities: ["core.choice"],
+        nodes: [
+          {
+            ...original,
+            sceneId: "scene.choice",
+            clock: { kind: "none" },
+            renderers: original.renderers.filter(
+              (renderer) => renderer.rendererId === "core.choice"
+            ),
+            eventBindings: [
+              on("renderer.outcome", "choice.a", [goto("scene.a")], "choice-selected"),
+            ],
+          },
+          videoScene("scene.a", "asset.a", [finish]),
+        ],
+      });
+      let currentSceneId = "";
+      await startFilm(runtime, [], {
+        onStateChange: (state) => {
+          currentSceneId = state.currentSceneId;
+        },
+      });
+      await press(
+        container.querySelector<HTMLButtonElement>("[data-experience-choice-overlay] button")
+      );
+      await fire("/a.mp4", "onCanPlay");
+      await playedTo("/a.mp4", 0.5);
+      const trigger = journeyTrigger("transport")!;
+      expect(trigger).not.toBeNull();
+      trigger.focus();
+      await press(trigger);
+
+      await press(
+        document.body.querySelector<HTMLButtonElement>('[data-journey-node="scene.choice"] button')
+      );
+
+      expect(currentSceneId).toBe("scene.choice");
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+      expect(journeyTrigger("transport")).toBeNull();
+      expect(journeyTrigger("corner")).not.toBeNull();
+      expect(document.activeElement).toBe(journeyTrigger("corner"));
+      expect(
+        container.querySelector("[data-experience-choice-overlay] button")?.textContent
+      ).toContain("Next scene");
+      expect(pausedFor()).toBeNull();
+    });
+  });
+
   describe("the frame's controls", () => {
     it("keep no pause toggle over the film itself: its picture pauses", async () => {
       await startFilm(twoClipFilm(), ["/a.mp4"]);
@@ -1559,7 +1758,11 @@ describe("ExperiencePlayer paused state", () => {
       // Paused 80 ms from the end of a 5 s clip: Vidstack would start it over.
       const clip = element("/a.mp4");
       Object.defineProperty(clip, "paused", { value: true, configurable: true });
-      Object.defineProperty(clip, "currentTime", { value: 4.92, configurable: true });
+      Object.defineProperty(clip, "currentTime", {
+        value: 4.92,
+        configurable: true,
+        writable: true,
+      });
 
       const plays = await playsDuring(() => pausedFrame()!.click());
 

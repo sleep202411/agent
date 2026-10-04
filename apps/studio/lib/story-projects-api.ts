@@ -119,6 +119,8 @@ export interface StoryProjectSummary {
   defaultLocale: string;
   cover: MediaAssetSummary | null;
   tags: string[];
+  /** Publication introduction authored by the creator; null when unset. */
+  storeListing: StoryStoreListing | null;
   sourceIpId: string | null;
   projectVersion: number;
   draftRevision: number;
@@ -126,6 +128,16 @@ export interface StoryProjectSummary {
   capabilities: StoryCapability[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** One plain-text publication introduction, currently single-locale.
+ * Media fields reference the project's candidate assets. */
+export interface StoryStoreListing {
+  description: string;
+  tags: string[];
+  developer: string;
+  trailerAssetId: string | null;
+  screenshotAssetIds: string[];
 }
 
 export interface StoryBillingBalance {
@@ -718,15 +730,18 @@ export async function updateStoryProject(
     defaultLocale?: string;
     visibility?: StoryVisibility;
     tags?: string[];
+    storeListing?: StoryStoreListing | null;
     frameProfile?: StoryFrameProfile;
     durationPreset?: StoryDurationPreset;
     visualStyle?: StoryVisualStyle;
     confirmCreativeProfile?: true;
-  }
+  },
+  signal?: AbortSignal
 ): Promise<StoryProjectSummary> {
   return api.patch<StoryProjectSummary>(`/aurora/story-projects/${encodeURIComponent(projectId)}`, {
     data: input,
     requestScope: "project",
+    signal,
   });
 }
 

@@ -19,6 +19,8 @@ export interface ExperiencePlaybackGates {
   nodeGate: boolean;
   /** A timeline-control charge holds its clip until it is pressed. */
   chargeGate: boolean;
+  /** The plot map holds the story without offering the frame's pause controls. */
+  journeyMap?: boolean;
 }
 
 export interface ExperiencePlaybackHolds {
@@ -49,13 +51,15 @@ export function resolveExperiencePlaybackHolds(
 ): ExperiencePlaybackHolds {
   const accessHeld = gates.accessPending || gates.retryAccess;
   const running = gates.started && !gates.ended && !gates.failed;
-  const storyHeld = !running || gates.viewerPause !== null || accessHeld;
+  const storyHeld =
+    !running || gates.viewerPause !== null || accessHeld || Boolean(gates.journeyMap);
   return {
     running,
     storyHeld,
-    audioHeld: gates.viewerPause !== null || accessHeld || gates.failed,
+    audioHeld:
+      gates.viewerPause !== null || accessHeld || gates.failed || Boolean(gates.journeyMap),
     mediaHeld: storyHeld || gates.chargeGate,
-    pauseUi: running && !gates.nodeGate && !accessHeld,
+    pauseUi: running && !gates.nodeGate && !accessHeld && !gates.journeyMap,
   };
 }
 

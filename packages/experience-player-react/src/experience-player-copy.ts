@@ -2,6 +2,38 @@ export interface ExperiencePlayerVideoCopy {
   unmute: string;
 }
 
+export interface ExperienceJourneyMapCopy {
+  open: string;
+  title: string;
+  description: string;
+  close: string;
+  current: string;
+  explored: string;
+  unexplored: string;
+  unexploredHint: string;
+  replay: string;
+  replaying: string;
+  replayHint: string;
+  replayUnavailable: string;
+  empty: string;
+  canvasLabel: string;
+  centerCurrent: string;
+  sceneLabel: (number: number) => string;
+  endingLabel: string;
+  truncated: string;
+  thumbnailUnavailable: string;
+}
+
+export interface ExperiencePlayerTransportCopy {
+  controlsLabel: string;
+  rewind10: string;
+  forward10: string;
+  progressLabel: string;
+  speedLabel: string;
+  watchedOnlyHint: string;
+  interactionBlocked: string;
+}
+
 /** The film frame's own playback controls: the pause toggle and the paused frame. */
 export interface ExperiencePlayerPlaybackCopy {
   /** The toggle while the film plays. */
@@ -14,6 +46,7 @@ export interface ExperiencePlayerPlaybackCopy {
   continuePlaying: string;
   /** The line under that button: why it is there. */
   interrupted: string;
+  transport: ExperiencePlayerTransportCopy;
 }
 
 export interface ExperiencePlayerCopy {
@@ -43,4 +76,5 @@ export interface ExperiencePlayerCopy {
   regionLabel: string;
   video: ExperiencePlayerVideoCopy;
   playback: ExperiencePlayerPlaybackCopy;
+  journeyMap: ExperienceJourneyMapCopy;
 }

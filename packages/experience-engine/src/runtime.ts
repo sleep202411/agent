@@ -1,5 +1,6 @@
 import type {
   ExperienceAccessRequirement,
+  ExperienceJourneyAccessRef,
   ExperienceCondition,
   ExperienceEventBinding,
   ExperienceGraphNode,
@@ -30,9 +31,12 @@ export type ExperienceAccessCheck = (requirement: ExperienceAccessRequirement) =
 
 function requireAccess(
   access: ExperienceAccessRequirement | undefined,
-  canAccess?: ExperienceAccessCheck
+  canAccess?: ExperienceAccessCheck,
+  ref?: ExperienceJourneyAccessRef,
+  effects?: ExperienceRuntimeEffect[]
 ) {
   if (access && !canAccess?.(access)) throw new ExperienceAccessRequiredError(access);
+  if (access && ref && effects) effects.push({ kind: "access.checked", ref });
 }
 
 export interface ExperienceRuntimeEvent {
@@ -55,8 +59,21 @@ export interface ExperienceRuntimeState {
 }
 
 export type ExperienceRuntimeEffect =
-  | { kind: "scene.changed"; fromSceneId: string; toSceneId: string }
-  | { kind: "ending.completed"; endingId: string }
+  | { kind: "access.checked"; ref: ExperienceJourneyAccessRef }
+  | {
+      kind: "scene.changed";
+      fromSceneId: string;
+      toSceneId: string;
+      bindingId: string;
+      routeId: string;
+    }
+  | {
+      kind: "ending.completed";
+      fromSceneId: string;
+      endingId: string;
+      bindingId: string;
+      routeId: string;
+    }
   | {
       kind: "renderer.command";
       instanceId: string;
@@ -228,7 +245,8 @@ export function dispatchExperienceEvent(
       `Current scene ${currentState.currentSceneId} is absent from the manifest`
     );
   }
-  requireAccess(node.access, canAccess);
+  const effects: ExperienceRuntimeEffect[] = [];
+  requireAccess(node.access, canAccess, { kind: "node", sceneId: node.sceneId }, effects);
   const matchingBindings = node.eventBindings.filter((binding) => selectorMatches(binding, event));
   if (matchingBindings.length > 1) {
     throw new ExperienceRuntimeInvariantError(
@@ -237,7 +255,7 @@ export function dispatchExperienceEvent(
     );
   }
   const binding = matchingBindings[0];
-  if (!binding) return { state: currentState, handled: false, effects: [] };
+  if (!binding) return { state: currentState, handled: false, effects };
 
   const route = binding.routes.find(
     (candidate) =>
@@ -248,15 +266,29 @@ export function dispatchExperienceEvent(
       state: currentState,
       handled: true,
       bindingId: binding.bindingId,
-      effects: [],
+      effects,
     };
   }
 
-  requireAccess(route.access, canAccess);
+  requireAccess(
+    route.access,
+    canAccess,
+    { kind: "route", sceneId: node.sceneId, bindingId: binding.bindingId, routeId: route.routeId },
+    effects
+  );
   const state = cloneRuntimeState(currentState);
-  const effects: ExperienceRuntimeEffect[] = [];
   for (const action of route.actions) {
-    applyAction(manifest, node, state, event, action, effects, canAccess);
+    applyAction(
+      manifest,
+      node,
+      state,
+      event,
+      action,
+      effects,
+      binding.bindingId,
+      route.routeId,
+      canAccess
+    );
   }
   return {
     state,
@@ -391,6 +423,8 @@ function applyAction(
   event: ExperienceRuntimeEvent,
   action: ExperienceRuntimeAction,
   effects: ExperienceRuntimeEffect[],
+  bindingId: string,
+  routeId: string,
   canAccess?: ExperienceAccessCheck
 ): void {
   switch (action.kind) {
@@ -420,19 +454,33 @@ function applyAction(
     case "scene.goto": {
       requireAccess(
         manifest.graph.nodes.find((candidate) => candidate.sceneId === action.sceneId)?.access,
-        canAccess
+        canAccess,
+        { kind: "node", sceneId: action.sceneId },
+        effects
       );
       const fromSceneId = state.currentSceneId;
       state.currentSceneId = action.sceneId;
       state.values.scene = createInitialStateBucket(manifest.stateDefinitions, "scene");
-      effects.push({ kind: "scene.changed", fromSceneId, toSceneId: action.sceneId });
+      effects.push({
+        kind: "scene.changed",
+        fromSceneId,
+        toSceneId: action.sceneId,
+        bindingId,
+        routeId,
+      });
       return;
     }
     case "ending.complete": {
       state.status = "completed";
       state.completedEndingId = action.endingId;
       state.completedEndingIds = addUnique(state.completedEndingIds, action.endingId);
-      effects.push({ kind: "ending.completed", endingId: action.endingId });
+      effects.push({
+        kind: "ending.completed",
+        fromSceneId: state.currentSceneId,
+        endingId: action.endingId,
+        bindingId,
+        routeId,
+      });
       return;
     }
     case "renderer.command":

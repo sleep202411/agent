@@ -48,6 +48,7 @@ export async function getInteractiveFilmPublication(
 export async function prepareInteractiveFilmRelease(
   projectId: string,
   input: {
+    expectedProjectVersion: number;
     expectedDraftRevision: number;
     expectedVideoSnapshotHash: string;
   },

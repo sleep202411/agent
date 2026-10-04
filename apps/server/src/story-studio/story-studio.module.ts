@@ -19,13 +19,20 @@ import { StoryProjectsController } from './story-projects.controller';
 import { StoryProjectsService } from './story-projects.service';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
+import { StoryStoreController } from './story-store.controller';
+import { StoryStoreService } from './story-store.service';
+import { StoryPublicationAuthorityService } from './story-publication-authority.service';
 import { StoryAgentRunModule } from './story-agent-run.module';
 import { StoryPublicationController } from './story-publication.controller';
 import { StoryPublicationService } from './story-publication.service';
 import { StoryPublicationJavaService } from './story-publication-java.service';
+import { AdminAuthModule } from '../admin-auth';
+import { StoryPublicationAdminController } from './story-publication-admin.controller';
+import { StoryPublicationAdminService } from './story-publication-admin.service';
 
 @Module({
   imports: [
+    AdminAuthModule,
     DocumentsModule,
     RealtimeRevokeModule,
     WorkspacesModule,
@@ -42,6 +49,8 @@ import { StoryPublicationJavaService } from './story-publication-java.service';
     StoryBuildController,
     StoryWorkingPreviewController,
     StoryPublicationController,
+    StoryStoreController,
+    StoryPublicationAdminController,
   ],
   providers: [
     StoryProjectMoveService,
@@ -54,6 +63,9 @@ import { StoryPublicationJavaService } from './story-publication-java.service';
     StoryWorkingPreviewService,
     StoryPublicationService,
     StoryPublicationJavaService,
+    StoryStoreService,
+    StoryPublicationAuthorityService,
+    StoryPublicationAdminService,
   ],
   exports: [StoryProjectsService, StoryAccessModule, StoryAgentRunModule],
 })

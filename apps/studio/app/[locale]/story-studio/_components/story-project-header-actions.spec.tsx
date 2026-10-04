@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NextIntlClientProvider } from "next-intl";
@@ -9,6 +9,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import type { StoryCapability, StoryWorkbench } from "@/lib/story-projects-api";
 import type { InteractiveFilmPublication } from "@/lib/interactive-film-api";
 import { StoryProjectHeaderActions } from "./story-project-header-actions";
+import type { StoryPublicationDetailsDialog } from "./story-publication-details-dialog";
+
+type DetailsProps = Parameters<typeof StoryPublicationDetailsDialog>[0];
 
 const h = vi.hoisted(() => ({
   user: "alice",
@@ -22,6 +25,9 @@ const h = vi.hoisted(() => ({
   signIn: vi.fn(),
   push: vi.fn(),
   toast: vi.fn(),
+  workbench: vi.fn(),
+  dialogMount: vi.fn(),
+  dialogRender: vi.fn(),
 }));
 vi.mock("@/app/_components/auth-provider", () => ({
   useAuth: () => ({
@@ -30,21 +36,51 @@ vi.mock("@/app/_components/auth-provider", () => ({
     signIn: h.signIn,
   }),
 }));
-vi.mock("@/i18n/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
+vi.mock("@/i18n/navigation", () => ({
+  useRouter: () => ({ push: h.push }),
+  usePathname: () => "/story-studio/projects/project-one/canvas",
+}));
 vi.mock("sonner", () => ({ toast: { success: h.toast, error: h.toast } }));
 vi.mock("./story-project-credits-badge", () => ({ StoryProjectCreditsBadge: () => null }));
+vi.mock("./story-publication-details-dialog", () => ({
+  StoryPublicationDetailsDialog: (props: DetailsProps) => {
+    h.dialogRender(props);
+    useEffect(() => {
+      h.dialogMount();
+    }, []);
+    return (
+      <div
+        data-testid="publication-details"
+        data-open={props.open}
+        data-project={props.projectId}
+        data-workbench={props.workbench?.project.id ?? ""}
+        data-loading={props.loading}
+        data-error={Boolean(props.error)}
+      >
+        {props.open ? (
+          <section role="dialog">
+            <span>Publication details</span>
+            <button type="button" onClick={() => props.onOpenChange(false)}>
+              Close publication
+            </button>
+            {props.error ? (
+              <button type="button" onClick={props.onRetry}>
+                Retry publication
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
+    );
+  },
+}));
 vi.mock("../_stores/story-project-ui-store", () => ({
   useStoryProjectUiStore: (select: (state: unknown) => unknown) =>
     select({ activeChapterId: "chapter-one", liveDraft: null, draftBarrier: h.save }),
 }));
 vi.mock("@/lib/story-projects-api", async (original) => ({
   ...(await original<typeof import("@/lib/story-projects-api")>()),
-  getStoryWorkbench: async () =>
-    ({
-      project: { id: "project-one", title: "Film", capabilities: h.capabilities },
-      draft: { revision: 7 },
-      video: { snapshotHash: "a".repeat(64) },
-    }) as StoryWorkbench,
+  getStoryWorkbench: h.workbench,
 }));
 vi.mock("@/lib/interactive-film-api", async (original) => ({
   ...(await original<typeof import("@/lib/interactive-film-api")>()),
@@ -59,6 +95,14 @@ beforeEach(() => {
   h.user = "alice";
   h.publication = null;
   h.capabilities = ["story.read", "story.edit", "story.build", "story.release"];
+  h.workbench.mockImplementation(
+    async () =>
+      ({
+        project: { id: "project-one", title: "Film", capabilities: h.capabilities },
+        draft: { revision: 7 },
+        video: { snapshotHash: "a".repeat(64) },
+      }) as StoryWorkbench
+  );
   h.get.mockImplementation(async () => h.publication);
   h.prepare.mockResolvedValue({ gameId: "project-one", status: "draft" });
   h.submit.mockImplementation(async () => {
@@ -121,7 +165,7 @@ async function click(target: HTMLButtonElement) {
   });
 }
 
-describe("project publication permissions in the existing header", () => {
+describe("project publication dialog entry", () => {
   it.each([
     { capabilities: ["story.read"] as StoryCapability[], role: "reader" },
     {
@@ -129,92 +173,126 @@ describe("project publication permissions in the existing header", () => {
       role: "editor",
     },
   ])(
-    "lets a $role read status while retaining publishing restrictions",
+    "lets a $role open publication details without issuing publication writes",
     async ({ capabilities }) => {
       h.capabilities = capabilities;
       h.publication = { gameId: "project-one", status: "published", rejectReason: null };
       await render();
-      expect(host.textContent).toContain("Published");
-      expect(h.get).toHaveBeenCalledOnce();
-      expect(button("Published").disabled).toBe(true);
-      expect(button("Published").parentElement?.getAttribute("aria-label")).toContain(
-        "Publishing access is required"
-      );
+      expect(button("Publish").disabled).toBe(false);
+      await click(button("Publish"));
+      expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+      expect(h.push).not.toHaveBeenCalled();
+      expect(h.get).not.toHaveBeenCalled();
       expect(host.textContent).not.toContain("Take offline");
       expect(h.prepare).not.toHaveBeenCalled();
       expect(h.submit).not.toHaveBeenCalled();
     }
   );
 
-  it("allows a producer to submit through the original modal and saved canvas snapshot", async () => {
+  it("saves a producer's mounted canvas before opening details in place", async () => {
     await render();
-    await click(button("Submit for review"));
-    expect(h.push).not.toHaveBeenCalled();
-    await click(button("Submit for review", document.querySelector('[role="dialog"]')!));
-    expect(h.get).toHaveBeenCalledTimes(3);
+    expect(h.dialogMount).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const href = window.location.href;
+    await click(button("Publish"));
     expect(h.save).toHaveBeenCalledOnce();
-    expect(h.prepare).toHaveBeenCalledWith(
-      "project-one",
-      { expectedDraftRevision: 7, expectedVideoSnapshotHash: "a".repeat(64) },
-      expect.any(AbortSignal)
+    expect(h.push).not.toHaveBeenCalled();
+    expect(h.prepare).not.toHaveBeenCalled();
+    expect(h.submit).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(window.location.href).toBe(href);
+    expect(h.dialogRender).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        projectId: "project-one",
+        open: true,
+        workbench: expect.objectContaining({
+          project: expect.objectContaining({ id: "project-one" }),
+        }),
+        loading: false,
+        error: null,
+      })
     );
-    expect(h.submit).toHaveBeenCalledOnce();
-    expect(document.body.textContent).toContain("Version submitted");
   });
 
-  it("requires a published producer to take the film offline before submitting again", async () => {
+  it("keeps a published project's management actions inside its dialog", async () => {
     h.publication = { gameId: "project-one", status: "published", rejectReason: null };
     await render();
-    expect(button("Published").disabled).toBe(true);
-    expect(button("Published").parentElement?.getAttribute("aria-label")).toContain(
-      "Take the project offline"
-    );
-    await click(button("Take offline"));
-    await click(button("Take offline", document.querySelector('[role="dialog"]')!));
-    expect(h.offline).toHaveBeenCalledWith("project-one", expect.any(AbortSignal));
-    expect(button("Submit update").disabled).toBe(false);
+    expect(button("Publish").disabled).toBe(false);
+    expect(host.textContent).not.toContain("Take offline");
+    await click(button("Publish"));
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(h.push).not.toHaveBeenCalled();
+    expect(h.offline).not.toHaveBeenCalled();
     expect(h.prepare).not.toHaveBeenCalled();
   });
 
-  it("explains upstream service authorization failure without blaming the producer's role", async () => {
-    h.get.mockRejectedValue(
-      Object.assign(Error("Upstream service credential rejected"), {
-        status: 502,
-        code: "STORY_PUBLICATION_UPSTREAM_FAILED",
-      })
-    );
+  it("retains the creation page and shows the draft error when saving fails", async () => {
+    h.save.mockRejectedValue(Error("Resolve the draft conflict first."));
     await render();
-    expect(host.textContent).toContain("Publication service error");
-    const submit = button("Submit for review");
-    expect(submit.disabled).toBe(true);
-    expect(submit.parentElement?.getAttribute("aria-label")).toContain(
-      "The publication service could not verify the status"
-    );
-    expect(submit.parentElement?.getAttribute("aria-label")).toContain(
-      "Upstream service credential rejected"
-    );
-    expect(submit.parentElement?.getAttribute("aria-label")).not.toContain(
-      "Publishing access is required"
-    );
+    await click(button("Publish"));
+    expect(h.push).not.toHaveBeenCalled();
+    expect(h.toast).toHaveBeenCalledWith("Resolve the draft conflict first.");
+    expect(button("Publish").disabled).toBe(false);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("aborts the previous account's status read and discards its late status", async () => {
-    let finish!: (value: InteractiveFilmPublication) => void;
-    h.get.mockImplementationOnce(() => {
-      h.get.mockResolvedValue({ gameId: "project-one", status: "offline", rejectReason: null });
-      return new Promise((resolve) => {
+  it("discards a late dialog opening after the account changes while the canvas saves", async () => {
+    let finish!: () => void;
+    h.save.mockImplementationOnce(() => {
+      return new Promise<void>((resolve) => {
         finish = resolve;
       });
     });
     await render();
-    const signal = h.get.mock.calls[0]![1] as AbortSignal;
+    await click(button("Publish"));
     h.user = "bob";
     await render();
-    expect(signal.aborted).toBe(true);
-    await act(async () =>
-      finish({ gameId: "project-one", status: "published", rejectReason: null })
+    await act(async () => finish());
+    expect(h.push).not.toHaveBeenCalled();
+    expect(button("Publish").disabled).toBe(false);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("keeps the details component mounted when closing and reopening", async () => {
+    await render();
+    await click(button("Publish"));
+    await click(button("Close publication"));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(host.querySelector('[data-testid="publication-details"]')).not.toBeNull();
+    expect(h.dialogMount).toHaveBeenCalledOnce();
+    await click(button("Publish"));
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(h.dialogMount).toHaveBeenCalledOnce();
+    expect(h.save).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores keyboard focus to Publish when the dialog requests close autofocus", async () => {
+    await render();
+    const publishButton = button("Publish");
+    await click(publishButton);
+    const closeButton = button("Close publication");
+    closeButton.focus();
+    expect(document.activeElement).toBe(closeButton);
+    await click(closeButton);
+    expect(document.activeElement).toBe(document.body);
+    const props = h.dialogRender.mock.lastCall?.[0] as DetailsProps;
+    expect(props.onCloseAutoFocus).toBeTypeOf("function");
+    const event = new Event("closeAutoFocus", { cancelable: true });
+    props.onCloseAutoFocus?.(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(publishButton);
+  });
+
+  it("passes a failed workbench query into details and lets its retry recover", async () => {
+    const error = new Error("Project status unavailable.");
+    h.workbench.mockRejectedValueOnce(error);
+    await render();
+    await click(button("Publish"));
+    expect(h.dialogRender).toHaveBeenLastCalledWith(expect.objectContaining({ error }));
+    await click(button("Retry publication"));
+    expect(h.workbench).toHaveBeenCalledTimes(2);
+    expect(h.dialogRender).toHaveBeenLastCalledWith(
+      expect.objectContaining({ error: null, loading: false })
     );
-    expect(host.textContent).toContain("Offline");
-    expect(host.textContent).not.toContain("Published");
   });
 });

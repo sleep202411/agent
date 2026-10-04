@@ -54,6 +54,7 @@ describe("useStoryCandidateAssets", () => {
   let root: Root;
   let queryClient: QueryClient;
   let controller: StoryCandidateAssetsController | null;
+  let enabled: boolean | undefined;
 
   let projectId = PROJECT_ID;
   let canEdit = true;
@@ -62,6 +63,7 @@ describe("useStoryCandidateAssets", () => {
     controller = useStoryCandidateAssets({
       projectId,
       canEdit,
+      enabled,
     });
     return <span data-loading={String(controller.loading)} />;
   }
@@ -72,6 +74,7 @@ describe("useStoryCandidateAssets", () => {
     projectId = PROJECT_ID;
     canEdit = true;
     account.id = "alice";
+    enabled = undefined;
     notifications.error.mockReset();
     vi.mocked(getStoryCandidateAssets).mockReset().mockResolvedValue([]);
     vi.mocked(addStoryCandidateAsset).mockReset().mockResolvedValue(candidateAsset());
@@ -90,6 +93,40 @@ describe("useStoryCandidateAssets", () => {
     await act(async () => root.unmount());
     queryClient.clear();
     container.remove();
+    vi.useRealTimers();
+  });
+
+  it("pauses automatic reads while closed and refreshes retained assets when reopened", async () => {
+    vi.useFakeTimers();
+    enabled = false;
+    vi.mocked(getStoryCandidateAssets).mockResolvedValue([candidateAsset()]);
+    await renderHarness();
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(getStoryCandidateAssets).not.toHaveBeenCalled();
+    expect(current().loading).toBe(false);
+
+    enabled = true;
+    await renderHarness();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(getStoryCandidateAssets).toHaveBeenCalledTimes(1);
+    expect(current().items.map((item) => item.asset.id)).toEqual([ASSET_ID]);
+
+    enabled = false;
+    await renderHarness();
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: storyCandidateAssetsQueryKey(PROJECT_ID, "alice"),
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(getStoryCandidateAssets).toHaveBeenCalledTimes(1);
+    expect(current().items.map((item) => item.asset.id)).toEqual([ASSET_ID]);
+
+    enabled = true;
+    await renderHarness();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(getStoryCandidateAssets).toHaveBeenCalledTimes(2);
+    expect(current().items.map((item) => item.asset.id)).toEqual([ASSET_ID]);
   });
 
   it("coalesces rapid duplicate additions before React can render pending state", async () => {
@@ -275,6 +312,11 @@ describe("useStoryCandidateAssets", () => {
   });
 
   async function mountHarness() {
+    await renderHarness();
+    await waitFor(() => !current().loading);
+  }
+
+  async function renderHarness() {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
@@ -282,7 +324,6 @@ describe("useStoryCandidateAssets", () => {
         </QueryClientProvider>
       );
     });
-    await waitFor(() => !current().loading);
   }
 
   function current(): StoryCandidateAssetsController {

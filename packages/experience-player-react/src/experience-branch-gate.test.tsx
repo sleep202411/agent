@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExperienceThemeConfig } from "@repo/shared/experience-runtime";
 import { ExperiencePlayer, timelineReportDrivesScene } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
+import { journeyMapTestCopy } from "./experience-journey-test-copy";
 
 /**
  * Branch-frame parking and timeline-control charging are the two runtime
@@ -21,6 +22,7 @@ import type { ExperiencePlayerCopy } from "./experience-player-copy";
 const HASH = "a".repeat(64);
 
 export const copy = {
+  journeyMap: journeyMapTestCopy,
   invalidManifest: "Invalid manifest",
   manifestRoot: "Manifest",
   interactiveFilm: "Interactive film",
@@ -40,6 +42,15 @@ export const copy = {
   regionLabel: "Experience player",
   video: { unmute: "Unmute" },
   playback: {
+    transport: {
+      controlsLabel: "Playback controls",
+      rewind10: "Back 10 seconds",
+      forward10: "Forward 10 seconds",
+      progressLabel: "Clip progress",
+      speedLabel: "Playback speed",
+      watchedOnlyHint: "You can seek only within footage you have watched.",
+      interactionBlocked: "Playback controls are unavailable during an interaction.",
+    },
     pause: "Pause",
     resume: "Resume",
     paused: "Paused",

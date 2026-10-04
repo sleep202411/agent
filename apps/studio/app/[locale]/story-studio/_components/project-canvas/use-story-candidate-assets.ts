@@ -33,9 +33,11 @@ export interface StoryCandidateAssetsController {
 export function useStoryCandidateAssets({
   projectId,
   canEdit,
+  enabled = true,
 }: {
   projectId: string;
   canEdit: boolean;
+  enabled?: boolean;
 }): StoryCandidateAssetsController {
   const t = useTranslations("storyStudio.canvas.creativeWorkbench.candidates");
   const queryClient = useQueryClient();
@@ -60,7 +62,7 @@ export function useStoryCandidateAssets({
     queryKey,
     queryFn: ({ signal }) => getStoryCandidateAssets(projectId, signal),
     staleTime: 20_000,
-    enabled: Boolean(projectId && userId),
+    enabled: enabled && Boolean(projectId && userId),
     retry: false,
   });
   const [pending, setPending] = useState<{ scope: typeof scope; ids: Set<string> } | null>(null);

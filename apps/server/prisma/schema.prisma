@@ -8611,6 +8611,9 @@ model StoryProject {
   defaultLocale              String                      @default("en-US") @map("default_locale") @db.VarChar(16)
   coverAssetId               String?                     @map("cover_asset_id") @db.Uuid
   tags                       Json                        @default("[]") @db.JsonB
+  /// Publication introduction draft. Review candidates freeze this together
+  /// with title, locale and cover identity; public reads never consume it.
+  storeListing               Json?                       @map("store_listing") @db.JsonB
   sourceIpId                 String?                     @map("source_ip_id") @db.Uuid
   nextBuildNumber            Int                         @default(1) @map("next_build_number")
   version                    Int                         @default(0)
@@ -9675,6 +9678,8 @@ model StoryExperienceDraftRelease {
   gameId            String                           @map("game_id") @db.VarChar(160)
   contentVersion    String                           @map("content_version") @db.VarChar(160)
   requestHash       String                           @map("request_hash") @db.VarChar(64)
+  /// Frozen introduction and promotional media for this exact review version.
+  listingSnapshot   Json?                            @map("listing_snapshot") @db.JsonB
   status            StoryExperiencePublicationStatus @default(pending)
   requestedByUserId String                           @map("requested_by_user_id") @db.VarChar(64)
 
@@ -9726,6 +9731,8 @@ model StoryExperienceGameRelease {
   gameId              String                           @map("game_id") @db.VarChar(160)
   contentVersion      String                           @map("content_version") @db.VarChar(160)
   requestHash         String                           @map("request_hash") @db.VarChar(64)
+  /// Frozen introduction and promotional media for this exact review version.
+  listingSnapshot     Json?                            @map("listing_snapshot") @db.JsonB
   status              StoryExperiencePublicationStatus @default(pending)
   requestedSetCurrent Boolean                          @default(true) @map("requested_set_current")
   requestedByUserId   String                           @map("requested_by_user_id") @db.VarChar(64)
@@ -10850,6 +10857,54 @@ model CrewSavedPosition {
   @@id([userId, positionId])
   @@index([userId, createdAt(sort: Desc)])
   @@map("crew_saved_positions")
+}
+
+/// Interactive-film play save (存档): one "current run" save slot per user,
+/// per game, per chapter. Chapters are independent runtime manifests, so a
+/// serial work keeps one slot each; the (userId, gameId, updatedAt desc)
+/// index backs the "continue where you last played" lookup. The save is
+/// never wiped by a republish — the player validates it against the live
+/// manifest on restore. Clearing retains a revisioned tombstone, so a late
+/// request cannot restore an earlier run or clear a newer save.
+model StoryPlaySave {
+  userId         String                @map("user_id") @db.VarChar(64)
+  gameId         String                @map("game_id") @db.VarChar(128)
+  /// Empty string for single-chapter works (no chapter identity exists).
+  chapterId      String                @map("chapter_id") @db.VarChar(128)
+  /// Diagnostics only — restore gates on the live manifest, not this value.
+  contentVersion String                @map("content_version") @db.VarChar(128)
+  /// ExperienceRuntimeState snapshot, stored verbatim.
+  state          Json
+  /// Pending event batch parked at a paid gate; normally [].
+  events         Json
+  /// Media cursor and watched bounds, validated by the player on restore.
+  playback       Json?
+  /// Small journey metadata; rewind checkpoints live in normalized child rows.
+  journey        Json?
+  journeyAnchors StoryPlaySaveAnchor[]
+  /// Every successful write or clear advances the slot's revision.
+  revision       Int                   @default(0)
+  cleared        Boolean               @default(false)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([userId, gameId, chapterId])
+  @@index([userId, gameId, updatedAt(sort: Desc)], map: "story_play_saves_latest_idx")
+  @@map("story_play_saves")
+}
+
+/// A single current rewind checkpoint for each visited scene in a save slot.
+model StoryPlaySaveAnchor {
+  userId    String        @map("user_id") @db.VarChar(64)
+  gameId    String        @map("game_id") @db.VarChar(128)
+  chapterId String        @map("chapter_id") @db.VarChar(128)
+  sceneId   String        @map("scene_id") @db.VarChar(160)
+  anchor    Json
+  sizeBytes Int           @map("size_bytes")
+  save      StoryPlaySave @relation(fields: [userId, gameId, chapterId], references: [userId, gameId, chapterId], onDelete: Cascade)
+
+  @@id([userId, gameId, chapterId, sceneId])
+  @@map("story_play_save_anchors")
 }
 
 model IpChannelVideoSubmission {

@@ -27,8 +27,8 @@ interface StoryFrame {
  * at, so `resume()` sets it again for exactly the time it had left. A frame is
  * never delivered while paused: one requested before or during a pause arrives
  * on the first frame after the resume, so a loop that only asks for its next
- * frame from inside the callback survives the pause. Story time is
- * `performance.now()` minus the time spent paused.
+ * frame from inside the callback survives the pause. Story time advances at
+ * the selected rate; changing it keeps the current story time continuous.
  *
  * `performance.now`, `setTimeout` and `requestAnimationFrame` are read at every
  * call, never captured, so fakes installed after import drive the clock too.
@@ -36,29 +36,58 @@ interface StoryFrame {
  */
 export class ExperienceStoryClock {
   private pausedAt: number | null;
-  private pausedFor = 0;
+  private wallAnchor: number;
+  private storyAnchor: number;
+  private playbackRate = 1;
   private nextId = 1;
   private readonly timers = new Map<number, StoryTimer>();
   private readonly frames = new Map<number, StoryFrame>();
   private readonly listeners = new Set<() => void>();
 
   constructor(options: { paused: boolean }) {
-    this.pausedAt = options.paused ? performance.now() : null;
+    const now = performance.now();
+    this.wallAnchor = now;
+    this.storyAnchor = now;
+    this.pausedAt = options.paused ? now : null;
   }
 
   get paused(): boolean {
     return this.pausedAt !== null;
   }
 
+  get rate(): number {
+    return this.playbackRate;
+  }
+
   /** Story time in milliseconds. Frozen while paused. */
   now(): number {
-    return (this.pausedAt ?? performance.now()) - this.pausedFor;
+    return this.storyTimeAt(this.pausedAt ?? performance.now());
+  }
+
+  /** Changes speed without advancing a paused clock or moving its current time. */
+  setRate(rate: number): void {
+    if (!Number.isFinite(rate) || rate <= 0)
+      throw new RangeError("Story rate must be finite and positive");
+    if (rate === this.playbackRate) return;
+    const wall = this.pausedAt ?? performance.now();
+    this.storyAnchor = this.storyTimeAt(wall);
+    this.wallAnchor = wall;
+    this.playbackRate = rate;
+    this.timers.forEach((timer, id) => {
+      if (timer.handle !== null) window.clearTimeout(timer.handle);
+      timer.handle = null;
+      this.armTimer(id, timer);
+    });
+    this.notify();
   }
 
   /** Freezes story time, its timers and its frames. A second call does nothing. */
   pause(): void {
     if (this.pausedAt !== null) return;
-    this.pausedAt = performance.now();
+    const wall = performance.now();
+    this.storyAnchor = this.storyTimeAt(wall);
+    this.wallAnchor = wall;
+    this.pausedAt = wall;
     this.timers.forEach((timer) => {
       if (timer.handle !== null) window.clearTimeout(timer.handle);
       timer.handle = null;
@@ -73,7 +102,7 @@ export class ExperienceStoryClock {
   /** Runs story time on from where it froze. A second call does nothing. */
   resume(): void {
     if (this.pausedAt === null) return;
-    this.pausedFor += performance.now() - this.pausedAt;
+    this.wallAnchor = performance.now();
     this.pausedAt = null;
     this.timers.forEach((timer, id) => this.armTimer(id, timer));
     this.frames.forEach((frame, id) => this.armFrame(id, frame));
@@ -132,13 +161,17 @@ export class ExperienceStoryClock {
     return id;
   }
 
+  private storyTimeAt(wall: number): number {
+    return this.storyAnchor + (wall - this.wallAnchor) * this.playbackRate;
+  }
+
   // Rounded up: a browser drops the fraction of a delay, and a story timer
   // must never fire before it is due.
   private armTimer(id: number, timer: StoryTimer): void {
     if (this.pausedAt !== null) return;
     timer.handle = window.setTimeout(
       () => this.fireTimer(id),
-      Math.max(0, Math.ceil(timer.dueAt - this.now()))
+      Math.max(0, Math.ceil((timer.dueAt - this.now()) / this.playbackRate))
     );
   }
 
@@ -147,6 +180,11 @@ export class ExperienceStoryClock {
   private fireTimer(id: number): void {
     const timer = this.timers.get(id);
     if (!timer || this.pausedAt !== null) return;
+    if (timer.dueAt > this.now()) {
+      if (timer.handle !== null) window.clearTimeout(timer.handle);
+      this.armTimer(id, timer);
+      return;
+    }
     timer.handle = null;
     if (timer.intervalMs === null) {
       this.timers.delete(id);

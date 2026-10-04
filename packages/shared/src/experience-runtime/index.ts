@@ -14,3 +14,4 @@ export * from "./game-manifest.js";
 export * from "./integrity.js";
 export * from "./release-protocol.js";
 export * from "./player-protocol.js";
+export * from "./journey.js";

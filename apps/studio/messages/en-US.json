@@ -3447,7 +3447,7 @@
           },
           "submitting": {
             "title": "Submit to platform",
-            "description": "Uploading the version to Java and requesting review."
+            "description": "Sending this version to the platform and requesting review."
           }
         },
         "actions": {
@@ -3483,7 +3483,13 @@
           "offlineFailed": "The interactive film could not be taken offline.",
           "unexpected": "The current version could not be submitted."
         },
-        "retryStatus": "Retry publication status"
+        "retryStatus": "Retry publication status",
+        "entry": "Publish",
+        "withdraw": {
+          "title": "Withdraw this submission?",
+          "description": "This version will leave the review queue. Your saved draft is retained and can be submitted again.",
+          "confirm": "Withdraw submission"
+        }
       },
       "workingPreview": {
         "pageTitle": "Story Playtest · Interactive Film Studio",
@@ -4213,6 +4219,88 @@
       "moving": "Moving…",
       "success": "Project moved",
       "failed": "Could not move the project."
+    },
+    "publication": {
+      "title": "Publish film",
+      "loading": "Loading publication details…",
+      "signInRequired": "Sign in to manage publication.",
+      "loadFailed": "Could not load this project.",
+      "retry": "Retry",
+      "saving": "Saving…",
+      "unsaved": "Unsaved changes",
+      "saved": "Draft saved",
+      "draftSaved": "Saved draft",
+      "editDenied": "You can view these promotional materials. Only project editors can change them.",
+      "invalidDraft": "Check the length and format of the promotional materials.",
+      "saveFailed": "Could not save the draft.",
+      "conflict": "The project has changed since this draft was loaded. Refresh its version before saving your changes.",
+      "keepDraft": "Refresh version and keep my edits",
+      "completeFields": "Complete the required promotional materials before submitting.",
+      "completeChapters": "Set a starting scene in every chapter before submitting.",
+      "mediaChecking": "Checking selected media…",
+      "mediaUnavailable": "Some selected media is unavailable. Choose media that is ready and has not been blocked.",
+      "checksTitle": "Before you submit",
+      "checksDescription": "Required details are checked here. Story structure and media are validated when the release is prepared.",
+      "chaptersIncomplete": "{count} chapters need a starting scene",
+      "chaptersReady": "{count} chapters have starting scenes",
+      "reviewFeedback": "Review feedback",
+      "viewPublished": "Open published film",
+      "retrySubmission": "Retry submission",
+      "submitted": "Submitted for review. This version of your promotional materials is now frozen.",
+      "submitHint": "Submitting saves your latest promotional materials and prepares a fixed version for review.",
+      "saveDraft": "Save draft",
+      "submit": "Submit for review",
+      "withdraw": "Withdraw submission",
+      "offline": "Take offline",
+      "state": {
+        "reviewing": {
+          "title": "Under review",
+          "description": "This submission is frozen. You can keep editing your next draft, or withdraw this submission to submit again."
+        },
+        "published": {
+          "title": "Your film is published",
+          "description": "Saving changes updates your draft. Take the published film offline before submitting a new version."
+        },
+        "offline": {
+          "title": "Film is offline",
+          "description": "Players cannot open this film. Update its details and submit a new version when it is ready."
+        }
+      },
+      "details": {
+        "introTitle": "Promotional materials",
+        "introDescription": "Introduce your film to players. You can save an unfinished draft at any time.",
+        "cover": "Cover",
+        "coverEmpty": "No cover selected",
+        "coverHint": "Choose a clear image that represents your film.",
+        "chooseCover": "Choose cover",
+        "replaceCover": "Replace cover",
+        "tags": "Tags",
+        "tagsPlaceholder": "Add a tag",
+        "mediaTitle": "Trailer and screenshots",
+        "mediaDescription": "Show moments from the film. Trailer and screenshots are optional.",
+        "trailer": "Trailer",
+        "chooseTrailer": "Choose trailer",
+        "replaceTrailer": "Replace trailer",
+        "removeTrailer": "Remove trailer",
+        "trailerEmpty": "Add a trailer from your media or upload one",
+        "screenshots": "Screenshots",
+        "screenshotCount": "{count}/8",
+        "addScreenshot": "Add screenshot",
+        "removeScreenshot": "Remove screenshot {index}",
+        "screenshotAlreadyAdded": "Already added to screenshots.",
+        "mediaNotReady": "This media is not ready. Choose another asset.",
+        "mediaBlocked": "Blocked media cannot be used for publication.",
+        "unavailableMedia": "Media unavailable",
+        "candidateLoadError": "Could not load project media.",
+        "retry": "Retry",
+        "addValue": "Add {label}",
+        "removeValue": "Remove {value}",
+        "mediaLoading": "Loading media…",
+        "description": "Introduction",
+        "descriptionPlaceholder": "Introduce the story, its world, and the choices players will make. Use line breaks for paragraphs."
+      },
+      "signIn": "Sign in",
+      "closeDraftHint": "Closing keeps your unfinished draft for when you reopen this dialog."
     }
   },
   "storyStudioLanding": {
@@ -4231,6 +4319,27 @@
     "studioDescription": "AI creative studio"
   },
   "experiencePlayer": {
+    "journeyMap": {
+      "open": "Story map",
+      "title": "Story map",
+      "description": "Scenes you have explored and the routes you have taken.",
+      "close": "Close story map",
+      "current": "Current",
+      "explored": "Explored",
+      "unexplored": "Unexplored",
+      "unexploredHint": "This part of the story is unexplored. Keep playing or try other choices to discover more of the story.",
+      "replay": "Replay from here",
+      "replaying": "Returning to the scene…",
+      "replayHint": "Replay starts at the scene’s entry point and replaces progress after it.",
+      "replayUnavailable": "No saved entry point is available for this scene.",
+      "empty": "The story map is not available yet.",
+      "canvasLabel": "Scenes and story paths",
+      "centerCurrent": "Find current scene",
+      "sceneLabel": "Scene {number}",
+      "endingLabel": "Ending",
+      "truncated": "Some connections are omitted because this map is unusually large.",
+      "thumbnailUnavailable": "Scene thumbnail unavailable"
+    },
     "communityAccess": {
       "title": "Unlock content",
       "price": "{amount} Community Points",
@@ -4251,7 +4360,16 @@
       "resume": "Resume",
       "paused": "Paused",
       "continuePlaying": "Tap to continue",
-      "interrupted": "This device needs a tap to keep playing."
+      "interrupted": "This device needs a tap to keep playing.",
+      "transport": {
+        "controlsLabel": "Playback controls",
+        "rewind10": "Back 10 seconds",
+        "forward10": "Forward 10 seconds",
+        "progressLabel": "Clip progress",
+        "speedLabel": "Playback speed",
+        "watchedOnlyHint": "You can seek only within footage you have watched.",
+        "interactionBlocked": "Playback controls are unavailable during an interaction."
+      }
     },
     "videoLabel": "Story video for scene {nodeId}",
     "continue": "Continue",

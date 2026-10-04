@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { transitionAdminInteractiveFilm } from "@/lib/admin-interactive-films";
+import {
+  getAdminInteractiveFilmDetail,
+  transitionAdminInteractiveFilm,
+} from "@/lib/admin-interactive-films";
 import { getAdminSession } from "@/lib/admin-session";
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 vi.mock("@/lib/admin-session", () => ({ getAdminSession: vi.fn() }));
-vi.mock("@/lib/admin-interactive-films", () => ({ transitionAdminInteractiveFilm: vi.fn() }));
+vi.mock("@/lib/admin-interactive-films", () => ({
+  getAdminInteractiveFilmDetail: vi.fn(),
+  transitionAdminInteractiveFilm: vi.fn(),
+}));
 
 const GAME_ID = "film_0123456789abcdef";
 const game = { gameId: GAME_ID, title: "迷雾车站", status: "published" } as never;
@@ -75,5 +81,17 @@ describe("admin interactive-film detail route", () => {
     const response = await POST(post({ action: "offline" }), context(GAME_ID));
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toMatchObject({ msg: "作品状态已变化" });
+  });
+
+  it("reads fresh moderation state with the same permission for approval preflight", async () => {
+    vi.mocked(getAdminSession).mockResolvedValueOnce(session(["ip.read"]));
+    expect((await GET(post(null), context(GAME_ID))).status).toBe(403);
+    expect(getAdminInteractiveFilmDetail).not.toHaveBeenCalled();
+    vi.mocked(getAdminInteractiveFilmDetail).mockResolvedValue(game);
+    const response = await GET(post(null), context(GAME_ID));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(getAdminInteractiveFilmDetail).toHaveBeenCalledWith(GAME_ID);
+    expect(transitionAdminInteractiveFilm).not.toHaveBeenCalled();
   });
 });
