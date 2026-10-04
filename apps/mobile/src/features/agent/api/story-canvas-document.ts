@@ -63,7 +63,11 @@ function parseDocument(scope: CandidateScope, raw: unknown, expectedId?: string)
     throw Error("Canvas document scope mismatch.");
   return document;
 }
-async function readDocument(scope: CandidateScope, documentId: string, signal: AbortSignal) {
+export async function readStoryCanvasDocument(
+  scope: CandidateScope,
+  documentId: string,
+  signal: AbortSignal
+) {
   current(scope, signal);
   id.parse(documentId);
   const raw = await api.get(`/documents/${documentId}`, {
@@ -118,7 +122,7 @@ async function synchronize(scope: CandidateScope, initial: CanvasDocument, signa
     } catch (error) {
       if (!(error instanceof HorizonChanged)) throw error;
       if (attempt === 2) break;
-      const fresh = await readDocument(scope, document.id, signal);
+      const fresh = await readStoryCanvasDocument(scope, document.id, signal);
       if (fresh.currentSequence < document.currentSequence)
         throw Error("Canvas document sequence regressed.");
       document = fresh;
@@ -146,5 +150,5 @@ export async function reloadStoryCanvasDocument(
   documentId: string,
   signal: AbortSignal
 ) {
-  return synchronize(scope, await readDocument(scope, documentId, signal), signal);
+  return synchronize(scope, await readStoryCanvasDocument(scope, documentId, signal), signal);
 }
