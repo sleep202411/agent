@@ -5247,5 +5247,6 @@
   "storyCanvas.map.moveNode": "移动节点",
   "storyCanvas.map.moveHint": "单指拖动选中的节点，松开后确认保存。",
   "storyCanvas.map.movementTitle": "移动节点",
-  "storyCanvas.map.resumeMovement": "继续移动"
+  "storyCanvas.map.resumeMovement": "继续移动",
+  "storyCanvas.map.moveGroup": "移动分组"
 }

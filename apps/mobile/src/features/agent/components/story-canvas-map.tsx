@@ -9,6 +9,7 @@ import { useTranslations } from "@/i18n";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import {
   canvasLayout,
+  canvasDragPositions,
   fitCanvasCamera,
   panCanvasCamera,
   zoomCanvasCamera,
@@ -53,6 +54,7 @@ export function StoryCanvasMap({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [movingGroup, setMovingGroup] = useState<string>();
   const [moving, setMoving] = useState(false),
     [movementError, setMovementError] = useState<string>();
   const [drag, setDrag] = useState<{ nodeId: string; x: number; y: number }>();
@@ -63,10 +65,17 @@ export function StoryCanvasMap({
             ...loaded.snapshot,
             nodes: {
               ...loaded.snapshot.nodes,
-              [drag.nodeId]: {
-                ...(loaded.snapshot.nodes[drag.nodeId] as Record<string, unknown>),
-                position: { x: drag.x, y: drag.y },
-              },
+              ...Object.fromEntries(
+                canvasDragPositions(loaded.snapshot, drag, movingGroup).positions.map(
+                  (position) => [
+                    position.nodeId,
+                    {
+                      ...(loaded.snapshot.nodes[position.nodeId] as Record<string, unknown>),
+                      position: { x: position.x, y: position.y },
+                    },
+                  ]
+                )
+              ),
             },
           }
         : loaded.snapshot;
@@ -74,7 +83,7 @@ export function StoryCanvasMap({
     } catch (cause) {
       return { error: cause instanceof Error ? cause.message : String(cause) };
     }
-  }, [loaded, drag]);
+  }, [loaded, drag, movingGroup]);
   const [viewport, setViewport] = useState({ width: 320, height: 480 });
   const [camera, setCamera] = useState<CanvasCamera | null>(null),
     [selected, setSelected] = useState<string>();
@@ -88,6 +97,9 @@ export function StoryCanvasMap({
     responder.updateCamera(visible);
   }, [responder, visible]);
   const node = projection.value?.nodes.find((node) => node.id === selected);
+  const group = projection.value?.groups.find(
+    (group) => selected && group.nodeIds.includes(selected)
+  );
   const viewBox = `${visible.x - viewport.width / visible.scale / 2} ${visible.y - viewport.height / visible.scale / 2} ${viewport.width / visible.scale} ${viewport.height / visible.scale}`;
   return (
     <Modal visible animationType="slide" onRequestClose={close}>
@@ -241,7 +253,7 @@ export function StoryCanvasMap({
                     setMoving(false);
                     if (!position) return;
                     try {
-                      move({ action: "moveNodes", positions: [position] });
+                      move(canvasDragPositions(loaded.snapshot, position, movingGroup));
                     } catch (cause) {
                       setMovementError(cause instanceof Error ? cause.message : String(cause));
                     }
@@ -275,7 +287,19 @@ export function StoryCanvasMap({
                 label={t(moving ? "common.cancel" : "storyCanvas.map.moveNode")}
                 onPress={() => {
                   setCamera(visible);
+                  setMovingGroup(undefined);
                   setMoving(!moving);
+                  setMovementError(undefined);
+                }}
+              />
+            )}
+            {move && group && !moving && (
+              <MapAction
+                label={t("storyCanvas.map.moveGroup")}
+                onPress={() => {
+                  setCamera(visible);
+                  setMovingGroup(group.id);
+                  setMoving(true);
                   setMovementError(undefined);
                 }}
               />

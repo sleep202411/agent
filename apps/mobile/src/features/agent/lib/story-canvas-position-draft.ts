@@ -3,6 +3,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import {
   canvasPositionEditSchema,
+  validateMovementGroup,
   type CanvasPositionEdit,
 } from "../../../../canvas-editor/position-schema";
 import { canvasUpdateSchema, type CanvasSnapshot } from "../../../../canvas-editor/protocol";
@@ -24,6 +25,7 @@ export type CanvasPositionDraft = z.infer<typeof canvasPositionDraftSchema>;
  * change independently. A missing node must never be recreated by a stale drag. */
 export function canvasPositionBaseline(snapshot: CanvasSnapshot, raw: CanvasPositionEdit) {
   const edit = canvasPositionEditSchema.parse(raw);
+  validateMovementGroup(snapshot.groups, Object.keys(snapshot.nodes), edit);
   return JSON.stringify(
     edit.positions.map(({ nodeId }) => {
       const node = z

@@ -155,3 +155,26 @@ it("rejects a node with a mismatched identity", () => {
     doc.destroy();
   }
 });
+it("moves an exact group selection and rejects stale membership without writing", () => {
+  const { doc, state } = fixture();
+  try {
+    const edit = {
+      action: "moveNodes" as const,
+      groupId: "group",
+      positions: [
+        { nodeId: "a", x: 40, y: 50 },
+        { nodeId: "b", x: 40, y: 50 },
+      ],
+    };
+    const result = editCanvasPositions(state(), edit);
+    expect(result.snapshot.nodes.a).toHaveProperty("position.x", 40);
+    expect(result.snapshot.nodes.b).toHaveProperty("position.x", 40);
+    expect(() =>
+      editCanvasPositions(state(), { ...edit, positions: edit.positions.slice(0, 1) })
+    ).toThrow("membership changed");
+    doc.getMap("groups").delete("group");
+    expect(() => editCanvasPositions(state(), edit)).toThrow("membership changed");
+  } finally {
+    doc.destroy();
+  }
+});

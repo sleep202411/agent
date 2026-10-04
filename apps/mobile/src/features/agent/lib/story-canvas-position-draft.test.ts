@@ -149,3 +149,21 @@ it("rejects aborted sends and preserves bytes if the account retires after recei
   await expect(setup().resume(new AbortController().signal)).rejects.toThrow("expired");
   expect(JSON.parse(raw!).draft.command).toEqual(command);
 });
+it("accepts recoloring but blocks changed group membership before encoding", () => {
+  const snapshot = {
+    ...fixture(),
+    groups: { group: { id: "group", nodeIds: ["a", "b"], color: "red" } },
+  };
+  const grouped = {
+    ...edit,
+    groupId: "group",
+    positions: [...edit.positions, { nodeId: "b", x: 120, y: 100 }],
+  };
+  setup().stage(snapshot, grouped);
+  snapshot.groups.group.color = "blue";
+  expect(setup().validate(snapshot).edit).toEqual(grouped);
+  snapshot.groups.group.nodeIds = ["a"];
+  expect(() => setup().validate(snapshot)).toThrow("membership changed");
+  expect(setup().read()?.edit).toEqual(grouped);
+  expect(submit).not.toHaveBeenCalled();
+});

@@ -121,3 +121,33 @@ it("provides an empty canvas viewport without mutating the document", () => {
     bounds: { x: 0, y: 0, width: 640, height: 480 },
   });
 });
+it("projects a whole-group drag with identical deltas and preserves non-members", async () => {
+  const { canvasDragPositions } = await import("./story-canvas-layout");
+  const snapshot = {
+    meta: {},
+    assets: {},
+    edges: {},
+    groups: { g: { id: "g", nodeIds: ["a", "b"], color: "red" } },
+    nodes: {
+      a: { id: "a", type: "note", data: {}, position: { x: 0, y: 20 } },
+      b: { id: "b", type: "note", data: {}, position: { x: 80, y: 40 } },
+      c: { id: "c", type: "note", data: {}, position: { x: 500, y: 200 } },
+    },
+  };
+  expect(canvasDragPositions(snapshot, { nodeId: "a", x: -10, y: 50 }, "g")).toEqual({
+    action: "moveNodes",
+    groupId: "g",
+    positions: [
+      { nodeId: "a", x: -10, y: 50 },
+      { nodeId: "b", x: 70, y: 70 },
+    ],
+  });
+  expect(canvasDragPositions(snapshot, { nodeId: "b", x: 100, y: 200 }).positions).toEqual([
+    { nodeId: "b", x: 100, y: 200 },
+  ]);
+  expect(() => canvasDragPositions(snapshot, { nodeId: "c", x: 0, y: 0 }, "g")).toThrow(
+    "membership"
+  );
+  expect(() => canvasDragPositions(snapshot, { nodeId: "a", x: Infinity, y: 0 }, "g")).toThrow();
+  expect(snapshot.nodes.b.position).toEqual({ x: 80, y: 40 });
+});

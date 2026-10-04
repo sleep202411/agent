@@ -5247,5 +5247,6 @@
   "storyCanvas.map.moveNode": "移動節點",
   "storyCanvas.map.moveHint": "單指拖動選中的節點，放開後確認儲存。",
   "storyCanvas.map.movementTitle": "移動節點",
-  "storyCanvas.map.resumeMovement": "繼續移動"
+  "storyCanvas.map.resumeMovement": "繼續移動",
+  "storyCanvas.map.moveGroup": "移動群組"
 }

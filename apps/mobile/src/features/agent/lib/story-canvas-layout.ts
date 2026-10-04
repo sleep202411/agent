@@ -1,3 +1,4 @@
+import { canvasPositionEditSchema } from "../../../../canvas-editor/position-schema";
 import { z } from "zod";
 import type { CanvasSnapshot } from "../../../../canvas-editor/protocol";
 import { canvasGroups } from "../../../../canvas-editor/group-schema";
@@ -109,4 +110,27 @@ export function panCanvasCamera(camera: CanvasCamera, dx: number, dy: number): C
   const x = camera.x - dx / camera.scale,
     y = camera.y - dy / camera.scale;
   return Number.isFinite(x) && Number.isFinite(y) ? { ...camera, x, y } : camera;
+}
+
+/** Move all members by the anchor delta so spacing stays identical to Web. */
+export function canvasDragPositions(
+  snapshot: CanvasSnapshot,
+  anchor: { nodeId: string; x: number; y: number },
+  groupId?: string
+) {
+  const layout = canvasLayout(snapshot);
+  const origin = layout.nodes.find((node) => node.id === anchor.nodeId);
+  if (!origin) throw Error("The dragged canvas node is unavailable.");
+  const group = groupId ? layout.groups.find((group) => group.id === groupId) : undefined;
+  if (groupId && (!group || !group.nodeIds.includes(anchor.nodeId)))
+    throw Error("Canvas group membership changed.");
+  const ids = group?.nodeIds ?? [anchor.nodeId];
+  return canvasPositionEditSchema.parse({
+    action: "moveNodes",
+    ...(groupId ? { groupId } : {}),
+    positions: ids.map((nodeId) => {
+      const node = layout.nodes.find((node) => node.id === nodeId)!;
+      return { nodeId, x: node.x + anchor.x - origin.x, y: node.y + anchor.y - origin.y };
+    }),
+  });
 }

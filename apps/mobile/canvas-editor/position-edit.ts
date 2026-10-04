@@ -1,6 +1,10 @@
 import * as Y from "yjs";
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
-import { canvasPositionEditSchema, type CanvasPositionEdit } from "./position-schema";
+import {
+  canvasPositionEditSchema,
+  validateMovementGroup,
+  type CanvasPositionEdit,
+} from "./position-schema";
 
 /** Web updateNodePosition semantics: commit final coordinates, leaving node
  * data and other CRDT maps intact. Validate the full selection before writing. */
@@ -8,6 +12,11 @@ export function editCanvasPositions(state: string, raw: CanvasPositionEdit) {
   const command = canvasPositionEditSchema.parse(raw);
   return withCanvasState(state, [], (doc) => {
     const nodes = doc.getMap("nodes");
+    validateMovementGroup(
+      Object.fromEntries(doc.getMap("groups").entries()),
+      nodes.keys(),
+      command
+    );
     const moves = command.positions.map((move) => {
       const node = nodes.get(move.nodeId);
       if (!(node instanceof Y.Map) || node.get("id") !== move.nodeId)

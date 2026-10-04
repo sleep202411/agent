@@ -1,6 +1,6 @@
 import { canvasOverview } from "../lib/story-canvas-overview";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Pressable, View } from "react-native";
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, View } from "react-native";
 import { uuid } from "expo-modules-core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -107,7 +107,9 @@ export function StoryCanvasPositionForm({
         <View
           style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
         >
-          <ThemedText type="smallBold">{t("storyCanvas.map.movementTitle")}</ThemedText>
+          <ThemedText type="smallBold">
+            {t(draft?.edit.groupId ? "storyCanvas.map.moveGroup" : "storyCanvas.map.movementTitle")}
+          </ThemedText>
           <Pressable accessibilityRole="button" onPress={close} style={{ padding: 10 }}>
             <ThemedText type="small">{t("agent.close")}</ThemedText>
           </Pressable>
@@ -117,12 +119,14 @@ export function StoryCanvasPositionForm({
             {error}
           </ThemedText>
         )}
-        {draft?.edit.positions.map((position) => (
-          <ThemedText key={position.nodeId} type="small">
-            {nodes.find((node) => node.id === position.nodeId)?.title ?? position.nodeId}
-            {"\n"}X: {Math.round(position.x)} / Y: {Math.round(position.y)}
-          </ThemedText>
-        ))}
+        <ScrollView style={{ flexGrow: 0, maxHeight: "50%" }} contentContainerStyle={{ gap: 8 }}>
+          {draft?.edit.positions.map((position) => (
+            <ThemedText key={position.nodeId} type="small">
+              {nodes.find((node) => node.id === position.nodeId)?.title ?? position.nodeId}
+              {"\n"}X: {Math.round(position.x)} / Y: {Math.round(position.y)}
+            </ThemedText>
+          ))}
+        </ScrollView>
         {draft && (
           <ThemedText type="small">
             {t(draft.command ? "storyCanvas.pending" : "storyCanvas.draftSaved")}
