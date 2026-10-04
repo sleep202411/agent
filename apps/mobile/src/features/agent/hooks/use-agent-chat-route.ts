@@ -17,20 +17,50 @@ export function useAgentChatRoute(options: {
     options;
   const identity = JSON.stringify([projectId, chapterId, workbenchMode]);
   const scope = useStoryRequestScope(identity);
+  const destination = useStoryRequestScope(JSON.stringify([projectId, workbenchMode]));
   const active = useRef<typeof scope | null>(scope);
   const actions = useRef({ send, restore });
   const consumedQueries = useRef(new Set<string>());
   const [draft, setDraftState] = useState(prefill);
-  const [previous, setPrevious] = useState({ scope, identity, prefill, revision: 0 });
-  if (previous.scope !== scope || previous.prefill !== prefill) {
-    setPrevious({ scope, identity, prefill, revision: previous.revision + 1 });
+  const [previous, setPrevious] = useState({
+    scope,
+    destination,
+    identity,
+    chapterId,
+    configured,
+    prefill,
+    revision: 0,
+  });
+  if (
+    previous.scope !== scope ||
+    previous.prefill !== prefill ||
+    previous.configured !== configured
+  ) {
+    const sameDestination = previous.destination === destination;
+    const sameChapter =
+      chapterId === previous.chapterId ||
+      (!chapterId && !configured) ||
+      (!previous.chapterId && !previous.configured);
+    setPrevious({
+      scope,
+      destination,
+      identity,
+      chapterId: chapterId || (sameDestination ? previous.chapterId : undefined),
+      configured,
+      prefill,
+      revision: previous.revision + 1,
+    });
     // A new destination can carry its own prefill; credential changes must not
     // reintroduce the old account's route draft.
-    setDraftState(
-      previous.scope !== scope && (previous.identity === identity || previous.prefill === prefill)
-        ? ""
-        : prefill
-    );
+    // Resolving or temporarily losing the chapter is not a new destination.
+    // The separate authenticated destination handle prevents retaining private
+    // text across account changes even when chapter resolution finishes then.
+    if (!(sameDestination && sameChapter && previous.prefill === prefill))
+      setDraftState(
+        previous.scope !== scope && (previous.identity === identity || previous.prefill === prefill)
+          ? ""
+          : prefill
+      );
   }
   useLayoutEffect(() => {
     actions.current = { send, restore };

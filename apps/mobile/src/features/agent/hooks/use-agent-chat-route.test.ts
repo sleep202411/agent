@@ -111,6 +111,45 @@ it("waits for chapter admission and consumes the query only after recovery", asy
   expect(send).toHaveBeenCalledTimes(1);
   expect(restore).toHaveBeenCalledTimes(1);
 });
+it("preserves prefill while the default chapter resolves", async () => {
+  configured = false;
+  chapterId = "";
+  await render();
+  chapterId = "chapter-a";
+  configured = true;
+  await render();
+  expect(hook.draft).toBe("Initial draft");
+  expect(send).not.toHaveBeenCalled();
+});
+it("preserves an unsent draft through chapter recovery but clears it for a different chapter", async () => {
+  await render();
+  await act(async () => hook.setDraft("Unsent chapter draft"));
+  chapterId = "";
+  configured = false;
+  await render();
+  expect(hook.draft).toBe("Unsent chapter draft");
+  chapterId = "chapter-a";
+  configured = true;
+  await render();
+  expect(hook.draft).toBe("Unsent chapter draft");
+  chapterId = "";
+  configured = false;
+  await render();
+  chapterId = "chapter-b";
+  configured = true;
+  await render();
+  expect(hook.draft).toBe("");
+});
+it("does not carry a pending chapter draft across an account change", async () => {
+  configured = false;
+  chapterId = "";
+  await render();
+  auth.token = "bob";
+  chapterId = "chapter-a";
+  configured = true;
+  await render();
+  expect(hook.draft).toBe("");
+});
 it("keeps a failed initial query editable without overwriting newer text", async () => {
   query = "Failed query";
   prefill = "";
