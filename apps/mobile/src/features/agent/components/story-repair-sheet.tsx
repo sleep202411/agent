@@ -1,3 +1,5 @@
+import { StoryRepairPriceEditor } from "./story-repair-price-editor";
+import { replaceRepairPointPrice } from "../lib/story-repair-price";
 import { repairNodeLabels } from "../lib/story-repair-fields";
 import {
   createRepairNode,
@@ -117,6 +119,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const [mediaNode, setMediaNode] = useState<string>();
   const [conditionChoice, setConditionChoice] = useState<string>();
   const [editingVariables, setEditingVariables] = useState(false);
+  const [priceNode, setPriceNode] = useState<string>();
   const [duplicating, setDuplicating] = useState(false);
   const [interactionNode, setInteractionNode] = useState<string>();
   const [effectTarget, setEffectTarget] = useState<EffectTarget>();
@@ -464,6 +467,11 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 ) : null}
                 {node.kind === "clip" ? (
                   <>
+                    <RepairAction
+                      label={`${t("storyPrice.title")}: ${String(node.communityPointPrice ?? 0)}`}
+                      disabled={busy || uncertain || conflict || showSaved}
+                      onPress={() => setPriceNode(selected)}
+                    />
                     <RepairAction
                       label={t("storyHotspot.title")}
                       disabled={busy || uncertain || conflict || showSaved}
@@ -995,6 +1003,21 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
             setMediaNode(undefined);
             onSaved();
           }}
+        />
+      ) : null}
+      {priceNode && content && loaded ? (
+        <StoryRepairPriceEditor
+          key={priceNode}
+          content={content}
+          nodeId={priceNode}
+          userId={userId}
+          storageKey={`${scope.projectId}:${scope.chapterId}:${priceNode}`}
+          canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+          applyError={error}
+          onApply={(expected, price) =>
+            edit((value) => replaceRepairPointPrice(value, priceNode, expected, price))
+          }
+          onClose={() => setPriceNode(undefined)}
         />
       ) : null}
       {duplicating && content && loaded ? (

@@ -5023,5 +5023,9 @@
   "storyHotspot.previewPause": "將暫停播放。",
   "storyHotspot.previewSeek": "將跳轉至時間",
   "storyHotspot.previewGoto": "將前往",
-  "storyHotspot.previewMissingTarget": "目標已不可用。"
+  "storyHotspot.previewMissingTarget": "目標已不可用。",
+  "storyPrice.title": "社區積分價格",
+  "storyPrice.help": "設定進入此場景所需的積分，填寫 0 表示免費。套用價格後，請儲存章節。",
+  "storyPrice.apply": "套用價格",
+  "storyPrice.invalid": "請輸入 0 至 2,147,483,647 之間的整數。"
 }

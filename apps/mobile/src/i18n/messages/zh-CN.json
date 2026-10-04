@@ -5023,5 +5023,9 @@
   "storyHotspot.previewPause": "将暂停播放。",
   "storyHotspot.previewSeek": "将跳转至时间",
   "storyHotspot.previewGoto": "将前往",
-  "storyHotspot.previewMissingTarget": "目标已不可用。"
+  "storyHotspot.previewMissingTarget": "目标已不可用。",
+  "storyPrice.title": "社区积分价格",
+  "storyPrice.help": "设置进入此场景所需的积分，填写 0 表示免费。应用价格后，请保存章节。",
+  "storyPrice.apply": "应用价格",
+  "storyPrice.invalid": "请输入 0 至 2,147,483,647 之间的整数。"
 }
