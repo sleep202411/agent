@@ -53,6 +53,7 @@ export function createCanvasHost(options: {
       if (!current()) return;
       const message = parseCanvasMessage(raw, options.sessionId);
       if (!message) return;
+      if (message.type === "edited") return;
       if (message.type === "ready") {
         ready = true;
         send();

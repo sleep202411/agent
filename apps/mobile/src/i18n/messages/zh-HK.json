@@ -5133,5 +5133,15 @@
   "storyCanvas.image": "圖片",
   "storyCanvas.video": "影片",
   "storyCanvas.audio": "音訊",
-  "storyCanvas.saveCandidate": "儲存為候選素材"
+  "storyCanvas.saveCandidate": "儲存為候選素材",
+  "storyCanvas.rename": "重新命名",
+  "storyCanvas.editPrompt": "編輯提示詞",
+  "storyCanvas.save": "儲存",
+  "storyCanvas.discard": "放棄草稿",
+  "storyCanvas.discardBody": "放棄這些尚未儲存的修改？",
+  "storyCanvas.pending": "此儲存尚未確認。重試以確認同一次修改。",
+  "storyCanvas.draftSaved": "草稿儲存在此裝置上。",
+  "storyCanvas.changed": "此欄位已在其他裝置上更改。草稿已保留；關閉後查看最新版本，或放棄草稿重新開始。",
+  "storyCanvas.pendingMismatch": "另一次畫布儲存尚未確認。請先重新開啟其草稿。",
+  "storyCanvas.resumeDraft": "正在繼續此畫布上已儲存的草稿。"
 }

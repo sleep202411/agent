@@ -3,14 +3,12 @@ import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import { pendingRequest } from "@/lib/pending-request";
-import { encodedCanvasState } from "../../../../canvas-editor/protocol";
+import { encodedCanvasState, canvasUpdateSchema } from "../../../../canvas-editor/protocol";
 import type { CandidateScope } from "./story-candidates-api";
 import { readStoryCanvasDocument } from "./story-canvas-document";
 
 const id = z.string().uuid();
-export const canvasUpdateSchema = z
-  .object({ clientKey: id, yjsUpdateBase64: encodedCanvasState })
-  .strict();
+export { canvasUpdateSchema } from "../../../../canvas-editor/protocol";
 export type CanvasUpdateCommand = z.infer<typeof canvasUpdateSchema>;
 export type CanvasWriteScope = CandidateScope & { documentId: string };
 const receiptSchema = z.object({

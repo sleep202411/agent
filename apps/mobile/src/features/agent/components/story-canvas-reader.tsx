@@ -4,7 +4,7 @@ import { View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import type { CandidateScope } from "../api/story-candidates-api";
 import { openStoryCanvasDocument } from "../api/story-canvas-document";
-import type { CanvasSnapshot } from "../../../../canvas-editor/protocol";
+import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import { canvasRuntimeHtml } from "../lib/story-canvas-bridge";
 import { createCanvasHost } from "../lib/story-canvas-host";
 import { CanvasRuntimeFrame, type CanvasFrameHandle } from "./story-canvas-runtime-frame";
@@ -20,7 +20,7 @@ export function StoryCanvasReader({
   scope: CandidateScope;
   title: string;
   runtimeError: string;
-  onResult(value: CanvasSnapshot): void;
+  onResult(value: CanvasLoaded): void;
   onError(message: string): void;
 }) {
   const [sessionId] = useState(() => uuid.v4());
@@ -39,7 +39,7 @@ export function StoryCanvasReader({
     const controller = new AbortController();
     let settled = false;
     const current = () => !controller.signal.aborted && getAuthGeneration() === scope.generation;
-    const finish = (error?: string, value?: CanvasSnapshot) => {
+    const finish = (error?: string, value?: CanvasLoaded) => {
       if (!current() || settled) return;
       settled = true;
       clearTimeout(timer);
@@ -61,7 +61,7 @@ export function StoryCanvasReader({
           sessionId,
           snapshot,
           send: (message) => frame.current?.send(message),
-          onResult: (message) => finish(undefined, message.snapshot),
+          onResult: (message) => finish(undefined, message),
           onError: (message) => finish(message),
         });
         setMounted(true);

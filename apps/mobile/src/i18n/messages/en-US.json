@@ -5133,5 +5133,15 @@
   "storyCanvas.image": "Image",
   "storyCanvas.video": "Video",
   "storyCanvas.audio": "Audio",
-  "storyCanvas.saveCandidate": "Save to candidate media"
+  "storyCanvas.saveCandidate": "Save to candidate media",
+  "storyCanvas.rename": "Rename",
+  "storyCanvas.editPrompt": "Edit prompt",
+  "storyCanvas.save": "Save",
+  "storyCanvas.discard": "Discard draft",
+  "storyCanvas.discardBody": "Discard these unsaved edits?",
+  "storyCanvas.pending": "This save is awaiting confirmation. Retry to confirm the same edit.",
+  "storyCanvas.draftSaved": "Your draft is kept on this device.",
+  "storyCanvas.changed": "This field changed on another device. Your draft is kept; close to review the latest version or discard it to start again.",
+  "storyCanvas.pendingMismatch": "A different canvas save is pending. Reopen its saved draft before continuing.",
+  "storyCanvas.resumeDraft": "Resuming the saved edit for this canvas."
 }

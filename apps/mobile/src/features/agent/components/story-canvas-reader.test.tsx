@@ -87,7 +87,7 @@ it("waits for decoded data then releases the hidden runtime", async () => {
   await ready();
   expect(h.send).toHaveBeenCalledOnce();
   await act(async () => h.receive(JSON.stringify(result)));
-  expect(onResult).toHaveBeenCalledExactlyOnceWith(result.snapshot);
+  expect(onResult).toHaveBeenCalledExactlyOnceWith(result);
   expect(element.querySelector("[data-frame]")).toBeNull();
 });
 it("aborts a pending read when leaving and ignores its late response", async () => {

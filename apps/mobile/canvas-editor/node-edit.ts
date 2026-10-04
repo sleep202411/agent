@@ -1,15 +1,8 @@
 import * as Y from "yjs";
-import { z } from "zod";
+import { canvasNodeEditSchema, type CanvasNodeEdit } from "./schema";
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
 
-export const canvasNodeEditSchema = z
-  .object({
-    nodeId: z.string().min(1),
-    kind: z.enum(["rename", "prompt"]),
-    value: z.string(),
-  })
-  .strict();
-export type CanvasNodeEdit = z.infer<typeof canvasNodeEditSchema>;
+export { canvasNodeEditSchema, type CanvasNodeEdit } from "./schema";
 const generationTypes = new Set(["prompt", "video", "audio"]);
 const mediaTypes = new Set(["image", "videoAsset", "audioAsset"]);
 

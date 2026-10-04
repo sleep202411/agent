@@ -11,6 +11,9 @@ import type { CandidateScope } from "../api/story-candidates-api";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCandidatesPanel } from "./story-candidates-panel";
 import { canvasOverview } from "../lib/story-canvas-overview";
+import { StoryCanvasEditForm } from "./story-canvas-edit-form";
+import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
+import type { CanvasNodeEdit } from "../../../../canvas-editor/schema";
 
 export function StoryCanvasEntry() {
   const context = useStoryChapterContext(),
@@ -63,10 +66,17 @@ export function StoryCanvasPanel({
     [loading, setLoading] = useState(true),
     [error, setError] = useState<string>();
   const [overview, setOverview] = useState<ReturnType<typeof canvasOverview>>();
+  const [loaded, setLoaded] = useState<CanvasLoaded>();
+  const [edit, setEdit] = useState<Pick<CanvasNodeEdit, "nodeId" | "kind">>();
+  const writeScope = useMemo(
+    () => (loaded ? { ...scope, documentId: loaded.documentId } : undefined),
+    [scope, loaded]
+  );
   const [tab, setTab] = useState<"nodes" | "media">("nodes"),
     [selected, setSelected] = useState<string>();
   const reload = () => {
     setOverview(undefined);
+    setLoaded(undefined);
     setError(undefined);
     setLoading(true);
     setAttempt((n) => n + 1);
@@ -102,9 +112,10 @@ export function StoryCanvasPanel({
               setError(message);
               setLoading(false);
             }}
-            onResult={(snapshot) => {
+            onResult={(value) => {
               try {
-                setOverview(canvasOverview(snapshot));
+                setOverview(canvasOverview(value.snapshot));
+                setLoaded(value);
               } catch (cause) {
                 setError(cause instanceof Error ? cause.message : String(cause));
               }
@@ -164,6 +175,28 @@ export function StoryCanvasPanel({
                     >
                       <ThemedText type="smallBold">{node.title}</ThemedText>
                       {!!node.text && <ThemedText type="small">{node.text}</ThemedText>}
+                      {canEdit && (
+                        <View style={{ flexDirection: "row", gap: 16, flexWrap: "wrap" }}>
+                          {node.canRename && (
+                            <Pressable
+                              accessibilityRole="button"
+                              onPress={() => setEdit({ nodeId: node.id, kind: "rename" })}
+                              style={{ paddingVertical: 10 }}
+                            >
+                              <ThemedText type="small">{t("storyCanvas.rename")}</ThemedText>
+                            </Pressable>
+                          )}
+                          {node.canEditPrompt && (
+                            <Pressable
+                              accessibilityRole="button"
+                              onPress={() => setEdit({ nodeId: node.id, kind: "prompt" })}
+                              style={{ paddingVertical: 10 }}
+                            >
+                              <ThemedText type="small">{t("storyCanvas.editPrompt")}</ThemedText>
+                            </Pressable>
+                          )}
+                        </View>
+                      )}
                     </View>
                   ))
                 : overview.assets.map((asset) => (
@@ -201,6 +234,22 @@ export function StoryCanvasPanel({
             userId={userId}
             mediaAssetId={selected}
             close={() => setSelected(undefined)}
+          />
+        )}
+        {edit && loaded && writeScope && canEdit && (
+          <StoryCanvasEditForm
+            scope={writeScope}
+            userId={userId}
+            loaded={loaded}
+            edit={edit}
+            close={() => {
+              setEdit(undefined);
+              reload();
+            }}
+            saved={() => {
+              setEdit(undefined);
+              reload();
+            }}
           />
         )}
       </View>

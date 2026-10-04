@@ -25,7 +25,15 @@ export function canvasOverview(snapshot: CanvasSnapshot) {
         [value.data.prompt, value.data.text, value.data.content].find(
           (v): v is string => typeof v === "string" && !!v.trim()
         ) ?? "";
-      return { id: value.id, title, text, type: value.type };
+      const generation = ["prompt", "video", "audio"].includes(value.type);
+      return {
+        id: value.id,
+        title,
+        text,
+        type: value.type,
+        canRename: generation || ["image", "videoAsset", "audioAsset"].includes(value.type),
+        canEditPrompt: generation && value.data.locked !== true,
+      };
     }),
     assets: Object.values(snapshot.assets).map((raw) => asset.parse(raw)),
     connections: Object.keys(snapshot.edges).length,

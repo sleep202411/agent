@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { canvasHostMessage, type CanvasRuntimeMessage } from "./protocol";
 import { materializeCanvas } from "./state";
+import { editCanvasNode } from "./node-edit";
 
 const { sessionId } = z
   .object({ sessionId: z.string().uuid() })
@@ -38,7 +39,15 @@ function receive(raw: unknown) {
     sequence: message.sequence,
   };
   try {
-    send({ type: "loaded", ...identity, ...materializeCanvas(message.snapshot, message.updates) });
+    if (message.type === "edit") {
+      send({ type: "edited", ...identity, ...editCanvasNode(message.snapshot, message.edit) });
+    } else {
+      send({
+        type: "loaded",
+        ...identity,
+        ...materializeCanvas(message.snapshot, message.updates),
+      });
+    }
   } catch (error) {
     send({
       type: "error",
