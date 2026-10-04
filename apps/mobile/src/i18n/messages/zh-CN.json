@@ -5009,5 +5009,10 @@
   "storyHotspot.resize": "调整大小",
   "storyHotspot.placeHelp": "在画面上拖动可绘制、移动或调整当前热点。下方数值字段可用于精确调整。",
   "storyHotspot.play": "播放",
-  "storyHotspot.previewTime": "预览位置（毫秒）"
+  "storyHotspot.previewTime": "预览位置（毫秒）",
+  "storyDuplicate.title": "复制节点",
+  "storyDuplicate.attachedChoice": "附带选择",
+  "storyDuplicate.selected": "项已选",
+  "storyDuplicate.apply": "复制所选",
+  "storyDuplicate.help": "选择要复制的场景或选择节点。所选节点之间的连接指向副本，指向其他节点的连接会断开，结局连接保留。场景媒体不会复制。选择场景时包含其附带选择。保存前副本仅为草稿。"
 }

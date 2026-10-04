@@ -4,6 +4,8 @@ import {
   removeRepairAttachedChoice,
 } from "../lib/story-repair-nodes";
 import { deleteRepairNode } from "../lib/story-repair-delete-node";
+import { StoryRepairDuplicatePicker } from "./story-repair-duplicate-picker";
+import { duplicateRepairNodes } from "../lib/story-repair-duplicate";
 import { StoryRepairInteractionsEditor } from "./story-repair-interactions-editor";
 import {
   readRepairInteractions,
@@ -114,6 +116,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const [mediaNode, setMediaNode] = useState<string>();
   const [conditionChoice, setConditionChoice] = useState<string>();
   const [editingVariables, setEditingVariables] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [interactionNode, setInteractionNode] = useState<string>();
   const [effectTarget, setEffectTarget] = useState<EffectTarget>();
   const [conditionRoute, setConditionRoute] = useState<{ index: number; route: StoryExitRoute }>();
@@ -316,6 +319,11 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
               label={t("storyVariables.title")}
               onPress={() => setEditingVariables(true)}
               disabled={busy || uncertain || conflict || showSaved}
+            />
+            <RepairAction
+              label={t("storyDuplicate.title")}
+              disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}
+              onPress={() => setDuplicating(true)}
             />
             <ThemedText type="small" themeColor="textSecondary">
               {t("storyRepair.help")}
@@ -985,6 +993,25 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
             setMediaNode(undefined);
             onSaved();
           }}
+        />
+      ) : null}
+      {duplicating && content && loaded ? (
+        <StoryRepairDuplicatePicker
+          content={content}
+          initialNodeId={selected}
+          canEdit={loaded.canEdit && !busy && !uncertain && !conflict && !showSaved}
+          error={error}
+          onApply={(sources) => {
+            let first: string | undefined;
+            const applied = edit((value) => {
+              const result = duplicateRepairNodes(value, sources, () => uuid.v4());
+              first = result.created[0];
+              return result.content;
+            });
+            if (applied && first) setSelected(first);
+            return applied;
+          }}
+          onClose={() => setDuplicating(false)}
         />
       ) : null}
       {interactionNode && content && loaded ? (

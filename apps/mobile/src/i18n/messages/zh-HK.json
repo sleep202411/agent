@@ -5009,5 +5009,10 @@
   "storyHotspot.resize": "調整大小",
   "storyHotspot.placeHelp": "在畫面上拖曳可繪製、移動或調整目前熱點。下方數值欄位可用於精確調整。",
   "storyHotspot.play": "播放",
-  "storyHotspot.previewTime": "預覽位置（毫秒）"
+  "storyHotspot.previewTime": "預覽位置（毫秒）",
+  "storyDuplicate.title": "複製節點",
+  "storyDuplicate.attachedChoice": "附帶選擇",
+  "storyDuplicate.selected": "項已選",
+  "storyDuplicate.apply": "複製所選",
+  "storyDuplicate.help": "選取要複製的場景或選擇節點。所選節點之間的連接指向副本，指向其他節點的連接會斷開，結局連接保留。場景媒體不會複製。選取場景時包含其附帶選擇。儲存前副本僅為草稿。"
 }

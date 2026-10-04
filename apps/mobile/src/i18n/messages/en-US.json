@@ -5009,5 +5009,10 @@
   "storyHotspot.resize": "Resize",
   "storyHotspot.placeHelp": "Drag on the frame to draw, move or resize the selected hotspot. Numeric fields below remain available for precision.",
   "storyHotspot.play": "Play",
-  "storyHotspot.previewTime": "Preview position (ms)"
+  "storyHotspot.previewTime": "Preview position (ms)",
+  "storyDuplicate.title": "Duplicate nodes",
+  "storyDuplicate.attachedChoice": "Attached choice",
+  "storyDuplicate.selected": "selected",
+  "storyDuplicate.apply": "Duplicate selected",
+  "storyDuplicate.help": "Select scenes or decisions to copy. Links within the selection follow the copies; links to other nodes are disconnected. Ending links stay. Scene media is not copied. Selecting a scene includes its attached choice. Copies remain drafts until you save."
 }
