@@ -2,6 +2,7 @@ import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskDetail } from "./task-detail";
+import { api } from "@/lib/api-client";
 import { TaskCenter } from "./task-center";
 import type { TaskSubmitSession } from "./use-task-submit-session";
 vi.mock("@/config", () => ({ appEnv: { siteRegion: "global" } }));
@@ -86,7 +87,7 @@ vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/components/authed-web-view", () => ({ AuthedWebView: () => null }));
 vi.mock("./task-case-create", () => ({ TaskCaseCreate: () => <div>task case</div> }));
 vi.mock("./task-feedback-create", () => ({ TaskFeedbackCreate: () => <div>task feedback</div> }));
-vi.mock("./task-review", () => ({ TaskReview: () => <div>review</div> }));
+
 vi.mock("./task-delivery", () => ({ TaskDelivery: () => <div>delivery</div> }));
 vi.mock("./task-commitments", () => ({ TaskCommitments: () => <div>commitments</div> }));
 vi.mock("./task-timeline", () => ({
@@ -116,7 +117,24 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <div>loading</div>,
-  TextInput: () => null,
+  TextInput: ({
+    value,
+    editable,
+    onChangeText,
+    accessibilityLabel,
+  }: {
+    value: string;
+    editable?: boolean;
+    onChangeText: (value: string) => void;
+    accessibilityLabel?: string;
+  }) => (
+    <input
+      aria-label={accessibilityLabel}
+      value={value}
+      disabled={editable === false}
+      onChange={(event) => onChangeText(event.target.value)}
+    />
+  ),
   FlatList: ({
     data,
     renderItem,
@@ -147,6 +165,7 @@ vi.mock("react-native", () => ({
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const detail = {
+  submissions: [],
   taskKind: "music",
   estimatePoints: 8,
   revisionLimit: 3,
@@ -188,6 +207,7 @@ beforeEach(() => {
   h.active = true;
   h.generation = 1;
   h.fetch.mockResolvedValue(detail);
+  vi.mocked(api.get).mockResolvedValue({ userId: "1", permissions: ["tasks.review"] });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -483,4 +503,61 @@ it("keeps child creation context mounted while its parent revalidates on return"
   expect(host.textContent).toContain("cancel child");
   await act(async () => click("cancel child"));
   expect(host.textContent).toContain("Private brief");
+});
+
+const submittedDetail = {
+  ...detail,
+  id: "task",
+  crewId: "crew",
+  status: "submitted",
+  submissions: [{ id: "submission-1", assets: [] }],
+};
+const reviewNote = () =>
+  host.querySelector<HTMLInputElement>('input[aria-label="taskReview.reviewNotePlaceholder"]');
+async function composeReview() {
+  await act(async () => {
+    const input = reviewNote()!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Please correct the final frame"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it("retains the real review panel's note through a failed foreground read and retry", async () => {
+  h.fetch.mockResolvedValue(submittedDetail);
+  await render();
+  await composeReview();
+  h.active = false;
+  await render();
+  h.fetch.mockRejectedValueOnce(new Error("Task temporarily unavailable"));
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Task temporarily unavailable");
+  expect(reviewNote()).toBeNull();
+  await act(async () => click("inbox.retry"));
+  expect(reviewNote()!.value).toBe("Please correct the final frame");
+  expect(vi.mocked(api.get)).toHaveBeenCalledTimes(2);
+});
+it("rereads review permission on return and discards an older submission's review draft", async () => {
+  h.fetch.mockResolvedValue(submittedDetail);
+  await render();
+  await composeReview();
+  h.active = false;
+  await render();
+  vi.mocked(api.get).mockResolvedValue({ userId: "1", permissions: [] });
+  h.active = true;
+  await render();
+  expect(reviewNote()).toBeNull();
+  expect(host.textContent).not.toContain("taskReview.approve");
+  h.active = false;
+  await render();
+  h.fetch.mockResolvedValue({
+    ...submittedDetail,
+    submissions: [{ id: "submission-2", assets: [] }],
+  });
+  vi.mocked(api.get).mockResolvedValue({ userId: "1", permissions: ["tasks.review"] });
+  h.active = true;
+  await render();
+  expect(reviewNote()!.value).toBe("");
 });
