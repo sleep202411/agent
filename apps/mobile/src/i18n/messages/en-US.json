@@ -5243,5 +5243,9 @@
   "storyCanvas.groups.color.indigo": "Indigo",
   "storyCanvas.groups.color.pink": "Pink",
   "storyCanvas.media.retrySync": "Retry media synchronization",
-  "storyCanvas.media.refresh": "Refresh media connection"
+  "storyCanvas.media.refresh": "Refresh media connection",
+  "storyCanvas.map.moveNode": "Move node",
+  "storyCanvas.map.moveHint": "Drag the selected node with one finger. Release to review and save.",
+  "storyCanvas.map.movementTitle": "Move node",
+  "storyCanvas.map.resumeMovement": "Resume movement"
 }

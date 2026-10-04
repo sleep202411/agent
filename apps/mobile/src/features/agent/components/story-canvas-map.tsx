@@ -1,3 +1,4 @@
+import type { CanvasPositionEdit } from "../../../../canvas-editor/position-schema";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { Modal, PanResponder, Pressable, View, type GestureResponderEvent } from "react-native";
 import Svg, { G, Path, Rect, Text as SvgText } from "react-native-svg";
@@ -42,21 +43,38 @@ export function StoryCanvasMap({
   loaded,
   close,
   inspect,
+  move,
 }: {
   loaded: CanvasLoaded;
   close(): void;
   inspect(nodeId: string): void;
+  move?(edit: CanvasPositionEdit): void;
 }) {
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [moving, setMoving] = useState(false),
+    [movementError, setMovementError] = useState<string>();
+  const [drag, setDrag] = useState<{ nodeId: string; x: number; y: number }>();
   const projection = useMemo(() => {
     try {
-      return { value: canvasLayout(loaded.snapshot) };
+      const snapshot = drag
+        ? {
+            ...loaded.snapshot,
+            nodes: {
+              ...loaded.snapshot.nodes,
+              [drag.nodeId]: {
+                ...(loaded.snapshot.nodes[drag.nodeId] as Record<string, unknown>),
+                position: { x: drag.x, y: drag.y },
+              },
+            },
+          }
+        : loaded.snapshot;
+      return { value: canvasLayout(snapshot) };
     } catch (cause) {
       return { error: cause instanceof Error ? cause.message : String(cause) };
     }
-  }, [loaded]);
+  }, [loaded, drag]);
   const [viewport, setViewport] = useState({ width: 320, height: 480 });
   const [camera, setCamera] = useState<CanvasCamera | null>(null),
     [selected, setSelected] = useState<string>();
@@ -100,7 +118,14 @@ export function StoryCanvasMap({
             onPress={() => setCamera(zoomCanvasCamera(visible, 1.5))}
           />
         </View>
-        <ThemedText type="small">{t("storyCanvas.map.hint")}</ThemedText>
+        <ThemedText type="small">
+          {t(moving ? "storyCanvas.map.moveHint" : "storyCanvas.map.hint")}
+        </ThemedText>
+        {movementError && (
+          <ThemedText type="small" accessibilityRole="alert">
+            {movementError}
+          </ThemedText>
+        )}
         {projection.error && (
           <ThemedText type="small" accessibilityRole="alert">
             {projection.error}
@@ -196,19 +221,44 @@ export function StoryCanvasMap({
             const width = item.width * visible.scale,
               height = item.height * visible.scale;
             if (
-              left + width < 0 ||
-              top + height < 0 ||
-              left > viewport.width ||
-              top > viewport.height
+              !(moving && selected === item.id) &&
+              (left + width < 0 ||
+                top + height < 0 ||
+                left > viewport.width ||
+                top > viewport.height)
             )
               return null;
+            if (moving && selected === item.id && move)
+              return (
+                <DraggableNode
+                  key={item.id}
+                  node={item}
+                  scale={visible.scale}
+                  style={{ position: "absolute", left, top, width, height }}
+                  preview={setDrag}
+                  finish={(position) => {
+                    setDrag(undefined);
+                    setMoving(false);
+                    if (!position) return;
+                    try {
+                      move({ action: "moveNodes", positions: [position] });
+                    } catch (cause) {
+                      setMovementError(cause instanceof Error ? cause.message : String(cause));
+                    }
+                  }}
+                />
+              );
             return (
               <Pressable
                 key={item.id}
                 accessibilityRole="button"
                 accessibilityLabel={item.title}
                 accessibilityState={{ selected: selected === item.id }}
-                onPress={() => setSelected(item.id)}
+                onPress={() => {
+                  setSelected(item.id);
+                  setMoving(false);
+                  setMovementError(undefined);
+                }}
                 style={{ position: "absolute", left, top, width, height }}
               />
             );
@@ -220,6 +270,16 @@ export function StoryCanvasMap({
             <ThemedText type="small" numberOfLines={2}>
               {node.text}
             </ThemedText>
+            {move && (
+              <MapAction
+                label={t(moving ? "common.cancel" : "storyCanvas.map.moveNode")}
+                onPress={() => {
+                  setCamera(visible);
+                  setMoving(!moving);
+                  setMovementError(undefined);
+                }}
+              />
+            )}
             <MapAction label={t("storyCanvas.map.inspect")} onPress={() => inspect(node.id)} />
           </View>
         )}
@@ -267,6 +327,73 @@ function canvasPanResponder(onChange: (camera: CanvasCamera) => void) {
     ...responder,
     updateCamera: (camera: CanvasCamera) => {
       current = camera;
+    },
+  };
+}
+
+type DragPosition = { nodeId: string; x: number; y: number };
+type DragConfig = {
+  node: { id: string; x: number; y: number; title: string };
+  scale: number;
+  preview(position: DragPosition | undefined): void;
+  finish(position?: DragPosition): void;
+};
+function DraggableNode({
+  style,
+  ...config
+}: DragConfig & { style: import("react-native").ViewStyle }) {
+  const responder = useMemo(() => nodeDragResponder(), []);
+  useLayoutEffect(() => responder.update(config), [responder, config]);
+  return (
+    <View
+      {...responder.panHandlers}
+      style={style}
+      accessible
+      accessibilityLabel={config.node.title}
+    />
+  );
+}
+function nodeDragResponder() {
+  let config: DragConfig | undefined;
+  let origin: DragPosition | undefined,
+    scale = 1,
+    cancelled = false;
+  const result = (dx: number, dy: number) => {
+    if (!origin || cancelled) return undefined;
+    const x = origin.x + dx / scale,
+      y = origin.y + dy / scale;
+    return Number.isFinite(x) && Number.isFinite(y) ? { ...origin, x, y } : undefined;
+  };
+  const responder = PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onPanResponderGrant: () => {
+      if (!config) return;
+      origin = { nodeId: config.node.id, x: config.node.x, y: config.node.y };
+      scale = config.scale;
+      cancelled = false;
+    },
+    onPanResponderMove: (_event, gesture) => {
+      if (gesture.numberActiveTouches > 1) cancelled = true;
+      config?.preview(result(gesture.dx, gesture.dy));
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      const next = result(gesture.dx, gesture.dy);
+      config?.finish(
+        next && origin && (next.x !== origin.x || next.y !== origin.y) ? next : undefined
+      );
+      origin = undefined;
+    },
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderTerminate: () => {
+      config?.preview(undefined);
+      config?.finish();
+      origin = undefined;
+    },
+  });
+  return {
+    ...responder,
+    update: (next: DragConfig) => {
+      config = next;
     },
   };
 }

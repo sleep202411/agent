@@ -5243,5 +5243,9 @@
   "storyCanvas.groups.color.indigo": "靛蓝色",
   "storyCanvas.groups.color.pink": "粉色",
   "storyCanvas.media.retrySync": "重试媒体同步",
-  "storyCanvas.media.refresh": "更新媒体连接"
+  "storyCanvas.media.refresh": "更新媒体连接",
+  "storyCanvas.map.moveNode": "移动节点",
+  "storyCanvas.map.moveHint": "单指拖动选中的节点，松开后确认保存。",
+  "storyCanvas.map.movementTitle": "移动节点",
+  "storyCanvas.map.resumeMovement": "继续移动"
 }

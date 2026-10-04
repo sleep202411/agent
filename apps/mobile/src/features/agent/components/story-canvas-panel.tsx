@@ -1,3 +1,8 @@
+import { StoryCanvasPositionForm } from "./story-canvas-position-form";
+import {
+  canvasPositionDraftStore,
+  canvasPositionRecovery,
+} from "../lib/story-canvas-position-draft";
 import { StoryCanvasMap } from "./story-canvas-map";
 import { StoryCanvasGroupForm } from "./story-canvas-group-form";
 import { canvasGroupDraftStore } from "../lib/story-canvas-group-draft";
@@ -72,6 +77,8 @@ export function StoryCanvasPanel({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [positioning, setPositioning] = useState(false),
+    [positionRecovery, setPositionRecovery] = useState(false);
   const [mapping, setMapping] = useState(false),
     [focusedNode, setFocusedNode] = useState<string>();
   const [grouping, setGrouping] = useState(false),
@@ -96,6 +103,7 @@ export function StoryCanvasPanel({
   const [tab, setTab] = useState<"nodes" | "media">("nodes"),
     [selected, setSelected] = useState<string>();
   const reload = () => {
+    setPositionRecovery(false);
     setFocusedNode(undefined);
     setGroupRecovery(false);
     setRecovery(undefined);
@@ -147,6 +155,12 @@ export function StoryCanvasPanel({
                   userId
                 ).read();
                 setRecovery(draft?.edit);
+                setPositionRecovery(
+                  !!canvasPositionDraftStore(
+                    { ...scope, documentId: value.documentId },
+                    userId
+                  ).read()
+                );
                 setGroupRecovery(
                   !!canvasGroupDraftStore({ ...scope, documentId: value.documentId }, userId).read()
                 );
@@ -217,6 +231,7 @@ export function StoryCanvasPanel({
           !mediaNode &&
           !grouping &&
           !mapping &&
+          !positioning &&
           !selected && (
             <StoryCanvasMediaSync
               scope={writeScope}
@@ -248,6 +263,15 @@ export function StoryCanvasPanel({
             style={{ paddingVertical: 10 }}
           >
             <ThemedText type="small">{t("storyCanvas.map.title")}</ThemedText>
+          </Pressable>
+        )}
+        {canEdit && positionRecovery && !loading && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setPositioning(true)}
+            style={{ paddingVertical: 10 }}
+          >
+            <ThemedText type="small">{t("storyCanvas.map.resumeMovement")}</ThemedText>
           </Pressable>
         )}
         {focusedNode && tab === "nodes" && (
@@ -445,12 +469,37 @@ export function StoryCanvasPanel({
         {mapping && loaded && (
           <StoryCanvasMap
             loaded={loaded}
+            move={
+              canEdit && writeScope
+                ? (edit) => {
+                    canvasPositionRecovery(writeScope, userId).stage(loaded.snapshot, edit);
+                    setMapping(false);
+                    setPositioning(true);
+                  }
+                : undefined
+            }
             close={() => setMapping(false)}
             inspect={(nodeId) => {
               setMapping(false);
               setFocusedNode(nodeId);
               setExpandedShot(nodeId);
               setTab("nodes");
+            }}
+          />
+        )}
+        {positioning && writeScope && loaded && (
+          <StoryCanvasPositionForm
+            loaded={loaded}
+            scope={writeScope}
+            userId={userId}
+            canEdit={canEdit}
+            close={() => {
+              setPositioning(false);
+              reload();
+            }}
+            saved={() => {
+              setPositioning(false);
+              reload();
             }}
           />
         )}
