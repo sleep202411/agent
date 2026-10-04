@@ -119,7 +119,10 @@ export async function submitInteractiveFilmRelease(
   current();
   const publication = await getInteractiveFilmPublication(projectId, signal);
   current();
-  if (!publication) throw new Error("Java did not return the submitted interactive film.");
+  if (!publication || !["reviewing", "published"].includes(publication.status))
+    throw new Error(
+      "Submission could not be verified. Refresh the publication status before trying again."
+    );
   return publication;
 }
 
@@ -139,6 +142,9 @@ export async function offlineInteractiveFilm(
   if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
   const publication = await getInteractiveFilmPublication(projectId, signal);
   if (generation !== getAuthGeneration()) throw new Error("Publication session expired.");
-  if (!publication) throw new Error("Java did not return the offline interactive film.");
+  if (!publication || publication.status !== "offline")
+    throw new Error(
+      "Taking this film offline could not be verified. Refresh the publication status before trying again."
+    );
   return publication;
 }

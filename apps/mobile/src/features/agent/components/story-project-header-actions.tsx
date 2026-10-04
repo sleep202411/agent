@@ -224,6 +224,7 @@ function OwnedStoryProjectHeaderActions({
                   ? error.message
                   : t("agent.publish.failed");
               Alert.alert(t("agent.publish.action"), message);
+              void refreshPublication();
             } finally {
               locked.current = false;
               if (current()) setSubmitting(false);
@@ -259,6 +260,7 @@ function OwnedStoryProjectHeaderActions({
                   ? error.message
                   : t("agent.publish.offline.failed");
               Alert.alert(t("agent.publish.offline.action"), message);
+              void refreshPublication();
             } finally {
               locked.current = false;
               if (current()) setOfflining(false);

@@ -227,3 +227,25 @@ it("supports a fresh confirmation after Strict Mode effect replay", async () => 
   await act(async () => confirm());
   expect(h.submit).toHaveBeenCalledOnce();
 });
+
+it("refreshes status after an uncertain submission without claiming success", async () => {
+  h.submit.mockRejectedValueOnce(Error("Submission could not be verified"));
+  await mount();
+  const confirm = await confirmation();
+  await act(async () => confirm());
+  expect(h.retry).toHaveBeenCalledOnce();
+  expect(h.set).not.toHaveBeenCalled();
+  expect(h.alert.mock.calls.some((call) => call[0] === "agent.publish.successTitle")).toBe(false);
+});
+it("refreshes status after an uncertain offline operation", async () => {
+  h.published = true;
+  h.offline.mockRejectedValueOnce(Error("Offline could not be verified"));
+  await mount();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="agent.publish.offline.action"]')!.click()
+  );
+  const confirm = h.alert.mock.calls.at(-1)![2][1].onPress;
+  await act(async () => confirm());
+  expect(h.retry).toHaveBeenCalledOnce();
+  expect(h.set).not.toHaveBeenCalled();
+});

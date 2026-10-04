@@ -66,3 +66,29 @@ it("does not read offline receipts under another account", async () => {
   await expect(offlineInteractiveFilm("film")).rejects.toThrow("session expired");
   expect(h.get).not.toHaveBeenCalled();
 });
+
+it.each(["draft", "offline"])("does not confirm submission from a %s receipt", async (status) => {
+  h.get.mockResolvedValue({ gameId: "film", status });
+  await expect(submitInteractiveFilmRelease("film", release)).rejects.toThrow(
+    "could not be verified"
+  );
+  expect(h.post).toHaveBeenCalledTimes(2);
+});
+it("accepts a release already approved by the time status is read", async () => {
+  h.get.mockResolvedValue({ gameId: "film", status: "published" });
+  await expect(submitInteractiveFilmRelease("film", release)).resolves.toMatchObject({
+    status: "published",
+  });
+});
+it.each(["draft", "reviewing", "published"])(
+  "does not confirm offlining from a %s receipt",
+  async (status) => {
+    h.get.mockResolvedValue({ gameId: "film", status });
+    await expect(offlineInteractiveFilm("film")).rejects.toThrow("could not be verified");
+    expect(h.post).toHaveBeenCalledTimes(1);
+  }
+);
+it("confirms a verified offline receipt", async () => {
+  h.get.mockResolvedValue({ gameId: "film", status: "offline" });
+  await expect(offlineInteractiveFilm("film")).resolves.toMatchObject({ status: "offline" });
+});
