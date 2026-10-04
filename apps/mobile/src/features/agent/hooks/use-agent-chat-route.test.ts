@@ -194,3 +194,61 @@ it("waits for authentication before the first query and does not replay it on re
   expect(send).toHaveBeenCalledTimes(1);
   expect(restore).toHaveBeenCalledTimes(1);
 });
+
+it("restores separate unsent drafts when returning to a chapter", async () => {
+  await render();
+  await act(async () => hook.setDraft("Chapter A draft"));
+  chapterId = "chapter-b";
+  await render();
+  expect(hook.draft).toBe("");
+  await act(async () => hook.setDraft("Chapter B draft"));
+  chapterId = "chapter-a";
+  await render();
+  expect(hook.draft).toBe("Chapter A draft");
+  chapterId = "chapter-b";
+  await render();
+  expect(hook.draft).toBe("Chapter B draft");
+});
+it("preserves chapter drafts across temporary resolution failures without leaking them to another account", async () => {
+  await render();
+  await act(async () => hook.setDraft("Private A"));
+  chapterId = "";
+  configured = false;
+  await render();
+  chapterId = "chapter-b";
+  configured = true;
+  await render();
+  await act(async () => hook.setDraft("Private B"));
+  auth.token = "bob";
+  await render();
+  chapterId = "chapter-a";
+  await render();
+  expect(hook.draft).toBe("");
+  auth.token = "alice";
+  await render();
+  expect(hook.draft).toBe("");
+});
+it("keeps sent drafts empty on return and rejects an old chapter's edit callback", async () => {
+  await render();
+  const editA = hook.setDraft;
+  await act(async () => hook.setDraft("Draft A"));
+  await act(async () => hook.setDraft(""));
+  chapterId = "chapter-b";
+  await render();
+  await act(async () => editA("Late A"));
+  chapterId = "chapter-a";
+  await render();
+  expect(hook.draft).toBe("");
+});
+it("clears the chapter cache when leaving the project", async () => {
+  await render();
+  await act(async () => hook.setDraft("Project A text"));
+  chapterId = "chapter-b";
+  await render();
+  projectId = "project-b";
+  await render();
+  projectId = "project-a";
+  chapterId = "chapter-a";
+  await render();
+  expect(hook.draft).toBe("");
+});

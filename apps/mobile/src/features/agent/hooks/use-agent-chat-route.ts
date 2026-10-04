@@ -22,6 +22,7 @@ export function useAgentChatRoute(options: {
   const actions = useRef({ send, restore });
   const consumedQueries = useRef(new Set<string>());
   const [draft, setDraftState] = useState(prefill);
+  const [chapterDrafts, setChapterDrafts] = useState<Record<string, string>>({});
   const [previous, setPrevious] = useState({
     scope,
     destination,
@@ -55,7 +56,13 @@ export function useAgentChatRoute(options: {
     // Resolving or temporarily losing the chapter is not a new destination.
     // The separate authenticated destination handle prevents retaining private
     // text across account changes even when chapter resolution finishes then.
-    if (!(sameDestination && sameChapter && previous.prefill === prefill))
+    if (!sameDestination) setChapterDrafts({});
+    if (sameDestination && !sameChapter) {
+      if (previous.chapterId) setChapterDrafts({ ...chapterDrafts, [previous.chapterId]: draft });
+      setDraftState(
+        previous.prefill !== prefill ? prefill : (chapterDrafts[chapterId ?? ""] ?? "")
+      );
+    } else if (!(sameDestination && sameChapter && previous.prefill === prefill))
       setDraftState(
         previous.scope !== scope && (previous.identity === identity || previous.prefill === prefill)
           ? ""
