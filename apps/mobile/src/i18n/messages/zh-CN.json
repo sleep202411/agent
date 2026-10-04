@@ -5047,5 +5047,16 @@
   "storyCover.removeHelp": "移除此项目的封面？媒体文件将保留。",
   "storyCover.choose": "项目图片",
   "storyCover.noImages": "暂无可用图片，请上传一张图片作为封面。",
-  "storyCover.select": "使用图片 {number}"
+  "storyCover.select": "使用图片 {number}",
+  "storyLibrary.title": "编辑影游项目",
+  "storyLibrary.titleField": "项目名称",
+  "storyLibrary.summaryField": "项目简介",
+  "storyLibrary.discard": "放弃本地修改",
+  "storyLibrary.discardHelp": "放弃本地编辑及待确认请求，并重新加载服务器上的当前项目？",
+  "storyLibrary.conflict": "项目已在其他位置更新。本地文本仍保留，请先检查再放弃或重试。",
+  "storyLibrary.pending": "项目修改待确认，请刷新或重试原请求。",
+  "storyLibrary.retrySave": "重试项目修改",
+  "storyLibrary.archive": "归档项目",
+  "storyLibrary.archiveHelp": "请先保存或放弃文本修改再归档。归档后项目将离开当前项目列表。",
+  "storyLibrary.confirmArchive": "归档“{title}”？它将离开当前项目列表。"
 }

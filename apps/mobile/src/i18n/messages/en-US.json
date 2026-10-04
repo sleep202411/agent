@@ -5047,5 +5047,16 @@
   "storyCover.removeHelp": "Remove this project’s cover image? The media file will be kept.",
   "storyCover.choose": "Project images",
   "storyCover.noImages": "No ready images available. Upload an image to use as the cover.",
-  "storyCover.select": "Use image {number}"
+  "storyCover.select": "Use image {number}",
+  "storyLibrary.title": "Edit Story project",
+  "storyLibrary.titleField": "Project title",
+  "storyLibrary.summaryField": "Project summary",
+  "storyLibrary.discard": "Discard local changes",
+  "storyLibrary.discardHelp": "Discard local edits and pending requests, then reload the current server project?",
+  "storyLibrary.conflict": "This project changed elsewhere. Your local text is retained. Review it before discarding or retrying.",
+  "storyLibrary.pending": "A project update is awaiting verification. Reload or retry the original request.",
+  "storyLibrary.retrySave": "Retry project update",
+  "storyLibrary.archive": "Archive project",
+  "storyLibrary.archiveHelp": "Save or discard your text edits before archiving. Archived projects leave the active library.",
+  "storyLibrary.confirmArchive": "Archive “{title}”? It will leave the active project library."
 }

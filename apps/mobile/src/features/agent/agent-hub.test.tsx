@@ -2,6 +2,20 @@ import { act, useEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import AgentHubScreen from "@/app/agent/index";
+vi.mock("@/features/agent/components/story-library-editor", () => ({
+  StoryLibraryEditor: ({
+    scope,
+    onSaved,
+  }: {
+    scope: { projectId: string };
+    onSaved: (archived: boolean) => void;
+  }) => (
+    <div>
+      Editing {scope.projectId}
+      <button onClick={() => onSaved(true)}>Archive fixture</button>
+    </div>
+  ),
+}));
 const h = vi.hoisted(() => ({
   generation: 1,
   workspaceParam: undefined as string | undefined,
@@ -47,7 +61,7 @@ vi.mock("expo-router", () => ({
   },
 }));
 vi.mock("@/auth", () => ({
-  useAuth: () => ({ generation: h.generation }),
+  useAuth: () => ({ generation: h.generation, user: { id: "owner" } }),
   useAuthGate: () => ({ isAuthenticated: h.authenticated, requireAuth: vi.fn() }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -286,4 +300,34 @@ it("opens native Text Adventures from the authenticated creation hub", async () 
   expect(entry).toBeDefined();
   await act(async () => entry!.click());
   expect(host.textContent).toContain("Native Text Adventures");
+});
+
+it("opens Story project management and refreshes the library after archiving", async () => {
+  h.list.mockResolvedValue({
+    workspaceId: "workspace",
+    projects: [
+      { id: "story", title: "Story", capabilities: ["story.read", "story.edit", "story.admin"] },
+    ],
+  });
+  await render();
+  const entry = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "storyLibrary.title"
+  );
+  expect(entry).toBeDefined();
+  await act(async () => entry!.click());
+  expect(host.textContent).toContain("Editing story");
+  h.list.mockResolvedValue({ workspaceId: "workspace", projects: [] });
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Archive fixture")!.click()
+  );
+  expect(host.textContent).not.toContain("Editing story");
+  expect(host.textContent).toContain("agent.projectsEmpty");
+});
+it("does not expose Story management for read-only projects", async () => {
+  h.list.mockResolvedValue({
+    workspaceId: "workspace",
+    projects: [{ id: "story", title: "Story", capabilities: ["story.read"] }],
+  });
+  await render();
+  expect(host.textContent).not.toContain("storyLibrary.title");
 });

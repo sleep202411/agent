@@ -1,3 +1,4 @@
+import { StoryLibraryEditor } from "@/features/agent/components/story-library-editor";
 import { TextAdventures } from "@/features/agent/text-adventures";
 import { ContentReviewHistory } from "@/features/agent/content-review-history";
 import { WorkspaceAnalyticsScreen } from "@/features/agent/workspace-analytics";
@@ -81,6 +82,9 @@ function AgentHubSession({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { requireAuth, isAuthenticated } = useAuthGate();
+  const { user } = useAuth();
+  const userId = String(user?.userId ?? user?.id ?? "");
+  const [editingStory, setEditingStory] = useState<{ projectId: string; generation: number }>();
   const [platformWorkspace, setPlatformWorkspace] = useState<StudioWorkspace>();
   const [adventuresOpen, setAdventuresOpen] = useState(false);
   const [joiningInvite, setJoiningInvite] = useState(false);
@@ -229,6 +233,21 @@ function AgentHubSession({
       />
     );
 
+  if (editingStory && isAuthenticated && userId)
+    return (
+      <StoryLibraryEditor
+        scope={editingStory}
+        userId={userId}
+        onClose={() => {
+          setEditingStory(undefined);
+          void loadProjects();
+        }}
+        onSaved={(archived) => {
+          if (archived) setEditingStory(undefined);
+          void loadProjects();
+        }}
+      />
+    );
   if (workspaceSettings)
     return (
       <StudioWorkspaceSettingsScreen
@@ -526,6 +545,21 @@ function AgentHubSession({
                           project={project}
                           onPress={() => openThread(project.id, project.title)}
                         />
+                        {userId &&
+                        (project.capabilities?.includes("story.edit") ||
+                          project.capabilities?.includes("story.admin")) ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={() => setEditingStory({ projectId: project.id, generation })}
+                            style={{
+                              padding: Spacing.two,
+                              minHeight: 44,
+                              justifyContent: "center",
+                            }}
+                          >
+                            <ThemedText type="small">{t("storyLibrary.title")}</ThemedText>
+                          </Pressable>
+                        ) : null}
                         {project.capabilities?.includes("story.read") && (
                           <Pressable
                             onPress={() =>

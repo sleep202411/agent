@@ -5047,5 +5047,16 @@
   "storyCover.removeHelp": "移除此專案的封面？媒體檔案將保留。",
   "storyCover.choose": "專案圖片",
   "storyCover.noImages": "暫無可用圖片，請上傳一張圖片作為封面。",
-  "storyCover.select": "使用圖片 {number}"
+  "storyCover.select": "使用圖片 {number}",
+  "storyLibrary.title": "編輯影遊專案",
+  "storyLibrary.titleField": "專案名稱",
+  "storyLibrary.summaryField": "專案簡介",
+  "storyLibrary.discard": "放棄本機修改",
+  "storyLibrary.discardHelp": "放棄本機編輯及待確認請求，並重新載入伺服器上的目前專案？",
+  "storyLibrary.conflict": "專案已在其他位置更新。本機文字仍保留，請先檢查再放棄或重試。",
+  "storyLibrary.pending": "專案修改待確認，請重新整理或重試原請求。",
+  "storyLibrary.retrySave": "重試專案修改",
+  "storyLibrary.archive": "封存專案",
+  "storyLibrary.archiveHelp": "請先儲存或放棄文字修改再封存。封存後專案將離開目前專案清單。",
+  "storyLibrary.confirmArchive": "封存「{title}」？它將離開目前專案清單。"
 }
