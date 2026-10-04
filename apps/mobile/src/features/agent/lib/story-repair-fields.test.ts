@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import {
+  repairNodeLabels,
   repairBranches,
   addRepairChoice,
   arrangeRepairChoice,
@@ -127,4 +128,27 @@ it("moves complete choices by identity and removes only the requested choice", (
   expect(
     repairBranches(arrangeRepairChoice(removed, "clip:a", "c", "up"), "clip:a", "en-US")
   ).toHaveLength(1);
+});
+
+it("distinguishes same-name copies consistently without renaming authored data", () => {
+  const copies = {
+    ...content,
+    graph: {
+      ...content.graph,
+      nodes: [
+        { ...content.graph.nodes[0], name: "Opening" },
+        { ...content.graph.nodes[1], name: " Opening " },
+        { nodeId: "clip:c", name: "Unique" },
+      ],
+    },
+  };
+  const before = JSON.stringify(copies);
+  const labels = repairNodeLabels(copies);
+  expect([...labels.values()]).toEqual(["Opening · 1", "Opening · 2", "Unique"]);
+  expect(
+    repairTargets(copies, "en-US")
+      .slice(0, 3)
+      .map((t) => t.label)
+  ).toEqual([...labels.values()]);
+  expect(JSON.stringify(copies)).toBe(before);
 });

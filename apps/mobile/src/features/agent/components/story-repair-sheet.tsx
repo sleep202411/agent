@@ -1,3 +1,4 @@
+import { repairNodeLabels } from "../lib/story-repair-fields";
 import {
   createRepairNode,
   updateRepairNodeText,
@@ -160,11 +161,12 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
   const content = showSaved
     ? loaded?.draft.content
     : (command?.input.content ?? loaded?.draft.content);
+  const nodeLabels = content ? repairNodeLabels(content) : new Map<string, string>();
   const node = content?.graph.nodes.find((n) => n.nodeId === selected);
   const autoRoutes = content ? repairAutoRoutes(content, selected) : null;
   const matchingNodes =
     content?.graph.nodes.filter((candidate) =>
-      `${candidate.nodeId} ${typeof candidate.name === "string" ? candidate.name : ""}`
+      `${candidate.nodeId} ${nodeLabels.get(candidate.nodeId) ?? ""}`
         .toLowerCase()
         .includes(nodeSearch.toLowerCase())
     ) ?? [];
@@ -352,7 +354,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 ))
               : null}
             <RepairAction
-              label={`${t("storyRepair.inspectNode")}: ${typeof node?.name === "string" ? node.name : (node?.nodeId ?? t("storyRepair.entryMissing"))}`}
+              label={`${t("storyRepair.inspectNode")}: ${node ? nodeLabels.get(node.nodeId) : t("storyRepair.entryMissing")}`}
               disabled={busy}
               onPress={() => setChoosingNode((value) => !value)}
             />
@@ -387,7 +389,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                   {matchingNodes.slice(0, 50).map((item) => (
                     <RepairAction
                       key={item.nodeId}
-                      label={typeof item.name === "string" && item.name ? item.name : item.nodeId}
+                      label={nodeLabels.get(item.nodeId)!}
                       onPress={() => {
                         setSelected(item.nodeId);
                         setChoosingNode(false);
@@ -412,9 +414,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
               <ThemedText>{t("storyRepair.nodeMissing")}</ThemedText>
             ) : (
               <>
-                <ThemedText type="smallBold">
-                  {typeof node.name === "string" ? node.name : node.nodeId}
-                </ThemedText>
+                <ThemedText type="smallBold">{nodeLabels.get(node.nodeId)}</ThemedText>
                 <RepairAction
                   label={t("storyNode.remove")}
                   disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}

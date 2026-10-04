@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
-import { repairChoiceExit, type RepairContent } from "../lib/story-repair-fields";
+import { repairNodeLabels, repairChoiceExit, type RepairContent } from "../lib/story-repair-fields";
 import type { RepairDuplicateSource } from "../lib/story-repair-duplicate";
 const key = (s: RepairDuplicateSource) => `${s.role}:${s.nodeId}`;
 export function StoryRepairDuplicatePicker({
@@ -32,8 +32,9 @@ export function StoryRepairDuplicatePicker({
     ),
     [search, setSearch] = useState(""),
     [rejected, setRejected] = useState(false);
+  const labels = repairNodeLabels(content);
   const available = content.graph.nodes.flatMap((node) => {
-    const label = typeof node.name === "string" && node.name ? node.name : node.nodeId;
+    const label = labels.get(node.nodeId)!;
     const result: { source: RepairDuplicateSource; label: string }[] = [
       { source: { nodeId: node.nodeId, role: "node" }, label },
     ];

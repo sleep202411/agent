@@ -12,10 +12,25 @@ export function sameRepairTarget(left: unknown, right: RepairTarget): boolean {
     (right.kind === "node" ? value.nodeId === right.nodeId : value.endingId === right.endingId)
   );
 }
+/** Display-only graph positions distinguish copies without renaming authored scenes. */
+export function repairNodeLabels(content: RepairContent): Map<string, string> {
+  const names = content.graph.nodes.map((node) =>
+    typeof node.name === "string" && node.name.trim() ? node.name.trim() : node.nodeId
+  );
+  const counts = new Map<string, number>();
+  names.forEach((name) => counts.set(name, (counts.get(name) ?? 0) + 1));
+  return new Map(
+    content.graph.nodes.map((node, index) => [
+      node.nodeId,
+      counts.get(names[index])! > 1 ? `${names[index]} · ${index + 1}` : names[index],
+    ])
+  );
+}
 export function repairTargets(content: RepairContent, locale: string) {
+  const labels = repairNodeLabels(content);
   const targets: { value: RepairTarget; label: string }[] = content.graph.nodes.map((node) => ({
     value: { kind: "node", nodeId: node.nodeId },
-    label: typeof node.name === "string" && node.name.trim() ? node.name : node.nodeId,
+    label: labels.get(node.nodeId)!,
   }));
   const endings = object(content.storyBible)?.endings;
   if (Array.isArray(endings))
