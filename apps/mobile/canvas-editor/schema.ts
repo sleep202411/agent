@@ -5,10 +5,16 @@ export const CANVAS_ROOTS = ["meta", "nodes", "edges", "groups", "assets"] as co
 export const canvasNodeEditSchema = z
   .object({
     nodeId: z.string().min(1),
-    kind: z.enum(["rename", "prompt", "text", "remove", ...CANVAS_SHOT_FIELDS]),
+    kind: z.enum(["rename", "prompt", "text", "remove", "reorderShot", ...CANVAS_SHOT_FIELDS]),
     value: z.string(),
   })
   .strict()
+  .refine(
+    (edit) =>
+      edit.kind !== "reorderShot" ||
+      (/^[1-9]\d*$/.test(edit.value) && Number.isSafeInteger(Number(edit.value))),
+    "Shot position must be a positive integer."
+  )
   .refine(
     (edit) => edit.kind !== "remove" || edit.value === "",
     "Removal cannot contain replacement text."

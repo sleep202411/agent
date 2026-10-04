@@ -26,3 +26,20 @@ it("fails explicitly rather than hiding malformed canvas content", () => {
     })
   ).toThrow();
 });
+it("derives shot numbers from Web keys while retaining non-shot positions", () => {
+  const nodes = {
+    c: { id: "c", type: "shot", data: { order: "k" } },
+    note: { id: "note", type: "note", data: { text: "Note" } },
+    b: { id: "b", type: "shot", data: { order: "V" } },
+    a: { id: "a", type: "shot", data: { order: "V" } },
+    last: { id: "last", type: "shot", data: {} },
+  };
+  const overview = canvasOverview({ ...empty, nodes });
+  expect(overview.nodes.map(({ id, shotNumber }) => [id, shotNumber])).toEqual([
+    ["a", 1],
+    ["note", undefined],
+    ["b", 2],
+    ["c", 3],
+    ["last", 4],
+  ]);
+});

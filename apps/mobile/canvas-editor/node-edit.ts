@@ -1,3 +1,4 @@
+import { moveCanvasShot } from "./shot-order";
 import * as Y from "yjs";
 import { isCanvasShotField, canvasShotValue } from "./shot-fields";
 import { removeCanvasNode } from "./node-remove";
@@ -12,6 +13,8 @@ const mediaTypes = new Set(["image", "videoAsset", "audioAsset"]);
  * The returned update is a delta, never a replacement JSON snapshot. */
 export function editCanvasNode(state: string, raw: CanvasNodeEdit) {
   const edit = canvasNodeEditSchema.parse(raw);
+  if (edit.kind === "reorderShot")
+    return moveCanvasShot(state, { nodeId: edit.nodeId, index: Number(edit.value) - 1 });
   if (edit.kind === "remove") return removeCanvasNode(state, edit.nodeId);
   return withCanvasState(state, [], (doc) => {
     const node = doc.getMap("nodes").get(edit.nodeId);

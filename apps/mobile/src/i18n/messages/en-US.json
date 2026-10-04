@@ -14,7 +14,6 @@
   "contentReports.newReport": "Initiate a complaint",
   "contentReports.search": "Search by IP name or room number",
   "contentReports.selectTarget": "Select an IP",
-
   "contentReports.title": "Content complaints",
   "contentReports.initiated": "Initiated by me",
   "contentReports.responses": "Outcomes for my content",
@@ -33,24 +32,19 @@
   "contentReports.reason.privacy": "Privacy exposure",
   "contentReports.reason.harassment": "Harassment or abusive content",
   "contentReports.reason.other": "Other issue",
-
   "myContracts.title": "My contracts",
   "myContracts.agreements": "Agreements",
   "myContracts.files": "Contract files",
   "myContracts.description": "Contract files linked to tasks you can access.",
   "myContracts.empty": "No linked contract files.",
-
   "taskContract.open": "View contract",
   "taskContract.refresh": "Refresh contract",
   "taskContract.unavailable": "This contract file is no longer available.",
-
   "myAgreements.title": "My agreements",
   "myAgreements.description": "Agreements you created or received across your Crews.",
-
   "privateCases.view.all": "All",
   "privateCases.view.initiated": "Initiated",
   "privateCases.view.responses": "Responses",
-
   "taskReview.reviewSubmission": "Review submission",
   "taskReview.reviewNotePlaceholder": "Write clear approval notes or revision instructions…",
   "taskReview.revisionLimitReached": "All included revision rounds have been used. Increase the limit in Edit task or approve this submission.",
@@ -5196,5 +5190,8 @@
   "storyCanvas.shot.option.tracking": "Tracking",
   "storyCanvas.shot.option.zoom": "Zoom",
   "storyCanvas.shot.option.handheld": "Handheld",
-  "storyCanvas.shot.option.crane": "Crane"
+  "storyCanvas.shot.option.crane": "Crane",
+  "storyCanvas.shot.reorder": "Reorder shot",
+  "storyCanvas.shot.position": "Shot position",
+  "storyCanvas.shot.positionHelp": "Choose the destination position. Names show the current order."
 }

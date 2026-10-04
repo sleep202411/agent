@@ -1,3 +1,4 @@
+import { canvasShotRows } from "./story-canvas-shot-rows";
 import { z } from "zod";
 import type { CanvasSnapshot } from "../../../../canvas-editor/protocol";
 const node = z.object({
@@ -14,8 +15,13 @@ const asset = z.object({
 });
 /** Native read projection only; the original CRDT is never rewritten from this. */
 export function canvasOverview(snapshot: CanvasSnapshot) {
+  const shots = canvasShotRows(snapshot);
+  let nextShot = 0;
+  const ordered = Object.values(snapshot.nodes).map((raw) =>
+    (raw as { type?: unknown } | null)?.type === "shot" ? snapshot.nodes[shots[nextShot++].id] : raw
+  );
   return {
-    nodes: Object.values(snapshot.nodes).map((raw) => {
+    nodes: ordered.map((raw) => {
       const value = node.parse(raw);
       const title =
         [
@@ -32,6 +38,8 @@ export function canvasOverview(snapshot: CanvasSnapshot) {
         ) ?? "";
       const generation = ["prompt", "video", "audio"].includes(value.type);
       return {
+        shotNumber:
+          value.type === "shot" ? shots.findIndex((shot) => shot.id === value.id) + 1 : undefined,
         id: value.id,
         title,
         text,

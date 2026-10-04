@@ -122,3 +122,25 @@ it("canonicalizes deletion baselines across object key ordering", () => {
   );
   expect(a).toEqual(b);
 });
+it("tracks shot membership and order without blocking unrelated field edits", () => {
+  const board = {
+    ...snapshot,
+    nodes: {
+      a: { id: "a", type: "shot", data: { order: "V", dialogue: "Original" } },
+      b: { id: "b", type: "shot", data: { order: "k" } },
+    },
+  };
+  const edit = { nodeId: "a", kind: "reorderShot" as const };
+  const baseline = canvasEditBaseline(board, edit);
+  board.nodes.a.data.dialogue = "Concurrent dialogue";
+  expect(canvasEditBaseline(board, edit)).toEqual(baseline);
+  board.nodes.b.data.order = "F";
+  expect(canvasEditBaseline(board, edit)).not.toEqual(baseline);
+  const store = canvasDraftStore(scope, "user", storage);
+  store.write({ ...baseline, edit: { ...edit, value: "2" } });
+  expect(store.read()?.edit.value).toBe("2");
+  expect(() => store.write({ ...baseline, edit: { ...edit, value: "0" } })).toThrow();
+  expect(() => canvasEditBaseline(snapshot, { nodeId: "n", kind: "reorderShot" })).toThrow(
+    "does not support"
+  );
+});

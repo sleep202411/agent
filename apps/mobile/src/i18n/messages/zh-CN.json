@@ -14,7 +14,6 @@
   "contentReports.newReport": "发起投诉",
   "contentReports.search": "搜索 IP 名称或房间号",
   "contentReports.selectTarget": "选择 IP",
-
   "contentReports.title": "内容投诉",
   "contentReports.initiated": "我发起的",
   "contentReports.responses": "我的内容处理结果",
@@ -33,24 +32,19 @@
   "contentReports.reason.privacy": "隐私泄露",
   "contentReports.reason.harassment": "骚扰或恶意内容",
   "contentReports.reason.other": "其他问题",
-
   "myContracts.title": "我的合同",
   "myContracts.agreements": "签署协议",
   "myContracts.files": "合同文件",
   "myContracts.description": "查看你有权访问的任务所关联的合同文件。",
   "myContracts.empty": "暂无关联合同文件。",
-
   "taskContract.open": "查看合同",
   "taskContract.refresh": "刷新合同",
   "taskContract.unavailable": "此合同文件已不可用。",
-
   "myAgreements.title": "我的协议",
   "myAgreements.description": "查看你在各剧组创建或收到的协议。",
-
   "privateCases.view.all": "全部",
   "privateCases.view.initiated": "我发起的",
   "privateCases.view.responses": "我需回应的",
-
   "taskReview.reviewSubmission": "审核提交",
   "taskReview.reviewNotePlaceholder": "填写清晰的通过意见或修改要求…",
   "taskReview.revisionLimitReached": "约定的返修轮次已用完。请先在编辑任务中提高上限，或通过当前提交。",
@@ -5196,5 +5190,8 @@
   "storyCanvas.shot.option.tracking": "跟拍",
   "storyCanvas.shot.option.zoom": "变焦",
   "storyCanvas.shot.option.handheld": "手持",
-  "storyCanvas.shot.option.crane": "升降"
+  "storyCanvas.shot.option.crane": "升降",
+  "storyCanvas.shot.reorder": "调整镜头顺序",
+  "storyCanvas.shot.position": "镜头位置",
+  "storyCanvas.shot.positionHelp": "选择目标位置。名称显示当前顺序。"
 }

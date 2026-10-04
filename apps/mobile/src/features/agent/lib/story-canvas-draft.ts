@@ -1,3 +1,4 @@
+import { canvasShotRows } from "./story-canvas-shot-rows";
 import { z } from "zod";
 import { isCanvasShotField } from "../../../../canvas-editor/shot-fields";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -25,6 +26,15 @@ export function canvasEditBaseline(
     .object({ id: z.string(), type: z.string(), data: z.record(z.unknown()) })
     .parse(snapshot.nodes[edit.nodeId]);
   if (node.id !== edit.nodeId) throw Error("Canvas node identity mismatch.");
+  if (edit.kind === "reorderShot") {
+    if (node.type !== "shot") throw Error("This canvas node does not support that edit.");
+    return {
+      nodeType: node.type,
+      baseValue: stableJson(
+        canvasShotRows(snapshot).map(({ id, order }) => ({ id, order: order ?? null }))
+      ),
+    };
+  }
   if (edit.kind === "remove") {
     const edges = Object.fromEntries(
       Object.entries(snapshot.edges).filter(([, value]) => {

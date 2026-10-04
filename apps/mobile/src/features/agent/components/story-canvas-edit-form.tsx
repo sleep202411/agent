@@ -1,5 +1,13 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Modal, Pressable, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
 import { uuid } from "expo-modules-core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -19,6 +27,7 @@ import {
   canvasShotValue,
   CANVAS_SHOT_OPTIONS,
 } from "../../../../canvas-editor/shot-fields";
+import { canvasShotRows } from "../lib/story-canvas-shot-rows";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
@@ -57,7 +66,18 @@ export function StoryCanvasEditForm({
         draft: {
           ...baseline,
           title,
-          edit: { ...edit, value: edit.kind === "remove" ? "" : baseline.baseValue },
+          edit: {
+            ...edit,
+            value:
+              edit.kind === "remove"
+                ? ""
+                : edit.kind === "reorderShot"
+                  ? String(
+                      canvasShotRows(loaded.snapshot).findIndex((shot) => shot.id === edit.nodeId) +
+                        1
+                    )
+                  : baseline.baseValue,
+          },
         } as CanvasDraft,
       };
     } catch (cause) {
@@ -157,15 +177,18 @@ export function StoryCanvasEditForm({
       failed(cause);
     }
   };
-  const actionTitle = shotField
-    ? (`storyCanvas.shot.${shotField}` as const)
-    : draft?.edit.kind === "remove"
-      ? "storyCanvas.remove"
-      : draft?.edit.kind === "text"
-        ? "storyCanvas.editNote"
-        : draft?.edit.kind === "prompt"
-          ? "storyCanvas.editPrompt"
-          : "storyCanvas.rename";
+  const actionTitle =
+    draft?.edit.kind === "reorderShot"
+      ? "storyCanvas.shot.reorder"
+      : shotField
+        ? (`storyCanvas.shot.${shotField}` as const)
+        : draft?.edit.kind === "remove"
+          ? "storyCanvas.remove"
+          : draft?.edit.kind === "text"
+            ? "storyCanvas.editNote"
+            : draft?.edit.kind === "prompt"
+              ? "storyCanvas.editPrompt"
+              : "storyCanvas.rename";
   const discard = () =>
     Alert.alert(t("storyCanvas.discard"), t("storyCanvas.discardBody"), [
       { text: t("common.cancel"), style: "cancel" },
@@ -215,6 +238,39 @@ export function StoryCanvasEditForm({
             </ThemedText>
             {draft.edit.kind === "remove" ? (
               <ThemedText type="small">{t("storyCanvas.removeBody")}</ThemedText>
+            ) : draft.edit.kind === "reorderShot" ? (
+              <ScrollView
+                style={{ flexShrink: 1 }}
+                contentContainerStyle={{ gap: 8 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                <ThemedText type="small">{t("storyCanvas.shot.positionHelp")}</ThemedText>
+                {canvasShotRows(loaded.snapshot).map((shot, index) => (
+                  <Pressable
+                    key={shot.id}
+                    accessibilityRole="radio"
+                    aria-checked={draft.edit.value === String(index + 1)}
+                    accessibilityLabel={`${t("storyCanvas.shot.position")} ${index + 1}`}
+                    accessibilityState={{
+                      checked: draft.edit.value === String(index + 1),
+                      disabled: phase !== "idle" || !!draft.command,
+                    }}
+                    disabled={phase !== "idle" || !!draft.command}
+                    onPress={() => changeValue(String(index + 1))}
+                    style={{
+                      padding: 12,
+                      borderWidth: 1,
+                      borderRadius: 8,
+                      borderColor:
+                        draft.edit.value === String(index + 1) ? theme.brand : theme.border,
+                    }}
+                  >
+                    <ThemedText type="small">
+                      {index + 1}. {shot.title}
+                    </ThemedText>
+                  </Pressable>
+                ))}
+              </ScrollView>
             ) : shotOptions ? (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 {(["", ...shotOptions] as const).map((value) => (

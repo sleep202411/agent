@@ -23,7 +23,11 @@ const result = await build({
         // evaluates unrelated protocol schemas, adding hundreds of KB to this
         // offline runtime despite using only its two ordering helpers.
         builder.onResolve({ filter: /^@repo\/shared$/ }, (args) => {
-          if (args.importer.endsWith("/canvas-editor/node-create.ts"))
+          if (
+            ["node-create.ts", "shot-order.ts"].some((file) =>
+              args.importer.endsWith(`/canvas-editor/${file}`)
+            )
+          )
             return { path: join(root, "packages/shared/src/fractional-index.ts") };
         });
       },

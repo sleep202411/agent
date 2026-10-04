@@ -218,6 +218,11 @@ export function StoryCanvasPanel({
                       {!!node.text && node.text !== node.title && (
                         <ThemedText type="small">{node.text}</ThemedText>
                       )}
+                      {node.shotNumber != null && (
+                        <ThemedText type="small">
+                          {t("storyCanvas.shot.position")} {node.shotNumber}
+                        </ThemedText>
+                      )}
                       {node.type === "shot" && (
                         <>
                           <Pressable
@@ -230,6 +235,15 @@ export function StoryCanvasPanel({
                           >
                             <ThemedText type="small">{t("storyCanvas.shot.details")}</ThemedText>
                           </Pressable>
+                          {expandedShot === node.id && canEdit && (
+                            <Pressable
+                              accessibilityRole="button"
+                              onPress={() => setEdit({ nodeId: node.id, kind: "reorderShot" })}
+                              style={{ paddingVertical: 10 }}
+                            >
+                              <ThemedText type="small">{t("storyCanvas.shot.reorder")}</ThemedText>
+                            </Pressable>
+                          )}
                           {expandedShot === node.id &&
                             CANVAS_SHOT_FIELDS.map((field) => {
                               const data = (
