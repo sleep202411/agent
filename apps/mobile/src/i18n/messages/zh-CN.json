@@ -4959,5 +4959,7 @@
   "storyRepair.noMatchingNode": "此章节没有匹配的节点。",
   "storyRepair.refineSearch": "显示前 50 个匹配节点。请缩小搜索范围以查找其他节点。",
   "storyNode.remove": "移除节点",
-  "storyNode.removeHelp": "移除此节点及指向它的连接？场景附带的选择将保留为独立节点，未使用的结局会被移除。保存后生效。"
+  "storyNode.removeHelp": "移除此节点及指向它的连接？场景附带的选择将保留为独立节点，未使用的结局会被移除。保存后生效。",
+  "storyNode.removeAttachedChoice": "移除附带选择",
+  "storyNode.removeAttachedChoiceHelp": "保留场景，但移除附带的提示、选项及分支？自动路线将没有目标，未使用的结局会被移除。保存后生效。"
 }

@@ -1,4 +1,8 @@
-import { createRepairNode, updateRepairNodeText } from "../lib/story-repair-nodes";
+import {
+  createRepairNode,
+  updateRepairNodeText,
+  removeRepairAttachedChoice,
+} from "../lib/story-repair-nodes";
 import { deleteRepairNode } from "../lib/story-repair-delete-node";
 import {
   createRepairEnding,
@@ -419,6 +423,27 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                   disabled={busy || uncertain || conflict || showSaved}
                   onPress={() => setEffectTarget({ nodeId: selected })}
                 />
+                {node.kind === "clip" && repairChoiceExit(content, selected) ? (
+                  <RepairAction
+                    label={t("storyNode.removeAttachedChoice")}
+                    disabled={!loaded.canEdit || busy || uncertain || conflict || showSaved}
+                    onPress={() =>
+                      Alert.alert(
+                        t("storyNode.removeAttachedChoice"),
+                        t("storyNode.removeAttachedChoiceHelp"),
+                        [
+                          { text: t("common.cancel"), style: "cancel" },
+                          {
+                            text: t("storyNode.removeAttachedChoice"),
+                            style: "destructive",
+                            onPress: () =>
+                              edit((value) => removeRepairAttachedChoice(value, selected)),
+                          },
+                        ]
+                      )
+                    }
+                  />
+                ) : null}
                 {node.kind === "clip" ? (
                   <>
                     {(["name", "description"] as const).map((field) => (

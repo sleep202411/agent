@@ -73,6 +73,18 @@ export function deleteRepairNode(content: RepairContent, nodeId: string): Repair
       return { ...node, exit: nextExit, interactions };
     });
   if (nodes.length > 10000) throw Error("A story supports at most 10,000 nodes.");
+  return pruneRepairEndings({
+    ...content,
+    graph: {
+      ...content.graph,
+      entryNodeId: content.graph.entryNodeId === nodeId ? null : content.graph.entryNodeId,
+      nodes,
+    },
+  });
+}
+
+export function pruneRepairEndings(content: RepairContent): RepairContent {
+  const nodes = content.graph.nodes;
   const usedEndings = new Set<unknown>();
   const note = (target: unknown) => {
     if (target != null && row(target).kind === "ending") usedEndings.add(row(target).endingId);
@@ -97,10 +109,5 @@ export function deleteRepairNode(content: RepairContent, nodeId: string): Repair
             ...bible,
             endings: rows(bible.endings).filter((ending) => usedEndings.has(ending.endingId)),
           },
-    graph: {
-      ...content.graph,
-      entryNodeId: content.graph.entryNodeId === nodeId ? null : content.graph.entryNodeId,
-      nodes,
-    },
   };
 }

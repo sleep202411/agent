@@ -1,6 +1,26 @@
 import type { RepairContent } from "./story-repair-fields";
+import { pruneRepairEndings } from "./story-repair-delete-node";
 const object = (v: unknown): Record<string, unknown> | null =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+/** Web removes a derived, attached decision by resetting its owning scene's exit. */
+export function removeRepairAttachedChoice(content: RepairContent, nodeId: string): RepairContent {
+  const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+  if (!node || node.kind !== "clip") throw Error("The selected scene is no longer available.");
+  if (object(node.exit)?.kind !== "choice")
+    throw Error("This scene no longer has an attached choice.");
+  return pruneRepairEndings({
+    ...content,
+    graph: {
+      ...content.graph,
+      nodes: content.graph.nodes.map((candidate) =>
+        candidate.nodeId === nodeId
+          ? { ...candidate, exit: { kind: "auto", routes: [{ target: null }] } }
+          : candidate
+      ),
+    },
+  });
+}
 export function createRepairNode(
   content: RepairContent,
   kind: "clip" | "decision",
