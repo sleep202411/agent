@@ -5094,7 +5094,7 @@
   "storyChapters.up": "上移",
   "storyChapters.down": "下移",
   "storyChapters.archive": "归档章节",
-  "storyChapters.archiveHelp": "只能归档空章节。请先保存或放弃本地剧情修改。",
+  "storyChapters.archiveHelp": "只能归档空章节。请先保存或放弃本地剧情修改，并完成剧本修改的同步。",
   "storyChapters.name": "章节名称",
   "storyChapters.discard": "放弃待处理修改",
   "storyChapters.discardHelp": "之前的请求可能已成功。重新开始前请检查章节列表。这只会清除本地待处理修改。",

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { scriptCheckpointSchema } from "../../../../script-editor/protocol";
+import { scriptUpdatePending } from "./story-script-collaboration";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
@@ -143,6 +145,54 @@ export function storyChapters(
           if (command.kind === "archive") {
             if (state.chapters.length === 1 || chapter.nodeCount > 0)
               throw Error("Only empty chapters can be archived, and one chapter must remain.");
+            // The selected chapter may have Script edits even when it has no scenes.
+            // Read its existing document identity without ensuring/creating a document.
+            const focused = z
+              .object({
+                project: z.object({ id, projectVersion: version }),
+                chapter: chapterSchema,
+                script: z.object({ documentId: id.nullable() }),
+              })
+              .parse(
+                await api.get(`/story-projects/${scope.projectId}/workbench`, {
+                  service: "aurora",
+                  signal,
+                  retry: false,
+                  params: { chapterId: chapter.id },
+                })
+              );
+            current(signal);
+            if (
+              focused.project.id !== scope.projectId ||
+              focused.chapter.projectId !== scope.projectId ||
+              focused.chapter.id !== chapter.id
+            )
+              throw Error("Chapter project identity mismatch.");
+            if (
+              focused.project.projectVersion !== command.expectedProjectVersion ||
+              focused.chapter.nodeCount > 0
+            )
+              throw Error("The chapter changed. Reload before archiving.");
+            if (focused.script.documentId) {
+              const identity = `${scope.projectId}:${chapter.id}:${focused.script.documentId}`;
+              const rawCheckpoint = durableRecord(
+                "story-script-checkpoint",
+                userId,
+                identity
+              ).read();
+              const checkpoint =
+                rawCheckpoint === null
+                  ? undefined
+                  : scriptCheckpointSchema.parse(JSON.parse(rawCheckpoint));
+              const scriptCommand = scriptUpdatePending(
+                { ...scope, chapterId: chapter.id, documentId: focused.script.documentId },
+                userId
+              ).read();
+              if (checkpoint?.pending.length || scriptCommand)
+                throw Error(
+                  "Open this chapter's Script and finish syncing its local edits before archiving."
+                );
+            }
             const draft = durableRecord(
               "story-repair-draft",
               userId,

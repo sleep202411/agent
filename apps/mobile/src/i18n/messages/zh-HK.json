@@ -5094,7 +5094,7 @@
   "storyChapters.up": "上移",
   "storyChapters.down": "下移",
   "storyChapters.archive": "封存章節",
-  "storyChapters.archiveHelp": "只能封存空章節。請先儲存或放棄本機劇情修改。",
+  "storyChapters.archiveHelp": "只能封存空章節。請先儲存或放棄本機劇情修改，並完成劇本修改的同步。",
   "storyChapters.name": "章節名稱",
   "storyChapters.discard": "放棄待處理修改",
   "storyChapters.discardHelp": "先前的請求可能已成功。重新開始前請檢查章節列表。這只會清除本機待處理修改。",

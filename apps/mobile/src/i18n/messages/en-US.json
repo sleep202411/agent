@@ -5094,7 +5094,7 @@
   "storyChapters.up": "Move up",
   "storyChapters.down": "Move down",
   "storyChapters.archive": "Archive chapter",
-  "storyChapters.archiveHelp": "Only empty chapters can be archived. Local graph edits must be saved or discarded first.",
+  "storyChapters.archiveHelp": "Only empty chapters can be archived. Save or discard local graph edits and finish syncing Script edits first.",
   "storyChapters.name": "Chapter title",
   "storyChapters.discard": "Discard pending changes",
   "storyChapters.discardHelp": "A previous request may already have succeeded. Review the chapter list before starting again. This removes only local pending edits.",
