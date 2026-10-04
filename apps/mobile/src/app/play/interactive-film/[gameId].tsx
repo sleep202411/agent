@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ExperiencePublishedPlayer } from "@/features/experience-player/components/experience-published-player";
 import { useAuth } from "@/auth";
 import { createPlaySessionReporter } from "@/features/experience-player/lib/play-session-reporter";
 import { ThemedText } from "@/components/themed-text";
@@ -16,7 +17,6 @@ import {
 import {
   ExperienceChapterButton,
   ExperienceChapterPicker,
-  ExperiencePlayerWithAccess,
   ExperienceShareButton,
   ExperienceStartShell,
   buildExperiencePlayShareUrl,
@@ -57,6 +57,8 @@ export default function PlayGameScreen() {
   }>();
   const gameId = firstParam(params.gameId);
   const chapterId = firstParam(params.chapter);
+  const [chapterIntent, setChapterIntent] = useState({ gameId, explicit: Boolean(chapterId) });
+  if (chapterIntent.gameId !== gameId) setChapterIntent({ gameId, explicit: Boolean(chapterId) });
   const previewTitle = firstParam(params.title)?.trim() || "";
   const previewSummary = firstParam(params.subtitle)?.trim() || "";
   const previewCoverUrl = firstParam(params.coverUrl)?.trim() || "";
@@ -101,12 +103,13 @@ export default function PlayGameScreen() {
 
   const selectChapter = useCallback(
     (nextChapterId: string) => {
+      setChapterIntent({ gameId, explicit: true });
       setChapterPickerOpen(false);
       if (nextChapterId === chapterId) return;
       // Same play route — only the chapter search param changes.
       router.setParams({ chapter: nextChapterId });
     },
-    [chapterId, router]
+    [chapterId, gameId, router]
   );
 
   useEffect(() => {
@@ -234,10 +237,13 @@ export default function PlayGameScreen() {
         <View style={styles.blackGate} />
       ) : published ? (
         <View style={styles.body}>
-          <ExperiencePlayerWithAccess
+          <ExperiencePublishedPlayer
             key={`${playerKey}:${auth.generation}`}
             reporter={reporter}
-            accessMode="published"
+            chapterId={published.activeChapterId ?? ""}
+            availableChapterIds={chapters.map((chapter) => chapter.chapterId)}
+            explicitChapter={chapterIntent.explicit}
+            onSavedChapter={selectChapter}
             runtime={published.manifest}
             locale={locale}
             copy={copy}

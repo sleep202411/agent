@@ -5248,5 +5248,17 @@
   "storyCanvas.map.moveHint": "單指拖動選中的節點，放開後確認儲存。",
   "storyCanvas.map.movementTitle": "移動節點",
   "storyCanvas.map.resumeMovement": "繼續移動",
-  "storyCanvas.map.moveGroup": "移動群組"
+  "storyCanvas.map.moveGroup": "移動群組",
+  "play.saveLoadFailed": "無法載入存檔。",
+  "play.saveUnavailableTitle": "無法繼續此存檔",
+  "play.saveChapterUnavailable": "存檔中的章節已不在目前發佈版本中。",
+  "play.saveStateUnavailable": "此存檔與目前發佈版本不相容。",
+  "play.savePreserved": "在你選擇重新開始前，存檔會被保留。",
+  "play.saveRestartFailed": "無法清除存檔。",
+  "play.saveWriteFailed": "無法儲存進度。",
+  "play.saveConflict": "存檔已更新",
+  "play.saveConflictHint": "其他裝置或工作階段更新了此存檔。請先重新載入存檔再繼續；目前裝置上尚未儲存的進度將被取代。",
+  "play.reloadSave": "重新載入存檔",
+  "play.saveSaving": "正在儲存進度…",
+  "play.saveSaved": "進度已儲存"
 }

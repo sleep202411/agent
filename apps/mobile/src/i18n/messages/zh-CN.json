@@ -5248,5 +5248,17 @@
   "storyCanvas.map.moveHint": "单指拖动选中的节点，松开后确认保存。",
   "storyCanvas.map.movementTitle": "移动节点",
   "storyCanvas.map.resumeMovement": "继续移动",
-  "storyCanvas.map.moveGroup": "移动分组"
+  "storyCanvas.map.moveGroup": "移动分组",
+  "play.saveLoadFailed": "无法加载存档。",
+  "play.saveUnavailableTitle": "无法继续此存档",
+  "play.saveChapterUnavailable": "存档中的章节已不在当前发布版本中。",
+  "play.saveStateUnavailable": "此存档与当前发布版本不兼容。",
+  "play.savePreserved": "在你选择重新开始前，存档会被保留。",
+  "play.saveRestartFailed": "无法清除存档。",
+  "play.saveWriteFailed": "无法保存进度。",
+  "play.saveConflict": "存档已更新",
+  "play.saveConflictHint": "其他设备或会话更新了此存档。请先重新加载存档再继续；当前设备上尚未保存的进度将被替换。",
+  "play.reloadSave": "重新加载存档",
+  "play.saveSaving": "正在保存进度…",
+  "play.saveSaved": "进度已保存"
 }

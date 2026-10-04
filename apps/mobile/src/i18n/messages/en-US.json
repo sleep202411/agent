@@ -5248,5 +5248,17 @@
   "storyCanvas.map.moveHint": "Drag the selected node with one finger. Release to review and save.",
   "storyCanvas.map.movementTitle": "Move node",
   "storyCanvas.map.resumeMovement": "Resume movement",
-  "storyCanvas.map.moveGroup": "Move group"
+  "storyCanvas.map.moveGroup": "Move group",
+  "play.saveLoadFailed": "Saved progress could not be loaded.",
+  "play.saveUnavailableTitle": "Saved progress cannot continue",
+  "play.saveChapterUnavailable": "The chapter in this save is no longer part of the current release.",
+  "play.saveStateUnavailable": "This save is incompatible with the current release.",
+  "play.savePreserved": "Your saved progress is kept until you choose to start over.",
+  "play.saveRestartFailed": "Saved progress could not be cleared.",
+  "play.saveWriteFailed": "Progress could not be saved.",
+  "play.saveConflict": "Saved progress changed",
+  "play.saveConflictHint": "Another device or session updated this save. Reload saved progress before continuing; unsaved progress on this device will be replaced.",
+  "play.reloadSave": "Reload saved progress",
+  "play.saveSaving": "Saving progress…",
+  "play.saveSaved": "Progress saved"
 }

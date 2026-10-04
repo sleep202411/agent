@@ -106,6 +106,7 @@ export interface ExperiencePlayerProps {
   active?: boolean;
   worldScope?: WorldPreviewScope;
   reporter?: PlaySessionReporter;
+  onRestartRequested?: () => void;
   entryCheckpoint?: ExperienceSaveCheckpoint;
   onCheckpoint?: (checkpoint: ExperienceSaveCheckpoint, reason: ExperienceCheckpointReason) => void;
 }
@@ -128,6 +129,7 @@ export function ExperiencePlayer({
   reporter,
   onCheckpoint,
   entryCheckpoint,
+  onRestartRequested,
 }: ExperiencePlayerProps) {
   const [restartEpoch, setRestartEpoch] = useState(0);
   const [randomSeed, setRandomSeed] = useState(
@@ -206,6 +208,10 @@ export function ExperiencePlayer({
       onCheckpoint={onCheckpoint}
       entryCheckpoint={prepared.checkpoint}
       onRestart={() => {
+        if (onRestartRequested) {
+          onRestartRequested();
+          return;
+        }
         setRandomSeed(
           globalThis.crypto?.randomUUID?.() ?? `experience-player:${Date.now()}:${restartEpoch + 1}`
         );
