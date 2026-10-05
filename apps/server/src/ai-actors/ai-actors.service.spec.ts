@@ -14,7 +14,13 @@ const photoAssetId = '01990000-0000-7000-8000-000000000002';
 const workspaceId = '01990000-0000-7000-8000-000000000003';
 const projectId = '01990000-0000-7000-8000-000000000004';
 const requestId = '01990000-0000-7000-8000-000000000005';
-const actor = { id: actorId, name: 'Mira', photoAssetId, active: true };
+const actor = {
+  id: actorId,
+  name: 'Mira',
+  photoAssetId,
+  active: true,
+  archivedAt: null,
+};
 let tx: ReturnType<typeof makeTransaction>;
 let permission: {
   requireWorkspaceRole: jest.Mock;

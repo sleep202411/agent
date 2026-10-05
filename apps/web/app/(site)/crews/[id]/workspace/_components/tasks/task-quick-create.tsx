@@ -316,9 +316,8 @@ export function TaskQuickCreate({
       if (session.current !== requestedSession || draftRevision.current !== requestedRevision)
         return;
       setDraft(next);
-      setEstimatePoints(next.estimatePoints?.toString() ?? "");
-      // AI 整理 rewrites content only. Scheduling/assignment are the
-      // user's explicit choices — leave them untouched.
+      // Organizing the brief changes visible content only. Keep saved effort,
+      // scheduling and assignment choices; this dialog cannot review AI estimates.
       setTitle(next.title);
       setDescription(next.description);
     } catch (error) {

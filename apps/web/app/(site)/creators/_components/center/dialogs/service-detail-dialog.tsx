@@ -14,10 +14,8 @@
  * (ContactCreatorDialog) on top of this one — the buyer stays in
  * the service context and the new modal sends the inquiry.
  *
- * "Start request" is the questionnaire-first order entry; routes
- * to /services/:id/order (Phase 1c — for now still stubs to a
- * Phase 1c toast). Today we don't have that route mounted; once it
- * lands this CTA just becomes a Link.
+ * "Start request" collects the brief and creates an order through
+ * StartRequestDialog, then opens the resulting order.
  */
 import { useState } from "react";
 import { IconLoader2, IconMessage, IconUserPlus } from "@tabler/icons-react";
@@ -47,7 +45,8 @@ export function ServiceDetailDialog({ serviceId, onOpenChange }: ServiceDetailDi
   const t = useTranslations("creatorService");
   const tc = useTranslations("common");
   const query = useCreatorService(serviceId);
-  const service = query.error || query.isFetching ? undefined : query.data;
+  const draftService = query.error ? undefined : query.data;
+  const service = query.isFetching ? undefined : draftService;
   const open = !!serviceId;
   const [contactOpen, setContactOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
@@ -118,14 +117,16 @@ export function ServiceDetailDialog({ serviceId, onOpenChange }: ServiceDetailDi
       {/* Stacked above ServiceDetailDialog — Radix handles z-index
           + focus trapping correctly for nested dialogs. */}
       <ContactCreatorDialog
-        open={contactOpen && Boolean(service)}
+        open={contactOpen && Boolean(draftService)}
         onOpenChange={setContactOpen}
-        service={service ?? null}
+        service={draftService ?? null}
+        revalidating={query.isFetching}
       />
       <StartRequestDialog
-        open={requestOpen && Boolean(service)}
+        open={requestOpen && Boolean(draftService)}
         onOpenChange={setRequestOpen}
-        service={service ?? null}
+        service={draftService ?? null}
+        revalidating={query.isFetching}
       />
     </>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { DocumentSyncError } from "@/components/document-sync-error";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import type * as Y from "yjs";
@@ -56,7 +57,12 @@ export function BriefEditor() {
     retry,
     retrying,
   } = useModeDocument(projectId, "brief");
-  const { doc, status: connStatus } = useCollabDoc(documentId, collabUser, TEXT_DOC_ROOT_SCHEMA);
+  const {
+    doc,
+    status: connStatus,
+    error: syncError,
+    retry: retrySync,
+  } = useCollabDoc(documentId, collabUser, TEXT_DOC_ROOT_SCHEMA);
 
   const [value, setValue] = useState("");
   const ytextRef = useRef<Y.Text | null>(null);
@@ -121,6 +127,12 @@ export function BriefEditor() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
+      <DocumentSyncError
+        error={syncError}
+        retry={retrySync}
+        retrying={connStatus === "connecting"}
+        className="mx-6 mt-3"
+      />
       {error ? (
         <div className="flex items-center justify-between gap-4 px-6 py-3 text-sm">
           <p role="alert" className="text-muted-foreground">
@@ -146,7 +158,7 @@ export function BriefEditor() {
           className="h-full w-full resize-none bg-transparent text-[15px] leading-relaxed text-white/90 outline-none placeholder:text-muted-foreground"
         />
       </div>
-      {doc && connStatus !== "synced" && (
+      {doc && !syncError && connStatus !== "synced" && (
         <span className="pointer-events-none absolute right-6 bottom-4 text-xs text-muted-foreground">
           {connStatus === "offline" ? t("offlineSaved") : t("connecting")}
         </span>

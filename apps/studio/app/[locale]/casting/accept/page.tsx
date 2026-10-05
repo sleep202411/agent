@@ -63,6 +63,7 @@ function CastingAcceptInner() {
 function CastingAcceptContent({ token }: { token: string }) {
   const t = useTranslations("characters");
   const tc = useTranslations("common");
+  const ti = useTranslations("invite");
   const router = useRouter();
   const { user, loading: authLoading, signIn } = useAuth();
   const { workspaces, loading: wsLoading } = useWorkspace();
@@ -207,13 +208,26 @@ function CastingAcceptContent({ token }: { token: string }) {
           </Shell>
         );
       }
+      const missing = [404, 410].includes(previewQ.error.status);
       return (
         <Shell
           icon={<IconAlertTriangle className="size-6" />}
-          title={t("castingInvalidTitle")}
-          body={t("castingInvalidBody")}
+          title={ti("unavailableTitle")}
+          body={previewQ.error.message || ti(missing ? "invalidBody" : "previewFailed")}
         >
-          <GoHome />
+          <div className="flex flex-col gap-2">
+            {!missing && (
+              <Button
+                className="w-full"
+                disabled={previewQ.isFetching}
+                onClick={() => void previewQ.refetch()}
+              >
+                {previewQ.isFetching ? <IconLoader2 className="size-4 animate-spin" /> : null}
+                {tc("retry")}
+              </Button>
+            )}
+            <GoHome />
+          </div>
         </Shell>
       );
     }

@@ -19,6 +19,16 @@ vi.mock("./document-provider", () => ({
     constructor() {
       mocks.instances.push(this);
     }
+    retry = vi.fn();
+    canRetry() {
+      return true;
+    }
+    getError() {
+      return null;
+    }
+    onError() {
+      return () => {};
+    }
     getStatus() {
       return "connecting";
     }

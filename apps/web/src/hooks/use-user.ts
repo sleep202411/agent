@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getUserInfo,
@@ -118,10 +118,33 @@ export function useUploadAvatar() {
  */
 export function useUploadBanner() {
   const queryClient = useQueryClient();
+  const locale = useLocale();
+  const { user } = useCurrentUser();
+  const account = useRef<{ id: string | null; active: boolean } | null>(null);
+  useLayoutEffect(() => {
+    const scope = { id: user?.id ?? null, active: true };
+    account.current = scope;
+    return () => {
+      scope.active = false;
+    };
+  }, [user?.id, locale]);
   return useMutation({
     mutationFn: async (file: File) => {
+      const origin = account.current;
+      const assertAccount = () => {
+        const current = queryClient.getQueryData<UserInfoResolved | null>(userKeys.infoOf(locale));
+        if (!origin?.active || !origin.id || String(current?.id ?? "") !== origin.id) {
+          throw new DOMException(
+            "Profile upload cancelled because the account is no longer active.",
+            "AbortError"
+          );
+        }
+      };
+      assertAccount();
       const path = await uploadBanner(file);
+      assertAccount();
       await updateUserInfo({ banner: path });
+      assertAccount();
       return path;
     },
     onSuccess: () => {

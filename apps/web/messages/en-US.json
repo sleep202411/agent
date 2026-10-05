@@ -4610,8 +4610,8 @@
     "publicBriefTooLong": "Shorten the public description to 10,000 characters; your full task brief is unchanged.",
     "addMemberLookupBy": "Look up by",
     "addMemberUserIdLabel": "User ID",
-    "addMemberUserIdHint": "Enter the teammate’s numeric User ID.",
-    "addMemberUserIdInvalid": "Enter a User ID containing 1–18 digits.",
+    "addMemberUserIdHint": "Enter the User ID shown on their profile.",
+    "addMemberUserIdInvalid": "Enter a valid User ID from their profile.",
     "addMemberLookupRetry": "Retry lookup"
   },
   "crewAssets": {
@@ -11566,7 +11566,15 @@
       "triaged": "Under review",
       "actioned": "Action taken",
       "dismissed": "Closed without action"
-    }
+    },
+    "blocked": "Blocked content",
+    "blockedHint": "Manage content you have hidden. Unblocking lets it appear in your recommendations again.",
+    "blockedEmpty": "You haven’t blocked any content.",
+    "blockedIp": "Unavailable IP",
+    "blockedCreator": "Blocked creator",
+    "unblock": "Unblock",
+    "unblocking": "Unblocking…",
+    "blockedCrew": "Blocked Crew"
   },
   "communityVideo": {
     "title": "Submit video",

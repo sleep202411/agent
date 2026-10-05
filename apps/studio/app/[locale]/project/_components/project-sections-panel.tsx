@@ -269,7 +269,13 @@ export function ProjectSectionsPanel() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>{tc("cancel")}</AlertDialogCancel>
-            <AlertDialogAction disabled={busy} onClick={() => void confirmArchive()}>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmArchive();
+              }}
+            >
               {t("archive")}
             </AlertDialogAction>
           </AlertDialogFooter>

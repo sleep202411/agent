@@ -4,6 +4,8 @@ import {
   type PromptMentionItem,
 } from "@/lib/prompt-document";
 import type {
+  ProjectSkillVersionSummary,
+  ProjectSkillOwnerKind,
   ProjectSkillInstallation,
   ProjectSkillInstallationsResponse,
   ProjectSkillScope,
@@ -42,14 +44,37 @@ export function generationSkillScope(
   return undefined;
 }
 
+export function projectSkillVersionSupports(
+  version: ProjectSkillVersionSummary | null | undefined,
+  scope: ProjectGenerationSkillScope | undefined,
+  ownerKind: ProjectSkillOwnerKind,
+  workbenchMode?: string
+): boolean {
+  return Boolean(
+    version &&
+    scope &&
+    version.capabilities.includes(scope) &&
+    (version.projectKinds.length === 0 || version.projectKinds.includes(ownerKind)) &&
+    (version.workbenchModes.length === 0 ||
+      Boolean(workbenchMode && version.workbenchModes.includes(workbenchMode)))
+  );
+}
+
 export function compatibleProjectSkillInstallations(
   projectSkills: ProjectSkillInstallationsResponse | undefined,
-  scope: ProjectGenerationSkillScope | undefined
+  scope: ProjectGenerationSkillScope | undefined,
+  workbenchMode?: string
 ): ProjectSkillInstallation[] {
-  if (!scope) return [];
-  return (projectSkills?.installations ?? []).filter(
+  if (!projectSkills) return [];
+  return projectSkills.installations.filter(
     (installation) =>
-      installation.status === "active" && installation.version.capabilities.includes(scope)
+      installation.status === "active" &&
+      projectSkillVersionSupports(
+        installation.version,
+        scope,
+        projectSkills.ownerKind,
+        workbenchMode
+      )
   );
 }
 
@@ -92,7 +117,11 @@ export function resolveEffectiveProjectSkills(input: {
   promptLength: number;
 }): EffectiveProjectSkill[] {
   if (!input.scope) return [];
-  const compatible = compatibleProjectSkillInstallations(input.projectSkills, input.scope);
+  const compatible = compatibleProjectSkillInstallations(
+    input.projectSkills,
+    input.scope,
+    input.workbenchMode
+  );
   const byId = new Map(compatible.map((installation) => [installation.id, installation]));
   const included = new Set(
     (input.selection?.includeInstallationIds ?? []).filter((id) => byId.has(id))

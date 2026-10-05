@@ -190,6 +190,9 @@ export function useDiscoveryAssistant(input: {
       setError(copy.storage);
       return;
     }
+    // A successful explicit reset also recovers failed storage hydration.
+    // send() still persists the exact new request before making an API call.
+    setReady(true);
     setRequest(null);
     setReceipt(null);
     setHistory([]);

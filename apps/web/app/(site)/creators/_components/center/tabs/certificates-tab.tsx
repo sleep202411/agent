@@ -16,6 +16,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
@@ -30,12 +31,33 @@ interface CertificatesTabProps {
 export function CertificatesTab({ creator, isOwner }: CertificatesTabProps) {
   const t = useTranslations("creatorCenter");
   const locale = useLocale() as Locale;
-  const { data: certificates = [], isLoading } = useCreatorCertificates(creator.id);
+  const common = useTranslations("common");
+  const {
+    data: certificates = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useCreatorCertificates(creator.id);
   const featured = certificates[0];
   const [previewCertificate, setPreviewCertificate] = useState<CreatorCertificate | null>(null);
 
   if (isLoading) {
     return <CertificatesSkeleton />;
+  }
+
+  if (isError) {
+    return (
+      <div role="alert" className="space-y-3 rounded-2xl bg-card/40 px-6 py-8">
+        <p className="break-words text-sm text-muted-foreground">
+          {error?.message || common("loadFailed")}
+        </p>
+        <Button size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()}>
+          {isFetching ? common("loading") : common("retry")}
+        </Button>
+      </div>
+    );
   }
 
   if (!featured) {

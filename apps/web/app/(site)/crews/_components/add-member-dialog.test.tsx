@@ -52,6 +52,7 @@ vi.mock("@/components/ui/dialog", () => {
   };
 });
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const originalScroll = HTMLElement.prototype.scrollIntoView;
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
@@ -64,6 +65,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  HTMLElement.prototype.scrollIntoView = originalScroll;
   vi.useRealTimers();
 });
 async function render(open = true, crew = "crew") {
@@ -211,5 +213,28 @@ it("requires new signer details after changing the invited account", async () =>
         signerEmail: "second@example.com",
       },
     })
+  );
+});
+
+it("switches the label and hint to User ID before submitting an ID invitation", async () => {
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  state.invite.mockResolvedValue({});
+  await render();
+  expect(container.querySelector("input")?.placeholder).toBe("addMemberContactPlaceholder");
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="addMemberLookupBy"]')!;
+  await act(async () =>
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+  );
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((node) =>
+    node.textContent?.includes("addMemberUserIdLabel")
+  )!;
+  expect(option).toBeDefined();
+  await act(async () => option.click());
+  expect(container.querySelector("input")?.placeholder).toBe("addMemberUserIdHint");
+  expect(container.querySelector("label")?.textContent).toContain("addMemberUserIdLabel");
+  await type("273848");
+  await submit();
+  expect(state.invite).toHaveBeenCalledWith(
+    expect.objectContaining({ account: "273848", lookupBy: "userId" })
   );
 });

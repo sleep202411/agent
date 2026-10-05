@@ -94,11 +94,6 @@ function build() {
     delete: jest.fn().mockResolvedValue(assetNode()),
   };
   const prisma = {
-    $queryRaw: jest
-      .fn()
-      .mockResolvedValue([
-        { total: 100000000000n, used: 0n, reserved: 0n, unknown: 0n },
-      ]),
     crew: {
       findFirst: jest.fn().mockResolvedValue({ studioWorkspaceId: 'ws-1' }),
     },
@@ -159,6 +154,15 @@ function build() {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest
+      .fn()
+      .mockImplementation((query: Prisma.Sql) =>
+        Promise.resolve(
+          query.sql.includes('storage_limit_bytes')
+            ? [{ total: 100000000000n, used: 0n, reserved: 0n, unknown: 0n }]
+            : [],
+        ),
+      ),
     $transaction: jest.fn(),
   };
   prisma.$transaction.mockImplementation(
@@ -531,7 +535,7 @@ describe('CrewAssetsService', () => {
 
     await t.service.discardPendingUpload(CREW_ID, USER_ID, MEDIA_ID);
 
-    expect(t.prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(t.prisma.$executeRaw).toHaveBeenCalledTimes(4);
     expect(t.mediaStorage.deleteObject).toHaveBeenCalledWith(
       expect.objectContaining({
         objectKey: 'media/global/crew-asset-file/user-1/pending.png',
@@ -584,7 +588,7 @@ describe('CrewAssetsService', () => {
       t.service.reclaimExpiredPendingUpload(MEDIA_ID, createdBefore),
     ).resolves.toBe(false);
 
-    expect(t.prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(t.prisma.$executeRaw).toHaveBeenCalledTimes(2);
     const [lookup] = t.prisma.mediaAsset.findFirst.mock.calls[0] as unknown as [
       {
         where: {

@@ -16,6 +16,7 @@
  */
 
 import { useMutation } from "@tanstack/react-query";
+import { extractFriendlyErrorMessage } from "@/src/lib/error-message";
 
 /** Subset of IP fields the analyzer is willing to propose. Every field
  *  is optional — the user might upload a brief that only mentions some
@@ -71,7 +72,10 @@ async function analyzeBrief(input: AnalyzeBriefInput): Promise<SparkDraft> {
       throw new Error("Network connection failed");
     }
     controller.signal.throwIfAborted();
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const message = extractFriendlyErrorMessage(await res.text());
+      throw new Error(`HTTP ${res.status}${message ? ` — ${message}` : ""}`);
+    }
     const body = (await res.json()) as {
       code?: number;
       success?: boolean;

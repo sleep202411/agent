@@ -1,3 +1,4 @@
+import { encodeUserId } from '@repo/shared/user-id-codec';
 import { UsersController } from './users.controller';
 import { InvitesController } from '../sharing/invites.controller';
 const viewer = { userId: 'viewer' } as never;
@@ -96,4 +97,40 @@ it('routes a user ID with crew context without using contact lookup', async () =
   await expect(
     controller.byId(viewer, 'cookie', '273848', ['crew', 'other'] as never),
   ).rejects.toMatchObject({ status: 400 });
+});
+
+it.each(['18424', '1234567', '90000001'])(
+  'decodes displayed IDs before raw Java lookup: %s',
+  async (rawId) => {
+    const { controller, service } = fixture();
+    await controller.byId(
+      viewer,
+      'cookie',
+      encodeUserId(rawId),
+      'crew',
+      'public',
+    );
+    expect(service.lookupByUserId).toHaveBeenCalledWith(
+      rawId,
+      'cookie',
+      'crew',
+    );
+  },
+);
+it.each(['bad', ['public', 'raw'], { type: 'public' }])(
+  'rejects invalid ID formats: %j',
+  async (format) => {
+    const { controller, service } = fixture();
+    await expect(
+      controller.byId(viewer, '', '273848', undefined, format as never),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(service.lookupByUserId).not.toHaveBeenCalled();
+  },
+);
+it('rejects invalid encoded IDs before calling Java', async () => {
+  const { controller, service } = fixture();
+  await expect(
+    controller.byId(viewer, '', 'u_invalid', undefined, 'public'),
+  ).rejects.toMatchObject({ status: 400 });
+  expect(service.lookupByUserId).not.toHaveBeenCalled();
 });

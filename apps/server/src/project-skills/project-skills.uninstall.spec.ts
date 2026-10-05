@@ -24,6 +24,7 @@ function setup() {
     },
   };
   const db = {
+    $executeRaw: jest.fn().mockResolvedValue(1),
     projectSkillState: {
       upsert: jest.fn().mockResolvedValue({}),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),

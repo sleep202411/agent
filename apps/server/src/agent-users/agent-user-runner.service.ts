@@ -148,27 +148,29 @@ export class AgentUserRunnerService
             });
             continue;
           }
-          const budget = await this.budgetGate(agent);
-          if (!budget.ok) {
-            results.push({
-              agentUserId: agent.id,
-              status: 'skipped',
-              reason: budget.reason,
-            });
-            continue;
-          }
-          if (startedAgents >= this.config.maxAgentsPerTick) break;
-          const claimed = await this.claimAgent(agent.id);
-          if (!claimed) {
-            results.push({
-              agentUserId: agent.id,
-              status: 'skipped',
-              reason: 'already_claimed',
-            });
-            continue;
-          }
-          startedAgents += 1;
         }
+        // Manual execution may bypass the calendar, never quotas or the
+        // cross-process claim used by scheduled execution.
+        const budget = await this.budgetGate(agent);
+        if (!budget.ok) {
+          results.push({
+            agentUserId: agent.id,
+            status: 'skipped',
+            reason: budget.reason,
+          });
+          continue;
+        }
+        if (startedAgents >= this.config.maxAgentsPerTick) break;
+        const claimed = await this.claimAgent(agent.id);
+        if (!claimed) {
+          results.push({
+            agentUserId: agent.id,
+            status: 'skipped',
+            reason: 'already_claimed',
+          });
+          continue;
+        }
+        startedAgents += 1;
 
         const result = await this.runOneAgent(agent.id, input.trigger);
         results.push(result);
@@ -219,10 +221,13 @@ export class AgentUserRunnerService
     return result.count === 1;
   }
 
-  private async budgetGate(agent: {
-    id: string;
-    schedule: unknown;
-  }): Promise<{ ok: true } | { ok: false; reason: string }> {
+  private async budgetGate(
+    agent: {
+      id: string;
+      schedule: unknown;
+    },
+    requiredActions = 1,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
     const schedule = asRecord(agent.schedule);
     const dailyBudget = positiveInt(schedule.dailyActionBudget, 30);
     const hourlyBudget = positiveInt(schedule.hourlyActionBudget, 6);
@@ -242,8 +247,9 @@ export class AgentUserRunnerService
         },
       }),
     ]);
-    if (dailyCount >= dailyBudget) return { ok: false, reason: 'daily_budget' };
-    if (hourlyCount >= hourlyBudget)
+    if (dailyCount + requiredActions > dailyBudget)
+      return { ok: false, reason: 'daily_budget' };
+    if (hourlyCount + requiredActions > hourlyBudget)
       return { ok: false, reason: 'hourly_budget' };
     return { ok: true };
   }
@@ -481,7 +487,29 @@ export class AgentUserRunnerService
         skippedCount += 1;
         continue;
       }
-      const allowed = actionAllowed(action, capabilities);
+      let allowed = actionAllowed(action, capabilities);
+      if (allowed.ok && action.action !== 'skip') {
+        const current = await this.prisma.agentUser.findUnique({
+          where: { id: input.agentUserId },
+          select: { id: true, status: true, schedule: true, policy: true },
+        });
+        if (!current || current.status !== 'active') {
+          allowed = { ok: false, reason: 'not_active' };
+        } else {
+          // A plan is not permission to use capabilities revoked while it ran.
+          allowed = actionAllowed(
+            action,
+            asRecord(asRecord(current.policy).capabilities),
+          );
+          if (allowed.ok) {
+            // A like/collection also records a view. Admit both or neither.
+            allowed = await this.budgetGate(
+              current,
+              action.action === 'view' ? 1 : 2,
+            );
+          }
+        }
+      }
       if (!allowed.ok) {
         const skipped = await this.agentUsers.createAction(input.agentUserId, {
           runId: input.runId,
@@ -699,7 +727,11 @@ function actionAllowed(
   action: RunnerAction,
   capabilities: JsonRecord,
 ): { ok: true } | { ok: false; reason: string } {
-  if (action.action === 'view' || action.action === 'skip') return { ok: true };
+  if (action.action === 'skip') return { ok: true };
+  // Every engagement action records a view before its other side effects.
+  if (capabilities.viewIp === false) {
+    return { ok: false, reason: 'view_disabled' };
+  }
   if (action.action === 'like' && capabilities.likeIp === false) {
     return { ok: false, reason: 'like_disabled' };
   }

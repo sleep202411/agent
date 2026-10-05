@@ -2,23 +2,23 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { useCredits, useRefreshCredits, userKeys } from "./use-user";
+import { useCredits, useRefreshCredits, useUploadBanner, userKeys } from "./use-user";
 
 const TEST_LOCALE = "en-US";
-const api = vi.hoisted(() => ({ credits: vi.fn() }));
+const api = vi.hoisted(() => ({ credits: vi.fn(), banner: vi.fn(), update: vi.fn() }));
 vi.mock("@/src/services/user", () => ({
   getUserInfo: vi.fn(),
   getCredits: api.credits,
-  updateUserInfo: vi.fn(),
+  updateUserInfo: api.update,
   uploadAvatar: vi.fn(),
-  uploadBanner: vi.fn(),
+  uploadBanner: api.banner,
   getRecommendationCode: vi.fn(),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-let root: Root;
+let root: Root | undefined;
 let client: QueryClient;
 async function settle() {
   await act(async () => {
@@ -38,13 +38,14 @@ async function mount(id: string | null = "alice") {
   let current!: {
     credits: ReturnType<typeof useCredits>;
     refresh: ReturnType<typeof useRefreshCredits>;
+    banner: ReturnType<typeof useUploadBanner>;
   };
   function Probe() {
-    current = { credits: useCredits(), refresh: useRefreshCredits() };
+    current = { credits: useCredits(), refresh: useRefreshCredits(), banner: useUploadBanner() };
     return null;
   }
   await act(async () =>
-    root.render(
+    root!.render(
       <QueryClientProvider client={client}>
         <Probe />
       </QueryClientProvider>
@@ -101,3 +102,67 @@ it("keeps a delayed refresh helper tied to its original account", async () => {
   await account("alice");
   expect(api.credits).toHaveBeenCalledTimes(1);
 });
+
+it("does not apply a delayed cover upload to a different account", async () => {
+  let finish!: (path: string) => void;
+  api.banner.mockImplementationOnce(
+    () =>
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      })
+  );
+  const current = await mount();
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = current()
+      .banner.mutateAsync(new File(["cover"], "cover.png"))
+      .catch((error: unknown) => error);
+  });
+  await account("bob");
+  await act(async () => {
+    finish("alice-cover.png");
+    await pending;
+  });
+  expect(api.update).not.toHaveBeenCalled();
+});
+it("persists a completed cover upload for the same active account", async () => {
+  api.banner.mockResolvedValue("alice-cover.png");
+  api.update.mockResolvedValue(undefined);
+  const current = await mount();
+  await act(async () => {
+    await current().banner.mutateAsync(new File(["cover"], "cover.png"));
+  });
+  expect(api.update).toHaveBeenCalledWith({ banner: "alice-cover.png" });
+});
+
+it.each(["unmount", "return to original account"])(
+  "retires pending cover work after %s",
+  async (transition) => {
+    let finish!: (path: string) => void;
+    api.banner.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const current = await mount();
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = current()
+        .banner.mutateAsync(new File(["cover"], "cover.png"))
+        .catch((error: unknown) => error);
+    });
+    if (transition === "unmount") {
+      act(() => root!.unmount());
+      root = undefined;
+    } else {
+      await account(null);
+      await account("alice");
+    }
+    await act(async () => {
+      finish("retired-cover.png");
+      await pending;
+    });
+    expect(api.update).not.toHaveBeenCalled();
+  }
+);

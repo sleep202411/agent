@@ -66,3 +66,20 @@ it("retains supported success envelopes and releases timeout/listener resources"
   expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("preserves the server explanation when upload analysis fails with HTTP 400", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ message: "Could not read any text from the uploaded file." }),
+          { status: 400 }
+        )
+      )
+  );
+  await expect(useSparkAnalyze().mutateAsync(file)).rejects.toThrow(
+    "Could not read any text from the uploaded file."
+  );
+});

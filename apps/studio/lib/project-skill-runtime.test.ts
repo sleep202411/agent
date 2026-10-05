@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  compatibleProjectSkillInstallations,
+  projectSkillVersionSupports,
   composePromptWithProjectSkills,
   extractProjectSkillSelection,
   projectSkillMention,
@@ -112,4 +114,42 @@ describe("project Skill prompt runtime", () => {
       anchors: { [OPTIONAL_ID]: 2 },
     });
   });
+});
+
+it("filters installed Skills by project kind and workbench restrictions", () => {
+  const restricted = {
+    ...optionalSkill,
+    version: {
+      ...optionalSkill.version,
+      projectKinds: ["story" as const],
+      workbenchModes: ["storyboard"],
+    },
+  };
+  const collection = { ...projectSkills, installations: [restricted] };
+  expect(compatibleProjectSkillInstallations(collection, "image_generation", "storyboard")).toEqual(
+    []
+  );
+  const story = { ...collection, ownerKind: "story" as const };
+  expect(compatibleProjectSkillInstallations(story, "image_generation")).toEqual([]);
+  expect(compatibleProjectSkillInstallations(story, "image_generation", "canvas")).toEqual([]);
+  expect(compatibleProjectSkillInstallations(story, "image_generation", "storyboard")).toEqual([
+    restricted,
+  ]);
+  expect(
+    resolveEffectiveProjectSkills({
+      projectSkills: story,
+      scope: "image_generation",
+      workbenchMode: "storyboard",
+      sourceSurface: "story-studio-workbench",
+      selection: { includeInstallationIds: [OPTIONAL_ID] },
+      labelFor: (item) => item.name!,
+      promptLength: 0,
+    })
+  ).toHaveLength(1);
+});
+it("uses unrestricted versions only for supported generation modalities", () => {
+  const version = { ...optionalSkill.version, projectKinds: [] };
+  expect(projectSkillVersionSupports(version, "image_generation", "platform")).toBe(true);
+  expect(projectSkillVersionSupports(version, "video_generation", "platform")).toBe(false);
+  expect(projectSkillVersionSupports(null, "image_generation", "platform")).toBe(false);
 });

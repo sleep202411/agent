@@ -39,6 +39,37 @@ import type {
 } from './dto';
 import { availableCrewAssetName } from './asset-name';
 import { lockCrewAssetFolderNames, lockCrewAssetUploads } from './upload-lock';
+import { savedProjectMediaReferences } from './saved-project-media-references';
+import { lockMediaAssetRetirement } from '../../media/media-asset-lifecycle-lock';
+
+// Removing a library entry must not retire media used by another product.
+// Keep historical references too: saved versions must remain recoverable.
+const UNREFERENCED_CREW_MEDIA = {
+  aiJobOutputs: { none: {} },
+  certificateImages: { none: {} },
+  ipCovers: { none: {} },
+  ipLocalizationCovers: { none: {} },
+  ipTrailers: { none: {} },
+  ipEpisodeCovers: { none: {} },
+  ipEpisodeMedia: { none: {} },
+  ipEpisodeTrailers: { none: {} },
+  ipLibraryAssets: { none: {} },
+  ipDiscoveryImages: { none: {} },
+  ipDiscoveryMobileImages: { none: {} },
+  ipDiscoveryTrailerMedia: { none: {} },
+  ipReportEvidence: { none: {} },
+  characterCovers: { none: {} },
+  characterMedia: { none: {} },
+  storyProjectCovers: { none: {} },
+  storyReferenceVersions: { none: {} },
+  storyBuildAssets: { none: {} },
+  storyCandidateAssets: { none: {} },
+  storyAssetSpecMediaVersions: { none: {} },
+  storyStoryboardMediaVersions: { none: {} },
+  linkedCrewAssetNodes: { none: {} },
+  contentReviewRecords: { none: {} },
+  usages: { none: { deletedAt: null } },
+} satisfies Prisma.MediaAssetWhereInput;
 
 const NODE_INCLUDE = {
   mediaAsset: {
@@ -412,8 +443,11 @@ export class CrewAssetsService {
               '/crew-asset-file/',
               '/crew-asset-final/',
             );
+            // Registered final objects belong to the media lifecycle, even
+            // after retirement. Its worker checks retained references and
+            // retries physical deletion; reservations must not bypass it.
             const asset = await tx.mediaAsset.findFirst({
-              where: { objectKey: finalKey, deletedAt: null },
+              where: { objectKey: finalKey },
               select: { id: true },
             });
             for (const key of asset
@@ -918,10 +952,12 @@ export class CrewAssetsService {
       createdBefore: Date | null;
     },
   ): Promise<boolean> {
-    return this.prisma.$transaction(async (tx) => {
+    const retired = await this.prisma.$transaction(async (tx) => {
       await lockCrewAssetUploads(tx, [mediaAssetId]);
+      await lockMediaAssetRetirement(tx, [mediaAssetId]);
       const media = await tx.mediaAsset.findFirst({
         where: {
+          ...UNREFERENCED_CREW_MEDIA,
           id: mediaAssetId,
           status: MediaAssetStatus.ready,
           deletedAt: null,
@@ -931,9 +967,9 @@ export class CrewAssetsService {
         },
         select: PENDING_UPLOAD_SELECT,
       });
-      if (!media) return false;
+      if (!media) return null;
       const metadata = this.crewUploadMetadata(media.metadata);
-      if (!metadata) return false;
+      if (!metadata) return null;
       if (
         scope.crewId &&
         (media.createdByUserId !== scope.userId ||
@@ -949,9 +985,10 @@ export class CrewAssetsService {
         where: { mediaAssetId },
         select: { id: true },
       });
-      if (claimed) return false;
+      if (claimed) return null;
 
-      await this.deletePhysicalObjects([media]);
+      if ((await savedProjectMediaReferences(tx, [media.id])).has(media.id))
+        return null;
       const deletedAt = new Date();
       await tx.mediaObjectPlacement.updateMany({
         where: { assetId: mediaAssetId, deletedAt: null },
@@ -978,8 +1015,25 @@ export class CrewAssetsService {
           deletedAt,
         },
       });
-      return true;
+      await tx.$executeRaw`
+        UPDATE media_assets
+        SET metadata = jsonb_set(metadata, '{crewPhysicalDeletionPending}', 'true'::jsonb)
+        WHERE id = ${media.id}::uuid
+      `;
+      return media;
     });
+    if (!retired) return false;
+    // Retire atomically before touching object storage. Rollbacks retain bytes;
+    // crashes and storage failures leave a marker for the cleanup worker.
+    try {
+      await this.deletePhysicalObjects([retired]);
+      await this.clearPhysicalDeletionPending(retired.id);
+    } catch (error) {
+      this.logger.warn(
+        `Crew pending-upload cleanup deferred asset=${retired.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return true;
   }
 
   async update(
@@ -1231,6 +1285,7 @@ export class CrewAssetsService {
             .filter((id): id is string => Boolean(id)),
         ),
       );
+      await lockMediaAssetRetirement(tx, candidateMediaIds);
       const referencedElsewhere =
         candidateMediaIds.length === 0
           ? []
@@ -1253,7 +1308,11 @@ export class CrewAssetsService {
         deletableMediaIds.length === 0
           ? []
           : await tx.mediaAsset.findMany({
-              where: { id: { in: deletableMediaIds }, deletedAt: null },
+              where: {
+                ...UNREFERENCED_CREW_MEDIA,
+                id: { in: deletableMediaIds },
+                deletedAt: null,
+              },
               select: {
                 id: true,
                 storageProvider: true,
@@ -1277,13 +1336,35 @@ export class CrewAssetsService {
                 },
               },
             });
-      const ownedAssets = mediaAssets.filter((asset) =>
-        this.isCrewOwnedUpload(asset.metadata, crewId),
+      const documentReferences = await savedProjectMediaReferences(
+        tx,
+        mediaAssets.map((asset) => asset.id),
+      );
+      const ownedAssets = mediaAssets.filter(
+        (asset) =>
+          this.isCrewOwnedUpload(asset.metadata, crewId) &&
+          !documentReferences.has(asset.id),
       );
 
       const deletedAt = new Date();
       const ownedMediaIds = ownedAssets.map((asset) => asset.id);
-      await tx.crewAssetNode.delete({ where: { id: node.id } });
+      try {
+        await tx.crewAssetNode.delete({ where: { id: node.id } });
+      } catch (error) {
+        // Let the foreign key enforce retention atomically, including a
+        // reference created concurrently or a linked descendant of a folder.
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2003'
+        ) {
+          throw new ConflictException({
+            code: 'CREW_ASSET_IN_USE',
+            message:
+              'This file or folder contains assets still required by linked Crew records. Restore it from Trash to keep working with those assets.',
+          });
+        }
+        throw error;
+      }
       if (ownedMediaIds.length === 0) return [];
       await tx.mediaObjectPlacement.updateMany({
         where: { assetId: { in: ownedMediaIds }, deletedAt: null },
@@ -1340,6 +1421,7 @@ export class CrewAssetsService {
   async reclaimDeletedCrewUpload(mediaAssetId: string): Promise<void> {
     const media = await this.prisma.mediaAsset.findFirst({
       where: {
+        ...UNREFERENCED_CREW_MEDIA,
         id: mediaAssetId,
         status: MediaAssetStatus.deleted,
         deletedAt: { not: null },
@@ -1353,6 +1435,10 @@ export class CrewAssetsService {
       },
     });
     if (!media || !this.crewUploadMetadata(media.metadata)) return;
+    if (
+      (await savedProjectMediaReferences(this.prisma, [media.id])).has(media.id)
+    )
+      return;
     await this.deletePhysicalObjects([media]);
     await this.clearPhysicalDeletionPending(media.id);
   }

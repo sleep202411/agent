@@ -1,4 +1,8 @@
 import {
+  referralCashTotalsQuery,
+  type ReferralCashTotalRow,
+} from './referral-cash-totals';
+import {
   BadRequestException,
   ConflictException,
   Injectable,
@@ -178,11 +182,9 @@ export class ReferralsService {
         take: 50,
         include: { items: { orderBy: { rank: 'asc' } } },
       }),
-      this.prisma.referralReward.groupBy({
-        by: ['status'],
-        where: { userId, payoutType: 'cash' },
-        _sum: { amountMinor: true },
-      }),
+      this.prisma.$queryRaw<ReferralCashTotalRow[]>(
+        referralCashTotalsQuery(userId),
+      ),
     ]);
     const rewards = [...accruedRewards, ...recentRewards].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
@@ -222,7 +224,29 @@ export class ReferralsService {
         ? `${this.inviteBase}/register?recommendationCode=${encodeURIComponent(code)}`
         : null,
       currency: defaultCurrency(),
-      totals: computeTotals(cashByStatus, referralCount),
+      totals: computeTotals(
+        cashByStatus
+          .filter((row) => row.currency === defaultCurrency())
+          .map((row) => ({
+            status: row.status,
+            _sum: { amountMinor: BigInt(row.amount) },
+          })),
+        referralCount,
+      ),
+      cashTotals: [...new Set(cashByStatus.map((row) => row.currency))].map(
+        (currency) => ({
+          currency,
+          ...computeTotals(
+            cashByStatus
+              .filter((row) => row.currency === currency)
+              .map((row) => ({
+                status: row.status,
+                _sum: { amountMinor: BigInt(row.amount) },
+              })),
+            referralCount,
+          ),
+        }),
+      ),
       inviteeBenefit: {
         title: program.inviteeBenefitTitle,
         detail: program.inviteeBenefitDetail,
@@ -1736,7 +1760,12 @@ function mapReward(r: {
   status: string;
   createdAt: Date;
   availableAt: Date | null;
-  items?: { payoutType: string; amountMinor: bigint; days: number }[];
+  items?: {
+    payoutType: string;
+    amountMinor: bigint;
+    days: number;
+    currency?: string | null;
+  }[];
 }): ReferralRewardDTO {
   return {
     id: r.id,
@@ -1758,12 +1787,15 @@ function mapReward(r: {
 
 /** A bundle item row → its wire DTO (additive `items[]`). */
 function mapBundleItem(it: {
+  currency?: string | null;
   payoutType: string;
   amountMinor: bigint;
   days: number;
 }): ReferralRewardItemDTO {
   return {
     kind: it.payoutType as ReferralRewardItemDTO['kind'],
+    currency:
+      it.payoutType === 'cash' ? (it.currency ?? defaultCurrency()) : null,
     amountMinor: it.amountMinor.toString(),
     days: it.days,
   };

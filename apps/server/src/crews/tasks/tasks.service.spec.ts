@@ -182,7 +182,24 @@ function build() {
     crewAssetNode: { findFirst: jest.fn().mockResolvedValue({ id: TASK_ID }) },
     crewTaskCommitment: { findFirst: jest.fn().mockResolvedValue(null) },
     crewParticipationRecord: { findFirst: jest.fn().mockResolvedValue(null) },
-    $queryRaw: jest.fn().mockResolvedValue([]),
+    $queryRaw: jest.fn().mockImplementation((query: Prisma.Sql) =>
+      Promise.resolve(
+        query.sql?.includes('SELECT d.crdt_state')
+          ? [
+              {
+                crdt_state: CANVAS_STATES.productionState,
+                content_snapshot: {
+                  nodes: { 'main-node': { id: 'main-node' } },
+                },
+                snapshot_sequence: 0,
+                current_sequence: 0,
+                updates: [],
+                unsupported_sequence: null,
+              },
+            ]
+          : [],
+      ),
+    ),
     $executeRaw: jest.fn().mockResolvedValue(1),
     crewMember: {
       findMany: jest

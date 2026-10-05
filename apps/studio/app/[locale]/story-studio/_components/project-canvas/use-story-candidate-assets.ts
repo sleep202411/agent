@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useAuth } from "@/app/_components/auth-provider";
 import {
   addStoryCandidateAsset,
   getStoryCandidateAssets,
@@ -12,8 +13,8 @@ import {
   type StoryCandidateAsset,
 } from "@/lib/story-projects-api";
 
-export function storyCandidateAssetsQueryKey(projectId: string) {
-  return ["story-studio", "candidate-assets", projectId] as const;
+export function storyCandidateAssetsQueryKey(projectId: string, userId: string | null) {
+  return ["story-studio", "candidate-assets", projectId, userId] as const;
 }
 
 export interface StoryCandidateAssetsController {
@@ -40,15 +41,32 @@ export function useStoryCandidateAssets({
 }): StoryCandidateAssetsController {
   const t = useTranslations("storyStudio.canvas.creativeWorkbench.candidates");
   const queryClient = useQueryClient();
-  const queryKey = useMemo(() => storyCandidateAssetsQueryKey(projectId), [projectId]);
+  const { user, isCurrentAccount } = useAuth();
+  const userId = user ? String(user.id) : null;
+  const queryKey = useMemo(
+    () => storyCandidateAssetsQueryKey(projectId, userId),
+    [projectId, userId]
+  );
+  const scope = useMemo(() => ({ projectId, userId, canEdit }), [projectId, userId, canEdit]);
+  type Owner = { scope: typeof scope; operations: Map<string, AbortController> };
+  const owner = useRef<Owner | null>(null);
+  useLayoutEffect(() => {
+    const current: Owner = { scope, operations: new Map() };
+    owner.current = current;
+    return () => {
+      for (const operation of current.operations.values()) operation.abort();
+      if (owner.current === current) owner.current = null;
+    };
+  }, [scope]);
   const query = useQuery({
     queryKey,
     queryFn: ({ signal }) => getStoryCandidateAssets(projectId, signal),
-    enabled,
     staleTime: 20_000,
+    enabled: enabled && Boolean(projectId && userId),
+    retry: false,
   });
-  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
-  const pendingIdsRef = useRef(new Set<string>());
+  const [pending, setPending] = useState<{ scope: typeof scope; ids: Set<string> } | null>(null);
+  const pendingIds = pending?.scope === scope ? pending.ids : new Set<string>();
   const items = useMemo(() => query.data ?? [], [query.data]);
   const candidateIds = useMemo(
     () => new Set(items.map((candidate) => candidate.asset.id)),
@@ -56,31 +74,42 @@ export function useStoryCandidateAssets({
   );
 
   const withPending = useCallback(
-    async (mediaAssetId: string, action: () => Promise<void>) => {
-      if (!canEdit || pendingIdsRef.current.has(mediaAssetId)) return;
-      pendingIdsRef.current.add(mediaAssetId);
-      setPendingIds((current) => new Set(current).add(mediaAssetId));
+    async (
+      mediaAssetId: string,
+      action: (signal: AbortSignal, current: () => boolean) => Promise<void>
+    ) => {
+      const owned = owner.current;
+      if (
+        owned?.scope !== scope ||
+        !canEdit ||
+        !projectId ||
+        !userId ||
+        !isCurrentAccount(userId) ||
+        owned.operations.has(mediaAssetId)
+      )
+        return;
+      const operation = new AbortController();
+      owned.operations.set(mediaAssetId, operation);
+      const current = () =>
+        owner.current === owned && !operation.signal.aborted && isCurrentAccount(userId);
+      setPending({ scope, ids: new Set(owned.operations.keys()) });
       try {
-        await action();
+        await action(operation.signal, current);
       } catch (error) {
-        const message = storyApiErrorMessage(error, t("actionError"));
-        toast.error(message);
+        if (current()) toast.error(storyApiErrorMessage(error, t("actionError")));
       } finally {
-        pendingIdsRef.current.delete(mediaAssetId);
-        setPendingIds((current) => {
-          const next = new Set(current);
-          next.delete(mediaAssetId);
-          return next;
-        });
+        owned.operations.delete(mediaAssetId);
+        if (current()) setPending({ scope, ids: new Set(owned.operations.keys()) });
       }
     },
-    [canEdit, t]
+    [scope, canEdit, projectId, userId, isCurrentAccount, t]
   );
 
   const remove = useCallback(
     async (mediaAssetId: string) => {
-      await withPending(mediaAssetId, async () => {
-        await removeStoryCandidateAsset(projectId, mediaAssetId);
+      await withPending(mediaAssetId, async (signal, current) => {
+        await removeStoryCandidateAsset(projectId, mediaAssetId, signal);
+        if (!current()) return;
         queryClient.setQueryData<StoryCandidateAsset[]>(queryKey, (current = []) =>
           current.filter((candidate) => candidate.asset.id !== mediaAssetId)
         );
@@ -95,8 +124,9 @@ export function useStoryCandidateAssets({
         await remove(mediaAssetId);
         return;
       }
-      await withPending(mediaAssetId, async () => {
-        const candidate = await addStoryCandidateAsset(projectId, mediaAssetId);
+      await withPending(mediaAssetId, async (signal, current) => {
+        const candidate = await addStoryCandidateAsset(projectId, mediaAssetId, signal);
+        if (!current()) return;
         queryClient.setQueryData<StoryCandidateAsset[]>(queryKey, (current = []) => [
           candidate,
           ...current.filter((item) => item.asset.id !== mediaAssetId),
@@ -107,8 +137,10 @@ export function useStoryCandidateAssets({
   );
 
   const refresh = useCallback(async () => {
+    if (owner.current?.scope !== scope || !projectId || !userId || !isCurrentAccount(userId))
+      return;
     await query.refetch();
-  }, [query]);
+  }, [query, scope, projectId, userId, isCurrentAccount]);
 
   return {
     items,
@@ -117,7 +149,7 @@ export function useStoryCandidateAssets({
     loading: query.isLoading,
     failed: query.isError,
     error: query.error ? storyApiErrorMessage(query.error, t("loadError")) : null,
-    canEdit,
+    canEdit: canEdit && Boolean(userId && projectId),
     toggle,
     remove,
     refresh,

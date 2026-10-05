@@ -81,3 +81,21 @@ it("withholds stale detail while revalidating it", async () => {
       .disabled
   ).toBe(true);
 });
+
+it.each(["detailStartRequest", "detailMessageCreator"])(
+  "keeps the %s draft mounted during background revalidation",
+  async (action) => {
+    await render();
+    await act(async () =>
+      [...host.querySelectorAll("button")].find((b) => b.textContent === action)!.click()
+    );
+    const label = action === "detailStartRequest" ? "Order form" : "Contact form";
+    expect(host.textContent).toContain(label);
+    mock.fetching = true;
+    await render();
+    expect(host.textContent).toContain(label);
+    mock.fetching = false;
+    await render();
+    expect(host.textContent).toContain(label);
+  }
+);

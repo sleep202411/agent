@@ -164,3 +164,46 @@ it("delivers application events only from the current document socket", async ()
   second.frame("app_event", { id: "current" });
   expect(receive).toHaveBeenCalledExactlyOnceWith({ id: "current" });
 });
+
+it("exposes rejected writes and retries original receipts without losing new edits", async () => {
+  const first = Socket.instances[0]!;
+  first.open();
+  first.sync();
+  provider.doc.getText("content").insert(0, "first");
+  const original = first.operations()[0]!;
+  const errors: Array<string | null> = [];
+  provider.onError((error) => errors.push(error));
+  first.frame("error", { code: "DOCUMENT_WS_ERROR", message: "Storage unavailable" });
+  expect(provider.getStatus()).toBe("offline");
+  expect(provider.getError()).toBe("Storage unavailable");
+  expect(first.readyState).toBe(3);
+  provider.doc.getText("content").insert(5, " second");
+  provider.retry();
+  const second = Socket.instances.at(-1)!;
+  second.open();
+  second.sync();
+  expect(second.operations()[0]).toEqual(original);
+  expect(second.operations()).toHaveLength(2);
+  expect(provider.getStatus()).not.toBe("synced");
+  expect(provider.getError()).toBe("Storage unavailable");
+  for (const [index, frame] of second.operations().entries()) {
+    second.frame("operation_ack", {
+      operation: { sequence: index + 1, clientMutationId: frame.data.clientMutationId },
+    });
+  }
+  expect(provider.doc.getText("content").toString()).toBe("first second");
+  expect(provider.getStatus()).toBe("synced");
+  expect(errors).toEqual(["Storage unavailable", null]);
+});
+it("does not reconnect on retry after access revocation", () => {
+  const socket = Socket.instances[0]!;
+  socket.open();
+  socket.sync();
+  socket.frame("terminate", { reason: "access_revoked", code: 1000 });
+  socket.close();
+  provider.retry();
+  expect(Socket.instances).toHaveLength(1);
+  expect(provider.canRetry()).toBe(false);
+  expect(provider.getError()).toBe("Your access to this document was revoked.");
+  expect(provider.getStatus()).toBe("offline");
+});

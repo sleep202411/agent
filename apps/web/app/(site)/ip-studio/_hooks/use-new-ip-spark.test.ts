@@ -94,3 +94,15 @@ it("preserves malformed-body errors and clears its deadline", async () => {
   expect(await run()).toEqual({ error: "Invalid JSON" });
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("preserves non-2xx analysis error details", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ msg: "AI provider is not configured." }), { status: 503 })
+      )
+  );
+  expect(await run()).toEqual({ error: "HTTP 503 — AI provider is not configured." });
+});

@@ -25,6 +25,33 @@ describe('AiGenerationService submit-time storage pin', () => {
     });
   });
 
+  it('passes compiled media references into atomic admission, including expanded characters', async () => {
+    const references = [
+      {
+        assetId: '01900000-0000-7000-8000-000000000001',
+        refId: 'image',
+        kind: 'image',
+      },
+      {
+        assetId: '01900000-0000-7000-8000-000000000002',
+        refId: 'character',
+        kind: 'image',
+        characterId: 'character-1',
+      },
+      { refId: 'external', kind: 'image' },
+    ];
+    const harness = submitHarness('image', references);
+    await harness.service.submitJob(
+      userFixture(),
+      submitBody(STORY_STUDIO_WORKBENCH_SURFACE),
+    );
+    expect(harness.store.reserveQueuedJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        references: references.slice(0, 2),
+      }),
+    );
+  });
+
   it('freezes the same configured provider for image jobs', async () => {
     const harness = submitHarness('image');
 
@@ -253,7 +280,15 @@ function workerWith(input: {
  * Drives the real `submitJob` far enough to capture the row `buildJob`
  * composes, which is the only place the pin is written.
  */
-function submitHarness(type: AiJobType) {
+function submitHarness(
+  type: AiJobType,
+  references: Array<{
+    assetId?: string;
+    refId: string;
+    kind: string;
+    characterId?: string;
+  }> = [],
+) {
   let built: AiJob | null = null;
   const store = {
     findByIdempotency: jest.fn(() => null),
@@ -309,7 +344,7 @@ function submitHarness(type: AiJobType) {
             displayText: 'prompt',
             searchText: 'prompt',
             compiledPrompt: 'prompt',
-            references: [],
+            references,
             styles: [],
           },
         }),

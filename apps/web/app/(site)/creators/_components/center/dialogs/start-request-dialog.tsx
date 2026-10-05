@@ -52,6 +52,8 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 interface StartRequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Keep the draft mounted while the service access/terms are refreshed. */
+  revalidating?: boolean;
   service: CreatorServiceDTO | null;
   /** Pre-select a specific tier (e.g. clicked from a tier card). */
   initialTier?: ServiceTier;
@@ -77,6 +79,7 @@ function StartRequestDialogContent({
   open,
   onOpenChange,
   service,
+  revalidating = false,
   initialTier,
 }: StartRequestDialogProps) {
   const active = useRef(false);
@@ -137,6 +140,7 @@ function StartRequestDialogContent({
   }, [service, answers]);
 
   const canSubmit =
+    !revalidating &&
     !!service &&
     !!selectedPkg &&
     !!idempotencyKey &&
@@ -148,6 +152,7 @@ function StartRequestDialogContent({
       !active.current ||
       admitted.current ||
       submit.isPending ||
+      revalidating ||
       !idempotencyKey ||
       !service ||
       !selectedPkg
@@ -329,7 +334,9 @@ function StartRequestDialogContent({
             {tc("cancel")}
           </Button>
           <Button type="button" onClick={handleSubmit} disabled={!canSubmit}>
-            {submit.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+            {submit.isPending || revalidating ? (
+              <IconLoader2 className="size-4 animate-spin" />
+            ) : null}
             {t("startRequestSubmit")}
           </Button>
         </DialogFooter>

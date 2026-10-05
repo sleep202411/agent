@@ -2567,6 +2567,7 @@
     }
   },
   "invite": {
+    "previewFailed": "無法載入此邀請，請重試。",
     "alreadyJoinedTitle": "您已加入",
     "alreadyJoinedBody": "您已有「{name}」的存取權限。",
     "enterProject": "進入專案",
@@ -3325,10 +3326,7 @@
         "replaceError": "無法替換片段媒體。",
         "mediaUnavailable": "專案恢復為可編輯狀態後才能替換媒體。",
         "unsupportedMedia": "片段只能使用圖片或影片媒體。"
-      },
-      "exportFilm": "合成成片",
-      "cancelExport": "取消匯出",
-      "downloadFilm": "下載到本機"
+      }
     },
     "canvas": {
       "back": "返回影遊工作室",
@@ -4221,15 +4219,6 @@
       "moving": "正在移動…",
       "success": "項目已移動",
       "failed": "無法移動項目。"
-    },
-    "timelineExport": {
-      "partialSaved": "成片已儲存，其中有 {count} 個鏡頭缺失或不完整。請檢查後再發佈。",
-      "partialDownload": "已開始下載，其中有 {count} 個鏡頭缺失或不完整。請檢查成片後再發佈。",
-      "noMedia": "沒有可匯出的媒體片段。",
-      "unsupported": "目前瀏覽器不支援影片匯出，請嘗試使用 Chrome。",
-      "saved": "成片已儲存至專案資產庫。",
-      "downloadStarted": "已開始下載成片。",
-      "failed": "成片匯出失敗，請重試。"
     },
     "publication": {
       "title": "發佈作品",

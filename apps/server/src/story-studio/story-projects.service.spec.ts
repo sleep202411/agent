@@ -333,9 +333,13 @@ function privateMediaPolicy(
   );
 }
 
-function transactionMock<TClient>(client: TClient) {
+function transactionMock<TClient extends object>(client: TClient) {
   return jest.fn((callback: (tx: TClient) => Promise<unknown>) =>
-    callback(client),
+    callback(
+      'mediaAsset' in client
+        ? Object.assign(client, { $executeRaw: jest.fn() })
+        : client,
+    ),
   );
 }
 

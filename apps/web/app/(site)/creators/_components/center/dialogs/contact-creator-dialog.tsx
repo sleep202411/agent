@@ -64,6 +64,8 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 interface ContactCreatorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Keep the draft mounted while the service access/terms are refreshed. */
+  revalidating?: boolean;
   service: ServiceLike | null;
   /**
    * Pre-filled message body (e.g. when entered as a quoted excerpt
@@ -89,6 +91,7 @@ function ContactCreatorDialogContent({
   open,
   onOpenChange,
   service,
+  revalidating = false,
   initialBody = "",
 }: ContactCreatorDialogProps) {
   const active = useRef(false);
@@ -123,7 +126,8 @@ function ContactCreatorDialogContent({
   }, [open, initialBody]);
 
   const trimmed = body.trim();
-  const canSend = !!service && trimmed.length >= MIN_BODY && !openConversation.isPending;
+  const canSend =
+    !revalidating && !!service && trimmed.length >= MIN_BODY && !openConversation.isPending;
 
   const handleSend = async () => {
     if (!service || !canSend || !active.current || admitted.current) return;
@@ -262,7 +266,7 @@ function ContactCreatorDialogContent({
             {tc("cancel")}
           </Button>
           <Button type="button" onClick={handleSend} disabled={!canSend}>
-            {openConversation.isPending ? (
+            {openConversation.isPending || revalidating ? (
               <IconLoader2 className="size-4 animate-spin" />
             ) : (
               <IconMessage className="size-4" />

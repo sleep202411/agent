@@ -7,15 +7,22 @@ function firstArgument<T>(mock: { mock: { calls: unknown[][] } }): T {
 const actor = { userId: 'reporter' } as AuthUser;
 function setup() {
   const db = {
+    $executeRaw: jest.fn().mockResolvedValue([]),
     ipContentReport: {
+      create: jest
+        .fn()
+        .mockResolvedValue({ id: 'report', createdAt: new Date() }),
       findFirst: jest.fn(),
       findMany: jest.fn().mockResolvedValue([]),
     },
     mediaAsset: { findFirst: jest.fn() },
     ip: { findFirst: jest.fn().mockResolvedValue({ id: 'ip' }) },
   };
+  const transaction = jest.fn((work: (tx: typeof db) => Promise<unknown>) =>
+    work(db),
+  );
   const svc = new IpCommerceService(
-    db as never,
+    { ...db, $transaction: transaction } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -23,7 +30,7 @@ function setup() {
     {} as never,
     {} as never,
   );
-  return { db, svc };
+  return { db, svc, transaction };
 }
 it('scopes initiated reports to the signed-in reporter', async () => {
   const { db, svc } = setup();
@@ -79,4 +86,36 @@ it('rejects evidence files not owned by the reporter', async () => {
     where: { id: 'file', createdByUserId: 'reporter', deletedAt: null },
     select: { id: true },
   });
+});
+
+it('locks and validates evidence in the same transaction as the report write', async () => {
+  const { db, svc, transaction } = setup();
+  db.mediaAsset.findFirst.mockResolvedValue({ id: 'file' });
+  await svc.reportContent(actor, {
+    targetType: 'ip',
+    targetId: 'ip',
+    reason: 'copyright',
+    evidenceAssetId: 'file',
+  });
+  expect(transaction).toHaveBeenCalledTimes(1);
+  expect(db.$executeRaw).toHaveBeenCalledTimes(1);
+  expect(db.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    db.mediaAsset.findFirst.mock.invocationCallOrder[0],
+  );
+  expect(db.mediaAsset.findFirst.mock.invocationCallOrder[0]).toBeLessThan(
+    db.ipContentReport.create.mock.invocationCallOrder[0],
+  );
+});
+
+it('creates a report without evidence without taking a media lock', async () => {
+  const { db, svc } = setup();
+  await expect(
+    svc.reportContent(actor, {
+      targetType: 'ip',
+      targetId: 'ip',
+      reason: 'copyright',
+    }),
+  ).resolves.toMatchObject({ report: { id: 'report' } });
+  expect(db.$executeRaw).not.toHaveBeenCalled();
+  expect(db.mediaAsset.findFirst).not.toHaveBeenCalled();
 });

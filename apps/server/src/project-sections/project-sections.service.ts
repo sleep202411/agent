@@ -123,6 +123,9 @@ export class ProjectSectionsService {
     );
     const before = await this.requireActiveSection(projectId, sectionId);
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Serialize structural edits before touching chapter or canvas rows.
+      // Reorder/archive acquire this same lock before their project-row writes.
+      await this.lockProject(tx, projectId);
       const result = await tx.platformProjectSection.updateMany({
         where: {
           id: sectionId,

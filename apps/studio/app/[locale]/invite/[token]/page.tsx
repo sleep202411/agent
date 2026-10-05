@@ -144,15 +144,32 @@ function InviteAcceptView({ token }: { token: string }) {
     }
 
     if (previewQ.isError) {
+      const missing = [404, 410].includes(previewQ.error.status);
       return (
         <Shell
           icon={<IconAlertTriangle className="size-6" />}
           title={t("unavailableTitle")}
-          body={t("invalidBody")}
+          body={previewQ.error.message || t(missing ? "invalidBody" : "previewFailed")}
         >
-          <Button variant="secondary" className="w-full" onClick={() => router.replace("/canvas")}>
-            {t("goToFizzStudio")}
-          </Button>
+          <div className="flex flex-col gap-2">
+            {!missing && (
+              <Button
+                className="w-full"
+                disabled={previewQ.isFetching}
+                onClick={() => void previewQ.refetch()}
+              >
+                {previewQ.isFetching ? <IconLoader2 className="size-4 animate-spin" /> : null}
+                {tc("retry")}
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={() => router.replace("/canvas")}
+            >
+              {t("goToFizzStudio")}
+            </Button>
+          </div>
         </Shell>
       );
     }

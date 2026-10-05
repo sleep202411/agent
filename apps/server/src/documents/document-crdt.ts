@@ -136,6 +136,29 @@ export class DocumentStateBuilder {
     return this.doc.toJSON() as unknown as DocumentSnapshot;
   }
 
+  /** Content retained in encoded state, including updates awaiting dependencies. */
+  retainedContent(): unknown[] {
+    const content: unknown[] = [this.snapshot()];
+    // Public encoding includes pending updates; do not depend on Yjs internals.
+    for (const item of Y.decodeUpdate(this.encodeState()).structs) {
+      if (!(item instanceof Y.Item)) continue;
+      content.push(item.parentSub);
+      if (item.content instanceof Y.ContentString)
+        content.push(item.content.str);
+      else if (item.content instanceof Y.ContentFormat)
+        content.push(item.content.value);
+      else if (
+        item.content instanceof Y.ContentAny ||
+        item.content instanceof Y.ContentJSON ||
+        item.content instanceof Y.ContentEmbed
+      ) {
+        const values: unknown[] = item.content.getContent();
+        content.push(...values);
+      }
+    }
+    return content;
+  }
+
   /** Both the re-encoded state and the materialized snapshot. */
   finish(): MergedDocumentState {
     return { state: this.encodeState(), snapshot: this.snapshot() };

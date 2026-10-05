@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  ForbiddenException,
   HttpCode,
   Param,
   Patch,
@@ -157,7 +158,7 @@ export class AgentUsersInternalController {
     @Body(new ZodValidationPipe(RecordIpViewSchema))
     body: RecordIpViewInput,
   ) {
-    await this.agentUsers.ensureRunnable(params.agentUserId);
+    await this.requireCapability(params.agentUserId, 'viewIp');
     const data = await this.ipCommerce.recordAgentIpView(
       params.agentUserId,
       params.ipId,
@@ -187,7 +188,7 @@ export class AgentUsersInternalController {
     @Param(new ZodValidationPipe(AgentIpParamsSchema))
     params: AgentIpParams,
   ) {
-    await this.agentUsers.ensureRunnable(params.agentUserId);
+    await this.requireCapability(params.agentUserId, 'likeIp');
     const data = await this.ipCommerce.likeAgentIp(
       params.agentUserId,
       params.ipId,
@@ -233,7 +234,7 @@ export class AgentUsersInternalController {
     @Param(new ZodValidationPipe(AgentIpParamsSchema))
     params: AgentIpParams,
   ) {
-    await this.agentUsers.ensureRunnable(params.agentUserId);
+    await this.requireCapability(params.agentUserId, 'collectIp');
     const data = await this.ipCommerce.saveAgentCollectionItem(
       params.agentUserId,
       params.ipId,
@@ -272,5 +273,24 @@ export class AgentUsersInternalController {
       metadata: {},
     });
     return { code: 200, data };
+  }
+  private async requireCapability(agentUserId: string, capability: string) {
+    const agent = await this.agentUsers.ensureRunnable(agentUserId);
+    const policy = agent.policy;
+    const capabilities =
+      policy && typeof policy === 'object' && !Array.isArray(policy)
+        ? policy.capabilities
+        : undefined;
+    if (
+      capabilities &&
+      typeof capabilities === 'object' &&
+      !Array.isArray(capabilities) &&
+      capabilities[capability] === false
+    ) {
+      throw new ForbiddenException({
+        code: 'AGENT_USER_CAPABILITY_DISABLED',
+        message: `Agent capability ${capability} is disabled.`,
+      });
+    }
   }
 }

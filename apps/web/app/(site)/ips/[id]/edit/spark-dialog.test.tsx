@@ -116,3 +116,14 @@ it("guards repeated apply and suppresses replacement-project callbacks", async (
   expect(s.toast).not.toHaveBeenCalled();
   expect(s.close).not.toHaveBeenCalled();
 });
+
+it("shows the analysis failure without clearing manually entered text", async () => {
+  s.analyze.mockRejectedValue(new Error("HTTP 400 — The uploaded file has no readable text."));
+  await render();
+  await typeName("Keep this title");
+  await upload();
+  expect(document.body.textContent).toContain("HTTP 400 — The uploaded file has no readable text.");
+  expect(document.querySelector<HTMLInputElement>('input:not([type="file"])')?.value).toBe(
+    "Keep this title"
+  );
+});

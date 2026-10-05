@@ -7,6 +7,7 @@ import Page from "./page";
 const state = vi.hoisted(() => ({
   userId: "alice",
   get: vi.fn(),
+  post: vi.fn(),
   search: vi.fn(),
   submit: vi.fn(),
 }));
@@ -25,7 +26,12 @@ vi.mock("next/link", () => ({
     <a href={href}>{children}</a>
   ),
 }));
-vi.mock("@/src/lib/api", () => ({ api: { get: (...args: unknown[]) => state.get(...args) } }));
+vi.mock("@/src/lib/api", () => ({
+  api: {
+    get: (...args: unknown[]) => state.get(...args),
+    delete: (...args: unknown[]) => state.post(...args),
+  },
+}));
 vi.mock("@/src/lib/ip-commerce/api", () => ({
   listIpCommerceIps: (...args: unknown[]) => state.search(...args),
   reportIpContent: (...args: unknown[]) => state.submit(...args),
@@ -176,4 +182,92 @@ it("requires a real selected IP before sending a complaint", async () => {
     description: undefined,
   });
   expect(document.querySelector("form")).toBeNull();
+});
+
+it("lists blocked content and refreshes after unblocking", async () => {
+  let blocked = true;
+  state.get.mockImplementation((path: string) =>
+    Promise.resolve({
+      items:
+        path.endsWith("/blocks") && blocked
+          ? [{ id: "block", targetType: "ip", targetId: "film", title: "Saved film" }]
+          : [],
+      nextCursor: null,
+    })
+  );
+  state.post.mockImplementation(() => {
+    blocked = false;
+    return Promise.resolve({ block: {} });
+  });
+  await render();
+  await click("blocked");
+  expect(document.body.textContent).toContain("Saved film");
+  await click("unblock");
+  expect(state.post).toHaveBeenCalledWith(
+    "/aurora/ip-commerce/me/blocks/block",
+    expect.objectContaining({
+      signal: expect.any(AbortSignal),
+    })
+  );
+  expect(document.body.textContent).toContain("blockedEmpty");
+});
+it("retains a failed unblock for retry and shows the backend error", async () => {
+  state.get.mockResolvedValue({
+    items: [{ id: "block", targetType: "ip", targetId: "film", title: "Saved film" }],
+    nextCursor: null,
+  });
+  state.post.mockRejectedValue(new Error("Unblock unavailable"));
+  await render();
+  await click("blocked");
+  await click("unblock");
+  expect(document.body.textContent).toContain("Unblock unavailable");
+  expect(document.body.textContent).toContain("Saved film");
+  expect(
+    [...document.querySelectorAll("button")].find((button) => button.textContent === "unblock")
+      ?.disabled
+  ).toBe(false);
+});
+it("aborts an outstanding unblock when switching accounts", async () => {
+  state.get.mockResolvedValue({
+    items: [{ id: "block", targetType: "ip", targetId: "film", title: "Alice film" }],
+    nextCursor: null,
+  });
+  let finish!: () => void;
+  state.post.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await click("blocked");
+  await click("unblock");
+  const signal = state.post.mock.calls[0]![1].signal as AbortSignal;
+  state.userId = "bob";
+  state.get.mockResolvedValue({ items: [], nextCursor: null });
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => {
+    finish();
+  });
+  expect(document.body.textContent).not.toContain("Alice film");
+});
+it("requests the next blocked-content cursor without dropping the first page", async () => {
+  state.get.mockImplementation((path: string, options: { params: { cursor?: string } }) => {
+    if (!path.endsWith("/blocks")) return Promise.resolve({ items: [], nextCursor: null });
+    if (!options.params.cursor)
+      return Promise.resolve({
+        items: [{ id: "one", targetType: "ip", targetId: "film1", title: "First film" }],
+        nextCursor: "one",
+      });
+    return Promise.resolve({
+      items: [{ id: "two", targetType: "ip", targetId: "film2", title: "Second film" }],
+      nextCursor: null,
+    });
+  });
+  await render();
+  await click("blocked");
+  await click("more");
+  expect(document.body.textContent).toContain("First film");
+  expect(document.body.textContent).toContain("Second film");
 });

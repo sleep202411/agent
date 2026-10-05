@@ -19,7 +19,7 @@ integration('Compute member usage rollup (owned PostgreSQL)', () => {
   let accounts: string[];
   let transactions: string[];
   let actor: string;
-  const service = () =>
+  const service = (contactUserId?: string) =>
     new BillingService(
       db as never,
       {} as never,
@@ -30,7 +30,21 @@ integration('Compute member usage rollup (owned PostgreSQL)', () => {
       {} as never,
       {} as never,
       {} as never,
-      { findUsersByIds: () => Promise.resolve([]) } as never,
+      {
+        findUsersByIds: (ids: string[]) =>
+          Promise.resolve(
+            contactUserId && ids.includes(encodeUserId(contactUserId))
+              ? [
+                  {
+                    userId: encodeUserId(contactUserId),
+                    nickName: 'Correct member',
+                  },
+                ]
+              : [],
+          ),
+        findUser: () =>
+          Promise.resolve(contactUserId ? { userId: contactUserId } : null),
+      } as never,
     );
   beforeAll(async () => {
     const url = postgresFixtureUrl(databaseUrl!);
@@ -117,6 +131,23 @@ integration('Compute member usage rollup (owned PostgreSQL)', () => {
     transactions.push(tx.id);
     return tx.id;
   }
+  it('uses the raw contact lookup identity without decoding it again', async () => {
+    actor = '273848';
+    const ws = await workspace();
+    await debit(ws.accountId, 20n, actor);
+    await debit(ws.accountId, 99n, '18424');
+    const result = await service(actor).listAdminComputeMemberUsage({
+      days: 30,
+      workspaceKind: 'all',
+      workspaceId: ws.id,
+      userQuery: '13800138000',
+      limit: 100,
+    });
+    expect(result.totalCredits).toBe('20');
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0].userId).toBe(encodeUserId(actor));
+    expect(result.members[0].nickName).toBe('Correct member');
+  });
   it('filters workspace names literally and includes official image/video counts', async () => {
     const ws = await workspace();
     const needle = `Fixture_%_${actor}`;

@@ -240,10 +240,12 @@ describe("current-draft Story production routes", () => {
     await expect(getStoryCandidateAssets("project / one", controller.signal)).resolves.toEqual([
       candidate,
     ]);
-    await expect(addStoryCandidateAsset("project / one", candidate.asset.id)).resolves.toEqual(
-      candidate
-    );
-    await expect(removeStoryCandidateAsset("project / one", candidate.asset.id)).resolves.toEqual({
+    await expect(
+      addStoryCandidateAsset("project / one", candidate.asset.id, controller.signal)
+    ).resolves.toEqual(candidate);
+    await expect(
+      removeStoryCandidateAsset("project / one", candidate.asset.id, controller.signal)
+    ).resolves.toEqual({
       mediaAssetId: candidate.asset.id,
     });
 
@@ -258,9 +260,11 @@ describe("current-draft Story production routes", () => {
     );
     expect(api.put).toHaveBeenCalledWith(path, {
       requestScope: "project",
+      signal: controller.signal,
     });
     expect(api.delete).toHaveBeenCalledWith(path, {
       requestScope: "project",
+      signal: controller.signal,
     });
   });
 

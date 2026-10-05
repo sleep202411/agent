@@ -75,6 +75,7 @@ afterEach(async () => {
   container?.remove();
   vi.resetAllMocks();
   vi.unstubAllGlobals();
+  Reflect.deleteProperty(Element.prototype, "scrollIntoView");
 });
 
 it("combines rapid filter changes and ignores the displaced result", async () => {
@@ -149,4 +150,51 @@ it("accepts matching new server snapshots without replacing client results on un
   await render("alice", "New snapshot", data("New snapshot"));
   expect(container.textContent).toContain("New snapshot");
   expect(container.textContent).not.toContain("Client refresh");
+});
+
+async function typeUser(value: string) {
+  const input = container.querySelector<HTMLInputElement>(
+    'input[placeholder="用户 ID"], input[placeholder="手机 / 邮箱"]'
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it.each(["18424", "273848", "u_abcd"])(
+  "routes explicit ID %s through the ID filter",
+  async (id) => {
+    fetchMock.mockResolvedValue(response("Matched"));
+    await render();
+    await typeUser(id);
+    await act(async () => click("查询"));
+    const url = new URL(fetchMock.mock.calls[0][0], "https://fixture.test");
+    expect(url.searchParams.get("userId")).toBe(id);
+    expect(url.searchParams.has("userQuery")).toBe(false);
+  }
+);
+it("routes a numeric phone through contact lookup when selected", async () => {
+  fetchMock.mockResolvedValue(response("Matched"));
+  await render();
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
+  await act(async () =>
+    container
+      .querySelector('[role="combobox"]')!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+  );
+  const option = [...document.querySelectorAll('[role="option"]')].find(
+    (el) => el.textContent === "手机 / 邮箱"
+  )!;
+  await act(async () => {
+    (option as HTMLElement).focus();
+    option.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  await typeUser("13800138000");
+  await act(async () => click("查询"));
+  const url = new URL(fetchMock.mock.calls[0][0], "https://fixture.test");
+  expect(url.searchParams.get("userQuery")).toBe("13800138000");
+  expect(url.searchParams.has("userId")).toBe(false);
 });

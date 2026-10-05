@@ -99,6 +99,7 @@ import {
   generationSkillScope,
   isProjectSkillDefault,
   projectSkillMention,
+  projectSkillVersionSupports,
   resolveEffectiveProjectSkills,
   type CanvasProjectSkillSelection,
 } from "@/lib/project-skill-runtime";
@@ -478,9 +479,17 @@ function GenerationCard({
       compatibleSkills.map((installation) => [installation.skillId, installation])
     );
     return (projectSkillCatalog.data?.items ?? [])
-      .filter((skill) => skillScope && skill.latestVersion?.capabilities.includes(skillScope))
+      .filter(
+        (skill) =>
+          (!skill.installation || skill.installation.status === "active") &&
+          projectSkillVersionSupports(
+            skill.installation?.version ?? skill.latestVersion,
+            skillScope,
+            owner.kind === "platform_project" ? "platform" : "story"
+          )
+      )
       .map((skill) => {
-        const installation = installationBySkillId.get(skill.id);
+        const installation = installationBySkillId.get(skill.id) ?? skill.installation;
         const translationKey = catalogTranslationKey(skill);
         const label = translationKey ? ts(`items.${translationKey}.name`) : skill.name;
         return {
@@ -494,7 +503,7 @@ function GenerationCard({
           previewVideoUrl: skill.previewVideoUrl ?? undefined,
         };
       });
-  }, [compatibleSkills, projectSkillCatalog.data?.items, skillScope, ts]);
+  }, [compatibleSkills, projectSkillCatalog.data?.items, skillScope, owner.kind, ts]);
   const defaultSkillIds = useMemo(
     () =>
       new Set(

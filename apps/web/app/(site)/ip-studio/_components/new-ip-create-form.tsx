@@ -119,6 +119,7 @@ export function NewIpCreateForm({ onClose, onCreated }: NewIpCreateFormProps = {
 
   // AI-fill state
   const [analyzeStatus, setAnalyzeStatus] = useState<AnalyzeStatus>("idle");
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [analyzedFileName, setAnalyzedFileName] = useState("");
   const [aiFilledFields, setAiFilledFields] = useState<Set<"name" | "description">>(new Set());
   const [dragOver, setDragOver] = useState(false);
@@ -174,6 +175,7 @@ export function NewIpCreateForm({ onClose, onCreated }: NewIpCreateFormProps = {
 
     setAnalyzedFileName(file.name);
     setAnalyzeStatus("analyzing");
+    setAnalyzeError(null);
     posthog.capture("ip_spark_analysis_started", {
       file_type: file.name.split(".").pop()?.toLowerCase(),
       file_size_kb: Math.round(file.size / 1024),
@@ -200,7 +202,7 @@ export function NewIpCreateForm({ onClose, onCreated }: NewIpCreateFormProps = {
       setAnalyzeStatus("success");
     } catch (err) {
       if (controller.signal.aborted) return;
-      console.error("[NewIpCreateForm] analyze failed", err);
+      setAnalyzeError(err instanceof Error ? err.message : null);
       setAnalyzeStatus("error");
     }
   };
@@ -272,6 +274,7 @@ export function NewIpCreateForm({ onClose, onCreated }: NewIpCreateFormProps = {
       <DialogBody>
         <Dropzone
           status={analyzeStatus}
+          errorMessage={analyzeError}
           dragOver={dragOver}
           fileName={analyzedFileName}
           onDragEnter={(e) => {
@@ -481,6 +484,7 @@ function TaxonomyPicker({
 
 interface DropzoneProps {
   status: AnalyzeStatus;
+  errorMessage: string | null;
   dragOver: boolean;
   fileName: string;
   onDragEnter: (e: React.DragEvent) => void;
@@ -494,6 +498,7 @@ interface DropzoneProps {
 
 function Dropzone({
   status,
+  errorMessage,
   dragOver,
   fileName,
   onDragEnter,
@@ -542,7 +547,9 @@ function Dropzone({
   if (status === "error") {
     return (
       <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3.5 text-center">
-        <div className="mb-2 text-sm font-medium text-destructive">{t("dropzoneFailed")}</div>
+        <div className="mb-2 text-sm font-medium text-destructive">
+          {errorMessage || t("dropzoneFailed")}
+        </div>
         <div className="flex justify-center gap-2">
           <Button size="sm" variant="outline" onClick={onRetry}>
             <IconRefresh className="size-3.5" />

@@ -18,6 +18,7 @@ import {
   Metric,
   PageHeader,
   StatusPill,
+  Select,
   TextInput,
   formatInteger,
   requestEnvelope,
@@ -61,6 +62,7 @@ export function BillingComputeMemberUsagePanel({
   );
   const [workspaceFilter, setWorkspaceFilter] = useState("");
   const [userQuery, setUserQuery] = useState("");
+  const [userFilterKind, setUserFilterKind] = useState<"userId" | "userQuery">("userId");
   const [data, setData] = useState<AdminComputeMemberUsageData>(initialData ?? emptyUsage);
   const [previousInitialData, setPreviousInitialData] = useState(initialData);
   const { busy: loading, begin } = useAdminOperation();
@@ -96,14 +98,7 @@ export function BillingComputeMemberUsagePanel({
         }
       }
       if (userQuery.trim()) {
-        // Prefer explicit id when the field looks like one; otherwise treat as
-        // phone/email for legacy bridge resolution.
-        const trimmed = userQuery.trim();
-        if (/^[0-9a-f-]{8,}$/i.test(trimmed) || /^\d{6,}$/.test(trimmed)) {
-          params.set("userId", trimmed);
-        } else {
-          params.set("userQuery", trimmed);
-        }
+        params.set(userFilterKind, userQuery.trim());
       }
       const nextData = await requestEnvelope<AdminComputeMemberUsageData>(
         `/api/admin/billing/usage/member-compute?${params.toString()}`,
@@ -218,11 +213,21 @@ export function BillingComputeMemberUsagePanel({
             })}
           </div>
 
+          <div className="w-36 shrink-0">
+            <Select
+              title="用户查询方式"
+              value={userFilterKind}
+              onChange={(value) => setUserFilterKind(value as "userId" | "userQuery")}
+            >
+              <option value="userId">用户 ID</option>
+              <option value="userQuery">手机 / 邮箱</option>
+            </Select>
+          </div>
           <div className="min-w-[180px] flex-1">
             <TextInput
               value={userQuery}
               onChange={(event) => setUserQuery(event.target.value)}
-              placeholder="用户 ID / 手机 / 邮箱"
+              placeholder={userFilterKind === "userId" ? "用户 ID" : "手机 / 邮箱"}
               onKeyDown={(event) => {
                 if (event.key === "Enter") void refresh();
               }}

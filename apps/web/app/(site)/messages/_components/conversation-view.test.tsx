@@ -467,6 +467,35 @@ describe("crew conversation identity", () => {
     expect(document.querySelectorAll('img[data-avatar][alt="Isaac"]')).toHaveLength(2);
   });
 
+  it("shows the complete revision instructions in the order conversation", () => {
+    state.conversation = thread({ contextType: "order", contextId: "order_1" }, [
+      "buyer",
+      "creator",
+    ]);
+    const reason =
+      "Keep the opening shot.\n" +
+      "Adjust the lighting. ".repeat(50) +
+      "<script>do not execute</script>";
+    state.messages = [
+      {
+        id: "revision_1",
+        conversationId: "conv_1",
+        authorId: null,
+        type: "system",
+        body: "",
+        payload: {
+          kind: "system",
+          system: { kind: "order.revision_requested", params: { orderId: "order_1", reason } },
+        },
+        createdAt: "2026-07-27T00:00:00.000Z",
+      } satisfies MessageDTO,
+    ];
+    render(<ConversationView conversationId="conv_1" />);
+    expect(text()).toContain("Buyer requested a revision.");
+    expect(text()).toContain(reason);
+    expect(document.querySelector("script")).toBeNull();
+  });
+
   it("renders a crew system message with the member's name, not their id", () => {
     state.displays = new Map([["9", { userId: "9", nickname: "Bo" }]]);
     state.messages = [

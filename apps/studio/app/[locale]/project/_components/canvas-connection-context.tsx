@@ -1,5 +1,6 @@
 "use client";
 
+import { DocumentSyncError } from "@/components/document-sync-error";
 import { createContext, useContext, useMemo } from "react";
 import { useAuth } from "@/app/_components/auth-provider";
 import { toCollabUser } from "@/lib/collab/collab-user";
@@ -65,6 +66,8 @@ export function CanvasConnectionProvider({
     provider,
     status: connectionStatus,
     rtt,
+    error,
+    retry,
   } = useCanvasDoc(documentId, collabUser);
   // The graph is the document's node/edge view. It's ONE per document (not per
   // surface) — canvas and storyboard read the same nodes, so the graph lives
@@ -107,6 +110,12 @@ export function CanvasConnectionProvider({
           disabledReason={generationDisabledReason}
         >
           {children}
+          <DocumentSyncError
+            error={error}
+            retry={retry}
+            retrying={connectionStatus === "connecting"}
+            className="absolute bottom-14 left-1/2 z-50 w-[min(32rem,calc(100%-2rem))] -translate-x-1/2 shadow-xl"
+          />
         </CanvasGenerationProvider>
       </CanvasGraphProvider>
     </CanvasConnectionContext.Provider>

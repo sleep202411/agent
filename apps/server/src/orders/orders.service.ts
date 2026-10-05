@@ -512,7 +512,7 @@ export class OrdersService {
   ): Promise<ServiceOrder> {
     return this.transition(orderId, actorId, 'request_revision', 'buyer', {
       systemKind: 'order.revision_requested',
-      systemParams: { reason: input.reason.slice(0, 200) },
+      systemParams: { reason: input.reason },
     });
   }
 

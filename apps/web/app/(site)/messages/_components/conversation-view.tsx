@@ -1133,16 +1133,22 @@ function SystemRow({
   }
 
   return (
-    <div className="flex justify-center py-1">
+    <div className="flex min-w-0 flex-col items-center gap-2 py-1">
       <span className="rounded-full bg-secondary px-3 py-1 text-[11px] text-muted-foreground">
         {presentation.label}
       </span>
+      {presentation.reason && (
+        <p className="w-full max-w-xl whitespace-pre-wrap break-words rounded-lg bg-secondary px-4 py-3 text-sm text-foreground [overflow-wrap:anywhere]">
+          {presentation.reason}
+        </p>
+      )}
     </div>
   );
 }
 
 type SystemMessagePresentation = {
   label: string;
+  reason?: string;
 };
 
 function systemMessagePresentation(
@@ -1169,6 +1175,10 @@ function systemMessagePresentation(
   if (subjectId) params.user = displayName(subjectId, displays, tm);
 
   return {
+    reason:
+      kind === "order.revision_requested" && typeof system.params.reason === "string"
+        ? system.params.reason
+        : undefined,
     label: tm(key, {
       ...params,
       defaultValue: tm("system.fallback", { kind }),

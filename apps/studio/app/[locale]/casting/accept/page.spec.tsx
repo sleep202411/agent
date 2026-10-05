@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import Page from "./page";
+import { ApiRequestError } from "@/lib/api";
 const s = vi.hoisted(() => ({
   user: "a",
   token: "t",
@@ -139,4 +140,28 @@ it("cancels preview reads on token change", async () => {
   s.token = "new";
   await render();
   expect(signals[0].aborted).toBe(true);
+});
+
+it("preserves temporary preview errors and recovers through Retry", async () => {
+  s.preview.mockRejectedValueOnce(
+    new ApiRequestError("unavailable", "Casting service unavailable", 503)
+  );
+  await render();
+  expect(host.textContent).toContain("Casting service unavailable");
+  expect(host.textContent).not.toContain("castingInvalidBody");
+  await click("retry");
+  await vi.waitFor(() => expect(host.textContent).toContain("castingPickTitle"));
+  expect(s.preview).toHaveBeenCalledTimes(2);
+  expect(s.accept).not.toHaveBeenCalled();
+});
+
+it.each([404, 410])("does not offer retry for a missing invitation (%s)", async (status) => {
+  s.preview.mockRejectedValue(
+    new ApiRequestError("missing", "Invitation no longer exists", status)
+  );
+  await render();
+  expect(host.textContent).toContain("Invitation no longer exists");
+  expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "retry")).toBe(
+    false
+  );
 });

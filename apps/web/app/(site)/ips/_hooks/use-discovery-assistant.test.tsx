@@ -241,3 +241,37 @@ it("rejects oversized conversation input without truncation and leaves anonymous
   expect(api.post).not.toHaveBeenCalled();
   expect(hook.canSend).toBe(false);
 });
+
+it("recovers from corrupt saved state through an explicit new conversation", async () => {
+  sessionStorage.setItem(key, "{broken");
+  await render();
+  expect(hook.error).toBe("Storage failed");
+  expect(hook.canSend).toBe(false);
+  act(() => hook.reset());
+  expect(sessionStorage.getItem(key)).toBeNull();
+  expect(hook.error).toBeNull();
+  expect(hook.canSend).toBe(true);
+  expect(api.post).not.toHaveBeenCalled();
+  vi.mocked(api.post).mockImplementation(async (_url, options) => {
+    const next = options!.data as typeof request;
+    expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(next);
+    return response(next.requestId);
+  });
+  await act(async () => hook.send("Find studios"));
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+
+it("does not enable dispatch if clearing broken storage fails", async () => {
+  sessionStorage.setItem(key, "{broken");
+  await render();
+  vi.stubGlobal("sessionStorage", {
+    removeItem: () => {
+      throw new Error("Unavailable");
+    },
+  });
+  act(() => hook.reset());
+  expect(hook.error).toBe("Storage failed");
+  expect(hook.canSend).toBe(false);
+  await act(async () => hook.send("Find studios"));
+  expect(api.post).not.toHaveBeenCalled();
+});

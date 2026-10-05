@@ -33,7 +33,15 @@ export type ReferralRewardStatus =
 
 export type ReferralMilestoneStatus = "complete" | "active" | "locked";
 
+export interface ReferralRewardItem {
+  currency?: string | null;
+  kind: Exclude<ReferralPayoutType, "membership_both">;
+  amountMinor: string;
+  days: number;
+}
+
 export interface ReferralMilestone {
+  items?: ReferralRewardItem[];
   id: string;
   /** Admin-authored display strings — render verbatim. */
   title: string;
@@ -50,6 +58,7 @@ export interface ReferralMilestone {
 }
 
 export interface ReferralReward {
+  items?: ReferralRewardItem[];
   id: string;
   /** Server-owned display strings — render verbatim. */
   title: string;
@@ -66,6 +75,12 @@ export interface ReferralReward {
 }
 
 export interface ReferralDashboard {
+  cashTotals?: Array<{
+    currency: string | null;
+    pendingMinor: string;
+    confirmedMinor: string;
+    reversedMinor: string;
+  }>;
   programAvailable: boolean;
   inviteCode: string | null;
   inviteUrl: string | null;

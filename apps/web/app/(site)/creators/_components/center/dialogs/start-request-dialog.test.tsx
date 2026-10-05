@@ -184,3 +184,18 @@ it("submits the displayed service version and retains it during a failed retry",
   expect(close).not.toHaveBeenCalled();
   expect(container.querySelector("textarea")!.value).toBe("Alice draft");
 });
+
+it("preserves the brief while revalidation pauses and resumes submission", async () => {
+  await act(async () => render());
+  await fill();
+  await act(async () =>
+    root.render(<StartRequestDialog service={service} open onOpenChange={close} revalidating />)
+  );
+  expect(submit().disabled).toBe(true);
+  await act(async () => submit().click());
+  expect(mocks.submit).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")!.value).toBe("Alice draft");
+  await act(async () => render());
+  expect(submit().disabled).toBe(false);
+  expect(container.querySelector("textarea")!.value).toBe("Alice draft");
+});

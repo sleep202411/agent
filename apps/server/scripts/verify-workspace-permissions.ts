@@ -21,6 +21,8 @@ void describe('Story workspace authorization in PostgreSQL', () => {
   beforeAll(async () => {
     db = await PGlite.create();
     await db.exec(`
+      CREATE TABLE crews(id uuid PRIMARY KEY, studio_workspace_id uuid, deleted_at timestamptz);
+      CREATE TABLE crew_members(id text PRIMARY KEY, crew_id uuid, user_id text, status text);
       CREATE TABLE workspaces(id uuid PRIMARY KEY, status text, deleted_at timestamptz);
       CREATE TABLE story_projects(id uuid PRIMARY KEY, workspace_id uuid, status text);
       CREATE TABLE workspace_members(id text PRIMARY KEY, workspace_id uuid, user_id text, role text, status text, removed_at timestamptz, access_scope text);
@@ -29,7 +31,7 @@ void describe('Story workspace authorization in PostgreSQL', () => {
   });
   afterAll(async () => db.close());
   beforeEach(async () => {
-    await db.exec(`TRUNCATE workspaces, story_projects, workspace_members, story_project_members;
+    await db.exec(`TRUNCATE crews, crew_members, workspaces, story_projects, workspace_members, story_project_members;
       INSERT INTO workspaces VALUES ('${WORKSPACE}', 'active', NULL);
       INSERT INTO story_projects VALUES ('${PROJECT}', '${WORKSPACE}', 'active');
       INSERT INTO workspace_members VALUES ('member', '${WORKSPACE}', 'editor', 'editor', 'active', NULL, 'workspace');`);
@@ -46,6 +48,17 @@ void describe('Story workspace authorization in PostgreSQL', () => {
             '',
           );
           return (await connection.query(sql, values)).rows;
+        },
+        // These cases isolate workspace/direct membership; Crew grants have
+        // their own persistence suite. Still execute the current lock SQL above.
+        crew: {
+          findFirst: async () => {
+            assert.equal(
+              (await connection.query('SELECT id FROM crews')).rows.length,
+              0,
+            );
+            return null;
+          },
         },
         storyProject: {
           findUnique: async () =>

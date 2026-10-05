@@ -16,6 +16,13 @@ import {
   type StoryCandidateAssetsController,
 } from "./use-story-candidate-assets";
 
+const account = vi.hoisted(() => ({ id: "alice" }));
+vi.mock("@/app/_components/auth-provider", () => ({
+  useAuth: () => ({
+    user: account.id ? { id: account.id } : null,
+    isCurrentAccount: (id: string) => account.id === id,
+  }),
+}));
 const notifications = vi.hoisted(() => ({
   error: vi.fn(),
 }));
@@ -49,10 +56,13 @@ describe("useStoryCandidateAssets", () => {
   let controller: StoryCandidateAssetsController | null;
   let enabled: boolean | undefined;
 
+  let projectId = PROJECT_ID;
+  let canEdit = true;
+
   function Harness() {
     controller = useStoryCandidateAssets({
-      projectId: PROJECT_ID,
-      canEdit: true,
+      projectId,
+      canEdit,
       enabled,
     });
     return <span data-loading={String(controller.loading)} />;
@@ -61,11 +71,14 @@ describe("useStoryCandidateAssets", () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     controller = null;
+    projectId = PROJECT_ID;
+    canEdit = true;
+    account.id = "alice";
     enabled = undefined;
     notifications.error.mockReset();
     vi.mocked(getStoryCandidateAssets).mockReset().mockResolvedValue([]);
-    vi.mocked(addStoryCandidateAsset).mockReset();
-    vi.mocked(removeStoryCandidateAsset).mockReset();
+    vi.mocked(addStoryCandidateAsset).mockReset().mockResolvedValue(candidateAsset());
+    vi.mocked(removeStoryCandidateAsset).mockReset().mockResolvedValue({ mediaAssetId: ASSET_ID });
     queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false, gcTime: Infinity },
@@ -101,7 +114,9 @@ describe("useStoryCandidateAssets", () => {
     enabled = false;
     await renderHarness();
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: storyCandidateAssetsQueryKey(PROJECT_ID) });
+      await queryClient.invalidateQueries({
+        queryKey: storyCandidateAssetsQueryKey(PROJECT_ID, "alice"),
+      });
       await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(getStoryCandidateAssets).toHaveBeenCalledTimes(1);
@@ -158,6 +173,141 @@ describe("useStoryCandidateAssets", () => {
 
     expect(current().failed).toBe(true);
     expect(current().error).toBe("Media index unavailable");
+    expect(current().items).toEqual([]);
+  });
+
+  it("does not expose the former account's cached candidate list", async () => {
+    vi.mocked(getStoryCandidateAssets)
+      .mockResolvedValueOnce([candidateAsset()])
+      .mockResolvedValueOnce([]);
+    await mountHarness();
+    expect(current().items).toHaveLength(1);
+    account.id = "bob";
+    await mountHarness();
+    expect(current().items).toEqual([]);
+    expect(getStoryCandidateAssets).toHaveBeenCalledTimes(2);
+  });
+
+  it("retires an old project addition without blocking the same asset in the new project", async () => {
+    const old = deferred<StoryCandidateAsset>();
+    vi.mocked(addStoryCandidateAsset)
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValueOnce(candidateAsset());
+    await mountHarness();
+    let pending!: Promise<void>;
+    act(() => {
+      pending = current().toggle(ASSET_ID);
+    });
+    projectId = "new-project";
+    await mountHarness();
+    await act(async () => {
+      await current().toggle(ASSET_ID);
+    });
+    expect(addStoryCandidateAsset).toHaveBeenCalledTimes(2);
+    old.resolve(candidateAsset());
+    await act(async () => {
+      await pending;
+    });
+    expect(current().items).toHaveLength(1);
+  });
+
+  it("does not issue mutations from callbacks retained by the former account", async () => {
+    await mountHarness();
+    const former = current();
+    account.id = "bob";
+    await mountHarness();
+    await act(async () => {
+      await former.toggle(ASSET_ID);
+      await former.remove(ASSET_ID);
+    });
+    expect(addStoryCandidateAsset).not.toHaveBeenCalled();
+    expect(removeStoryCandidateAsset).not.toHaveBeenCalled();
+  });
+
+  it.each(["toggle", "remove"] as const)(
+    "aborts pending %s and ignores its late result after account departure",
+    async (operation) => {
+      const late = deferred<StoryCandidateAsset>();
+      const removal = deferred<{ mediaAssetId: string }>();
+      vi.mocked(addStoryCandidateAsset).mockReturnValue(late.promise);
+      vi.mocked(removeStoryCandidateAsset).mockReturnValue(removal.promise);
+      await mountHarness();
+      let pending!: Promise<void>;
+      act(() => {
+        pending = current()[operation](ASSET_ID);
+      });
+      const signal =
+        operation === "toggle"
+          ? vi.mocked(addStoryCandidateAsset).mock.calls[0]![2]
+          : vi.mocked(removeStoryCandidateAsset).mock.calls[0]![2];
+      expect(signal?.aborted).toBe(false);
+      account.id = "bob";
+      await mountHarness();
+      expect(signal?.aborted).toBe(true);
+      queryClient.removeQueries({ queryKey: storyCandidateAssetsQueryKey(PROJECT_ID, "alice") });
+      late.resolve(candidateAsset());
+      removal.resolve({ mediaAssetId: ASSET_ID });
+      await act(async () => {
+        await pending;
+      });
+      expect(
+        queryClient.getQueryData(storyCandidateAssetsQueryKey(PROJECT_ID, "alice"))
+      ).toBeUndefined();
+      expect(current().items).toEqual([]);
+      expect(current().pendingIds.size).toBe(0);
+      expect(notifications.error).not.toHaveBeenCalled();
+    }
+  );
+
+  it("does not load or mutate signed-out candidates, including manual refresh", async () => {
+    account.id = "";
+    await mountHarness();
+    await act(async () => {
+      await current().refresh();
+      await current().toggle(ASSET_ID);
+    });
+    expect(getStoryCandidateAssets).not.toHaveBeenCalled();
+    expect(addStoryCandidateAsset).not.toHaveBeenCalled();
+    expect(current().canEdit).toBe(false);
+  });
+
+  it("retires pending edits when edit access is revoked and keeps reads available", async () => {
+    const late = deferred<StoryCandidateAsset>();
+    vi.mocked(addStoryCandidateAsset).mockReturnValue(late.promise);
+    await mountHarness();
+    const previous = current();
+    let pending!: Promise<void>;
+    act(() => {
+      pending = previous.toggle(ASSET_ID);
+    });
+    canEdit = false;
+    await mountHarness();
+    expect(vi.mocked(addStoryCandidateAsset).mock.calls[0]![2]?.aborted).toBe(true);
+    late.reject(new Error("retired error"));
+    await act(async () => {
+      await pending;
+      await previous.toggle(ASSET_ID);
+    });
+    expect(addStoryCandidateAsset).toHaveBeenCalledOnce();
+    expect(current().pendingIds.size).toBe(0);
+    expect(notifications.error).not.toHaveBeenCalled();
+  });
+
+  it("allows a failed removal to be retried without losing the candidate", async () => {
+    vi.mocked(getStoryCandidateAssets).mockResolvedValue([candidateAsset()]);
+    vi.mocked(removeStoryCandidateAsset)
+      .mockRejectedValueOnce(new Error("Storage busy"))
+      .mockResolvedValueOnce({ mediaAssetId: ASSET_ID });
+    await mountHarness();
+    await act(async () => {
+      await current().remove(ASSET_ID);
+    });
+    expect(current().items).toHaveLength(1);
+    expect(current().pendingIds.size).toBe(0);
+    expect(notifications.error).toHaveBeenCalledWith("Storage busy");
+    await act(async () => {
+      await current().remove(ASSET_ID);
+    });
     expect(current().items).toEqual([]);
   });
 

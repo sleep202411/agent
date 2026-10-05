@@ -8,6 +8,9 @@ import { StoryProjectMoveService } from '../src/story-studio/story-project-move.
 import { StoryPermissionService } from '../src/story-studio/story-permission.service';
 import { StoryProjectWriteGuardService } from '../src/story-studio/story-project-write-guard.service';
 import { WorkspacePermissionService } from '../src/workspaces/workspace-permission.service';
+import { CrewAssetAccessService } from '../src/crews/assets/asset-access.service';
+import { CrewAuthorizationService } from '../src/crews/crew-authorization.service';
+import { StudioDocumentAccessService } from '../src/documents/studio-document-access.service';
 import { MediaAccessService } from '../src/media/media-access.service';
 import { CreateStoryProjectSchema } from '../src/story-studio/dto';
 import { BillingService } from '../src/billing/billing.service';
@@ -50,8 +53,8 @@ async function main() {
     p,
     {} as never,
     workspacePermissions,
-    {} as never,
-    {} as never,
+    new CrewAssetAccessService(p, new CrewAuthorizationService(p)),
+    new StudioDocumentAccessService(p, workspacePermissions, permissions),
   );
   const projects = new StoryProjectsService(
     p,

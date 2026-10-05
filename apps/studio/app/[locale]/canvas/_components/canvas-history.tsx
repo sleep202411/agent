@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { IconHistory } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
 import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { useDocumentVersions } from "@/lib/collab/use-versions";
 import type { VersionDto, VersionSource } from "@/lib/collab/versions-api";
@@ -44,7 +45,7 @@ function relativeTime(iso: string, t: ReturnType<typeof useTranslations>): strin
 export function CanvasHistory({ documentId, provider, onClose }: CanvasHistoryProps) {
   const t = useTranslations("canvasCollab");
   const tc = useTranslations("common");
-  const { versions, loading } = useDocumentVersions(documentId, provider);
+  const { versions, loading, error, refetch } = useDocumentVersions(documentId, provider);
 
   const entries = useMemo(
     () => versions.filter((version) => ACTIVITY_SOURCES.has(version.source)),
@@ -61,9 +62,19 @@ export function CanvasHistory({ documentId, provider, onClose }: CanvasHistoryPr
         onClose={onClose}
       />
       <DrawerPanel.Body className="px-2 pb-3">
+        {error && (
+          <div className="space-y-2 px-2 py-3">
+            <p role="alert" className="text-xs text-muted-foreground">
+              {error}
+            </p>
+            <Button variant="secondary" size="sm" disabled={loading} onClick={() => void refetch()}>
+              {tc("retry")}
+            </Button>
+          </div>
+        )}
         {loading && entries.length === 0 ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">{tc("loading")}</p>
-        ) : entries.length === 0 ? (
+        ) : entries.length === 0 && !error ? (
           <p className="px-2 py-6 text-center text-xs text-muted-foreground">
             {t("activity.empty")}
           </p>

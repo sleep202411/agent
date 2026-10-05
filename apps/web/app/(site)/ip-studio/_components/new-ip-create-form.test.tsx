@@ -150,3 +150,18 @@ it("keeps creator text while limiting the remaining AI-filled field", async () =
   expect(field("name").value).toBe("N".repeat(80));
   expect(field("description").value).toBe("My own summary");
 });
+
+it("shows the analysis failure while retaining the new IP draft", async () => {
+  mocks.analyze.mockRejectedValueOnce(new Error("HTTP 503 — AI provider is not configured."));
+  await edit("name", "Keep this title");
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["brief"], "brief.txt")],
+    });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(container.textContent).toContain("HTTP 503 — AI provider is not configured.");
+  expect(field("name").value).toBe("Keep this title");
+});

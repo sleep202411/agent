@@ -4610,8 +4610,8 @@
     "publicBriefTooLong": "请将公开说明缩短至10,000字以内，完整任务说明不受影响。",
     "addMemberLookupBy": "查询方式",
     "addMemberUserIdLabel": "用户 ID",
-    "addMemberUserIdHint": "输入对方的数字用户 ID。",
-    "addMemberUserIdInvalid": "请输入 1–18 位数字用户 ID。",
+    "addMemberUserIdHint": "输入对方个人资料中显示的用户 ID。",
+    "addMemberUserIdInvalid": "请输入对方个人资料中显示的有效用户 ID。",
     "addMemberLookupRetry": "重试查询"
   },
   "crewAssets": {
@@ -11566,7 +11566,15 @@
       "triaged": "审核中",
       "actioned": "已采取措施",
       "dismissed": "已结案，未采取措施"
-    }
+    },
+    "blocked": "已屏蔽内容",
+    "blockedHint": "管理你已隐藏的内容。取消屏蔽后，内容可再次出现在推荐中。",
+    "blockedEmpty": "你尚未屏蔽任何内容。",
+    "blockedIp": "暂不可用的 IP",
+    "blockedCreator": "已屏蔽的创作者",
+    "unblock": "取消屏蔽",
+    "unblocking": "正在取消…",
+    "blockedCrew": "已屏蔽的剧组"
   },
   "communityVideo": {
     "title": "投稿视频",
