@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useIsFocused } from "expo-router";
+import { useIsFocused, useNavigation } from "expo-router";
+import { usePreventRemove } from "expo-router/build/react-navigation/core/usePreventRemove";
 import {
   ActivityIndicator,
   BackHandler,
@@ -68,7 +69,31 @@ function Session({ workspace, generation, onClose }: Props) {
     alive = useRef(true),
     pending = useRef<AbortController | null>(null),
     coverPending = useRef<AbortController | null>(null);
+  const navigation = useNavigation();
+  const [leave, setLeave] = useState<{ run: () => void }>();
+  const hasEdits =
+    !!form &&
+    (name !== (form.project?.name ?? "") ||
+      description !== (form.project?.description ?? "") ||
+      uncertainAt !== undefined);
   const current = () => alive.current && generation === getAuthGeneration();
+  const exitForm = () => {
+    setForm(undefined);
+    setDetailReview(undefined);
+    setDetailRecovery(false);
+  };
+  const requestLeave = (run: () => void) => {
+    if (lock.current || !active || !current()) return;
+    if (hasEdits) setLeave({ run });
+    else run();
+  };
+  usePreventRemove(hasEdits || busy, ({ data }) => {
+    if (generation !== getAuthGeneration()) {
+      navigation.dispatch(data.action);
+      return;
+    }
+    requestLeave(() => navigation.dispatch(data.action));
+  });
   if (!active && detailReview) setDetailReview(undefined);
   useEffect(() => {
     alive.current = true;
@@ -102,16 +127,12 @@ function Session({ workspace, generation, onClose }: Props) {
     if (!active || collaboration) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (!lock.current) {
-        if (form) {
-          setForm(undefined);
-          setDetailReview(undefined);
-          setDetailRecovery(false);
-        } else onClose();
+        requestLeave(form ? exitForm : onClose);
       }
       return true;
     });
     return () => sub.remove();
-  }, [active, collaboration, form, onClose]);
+  });
   const visible = loaded?.revision === revision ? loaded : undefined;
   const locked = busy || uncertainAt !== undefined || detailRecovery;
   const editable = form?.project
@@ -261,6 +282,30 @@ function Session({ workspace, generation, onClose }: Props) {
       <StudioInvites scope={scope} generation={generation} onClose={close} />
     );
   }
+  if (leave)
+    return (
+      <View style={{ padding: 16, gap: 12 }}>
+        <ThemedText>{t("documentEditor.discardQuestion")}</ThemedText>
+        <Action
+          label={t("documentEditor.keepEditing")}
+          disabled={busy}
+          onPress={() => {
+            if (active && current() && !lock.current) setLeave(undefined);
+          }}
+        />
+        <Action
+          label={t("documentEditor.discard")}
+          disabled={busy}
+          onPress={() => {
+            if (!active || !current() || lock.current) return;
+            const run = leave.run;
+            setLeave(undefined);
+            exitForm();
+            run();
+          }}
+        />
+      </View>
+    );
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -384,9 +429,7 @@ function Session({ workspace, generation, onClose }: Props) {
             label={t("studioProjects.discard")}
             disabled={busy}
             onPress={() => {
-              setForm(undefined);
-              setDetailReview(undefined);
-              setDetailRecovery(false);
+              requestLeave(exitForm);
             }}
           />
         </>
@@ -483,7 +526,11 @@ function Session({ workspace, generation, onClose }: Props) {
         />
       )}
       {busy && <ActivityIndicator />}
-      <Action label={t("common.back")} disabled={busy} onPress={onClose} />
+      <Action
+        label={t("common.back")}
+        disabled={busy}
+        onPress={() => requestLeave(form ? exitForm : onClose)}
+      />
     </ScrollView>
   );
 }

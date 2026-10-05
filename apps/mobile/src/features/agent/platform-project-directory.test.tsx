@@ -4,6 +4,10 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { PlatformProjectDirectory } from "./platform-project-directory";
 import { PlatformProjectWriteError } from "./api/platform-projects-api";
 const h = vi.hoisted(() => ({
+  prevent: false,
+  routeRemove: undefined as undefined | ((event: { data: { action: { type: string } } }) => void),
+  hardwareBack: undefined as undefined | (() => boolean),
+  dispatch: vi.fn(),
   cover: vi.fn(),
   upload: vi.fn(),
   read: vi.fn(),
@@ -65,7 +69,16 @@ vi.mock("./studio-invites", () => ({
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
-vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
+vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
+  useNavigation: () => ({ dispatch: h.dispatch }),
+}));
+vi.mock("expo-router/build/react-navigation/core/usePreventRemove", () => ({
+  usePreventRemove: (prevent: boolean, callback: typeof h.routeRemove) => {
+    h.prevent = prevent;
+    h.routeRemove = callback;
+  },
+}));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s, getLocale: () => "en-US" }));
@@ -86,7 +99,12 @@ vi.mock("react-native", () => ({
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>Loading</span>,
   Linking: { openURL: h.open },
-  BackHandler: { addEventListener: () => ({ remove: vi.fn() }) },
+  BackHandler: {
+    addEventListener: (_: string, callback: () => boolean) => {
+      h.hardwareBack = callback;
+      return { remove: vi.fn() };
+    },
+  },
   Pressable: ({
     children,
     disabled,
@@ -206,6 +224,7 @@ it("keeps failed edits and requires fresh list review after uncertain writes", a
   expect(host.querySelector("input")!.value).toBe("Draft");
   expect(button("studioProjects.save")!.disabled).toBe(true);
   await click("studioProjects.discard");
+  if (button("documentEditor.discard")) await click("documentEditor.discard");
   await click("studioProjects.reload");
   expect(button("studioProjects.create")!.disabled).toBe(true);
   await click("studioProjects.reviewed");
@@ -336,6 +355,7 @@ it("requires another refresh after leaving an unaccepted review in the backgroun
   expect(button("studioProjects.save")!.disabled).toBe(true);
   expect(host.querySelector("input")!.value).toBe("Retained title");
   await click("studioProjects.discard");
+  if (button("documentEditor.discard")) await click("documentEditor.discard");
   expect(button("studioProjects.create")!.disabled).toBe(false);
 });
 
@@ -348,6 +368,7 @@ it("reopens the confirmed cover and version after closing details with unsaved t
   await input(0, "Unsaved title");
   await click("studioProjects.uploadCover");
   await click("studioProjects.discard");
+  if (button("documentEditor.discard")) await click("documentEditor.discard");
   await click("studioProjects.details");
   expect(host.querySelector("input")!.value).toBe(row.name);
   expect(button("studioProjects.removeCover")).toBeDefined();
@@ -355,6 +376,7 @@ it("reopens the confirmed cover and version after closing details with unsaved t
   await click("studioProjects.removeCover");
   expect(h.cover).toHaveBeenLastCalledWith(confirmed, null, 1, expect.any(AbortSignal));
   await click("studioProjects.discard");
+  if (button("documentEditor.discard")) await click("documentEditor.discard");
   await click("studioProjects.details");
   expect(button("studioProjects.removeCover")).toBeUndefined();
 });
@@ -368,6 +390,7 @@ it("keeps accepted refreshed metadata and permissions when reopening details", a
   await click("studioProjects.reviewed");
   expect(host.querySelector("input")!.value).toBe("Local title");
   await click("studioProjects.discard");
+  if (button("documentEditor.discard")) await click("documentEditor.discard");
   await click("studioProjects.details");
   expect(host.querySelector("input")!.value).toBe("Renamed on Web");
   expect(button("studioProjects.save")).toBeUndefined();
@@ -422,3 +445,56 @@ it.each(["navigation", "account"])(
     expect(h.cover).not.toHaveBeenCalled();
   }
 );
+
+it("retains edits when cancelling Back and discards only after confirmation", async () => {
+  await render();
+  await click("studioProjects.details");
+  await input(0, "Unsaved name");
+  await click("common.back");
+  expect(h.close).not.toHaveBeenCalled();
+  await click("documentEditor.keepEditing");
+  expect(host.querySelector("input")!.value).toBe("Unsaved name");
+  await act(async () => {
+    h.hardwareBack!();
+  });
+  await click("documentEditor.discard");
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.close).not.toHaveBeenCalled();
+  await click("common.back");
+  expect(h.close).toHaveBeenCalledOnce();
+});
+it("guards route removal and resumes only the confirmed navigation", async () => {
+  await render();
+  await click("studioProjects.create");
+  await input(0, "New draft");
+  expect(h.prevent).toBe(true);
+  const action = { type: "GO_BACK" };
+  await act(async () => h.routeRemove!({ data: { action } }));
+  await click("documentEditor.keepEditing");
+  expect(h.dispatch).not.toHaveBeenCalled();
+  expect(host.querySelector("input")!.value).toBe("New draft");
+  await act(async () => h.routeRemove!({ data: { action } }));
+  await click("documentEditor.discard");
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+});
+it("does not interrupt pending saves or block account retirement", async () => {
+  let finish!: () => void;
+  h.update.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await click("studioProjects.details");
+  await input(0, "Saving name");
+  await click("studioProjects.save");
+  const action = { type: "GO_BACK" };
+  await act(async () => h.routeRemove!({ data: { action } }));
+  expect(button("documentEditor.discard")).toBeUndefined();
+  expect(h.dispatch).not.toHaveBeenCalled();
+  h.generation++;
+  await act(async () => h.routeRemove!({ data: { action } }));
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+  await act(async () => finish());
+});
