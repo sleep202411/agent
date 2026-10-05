@@ -1,3 +1,4 @@
+import { StoryListingEditor } from "./story-listing-editor";
 import { StoryChaptersSheet } from "./story-chapters-sheet";
 import { StoryRepairSheet } from "./story-repair-sheet";
 import {
@@ -104,6 +105,7 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const context = useStoryChapterContext();
   const t = useTranslations();
   const [chaptersOpen, setChaptersOpen] = useState(false);
+  const [listingOpen, setListingOpen] = useState(false);
   const { generation, user } = useAuth();
   const active = useScreenActive();
   const [repair, setRepair] = useState<{
@@ -114,6 +116,10 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const scope = useMemo(
     () => ({ projectId, chapterId: repair?.diagnostics.chapterId ?? "", generation }),
     [projectId, repair?.diagnostics.chapterId, generation]
+  );
+  const listingScope = useMemo(
+    () => ({ projectId, generation, chapterId: context.chapterId ?? "" }),
+    [projectId, generation, context.chapterId]
   );
   const chapterScope = useMemo(() => ({ projectId, generation }), [projectId, generation]);
   const parentToken = useMemo(
@@ -175,6 +181,28 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
           }}
         />
       ) : null}
+      {active && userId && context.capabilities.includes("story.read") && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("storyListing.title")}
+          onPress={() => setListingOpen(true)}
+          style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}
+        >
+          <Text style={{ color: "#f5f5f5", fontSize: 12 }}>{t("storyListing.title")}</Text>
+        </Pressable>
+      )}
+      {active && userId && listingOpen && context.capabilities.includes("story.read") && (
+        <StoryListingEditor
+          key={projectId + ":" + generation}
+          scope={listingScope}
+          userId={userId}
+          onClose={() => setListingOpen(false)}
+          onSaved={() => {
+            context.refresh();
+            context.refreshPublication();
+          }}
+        />
+      )}
       <OwnedStoryProjectHeaderActions
         key={identity}
         projectId={projectId}

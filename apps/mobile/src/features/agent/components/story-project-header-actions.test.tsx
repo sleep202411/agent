@@ -2,6 +2,9 @@ import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StoryProjectHeaderActions } from "./story-project-header-actions";
+vi.mock("./story-listing-editor", () => ({
+  StoryListingEditor: () => <span>Film details editor</span>,
+}));
 vi.mock("./story-repair-sheet", () => ({ StoryRepairSheet: () => <span>Repair sheet</span> }));
 vi.mock("./story-chapters-sheet", () => ({
   StoryChaptersSheet: () => <span>Chapter manager</span>,
@@ -475,4 +478,12 @@ it("refreshes the workbench after a snapshot conflict without replaying the rele
   expect(h.refresh).toHaveBeenCalledOnce();
   expect(h.prepare).toHaveBeenCalledOnce();
   expect(h.submit).not.toHaveBeenCalled();
+});
+
+it("opens publication details from the existing project header", async () => {
+  await mount();
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="storyListing.title"]')!.click()
+  );
+  expect(host.textContent).toContain("Film details editor");
 });
