@@ -2,6 +2,7 @@ import { serviceFieldStyle } from "./service-field-style";
 import { useRef, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { SERVICE_CATEGORIES } from "@repo/shared/creator-service";
+import { useAuth } from "@/auth";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
@@ -10,22 +11,32 @@ import { ThemedText } from "@/components/themed-text";
 import { serviceCategoryLabel } from "@/lib/creator-service-format";
 import { inquiryKey } from "./inquiry-api";
 import { createServiceDraft, serviceDraftSchema } from "./service-create-api";
+import { serviceCreationPending } from "./service-create-pending";
 
 /** Mounted only by the authenticated owner screen; key by auth generation. */
 export function ServiceCreate({ onCreated }: { onCreated: (id: string) => void }) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation("new-service", useScreenActive());
-  const [open, setOpen] = useState(false),
-    [submitted, setSubmitted] = useState(false);
-  const [title, setTitle] = useState(""),
-    [summary, setSummary] = useState(""),
-    [category, setCategory] = useState<string>("other"),
-    [tags, setTags] = useState("");
-  const [error, setError] = useState<string>();
-  const intent = useRef<{ data: ReturnType<typeof serviceDraftSchema.parse>; key: string } | null>(
-    null
+  const auth = useAuth();
+  const [box] = useState(() =>
+    serviceCreationPending(String(auth.user?.userId ?? auth.user?.id ?? ""), auth.generation)
   );
+  const [initial] = useState(() => {
+    try {
+      return { pending: box.read(), error: undefined };
+    } catch (cause) {
+      return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+  const [open, setOpen] = useState(!!initial.pending || !!initial.error),
+    [submitted, setSubmitted] = useState(!!initial.pending);
+  const [title, setTitle] = useState(initial.pending?.data.title ?? ""),
+    [summary, setSummary] = useState(initial.pending?.data.summary ?? ""),
+    [category, setCategory] = useState<string>(initial.pending?.data.category ?? "other"),
+    [tags, setTags] = useState(initial.pending?.data.tags.join("\n") ?? "");
+  const [error, setError] = useState<string | undefined>(initial.error);
+  const intent = useRef(initial.pending);
   const parsed = serviceDraftSchema.safeParse({
     title,
     summary,
@@ -35,7 +46,7 @@ export function ServiceCreate({ onCreated }: { onCreated: (id: string) => void }
       .map((v) => v.trim())
       .filter(Boolean),
   });
-  const locked = op.busy || submitted;
+  const locked = op.busy || submitted || !!initial.error;
   if (!open)
     return (
       <Pressable accessibilityRole="button" onPress={() => setOpen(true)}>
@@ -97,15 +108,19 @@ export function ServiceCreate({ onCreated }: { onCreated: (id: string) => void }
       {submitted && !op.busy && <ThemedText>{t("serviceCreate.retryHint")}</ThemedText>}
       <Pressable
         accessibilityRole="button"
-        disabled={op.busy || !parsed.success}
+        disabled={op.busy || !!initial.error || !parsed.success}
         onPress={() => {
           if (!parsed.success) return;
           void op.run(
-            () => {
-              intent.current ??= { data: parsed.data, key: inquiryKey() };
+            async () => {
+              const pending = intent.current ?? { data: parsed.data, clientKey: inquiryKey() };
+              box.save(pending);
+              intent.current = pending;
               setSubmitted(true);
               setError(undefined);
-              return createServiceDraft(intent.current.data, intent.current.key);
+              const result = await createServiceDraft(pending.data, pending.clientKey);
+              box.clear(pending.clientKey);
+              return result;
             },
             (result) => {
               setOpen(false);

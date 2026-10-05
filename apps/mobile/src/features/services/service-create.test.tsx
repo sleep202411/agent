@@ -14,6 +14,9 @@ vi.mock("./service-create-api", async (original) => ({
   ...(await original<typeof import("./service-create-api")>()),
   createServiceDraft: h.change,
 }));
+vi.mock("@/config", () => ({
+  appEnv: { siteRegion: "global", api: { auroraBaseUrl: "https://fixture.invalid" } },
+}));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({
@@ -81,6 +84,9 @@ const type = (label: string, text: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.user = "owner";
+  h.authenticated = true;
+  window.localStorage.clear();
   h.active = true;
   host = document.createElement("div");
   document.body.append(host);
@@ -132,6 +138,7 @@ it("ignores a create response after the account changes", async () => {
   await fill();
   await act(async () => click("serviceCreate.save"));
   h.generation++;
+  h.user = "another-owner";
   await render();
   await act(async () => finish({ id: "old" }));
   expect(h.refresh).not.toHaveBeenCalled();
@@ -159,6 +166,81 @@ it("explains an unconfirmed background write and retries only on explicit action
   expect(host.textContent).toContain("serviceCreate.retryHint");
   expect(host.querySelector("input")?.disabled).toBe(true);
   expect(h.change).toHaveBeenCalledOnce();
+  await act(async () => click("common.retry"));
+  expect(h.change.mock.calls[1]).toEqual(h.change.mock.calls[0]);
+  expect(h.refresh).toHaveBeenCalledExactlyOnceWith("created");
+});
+
+it("restores the exact pending create after leaving and reopening without auto replay", async () => {
+  h.change.mockRejectedValueOnce(new Error("Reply lost")).mockResolvedValue({ id: "created" });
+  await fill();
+  await act(async () => click("serviceCreate.save"));
+  const original = h.change.mock.calls[0];
+  await act(async () => root.render(null));
+  await render();
+  expect(host.textContent).toContain("serviceCreate.retryHint");
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="serviceEdit.name"]')?.value).toBe(
+    "Film"
+  );
+  expect(host.querySelector("input")?.disabled).toBe(true);
+  expect(h.change).toHaveBeenCalledOnce();
+  await act(async () => click("common.retry"));
+  expect(h.change.mock.calls[1]).toEqual(original);
+  expect(h.refresh).toHaveBeenCalledWith("created");
+  await act(async () => root.render(null));
+  await render();
+  expect(host.textContent).toBe("serviceCreate.title");
+});
+it("does not send a create when saving its recovery record fails", async () => {
+  await fill();
+  const write = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+    throw Error("Storage full");
+  });
+  try {
+    await act(async () => click("serviceCreate.save"));
+    expect(h.change).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("Storage full");
+    expect(host.querySelector("input")?.disabled).toBe(false);
+  } finally {
+    write.mockRestore();
+  }
+});
+
+it("restores the original owner's pending request after an account switch", async () => {
+  h.change.mockRejectedValue(new Error("Reply lost"));
+  await fill();
+  await act(async () => click("serviceCreate.save"));
+  const original = h.change.mock.calls[0];
+  h.user = "another-owner";
+  h.generation++;
+  await render();
+  expect(host.textContent).toBe("serviceCreate.title");
+  h.user = "owner";
+  h.generation++;
+  await render();
+  expect(host.textContent).toContain("serviceCreate.retryHint");
+  expect(h.change).toHaveBeenCalledOnce();
+  await act(async () => click("common.retry"));
+  expect(h.change.mock.calls[1]).toEqual(original);
+});
+
+it("retains the request if clearing its acknowledged receipt fails", async () => {
+  h.change.mockResolvedValue({ id: "created" });
+  await fill();
+  const actualWrite = window.localStorage.setItem.bind(window.localStorage);
+  const write = vi.spyOn(window.localStorage, "setItem").mockImplementation((key, value) => {
+    if (JSON.parse(value).intent === null) throw Error("Storage unavailable");
+    actualWrite(key, value);
+  });
+  try {
+    await act(async () => click("serviceCreate.save"));
+    expect(h.refresh).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("Storage unavailable");
+  } finally {
+    write.mockRestore();
+  }
+  await act(async () => root.render(null));
+  await render();
   await act(async () => click("common.retry"));
   expect(h.change.mock.calls[1]).toEqual(h.change.mock.calls[0]);
   expect(h.refresh).toHaveBeenCalledExactlyOnceWith("created");
