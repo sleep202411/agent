@@ -1,5 +1,10 @@
+import type { getGenerationJob } from "@/features/ai-lab/jobs-api";
 import { beforeEach, expect, it, vi } from "vitest";
-import { canvasSubmissionForCommand, persistCanvasSubmission } from "./story-canvas-submission";
+import {
+  canvasSubmissionForCommand,
+  persistCanvasSubmission,
+  persistCanvasRetry,
+} from "./story-canvas-submission";
 import type { CanvasUpdateCommand } from "../api/story-canvas-update";
 const h = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("expo-modules-core", () => ({
@@ -129,5 +134,59 @@ it("rechecks drafts after encoding and handles an already-recorded request as a 
   allowed = true;
   encode.mockResolvedValueOnce(null);
   await save();
+  expect(queue.prepare).not.toHaveBeenCalled();
+});
+
+it("verifies retry ownership and media type before persisting its recovery record", async () => {
+  const readJob = vi.fn<typeof getGenerationJob>();
+  const job = { type: "image", status: "failed" } as Awaited<ReturnType<typeof getGenerationJob>>;
+  readJob.mockResolvedValue(job);
+  const retry = {
+    clientKey: id,
+    jobId: id,
+    workspaceId: id,
+    storyProjectId: id,
+    documentId: id,
+    documentBlockId: "card",
+    sourceSurface: "fizzstudio-canvas" as const,
+  };
+  const run = () =>
+    persistCanvasRetry(
+      scope,
+      "alice",
+      "image",
+      retry,
+      new AbortController().signal,
+      { queue, encode },
+      readJob
+    );
+  await run();
+  expect(readJob).toHaveBeenCalledWith(id, 1, expect.any(AbortSignal), {
+    workspaceId: id,
+    storyProjectId: id,
+    documentId: id,
+    documentBlockId: "card",
+    sourceSurface: "fizzstudio-canvas",
+  });
+  expect(encode).toHaveBeenCalledWith(
+    {
+      ownerId: "alice",
+      type: "image",
+      retry: { documentId: id, documentBlockId: "card", jobId: id },
+    },
+    expect.any(AbortSignal)
+  );
+  encode.mockClear();
+  queue.prepare.mockClear();
+  readJob.mockResolvedValue({ ...job, type: "video" });
+  await expect(run()).rejects.toThrow("media type");
+  readJob.mockResolvedValue({ ...job, status: "completed" });
+  await expect(run()).rejects.toThrow("failed generation");
+  readJob.mockImplementation(async () => {
+    h.generation++;
+    return job;
+  });
+  await expect(run()).rejects.toThrow("expired");
+  expect(encode).not.toHaveBeenCalled();
   expect(queue.prepare).not.toHaveBeenCalled();
 });

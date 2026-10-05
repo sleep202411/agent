@@ -1,4 +1,4 @@
-import type { CanvasSubmission } from "../../../../canvas-editor/submission-schema";
+import type { CanvasSubmissionRecord } from "../../../../canvas-editor/submission-schema";
 import type { CanvasGenerationJob } from "../../../../canvas-editor/generation-schema";
 import type { CanvasPositionEdit } from "../../../../canvas-editor/position-schema";
 import type { CanvasGroupEdit } from "../../../../canvas-editor/group-schema";
@@ -30,7 +30,7 @@ export function StoryCanvasEncoder({
     | CanvasPositionEdit
     | { action: "reconcileShotMedia" }
     | { action: "generation"; job: CanvasGenerationJob }
-    | { action: "submission"; submission: CanvasSubmission };
+    | { action: "submission"; submission: CanvasSubmissionRecord };
   generation: number;
   title: string;
   runtimeError: string;

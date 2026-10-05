@@ -1,4 +1,4 @@
-import { canvasSubmissionSchema } from "./submission-schema";
+import { canvasSubmissionRecordSchema } from "./submission-schema";
 import { canvasGenerationJobSchema } from "./generation-schema";
 import { canvasPositionEditSchema } from "./position-schema";
 import { canvasGroupEditSchema } from "./group-schema";
@@ -35,7 +35,7 @@ export const canvasHostMessage = z.discriminatedUnion("type", [
       type: z.literal("submission"),
       ...identity,
       snapshot: encodedCanvasState,
-      submission: canvasSubmissionSchema,
+      submission: canvasSubmissionRecordSchema,
     })
     .strict(),
   z

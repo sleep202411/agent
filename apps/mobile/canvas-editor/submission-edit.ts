@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { canvasSubmissionSchema, type CanvasSubmission } from "./submission-schema";
+import { canvasSubmissionRecordSchema, type CanvasSubmissionRecord } from "./submission-schema";
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
 const kinds: Record<string, string> = { prompt: "image", video: "video", audio: "audio" };
 function canonical(value: unknown): string {
@@ -13,14 +13,20 @@ function canonical(value: unknown): string {
   return JSON.stringify(value);
 }
 /** Persist the same recovery record as Web before the host sends a paid job. */
-export function recordCanvasSubmission(state: string, documentId: string, raw: CanvasSubmission) {
-  const command = canvasSubmissionSchema.parse(raw);
-  const input = command.submission;
-  if (input.context.documentId !== documentId)
-    throw Error("Submission belongs to another document.");
+export function recordCanvasSubmission(
+  state: string,
+  documentId: string,
+  raw: CanvasSubmissionRecord
+) {
+  const command = canvasSubmissionRecordSchema.parse(raw);
+  const input = "submission" in command ? command.submission : null;
+  const retry = "retry" in command ? command.retry : null;
+  const context = input?.context ?? retry!;
+  const key = input?.idempotencyKey ?? `retry:${retry!.jobId}`;
+  if (context.documentId !== documentId) throw Error("Submission belongs to another document.");
   return withCanvasState(state, [], (doc) => {
-    const node = doc.getMap("nodes").get(input.context.documentBlockId);
-    if (!(node instanceof Y.Map) || node.get("id") !== input.context.documentBlockId)
+    const node = doc.getMap("nodes").get(context.documentBlockId);
+    if (!(node instanceof Y.Map) || node.get("id") !== context.documentBlockId)
       throw Error("Generation card is unavailable. Reload the document.");
     const data = node.get("data");
     if (
@@ -32,13 +38,19 @@ export function recordCanvasSubmission(state: string, documentId: string, raw: C
     const previous = data.get("generation") as Record<string, unknown> | null | undefined;
     if (previous != null && (typeof previous !== "object" || Array.isArray(previous)))
       throw Error("Generation card state is invalid.");
-    if (previous?.submissionKey === input.idempotencyKey) {
-      if (previous.submission && canonical(previous.submission) !== canonical(input))
+    if (previous?.submissionKey === key) {
+      if (input && previous.submission && canonical(previous.submission) !== canonical(input))
         throw Error("The saved generation request changed. Keep the original request.");
       if (previous.submissionOwnerId && previous.submissionOwnerId !== command.ownerId)
         throw Error("This submission belongs to another account.");
       return { ...captureCanvasState(doc), yjsUpdateBase64: null };
     }
+    if (
+      retry &&
+      (previous?.jobId !== retry.jobId ||
+        !["failed", "cancelled"].includes(String(previous.status)))
+    )
+      throw Error("The retry target no longer matches this failed card.");
     if (previous && !["done", "failed", "cancelled"].includes(String(previous.status)))
       throw Error("Another generation is still pending on this card.");
     let update: string | null = null;
@@ -51,14 +63,16 @@ export function recordCanvasSubmission(state: string, documentId: string, raw: C
         JSON.parse(
           JSON.stringify({
             status: "submitting",
-            submissionKey: input.idempotencyKey,
+            submissionKey: key,
             submissionOwnerId: command.ownerId,
-            submission: input,
+            ...(input ? { submission: input } : {}),
           })
         )
       );
-      data.set("modelId", input.modelId);
-      if (typeof input.input.prompt === "string") data.set("prompt", input.input.prompt);
+      if (input) {
+        data.set("modelId", input.modelId);
+        if (typeof input.input.prompt === "string") data.set("prompt", input.input.prompt);
+      }
     });
     return { ...captureCanvasState(doc), yjsUpdateBase64: update };
   });

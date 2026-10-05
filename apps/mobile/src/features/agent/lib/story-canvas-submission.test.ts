@@ -102,44 +102,96 @@ it("accepts settled runs and reordered payload keys but never regresses an ackno
   expect(recordCanvasSubmission(settled, documentId, command).yjsUpdateBase64).toBeNull();
 });
 
-it("records submissions through the bundled runtime bridge", async () => {
-  const { runInNewContext } = await import("node:vm");
-  const { webcrypto } = await import("node:crypto");
-  const { default: bundle } = await import("../canvas-data/runtime-bundle.json");
-  const { canvasRuntimeMessage } = await import("../../../../canvas-editor/protocol");
-  const received: unknown[] = [];
-  const host = {
-    addEventListener() {},
-    __fizzCanvasReceive: undefined as undefined | ((raw: string) => void),
+it.each(["submission", "retry"] as const)(
+  "records %s through the bundled runtime bridge",
+  async (kind) => {
+    const { runInNewContext } = await import("node:vm");
+    const { webcrypto } = await import("node:crypto");
+    const { default: bundle } = await import("../canvas-data/runtime-bundle.json");
+    const { canvasRuntimeMessage } = await import("../../../../canvas-editor/protocol");
+    const received: unknown[] = [];
+    const host = {
+      addEventListener() {},
+      __fizzCanvasReceive: undefined as undefined | ((raw: string) => void),
+    };
+    runInNewContext(bundle, {
+      window: host,
+      document: {
+        querySelector: () => ({ textContent: JSON.stringify({ sessionId: documentId }) }),
+      },
+      parent: { postMessage: (raw: string) => received.push(JSON.parse(raw)) },
+      crypto: webcrypto,
+      URL,
+      TextEncoder,
+      TextDecoder,
+      atob,
+      btoa,
+      setTimeout,
+      clearTimeout,
+      console,
+    });
+    const snapshot = fixture(
+      kind === "retry" ? { status: "failed", jobId: documentId } : undefined
+    );
+    host.__fizzCanvasReceive!(
+      JSON.stringify({
+        type: "submission",
+        sessionId: documentId,
+        documentId,
+        requestId: 1,
+        sequence: 0,
+        snapshot,
+        submission:
+          kind === "retry"
+            ? {
+                ownerId: "alice",
+                type: "image",
+                retry: { documentId, documentBlockId: "card", jobId: documentId },
+              }
+            : command,
+      })
+    );
+    const result = canvasRuntimeMessage.parse(received.at(-1));
+    if (result.type !== "edited" || !result.yjsUpdateBase64)
+      throw Error("Missing submission delta");
+    expect(materializeCanvas(snapshot, [result.yjsUpdateBase64]).snapshot).toEqual(result.snapshot);
+    expect(result.snapshot.nodes.card).toHaveProperty(
+      "data.generation.submissionKey",
+      kind === "retry" ? `retry:${documentId}` : "attempt"
+    );
+  }
+);
+
+it("records a stable retry key only for the current failed job, preserving card content", () => {
+  const retry = {
+    ownerId: "alice",
+    type: "image" as const,
+    retry: { documentId, documentBlockId: "card", jobId: documentId },
   };
-  runInNewContext(bundle, {
-    window: host,
-    document: { querySelector: () => ({ textContent: JSON.stringify({ sessionId: documentId }) }) },
-    parent: { postMessage: (raw: string) => received.push(JSON.parse(raw)) },
-    crypto: webcrypto,
-    URL,
-    TextEncoder,
-    TextDecoder,
-    atob,
-    btoa,
-    setTimeout,
-    clearTimeout,
-    console,
+  const initial = fixture({ status: "failed", jobId: documentId, submissionKey: "old" });
+  const result = recordCanvasSubmission(initial, documentId, retry);
+  expect(result.snapshot.nodes.card).toHaveProperty("data.generation", {
+    status: "submitting",
+    submissionKey: `retry:${documentId}`,
+    submissionOwnerId: "alice",
   });
-  const snapshot = fixture();
-  host.__fizzCanvasReceive!(
-    JSON.stringify({
-      type: "submission",
-      sessionId: documentId,
-      documentId,
-      requestId: 1,
-      sequence: 0,
-      snapshot,
-      submission: command,
-    })
-  );
-  const result = canvasRuntimeMessage.parse(received.at(-1));
-  if (result.type !== "edited" || !result.yjsUpdateBase64) throw Error("Missing submission delta");
-  expect(materializeCanvas(snapshot, [result.yjsUpdateBase64]).snapshot).toEqual(result.snapshot);
-  expect(result.snapshot.nodes.card).toHaveProperty("data.generation.submissionKey", "attempt");
+  expect(result.snapshot.nodes.card).toHaveProperty("data.settings.seed", 7);
+  expect(
+    materializeCanvas(initial, [result.yjsUpdateBase64!, result.yjsUpdateBase64!]).snapshot
+  ).toEqual(result.snapshot);
+  expect(recordCanvasSubmission(result.state, documentId, retry).yjsUpdateBase64).toBeNull();
+  expect(() =>
+    recordCanvasSubmission(result.state, documentId, { ...retry, ownerId: "bob" })
+  ).toThrow("another account");
+  for (const generation of [
+    undefined,
+    { status: "done", jobId: documentId },
+    { status: "failed", jobId: "other" },
+    { status: "generating", jobId: documentId },
+  ])
+    expect(() => recordCanvasSubmission(fixture(generation), documentId, retry)).toThrow(
+      "retry target"
+    );
+  const settled = fixture({ status: "done", jobId: "child", submissionKey: `retry:${documentId}` });
+  expect(recordCanvasSubmission(settled, documentId, retry).yjsUpdateBase64).toBeNull();
 });

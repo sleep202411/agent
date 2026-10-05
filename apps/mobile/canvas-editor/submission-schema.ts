@@ -37,3 +37,21 @@ export const canvasSubmissionSchema = z
   })
   .strict();
 export type CanvasSubmission = z.infer<typeof canvasSubmissionSchema>;
+
+/** Retry reuses the server's frozen job input, not a reconstructed submission. */
+export const canvasRetrySchema = z
+  .object({
+    ownerId: z.string().min(1),
+    type: z.enum(["image", "video", "audio"]),
+    retry: z
+      .object({
+        documentId: z.string().uuid(),
+        documentBlockId: z.string().min(1).max(128),
+        jobId: z.string().uuid(),
+      })
+      .strict(),
+  })
+  .strict();
+export type CanvasRetry = z.infer<typeof canvasRetrySchema>;
+export const canvasSubmissionRecordSchema = z.union([canvasSubmissionSchema, canvasRetrySchema]);
+export type CanvasSubmissionRecord = z.infer<typeof canvasSubmissionRecordSchema>;

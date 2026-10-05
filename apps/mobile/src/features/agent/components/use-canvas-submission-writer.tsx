@@ -1,12 +1,15 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useTranslations } from "@/i18n";
-import type { GenerationCommand } from "@/features/ai-lab/jobs-api";
-import type { CanvasSubmission } from "../../../../canvas-editor/submission-schema";
+import type { GenerationCommand, GenerationRetry } from "@/features/ai-lab/jobs-api";
+import type {
+  CanvasSubmission,
+  CanvasSubmissionRecord,
+} from "../../../../canvas-editor/submission-schema";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import type { CanvasWriteScope } from "../api/story-canvas-update";
 import { canvasReconciliation } from "../lib/story-canvas-reconciliation";
-import { persistCanvasSubmission } from "../lib/story-canvas-submission";
+import { persistCanvasSubmission, persistCanvasRetry } from "../lib/story-canvas-submission";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
@@ -15,7 +18,7 @@ type Request = {
   scope: CanvasWriteScope;
   userId: string;
   type: CanvasSubmission["type"];
-  command: CanvasSubmission;
+  command: CanvasSubmissionRecord;
   signal: AbortSignal;
   finish(error?: Error, update?: string | null): void;
   loaded?: CanvasLoaded;
@@ -47,7 +50,7 @@ export function useCanvasSubmissionWriter(
     };
   }, [scope, userId, type]);
   const encode = useCallback(
-    (command: CanvasSubmission, signal: AbortSignal): Promise<string | null> => {
+    (command: CanvasSubmissionRecord, signal: AbortSignal): Promise<string | null> => {
       const life = lifetime.current;
       if (
         !life?.active ||
@@ -86,8 +89,8 @@ export function useCanvasSubmissionWriter(
     },
     [scope, userId, type]
   );
-  const beforeSubmit = useCallback(
-    async (command: GenerationCommand, signal: AbortSignal) => {
+  const save = useCallback(
+    async (run: (signal: AbortSignal) => Promise<void>, signal: AbortSignal) => {
       const life = lifetime.current;
       if (
         !life?.active ||
@@ -104,10 +107,7 @@ export function useCanvasSubmissionWriter(
       const abort = () => controller.abort();
       signal.addEventListener("abort", abort, { once: true });
       try {
-        await persistCanvasSubmission(scope, userId, type, command, controller.signal, {
-          queue,
-          encode,
-        });
+        await run(controller.signal);
         if (!life.active || controller.signal.aborted || getAuthGeneration() !== scope.generation)
           throw Error("Canvas session expired.");
       } finally {
@@ -115,7 +115,24 @@ export function useCanvasSubmissionWriter(
         life.controllers.delete(controller);
       }
     },
-    [scope, userId, type, queue, encode]
+    [scope, userId, type]
+  );
+  const beforeSubmit = useCallback(
+    (command: GenerationCommand, signal: AbortSignal) =>
+      save(
+        (active) =>
+          persistCanvasSubmission(scope, userId, type, command, active, { queue, encode }),
+        signal
+      ),
+    [save, scope, userId, type, queue, encode]
+  );
+  const beforeRetry = useCallback(
+    (command: GenerationRetry, signal: AbortSignal) =>
+      save(
+        (active) => persistCanvasRetry(scope, userId, type, command, active, { queue, encode }),
+        signal
+      ),
+    [save, scope, userId, type, queue, encode]
   );
   const current = (value: Request) =>
     pending.current?.id === value.id &&
@@ -168,5 +185,5 @@ export function useCanvasSubmissionWriter(
         />
       )
     ) : null;
-  return { beforeSubmit, bridge };
+  return { beforeSubmit, beforeRetry, bridge };
 }

@@ -282,7 +282,7 @@ export async function cancelGeneration(
 // The official retry route recovers one child per original job, including legacy
 // retry lineage. Persist the original target and retry only on explicit user action.
 
-const retryCommand = z
+export const generationRetryCommand = z
   .object({
     clientKey: id,
     jobId: id,
@@ -297,14 +297,14 @@ const retryCommand = z
     (v) => !(v.projectId || v.storyProjectId) || !!v.workspaceId,
     "Project generation requires its workspace."
   );
-export type GenerationRetry = z.infer<typeof retryCommand>;
+export type GenerationRetry = z.infer<typeof generationRetryCommand>;
 export function generationRetryOutbox(
   userId: string,
   generation: number,
   storageScope?: GenerationStorageScope
 ) {
   return pendingRequest(
-    retryCommand,
+    generationRetryCommand,
     generation,
     durableRecord("ai-lab-retry", userId, generationStorageKey(storageScope, "pending"))
   );
@@ -327,7 +327,7 @@ export async function retryPendingGeneration(
   if (storageScope && !matchesGenerationScope(command, storageScope))
     throw new Error("Retry does not match this workspace.");
   const box = generationRetryOutbox(userId, generation, storageScope);
-  const intent = retryCommand.parse(command),
+  const intent = generationRetryCommand.parse(command),
     previous = box.read();
   if (previous && JSON.stringify(previous) !== JSON.stringify(intent))
     throw new Error("Recover the saved generation retry before choosing another job.");
