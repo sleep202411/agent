@@ -8,11 +8,10 @@ import {
   type CanvasPositionEdit,
 } from "../../../../canvas-editor/position-schema";
 import { canvasUpdateSchema, type CanvasSnapshot } from "../../../../canvas-editor/protocol";
-import {
-  canvasUpdatePending,
-  type CanvasWriteScope,
-  type CanvasUpdateCommand,
-} from "../api/story-canvas-update";
+import { canvasUpdatePending, type CanvasUpdateCommand } from "../api/story-canvas-update";
+
+import type { CanvasEditScope } from "./story-canvas-draft";
+import { platformCanvasUpdatePending } from "../api/platform-canvas-document";
 
 export const canvasPositionDraftSchema = z
   .object({
@@ -47,12 +46,14 @@ export function canvasPositionBaseline(snapshot: CanvasSnapshot, raw: CanvasPosi
   );
 }
 export function canvasPositionDraftStore(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   storage: DurableRecord = durableRecord(
-    "story-canvas-position-draft",
+    "kind" in scope ? "platform-canvas-position-draft" : "story-canvas-position-draft",
     userId,
-    `${scope.projectId}:${scope.documentId}`
+    "kind" in scope
+      ? `${scope.workspaceId}:${scope.projectId}:${scope.sectionId}:${scope.documentId}`
+      : `${scope.projectId}:${scope.documentId}`
   )
 ) {
   const current = () => {
@@ -83,11 +84,14 @@ export function canvasPositionDraftStore(
 /** Own exact bytes independently of the shared transport journal: a lost
  * response must replay the same movement, never encode a second drag. */
 export function canvasPositionRecovery(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   dependencies = {
     store: canvasPositionDraftStore(scope, userId),
-    client: canvasUpdatePending(scope, userId),
+    client:
+      "kind" in scope
+        ? platformCanvasUpdatePending(scope, userId)
+        : canvasUpdatePending(scope, userId),
   }
 ) {
   const { store, client } = dependencies;

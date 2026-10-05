@@ -18,11 +18,12 @@ import {
   canvasGroupDraftStore,
   type CanvasGroupDraft,
 } from "../lib/story-canvas-group-draft";
+import { canvasUpdatePending, type CanvasUpdateCommand } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
 import {
-  canvasUpdatePending,
-  type CanvasWriteScope,
-  type CanvasUpdateCommand,
-} from "../api/story-canvas-update";
+  openPlatformCanvasDocument,
+  platformCanvasUpdatePending,
+} from "../api/platform-canvas-document";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
@@ -34,7 +35,7 @@ export function StoryCanvasGroupForm({
   close,
   saved,
 }: {
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   userId: string;
   loaded: CanvasLoaded;
   canEdit: boolean;
@@ -45,7 +46,13 @@ export function StoryCanvasGroupForm({
     theme = useTheme(),
     insets = useSafeAreaInsets();
   const store = useMemo(() => canvasGroupDraftStore(scope, userId), [scope, userId]);
-  const client = useMemo(() => canvasUpdatePending(scope, userId), [scope, userId]);
+  const client = useMemo(
+    () =>
+      "kind" in scope
+        ? platformCanvasUpdatePending(scope, userId)
+        : canvasUpdatePending(scope, userId),
+    [scope, userId]
+  );
   const [initial] = useState(() => {
     try {
       return { draft: store.read() };
@@ -393,6 +400,7 @@ export function StoryCanvasGroupForm({
         {phase === "refresh" && action && (
           <StoryCanvasReader
             scope={scope}
+            platform={"kind" in scope ? { scope, load: openPlatformCanvasDocument } : undefined}
             title={t("storyCanvas.title")}
             runtimeError={t("storyCanvas.loadError")}
             onError={failed}

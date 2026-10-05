@@ -1,3 +1,4 @@
+import { durableRecord } from "@/lib/durable-record";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   canvasPositionBaseline,
@@ -9,6 +10,7 @@ const h = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/durable-record", () => ({ durableRecord: vi.fn() }));
 vi.mock("../api/story-canvas-update", () => ({ canvasUpdatePending: vi.fn() }));
+vi.mock("../api/platform-canvas-document", () => ({ platformCanvasUpdatePending: vi.fn() }));
 const key = "00000000-0000-4000-8000-000000000001";
 const scope = { projectId: key, documentId: key, generation: 1 };
 const command = { clientKey: key, yjsUpdateBase64: "AAA=" };
@@ -181,4 +183,34 @@ it("rejects a tidy proposal after wires change, but keeps independent text edits
   expect(submit).not.toHaveBeenCalled();
   setup().prepare(command);
   expect(setup().validate({ ...snapshot, edges: {} }).command).toEqual(command);
+});
+
+it("isolates platform position drafts from Story and other chapters", () => {
+  vi.mocked(durableRecord).mockReturnValue(storage);
+  const platform = {
+    ...scope,
+    kind: "platform" as const,
+    workspaceId: "workspace",
+    sectionId: "section",
+  };
+  const draft = { edit, baseline: "baseline" };
+  canvasPositionDraftStore(platform, "user").write(draft);
+  expect(durableRecord).toHaveBeenLastCalledWith(
+    "platform-canvas-position-draft",
+    "user",
+    `workspace:${scope.projectId}:section:${scope.documentId}`
+  );
+  expect(canvasPositionDraftStore(platform, "user").read()).toEqual(draft);
+  canvasPositionDraftStore({ ...platform, sectionId: "other" }, "user");
+  expect(durableRecord).toHaveBeenLastCalledWith(
+    "platform-canvas-position-draft",
+    "user",
+    `workspace:${scope.projectId}:other:${scope.documentId}`
+  );
+  canvasPositionDraftStore(scope, "user");
+  expect(durableRecord).toHaveBeenLastCalledWith(
+    "story-canvas-position-draft",
+    "user",
+    `${scope.projectId}:${scope.documentId}`
+  );
 });

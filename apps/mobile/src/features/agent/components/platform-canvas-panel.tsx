@@ -11,6 +11,13 @@ import type { CanvasNodeEdit } from "../../../../canvas-editor/schema";
 import { CANVAS_SHOT_FIELDS } from "../../../../canvas-editor/shot-fields";
 import { canvasDraftStore } from "../lib/story-canvas-draft";
 import { fetchPlatformSections } from "../api/platform-sections-api";
+import { StoryCanvasPositionForm } from "./story-canvas-position-form";
+import { StoryCanvasGroupForm } from "./story-canvas-group-form";
+import {
+  canvasPositionDraftStore,
+  canvasPositionRecovery,
+} from "../lib/story-canvas-position-draft";
+import { canvasGroupDraftStore } from "../lib/story-canvas-group-draft";
 import { StoryCanvasEditForm } from "./story-canvas-edit-form";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import {
@@ -121,6 +128,10 @@ function Document({
 }) {
   const t = useTranslations(),
     theme = useTheme();
+  const [positioning, setPositioning] = useState(false);
+  const [grouping, setGrouping] = useState(false);
+  const [positionRecovery, setPositionRecovery] = useState(false);
+  const [groupRecovery, setGroupRecovery] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [edit, setEdit] = useState<Pick<CanvasNodeEdit, "nodeId" | "kind">>();
   const [recovery, setRecovery] = useState<Pick<CanvasNodeEdit, "nodeId" | "kind">>();
@@ -165,6 +176,8 @@ function Document({
               try {
                 setOverview(canvasOverview(result.snapshot));
                 setRecovery(canvasDraftStore(scope, userId).read()?.edit);
+                setPositionRecovery(!!canvasPositionDraftStore(scope, userId).read());
+                setGroupRecovery(!!canvasGroupDraftStore(scope, userId).read());
                 setLoaded(result);
               } catch (cause) {
                 setError(cause instanceof Error ? cause.message : String(cause));
@@ -190,6 +203,26 @@ function Document({
               <ThemedText type="small">{t("storyCanvas.resumeAction")}</ThemedText>
             </Pressable>
           )}
+          {canEdit && positionRecovery && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setPositioning(true)}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <ThemedText type="small">{t("storyCanvas.map.resumeMovement")}</ThemedText>
+            </Pressable>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setGrouping(true)}
+            style={{ minHeight: 44, justifyContent: "center" }}
+          >
+            <ThemedText type="small">
+              {t(
+                groupRecovery && canEdit ? "storyCanvas.groups.resume" : "storyCanvas.groups.title"
+              )}
+            </ThemedText>
+          </Pressable>
           {openActors && (
             <Pressable accessibilityRole="button" onPress={openActors} style={{ padding: 10 }}>
               <ThemedText type="small">{t("platformActors.title")}</ThemedText>
@@ -295,6 +328,26 @@ function Document({
           )}
         </ScrollView>
       )}
+      {loaded && positioning && canEdit && (
+        <StoryCanvasPositionForm
+          loaded={loaded}
+          scope={scope}
+          userId={userId}
+          canEdit={canEdit}
+          close={saved}
+          saved={saved}
+        />
+      )}
+      {loaded && grouping && (
+        <StoryCanvasGroupForm
+          loaded={loaded}
+          scope={scope}
+          userId={userId}
+          canEdit={canEdit}
+          close={saved}
+          saved={saved}
+        />
+      )}
       {loaded && edit && canEdit && (
         <StoryCanvasEditForm
           scope={scope}
@@ -314,6 +367,16 @@ function Document({
       )}
       {loaded && mapping && (
         <StoryCanvasMap
+          generation={scope.generation}
+          move={
+            canEdit
+              ? (edit, selection) => {
+                  canvasPositionRecovery(scope, userId).stage(loaded.snapshot, edit, selection);
+                  setMapping(false);
+                  setPositioning(true);
+                }
+              : undefined
+          }
           loaded={loaded}
           close={() => setMapping(false)}
           inspect={(nodeId) => {

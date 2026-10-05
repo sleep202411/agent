@@ -7,7 +7,7 @@ import {
   type CanvasGroupEdit,
 } from "../../../../canvas-editor/group-schema";
 import { canvasUpdateSchema, type CanvasSnapshot } from "../../../../canvas-editor/protocol";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "./story-canvas-draft";
 
 export const canvasGroupDraftSchema = z.discriminatedUnion("stage", [
   z.object({ stage: z.literal("selection"), nodeIds: z.array(z.string().min(1)) }).strict(),
@@ -52,12 +52,14 @@ export function canvasGroupBaseline(snapshot: CanvasSnapshot, raw: CanvasGroupEd
   });
 }
 export function canvasGroupDraftStore(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   storage: DurableRecord = durableRecord(
-    "story-canvas-group-draft",
+    "kind" in scope ? "platform-canvas-group-draft" : "story-canvas-group-draft",
     userId,
-    `${scope.projectId}:${scope.documentId}`
+    "kind" in scope
+      ? `${scope.workspaceId}:${scope.projectId}:${scope.sectionId}:${scope.documentId}`
+      : `${scope.projectId}:${scope.documentId}`
   )
 ) {
   const current = () => {

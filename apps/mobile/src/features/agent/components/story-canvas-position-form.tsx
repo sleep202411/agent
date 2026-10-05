@@ -8,7 +8,8 @@ import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
+import { openPlatformCanvasDocument } from "../api/platform-canvas-document";
 import { canvasPositionRecovery } from "../lib/story-canvas-position-draft";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
@@ -20,7 +21,7 @@ export function StoryCanvasPositionForm({
   close,
   saved,
 }: {
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   loaded: CanvasLoaded;
   userId: string;
   canEdit: boolean;
@@ -160,6 +161,7 @@ export function StoryCanvasPositionForm({
         {phase === "refresh" && (
           <StoryCanvasReader
             scope={scope}
+            platform={"kind" in scope ? { scope, load: openPlatformCanvasDocument } : undefined}
             title={t("storyCanvas.title")}
             runtimeError={t("storyCanvas.loadError")}
             onError={failed}

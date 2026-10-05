@@ -1,3 +1,4 @@
+import { durableRecord } from "@/lib/durable-record";
 import { beforeEach, expect, it, vi } from "vitest";
 import { canvasGroupBaseline, canvasGroupDraftStore } from "./story-canvas-group-draft";
 const h = vi.hoisted(() => ({ generation: 1 }));
@@ -88,4 +89,34 @@ it("detects a newly occupied group ID before creating a saved selection", () => 
   const baseline = canvasGroupBaseline(snapshot, edit);
   Object.assign(snapshot.groups, { [groupId]: { nodeIds: [] } });
   expect(canvasGroupBaseline(snapshot, edit)).not.toBe(baseline);
+});
+
+it("isolates platform group drafts from Story and other chapters", () => {
+  vi.mocked(durableRecord).mockReturnValue(storage);
+  const platform = {
+    ...scope,
+    kind: "platform" as const,
+    workspaceId: "workspace",
+    sectionId: "section",
+  };
+  const draft = { stage: "selection" as const, nodeIds: ["a", "b"] };
+  canvasGroupDraftStore(platform, "user").write(draft);
+  expect(durableRecord).toHaveBeenLastCalledWith(
+    "platform-canvas-group-draft",
+    "user",
+    `workspace:${scope.projectId}:section:${scope.documentId}`
+  );
+  expect(canvasGroupDraftStore(platform, "user").read()).toEqual(draft);
+  canvasGroupDraftStore({ ...platform, sectionId: "other" }, "user");
+  expect(durableRecord).toHaveBeenLastCalledWith(
+    "platform-canvas-group-draft",
+    "user",
+    `workspace:${scope.projectId}:other:${scope.documentId}`
+  );
+  canvasGroupDraftStore(scope, "user");
+  expect(durableRecord).toHaveBeenLastCalledWith(
+    "story-canvas-group-draft",
+    "user",
+    `${scope.projectId}:${scope.documentId}`
+  );
 });
