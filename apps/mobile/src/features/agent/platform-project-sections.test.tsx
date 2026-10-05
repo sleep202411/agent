@@ -4,6 +4,10 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { PlatformProjectSections } from "./platform-project-sections";
 import { SectionWriteError } from "./api/platform-sections-api";
 const h = vi.hoisted(() => ({
+  prevent: false,
+  removeRoute: undefined as undefined | ((event: { data: { action: { type: string } } }) => void),
+  hardwareBack: undefined as undefined | (() => boolean),
+  dispatch: vi.fn(),
   generation: 1,
   active: true,
   list: vi.fn(),
@@ -16,6 +20,13 @@ vi.mock("./components/platform-canvas-panel", () => ({
   PlatformCanvasPanel: (props: { close(): void }) => {
     h.canvas(props);
     return <button onClick={props.close}>Close canvas</button>;
+  },
+}));
+vi.mock("expo-router", () => ({ useNavigation: () => ({ dispatch: h.dispatch }) }));
+vi.mock("expo-router/build/react-navigation/core/usePreventRemove", () => ({
+  usePreventRemove: (prevent: boolean, callback: typeof h.removeRoute) => {
+    h.prevent = prevent;
+    h.removeRoute = callback;
   },
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -37,7 +48,12 @@ vi.mock("react-native", () => ({
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>Loading</span>,
   Linking: { openURL: h.open },
-  BackHandler: { addEventListener: () => ({ remove: vi.fn() }) },
+  BackHandler: {
+    addEventListener: (_: string, callback: () => boolean) => {
+      h.hardwareBack = callback;
+      return { remove: vi.fn() };
+    },
+  },
   Pressable: ({
     children,
     disabled,
@@ -278,4 +294,60 @@ it("retains drafts on failed refresh and does not revive a removed chapter", asy
   expect(button("studioProjects.reviewed")).toBeUndefined();
   expect(button("studioChapters.confirm").disabled).toBe(true);
   expect(host.querySelector("input")!.value).toBe("My retained title");
+});
+
+it("retains a renamed chapter after cancelled exits and returns to chapters after discard", async () => {
+  await render();
+  await click("studioChapters.rename");
+  await input("Retained name");
+  await click("common.back");
+  expect(h.close).not.toHaveBeenCalled();
+  await click("documentEditor.keepEditing");
+  expect(host.querySelector("input")!.value).toBe("Retained name");
+  await act(async () => {
+    h.hardwareBack!();
+  });
+  await click("documentEditor.discard");
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.close).not.toHaveBeenCalled();
+  await click("common.back");
+  expect(h.close).toHaveBeenCalledOnce();
+});
+it("protects new chapter titles from route removal and explicit discard", async () => {
+  await render();
+  await click("studioChapters.create");
+  await input("New chapter draft");
+  expect(h.prevent).toBe(true);
+  const action = { type: "GO_BACK" };
+  await act(async () => h.removeRoute!({ data: { action } }));
+  await click("documentEditor.keepEditing");
+  expect(host.querySelector("input")!.value).toBe("New chapter draft");
+  await click("studioProjects.discard");
+  await click("documentEditor.keepEditing");
+  expect(h.dispatch).not.toHaveBeenCalled();
+  await act(async () => h.removeRoute!({ data: { action } }));
+  await click("documentEditor.discard");
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+  expect(h.write).not.toHaveBeenCalled();
+});
+it("blocks leaving during chapter writes but allows account retirement", async () => {
+  let finish!: (value: typeof data) => void;
+  h.write.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await click("studioChapters.create");
+  await input("Saving chapter");
+  await click("studioChapters.confirm");
+  const action = { type: "GO_BACK" };
+  await act(async () => h.removeRoute!({ data: { action } }));
+  expect(button("documentEditor.discard")).toBeUndefined();
+  expect(h.dispatch).not.toHaveBeenCalled();
+  h.generation++;
+  await act(async () => h.removeRoute!({ data: { action } }));
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+  await act(async () => finish(data));
 });
