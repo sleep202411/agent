@@ -110,6 +110,16 @@ function WorldSceneSession({
       return;
     }
     controller.current = travel;
+    // Observe readiness before creating a paid session. A missing handshake must
+    // reach the player error UI, and a late message cannot revive a timed-out frame.
+    void transport.waitUntilReady().then(
+      () => {
+        if (mounted) setAttached(true);
+      },
+      (error) => {
+        if (mounted) reportError(error);
+      }
+    );
     return () => {
       mounted = false;
       if (controller.current === travel) controller.current = null;
@@ -228,12 +238,6 @@ function WorldSceneSession({
           if (typeof raw === "string" && raw.length <= 100000) {
             try {
               const message = worldMessageSchema.safeParse(JSON.parse(raw));
-              if (
-                message.success &&
-                message.data.sessionId === sessionId &&
-                message.data.type === "ready"
-              )
-                setAttached(true);
               if (
                 message.success &&
                 message.data.sessionId === sessionId &&

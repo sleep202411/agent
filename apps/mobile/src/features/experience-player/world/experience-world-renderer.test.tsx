@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ExperienceWorldRenderer } from "./experience-world-renderer";
 const h = vi.hoisted(() => ({
   active: true,
+  ready: true,
   frame: null as any,
   commands: [] as any[],
   create: vi.fn(),
@@ -78,6 +79,7 @@ vi.mock("./world-runtime-frame", () => ({
       },
     }));
     useEffect(() => {
+      if (!h.ready) return;
       const timer = setTimeout(
         () =>
           h.frame.onMessage(
@@ -104,6 +106,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   h.active = true;
+  h.ready = true;
   h.commands = [];
   h.deferPause = false;
   h.finishPause = null;
@@ -283,4 +286,40 @@ it("leaves the embedded tap recovery visible and disables movement until playbac
     false
   );
   expect(h.create).toHaveBeenCalledOnce();
+});
+
+it("reports a missing embedded-player handshake without opening a paid session", async () => {
+  h.ready = false;
+  await render();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(15001);
+  });
+  expect(props.onError).toHaveBeenCalledOnce();
+  expect(props.onError).toHaveBeenCalledWith(
+    expect.objectContaining({ message: "World playback surface did not load." })
+  );
+  expect(h.create).not.toHaveBeenCalled();
+  expect(props.onCompleted).not.toHaveBeenCalled();
+  await act(async () =>
+    h.frame.onMessage(
+      JSON.stringify({
+        sessionId: "41111111-1111-4111-8111-111111111111",
+        type: "ready",
+      })
+    )
+  );
+  await flush();
+  expect(h.create).not.toHaveBeenCalled();
+});
+
+it("does not report a missing handshake after leaving the scene", async () => {
+  h.ready = false;
+  await render();
+  await act(async () => root.render(null));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(15001);
+  });
+  expect(props.onError).not.toHaveBeenCalled();
+  expect(h.create).not.toHaveBeenCalled();
+  expect(props.onCompleted).not.toHaveBeenCalled();
 });

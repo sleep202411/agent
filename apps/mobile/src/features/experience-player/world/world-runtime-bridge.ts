@@ -61,6 +61,10 @@ export class WorldRuntimeBridge implements WorldTravelRuntime {
     );
   }
 
+  waitUntilReady(): Promise<void> {
+    return this.ready;
+  }
+
   async initialize(input: CreateWorldTravelRuntimeInput): Promise<WorldTravelRuntime> {
     if (this.input) throw new Error("World playback surface is already assigned.");
     this.input = input;
