@@ -9,6 +9,9 @@ import {
   View,
 } from "react-native";
 import { uuid } from "expo-modules-core";
+import * as DocumentPicker from "expo-document-picker";
+import { canvasUploadTypes } from "../../../../canvas-editor/upload-schema";
+import { uploadCanvasFile, confirmCanvasUpload } from "../api/story-canvas-upload";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useTranslations } from "@/i18n";
@@ -30,7 +33,7 @@ import { loadCanvasModels } from "../api/story-canvas-models";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
-const types = ["prompt", "video", "audio", "note", "shot"] as const;
+const types = ["prompt", "video", "audio", "note", "shot", "uploadedAsset"] as const;
 export function StoryCanvasCreateForm({
   scope,
   userId,
@@ -70,7 +73,9 @@ export function StoryCanvasCreateForm({
   });
   const [draft, setDraft] = useState<CanvasCreateDraft | undefined>(initial.draft),
     [error, setError] = useState(initial.error);
-  const [phase, setPhase] = useState<"idle" | "refresh" | "prepare" | "encode" | "save">("idle");
+  const [phase, setPhase] = useState<"idle" | "refresh" | "prepare" | "encode" | "save" | "upload">(
+    "idle"
+  );
   const [prepared, setPrepared] = useState<{ loaded: CanvasLoaded; create: CanvasNodeCreate }>();
   const life = useRef<AbortController | null>(null),
     busy = useRef(false),
@@ -101,11 +106,64 @@ export function StoryCanvasCreateForm({
   };
   const change = (patch: Partial<Pick<CanvasCreateDraft, "type" | "name" | "text">>) => {
     if (!current() || !draft || busy.current || draft.command) return;
+    if (patch.type && patch.type !== draft.type && (draft.upload || draft.uploadedAsset)) return;
     const next = { ...draft, ...patch };
     setDraft(next);
     try {
       store.write(next);
       setError(undefined);
+    } catch (cause) {
+      fail(cause);
+    }
+  };
+  const pickFile = async () => {
+    if (
+      !current() ||
+      !draft ||
+      busy.current ||
+      draft.command ||
+      draft.upload ||
+      draft.uploadedAsset
+    )
+      return;
+    busy.current = true;
+    setError(undefined);
+    setPhase("upload");
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: canvasUploadTypes,
+        multiple: false,
+        copyToCacheDirectory: true,
+        base64: false,
+      });
+      if (!current()) return;
+      if (!picked.canceled) {
+        if (picked.assets.length !== 1) throw Error(t("storyCanvas.upload.pickOne"));
+        const file = picked.assets[0]!;
+        let latest = draft;
+        const uploadedAsset = await uploadCanvasFile(
+          scope,
+          {
+            uri: file.uri,
+            name: file.name,
+            type: file.file?.type || file.mimeType || "",
+            size: file.file?.size ?? file.size,
+          },
+          life.current!.signal,
+          (upload) => {
+            if (!current()) throw Error(t("storyCanvas.changed"));
+            latest = { ...draft, upload };
+            store.write(latest);
+            setDraft(latest);
+          }
+        );
+        if (!current()) return;
+        const next = { ...latest, uploadedAsset };
+        store.write(next);
+        setDraft(next);
+      }
+      busy.current = false;
+      setPhase("idle");
     } catch (cause) {
       fail(cause);
     }
@@ -122,11 +180,13 @@ export function StoryCanvasCreateForm({
       fail(cause);
     }
   };
-  const save = () => {
+  const save = async () => {
     if (!current() || !draft || busy.current) return;
     busy.current = true;
     setError(undefined);
     try {
+      if (draft.type === "uploadedAsset" && !draft.uploadedAsset && !draft.upload)
+        throw Error(t("storyCanvas.upload.pickOne"));
       store.write(draft);
       const pending = client.read();
       if (
@@ -137,7 +197,21 @@ export function StoryCanvasCreateForm({
       )
         throw Error(t("storyCanvas.pendingMismatch"));
       if (draft.command) void submit(draft.command);
-      else setPhase("refresh");
+      else {
+        if (draft.type === "uploadedAsset" && !draft.uploadedAsset && draft.upload) {
+          setPhase("upload");
+          const uploadedAsset = await confirmCanvasUpload(
+            scope,
+            draft.upload,
+            life.current!.signal
+          );
+          if (!current()) return;
+          const next = { ...draft, uploadedAsset };
+          store.write(next);
+          setDraft(next);
+        }
+        setPhase("refresh");
+      }
     } catch (cause) {
       fail(cause);
     }
@@ -149,7 +223,15 @@ export function StoryCanvasCreateForm({
       if (loaded.documentId !== scope.documentId) throw Error(t("storyCanvas.changed"));
       const position = canvasAppendPosition(loaded.snapshot);
       let create: CanvasNodeCreate;
-      if (draft.type === "libraryAsset")
+      if (draft.type === "uploadedAsset") {
+        if (!draft.uploadedAsset) throw Error(t("storyCanvas.upload.pickOne"));
+        create = {
+          nodeId: draft.nodeId,
+          type: "uploadedAsset",
+          asset: draft.uploadedAsset,
+          position,
+        };
+      } else if (draft.type === "libraryAsset")
         create = { nodeId: draft.nodeId, type: "libraryAsset", assetId: draft.assetId!, position };
       else if (draft.type === "shot") create = { nodeId: draft.nodeId, type: "shot", position };
       else if (draft.type === "note")
@@ -196,7 +278,8 @@ export function StoryCanvasCreateForm({
         },
       },
     ]);
-  const editable = phase === "idle" && !draft?.command;
+  const editable = phase === "idle" && !draft?.command && !draft?.upload && !draft?.uploadedAsset;
+  const missingFile = draft?.type === "uploadedAsset" && !draft.upload && !draft.uploadedAsset;
   return (
     <Modal visible animationType="slide" onRequestClose={close}>
       <View
@@ -254,7 +337,7 @@ export function StoryCanvasCreateForm({
                   ))}
                 </View>
               )}
-              {!["shot", "note", "libraryAsset"].includes(draft.type) && (
+              {!["shot", "note", "libraryAsset", "uploadedAsset"].includes(draft.type) && (
                 <>
                   <ThemedText type="small">{t("storyCanvas.createName")}</ThemedText>
                   <TextInput
@@ -272,7 +355,7 @@ export function StoryCanvasCreateForm({
                   />
                 </>
               )}
-              {!["shot", "libraryAsset"].includes(draft.type) && (
+              {!["shot", "libraryAsset", "uploadedAsset"].includes(draft.type) && (
                 <>
                   <ThemedText type="small">
                     {t(draft.type === "note" ? "storyCanvas.noteText" : "storyCanvas.promptText")}
@@ -297,22 +380,54 @@ export function StoryCanvasCreateForm({
                   />
                 </>
               )}
+              {draft.type === "uploadedAsset" && (
+                <>
+                  <ThemedText type="small">
+                    {draft.uploadedAsset?.name ??
+                      draft.upload?.name ??
+                      t("storyCanvas.upload.formats")}
+                  </ThemedText>
+                  {!draft.upload && !draft.uploadedAsset && (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={phase !== "idle"}
+                      onPress={() => {
+                        void pickFile();
+                      }}
+                      style={{ paddingVertical: 12 }}
+                    >
+                      <ThemedText type="small">{t("storyCanvas.upload.choose")}</ThemedText>
+                    </Pressable>
+                  )}
+                </>
+              )}
               <ThemedText type="small">
                 {t(
-                  draft.type === "libraryAsset"
-                    ? "storyCanvas.library.addHelp"
-                    : draft.type === "shot"
-                      ? "storyCanvas.createShotHelp"
-                      : draft.type === "note"
-                        ? "storyCanvas.createNoteHelp"
-                        : "storyCanvas.createGenerationHelp"
+                  draft.type === "uploadedAsset"
+                    ? "storyCanvas.upload.help"
+                    : draft.type === "libraryAsset"
+                      ? "storyCanvas.library.addHelp"
+                      : draft.type === "shot"
+                        ? "storyCanvas.createShotHelp"
+                        : draft.type === "note"
+                          ? "storyCanvas.createNoteHelp"
+                          : "storyCanvas.createGenerationHelp"
                 )}
               </ThemedText>
               {phase === "idle" ? (
                 <Pressable
                   accessibilityRole="button"
-                  onPress={save}
-                  style={{ padding: 12, borderRadius: 8, backgroundColor: theme.brand }}
+                  disabled={missingFile}
+                  accessibilityState={{ disabled: missingFile }}
+                  onPress={() => {
+                    void save();
+                  }}
+                  style={{
+                    padding: 12,
+                    borderRadius: 8,
+                    backgroundColor: theme.brand,
+                    opacity: missingFile ? 0.5 : 1,
+                  }}
                 >
                   <ThemedText type="smallBold">
                     {t(draft.command ? "common.retry" : "storyCanvas.create")}

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  canvasUploadedAssetSchema,
+  canvasUploadCheckpointSchema,
+} from "../../../../canvas-editor/upload-schema";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import { canvasUpdateSchema, type CanvasSnapshot } from "../../../../canvas-editor/protocol";
@@ -7,13 +11,19 @@ import type { CanvasWriteScope } from "../api/story-canvas-update";
 export const canvasCreateDraftSchema = z
   .object({
     nodeId: z.string().uuid(),
-    type: z.enum(["prompt", "video", "audio", "note", "shot", "libraryAsset"]),
+    type: z.enum(["prompt", "video", "audio", "note", "shot", "libraryAsset", "uploadedAsset"]),
     name: z.string(),
     text: z.string(),
     command: canvasUpdateSchema.optional(),
     assetId: z.string().min(1).optional(),
+    upload: canvasUploadCheckpointSchema.optional(),
+    uploadedAsset: canvasUploadedAssetSchema.optional(),
   })
   .strict()
+  .refine(
+    (draft) => (!draft.upload && !draft.uploadedAsset) || draft.type === "uploadedAsset",
+    "Only a media import can contain upload recovery."
+  )
   .refine(
     (draft) => (draft.type === "libraryAsset") === !!draft.assetId,
     "Library creation requires its original asset identity."
@@ -28,6 +38,10 @@ export function canvasCreateDraftStore(
     `${scope.projectId}:${scope.documentId}`
   )
 ) {
+  const scopedDraft = canvasCreateDraftSchema.refine(
+    (draft) => !draft.upload || draft.upload.confirmation.scope.storyProjectId === scope.projectId,
+    "Canvas upload project mismatch."
+  );
   const current = () => {
     if (getAuthGeneration() !== scope.generation) throw Error("Canvas session expired.");
   };
@@ -37,16 +51,15 @@ export function canvasCreateDraftStore(
       const raw = storage.read();
       return raw === null
         ? null
-        : z
-            .object({ version: z.literal(1), draft: canvasCreateDraftSchema.nullable() })
-            .parse(JSON.parse(raw)).draft;
+        : z.object({ version: z.literal(1), draft: scopedDraft.nullable() }).parse(JSON.parse(raw))
+            .draft;
     },
     write: (draft: CanvasCreateDraft | null) => {
       current();
       storage.write(
         JSON.stringify({
           version: 1,
-          draft: draft === null ? null : canvasCreateDraftSchema.parse(draft),
+          draft: draft === null ? null : scopedDraft.parse(draft),
         })
       );
     },

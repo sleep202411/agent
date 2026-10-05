@@ -14,7 +14,27 @@ export function createCanvasNode(state: string, raw: CanvasNodeCreate) {
       throw Error("Canvas node ID already exists. Reload the document.");
     let fields: Record<string, unknown>;
     let type: string = command.type;
-    if (command.type === "libraryAsset") {
+    let imported:
+      | {
+          id: string;
+          mediaAssetId: string;
+          kind: string;
+          url: string;
+          name: string;
+          createdAt: number;
+          source: string;
+          category: string;
+        }
+      | undefined;
+    if (command.type === "uploadedAsset") {
+      const asset = command.asset;
+      if (doc.getMap("assets").has(asset.mediaAssetId))
+        throw Error("This upload is already in the library. Add it from the library instead.");
+      type =
+        asset.kind === "video" ? "videoAsset" : asset.kind === "audio" ? "audioAsset" : "image";
+      fields = { src: asset.url, mediaAssetId: asset.mediaAssetId, label: asset.name };
+      imported = { ...asset, id: asset.mediaAssetId, source: "uploaded", category: "general" };
+    } else if (command.type === "libraryAsset") {
       const source = doc.getMap("assets").get(command.assetId);
       if (!source) throw Error("This library asset is no longer available. Reload the library.");
       const asset = z
@@ -61,6 +81,7 @@ export function createCanvasNode(state: string, raw: CanvasNodeCreate) {
       update = encodeCanvasBytes(bytes);
     });
     doc.transact(() => {
+      if (imported) doc.getMap("assets").set(imported.id, imported);
       const node = new Y.Map<unknown>();
       nodes.set(command.nodeId, node);
       node.set("id", command.nodeId);

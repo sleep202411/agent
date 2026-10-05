@@ -1,4 +1,9 @@
 {
+  "storyCanvas.createType.uploadedAsset": "Import media",
+  "storyCanvas.upload.pickOne": "Choose one image, video or audio file.",
+  "storyCanvas.upload.formats": "JPG, PNG or WebP up to 30 MiB; MP4 or MOV up to 2 GiB; MP3 or WAV up to 15 MiB.",
+  "storyCanvas.upload.choose": "Choose file",
+  "storyCanvas.upload.help": "Upload a file, then create its canvas card. The file is also added to the media library.",
   "storyCanvas.library.existingDraft": "Your saved card draft is open. Finish or discard it before adding another asset.",
   "storyCanvas.library.add": "Add to canvas",
   "storyCanvas.library.addHelp": "Create a media card from this library asset. The original stays in the library.",

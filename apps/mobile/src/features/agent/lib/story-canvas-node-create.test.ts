@@ -149,3 +149,37 @@ it("rejects missing or invalid library sources without writing a node", () => {
   expect(materializeCanvas(state, []).snapshot.nodes).toEqual({});
   doc.destroy();
 });
+it.each([
+  ["image", "image"],
+  ["video", "videoAsset"],
+  ["audio", "audioAsset"],
+] as const)("atomically imports uploaded %s into the library and canvas", (kind, type) => {
+  const asset = {
+    mediaAssetId: second,
+    kind,
+    url: "https://example.test/upload",
+    name: "New media",
+    createdAt: 1000,
+  };
+  const state = empty();
+  const command = { nodeId: id, type: "uploadedAsset" as const, asset, position };
+  const created = createCanvasNode(state, command);
+  expect(created.snapshot.nodes[id]).toEqual({
+    id,
+    type,
+    position,
+    data: { src: asset.url, mediaAssetId: second, label: asset.name },
+  });
+  expect(created.snapshot.assets[second]).toEqual({
+    ...asset,
+    id: second,
+    source: "uploaded",
+    category: "general",
+  });
+  expect(
+    materializeCanvas(state, [created.yjsUpdateBase64!, created.yjsUpdateBase64!]).snapshot
+  ).toEqual(created.snapshot);
+  expect(() => createCanvasNode(created.state, { ...command, nodeId: second })).toThrow(
+    "already in the library"
+  );
+});

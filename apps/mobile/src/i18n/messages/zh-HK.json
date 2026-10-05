@@ -1,4 +1,9 @@
 {
+  "storyCanvas.createType.uploadedAsset": "匯入媒體",
+  "storyCanvas.upload.pickOne": "請選擇一個圖片、影片或音訊檔案。",
+  "storyCanvas.upload.formats": "JPG、PNG 或 WebP 最大 30 MiB；MP4 或 MOV 最大 2 GiB；MP3 或 WAV 最大 15 MiB。",
+  "storyCanvas.upload.choose": "選擇檔案",
+  "storyCanvas.upload.help": "上傳檔案後建立畫布卡片。檔案亦會加入媒體庫。",
   "storyCanvas.library.existingDraft": "已開啟儲存的卡片草稿。請先完成或捨棄此草稿，再加入其他資產。",
   "storyCanvas.library.add": "加入畫布",
   "storyCanvas.library.addHelp": "使用此素材建立媒體卡片，原素材仍保留在素材庫中。",
