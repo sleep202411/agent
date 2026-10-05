@@ -114,9 +114,11 @@ function AgentHubSession({
       if (blocking) setLoading(true);
       setError(undefined);
       setWorkspaceMissing(false);
+      let workspaceReadSucceeded = false;
       try {
         const choices = await loadAgentWorkspaces(controller.signal);
         if (!current()) return;
+        workspaceReadSucceeded = true;
         const requestedId = opts?.workspaceId ?? selectedWorkspaceRef.current;
         const selected = requestedId
           ? choices.find((row) => row.id === requestedId)
@@ -138,7 +140,12 @@ function AgentHubSession({
         if (!current()) return;
         setError(err instanceof Error ? err.message : String(err));
         setProjects([]);
-        setWorkspaces([]);
+        // A Story service failure must not hide independently available Studio
+        // projects/settings. Only retire workspace access when that read failed.
+        if (!workspaceReadSucceeded) {
+          setWorkspaces([]);
+          setWorkspaceId(undefined);
+        }
       } finally {
         if (current()) setLoading(false);
       }

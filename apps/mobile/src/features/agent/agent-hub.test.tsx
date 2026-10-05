@@ -385,3 +385,27 @@ it("opens a pasted platform-project invitation in the native project screen", as
     "/studio-project?projectId=22222222-2222-4222-8222-222222222222&workspaceId=11111111-1111-4111-8111-111111111111"
   );
 });
+
+it("keeps freshly authorized workspace tools available when Story loading fails", async () => {
+  h.list.mockRejectedValue(new Error("Story service unavailable"));
+  await render();
+  expect(host.textContent).toContain("Story service unavailable");
+  expect(host.textContent).toContain("Personal");
+  const studio = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "studioProjects.title"
+  );
+  expect(studio).toBeDefined();
+  await act(async () => studio!.click());
+  expect(host.textContent).toContain("Platform Projects");
+});
+it("retires stale workspace tools when the workspace permission read itself fails", async () => {
+  await render();
+  h.workspaces.mockRejectedValue(new Error("Workspace access unavailable"));
+  h.focused = false;
+  await render();
+  h.focused = true;
+  await render();
+  expect(host.textContent).toContain("Workspace access unavailable");
+  expect(host.textContent).not.toContain("studioProjects.title");
+  expect(host.textContent).not.toContain("studioMembers.title");
+});
