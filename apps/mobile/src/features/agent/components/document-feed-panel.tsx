@@ -22,12 +22,14 @@ export function DocumentFeedPanel({
   generation,
   userId = "",
   canComment = false,
+  nodes = [],
   close,
 }: {
   documentId: string;
   generation: number;
   userId?: string;
   canComment?: boolean;
+  nodes?: { id: string; title: string }[];
   close(): void;
 }) {
   const t = useTranslations(),
@@ -80,6 +82,7 @@ export function DocumentFeedPanel({
             kind={tab}
             userId={userId}
             canComment={canComment}
+            nodes={nodes}
           />
         )}
       </View>
@@ -92,12 +95,14 @@ function Feed({
   kind,
   userId,
   canComment,
+  nodes,
 }: {
   documentId: string;
   generation: number;
   kind: "comments" | "history";
   userId: string;
   canComment: boolean;
+  nodes: { id: string; title: string }[];
 }) {
   const t = useTranslations(),
     locale = useLocale(),
@@ -183,6 +188,7 @@ function Feed({
             generation={generation}
             userId={userId}
             canComment={canComment}
+            nodes={nodes}
             ready={!loading && !error && !!rows}
             threads={rows?.kind === "comments" ? rows.items : []}
             author={author}

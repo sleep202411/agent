@@ -5302,5 +5302,9 @@
   "documentFeed.discardHint": "放弃这条未发送的评论？",
   "documentFeed.uncertain": "上次操作可能已保存。请刷新并检查讨论后再继续。系统不会自动重新发送。",
   "documentFeed.reviewed": "我已检查讨论",
-  "documentFeed.reviewHint": "检查讨论后清除此待确认操作及草稿？这不会删除已发布的评论。"
+  "documentFeed.reviewHint": "检查讨论后清除此待确认操作及草稿？这不会删除已发布的评论。",
+  "documentFeed.wholeDocument": "整个文档",
+  "documentFeed.findNode": "搜索画布内容",
+  "documentFeed.unavailableNode": "画布内容不可用",
+  "documentFeed.chooseAnotherNode": "发送前请选择其他内容或整个文档。"
 }

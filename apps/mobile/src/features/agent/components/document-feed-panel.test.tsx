@@ -108,7 +108,12 @@ const row = {
     },
   ],
 };
-const draw = (documentId = "doc", generation = 1, canComment = false) =>
+const draw = (
+  documentId = "doc",
+  generation = 1,
+  canComment = false,
+  nodes: { id: string; title: string }[] = []
+) =>
   act(async () =>
     root.render(
       <DocumentFeedPanel
@@ -116,6 +121,7 @@ const draw = (documentId = "doc", generation = 1, canComment = false) =>
         generation={generation}
         userId="42"
         canComment={canComment}
+        nodes={nodes}
         close={() => {}}
       />
     )
@@ -313,4 +319,35 @@ it("rejects delayed resolution confirmation after permission loss", async () => 
   await draw("doc", 1, false);
   await act(async () => h.confirm?.());
   expect(h.write).not.toHaveBeenCalled();
+});
+
+it("selects a named node and preserves its identity across rename and reopening", async () => {
+  await draw("doc", 1, true, [{ id: "shot-1", title: "Rain scene" }]);
+  await click("documentFeed.newThread");
+  await fill("documentFeed.body", "Keep this detail");
+  await click("documentFeed.wholeDocument");
+  await click("Rain scene");
+  h.active = false;
+  await draw("doc", 1, true);
+  h.active = true;
+  await draw("doc", 1, true, [{ id: "shot-1", title: "Storm scene" }]);
+  expect(host.textContent).toContain("Storm scene");
+  await click("documentFeed.send");
+  expect(h.write.mock.calls[0][0]).toMatchObject({ blockId: "shot-1" });
+});
+it("retains an unavailable node draft and requires explicit reassignment", async () => {
+  await draw("doc", 1, true, [{ id: "shot-1", title: "Rain scene" }]);
+  await click("documentFeed.newThread");
+  await fill("documentFeed.body", "Preserve this");
+  await click("documentFeed.wholeDocument");
+  await click("Rain scene");
+  await draw("doc", 1, true, []);
+  expect(host.textContent).toContain("documentFeed.chooseAnotherNode");
+  await click("documentFeed.send");
+  expect(h.write).not.toHaveBeenCalled();
+  await click("documentFeed.unavailableNode");
+  await click("documentFeed.wholeDocument");
+  await click("documentFeed.send");
+  expect(h.write.mock.calls[0][0]).toMatchObject({ body: "Preserve this" });
+  expect(h.write.mock.calls[0][0]).not.toHaveProperty("blockId");
 });

@@ -26,6 +26,7 @@ export function DocumentDiscussion({
   userId,
   canComment,
   ready,
+  nodes,
   threads,
   author,
   refresh,
@@ -35,6 +36,7 @@ export function DocumentDiscussion({
   userId: string;
   canComment: boolean;
   ready: boolean;
+  nodes: { id: string; title: string }[];
   threads: DocumentThread[];
   author(id: string): string;
   refresh(): void;
@@ -62,6 +64,10 @@ export function DocumentDiscussion({
   const [pending, setPending] = useState(initial.pending);
   const [error, setError] = useState(initial.error);
   const [busy, setBusy] = useState(false);
+  const [choosingNode, setChoosingNode] = useState(false);
+  const [nodeQuery, setNodeQuery] = useState("");
+  const nodeLabel = (id: string) =>
+    nodes.find((node) => node.id === id)?.title || t("documentFeed.unavailableNode");
   const active = useRef(true),
     operation = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -196,7 +202,56 @@ export function DocumentDiscussion({
           {draft.target === "new" && (
             <>
               {field("title", 160)}
-              {field("blockId", 128)}
+              <DiscussionAction
+                label={draft.blockId ? nodeLabel(draft.blockId) : t("documentFeed.wholeDocument")}
+                onPress={() => setChoosingNode((value) => !value)}
+                disabled={locked}
+              />
+              {choosingNode && (
+                <View style={{ gap: 4 }}>
+                  <TextInput
+                    accessibilityLabel={t("documentFeed.findNode")}
+                    placeholder={t("documentFeed.findNode")}
+                    placeholderTextColor={theme.textSecondary}
+                    value={nodeQuery}
+                    onChangeText={setNodeQuery}
+                    style={{
+                      color: theme.text,
+                      padding: 10,
+                      backgroundColor: theme.backgroundElement,
+                      borderRadius: 8,
+                    }}
+                  />
+                  <DiscussionAction
+                    label={t("documentFeed.wholeDocument")}
+                    disabled={locked}
+                    onPress={() => {
+                      save({ ...draft, blockId: "" });
+                      setChoosingNode(false);
+                    }}
+                  />
+                  {nodes
+                    .filter((node) =>
+                      node.title
+                        .toLocaleLowerCase(locale)
+                        .includes(nodeQuery.trim().toLocaleLowerCase(locale))
+                    )
+                    .map((node) => (
+                      <DiscussionAction
+                        key={node.id}
+                        label={node.title}
+                        disabled={locked}
+                        onPress={() => {
+                          save({ ...draft, blockId: node.id });
+                          setChoosingNode(false);
+                        }}
+                      />
+                    ))}
+                </View>
+              )}
+              {!!draft.blockId && !nodes.some((node) => node.id === draft.blockId) && (
+                <ThemedText type="small">{t("documentFeed.chooseAnotherNode")}</ThemedText>
+              )}
             </>
           )}
           {field("body", 5000)}
@@ -220,6 +275,9 @@ export function DocumentDiscussion({
               disabled={
                 locked ||
                 !draft.body.trim() ||
+                (draft.target === "new" &&
+                  !!draft.blockId &&
+                  !nodes.some((node) => node.id === draft.blockId)) ||
                 (draft.target !== "new" && !threads.some((thread) => thread.id === draft.target))
               }
             />
@@ -263,7 +321,7 @@ export function DocumentDiscussion({
           )}
           {thread.blockId && (
             <ThemedText type="small" themeColor="textSecondary">
-              {t("documentFeed.node")} {thread.blockId}
+              {t("documentFeed.node")} {nodeLabel(thread.blockId)}
             </ThemedText>
           )}
           {thread.comments.map((comment) => (

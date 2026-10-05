@@ -5302,5 +5302,9 @@
   "documentFeed.discardHint": "Discard this unsent comment?",
   "documentFeed.uncertain": "The last action may have been saved. Refresh and review the discussion before continuing. It will not be sent again automatically.",
   "documentFeed.reviewed": "I reviewed the discussion",
-  "documentFeed.reviewHint": "Clear this pending action and its draft after checking the discussion? This does not delete any posted comment."
+  "documentFeed.reviewHint": "Clear this pending action and its draft after checking the discussion? This does not delete any posted comment.",
+  "documentFeed.wholeDocument": "Entire document",
+  "documentFeed.findNode": "Find a canvas item",
+  "documentFeed.unavailableNode": "Unavailable canvas item",
+  "documentFeed.chooseAnotherNode": "Choose another item or the entire document before sending."
 }

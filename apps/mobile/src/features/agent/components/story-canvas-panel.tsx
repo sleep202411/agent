@@ -287,6 +287,7 @@ export function StoryCanvasPanel({
             generation={scope.generation}
             userId={userId}
             canComment={canComment}
+            nodes={overview?.nodes ?? []}
             close={() => setDocumentFeed(false)}
           />
         )}
