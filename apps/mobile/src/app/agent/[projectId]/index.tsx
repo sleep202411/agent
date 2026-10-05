@@ -161,10 +161,11 @@ export default function AgentChatScreen() {
     (!live.assistantStreaming || live.session.status === "waiting_for_external" || waitingUser);
   const composerLocked = !chapterReady || isExecuting || restoring || waitingUser;
   const composerTurn = useAgentComposerTurn(
-    readyProjectId,
+    projectOk ? projectId : "",
     workbenchMode,
     composerLocked,
-    chapterId
+    chapterId,
+    chapterReady
   );
 
   const {
