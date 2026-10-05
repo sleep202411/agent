@@ -5310,7 +5310,7 @@
   "documentFeed.allDiscussions": "全部讨论",
   "storyListing.title": "影游详情",
   "storyListing.help": "草稿保存在当前设备中，保存详情不会提交影游审核。",
-  "storyListing.conflict": "项目已更改，草稿已保留。请先核对当前项目，再决定是否放弃草稿。",
+  "storyListing.conflict": "项目已更改，草稿已保留。请核对服务器详情，再选择在该版本上保留草稿或放弃草稿。",
   "storyListing.pending": "保存结果需要确认，请重试原保存或刷新状态。",
   "storyListing.description": "简介",
   "storyListing.developer": "开发者",
@@ -5330,5 +5330,11 @@
   "storyListing.save": "保存详情",
   "storyListing.discard": "放弃本地更改",
   "storyListing.discardHelp": "放弃本地草稿及待确认保存记录，并加载服务器当前详情？这不会撤销已完成的服务器保存。",
-  "storyListing.selectedTrailer": "已选预告片"
+  "storyListing.selectedTrailer": "已选预告片",
+  "storyListing.clear": "清空已保存详情",
+  "storyListing.clearHelp": "清空已保存的详情和本地草稿？影游和媒体文件会保留，此操作不会下架已发布的影游。",
+  "storyListing.keepDraft": "在此版本上保留草稿",
+  "storyListing.keepDraftHelp": "使用已核对的项目版本保留本地详情？此操作尚不保存，之后保存会替换已核对的详情。",
+  "storyListing.reviewServer": "核对服务器详情",
+  "storyListing.serverDetails": "服务器当前详情"
 }

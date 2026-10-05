@@ -1,5 +1,6 @@
+import { StoryCoverEditor } from "./story-cover-editor";
 import { ConversationVideo } from "@/features/services/conversation-video";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -73,6 +74,8 @@ export function StoryListingEditor({
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [revision, setRevision] = useState(0);
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [previewId, setPreviewId] = useState<string>();
   const [tag, setTag] = useState(""),
     [uploadPending, setUploadPending] = useState(false);
@@ -141,6 +144,56 @@ export function StoryListingEditor({
   }, [client, storage, uploads, scope, revision]);
   const editable = project?.status === "active" && project.capabilities.includes("story.edit");
   const disabled = busy || loading || !!pending || !editable;
+  const latest = useRef({ project, draft, pending, loading, busy, editable });
+  useLayoutEffect(() => {
+    latest.current = { project, draft, pending, loading, busy, editable };
+  }, [project, draft, pending, loading, busy, editable]);
+  const confirmCurrent = () =>
+    current() &&
+    !lock.current &&
+    !latest.current.loading &&
+    !latest.current.busy &&
+    latest.current.editable &&
+    latest.current.project === project &&
+    latest.current.draft === draft &&
+    latest.current.pending === pending;
+  const clearListing = () =>
+    Alert.alert(t("storyListing.clear"), t("storyListing.clearHelp"), [
+      { text: t("common.cancel"), style: "cancel" },
+      {
+        text: t("storyListing.clear"),
+        style: "destructive",
+        onPress: () => {
+          if (!confirmCurrent() || !project || pending) return;
+          save({
+            clientKey: uuid.v4(),
+            expectedProjectVersion: project.projectVersion,
+            storeListing: null,
+          });
+        },
+      },
+    ]);
+  const keepDraft = () =>
+    Alert.alert(t("storyListing.keepDraft"), t("storyListing.keepDraftHelp"), [
+      { text: t("common.cancel"), style: "cancel" },
+      {
+        text: t("storyListing.keepDraft"),
+        onPress: () => {
+          if (!confirmCurrent() || !project || !draft) return;
+          try {
+            const next = { ...draft, version: project.projectVersion };
+            storage.write(JSON.stringify(next));
+            if (pending) client.discard(pending.clientKey);
+            setPending(null);
+            setDraft(next);
+            setReviewOpen(false);
+            setError(undefined);
+          } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+          }
+        },
+      },
+    ]);
   const edit = (value: StoryStoreListing) => {
     if (!current() || lock.current || disabled || !draft) return;
     try {
@@ -217,6 +270,18 @@ export function StoryListingEditor({
     [ids[index], ids[other]] = [ids[other], ids[index]];
     edit({ ...draft.value, screenshotAssetIds: ids });
   };
+  if (coverOpen)
+    return (
+      <StoryCoverEditor
+        scope={scope}
+        userId={userId}
+        onSaved={onSaved}
+        onClose={() => {
+          setCoverOpen(false);
+          reload();
+        }}
+      />
+    );
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View
@@ -243,6 +308,80 @@ export function StoryListingEditor({
           {project && draft && (
             <>
               <ThemedText type="small">{t("storyListing.help")}</ThemedText>
+              <ListingAction
+                label={t("storyCover.title")}
+                onPress={() => {
+                  setPreviewId(undefined);
+                  setCoverOpen(true);
+                }}
+                disabled={busy || loading}
+              />
+              <ListingAction
+                label={t("storyListing.reviewServer")}
+                onPress={() => setReviewOpen((value) => !value)}
+                disabled={busy || loading}
+              />
+              {reviewOpen && (
+                <View
+                  style={{
+                    gap: 8,
+                    padding: 12,
+                    borderRadius: 8,
+                    backgroundColor: theme.backgroundElement,
+                  }}
+                >
+                  <ThemedText type="smallBold">{t("storyListing.serverDetails")}</ThemedText>
+                  <ThemedText type="small">
+                    {t("storyListing.description")}: {project.storeListing?.description || "—"}
+                  </ThemedText>
+                  <ThemedText type="small">
+                    {t("storyListing.developer")}: {project.storeListing?.developer || "—"}
+                  </ThemedText>
+                  <ThemedText type="small">
+                    {t("storyListing.tags")}: {project.storeListing?.tags.join(", ") || "—"}
+                  </ThemedText>
+                  <ThemedText type="small">{t("storyListing.trailer")}</ThemedText>
+                  {project.storeListing?.trailerAssetId ? (
+                    media.find((v) => v.asset.id === project.storeListing?.trailerAssetId)?.asset
+                      .previewUrl ? (
+                      <ConversationVideo
+                        url={
+                          media.find((v) => v.asset.id === project.storeListing?.trailerAssetId)!
+                            .asset.previewUrl!
+                        }
+                        onRetry={reload}
+                      />
+                    ) : (
+                      <ThemedText type="small">{t("storyCanvas.media.unavailable")}</ThemedText>
+                    )
+                  ) : (
+                    <ThemedText type="small">—</ThemedText>
+                  )}
+                  <ThemedText type="small">{t("storyListing.screenshots")}</ThemedText>
+                  {(project.storeListing?.screenshotAssetIds ?? []).map((id) => {
+                    const asset = media.find((v) => v.asset.id === id)?.asset;
+                    return asset?.previewUrl ? (
+                      <Image
+                        key={id}
+                        source={{ uri: asset.previewUrl }}
+                        contentFit="contain"
+                        style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: 8 }}
+                      />
+                    ) : (
+                      <ThemedText key={id} type="small">
+                        {t("storyCanvas.media.unavailable")}
+                      </ThemedText>
+                    );
+                  })}
+                  {(draft.version !== project.projectVersion || pending) && (
+                    <ListingAction
+                      label={t("storyListing.keepDraft")}
+                      onPress={keepDraft}
+                      disabled={busy || loading || !editable}
+                    />
+                  )}
+                </View>
+              )}
               {!editable && <ThemedText type="small">{t("storyRepair.readOnly")}</ThemedText>}
               {draft.version !== project.projectVersion && !pending && (
                 <ThemedText type="small">{t("storyListing.conflict")}</ThemedText>
@@ -334,7 +473,7 @@ export function StoryListingEditor({
                         style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: 8 }}
                       />
                     ) : (
-                      <ThemedText type="small">{t("storyCover.unavailable")}</ThemedText>
+                      <ThemedText type="small">{t("storyCanvas.media.unavailable")}</ThemedText>
                     )}
                     <View style={{ flexDirection: "row", gap: 16 }}>
                       <ListingAction
@@ -450,6 +589,13 @@ export function StoryListingEditor({
                   })
                 }
               />
+              {project.storeListing && (
+                <ListingAction
+                  label={t("storyListing.clear")}
+                  onPress={clearListing}
+                  disabled={disabled}
+                />
+              )}
               <ListingAction
                 label={t("storyListing.discard")}
                 disabled={busy || loading}

@@ -5310,7 +5310,7 @@
   "documentFeed.allDiscussions": "All discussions",
   "storyListing.title": "Film details",
   "storyListing.help": "Drafts stay on this device until saved. Saving details does not submit the film for review.",
-  "storyListing.conflict": "The project changed. Your draft is preserved. Discard it only after reviewing the current project.",
+  "storyListing.conflict": "The project changed. Your draft is preserved. Review server details, then keep your draft against that version or discard it.",
   "storyListing.pending": "A save needs verification. Retry the saved change or refresh its status.",
   "storyListing.description": "Description",
   "storyListing.developer": "Developer",
@@ -5330,5 +5330,11 @@
   "storyListing.save": "Save details",
   "storyListing.discard": "Discard local changes",
   "storyListing.discardHelp": "Discard the local draft and pending save record, then load current server details? This does not undo a completed server save.",
-  "storyListing.selectedTrailer": "Selected trailer"
+  "storyListing.selectedTrailer": "Selected trailer",
+  "storyListing.clear": "Clear saved details",
+  "storyListing.clearHelp": "Clear the saved listing and this local draft? The film and media files will remain. This does not take a published film offline.",
+  "storyListing.keepDraft": "Keep my draft against this version",
+  "storyListing.keepDraftHelp": "Keep your local details using the reviewed project version? This does not save yet. A later save will replace the reviewed listing.",
+  "storyListing.reviewServer": "Review server details",
+  "storyListing.serverDetails": "Current server details"
 }
