@@ -617,7 +617,11 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
               throw new Error(t("aiLab.skillsChanged"));
             }
           }
-          await canvas?.beforeSubmit(command, controller.current!.signal);
+          if (canvas) {
+            // A lost card-save reply must retain the same paid request/key too.
+            box.save(command);
+            await canvas.beforeSubmit(command, controller.current!.signal);
+          }
           await submitPendingGeneration(
             command,
             userId,
@@ -697,7 +701,10 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
               run(
                 async () => {
                   await assertProjectWrite();
-                  await canvas?.beforeRetry(retryPending, controller.current!.signal);
+                  if (canvas) {
+                    retryBox.save(retryPending);
+                    await canvas.beforeRetry(retryPending, controller.current!.signal);
+                  }
                   await retryPendingGeneration(
                     retryPending,
                     userId,
@@ -1347,7 +1354,10 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
                 run(
                   async () => {
                     await assertProjectWrite();
-                    await canvas?.beforeRetry(command, controller.current!.signal);
+                    if (canvas) {
+                      retryBox.save(command);
+                      await canvas.beforeRetry(command, controller.current!.signal);
+                    }
                     await retryPendingGeneration(
                       command,
                       userId,

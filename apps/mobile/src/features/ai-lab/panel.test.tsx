@@ -1467,7 +1467,7 @@ it("does not submit a canvas job when saving its recovery identity fails", async
     documentId: "55555555-5555-4555-8555-555555555555",
     nodeId: "card-one",
     mode: "image" as const,
-    beforeSubmit: vi.fn(async () => {
+    beforeSubmit: vi.fn(async (): Promise<void> => {
       throw Error("Card save interrupted");
     }),
     beforeRetry: vi.fn(async () => {}),
@@ -1480,4 +1480,9 @@ it("does not submit a canvas job when saving its recovery identity fails", async
   expect(host.textContent).toContain("Card save interrupted");
   expect(h.post).not.toHaveBeenCalled();
   expect(input("Prompt").value).toBe("Lake");
+  const original = canvas.beforeSubmit.mock.calls[0];
+  canvas.beforeSubmit.mockResolvedValueOnce(undefined);
+  await click("aiLab.recover");
+  expect(canvas.beforeSubmit.mock.calls[1]).toEqual(original);
+  expect(h.post).toHaveBeenCalledOnce();
 });

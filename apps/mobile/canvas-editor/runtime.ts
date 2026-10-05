@@ -1,3 +1,4 @@
+import { recordCanvasSubmission } from "./submission-edit";
 import { applyCanvasGeneration } from "./generation-edit";
 import { editCanvasPositions } from "./position-edit";
 import { editCanvasGroup } from "./group-edit";
@@ -44,7 +45,13 @@ function receive(raw: unknown) {
     sequence: message.sequence,
   };
   try {
-    if (message.type === "generation") {
+    if (message.type === "submission") {
+      send({
+        type: "edited",
+        ...identity,
+        ...recordCanvasSubmission(message.snapshot, message.documentId, message.submission),
+      });
+    } else if (message.type === "generation") {
       send({
         type: "edited",
         ...identity,

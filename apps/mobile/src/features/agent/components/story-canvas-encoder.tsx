@@ -1,3 +1,4 @@
+import type { CanvasSubmission } from "../../../../canvas-editor/submission-schema";
 import type { CanvasGenerationJob } from "../../../../canvas-editor/generation-schema";
 import type { CanvasPositionEdit } from "../../../../canvas-editor/position-schema";
 import type { CanvasGroupEdit } from "../../../../canvas-editor/group-schema";
@@ -28,7 +29,8 @@ export function StoryCanvasEncoder({
     | CanvasGroupEdit
     | CanvasPositionEdit
     | { action: "reconcileShotMedia" }
-    | { action: "generation"; job: CanvasGenerationJob };
+    | { action: "generation"; job: CanvasGenerationJob }
+    | { action: "submission"; submission: CanvasSubmission };
   generation: number;
   title: string;
   runtimeError: string;
@@ -95,11 +97,13 @@ export function StoryCanvasEncoder({
                 : "action" in edit
                   ? edit.action === "moveNodes"
                     ? { type: "moveNodes" as const, move: edit }
-                    : edit.action === "generation"
-                      ? { type: "generation" as const, job: edit.job }
-                      : edit.action === "reconcileShotMedia"
-                        ? { type: "reconcileShotMedia" as const }
-                        : { type: "shotMedia" as const, media: edit }
+                    : edit.action === "submission"
+                      ? { type: "submission" as const, submission: edit.submission }
+                      : edit.action === "generation"
+                        ? { type: "generation" as const, job: edit.job }
+                        : edit.action === "reconcileShotMedia"
+                          ? { type: "reconcileShotMedia" as const }
+                          : { type: "shotMedia" as const, media: edit }
                   : "kind" in edit
                     ? { type: "edit" as const, edit }
                     : { type: "create" as const, create: edit }),
