@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { getGenerationJob, generationSession } from "@/features/ai-lab/jobs-api";
+import { api } from "@/lib/api-client";
+import { generationJob, getGenerationJob, generationSession } from "@/features/ai-lab/jobs-api";
 import {
   canvasGenerationJobSchema,
   type CanvasGenerationJob,
@@ -17,19 +18,25 @@ export async function loadTrackedCanvasJobs(
 ): Promise<CanvasGenerationJob[]> {
   generationSession(scope.generation, signal);
   if (loaded.documentId !== scope.documentId) throw Error("Canvas generation document mismatch.");
-  const cards: { nodeId: string; jobId: string; type: string }[] = [];
+  const cards: { nodeId: string; jobId?: string; submissionKey?: string; type: string }[] = [];
   const types: Record<string, string> = { prompt: "image", video: "video", audio: "audio" };
   for (const [nodeId, raw] of Object.entries(loaded.snapshot.nodes)) {
     const node = raw as {
       id?: unknown;
       type?: unknown;
-      data?: { generation?: { jobId?: unknown } };
+      data?: { generation?: { jobId?: unknown; submissionKey?: unknown } };
     } | null;
     if (!node || typeof node.type !== "string" || !Object.hasOwn(types, node.type)) continue;
     const jobId = node.data?.generation?.jobId;
-    if (jobId == null) continue;
+    const submissionKey = node.data?.generation?.submissionKey;
+    if (jobId == null && submissionKey == null) continue;
     if (node.id !== nodeId) throw Error("Canvas generation card identity mismatch.");
-    cards.push({ nodeId, jobId: z.string().uuid().parse(jobId), type: types[node.type]! });
+    cards.push({
+      nodeId,
+      jobId: jobId == null ? undefined : z.string().uuid().parse(jobId),
+      submissionKey: submissionKey == null ? undefined : z.string().min(1).parse(submissionKey),
+      type: types[node.type]!,
+    });
   }
   if (!cards.length) return [];
   await readStoryCanvasDocument(scope, scope.documentId, signal);
@@ -38,7 +45,35 @@ export async function loadTrackedCanvasJobs(
   for (let start = 0; start < cards.length; start += 4) {
     const batch = await Promise.all(
       cards.slice(start, start + 4).map(async (card) => {
-        const job = await getGenerationJob(card.jobId, scope.generation, signal);
+        let job;
+        if (card.jobId) job = await getGenerationJob(card.jobId, scope.generation, signal);
+        else {
+          const response = z
+            .object({ jobs: z.array(generationJob), nextCursor: z.string().nullable() })
+            .parse(
+              await api.get("/ai/jobs", {
+                service: "aurora",
+                signal,
+                retry: false,
+                params: {
+                  storyProjectId: scope.projectId,
+                  documentId: scope.documentId,
+                  documentBlockId: card.nodeId,
+                  sourceSurface: "fizzstudio-canvas",
+                  idempotencyKey: card.submissionKey,
+                  limit: 80,
+                },
+              })
+            );
+          generationSession(scope.generation, signal);
+          if (response.nextCursor || response.jobs.length > 1)
+            throw Error("Generation recovery is ambiguous. Keep the saved request and retry.");
+          // Empty lookup is not evidence of failure or permission to submit again.
+          if (!response.jobs.length) return null;
+          job = response.jobs[0]!;
+          if (job.idempotencyKey !== card.submissionKey)
+            throw Error("Generation recovery does not match the saved request.");
+        }
         if (
           job.storyProjectId !== scope.projectId ||
           job.projectId ||
@@ -63,7 +98,7 @@ export async function loadTrackedCanvasJobs(
       })
     );
     generationSession(scope.generation, signal);
-    jobs.push(...batch);
+    jobs.push(...batch.filter((job): job is CanvasGenerationJob => job !== null));
   }
   return jobs;
 }

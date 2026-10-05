@@ -1,9 +1,19 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { loadTrackedCanvasJobs } from "./story-canvas-generation";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
-const h = vi.hoisted(() => ({ get: vi.fn(), read: vi.fn(), generation: 1 }));
+const h = vi.hoisted(() => ({
+  get: vi.fn(),
+  lookup: vi.fn(),
+  post: vi.fn(),
+  read: vi.fn(),
+  generation: 1,
+}));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("@/lib/durable-record", () => ({ durableRecord: vi.fn() }));
 vi.mock("./story-canvas-document", () => ({ readStoryCanvasDocument: h.read }));
-vi.mock("@/features/ai-lab/jobs-api", () => ({
+vi.mock("@/lib/api-client", () => ({ api: { get: h.lookup, post: h.post } }));
+vi.mock("@/features/ai-lab/jobs-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/ai-lab/jobs-api")>()),
   getGenerationJob: h.get,
   generationSession: (generation: number, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -39,6 +49,8 @@ const job = () => ({
   type: "image",
   modelId: "model",
   status: "completed",
+  stage: "done",
+  updatedAt: "2026-10-05T00:00:00.000Z",
   prompt: "Lake",
   createdAt: "2026-10-05T00:00:00.000Z",
   progress: null,
@@ -96,4 +108,75 @@ it("does not request untracked cards and stops on access loss or retired session
   await expect(
     loadTrackedCanvasJobs(scope, loaded(), new AbortController().signal)
   ).rejects.toThrow("expired");
+});
+
+const uncertain = () => {
+  const value = loaded();
+  value.snapshot.nodes.card = {
+    id: "card",
+    type: "prompt",
+    data: { generation: { status: "uncertain", submissionKey: "canvas:attempt" } },
+  };
+  return value;
+};
+it("recovers the exact uncertain submission without a second generation request", async () => {
+  h.lookup.mockResolvedValue({
+    jobs: [{ ...job(), idempotencyKey: "canvas:attempt" }],
+    nextCursor: null,
+  });
+  const value = uncertain();
+  const result = await loadTrackedCanvasJobs(scope, value, new AbortController().signal);
+  expect(result).toHaveLength(1);
+  expect(h.lookup).toHaveBeenCalledWith(
+    "/ai/jobs",
+    expect.objectContaining({
+      retry: false,
+      params: {
+        storyProjectId: projectId,
+        documentId,
+        documentBlockId: "card",
+        sourceSurface: "fizzstudio-canvas",
+        idempotencyKey: "canvas:attempt",
+        limit: 80,
+      },
+    })
+  );
+  expect(value.snapshot.nodes.card).toHaveProperty(
+    "data.generation.submissionKey",
+    "canvas:attempt"
+  );
+  expect(h.get).not.toHaveBeenCalled();
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("leaves an uncertain card intact on an empty lookup, ambiguity or mismatched receipt", async () => {
+  const value = uncertain();
+  const before = JSON.stringify(value);
+  h.lookup.mockResolvedValue({ jobs: [], nextCursor: null });
+  expect(await loadTrackedCanvasJobs(scope, value, new AbortController().signal)).toEqual([]);
+  for (const response of [
+    { jobs: [{ ...job(), idempotencyKey: "wrong" }], nextCursor: null },
+    { jobs: [job(), job()], nextCursor: null },
+    { jobs: [], nextCursor: "more" },
+    {
+      jobs: [{ ...job(), idempotencyKey: "canvas:attempt", documentBlockId: "other" }],
+      nextCursor: null,
+    },
+  ]) {
+    h.lookup.mockResolvedValue(response);
+    await expect(
+      loadTrackedCanvasJobs(scope, value, new AbortController().signal)
+    ).rejects.toThrow();
+  }
+  expect(JSON.stringify(value)).toBe(before);
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("rejects a recovery reply arriving after account retirement", async () => {
+  h.lookup.mockImplementation(async () => {
+    h.generation++;
+    return { jobs: [{ ...job(), idempotencyKey: "canvas:attempt" }], nextCursor: null };
+  });
+  await expect(
+    loadTrackedCanvasJobs(scope, uncertain(), new AbortController().signal)
+  ).rejects.toThrow("expired");
+  expect(h.post).not.toHaveBeenCalled();
 });
