@@ -5417,5 +5417,6 @@
   "platformActors.next": "Next page",
   "platformActors.confirmDiscard": "Discard insertion",
   "platformActors.discardHelp": "Discard this saved insertion? Existing canvas cards stay unchanged.",
-  "platformActors.photoUnavailable": "Photo unavailable"
+  "platformActors.photoUnavailable": "Photo unavailable",
+  "platformCanvas.editCard": "Edit card"
 }

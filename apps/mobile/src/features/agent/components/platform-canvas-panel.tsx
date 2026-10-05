@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -7,6 +7,11 @@ import { ThemedText } from "@/components/themed-text";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
+import type { CanvasNodeEdit } from "../../../../canvas-editor/schema";
+import { CANVAS_SHOT_FIELDS } from "../../../../canvas-editor/shot-fields";
+import { canvasDraftStore } from "../lib/story-canvas-draft";
+import { fetchPlatformSections } from "../api/platform-sections-api";
+import { StoryCanvasEditForm } from "./story-canvas-edit-form";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import {
   openPlatformCanvasDocument,
@@ -93,6 +98,8 @@ function Session({
         ) : (
           <Document
             key={revision}
+            userId={String(auth.user?.userId ?? auth.user?.id ?? "")}
+            saved={() => setRevision((n) => n + 1)}
             scope={scope}
             openActors={auth.status === "authenticated" ? () => setActors(true) : undefined}
           />
@@ -101,9 +108,43 @@ function Session({
     </Modal>
   );
 }
-function Document({ scope, openActors }: { scope: PlatformCanvasScope; openActors?: () => void }) {
+function Document({
+  scope,
+  openActors,
+  userId,
+  saved,
+}: {
+  scope: PlatformCanvasScope;
+  openActors?: () => void;
+  userId: string;
+  saved(): void;
+}) {
   const t = useTranslations(),
     theme = useTheme();
+  const [canEdit, setCanEdit] = useState(false);
+  const [edit, setEdit] = useState<Pick<CanvasNodeEdit, "nodeId" | "kind">>();
+  const [recovery, setRecovery] = useState<Pick<CanvasNodeEdit, "nodeId" | "kind">>();
+  const [actions, setActions] = useState<string>();
+  const load = useCallback(async (currentScope: PlatformCanvasScope, signal: AbortSignal) => {
+    const result = await openPlatformCanvasDocument(currentScope, signal);
+    const sections = await fetchPlatformSections(
+      currentScope.projectId,
+      currentScope.workspaceId,
+      currentScope.generation,
+      signal
+    );
+    signal.throwIfAborted();
+    if (getAuthGeneration() !== currentScope.generation) throw Error("Canvas session expired.");
+    if (
+      !sections.sections.some(
+        (row) =>
+          row.id === currentScope.sectionId && row.canvasDocumentId === currentScope.documentId
+      )
+    )
+      throw Error("Canvas no longer belongs to the selected chapter.");
+    setCanEdit(sections.canEdit);
+    return result;
+  }, []);
   const [loaded, setLoaded] = useState<CanvasLoaded>();
   const [overview, setOverview] = useState<ReturnType<typeof canvasOverview>>();
   const [error, setError] = useState<string>();
@@ -117,12 +158,13 @@ function Document({ scope, openActors }: { scope: PlatformCanvasScope; openActor
           <ActivityIndicator />
           <StoryCanvasReader
             scope={scope}
-            platform={{ scope, load: openPlatformCanvasDocument }}
+            platform={{ scope, load }}
             title={t("storyCanvas.title")}
             runtimeError={t("storyCanvas.loadError")}
             onResult={(result) => {
               try {
                 setOverview(canvasOverview(result.snapshot));
+                setRecovery(canvasDraftStore(scope, userId).read()?.edit);
                 setLoaded(result);
               } catch (cause) {
                 setError(cause instanceof Error ? cause.message : String(cause));
@@ -139,6 +181,15 @@ function Document({ scope, openActors }: { scope: PlatformCanvasScope; openActor
       )}
       {loaded && overview && (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          {canEdit && recovery && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setEdit(recovery)}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <ThemedText type="small">{t("storyCanvas.resumeAction")}</ThemedText>
+            </Pressable>
+          )}
           {openActors && (
             <Pressable accessibilityRole="button" onPress={openActors} style={{ padding: 10 }}>
               <ThemedText type="small">{t("platformActors.title")}</ThemedText>
@@ -179,6 +230,52 @@ function Document({ scope, openActors }: { scope: PlatformCanvasScope; openActor
                     </ThemedText>
                   </Pressable>
                 ))}
+                {canEdit && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: actions === node.id }}
+                    onPress={() => setActions(actions === node.id ? undefined : node.id)}
+                    style={{ minHeight: 44, justifyContent: "center" }}
+                  >
+                    <ThemedText type="small">{t("platformCanvas.editCard")}</ThemedText>
+                  </Pressable>
+                )}
+                {canEdit && actions === node.id && (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                    {(
+                      [
+                        ...(node.canRename
+                          ? [{ kind: "rename", label: "storyCanvas.rename" }]
+                          : []),
+                        ...(node.canEditText
+                          ? [{ kind: "text", label: "storyCanvas.editNote" }]
+                          : []),
+                        ...(node.canEditPrompt
+                          ? [{ kind: "prompt", label: "storyCanvas.editPrompt" }]
+                          : []),
+                        ...(node.type === "shot"
+                          ? [
+                              ...CANVAS_SHOT_FIELDS.map((kind) => ({
+                                kind,
+                                label: `storyCanvas.shot.${kind}`,
+                              })),
+                              { kind: "reorderShot", label: "storyCanvas.shot.reorder" },
+                            ]
+                          : []),
+                        { kind: "remove", label: "storyCanvas.remove" },
+                      ] as { kind: CanvasNodeEdit["kind"]; label: Parameters<typeof t>[0] }[]
+                    ).map((action) => (
+                      <Pressable
+                        key={action.kind}
+                        accessibilityRole="button"
+                        onPress={() => setEdit({ nodeId: node.id, kind: action.kind })}
+                        style={{ minHeight: 44, justifyContent: "center" }}
+                      >
+                        <ThemedText type="small">{t(action.label)}</ThemedText>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
                 {!!node.text && (
                   <ThemedText type="small" selectable>
                     {node.text}
@@ -197,6 +294,16 @@ function Document({ scope, openActors }: { scope: PlatformCanvasScope; openActor
             </Pressable>
           )}
         </ScrollView>
+      )}
+      {loaded && edit && canEdit && (
+        <StoryCanvasEditForm
+          scope={scope}
+          userId={userId}
+          loaded={loaded}
+          edit={edit}
+          close={saved}
+          saved={saved}
+        />
       )}
       {loaded && mediaPreview && (
         <StoryCanvasMediaPreview

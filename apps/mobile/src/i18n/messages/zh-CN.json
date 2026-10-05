@@ -5417,5 +5417,6 @@
   "platformActors.next": "下一页",
   "platformActors.confirmDiscard": "放弃添加",
   "platformActors.discardHelp": "放弃此次已保存的添加操作？现有画布卡片不会更改。",
-  "platformActors.photoUnavailable": "照片暂不可用"
+  "platformActors.photoUnavailable": "照片暂不可用",
+  "platformCanvas.editCard": "编辑卡片"
 }

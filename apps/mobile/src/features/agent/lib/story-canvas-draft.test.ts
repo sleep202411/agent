@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { durableRecord } from "@/lib/durable-record";
 import { canvasDraftStore, canvasEditBaseline } from "./story-canvas-draft";
 const h = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -143,4 +144,23 @@ it("tracks shot membership and order without blocking unrelated field edits", ()
   expect(() => canvasEditBaseline(snapshot, { nodeId: "n", kind: "reorderShot" })).toThrow(
     "does not support"
   );
+});
+
+it("isolates platform drafts by workspace, project, chapter, document and account", () => {
+  vi.mocked(durableRecord).mockReturnValue(storage);
+  const platform = {
+    ...scope,
+    kind: "platform" as const,
+    workspaceId: "workspace",
+    sectionId: "section",
+  };
+  canvasDraftStore(platform, "user").write(draft);
+  expect(durableRecord).toHaveBeenLastCalledWith(
+    "platform-canvas-draft",
+    "user",
+    "workspace:project:section:doc"
+  );
+  expect(canvasDraftStore(platform, "user").read()).toEqual(draft);
+  canvasDraftStore(scope, "user");
+  expect(durableRecord).toHaveBeenLastCalledWith("story-canvas-draft", "user", "project:doc");
 });

@@ -5,9 +5,11 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import { canvasNodeEditSchema, type CanvasNodeEdit } from "../../../../canvas-editor/schema";
 import type { CanvasSnapshot } from "../../../../canvas-editor/protocol";
+import type { PlatformCanvasScope } from "../api/platform-canvas-document";
 import type { CanvasWriteScope } from "../api/story-canvas-update";
 import { canvasUpdateSchema } from "../../../../canvas-editor/protocol";
 
+export type CanvasEditScope = CanvasWriteScope | PlatformCanvasScope;
 const draftSchema = z
   .object({
     edit: canvasNodeEditSchema,
@@ -100,12 +102,14 @@ function stableJson(value: unknown): string {
 }
 /** One saved edit per canvas; reopening any edit resumes it instead of replacing it. */
 export function canvasDraftStore(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   storage: DurableRecord = durableRecord(
-    "story-canvas-draft",
+    "kind" in scope ? "platform-canvas-draft" : "story-canvas-draft",
     userId,
-    `${scope.projectId}:${scope.documentId}`
+    "kind" in scope
+      ? `${scope.workspaceId}:${scope.projectId}:${scope.sectionId}:${scope.documentId}`
+      : `${scope.projectId}:${scope.documentId}`
   )
 ) {
   const current = () => {

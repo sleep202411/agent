@@ -16,18 +16,23 @@ import { useTheme } from "@/hooks/use-theme";
 import { ThemedText } from "@/components/themed-text";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import type { CanvasNodeEdit } from "../../../../canvas-editor/schema";
-import { canvasDraftStore, canvasEditBaseline, type CanvasDraft } from "../lib/story-canvas-draft";
 import {
-  canvasUpdatePending,
-  type CanvasWriteScope,
-  type CanvasUpdateCommand,
-} from "../api/story-canvas-update";
+  canvasDraftStore,
+  canvasEditBaseline,
+  type CanvasDraft,
+  type CanvasEditScope,
+} from "../lib/story-canvas-draft";
+import { canvasUpdatePending, type CanvasUpdateCommand } from "../api/story-canvas-update";
 import {
   isCanvasShotField,
   canvasShotValue,
   CANVAS_SHOT_OPTIONS,
 } from "../../../../canvas-editor/shot-fields";
 import { canvasShotRows } from "../lib/story-canvas-shot-rows";
+import {
+  openPlatformCanvasDocument,
+  platformCanvasUpdatePending,
+} from "../api/platform-canvas-document";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
@@ -39,7 +44,7 @@ export function StoryCanvasEditForm({
   close,
   saved,
 }: {
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   userId: string;
   loaded: CanvasLoaded;
   edit: Pick<CanvasNodeEdit, "nodeId" | "kind">;
@@ -50,7 +55,13 @@ export function StoryCanvasEditForm({
     theme = useTheme(),
     insets = useSafeAreaInsets();
   const store = useMemo(() => canvasDraftStore(scope, userId), [scope, userId]);
-  const client = useMemo(() => canvasUpdatePending(scope, userId), [scope, userId]);
+  const client = useMemo(
+    () =>
+      "kind" in scope
+        ? platformCanvasUpdatePending(scope, userId)
+        : canvasUpdatePending(scope, userId),
+    [scope, userId]
+  );
   const [initial] = useState(() => {
     try {
       const draft = store.read();
@@ -355,6 +366,7 @@ export function StoryCanvasEditForm({
         {phase === "refresh" && draft && (
           <StoryCanvasReader
             scope={scope}
+            platform={"kind" in scope ? { scope, load: openPlatformCanvasDocument } : undefined}
             title={t("storyCanvas.title")}
             runtimeError={t("storyCanvas.loadError")}
             onError={failed}
