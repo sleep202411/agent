@@ -36,11 +36,13 @@ export function StoryCanvasCreateForm({
   userId,
   close,
   saved,
+  libraryAsset,
 }: {
   scope: CanvasWriteScope;
   userId: string;
   close(): void;
   saved(): void;
+  libraryAsset?: { id: string; name?: string };
 }) {
   const t = useTranslations(),
     theme = useTheme(),
@@ -50,7 +52,17 @@ export function StoryCanvasCreateForm({
   const [initial] = useState(() => {
     try {
       return {
-        draft: store.read() ?? { nodeId: uuid.v4(), type: "prompt" as const, name: "", text: "" },
+        draft:
+          store.read() ??
+          (libraryAsset
+            ? {
+                nodeId: uuid.v4(),
+                type: "libraryAsset" as const,
+                name: libraryAsset.name ?? "",
+                text: "",
+                assetId: libraryAsset.id,
+              }
+            : { nodeId: uuid.v4(), type: "prompt" as const, name: "", text: "" }),
       };
     } catch (cause) {
       return { error: cause instanceof Error ? cause.message : String(cause) };
@@ -61,12 +73,24 @@ export function StoryCanvasCreateForm({
   const [phase, setPhase] = useState<"idle" | "refresh" | "prepare" | "encode" | "save">("idle");
   const [prepared, setPrepared] = useState<{ loaded: CanvasLoaded; create: CanvasNodeCreate }>();
   const life = useRef<AbortController | null>(null),
-    busy = useRef(false);
+    busy = useRef(false),
+    persistedInitial = useRef(false);
   useLayoutEffect(() => {
     const controller = new AbortController();
     life.current = controller;
+    try {
+      if (!persistedInitial.current && initial.draft) {
+        store.write(initial.draft);
+        persistedInitial.current = true;
+      }
+    } catch (cause) {
+      queueMicrotask(() => {
+        if (!controller.signal.aborted)
+          setError(cause instanceof Error ? cause.message : String(cause));
+      });
+    }
     return () => controller.abort();
-  }, []);
+  }, [initial, store]);
   const current = () =>
     !!life.current && !life.current.signal.aborted && getAuthGeneration() === scope.generation;
   const fail = (cause: unknown) => {
@@ -125,7 +149,9 @@ export function StoryCanvasCreateForm({
       if (loaded.documentId !== scope.documentId) throw Error(t("storyCanvas.changed"));
       const position = canvasAppendPosition(loaded.snapshot);
       let create: CanvasNodeCreate;
-      if (draft.type === "shot") create = { nodeId: draft.nodeId, type: "shot", position };
+      if (draft.type === "libraryAsset")
+        create = { nodeId: draft.nodeId, type: "libraryAsset", assetId: draft.assetId!, position };
+      else if (draft.type === "shot") create = { nodeId: draft.nodeId, type: "shot", position };
       else if (draft.type === "note")
         create = { nodeId: draft.nodeId, type: "note", position, data: { text: draft.text } };
       else {
@@ -200,26 +226,35 @@ export function StoryCanvasCreateForm({
               <ThemedText type="small">
                 {t(draft.command ? "storyCanvas.pending" : "storyCanvas.draftSaved")}
               </ThemedText>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                {types.map((type) => (
-                  <Pressable
-                    key={type}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: draft.type === type, disabled: !editable }}
-                    disabled={!editable}
-                    onPress={() => change({ type })}
-                    style={{
-                      padding: 10,
-                      borderWidth: 1,
-                      borderRadius: 8,
-                      borderColor: draft.type === type ? theme.brand : theme.border,
-                    }}
-                  >
-                    <ThemedText type="small">{t(`storyCanvas.createType.${type}`)}</ThemedText>
-                  </Pressable>
-                ))}
-              </View>
-              {!["shot", "note"].includes(draft.type) && (
+              {libraryAsset && draft.assetId !== libraryAsset.id && (
+                <ThemedText type="small">{t("storyCanvas.library.existingDraft")}</ThemedText>
+              )}
+              {draft.type === "libraryAsset" ? (
+                <ThemedText type="smallBold">
+                  {draft.name || t("storyCanvas.library.add")}
+                </ThemedText>
+              ) : (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {types.map((type) => (
+                    <Pressable
+                      key={type}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: draft.type === type, disabled: !editable }}
+                      disabled={!editable}
+                      onPress={() => change({ type })}
+                      style={{
+                        padding: 10,
+                        borderWidth: 1,
+                        borderRadius: 8,
+                        borderColor: draft.type === type ? theme.brand : theme.border,
+                      }}
+                    >
+                      <ThemedText type="small">{t(`storyCanvas.createType.${type}`)}</ThemedText>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+              {!["shot", "note", "libraryAsset"].includes(draft.type) && (
                 <>
                   <ThemedText type="small">{t("storyCanvas.createName")}</ThemedText>
                   <TextInput
@@ -237,7 +272,7 @@ export function StoryCanvasCreateForm({
                   />
                 </>
               )}
-              {draft.type !== "shot" && (
+              {!["shot", "libraryAsset"].includes(draft.type) && (
                 <>
                   <ThemedText type="small">
                     {t(draft.type === "note" ? "storyCanvas.noteText" : "storyCanvas.promptText")}
@@ -264,11 +299,13 @@ export function StoryCanvasCreateForm({
               )}
               <ThemedText type="small">
                 {t(
-                  draft.type === "shot"
-                    ? "storyCanvas.createShotHelp"
-                    : draft.type === "note"
-                      ? "storyCanvas.createNoteHelp"
-                      : "storyCanvas.createGenerationHelp"
+                  draft.type === "libraryAsset"
+                    ? "storyCanvas.library.addHelp"
+                    : draft.type === "shot"
+                      ? "storyCanvas.createShotHelp"
+                      : draft.type === "note"
+                        ? "storyCanvas.createNoteHelp"
+                        : "storyCanvas.createGenerationHelp"
                 )}
               </ThemedText>
               {phase === "idle" ? (

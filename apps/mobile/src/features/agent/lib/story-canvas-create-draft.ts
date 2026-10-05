@@ -7,12 +7,17 @@ import type { CanvasWriteScope } from "../api/story-canvas-update";
 export const canvasCreateDraftSchema = z
   .object({
     nodeId: z.string().uuid(),
-    type: z.enum(["prompt", "video", "audio", "note", "shot"]),
+    type: z.enum(["prompt", "video", "audio", "note", "shot", "libraryAsset"]),
     name: z.string(),
     text: z.string(),
     command: canvasUpdateSchema.optional(),
+    assetId: z.string().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (draft) => (draft.type === "libraryAsset") === !!draft.assetId,
+    "Library creation requires its original asset identity."
+  );
 export type CanvasCreateDraft = z.infer<typeof canvasCreateDraftSchema>;
 export function canvasCreateDraftStore(
   scope: CanvasWriteScope,

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import * as Y from "yjs";
 import { compareByOrder, orderBetween } from "@repo/shared";
 import { canvasNodeCreateSchema, type CanvasNodeCreate } from "./schema";
@@ -12,7 +13,35 @@ export function createCanvasNode(state: string, raw: CanvasNodeCreate) {
     if (nodes.has(command.nodeId))
       throw Error("Canvas node ID already exists. Reload the document.");
     let fields: Record<string, unknown>;
-    if (command.type === "shot") {
+    let type: string = command.type;
+    if (command.type === "libraryAsset") {
+      const source = doc.getMap("assets").get(command.assetId);
+      if (!source) throw Error("This library asset is no longer available. Reload the library.");
+      const asset = z
+        .object({
+          id: z.literal(command.assetId),
+          kind: z.enum(["image", "video", "audio"]),
+          url: z.string().min(1),
+          mediaAssetId: z.string().uuid().optional(),
+          panorama: z.boolean().optional(),
+          name: z.string().optional(),
+          prompt: z.string().optional(),
+        })
+        .parse(source);
+      type =
+        asset.kind === "video"
+          ? "videoAsset"
+          : asset.kind === "audio"
+            ? "audioAsset"
+            : asset.panorama
+              ? "panorama"
+              : "image";
+      fields = {
+        src: asset.url,
+        mediaAssetId: asset.mediaAssetId,
+        label: asset.name ?? asset.prompt,
+      };
+    } else if (command.type === "shot") {
       const shots: { id: string; order?: string | null }[] = [];
       for (const [id, value] of nodes) {
         if (!(value instanceof Y.Map) || value.get("type") !== "shot") continue;
@@ -35,7 +64,7 @@ export function createCanvasNode(state: string, raw: CanvasNodeCreate) {
       const node = new Y.Map<unknown>();
       nodes.set(command.nodeId, node);
       node.set("id", command.nodeId);
-      node.set("type", command.type);
+      node.set("type", type);
       node.set("position", new Y.Map<number>(Object.entries(command.position)));
       const data = new Y.Map<unknown>();
       node.set("data", data);

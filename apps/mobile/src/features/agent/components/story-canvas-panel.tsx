@@ -102,6 +102,7 @@ export function StoryCanvasPanel({
   const [mediaNode, setMediaNode] = useState<string>();
   const [mediaRecovery, setMediaRecovery] = useState<string>();
   const [expandedShot, setExpandedShot] = useState<string>();
+  const [libraryAsset, setLibraryAsset] = useState<{ id: string; name?: string }>();
   const [creating, setCreating] = useState(false),
     [createRecovery, setCreateRecovery] = useState(false);
   const [attempt, setAttempt] = useState(0),
@@ -525,6 +526,10 @@ export function StoryCanvasPanel({
                 assets={overview.assets}
                 canEdit={canEdit}
                 onSaveCandidate={setSelected}
+                onAdd={(asset) => {
+                  setLibraryAsset(asset);
+                  setCreating(true);
+                }}
                 onPreview={(asset) => setMediaPreview({ assetId: asset.id })}
                 onPreviewPanorama={(asset) =>
                   setPanorama({
@@ -644,14 +649,17 @@ export function StoryCanvasPanel({
         )}
         {creating && writeScope && canEdit && (
           <StoryCanvasCreateForm
+            libraryAsset={libraryAsset}
             scope={writeScope}
             userId={userId}
             close={() => {
               setCreating(false);
+              setLibraryAsset(undefined);
               reload();
             }}
             saved={() => {
               setCreating(false);
+              setLibraryAsset(undefined);
               reload();
             }}
           />

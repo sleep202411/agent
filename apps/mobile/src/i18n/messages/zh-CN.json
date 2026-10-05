@@ -1,4 +1,7 @@
 {
+  "storyCanvas.library.existingDraft": "已打开保存的卡片草稿。请先完成或放弃此草稿，再添加其他资产。",
+  "storyCanvas.library.add": "添加到画布",
+  "storyCanvas.library.addHelp": "使用此素材创建媒体卡片，原素材仍保留在素材库中。",
   "storyCanvas.map.selectHint": "点按卡片来选择或取消选择，再点击“移动所选卡片”。",
   "storyCanvas.map.selectCards": "选择卡片",
   "storyCanvas.map.cancelSelection": "取消多选",

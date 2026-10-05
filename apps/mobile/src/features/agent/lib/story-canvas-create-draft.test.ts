@@ -66,3 +66,17 @@ it("rejects nonfinite placement rather than persisting unusable coordinates", ()
     })
   ).toThrow();
 });
+it("keeps library source identity and frozen update after reopening", () => {
+  const library = {
+    ...draft,
+    type: "libraryAsset" as const,
+    assetId: "asset",
+    command: { clientKey: "00000000-0000-4000-8000-000000000002", yjsUpdateBase64: "AAA=" },
+  };
+  canvasCreateDraftStore(scope, "user", storage).write(library);
+  expect(canvasCreateDraftStore(scope, "user", storage).read()).toEqual(library);
+  expect(() =>
+    canvasCreateDraftStore(scope, "user", storage).write({ ...library, assetId: undefined })
+  ).toThrow();
+  expect(canvasCreateDraftStore(scope, "user", storage).read()).toEqual(library);
+});

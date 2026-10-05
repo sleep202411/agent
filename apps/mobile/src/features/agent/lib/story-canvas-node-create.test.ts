@@ -96,3 +96,56 @@ it("rejects nonfinite placement and generation-state injection", () => {
     } as never)
   ).toThrow();
 });
+
+it.each([
+  ["image", false, "image"],
+  ["image", true, "panorama"],
+  ["video", false, "videoAsset"],
+  ["audio", false, "audioAsset"],
+] as const)("adds library %s (panorama %s) using Web media fields", (kind, panorama, type) => {
+  const doc = new Y.Doc();
+  const asset = {
+    id: "asset",
+    kind,
+    panorama,
+    url: "https://example.test/media",
+    mediaAssetId: second,
+    prompt: "Original prompt",
+  };
+  doc.getMap("assets").set("asset", asset);
+  doc.getMap("meta").set("unrelated", { keep: true });
+  const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  const result = createCanvasNode(state, {
+    nodeId: id,
+    type: "libraryAsset",
+    assetId: "asset",
+    position,
+  });
+  expect(result.snapshot.nodes[id]).toEqual({
+    id,
+    type,
+    position,
+    data: { src: asset.url, mediaAssetId: second, label: asset.prompt },
+  });
+  expect(result.snapshot.assets).toEqual({ asset });
+  expect(result.snapshot.meta).toEqual({ unrelated: { keep: true } });
+  expect(
+    materializeCanvas(state, [result.yjsUpdateBase64!, result.yjsUpdateBase64!]).snapshot
+  ).toEqual(result.snapshot);
+  expect(() =>
+    createCanvasNode(result.state, { nodeId: id, type: "libraryAsset", assetId: "asset", position })
+  ).toThrow("already exists");
+});
+it("rejects missing or invalid library sources without writing a node", () => {
+  const command = { nodeId: id, type: "libraryAsset" as const, assetId: "asset", position };
+  expect(() => createCanvasNode(empty(), command)).toThrow("no longer available");
+  const doc = new Y.Doc();
+  doc
+    .getMap("assets")
+    .set("asset", { id: "different", kind: "image", url: "https://example.test/media" });
+  const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+  expect(() => createCanvasNode(state, command)).toThrow();
+  expect(materializeCanvas(state, []).snapshot.nodes).toEqual({});
+  doc.destroy();
+});

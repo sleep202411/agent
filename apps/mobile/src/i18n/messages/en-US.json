@@ -1,4 +1,7 @@
 {
+  "storyCanvas.library.existingDraft": "Your saved card draft is open. Finish or discard it before adding another asset.",
+  "storyCanvas.library.add": "Add to canvas",
+  "storyCanvas.library.addHelp": "Create a media card from this library asset. The original stays in the library.",
   "storyCanvas.map.selectHint": "Tap cards to select or deselect them, then choose Move selected cards.",
   "storyCanvas.map.selectCards": "Select cards",
   "storyCanvas.map.cancelSelection": "Cancel selection",

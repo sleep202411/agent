@@ -13,11 +13,13 @@ export function StoryCanvasMediaLibrary({
   onSaveCandidate,
   onPreviewPanorama,
   onPreview,
+  onAdd,
 }: {
   assets: CanvasLibraryAsset[];
   visible: boolean;
   canEdit: boolean;
   onSaveCandidate: (mediaAssetId: string) => void;
+  onAdd?: (asset: CanvasLibraryAsset) => void;
   onPreview?: (asset: CanvasLibraryAsset) => void;
   onPreviewPanorama?: (asset: CanvasLibraryAsset) => void;
 }) {
@@ -114,6 +116,15 @@ export function StoryCanvasMediaLibrary({
               style={{ minHeight: 44, justifyContent: "center" }}
             >
               <ThemedText type="small">{t("storyCandidates.preview")}</ThemedText>
+            </Pressable>
+          )}
+          {canEdit && onAdd && asset.url && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onAdd(asset)}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <ThemedText type="small">{t("storyCanvas.library.add")}</ThemedText>
             </Pressable>
           )}
           {canEdit && asset.mediaAssetId && (

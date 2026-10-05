@@ -26,6 +26,7 @@ const newNode = {
   position: z.object({ x: z.number().finite(), y: z.number().finite() }).strict(),
 };
 export const canvasNodeCreateSchema = z.discriminatedUnion("type", [
+  z.object({ ...newNode, type: z.literal("libraryAsset"), assetId: z.string().min(1) }).strict(),
   z
     .object({ ...newNode, type: z.literal("note"), data: z.object({ text: z.string() }).strict() })
     .strict(),
