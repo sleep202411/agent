@@ -1,5 +1,9 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { getGenerationProject, listGenerationProjects } from "./projects-api";
+import {
+  getGenerationProject,
+  listGenerationProjects,
+  getStoryCanvasGenerationProject,
+} from "./projects-api";
 const h = vi.hoisted(() => ({ get: vi.fn(), stories: vi.fn(), generation: 1 }));
 vi.mock("@/lib/durable-record", () => ({ durableRecord: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get } }));
@@ -69,4 +73,31 @@ it("rejects wrong project/workspace, archived projects and stale sessions", asyn
     getGenerationProject(workspaceId, { kind: "platform", id }, 1, signal())
   ).rejects.toThrow("expired");
   expect(h.get).not.toHaveBeenCalled();
+});
+
+it("resolves canvas workspace from the current Story project and requires editing access", async () => {
+  const row = {
+    id,
+    workspaceId,
+    title: "Story",
+    status: "active",
+    capabilities: ["story.read", "story.edit", "story.generate"],
+  };
+  h.get.mockResolvedValue(row);
+  expect(await getStoryCanvasGenerationProject(id, 1, signal())).toMatchObject({
+    workspaceId,
+    storyProjectId: id,
+    canGenerate: true,
+  });
+  h.get.mockResolvedValue({ ...row, capabilities: ["story.generate"] });
+  await expect(getStoryCanvasGenerationProject(id, 1, signal())).rejects.toThrow(
+    "editing permission"
+  );
+  h.get.mockResolvedValue({ ...row, status: "archived" });
+  await expect(getStoryCanvasGenerationProject(id, 1, signal())).rejects.toThrow("unavailable");
+  h.get.mockImplementation(async () => {
+    h.generation++;
+    return row;
+  });
+  await expect(getStoryCanvasGenerationProject(id, 1, signal())).rejects.toThrow("expired");
 });

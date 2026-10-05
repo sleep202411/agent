@@ -1419,6 +1419,7 @@ it("isolates canvas composer drafts and saves card identity before paid submissi
     documentId: "55555555-5555-4555-8555-555555555555",
     nodeId: "card-one",
     mode: "image" as const,
+    seed: { prompt: "Original card prompt", modelId: "model", settings: {}, references: {} },
     beforeSubmit,
     beforeRetry: vi.fn(async () => {}),
     afterReceipt: vi.fn(async () => {}),
@@ -1426,6 +1427,7 @@ it("isolates canvas composer drafts and saves card identity before paid submissi
   await mount(undefined, project, canvas);
   expect(button("aiLab.video")).toBeUndefined();
   await click("Image preset");
+  expect(input("Prompt").value).toBe("Original card prompt");
   await change("Prompt", "Canvas lake");
   await click("aiLab.generate");
   await click("aiLab.confirm");

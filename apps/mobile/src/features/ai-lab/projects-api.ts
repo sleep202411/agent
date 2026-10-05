@@ -89,3 +89,28 @@ export async function getGenerationProject(
         : ["owner", "admin", "editor"].includes(row.role ?? ""),
   };
 }
+
+/** Resolve the workspace from the authoritative Story project before canvas entry. */
+export async function getStoryCanvasGenerationProject(
+  projectId: string,
+  generation: number,
+  signal: AbortSignal
+) {
+  generationSession(generation, signal);
+  const id = z.string().uuid().parse(projectId);
+  const row = story.parse(
+    await api.get(`/story-projects/${id}`, { service: "aurora", signal, retry: false })
+  );
+  generationSession(generation, signal);
+  if (row.id !== id || !row.capabilities.includes("story.edit"))
+    throw Error("Canvas editing permission is required.");
+  if (row.status !== "active")
+    throw Error("The selected project is unavailable in this workspace.");
+  return {
+    ...generationProjectScope.parse({ workspaceId: row.workspaceId, storyProjectId: id }),
+    kind: "story" as const,
+    id,
+    title: row.title,
+    canGenerate: row.capabilities.includes("story.generate"),
+  };
+}

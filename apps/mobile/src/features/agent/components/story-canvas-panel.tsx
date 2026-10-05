@@ -1,3 +1,4 @@
+import { StoryCanvasGenerationPanel } from "./story-canvas-generation-panel";
 import { StoryCanvasMediaLibrary } from "./story-canvas-media-library";
 import { DocumentFeedPanel } from "./document-feed-panel";
 import { StoryCanvasPositionForm } from "./story-canvas-position-form";
@@ -59,6 +60,7 @@ export function StoryCanvasEntry() {
           scope={scope}
           userId={String(auth.user?.userId ?? auth.user?.id ?? "")}
           canEdit={context.capabilities.includes("story.edit")}
+          canGenerate={context.capabilities.includes("story.generate")}
           canComment={context.capabilities.includes("story.review")}
           close={() => setOpen(false)}
         />
@@ -71,17 +73,20 @@ export function StoryCanvasPanel({
   userId,
   canEdit,
   canComment = false,
+  canGenerate = false,
   close,
 }: {
   scope: CandidateScope;
   userId: string;
   canEdit: boolean;
   canComment?: boolean;
+  canGenerate?: boolean;
   close(): void;
 }) {
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [generationCard, setGenerationCard] = useState<{ id: string; title: string }>();
   const [documentFeed, setDocumentFeed] = useState<string | null>(null);
   const [positioning, setPositioning] = useState(false),
     [positionRecovery, setPositionRecovery] = useState(false);
@@ -238,6 +243,7 @@ export function StoryCanvasPanel({
           !grouping &&
           !mapping &&
           !positioning &&
+          !generationCard &&
           !selected &&
           documentFeed === null && (
             <StoryCanvasMediaSync
@@ -362,6 +368,15 @@ export function StoryCanvasPanel({
                         {!!node.text && node.text !== node.title && (
                           <ThemedText type="small">{node.text}</ThemedText>
                         )}
+                        {canEdit && canGenerate && node.canEditPrompt && writeScope && (
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={() => setGenerationCard({ id: node.id, title: node.title })}
+                            style={{ paddingVertical: 10 }}
+                          >
+                            <ThemedText type="small">{t("aiLab.generate")}</ThemedText>
+                          </Pressable>
+                        )}
                         {node.shotNumber != null && (
                           <ThemedText type="small">
                             {t("storyCanvas.shot.position")} {node.shotNumber}
@@ -481,6 +496,19 @@ export function StoryCanvasPanel({
               />
             </ScrollView>
           </>
+        )}
+        {generationCard && writeScope && canEdit && canGenerate && (
+          <StoryCanvasGenerationPanel
+            key={`${writeScope.documentId}:${generationCard.id}:${scope.generation}`}
+            scope={writeScope}
+            userId={userId}
+            nodeId={generationCard.id}
+            title={generationCard.title}
+            close={() => {
+              setGenerationCard(undefined);
+              reload();
+            }}
+          />
         )}
         {mapping && loaded && (
           <StoryCanvasMap

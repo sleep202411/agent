@@ -12,6 +12,18 @@ const draftSchema = z.object({
   values: z.record(z.string(), z.unknown()),
   upload: referenceCheckpoint.optional(),
   skillSelection: skillSelection.optional(),
+  referenceMedia: z
+    .array(
+      z.object({
+        field: z.string(),
+        kind: z.enum(["image", "video", "audio"]),
+        url: z.string().url(),
+        assetId: z.string().optional(),
+        durationSeconds: z.number().finite().nonnegative().optional(),
+        bytes: z.number().finite().nonnegative().optional(),
+      })
+    )
+    .optional(),
   uploadedReferences: z
     .array(
       z.object({

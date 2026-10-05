@@ -1,3 +1,4 @@
+import { canvasSeedDraft, type CanvasGenerationSeed } from "./canvas-seed";
 import { resultDetails, resultCreatedAt } from "./result-details";
 import { setStringAsync } from "expo-clipboard";
 import { saveOutput } from "./save-output";
@@ -106,6 +107,7 @@ export type CanvasGenerationContext = {
   documentId: string;
   nodeId: string;
   mode: "image" | "video" | "audio";
+  seed?: CanvasGenerationSeed;
   beforeSubmit(command: GenerationCommand, signal: AbortSignal): Promise<void>;
   beforeRetry(command: GenerationRetry, signal: AbortSignal): Promise<void>;
   afterReceipt(
@@ -328,7 +330,9 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
         presetId: p.id,
         modelId: m.id,
         schemaVersion: m.schemaVersion,
-        values: deriveInitialValues(m.input_schema),
+        ...(canvas?.seed
+          ? canvasSeedDraft(canvas.seed, m.id, m.input_schema)
+          : { values: deriveInitialValues(m.input_schema) }),
       });
     } catch (e) {
       fail(e);
@@ -526,10 +530,9 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
     const activeRaw = Object.fromEntries(
       Object.keys(values).map((key) => [key, draft.values[key]])
     );
-    const media = referenceSnapshots(
-      model.input_schema,
-      activeRaw,
-      (draft.uploadedReferences ?? [])
+    const media = referenceSnapshots(model.input_schema, activeRaw, [
+      ...(draft.referenceMedia ?? []).filter((row) => keyHasUrl(values[row.field], row.url)),
+      ...(draft.uploadedReferences ?? [])
         .filter(
           (row) =>
             (row.kind === "video" || row.kind === "audio") && keyHasUrl(values[row.field], row.url)
@@ -541,8 +544,8 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
           assetId: row.mediaAssetId,
           durationSeconds: row.durationSeconds,
           bytes: row.bytes,
-        }))
-    );
+        })),
+    ]);
     validateReferenceMedia(model.input_schema, values, media);
     const structured = ["referenceImages", "referenceVideos", "referenceAudios"].filter((name) => {
       const field = model.input_schema.properties[name];
@@ -678,7 +681,13 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
         <View style={{ gap: 8 }}>
           <ThemedText>{t("aiLab.pending")}</ThemedText>
           <Button label={t("aiLab.recover")} disabled={op.busy || !canGenerate} onPress={submit} />
-          <Button label={t("aiLab.clear")} disabled={op.busy} onPress={() => setConfirm("clear")} />
+          {!canvas && (
+            <Button
+              label={t("aiLab.clear")}
+              disabled={op.busy}
+              onPress={() => setConfirm("clear")}
+            />
+          )}
         </View>
       ) : null}
       {draft?.upload ? (
