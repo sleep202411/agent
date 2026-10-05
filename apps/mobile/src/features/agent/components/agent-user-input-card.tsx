@@ -1,3 +1,6 @@
+import { Image } from "expo-image";
+import { storyVisualStyleSkillBySlug } from "@repo/shared";
+import { storyVisualStylePreviews } from "../lib/story-visual-style-previews";
 import { useMemo } from "react";
 import { useAuth } from "@/auth";
 import { durableRecord } from "@/lib/durable-record";
@@ -123,6 +126,10 @@ function AgentUserInputView({
         <View style={styles.optionsGrid}>
           {question.options.map((option) => {
             const checked = option.value === selected;
+            const visualStyle =
+              request.formId === "story_creative_profile" && question.id === "visual_direction"
+                ? storyVisualStyleSkillBySlug(option.value)
+                : undefined;
             return (
               <Pressable
                 key={option.value}
@@ -133,11 +140,20 @@ function AgentUserInputView({
                 onPress={() => choose(option.value)}
                 style={({ pressed }) => [
                   styles.option,
+                  visualStyle && styles.previewOption,
                   checked && styles.optionSelected,
                   pressed && !locked && styles.pressed,
                 ]}
               >
-                <Text style={styles.optionLabel}>
+                {visualStyle ? (
+                  <Image
+                    source={storyVisualStylePreviews[visualStyle.slug]}
+                    contentFit="cover"
+                    accessible={false}
+                    style={styles.preview}
+                  />
+                ) : null}
+                <Text style={[styles.optionLabel, visualStyle && styles.previewLabel]}>
                   {agentInputOptionLabel(request.formId, question.id, option, locale, t)}
                 </Text>
                 {option.description ? (
@@ -275,6 +291,19 @@ const styles = StyleSheet.create({
     minHeight: 80,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
+  },
+  previewOption: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    overflow: "hidden",
+  },
+  preview: {
+    width: "100%",
+    aspectRatio: 2 / 3,
+  },
+  previewLabel: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
   },
   optionSelected: {
     backgroundColor: "rgba(229,34,39,0.095)",
