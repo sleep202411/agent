@@ -1,3 +1,4 @@
+import { useFixedPlaybackClock } from "../hooks/use-fixed-playback-clock";
 import { ExperienceJourneyMap } from "./experience-journey-map";
 import { ExperienceJourneyReplay } from "../lib/experience-journey-replay";
 import {
@@ -25,6 +26,7 @@ import {
   createExperienceTimelineCursor,
   evaluateExperienceCondition,
   isExperienceRendererVisible,
+  isExperienceGestureAvailable,
   type PlaySessionReporter,
   type ExperienceEventQueueResult,
   type ExperienceRuntimeController,
@@ -265,6 +267,7 @@ function ActiveExperienceRuntimePlayer({
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [initialPlayback] = useState(() => entryCheckpoint?.playback);
+  const playbackRate = initialPlayback?.rate ?? 1;
   const [restoredPresentation, setRestoredPresentation] = useState({
     epoch: 0,
     playback: initialPlayback,
@@ -527,7 +530,7 @@ function ActiveExperienceRuntimePlayer({
                 parkedEvents: [],
                 media: [],
                 playbackEnabled: playbackEnabledRef.current,
-                rate: 1,
+                rate: playbackRate,
                 ...(audio ? { audio } : {}),
               },
             })
@@ -540,7 +543,7 @@ function ActiveExperienceRuntimePlayer({
       journeyRef.current = nextJourney;
       setJourney(nextJourney);
     },
-    [applyAudioEffects, manifest, entryCheckpoint, checkpointAudio]
+    [applyAudioEffects, manifest, entryCheckpoint, checkpointAudio, playbackRate]
   );
 
   const run = useCallback(
@@ -756,77 +759,37 @@ function ActiveExperienceRuntimePlayer({
       pending.forEach((deliver) => deliver());
     }
   }, [presenting, timelineHoldGate]);
-  /** Pause / resume hook published by the scene-clock effect while it runs. */
-  const clockGateRef = useRef<((active: boolean) => void) | null>(null);
-
-  // Fixed scene clock (same path as web player). Pause wall-clock accrual while
-  // away so resume does not skip ahead of the frozen video.
+  const effectivePlaybackRate = useMemo(() => {
+    // Settled gestures and parked events are updated with this revision.
+    void checkpointRevision;
+    const pending = parkedGestureEventsRef.current.length > 0;
+    const interaction = scene?.gestures.some((gesture) => {
+      if (settledGestureIdsRef.current.includes(gesture.gestureId)) return false;
+      return (
+        isExperienceGestureAvailable(gesture, runtimeState, sceneTimeMs) ||
+        (!!gesture.activeWindow &&
+          gesture.activeWindow.startMs <= sceneTimeMs + 1000 &&
+          gesture.activeWindow.endMs >= sceneTimeMs)
+      );
+    });
+    return timelineHoldGate || pending || interaction ? 1 : playbackRate;
+  }, [scene, runtimeState, sceneTimeMs, timelineHoldGate, playbackRate, checkpointRevision]);
   const clockScene = scene?.clock.kind === "fixed" ? scene : null;
-  const clockDurationMs = clockScene?.clock.kind === "fixed" ? clockScene.clock.durationMs : null;
-  useEffect(() => {
-    if (!clockScene || clockDurationMs === null || !started || endingId) return;
-    let frame: number | null = null;
-    let ended = fixedClockEndedRef.current;
-    if (ended) return;
-    const restoredTime = entryPlayback?.sceneTimeMs ?? 0;
-    const startedAt = performance.now() - restoredTime;
-    let pausedTotal = 0;
-    let pausedAt: number | null = presentingRef.current ? null : performance.now();
-
-    const tick = () => {
-      frame = null;
-      if (pausedAt !== null) return;
-      const elapsed = Math.min(performance.now() - startedAt - pausedTotal, clockDurationMs);
-      advanceTimeline(null, elapsed);
-      if (elapsed < clockDurationMs) {
-        frame = requestAnimationFrame(tick);
-        return;
-      }
-      if (ended) return;
-      ended = true;
+  useFixedPlaybackClock({
+    identity: `${scene?.sceneId}:${sceneEpoch}`,
+    enabled: !!clockScene && started && !endingId,
+    running: presenting,
+    playbackRate: effectivePlaybackRate,
+    durationMs: clockScene?.clock.kind === "fixed" ? clockScene.clock.durationMs : 0,
+    initialPositionMs: entryPlayback?.sceneTimeMs,
+    initiallyCompleted: entryPlayback?.fixedClockEnded,
+    onTime: (timeMs) => advanceTimeline(null, timeMs),
+    onCompleted: () => {
+      if (!clockScene) return;
       fixedClockEndedRef.current = true;
       emitRuntimeEvents([{ type: "scene.clock-ended", sourceId: clockScene.sceneId }]);
-    };
-
-    clockGateRef.current = (active) => {
-      if (active) {
-        if (pausedAt !== null) {
-          pausedTotal += performance.now() - pausedAt;
-          pausedAt = null;
-        }
-        if (!ended && frame === null) frame = requestAnimationFrame(tick);
-        return;
-      }
-      if (pausedAt === null) pausedAt = performance.now();
-      if (frame !== null) {
-        cancelAnimationFrame(frame);
-        frame = null;
-      }
-    };
-
-    if (pausedAt === null) frame = requestAnimationFrame(tick);
-    return () => {
-      if (frame !== null) cancelAnimationFrame(frame);
-      clockGateRef.current = null;
-    };
-  }, [
-    entryPlayback,
-    advanceTimeline,
-    clockDurationMs,
-    clockScene,
-    controller,
-    emitRuntimeEvents,
-    endingId,
-    run,
-    sceneEpoch,
-    started,
-  ]);
-
-  // Registered above while a fixed clock is running; the gate below is declared
-  // after it so the running clock is always the one being paused or resumed.
-  useEffect(() => {
-    clockGateRef.current?.(presenting);
-  }, [presenting]);
+    },
+  });
 
   useEffect(() => {
     if (!started) return;
@@ -882,7 +845,7 @@ function ActiveExperienceRuntimePlayer({
                 parkedEvents: parkedGestureEventsRef.current,
                 media,
                 playbackEnabled: playbackEnabledRef.current,
-                rate: 1 as const,
+                rate: playbackRate,
                 ...(audio ? { audio } : {}),
               },
             }
@@ -1300,6 +1263,7 @@ function ActiveExperienceRuntimePlayer({
               value={presenting && !timelineHoldGate && playbackEnabled}
             >
               <RendererPanel
+                playbackRate={effectivePlaybackRate}
                 manifest={manifest}
                 renderer={renderer}
                 runtimeState={runtimeState}
@@ -1396,6 +1360,7 @@ function ActiveExperienceRuntimePlayer({
 }
 
 function RendererPanel({
+  playbackRate,
   manifest,
   renderer,
   runtimeState,
@@ -1437,6 +1402,7 @@ function RendererPanel({
   onWorldEndHandle: (instanceId: string, handle: (() => Promise<void>) | null) => void;
   onPlaybackProgress: (checkpoint: ExperienceMediaCheckpoint) => void;
   checkpoint?: ExperienceMediaCheckpoint;
+  playbackRate: number;
 }) {
   const defaultLocale = manifest.localization.defaultLocale;
 
@@ -1466,6 +1432,7 @@ function RendererPanel({
   if (renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
     return (
       <ExperienceVideoRenderer
+        playbackRate={playbackRate}
         manifest={manifest}
         renderer={renderer}
         copy={copy}

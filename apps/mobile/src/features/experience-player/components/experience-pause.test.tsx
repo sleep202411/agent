@@ -45,6 +45,7 @@ const h = vi.hoisted(() => ({
   spatialPresenting: true,
   hold: (_hold: boolean) => {},
   video: {} as {
+    playbackRate: number;
     checkpoint?: ExperienceMediaCheckpoint;
     onCompleted: () => void;
     onPlaybackRefused: () => void;
@@ -745,3 +746,29 @@ const pausePicture = () =>
     h.stage.onResponderGrant!(event);
     h.stage.onResponderRelease!(event);
   });
+
+it("restores the saved playback rate for media, fixed time and subsequent saves", async () => {
+  const saved = savedCheckpoint();
+  saved.playback!.rate = 2;
+  await render(true, runtime, true, saved);
+  await click("Start");
+  expect(h.video.playbackRate).toBe(2);
+  expect(captured.mock.calls.at(-1)![0].playback.rate).toBe(2);
+  await act(async () => vi.advanceTimersByTime(512));
+  expect(captured.mock.calls.at(-1)![0].playback.sceneTimeMs).toBeGreaterThanOrEqual(9000);
+  await pausePicture();
+  const paused = captured.mock.calls.at(-1)![0].playback.sceneTimeMs;
+  await act(async () => vi.advanceTimersByTime(10000));
+  expect(captured.mock.calls.at(-1)![0].playback.sceneTimeMs).toBe(paused);
+});
+it("temporarily clamps media to normal speed for an interaction hold without losing saved preference", async () => {
+  const saved = savedCheckpoint();
+  saved.playback!.rate = 2;
+  await render(true, runtime, true, saved);
+  await click("Start");
+  await act(async () => h.hold(true));
+  expect(h.video.playbackRate).toBe(1);
+  expect(captured.mock.calls.at(-1)![0].playback.rate).toBe(2);
+  await act(async () => h.hold(false));
+  expect(h.video.playbackRate).toBe(2);
+});
