@@ -34,7 +34,9 @@ vi.mock("@/data/browse-refresh", () => ({ useBrowseVersion: () => 0 }));
 vi.mock("@/lib/navigation", () => ({ toHref: (v: string) => v }));
 vi.mock("@/components/ip-grid", () => ({ IpGridCard: () => null }));
 vi.mock("@/data/interactive-film-api", () => ({ listPublishedInteractiveFilms: h.feed }));
-vi.mock("@/features/experience-player", () => ({ navigateToPlay: h.filmPlay }));
+vi.mock("@/features/film-store/film-store", () => ({
+  FilmStore: ({ game }: { game: { gameId: string } }) => <span>preview:{game.gameId}</span>,
+}));
 vi.mock("@/lib/avatar", () => ({ dicebearAvatarUrl: () => "" }));
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 vi.mock("@/config", () => ({ webBaseUrl: "http://localhost" }));
@@ -160,5 +162,6 @@ it("opens a text adventure natively and retains film navigation", async () => {
   await act(async () => buttons.find((b) => b.textContent?.includes("A text game"))!.click());
   expect(h.push).toHaveBeenCalledWith("/play/text-game/tg_0123456789abcdef");
   await act(async () => buttons.find((b) => b.textContent?.includes("games.filmLabel"))!.click());
-  expect(h.filmPlay).toHaveBeenCalledWith(expect.anything(), { gameId: "a" });
+  expect(host.textContent).toContain("preview:a");
+  expect(h.filmPlay).not.toHaveBeenCalled();
 });

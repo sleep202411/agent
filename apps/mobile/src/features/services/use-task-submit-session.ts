@@ -4,16 +4,12 @@ import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import type { CrewAsset } from "@/features/crew-assets/api";
 import type { TaskDetail } from "./task-detail-api";
 import type { DeliveryTemplate } from "./task-delivery-api";
-import {
-  submitTask,
-  type DeliveryAnswers,
-  type DeliveryFolder,
-  type TaskSubmitInput,
-} from "./task-submit-api";
+import { submitTask, type DeliveryAnswers, type TaskSubmitInput } from "./task-submit-api";
 
 export type TaskSubmissionUpload = {
   sequence: number;
-  field: string;
+  taskId: string;
+  field?: string;
   templateKey: string;
   parentId: string | null;
   destination?: string;
@@ -25,7 +21,7 @@ export function useTaskSubmitSession(taskId: string, generation: number, onRefre
   const uploadSequence = useRef(0);
   const [note, setNote] = useState("");
   const [assets, setAssets] = useState<Pick<CrewAsset, "id" | "name">[]>([]);
-  const [folder, setFolder] = useState<DeliveryFolder>();
+  const [deliveryLink, setDeliveryLink] = useState("");
   const [answersByTemplate, setAnswersByTemplate] = useState<Record<string, DeliveryAnswers>>({});
   const [attemptedAt, setAttemptedAt] = useState<TaskDetail>();
   const [error, setError] = useState<string>();
@@ -38,7 +34,7 @@ export function useTaskSubmitSession(taskId: string, generation: number, onRefre
   return {
     upload,
     setUpload,
-    beginUpload(task: TaskDetail, templateKey: string, field: string) {
+    beginUpload(task: TaskDetail, templateKey: string, field?: string) {
       if (
         generation !== getAuthGeneration() ||
         task.id !== taskId ||
@@ -48,18 +44,19 @@ export function useTaskSubmitSession(taskId: string, generation: number, onRefre
         return;
       setUpload({
         sequence: ++uploadSequence.current,
+        taskId: task.id,
         field,
         templateKey,
-        parentId: folder?.id ?? null,
-        destination: folder?.name,
+        parentId: task.deliveryFolder?.id ?? null,
+        destination: task.deliveryFolder?.name,
       });
     },
     note,
     setNote,
     assets,
     setAssets,
-    folder,
-    setFolder,
+    deliveryLink,
+    setDeliveryLink,
     answersByTemplate,
     setAnswersByTemplate,
     observe,
@@ -89,7 +86,7 @@ export function useTaskSubmitSession(taskId: string, generation: number, onRefre
         () => {
           setNote("");
           setAssets([]);
-          setFolder(undefined);
+          setDeliveryLink("");
           setAnswersByTemplate({});
           onRefresh();
         },

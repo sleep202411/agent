@@ -327,3 +327,13 @@ it("creates a linked contract and rejects a missing acknowledgement", async () =
     "acknowledgement"
   );
 });
+
+it("sends selected payment terms and rejects a receipt with different terms", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, paymentTerms: "half_upfront" });
+  await createTask("crew", { ...input, paymentTerms: "half_upfront" });
+  expect(vi.mocked(api.post).mock.calls[0][1]?.data).toMatchObject({
+    paymentTerms: "half_upfront",
+  });
+  vi.mocked(api.post).mockResolvedValue({ ...detail, paymentTerms: "monthly" });
+  await expect(createTask("crew", { ...input, paymentTerms: "half_upfront" })).rejects.toThrow();
+});

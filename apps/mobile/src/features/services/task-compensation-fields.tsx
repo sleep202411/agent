@@ -1,3 +1,5 @@
+import { TaskPaymentTermsField } from "./task-payment-terms-field";
+import { type TaskPaymentTerms } from "@repo/shared/crew";
 import { TextInput, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -9,6 +11,8 @@ export function TaskCompensationFields({
   onShare,
   locked,
   rewardRequired = false,
+  paymentTerms,
+  onPaymentTerms,
 }: {
   reward: string;
   share: string;
@@ -16,6 +20,8 @@ export function TaskCompensationFields({
   onShare: (value: string) => void;
   locked: boolean;
   rewardRequired?: boolean;
+  paymentTerms?: TaskPaymentTerms | null;
+  onPaymentTerms?: (value: TaskPaymentTerms | null) => void;
 }) {
   const t = useTranslations(),
     theme = useTheme();
@@ -40,6 +46,14 @@ export function TaskCompensationFields({
           />
         </View>
       ))}
+      {onPaymentTerms && (
+        <TaskPaymentTermsField
+          value={paymentTerms ?? null}
+          onChange={onPaymentTerms}
+          locked={locked}
+          required={rewardRequired}
+        />
+      )}
       <ThemedText>
         {t(rewardRequired ? "taskCreate.rewardHelp" : "taskCompensation.help")}
       </ThemedText>

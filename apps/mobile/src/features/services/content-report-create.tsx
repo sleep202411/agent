@@ -1,3 +1,4 @@
+import { uuid } from "expo-modules-core";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -25,6 +26,7 @@ export function ContentReportCreate(props: Props) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [open, setOpen] = useState(false);
+  const request = useRef<{ fingerprint: string; id: string } | null>(null);
   const pending = useRef(false),
     mounted = useRef(true);
   useEffect(() => {
@@ -104,12 +106,16 @@ export function ContentReportCreate(props: Props) {
             pending.current = true;
             setBusy(true);
             setError("");
-            void reportIpContent({
-              targetType: "ip",
+            const payload = {
+              targetType: "ip" as const,
               targetId: draft.targetId,
               reason: draft.reason,
-              description: draft.description,
-            })
+              description: draft.description?.trim() || undefined,
+            };
+            const fingerprint = JSON.stringify(payload);
+            if (request.current?.fingerprint !== fingerprint)
+              request.current = { fingerprint, id: uuid.v4() };
+            void reportIpContent({ ...payload, requestId: request.current.id })
               .then(
                 () => {
                   if (current()) props.onSaved();

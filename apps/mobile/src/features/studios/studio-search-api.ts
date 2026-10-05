@@ -75,6 +75,7 @@ export async function searchStudios(
               (item) => item?.id === cluster.creatorId && !item.showOnMap
             )
         ))) ||
+    page.island.matchedCreatorCount > page.island.creatorCount ||
     page.items.length > data.limit ||
     page.matchedCount > page.accessibleCount ||
     page.items.length > page.matchedCount ||

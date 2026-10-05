@@ -113,3 +113,53 @@ it("does not retry lost receipts automatically", async () => {
   await expect(acceptCrewInvite(token, preview, 1)).rejects.toThrow("Lost response");
   expect(h.post).toHaveBeenCalledTimes(1);
 });
+
+const taskId = "00000000-0000-4000-8000-000000000001";
+const offer = {
+  id: taskId,
+  version: 3,
+  title: "Pilot",
+  description: "Storyboard work",
+  dueAt: null,
+  requiredSkills: ["storyboard"],
+  paymentTerms: "half_upfront" as const,
+  rewardUsdMinor: 12500,
+  profitShareBps: 250,
+};
+const taskHref = `/crews/crew1/workspace?tab=tasks&task=${taskId}`;
+it("preserves reviewed task terms and opens the accepted native task", async () => {
+  const p = { ...preview, task: offer };
+  h.get.mockResolvedValue(p);
+  h.post.mockResolvedValue({ ...target, workspaceHref: taskHref });
+  expect((await previewCrewInvite(token, 1)).task).toEqual(offer);
+  expect(crewInviteTargetRoute(await acceptCrewInvite(token, p, 1))).toBe(
+    `/crew-tasks/crew1?task=${taskId}`
+  );
+});
+it("rejects changed task terms before accepting and mismatched task receipts", async () => {
+  const p = { ...preview, task: offer };
+  h.get.mockResolvedValue({ ...p, task: { ...offer, rewardUsdMinor: 10000 } });
+  await expect(acceptCrewInvite(token, p, 1)).rejects.toThrow("terms changed");
+  expect(h.post).not.toHaveBeenCalled();
+  h.get.mockResolvedValue(p);
+  h.post.mockResolvedValue(target);
+  await expect(acceptCrewInvite(token, p, 1)).rejects.toThrow("could not be verified");
+});
+it("recovers a previously redeemed task without reaccepting different terms", async () => {
+  const p = { ...preview, task: offer };
+  h.get.mockResolvedValue({ ...preview, status: "exhausted", task: null, acceptedHref: taskHref });
+  h.post.mockResolvedValue({ ...target, workspaceHref: taskHref });
+  expect(crewInviteTargetRoute(await acceptCrewInvite(token, p, 1, undefined, true))).toContain(
+    `task=${taskId}`
+  );
+});
+it("rejects unsafe or foreign task destinations", async () => {
+  for (const href of [
+    "https://evil.test/crews/crew1/workspace",
+    `/crews/other/workspace?tab=tasks&task=${taskId}`,
+    `${taskHref}&redirect=evil`,
+  ]) {
+    h.get.mockResolvedValue({ ...preview, acceptedHref: href });
+    await expect(previewCrewInvite(token, 1)).rejects.toThrow();
+  }
+});

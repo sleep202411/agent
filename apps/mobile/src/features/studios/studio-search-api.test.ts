@@ -30,6 +30,7 @@ const result = () => ({
   matchedCount: 1,
   accessibleCount: 2,
   requiresLogin: false,
+  island: { creatorCount: 0, matchedCreatorCount: 0 },
   countScope: "public_platform_creators_with_listed_services",
   map: null,
 });
@@ -221,4 +222,11 @@ it("validates viewport bounds before sending a map request", async () => {
     ).rejects.toThrow();
   }
   expect(h.post).not.toHaveBeenCalled();
+});
+
+it("retains island counts for creators without services outside the normal studio result count", async () => {
+  h.post.mockResolvedValue({ ...result(), island: { creatorCount: 10, matchedCreatorCount: 8 } });
+  expect(
+    (await searchStudios(scope, emptyStudioQuery, null, requestId, signal())).island.creatorCount
+  ).toBe(10);
 });

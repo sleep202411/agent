@@ -98,3 +98,13 @@ it("leaves foreign sites, credentials, fragments and unrelated callbacks untouch
   ])
     expect(redirectStudioSearch(path, "global", ["fizzdragon-dev"])).toBe(path);
 });
+
+it("retains explicit island discovery while leaving the default search unfiltered", () => {
+  const parsed = parseStudioDraft(readStudioLink({ location: "island" }).draft);
+  expect(parsed).toMatchObject({ success: true, data: { islandOnly: true } });
+  if (!parsed.success) throw Error("Invalid fixture");
+  expect(studioLinkParams(parsed.data).location).toBe("island");
+  expect(parseStudioDraft(emptyStudioDraft)).toMatchObject({ success: true });
+  expect(parseStudioDraft({ ...emptyStudioDraft, location: "unknown" }).success).toBe(false);
+  expect(readStudioLink({ location: ["island", ""] }).invalid).toBe(true);
+});

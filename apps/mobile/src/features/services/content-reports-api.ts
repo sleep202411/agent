@@ -8,7 +8,9 @@ const report = z.object({
   id: uuid,
   targetType: z.enum(["ip", "episode"]),
   targetId: uuid,
+  purchaseOrderId: uuid.nullish(),
   reason: z.enum([
+    "payment",
     "copyright",
     "unsafe_content",
     "fraud",
@@ -56,7 +58,7 @@ export async function fetchContentReports(
   return {
     ...page,
     items: page.items.map((item) =>
-      view === "responses" ? { ...item, description: undefined } : item
+      view === "responses" ? { ...item, description: undefined, purchaseOrderId: undefined } : item
     ),
   };
 }

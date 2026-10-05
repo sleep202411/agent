@@ -10,8 +10,11 @@ const h = vi.hoisted(() => ({
   post: vi.fn(),
   detail: vi.fn(),
   push: vi.fn(),
+  pick: vi.fn(),
+  fetch: vi.fn(),
   records: new Map<string, string>(),
 }));
+vi.mock("expo-document-picker", () => ({ getDocumentAsync: h.pick }));
 vi.mock("@/lib/api-client", () => ({
   api: { get: h.get, put: h.put, post: h.post },
   ApiRequestError: class extends Error {},
@@ -95,6 +98,7 @@ const row = {
   openedByUserId: "creator",
   respondentUserId: "reviewer",
   title: "Delivery issue",
+  category: "payment",
   status: "open",
   version: 1,
   ownerAdminId: null,
@@ -121,6 +125,8 @@ beforeEach(() => {
   h.active = true;
   h.generation = 1;
   h.records.clear();
+  vi.stubGlobal("fetch", h.fetch);
+  h.fetch.mockResolvedValue({ ok: true });
   h.get.mockImplementation(async (path: string) =>
     path.startsWith("/crews/") ? { id: "crew", ownerUserId: "owner" } : task
   );
@@ -132,11 +138,13 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.unstubAllGlobals();
 });
 it("creates from selected task participants/evidence and opens the returned native case route", async () => {
   await mount();
   await click("taskCase.open");
   await click("○ reviewer");
+  await click("○ crewTaskDispute.categories.payment");
   await type("taskCase.subject", "Delivery issue");
   await type("privateCases.message", "Please review");
   await click(`☐ 1 · ${id(2)}`);
@@ -150,6 +158,7 @@ it("restores the exact creation intent after a lost response and backgrounding",
   await mount();
   await click("taskCase.open");
   await click("○ reviewer");
+  await click("○ crewTaskDispute.categories.payment");
   await type("taskCase.subject", "Delivery issue");
   await type("privateCases.message", "Please review");
   await click("feedbackHistory.submit");
@@ -195,4 +204,90 @@ it("opens existing private cases even when task participation cannot be loaded",
   await click("taskCase.open");
   await click("feedbackHistory.cases");
   expect(h.push).toHaveBeenCalledWith("/private-cases");
+});
+
+it("restores incomplete initial evidence and confirms stored bytes before opening the exact case", async () => {
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [
+      {
+        name: "private.pdf",
+        mimeType: "application/pdf",
+        size: 3,
+        file: new Blob(["pdf"], { type: "application/pdf" }),
+      },
+    ],
+  });
+  let confirm = false;
+  h.post.mockImplementation(async (path: string) => {
+    if (path.endsWith("/confirm")) {
+      if (!confirm) throw Error("Confirmation lost");
+      return { id: id(4) };
+    }
+    if (path.includes("/attachments/"))
+      return {
+        url: "https://files.test/put",
+        method: "PUT",
+        headers: {},
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      };
+    return row;
+  });
+  await mount();
+  await click("taskCase.open");
+  await click("crewTaskDispute.initialEvidence");
+  expect(host.textContent).toContain("Confirmation lost");
+  expect(h.post.mock.calls[0][0]).toBe(
+    `/crew-tasks/${id(1)}/dispute-drafts/${id(4)}/attachments/${id(4)}`
+  );
+  h.active = false;
+  await mount();
+  h.active = true;
+  await mount();
+  await click("taskCase.open");
+  expect(host.textContent).toContain("private.pdf");
+  confirm = true;
+  await click("crewEvidence.confirmStored");
+  expect(h.fetch).toHaveBeenCalledTimes(1);
+  await click("○ reviewer");
+  await click("○ crewTaskDispute.categories.payment");
+  await type("taskCase.subject", "Delivery issue");
+  await type("privateCases.message", "Please review");
+  await click("feedbackHistory.submit");
+  expect(h.post.mock.calls.at(-1)![1].data).toMatchObject({
+    id: id(4),
+    attachmentIds: [id(4)],
+    category: "payment",
+  });
+  expect(host.textContent).toContain("feedbackHistory.saved");
+  expect(h.records.get(`task-case-initial-evidence:creator:${id(1)}`)).toBe("");
+});
+it("requires classification before sending and preserves the optional requested outcome", async () => {
+  await mount();
+  await click("taskCase.open");
+  await click("○ reviewer");
+  await type("taskCase.subject", "Delivery issue");
+  await type("privateCases.message", "Please review");
+  await click("feedbackHistory.submit");
+  expect(h.post).not.toHaveBeenCalled();
+  await click("○ crewTaskDispute.categories.payment");
+  await click("○ crewTaskDispute.resolutions.warning");
+  h.post.mockResolvedValue({ ...row, desiredResolution: "warning" });
+  await click("feedbackHistory.submit");
+  expect(h.post.mock.calls[0][1].data.desiredResolution).toBe("warning");
+  expect(host.textContent).toContain("feedbackHistory.saved");
+});
+
+it("preserves unsubmitted complaint text and choices when collapsing the form", async () => {
+  await mount();
+  await click("taskCase.open");
+  await click("○ reviewer");
+  await click("○ crewTaskDispute.categories.payment");
+  await type("taskCase.subject", "Keep my draft");
+  await click("taskCase.open");
+  await click("taskCase.open");
+  expect(host.querySelector<HTMLInputElement>('input[aria-label="taskCase.subject"]')!.value).toBe(
+    "Keep my draft"
+  );
+  expect(host.textContent).toContain("● crewTaskDispute.categories.payment");
 });

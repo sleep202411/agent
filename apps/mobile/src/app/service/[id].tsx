@@ -1,3 +1,4 @@
+import { ServiceEditorNavigation } from "@/features/services/service-editor-navigation";
 import { SERVICE_TIERS } from "@repo/shared/creator-service";
 import { ServiceEditorDrafts } from "@/features/services/service-editor-drafts";
 import { ServiceIntentProvider } from "@/features/services/service-intent";
@@ -31,6 +32,7 @@ export default function CreatorServiceDetailScreen() {
       <ServiceEditorDrafts
         key={JSON.stringify([id, auth.generation, auth.status, auth.user?.userId ?? auth.user?.id])}
       >
+        <ServiceEditorNavigation />
         <ServiceDetailContent id={id} />
       </ServiceEditorDrafts>
     </ServiceIntentProvider>

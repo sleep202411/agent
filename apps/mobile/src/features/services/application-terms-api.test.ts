@@ -231,3 +231,10 @@ it("requests received applications and verifies the current owner on each row", 
     "account"
   );
 });
+
+it("refuses confirmation if the returned payment terms differ from the reviewed offer", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...result, paymentTerms: "monthly" });
+  await expect(
+    confirmApplicationTerms(app, { ...row, paymentTerms: "half_upfront" }, "creator", 1)
+  ).rejects.toThrow("could not be verified");
+});

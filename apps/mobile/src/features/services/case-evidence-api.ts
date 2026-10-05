@@ -39,6 +39,10 @@ function current(generation: number, signal: AbortSignal) {
   if (generation !== getAuthGeneration()) throw new Error("Evidence session expired.");
 }
 const base = (caseId: string) => `/crew-disputes/${id.parse(caseId)}/attachments`;
+const evidenceBase = (caseId: string, taskId?: string) =>
+  taskId
+    ? `/crew-tasks/${id.parse(taskId)}/dispute-drafts/${id.parse(caseId)}/attachments`
+    : base(caseId);
 export async function fetchCaseEvidence(
   caseId: string,
   generation: number,
@@ -105,11 +109,12 @@ export async function confirmCaseEvidence(
   caseId: string,
   attachmentId: string,
   generation: number,
-  signal: AbortSignal
+  signal: AbortSignal,
+  taskId?: string
 ) {
   current(generation, signal);
   const saved = z.object({ id }).parse(
-    await api.post(`${base(caseId)}/${id.parse(attachmentId)}/confirm`, {
+    await api.post(`${evidenceBase(caseId, taskId)}/${id.parse(attachmentId)}/confirm`, {
       service: "aurora",
       signal,
       retry: false,
@@ -155,7 +160,8 @@ export async function uploadCaseEvidence(
   caseId: string,
   upload: CaseUpload,
   generation: number,
-  signal: AbortSignal
+  signal: AbortSignal,
+  taskId?: string
 ) {
   current(generation, signal);
   const data = metadata.parse(upload.metadata);
@@ -169,7 +175,7 @@ export async function uploadCaseEvidence(
         headers: z.record(z.string(), z.string()),
       })
       .parse(
-        await api.post(`${base(caseId)}/${id.parse(upload.id)}`, {
+        await api.post(`${evidenceBase(caseId, taskId)}/${id.parse(upload.id)}`, {
           service: "aurora",
           signal,
           retry: false,
@@ -194,5 +200,5 @@ export async function uploadCaseEvidence(
     upload.uploaded = true;
     current(generation, signal);
   }
-  return confirmCaseEvidence(caseId, upload.id, generation, signal);
+  return confirmCaseEvidence(caseId, upload.id, generation, signal, taskId);
 }

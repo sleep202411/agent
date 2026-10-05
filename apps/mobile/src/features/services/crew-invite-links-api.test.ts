@@ -8,12 +8,14 @@ import {
 } from "./crew-invite-links-api";
 const h = vi.hoisted(() => ({
   generation: 1,
+  detail: vi.fn(),
   get: vi.fn(),
   post: vi.fn(),
   delete: vi.fn(),
   records: new Map<string, string>(),
   permissions: ["members.invite", "members.permissions.manage"],
 }));
+vi.mock("./task-detail-api", () => ({ fetchTaskDetail: h.detail }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/api-client", () => ({ api: h }));
 vi.mock("@/lib/durable-record", () => ({
@@ -175,4 +177,58 @@ it("uses only the selected regional origin", () => {
   );
   expect(crewLinkUrl("a".repeat(32), "global")).toContain("https://fizzdragon.com/");
   expect(() => crewLinkUrl("bad", "global")).toThrow();
+});
+
+const taskId = "00000000-0000-4000-8000-000000000001";
+const taskInput = { kind: "member" as const, policyKeys: [], maxUses: 1, taskId, taskVersion: 3 };
+const taskLink = { ...row, taskId, taskVersion: 3, policyKeys: [], maxUses: 1, expiresAt: null };
+it("binds one-use links to freshly authorized, unchanged, unassigned tasks", async () => {
+  h.permissions = ["members.invite", "tasks.manage"];
+  h.detail.mockResolvedValue({ version: 3, isRecruiting: false, assignees: [], status: "open" });
+  h.post.mockImplementation(async () => {
+    expect(crewLinkPending("crew", "actor", 1, taskId).read()).toMatchObject({ input: taskInput });
+    expect(pending().read()).toBeNull();
+    return { ...taskLink, token: "a".repeat(32) };
+  });
+  await createCrewLink("crew", "actor", 1, taskInput, signal());
+  expect(h.post.mock.calls[0][1].data).toEqual(taskInput);
+  expect(crewLinkPending("crew", "actor", 1, taskId).read()).toBeNull();
+});
+it.each([
+  { version: 4 },
+  { isRecruiting: true },
+  { assignees: [{ userId: "assigned" }] },
+  { status: "submitted" },
+])("does not create after task eligibility changes %j", async (change) => {
+  h.permissions = ["members.invite", "tasks.manage"];
+  h.detail.mockResolvedValue({
+    version: 3,
+    isRecruiting: false,
+    assignees: [],
+    status: "open",
+    ...change,
+  });
+  await expect(createCrewLink("crew", "actor", 1, taskInput, signal())).rejects.toThrow(
+    "unavailable"
+  );
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("separates task links from general Crew links and rejects unsafe grants", async () => {
+  h.get.mockImplementation(async (path: string) =>
+    path.endsWith("/me")
+      ? { userId: "actor", permissions: h.permissions }
+      : [row, { ...taskLink, id: "00000000-0000-4000-8000-000000000002" }]
+  );
+  expect((await fetchCrewLinks("crew", "actor", 1, signal())).links).toEqual([row]);
+  expect((await fetchCrewLinks("crew", "actor", 1, signal(), taskId)).links).toHaveLength(1);
+  for (const change of [
+    { maxUses: 2 },
+    { policyKeys: ["admin"] },
+    { kind: "community" },
+    { taskVersion: undefined },
+  ])
+    await expect(
+      createCrewLink("crew", "actor", 1, { ...taskInput, ...change } as typeof taskInput, signal())
+    ).rejects.toThrow();
+  expect(h.post).not.toHaveBeenCalled();
 });

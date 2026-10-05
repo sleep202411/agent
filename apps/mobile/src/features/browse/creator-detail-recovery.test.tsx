@@ -38,6 +38,7 @@ vi.mock("@/features/studios/public-studio-profile", () => ({
     </>
   ),
 }));
+vi.mock("@/features/profile/creator-reviews", () => ({ CreatorReviews: () => null }));
 vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("expo-symbols", () => ({ SymbolView: () => null }));
 vi.mock("react-native-safe-area-context", () => ({

@@ -35,6 +35,7 @@ import { CreatorPersonalWorks } from "@/features/profile/creator-personal-works"
 import { CreatorExperience } from "@/features/profile/creator-experience";
 import { CreatorCertificates } from "@/features/certificates/creator-certificates";
 import { CreatorEducation } from "@/features/profile/creator-education";
+import { CreatorReviews } from "@/features/profile/creator-reviews";
 
 export default function CreatorDetailScreen() {
   const { id, section } = useLocalSearchParams<{ id: string; section?: string | string[] }>();
@@ -445,6 +446,7 @@ function CreatorDetailContent({
               )}
             </PublicStudioProfile>
           </View>
+          <CreatorReviews creatorId={creator.id} />
         </View>
       </ScrollView>
     </ThemedView>

@@ -225,3 +225,30 @@ it("revalidates rows and totals when returning to a previously active screen", a
   await act(async () => finish({ items: [{ ...item, title: "Fresh" }], nextCursor: null }));
   expect(host.textContent).toContain("Fresh");
 });
+
+it("starts a fresh cursor for changed filters and does not resurrect old rows on returning to a prior filter", async () => {
+  function Filtered({ status }: { status: "posted" | "pending" }) {
+    const state = useCrewIncome("1", "user", "USD", "earnings", "", { status });
+    return (
+      <div>
+        {state.items.map((item) => (
+          <span key={item.id}>{"title" in item ? item.title : ""}</span>
+        ))}
+        <button onClick={state.loadMore}>more</button>
+      </div>
+    );
+  }
+  h.load
+    .mockResolvedValueOnce({ items: [{ id: "a", title: "Posted" }], nextCursor: "next" })
+    .mockResolvedValueOnce({ items: [{ id: "b", title: "Pending" }], nextCursor: null });
+  await act(async () => root.render(<Filtered status="posted" />));
+  await act(async () => root.render(<Filtered status="pending" />));
+  expect(host.textContent).not.toContain("Posted");
+  expect(host.textContent).toContain("Pending");
+  expect(h.load.mock.calls[1][4]).toBeNull();
+  expect(h.load.mock.calls[1][6]).toEqual({ status: "pending" });
+  h.load.mockReturnValue(new Promise(() => {}));
+  await act(async () => root.render(<Filtered status="posted" />));
+  expect(host.textContent).not.toContain("Posted");
+  expect(host.textContent).not.toContain("Pending");
+});

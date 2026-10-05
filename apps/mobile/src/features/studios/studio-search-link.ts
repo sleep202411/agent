@@ -4,6 +4,7 @@ import {
 } from "@repo/shared/creator-location";
 import type { StudioQuery } from "./studio-search-api";
 export const emptyStudioDraft = {
+  location: "",
   text: "",
   category: "",
   basedCountry: "",
@@ -22,6 +23,7 @@ export function parseStudioDraft(draft: StudioDraft) {
       : null;
   const flag = (value: string) => (value === "1" ? true : value === "" ? false : value);
   return CreatorDiscoveryQuerySchema.safeParse({
+    ...(draft.location ? { islandOnly: draft.location === "island" ? true : draft.location } : {}),
     text: draft.text,
     category: draft.category || null,
     basedIn: place(draft.basedCountry, draft.basedCity),
@@ -32,6 +34,7 @@ export function parseStudioDraft(draft: StudioDraft) {
 }
 export function studioDraftFromQuery(query: StudioQuery): StudioDraft {
   return {
+    location: query.islandOnly ? "island" : "",
     text: query.text,
     category: query.category ?? "",
     basedCountry: query.basedIn?.countryCode ?? "",

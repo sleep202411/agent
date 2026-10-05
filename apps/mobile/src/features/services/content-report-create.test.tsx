@@ -9,6 +9,9 @@ const h = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
 }));
+vi.mock("expo-modules-core", () => ({
+  uuid: { v4: () => "00000000-0000-4000-8000-000000000009" },
+}));
 vi.mock("@/lib/api-client", () => ({
   api: { get: h.get, post: h.post },
   ApiRequestError: class extends Error {},
@@ -103,6 +106,7 @@ it("selects an official target and submits edited details once", async () => {
   });
   expect(h.post).toHaveBeenCalledTimes(1);
   expect(h.post).toHaveBeenCalledWith({
+    requestId: id(9),
     targetType: "ip",
     targetId: row.id,
     reason: "copyright",
@@ -125,6 +129,9 @@ it("retains the edited draft across background and failed submission", async () 
   expect(saved).not.toHaveBeenCalled();
   await click("River film · 123");
   expect(host.textContent).toContain("My evidence");
+  h.post.mockResolvedValue(undefined);
+  await click("submit");
+  expect(h.post.mock.calls[1][0]).toEqual(h.post.mock.calls[0][0]);
 });
 it("does not complete a replacement account's form", async () => {
   let resolve!: () => void;

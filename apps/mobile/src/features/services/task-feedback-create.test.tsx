@@ -199,3 +199,27 @@ it("retires an unsubmitted feedback draft when the task route loses focus", asyn
   expect(host.querySelector("input")!.value).toBe("");
   expect(h.post).not.toHaveBeenCalled();
 });
+
+it("shows the public notice and permits a rated review without a comment", async () => {
+  h.post.mockImplementation(async (_path, { data }) => ({
+    ...data,
+    id: id(1),
+    taskId: id(2),
+    submissionId: id(3),
+    authorUserId: "creator",
+    response: null,
+    respondedAt: null,
+    createdAt: "2026-10-06T00:00:00Z",
+  }));
+  await mount();
+  expect(host.textContent).toContain("feedbackHistory.publicNotice");
+  await click("4");
+  await click("feedbackHistory.submit");
+  expect(h.post).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      data: expect.objectContaining({ comment: "", publicOnProfile: true }),
+    })
+  );
+  expect(host.textContent).toContain("feedbackHistory.saved");
+});

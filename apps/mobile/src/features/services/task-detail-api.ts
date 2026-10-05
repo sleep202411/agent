@@ -12,6 +12,9 @@ export const taskReference = taskOption.extend({
   parentId: z.string().uuid().nullable(),
 });
 export const taskDetailSchema = taskOption.extend({
+  deliveryFolder: z.object({ id: z.string().uuid(), name: z.string() }).nullable().optional(),
+  canvasHref: z.string().nullable().optional(),
+  isRecruiting: z.boolean().optional(),
   ...taskCompensationShape,
   contractAssetNodeId: z.string().uuid().nullable().optional(),
   requiredSkills: requiredSkillsSchema.optional(),

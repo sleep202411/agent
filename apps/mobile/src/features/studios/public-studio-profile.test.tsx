@@ -99,16 +99,16 @@ it("never displays a hidden base city", async () => {
   expect(host.textContent).not.toContain("creatorStudio.serves");
   expect(host.textContent).toContain("Service cards");
 });
-it("hides an unavailable public studio rather than showing its service section", async () => {
+it("keeps independent public services when optional location metadata is absent", async () => {
   h.get.mockRejectedValue(new ApiRequestError(404, "Not found", 404));
   await render();
-  expect(host.textContent).toBe("");
+  expect(host.textContent).toContain("Service cards");
 });
 it("shows the upstream error and retries without claiming the studio is absent", async () => {
   h.get.mockRejectedValueOnce(Error("Profile unavailable"));
   await render();
   expect(host.textContent).toContain("Profile unavailable");
-  expect(host.textContent).not.toContain("Service cards");
+  expect(host.textContent).toContain("Service cards");
   await act(async () => host.querySelector("button")!.click());
   expect(host.textContent).toContain("Service cards");
 });
@@ -119,7 +119,7 @@ it.each([
   h.get.mockResolvedValue(value);
   await render();
   expect(host.textContent).toContain("contentGpsDiscovery.responseMismatch");
-  expect(host.textContent).not.toContain("Service cards");
+  expect(host.textContent).toContain("Service cards");
 });
 it("aborts on background and rechecks permissions on return", async () => {
   await render();
@@ -131,7 +131,7 @@ it("aborts on background and rechecks permissions on return", async () => {
   h.active = true;
   h.get.mockRejectedValue(new ApiRequestError(404, "Not found", 404));
   await render();
-  expect(host.textContent).toBe("");
+  expect(host.textContent).toContain("Service cards");
   expect(h.get).toHaveBeenCalledTimes(2);
 });
 it("ignores a late previous-account projection", async () => {

@@ -1,3 +1,4 @@
+import { CreatorDeviceCity } from "./creator-device-city";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -276,6 +277,18 @@ function LocationForm({ scope, onClose }: { scope: LocationScope; onClose: () =>
       {revision && (
         <>
           <ThemedText>{t("creatorLocation.basedInHint")}</ThemedText>
+          <CreatorDeviceCity
+            key={`${scope.userId}:${scope.generation}:${locale}:${revision.version}`}
+            scope={scope}
+            disabled={disabled}
+            confirm={(basedIn) => change({ ...profile, basedIn })}
+            onDenied={(cause) => {
+              setError(cause instanceof Error ? cause.message : String(cause));
+              setRevision(null);
+              setProfile(emptyLocation);
+              setBlocked(true);
+            }}
+          />
           {profile.basedIn ? (
             <>
               <CityField

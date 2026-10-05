@@ -51,3 +51,17 @@ it("rejects stale sessions before or during reads", async () => {
   });
   await expect(fetchContentReports(1, "initiated", null, signal())).rejects.toThrow("expired");
 });
+
+it("shows purchase-linked payment reports only with the reporter's private reference", async () => {
+  h.get.mockResolvedValue({
+    items: [{ ...row, reason: "payment", purchaseOrderId: id }],
+    nextCursor: null,
+  });
+  expect((await fetchContentReports(1, "initiated", null, signal())).items[0]).toMatchObject({
+    reason: "payment",
+    purchaseOrderId: id,
+  });
+  expect(
+    (await fetchContentReports(1, "responses", null, signal())).items[0]?.purchaseOrderId
+  ).toBeUndefined();
+});

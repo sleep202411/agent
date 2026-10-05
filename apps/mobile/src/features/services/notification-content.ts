@@ -171,6 +171,18 @@ export function notificationContent(
         body: t(`events.earning.${outcome}.body`, { amount: grossAmount }),
       };
     }
+    case "crew.withdrawal.processing":
+    case "crew.withdrawal.paid":
+    case "crew.withdrawal.rejected": {
+      const outcome = item.type.slice("crew.withdrawal.".length) as
+        | "processing"
+        | "paid"
+        | "rejected";
+      return {
+        title: t(`events.withdrawal.${outcome}.title`),
+        body: t(`events.withdrawal.${outcome}.body`),
+      };
+    }
     case "crew.payout.scheduled":
     case "crew.payout.paid":
     case "crew.payout.voided": {

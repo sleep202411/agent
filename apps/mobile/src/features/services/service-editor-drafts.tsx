@@ -1,3 +1,4 @@
+import { ServiceEditorExitState, useClearServiceEditorExit } from "./service-editor-exit-state";
 import {
   createContext,
   useContext,
@@ -47,9 +48,11 @@ export function ServiceEditorDrafts({ children }: { children: ReactNode }) {
   const [store] = useState(() => new Map<string, unknown>());
   const [receipts] = useState(createReceipts);
   return (
-    <Receipts.Provider value={receipts}>
-      <Drafts.Provider value={store}>{children}</Drafts.Provider>
-    </Receipts.Provider>
+    <ServiceEditorExitState>
+      <Receipts.Provider value={receipts}>
+        <Drafts.Provider value={store}>{children}</Drafts.Provider>
+      </Receipts.Provider>
+    </ServiceEditorExitState>
   );
 }
 export function useServiceEditorState<T>(
@@ -74,6 +77,7 @@ export function useServiceEditorState<T>(
   ];
 }
 export function useClearServiceEditorDraft(panel: string) {
+  const clearExit = useClearServiceEditorExit();
   const store = useContext(Drafts);
   // Closed panels should initialize from fresh service data after a reload.
   useState(() => {
@@ -82,6 +86,7 @@ export function useClearServiceEditorDraft(panel: string) {
     return undefined;
   });
   return () => {
+    clearExit(panel);
     for (const key of store?.keys() ?? []) if (key.startsWith(`${panel}:`)) store?.delete(key);
   };
 }

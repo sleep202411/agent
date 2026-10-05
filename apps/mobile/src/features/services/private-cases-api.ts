@@ -1,3 +1,4 @@
+import { caseCategory, caseResolution } from "./case-classification";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -12,6 +13,8 @@ export const privateCase = z.object({
   openedByUserId: user,
   respondentUserId: user,
   title: z.string(),
+  category: caseCategory.nullish(),
+  desiredResolution: caseResolution.nullish(),
   status: z.enum(["open", "in_review", "resolved", "appealed"]),
   ownerAdminId: z.string().nullable(),
   version: z.number().int().positive(),

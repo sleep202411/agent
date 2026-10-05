@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   post: vi.fn(),
   records: new Map<string, string>(),
 }));
+vi.mock("./task-case-entry", () => ({ TaskCaseEntry: () => <div>new task case selection</div> }));
 vi.mock("@/lib/api-client", () => ({
   api: { get: h.get, put: h.put, post: h.post },
   ApiRequestError: class extends Error {},

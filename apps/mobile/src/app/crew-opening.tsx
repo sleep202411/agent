@@ -179,6 +179,11 @@ function Opening({ crewId, positionId }: { crewId: string; positionId: string })
               {position.salary.period ? t(`crewTerms.${position.salary.period}`) : ""}
             </ThemedText>
           ) : null}
+          {position.paymentTerms && (
+            <ThemedText>
+              {t("taskPaymentTerms.label")}: {t(`taskPaymentTerms.${position.paymentTerms}`)}
+            </ThemedText>
+          )}
           {position.salary.negotiable ? (
             <ThemedText>{t("positionCreate.negotiable")}</ThemedText>
           ) : null}

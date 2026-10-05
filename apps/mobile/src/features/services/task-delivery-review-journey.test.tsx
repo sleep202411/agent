@@ -66,6 +66,7 @@ const initial: TaskDetail = {
   number: 1,
   title: "Shot",
   description: "Deliver a script",
+  canvasHref: "/fizzstudio/projects/script",
   version: 1,
   status: "open",
   revisionLimit: 2,

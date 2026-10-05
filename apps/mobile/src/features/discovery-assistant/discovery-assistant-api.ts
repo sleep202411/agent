@@ -52,6 +52,32 @@ export function discoveryPending(scope: AssistantScope) {
     clear: (id: string) => store.clear(id),
   };
 }
+/** Explicit recovery after hydration failed. Preserve any now-readable pending request. */
+export function recoverDiscoveryStorage(scope: AssistantScope): AssistantRequest | null {
+  current(scope);
+  const storage = durableRecord(
+    "discovery-assistant",
+    scope.userId,
+    `${scope.locale}:${scope.kind}`
+  );
+  // Storage access failures must propagate; they are not evidence of corrupt data.
+  const raw = storage.read();
+  let request: AssistantRequest | null = null;
+  if (raw !== null) {
+    try {
+      const record = z
+        .object({ version: z.literal(1), intent: command.nullable() })
+        .parse(JSON.parse(raw));
+      request = record.intent?.request ?? null;
+    } catch {
+      // Only an explicit confirmed recovery may replace an unreadable record.
+    }
+  }
+  current(scope);
+  if (request) return scoped(scope, request);
+  if (!request) storage.write(JSON.stringify({ version: 1, intent: null }));
+  return request;
+}
 function receipt(scope: AssistantScope, expected: AssistantRequest, raw: unknown) {
   const value = DiscoveryAssistantReceiptSchema.safeParse(raw);
   if (

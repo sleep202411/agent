@@ -70,13 +70,12 @@ function Profile({
       });
     return () => controller.abort();
   }, [creatorId, generation, signedIn, revision, t]);
-  if (missing) return null;
   const place = (value: { city: string; countryCode: string }) =>
     `${value.city}, ${regionLabel(value.countryCode, locale)}`;
   return (
     <View style={{ gap: 12 }}>
       {header}
-      {loading ? (
+      {missing ? null : loading ? (
         <ActivityIndicator accessibilityLabel={t("creatorStudio.loading")} />
       ) : error ? (
         <View style={{ gap: 8 }}>
@@ -114,9 +113,9 @@ function Profile({
               </ThemedText>
             )}
           </View>
-          {children}
         </>
       ) : null}
+      {children}
     </View>
   );
 }

@@ -19,6 +19,7 @@ import {
   checkDiscovery,
   clearDiscovery,
   discoveryPending,
+  recoverDiscoveryStorage,
   retryDiscovery,
   sendDiscovery,
   type AssistantScope,
@@ -281,11 +282,20 @@ function Conversation({
     valid &&
     !!text.trim() &&
     (!request || receipt?.status === "succeeded" || receipt?.status === "cancelled");
-  const canReset =
-    ready && !busy && active && (!request || (!!receipt && receipt.status !== "dispatched"));
+  const canReset = !busy && active && (!request || (!!receipt && receipt.status !== "dispatched"));
   const result = receipt?.result;
   const reset = () => {
+    if (!canReset || denied) return;
     try {
+      if (!ready) {
+        const recovered = recoverDiscoveryStorage(scope);
+        setReady(true);
+        setRequest(recovered);
+        setHistory(recovered?.conversation.messages ?? []);
+        setConfirmReset(false);
+        setError("");
+        if (recovered) return;
+      }
       if (request && receipt) clearDiscovery(scope, request, receipt);
       setRequest(null);
       setReceipt(null);
@@ -483,7 +493,7 @@ function Conversation({
       <Action label={t("discoveryAssistant.send")} onPress={send} disabled={!canSend} />
       <Action
         label={t("discoveryAssistant.newConversation")}
-        onPress={() => (request ? setConfirmReset(true) : reset())}
+        onPress={() => (request || !ready ? setConfirmReset(true) : reset())}
         disabled={!canReset || denied}
       />
       {confirmReset && (

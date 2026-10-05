@@ -40,8 +40,9 @@ vi.mock("./task-child-create", () => ({
   ),
 }));
 vi.mock("./task-assignments", () => ({ TaskAssignments: () => null }));
-vi.mock("./task-contract", () => ({
-  TaskContract: ({ assetId }: { assetId: string }) => <span>contract:{assetId}</span>,
+vi.mock("./task-invite-links", () => ({ TaskInviteLinks: () => null }));
+vi.mock("./task-contract-files", () => ({
+  TaskContractFiles: ({ taskId }: { taskId: string }) => <span>contracts:{taskId}</span>,
 }));
 const h = vi.hoisted(() => ({
   fetch: vi.fn(),
@@ -168,6 +169,7 @@ vi.mock("react-native", () => ({
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const detail = {
+  id: "task",
   submissions: [],
   taskKind: "music",
   estimatePoints: 8,
@@ -565,10 +567,10 @@ it("rereads review permission on return and discards an older submission's revie
   expect(reviewNote()!.value).toBe("");
 });
 
-it("shows the current linked contract and removes it after the link is cleared", async () => {
+it("discovers retained contract files even when the original link is absent", async () => {
   h.fetch.mockResolvedValueOnce({ ...detail, contractAssetNodeId: "linked-file" });
   await render();
-  expect(host.textContent).toContain("contract:linked-file");
+  expect(host.textContent).toContain(`contracts:${detail.id}`);
   await act(async () => click("thread.refresh"));
-  expect(host.textContent).not.toContain("contract:linked-file");
+  expect(host.textContent).toContain(`contracts:${detail.id}`);
 });

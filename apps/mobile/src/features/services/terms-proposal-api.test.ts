@@ -181,3 +181,10 @@ it.each(
     fetchProposalContext("crew", "app", 1, new AbortController().signal)
   ).rejects.toThrow();
 });
+
+it("verifies payment terms in proposal receipts", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...receipt, paymentTerms: "monthly" });
+  await expect(
+    proposeApplicationTerms(app, false, { ...data, paymentTerms: "half_upfront" }, "manager", 1)
+  ).rejects.toThrow("could not be verified");
+});

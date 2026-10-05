@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type SetStateAction } from "react";
-import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useTaskSubmitSession, type TaskSubmitSession } from "./use-task-submit-session";
@@ -11,11 +11,10 @@ import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
 import type { TaskDetail } from "./task-detail-api";
 import { fetchTaskDeliveryTemplate, type DeliveryTemplate } from "./task-delivery-api";
 import {
+  ensureTaskDeliveryFolder,
   fetchTaskSubmitPermission,
-  fetchDeliveryFolders,
   validateTaskSubmission,
   type DeliveryAnswers,
-  type DeliveryFolder,
   type TaskSubmitInput,
 } from "./task-submit-api";
 
@@ -77,6 +76,28 @@ function SubmissionUploadDialog({
   const theme = useTheme(),
     t = useTranslations();
   const upload = session.upload!;
+  const [destination, setDestination] = useState(
+    upload.parentId
+      ? { id: upload.parentId, name: upload.destination ?? t("taskSubmit.deliveryFolder") }
+      : undefined
+  );
+  const [folderError, setFolderError] = useState<string>();
+  const [folderAttempt, setFolderAttempt] = useState(0);
+  useEffect(() => {
+    if (destination) return;
+    const controller = new AbortController();
+    void ensureTaskDeliveryFolder(upload.taskId, crewId, generation, controller.signal).then(
+      (folder) => {
+        if (!controller.signal.aborted && generation === getAuthGeneration())
+          setDestination(folder);
+      },
+      (cause) => {
+        if (!controller.signal.aborted && generation === getAuthGeneration())
+          setFolderError(cause instanceof Error ? cause.message : String(cause));
+      }
+    );
+    return () => controller.abort();
+  }, [upload.taskId, crewId, generation, destination, folderAttempt]);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -90,35 +111,61 @@ function SubmissionUploadDialog({
   return (
     <Modal visible animationType="slide" onRequestClose={close}>
       <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-        <AssetFileUpload
-          crewId={crewId}
-          userId={userId}
-          generation={generation}
-          parentId={upload.parentId}
-          destination={upload.destination ?? t("studioMedia.root")}
-          onClose={close}
-          onAttached={(asset) => {
-            if (!live.current || generation !== getAuthGeneration()) return;
-            session.setAssets((current) =>
-              current.some((item) => item.id === asset.id) ? current : [...current, asset]
-            );
-            // Bind to the template selected before opening the native picker, even if a
-            // foreground refresh loads a different delivery template in the meantime.
-            session.setAnswersByTemplate((current) => {
-              const answers = current[upload.templateKey] ?? {};
-              const previous = answers[upload.field];
-              return {
-                ...current,
-                [upload.templateKey]: {
-                  ...answers,
-                  [upload.field]: [
-                    ...new Set([...(Array.isArray(previous) ? previous : []), asset.id]),
-                  ],
-                },
-              };
-            });
-          }}
-        />
+        {!destination && (
+          <View style={{ padding: 16, gap: 12 }}>
+            {folderError ? (
+              <>
+                <ThemedText accessibilityRole="alert">{folderError}</ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setFolderError(undefined);
+                    setFolderAttempt((n) => n + 1);
+                  }}
+                >
+                  <ThemedText>{t("common.retry")}</ThemedText>
+                </Pressable>
+              </>
+            ) : (
+              <ActivityIndicator />
+            )}
+            <Pressable accessibilityRole="button" onPress={close}>
+              <ThemedText>{t("myServices.cancel")}</ThemedText>
+            </Pressable>
+          </View>
+        )}
+        {destination && (
+          <AssetFileUpload
+            crewId={crewId}
+            userId={userId}
+            generation={generation}
+            parentId={destination.id}
+            destination={destination.name}
+            onClose={close}
+            onAttached={(asset) => {
+              if (!live.current || generation !== getAuthGeneration()) return;
+              session.setAssets((current) =>
+                current.some((item) => item.id === asset.id) ? current : [...current, asset]
+              );
+              // Bind to the template selected before opening the native picker, even if a
+              // foreground refresh loads a different delivery template in the meantime.
+              session.setAnswersByTemplate((current) => {
+                if (!upload.field) return current;
+                const answers = current[upload.templateKey] ?? {};
+                const previous = answers[upload.field];
+                return {
+                  ...current,
+                  [upload.templateKey]: {
+                    ...answers,
+                    [upload.field]: [
+                      ...new Set([...(Array.isArray(previous) ? previous : []), asset.id]),
+                    ],
+                  },
+                };
+              });
+            }}
+          />
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -138,7 +185,7 @@ function SubmissionForm({
 }: Props & { session: TaskSubmitSession }) {
   const t = useTranslations(),
     theme = useTheme();
-  const { note, setNote, assets, setAssets, folder, setFolder } = session;
+  const { note, setNote, assets, setAssets, deliveryLink, setDeliveryLink } = session;
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -151,7 +198,6 @@ function SubmissionForm({
   const [context, setContext] = useState<{
     allowed: boolean;
     template: DeliveryTemplate | null;
-    folders: DeliveryFolder[];
   }>();
   const [localError, setError] = useState<string>();
   const error = localError ?? session.error;
@@ -164,18 +210,15 @@ function SubmissionForm({
       ...previous,
       [templateKey]: typeof update === "function" ? update(previous[templateKey] ?? {}) : update,
     }));
-  const [picker, setPicker] = useState<"files" | "folders">();
+  const [picker, setPicker] = useState<"files">();
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
       const allowed = await fetchTaskSubmitPermission(task, userId, controller.signal);
       if (!allowed || controller.signal.aborted || generation !== getAuthGeneration())
         return { allowed: false, template: null, folders: [] };
-      const [template, folders] = await Promise.all([
-        fetchTaskDeliveryTemplate(task.id, controller.signal),
-        fetchDeliveryFolders(task.crewId, controller.signal),
-      ]);
-      return { allowed, template, folders };
+      const template = await fetchTaskDeliveryTemplate(task.id, controller.signal);
+      return { allowed, template };
     })().then(
       (value) => {
         if (!controller.signal.aborted && generation === getAuthGeneration()) setContext(value);
@@ -191,9 +234,8 @@ function SubmissionForm({
   const locked = session.locked(task);
   const blocked = task.blockedBy.some((dependency) => !dependency.resolved);
   const input: TaskSubmitInput = {
-    note,
+    note: [deliveryLink.trim(), note].filter(Boolean).join("\n\n"),
     assetNodeIds: assets.map((a) => a.id),
-    ...(folder ? { deliveryFolderId: folder.id } : {}),
     ...(context?.template
       ? {
           professionalDelivery: {
@@ -204,11 +246,24 @@ function SubmissionForm({
         }
       : {}),
   };
+  const linkError = (() => {
+    if (context?.template) return undefined;
+    const link = deliveryLink.trim();
+    if (!link)
+      return assets.length || task.canvasHref ? undefined : "taskSubmit.deliveryLinkRequired";
+    try {
+      const url = new URL(link);
+      if (["http:", "https:"].includes(url.protocol) && url.hostname) return undefined;
+    } catch {
+      /* Display the official link validation below. */
+    }
+    return "taskSubmit.deliveryLinkInvalid";
+  })();
   let valid = false;
   if (context) {
     try {
       validateTaskSubmission(input, context.template);
-      valid = true;
+      valid = !linkError;
     } catch {
       /* Required fields remain visible below. */
     }
@@ -239,17 +294,16 @@ function SubmissionForm({
       {context?.allowed && (
         <>
           <ThemedText>{t("taskSubmit.submitDescription")}</ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            disabled={locked}
-            onPress={() => setPicker("folders")}
-            style={{ padding: 12 }}
-          >
-            <ThemedText>
-              {t("taskSubmit.deliveryFolder")}:{" "}
-              {folder?.name ?? t("taskSubmit.automaticDeliveryFolder")}
-            </ThemedText>
-          </Pressable>
+          <ThemedText>
+            {t("taskSubmit.deliveryFolder")}:{" "}
+            {task.deliveryFolder?.name ?? t("taskSubmit.automaticDeliveryFolder")}
+          </ThemedText>
+          {task.canvasHref && (
+            <>
+              <ThemedText>{t("taskSubmit.canvasIncluded")}</ThemedText>
+              <ThemedText>{t("taskSubmit.canvasIncludedHint")}</ThemedText>
+            </>
+          )}
           <TextInput
             accessibilityLabel={t("taskSubmit.submitNotePlaceholder")}
             placeholder={t("taskSubmit.submitNotePlaceholder")}
@@ -261,6 +315,33 @@ function SubmissionForm({
             maxLength={5000}
             style={{ color: theme.text, padding: 12, minHeight: 60 }}
           />
+          {!context.template && (
+            <>
+              <ThemedText>{t("taskSubmit.deliveryLink")}</ThemedText>
+              <TextInput
+                accessibilityLabel={t("taskSubmit.deliveryLink")}
+                value={deliveryLink}
+                onChangeText={setDeliveryLink}
+                editable={!locked}
+                maxLength={1500}
+                autoCapitalize="none"
+                keyboardType="url"
+                placeholder="https://…"
+                placeholderTextColor={theme.textSecondary}
+                style={{ color: theme.text, padding: 12 }}
+              />
+              <ThemedText>{t("taskSubmit.deliveryLinkHint")}</ThemedText>
+              {linkError && <ThemedText accessibilityRole="alert">{t(linkError)}</ThemedText>}
+              <Pressable
+                accessibilityRole="button"
+                disabled={locked || assets.length >= 100}
+                onPress={() => session.beginUpload(task, templateKey)}
+                style={{ padding: 12 }}
+              >
+                <ThemedText>{t("thread.uploadFile")}</ThemedText>
+              </Pressable>
+            </>
+          )}
           <Pressable
             accessibilityRole="button"
             disabled={locked || assets.length >= 100}
@@ -396,36 +477,6 @@ function SubmissionForm({
                 setPicker(undefined);
               }}
             />
-          )}
-          {picker === "folders" && (
-            <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-              <ThemedText type="smallBold">{t("taskSubmit.deliveryFolder")}</ThemedText>
-              <Pressable
-                onPress={() => {
-                  setFolder(undefined);
-                  setPicker(undefined);
-                }}
-              >
-                <ThemedText>{t("taskSubmit.automaticDeliveryFolder")}</ThemedText>
-              </Pressable>
-              {context?.folders.map((item) => (
-                <Pressable
-                  key={item.id}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: folder?.id === item.id }}
-                  onPress={() => {
-                    if (generation === getAuthGeneration()) setFolder(item);
-                    setPicker(undefined);
-                  }}
-                  style={{ padding: 12 }}
-                >
-                  <ThemedText>{item.name}</ThemedText>
-                </Pressable>
-              ))}
-              <Pressable onPress={() => setPicker(undefined)}>
-                <ThemedText>{t("myServices.cancel")}</ThemedText>
-              </Pressable>
-            </ScrollView>
           )}
         </SafeAreaView>
       </Modal>

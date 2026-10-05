@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewInviteLinks } from "./crew-invite-links";
 const h = vi.hoisted(() => ({
   generation: 1,
+  detail: vi.fn(),
   active: true,
   get: vi.fn(),
   post: vi.fn(),
@@ -13,6 +14,7 @@ const h = vi.hoisted(() => ({
   records: new Map<string, string>(),
   permissions: ["members.invite", "members.permissions.manage"],
 }));
+vi.mock("./task-detail-api", () => ({ fetchTaskDetail: h.detail }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/api-client", () => ({ api: h }));
@@ -193,4 +195,50 @@ it("retains the one-time link in memory while the share sheet backgrounds the sc
   await render();
   expect(host.textContent).toContain("https://fizzdragon.com/crew-invite/");
   expect(h.post).toHaveBeenCalledTimes(1);
+});
+
+it("locks task invitation controls to one-use member access without policy grants", async () => {
+  const taskId = "00000000-0000-4000-8000-000000000001";
+  h.permissions = ["members.invite", "members.permissions.manage", "tasks.manage"];
+  h.detail.mockResolvedValue({ version: 3, isRecruiting: false, assignees: [], status: "open" });
+  h.post.mockResolvedValue({
+    ...row,
+    taskId,
+    taskVersion: 3,
+    maxUses: 1,
+    policyKeys: [],
+    token: "a".repeat(32),
+  });
+  await act(async () =>
+    root.render(
+      <CrewInviteLinks
+        crewId="crew"
+        userId="actor"
+        generation={1}
+        task={{ id: taskId, version: 3, title: "Pilot" }}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(host.textContent).not.toContain("crewLinks.maxUses");
+  expect(host.textContent).not.toContain("crewMembers.admin");
+  expect(host.textContent).toContain("workspace.taskInviteIntro");
+  await click("crewLinks.review");
+  await click("crewLinks.create");
+  expect(h.post.mock.calls[0][1].data).toMatchObject({
+    taskId,
+    taskVersion: 3,
+    kind: "member",
+    maxUses: 1,
+    policyKeys: [],
+  });
+  h.get.mockImplementation(async (path: string) =>
+    path.endsWith("/me")
+      ? { userId: "actor", permissions: h.permissions }
+      : [{ ...row, taskId, taskVersion: 3, maxUses: 1, policyKeys: [] }]
+  );
+  await click("crewLinks.share");
+  expect(h.share).toHaveBeenCalledWith({
+    message: `https://fizzdragon.com/crew-invite/${"a".repeat(32)}`,
+  });
 });

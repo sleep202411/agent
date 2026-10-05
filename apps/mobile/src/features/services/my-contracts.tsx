@@ -7,18 +7,10 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { MyAgreements } from "./my-agreements";
-import { TaskContract } from "./task-contract";
-import { useTaskCenter } from "./use-task-center";
-import type { CenterFilters } from "./task-center-api";
+import { ContractFileRow } from "./contract-file-row";
+import { useTaskContracts } from "./use-task-contracts";
+import { contractLifecycles, type ContractLifecycle } from "./task-contract-files-api";
 type Props = { userId: string; generation: number };
-const filters: CenterFilters = {
-  scope: "all",
-  status: "all",
-  crewId: "",
-  taskKind: "",
-  query: "",
-  hasContract: true,
-};
 export function MyContracts(props: Props) {
   const focused = useIsFocused();
   return focused && props.generation === getAuthGeneration() ? (
@@ -57,12 +49,34 @@ function Session(props: Props) {
   );
 }
 function ContractFiles(props: Props) {
-  const t = useTranslations();
+  const t = useTranslations(),
+    theme = useTheme();
   const active = useScreenActive();
-  const list = useTaskCenter(active, props.generation, filters);
+  const [lifecycle, setLifecycle] = useState<ContractLifecycle>("all");
+  const list = useTaskContracts(active, props.generation, lifecycle);
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("myContracts.description")}</ThemedText>
+      <ThemedText>{t("taskContractFiles.lifecycle")}</ThemedText>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {contractLifecycles.map((value) => (
+          <Pressable
+            key={value}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: lifecycle === value }}
+            onPress={() => setLifecycle(value)}
+            style={{
+              minHeight: 44,
+              justifyContent: "center",
+              padding: 8,
+              borderWidth: lifecycle === value ? 1 : 0,
+              borderColor: theme.brand,
+            }}
+          >
+            <ThemedText>{t(`taskContractFiles.${value}`)}</ThemedText>
+          </Pressable>
+        ))}
+      </View>
       <Pressable
         accessibilityRole="button"
         disabled={list.loading}
@@ -86,19 +100,19 @@ function ContractFiles(props: Props) {
         </View>
       ) : (
         <>
-          {!list.loading && !list.items.length && <ThemedText>{t("myContracts.empty")}</ThemedText>}
+          {!list.loading && !list.hasMore && !list.items.length && (
+            <ThemedText>{t("myContracts.empty")}</ThemedText>
+          )}
           {list.items.map((item) => (
             <View key={item.id} style={{ gap: 4 }}>
               <ThemedText type="smallBold">{item.title}</ThemedText>
               <ThemedText>{item.crew.name}</ThemedText>
-              {item.contractAssetNodeId && (
-                <TaskContract
-                  key={item.contractAssetNodeId}
-                  {...props}
-                  crewId={item.crew.id}
-                  assetId={item.contractAssetNodeId}
-                />
+              {item.archived && (
+                <ThemedText type="small">{t("taskContractFiles.archived")}</ThemedText>
               )}
+              {item.files.map((file) => (
+                <ContractFileRow key={file.id} file={file} generation={props.generation} />
+              ))}
             </View>
           ))}
           {list.hasMore && (

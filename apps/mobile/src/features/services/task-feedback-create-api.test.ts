@@ -83,7 +83,12 @@ it("sends the official payload with no automatic retry and validates the receipt
     `/crew-tasks/${id(1)}/feedback`,
     expect.objectContaining({
       retry: false,
-      data: { subjectUserId: input.subjectUserId, ratings: input.ratings, comment: input.comment },
+      data: {
+        subjectUserId: input.subjectUserId,
+        ratings: input.ratings,
+        comment: input.comment,
+        publicOnProfile: false,
+      },
     })
   );
   h.post.mockResolvedValue({ ...row, submissionId: id(7) });
@@ -129,5 +134,26 @@ it("rejects expired sessions, aborted operations, invalid scores and pagination 
   ).rejects.toThrow();
   h.get.mockResolvedValue({ items: [], nextCursor: id(8) });
   await expect(send()).rejects.toThrow("pagination");
+  expect(h.post).not.toHaveBeenCalled();
+});
+
+it("publishes new reviews with optional comments and checks visibility on receipt", async () => {
+  const request = { ...input, comment: "", publicOnProfile: true };
+  h.post.mockResolvedValue({ ...row, comment: "", publicOnProfile: true });
+  await send(request);
+  expect(h.post).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      data: expect.objectContaining({ comment: "", publicOnProfile: true }),
+    })
+  );
+  h.post.mockResolvedValue({ ...row, comment: "", publicOnProfile: false });
+  await expect(send(request)).rejects.toThrow("receipt");
+});
+it("never upgrades a saved private review on retry or accepts a different visibility", async () => {
+  h.get.mockResolvedValue({ items: [{ ...row, publicOnProfile: false }], nextCursor: null });
+  await send(input);
+  expect(h.post).not.toHaveBeenCalled();
+  await expect(send({ ...input, publicOnProfile: true })).rejects.toThrow("Different feedback");
   expect(h.post).not.toHaveBeenCalled();
 });

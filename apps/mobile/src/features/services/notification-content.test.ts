@@ -213,3 +213,29 @@ it.each([
     }
   }
 );
+
+it.each([
+  ["en-US", enUS],
+  ["zh-CN", zhCN],
+  ["zh-HK", zhHK],
+] as const)(
+  "localizes withdrawal outcomes in %s without exposing bank metadata",
+  (locale, catalog) => {
+    for (const outcome of ["processing", "paid", "rejected"] as const) {
+      const result = notificationContent(
+        row(`crew.withdrawal.${outcome}`, {
+          accountNumber: "PRIVATE-BANK",
+          paymentReference: "PRIVATE-REFERENCE",
+        }),
+        locale,
+        (key) => catalog[`notifications.${key}` as keyof typeof catalog]
+      );
+      expect(result).toEqual({
+        title: catalog[`notifications.events.withdrawal.${outcome}.title`],
+        body: catalog[`notifications.events.withdrawal.${outcome}.body`],
+      });
+      expect(result.title).toBeTruthy();
+      expect(JSON.stringify(result)).not.toContain("PRIVATE-");
+    }
+  }
+);

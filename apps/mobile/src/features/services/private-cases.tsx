@@ -1,3 +1,4 @@
+import { TaskCaseEntry } from "./task-case-entry";
 import { useEffect, useRef, useState } from "react";
 import { useIsFocused } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
@@ -60,17 +61,24 @@ function Session(props: Props) {
     setLastActive(active);
     if (active) setRevision((v) => v + 1);
   }
+  const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState(props.initialCaseId);
   const [view, setView] = useState<PrivateCaseView>("all");
   return (
     <View style={{ flex: 1, display: active ? "flex" : "none" }}>
-      {selected ? (
+      {creating ? (
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          <Action label={t("privateCases.back")} onPress={() => setCreating(false)} />
+          <TaskCaseEntry userId={props.userId} generation={props.generation} />
+        </ScrollView>
+      ) : selected ? (
         <View style={{ flex: 1 }}>
           <Action label={t("privateCases.back")} onPress={() => setSelected(undefined)} />
           <Detail key={selected} {...props} caseId={selected} />
         </View>
       ) : (
         <View style={{ flex: 1 }}>
+          <Action label={t("crewCases.newCase")} onPress={() => setCreating(true)} />
           <View
             accessibilityRole="tablist"
             style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 16 }}
@@ -229,6 +237,17 @@ function Detail({ caseId, userId, generation }: Props & { caseId: string }) {
       {row && (
         <View style={{ display: active && !loading && !error ? "flex" : "none" }}>
           <ThemedText type="smallBold">{row.title}</ThemedText>
+          {row.category && (
+            <ThemedText>
+              {t("crewTaskDispute.category")}: {t(`crewTaskDispute.categories.${row.category}`)}
+            </ThemedText>
+          )}
+          {row.desiredResolution && (
+            <ThemedText>
+              {t("crewTaskDispute.desiredResolution")}:{" "}
+              {t(`crewTaskDispute.resolutions.${row.desiredResolution}`)}
+            </ThemedText>
+          )}
           <ThemedText>
             {t(`privateCases.${row.status}`)} · {row.version}
           </ThemedText>

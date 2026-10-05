@@ -1,3 +1,4 @@
+import { TaskPaymentTermsField } from "./task-payment-terms-field";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -65,6 +66,7 @@ function Session(
     [page, setPage] = useState<Awaited<ReturnType<typeof fetchApplicationAmendments>>>();
   const [error, setError] = useState<string>(),
     [draft, setDraft] = useState<{
+      paymentTerms: Terms["paymentTerms"];
       scope: string;
       fee: string;
       share: string;
@@ -170,6 +172,7 @@ function Session(
       expectedVersion: effective.version,
       expectedTaskVersion: context.taskVersion,
       scope: draft.scope,
+      paymentTerms: draft.paymentTerms,
       feeAmount: proposalMinor(draft.fee),
       currency: effective.currency,
       feePeriod: "project",
@@ -210,6 +213,11 @@ function Session(
       <ThemedText>
         {t("crewTerms.share")} · {(row.revenueShareBp / 100).toFixed(2)}%
       </ThemedText>
+      {row.paymentTerms && (
+        <ThemedText>
+          {t("taskPaymentTerms.label")}: {t(`taskPaymentTerms.${row.paymentTerms}`)}
+        </ThemedText>
+      )}
       {row.shareBasis && <ThemedText>{row.shareBasis}</ThemedText>}
     </View>
   );
@@ -256,6 +264,7 @@ function Session(
           t("crewAmendments.propose"),
           () =>
             setDraft({
+              paymentTerms: effective!.paymentTerms ?? null,
               scope: effective!.scope,
               fee: major(effective!.feeAmount),
               share: major(String(effective!.revenueShareBp)),
@@ -274,6 +283,11 @@ function Session(
           <ThemedText>
             {effective.currency} · {t("crewTerms.project")}
           </ThemedText>
+          <TaskPaymentTermsField
+            value={draft.paymentTerms ?? null}
+            onChange={(paymentTerms) => setDraft({ ...draft, paymentTerms })}
+            locked={locked}
+          />
           {(["scope", "fee", "share", "basis", "reason"] as const).map((key) => (
             <View key={key} style={{ gap: 6 }}>
               <ThemedText>{t(`crewAmendments.${key}`)}</ThemedText>

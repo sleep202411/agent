@@ -1,3 +1,4 @@
+import { useServiceEditorExit } from "./service-editor-exit-state";
 import { serviceFieldStyle } from "./service-field-style";
 import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useState } from "react";
@@ -52,6 +53,15 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
     [category, setCategory] = useServiceEditorState("details:category", service.category),
     [tags, setTags] = useServiceEditorState("details:tags", service.tags.join("\n"));
   const [error, setError] = useState<string>();
+  const [baseline, setBaseline] = useServiceEditorState("details:baseline", () =>
+    JSON.stringify([service.title, service.summary, service.category, service.tags.join("\n")])
+  );
+  useServiceEditorExit(
+    "details",
+    open && JSON.stringify([title, summary, category, tags]) !== baseline,
+    op.busy
+  );
+
   const parsed = serviceDetailsSchema.safeParse({
     title,
     summary,
@@ -63,6 +73,9 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
     expectedVersion: draftVersion,
   });
   const reset = () => {
+    setBaseline(
+      JSON.stringify([service.title, service.summary, service.category, service.tags.join("\n")])
+    );
     setDraftVersion(service.version);
     setTitle(service.title);
     setSummary(service.summary);

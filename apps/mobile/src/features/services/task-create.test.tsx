@@ -952,3 +952,14 @@ it("keeps a rejected incomplete creation editable without an uncertain-write war
   expect(button("taskCreate.submit")!.disabled).toBe(false);
   expect(host.querySelector("input")!.disabled).toBe(false);
 });
+
+it("includes the selected payment terms in the task creation command", async () => {
+  await render();
+  await act(async () => {
+    type(0, "Payment task");
+    type(3, "2026-10-06 10:00");
+  });
+  await act(async () => button("○ taskPaymentTerms.half_upfront")!.click());
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update.mock.calls[0][1]).toMatchObject({ paymentTerms: "half_upfront" });
+});

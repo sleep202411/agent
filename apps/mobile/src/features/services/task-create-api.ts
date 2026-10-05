@@ -113,6 +113,7 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
     (data.requiredSkills !== undefined &&
       !sameSkills(result.requiredSkills, data.requiredSkills)) ||
     (data.positionRole !== undefined && (result.positionRole ?? null) !== data.positionRole) ||
+    (data.paymentTerms !== undefined && (result.paymentTerms ?? null) !== data.paymentTerms) ||
     (data.rewardUsdMinor !== undefined && result.rewardUsdMinor !== data.rewardUsdMinor) ||
     (data.profitShareBps !== undefined && result.profitShareBps !== data.profitShareBps) ||
     result.crewId !== crewId ||

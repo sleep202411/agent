@@ -5,7 +5,7 @@ import { ThemedText } from "@/components/themed-text";
 import { appEnv } from "@/config/app-env";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations } from "@/i18n";
+import { useLocale, useTranslations } from "@/i18n";
 import {
   acceptCrewInvite,
   canAcceptCrewInvite,
@@ -27,6 +27,7 @@ export function CrewInviteAccept(props: Props) {
   ) : null;
 }
 function Session({ generation, onClose, onOpen, initialLink }: Props) {
+  const locale = useLocale();
   const t = useTranslations(),
     theme = useTheme(),
     active = useScreenActive();
@@ -167,6 +168,42 @@ function Session({ generation, onClose, onOpen, initialLink }: Props) {
               ? t("crewJoin.never")
               : new Date(review.value.expiresAt).toLocaleString()}
           </ThemedText>
+          {review.value.task && (
+            <>
+              <ThemedText type="smallBold">{review.value.task.title}</ThemedText>
+              {!!review.value.task.description && (
+                <ThemedText>{review.value.task.description}</ThemedText>
+              )}
+              <ThemedText>
+                {t("crewInvite.taskReward")}:{" "}
+                {review.value.task.rewardUsdMinor === null
+                  ? t("crewInvite.taskUnspecified")
+                  : new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(
+                      review.value.task.rewardUsdMinor / 100
+                    )}
+              </ThemedText>
+              {review.value.task.paymentTerms && (
+                <ThemedText>{t(`taskPaymentTerms.${review.value.task.paymentTerms}`)}</ThemedText>
+              )}
+              {review.value.task.profitShareBps !== null && (
+                <ThemedText>
+                  {t("crewInvite.taskShare")}: {review.value.task.profitShareBps / 100}%
+                </ThemedText>
+              )}
+              <ThemedText>
+                {t("crewInvite.taskDeadline")}:{" "}
+                {review.value.task.dueAt
+                  ? new Date(review.value.task.dueAt).toLocaleString(locale)
+                  : t("crewInvite.taskUnspecified")}
+              </ThemedText>
+              {!!review.value.task.requiredSkills.length && (
+                <ThemedText>
+                  {t("crewInvite.taskSkills")}: {review.value.task.requiredSkills.join(" · ")}
+                </ThemedText>
+              )}
+              <ThemedText>{t("crewInvite.taskAcceptExplanation")}</ThemedText>
+            </>
+          )}
           {!result && (
             <Action
               label={t(

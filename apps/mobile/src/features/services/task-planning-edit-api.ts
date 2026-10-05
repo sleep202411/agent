@@ -1,3 +1,4 @@
+import type { TaskPaymentTerms } from "@repo/shared/crew";
 import { requiredSkillsSchema, sameSkills } from "./crew-skills-api";
 import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
@@ -51,6 +52,7 @@ export const planningEditInput = z
       data.contractAssetNodeId !== undefined ||
       data.requiredSkills !== undefined ||
       data.positionRole !== undefined ||
+      data.paymentTerms !== undefined ||
       data.rewardUsdMinor !== undefined ||
       data.profitShareBps !== undefined ||
       data.estimatePoints !== undefined ||
@@ -80,6 +82,7 @@ export function planningChanges(
     positionRole?: string | null;
     estimatePoints: number | null;
     revisionLimit: number | null;
+    paymentTerms?: TaskPaymentTerms | null;
     rewardUsdMinor?: number | null;
     profitShareBps?: number | null;
   } = {
@@ -92,11 +95,21 @@ export function planningChanges(
   const ids = draft.labels.map((label) => label.id);
   return planningEditInput
     .refine(
+      (value) =>
+        !task.contractAssetNodeId ||
+        value.contractAssetNodeId === undefined ||
+        value.contractAssetNodeId === task.contractAssetNodeId,
+      "Attached contracts cannot be replaced or removed"
+    )
+    .refine(
       (value) => value.revisionLimit == null || value.revisionLimit >= task.revisionRoundsUsed,
       "Revision limit is below used rounds"
     )
     .safeParse({
       expectedVersion: task.version,
+      ...(values.paymentTerms !== undefined && values.paymentTerms !== (task.paymentTerms ?? null)
+        ? { paymentTerms: values.paymentTerms }
+        : {}),
       ...(values.contractAssetNodeId !== undefined &&
       values.contractAssetNodeId !== (task.contractAssetNodeId ?? null)
         ? { contractAssetNodeId: values.contractAssetNodeId }
@@ -146,6 +159,12 @@ export async function updateTaskPlanning(
 ) {
   z.string().uuid().parse(task.id);
   const data = planningEditInput.parse(value);
+  if (
+    task.contractAssetNodeId &&
+    data.contractAssetNodeId !== undefined &&
+    data.contractAssetNodeId !== task.contractAssetNodeId
+  )
+    throw new Error("Attached contracts cannot be replaced or removed");
   if (data.expectedVersion !== task.version) throw new Error("Task planning version mismatch");
   if (data.revisionLimit != null && data.revisionLimit < task.revisionRoundsUsed)
     throw new Error("Revision limit is below used rounds");
@@ -163,6 +182,8 @@ export async function updateTaskPlanning(
     !sameSkills(result.requiredSkills, data.requiredSkills ?? task.requiredSkills) ||
     (result.positionRole ?? null) !==
       (data.positionRole === undefined ? (task.positionRole ?? null) : data.positionRole) ||
+    (result.paymentTerms ?? null) !==
+      (data.paymentTerms === undefined ? (task.paymentTerms ?? null) : data.paymentTerms) ||
     result.rewardUsdMinor !==
       (data.rewardUsdMinor === undefined ? task.rewardUsdMinor : data.rewardUsdMinor) ||
     result.profitShareBps !==

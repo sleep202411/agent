@@ -132,3 +132,35 @@ it("rejects self-cases, duplicate/oversized evidence and cancelled sends", async
   await expect(openTaskCase(id(1), "creator", 1, request, c.signal)).rejects.toThrow();
   expect(h.post).not.toHaveBeenCalled();
 });
+
+it("freezes classification, requested outcome and initial evidence through retries", async () => {
+  const input = {
+    ...request,
+    category: "payment" as const,
+    desiredResolution: "payment_allocation" as const,
+    attachmentIds: [id(8)],
+  };
+  const box = taskCaseOutbox(id(1), "creator", 1);
+  box.save(input);
+  h.post.mockResolvedValue({
+    ...row,
+    category: input.category,
+    desiredResolution: input.desiredResolution,
+  });
+  await openTaskCase(id(1), "creator", 1, box.read()!, signal());
+  expect(h.post.mock.calls[0][1].data).toMatchObject({
+    category: "payment",
+    desiredResolution: "payment_allocation",
+    attachmentIds: [id(8)],
+  });
+  expect(() => box.save({ ...input, category: "other" })).toThrow();
+  h.post.mockResolvedValue({
+    ...row,
+    category: "other",
+    desiredResolution: input.desiredResolution,
+  });
+  await expect(openTaskCase(id(1), "creator", 1, input, signal())).rejects.toThrow("receipt");
+  await expect(
+    openTaskCase(id(1), "creator", 1, { ...input, attachmentIds: [id(8), id(8)] }, signal())
+  ).rejects.toThrow("Duplicate");
+});

@@ -10,7 +10,9 @@ export const feedbackCreation = z.object({
   submissionId: z.string().uuid(),
   subjectUserId: z.string().min(1).max(64),
   ratings: feedbackSchema.shape.ratings,
-  comment: z.string().trim().min(3).max(2000),
+  comment: z.string().trim().max(2000),
+  // Requests saved before public reviews were introduced remain private on retry.
+  publicOnProfile: z.boolean().optional(),
 });
 export type FeedbackCreation = z.infer<typeof feedbackCreation>;
 export function feedbackTarget(task: TaskDetail, userId: string) {
@@ -66,6 +68,7 @@ export async function createTaskFeedback(
     row.subjectUserId === request.subjectUserId &&
     row.submissionId === request.submissionId &&
     row.comment === request.comment &&
+    (row.publicOnProfile ?? false) === (request.publicOnProfile ?? false) &&
     JSON.stringify(row.ratings) === JSON.stringify(request.ratings);
   let cursor: string | null = null;
   const seen = new Set<string>();
@@ -107,6 +110,7 @@ export async function createTaskFeedback(
         subjectUserId: request.subjectUserId,
         ratings: request.ratings,
         comment: request.comment,
+        publicOnProfile: request.publicOnProfile ?? false,
       },
     })
   );

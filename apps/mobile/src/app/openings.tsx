@@ -25,6 +25,7 @@ import {
   type OpeningFilters,
 } from "@/features/browse/openings-api";
 export default function OpeningsScreen() {
+  const router = useRouter();
   const auth = useAuth(),
     active = useScreenActive(),
     locale = useLocale(),
@@ -33,6 +34,13 @@ export default function OpeningsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <Stack.Screen options={{ headerShown: true, title: t("openings.title") }} />
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 16 }}
+        onPress={() => router.push(toHref("/crew-work-entry?mode=position"))}
+      >
+        <ThemedText>{t("taskEntry.positionTitle")}</ThemedText>
+      </Pressable>
       {active && auth.status !== "hydrating" ? (
         <Openings key={`${auth.generation}:${locale}`} generation={auth.generation} />
       ) : (
@@ -348,6 +356,11 @@ function Results({ filters, generation }: { filters: OpeningFilters; generation:
                   {position.salary.period ? ` / ${t(`crewTerms.${position.salary.period}`)}` : ""}
                 </ThemedText>
               ) : null}
+              {position.paymentTerms && (
+                <ThemedText>
+                  {t("taskPaymentTerms.label")}: {t(`taskPaymentTerms.${position.paymentTerms}`)}
+                </ThemedText>
+              )}
               {position.salary.negotiable ? (
                 <ThemedText type="small">{t("positionCreate.negotiable")}</ThemedText>
               ) : null}

@@ -1,3 +1,4 @@
+import { PublicIpReleaseLinks } from "@/features/ip-author/public-ip-release-links";
 import { NextVideoControl } from "@/features/content-gps/next-video-control";
 import { useMemberView } from "@/features/ip-community/use-member-view";
 import { ChannelSubmissions } from "@/features/ip-community/channel-submissions";
@@ -556,6 +557,7 @@ function IpDetailSession() {
           </ThemedText>
           <IpFanCommunity ipId={ip.id} />
           <ChannelSubmissions ipId={ip.id} />
+          <PublicIpReleaseLinks ipId={ip.id} />
 
           {(() => {
             const pubItems = (ip.publishers ?? []).filter((p) => p.logoUrl?.trim()).slice(0, 4);

@@ -25,11 +25,23 @@ export function TaskContractField({
 }) {
   const t = useTranslations(),
     theme = useTheme();
+  const [selectionError, setSelectionError] = useState("");
+  const select = (id: string | null) => {
+    try {
+      onChange(id);
+      setSelectionError("");
+      return true;
+    } catch (cause) {
+      setSelectionError(cause instanceof Error ? cause.message : String(cause));
+      return false;
+    }
+  };
   const [open, setOpen] = useState(false);
   const [upload, setUpload] = useState(false);
   const current = () => !locked && generation === getAuthGeneration();
   return (
     <View style={{ gap: 8 }}>
+      {!!selectionError && <ThemedText accessibilityRole="alert">{selectionError}</ThemedText>}
       <Pressable
         accessibilityRole="button"
         disabled={locked}
@@ -67,7 +79,7 @@ export function TaskContractField({
             disabled={locked}
             style={{ padding: 12 }}
             onPress={() => {
-              if (current()) onChange(null);
+              if (current()) select(null);
             }}
           >
             <ThemedText>{t("taskContract.remove")}</ThemedText>
@@ -86,8 +98,7 @@ export function TaskContractField({
                 if (!current() || assets.length !== 1) return;
                 const asset = assets[0]!;
                 if (asset.kind !== "file" || asset.status !== "active" || !asset.media) return;
-                onChange(asset.id);
-                setOpen(false);
+                if (select(asset.id)) setOpen(false);
               }}
             />
           </SafeAreaView>

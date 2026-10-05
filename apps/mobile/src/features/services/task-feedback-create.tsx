@@ -91,6 +91,7 @@ function Form({
           submissionId: target.submissionId,
           subjectUserId: target.subjectUserId,
           comment,
+          publicOnProfile: true,
           ratings:
             target.direction === "creator"
               ? {
@@ -116,6 +117,13 @@ function Form({
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("feedbackHistory.create")}</ThemedText>
       <ThemedText>{t("feedbackHistory.creationHelp")}</ThemedText>
+      <ThemedText>
+        {t(
+          pending && !pending.publicOnProfile
+            ? "feedbackHistory.privateRetryNotice"
+            : "feedbackHistory.publicNotice"
+        )}
+      </ThemedText>
       <ThemedText>{target.subjectUserId}</ThemedText>
       {keys.map((key) => (
         <View key={key} style={{ gap: 4 }}>
@@ -159,11 +167,7 @@ function Form({
       ) : (
         <Pressable
           accessibilityRole="button"
-          disabled={
-            op.busy ||
-            !!initial.error ||
-            (!pending && (comment.trim().length < 3 || keys.some((key) => !scores[key])))
-          }
+          disabled={op.busy || !!initial.error || (!pending && keys.some((key) => !scores[key]))}
           onPress={submit}
           style={{ padding: 12 }}
         >

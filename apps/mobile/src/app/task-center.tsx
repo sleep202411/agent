@@ -1,4 +1,5 @@
-import { Stack } from "expo-router";
+import { toHref } from "@/lib/navigation";
+import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
@@ -6,6 +7,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { TaskCenter } from "@/features/services/task-center";
 export default function TaskCenterScreen() {
+  const router = useRouter();
   const auth = useAuth(),
     gate = useAuthGate(),
     theme = useTheme(),
@@ -21,6 +23,13 @@ export default function TaskCenterScreen() {
           headerStyle: { backgroundColor: theme.background },
         }}
       />
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 16 }}
+        onPress={() => router.push(toHref("/crew-work-entry"))}
+      >
+        <ThemedText>{t("taskEntry.title")}</ThemedText>
+      </Pressable>
       {auth.status === "hydrating" ? (
         <ActivityIndicator />
       ) : auth.status !== "authenticated" ? (

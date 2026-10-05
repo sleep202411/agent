@@ -512,3 +512,32 @@ it("keeps studio and IP conversations isolated and disables invalid IP requests"
   expect(h.post).not.toHaveBeenCalled();
   expect(discoveryPending(scope).read()).toEqual(saved);
 });
+
+it("recovers corrupt storage only after explicit confirmation without sending", async () => {
+  discoveryPending(scope).save(saved);
+  const key = [...h.records.keys()][0]!;
+  h.records.set(key, "corrupt");
+  await open();
+  await type("Find a studio");
+  expect(button("discoveryAssistant.send").disabled).toBe(true);
+  await click("discoveryAssistant.newConversation");
+  expect(h.records.get(key)).toBe("corrupt");
+  await click("discoveryAssistant.confirmNew");
+  expect(discoveryPending(scope).read()).toBeNull();
+  await type("Find a studio");
+  expect(button("discoveryAssistant.send").disabled).toBe(false);
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("preserves a pending request that becomes readable before confirmed recovery", async () => {
+  discoveryPending(scope).save(saved);
+  const key = [...h.records.keys()][0]!;
+  const original = h.records.get(key)!;
+  h.records.set(key, "corrupt");
+  await open();
+  await click("discoveryAssistant.newConversation");
+  h.records.set(key, original);
+  await click("discoveryAssistant.confirmNew");
+  expect(discoveryPending(scope).read()).toEqual(saved);
+  expect(button("discoveryAssistant.check").disabled).toBe(false);
+  expect(h.post).not.toHaveBeenCalled();
+});

@@ -580,6 +580,7 @@ export const IP_REPORT_REASONS = [
 export type IpReportReason = (typeof IP_REPORT_REASONS)[number];
 
 export type IpContentReport = {
+  requestId?: string;
   targetType: "ip" | "episode";
   targetId: string;
   reason: IpReportReason;

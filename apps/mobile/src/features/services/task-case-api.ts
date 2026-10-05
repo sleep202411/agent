@@ -3,6 +3,7 @@ import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord } from "@/lib/durable-record";
 import { pendingRequest } from "@/lib/pending-request";
+import { caseCategory, caseResolution } from "./case-classification";
 import { privateCase } from "./private-cases-api";
 const id = z.string().uuid(),
   user = z.string().min(1).max(64);
@@ -65,6 +66,13 @@ export async function fetchTaskCaseContext(
 export type TaskCaseContext = Awaited<ReturnType<typeof fetchTaskCaseContext>>;
 export const taskCaseCommand = z.object({
   clientKey: id,
+  category: caseCategory.optional(),
+  desiredResolution: caseResolution.optional(),
+  attachmentIds: z
+    .array(id)
+    .max(5)
+    .refine((ids) => new Set(ids).size === ids.length, "Duplicate private evidence.")
+    .optional(),
   respondentUserId: user,
   title: z.string().trim().min(1).max(180),
   message: z.string().trim().min(1).max(4000),
@@ -102,6 +110,9 @@ export async function openTaskCase(
         title: request.title,
         message: request.message,
         submissionIds: request.submissionIds,
+        ...(request.category ? { category: request.category } : {}),
+        ...(request.desiredResolution ? { desiredResolution: request.desiredResolution } : {}),
+        ...(request.attachmentIds ? { attachmentIds: request.attachmentIds } : {}),
       },
     })
   );
@@ -111,7 +122,9 @@ export async function openTaskCase(
     row.taskId !== taskId ||
     row.openedByUserId !== userId ||
     row.respondentUserId !== request.respondentUserId ||
-    row.title !== request.title
+    row.title !== request.title ||
+    (row.category ?? undefined) !== request.category ||
+    (row.desiredResolution ?? undefined) !== request.desiredResolution
   )
     throw new Error("Case creation receipt mismatch.");
   return row;

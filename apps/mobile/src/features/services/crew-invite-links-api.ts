@@ -1,3 +1,5 @@
+import { fetchTaskDetail } from "./task-detail-api";
+import { fetchTaskCommentAccess } from "./task-comment-api";
 import { z } from "zod";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "@/lib/api-client";
@@ -12,17 +14,31 @@ const policies = z
 export const crewLinkInput = z
   .object({
     kind: z.enum(["member", "community"]),
+    taskId: z.string().uuid().optional(),
+    taskVersion: z.number().int().positive().optional(),
     policyKeys: policies,
     expiresInDays: z.number().int().min(1).max(365).optional(),
     maxUses: z.number().int().min(1).max(500).optional(),
   })
   .strict()
   .refine(
+    (v) =>
+      v.taskId
+        ? v.taskVersion !== undefined &&
+          v.kind === "member" &&
+          v.maxUses === 1 &&
+          v.policyKeys.length === 0
+        : v.taskVersion === undefined,
+    "Task invitations require one use and unchanged task terms."
+  )
+  .refine(
     (v) => v.kind !== "community" || v.policyKeys.length === 0,
     "Community links cannot grant Crew permissions."
   );
 export type CrewLinkInput = z.infer<typeof crewLinkInput>;
 const rowSchema = z.object({
+  taskId: z.string().uuid().nullish(),
+  taskVersion: z.number().int().positive().nullish(),
   id: z.string().uuid(),
   crewId: id,
   kind: z.enum(["member", "community"]),
@@ -44,10 +60,19 @@ function current(generation: number, signal?: AbortSignal) {
   if (generation !== getAuthGeneration() || signal?.aborted)
     throw new Error("Crew invitation session expired.");
 }
-export function crewLinkPending(crewId: string, userId: string, generation: number) {
+export function crewLinkPending(
+  crewId: string,
+  userId: string,
+  generation: number,
+  taskId?: string
+) {
   id.parse(crewId);
   id.parse(userId);
-  const storage = durableRecord("crew-invite-link", userId, crewId);
+  const storage = durableRecord(
+    "crew-invite-link",
+    userId,
+    taskId ? `${crewId}:${z.string().uuid().parse(taskId)}` : crewId
+  );
   const read = () => {
     current(generation);
     const raw = storage.read();
@@ -70,7 +95,8 @@ export async function fetchCrewLinks(
   crewId: string,
   userId: string,
   generation: number,
-  signal: AbortSignal
+  signal: AbortSignal,
+  taskId?: string
 ) {
   const access = await teamInvitationAccess(crewId, userId, generation, signal);
   const links = z
@@ -90,7 +116,10 @@ export async function fetchCrewLinks(
     new Set(links.map((v) => v.id)).size !== links.length
   )
     throw new Error("Invitation link list could not be verified. Refresh the list.");
-  return { links, access };
+  return {
+    links: links.filter((link) => (taskId ? link.taskId === taskId : !link.taskId)),
+    access,
+  };
 }
 export async function createCrewLink(
   crewId: string,
@@ -103,8 +132,22 @@ export async function createCrewLink(
   const access = await teamInvitationAccess(crewId, userId, generation, signal);
   if (data.policyKeys.length && !access.policies)
     throw new Error("Permission to grant Crew access has changed.");
+  if (data.taskId) {
+    const [task, taskAccess] = await Promise.all([
+      fetchTaskDetail(crewId, data.taskId, signal),
+      fetchTaskCommentAccess(crewId, userId, signal),
+    ]);
+    if (
+      !taskAccess.canManage ||
+      task.version !== data.taskVersion ||
+      task.isRecruiting !== false ||
+      task.assignees.length ||
+      ["submitted", "approved", "cancelled"].includes(task.status)
+    )
+      throw Error("Task invitation is unavailable. Refresh the task before inviting.");
+  }
   current(generation, signal);
-  const pending = crewLinkPending(crewId, userId, generation);
+  const pending = crewLinkPending(crewId, userId, generation, data.taskId);
   pending.save({ kind: "create", input: data, startedAt: new Date().toISOString() });
   const receipt = rowSchema.extend({ token: z.string().regex(/^[A-Za-z0-9_-]{32}$/) }).parse(
     await api.post(`/crews/${crewId}/invite-links`, {
@@ -116,6 +159,8 @@ export async function createCrewLink(
   );
   current(generation, signal);
   if (
+    (receipt.taskId ?? undefined) !== data.taskId ||
+    (receipt.taskVersion ?? undefined) !== data.taskVersion ||
     receipt.crewId !== crewId ||
     receipt.createdByUserId !== userId ||
     receipt.kind !== data.kind ||
@@ -150,7 +195,7 @@ export async function revokeCrewLink(
     throw new Error("Invitation link scope or status changed.");
   await teamInvitationAccess(crewId, userId, generation, signal);
   current(generation, signal);
-  const pending = crewLinkPending(crewId, userId, generation);
+  const pending = crewLinkPending(crewId, userId, generation, row.taskId ?? undefined);
   pending.save({ kind: "revoke", link: row, startedAt: new Date().toISOString() });
   await api.delete(`/crews/${crewId}/invite-links/${row.id}`, {
     service: "aurora",

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchCrewIncome,
   type IncomeRow,
   type IncomePage,
   type IncomeView,
+  type IncomeFilters,
 } from "./crew-income-api";
 type Session = {
   key: string;
@@ -31,10 +32,13 @@ export function useCrewIncome(
   userId: string,
   currency: "USD" | "CNY",
   view: IncomeView,
-  crewId: string
+  crewId: string,
+  filters: IncomeFilters = {}
 ) {
   const [revision, setRevision] = useState(0);
-  const key = JSON.stringify([owner, userId, currency, view, crewId, revision]);
+  const filtersKey = JSON.stringify(view === "earnings" ? filters : {});
+  const appliedFilters = useMemo(() => JSON.parse(filtersKey) as IncomeFilters, [filtersKey]);
+  const key = JSON.stringify([owner, userId, currency, view, crewId, filtersKey, revision]);
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [snapshotScope, setSnapshotScope] = useState(key);
@@ -62,7 +66,8 @@ export function useCrewIncome(
             view,
             crewId,
             cursor,
-            session.abort.signal
+            session.abort.signal,
+            appliedFilters
           );
           if (session.abort.signal.aborted) return;
           if (result.nextCursor && seen.has(result.nextCursor))
@@ -116,7 +121,7 @@ export function useCrewIncome(
           });
       }
     },
-    [userId, currency, view, crewId]
+    [userId, currency, view, crewId, appliedFilters]
   );
   useEffect(() => {
     if (!owner) return;

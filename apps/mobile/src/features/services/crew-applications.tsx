@@ -452,6 +452,11 @@ function TermsPage(
           <ThemedText>
             {t("crewTerms.share")} · {(row.revenueShareBp / 100).toFixed(2)}%
           </ThemedText>
+          {row.paymentTerms && (
+            <ThemedText>
+              {t("taskPaymentTerms.label")}: {t(`taskPaymentTerms.${row.paymentTerms}`)}
+            </ThemedText>
+          )}
           {row.shareBasis && <ThemedText>{row.shareBasis}</ThemedText>}
         </View>
       ))}

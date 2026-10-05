@@ -1,3 +1,5 @@
+import { IncomeFilterFields } from "@/features/earnings/income-filters";
+import { CreatorWithdrawals } from "@/features/earnings/creator-withdrawals";
 import { useState } from "react";
 import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
@@ -8,7 +10,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useLocale, useTranslations, type MessageKey } from "@/i18n";
 import { isChinaRegion } from "@/config";
 import { useCrewIncome } from "@/features/earnings/use-crew-income";
-import type { IncomeView } from "@/features/earnings/crew-income-api";
+import type { IncomeView, IncomeFilters } from "@/features/earnings/crew-income-api";
 import { formatFinanceMoney } from "@/features/services/crew-finance-api";
 import { CrewFinanceTrend } from "@/features/services/crew-finance-trend";
 export default function CrewIncomeScreen() {
@@ -54,9 +56,10 @@ function Income({ userId, owner }: { userId: string; owner: string }) {
     active = useScreenActive(),
     router = useRouter();
   const [view, setView] = useState<IncomeView>("earnings"),
-    [crewId, setCrewId] = useState("");
+    [crewId, setCrewId] = useState(""),
+    [filters, setFilters] = useState<IncomeFilters>({});
   const currency = isChinaRegion ? "CNY" : "USD";
-  const list = useCrewIncome(active ? owner : undefined, userId, currency, view, crewId);
+  const list = useCrewIncome(active ? owner : undefined, userId, currency, view, crewId, filters);
   const prefix = view === "earnings" ? "crewPersonalIncome" : "crewPersonalPayouts";
   const label = (key: string) => t(`${prefix}.${key}` as MessageKey);
   const money = (amount: string) => formatFinanceMoney(amount, currency);
@@ -126,6 +129,39 @@ function Income({ userId, owner }: { userId: string; owner: string }) {
           ) : (
             <ThemedText type="small">{t("crewPersonalPayouts.balanceDescription")}</ThemedText>
           )}
+          {view === "earnings" && (
+            <>
+              {!list.error && list.summary?.postedBySource && (
+                <Pressable
+                  accessibilityRole="button"
+                  style={box}
+                  onPress={() =>
+                    setFilters((value) => ({
+                      ...value,
+                      sourceType: "task_reward",
+                    }))
+                  }
+                >
+                  <ThemedText type="smallBold">
+                    {t("crewPersonalIncome.productionOrders")}
+                  </ThemedText>
+                  <ThemedText>
+                    {money(
+                      list.summary.postedBySource.find(
+                        (value) => value.sourceType === "task_reward"
+                      )?.amountMinor ?? "0"
+                    )}
+                  </ThemedText>
+                </Pressable>
+              )}
+              <IncomeFilterFields value={filters} onApply={setFilters} />
+            </>
+          )}
+          <CreatorWithdrawals
+            userId={userId}
+            generation={Number(owner)}
+            onSubmitted={list.refresh}
+          />
         </View>
       }
       renderItem={({ item }) => (
@@ -134,6 +170,31 @@ function Income({ userId, owner }: { userId: string; owner: string }) {
             <>
               <ThemedText type="smallBold">{item.title}</ThemedText>
               <ThemedText type="small">{item.description}</ThemedText>
+              {item.crew && <ThemedText type="small">{item.crew.name}</ThemedText>}
+              <ThemedText type="small">
+                {t("crewPersonalIncome.incomeType")}: {t(`crewIncome.sources.${item.sourceType}`)}
+              </ThemedText>
+              {item.revenueDistribution && (
+                <View style={{ gap: 4 }}>
+                  <ThemedText type="small">
+                    {t("crewPersonalIncome.confirmedRevenue")}
+                    {item.revenueDistribution.shareBps !== null
+                      ? ` · ${t("crewPersonalIncome.revenueShare").replace("{percentage}", String(item.revenueDistribution.shareBps / 100))}`
+                      : ""}
+                  </ThemedText>
+                  <ThemedText type="small">
+                    {t("crewPersonalIncome.revenueReference")}:{" "}
+                    {item.revenueDistribution.revenueReference}
+                  </ThemedText>
+                  <ThemedText type="small">
+                    {t("crewPersonalIncome.distributionContract")}:{" "}
+                    {item.revenueDistribution.contract.filename}
+                  </ThemedText>
+                  <ThemedText type="small">
+                    {t("crewPersonalIncome.distributionReceipt")}: {item.revenueDistribution.id}
+                  </ThemedText>
+                </View>
+              )}
               {item.task && (
                 <ThemedText type="small">
                   #{item.task.number} {item.task.title}
@@ -146,15 +207,16 @@ function Income({ userId, owner }: { userId: string; owner: string }) {
             {money("netAmountMinor" in item ? item.netAmountMinor : item.amountMinor)}
           </ThemedText>
           <ThemedText type="small">
-            {new Date(("postedAt" in item ? item.postedAt : null) ?? item.createdAt).toLocaleString(
-              locale
+            {new Date(item.createdAt).toLocaleString(
+              locale,
+              "postedAt" in item ? { timeZone: "UTC" } : undefined
             )}
           </ThemedText>
           <ThemedText type="small">
             {label("crew")}: {item.crewId}
           </ThemedText>
           <ThemedText type="small">
-            {label("record")}: {item.id}
+            {view === "earnings" ? t("crewPersonalIncome.incomeCode") : label("record")}: {item.id}
           </ThemedText>
           {"netAmountMinor" in item && (
             <>

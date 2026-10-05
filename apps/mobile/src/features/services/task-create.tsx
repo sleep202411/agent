@@ -1,3 +1,4 @@
+import type { TaskPaymentTerms } from "@repo/shared/crew";
 import { TaskContractField } from "./task-contract-field";
 import { CrewSkillsField } from "./crew-skills-field";
 import { TaskCreationRequiredError } from "./task-creation-required";
@@ -180,6 +181,9 @@ function Editor({
   const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">(
     initial?.priority ?? "normal"
   );
+  const [paymentTerms, setPaymentTerms] = useState<TaskPaymentTerms | null>(
+    initial?.paymentTerms ?? "on_completion"
+  );
   const [reward, setReward] = useState(compensationText(initial?.rewardUsdMinor));
   const [share, setShare] = useState(compensationText(initial?.profitShareBps));
   const [estimate, setEstimate] = useState(
@@ -218,6 +222,7 @@ function Editor({
       priority,
       taskKind,
       estimatePoints: parsePlanningNumber(estimate, 1_000_000),
+      paymentTerms,
       rewardUsdMinor: parseCompensation(reward, 100_000_000_000),
       profitShareBps: parseCompensation(share, 10_000),
       revisionLimit: parsePlanningNumber(revisionLimit, 100),
@@ -397,6 +402,8 @@ function Editor({
         onBlockersChange={setBlockers}
       />
       <TaskCompensationFields
+        paymentTerms={paymentTerms}
+        onPaymentTerms={setPaymentTerms}
         rewardRequired
         reward={reward}
         share={share}

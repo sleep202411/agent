@@ -44,8 +44,8 @@ vi.mock("react-native", () => ({
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
 vi.mock("./my-agreements", () => ({ MyAgreements: () => <span>agreement inbox</span> }));
-vi.mock("./task-contract", () => ({
-  TaskContract: ({ assetId }: { assetId: string }) => <span>contract:{assetId}</span>,
+vi.mock("./contract-file-row", () => ({
+  ContractFileRow: ({ file }: { file: { id: string } }) => <span>contract:{file.id}</span>,
 }));
 const task = {
   id: id(1),
@@ -60,7 +60,17 @@ const task = {
   canSubmit: false,
   canReview: false,
   deadlineRisk: null,
-  contractAssetNodeId: id(3),
+  archived: false,
+  files: [
+    {
+      id: id(3),
+      name: "Original",
+      attachedAt: null,
+      sizeBytes: null,
+      contentType: null,
+      available: true,
+    },
+  ],
 };
 const page = {
   items: [task],
@@ -97,9 +107,8 @@ it("loads only contracts after switching from agreements and preserves paginatio
   await click("myContracts.files");
   expect(host.textContent).toContain(`contract:${id(3)}`);
   expect(h.get.mock.calls[0][1].params).toMatchObject({
-    hasContract: "true",
-    scope: "all",
-    status: "all",
+    lifecycle: "all",
+    limit: 20,
   });
   h.get.mockResolvedValue({ ...page, items: [] });
   await click("crewFinance.more");
@@ -131,4 +140,30 @@ it("keeps the section but reloads after backgrounding; clears changed accounts",
   h.generation = 2;
   await mount();
   expect(host.textContent).toBe("");
+});
+
+it("continues through ACL-empty pages and filters archived retained files", async () => {
+  h.get.mockResolvedValueOnce({ items: [], nextCursor: id(1) });
+  await mount();
+  await click("myContracts.files");
+  expect(host.textContent).not.toContain("myContracts.empty");
+  await click("crewFinance.more");
+  expect(host.textContent).toContain("contract:");
+  h.get.mockResolvedValue({ items: [{ ...task, archived: true }], nextCursor: null });
+  await click("taskContractFiles.archived");
+  expect(h.get.mock.calls.at(-1)![1].params).toEqual({ lifecycle: "archived", limit: 20 });
+  expect(host.textContent).toContain("contract:");
+});
+it("recovers an inaccessible cursor from the first page and rejects cycles", async () => {
+  h.get.mockResolvedValueOnce({ ...page, nextCursor: id(1) });
+  await mount();
+  await click("myContracts.files");
+  h.get.mockRejectedValueOnce(Object.assign(Error("Cursor unavailable"), { status: 404 }));
+  await click("crewFinance.more");
+  expect(host.textContent).not.toContain("contract:");
+  h.get.mockResolvedValue({ ...page, nextCursor: id(1) });
+  await click("common.retry");
+  expect(h.get.mock.calls.at(-1)![1].params.cursor).toBeUndefined();
+  await click("crewFinance.more");
+  expect(host.textContent).toContain("pagination did not advance");
 });

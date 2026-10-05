@@ -178,13 +178,21 @@ function StudioCard({ studio }: { studio: StudioPage["items"][number] }) {
       )}
       {studio.remote && <ThemedText>{t("studioDiscovery.remote")}</ThemedText>}
       {studio.openToWork && <ThemedText>{t("studioDiscovery.available")}</ThemedText>}
-      <ThemedText>
-        {t("studioDiscovery.services").replace("{count}", String(studio.matchingServiceCount))}
-      </ThemedText>
+      {studio.serviceCount > 0 && (
+        <ThemedText>
+          {t("studioDiscovery.services").replace("{count}", String(studio.matchingServiceCount))}
+        </ThemedText>
+      )}
       <Action
-        label={t("studioDiscovery.viewStudio")}
+        label={t(
+          studio.serviceCount > 0 ? "studioDiscovery.viewStudio" : "studioDiscovery.viewCreator"
+        )}
         onPress={() =>
-          router.push(toHref(`/creator/${encodeURIComponent(studio.id)}?section=services`))
+          router.push(
+            toHref(
+              `/creator/${encodeURIComponent(studio.id)}${studio.serviceCount > 0 ? "?section=services" : ""}`
+            )
+          )
         }
       />
     </View>
@@ -307,6 +315,33 @@ function StudioSearchContent({ initial }: { initial: ReturnType<typeof readStudi
                     onSelect={(id) => router.push(toHref(`/creator/${encodeURIComponent(id)}`))}
                   />
                 )}
+              </View>
+            )}
+            {state.page && !state.error && (
+              <View style={{ gap: 8, padding: 12, backgroundColor: theme.backgroundElement }}>
+                <ThemedText type="smallBold">FizzDragon Island</ThemedText>
+                <ThemedText>{t("studioDiscovery.islandDescription")}</ThemedText>
+                <ThemedText>
+                  {t("studioDiscovery.islandCount").replace(
+                    "{count}",
+                    String(state.page.island.matchedCreatorCount)
+                  )}
+                </ThemedText>
+                <Action
+                  label={t(
+                    query.islandOnly
+                      ? "studioDiscovery.islandLeave"
+                      : "studioDiscovery.islandBrowse"
+                  )}
+                  disabled={!active}
+                  onPress={() =>
+                    setSearch({
+                      ...query,
+                      islandOnly: query.islandOnly ? undefined : true,
+                      basedIn: null,
+                    })
+                  }
+                />
               </View>
             )}
             <DiscoveryAssistantPanel
@@ -451,7 +486,11 @@ function StudioSearchContent({ initial }: { initial: ReturnType<typeof readStudi
             )}
             {dirty && <ThemedText>{t("studioDiscovery.applyHint")}</ThemedText>}
             <Action
-              label={t("studioDiscovery.search")}
+              label={t(
+                draft.location === "island"
+                  ? "studioDiscovery.searchCreators"
+                  : "studioDiscovery.search"
+              )}
               onPress={apply}
               disabled={!active || !parsed.success || initial.invalid}
             />
@@ -487,14 +526,18 @@ function StudioSearchContent({ initial }: { initial: ReturnType<typeof readStudi
             )}
             {state.page && !state.error && (
               <ThemedText>
-                {t("studioDiscovery.count").replace("{count}", String(state.page.matchedCount))}
+                {t(
+                  query.islandOnly ? "studioDiscovery.islandCount" : "studioDiscovery.count"
+                ).replace("{count}", String(state.page.matchedCount))}
               </ThemedText>
             )}
           </View>
         }
         ListEmptyComponent={
           validLink && !state.loading && !state.error ? (
-            <ThemedText>{t("studioDiscovery.empty")}</ThemedText>
+            <ThemedText>
+              {t(query.islandOnly ? "studioDiscovery.islandEmpty" : "studioDiscovery.empty")}
+            </ThemedText>
           ) : null
         }
         ListFooterComponent={

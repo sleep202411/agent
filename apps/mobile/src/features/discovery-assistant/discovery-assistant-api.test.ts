@@ -5,6 +5,7 @@ import {
   checkDiscovery,
   clearDiscovery,
   discoveryPending,
+  recoverDiscoveryStorage,
   retryDiscovery,
   sendDiscovery,
   type AssistantScope,
@@ -16,6 +17,7 @@ const h = vi.hoisted(() => ({
   post: vi.fn(),
   generation: 1,
   failWrite: false,
+  failRead: false,
   records: new Map<string, string>(),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -33,7 +35,10 @@ vi.mock("@/lib/api-client", () => ({
 }));
 vi.mock("@/lib/durable-record", () => ({
   durableRecord: (ns: string, user: string, id: string) => ({
-    read: () => h.records.get([ns, user, id].join(":")) ?? null,
+    read: () => {
+      if (h.failRead) throw Error("Read unavailable");
+      return h.records.get([ns, user, id].join(":")) ?? null;
+    },
     write: (v: string) => {
       if (h.failWrite) throw Error("Storage unavailable");
       h.records.set([ns, user, id].join(":"), v);
@@ -91,6 +96,7 @@ beforeEach(() => {
   h.records.clear();
   h.generation = 1;
   h.failWrite = false;
+  h.failRead = false;
   h.post.mockResolvedValue(success);
   h.get.mockResolvedValue(success);
 });
@@ -114,6 +120,7 @@ it("never sends without durable storage or a valid bounded conversation", async 
   h.failWrite = true;
   await expect(sendDiscovery(scope, request, signal())).rejects.toThrow("Storage");
   h.failWrite = false;
+  h.failRead = false;
   for (const bad of [
     { ...request, locale: "zh-CN" },
     {
@@ -230,4 +237,30 @@ it("isolates account/locale/mode and ignores aborts, late sessions and changed s
   await expect(checkDiscovery(scope, request, signal())).rejects.toThrow(
     "saved discovery request changed"
   );
+});
+
+it("recovery preserves readable pending requests and does not treat access errors as corrupt data", () => {
+  discoveryPending(scope).save(request);
+  const before = [...h.records.entries()];
+  h.failRead = true;
+  expect(() => recoverDiscoveryStorage(scope)).toThrow("Read unavailable");
+  expect([...h.records.entries()]).toEqual(before);
+  h.failRead = false;
+  expect(recoverDiscoveryStorage(scope)).toEqual(request);
+  expect([...h.records.entries()]).toEqual(before);
+  h.generation++;
+  expect(() => recoverDiscoveryStorage(scope)).toThrow("expired");
+  expect([...h.records.entries()]).toEqual(before);
+});
+it("recovery remains failed when the empty replacement cannot be persisted", () => {
+  discoveryPending(scope).save(request);
+  const key = [...h.records.keys()][0]!;
+  h.records.set(key, "bad json");
+  h.failWrite = true;
+  expect(() => recoverDiscoveryStorage(scope)).toThrow("Storage unavailable");
+  expect(h.records.get(key)).toBe("bad json");
+  h.failWrite = false;
+  expect(recoverDiscoveryStorage(scope)).toBeNull();
+  expect(discoveryPending(scope).read()).toBeNull();
+  expect(h.post).not.toHaveBeenCalled();
 });

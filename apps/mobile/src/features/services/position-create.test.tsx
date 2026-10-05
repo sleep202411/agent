@@ -506,3 +506,19 @@ it("allows explicitly restoring an emptied task brief without overwriting text",
     (host.querySelector('[aria-label="positionCreate.description"]') as HTMLTextAreaElement).value
   ).toBe("Task brief");
 });
+
+it("imports task payment terms and includes them in the advertised opening", async () => {
+  h.source.mockResolvedValue({
+    description: "Task brief",
+    requiredSkills: [],
+    rewardUsdMinor: null,
+    dueAt: null,
+    paymentTerms: "monthly",
+  });
+  await render();
+  await click("positionCreate.task");
+  await click("Pick true");
+  expect(button("● taskPaymentTerms.monthly")).toBeDefined();
+  await click("positionCreate.publish");
+  expect(h.post.mock.calls[0]![1].data.paymentTerms).toBe("monthly");
+});

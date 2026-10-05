@@ -1,3 +1,4 @@
+import { TaskPaymentTermsField } from "./task-payment-terms-field";
 import { fetchTaskDetail, type TaskDetail } from "./task-detail-api";
 import { isPresetPosition } from "@repo/shared/crew";
 import { CrewSkillsField } from "./crew-skills-field";
@@ -82,6 +83,9 @@ export function PositionCreate(props: {
     [visibility, setVisibility] = useState<"public" | "private">(
       initial?.recruitmentVisibility ?? "public"
     );
+  const [paymentTerms, setPaymentTerms] = useState<NewPosition["paymentTerms"]>(
+    initial?.paymentTerms ?? null
+  );
   const [roleChosen, setRoleChosen] = useState(!!initial || !!props.initialPosition);
   const [source, setSource] = useState<{ id: string; data?: TaskDetail; error?: string }>();
   const [sourceRevision, setSourceRevision] = useState(0);
@@ -151,6 +155,7 @@ export function PositionCreate(props: {
   ) {
     const data = taskSource.data;
     setImportedTask(task!.id);
+    setPaymentTerms(data.paymentTerms ?? null);
     if (!roleChosen && data.positionRole && isPresetPosition(data.positionRole)) {
       setRole(data.positionRole);
       setRoleChosen(true);
@@ -266,6 +271,7 @@ export function PositionCreate(props: {
         employmentType: employment,
         experienceLevel: experience,
         requiredSkills: skills,
+        paymentTerms,
         salary: {
           period,
           currency,
@@ -393,6 +399,11 @@ export function PositionCreate(props: {
           {choice("positionCreate.experience", experience, EXPERIENCE_LEVELS, setExperience, (v) =>
             t(`positionCreate.${v}`)
           )}
+          <TaskPaymentTermsField
+            value={paymentTerms ?? null}
+            onChange={setPaymentTerms}
+            locked={locked}
+          />
           {choice("positionCreate.currency", currency, positionCurrencies, setCurrency, (v) => v)}
           {choice("positionCreate.period", period, SALARY_PERIODS, setPeriod, (v) =>
             t(`crewTerms.${v}`)

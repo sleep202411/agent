@@ -1,6 +1,7 @@
+import { caseCategories, caseResolutions } from "./case-classification";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
-import { uuid } from "expo-modules-core";
+import { useInitialCaseEvidence } from "./use-initial-case-evidence";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -16,7 +17,13 @@ import {
   type TaskCaseCommand,
   type TaskCaseContext,
 } from "./task-case-api";
-type Props = { crewId: string; taskId: string; userId: string; generation: number };
+type Props = {
+  crewId: string;
+  taskId: string;
+  userId: string;
+  generation: number;
+  initiallyOpen?: boolean;
+};
 export function TaskCaseCreate(props: Props) {
   const active = useScreenActive();
   return active && getAuthGeneration() === props.generation ? (
@@ -46,12 +53,19 @@ function Button({
 function Session(props: Props) {
   const t = useTranslations(),
     router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(props.initiallyOpen ?? false);
+  const [visited, setVisited] = useState(props.initiallyOpen ?? false);
   return (
     <View style={{ gap: 8 }}>
-      <Button label={t("taskCase.open")} onPress={() => setOpen((v) => !v)} />
-      {open && (
-        <>
+      <Button
+        label={t("taskCase.open")}
+        onPress={() => {
+          setVisited(true);
+          setOpen((v) => !v);
+        }}
+      />
+      {visited && (
+        <View style={{ display: open ? "flex" : "none" }}>
           <Button
             label={t("feedbackHistory.cases")}
             onPress={() => router.push("/private-cases")}
@@ -60,7 +74,7 @@ function Session(props: Props) {
             {...props}
             onCreated={(caseId) => router.push({ pathname: "/private-cases", params: { caseId } })}
           />
-        </>
+        </View>
       )}
     </View>
   );
@@ -85,6 +99,10 @@ function Form({
   });
   const [pending, setPending] = useState<TaskCaseCommand | null>(initial.pending ?? null),
     [respondent, setRespondent] = useState(initial.pending?.respondentUserId ?? ""),
+    [category, setCategory] = useState<TaskCaseCommand["category"]>(initial.pending?.category),
+    [desiredResolution, setDesiredResolution] = useState<TaskCaseCommand["desiredResolution"]>(
+      initial.pending?.desiredResolution
+    ),
     [title, setTitle] = useState(initial.pending?.title ?? ""),
     [message, setMessage] = useState(initial.pending?.message ?? ""),
     [evidence, setEvidence] = useState(initial.pending?.submissionIds ?? []),
@@ -93,6 +111,12 @@ function Form({
     [loading, setLoading] = useState(true),
     [revision, setRevision] = useState(0),
     [saved, setSaved] = useState<string>();
+  const initialEvidence = useInitialCaseEvidence(
+    taskId,
+    userId,
+    generation,
+    initial.pending?.clientKey
+  );
   const controller = useRef<AbortController | null>(null);
   useEffect(() => {
     const c = new AbortController();
@@ -118,12 +142,17 @@ function Form({
   }, [crewId, taskId, generation, revision]);
   const eligible = context?.participants.includes(userId),
     candidates = context?.participants.filter((id) => id !== userId) ?? [],
-    locked = op.busy || !!pending || !!saved || !!initial.error;
+    locked = op.busy || initialEvidence.busy || !!pending || !!saved || !!initial.error;
   const valid =
     eligible &&
+    !!category &&
+    !initialEvidence.busy &&
+    !initialEvidence.unresolved &&
+    !initialEvidence.blocked &&
     candidates.includes(respondent) &&
     title.trim().length > 0 &&
     message.trim().length > 0 &&
+    message.trim().length <= 1000 &&
     evidence.every((id) => context?.submissions.some((s) => s.id === id));
   const submit = () => {
     const c = controller.current;
@@ -131,17 +160,21 @@ function Form({
     void op.run(
       async () => {
         const request = pending ?? {
-          clientKey: uuid.v4(),
+          clientKey: initialEvidence.caseId,
           respondentUserId: respondent,
           title,
           message,
           submissionIds: evidence,
+          category,
+          ...(initialEvidence.ids.length ? { attachmentIds: initialEvidence.ids } : {}),
+          ...(desiredResolution ? { desiredResolution } : {}),
         };
         outbox.save(request);
         setPending(request);
         setError("");
         try {
           const result = await openTaskCase(taskId, userId, generation, request, c.signal);
+          initialEvidence.clear();
           outbox.clear(request.clientKey);
           return result.id;
         } catch (e) {
@@ -205,6 +238,46 @@ function Form({
               {!pending && !candidates.length && (
                 <ThemedText>{t("taskCase.noRespondent")}</ThemedText>
               )}
+              <ThemedText>{t("crewTaskDispute.category")}</ThemedText>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {caseCategories.map((value) => (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: category === value }}
+                    disabled={locked}
+                    onPress={() => setCategory(value)}
+                    style={{ padding: 10 }}
+                  >
+                    <ThemedText>
+                      {category === value ? "● " : "○ "}
+                      {t(`crewTaskDispute.categories.${value}`)}
+                    </ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+              <ThemedText>{t("crewTaskDispute.desiredResolution")}</ThemedText>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {([undefined, ...caseResolutions] as const).map((value) => (
+                  <Pressable
+                    key={value ?? "none"}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: desiredResolution === value }}
+                    disabled={locked}
+                    onPress={() => setDesiredResolution(value)}
+                    style={{ padding: 10 }}
+                  >
+                    <ThemedText>
+                      {desiredResolution === value ? "● " : "○ "}
+                      {t(
+                        value
+                          ? `crewTaskDispute.resolutions.${value}`
+                          : "crewTaskDispute.noPreference"
+                      )}
+                    </ThemedText>
+                  </Pressable>
+                ))}
+              </View>
               <TextInput
                 accessibilityLabel={t("taskCase.subject")}
                 placeholder={t("taskCase.subject")}
@@ -223,7 +296,7 @@ function Form({
                 onChangeText={setMessage}
                 editable={!locked}
                 multiline
-                maxLength={4000}
+                maxLength={1000}
                 style={{ color: theme.text, padding: 12, minHeight: 72 }}
               />
               <ThemedText>{t("taskCase.evidence")}</ThemedText>
@@ -257,6 +330,52 @@ function Form({
                       </ThemedText>
                     </Pressable>
                   ))}
+              <ThemedText>{t("crewTaskDispute.initialEvidence")}</ThemedText>
+              <ThemedText>{t("crewTaskDispute.initialEvidenceHint")}</ThemedText>
+              {!!initialEvidence.error && (
+                <ThemedText accessibilityRole="alert">{initialEvidence.error}</ThemedText>
+              )}
+              {initialEvidence.items.map((item) => (
+                <View key={item.id} style={{ gap: 4 }}>
+                  <ThemedText>
+                    {item.name} ·{" "}
+                    {t(
+                      item.ready
+                        ? "crewTaskDispute.evidenceReady"
+                        : "crewTaskDispute.evidencePending"
+                    )}
+                  </ThemedText>
+                  {!item.ready && (
+                    <>
+                      <Button
+                        label={t("common.retry")}
+                        disabled={locked}
+                        onPress={() => void initialEvidence.retry(item.id)}
+                      />
+                      <Button
+                        label={t("crewEvidence.confirmStored")}
+                        disabled={locked}
+                        onPress={() => void initialEvidence.retry(item.id, true)}
+                      />
+                    </>
+                  )}
+                  <Button
+                    label={t("crewTaskDispute.removeEvidence")}
+                    disabled={locked}
+                    onPress={() => initialEvidence.remove(item.id)}
+                  />
+                </View>
+              ))}
+              <Button
+                label={t("crewTaskDispute.initialEvidence")}
+                disabled={
+                  locked ||
+                  initialEvidence.blocked ||
+                  initialEvidence.unresolved ||
+                  initialEvidence.items.length >= 5
+                }
+                onPress={() => void initialEvidence.add()}
+              />
               {pending && <ThemedText>{t("feedbackHistory.retryHelp")}</ThemedText>}
               <Button
                 label={t(pending ? "feedbackHistory.retry" : "feedbackHistory.submit")}

@@ -1,7 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import Script from "./script";
+import Script from "@/app/agent/[projectId]/script";
 const h = vi.hoisted(() => ({
   push: vi.fn(),
   refresh: vi.fn(),

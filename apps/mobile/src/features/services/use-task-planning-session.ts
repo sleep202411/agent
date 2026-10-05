@@ -17,6 +17,7 @@ function initialDraft(snapshot: PlanningSnapshot) {
     contractAssetNodeId: snapshot.contractAssetNodeId ?? null,
     requiredSkills: snapshot.requiredSkills ?? [],
     positionRole: snapshot.positionRole ?? "",
+    paymentTerms: snapshot.paymentTerms ?? null,
     reward: compensationText(snapshot.rewardUsdMinor),
     share: compensationText(snapshot.profitShareBps),
     estimate: snapshot.estimatePoints == null ? "" : String(snapshot.estimatePoints),
@@ -33,6 +34,7 @@ export function parsePlanningDraft(draft: Draft) {
       positionRole: draft.positionRole.trim() || null,
       estimatePoints: parsePlanningNumber(draft.estimate, 1_000_000),
       revisionLimit: parsePlanningNumber(draft.revisionLimit, 100),
+      paymentTerms: draft.paymentTerms,
       rewardUsdMinor: parseCompensation(draft.reward, 100_000_000_000),
       profitShareBps: parseCompensation(draft.share, 10_000),
     });
@@ -65,6 +67,7 @@ export function useTaskPlanningSession(taskId: string, generation: number, onRef
         | "contractAssetNodeId"
         | "requiredSkills"
         | "positionRole"
+        | "paymentTerms"
         | "reward"
         | "share"
         | "estimate"
@@ -89,7 +92,13 @@ export function useTaskPlanningSession(taskId: string, generation: number, onRef
         snapshot === draft.attemptedAt
       )
         return;
-      setDraft({ ...draft, snapshot, attemptedAt: undefined, error: undefined });
+      setDraft({
+        ...draft,
+        snapshot,
+        contractAssetNodeId: snapshot.contractAssetNodeId ?? draft.contractAssetNodeId,
+        attemptedAt: undefined,
+        error: undefined,
+      });
     },
     cancel() {
       if (!current() || op.busy) return;

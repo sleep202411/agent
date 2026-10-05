@@ -424,6 +424,19 @@ module.exports = ({ config }) => {
       "expo-file-system",
       "expo-image",
       "expo-localization",
+      [
+        "expo-location",
+        {
+          locationWhenInUsePermission:
+            "Allow FizzDragon to suggest your city when you choose to use your device location.",
+          motionUsagePermission: false,
+          locationAlwaysPermission: false,
+          locationAlwaysAndWhenInUsePermission: false,
+          isIosBackgroundLocationEnabled: false,
+          isAndroidBackgroundLocationEnabled: false,
+          isAndroidForegroundServiceEnabled: false,
+        },
+      ],
       "expo-secure-store",
       "expo-sharing",
       [

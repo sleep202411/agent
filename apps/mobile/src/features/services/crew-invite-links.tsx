@@ -17,10 +17,19 @@ import {
   type CrewLinkAttempt,
   type CrewLinkInput,
 } from "./crew-invite-links-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  crewId: string;
+  userId: string;
+  generation: number;
+  task?: { id: string; version: number; title: string };
+  onClose: () => void;
+};
 export function CrewInviteLinks(props: Props) {
   return props.generation === getAuthGeneration() ? (
-    <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
+    <Session
+      key={`${props.crewId}:${props.userId}:${props.generation}:${props.task?.id ?? ""}:${props.task?.version ?? ""}`}
+      {...props}
+    />
   ) : null;
 }
 function Session(props: Props) {
@@ -49,7 +58,9 @@ function Session(props: Props) {
     props.generation === getAuthGeneration();
   const sync = () => {
     try {
-      setPending(crewLinkPending(props.crewId, props.userId, props.generation).read());
+      setPending(
+        crewLinkPending(props.crewId, props.userId, props.generation, props.task?.id).read()
+      );
       setStorageError(false);
     } catch (e) {
       setStorageError(true);
@@ -79,7 +90,13 @@ function Session(props: Props) {
     setReview(undefined);
     setRevoking(undefined);
     try {
-      const data = await fetchCrewLinks(props.crewId, props.userId, props.generation, signal);
+      const data = await fetchCrewLinks(
+        props.crewId,
+        props.userId,
+        props.generation,
+        signal,
+        props.task?.id
+      );
       if (!valid() || signal.aborted) return;
       setPage(data);
       if (!data.access.policies) setPolicy("standard");
@@ -153,7 +170,11 @@ function Session(props: Props) {
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       <ThemedText type="smallBold">{t("crewLinks.title")}</ThemedText>
-      <ThemedText type="small">{t("crewLinks.help")}</ThemedText>
+      <ThemedText type="small">
+        {props.task
+          ? t("workspace.taskInviteIntro").replace("{task}", props.task.title)
+          : t("crewLinks.help")}
+      </ThemedText>
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {(pending || storageError) && (
         <View style={{ gap: 8 }}>
@@ -180,7 +201,12 @@ function Session(props: Props) {
                 return;
               }
               void run(async () => {
-                crewLinkPending(props.crewId, props.userId, props.generation).clear();
+                crewLinkPending(
+                  props.crewId,
+                  props.userId,
+                  props.generation,
+                  props.task?.id
+                ).clear();
                 sync();
                 setClearArmed(false);
                 setReview(undefined);
@@ -206,7 +232,8 @@ function Session(props: Props) {
                   props.crewId,
                   props.userId,
                   props.generation,
-                  signal
+                  signal,
+                  props.task?.id
                 );
                 if (!valid() || signal.aborted) return;
                 setPage(data);
@@ -232,21 +259,23 @@ function Session(props: Props) {
       )}
       {page && !pending && !storageError && !fresh && (
         <>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {(["member", "community"] as const).map((v) => (
-              <Action
-                key={v}
-                label={`${kind === v ? "✓ " : ""}${t(v === "member" ? "crewJoin.crew" : "crewJoin.crew_community")}`}
-                disabled={busy}
-                onPress={() => {
-                  setKind(v);
-                  setPolicy("standard");
-                  change();
-                }}
-              />
-            ))}
-          </View>
-          {kind === "member" && page.access.policies && (
+          {!props.task && (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {(["member", "community"] as const).map((v) => (
+                <Action
+                  key={v}
+                  label={`${kind === v ? "✓ " : ""}${t(v === "member" ? "crewJoin.crew" : "crewJoin.crew_community")}`}
+                  disabled={busy}
+                  onPress={() => {
+                    setKind(v);
+                    setPolicy("standard");
+                    change();
+                  }}
+                />
+              ))}
+            </View>
+          )}
+          {!props.task && kind === "member" && page.access.policies && (
             <View style={{ gap: 8 }}>
               {(["standard", "finance", "admin"] as const).map((v) => (
                 <Action
@@ -270,16 +299,18 @@ function Session(props: Props) {
               change();
             }}
           />
-          <Field
-            label={t("crewLinks.maxUses")}
-            value={uses}
-            disabled={busy}
-            onChange={(v) => {
-              setUses(v);
-              change();
-            }}
-          />
-          <ThemedText type="small">{t("crewLinks.bounds")}</ThemedText>
+          {!props.task && (
+            <Field
+              label={t("crewLinks.maxUses")}
+              value={uses}
+              disabled={busy}
+              onChange={(v) => {
+                setUses(v);
+                change();
+              }}
+            />
+          )}
+          {!props.task && <ThemedText type="small">{t("crewLinks.bounds")}</ThemedText>}
           <Action
             label={t("crewLinks.review")}
             disabled={busy}
@@ -287,10 +318,14 @@ function Session(props: Props) {
               try {
                 setReview(
                   crewLinkInput.parse({
-                    kind,
-                    policyKeys: kind === "member" && policy !== "standard" ? [policy] : [],
+                    kind: props.task ? "member" : kind,
+                    policyKeys:
+                      !props.task && kind === "member" && policy !== "standard" ? [policy] : [],
+                    ...(props.task
+                      ? { taskId: props.task.id, taskVersion: props.task.version }
+                      : {}),
                     expiresInDays: number(days),
-                    maxUses: number(uses),
+                    maxUses: props.task ? 1 : number(uses),
                   })
                 );
                 setError(undefined);

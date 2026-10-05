@@ -22,6 +22,7 @@ export const feedbackSchema = z.object({
     z.object({ direction: z.literal("manager"), managementAbility: score }),
   ]),
   comment: z.string(),
+  publicOnProfile: z.boolean().optional(),
   response: z.string().nullable(),
   createdAt: z.string().datetime({ offset: true }),
   respondedAt: z.string().datetime({ offset: true }).nullable(),

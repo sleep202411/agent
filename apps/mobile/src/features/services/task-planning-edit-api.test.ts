@@ -288,9 +288,9 @@ it("updates, clears and verifies required skills without order-only changes", as
   }
 });
 
-it("replaces and removes contracts while verifying the exact linked file", async () => {
-  const current = { ...snapshot, contractAssetNodeId: id };
-  for (const contractAssetNodeId of [other, null]) {
+it("attaches the first contract while verifying the exact linked file", async () => {
+  const current = { ...snapshot, contractAssetNodeId: null };
+  for (const contractAssetNodeId of [id, other]) {
     const change = planningChanges(current, planningDraft(current), current.taskKind, {
       estimatePoints: current.estimatePoints,
       revisionLimit: current.revisionLimit,
@@ -302,4 +302,43 @@ it("replaces and removes contracts while verifying the exact linked file", async
     vi.mocked(api.patch).mockResolvedValue({ ...current, version: 2 });
     await expect(updateTaskPlanning(current, change.data!)).rejects.toThrow("acknowledgement");
   }
+});
+
+it("retains original contracts while permitting the first attachment", async () => {
+  const values = { estimatePoints: 8, revisionLimit: null };
+  const attached = { ...snapshot, contractAssetNodeId: id };
+  for (const replacement of [null, other]) {
+    expect(
+      planningChanges(attached, planningDraft(attached), attached.taskKind, {
+        ...values,
+        contractAssetNodeId: replacement,
+      }).success
+    ).toBe(false);
+    await expect(
+      updateTaskPlanning(attached, { expectedVersion: 1, contractAssetNodeId: replacement })
+    ).rejects.toThrow("cannot be replaced");
+  }
+  expect(api.patch).not.toHaveBeenCalled();
+  expect(
+    planningChanges(snapshot, planningDraft(snapshot), snapshot.taskKind, {
+      ...values,
+      contractAssetNodeId: id,
+    }).success
+  ).toBe(true);
+});
+
+it("edits and clears payment terms without changing other compensation", async () => {
+  const task = { ...snapshot, paymentTerms: "monthly" as const };
+  const changed = planningChanges(task, planningDraft(task), task.taskKind, {
+    estimatePoints: task.estimatePoints,
+    revisionLimit: task.revisionLimit,
+    paymentTerms: "half_upfront",
+  });
+  expect(changed.data).toEqual({ expectedVersion: 1, paymentTerms: "half_upfront" });
+  vi.mocked(api.patch).mockResolvedValue({ ...task, version: 2, paymentTerms: "half_upfront" });
+  await updateTaskPlanning(task, changed.data!);
+  vi.mocked(api.patch).mockResolvedValue({ ...task, version: 2, paymentTerms: null });
+  await updateTaskPlanning(task, { expectedVersion: 1, paymentTerms: null });
+  vi.mocked(api.patch).mockResolvedValue({ ...task, version: 2 });
+  await expect(updateTaskPlanning(task, changed.data!)).rejects.toThrow("acknowledgement");
 });

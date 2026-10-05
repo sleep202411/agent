@@ -92,3 +92,67 @@ it("reads payout allocations, separate settlement balances and gross/net groups"
     cursor: id,
   });
 });
+
+it("passes official income filters and preserves exact monthly/source totals and provenance", async () => {
+  const distribution = {
+    id,
+    revenueReference: "Distribution 2026-10",
+    confirmedAt: "2026-10-01T00:00:00Z",
+    contract: { id, filename: "Signed contract.pdf" },
+    shareBps: 3333,
+  };
+  const source = { sourceType: "task_reward", count: 1, amountMinor: row.amountMinor };
+  vi.mocked(api.get).mockResolvedValue({
+    ...page,
+    items: [
+      { ...row, crew: { id: "crew", name: "Animation Crew" }, revenueDistribution: distribution },
+    ],
+    summary: {
+      ...page.summary,
+      postedThisMonthAmountMinor: row.amountMinor,
+      postedBySource: [source],
+    },
+  });
+  const filters = {
+    status: "posted" as const,
+    sourceType: "task_reward" as const,
+    recordedFrom: "2026-10-01",
+    recordedThrough: "2026-10-06",
+  };
+  const result = await fetchCrewIncome("user", "USD", "earnings", "", null, signal, filters);
+  expect(api.get).toHaveBeenLastCalledWith(
+    "/me/crew-earnings",
+    expect.objectContaining({ params: { currency: "USD", limit: 50, ...filters } })
+  );
+  expect(result.summary[0]).toEqual({
+    key: "crewPersonalIncome.postedThisMonth",
+    amount: row.amountMinor,
+  });
+  expect(result.postedBySource).toEqual([source]);
+  expect(result.items[0]).toMatchObject({
+    revenueDistribution: distribution,
+    crew: { name: "Animation Crew" },
+  });
+});
+it.each([
+  { recordedFrom: "2026-02-30" },
+  { recordedThrough: "tomorrow" },
+  { recordedFrom: "2026-10-07", recordedThrough: "2026-10-05" },
+])("rejects invalid date filters before fetching %j", async (filters) => {
+  await expect(
+    fetchCrewIncome("user", "USD", "earnings", "", null, signal, filters)
+  ).rejects.toThrow();
+  expect(api.get).not.toHaveBeenCalled();
+});
+it("rejects responses outside the selected status/source/date scope", async () => {
+  vi.mocked(api.get).mockResolvedValue(page);
+  for (const filters of [
+    { status: "pending" as const },
+    { sourceType: "revenue_share" as const },
+    { recordedFrom: "2026-10-02" },
+    { recordedThrough: "2026-09-30" },
+  ])
+    await expect(
+      fetchCrewIncome("user", "USD", "earnings", "", null, signal, filters)
+    ).rejects.toThrow("mismatch");
+});

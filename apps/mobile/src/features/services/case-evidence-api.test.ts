@@ -139,3 +139,11 @@ it("rejects duplicate list entries, stalled cursors and account changes", async 
   });
   await expect(fetchCaseEvidence(id(1), 1, null, signal())).rejects.toThrow("expired");
 });
+
+it("uploads initial private evidence under the task and future case, then confirms by identity", async () => {
+  await uploadCaseEvidence(id(1), upload(), 1, signal(), id(3));
+  expect(h.post.mock.calls.map((call) => call[0])).toEqual([
+    `/crew-tasks/${id(3)}/dispute-drafts/${id(1)}/attachments/${id(2)}`,
+    `/crew-tasks/${id(3)}/dispute-drafts/${id(1)}/attachments/${id(2)}/confirm`,
+  ]);
+});

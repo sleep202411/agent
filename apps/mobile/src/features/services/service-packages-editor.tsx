@@ -1,3 +1,4 @@
+import { useServiceEditorExit } from "./service-editor-exit-state";
 import { serviceFieldStyle } from "./service-field-style";
 import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useState } from "react";
@@ -78,6 +79,10 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
   const [rows, setRows] = useServiceEditorState("packages:rows", initial),
     [open, setOpen] = useServiceEditorState("packages:open", false),
     [error, setError] = useState<string>();
+  const [baseline, setBaseline] = useServiceEditorState("packages:baseline", () =>
+    JSON.stringify(initial())
+  );
+  useServiceEditorExit("packages", open && JSON.stringify(rows) !== baseline, op.busy);
   const parsed = packagesSchema.safeParse({
     expectedVersion: draftVersion,
     packages: rows
@@ -189,6 +194,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
         !parsed.success || emptyListed
       )}
       {button(t("myServices.cancel"), () => {
+        setBaseline(JSON.stringify(initial()));
         setDraftVersion(service.version);
         setRows(initial());
         setError(undefined);

@@ -9,7 +9,8 @@ import { EmptyState, ListFooter, PosterImage, ScreenHeader, Skeleton } from "@/c
 import { MaxContentWidth, Spacing } from "@/constants/theme";
 import { loadGameCatalogue, type GameCatalogueRow } from "@/data/game-catalogue";
 import { toHref } from "@/lib/navigation";
-import { navigateToPlay } from "@/features/experience-player";
+import { FilmStore } from "@/features/film-store/film-store";
+import type { ExperienceGameSummary } from "@/data/interactive-film-api";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
@@ -18,6 +19,7 @@ export default function GamesScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const [selectedFilm, setSelectedFilm] = useState<ExperienceGameSummary | null>(null);
   const [games, setGames] = useState<GameCatalogueRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -167,7 +169,7 @@ export default function GamesScreen() {
               onPress={() =>
                 item.kind === "text"
                   ? router.push(toHref(`/play/text-game/${item.gameId}`))
-                  : navigateToPlay(router, item.film)
+                  : setSelectedFilm(item.film)
               }
               style={({ pressed }) => [
                 styles.card,
@@ -198,6 +200,7 @@ export default function GamesScreen() {
           )}
         />
       )}
+      {selectedFilm && <FilmStore game={selectedFilm} close={() => setSelectedFilm(null)} />}
     </ThemedView>
   );
 }

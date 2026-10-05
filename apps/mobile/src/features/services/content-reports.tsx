@@ -1,3 +1,4 @@
+import { PurchaseReportCreate } from "./purchase-report-create";
 import { ContentReportCreate } from "./content-report-create";
 import { useEffect, useRef, useState } from "react";
 import { useIsFocused } from "expo-router";
@@ -26,15 +27,16 @@ function Session(props: Props) {
   const active = useScreenActive();
   const [view, setView] = useState<ReportView>("initiated");
   const [revision, setRevision] = useState(0);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<"content" | "purchase" | null>(null);
+  const Create = creating === "purchase" ? PurchaseReportCreate : ContentReportCreate;
   if (creating)
     return (
-      <ContentReportCreate
+      <Create
         {...props}
         active={active}
-        onClose={() => setCreating(false)}
+        onClose={() => setCreating(null)}
         onSaved={() => {
-          setCreating(false);
+          setCreating(null);
           setView("initiated");
           setRevision((v) => v + 1);
         }}
@@ -46,9 +48,16 @@ function Session(props: Props) {
       <Pressable
         accessibilityRole="button"
         style={{ padding: 16 }}
-        onPress={() => setCreating(true)}
+        onPress={() => setCreating("content")}
       >
         <ThemedText>{t("contentReports.newReport")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 16 }}
+        onPress={() => setCreating("purchase")}
+      >
+        <ThemedText>{t("contentReports.newPurchaseReport")}</ThemedText>
       </Pressable>
       <View
         accessibilityRole="tablist"
@@ -138,6 +147,11 @@ function Listing(props: Props & { view: ReportView }) {
       {rows.map((row) => (
         <View key={row.id} style={{ paddingVertical: 12, gap: 6 }}>
           <ThemedText type="smallBold">{t(`contentReports.reason.${row.reason}`)}</ThemedText>
+          {row.purchaseOrderId && (
+            <ThemedText>
+              {t("contentReports.purchaseReference").replace("{id}", row.purchaseOrderId)}
+            </ThemedText>
+          )}
           <ThemedText>
             {t(`contentReports.status.${row.status}`)} ·{" "}
             {new Date(row.createdAt).toLocaleDateString(locale)}

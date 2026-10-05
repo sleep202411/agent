@@ -152,3 +152,13 @@ it("accepts the complete official 10,000-character public brief without truncati
   );
   expect(newPosition.safeParse({ ...input, description: "x".repeat(10001) }).success).toBe(false);
 });
+
+it("preserves selected payment terms and rejects a different receipt", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...result, paymentTerms: "monthly" });
+  await expect(
+    createPosition("crew", "manager", 1, { ...input, paymentTerms: "monthly" })
+  ).resolves.toMatchObject({ paymentTerms: "monthly" });
+  await expect(
+    createPosition("crew", "manager", 1, { ...input, paymentTerms: "half_upfront" })
+  ).rejects.toThrow("receipt mismatch");
+});

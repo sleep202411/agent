@@ -1,3 +1,4 @@
+import { releaseLinks } from "./release-link-schema";
 import { z } from "zod";
 import { api, ApiRequestError } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -8,29 +9,7 @@ export const governanceKinds = ["disclosures", "links", "crew"] as const;
 export type GovernanceKind = (typeof governanceKinds)[number];
 const version = z.number().int().nonnegative();
 const crewId = z.string().trim().min(1).max(100);
-export const releaseLink = z.object({
-  label: z.string().trim().min(1).max(80),
-  url: z
-    .string()
-    .trim()
-    .url()
-    .max(2000)
-    .refine((value) => {
-      try {
-        const url = new URL(value);
-        return url.protocol === "https:" && !url.username && !url.password;
-      } catch {
-        return false;
-      }
-    }, "Use an HTTPS link without embedded credentials."),
-});
-export const releaseLinks = z
-  .array(releaseLink)
-  .max(20)
-  .refine(
-    (items) => new Set(items.map((item) => item.url)).size === items.length,
-    "Remove duplicate release links."
-  );
+export { releaseLink, releaseLinks } from "./release-link-schema";
 const disclosureFields = z.object({
   copyrightOwner: z
     .string()

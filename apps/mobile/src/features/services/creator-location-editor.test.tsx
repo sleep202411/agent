@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CreatorLocationEditor } from "./creator-location-editor";
 import { ApiRequestError } from "@/lib/api-client";
+vi.mock("./creator-device-city", () => ({ CreatorDeviceCity: () => null }));
 const h = vi.hoisted(() => ({
   get: vi.fn(),
   put: vi.fn(),

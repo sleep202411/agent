@@ -201,20 +201,34 @@ function Editor({
         locked={locked}
       />
       <TaskCompensationFields
+        paymentTerms={draft.paymentTerms}
+        onPaymentTerms={(value) => session.change("paymentTerms", value)}
         reward={reward}
         share={share}
         onReward={(v) => session.change("reward", v)}
         onShare={(v) => session.change("share", v)}
         locked={locked}
       />
-      <TaskContractField
-        crewId={snapshot.crewId}
-        userId={userId}
-        generation={generation}
-        value={draft.contractAssetNodeId}
-        onChange={(v) => session.change("contractAssetNodeId", v)}
-        locked={locked}
-      />
+      {snapshot.contractAssetNodeId ? (
+        <View style={{ gap: 8 }}>
+          <ThemedText>{t("taskContractFiles.lockedHint")}</ThemedText>
+          <TaskContract
+            crewId={snapshot.crewId}
+            userId={userId}
+            generation={generation}
+            assetId={snapshot.contractAssetNodeId}
+          />
+        </View>
+      ) : (
+        <TaskContractField
+          crewId={snapshot.crewId}
+          userId={userId}
+          generation={generation}
+          value={draft.contractAssetNodeId}
+          onChange={(v) => session.change("contractAssetNodeId", v)}
+          locked={locked}
+        />
+      )}
       <CrewSkillsField
         value={draft.requiredSkills}
         onChange={(v) => session.change("requiredSkills", v)}
