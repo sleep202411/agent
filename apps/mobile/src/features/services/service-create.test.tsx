@@ -17,7 +17,7 @@ vi.mock("./service-create-api", async (original) => ({
 vi.mock("@/config", () => ({
   appEnv: { siteRegion: "global", api: { auroraBaseUrl: "https://fixture.invalid" } },
 }));
-vi.mock("@/lib/api-client", () => ({ api: {} }));
+vi.mock("@/lib/api-client", () => ({ api: {}, ApiRequestError: class extends Error {} }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({
     status: h.authenticated ? "authenticated" : "anonymous",
