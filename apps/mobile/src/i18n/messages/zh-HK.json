@@ -5287,5 +5287,7 @@
   "documentFeed.source.manual": "手動",
   "documentFeed.source.import": "匯入",
   "documentFeed.source.ai": "AI",
-  "documentFeed.source.system": "系統"
+  "documentFeed.source.system": "系統",
+  "documentFeed.unknownAuthor": "未知作者",
+  "documentFeed.resolvedBy": "解決者"
 }

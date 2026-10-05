@@ -5287,5 +5287,7 @@
   "documentFeed.source.manual": "Manual",
   "documentFeed.source.import": "Import",
   "documentFeed.source.ai": "AI",
-  "documentFeed.source.system": "System"
+  "documentFeed.source.system": "System",
+  "documentFeed.unknownAuthor": "Unknown author",
+  "documentFeed.resolvedBy": "Resolved by"
 }

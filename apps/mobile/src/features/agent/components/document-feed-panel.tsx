@@ -1,3 +1,4 @@
+import { useUserDisplays } from "@/features/services/user-displays";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -94,6 +95,17 @@ function Feed({
   const [loading, setLoading] = useState(true),
     [error, setError] = useState<string>();
   const [revision, setRevision] = useState(0);
+  const authorIds =
+    rows?.kind === "comments"
+      ? rows.items.flatMap((thread) => [
+          thread.createdById,
+          ...(thread.resolvedById ? [thread.resolvedById] : []),
+          ...thread.comments.map((comment) => comment.createdById),
+        ])
+      : (rows?.items.map((version) => version.createdById) ?? []);
+  const displays = useUserDisplays(rows ? `${generation}:${documentId}` : undefined, authorIds);
+  const author = (id: string) =>
+    displays?.get(id)?.nickname.trim() || t("documentFeed.unknownAuthor");
   useEffect(() => {
     let disposed = false;
     let controller: AbortController | undefined;
@@ -169,6 +181,11 @@ function Feed({
                 {thread.title || t("documentFeed.thread")} ·{" "}
                 {t(thread.status === "open" ? "documentFeed.open" : "documentFeed.resolved")}
               </ThemedText>
+              {thread.status === "resolved" && thread.resolvedById && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t("documentFeed.resolvedBy")} {author(thread.resolvedById)}
+                </ThemedText>
+              )}
               {thread.blockId && (
                 <ThemedText type="small" themeColor="textSecondary">
                   {t("documentFeed.node")} {thread.blockId}
@@ -177,6 +194,7 @@ function Feed({
               {thread.comments.map((comment) => (
                 <View key={comment.id} style={{ gap: 4 }}>
                   <ThemedText type="small" themeColor="textSecondary">
+                    {author(comment.createdById)} ·{" "}
                     {new Date(comment.createdAt).toLocaleString(locale)}
                   </ThemedText>
                   <ThemedText type="small" selectable>
@@ -202,7 +220,7 @@ function Feed({
                 {version.label ? ` · ${version.label}` : ""}
               </ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                {t(`documentFeed.source.${version.source}`)} ·{" "}
+                {author(version.createdById)} · {t(`documentFeed.source.${version.source}`)} ·{" "}
                 {new Date(version.createdAt).toLocaleString(locale)}
               </ThemedText>
             </View>

@@ -2,7 +2,13 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DocumentFeedPanel } from "./document-feed-panel";
-const h = vi.hoisted(() => ({ threads: vi.fn(), versions: vi.fn(), active: true }));
+const h = vi.hoisted(() => ({
+  threads: vi.fn(),
+  versions: vi.fn(),
+  active: true,
+  displays: vi.fn(),
+}));
+vi.mock("@/features/services/user-displays", () => ({ useUserDisplays: h.displays }));
 vi.mock("../api/document-feeds-api", () => ({
   listDocumentThreads: h.threads,
   listDocumentVersions: h.versions,
@@ -46,7 +52,15 @@ const row = {
   title: null,
   status: "open",
   blockId: "node-1",
-  comments: [{ id: "c", body: "Review <b>this</b>\n细节", createdAt: "2026-10-05T00:00:00Z" }],
+  createdById: "42",
+  comments: [
+    {
+      id: "c",
+      createdById: "42",
+      body: "Review <b>this</b>\n细节",
+      createdAt: "2026-10-05T00:00:00Z",
+    },
+  ],
 };
 const draw = (documentId = "doc", generation = 1) =>
   act(async () =>
@@ -140,4 +154,31 @@ it("polls while visible without cancelling a slow in-flight read", async () => {
   await draw();
   await act(async () => vi.advanceTimersByTime(30000));
   expect(h.threads).toHaveBeenCalledTimes(2);
+});
+
+it("shows authors and resolution attribution without leaking raw IDs when lookup fails", async () => {
+  h.displays.mockReturnValue(
+    new Map([
+      ["42", { nickname: "Pax" }],
+      ["77", { nickname: "$& Resolver" }],
+    ])
+  );
+  h.threads.mockResolvedValue([{ ...row, status: "resolved", resolvedById: "77" }]);
+  await draw();
+  expect(host.textContent).toContain("Pax");
+  expect(host.textContent).toContain("documentFeed.resolvedBy $& Resolver");
+  expect(h.displays).toHaveBeenLastCalledWith("1:doc", expect.arrayContaining(["42", "77"]));
+  h.displays.mockReturnValue(undefined);
+  await draw();
+  expect(host.textContent).not.toContain("Pax");
+  expect(host.textContent).toContain("documentFeed.unknownAuthor");
+  expect(host.textContent).toContain(row.comments[0].body);
+});
+it("scopes author enrichment to the current feed and clears it after revocation", async () => {
+  await draw();
+  await draw("second", 2);
+  expect(h.displays).toHaveBeenLastCalledWith("2:second", expect.any(Array));
+  h.threads.mockRejectedValueOnce(Object.assign(new Error("Revoked"), { status: 403 }));
+  await click("documentFeed.refresh");
+  expect(h.displays).toHaveBeenLastCalledWith(undefined, []);
 });
