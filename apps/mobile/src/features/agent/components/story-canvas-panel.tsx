@@ -1,3 +1,4 @@
+import { StoryCanvasMediaLibrary } from "./story-canvas-media-library";
 import { DocumentFeedPanel } from "./document-feed-panel";
 import { StoryCanvasPositionForm } from "./story-canvas-position-form";
 import {
@@ -333,7 +334,7 @@ export function StoryCanvasPanel({
               ))}
             </View>
             <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
-              {(tab === "nodes" ? overview.nodes.length === 0 : overview.assets.length === 0) && (
+              {tab === "nodes" && overview.nodes.length === 0 && (
                 <ThemedText type="small">{t("storyCanvas.empty")}</ThemedText>
               )}
               {tab === "nodes"
@@ -471,32 +472,13 @@ export function StoryCanvasPanel({
                         )}
                       </View>
                     ))
-                : overview.assets.map((asset) => (
-                    <View
-                      key={asset.id}
-                      style={{
-                        padding: 12,
-                        gap: 8,
-                        borderRadius: 8,
-                        borderWidth: 1,
-                        borderColor: theme.border,
-                      }}
-                    >
-                      <ThemedText type="smallBold">
-                        {asset.name || t(`storyCanvas.${asset.kind}`)}
-                      </ThemedText>
-                      <ThemedText type="small">{t(`storyCanvas.${asset.kind}`)}</ThemedText>
-                      {canEdit && asset.mediaAssetId && (
-                        <Pressable
-                          accessibilityRole="button"
-                          onPress={() => setSelected(asset.mediaAssetId)}
-                          style={{ paddingVertical: 10 }}
-                        >
-                          <ThemedText type="small">{t("storyCanvas.saveCandidate")}</ThemedText>
-                        </Pressable>
-                      )}
-                    </View>
-                  ))}
+                : null}
+              <StoryCanvasMediaLibrary
+                visible={tab === "media"}
+                assets={overview.assets}
+                canEdit={canEdit}
+                onSaveCandidate={setSelected}
+              />
             </ScrollView>
           </>
         )}

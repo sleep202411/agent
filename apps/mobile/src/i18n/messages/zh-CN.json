@@ -5346,5 +5346,10 @@
   "play.topUpReturn.title": "返回影游？",
   "play.topUpReturn.body": "你曾离开影游进行充值。重新打开后将检查访问权限，并从已保存的进度继续。",
   "play.topUpReturn.continue": "打开影游",
-  "play.topUpReturn.error": "无法恢复影游"
+  "play.topUpReturn.error": "无法恢复影游",
+  "storyCanvas.library.all": "全部来源",
+  "storyCanvas.library.generated": "生成素材",
+  "storyCanvas.library.uploaded": "上传素材",
+  "storyCanvas.library.search": "搜索素材名称或提示词",
+  "storyCanvas.library.noMatches": "没有符合筛选条件的素材。"
 }

@@ -5346,5 +5346,10 @@
   "play.topUpReturn.title": "Return to your film?",
   "play.topUpReturn.body": "You left a film to top up. Reopen it to check access and continue from saved progress.",
   "play.topUpReturn.continue": "Open film",
-  "play.topUpReturn.error": "Could not recover the film"
+  "play.topUpReturn.error": "Could not recover the film",
+  "storyCanvas.library.all": "All sources",
+  "storyCanvas.library.generated": "Generated",
+  "storyCanvas.library.uploaded": "Uploaded",
+  "storyCanvas.library.search": "Search media names or prompts",
+  "storyCanvas.library.noMatches": "No media matches these filters."
 }

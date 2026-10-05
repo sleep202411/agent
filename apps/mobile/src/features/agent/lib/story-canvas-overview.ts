@@ -10,6 +10,9 @@ const asset = z.object({
   id: z.string().min(1),
   kind: z.enum(["image", "video", "audio"]),
   name: z.string().optional(),
+  prompt: z.string().optional(),
+  source: z.enum(["generated", "uploaded"]).optional(),
+  createdAt: z.number().finite().optional(),
   url: z.string(),
   mediaAssetId: z.string().uuid().optional(),
 });
@@ -54,3 +57,5 @@ export function canvasOverview(snapshot: CanvasSnapshot) {
     groups: Object.keys(snapshot.groups).length,
   };
 }
+
+export type CanvasLibraryAsset = ReturnType<typeof canvasOverview>["assets"][number];
