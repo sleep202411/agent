@@ -35,7 +35,7 @@ export default function StudioProjectScreen() {
       : router.replace(
           toHref(
             valid && isAgentOsId(resolvedWorkspaceId)
-              ? `/agent?workspace=${resolvedWorkspaceId}`
+              ? `/studio-projects?workspaceId=${resolvedWorkspaceId}`
               : "/agent"
           )
         );

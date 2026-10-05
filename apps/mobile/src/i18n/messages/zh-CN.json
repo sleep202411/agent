@@ -934,7 +934,7 @@
   "studioProjects.empty": "此工作区暂无 Studio 项目。",
   "studioProjects.details": "详情",
   "studioProjects.open": "在 Studio 中打开画布",
-  "studioProjects.reload": "放弃修改并刷新",
+  "studioProjects.reload": "刷新",
   "studioProjects.uncertain": "无法确认操作结果。请刷新并核对当前列表，再创建或修改项目。",
   "studioProjects.reviewed": "我已核对当前列表",
   "studioProjects.private": "私密",

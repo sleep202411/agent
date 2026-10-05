@@ -934,7 +934,7 @@
   "studioProjects.empty": "No Studio projects in this workspace.",
   "studioProjects.details": "Details",
   "studioProjects.open": "Open Canvas in Studio",
-  "studioProjects.reload": "Discard Edits and Refresh",
+  "studioProjects.reload": "Refresh",
   "studioProjects.uncertain": "The result could not be confirmed. Refresh and review the current list before creating or changing another project.",
   "studioProjects.reviewed": "I Have Reviewed the Current List",
   "studioProjects.private": "Private",

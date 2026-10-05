@@ -128,7 +128,7 @@ it("returns a cold entry to its workspace instead of another project", async () 
   h.canGoBack = false;
   await render();
   await click("Close project");
-  expect(h.replace).toHaveBeenCalledWith(`/agent?workspace=${workspaceId}`);
+  expect(h.replace).toHaveBeenCalledWith(`/studio-projects?workspaceId=${workspaceId}`);
 });
 it("retires previous project reads and drafts on destination or account changes", async () => {
   let complete!: (value: { name: string }) => void;
@@ -161,7 +161,7 @@ it("resolves a project-only notification and returns to the server-provided work
   expect(host.textContent).toContain(workspaceId);
   expect(host.textContent).toContain("Resolved project");
   await click("Close project");
-  expect(h.replace).toHaveBeenCalledWith(`/agent?workspace=${workspaceId}`);
+  expect(h.replace).toHaveBeenCalledWith(`/studio-projects?workspaceId=${workspaceId}`);
 });
 it("keeps project-only links through login and retries a denied read", async () => {
   h.params = { projectId };
