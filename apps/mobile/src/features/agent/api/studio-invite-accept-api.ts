@@ -111,7 +111,6 @@ export function studioInviteTargetRoute(target: StudioInviteTarget) {
   const checked = targetSchema.parse(target);
   if (checked.scope === "project")
     return `/studio-project?projectId=${checked.projectId}&workspaceId=${checked.workspaceId}`;
-  if (checked.scope === "story-project")
-    return `/agent/${checked.storyProjectId}?mode=story&title=${encodeURIComponent(checked.targetName)}`;
+  if (checked.scope === "story-project") return `/agent/${checked.storyProjectId}/assets?graph=1`;
   return `/studio-projects?workspaceId=${checked.workspaceId}`;
 }

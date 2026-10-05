@@ -127,7 +127,7 @@ it.each([
     "project",
     "/studio-project?projectId=22222222-2222-4222-8222-222222222222&workspaceId=11111111-1111-4111-8111-111111111111",
   ],
-  ["story-project", "/agent/33333333-3333-4333-8333-333333333333?mode=story&title=Team"],
+  ["story-project", "/agent/33333333-3333-4333-8333-333333333333/assets?graph=1"],
 ])("opens accepted %s invitations in Mobile", async (scope, destination) => {
   h.status = "authenticated";
   h.scope = scope;
