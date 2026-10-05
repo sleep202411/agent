@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { loadCanvasReferenceCatalog } from "@/features/ai-lab/catalog-api";
+import { canvasReferenceFields } from "@/features/ai-lab/canvas-modes";
 import { api } from "@/lib/api-client";
 import { generationJob, getGenerationJob, generationSession } from "@/features/ai-lab/jobs-api";
 import {
@@ -100,5 +102,59 @@ export async function loadTrackedCanvasJobs(
     generationSession(scope.generation, signal);
     jobs.push(...batch.filter((job): job is CanvasGenerationJob => job !== null));
   }
-  return jobs;
+  const targets: NonNullable<CanvasGenerationJob["referenceTargets"]> = {};
+  const targetIds = new Set<string>();
+  const completed = new Set(
+    jobs
+      .filter((job) => job.status === "completed" && job.outputs.length)
+      .map((job) => job.documentBlockId)
+  );
+  for (const raw of Object.values(loaded.snapshot.edges)) {
+    const edge = raw as { source?: string; target?: string } | null;
+    if (edge?.source && completed.has(edge.source) && edge.target) targetIds.add(edge.target);
+  }
+  const candidates = [...targetIds].flatMap((id) => {
+    const node = loaded.snapshot.nodes[id] as
+      | { id?: string; type?: string; data?: { modelId?: string; mode?: string } }
+      | undefined;
+    return node?.id === id &&
+      node.type &&
+      Object.hasOwn(types, node.type) &&
+      typeof node.data?.modelId === "string"
+      ? [{ id, data: node.data }]
+      : [];
+  });
+  if (candidates.length) {
+    const catalog = await loadCanvasReferenceCatalog(scope.generation, signal);
+    for (const { id, data } of candidates) {
+      const model = catalog.models.find((model) => model.id === data.modelId);
+      if (!model) continue;
+      const mode =
+        data.mode ??
+        model.generationModes?.find((mode) => mode.startsWith("text_to_")) ??
+        model.generationModes?.[0];
+      targets[id] = {
+        modelId: model.id,
+        mode: data.mode,
+        fields: canvasReferenceFields(model.input_schema, mode).flatMap((field) => {
+          const property = model.input_schema.properties[field]!;
+          const ui = property["x-ui"] as { mediaKind?: string; control?: string } | undefined;
+          const kind =
+            ui?.mediaKind === "image" || ui?.mediaKind === "video" || ui?.mediaKind === "audio"
+              ? ui.mediaKind
+              : ui?.control === "video_upload"
+                ? "video"
+                : ui?.control === "audio_upload"
+                  ? "audio"
+                  : "image";
+          const maxItems = property.type === "array" ? Math.floor(property.maxItems ?? 0) : 1;
+          return maxItems > 0 && (kind === "image" || kind === "video" || kind === "audio")
+            ? [{ field, kind, maxItems }]
+            : [];
+        }),
+      };
+    }
+  }
+  generationSession(scope.generation, signal);
+  return jobs.map((job) => canvasGenerationJobSchema.parse({ ...job, referenceTargets: targets }));
 }

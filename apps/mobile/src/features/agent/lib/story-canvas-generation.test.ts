@@ -161,7 +161,7 @@ it("applies results through the shipped bridge and rejects mismatched document i
     clearTimeout,
     console,
   });
-  const snapshot = fixture();
+  const snapshot = connected();
   const request = {
     type: "generation",
     sessionId,
@@ -169,14 +169,17 @@ it("applies results through the shipped bridge and rejects mismatched document i
     documentId,
     sequence: 7,
     snapshot,
-    job,
+    job: routedJob,
   };
   host.__fizzCanvasReceive!(JSON.stringify(request));
   expect(received.at(-1)).toMatchObject({
     type: "edited",
     documentId,
     sequence: 7,
-    snapshot: { assets: { result: { mediaAssetId: "asset" } } },
+    snapshot: {
+      assets: { result: { mediaAssetId: "asset" } },
+      nodes: { target: { data: { references: { referenceImages: [{ edgeId: "wire" }] } } } },
+    },
   });
   const { canvasRuntimeMessage } = await import("../../../../canvas-editor/protocol");
   const result = canvasRuntimeMessage.parse(received.at(-1));
@@ -187,4 +190,196 @@ it("applies results through the shipped bridge and rejects mismatched document i
     type: "error",
     message: "Generation belongs to another document.",
   });
+});
+
+function connected(refs: unknown = {}, mode = "image_to_image") {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Uint8Array.from(Buffer.from(fixture(), "base64")));
+  doc.getMap("nodes").set(
+    "target",
+    new Y.Map<unknown>(
+      Object.entries({
+        id: "target",
+        type: "prompt",
+        data: new Y.Map<unknown>(
+          Object.entries({
+            modelId: "target-model",
+            mode,
+            references: refs,
+            prompt: "Keep target prompt",
+          })
+        ),
+      })
+    )
+  );
+  doc
+    .getMap("edges")
+    .set("wire", new Y.Map(Object.entries({ id: "wire", source: "card", target: "target" })));
+  const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  return state;
+}
+const routedJob: CanvasGenerationJob = {
+  ...job,
+  referenceTargets: {
+    target: {
+      modelId: "target-model",
+      mode: "image_to_image",
+      fields: [{ field: "referenceImages", kind: "image", maxItems: 2 }],
+    },
+  },
+};
+it("backfills a connected generation input, preserves other references and replays idempotently", () => {
+  const state = connected({
+    referenceImages: [{ id: "manual", url: "https://example.test/manual" }],
+    referenceAudios: [{ id: "sound" }],
+  });
+  const saved = applyCanvasGeneration(state, documentId, routedJob);
+  expect(saved.snapshot.nodes.target).toHaveProperty("data.prompt", "Keep target prompt");
+  expect(saved.snapshot.nodes.target).toHaveProperty("data.references", {
+    referenceImages: [
+      { id: "manual", url: "https://example.test/manual" },
+      {
+        id: "wire",
+        edgeId: "wire",
+        sourceNodeId: "card",
+        url: job.outputs[0]!.url,
+        kind: "image",
+        name: "A lake",
+        assetId: "asset",
+      },
+    ],
+    referenceAudios: [{ id: "sound" }],
+  });
+  expect(materializeCanvas(state, [saved.yjsUpdateBase64!]).snapshot).toEqual(saved.snapshot);
+  expect(applyCanvasGeneration(saved.state, documentId, routedJob).yjsUpdateBase64).toBeNull();
+  const refreshed = applyCanvasGeneration(saved.state, documentId, {
+    ...routedJob,
+    outputs: [{ ...job.outputs[0]!, url: "https://example.test/new", width: 1024 }],
+  });
+  expect(refreshed.snapshot.nodes.target).toHaveProperty(
+    "data.references.referenceImages.1.width",
+    1024
+  );
+  expect(refreshed.snapshot.nodes.target).toHaveProperty(
+    "data.references.referenceImages.1.url",
+    "https://example.test/new"
+  );
+});
+it("leaves full, unsupported and changed-mode targets untouched without losing the result", () => {
+  for (const state of [
+    connected({ referenceImages: [{ id: "a" }, { id: "b" }] }),
+    connected({}, "text_to_image"),
+    connected({ referenceImages: "invalid" }),
+  ]) {
+    const before = materializeCanvas(state, []).snapshot.nodes.target;
+    const result = applyCanvasGeneration(state, documentId, routedJob);
+    expect(result.snapshot.nodes.target).toEqual(before);
+    expect(result.snapshot.assets.result).toBeDefined();
+  }
+  const state = connected();
+  const unsupported = {
+    ...routedJob,
+    referenceTargets: {
+      target: {
+        ...routedJob.referenceTargets!.target!,
+        fields: [{ field: "audio", kind: "audio" as const, maxItems: 1 }],
+      },
+    },
+  };
+  expect(applyCanvasGeneration(state, documentId, unsupported).snapshot.nodes.target).toEqual(
+    materializeCanvas(state, []).snapshot.nodes.target
+  );
+  const running = applyCanvasGeneration(state, documentId, { ...routedJob, status: "running" });
+  expect(running.snapshot.nodes.target).toHaveProperty("data.references", {});
+});
+it("refreshes an already-completed card's previously unbound wire and removes its obsolete slot binding", () => {
+  const state = connected({ obsolete: [{ edgeId: "wire", url: "https://example.test/old" }] });
+  const first = applyCanvasGeneration(state, documentId, job);
+  const backfilled = applyCanvasGeneration(first.state, documentId, routedJob);
+  expect(backfilled.snapshot.nodes.target).toHaveProperty("data.references.obsolete", []);
+  expect(backfilled.snapshot.nodes.target).toHaveProperty(
+    "data.references.referenceImages.0.edgeId",
+    "wire"
+  );
+  expect(applyCanvasGeneration(backfilled.state, documentId, routedJob).yjsUpdateBase64).toBeNull();
+});
+
+it("ignores removed wires and targets whose model changed since catalog discovery", () => {
+  for (const mutate of [
+    (doc: Y.Doc) => doc.getMap("edges").delete("wire"),
+    (doc: Y.Doc) =>
+      ((doc.getMap("nodes").get("target") as Y.Map<unknown>).get("data") as Y.Map<unknown>).set(
+        "modelId",
+        "different"
+      ),
+  ]) {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, Uint8Array.from(Buffer.from(connected(), "base64")));
+    mutate(doc);
+    const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+    doc.destroy();
+    expect(
+      applyCanvasGeneration(state, documentId, routedJob).snapshot.nodes.target
+    ).toHaveProperty("data.references", {});
+  }
+});
+it("allocates multiple wires against fresh capacity without causing a reconciliation write loop", () => {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Uint8Array.from(Buffer.from(connected(), "base64")));
+  doc
+    .getMap("edges")
+    .set("wire2", new Y.Map(Object.entries({ id: "wire2", source: "card", target: "target" })));
+  const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  const result = applyCanvasGeneration(state, documentId, routedJob);
+  expect(result.snapshot.nodes.target).toHaveProperty("data.references.referenceImages.length", 2);
+  expect(applyCanvasGeneration(result.state, documentId, routedJob).yjsUpdateBase64).toBeNull();
+});
+it.each(["video", "audio"] as const)(
+  "propagates a completed %s with its durable media metadata",
+  (kind) => {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, Uint8Array.from(Buffer.from(connected(), "base64")));
+    (doc.getMap("nodes").get("card") as Y.Map<unknown>).set("type", kind);
+    const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+    doc.destroy();
+    const result = applyCanvasGeneration(state, documentId, {
+      ...routedJob,
+      type: kind,
+      outputs: [{ ...job.outputs[0]!, type: kind, durationSeconds: 8, bytes: 1024 }],
+      referenceTargets: {
+        target: {
+          ...routedJob.referenceTargets!.target!,
+          fields: [{ field: "media", kind, maxItems: 1 }],
+        },
+      },
+    });
+    expect(result.snapshot.nodes.target).toHaveProperty(
+      "data.references.media.0",
+      expect.objectContaining({ kind, durationSeconds: 8, bytes: 1024, assetId: "asset" })
+    );
+  }
+);
+it("routes to the second frame when the first frame is occupied", () => {
+  const result = applyCanvasGeneration(
+    connected({ startFrame: [{ id: "existing" }] }),
+    documentId,
+    {
+      ...routedJob,
+      referenceTargets: {
+        target: {
+          ...routedJob.referenceTargets!.target!,
+          fields: [
+            { field: "startFrame", kind: "image", maxItems: 1 },
+            { field: "endFrame", kind: "image", maxItems: 1 },
+          ],
+        },
+      },
+    }
+  );
+  expect(result.snapshot.nodes.target).toHaveProperty("data.references.startFrame", [
+    { id: "existing" },
+  ]);
+  expect(result.snapshot.nodes.target).toHaveProperty("data.references.endFrame.0.edgeId", "wire");
 });

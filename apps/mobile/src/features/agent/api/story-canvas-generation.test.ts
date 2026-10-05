@@ -180,3 +180,61 @@ it("rejects a recovery reply arriving after account retirement", async () => {
   ).rejects.toThrow("expired");
   expect(h.post).not.toHaveBeenCalled();
 });
+
+it("loads current catalog slots only for completed jobs with connected generation targets", async () => {
+  const value = loaded();
+  value.snapshot.nodes.target = {
+    id: "target",
+    type: "video",
+    data: { modelId: "video-model", mode: "first_last_frame_to_video" },
+  };
+  value.snapshot.edges.wire = { id: "wire", source: "card", target: "target" };
+  h.lookup.mockResolvedValue({
+    version: "1",
+    region: "global",
+    presets: [],
+    models: [
+      {
+        id: "video-model",
+        name: "Video",
+        type: "video",
+        enabled: true,
+        schemaVersion: "1",
+        generationModes: ["text_to_video", "first_last_frame_to_video"],
+        input_schema: {
+          type: "object",
+          properties: {
+            startFrame: { type: "string", "x-ui": { control: "image_upload" } },
+            endFrame: { type: "string", "x-ui": { control: "image_upload" } },
+            referenceImages: {
+              type: "array",
+              maxItems: 9,
+              items: { type: "string" },
+              "x-ui": { control: "image_upload" },
+            },
+          },
+        },
+      },
+    ],
+  });
+  const result = await loadTrackedCanvasJobs(scope, value, new AbortController().signal);
+  expect(result[0]!.referenceTargets).toEqual({
+    target: {
+      modelId: "video-model",
+      mode: "first_last_frame_to_video",
+      fields: [
+        { field: "startFrame", kind: "image", maxItems: 1 },
+        { field: "endFrame", kind: "image", maxItems: 1 },
+      ],
+    },
+  });
+  expect(h.lookup).toHaveBeenCalledWith("/ai/models", expect.objectContaining({ retry: false }));
+  expect(h.post).not.toHaveBeenCalled();
+  value.snapshot.nodes.target = { id: "target", type: "video", data: { modelId: "video-model" } };
+  const defaultMode = await loadTrackedCanvasJobs(scope, value, new AbortController().signal);
+  expect(defaultMode[0]!.referenceTargets!.target!.fields).toEqual([]);
+  h.lookup.mockClear();
+  h.get.mockResolvedValue({ ...job(), status: "running" });
+  await loadTrackedCanvasJobs(scope, value, new AbortController().signal);
+  expect(h.lookup).not.toHaveBeenCalled();
+});

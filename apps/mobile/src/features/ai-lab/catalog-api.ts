@@ -106,3 +106,11 @@ export function canUseGeneration(model: GenerationModel, preset: GenerationPrese
     planRank(model.access?.requiredPlan ?? model.entitlement?.requiredPlan) <= rank
   );
 }
+
+/** Read catalog constraints for existing canvas wires; no billing/preflight request. */
+export async function loadCanvasReferenceCatalog(generation: number, signal: AbortSignal) {
+  generationSession(generation, signal);
+  const raw = await api.get("/ai/models", { service: "aurora", signal, retry: false });
+  generationSession(generation, signal);
+  return catalog.parse(raw);
+}

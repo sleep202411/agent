@@ -1,4 +1,5 @@
 import * as Y from "yjs";
+import { generationReferencePatches } from "./generation-references";
 import { canvasGenerationJobSchema, type CanvasGenerationJob } from "./generation-schema";
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
 
@@ -86,12 +87,14 @@ export function applyCanvasGeneration(state: string, documentId: string, raw: Ca
             };
           })
         : [];
+    const referencePatches = generationReferencePatches(doc, job);
     let update: string | null = null;
     doc.on("update", (bytes: Uint8Array) => {
       update = encodeCanvasBytes(bytes);
     });
     doc.transact(() => {
       if (JSON.stringify(previous) !== JSON.stringify(next)) data.set("generation", next);
+      for (const [target, references] of referencePatches) target.set("references", references);
       // Preserve user-renamed media and avoid duplicate writes on reconciliation.
       for (const asset of additions) {
         if (!asset.existing) assets.set(asset.id, asset.value);

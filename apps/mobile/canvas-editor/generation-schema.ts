@@ -26,6 +26,23 @@ export const canvasGenerationJobSchema = z.object({
   queuePosition: measure,
   estimatedTotalSeconds: measure,
   error: z.object({ code: z.string().optional(), userMessage: z.string() }).optional(),
+  // Host-derived catalog slots, guarded against target model/mode changes.
+  referenceTargets: z
+    .record(
+      z.string(),
+      z.object({
+        modelId: z.string().min(1),
+        mode: z.string().optional(),
+        fields: z.array(
+          z.object({
+            field: z.string().min(1),
+            kind: z.enum(["image", "video", "audio"]),
+            maxItems: z.number().int().positive(),
+          })
+        ),
+      })
+    )
+    .optional(),
   outputs: z.array(
     z.object({
       id: z.string().min(1),
