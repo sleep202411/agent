@@ -43,6 +43,7 @@ import {
   storyboardCellStyle,
   storyboardHeadClass,
 } from "./storyboard-columns";
+import { StoryboardPlayback } from "./storyboard-playback";
 import { StoryboardRow } from "./storyboard-row";
 import type { StoryboardRowActions } from "./storyboard-types";
 import { useStoryboard } from "./use-storyboard";
@@ -269,8 +270,11 @@ export function StoryboardTable({
             <span className="text-xs text-white/35 tabular-nums">
               {t("shotCount", { count: rows.length })}
             </span>
+            <div className="ml-auto">
+              <StoryboardPlayback rows={rows} />
+            </div>
             {canEdit ? (
-              <Button className="ml-auto" size="sm" onClick={() => insertShot(rows.length)}>
+              <Button size="sm" onClick={() => insertShot(rows.length)}>
                 <IconPlus data-icon="inline-start" />
                 {t("addShot")}
               </Button>

@@ -8,6 +8,7 @@ import { ProfessionalDeliveryInput } from './tasks/task-delivery-template';
 import { z } from 'zod';
 import { parsePublicUserId } from '@repo/shared/user-id-codec';
 import {
+  TASK_PAYMENT_TERMS,
   ALL_CURRENCIES,
   CREW_GENRES,
   CREW_STYLES,
@@ -228,6 +229,7 @@ const PositionBaseSchema = z.object({
   employmentType: z.enum(EMPLOYMENT_TYPES).default('project_based'),
   experienceLevel: z.enum(EXPERIENCE_LEVELS).default('any'),
   requiredSkills: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+  paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
   salary: SalarySchema.optional(),
   /// Tenure in months (1-60). NULL/undefined = open-ended commitment
   /// — see CrewPosition.durationMonths comment in schema.prisma.
@@ -481,10 +483,32 @@ export const CreateCrewInviteLinkSchema = z
     policyKeys: z.array(crewPolicyKey).max(CREW_POLICY_KEYS.length).default([]),
     /** Omit for a link that never expires. */
     expiresInDays: z.number().int().min(1).max(365).optional(),
-    /** Omit for unlimited joins. */
+    taskId: z.string().uuid().optional(),
+    taskVersion: z.number().int().positive().optional(),
+    /** Omit for unlimited joins on ordinary Crew links. */
     maxUses: z.number().int().min(1).max(500).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if ((input.taskId === undefined) !== (input.taskVersion === undefined))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['taskId'],
+        message: 'Task and task version are required together.',
+      });
+    if (
+      input.taskId &&
+      (input.kind !== 'member' ||
+        input.policyKeys.length > 0 ||
+        (input.maxUses !== undefined && input.maxUses !== 1))
+    )
+      ctx.addIssue({
+        code: 'custom',
+        path: ['taskId'],
+        message:
+          'Task invitations are single-use member links with standard access.',
+      });
+  });
 export type CreateCrewInviteLinkInput = z.infer<
   typeof CreateCrewInviteLinkSchema
 >;
@@ -614,6 +638,7 @@ export const CreateCrewTaskSchema = z
       .max(100_000_000_000)
       .nullable()
       .optional(),
+    paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
     positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     contractAssetNodeId: z.string().uuid().nullable().optional(),
     requiredSkills: z
@@ -755,6 +780,7 @@ export const UpdateCrewTaskSchema = z
       .max(100_000_000_000)
       .nullable()
       .optional(),
+    paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
     positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     contractAssetNodeId: z.string().uuid().nullable().optional(),
     requiredSkills: z

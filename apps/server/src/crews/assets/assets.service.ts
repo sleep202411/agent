@@ -1,4 +1,5 @@
 import { crewStorageUsage, lockCrewStorage } from './storage-quota';
+import { requireNoTaskContractReferences } from './task-contract-retention';
 import {
   BadRequestException,
   ConflictException,
@@ -72,6 +73,7 @@ const UNREFERENCED_CREW_MEDIA = {
 } satisfies Prisma.MediaAssetWhereInput;
 
 const NODE_INCLUDE = {
+  taskContracts: { select: { id: true }, take: 1 },
   mediaAsset: {
     select: {
       id: true,
@@ -1060,6 +1062,9 @@ export class CrewAssetsService {
           CrewAssetPermission.edit,
           tx,
         );
+        // Contract files are read-only once attached, including their name and
+        // location. Attachment takes this same tree lock, closing the race.
+        await requireNoTaskContractReferences(tx, crewId, [node.id]);
         if (input.parentId === node.id) {
           throw new BadRequestException('A folder cannot contain itself');
         }
@@ -1153,6 +1158,10 @@ export class CrewAssetsService {
         node.kind === CrewAssetNodeKind.folder
           ? await this.collectDescendantIds(tx, crewId, node.id)
           : [];
+      await requireNoTaskContractReferences(tx, crewId, [
+        node.id,
+        ...descendantIds,
+      ]);
       if (descendantIds.length > 0) {
         await tx.crewAssetNode.updateMany({
           where: {
@@ -1274,6 +1283,7 @@ export class CrewAssetsService {
           ? await this.collectDescendantIds(tx, crewId, node.id)
           : [];
       const subtreeIds = [node.id, ...descendantIds];
+      await requireNoTaskContractReferences(tx, crewId, subtreeIds);
       const linkedNodes = await tx.crewAssetNode.findMany({
         where: { id: { in: subtreeIds }, crewId },
         select: { mediaAssetId: true },
@@ -1944,6 +1954,7 @@ export class CrewAssetsService {
       accessMode: node.accessMode,
       permissionVersion: node.permissionVersion,
       effectivePermission,
+      contractLocked: Boolean(node.taskContracts?.length),
       folderKey: node.folderKey ?? null,
       linkedStudio: node.linkedStudioMediaAsset
         ? {

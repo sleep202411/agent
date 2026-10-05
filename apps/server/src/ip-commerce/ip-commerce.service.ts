@@ -1,3 +1,5 @@
+import { listReportPurchases, requireReportPurchase } from './report-purchases';
+import type { ListReportPurchasesQuery } from './dto';
 import { lockMediaAssetReference } from '../media/media-asset-lifecycle-lock';
 import { createCrewTx } from '../crews/create-crew';
 import { hasCrewCreatePass } from '../integrations/java/user-level-gates';
@@ -5402,6 +5404,10 @@ export class IpCommerceService {
     return { recorded: true, settlementPeriod };
   }
 
+  listMyReportPurchases(user: AuthUser, query: ListReportPurchasesQuery) {
+    return listReportPurchases(this.prisma, user.userId, query);
+  }
+
   async listMyContentReports(user: AuthUser, query: ListMyContentReportsQuery) {
     // Respondents see completed moderation outcomes on IPs they currently own;
     // reporter identities and supporting evidence are never projected here.
@@ -5440,7 +5446,9 @@ export class IpCommerceService {
         createdAt: true,
         resolvedAt: true,
         resolutionNote: true,
-        ...(query.view === 'initiated' ? { description: true } : {}),
+        ...(query.view === 'initiated'
+          ? { description: true, purchaseOrderId: true }
+          : {}),
       },
     });
     return {
@@ -5450,8 +5458,37 @@ export class IpCommerceService {
   }
 
   async reportContent(user: AuthUser, input: CreateIpContentReportInput) {
-    const target = await this.resolveReportTarget(input);
     const report = await this.prisma.$transaction(async (tx) => {
+      if (input.requestId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ip-content-report:${input.requestId}`},0))`;
+        const previous = await tx.ipContentReport.findUnique({
+          where: { id: input.requestId },
+        });
+        if (previous) {
+          if (
+            previous.reporterUserId !== user.userId ||
+            previous.targetType !== input.targetType ||
+            previous.targetId !== input.targetId ||
+            previous.reason !== input.reason ||
+            previous.purchaseOrderId !== (input.purchaseOrderId ?? null) ||
+            previous.description !== (input.description ?? null) ||
+            previous.evidenceAssetId !== (input.evidenceAssetId ?? null)
+          )
+            throw new ConflictException(
+              'Report request identity was already used with different details.',
+            );
+          return previous;
+        }
+      }
+      const target = input.purchaseOrderId
+        ? await requireReportPurchase(
+            tx,
+            user.userId,
+            input.purchaseOrderId,
+            input.targetType,
+            input.targetId,
+          )
+        : await this.resolveReportTarget(input);
       if (input.evidenceAssetId) {
         await lockMediaAssetReference(tx, input.evidenceAssetId);
       }
@@ -5472,11 +5509,13 @@ export class IpCommerceService {
         });
       return tx.ipContentReport.create({
         data: {
+          ...(input.requestId ? { id: input.requestId } : {}),
           targetType: input.targetType as IpTargetType,
           targetId: input.targetId,
           ipId: target.ipId,
           episodeId: target.episodeId,
           reporterUserId: user.userId,
+          purchaseOrderId: input.purchaseOrderId,
           reason: input.reason,
           status: IpReportStatus.submitted,
           description: input.description,
@@ -8313,6 +8352,7 @@ function adminReportDto(
     ipId: string | null;
     episodeId: string | null;
     reporterUserId: string | null;
+    purchaseOrderId: string | null;
     reason: string;
     status: IpReportStatus;
     description: string | null;
@@ -8345,6 +8385,7 @@ function adminReportDto(
     ipId: report.ipId,
     episodeId: report.episodeId,
     reporterUserId: report.reporterUserId,
+    purchaseOrderId: report.purchaseOrderId,
     reason: report.reason,
     status: report.status,
     description: report.description,

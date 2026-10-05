@@ -2,6 +2,8 @@
 import { ChannelBadge } from "@/components/channel-badge";
 
 import Link from "next/link";
+import { useState } from "react";
+import { IpHoverPreview } from "./ip-hover-preview";
 import {
   IconBookmark,
   IconEye,
@@ -21,6 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import type { PlazaCoCreator, PlazaProject } from "./plaza-types";
 
 export function IPPlazaCard({ project }: { project: PlazaProject }) {
+  const [preview, setPreview] = useState(false);
   const t = useTranslations("ip");
   const locale = useLocale() as Locale;
   const cat = project.genres[0] ?? "";
@@ -33,7 +36,14 @@ export function IPPlazaCard({ project }: { project: PlazaProject }) {
 
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-2xl transition-all hover:bg-muted/90 hover:shadow-lg hover:shadow-black/20">
-      <Link href={ipHref} className="relative aspect-video w-full overflow-hidden bg-secondary">
+      <Link
+        href={ipHref}
+        onMouseEnter={() => setPreview(true)}
+        onMouseLeave={() => setPreview(false)}
+        onFocus={() => setPreview(true)}
+        onBlur={() => setPreview(false)}
+        className="relative aspect-video w-full overflow-hidden bg-secondary"
+      >
         {project.cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -48,6 +58,11 @@ export function IPPlazaCard({ project }: { project: PlazaProject }) {
           </div>
         )}
 
+        <IpHoverPreview
+          key={`${project.id}:${project.trailer}:${preview}`}
+          src={project.trailer}
+          active={preview}
+        />
         <div className="absolute inset-0 bg-linear-to-t from-black/70 via-black/15 to-transparent" />
 
         {regionName && (

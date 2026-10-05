@@ -169,6 +169,14 @@ export class ExperienceRuntimeController {
     events: readonly ExperienceRuntimeEvent[],
     options?: { maxProcessedEvents?: number }
   ): ExperienceEventQueueResult {
+    return this.#dispatch(events, options);
+  }
+
+  #dispatch(
+    events: readonly ExperienceRuntimeEvent[],
+    options?: { maxProcessedEvents?: number },
+    onAccepted?: () => void
+  ): ExperienceEventQueueResult {
     this.#assertStarted();
     let result: ExperienceEventQueueResult;
     try {
@@ -184,6 +192,8 @@ export class ExperienceRuntimeController {
     // Restored access checkpoints also need a transport-owned report session.
     // Start only after the runtime has accepted the events.
     this.#startReporting();
+    // Report accepted input before its scene/ending effects, never a refused choice.
+    onAccepted?.();
     const epoch = this.#reportEpoch;
     result.effects.forEach((effect) => {
       if (effect.kind === "scene.changed") {
@@ -289,55 +299,59 @@ export class ExperienceRuntimeController {
     const payload = structuredClone(input.payload ?? {});
     this.#rendererRegistry.require(instance.rendererId).assertOutcome(input.outcomeType, payload);
 
-    if (input.outcomeType === "choice-selected" && this.#reporter) {
-      const choiceId = (payload as any)?.choiceId;
-      if (choiceId && typeof choiceId === "string") {
-        const config = instance.config as any;
-        const choices = Array.isArray(config?.choices) ? config.choices : [];
-        const matchedChoice = choices.find((c: any) => c.choiceId === choiceId);
-        const decisionId = config?.decisionId || instance.instanceId;
-        if (matchedChoice) {
-          const rawLabel = matchedChoice.label;
-          const defaultLoc = this.#manifest.localization?.defaultLocale ?? "zh-CN";
-          const label =
-            typeof rawLabel === "string"
-              ? rawLabel
-              : rawLabel?.[defaultLoc] || Object.values(rawLabel || {})[0] || choiceId;
-          const currentNode = this.#state.currentSceneId;
-          const epoch = this.#reportEpoch;
-          this.#reporting = this.#reporting.then(async () => {
-            if (epoch !== this.#reportEpoch) return;
-            const sessionId = this.#playSessionId;
-            if (!sessionId) return;
-            try {
-              await this.#reporter!.onProgress(sessionId, {
-                currentNode,
-                choice: {
-                  optionId: choiceId,
-                  label: String(label),
-                  decisionId: String(decisionId),
-                },
+    return this.#dispatch(
+      [
+        {
+          type: "renderer.outcome",
+          sourceId: input.instanceId,
+          qualifierId: input.outcomeType,
+          payload,
+        },
+      ],
+      undefined,
+      () => {
+        if (input.outcomeType === "choice-selected" && this.#reporter) {
+          const choiceId = (payload as any)?.choiceId;
+          if (choiceId && typeof choiceId === "string") {
+            const config = instance.config as any;
+            const choices = Array.isArray(config?.choices) ? config.choices : [];
+            const matchedChoice = choices.find((c: any) => c.choiceId === choiceId);
+            const decisionId = config?.decisionId || instance.instanceId;
+            if (matchedChoice) {
+              const rawLabel = matchedChoice.label;
+              const defaultLoc = this.#manifest.localization?.defaultLocale ?? "zh-CN";
+              const label =
+                typeof rawLabel === "string"
+                  ? rawLabel
+                  : rawLabel?.[defaultLoc] || Object.values(rawLabel || {})[0] || choiceId;
+              const currentNode = this.#state.currentSceneId;
+              const epoch = this.#reportEpoch;
+              this.#reporting = this.#reporting.then(async () => {
+                if (epoch !== this.#reportEpoch) return;
+                const sessionId = this.#playSessionId;
+                if (!sessionId) return;
+                try {
+                  await this.#reporter!.onProgress(sessionId, {
+                    currentNode,
+                    choice: {
+                      optionId: choiceId,
+                      label: String(label),
+                      decisionId: String(decisionId),
+                    },
+                  });
+                } catch (err) {
+                  this.#handleReporterFailure(err, "onProgress (choice)");
+                }
               });
-            } catch (err) {
-              this.#handleReporterFailure(err, "onProgress (choice)");
+            } else {
+              console.warn(
+                `[ExperienceRuntimeController] Choice ${choiceId} not found in instance ${instance.instanceId}`
+              );
             }
-          });
-        } else {
-          console.warn(
-            `[ExperienceRuntimeController] Choice ${choiceId} not found in instance ${instance.instanceId}`
-          );
+          }
         }
       }
-    }
-
-    return this.dispatch([
-      {
-        type: "renderer.outcome",
-        sourceId: input.instanceId,
-        qualifierId: input.outcomeType,
-        payload,
-      },
-    ]);
+    );
   }
 
   #assertStarted(): void {

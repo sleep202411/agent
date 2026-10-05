@@ -14,10 +14,11 @@ import {
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import { CurrentUser, type AuthUser } from '../../auth';
+import { CurrentUser, Public, type AuthUser } from '../../auth';
 import { ZodValidationPipe } from '../../common/zod.pipe';
 import { PrismaService } from '../../infra/db/db.module';
 import { CrewAuthorizationService } from '../crew-authorization.service';
+import { taskReviewScore } from './task-review-score';
 
 const score = z.number().int().min(1).max(5);
 export const TaskFeedbackInput = z
@@ -36,7 +37,8 @@ export const TaskFeedbackInput = z
         .object({ direction: z.literal('manager'), managementAbility: score })
         .strict(),
     ]),
-    comment: z.string().trim().min(3).max(2000),
+    comment: z.string().trim().max(2000).default(''),
+    publicOnProfile: z.boolean().default(false),
   })
   .strict();
 const ResponseInput = z
@@ -61,7 +63,7 @@ export class CrewTaskFeedbackService {
   async submit(
     taskId: string,
     userId: string,
-    raw: z.infer<typeof TaskFeedbackInput>,
+    raw: z.input<typeof TaskFeedbackInput>,
   ) {
     const input = TaskFeedbackInput.parse(raw);
     if (userId === input.subjectUserId)
@@ -114,6 +116,7 @@ export class CrewTaskFeedbackService {
           subjectUserId: existing.subjectUserId,
           ratings: existing.ratings,
           comment: existing.comment,
+          publicOnProfile: existing.publicOnProfile ?? false,
         });
         if (JSON.stringify(stored) !== JSON.stringify(input))
           throw new ConflictException(
@@ -131,11 +134,98 @@ export class CrewTaskFeedbackService {
           direction,
           ratings: input.ratings,
           comment: input.comment,
+          publicOnProfile: input.publicOnProfile,
+          ...taskReviewScore(input.ratings, submission),
         },
       });
       await this.auth.require(task.crewId, userId, 'tasks.view', tx);
       return feedback;
     });
+  }
+
+  async publicProfile(
+    userId: string,
+    query: z.infer<typeof TaskFeedbackPageInput>,
+  ) {
+    return this.db.$transaction(
+      async (tx) => {
+        const where = { subjectUserId: userId, publicOnProfile: true };
+        const cursor = query.cursor
+          ? await tx.crewTaskFeedback.findFirst({
+              where: { ...where, id: query.cursor },
+              select: { id: true, createdAt: true },
+            })
+          : null;
+        if (query.cursor && !cursor)
+          throw new NotFoundException('Public review cursor not found.');
+        const groups = await tx.crewTaskFeedback.groupBy({
+          by: ['direction', 'scoreMilli'],
+          where,
+          _count: { _all: true },
+        });
+        const summary = {
+          creator: { count: 0, average: null as number | null },
+          manager: { count: 0, average: null as number | null },
+          total: 0,
+          average: null as number | null,
+          histogram: [0, 0, 0, 0, 0],
+        };
+        const sums = { creator: 0, manager: 0 };
+        for (const row of groups) {
+          if (
+            (row.direction !== 'creator' && row.direction !== 'manager') ||
+            row.scoreMilli === null
+          )
+            continue;
+          const count = row._count._all;
+          summary[row.direction].count += count;
+          sums[row.direction] += row.scoreMilli * count;
+          summary.total += count;
+          summary.histogram[Math.round(row.scoreMilli / 1000) - 1] += count;
+        }
+        for (const direction of ['creator', 'manager'] as const) {
+          if (summary[direction].count)
+            summary[direction].average =
+              sums[direction] / summary[direction].count / 1000;
+        }
+        if (summary.total)
+          summary.average =
+            (sums.creator + sums.manager) / summary.total / 1000;
+        const rows = await tx.crewTaskFeedback.findMany({
+          where: {
+            ...where,
+            ...(cursor
+              ? {
+                  OR: [
+                    { createdAt: { lt: cursor.createdAt } },
+                    { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+                  ],
+                }
+              : {}),
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: query.limit + 1,
+          // No task/Crew/submission IDs, private replies, or delivery evidence.
+          select: {
+            id: true,
+            authorUserId: true,
+            direction: true,
+            ratings: true,
+            comment: true,
+            scoreMilli: true,
+            timelinessScore: true,
+            createdAt: true,
+          },
+        });
+        return {
+          summary,
+          items: rows.slice(0, query.limit),
+          nextCursor:
+            rows.length > query.limit ? rows[query.limit - 1].id : null,
+        };
+      },
+      { isolationLevel: 'RepeatableRead' },
+    );
   }
 
   async list(
@@ -217,6 +307,21 @@ export class CrewTaskFeedbackService {
 @Controller()
 export class CrewTaskFeedbackController {
   constructor(private readonly feedback: CrewTaskFeedbackService) {}
+  @Public()
+  @Get('creator-profiles/:userId/reviews')
+  publicProfile(
+    @Param(
+      new ZodValidationPipe(
+        z.object({ userId: z.string().trim().min(1).max(64) }),
+      ),
+    )
+    params: { userId: string },
+    @Query(new ZodValidationPipe(TaskFeedbackPageInput))
+    query: z.infer<typeof TaskFeedbackPageInput>,
+  ) {
+    return this.feedback.publicProfile(params.userId, query);
+  }
+
   @Get('me/crew-task-feedback')
   mine(
     @CurrentUser() user: AuthUser,

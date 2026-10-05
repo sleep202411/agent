@@ -1709,7 +1709,9 @@
     "requiresPlan": "{plan} plan",
     "unavailableOnPlan": "Not on your plan",
     "lockedForOpExpired": "Your membership expired — renew to use {op}",
-    "membershipExpired": "Membership expired"
+    "membershipExpired": "Membership expired",
+    "statusGeneratingRemaining": "Generating · about {seconds}s remaining",
+    "statusGeneratingLonger": "Still generating · taking longer than estimated"
   },
   "canvasEditors": {
     "reset": "Reset",
@@ -2564,6 +2566,62 @@
         "character": "Character",
         "scene": "Scene"
       }
+    },
+    "playback": {
+      "open": "Play",
+      "title": "Storyboard Playback",
+      "missing": "No ready video in this shot. Choose another shot or add a video on the canvas.",
+      "position": "Shot {current} / {count}",
+      "previous": "Previous shot",
+      "next": "Next shot",
+      "shots": "Storyboard shots",
+      "shot": "Shot {number}",
+      "error": "This video could not be played. Retry or choose another shot.",
+      "retry": "Retry",
+      "loading": "Loading video…",
+      "video": "Shot video"
+    },
+    "drag": {
+      "title": "Storyboard",
+      "mode": "Drag to storyboard",
+      "instructions": "Select a canvas video, drag it to a shot, then drop.",
+      "reorder": "Drag the shot handle to reorder",
+      "video": "Video",
+      "placed": "Video added to shot",
+      "add": "Add shot",
+      "collapse": "Collapse storyboard",
+      "expand": "Expand storyboard",
+      "empty": "Add a shot, then drag a video from the canvas.",
+      "shot": "Shot {number}",
+      "placeSelected": "Place selected",
+      "earlier": "Move shot {number} earlier",
+      "later": "Move shot {number} later",
+      "removeVideo": "Remove video from shot {number}",
+      "activeMode": "Drag Mode active — drag canvas videos into the storyboard below"
+    },
+    "export": {
+      "open": "Export MP4",
+      "title": "Export storyboard",
+      "description": "Export the saved shot order using each shot’s first ready video. Downloads are available for 24 hours.",
+      "format": "Output size",
+      "waitForSave": "Wait for all canvas changes to finish saving, then try again.",
+      "failed": "Export could not finish.",
+      "invalidDownload": "The download link is invalid or expired. Try again.",
+      "submitting": "Submitting…",
+      "retry": "Retry request",
+      "create": "Create export",
+      "uncertain": "The response was interrupted. Retry checks the same request without creating a duplicate export.",
+      "loading": "Loading exports…",
+      "refresh": "Refresh",
+      "empty": "No exports yet.",
+      "history": "Recent exports",
+      "queued": "Queued",
+      "running": "Rendering",
+      "completed": "Ready",
+      "cancelled": "Cancelled",
+      "expired": "Expired",
+      "cancel": "Cancel",
+      "download": "Download"
     }
   },
   "invite": {

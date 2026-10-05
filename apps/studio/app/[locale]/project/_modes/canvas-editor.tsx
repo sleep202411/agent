@@ -1,5 +1,6 @@
 "use client";
 
+import { CanvasStoryboard } from "./storyboard/canvas-storyboard";
 import { CanvasView } from "@/app/[locale]/canvas/_components/canvas-view";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 
@@ -13,8 +14,8 @@ import { useProjectContext } from "@/app/[locale]/project/_components/project-co
 export function CanvasEditor() {
   const { projectId, canEdit } = useProjectContext();
   return (
-    <div className="h-full">
+    <CanvasStoryboard>
       <CanvasView projectId={projectId} canEdit={canEdit} />
-    </div>
+    </CanvasStoryboard>
   );
 }

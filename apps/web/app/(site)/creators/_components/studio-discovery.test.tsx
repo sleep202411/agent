@@ -134,6 +134,7 @@ function response(config: ApiRequestConfig, overrides = {}) {
     matchedCount: 87,
     accessibleCount: 120,
     requiresLogin: false,
+    island: { creatorCount: 0, matchedCreatorCount: 0 },
     countScope: "public_platform_creators_with_listed_services",
     ...overrides,
   };
@@ -414,10 +415,14 @@ it("synchronizes card and map selection while panning leaves query and card pagi
   const map = mapFixture();
   vi.mocked(api.post).mockImplementation(async (_p, config) => pinnedResponse(config!));
   await render(map.factory);
-  expect(map.features.at(-1)).toMatchObject([{ entityId: "123", selected: false }]);
+  expect(map.features.at(-1)?.filter((feature) => !feature.virtualDestination)).toMatchObject([
+    { entityId: "123", selected: false },
+  ]);
   await click("Select studio");
   expect(host.querySelector("aside")!.textContent).toContain("Singapore animation studio");
-  expect(map.features.at(-1)).toMatchObject([{ entityId: "123", selected: true }]);
+  expect(map.features.at(-1)?.filter((feature) => !feature.virtualDestination)).toMatchObject([
+    { entityId: "123", selected: true },
+  ]);
   await click("Clear selection");
   await act(async () => map.options.onActivate(map.features.at(-1)![0]));
   await tick();
@@ -441,7 +446,7 @@ it("removes revoked selection from pins, details and cached cards even after sel
   revoked = true;
   await click("Select studio");
   expect(host.querySelector("aside")!.textContent).toContain("no longer available");
-  expect(map.features.at(-1)).toEqual([]);
+  expect(map.features.at(-1)?.filter((feature) => !feature.virtualDestination)).toEqual([]);
   await click("Clear selection");
   expect(host.textContent).not.toContain("Singapore animation studio");
 });
@@ -459,7 +464,7 @@ it("keeps cards usable on map query failure and clears the old pins", async () =
   await tick();
   expect(host.textContent).toContain("Map query unavailable");
   expect(host.textContent).toContain("Singapore animation studio");
-  expect(map.features.at(-1)).toEqual([]);
+  expect(map.features.at(-1)?.filter((feature) => !feature.virtualDestination)).toEqual([]);
 });
 
 it("applies creator recommendations with distinct location rules and preserves the conversation", async () => {
@@ -542,4 +547,63 @@ it("blocks conversation dispatch when edited search criteria are invalid", async
       .mocked(api.post)
       .mock.calls.some(([path]) => path === "/aurora/content-gps/discovery/requests")
   ).toBe(false);
+});
+
+it("opens the server-counted virtual island without selecting a creator", async () => {
+  context.params = "basedCountry=SG&basedCity=Singapore&text=animation";
+  vi.mocked(api.post).mockImplementation(async (_path, config) =>
+    response(config!, { island: { creatorCount: 87, matchedCreatorCount: 12 } })
+  );
+  const map = mapFixture();
+  await render(map.factory);
+  const island = host.querySelector<HTMLAnchorElement>(
+    `a[aria-label="${en.studioDiscovery.islandBrowse}"]`
+  )!;
+  expect(island).toBeTruthy();
+  expect(island.textContent).toContain("FizzDragon Island");
+  expect(island.textContent).toContain("12");
+  const params = new URL(island.href, "https://example.test").searchParams;
+  expect(params.get("location")).toBe("island");
+  expect(params.get("basedCountry")).toBeNull();
+  expect(params.get("text")).toBe("animation");
+  const anchor = map.features
+    .at(-1)!
+    .find((feature) => feature.virtualDestination === "fizzdragon-island")!;
+  expect(anchor).toMatchObject({ latitude: -25, longitude: -140, entityId: null });
+  expect(anchor.label).toContain(en.studioDiscovery.islandDescription);
+  await act(async () => map.options.onActivate(anchor));
+  expect(context.push).toHaveBeenCalledWith(island.getAttribute("href"), { scroll: false });
+});
+
+it("opens service-free island creators through their profile without advertising a service", async () => {
+  context.params = "location=island";
+  vi.mocked(api.post).mockImplementation(async (_path, config) =>
+    response(config!, {
+      items: [
+        { ...item(), showOnMap: false, basedIn: null, serviceCount: 0, matchingServiceCount: 0 },
+      ],
+      countScope: "public_platform_creators",
+      island: { creatorCount: 1, matchedCreatorCount: 1 },
+      matchedCount: 1,
+      accessibleCount: 1,
+    })
+  );
+  await render();
+  expect(host.querySelector("h1")?.textContent).toBe("FizzDragon Island");
+  const profile = [...host.querySelectorAll<HTMLAnchorElement>("a")].find(
+    (link) => link.textContent === en.studioDiscovery.viewCreator
+  )!;
+  expect(profile).toBeTruthy();
+  expect(profile.getAttribute("href")).not.toContain("#services");
+  expect(host.querySelector("article")?.textContent).not.toContain("0 matching services");
+});
+
+it("links signed-in Island visitors to their own location controls and removes the link on logout", async () => {
+  context.params = "location=island";
+  await render();
+  const locationLink = () => host.querySelector('a[href="/en-US/profile/services"]');
+  expect(locationLink()?.textContent).toContain(en.studioDiscovery.manageLocation);
+  context.viewer = null;
+  await render();
+  expect(locationLink()).toBeNull();
 });

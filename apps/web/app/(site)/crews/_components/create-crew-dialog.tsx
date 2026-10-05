@@ -79,6 +79,7 @@ interface CreateCrewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initial?: CrewFormInitial | null;
+  onCreated?: (crew: { id: string }) => void;
 }
 
 export function CreateCrewDialog(props: CreateCrewDialogProps) {
@@ -145,6 +146,7 @@ function CrewFormDialog({
   accountId,
   workspaces = [],
   onCertificationRequired,
+  onCreated,
 }: CreateCrewDialogProps & {
   accountId?: string | null;
   workspaces?: Array<{ id: string; name: string }>;
@@ -363,7 +365,8 @@ function CrewFormDialog({
           posthog.capture("crew_created", { crew_id: crew.id });
           onOpenChange(false);
           toast.success(t("createSuccess"));
-          router.push(localizePath(`/crews/${crew.id}/setup`, locale));
+          if (onCreated) onCreated(crew);
+          else router.push(localizePath(`/crews/${crew.id}/setup`, locale));
         },
         onError: (err) => {
           if (!alive.current) return;

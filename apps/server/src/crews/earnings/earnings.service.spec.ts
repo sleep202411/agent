@@ -355,6 +355,25 @@ describe('CrewEarningsService', () => {
     expect(t.tx.crewEarningEntry.update).not.toHaveBeenCalled();
   });
 
+  it('does not allow Crew finance to reverse platform-confirmed contract revenue', async () => {
+    const t = build();
+    const posted = earning({
+      status: CrewEarningStatus.posted,
+      revenueDistributionId: 'distribution',
+      sourceType: CrewEarningSourceType.revenue_share,
+    });
+    t.prisma.crewEarningEntry.findUnique.mockResolvedValue(posted);
+    t.tx.crewEarningEntry.findUniqueOrThrow.mockResolvedValue(posted);
+    await expect(
+      t.service.reverse(EARNING_ID, ACTOR_ID, {
+        expectedVersion: 1,
+        reason: 'Change the contract',
+      }),
+    ).rejects.toThrow('platform finance');
+    expect(t.tx.crewEarningEntry.update).not.toHaveBeenCalled();
+    expect(t.notifications.send).not.toHaveBeenCalled();
+  });
+
   it('waits for an in-flight payout before deciding whether an earning can be reversed', async () => {
     const t = build();
     const posted = earning({ status: CrewEarningStatus.posted, version: 2 });
@@ -428,6 +447,56 @@ describe('CrewEarningsService', () => {
 });
 
 describe('Personal cross-Crew earnings', () => {
+  it.each([
+    { recordedFrom: '2026-02-30' },
+    { recordedThrough: 'tomorrow' },
+    { recordedFrom: '2026-10-07', recordedThrough: '2026-10-05' },
+  ])('rejects invalid recorded dates: %j', (range) => {
+    expect(
+      ListMyCrewEarningsQuerySchema.safeParse({ currency: 'USD', ...range })
+        .success,
+    ).toBe(false);
+  });
+  it('applies inclusive UTC days to rows, cursors, totals and trend without changing beneficiary scope', async () => {
+    const f = build();
+    f.prisma.crewEarningEntry.findFirst.mockResolvedValue({ id: EARNING_ID });
+    await f.service.listMine(
+      MEMBER_USER_ID,
+      ListMyCrewEarningsQuerySchema.parse({
+        currency: 'USD',
+        cursor: EARNING_ID,
+        recordedFrom: '2026-10-05',
+        recordedThrough: '2026-10-07',
+      }),
+    );
+    const createdAt = {
+      gte: new Date('2026-10-05T00:00:00Z'),
+      lt: new Date('2026-10-08T00:00:00Z'),
+    };
+    for (const mock of [
+      f.prisma.crewEarningEntry.findFirst,
+      f.prisma.crewEarningEntry.findMany,
+      f.prisma.crewEarningEntry.groupBy,
+      f.prisma.crewEarningEntry.aggregate,
+    ]) {
+      for (const [args] of mock.mock.calls as unknown as [
+        { where: Record<string, unknown> },
+      ][]) {
+        expect(
+          args.where.AND ? (args.where.AND as unknown[])[0] : args.where,
+        ).toMatchObject({ userId: MEMBER_USER_ID, currency: 'USD', createdAt });
+      }
+    }
+    const query = firstCallArgument(f.prisma.$queryRaw) as {
+      text: string;
+      values: unknown[];
+    };
+    expect(query.text).toContain('created_at >=');
+    expect(query.text).toContain('created_at <');
+    expect(query.values).toEqual(
+      expect.arrayContaining([createdAt.gte, createdAt.lt, MEMBER_USER_ID]),
+    );
+  });
   it('accepts a Crew filter but rejects empty identifiers', () => {
     expect(
       ListMyCrewEarningsQuerySchema.parse({

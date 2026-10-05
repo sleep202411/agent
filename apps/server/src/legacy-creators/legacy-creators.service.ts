@@ -54,6 +54,20 @@ export class LegacyCreatorsService {
     return rows.filter((row) => requested.has(row.id));
   }
 
+  /** Bounded traversal of the authoritative public directory for map discovery.
+   * Keep IDs as strings and use the same lexical order as discovery cursors. */
+  async publicCreatorPage(afterId: string | null) {
+    if (afterId !== null && !/^[0-9]{1,64}$/.test(afterId))
+      throw new Error('Invalid public creator cursor.');
+    const id = 'CAST(id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_bin';
+    return this.legacy.query<CreatorRow>(
+      `SELECT CAST(id AS CHAR) AS id, nick_name, avatar, jobseeking FROM client_user
+       ${WHERE_REAL} ${afterId === null ? '' : `AND ${id} > ?`}
+       ORDER BY ${id} LIMIT 500`,
+      afterId === null ? [] : [afterId],
+    );
+  }
+
   async publicCreatorDisplay(row: CreatorRow): Promise<PublicCreator> {
     return {
       id: row.id,

@@ -1,9 +1,12 @@
+import { recordTaskContractFile } from '../assets/task-contract-retention';
+import { TASK_PAYMENT_TERMS } from '@repo/shared/crew';
 import { readDocumentCrdtState } from '../../documents/document-persisted-state';
 import { validateTaskCustomFieldValues } from './task-custom-field-values';
 import { taskAssetCategory } from './task-asset-category';
 import { CloseCrewTaskSchema, type CloseCrewTaskInput } from '../dto';
 import { assertRecruitedTaskAssignees } from '../task-recruitment';
 import { assertDeliveryTemplateEditable } from './task-delivery-template';
+import { requireAvailableTaskContractAsset } from '../assets/task-contract-retention';
 import {
   overdueTaskPredicate,
   TASK_ADVANCE_WARNING_MS,
@@ -24,6 +27,7 @@ import {
 } from './task-timeliness';
 import {
   taskDeliveryFolderTx,
+  provisionTaskDeliveryFolderTx,
   publishTaskDeliveryAssetsTx,
 } from './task-delivery-folder';
 import { assertNewCrewCurrency } from '../earnings/ledger-currency';
@@ -128,6 +132,14 @@ const taskInclude = {
   },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
+  recruitmentPositions: {
+    where: {
+      status: 'open' as const,
+      deletedAt: null,
+      moderationStatus: 'ok' as const,
+    },
+    select: { closeDate: true },
+  },
   deliveryFolder: {
     include: {
       folder: { select: { id: true, name: true } },
@@ -178,6 +190,14 @@ const taskCardInclude = {
   },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
+  recruitmentPositions: {
+    where: {
+      status: 'open' as const,
+      deletedAt: null,
+      moderationStatus: 'ok' as const,
+    },
+    select: { closeDate: true },
+  },
   deliveryFolder: {
     include: {
       folder: { select: { id: true, name: true } },
@@ -1660,7 +1680,7 @@ export class CrewTasksService {
         ? { metadata: { path: ['contractAssetNodeId'], not: Prisma.AnyNull } }
         : {}),
       ...(query.query
-        ? { title: { contains: query.query, mode: 'insensitive' } }
+        ? { OR: taskCenterSearchWhere(query.query, userId) }
         : {}),
     };
     const categories = await this.prisma.crewTask.groupBy({
@@ -1762,14 +1782,7 @@ export class CrewTasksService {
     assetId: string | null | undefined,
   ) {
     if (!assetId) return;
-    const node = await tx.crewAssetNode.findFirst({
-      where: { id: assetId, crewId, status: 'active', kind: 'file' },
-      select: { id: true },
-    });
-    if (!node)
-      throw new BadRequestException({
-        message: 'The contract file is unavailable in this crew.',
-      });
+    await requireAvailableTaskContractAsset(tx, crewId, assetId);
     await this.assetAccess.requireNodesPermission(
       crewId,
       [assetId],
@@ -2210,6 +2223,7 @@ export class CrewTasksService {
             positionRole: input.positionRole ?? null,
             contractAssetNodeId: input.contractAssetNodeId ?? null,
             compensation: {
+              paymentTerms: input.paymentTerms ?? null,
               rewardUsdMinor: input.rewardUsdMinor ?? null,
               profitShareBps: input.profitShareBps ?? null,
             },
@@ -2261,6 +2275,13 @@ export class CrewTasksService {
         },
         include: taskInclude,
       });
+      await provisionTaskDeliveryFolderTx(tx, created, userId);
+      await recordTaskContractFile(
+        tx,
+        created.id,
+        input.contractAssetNodeId,
+        userId,
+      );
       await this.writeActivity(tx, created.id, 'task.created', userId, {
         title: created.title,
         assigneeUserIds: uniqueAssigneeIds,
@@ -2286,7 +2307,11 @@ export class CrewTasksService {
           tx,
         );
       }
-      return created;
+      // Include the folder inserted after task creation in the returned DTO.
+      return tx.crewTask.findUniqueOrThrow({
+        where: { id: created.id },
+        include: taskInclude,
+      });
     });
     await this.conversations.broadcastCrewTaskChange(
       crewId,
@@ -2782,13 +2807,25 @@ export class CrewTasksService {
           });
         }
 
+        const priorMetadata = (locked.metadata ?? {}) as Prisma.JsonObject;
+        const attachedContractId = taskContractAssetId(priorMetadata);
+        if (
+          attachedContractId &&
+          input.contractAssetNodeId !== undefined &&
+          input.contractAssetNodeId !== attachedContractId
+        ) {
+          throw new ConflictException({
+            code: 'CREW_TASK_CONTRACT_LOCKED',
+            message:
+              'An attached task contract cannot be replaced or removed. Keep the original contract when updating the task.',
+          });
+        }
         await this.assertContractAsset(
           tx,
           locked.crewId,
           userId,
           input.contractAssetNodeId,
         );
-        const priorMetadata = (locked.metadata ?? {}) as Prisma.JsonObject;
         recordChange(
           'contractAssetNodeId',
           priorMetadata.contractAssetNodeId ?? null,
@@ -2810,6 +2847,11 @@ export class CrewTasksService {
           'rewardUsdMinor',
           priorCompensation.rewardUsdMinor ?? null,
           input.rewardUsdMinor,
+        );
+        recordChange(
+          'paymentTerms',
+          priorCompensation.paymentTerms ?? null,
+          input.paymentTerms,
         );
         recordChange(
           'profitShareBps',
@@ -2836,6 +2878,7 @@ export class CrewTasksService {
                   : null,
             estimatePoints: input.estimatePoints,
             metadata:
+              input.paymentTerms !== undefined ||
               input.rewardUsdMinor !== undefined ||
               input.profitShareBps !== undefined ||
               input.requiredSkills !== undefined ||
@@ -2852,11 +2895,15 @@ export class CrewTasksService {
                     ...(input.requiredSkills !== undefined
                       ? { requiredSkills: [...new Set(input.requiredSkills)] }
                       : {}),
-                    ...(input.rewardUsdMinor !== undefined ||
+                    ...(input.paymentTerms !== undefined ||
+                    input.rewardUsdMinor !== undefined ||
                     input.profitShareBps !== undefined
                       ? {
                           compensation: {
                             ...priorCompensation,
+                            ...(input.paymentTerms !== undefined
+                              ? { paymentTerms: input.paymentTerms }
+                              : {}),
                             ...(input.rewardUsdMinor !== undefined
                               ? { rewardUsdMinor: input.rewardUsdMinor }
                               : {}),
@@ -2885,6 +2932,12 @@ export class CrewTasksService {
           },
           include: taskInclude,
         });
+        await recordTaskContractFile(
+          tx,
+          taskId,
+          input.contractAssetNodeId,
+          userId,
+        );
         await this.writeActivity(tx, taskId, 'task.updated', userId, {
           changedFields,
           addedAssigneeUserIds: addedAssigneeIds,
@@ -5084,6 +5137,9 @@ function taskCompensation(metadata: Prisma.JsonValue | null) {
     | Prisma.JsonObject
     | undefined;
   return {
+    paymentTerms:
+      TASK_PAYMENT_TERMS.find((term) => term === compensation?.paymentTerms) ??
+      null,
     rewardUsdMinor:
       typeof compensation?.rewardUsdMinor === 'number'
         ? compensation.rewardUsdMinor
@@ -5132,6 +5188,13 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     number: task.number,
     title: task.title,
     description: task.description,
+    isRecruiting:
+      task.recruitmentPositions?.some(
+        (position) =>
+          !position.closeDate ||
+          position.closeDate.getTime() >=
+            new Date(new Date().toISOString().slice(0, 10)).getTime(),
+      ) ?? false,
     taskKind: task.taskKind,
     assetCategory: taskAssetCategory(task.metadata, task.taskKind),
     storyboardClipId:
@@ -5503,4 +5566,26 @@ function taskContractAssetId(
 ): string | null {
   const value = (metadata as Prisma.JsonObject | null)?.contractAssetNodeId;
   return typeof value === 'string' ? value : null;
+}
+
+/** A financial reference only discovers a task when it belongs to the viewer;
+ * the outer task-center scope still enforces live Crew/task permissions. */
+export function taskCenterSearchWhere(
+  query: string,
+  userId: string,
+): Prisma.CrewTaskWhereInput[] {
+  const term = query.trim();
+  const clauses: Prisma.CrewTaskWhereInput[] = [
+    { title: { contains: term, mode: 'insensitive' } },
+    { crew: { name: { contains: term, mode: 'insensitive' } } },
+  ];
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(term)
+  ) {
+    clauses.push(
+      { id: term },
+      { earningEntries: { some: { id: term, userId } } },
+    );
+  }
+  return clauses;
 }

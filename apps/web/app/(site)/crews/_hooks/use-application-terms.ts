@@ -11,6 +11,7 @@ export interface ApplicationTerms {
   feeAmount: string;
   currency: "USD" | "CNY";
   feePeriod: "month" | "episode" | "project";
+  paymentTerms?: import("@repo/shared/crew").TaskPaymentTerms | null;
   revenueShareBp: number;
   shareBasis: string | null;
   confirmedAt: string | null;

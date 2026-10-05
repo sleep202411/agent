@@ -40,6 +40,9 @@ export const NOTIFICATION_TYPES = [
   "crew.payout.scheduled",
   "crew.payout.paid",
   "crew.payout.voided",
+  "crew.withdrawal.processing",
+  "crew.withdrawal.paid",
+  "crew.withdrawal.rejected",
   // Sharing (studio team collaboration — workspace + project membership)
   "workspace.member.added",
   "workspace.member.removed",

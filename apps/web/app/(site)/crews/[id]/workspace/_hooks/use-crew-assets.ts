@@ -19,6 +19,7 @@ export interface CrewAssetNodeDTO {
   accessMode: CrewAssetAccessMode;
   permissionVersion: number;
   effectivePermission: CrewAssetPermission;
+  contractLocked?: boolean;
   favorite: boolean;
   createdByUserId: string;
   updatedByUserId: string;

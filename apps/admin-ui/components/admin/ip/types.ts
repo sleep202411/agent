@@ -179,6 +179,7 @@ export type ReportRow = {
   ipId: string | null;
   episodeId: string | null;
   reporterUserId: string | null;
+  purchaseOrderId?: string | null;
   reason: string;
   status: string;
   description: string | null;

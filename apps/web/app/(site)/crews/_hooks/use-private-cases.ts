@@ -8,6 +8,8 @@ export type PrivateCase = {
   openedByUserId: string;
   respondentUserId: string;
   title: string;
+  category?: "copyright" | "payment" | "violation" | "harassment" | "other" | null;
+  desiredResolution?: "payment_allocation" | "warning" | "takedown" | null;
   status: "open" | "in_review" | "resolved" | "appealed";
   ownerAdminId: string | null;
   version: number;
@@ -31,16 +33,20 @@ export type PrivateCaseHistory = PrivateCase & {
 export function isCaseParticipant(item: PrivateCase, userId: string) {
   return item.openedByUserId === userId || item.respondentUserId === userId;
 }
-export function usePrivateCases(userId: string, view: "all" | "initiated" | "responses" = "all") {
+export function usePrivateCases(
+  userId: string,
+  view: "all" | "initiated" | "responses" = "all",
+  lifecycle: "all" | "active" | "archived" = "all"
+) {
   return useInfiniteQuery({
-    queryKey: ["crew-cases", userId, "list", view],
+    queryKey: ["crew-cases", userId, "list", view, lifecycle],
     retry: false,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       crewApi.get<{ items: PrivateCase[]; nextBeforeId: string | null }>("/crew-disputes", {
         signal,
         cache: "no-store",
-        query: { limit: 20, beforeId: pageParam, view },
+        query: { limit: 20, beforeId: pageParam, view, lifecycle },
       }),
     getNextPageParam: (page) => page.nextBeforeId ?? undefined,
   });

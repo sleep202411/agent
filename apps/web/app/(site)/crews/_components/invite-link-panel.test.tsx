@@ -211,3 +211,51 @@ it("recovers a failed link list in place without losing a freshly created token"
     vi.resetAllMocks();
   }
 });
+
+it("creates a task-bound single-use link and clears it when the reviewed task changes", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  mocks.userId = "alice";
+  mocks.links = [];
+  mocks.create.mockResolvedValue({ id: "task-link", token: "task-token" });
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
+  let version = 3;
+  const render = () =>
+    act(() =>
+      root.render(
+        <InviteLinkPanel
+          crewId="crew"
+          open
+          canGrantPolicies
+          task={{ id: "task", version, title: "Animate scene" }}
+        />
+      )
+    );
+  try {
+    render();
+    expect(host.textContent).toContain("taskInviteIntro");
+    expect(host.textContent).not.toContain("addMemberAccessLabel");
+    expect(host.textContent).not.toContain("inviteLinkUsesLabel");
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>("button")]
+        .find((item) => item.textContent?.includes("inviteLinkCreate"))!
+        .click()
+    );
+    expect(mocks.create).toHaveBeenCalledWith({
+      taskId: "task",
+      taskVersion: 3,
+      maxUses: 1,
+      policyKeys: [],
+    });
+    expect(host.querySelector("input")?.value).toContain("task-token");
+    version = 4;
+    render();
+    expect(host.querySelector("input")).toBeNull();
+  } finally {
+    act(() => root.unmount());
+    vi.resetAllMocks();
+  }
+});

@@ -164,14 +164,17 @@ vi.mock("./task-quick-create", () => ({
     open,
     crewId,
     presetWorkflowStateId,
+    onOpenChange,
   }: {
     open: boolean;
     crewId: string;
     presetWorkflowStateId: string | null;
+    onOpenChange: (open: boolean) => void;
   }) =>
     open ? (
       <div data-create-task={crewId} data-preset={String(presetWorkflowStateId)}>
         Task creation dialog
+        <button onClick={() => onOpenChange(false)}>Cancel creation</button>
       </div>
     ) : null,
 }));
@@ -195,7 +198,13 @@ afterEach(() => {
   state.workflow.name = "To do";
   state.workflow.version = 3;
 });
-async function render(deeplinkTaskId?: string | null, reuse = false, production = false) {
+async function render(
+  deeplinkTaskId?: string | null,
+  reuse = false,
+  production = false,
+  createTaskRequested = false,
+  handled?: () => void
+) {
   if (!reuse) {
     const el = document.createElement("div");
     document.body.append(el);
@@ -204,6 +213,8 @@ async function render(deeplinkTaskId?: string | null, reuse = false, production 
   await act(async () =>
     root.render(
       <LinearTaskWorkspace
+        createTaskRequested={createTaskRequested}
+        onCreateTaskRequestHandled={handled}
         deeplinkTaskId={deeplinkTaskId}
         crewId="crew"
         crewName="Test12"
@@ -527,3 +538,25 @@ it.each(["en-US", "zh-CN", "zh-HK"])(
     expect(state.workflow.systemKey).toBe("open");
   }
 );
+
+it("opens a task request, consumes cancellation, and accepts a later request in the same Crew", async () => {
+  state.owner = true;
+  const handled = vi.fn();
+  await render(undefined, false, true, true, handled);
+  expect(document.querySelector('[data-create-task="crew"]')).not.toBeNull();
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((b) => b.textContent === "Cancel creation")!
+      .click()
+  );
+  expect(handled).toHaveBeenCalledTimes(1);
+  expect(document.querySelector("[data-create-task]")).toBeNull();
+  await render(undefined, true, true, false, handled);
+  await render(undefined, true, true, true, handled);
+  expect(document.querySelector('[data-create-task="crew"]')).not.toBeNull();
+});
+it("does not open a requested task editor without create permission", async () => {
+  state.owner = false;
+  await render(undefined, false, true, true);
+  expect(document.querySelector("[data-create-task]")).toBeNull();
+});

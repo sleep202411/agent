@@ -20,10 +20,27 @@ import type {
   CrewEarningStatus,
 } from "./types";
 
-export function useMyCrewEarnings(currency: CrewLedgerCurrency, crewId?: string) {
+export type PersonalEarningFilters = {
+  status?: CrewEarningStatus;
+  sourceType?: CrewEarningSourceType;
+  recordedFrom?: string;
+  recordedThrough?: string;
+};
+
+export function useMyCrewEarnings(
+  currency: CrewLedgerCurrency,
+  crewId?: string,
+  filters: PersonalEarningFilters = {}
+) {
   const { user } = useCurrentUser();
   return useInfiniteQuery({
-    queryKey: ["crew-personal-earnings", user?.id ?? null, currency, ...(crewId ? [crewId] : [])],
+    queryKey: [
+      "crew-personal-earnings",
+      user?.id ?? null,
+      currency,
+      ...(crewId ? [crewId] : []),
+      ...(Object.keys(filters).length ? [filters] : []),
+    ],
     enabled: Boolean(user?.id),
     refetchInterval: 60_000,
     initialPageParam: undefined as string | undefined,
@@ -31,7 +48,13 @@ export function useMyCrewEarnings(currency: CrewLedgerCurrency, crewId?: string)
       crewApi.get<CrewEarningPageDTO>("/me/crew-earnings", {
         signal,
         cache: "no-store",
-        query: { currency, cursor: pageParam, limit: 50, ...(crewId ? { crewId } : {}) },
+        query: {
+          currency,
+          cursor: pageParam,
+          limit: 50,
+          ...(crewId ? { crewId } : {}),
+          ...filters,
+        },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });

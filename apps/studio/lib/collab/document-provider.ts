@@ -147,6 +147,16 @@ export class DocumentProvider {
     return this.status;
   }
 
+  /** Only a fully acknowledged local document may request a saved export. */
+  getSavedSequence(): number | null {
+    return this.status === "synced" &&
+      !this.error &&
+      this.pendingUpdates.length === 0 &&
+      this.unacknowledged.size === 0
+      ? this.lastAckedSequence
+      : null;
+  }
+
   onStatus(listener: (status: ConnectionStatus) => void): () => void {
     this.statusListeners.add(listener);
     return () => this.statusListeners.delete(listener);

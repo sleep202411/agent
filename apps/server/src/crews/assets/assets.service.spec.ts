@@ -238,6 +238,40 @@ function build() {
 }
 
 describe('CrewAssetsService', () => {
+  it.each([
+    ['trash', CrewAssetNodeKind.file],
+    ['trash', CrewAssetNodeKind.folder],
+    ['removePermanently', CrewAssetNodeKind.file],
+    ['removePermanently', CrewAssetNodeKind.folder],
+  ] as const)(
+    'blocks %s for a contract-bearing %s before mutations',
+    async (operation, kind) => {
+      const t = build();
+      t.prisma.crewAssetNode.findFirst.mockResolvedValueOnce({
+        id: NODE_ID,
+        parentId: null,
+        kind,
+        trashedAt: operation === 'trash' ? null : new Date(),
+      });
+      if (kind === CrewAssetNodeKind.folder) {
+        t.prisma.crewAssetNode.findMany
+          .mockResolvedValueOnce([{ id: FOLDER_ID }])
+          .mockResolvedValueOnce([]);
+      }
+      t.prisma.$queryRaw.mockResolvedValueOnce([{ id: 'retained-task' }]);
+      await expect(
+        t.service[operation](CREW_ID, USER_ID, NODE_ID),
+      ).rejects.toMatchObject({
+        response: { code: 'CREW_TASK_CONTRACT_LOCKED' },
+      });
+      expect(t.prisma.crewAssetNode.update).not.toHaveBeenCalled();
+      expect(t.prisma.crewAssetNode.updateMany).not.toHaveBeenCalled();
+      expect(t.prisma.crewAssetNode.delete).not.toHaveBeenCalled();
+      expect(t.prisma.mediaAsset.updateMany).not.toHaveBeenCalled();
+      expect(t.mediaStorage.deleteObject).not.toHaveBeenCalled();
+    },
+  );
+
   it('prefers the explicitly linked Studio crew over internal canvas ownership', async () => {
     const t = build();
     t.prisma.platformProject.findUnique.mockResolvedValue({

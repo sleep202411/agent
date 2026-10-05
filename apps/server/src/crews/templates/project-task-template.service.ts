@@ -1,3 +1,4 @@
+import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import { TaskTemplateDefinitionSchema } from './project-task-template.schema';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import {
@@ -230,6 +231,11 @@ export class ProjectTaskTemplateService {
               : {}),
           },
         });
+        await provisionTaskDeliveryFolderTx(
+          tx,
+          task,
+          options.userId ?? 'system',
+        );
         createdTasks.push(task);
       }
 

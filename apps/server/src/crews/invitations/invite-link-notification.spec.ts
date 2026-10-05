@@ -41,6 +41,7 @@ function harness() {
     conversations as never,
     {} as never,
     notifications as never,
+    {} as never,
   );
   const accept = () =>
     service.accept(

@@ -97,17 +97,17 @@ it("does not display a base without map consent", async () => {
   expect(host.textContent).not.toContain("Singapore");
   expect(host.textContent).toContain("Johor Bahru");
 });
-it("removes cached public details when a refetch returns 404", async () => {
+it("removes unavailable location details without hiding independently authorized services", async () => {
   await render();
   vi.mocked(api.get).mockRejectedValueOnce(new ApiRequestError("NOT_FOUND", "Not found", 404));
   await act(async () => {
     await client.invalidateQueries({ queryKey: ["public-studio-profile"] });
   });
   await wait();
-  expect(host.textContent).toBe("");
-  expect(host.querySelector("[data-services]")).toBeNull();
+  expect(host.textContent).not.toContain("Singapore");
+  expect(host.querySelector("[data-services]")).not.toBeNull();
 });
-it("shows an actionable error and retry without retaining stale offerings", async () => {
+it("allows location retry while keeping the independent service listing available", async () => {
   await render();
   vi.mocked(api.get).mockRejectedValueOnce(new Error("Directory unavailable"));
   await act(async () => {
@@ -115,7 +115,7 @@ it("shows an actionable error and retry without retaining stale offerings", asyn
   });
   await wait();
   expect(host.querySelector("[role=alert]")?.textContent).toBe("Directory unavailable");
-  expect(host.querySelector("[data-services]")).toBeNull();
+  expect(host.querySelector("[data-services]")).not.toBeNull();
   await act(async () => host.querySelector("button")!.click());
   await wait();
   expect(host.querySelector("[data-services]")).not.toBeNull();

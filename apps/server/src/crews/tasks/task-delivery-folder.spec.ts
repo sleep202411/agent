@@ -40,6 +40,7 @@ it('creates a named folder once and reuses the task mapping on subsequent submis
     data: {
       crewId: 'crew',
       kind: 'folder',
+      parentId: null,
       name: 'Final cut',
       createdByUserId: 'actor',
       updatedByUserId: 'actor',
@@ -96,9 +97,86 @@ it('allocates a distinct folder when another task already uses the same title', 
     data: {
       crewId: 'crew',
       kind: 'folder',
+      parentId: null,
       name: 'Final cut (2)',
       createdByUserId: 'actor',
       updatedByUserId: 'actor',
     },
   });
+});
+
+it('places a script task under its stable category folder even when renamed', async () => {
+  const f = fixture();
+  f.tx.crewAssetNode.findFirst.mockResolvedValue({
+    id: 'renamed-script',
+    status: 'active',
+  });
+  await taskDeliveryFolderTx(
+    f.tx as never,
+    f.access as never,
+    { ...task, taskKind: 'script' },
+    'actor',
+  );
+  expect(f.tx.crewAssetNode.findFirst).toHaveBeenCalledWith({
+    where: { crewId: 'crew', folderKey: 'script', kind: 'folder' },
+    select: { id: true, status: true },
+  });
+  expect(f.tx.crewAssetNode.create).toHaveBeenCalledWith({
+    data: expect.objectContaining({
+      parentId: 'renamed-script',
+      name: 'Final cut',
+    }) as unknown,
+  });
+  expect(f.access.requireContainerPermission).toHaveBeenCalledWith(
+    'crew',
+    'renamed-script',
+    'actor',
+    'upload',
+    f.tx,
+  );
+});
+it('does not route around a trashed or restricted category folder', async () => {
+  const f = fixture();
+  f.tx.crewAssetNode.findFirst.mockResolvedValue({
+    id: 'script',
+    status: 'trashed',
+  });
+  await expect(
+    taskDeliveryFolderTx(
+      f.tx as never,
+      f.access as never,
+      { ...task, taskKind: 'script' },
+      'actor',
+    ),
+  ).rejects.toThrow('category folder is unavailable');
+  f.tx.crewAssetNode.findFirst.mockResolvedValue({
+    id: 'script',
+    status: 'active',
+  });
+  f.access.requireContainerPermission.mockRejectedValue(
+    new ForbiddenException(),
+  );
+  await expect(
+    taskDeliveryFolderTx(
+      f.tx as never,
+      f.access as never,
+      { ...task, taskKind: 'script' },
+      'actor',
+    ),
+  ).rejects.toBeInstanceOf(ForbiddenException);
+  expect(f.tx.crewAssetNode.create).not.toHaveBeenCalled();
+});
+it('keeps a previously selected task folder when its task type changes', async () => {
+  const f = fixture();
+  f.tx.$queryRaw.mockResolvedValue([{ folderId: 'existing' }]);
+  await taskDeliveryFolderTx(
+    f.tx as never,
+    f.access as never,
+    { ...task, taskKind: 'script' },
+    'actor',
+  );
+  expect(f.tx.crewAssetNode.findFirst).toHaveBeenCalledWith({
+    where: { id: 'existing', crewId: 'crew', kind: 'folder', status: 'active' },
+  });
+  expect(f.tx.crewAssetNode.create).not.toHaveBeenCalled();
 });

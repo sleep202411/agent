@@ -49,6 +49,8 @@ export type CreatorLocationProfile = z.infer<typeof CreatorLocationProfileSchema
 export type SaveCreatorLocationProfile = z.infer<typeof SaveCreatorLocationProfileSchema>;
 
 export const CreatorDiscoveryQuerySchema = z.strictObject({
+  /** Virtual community group, never a geographic city or coordinate. */
+  islandOnly: z.boolean().optional(),
   basedIn: CreatorCitySchema.nullable(),
   serves: CreatorCitySchema.nullable(),
   remoteOnly: z.boolean(),
@@ -94,7 +96,11 @@ export const CreatorDiscoveryResultSchema = z.strictObject({
   matchedCount: z.number().int().nonnegative().safe(),
   accessibleCount: z.number().int().nonnegative().safe(),
   requiresLogin: z.boolean(),
-  countScope: z.literal("public_platform_creators_with_listed_services"),
+  island: z.strictObject({
+    creatorCount: z.number().int().nonnegative().safe(),
+    matchedCreatorCount: z.number().int().nonnegative().safe(),
+  }),
+  countScope: z.enum(["public_platform_creators_with_listed_services", "public_platform_creators"]),
   map: z
     .strictObject({
       viewport: ContentGpsSearchRequestSchema.shape.map,

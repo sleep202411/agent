@@ -22,7 +22,7 @@ describe('Full-ledger income trend', () => {
   beforeAll(async () => {
     db = await PGlite.create();
     await db.exec(
-      'CREATE TABLE crew_earning_entries(crew_id text,user_id text,currency text,status text,source_type text,posted_at timestamptz,amount_minor bigint)',
+      'CREATE TABLE crew_earning_entries(crew_id text,user_id text,currency text,status text,source_type text,posted_at timestamptz,amount_minor bigint,created_at timestamptz)',
     );
   }, 30000);
   beforeEach(async () => {
@@ -39,10 +39,11 @@ describe('Full-ledger income trend', () => {
       status: 'posted',
       source: 'task_reward',
       date: '2026-09-29T00:00:00Z',
+      recorded: '2026-09-29T00:00:00Z',
       ...overrides,
     };
     await db.query(
-      'INSERT INTO crew_earning_entries VALUES($1,$2,$3,$4,$5,$6,$7)',
+      'INSERT INTO crew_earning_entries VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
       [
         row.crew,
         row.user,
@@ -51,9 +52,33 @@ describe('Full-ledger income trend', () => {
         row.source,
         row.date,
         amount,
+        row.recorded,
       ],
     );
   }
+  it('includes the first instant and last millisecond of selected recorded UTC days only', async () => {
+    await add('100', { recorded: '2026-09-27T23:59:59.999Z' });
+    await add('200', { recorded: '2026-09-28T00:00:00Z' });
+    await add('300', { recorded: '2026-09-28T23:59:59.999Z' });
+    await add('400', { recorded: '2026-09-29T00:00:00Z' });
+    await add('500', {
+      recorded: '2026-09-28T12:00:00Z',
+      user: 'someone-else',
+    });
+    const result = await readEarningTrend(
+      reader,
+      {
+        currency: 'USD',
+        userId: 'alice',
+        createdAt: {
+          gte: new Date('2026-09-28T00:00:00Z'),
+          lt: new Date('2026-09-29T00:00:00Z'),
+        },
+      },
+      now,
+    );
+    expect(result.days[29].amountMinor).toBe('500');
+  });
   it('aggregates more than one page exactly, including amounts above safe JS integers', async () => {
     for (let i = 0; i < 55; i++) await add('9007199254740993');
     const result = await readEarningTrend(

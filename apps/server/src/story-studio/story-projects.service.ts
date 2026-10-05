@@ -3,7 +3,10 @@ import {
   crewStudioRoleForMember,
 } from '../workspaces/crew-studio-access';
 import { MediaAccessService } from '../media/media-access.service';
-import { lockMediaAssetReference } from '../media/media-asset-lifecycle-lock';
+import {
+  lockMediaAssetReference,
+  lockMediaAssetReferences,
+} from '../media/media-asset-lifecycle-lock';
 import {
   BadRequestException,
   ConflictException,
@@ -636,6 +639,14 @@ export class StoryProjectsService {
           });
         }
       }
+      // Lock the complete set in one order before validating JSON references.
+      await lockMediaAssetReferences(tx, [
+        ...(input.coverAssetId ? [input.coverAssetId] : []),
+        ...(input.storeListing?.trailerAssetId
+          ? [input.storeListing.trailerAssetId]
+          : []),
+        ...(input.storeListing?.screenshotAssetIds ?? []),
+      ]);
       if (input.coverAssetId !== undefined && input.coverAssetId !== null) {
         // A cover must be a STILL. Every place a cover is consumed needs one: the
         // player paints it as the pre-playback backdrop from an image asset, the
@@ -643,7 +654,6 @@ export class StoryProjectsService {
         // og:image. A video could only ever have appeared on the studio's own
         // library card, so accepting one meant a creator could set a cover that
         // no player and no catalogue would ever show.
-        await lockMediaAssetReference(tx, input.coverAssetId);
         // Personal uploads and explicitly shared references need the canonical
         // consumption policy; project edit access alone does not grant media.
         await this.requireProjectMediaUseAccess(user.userId, projectId, [

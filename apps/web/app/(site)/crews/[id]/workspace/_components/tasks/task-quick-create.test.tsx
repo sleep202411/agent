@@ -184,12 +184,14 @@ function renderQuickCreate(
     open?: boolean;
     initialInput?: CreateCrewTaskInput;
     crewId?: string;
+    crewName?: string;
     parentId?: string;
     activeView?: CrewTaskViewDTO;
     presetEpisodeId?: string;
     onStage?: (input: CreateCrewTaskInput) => void;
     onCreateStaged?: (input: CreateCrewTaskInput) => Promise<CrewTaskDTO>;
     onPublishTask?: (taskId: string) => void;
+    onInviteTask?: (task: CrewTaskDTO) => void;
   } = {}
 ) {
   if (!root) {
@@ -213,12 +215,12 @@ function renderQuickCreate(
     )
   );
   if (context.open === false) return;
-  const brief = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task brief"]');
+  const brief = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Brief"]');
   if (brief && !brief.value) act(() => fill(brief, "Deliver a reviewable task."));
   const reward = document.querySelector<HTMLInputElement>('input[aria-label="Reward (USD)"]');
   if (reward && !reward.value) act(() => fill(reward, "100"));
   if (!context.initialInput?.dueAt) {
-    act(() => click(document.querySelector('button[aria-label="Due date"]')!));
+    act(() => click(document.querySelector('button[aria-label="Due Date"]')!));
     const date = document.querySelector<HTMLInputElement>('input[aria-label="Calendar selection"]');
     if (date) act(() => fill(date, "2099-10-03"));
   }
@@ -300,7 +302,7 @@ describe("TaskQuickCreate", () => {
       });
       act(() =>
         fill(
-          document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+          document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
           "Review a shot"
         )
       );
@@ -317,7 +319,7 @@ describe("TaskQuickCreate", () => {
     });
     act(() =>
       fill(
-        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
         "Review a shot"
       )
     );
@@ -340,7 +342,7 @@ describe("TaskQuickCreate", () => {
     });
     act(() =>
       fill(
-        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
         "Review a shot"
       )
     );
@@ -362,7 +364,7 @@ describe("TaskQuickCreate", () => {
     renderQuickCreate(vi.fn(), vi.fn(), taskProject, context);
     act(() =>
       fill(
-        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
         "Keep my assignment"
       )
     );
@@ -397,7 +399,7 @@ describe("TaskQuickCreate", () => {
     const onOpenChange = vi.fn();
     renderQuickCreate(onCreated, onOpenChange);
 
-    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!;
     act(() => fill(input, "Review episode one animatic"));
     await act(async () => {
       click(exactButton("Create"));
@@ -421,7 +423,7 @@ describe("TaskQuickCreate", () => {
     const onOpenChange = vi.fn();
     renderQuickCreate(vi.fn(), onOpenChange);
 
-    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!;
     act(() => {
       fill(input, "Create a second storyboard pass");
       click(document.querySelector('button[role="switch"]')!);
@@ -439,7 +441,7 @@ describe("TaskQuickCreate", () => {
   it("keeps AI output as an editable draft until the user confirms", async () => {
     renderQuickCreate();
 
-    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!;
     act(() => fill(input, "Isaac should finish the first-act storyboard next Friday"));
 
     await act(async () => {
@@ -465,7 +467,7 @@ describe("TaskQuickCreate", () => {
     );
     expect(state.create.mock.calls[0]![0]).not.toHaveProperty("computeBudgetPoints");
   });
-  it.each(["Task title", "Task brief"])(
+  it.each(["Task Title", "Task Brief"])(
     "preserves edits to %s made while AI preparation runs",
     async (label) => {
       let finish!: (value: unknown) => void;
@@ -476,7 +478,7 @@ describe("TaskQuickCreate", () => {
       );
       renderQuickCreate();
       const title = document.querySelector<HTMLTextAreaElement>(
-        'textarea[aria-label="Task title"]'
+        'textarea[aria-label="Task Title"]'
       )!;
       act(() => fill(title, "Original prompt"));
 
@@ -498,8 +500,8 @@ describe("TaskQuickCreate", () => {
       await act(async () => click(exactButton("Create")));
       expect(state.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: label === "Task title" ? "Newer user text" : "Original prompt",
-          description: label === "Task brief" ? "Newer user text" : "Deliver a reviewable task.",
+          title: label === "Task Title" ? "Newer user text" : "Original prompt",
+          description: label === "Task Brief" ? "Newer user text" : "Deliver a reviewable task.",
         })
       );
     }
@@ -520,13 +522,13 @@ describe("TaskQuickCreate", () => {
         cycles: [{ id: "cycle-user", name: "Chosen cycle", status: "planned" }],
       } as unknown as CrewTaskProjectDTO);
       const title = document.querySelector<HTMLTextAreaElement>(
-        'textarea[aria-label="Task title"]'
+        'textarea[aria-label="Task Title"]'
       )!;
       act(() => fill(title, "Current title"));
 
       await act(async () => click(button("Organize with AI")));
       if (field === "deadline") {
-        await act(async () => click(document.querySelector('button[aria-label="Due date"]')!));
+        await act(async () => click(document.querySelector('button[aria-label="Due Date"]')!));
         act(() =>
           fill(document.querySelector<HTMLInputElement>('input[type="date"]')!, futureDate)
         );
@@ -577,7 +579,7 @@ describe("TaskQuickCreate", () => {
     renderQuickCreate(onCreated, onOpenChange);
     act(() =>
       fill(
-        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
         "Old prompt"
       )
     );
@@ -585,7 +587,7 @@ describe("TaskQuickCreate", () => {
     await act(async () => click(button("Organize with AI")));
     renderQuickCreate(onCreated, onOpenChange, project, { open: false });
     renderQuickCreate(onCreated, onOpenChange);
-    const title = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    const title = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!;
     expect(title.value).toBe("");
     act(() => fill(title, "New session"));
     await act(async () =>
@@ -619,14 +621,14 @@ describe("TaskQuickCreate", () => {
     renderQuickCreate(onCreated, onOpenChange);
     act(() =>
       fill(
-        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
         "Old task"
       )
     );
     act(() => click(exactButton("Create")));
     renderQuickCreate(onCreated, onOpenChange, project, { open: false });
     renderQuickCreate(onCreated, onOpenChange);
-    const title = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    const title = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!;
     act(() => fill(title, "New task"));
     act(() => click(exactButton("Create")));
     expect(state.create).toHaveBeenCalledTimes(2);
@@ -646,13 +648,13 @@ describe("TaskQuickCreate", () => {
       renderQuickCreate();
       act(() =>
         fill(
-          document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+          document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
           "Previous context"
         )
       );
       renderQuickCreate(vi.fn(), vi.fn(), project, context);
       expect(
-        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!.value
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!.value
       ).toBe("");
     }
   );
@@ -668,7 +670,7 @@ describe("TaskQuickCreate", () => {
       );
       renderQuickCreate();
       const input = document.querySelector<HTMLTextAreaElement>(
-        'textarea[aria-label="Task title"]'
+        'textarea[aria-label="Task Title"]'
       )!;
       act(() => fill(input, "Create only once"));
       const shortcut = () =>
@@ -702,7 +704,7 @@ describe("TaskQuickCreate", () => {
       })
     );
     renderQuickCreate();
-    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!;
     act(() => fill(input, "Prepare this task"));
 
     act(() => {
@@ -734,10 +736,10 @@ describe("TaskQuickCreate", () => {
   });
   it.each(["", "2099-09-25"])("respects the user changing a deadline to %s", async (date) => {
     renderQuickCreate();
-    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!;
     act(() => fill(input, "Prepare storyboard"));
     await act(async () => click(button("Organize with AI")));
-    await act(async () => click(document.querySelector('button[aria-label="Due date"]')!));
+    await act(async () => click(document.querySelector('button[aria-label="Due Date"]')!));
     const dateInput = document.querySelector<HTMLInputElement>('input[type="date"]')!;
     act(() => fill(dateInput, date));
     await act(async () => click(exactButton("Create")));
@@ -775,7 +777,7 @@ it("submits a manually selected assignee and preserves it after server rejection
   renderQuickCreate();
   act(() =>
     fill(
-      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
       "Assigned task"
     )
   );
@@ -796,7 +798,7 @@ it("submits a manually selected assignee and preserves it after server rejection
     expect.objectContaining({ assignees: [expect.objectContaining({ userId: "member-1" })] })
   );
   expect(
-    document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!.value
+    document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!.value
   ).toBe("Assigned task");
   await act(async () => click(exactButton("Create")));
   expect(state.create).toHaveBeenCalledTimes(2);
@@ -833,6 +835,7 @@ it("reopens a staged task, saves edits and preserves unexposed planning fields",
     labelIds: [],
     assignees: [{ userId: "member-1", currency: "USD", rewardAmountMinor: 500 }],
     estimatePoints: 8,
+    paymentTerms: "monthly",
     rewardUsdMinor: 3025,
     profitShareBps: 250,
     revisionLimit: 2,
@@ -935,7 +938,7 @@ it("saves and opens the publishing form directly from Recruit Creators", async (
   renderQuickCreate(vi.fn(), vi.fn(), project, { onPublishTask: publish });
   act(() =>
     fill(
-      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
       "Open role"
     )
   );
@@ -952,7 +955,7 @@ it("lets recruitment replace a selected assignee before publishing", async () =>
   renderQuickCreate(vi.fn(), vi.fn(), project, { onPublishTask: publish });
   act(() =>
     fill(
-      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
       "Open role"
     )
   );
@@ -974,24 +977,15 @@ it("lets recruitment replace a selected assignee before publishing", async () =>
   expect(publish).toHaveBeenCalledWith("task-created");
 });
 
-it("opens the Episode selector, distinguishes duplicate titles, and saves the chosen ID", async () => {
-  renderQuickCreate(vi.fn());
+it("omits episode editing while preserving the task's episode association", async () => {
+  renderQuickCreate(vi.fn(), vi.fn(), project, { presetEpisodeId: "episode-two" });
+  expect(document.querySelector('[aria-label="Episode"]')).toBeNull();
   act(() =>
     fill(
-      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
       "Episode task"
     )
   );
-  const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Episode"]')!;
-  await act(async () =>
-    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
-  );
-  const options = [...document.querySelectorAll('[role="option"]')];
-  expect(options).toHaveLength(3);
-  await act(async () =>
-    options[2].dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
-  );
-  expect(trigger.textContent).toContain("Opening");
   await act(async () => click(exactButton("Create")));
   expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ episodeId: "episode-two" }));
 });
@@ -999,7 +993,7 @@ it("blocks a stale episode instead of silently assigning a different episode", a
   renderQuickCreate(vi.fn(), vi.fn(), project, { presetEpisodeId: "deleted-episode" });
   act(() =>
     fill(
-      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
       "Episode task"
     )
   );
@@ -1018,7 +1012,7 @@ it("recruits a staged draft through the durable workbench creation path", async 
   });
   act(() =>
     fill(
-      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
       "Recruit editor"
     )
   );
@@ -1036,7 +1030,7 @@ it("attaches the uploaded contract and blocks creation while it uploads", async 
   renderQuickCreate();
   act(() =>
     fill(
-      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
       "Contract task"
     )
   );
@@ -1055,7 +1049,7 @@ it("clears interrupted upload state when switching crews", async () => {
   renderQuickCreate(vi.fn(), vi.fn(), project, { crewId: "crew-2" });
   act(() =>
     fill(
-      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
       "New crew task"
     )
   );
@@ -1064,10 +1058,10 @@ it("clears interrupted upload state when switching crews", async () => {
   expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ contractAssetNodeId: null }));
 });
 
-it.each(["Task brief", "Reward (USD)"])("blocks an empty required %s", async (label) => {
+it.each(["Task Brief", "Reward (USD)"])("blocks an empty required %s", async (label) => {
   renderQuickCreate();
   act(() =>
-    fill(document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!, "Task")
+    fill(document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!, "Task")
   );
   act(() =>
     fill(
@@ -1077,4 +1071,105 @@ it.each(["Task brief", "Reward (USD)"])("blocks an empty required %s", async (la
   );
   await act(async () => click(exactButton("Create")));
   expect(state.create).not.toHaveBeenCalled();
+});
+
+it("keeps assignment visible and names the default priority", () => {
+  renderQuickCreate();
+  const assignee = document.querySelector('[aria-label="Assignees"]');
+  expect(assignee).not.toBeNull();
+  expect(assignee!.closest("details")).toBeNull();
+  expect(document.querySelector('[aria-label="Priority"]')?.textContent).toContain("Normal");
+});
+
+it("shows immutable Crew context without the redundant recruitment note", () => {
+  renderQuickCreate(vi.fn(), vi.fn(), project, { crewName: "Film Crew", onPublishTask: vi.fn() });
+  expect(document.querySelector('[aria-label="Crew"]')?.textContent).toContain("Film Crew");
+  expect(document.querySelector('input[aria-label="Crew"], button[aria-label="Crew"]')).toBeNull();
+  expect(document.body.textContent).not.toContain("Save this task and continue to the job form.");
+});
+
+it("stages the selected payment terms alongside the reward", async () => {
+  const stage = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
+  act(() => fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Paid script"));
+  const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Payment terms"]')!;
+  await act(async () => click(trigger));
+  const option = [...document.querySelectorAll('[role="option"]')].find((node) =>
+    node.textContent?.includes("50% upfront")
+  );
+  expect(option).toBeDefined();
+  await act(async () =>
+    option!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  );
+  await act(async () => click(exactButton("Add task")));
+  expect(stage).toHaveBeenCalledWith(expect.objectContaining({ paymentTerms: "half_upfront" }));
+});
+
+it("creates an unassigned task before opening its invitation and preserves payment timing", async () => {
+  const invite = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, {
+    onInviteTask: invite,
+    initialInput: {
+      title: "Invite an editor",
+      description: "Edit the scene",
+      taskKind: "script",
+      priority: "normal",
+      assignees: [{ userId: "member", currency: "USD" }],
+      rewardUsdMinor: 10000,
+      paymentTerms: "half_upfront",
+      dueAt: "2099-10-03T00:00:00Z",
+    } as CreateCrewTaskInput,
+  });
+  await act(async () => {
+    click(exactButton("Create & invite"));
+    await Promise.resolve();
+  });
+  expect(state.create).toHaveBeenCalledTimes(1);
+  expect(state.create).toHaveBeenCalledWith(
+    expect.objectContaining({ assignees: [], paymentTerms: "half_upfront" })
+  );
+  expect(invite).toHaveBeenCalledExactlyOnceWith({ id: "task-created" });
+});
+it("does not open invitations when task creation fails", async () => {
+  const invite = vi.fn();
+  state.create.mockRejectedValueOnce(new Error("Cannot create task"));
+  renderQuickCreate(vi.fn(), vi.fn(), project, { onInviteTask: invite });
+  act(() =>
+    fill(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task Title"]')!,
+      "Invite editor"
+    )
+  );
+  await act(async () => {
+    click(exactButton("Create & invite"));
+    await Promise.resolve();
+  });
+  expect(invite).not.toHaveBeenCalled();
+});
+
+it("does not inherit an approved workflow filter when creating a new task", () => {
+  renderQuickCreate(
+    vi.fn(),
+    vi.fn(),
+    {
+      ...project,
+      workflowStates: [
+        ...project.workflowStates,
+        {
+          ...project.workflowStates[0]!,
+          id: "already-approved",
+          semantic: "approved",
+          systemKey: "approved",
+          name: "Already approved",
+        },
+      ],
+    },
+    {
+      activeView: { ...view, filters: { ...view.filters, workflowStateIds: ["already-approved"] } },
+    }
+  );
+  expect(document.querySelector('[aria-label="Planning State"]')?.textContent).not.toContain(
+    "Already approved"
+  );
+  expect(document.querySelector('[aria-label="Planning State"]')).not.toBeNull();
 });

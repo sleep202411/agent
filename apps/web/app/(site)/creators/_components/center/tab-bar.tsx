@@ -7,8 +7,8 @@
  * `/profile` creator center uses the same visual treatment as an accessible
  * tablist that swaps a single content panel.
  *
- * IP leads the portfolio per Pax’s stage-modification Slide 26.
- * Service management remains separate from the profile portfolio.
+ * Services lead per Pax’s October 5 profile feedback.
+ * Service packages remain accessible to both owners and visitors.
  *
  * About (bio / education / experience / socials) was lifted out of the
  * tab bar entirely and now lives in the left rail — identity content
@@ -21,11 +21,18 @@
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 
-export type CreatorTabId = "works" | "certificates" | "ips" | "crews";
+export type CreatorTabId = "works" | "certificates" | "ips" | "crews" | "services";
 
-export const CREATOR_TAB_ORDER: CreatorTabId[] = ["ips", "works", "certificates", "crews"];
+export const CREATOR_TAB_ORDER: CreatorTabId[] = [
+  "services",
+  "ips",
+  "works",
+  "certificates",
+  "crews",
+];
 
 const TAB_I18N_KEY: Record<CreatorTabId, string> = {
+  services: "tabs.services",
   works: "tabs.works",
   certificates: "tabs.certificates",
   ips: "tabs.ips",

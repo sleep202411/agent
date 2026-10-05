@@ -223,6 +223,30 @@ function unsupportedProfileManifestFixture() {
   });
 }
 
+test("rejects a removed chapter link when the current release is a standalone film", async () => {
+  const fetcher = async (input: string | URL) =>
+    String(input) === MANIFEST_URL
+      ? Response.json(manifestFixture())
+      : Response.json({
+          code: 200,
+          data: {
+            gameId: "game-one",
+            title: "Game one",
+            currentVersion: "version-1",
+            manifestUrl: MANIFEST_URL,
+          },
+        });
+  await assert.rejects(
+    loadPublishedInteractiveFilm("game-one", {
+      fetcher,
+      javaStudioUrl: JAVA_URL,
+      chapterId: "removed-chapter",
+    }),
+    (error: unknown) =>
+      error instanceof InteractiveFilmLoadError && error.code === "CHAPTER_NOT_FOUND"
+  );
+});
+
 test("loads the Java catalogue envelope without weakening its contract", async () => {
   const fetcher = async (input: string | URL) => {
     assert.equal(String(input), `${JAVA_URL}/api/player/interactive-film/games`);

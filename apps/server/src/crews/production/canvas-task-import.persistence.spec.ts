@@ -1,3 +1,7 @@
+import {
+  deliveryFolderAdapter,
+  deliveryFolderSql,
+} from '../tasks/testing/delivery-folder-sql';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { CrewCanvasTaskImportService } from './canvas-task-import';
@@ -9,14 +13,8 @@ const projectId = '01990000-0000-7000-8000-000000000001';
 const input = { sourceRevision: 3, sourceHash: 'a'.repeat(64) };
 let failSecondWrite = false;
 function adapter(sql: Sql) {
-  const raw = (parts: TemplateStringsArray, ...values: unknown[]) =>
-    sql.query(
-      parts.reduce((text, part, i) => text + (i ? `$${i}` : '') + part, ''),
-      values,
-    );
   return {
-    $executeRaw: raw,
-    $queryRaw: raw,
+    ...deliveryFolderAdapter(sql),
     crew: {
       findFirst: async ({ where }: { where: { id: string } }) =>
         (
@@ -112,7 +110,7 @@ function adapter(sql: Sql) {
             JSON.stringify(data.metadata),
           ],
         );
-        return { id };
+        return { id, ...data };
       },
     },
   };
@@ -122,6 +120,7 @@ describe('Canvas import isolated SQL persistence', () => {
   let service: CrewCanvasTaskImportService;
   beforeAll(async () => {
     db = await PGlite.create();
+    await db.exec(deliveryFolderSql);
     await db.exec(`CREATE TABLE crews(id text PRIMARY KEY, workspace text, kind text);
       CREATE TABLE story_projects(id uuid PRIMARY KEY, workspace text, status text);
       CREATE TABLE story_drafts(id uuid PRIMARY KEY, story_project_id uuid UNIQUE, revision int, hash text);
@@ -178,7 +177,9 @@ describe('Canvas import isolated SQL persistence', () => {
   }, 30000);
   beforeEach(async () => {
     failSecondWrite = false;
-    await db.exec('TRUNCATE tasks, activity');
+    await db.exec(
+      'TRUNCATE tasks, activity, fixture_asset_nodes, crew_task_delivery_folders',
+    );
   });
   afterAll(async () => {
     await db.close();
@@ -194,6 +195,9 @@ describe('Canvas import isolated SQL persistence', () => {
       true,
     ]);
     expect((await db.query('SELECT * FROM tasks')).rows).toHaveLength(2);
+    expect(
+      (await db.query('SELECT * FROM crew_task_delivery_folders')).rows,
+    ).toHaveLength(2);
     expect((await db.query('SELECT * FROM activity')).rows).toHaveLength(1);
   });
   it('rolls back every task when a later task write fails', async () => {
@@ -202,6 +206,12 @@ describe('Canvas import isolated SQL persistence', () => {
       service.apply('crew', projectId, 'user', input),
     ).rejects.toThrow('Second task failed');
     expect((await db.query('SELECT * FROM tasks')).rows).toHaveLength(0);
+    expect(
+      (await db.query('SELECT * FROM crew_task_delivery_folders')).rows,
+    ).toHaveLength(0);
+    expect(
+      (await db.query('SELECT * FROM fixture_asset_nodes')).rows,
+    ).toHaveLength(0);
     expect((await db.query('SELECT * FROM activity')).rows).toHaveLength(0);
     failSecondWrite = false;
     await expect(

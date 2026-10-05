@@ -28,6 +28,8 @@ const totals = {
   availableAmountMinor: "7000",
 };
 function response(path: string, options: { query: { crewId?: string; cursor?: string } }) {
+  if (path === "/me/withdrawals/balances") return [];
+  if (path === "/me/withdrawals") return { items: [], nextCursor: null };
   const crewId = options.query.crewId ?? "departed-crew";
   const amount = options.query.crewId ? "500" : "10000";
   const page = options.query.cursor ? "second" : "first";
@@ -119,7 +121,14 @@ it.each([0, 1])(
       );
     }
     expect(
-      h.get.mock.calls.every(([path]) => ["/me/crew-earnings", "/me/crew-payouts"].includes(path))
+      h.get.mock.calls.every(([path]) =>
+        [
+          "/me/crew-earnings",
+          "/me/crew-payouts",
+          "/me/withdrawals",
+          "/me/withdrawals/balances",
+        ].includes(path)
+      )
     ).toBe(true);
     expect(container.textContent).not.toContain("USD 100.00");
     expect(container.textContent).toContain("USD 5.00");
@@ -206,4 +215,27 @@ it("does not substitute combined balances when a filtered read fails and allows 
   h.get.mockImplementation((path, options) => Promise.resolve(response(path, options)));
   await click("allCrews");
   expect(container.textContent).toContain("USD 100.00");
+});
+
+it("sends transaction filters to the server and starts a fresh cursor", async () => {
+  await render();
+  await click("loadMore");
+  h.get.mockClear();
+  const form = container.querySelector("form")!;
+  const fields = {
+    sourceType: "task_reward",
+    status: "posted",
+    recordedFrom: "2026-10-05",
+    recordedThrough: "2026-10-07",
+  };
+  for (const [name, value] of Object.entries(fields)) {
+    (form.elements.namedItem(name) as HTMLInputElement).value = value;
+  }
+  await act(async () =>
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+  );
+  await settle();
+  const calls = h.get.mock.calls.filter(([path]) => path === "/me/crew-earnings");
+  expect(calls.length).toBeGreaterThan(0);
+  expect(calls.at(-1)?.[1].query).toMatchObject({ ...fields, currency: "USD", cursor: undefined });
 });

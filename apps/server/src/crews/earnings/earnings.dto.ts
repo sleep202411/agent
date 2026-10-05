@@ -26,7 +26,21 @@ export const ListMyCrewEarningsQuerySchema = ListCrewEarningsQuerySchema.omit({
   scope: true,
 })
   .extend({ crewId: z.string().trim().min(1).max(128).optional() })
-  .strict();
+  .extend({
+    recordedFrom: z.string().date().optional(),
+    recordedThrough: z.string().date().optional(),
+  })
+  .strict()
+  .refine(
+    (v) =>
+      !v.recordedFrom ||
+      !v.recordedThrough ||
+      v.recordedFrom <= v.recordedThrough,
+    {
+      message: 'The recorded date range must end on or after its start.',
+      path: ['recordedThrough'],
+    },
+  );
 export type ListMyCrewEarningsQuery = z.infer<
   typeof ListMyCrewEarningsQuerySchema
 >;

@@ -338,6 +338,7 @@ const request = () => ({
           accessibleCount: 2,
           countScope: 'public_platform_creators_with_listed_services',
           requiresLogin: false,
+          island: { creatorCount: 0, matchedCreatorCount: 0 },
           map: null,
         }),
       );
@@ -356,6 +357,7 @@ const request = () => ({
           accessibleCount: 1,
           countScope: 'public_platform_creators_with_listed_services',
           requiresLogin: false,
+          island: { creatorCount: 0, matchedCreatorCount: 0 },
           map: null,
         }),
       );

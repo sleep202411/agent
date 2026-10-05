@@ -1055,7 +1055,10 @@ function GenerationCard({
                     t("statusQueued")
                   )
                 ) : (
-                  <GenerationEstimate seconds={generation?.etaSeconds} />
+                  <GenerationEstimate
+                    seconds={generation?.etaSeconds}
+                    createdAt={generation?.createdAt}
+                  />
                 )}
               </p>
             </>

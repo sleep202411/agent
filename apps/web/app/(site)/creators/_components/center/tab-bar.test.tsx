@@ -16,14 +16,15 @@ afterEach(async () => {
 });
 
 function Harness() {
-  const [active, setActive] = useState<CreatorTabId>("ips");
+  const [active, setActive] = useState<CreatorTabId>("services");
   return <CreatorTabBar mode="tabs" active={active} onPick={setActive} />;
 }
 
-it("shows IP first and preserves keyboard navigation without the removed services tab", async () => {
+it("shows services first and preserves keyboard navigation", async () => {
   await act(async () => root.render(<Harness />));
   const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
   expect(tabs.map((tab) => tab.textContent)).toEqual([
+    "tabs.services",
     "tabs.ips",
     "tabs.works",
     "tabs.certificates",
@@ -33,9 +34,9 @@ it("shows IP first and preserves keyboard navigation without the removed service
   await act(async () =>
     tabs[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }))
   );
-  expect(tabs[3].getAttribute("aria-selected")).toBe("true");
+  expect(tabs[4].getAttribute("aria-selected")).toBe("true");
   await act(async () =>
-    tabs[3].dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }))
+    tabs[4].dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }))
   );
   expect(tabs[0].getAttribute("aria-selected")).toBe("true");
 });

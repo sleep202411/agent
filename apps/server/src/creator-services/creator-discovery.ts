@@ -49,6 +49,7 @@ function candidateSql(
   viewerId: string | null,
   onlyCreatorId: string | null = null,
   creatorIds?: string[],
+  includeWithoutServices = false,
 ) {
   const q = input.query;
   const city = (
@@ -71,6 +72,17 @@ function candidateSql(
         AND NOT EXISTS (SELECT 1 FROM ip_user_content_blocks b WHERE b.user_id = ${viewerId}
           AND b.target_type::text = 'creator' AND b.target_id = s.creator_id AND b.unblocked_at IS NULL)
       GROUP BY s.creator_id ORDER BY s.creator_id COLLATE "C" LIMIT ${BATCH}
+    ), population AS (
+      ${
+        includeWithoutServices && creatorIds?.length
+          ? Prisma.sql`SELECT ids.id, COALESCE(s.service_count, 0) AS service_count,
+            COALESCE(s.matching_service_count, 0) AS matching_service_count
+          FROM (VALUES ${Prisma.join(creatorIds.map((id) => Prisma.sql`(${id}::text)`))}) ids(id)
+          LEFT JOIN creators s ON s.id = ids.id
+          WHERE NOT EXISTS (SELECT 1 FROM ip_user_content_blocks b WHERE b.user_id = ${viewerId}
+            AND b.target_type::text = 'creator' AND b.target_id = ids.id AND b.unblocked_at IS NULL)`
+          : Prisma.sql`SELECT * FROM creators`
+      }
     )
     SELECT c.id, c.service_count AS "serviceCount", c.matching_service_count AS "matchingServiceCount", p.profile, CASE WHEN (p.profile->>'showOnMap')::boolean THEN g.result->'point' ELSE NULL END AS point,
       COALESCE((
@@ -78,7 +90,7 @@ function candidateSql(
         AND ${q.serves ? Prisma.sql`EXISTS (SELECT 1 FROM jsonb_array_elements(p.profile->'serves') place(value) WHERE ${city(Prisma.sql`place.value`, q.serves)})` : Prisma.sql`TRUE`}
         AND ${q.remoteOnly ? Prisma.sql`(p.profile->>'remote')::boolean` : Prisma.sql`TRUE`}
       ), FALSE) AS "locationMatch"
-    FROM creators c LEFT JOIN LATERAL (
+    FROM population c LEFT JOIN LATERAL (
       SELECT profile, version FROM creator_location_revisions r WHERE r.creator_id = c.id ORDER BY version DESC LIMIT 1
     ) p ON TRUE LEFT JOIN LATERAL (
       SELECT result FROM creator_location_geocodes g WHERE g.creator_id = c.id AND g.version = p.version
@@ -225,36 +237,31 @@ export class CreatorDiscoveryService {
           }
         >();
         let mapCount = 0,
-          mapMatchedCount = 0;
+          mapMatchedCount = 0,
+          islandCount = 0,
+          islandMatchedCount = 0;
         const width = viewport
           ? viewport.east > viewport.west
             ? viewport.east - viewport.west
             : 360 - viewport.west + viewport.east
           : 0;
         for (;;) {
+          const directoryPage = await this.directory.publicCreatorPage(after);
+          if (!directoryPage.length) break;
           const batch: Candidate[] = await tx.$queryRaw(
-            candidateSql(input, after, user?.userId ?? null),
+            candidateSql(
+              input,
+              null,
+              user?.userId ?? null,
+              null,
+              directoryPage.map((row) => row.id),
+              true,
+            ),
           );
-          if (!batch.length) break;
-          const identities = new Map(
-            (
-              await this.directory.publicCreatorBatch(batch.map((c) => c.id))
-            ).map((row) => [row.id, row]),
-          );
+          const identities = new Map(directoryPage.map((row) => [row.id, row]));
           for (const candidate of batch) {
             const identity = identities.get(candidate.id);
             if (!identity) continue;
-            accessibleCount++;
-            const matched =
-              candidate.locationMatch &&
-              candidate.matchingServiceCount > 0 &&
-              (!input.query.availableForWork ||
-                Number(identity.jobseeking ?? 0) === 1);
-            if (matched) matchedCount++;
-            const visible =
-              Boolean(user) || (matched && matchedCount <= GUEST_CAP);
-            if (!visible) continue;
-            const entry = { candidate, identity, matched };
             const profile = candidate.profile
               ? CreatorLocationProfileSchema.parse(candidate.profile)
               : null;
@@ -262,6 +269,35 @@ export class CreatorDiscoveryService {
               profile?.showOnMap && candidate.point
                 ? CityPoint.parse(candidate.point)
                 : null;
+            const islandMatch =
+              !point &&
+              candidate.locationMatch &&
+              ((!input.query.category && !input.query.text) ||
+                candidate.matchingServiceCount > 0) &&
+              (!input.query.availableForWork ||
+                Number(identity.jobseeking ?? 0) === 1);
+            if (islandMatch && (user || islandMatchedCount < GUEST_CAP))
+              islandMatchedCount++;
+            if (
+              !point &&
+              (user || islandMatch) &&
+              (user || islandCount < GUEST_CAP)
+            )
+              islandCount++;
+            if (!input.query.islandOnly && candidate.serviceCount === 0)
+              continue;
+            accessibleCount++;
+            const matched = input.query.islandOnly
+              ? islandMatch
+              : candidate.locationMatch &&
+                candidate.matchingServiceCount > 0 &&
+                (!input.query.availableForWork ||
+                  Number(identity.jobseeking ?? 0) === 1);
+            if (matched) matchedCount++;
+            const visible =
+              Boolean(user) || (matched && matchedCount <= GUEST_CAP);
+            if (!visible) continue;
+            const entry = { candidate, identity, matched };
             if (
               viewport &&
               point &&
@@ -306,14 +342,18 @@ export class CreatorDiscoveryService {
             )
               page.push(entry);
           }
-          after = batch[batch.length - 1].id;
-          if (batch.length < BATCH) break;
+          after = directoryPage[directoryPage.length - 1].id;
+          if (directoryPage.length < BATCH) break;
         }
         return {
           page,
           selected,
           matchedCount,
           accessibleCount,
+          island: {
+            creatorCount: islandCount,
+            matchedCreatorCount: islandMatchedCount,
+          },
           map: viewport
             ? {
                 viewport,
@@ -344,13 +384,16 @@ export class CreatorDiscoveryService {
       items: await Promise.all(page.map((entry) => this.project(entry))),
       selected: result.selected ? await this.project(result.selected) : null,
       map: result.map,
+      island: result.island,
       matchedCount: result.matchedCount,
       accessibleCount: result.accessibleCount,
       nextCursor: hasMore
         ? { afterId: page[page.length - 1].candidate.id, queryId }
         : null,
       requiresLogin: !user && result.matchedCount > GUEST_CAP && !hasMore,
-      countScope: 'public_platform_creators_with_listed_services',
+      countScope: input.query.islandOnly
+        ? 'public_platform_creators'
+        : 'public_platform_creators_with_listed_services',
     });
   }
 }

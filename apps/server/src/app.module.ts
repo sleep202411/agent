@@ -1,3 +1,4 @@
+import { CreatorWithdrawalsModule } from './creator-withdrawals/creator-withdrawals.module';
 import { DiscoveryAssistantModule } from './discovery-assistant/discovery-assistant.module';
 import { AiActorsModule } from './ai-actors/ai-actors.module';
 import { Module } from '@nestjs/common';
@@ -36,6 +37,7 @@ import { LegacyPointsModule } from './legacy-points/legacy-points.module';
 import { LegacyProjectsModule } from './legacy-projects/legacy-projects.module';
 import { IpCommerceModule } from './ip-commerce';
 import { MediaModule } from './media/media.module';
+import { StoryboardExportModule } from './storyboard-export/storyboard-export.module';
 import { RealtimeModule } from './infra/realtime/realtime.module';
 import { RedisModule } from './infra/redis/redis.module';
 import { NotificationModule } from './notification';
@@ -100,9 +102,11 @@ const agentOsGatewayEnabled = (() => {
     StoryStudioModule,
     StoryPlaybackModule,
     MediaModule,
+    StoryboardExportModule,
     AiActorsModule,
     CrewsModule,
     CreatorServicesModule,
+    CreatorWithdrawalsModule,
     ReferralsModule,
     StorySavesModule,
     ConversationsModule,

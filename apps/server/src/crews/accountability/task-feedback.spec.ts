@@ -6,6 +6,7 @@ import {
 import {
   CrewTaskFeedbackService,
   TaskFeedbackPageInput,
+  TaskFeedbackInput,
 } from './task-feedback';
 
 function fixture() {
@@ -187,5 +188,46 @@ describe('private task feedback history', () => {
       f.service.listMine('creator', { limit: 20, cursor: 'foreign' }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(f.tx.crewTaskFeedback.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('optional task review comments', () => {
+  it('accepts omitted, blank and short comments while requiring valid ratings', async () => {
+    const ratingOnly = {
+      subjectUserId: review.subjectUserId,
+      ratings: review.ratings,
+    };
+    expect(TaskFeedbackInput.parse(ratingOnly).comment).toBe('');
+    const f = fixture();
+    for (const comment of ['', '  ', 'OK']) {
+      expect(
+        await f.service.submit('task', 'manager', { ...review, comment }),
+      ).toMatchObject({ comment: comment.trim(), ratings: review.ratings });
+    }
+    expect(
+      TaskFeedbackInput.safeParse({ ...review, comment: 'x'.repeat(2001) })
+        .success,
+    ).toBe(false);
+    expect(
+      TaskFeedbackInput.safeParse({
+        ...ratingOnly,
+        ratings: { ...review.ratings, communication: 0 },
+      }).success,
+    ).toBe(false);
+  });
+  it('replays an empty-comment review and rejects a later added comment', async () => {
+    const f = fixture();
+    const input = { ...review, comment: '' };
+    f.tx.crewTaskFeedback.findUnique.mockResolvedValue({
+      ...input,
+      id: 'feedback',
+    } as never);
+    expect(await f.service.submit('task', 'manager', input)).toMatchObject({
+      id: 'feedback',
+    });
+    await expect(
+      f.service.submit('task', 'manager', { ...input, comment: 'Added later' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(f.tx.crewTaskFeedback.create).not.toHaveBeenCalled();
   });
 });

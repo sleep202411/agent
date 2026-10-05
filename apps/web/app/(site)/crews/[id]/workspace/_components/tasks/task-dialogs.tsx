@@ -23,8 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useSubmitCrewTask, type CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslations } from "@/src/i18n/i18n";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { useCrewAssetFolders, useCrewAssets } from "../../_hooks/use-crew-assets";
+import { useCrewAssets } from "../../_hooks/use-crew-assets";
 
 export function SubmitTaskDialog({
   open,
@@ -57,7 +56,9 @@ export function SubmitTaskDialog({
   const [slotAssets, setSlotAssets] = useState<Record<string, Array<{ id: string; name: string }>>>(
     {}
   );
+  const [assetIds, setAssetIds] = useState<string[]>([]);
   const needsDeliveryLink = !template.data && !template.isPending && !template.isError;
+  const hasAlternativeDelivery = assetIds.length > 0 || Boolean(task?.canvasHref);
   const validDeliveryLink = (() => {
     try {
       const url = new URL(deliveryLink.trim());
@@ -67,13 +68,13 @@ export function SubmitTaskDialog({
     }
   })();
   const deliveryLinkError =
-    needsDeliveryLink && !validDeliveryLink
+    needsDeliveryLink &&
+    !validDeliveryLink &&
+    (Boolean(deliveryLink.trim()) || !hasAlternativeDelivery)
       ? t(deliveryLink.trim() ? "deliveryLinkInvalid" : "deliveryLinkRequired")
       : null;
   const noteTooLong = [deliveryLink.trim(), note].filter(Boolean).join("\n\n").length > 5000;
-  const [deliveryFolderId, setDeliveryFolderId] = useState("");
-  const folders = useCrewAssetFolders(crewId, open);
-  const [assetIds, setAssetIds] = useState<string[]>([]);
+  const deliveryFolderId = task?.deliveryFolder?.id ?? null;
   const [uploadedAssets, setUploadedAssets] = useState<Array<{ id: string; name: string }>>([]);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const uploadingRef = useRef<Record<string, boolean>>({});
@@ -120,7 +121,6 @@ export function SubmitTaskDialog({
     setDeliveryLink("");
     setAssetIds([]);
     setAnswers({});
-    setDeliveryFolderId("");
     setUploadedAssets([]);
     setSlotAssets({});
     setUploading({});
@@ -143,7 +143,6 @@ export function SubmitTaskDialog({
       setDeliveryLink("");
       setAssetIds([]);
       setAnswers({});
-      setDeliveryFolderId("");
       setUploadedAssets([]);
       setSlotAssets({});
       setUploading({});
@@ -187,7 +186,6 @@ export function SubmitTaskDialog({
               },
             }
           : {}),
-        ...(deliveryFolderId ? { deliveryFolderId } : {}),
       });
       if (generation.current !== requestGeneration) return;
       toast.success(t("submitted"));
@@ -247,6 +245,7 @@ export function SubmitTaskDialog({
                 <TaskDeliveryUpload
                   key={`${answerKey}:${field.key}`}
                   crewId={crewId}
+                  taskId={task?.id ?? ""}
                   parentId={deliveryFolderId || null}
                   label={field.label}
                   disabled={saving}
@@ -281,11 +280,17 @@ export function SubmitTaskDialog({
           <>
             <label className="block space-y-2 rounded-lg border border-border p-4 text-sm">
               <span>
-                {t("deliveryLink")} <span aria-hidden="true">*</span>
+                {t("deliveryLink")}
+                {!hasAlternativeDelivery && (
+                  <span aria-hidden="true" className="text-destructive">
+                    {" "}
+                    *
+                  </span>
+                )}
               </span>
               <Input
                 type="url"
-                required
+                required={!hasAlternativeDelivery}
                 aria-invalid={Boolean(deliveryLink.trim() && deliveryLinkError)}
                 aria-describedby={deliveryErrorId}
                 aria-label={t("deliveryLink")}
@@ -310,6 +315,7 @@ export function SubmitTaskDialog({
                     <TaskDeliveryUpload
                       key={`${answerKey}:${slot}`}
                       crewId={crewId}
+                      taskId={task?.id ?? ""}
                       parentId={deliveryFolderId || null}
                       label={t(slot)}
                       disabled={saving}
@@ -371,38 +377,12 @@ export function SubmitTaskDialog({
             })}
           </p>
         ) : null}
-        <label className="block space-y-2 text-sm">
-          {t("deliveryFolder")}
-          <NativeSelect
-            aria-label={t("deliveryFolder")}
-            disabled={saving || folders.isLoading}
-            value={deliveryFolderId}
-            onChange={setDeliveryFolderId}
-          >
-            <NativeSelectOption value="">{t("automaticDeliveryFolder")}</NativeSelectOption>
-            {(folders.data ?? [])
-              .filter((folder) =>
-                ["upload", "edit", "manage"].includes(folder.effectivePermission ?? "")
-              )
-              .map((folder) => (
-                <NativeSelectOption key={folder.id} value={folder.id}>
-                  {folder.name}
-                </NativeSelectOption>
-              ))}
-          </NativeSelect>
-        </label>
-        {folders.error ? (
-          <div role="alert" className="text-xs">
-            <p>{folders.error instanceof Error ? folders.error.message : common("loadFailed")}</p>
-            <Button
-              variant="outline"
-              disabled={saving || folders.isFetching}
-              onClick={() => void folders.refetch()}
-            >
-              {common("retry")}
-            </Button>
-          </div>
-        ) : null}
+        <div className="space-y-1 text-sm">
+          <p className="font-medium">{t("deliveryFolder")}</p>
+          <p className="break-words text-muted-foreground">
+            {task?.deliveryFolder?.name ?? t("automaticDeliveryFolder")}
+          </p>
+        </div>
 
         {task?.canvasHref ? (
           <div className="rounded-lg border border-border bg-muted/25 p-3">
@@ -424,10 +404,8 @@ export function SubmitTaskDialog({
           maxLength={5000}
           className="min-h-24"
         />
-        <details>
-          <summary className="cursor-pointer py-2 text-sm text-muted-foreground">
-            {t("attachAssets")}
-          </summary>
+        <section aria-label={t("attachAssets")}>
+          <h3 className="py-2 text-sm text-muted-foreground">{t("attachAssets")}</h3>
           <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
             {assetQuery.isLoading ? (
               <p role="status" className="px-2 py-4 text-center text-[11px] text-muted-foreground">
@@ -500,7 +478,7 @@ export function SubmitTaskDialog({
               {assetQuery.isFetchingNextPage ? common("loading") : common("loadMore")}
             </Button>
           )}
-        </details>
+        </section>
       </DialogBody>
       {hasUploads ? (
         <p role="status" className="text-xs text-muted-foreground">

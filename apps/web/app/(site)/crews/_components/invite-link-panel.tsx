@@ -41,22 +41,28 @@ import {
   type CrewInviteAccessPreset,
 } from "@/app/(site)/crews/_lib/member-access-preset";
 
-const EXPIRY_CHOICES = ["never", "7", "30"] as const;
-const USES_CHOICES = ["unlimited", "5", "25"] as const;
+type ExpiryChoice = "never" | "7" | "30";
+type UsesChoice = "unlimited" | "5" | "25";
 
 interface InviteLinkPanelProps {
   crewId: string;
   canGrantPolicies: boolean;
   open: boolean;
+  task?: { id: string; version: number; title: string };
 }
 
 export function InviteLinkPanel(props: InviteLinkPanelProps) {
   const { user } = useCurrentUser();
   if (!props.open || !user) return null;
-  return <InviteLinkSession key={`${props.crewId}:${user.id}`} {...props} />;
+  return (
+    <InviteLinkSession
+      key={`${props.crewId}:${user.id}:${props.task?.id ?? ""}:${props.task?.version ?? ""}`}
+      {...props}
+    />
+  );
 }
 
-function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelProps) {
+function InviteLinkSession({ crewId, canGrantPolicies, open, task }: InviteLinkPanelProps) {
   const active = useRef(true);
   const createPending = useRef(false);
   const revokePending = useRef(false);
@@ -70,8 +76,8 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
   const commonT = useTranslations("common");
 
   const [accessPreset, setAccessPreset] = useState<CrewInviteAccessPreset>("standard");
-  const [expiry, setExpiry] = useState<(typeof EXPIRY_CHOICES)[number]>("never");
-  const [uses, setUses] = useState<(typeof USES_CHOICES)[number]>("unlimited");
+  const [expiry, setExpiry] = useState<ExpiryChoice>("never");
+  const [uses, setUses] = useState<UsesChoice>("unlimited");
   const [freshLink, setFreshLink] = useState<{ id: string; url: string } | null>(null);
   const freshUrl = freshLink?.url;
 
@@ -79,14 +85,19 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
   const { mutateAsync: createLink, isPending: creating } = useCreateCrewInviteLink(crewId);
   const { mutateAsync: revokeLink, isPending: revoking } = useRevokeCrewInviteLink(crewId);
 
+  const visibleLinks = links.data?.filter((link) =>
+    task ? link.taskId === task.id : !link.taskId
+  );
+
   const handleCreate = async () => {
     if (!active.current || createPending.current) return;
     createPending.current = true;
     try {
       const created = await createLink({
-        policyKeys: canGrantPolicies ? policyKeysForAccessPreset(accessPreset) : [],
+        policyKeys: !task && canGrantPolicies ? policyKeysForAccessPreset(accessPreset) : [],
+        ...(task ? { taskId: task.id, taskVersion: task.version, maxUses: 1 } : {}),
         ...(expiry === "never" ? {} : { expiresInDays: Number(expiry) }),
-        ...(uses === "unlimited" ? {} : { maxUses: Number(uses) }),
+        ...(!task && uses !== "unlimited" ? { maxUses: Number(uses) } : {}),
       });
       if (!active.current) return;
       const url = crewInviteUrl(created.token);
@@ -129,9 +140,11 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
 
   return (
     <FieldGroup>
-      <p className="text-[11px] leading-5 text-muted-foreground">{t("inviteLinkIntro")}</p>
+      <p className="text-[11px] leading-5 text-muted-foreground">
+        {task ? t("taskInviteIntro", { task: task.title }) : t("inviteLinkIntro")}
+      </p>
 
-      {canGrantPolicies ? (
+      {canGrantPolicies && !task ? (
         <Field>
           <FieldLabel>{t("addMemberAccessLabel")}</FieldLabel>
           <Select
@@ -158,7 +171,7 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
           <FieldLabel>{t("inviteLinkExpiryLabel")}</FieldLabel>
           <Select
             value={expiry}
-            onValueChange={(v) => setExpiry(v as (typeof EXPIRY_CHOICES)[number])}
+            onValueChange={(v) => setExpiry(v as ExpiryChoice)}
             disabled={creating}
           >
             <SelectTrigger className="h-10 w-full rounded-lg px-3 text-sm">
@@ -171,23 +184,25 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
             </SelectContent>
           </Select>
         </Field>
-        <Field>
-          <FieldLabel>{t("inviteLinkUsesLabel")}</FieldLabel>
-          <Select
-            value={uses}
-            onValueChange={(v) => setUses(v as (typeof USES_CHOICES)[number])}
-            disabled={creating}
-          >
-            <SelectTrigger className="h-10 w-full rounded-lg px-3 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper" align="start">
-              <SelectItem value="unlimited">{t("inviteLinkUsesUnlimited")}</SelectItem>
-              <SelectItem value="5">{t("inviteLinkUsesLimited", { count: 5 })}</SelectItem>
-              <SelectItem value="25">{t("inviteLinkUsesLimited", { count: 25 })}</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
+        {!task ? (
+          <Field>
+            <FieldLabel>{t("inviteLinkUsesLabel")}</FieldLabel>
+            <Select
+              value={uses}
+              onValueChange={(v) => setUses(v as UsesChoice)}
+              disabled={creating}
+            >
+              <SelectTrigger className="h-10 w-full rounded-lg px-3 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="unlimited">{t("inviteLinkUsesUnlimited")}</SelectItem>
+                <SelectItem value="5">{t("inviteLinkUsesLimited", { count: 5 })}</SelectItem>
+                <SelectItem value="25">{t("inviteLinkUsesLimited", { count: 25 })}</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        ) : null}
       </div>
 
       <Button type="button" onClick={() => void handleCreate()} disabled={creating}>
@@ -238,12 +253,12 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
         ) : null}
         {links.isLoading ? (
           <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
-        ) : (links.data?.length ?? 0) === 0 ? (
+        ) : (visibleLinks?.length ?? 0) === 0 ? (
           !links.isError ? (
             <p className="m-0 text-[11px] leading-5 text-muted-foreground">{t("inviteLinkNone")}</p>
           ) : null
         ) : (
-          links.data?.map((link) => (
+          visibleLinks?.map((link) => (
             <div
               key={link.id}
               className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 ring-1 ring-white/[0.06]"

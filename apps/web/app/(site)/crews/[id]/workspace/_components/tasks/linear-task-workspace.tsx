@@ -1,4 +1,5 @@
 "use client";
+import { TaskInviteDialog } from "@/app/(site)/crews/_components/task-invite-dialog";
 
 import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { useCallback, useDeferredValue, useMemo, useState } from "react";
@@ -77,6 +78,9 @@ interface LinearTaskWorkspaceProps {
   members: CrewMemberDTO[];
   isOwner: boolean;
   canCreate?: boolean;
+  createTaskRequested?: boolean;
+  onCreateTaskRequestHandled?: () => void;
+  canInvite?: boolean;
   onPublishTask?: (taskId: string) => void;
   canReview: boolean;
   canSubmitAssigned: boolean;
@@ -93,6 +97,9 @@ export function LinearTaskWorkspace(props: LinearTaskWorkspaceProps) {
 }
 
 function LinearTaskSession({
+  createTaskRequested = false,
+  onCreateTaskRequestHandled,
+  canInvite = false,
   crewId,
   crewName,
   crewSummary,
@@ -110,6 +117,7 @@ function LinearTaskSession({
   deeplinkTaskId,
   onSelectedTaskChange,
 }: LinearTaskWorkspaceProps) {
+  const [inviteTask, setInviteTask] = useState<CrewTaskDTO | null>(null);
   const t = useTranslations("crewTaskProject");
   const projectQuery = useCrewTaskProject(crewId);
   const summaryQuery = useCrewTaskSummary(crewId);
@@ -122,7 +130,9 @@ function LinearTaskSession({
   const deleteView = useDeleteCrewTaskView(crewId);
   const createWorkflowState = useCreateCrewTaskWorkflowState(crewId);
   const updateWorkflowState = useUpdateCrewTaskWorkflowState(crewId);
-  const [section, setSection] = useState<PrimarySection>("production");
+  const [section, setSection] = useState<PrimarySection>(
+    createTaskRequested ? "issues" : "production"
+  );
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(deeplinkTaskId ?? null);
   const [query, setQuery] = useState("");
@@ -130,7 +140,17 @@ function LinearTaskSession({
   const [priorityFilterOpen, setPriorityFilterOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [displayDraft, setDisplayDraft] = useState<CrewTaskViewDTO | null>(null);
-  const [createTaskStateId, setCreateTaskStateId] = useState<string | null | undefined>(undefined);
+  const [createTaskStateId, setCreateTaskStateId] = useState<string | null | undefined>(
+    createTaskRequested ? null : undefined
+  );
+  const [previousCreateRequest, setPreviousCreateRequest] = useState(createTaskRequested);
+  if (previousCreateRequest !== createTaskRequested) {
+    setPreviousCreateRequest(createTaskRequested);
+    if (createTaskRequested) {
+      setSection("issues");
+      setCreateTaskStateId(null);
+    }
+  }
   const [createViewMode, setCreateViewMode] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [newViewLayout, setNewViewLayout] = useState<"list" | "board">("list");
@@ -552,6 +572,7 @@ function LinearTaskSession({
         canManage={canCreate}
         canSubmitAssigned={canSubmitAssigned}
         onPublishTask={onPublishTask}
+        onInviteTask={canInvite ? setInviteTask : undefined}
         canManageEpisodes={productionOverviewQuery.data?.capabilities.manage === true}
         active={section === "production"}
         onSelectTask={selectTask}
@@ -796,6 +817,7 @@ function LinearTaskSession({
               isOwner={isOwner}
               canCreate={canCreate}
               onPublishTask={onPublishTask}
+              onInviteTask={canInvite ? setInviteTask : undefined}
               canReview={canReview}
               canSubmitAssigned={canSubmitAssigned}
               canComment={canComment}
@@ -836,7 +858,10 @@ function LinearTaskSession({
       {canCreate && section !== "production" ? (
         <TaskQuickCreate
           open={createTaskStateId !== undefined}
-          onOpenChange={(open) => setCreateTaskStateId(open ? null : undefined)}
+          onOpenChange={(open) => {
+            setCreateTaskStateId(open ? null : undefined);
+            if (!open && createTaskRequested) onCreateTaskRequestHandled?.();
+          }}
           crewId={crewId}
           crewName={crewName}
           members={members}
@@ -844,8 +869,20 @@ function LinearTaskSession({
           activeView={effectiveView}
           presetWorkflowStateId={createTaskStateId ?? null}
           onPublishTask={onPublishTask}
+          onInviteTask={canInvite ? setInviteTask : undefined}
         />
       ) : null}
+      {canInvite && inviteTask && (
+        <TaskInviteDialog
+          key={inviteTask.id}
+          task={inviteTask}
+          open
+          hideTrigger
+          onOpenChange={(open) => {
+            if (!open) setInviteTask(null);
+          }}
+        />
+      )}
       {workflowEditor ? (
         <WorkflowEditor
           key={workflowEditor.state?.id ?? `new-${workflowEditor.afterStateId ?? "first"}`}

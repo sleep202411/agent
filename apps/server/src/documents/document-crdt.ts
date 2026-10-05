@@ -159,6 +159,26 @@ export class DocumentStateBuilder {
     return content;
   }
 
+  /** Reject incomplete projections without depending on Yjs store internals.
+   * The state vector covers integrated structs; the full update also carries
+   * pending structs/deletes whose dependencies have not arrived yet. */
+  hasUnresolvedUpdates(): boolean {
+    this.assertLive();
+    const integrated = Y.decodeStateVector(Y.encodeStateVector(this.doc));
+    const encoded = Y.decodeUpdate(this.encodeState());
+    return (
+      encoded.structs.some(
+        (item) =>
+          item.id.clock + item.length > (integrated.get(item.id.client) ?? 0),
+      ) ||
+      [...encoded.ds.clients].some(([client, ranges]) =>
+        ranges.some(
+          (range) => range.clock + range.len > (integrated.get(client) ?? 0),
+        ),
+      )
+    );
+  }
+
   /** Both the re-encoded state and the materialized snapshot. */
   finish(): MergedDocumentState {
     return { state: this.encodeState(), snapshot: this.snapshot() };

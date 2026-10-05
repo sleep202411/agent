@@ -624,7 +624,6 @@ function SecretAccountMenu({
               [
                 { href: "/crews/income", label: "myIncome", icon: IconCoins },
                 { href: "/contracts", label: "myContracts", icon: IconFileText },
-                { href: "/resolution-center", label: "resolutionCenter", icon: IconScale },
               ] as const
             ).map(({ href, label, icon: Icon }) => (
               <Link
@@ -659,6 +658,14 @@ function SecretAccountMenu({
               <span className="flex-1">{navT("userGuide")}</span>
               <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
             </a>
+            <Link
+              href={localizePath("/resolution-center", locale)}
+              className={navCx("fd-secret-account-row")}
+            >
+              <IconScale className="size-5" />
+              <span className="flex-1">{navT("resolutionCenter")}</span>
+              <IconChevronRight className={navCx("fd-secret-account-row-arrow size-4")} />
+            </Link>
           </div>
 
           <div className={navCx("fd-secret-account-section")}>

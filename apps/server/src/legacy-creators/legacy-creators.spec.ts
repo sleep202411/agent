@@ -25,6 +25,24 @@ function fixture(total = 75) {
 }
 
 describe('Public creator availability filter', () => {
+  it('traverses public identities with bound lexical cursors and bounded pages', async () => {
+    const { legacy, service } = fixture();
+    await service.publicCreatorPage(null);
+    expect(legacy.query).toHaveBeenLastCalledWith(
+      expect.stringContaining('LIMIT 500'),
+      [],
+    );
+    await service.publicCreatorPage('9007199254740993');
+    expect(legacy.query).toHaveBeenLastCalledWith(
+      expect.stringContaining('COLLATE utf8mb4_bin > ?'),
+      ['9007199254740993'],
+    );
+    await expect(service.publicCreatorPage("1' OR 1=1")).rejects.toThrow(
+      'cursor',
+    );
+    expect(legacy.query).toHaveBeenCalledTimes(2);
+  });
+
   it('binds creator-batch identifiers and rejects coerced or unrequested IDs', async () => {
     const { legacy, service } = fixture();
     legacy.query.mockResolvedValueOnce([

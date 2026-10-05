@@ -3,7 +3,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskDeliveryUpload } from "./task-delivery-upload";
-const state = vi.hoisted(() => ({ upload: vi.fn(), attach: vi.fn(), allowed: true }));
+const state = vi.hoisted(() => ({
+  upload: vi.fn(),
+  attach: vi.fn(),
+  resolve: vi.fn(),
+  allowed: true,
+}));
+vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { put: state.resolve } }));
 vi.mock("@/src/lib/media-upload", () => ({ uploadFileViaSignedUrl: state.upload }));
 vi.mock("../../_hooks/use-crew-assets", () => ({
   attachCrewAssetFile: state.attach,
@@ -24,6 +30,7 @@ beforeEach(() => {
   state.allowed = true;
   state.upload.mockReset();
   state.attach.mockReset();
+  state.resolve.mockReset();
   onUploaded.mockClear();
   onBusy.mockClear();
 });
@@ -32,13 +39,14 @@ afterEach(() => {
   host.remove();
   client.clear();
 });
-function render(scope = "task-a", parentId = "folder-a") {
+function render(scope = "task-a", parentId: string | null = "folder-a") {
   act(() =>
     root.render(
       <QueryClientProvider client={client}>
         <TaskDeliveryUpload
           key={scope}
           crewId="crew"
+          taskId={scope}
           parentId={parentId}
           label="Film"
           disabled={false}
@@ -127,4 +135,39 @@ it("does not issue uploads when storage permission is unavailable", async () => 
   render();
   await choose();
   expect(state.upload).not.toHaveBeenCalled();
+});
+
+it("resolves a task folder before the first upload and retains it for attachment retries", async () => {
+  state.resolve.mockResolvedValue({ deliveryFolder: { id: "automatic-task-folder" } });
+  state.upload.mockResolvedValue({ mediaAssetId: "media" });
+  state.attach
+    .mockRejectedValueOnce(new Error("Connection lost"))
+    .mockResolvedValue({ id: "node", name: "Film" });
+  render("task-a", null);
+  await choose();
+  expect(state.resolve).toHaveBeenCalledWith("/crew-tasks/task-a/delivery-folder", {
+    body: { deliveryFolderId: null },
+    signal: expect.any(AbortSignal),
+  });
+  expect(state.resolve.mock.invocationCallOrder[0]).toBeLessThan(
+    state.upload.mock.invocationCallOrder[0]
+  );
+  expect(state.attach.mock.calls[0][1].parentId).toBe("automatic-task-folder");
+  await retry();
+  expect(state.resolve).toHaveBeenCalledTimes(1);
+  expect(state.upload).toHaveBeenCalledTimes(1);
+  expect(state.attach.mock.calls[1][1].parentId).toBe("automatic-task-folder");
+});
+it("does not upload to the root when folder resolution fails", async () => {
+  state.resolve.mockRejectedValueOnce(new Error("Category folder is restricted"));
+  render("task-a", null);
+  await choose();
+  expect(state.upload).not.toHaveBeenCalled();
+  expect(state.attach).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Category folder is restricted");
+  state.resolve.mockResolvedValue({ deliveryFolder: { id: "recovered-folder" } });
+  state.upload.mockResolvedValue({ mediaAssetId: "media" });
+  state.attach.mockResolvedValue({ id: "node", name: "Film" });
+  await retry();
+  expect(state.attach.mock.calls[0][1].parentId).toBe("recovered-folder");
 });

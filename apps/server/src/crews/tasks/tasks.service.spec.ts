@@ -406,6 +406,38 @@ function build() {
 }
 
 describe('CrewTasksService', () => {
+  it.each([
+    null,
+    new Date(new Date().toISOString().slice(0, 10)),
+    new Date('2000-01-01'),
+  ])(
+    'reports recruitment from open positions and inclusive closing dates (%s)',
+    async (closeDate) => {
+      const t = build();
+      t.prisma.crewTask.findUnique.mockResolvedValue(
+        task({ recruitmentPositions: [{ closeDate }] }),
+      );
+      const result = await t.service.get(TASK_ID, OWNER_ID);
+      expect(result.isRecruiting).toBe(
+        closeDate === null || closeDate.getUTCFullYear() !== 2000,
+      );
+      expect(t.prisma.crewTask.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: expect.objectContaining({
+            recruitmentPositions: {
+              where: {
+                status: 'open',
+                deletedAt: null,
+                moderationStatus: 'ok',
+              },
+              select: { closeDate: true },
+            },
+          }) as unknown,
+        }),
+      );
+    },
+  );
+
   it('rejects missing or cross-crew contract assets before changing a task', async () => {
     const t = build();
     t.tx.crewAssetNode.findFirst.mockResolvedValue(null as never);
@@ -435,8 +467,31 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTask.update).not.toHaveBeenCalled();
   });
   it.each([TASK_ID, null])(
-    'updates or detaches a contract while preserving task metadata (%s)',
+    'rejects replacement or removal of an attached contract (%s)',
     async (assetId) => {
+      const t = build();
+      const current = task({
+        canvasProjectId: null,
+        metadata: { clipId: 'clip-1', contractAssetNodeId: 'old-file' },
+      });
+      t.prisma.crewTask.findUnique.mockResolvedValue(current);
+      t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+      t.tx.crewTask.update.mockResolvedValue(current);
+      await expect(
+        t.service.update(TASK_ID, OWNER_ID, {
+          expectedVersion: 1,
+          contractAssetNodeId: assetId,
+        }),
+      ).rejects.toMatchObject({
+        response: { code: 'CREW_TASK_CONTRACT_LOCKED' },
+      });
+      expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([undefined, 'old-file'])(
+    'keeps the attached contract when updating other task details (%s)',
+    async (contractAssetNodeId) => {
       const t = build();
       const current = task({
         canvasProjectId: null,
@@ -447,24 +502,17 @@ describe('CrewTasksService', () => {
       t.tx.crewTask.update.mockResolvedValue(current);
       await t.service.update(TASK_ID, OWNER_ID, {
         expectedVersion: 1,
-        contractAssetNodeId: assetId,
+        title: 'Updated task title',
+        contractAssetNodeId,
       });
       const update = firstCallArgument<Prisma.CrewTaskUpdateArgs>(
         t.tx.crewTask.update,
       );
-      expect(update.data.metadata).toEqual({
-        clipId: 'clip-1',
-        contractAssetNodeId: assetId,
-      });
-      if (assetId)
-        expect(t.assetAccess.requireNodesPermission).toHaveBeenCalledWith(
-          CREW_ID,
-          [assetId],
-          OWNER_ID,
-          'view',
-          t.tx,
-        );
-      else expect(t.assetAccess.requireNodesPermission).not.toHaveBeenCalled();
+      expect(update.data.title).toBe('Updated task title');
+      if (update.data.metadata)
+        expect(update.data.metadata).toMatchObject({
+          contractAssetNodeId: 'old-file',
+        });
     },
   );
 
@@ -485,6 +533,10 @@ describe('CrewTasksService', () => {
     expect(t.prisma.$transaction).not.toHaveBeenCalled();
   });
   it.each([
+    [
+      { paymentTerms: 'monthly' as const },
+      { rewardUsdMinor: 3000, profitShareBps: 250, paymentTerms: 'monthly' },
+    ],
     [{ rewardUsdMinor: 0 }, { rewardUsdMinor: 0, profitShareBps: 250 }],
     [{ profitShareBps: null }, { rewardUsdMinor: 3000, profitShareBps: null }],
   ])(

@@ -219,3 +219,32 @@ it("cleans up synchronous viewport-initialization failures without leaving a rea
   expect(maps[0].listeners.size).toBe(0);
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it.each(["google", "gaode"] as const)(
+  "renders a labelled virtual destination on %s without a creator identity",
+  async (provider) => {
+    if (provider === "gaode") {
+      options.config = { provider: "gaode", key: "fixture", securityProxyPath: "/_AMapService" };
+      options.initialViewport = { ...bounds, coordinateSystem: "GCJ02" };
+    }
+    const handle =
+      provider === "google"
+        ? await createGoogleGpsMap(google, options)
+        : await createGaodeGpsMap(gaode, options);
+    const island = feature({
+      id: "virtual:fizzdragon-island",
+      latitude: -25,
+      longitude: -140,
+      coordinateSystem: options.initialViewport.coordinateSystem,
+      label: "FizzDragon Island · Virtual community",
+      count: 87,
+      entityId: null,
+      virtualDestination: "fizzdragon-island",
+    });
+    handle.setFeatures([island]);
+    expect(markers[0].node.textContent).toBe("◇ FizzDragon Island · Virtual community");
+    markers[0].node.dispatchEvent(new Event(provider === "google" ? "gmp-click" : "click"));
+    expect(options.onActivate).toHaveBeenCalledWith(island);
+    handle.destroy();
+  }
+);

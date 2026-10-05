@@ -177,12 +177,11 @@ function selectCreators(data: { pages: CreatorListResult[] }): CreatorsView {
   const out: Creator[] = [];
   for (const page of data.pages) {
     for (const row of page.list) {
-      // The assigned level set is the public qualification source. Application
-      // submissions and unrelated privileges (e.g. free viewing) do not qualify.
+      // Pax (2026-10-06): discovery includes all returned creators. Assigned
+      // qualifications still control badges and explicit qualification filters.
       const levels = Array.isArray(row?.level) ? row.level.filter(isCreatorQualification) : [];
-      if (levels.length === 0) continue;
-      const c = toCreator({ ...row, level: levels });
-      if (!c || c.levels.length === 0 || seen.has(c.id)) continue;
+      const c = toCreator(row?.info ? { ...row, level: levels } : row);
+      if (!c || seen.has(c.id)) continue;
       seen.add(c.id);
       out.push(c);
     }

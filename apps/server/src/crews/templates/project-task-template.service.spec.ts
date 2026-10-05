@@ -1,3 +1,6 @@
+jest.mock('../tasks/task-delivery-folder', () => ({
+  provisionTaskDeliveryFolderTx: jest.fn().mockResolvedValue('folder'),
+}));
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { CrewProductionKind, type Prisma } from '@prisma/client';
 import { ProjectTaskTemplateService } from './project-task-template.service';

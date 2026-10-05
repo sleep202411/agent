@@ -21,6 +21,7 @@ type Props = {
   loading: boolean;
   onViewport: (viewport: GpsViewport) => void;
   onSelect: (id: string) => void;
+  onVirtualSelect?: (destination: string) => void;
   /** Provider boundary injection for offline acceptance; never a fake production basemap. */
   factory?: GpsMapFactory;
 };
@@ -36,18 +37,19 @@ function ProviderMap({
   loading,
   onViewport,
   onSelect,
+  onVirtualSelect,
   factory = createGpsMap,
 }: Props) {
   const t = useTranslations(kind === "creator" ? "creatorGpsMap" : "contentGpsMap");
   const element = useRef<HTMLDivElement>(null);
   const handle = useRef<GpsMapHandle | null>(null);
-  const current = useRef({ features, loading, onViewport, onSelect });
+  const current = useRef({ features, loading, onViewport, onSelect, onVirtualSelect });
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<GpsMapError | null>(null);
   const signature = JSON.stringify(config);
   const initial = useRef(initialViewport);
   useLayoutEffect(() => {
-    current.current = { features, loading, onViewport, onSelect };
+    current.current = { features, loading, onViewport, onSelect, onVirtualSelect };
     try {
       handle.current?.setFeatures(loading ? [] : features);
     } catch (cause) {
@@ -58,7 +60,7 @@ function ProviderMap({
       setStatus("error");
       /* eslint-enable react-hooks/set-state-in-effect */
     }
-  }, [features, loading, onViewport, onSelect]);
+  }, [features, loading, onViewport, onSelect, onVirtualSelect]);
   useEffect(() => {
     if (!element.current || !signature || signature === "null") return;
     const controller = new AbortController();
@@ -91,7 +93,9 @@ function ProviderMap({
           !current.current.features.some((value) => value.id === feature.id)
         )
           return;
-        if (feature.entityId) current.current.onSelect(feature.entityId);
+        if (feature.virtualDestination)
+          current.current.onVirtualSelect?.(feature.virtualDestination);
+        else if (feature.entityId) current.current.onSelect(feature.entityId);
         else handle.current?.focus(feature.latitude, feature.longitude);
       },
       onError: fail,

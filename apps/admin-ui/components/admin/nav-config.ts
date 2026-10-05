@@ -77,6 +77,20 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
   { key: "/", href: "/", label: "运营总览", icon: IconDashboard },
   { key: "/ip", href: "/ip", label: "IP管理", icon: IconVersions, permission: "ip.read" },
   {
+    key: "/withdrawals",
+    href: "/withdrawals",
+    label: "Withdrawals",
+    icon: IconWallet,
+    permission: "creator.withdrawals.manage",
+  },
+  {
+    key: "/revenue",
+    href: "/revenue",
+    label: "Crew revenue",
+    icon: IconReportMoney,
+    permission: "creator.revenue.manage",
+  },
+  {
     key: "/billing",
     href: "/billing",
     label: "计费财务",

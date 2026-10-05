@@ -1,3 +1,4 @@
+import type { TaskPaymentTerms } from "@repo/shared/crew";
 /**
  * Re-export shared crew DTOs as the feature's public type surface.
  *
@@ -125,6 +126,7 @@ export interface SalaryInput {
 }
 
 export interface CreatePositionInput {
+  paymentTerms?: import("@repo/shared/crew").TaskPaymentTerms | null;
   taskId?: string;
   recruitmentVisibility?: "public" | "private";
   positionType: string;
@@ -381,6 +383,15 @@ export interface CrewEarningEntryDTO {
   currency: "CNY" | "USD";
   id: string;
   crewId: string;
+  crew?: { id: string; name: string } | null;
+  revenueDistributionId?: string | null;
+  revenueDistribution?: {
+    id: string;
+    revenueReference: string;
+    confirmedAt: string;
+    contract: { id: string; filename: string };
+    shareBps: number | null;
+  } | null;
   crewMemberId: string;
   userId: string;
   sourceType: CrewEarningSourceType;
@@ -510,6 +521,7 @@ export interface CrewPayoutPageDTO {
 }
 
 export interface CrewTaskDTO {
+  isRecruiting?: boolean;
   storyboardClipId?: string | null;
   assetCategory?: string;
   id: string;
@@ -527,6 +539,7 @@ export interface CrewTaskDTO {
   requiredSkills?: string[];
   positionRole?: string | null;
   contractAssetNodeId?: string | null;
+  paymentTerms?: TaskPaymentTerms | null;
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints: number | null;
@@ -677,6 +690,7 @@ export interface UpdateCrewTaskInput {
   requiredSkills?: string[];
   positionRole?: string | null;
   contractAssetNodeId?: string | null;
+  paymentTerms?: TaskPaymentTerms | null;
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints?: number | null;
@@ -721,6 +735,7 @@ export interface CreateCrewTaskInput {
   requiredSkills?: string[];
   positionRole?: string | null;
   contractAssetNodeId?: string | null;
+  paymentTerms?: TaskPaymentTerms | null;
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints?: number | null;
@@ -968,6 +983,7 @@ export interface CrewTaskDraftDTO {
   priority: CrewTaskPriority;
   startDate: string | null;
   dueDate: string | null;
+  paymentTerms?: TaskPaymentTerms | null;
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints: number | null;

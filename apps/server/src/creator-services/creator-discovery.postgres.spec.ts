@@ -32,7 +32,13 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
     const legacy = {
       query: jest.fn((_sql: string, ids: string[]) =>
         Promise.resolve(
-          ids.flatMap((id) => {
+          (_sql.includes('LIMIT 500')
+            ? [...identities.keys()]
+                .sort()
+                .filter((id) => !ids[0] || id > ids[0])
+                .slice(0, 500)
+            : ids
+          ).flatMap((id) => {
             const row = identities.get(id);
             return row?.nick_name.trim() ? [row] : [];
           }),
@@ -383,7 +389,10 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
       expect(result.accessibleCount).toBe(505);
       expect(result.matchedCount).toBe(1);
       expect(result.items[0].id).toBe('100505');
-      expect(legacy.query.mock.calls.map((c) => c[1].length)).toEqual([500, 5]);
+      expect(legacy.query.mock.calls.map((c) => c[1])).toEqual([
+        [],
+        ['100500'],
+      ]);
       expect(
         legacy.query.mock.calls.every((c) =>
           c[0].includes("TRIM(nick_name) <> ''"),
@@ -477,6 +486,59 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
       await db.$executeRaw`INSERT INTO creator_location_geocodes(id,creator_id,version,provider,status,result,expires_at)
         VALUES(${randomUUID()}::uuid,${id},1,${coordinateSystem === 'WGS84' ? 'google' : 'amap'},'completed',${JSON.stringify(result)}::jsonb,now()+interval '1 hour')`;
     }
+    it('counts and pages the virtual island without manufacturing coordinates', async () => {
+      await add('1');
+      await pin('1');
+      await add('2', { ...profile, showOnMap: false });
+      await add('3', {
+        basedIn: null,
+        serves: [],
+        remote: false,
+        showOnMap: false,
+      });
+      await add('4'); // Public city, but not yet geocoded.
+      const request = {
+        ...input(),
+        limit: 1,
+        map: world,
+        query: { ...input().query, islandOnly: true },
+      };
+      const first = await search.search(request, { userId: 'viewer' });
+      expect(first.island).toEqual({ creatorCount: 3, matchedCreatorCount: 3 });
+      expect(first.matchedCount).toBe(3);
+      expect(first.items.map((item) => item.id)).toEqual(['2']);
+      expect(first.items[0].point).toBeNull();
+      expect(first.items[0].basedIn).toBeNull();
+      expect(first.map?.clusters).toEqual([
+        expect.objectContaining({ creatorId: '1', matched: false }),
+      ]);
+      const second = await search.search(
+        { ...request, cursor: first.nextCursor },
+        { userId: 'viewer' },
+      );
+      expect(second.items.map((item) => item.id)).toEqual(['3']);
+      const third = await search.search(
+        { ...request, cursor: second.nextCursor },
+        { userId: 'viewer' },
+      );
+      expect(third.items.map((item) => item.id)).toEqual(['4']);
+      expect(third.nextCursor).toBeNull();
+      expect(third.island).toEqual(first.island);
+    });
+    it('moves a creator out of the island only when a public city point resolves', async () => {
+      await add('1');
+      const request = {
+        ...input(),
+        query: { ...input().query, islandOnly: true },
+      };
+      expect(
+        (await search.search(request, { userId: 'viewer' })).matchedCount,
+      ).toBe(1);
+      await pin('1');
+      const located = await search.search(request, { userId: 'viewer' });
+      expect(located.island.creatorCount).toBe(0);
+      expect(located.items).toEqual([]);
+    });
     it('aggregates consented cities across all pages and resolves a selected creator outside the page', async () => {
       await add('1');
       await add('2');
@@ -578,6 +640,74 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
       expect(result.matchedCount).toBe(52);
       expect(result.map?.creatorCount).toBe(50);
       expect(result.selected).toBeNull();
+    });
+    it('caps service-free island guests and denies selection beyond their visible page range', async () => {
+      await bulk(55);
+      await db.$executeRaw`DELETE FROM creator_services`;
+      const request = input();
+      request.query.islandOnly = true;
+      const result = await search.search({
+        ...request,
+        limit: 50,
+        selectedCreatorId: '100055',
+      });
+      expect(result.matchedCount).toBe(55);
+      expect(result.items).toHaveLength(50);
+      expect(result.requiresLogin).toBe(true);
+      expect(result.nextCursor).toBeNull();
+      expect(result.selected).toBeNull();
+      expect(result.island.matchedCreatorCount).toBe(50);
+    });
+    it('includes service-free public creators on the island without publishing draft services', async () => {
+      await add('1');
+      await db.$executeRaw`UPDATE creator_services SET status='draft' WHERE creator_id='1'`;
+      identities.set('2', {
+        id: '2',
+        nick_name: 'New creator',
+        avatar: 'https://example.test/avatar.png',
+        jobseeking: 1,
+      });
+      identities.set('3', {
+        id: '3',
+        nick_name: 'Blocked creator',
+        avatar: '',
+        jobseeking: 1,
+      });
+      await db.$executeRaw`INSERT INTO ip_user_content_blocks(user_id,target_type,target_id) VALUES('viewer','creator','3')`;
+      const request = input();
+      const normal = await search.search(request, { userId: 'viewer' });
+      expect(normal.items).toEqual([]);
+      expect(normal.island.matchedCreatorCount).toBe(2);
+      const island = await search.search(
+        { ...request, query: { ...request.query, islandOnly: true }, limit: 1 },
+        { userId: 'viewer' },
+      );
+      expect(island.countScope).toBe('public_platform_creators');
+      expect(island.matchedCount).toBe(2);
+      expect(island.items[0]).toMatchObject({
+        id: '1',
+        serviceCount: 0,
+        matchingServiceCount: 0,
+        point: null,
+      });
+      const next = await search.search(
+        {
+          ...request,
+          query: island.query,
+          limit: 1,
+          cursor: island.nextCursor,
+        },
+        { userId: 'viewer' },
+      );
+      expect(next.items.map((item) => item.id)).toEqual(['2']);
+      const filtered = await search.search(
+        {
+          ...request,
+          query: { ...island.query, category: 'video_production' },
+        },
+        { userId: 'viewer' },
+      );
+      expect(filtered.items).toEqual([]);
     });
     it('handles antimeridian bounds, separates coordinate systems and refuses street precision', async () => {
       for (const id of ['east', 'west', 'cn', 'street']) await add(id);

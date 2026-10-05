@@ -1,3 +1,4 @@
+import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -212,8 +213,8 @@ export class CrewCanvasTaskImportService {
                 sourceHash: input.sourceHash,
               },
             },
-            select: { id: true },
           });
+          await provisionTaskDeliveryFolderTx(tx, task, userId);
           taskIds.push(task.id);
         }
         await tx.crewProductionActivity.create({

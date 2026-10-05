@@ -1,5 +1,6 @@
 "use client";
-import { TaskContractLink } from "@/app/(site)/crews/_components/task-contract-link";
+import { TaskInviteDialog } from "@/app/(site)/crews/_components/task-invite-dialog";
+import { TaskContractFiles } from "@/app/(site)/crews/_components/task-contract-files";
 
 import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
 import { CustomFieldControl, normalizeCustomFieldDraft } from "./task-custom-field-control";
@@ -122,6 +123,7 @@ interface TaskIssueDetailProps {
   isOwner: boolean;
   canCreate?: boolean;
   onPublishTask?: (taskId: string) => void;
+  onInviteTask?: (task: CrewTaskDTO) => void;
   canReview: boolean;
   canSubmitAssigned: boolean;
   canComment: boolean;
@@ -140,6 +142,7 @@ export function TaskIssueDetail({
   isOwner,
   canCreate = false,
   onPublishTask,
+  onInviteTask,
   canReview,
   canSubmitAssigned,
   canComment,
@@ -153,6 +156,7 @@ export function TaskIssueDetail({
 }: TaskIssueDetailProps) {
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
+  const paymentT = useTranslations("taskPaymentTerms");
   const updateTask = useUpdateCrewTask(task.crewId);
   const setDeliveryFolderMutation = useSetTaskDeliveryFolder(task.crewId);
   const assetFolders = useCrewAssetFolders(task.crewId, true);
@@ -378,7 +382,7 @@ export function TaskIssueDetail({
             </section>
 
             {canSubmit ? submissionForm : null}
-            <TaskContractLink crewId={task.crewId} assetId={task.contractAssetNodeId} />
+            <TaskContractFiles crewId={task.crewId} taskId={task.id} canManage={isOwner} />
             <TaskDeliverySummary task={task} />
             <details className="my-3">
               <summary className="cursor-pointer text-xs text-muted-foreground">
@@ -689,6 +693,7 @@ export function TaskIssueDetail({
           ) : null}
 
           <RailSection title={t("taskInfo")}>
+            {isOwner ? <TaskInviteDialog key={task.id} task={task} /> : null}
             {onPublishTask &&
             task.assignees.length === 0 &&
             !["approved", "cancelled", "submitted"].includes(task.status) ? (
@@ -700,9 +705,14 @@ export function TaskIssueDetail({
                 {projectT("workbench.publishJob")}
               </button>
             ) : null}
-            {task.rewardUsdMinor != null || task.profitShareBps != null ? (
+            {task.paymentTerms || task.rewardUsdMinor != null || task.profitShareBps != null ? (
               <RailRow icon={<IconAt className="size-4" />} align="start">
                 <div className="space-y-1 text-[11px] text-[#c9cacf]">
+                  {task.paymentTerms && (
+                    <p>
+                      {paymentT("label")}: {paymentT(task.paymentTerms)}
+                    </p>
+                  )}
                   <p>
                     {task.rewardUsdMinor == null
                       ? projectT("workbench.rewardUnset")
@@ -866,6 +876,7 @@ export function TaskIssueDetail({
           activeView={project.views[0]}
           presetWorkflowStateId={task.workflowStateId}
           parentId={task.id}
+          onInviteTask={onInviteTask}
         />
       ) : null}
     </div>

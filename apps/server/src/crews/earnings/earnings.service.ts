@@ -27,6 +27,16 @@ import type {
 } from './earnings.dto';
 
 const earningInclude = {
+  crew: { select: { id: true, name: true } },
+  revenueDistribution: {
+    select: {
+      id: true,
+      revenueReference: true,
+      postedAt: true,
+      allocations: true,
+      contract: { select: { id: true, filename: true } },
+    },
+  },
   task: { select: { id: true, number: true, title: true } },
   agreement: { select: { id: true, status: true } },
   crewMember: { select: { id: true, userId: true } },
@@ -80,6 +90,24 @@ export class CrewEarningsService {
         ...(query.crewId ? { crewId: query.crewId } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.sourceType ? { sourceType: query.sourceType } : {}),
+        ...(query.recordedFrom || query.recordedThrough
+          ? {
+              createdAt: {
+                ...(query.recordedFrom
+                  ? { gte: new Date(`${query.recordedFrom}T00:00:00.000Z`) }
+                  : {}),
+                ...(query.recordedThrough
+                  ? {
+                      lt: new Date(
+                        new Date(
+                          `${query.recordedThrough}T00:00:00.000Z`,
+                        ).getTime() + 86_400_000,
+                      ),
+                    }
+                  : {}),
+              },
+            }
+          : {}),
       },
       query,
     );
@@ -374,6 +402,11 @@ export class CrewEarningsService {
         where: { id: earningId },
         include: earningInclude,
       });
+      if (locked.revenueDistributionId) {
+        throw new ConflictException(
+          'Platform-confirmed revenue must be corrected by platform finance.',
+        );
+      }
       requireVersion(locked, input.expectedVersion);
       if (locked.status !== CrewEarningStatus.posted) {
         throw invalidTransition(locked.status, 'reversed');
@@ -495,6 +528,7 @@ export class CrewEarningsService {
           earningTitle: earning.title,
           sourceType: earning.sourceType,
           amendmentId: earning.amendmentId ?? null,
+          revenueDistributionId: earning.revenueDistributionId ?? null,
           currency: earning.currency,
           amountMinor: earning.amountMinor.toString(),
           deeplink: `/crews/${earning.crewId}/workspace?tab=income`,
@@ -538,6 +572,7 @@ function earningSnapshot(earning: CrewEarningEntry) {
     status: earning.status,
     sourceType: earning.sourceType,
     amendmentId: earning.amendmentId ?? null,
+    revenueDistributionId: earning.revenueDistributionId ?? null,
     currency: earning.currency,
     amountMinor: earning.amountMinor.toString(),
     version: earning.version,
@@ -547,13 +582,44 @@ function earningSnapshot(earning: CrewEarningEntry) {
 }
 
 function earningDto(earning: EarningWithRelations) {
+  const distribution = earning.revenueDistribution;
+  // Only the earning owner's share belongs in the creator read model. Never
+  // serialize the receipt's full beneficiary list or private storage fields.
+  const ownShare = Array.isArray(distribution?.allocations)
+    ? distribution.allocations.find(
+        (row) =>
+          row !== null &&
+          typeof row === 'object' &&
+          !Array.isArray(row) &&
+          row.crewMemberId === earning.crewMemberId &&
+          row.userId === earning.userId,
+      )
+    : null;
+  const shareBps =
+    ownShare &&
+    typeof ownShare === 'object' &&
+    !Array.isArray(ownShare) &&
+    typeof ownShare.shareBps === 'number'
+      ? ownShare.shareBps
+      : null;
   return {
     id: earning.id,
     crewId: earning.crewId,
+    crew: earning.crew ?? null,
     crewMemberId: earning.crewMemberId,
     userId: earning.userId,
     sourceType: earning.sourceType,
     amendmentId: earning.amendmentId ?? null,
+    revenueDistributionId: earning.revenueDistributionId ?? null,
+    revenueDistribution: distribution
+      ? {
+          id: distribution.id,
+          revenueReference: distribution.revenueReference,
+          confirmedAt: distribution.postedAt.toISOString(),
+          contract: distribution.contract,
+          shareBps,
+        }
+      : null,
     task: earning.task,
     agreement: earning.agreement,
     title: earning.title,

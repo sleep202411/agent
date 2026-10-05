@@ -16,7 +16,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { CurrentUser } from '../auth';
+import { CurrentUser, ViewerCookie } from '../auth';
 import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import { CrewInviteLinksService } from '../crews/invitations/invite-links.service';
@@ -61,7 +61,10 @@ export class InvitesController {
       };
     const crew = await this.crewInviteLinks.findByHash(tokenHash);
     if (crew)
-      return { code: 200, data: await this.crewInviteLinks.preview(crew) };
+      return {
+        code: 200,
+        data: await this.crewInviteLinks.preview(crew, user),
+      };
     throw new NotFoundException({
       code: 'INVITE_NOT_FOUND',
       msg: 'This invite link is invalid.',
@@ -72,6 +75,7 @@ export class InvitesController {
   async accept(
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(AcceptInviteSchema)) body: AcceptInviteInput,
+    @ViewerCookie() cookie?: string,
   ) {
     const tokenHash = hashInviteToken(body.token);
     const ws = await this.workspaceInvites.findByHash(tokenHash);
@@ -90,7 +94,10 @@ export class InvitesController {
     }
     const crew = await this.crewInviteLinks.findByHash(tokenHash);
     if (crew) {
-      return { code: 200, data: await this.crewInviteLinks.accept(crew, user) };
+      return {
+        code: 200,
+        data: await this.crewInviteLinks.accept(crew, user, cookie),
+      };
     }
     throw new NotFoundException({
       code: 'INVITE_NOT_FOUND',

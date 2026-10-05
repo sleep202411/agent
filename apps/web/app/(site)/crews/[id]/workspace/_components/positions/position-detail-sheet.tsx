@@ -97,6 +97,7 @@ function PositionDetailSession({
   canManage = false,
   onOpenChange,
 }: PositionDetailSheetProps & { position: CrewPositionDTO }) {
+  const paymentT = useTranslations("taskPaymentTerms");
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const translatePosition = useTranslatePositionValue();
@@ -213,6 +214,9 @@ function PositionDetailSession({
               {position.experienceLevel !== "any" ? (
                 <MetaChip icon={IconStar}>{t(experienceKey(position.experienceLevel))}</MetaChip>
               ) : null}
+              {position.paymentTerms && (
+                <MetaChip icon={IconCoin}>{paymentT(position.paymentTerms)}</MetaChip>
+              )}
               {salaryText ? (
                 <MetaChip icon={IconCoin} highlight>
                   {salaryText}

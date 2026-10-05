@@ -196,6 +196,7 @@ export class CrewApplicationAmendmentsService {
       feeAmount: input.feeAmount,
       currency: input.currency,
       feePeriod: input.feePeriod,
+      paymentTerms: input.paymentTerms,
       revenueShareBp: input.revenueShareBp,
       shareBasis: input.shareBasis,
     });
@@ -412,6 +413,7 @@ export class CrewApplicationAmendmentsService {
             feeAmount: target,
             currency: row.proposal.currency,
             feePeriod: 'project',
+            paymentTerms: row.proposal.paymentTerms ?? null,
             revenueShareBp: row.proposal.revenueShareBp,
             shareBasis: row.proposal.shareBasis,
             proposedByUserId: row.proposer_id,
@@ -601,6 +603,7 @@ export class CrewApplicationAmendmentsService {
               feeAmount: BigInt(p.feeAmount),
               currency: p.currency,
               feePeriod: p.feePeriod,
+              paymentTerms: p.paymentTerms ?? null,
               revenueShareBp: p.revenueShareBp,
               shareBasis: p.shareBasis,
               proposedByUserId: row.proposer_id,

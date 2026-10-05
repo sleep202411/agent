@@ -1,4 +1,28 @@
 {
+  "taskEntry": {
+    "title": "创建任务",
+    "description": "为此任务选择剧组，或创建新剧组。",
+    "crew": "剧组",
+    "choose": "选择剧组",
+    "empty": "你尚未加入剧组。",
+    "cannotManage": "你没有在此剧组创建任务的权限。",
+    "loading": "加载中…",
+    "retry": "重试",
+    "newCrew": "创建新剧组",
+    "continue": "继续创建任务",
+    "signIn": "登录以创建任务",
+    "positionTitle": "创建职位",
+    "positionDescription": "选择此职位所属的剧组。您可以在下一步将职位关联到已有任务。",
+    "cannotManagePositions": "您需要此剧组的招聘管理权限。",
+    "continuePosition": "继续创建职位"
+  },
+  "taskPaymentTerms": {
+    "unspecified": "未指定",
+    "label": "付款方式",
+    "monthly": "月结",
+    "half_upfront": "50%预付款",
+    "on_completion": "完成后结算"
+  },
   "common": {
     "appName": "FizzDragon Studio",
     "loading": "加载中...",
@@ -1755,7 +1779,8 @@
         "misleading": "误导性描述",
         "privacy": "隐私泄露",
         "harassment": "骚扰或恶意内容",
-        "other": "其他问题"
+        "other": "其他问题",
+        "payment": "支付问题"
       }
     },
     "tabs": {
@@ -1907,7 +1932,7 @@
     "heroTitle2": "让创作发生",
     "heroDesc": "以剧组为单位组织协作：资料准备好后公开展示、招募、报名、筛选、协作。",
     "createStudio": "创建剧组",
-    "createDialogEyebrow": "STORYOS / 剧组",
+    "createDialogEyebrow": "FizzDragon / Crew",
     "createDialogTitle": "创建剧组",
     "createDialogSubtitle": "先私下创建剧组；资料准备好后，再公开展示到剧组大厅并发布招募岗位。",
     "createKycRequiredDesc": "中国站创建剧组前需要先完成实名认证。",
@@ -2142,7 +2167,7 @@
   "creator": {
     "noMatchesLoaded": "已加载的页面暂无符合条件的认证艺术家，请加载更多。",
     "qualificationFilter": "认证筛选",
-    "qualificationAll": "全部已认证艺术家",
+    "qualificationAll": "所有创作者",
     "qualificationFd": "FD 认证",
     "qualificationProducer": "AI 制片人",
     "qualificationSkill": "技能认证",
@@ -2178,6 +2203,25 @@
     "contactDesc": "通过 {name} 公开的联系方式与其取得联系。",
     "contactCopy": "复制",
     "contactCopied": "已复制"
+  },
+  "creatorReviews": {
+    "creator": "创作能力",
+    "manager": "制片能力",
+    "creatorHint": "制作能力、任务理解与沟通",
+    "managerHint": "合作中的管理能力",
+    "reviewCount": "{count} 条评价",
+    "services": "服务包",
+    "reviews": "公开评价",
+    "loading": "正在加载评价…",
+    "retry": "重试",
+    "overall": "综合评分",
+    "distribution": "评分分布",
+    "empty": "暂无公开评价。",
+    "more": "加载更多评价",
+    "unrated": "暂无评分",
+    "score": "{value} 分，满分 5 星",
+    "reviewer": "评价者 {id}",
+    "timeliness": "已记录的交付时效评分：{score} / 5"
   },
   "creatorCenter": {
     "notFoundTitle": "未找到该创作者",
@@ -2220,7 +2264,7 @@
       "contact": "联系方式"
     },
     "tabs": {
-      "services": "服务包",
+      "services": "服务与评价",
       "works": "作品",
       "certificates": "证书",
       "ips": "IP",
@@ -2250,7 +2294,7 @@
       "noMedia": "该作品暂无可播放的视频。"
     },
     "levels": {
-      "heading": "FD 认证",
+      "heading": "FizzDragon Passport",
       "emptyOwner": "尚未获得 FD 等级。完成项目并提交评审即可解锁徽章。",
       "emptyVisitor": "尚未获得 FD 等级。",
       "apply": {
@@ -4030,7 +4074,7 @@
     "memberColumnJoined": "加入时间",
     "memberColumnActions": "操作",
     "inviteMember": "邀请成员",
-    "addMemberDialogEyebrow": "STORYOS / 剧组",
+    "addMemberDialogEyebrow": "FizzDragon / Crew",
     "addMemberDialogTitle": "邀请成员",
     "addMemberDialogSubtitle": "通过对方注册的手机号、邮箱或用户 ID 发送邀请；接受后才会获得剧组权限。",
     "addMemberContactLabel": "手机号 / 邮箱",
@@ -4144,7 +4188,7 @@
     "closeJobConfirm": "确定关闭「{name}」招聘？待处理申请将被归档。",
     "closeJobSuccess": "已关闭「{name}」",
     "closeJobFailed": "关闭招聘失败",
-    "createJobDialogEyebrow": "STORYOS / 剧组",
+    "createJobDialogEyebrow": "FizzDragon / Crew",
     "createJobDialogTitle": "发布岗位",
     "createJobDialogSubtitle": "选择岗位类型、填写描述、设定招聘人数。",
     "createJobRoleLabel": "岗位",
@@ -4612,7 +4656,9 @@
     "addMemberUserIdLabel": "用户 ID",
     "addMemberUserIdHint": "输入对方个人资料中显示的用户 ID。",
     "addMemberUserIdInvalid": "请输入对方个人资料中显示的有效用户 ID。",
-    "addMemberLookupRetry": "重试查询"
+    "addMemberLookupRetry": "重试查询",
+    "taskInviteTitle": "邀请创作者",
+    "taskInviteIntro": "创作者接受此链接后，将以普通成员权限加入剧组并领取「{task}」。仅限一位创作者领取。"
   },
   "crewAssets": {
     "title": "剧组资产中心",
@@ -4796,7 +4842,8 @@
     "commentTwo": "我更新了追逐方向，并替换了第三、第四格。",
     "commentThree": "已通过下一轮审核，请保留上一个版本。",
     "addComment": "添加评论…",
-    "dragMoveHint": "将文件拖到文件夹上即可移动，也可以勾选多个文件一起拖动。"
+    "dragMoveHint": "将文件拖到文件夹上即可移动，也可以勾选多个文件一起拖动。",
+    "contractReadOnly": "合同 · 只读"
   },
   "crewTransfers": {
     "title": "文件传输",
@@ -5153,6 +5200,7 @@
     "create": "创建",
     "initiateTask": "发起任务",
     "workbench": {
+      "recruiting": "招聘中",
       "title": "任务创建工作台",
       "assets": "项目资产库",
       "assetsHelp": "本剧组共享的剧本、美术资产与音乐。",
@@ -5262,6 +5310,7 @@
       "emptyCanvas": "此影游尚无可导入场景。请在 Studio 中添加场景后重新预览。",
       "publishJob": "招募创作者",
       "publishOpening": "招募创作者",
+      "createAndInvite": "创建并邀请",
       "unassignedOnly": "招募将清除已选负责人",
       "savedCount": "{count} 个已保存任务",
       "recoverTemplates": "已保存的模板草稿（{count}）",
@@ -5561,6 +5610,7 @@
     }
   },
   "crewTasks": {
+    "crewLabel": "剧组",
     "briefTooLong": "任务说明不能超过 10,000 个字符。",
     "deletion": {
       "label": "删除任务",
@@ -5825,9 +5875,9 @@
     "subtitleFile": "字幕文件",
     "sourceFiles": "原素材",
     "episodeUnavailable": "该集不可用。请选择可用集数或“不关联集数”。",
-    "deliveryLinkRequired": "请填写交付链接后提交任务。",
+    "deliveryLinkRequired": "请添加交付链接、附加文件，或使用此任务关联的画布后提交。",
     "deliveryLinkInvalid": "请输入完整的 http:// 或 https:// 交付链接。",
-    "deliveryLinkHint": "填写本次交付作品的链接。",
+    "deliveryLinkHint": "填写作品的交付链接。已附加文件或关联任务画布时可不填。",
     "removeDeliveryFile": "从本次提交中移除 {name}",
     "deliveryUploadPending": "请等待文件上传并关联完成后再提交。",
     "deliveryNoteTooLong": "交付链接和备注合计不得超过 5,000 个字符。",
@@ -9812,6 +9862,20 @@
           "title": "发放单已作废",
           "body": "{grossAmount} 对应的 {amount} 已作废，金额已重新可用。"
         }
+      },
+      "withdrawal": {
+        "processing": {
+          "title": "提现处理中",
+          "body": "FizzDragon 正在审核你的提现申请。请在「我的收益」查看进度。"
+        },
+        "paid": {
+          "title": "提现已支付",
+          "body": "FizzDragon 已记录付款。请在「我的收益」查看详情。"
+        },
+        "rejected": {
+          "title": "提现已驳回",
+          "body": "提现申请已驳回，预留收益已恢复可提现。请在「我的收益」查看原因。"
+        }
       }
     }
   },
@@ -9910,7 +9974,15 @@
     "alreadyMember": "你已经是这个剧组的成员了。",
     "removedTitle": "无法通过链接重新加入",
     "removedBody": "你已被移出该剧组，请让管理者重新邀请你。",
-    "failed": "加入失败，请重试。"
+    "failed": "加入失败，请重试。",
+    "taskOffer": "任务邀请",
+    "taskReward": "报酬（美元）",
+    "taskShare": "收益分成",
+    "taskDeadline": "截止时间",
+    "taskSkills": "所需技能",
+    "taskUnspecified": "未设置",
+    "taskAcceptExplanation": "接受后，你将加入此剧组并领取该任务。",
+    "acceptTask": "接受任务"
   },
   "tv": {
     "checkingAccess": "正在查询剧集权限…",
@@ -10215,6 +10287,21 @@
     "urgentLabel": "紧急"
   },
   "crewPersonalIncome": {
+    "productionRecorded": "{count} 笔已批准任务报酬 · 当前筛选",
+    "productionOrders": "制作订单",
+    "incomeType": "收入类型",
+    "allTypes": "全部收入类型",
+    "allStatuses": "全部状态",
+    "recordedFrom": "记录开始日期（UTC）",
+    "recordedThrough": "记录结束日期（UTC）",
+    "applyFilters": "应用筛选",
+    "invalidDateRange": "结束日期不得早于开始日期。",
+    "incomeCode": "收入编号",
+    "confirmedRevenue": "已确认分润",
+    "revenueShare": "你的分润比例：{percentage}%",
+    "revenueReference": "收益编号",
+    "distributionContract": "分润合同",
+    "distributionReceipt": "分润记录编号",
     "title": "我的收入",
     "back": "剧组大厅",
     "description": "查看你在各剧组的收入记录。",
@@ -10250,7 +10337,10 @@
     "referralSourceHint": "查看推荐记录、佣金和支付状态。",
     "workSourceHint": "查看已发布作品的收入。",
     "productionSource": "制作订单",
-    "productionSourceHint": "查看任务报酬、结算和付款记录。"
+    "productionSourceHint": "查看已批准的任务报酬及账本记录。收入入账不代表银行款项已到账。",
+    "incomeOverview": "已记录收入概览",
+    "postedThisMonth": "本月已入账（UTC）",
+    "transactionHistory": "收入明细"
   },
   "crewPersonalPayouts": {
     "title": "付款记录",
@@ -10675,8 +10765,8 @@
     "done": "任务已取消"
   },
   "crewFeedback": {
-    "title": "私密任务评价",
-    "privacy": "仅评价作者和被评价者可查看此评价。不会改变公开评分。",
+    "title": "任务评价",
+    "privacy": "新评价会公开显示在被评价者的个人主页上。此前的私密评价和所有回复仍仅作者与被评价者可见。",
     "signIn": "请登录查看你的评价。",
     "loading": "加载中…",
     "failed": "请求失败。",
@@ -10692,17 +10782,27 @@
     "evaluate": "评价 {subject}",
     "immutable": "提交后无法修改评分及评语。请逐项选择分数。",
     "choose": "选择分数（1–5）",
-    "comment": "评语（3–2,000 字符）",
-    "submit": "提交私密评价",
+    "comment": "评语（选填，最多 2,000 字）",
+    "submit": "发布评价",
     "productionAbility": "制作能力",
     "understanding": "理解能力",
     "communication": "沟通能力",
     "managementAbility": "管理能力",
     "responseOnce": "仅可记录一次回复，提交后无法修改。",
     "respond": "提交回复",
-    "history": "我的任务评价"
+    "history": "我的任务评价",
+    "publicNotice": "您的评分、选填评语和创作者身份将公开显示在被评价者的个人主页并计入评分。任务详情与私密回复不会公开。",
+    "publicReview": "已公开的主页评价",
+    "privateReview": "私密评价"
   },
   "crewCases": {
+    "allParticipants": "全部参与",
+    "caseStatusFilter": "案件状态",
+    "lifecycle": {
+      "all": "全部案件",
+      "active": "处理中",
+      "archived": "已归档"
+    },
     "title": "争议与调解中心",
     "privacy": "处理任务争议、交付问题和申诉。仅案件当事人和授权客服可查看；离开剧组后仍可访问。",
     "loading": "加载中…",
@@ -10763,7 +10863,31 @@
     "mine": "我的任务",
     "producer": "我管理的任务",
     "relatedTask": "相关任务",
-    "moreTasks": "加载更多任务"
+    "moreTasks": "加载更多任务",
+    "categories": {
+      "copyright": "版权",
+      "payment": "付款",
+      "violation": "违规",
+      "harassment": "骚扰",
+      "other": "其他原因"
+    },
+    "resolutions": {
+      "payment_allocation": "审核款项分配",
+      "warning": "向对方发出正式警告",
+      "takedown": "移除或下架内容"
+    },
+    "requestedResolution": "期望的处理结果：{resolution}",
+    "recordSearch": "查找关联任务",
+    "recordSearchHint": "任务、剧组、任务 ID 或你的收入编号",
+    "searchRecords": "搜索",
+    "noMatchingTasks": "未找到符合条件且可访问的任务。",
+    "relatedRecordType": "关联记录类型",
+    "taskRecordType": "任务或任务收入",
+    "contentRecordType": "IP 或内容",
+    "contentReportSubmitted": "内容举报已提交。编号：{id}",
+    "viewContentReports": "查看我的内容举报",
+    "anotherContentReport": "举报其他内容",
+    "purchaseRecordType": "IP 购买"
   },
   "crewTaskDispute": {
     "title": "发起任务争议",
@@ -10782,7 +10906,28 @@
     "submission": "提交版本 {version} · {id}",
     "submit": "创建私密案件",
     "evidenceChanged": "部分已选提交记录不再可用。请清空选择并检查当前记录。",
-    "clearEvidence": "清空提交记录选择"
+    "clearEvidence": "清空提交记录选择",
+    "category": "投诉类型",
+    "chooseCategory": "选择投诉类型",
+    "desiredResolution": "期望的处理结果（选填）",
+    "noPreference": "无偏好",
+    "categories": {
+      "copyright": "版权",
+      "payment": "付款",
+      "violation": "违规",
+      "harassment": "骚扰",
+      "other": "其他原因"
+    },
+    "resolutions": {
+      "payment_allocation": "审核款项分配",
+      "warning": "向对方发出正式警告",
+      "takedown": "移除或下架内容"
+    },
+    "initialEvidence": "支持证据",
+    "initialEvidenceHint": "最多 5 个 PDF、JPG 或 PNG 文件，每个不超过 10 MB。提交投诉前，文件仅供你访问。",
+    "evidenceReady": "已就绪",
+    "evidencePending": "上传未完成",
+    "removeEvidence": "移除"
   },
   "crewEvidence": {
     "title": "私密证据",
@@ -11154,6 +11299,12 @@
     "remote": "可提供远程服务"
   },
   "studioDiscovery": {
+    "manageLocation": "管理我的位置",
+    "searchCreators": "搜索创作者",
+    "selectedCreator": "已选创作者",
+    "selectCreator": "选择创作者",
+    "creatorSelectHint": "选择创作者以查看其主页。",
+    "islandEmpty": "没有符合这些筛选条件的岛上创作者。",
     "title": "寻找工作室",
     "description": "寻找提供本地内容和服务的创作者。了解他们的作品，再通过工作室主页联系。",
     "allCreators": "全部创作者",
@@ -11200,7 +11351,12 @@
     "selectStudio": "选择工作室",
     "selectedStudio": "已选择工作室",
     "unpinned": "没有公开城市图钉",
-    "resultsChanged": "结果已变化，请刷新以同步地图和列表。"
+    "resultsChanged": "结果已变化，请刷新以同步地图和列表。",
+    "islandDescription": "虚拟社区 · 暂无公开地图位置",
+    "islandBrowse": "浏览 FizzDragon Island",
+    "islandCount": "{count} 位匹配的创作者",
+    "viewCreator": "查看创作者主页",
+    "islandLeave": "显示所有位置"
   },
   "contentGpsMap": {
     "title": "IP地点",
@@ -11574,7 +11730,25 @@
     "blockedCreator": "已屏蔽的创作者",
     "unblock": "取消屏蔽",
     "unblocking": "正在取消…",
-    "blockedCrew": "已屏蔽的剧组"
+    "blockedCrew": "已屏蔽的剧组",
+    "newPurchaseReport": "报告 IP 购买问题",
+    "purchaseHint": "选择您的一笔 IP 购买记录。提交报告不会取消购买或发起退款。",
+    "purchaseSearch": "按订单号、购买 ID 或钱包交易 ID 搜索",
+    "purchaseTarget": "购买记录",
+    "noPurchases": "此账户未找到匹配的购买记录。",
+    "purchaseReference": "购买编号：{id}",
+    "purchaseAmount": "金额：{amount} {currency}",
+    "purchaseStatus": "状态：{status}",
+    "communityPoints": "社区积分",
+    "purchaseStatuses": {
+      "pending": "待付款",
+      "paid": "已付款",
+      "fulfilled": "已完成",
+      "canceled": "已取消",
+      "failed": "失败",
+      "refunded": "已退款",
+      "partially_refunded": "部分退款"
+    }
   },
   "communityVideo": {
     "title": "投稿视频",
@@ -11602,5 +11776,94 @@
     "reject": "拒绝",
     "closed": "此频道暂不接受投稿。",
     "signIn": "登录后投稿视频"
+  },
+  "creatorWithdrawals": {
+    "title": "收益提现",
+    "description": "提现已确认的任务收益和平台确认的分润收益。",
+    "withdraw": "提现",
+    "currency": "币种",
+    "refresh": "刷新",
+    "loading": "加载中…",
+    "available": "可提现",
+    "reserved": "等待付款",
+    "paid": "已支付",
+    "submitted": "提现申请已提交，可在下方查看进度。",
+    "history": "提现记录",
+    "empty": "暂无提现申请。",
+    "date": "申请日期",
+    "amount": "提现金额",
+    "status": "状态",
+    "details": "支付日期或原因",
+    "loadMore": "加载更多",
+    "formTitle": "申请提现",
+    "cancel": "取消",
+    "retry": "重试",
+    "percentage": "提现比例（%）",
+    "invalidPercentage": "请输入 0.01–100%，且提现金额至少为 0.01。",
+    "bankHint": "提交时保存银行信息，之后可重复使用。FizzDragon 完成转账后会更新支付状态。",
+    "retryHint": "系统可能已收到申请，重试会发送同一申请，不会重复创建。",
+    "submit": "提交提现申请",
+    "submitting": "提交中…",
+    "submitFailed": "无法提交提现申请。",
+    "loadFailed": "无法加载已保存的银行信息。",
+    "reviewBalance": "关闭并刷新余额",
+    "states": {
+      "pending": "等待付款",
+      "processing": "处理中",
+      "paid": "已支付",
+      "rejected": "已拒绝",
+      "cancelled": "已取消"
+    },
+    "bank": {
+      "fullName": "收款人姓名",
+      "accountNumber": "银行账号",
+      "address": "收款人地址",
+      "swift": "SWIFT / BIC",
+      "branchAddress": "银行支行地址"
+    },
+    "viewPaymentProof": "查看付款凭证",
+    "proofLoading": "正在打开凭证…",
+    "proofFailed": "无法打开付款凭证，请重试。"
+  },
+  "creatorDeviceCity": {
+    "consent": "使用设备位置推荐城市。此次查询会将坐标发送至所在区域的地图服务商，FizzDragon 不会保存坐标。",
+    "locate": "使用设备位置",
+    "check": "查看查询结果",
+    "unsupported": "设备定位需要支持的浏览器和安全连接。您可以手动填写城市。",
+    "denied": "定位权限被拒绝。您可以手动填写城市。",
+    "unavailable": "无法获取设备位置。请重试或手动填写城市。",
+    "loading": "正在查找城市…",
+    "suggestion": "推荐城市：{city}，{country}",
+    "confirmHint": "仅在此处为您的工作室所在地时确认。之后仍需保存资料；是否在地图上展示由您另行选择。",
+    "confirm": "使用此城市",
+    "dismiss": "忽略",
+    "completed": "未找到明确的城市。请手动填写。",
+    "missing": "没有查询记录。您可以再次请求设备定位。",
+    "expired": "推荐结果已过期。请重新查询或手动填写城市。",
+    "dispatched": "查询仍在进行，请稍后查看结果。",
+    "uncertain": "无法确认查询结果。请手动填写城市，或主动发起新的查询。"
+  },
+  "taskContractFiles": {
+    "title": "任务合同文件",
+    "readOnly": "只读",
+    "lockedHint": "合同及补充协议附加后保持只读，不能编辑、移动或删除。",
+    "loading": "正在加载合同…",
+    "retry": "重试",
+    "empty": "此视图中没有可访问的合同文件。",
+    "download": "下载",
+    "openDownload": "打开下载链接",
+    "invalidLink": "下载链接无效或已过期，请重新获取。",
+    "unavailable": "文件不可用",
+    "bytes": "{count} 字节",
+    "upload": "上传合同或补充协议",
+    "attachNotice": "附加后，该文件将永久关联到此任务。你可以继续添加文件，但已附加的文件不能移除或更改。",
+    "attach": "附加文件",
+    "retryAttach": "重试附加",
+    "lifecycle": "任务归档状态",
+    "all": "全部任务",
+    "active": "当前任务",
+    "archived": "已归档任务",
+    "more": "加载更多",
+    "clearSelection": "清除选择"
   }
 }

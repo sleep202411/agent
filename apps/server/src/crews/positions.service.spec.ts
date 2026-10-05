@@ -1,4 +1,5 @@
 import {
+  UpdatePositionSchema,
   ListCrewPositionsQuerySchema,
   ListPublicPositionsQuerySchema,
 } from './dto';
@@ -265,6 +266,21 @@ describe('PositionsService.update recruitment status', () => {
     );
     return { service, tx };
   }
+
+  it.each(['monthly', 'half_upfront', 'on_completion', null] as const)(
+    'persists and exposes payment timing %s without changing fee basis',
+    async (paymentTerms) => {
+      const { service } = editor('open', 0);
+      const result = await service.update(
+        'crew-1',
+        'position-1',
+        'owner-1',
+        UpdatePositionSchema.parse({ paymentTerms }),
+      );
+      expect(result.paymentTerms).toBe(paymentTerms);
+      expect(result.salary.period).toBe('project');
+    },
+  );
 
   it('keeps a full closed position hidden when editing its description', async () => {
     const { service } = editor('frozen', 2);

@@ -264,7 +264,8 @@ export function useStoryboard() {
 
   /** Wire an existing canvas node into a shot, exactly as dragging a wire does. */
   const attachSource = useCallback(
-    (shotId: string, sourceNodeId: string) => {
+    (shotId: string, sourceNodeId: string): boolean => {
+      if (!canEdit) return false;
       try {
         connectNodes(
           {
@@ -276,15 +277,18 @@ export function useStoryboard() {
           sourceNodeId,
           shotId
         );
+        return true;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : String(error));
+        return false;
       }
     },
-    [addEdge, catalog, getEdges, getNode, patchNodeData, removeEdge]
+    [addEdge, canEdit, catalog, getEdges, getNode, patchNodeData, removeEdge]
   );
 
   const detachPicture = useCallback(
     (shotId: string, edgeId: string) => {
+      if (!canEdit) return;
       removeEdgeById(
         { getEdges, graph: { removeEdge, removeNode, patchNodeData } },
         edgeId,
@@ -297,7 +301,7 @@ export function useStoryboard() {
         patchNodeData(shotId, { preferredFrameEdgeId: undefined });
       }
     },
-    [getEdges, getNode, patchNodeData, removeEdge, removeNode]
+    [canEdit, getEdges, getNode, patchNodeData, removeEdge, removeNode]
   );
 
   /**

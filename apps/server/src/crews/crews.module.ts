@@ -1,3 +1,7 @@
+import {
+  CrewTaskContractsController,
+  CrewTaskContractsService,
+} from './tasks/task-contracts';
 import { DocumentsModule } from '../documents/documents.module';
 import { RealtimeRevokeModule } from '../infra/realtime/realtime-revoke.module';
 import { CrewStudioRevocationService } from './production/crew-studio-revocation.service';
@@ -35,6 +39,7 @@ import { CrewTaskOverdueWorker } from './tasks/task-overdue.worker';
 import {
   CrewDisputeAttachmentsService,
   CrewDisputeAttachmentsController,
+  CrewDisputeDraftAttachmentsController,
   CrewDisputeAttachmentsAdminController,
 } from './tasks/dispute-attachments';
 import {
@@ -171,6 +176,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAmendmentSettlementQueueController,
     CrewTaskFeedbackAppealsController,
     CrewDisputeAttachmentsController,
+    CrewDisputeDraftAttachmentsController,
     CrewDisputeAttachmentsAdminController,
     CrewTaskDisputesController,
     CrewTaskDisputesAdminController,
@@ -201,6 +207,7 @@ import { CrewProductionService } from './production/production.service';
     CanvasCrewAssetsController,
     CrewInvitationsController,
     CrewTasksController,
+    CrewTaskContractsController,
     CrewProductionController,
     CrewCanvasTaskImportController,
     CrewAgreementsController,
@@ -244,6 +251,7 @@ import { CrewProductionService } from './production/production.service';
     CrewInvitationsService,
     CrewInviteLinksService,
     CrewTasksService,
+    CrewTaskContractsService,
     CrewTaskDraftService,
     CrewProductionService,
     CrewCanvasTaskImportService,

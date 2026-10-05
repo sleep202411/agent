@@ -34,6 +34,7 @@ vi.mock("@/src/lib/api", () => ({
 }));
 vi.mock("@/src/lib/ip-commerce/api", () => ({
   listIpCommerceIps: (...args: unknown[]) => state.search(...args),
+  listMyReportPurchases: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
   reportIpContent: (...args: unknown[]) => state.submit(...args),
 }));
 vi.mock("@/components/ui/native-select", () => ({
@@ -176,6 +177,7 @@ it("requires a real selected IP before sending a complaint", async () => {
   });
   await click("submit");
   expect(state.submit).toHaveBeenCalledWith({
+    requestId: expect.any(String),
     targetType: "ip",
     targetId: "ip-1",
     reason: "copyright",

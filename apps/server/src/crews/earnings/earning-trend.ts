@@ -9,6 +9,7 @@ export type EarningReadScope = {
   userId?: string;
   status?: CrewEarningStatus;
   sourceType?: CrewEarningSourceType;
+  createdAt?: { gte?: Date; lt?: Date };
 };
 type Reader = { $queryRaw<T>(query: Prisma.Sql): Promise<T> };
 /** Full-ledger aggregation, independent of cursor/page size. Integer minor units remain exact. */
@@ -33,6 +34,10 @@ export async function readEarningTrend(
   if (scope.status) conditions.push(Prisma.sql`status::text = ${scope.status}`);
   if (scope.sourceType)
     conditions.push(Prisma.sql`source_type::text = ${scope.sourceType}`);
+  if (scope.createdAt?.gte)
+    conditions.push(Prisma.sql`created_at >= ${scope.createdAt.gte}`);
+  if (scope.createdAt?.lt)
+    conditions.push(Prisma.sql`created_at < ${scope.createdAt.lt}`);
   const rows = await db.$queryRaw<
     Array<{ date: string; amountMinor: string }>
   >(Prisma.sql`

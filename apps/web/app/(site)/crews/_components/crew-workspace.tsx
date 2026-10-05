@@ -466,6 +466,12 @@ export function CrewWorkspace({
             {activeTab === "tasks" ? (
               <CrewTasksTab
                 crewId={id}
+                createTaskRequested={searchParams.get("createTask") === "1"}
+                onCreateTaskRequestHandled={() => {
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.delete("createTask");
+                  router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+                }}
                 crewName={crewDetail.name}
                 crewSummary={crewDetail.tagline?.trim() || crewDetail.description}
                 crewLogo={crewDetail.logo}
@@ -473,6 +479,7 @@ export function CrewWorkspace({
                 members={members}
                 isOwner={viewer.can("tasks.manage")}
                 canCreate={viewer.can("tasks.manage")}
+                canInvite={viewer.can("tasks.manage") && viewer.can("members.invite")}
                 onPublishTask={
                   viewer.can("openings.manage")
                     ? (taskId) => {

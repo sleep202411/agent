@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { IpHoverPreview } from "./ip-hover-preview";
 import { ChannelBadge } from "@/components/channel-badge";
 import {
   IconBolt,
@@ -76,12 +77,16 @@ export function IPCinematicHero({
   const slide = slides[activeIndex];
 
   return (
-    <section
-      className="relative"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-    >
-      <div className="relative h-[100svh] w-full overflow-hidden bg-black">
+    <section className="relative">
+      <div
+        className="relative h-[100svh] w-full overflow-hidden bg-black"
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+        onFocusCapture={() => setPaused(true)}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
+        }}
+      >
         {slides.map((item, i) =>
           item.cover ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -105,6 +110,11 @@ export function IPCinematicHero({
           )
         )}
 
+        <IpHoverPreview
+          key={`${slide.id}:${slide.trailer}:${paused}`}
+          src={slide.trailer}
+          active={paused}
+        />
         <div className="absolute inset-0 bg-linear-to-r from-background via-background/70 to-transparent to-60%" />
         <div className="absolute inset-x-0 bottom-0 h-32 bg-linear-to-t from-background to-transparent" />
 
@@ -237,6 +247,7 @@ function RailOnly({
   compact?: boolean;
 }) {
   const t = useTranslations("ip");
+  const [previewId, setPreviewId] = useState<string | null>(null);
   return (
     <div className={cn("mx-auto max-w-[1800px] px-6 sm:px-10", compact ? "-mt-2 pt-6" : "pt-20")}>
       <div className="mb-3">
@@ -246,6 +257,10 @@ function RailOnly({
         {rail.map((item) => (
           <Link
             key={item.id}
+            onMouseEnter={() => setPreviewId(item.id)}
+            onMouseLeave={() => setPreviewId(null)}
+            onFocus={() => setPreviewId(item.id)}
+            onBlur={() => setPreviewId(null)}
             href={localizePath(ipRoomPath(item.roomNumber), locale)}
             className="group block min-w-0"
           >
@@ -260,6 +275,11 @@ function RailOnly({
               ) : (
                 <div className="size-full bg-secondary" />
               )}
+              <IpHoverPreview
+                key={`${item.id}:${item.trailer}:${previewId === item.id}`}
+                src={item.trailer}
+                active={previewId === item.id}
+              />
               <div className="absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-black/85 to-transparent" />
               <div className="absolute inset-x-3 bottom-3">
                 <h3 className="line-clamp-1 text-sm font-semibold text-white">{item.name}</h3>

@@ -121,7 +121,7 @@ async function field(selector: string, value: string) {
   });
 }
 
-it("requires explicit scores and a comment for the actual reviewer", async () => {
+it("requires explicit scores and includes the actual reviewer’s optional comment", async () => {
   await render();
   expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(1);
   expect(button("submit")?.disabled).toBe(true);
@@ -131,6 +131,7 @@ it("requires explicit scores and a comment for the actual reviewer", async () =>
   expect(h.post).toHaveBeenCalledWith("/crew-tasks/task/feedback", {
     body: {
       subjectUserId: "reviewer",
+      publicOnProfile: true,
       ratings: { direction: "manager", managementAbility: 4 },
       comment: "Clear management",
     },
@@ -145,6 +146,7 @@ it("lets the actual reviewer rate all three creator dimensions", async () => {
   await click("submit");
   expect(h.post.mock.calls[0][1].body).toEqual({
     subjectUserId: "creator",
+    publicOnProfile: true,
     ratings: { direction: "creator", productionAbility: 3, understanding: 4, communication: 5 },
     comment: "Good delivery",
   });
@@ -285,4 +287,20 @@ it("paginates personal history with the returned participant cursor", async () =
   await click("more");
   expect(h.get.mock.calls[1][1].query.cursor).toBe("feedback");
   expect(host.querySelectorAll("article")).toHaveLength(2);
+});
+
+it.each(["creator", "reviewer"])("allows %s to submit ratings without a comment", async (user) => {
+  h.user = user;
+  await render();
+  expect(button("submit")?.disabled).toBe(true);
+  if (user === "creator") await rate("4");
+  else await rate("3", "4", "5");
+  expect(button("submit")?.disabled).toBe(false);
+  await click("submit");
+  expect(h.post).toHaveBeenCalledWith("/crew-tasks/task/feedback", {
+    body: expect.objectContaining({
+      comment: "",
+      subjectUserId: user === "creator" ? "reviewer" : "creator",
+    }),
+  });
 });

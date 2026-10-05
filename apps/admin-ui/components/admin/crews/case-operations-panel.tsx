@@ -228,6 +228,16 @@ function CaseView({
       {row && (
         <>
           <h2 className="font-semibold">{row.title}</h2>
+          {row.category && (
+            <p>
+              {t.category}: {t.categories[row.category]}
+            </p>
+          )}
+          {row.desiredResolution && (
+            <p>
+              {t.desiredResolution}: {t.resolutions[row.desiredResolution]}
+            </p>
+          )}
           <p className="text-sm">
             {t.case}: {row.id} · {t.task}: {row.taskId} · {t.version}: {row.version}
           </p>
@@ -322,8 +332,10 @@ function CaseView({
               <li className="space-y-2 py-3" key={event.id}>
                 <p>
                   {t.version} {event.version} ·{" "}
-                  {event.action in t ? t[event.action as keyof CaseCopy] : event.action} · {t.actor}
-                  : {event.actorKind === "admin" ? t.admin : t.user} {event.actorId} ·{" "}
+                  {typeof t[event.action as keyof CaseCopy] === "string"
+                    ? String(t[event.action as keyof CaseCopy])
+                    : event.action}{" "}
+                  · {t.actor}: {event.actorKind === "admin" ? t.admin : t.user} {event.actorId} ·{" "}
                   {event.createdAt}
                 </p>
                 <p className="whitespace-pre-wrap break-words">{event.message}</p>

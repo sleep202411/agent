@@ -231,20 +231,57 @@ export class CrewAgreementArchiveWorker
   ): Promise<StoredArtifact> {
     const artifact = await download();
     const suffix = kind === 'signed_document' ? 'signed' : 'audit-trail';
-    const result = await storage.upload({
-      body: artifact.bytes,
-      key: `crew-agreements/${job.agreement.crewId}/${job.agreementId}/${suffix}.pdf`,
-      contentType: artifact.contentType,
-      filename: `${safeFilenameStem(job.agreement.title)}-${suffix}.pdf`,
+    const key = `crew-agreements/${job.agreement.crewId}/${job.agreementId}/${suffix}.pdf`;
+    const placement = await storage.createPrivateUploadUrl({
+      storageKey: key,
+      contentType: 'application/pdf',
+      maxBytes: artifact.bytes.length,
+      expiresInSeconds: 120,
     });
-    if (result.bytes !== artifact.bytes.length) {
-      throw new Error(
-        `Agreement archive storage size mismatch for ${kind}: expected ${artifact.bytes.length}, got ${result.bytes}`,
+    if (placement.storageKey !== key || !placement.bucket) {
+      throw new ServiceUnavailableException(
+        'Invalid private agreement archive destination.',
+      );
+    }
+    // Keep the write capability server-side; general media uploads may use a
+    // public bucket regardless of MediaAsset.visibility in the database.
+    const response = await fetch(placement.url, {
+      method: 'PUT',
+      headers: { ...placement.headers, 'content-type': 'application/pdf' },
+      body: new Uint8Array(artifact.bytes),
+      signal: AbortSignal.timeout(30_000),
+      redirect: 'error',
+    });
+    await response.body?.cancel();
+    if (!response.ok) {
+      throw new ServiceUnavailableException(
+        'Private agreement archive upload failed.',
+      );
+    }
+    const stored = await storage.headStoredObject({
+      bucket: placement.bucket,
+      storageKey: key,
+      region: placement.region,
+    });
+    if (
+      !stored.exists ||
+      stored.sizeBytes !== artifact.bytes.length ||
+      stored.contentType?.split(';')[0] !== 'application/pdf'
+    ) {
+      throw new ServiceUnavailableException(
+        `Private agreement archive verification failed for ${kind}.`,
       );
     }
     return {
       kind,
-      result,
+      result: {
+        url: '',
+        storagePath: key,
+        bytes: stored.sizeBytes,
+        provider: placement.provider,
+        bucket: placement.bucket,
+        region: placement.region,
+      },
       checksumSha256: createHash('sha256').update(artifact.bytes).digest('hex'),
       filename: `${safeFilenameStem(job.agreement.title)}-${suffix}.pdf`,
     };

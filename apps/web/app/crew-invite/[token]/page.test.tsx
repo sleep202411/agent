@@ -213,3 +213,63 @@ it.each(["crew", "crew_community"])(
     );
   }
 );
+
+async function renderTaskOffer() {
+  mocks.get.mockResolvedValue({
+    scope: "crew",
+    crewId: "crew",
+    targetName: "Crew",
+    status: "active",
+    memberCount: 1,
+    task: {
+      id: "task",
+      version: 3,
+      title: "Animate scene",
+      description: "Deliver a five-second clip",
+      paymentTerms: "half_upfront",
+      rewardUsdMinor: 12000,
+      profitShareBps: 250,
+      dueAt: "2027-01-01T12:00:00Z",
+      requiredSkills: ["Animation"],
+    },
+  });
+  mocks.token = "task-link";
+  await render();
+}
+it("shows the task terms before acceptance", async () => {
+  await renderTaskOffer();
+  expect(host.textContent).toContain("Animate scene");
+  expect(host.textContent).toContain("Deliver a five-second clip");
+  expect(host.textContent).toContain("$120.00");
+  expect(host.textContent).toContain("half_upfront");
+  expect(host.textContent).toContain("2.5%");
+  expect(host.textContent).toContain("Animation");
+  expect(mocks.post).not.toHaveBeenCalled();
+  await act(async () => button("acceptTask").click());
+  expect(mocks.post).toHaveBeenCalledWith("/invites/accept", { body: { token: "task-link" } });
+});
+it.each([403, 409])(
+  "does not turn a task acceptance failure (%s) into membership success",
+  async (status) => {
+    await renderTaskOffer();
+    mocks.post.mockRejectedValue(new CrewApiError(status, "Task cannot be claimed"));
+    await act(async () => button("acceptTask").click());
+    expect(host.textContent).toContain("Task cannot be claimed");
+    expect(host.textContent).not.toContain("openWorkspace");
+    expect(host.textContent).not.toContain("removedTitle");
+  }
+);
+it("reopens an already accepted task without claiming it again", async () => {
+  mocks.get.mockResolvedValue({
+    scope: "crew",
+    crewId: "crew",
+    targetName: "Crew",
+    status: "exhausted",
+    acceptedHref: "/crews/crew/workspace?tab=tasks&task=task",
+  });
+  mocks.token = "accepted-task";
+  await render();
+  await act(async () => button("openWorkspace").click());
+  expect(mocks.push).toHaveBeenCalledWith("/en-US/crews/crew/workspace?tab=tasks&task=task");
+  expect(mocks.post).not.toHaveBeenCalled();
+});

@@ -1,6 +1,5 @@
 "use client";
-import { TaskContractLink } from "../crews/_components/task-contract-link";
-import { crewKeys } from "../crews/_hooks/shared";
+import { ContractFileRow, type TaskContractFile } from "../crews/_components/task-contract-files";
 import { useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -62,9 +61,10 @@ function ContractsSession({ userId }: { userId: string }) {
   );
 }
 function TaskContracts({ userId }: { userId: string }) {
-  const t = useTranslations("myContracts");
+  const t = useTranslations("taskContractFiles");
+  const [lifecycle, setLifecycle] = useState<"all" | "active" | "archived">("all");
   const query = useInfiniteQuery({
-    queryKey: [...crewKeys.taskCenter, userId, "contract-files"],
+    queryKey: ["my-task-contracts", userId, lifecycle],
     initialPageParam: undefined as string | undefined,
     retry: false,
     queryFn: ({ signal, pageParam }) =>
@@ -72,61 +72,67 @@ function TaskContracts({ userId }: { userId: string }) {
         items: {
           id: string;
           title: string;
+          number: number;
           crew: { id: string; name: string };
-          contractAssetNodeId: string | null;
+          archived: boolean;
+          files: TaskContractFile[];
         }[];
         nextCursor: string | null;
-      }>("/crew-task-center", {
+      }>("/me/task-contracts", {
         signal,
         cache: "no-store",
-        query: { scope: "all", status: "all", hasContract: "true", cursor: pageParam, limit: 30 },
+        query: { lifecycle, cursor: pageParam, limit: 20 },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
-  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const items = query.isSuccess ? query.data.pages.flatMap((page) => page.items) : [];
   return (
     <section className="space-y-4">
-      <p className="text-sm text-muted-foreground">{t("filesDescription")}</p>
-      {query.isPending ? <p role="status">{t("loading")}</p> : null}
-      {query.error ? (
+      <p className="text-sm text-muted-foreground">{t("lockedHint")}</p>
+      <nav className="flex gap-2" aria-label={t("lifecycle")}>
+        {(["all", "active", "archived"] as const).map((value) => (
+          <Button
+            key={value}
+            variant={lifecycle === value ? "solid" : "ghost"}
+            color="muted"
+            aria-pressed={lifecycle === value}
+            onClick={() => setLifecycle(value)}
+          >
+            {t(value)}
+          </Button>
+        ))}
+      </nav>
+      {query.isPending && <p role="status">{t("loading")}</p>}
+      {query.error && (
         <div role="alert">
           <p>{query.error.message}</p>
-          <Button
-            disabled={query.isFetching}
-            onClick={() =>
-              void (query.isFetchNextPageError &&
-              !isCrewCursorError(query.error, "CREW_TASK_CURSOR_INVALID")
-                ? query.fetchNextPage()
-                : query.refetch())
-            }
-          >
+          <Button disabled={query.isFetching} onClick={() => void query.refetch()}>
             {t("retry")}
           </Button>
         </div>
-      ) : null}
-      {!query.isError && query.isSuccess && !items.length ? (
-        <p className="py-8 text-sm text-muted-foreground">{t("filesEmpty")}</p>
-      ) : null}
-      {!query.isError ? (
-        <ul className="divide-y divide-border">
-          {items.map((item) => (
-            <li key={item.id} className="flex flex-wrap items-center gap-3 py-4">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{item.title}</p>
-                <p className="text-xs text-muted-foreground">{item.crew.name}</p>
-              </div>
-              {item.contractAssetNodeId ? (
-                <TaskContractLink crewId={item.crew.id} assetId={item.contractAssetNodeId} />
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {query.hasNextPage && !query.isError ? (
+      )}
+      {query.isSuccess && !items.length && !query.hasNextPage && <p>{t("empty")}</p>}
+      {items.map((item) => (
+        <details key={item.id} open className="rounded-lg border border-border p-4">
+          <summary className="cursor-pointer text-sm font-medium">
+            {item.title}
+            <span className="ml-2 text-xs text-muted-foreground">
+              {item.crew.name} · #{item.number}
+              {item.archived ? ` · ${t("archived")}` : ""}
+            </span>
+          </summary>
+          <ul className="mt-4 space-y-2">
+            {item.files.map((file) => (
+              <ContractFileRow key={file.id} file={file} />
+            ))}
+          </ul>
+        </details>
+      ))}
+      {query.hasNextPage && !query.isError && (
         <Button disabled={query.isFetching} onClick={() => void query.fetchNextPage()}>
           {t("more")}
         </Button>
-      ) : null}
+      )}
     </section>
   );
 }

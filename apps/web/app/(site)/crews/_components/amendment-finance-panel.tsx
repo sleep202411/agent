@@ -256,6 +256,7 @@ function FinanceSession({ crewId, userId }: { crewId: string; userId: string }) 
 function AmendmentDetails({ row }: { row: ApplicationAmendment }) {
   const t = useTranslations("crewAmendmentFinance");
   const terms = useTranslations("crewAmendments");
+  const paymentT = useTranslations("taskPaymentTerms");
   const p = row.proposal;
   return (
     <div className="space-y-1 break-words text-sm">
@@ -266,6 +267,11 @@ function AmendmentDetails({ row }: { row: ApplicationAmendment }) {
       <p>
         {t("target")}: {p.currency} {exactMajorUnits(p.feeAmount)}
       </p>
+      {p.paymentTerms && (
+        <p>
+          {paymentT("label")}: {paymentT(p.paymentTerms)}
+        </p>
+      )}
       <p className="whitespace-pre-wrap">
         {terms("scope")}: {p.scope}
       </p>

@@ -180,6 +180,16 @@ BoldSign 确认 `Sent` 后，合同绑定成员可调用
 达到上限后 UI 会显示归档失败，管理员可调用
 `POST /crew-agreements/:agreementId/archive/retry` 重新入队。Webhook 不承担外部文件 IO。
 
+Agreement archives use the provider's separate private upload destination
+(`S3_PRIVATE_BUCKET` globally, `OSS_PRIVATE_BUCKET` in CN). The worker keeps
+the signed write URL server-side and verifies stored size/type before linking
+the restricted assets. Missing private storage fails the job; it never falls
+back to the media bucket. This applies to new archives only. Before rollout,
+operators should inventory existing `crew_agreement_archive` media placements
+and verify their buckets deny anonymous reads. Existing objects in public media
+storage need a separate migration and public-copy cleanup; this worker change
+does not relocate them.
+
 ## Story project publication gateway
 
 Authenticated Studio clients use the project gateway instead of Java's
@@ -615,3 +625,209 @@ dispatcher，不开 HTTP 监听。
 ### 认证
 
 所有请求需要透传用户的 `satoken` cookie。在代码中通过 `headers` 参数传递。
+
+### Creator manual withdrawals
+
+Creator withdrawals reserve confirmed task earnings in their original USD/CNY
+currency. FizzDragon finance records bank transfers made outside the platform;
+these endpoints do not initiate a payment or convert community points into cash.
+
+Before deploying this module, provision `CREATOR_PAYOUT_DETAILS_KEY` in the
+server-only regional secret: 32 cryptographically random bytes represented by
+64 hexadecimal characters. The international Key Vault mapping uses
+`creator-payout-details-key`; CN uses the existing `fizzdragon-server-secrets`.
+Startup fails if this key is absent or malformed. Preserve and back up the key
+with the database; replacing it without re-encrypting stored records makes saved
+bank details and withdrawal recipient snapshots unreadable. Never expose it to
+Web, Studio, admin-ui, logs, or source control.
+
+Admin access requires `creator.withdrawals.manage` and a matching site scope.
+Bank-detail reads are audited before details are returned. Payment transitions
+require a processing claim, current request version, and a transfer reference.
+Queue filters include creator ID, stored recipient label/withdrawal ID search,
+inclusive UTC request dates, and currency-specific minor-unit amount ranges.
+`GET /admin/creator-withdrawals/export` applies the same filters across all pages
+and returns a CSV download payload. Exports contain masked recipient labels,
+exact decimal amounts and payment references, never decrypted bank details.
+Formula-like cells are escaped for spreadsheet import. Above 10,000 matches the
+request fails with an instruction to narrow filters; exports are never silently
+truncated. The admin UI exports the applied filters, not unsaved form edits.
+
+Admin batch recording selects up to 50 available requests on the current page,
+requires a transfer reference for each and explicit confirmation that transfers
+already completed. It uses the existing claim/version/payment endpoints per
+request, reports partial failures, and retries remaining requests only. Before a
+retry, current state is fetched; an already-paid request is accepted only when
+the payment reference and paying administrator match. Batch recording does not
+initiate bank transfers or take over another administrator's processing claim.
+
+Optional payment proofs use `POST /admin/creator-withdrawals/:id/proofs`
+(single `file`, PDF/JPG/PNG up to 10 MB, detected from bytes). The server holds
+private write capabilities, verifies the stored object, and rechecks the current
+processing claim before accepting a proof. The finance-only download endpoint is
+`POST /admin/creator-withdrawals/:id/proofs/:proofId/download`; reads are audited
+and links last 60 seconds. The admin payment form waits for a selected upload,
+retains failed work for retry, and can include an internal note of up to 2,000
+characters. Historical paid records without attachments remain valid.
+
+Creators can download their attached paid proof through authenticated
+`POST /me/withdrawals/:id/payment-proof/download`. The owner-scoped lookup
+requires a paid withdrawal and its verified, immutable proof; processing proofs
+and other users' withdrawals return not found. Creator history exposes only
+`hasPaymentProof`, and the web history requests a fresh 60-second private link
+on each click. Admin notes and storage metadata remain private.
+
+Migrations `20261006140000_withdrawal_payment_proofs` and
+`20261006150000_withdrawal_proof_state_guards` add the SQL-owned proof/cleanup
+table and immutable payment evidence. Payment binds only a verified proof for
+that withdrawal and removes it from cleanup in the same transaction. A minute
+sweep retires unattached uploads after 24 hours, then deletes private objects;
+failed deletions retry after 15 minutes. Recovery is recorded before any bytes
+are uploaded. Cleanup and payment use the same creator lock, and attached paid
+proofs cannot be retired or deleted. Internal notes are excluded from creator
+history. Local PostgreSQL, HTTP, proxy, component and fixture-browser checks
+cover this flow; real regional storage still needs lead-owned acceptance.
+
+### Creator device city suggestions
+
+`POST /creator-location/me/device-city` requires the authenticated owner, a UUID
+`requestId`, `consent: true`, device latitude/longitude and locale. A lookup only
+suggests a city: it does not save a profile, enable public discovery, or resolve
+public map coordinates. The creator must confirm the city, save their location
+profile, and separately choose map visibility. Manual city entry remains usable.
+
+Enable with `CREATOR_DEVICE_CITY_ENABLED=true` only after configuring
+`CREATOR_GPS_GEOCODING_REGION` (`global` or `cn`),
+`CREATOR_GPS_GEOCODING_KEY`, `CREATOR_DEVICE_CITY_DAILY_LIMIT` (provider-call
+budget, UTC day) and `CREATOR_DEVICE_CITY_MAX_IN_FLIGHT` (concurrent attempts).
+These are explicit **additional** budgets, separate from saved-city forward
+geocoding. Enabled misconfiguration fails startup. CN reserves two calls (GPS
+conversion and reverse lookup); global reserves one. Accounts are limited to
+five attempts per rolling hour. Providers have a bounded ten-second deadline;
+there are no automatic provider retries.
+
+Apply migration `20261005120000_creator_device_city` before starting this code.
+The private SQL ledger stores attempt metadata and city/country only. Coordinates
+are sent in the POST body and to the regional provider, never persisted by this
+feature. Keep request-body capture disabled in proxies/APM for this endpoint.
+City suggestions expire after ten minutes; the worker removes expired city data
+on its next one-minute sweep. Quota/replay metadata is retained. Owner-only
+`GET /creator-location/me/device-city/:requestId` recovers an interrupted response
+without dispatching another lookup; replaying the same UUID never calls a provider
+again. Uncertain attempts require an explicit new request or manual entry.
+
+Local validation uses mocked Google/Amap responses and a dedicated PostgreSQL
+fixture. Real device accuracy, provider credentials, regional availability and
+provider retention policies still need deployment-owner verification.
+
+### Private revenue-contract upload recovery
+
+Migration `20261005123000_revenue_contract_upload_recovery` adds the SQL-owned
+`crew_revenue_contract_uploads` queue; preserve it during schema reconciliation.
+The server records private placement before sending bytes. Publication and
+cleanup share an object-specific transaction lock. Successful publication removes
+the queue record atomically with the contract and audit. Cleanup rechecks contract
+references and permanently retires unreferenced uploads before deleting bytes;
+retired/missing attempts cannot subsequently become contract evidence.
+
+The service sweeps up to 50 due uploads every minute. Interrupted pending writes
+become eligible after 24 hours, well beyond the server-held two-minute write URL
+and 30-second PUT timeout. Failed requests attempt immediate safe cleanup;
+failed deletions remain durable and retry after 15 minutes. Concurrent replicas
+claim under the same lock. A database failure after object deletion is safe to
+retry. No signed URLs, document contents or bank information are stored in this
+queue. This recovers newly recorded uploads, not historical orphan objects that
+predate the queue. Live regional object-store deletion remains a release check.
+
+### Storyboard export jobs
+
+`src/storyboard-export/local-video-renderer.ts` renders ordered local MP4/WebM
+clips with FFmpeg into H.264/AAC MP4. It preserves clip audio offsets, supplies
+silence for clips without audio, fits the requested even-sized output dimensions,
+and normalizes to 30 fps (duration rounds to the nearest frame). It accepts only
+owned local input filenames, refuses symlinks/network protocols, bounds input
+bytes/duration/clip count and output size, and cleans temporary output on failure.
+The successful caller must invoke `dispose()` after storing the result privately.
+Real-codec tests run with `STORYBOARD_RENDER_INTEGRATION=1`.
+
+Authenticated `POST /storyboard-exports`, `GET /storyboard-exports/:id`,
+`POST /storyboard-exports/:id/cancel` and `POST /storyboard-exports/:id/download`
+expose job creation, status, cancellation and protected download. Account-scoped
+`GET /storyboard-exports?documentId=...` returns the latest 20 jobs for return visits.
+The creative-project storyboard dialog submits only fully acknowledged canvas
+revisions, preserves request identity after an interrupted response, and polls
+history for status, cancellation and download. Interactive Story timelines remain
+outside merged-export scope. Durable admission records
+the authorized saved snapshot and source-media usages atomically, serializes
+idempotent requests per account, and limits each account to three active jobs.
+Migration `20261006120000_storyboard_export_jobs` adds this queue. Internal worker
+coordination uses renewable one-minute leases, fences stale workers, permits at
+most three interrupted attempts, and releases source retention on failure,
+cancellation or expiry. Completed jobs retain sources until their 24-hour expiry
+so download authorization can recheck the referenced media. Expired private
+output references remain recorded until storage cleanup succeeds.
+
+Source reauthorization refreshes and locks the job, checks current canvas access,
+active retained media and moderation, and rejects changed storage identities.
+The input spool streams signed HTTPS reads with redirects disabled, enforces
+declared and actual byte limits, writes private local files, and removes them on
+failure or cancellation.
+
+Private output upload now records placement in the SQL-owned
+`storyboard_export_outputs` queue (migration `20261006130000`) before transfer,
+verifies stored size/type, and publishes only with current source authorization
+and a live lease. Cleanup permanently retires unreferenced objects before deletion;
+failed deletions remain queued. Pending uploads wait one hour before cleanup,
+beyond their five-minute write capability and two-minute transfer deadline.
+Download signing rechecks job ownership, canvas access and source moderation,
+then issues a private link valid for at most 60 seconds or the remaining job TTL.
+
+The worker polls every ten seconds with one active render per server process,
+renews its lease every twenty seconds, and aborts on lease loss or cancellation.
+Shutdown aborts active work and leaves the lease recoverable by another replica.
+It rechecks authorization before downloading, before rendering and when publishing.
+Queue and private-output cleanup run each cycle. The container already includes
+FFmpeg. Local codec tests exercise actual FFmpeg; storage-transfer tests use fixtures.
+
+Local Chromium walkthroughs cover desktop/mobile creation, interrupted request
+retry, cancellation and history reopening with API/auth/collaboration fixtures.
+An isolated PostgreSQL integration runs the actual FFmpeg worker through private
+publication, protected download authorization and expiry cleanup with storage
+transfer fixtures. Run it with both `STORYBOARD_RENDER_INTEGRATION=1` and the
+allowlisted `STORYBOARD_EXPORT_TEST_DATABASE_URL`. Real regional storage and
+production worker capacity remain deployment acceptance checks.
+Lease ownership is never a substitute for current document
+and media authorization; recheck before rendering, publishing and downloading.
+Worker capacity/disk isolation and COM/CN deployment acceptance remain necessary.
+
+Saved export capture folds the persisted Yjs checkpoint and acknowledged tail
+under the document mutation lock, checks the expected sequence, rejects pending
+insert/delete dependencies, and projects saved shot order without rewriting the
+canvas. Media IDs/URLs in this projection are identity hints, not authorization
+or fetch capabilities; the admission path must resolve and pin canonical media.
+
+### Resolution record search
+
+The new-case task selector uses `GET /crew-task-center` with `scope`, `status=all`
+and an optional `query`. Search matches task title, Crew name, exact task UUID,
+or an exact task-linked income-entry UUID belonging to the requesting user.
+All matches remain inside the existing live Crew membership and task-permission
+scope; an income code is not an access capability. The same new-case page also embeds the existing IP/content report form; switching
+record types preserves drafts, and successful reports link to their history.
+The IP-purchase option uses authenticated `GET /ip-commerce/me/report-purchases`
+to search the caller's orders by order number, purchase UUID or wallet transaction
+UUID. It supports purchases whose content is no longer publicly listed. Reports
+bind the owned order and its canonical IP/episode target; the database prevents
+reassignment of the report link. The payment reason requires this verified link.
+The form supplies a stable request UUID for unchanged retries; the server serializes
+concurrent retries and rejects reused identities with different payloads. Purchase
+references appear in initiated history and admin moderation, never the creator's
+response projection. Creating a report does not refund or alter an order.
+
+General Java-service transaction disputes and a dedicated published resolution-policy
+URL remain outside these implemented contracts.
+
+Initial evidence remains private until the uploader explicitly submits it with
+an authorized case. Submission binds at most five verified attachments atomically
+to the case; other participants cannot list unsubmitted drafts. Abandoned drafts
+currently remain private and retained; no automatic deletion period is implied.

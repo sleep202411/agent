@@ -173,7 +173,7 @@ it("keeps search query parameters and total fallback", async () => {
   expect(init.body).toBeUndefined();
 });
 
-it("filters assigned qualifications without stranding qualified artists on later pages", async () => {
+it("shows artists without certification by default and retains explicit qualification filters", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.stubGlobal(
     "IntersectionObserver",
@@ -217,7 +217,7 @@ it("filters assigned qualifications without stranding qualified artists on later
       )
     );
     await settle();
-    expect(container.textContent).not.toContain("Creator 1");
+    expect(container.textContent).toContain("Creator 1");
     const more = [...container.querySelectorAll("button")].find(
       (b) => b.textContent === "loadMore"
     );

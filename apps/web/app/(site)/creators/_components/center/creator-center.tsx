@@ -1,7 +1,7 @@
 "use client";
 
-/** Shared owner/public portfolio. IP is first per stage-modification Slide 26.
- * Service management is retained at /profile/services, outside the portfolio.
+/** Shared owner/public portfolio. Services lead per Pax’s October 5 feedback.
+ * Service packages are available here and at /profile/services.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
@@ -36,6 +36,8 @@ import { WorksTab } from "./tabs/works-tab";
 import { CertificatesTab } from "./tabs/certificates-tab";
 import { IpsTab } from "./tabs/ips-tab";
 import { CrewsTab } from "./tabs/crews-tab";
+import { CreatorReviews } from "./creator-reviews";
+import { ServicesTab } from "./tabs/services-tab";
 import { PublicStudioServices } from "./public-studio-services";
 
 export interface CreatorCenterProps {
@@ -44,7 +46,7 @@ export interface CreatorCenterProps {
   creatorId: string;
 }
 
-const DEFAULT_TAB: CreatorTabId = "ips";
+const DEFAULT_TAB: CreatorTabId = "services";
 
 /** Public creator page: always renders the complete scrollable profile. */
 export function CreatorCenter({ creatorId }: CreatorCenterProps) {
@@ -278,7 +280,6 @@ export function SharedCreatorCenterLayout({
               ))}
             </div>
           )}
-          {contentMode === "sections" && <PublicStudioServices creator={creator} />}
         </main>
       </div>
 
@@ -356,6 +357,16 @@ function SectionContent({
   contentMode: "sections" | "tabs";
 }) {
   switch (tab) {
+    case "services":
+      return (
+        <CreatorReviews creatorId={creator.id}>
+          {contentMode === "sections" ? (
+            <PublicStudioServices creator={creator} />
+          ) : (
+            <ServicesTab creator={creator} isOwner={isOwner} />
+          )}
+        </CreatorReviews>
+      );
     case "works":
       return <WorksTab creator={creator} isOwner={isOwner} />;
     case "certificates":

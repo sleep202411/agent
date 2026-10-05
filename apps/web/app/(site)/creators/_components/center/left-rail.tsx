@@ -151,7 +151,7 @@ export function CreatorLeftRail({
           of imagePath icons, name underneath, full description on
           hover. Empty state encourages owners to earn one and reads
           as "not yet" rather than "broken" for visitors. */}
-      <RailCard title={t("levels.heading")} action={levelApplyAction}>
+      <RailCard title={t("levels.heading")} action={levelApplyAction} preserveCase>
         {levels.length === 0 ? (
           <div className="space-y-2.5">
             <EmptyHint body={isOwner ? t("levels.emptyOwner") : t("levels.emptyVisitor")} />
@@ -261,15 +261,19 @@ function RailCard({
   title,
   action,
   children,
+  preserveCase = false,
 }: {
   title: string;
+  preserveCase?: boolean;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl bg-card px-5 py-4">
       <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h2
+          className={`text-[10px] font-semibold tracking-wider text-muted-foreground${preserveCase ? "" : " uppercase"}`}
+        >
           {title}
         </h2>
         {action}
