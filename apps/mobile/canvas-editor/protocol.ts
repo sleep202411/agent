@@ -1,3 +1,4 @@
+import { canvasReferenceEditSchema } from "./reference-schema";
 import { canvasSubmissionRecordSchema } from "./submission-schema";
 import { canvasGenerationJobSchema } from "./generation-schema";
 import { canvasPositionEditSchema } from "./position-schema";
@@ -31,6 +32,14 @@ export const canvasSnapshotSchema = z
   })
   .strict();
 export const canvasHostMessage = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("references"),
+      ...identity,
+      snapshot: encodedCanvasState,
+      references: canvasReferenceEditSchema,
+    })
+    .strict(),
   z.object({ type: z.literal("tidy"), ...identity, layout: canvasTidyRequestSchema }).strict(),
   z
     .object({

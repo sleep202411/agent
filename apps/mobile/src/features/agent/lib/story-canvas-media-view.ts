@@ -1,11 +1,14 @@
+import type { CanvasReferenceTarget } from "../../../../canvas-editor/reference-schema";
 import { z } from "zod";
 import type { CanvasSnapshot } from "../../../../canvas-editor/protocol";
-const kinds: Record<string, "image" | "video"> = {
+const kinds: Record<string, "image" | "video" | "audio"> = {
   image: "image",
   panorama: "image",
   prompt: "image",
   video: "video",
   videoAsset: "video",
+  audio: "audio",
+  audioAsset: "audio",
 };
 const nodeSchema = z.object({ id: z.string(), type: z.string(), data: z.record(z.unknown()) });
 export type CanvasMediaItem = {
@@ -13,7 +16,7 @@ export type CanvasMediaItem = {
   edgeId?: string;
   sourceId?: string;
   name: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   url?: string;
   mediaAssetId?: string;
   preferred?: boolean;
@@ -33,15 +36,23 @@ function assetIdentity(value: unknown) {
   const parsed = z.string().uuid().safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
-export function canvasMediaView(snapshot: CanvasSnapshot, nodeId: string) {
+export function canvasMediaView(
+  snapshot: CanvasSnapshot,
+  nodeId: string,
+  target?: CanvasReferenceTarget
+) {
   const shot = nodeSchema.parse(snapshot.nodes[nodeId]);
-  if (shot.id !== nodeId || shot.type !== "shot") throw Error("Canvas shot is unavailable.");
+  if (shot.id !== nodeId || !["shot", "prompt", "video", "audio"].includes(shot.type))
+    throw Error("Canvas node is unavailable.");
+  const reference = shot.type !== "shot";
   const refs = z.record(z.array(z.record(z.unknown()))).parse(shot.data.references ?? {});
   const sources: CanvasMediaItem[] = Object.values(snapshot.nodes).flatMap((raw) => {
     if (!raw || typeof raw !== "object" || !Object.hasOwn(kinds, (raw as { type: string }).type))
       return [];
     const node = nodeSchema.parse(raw);
-    const generation = ["prompt", "video"].includes(node.type);
+    if (node.id === nodeId || (!reference && ["audio", "audioAsset"].includes(node.type)))
+      return [];
+    const generation = ["prompt", "video", "audio"].includes(node.type);
     const output = generation
       ? (node.data.generation as { outputs?: { url?: unknown; assetId?: unknown }[] } | undefined)
           ?.outputs?.[0]
@@ -63,38 +74,62 @@ export function canvasMediaView(snapshot: CanvasSnapshot, nodeId: string) {
       },
     ];
   });
-  const attached: CanvasMediaItem[] = ["frame", "clip"].flatMap((field) =>
-    (refs[field] ?? []).map((ref, index) => {
-      const mediaAssetId = assetIdentity(ref.assetId);
-      const edgeId = typeof ref.edgeId === "string" ? ref.edgeId : undefined;
-      const sourceId = typeof ref.sourceNodeId === "string" ? ref.sourceNodeId : undefined;
-      return {
-        key:
-          typeof ref.edgeId === "string"
-            ? `edge:${ref.edgeId}`
-            : `${field}:${mediaAssetId ? `asset:${mediaAssetId}` : `url:${String(ref.url)}`}`,
-        edgeId,
-        sourceId,
-        kind: field === "frame" ? ("image" as const) : ("video" as const),
-        name:
-          typeof ref.name === "string" && ref.name
-            ? ref.name
-            : (sources.find((source) => source.sourceId === sourceId)?.name ??
-              sourceId ??
-              String(index + 1)),
-        url: mediaUrl(ref.url),
-        mediaAssetId,
-        needsRefresh:
-          !!edgeId &&
-          !!(
-            sources.find((source) => source.sourceId === sourceId)?.url ||
-            sources.find((source) => source.sourceId === sourceId)?.mediaAssetId
-          ) &&
-          (sources.find((source) => source.sourceId === sourceId)?.url !== mediaUrl(ref.url) ||
-            sources.find((source) => source.sourceId === sourceId)?.mediaAssetId !== mediaAssetId),
-        preferred: field === "frame" && !!edgeId && shot.data.preferredFrameEdgeId === edgeId,
-      };
-    })
+  const attached: CanvasMediaItem[] = (reference ? Object.keys(refs) : ["frame", "clip"]).flatMap(
+    (field) =>
+      (refs[field] ?? []).map((ref, index) => {
+        const mediaAssetId = assetIdentity(ref.assetId);
+        const edgeId = typeof ref.edgeId === "string" ? ref.edgeId : undefined;
+        const linked = edgeId
+          ? z
+              .object({ target: z.literal(nodeId), source: z.string() })
+              .safeParse(snapshot.edges[edgeId])
+          : undefined;
+        const sourceId =
+          typeof ref.sourceNodeId === "string"
+            ? ref.sourceNodeId
+            : linked?.success
+              ? linked.data.source
+              : undefined;
+        return {
+          key:
+            typeof ref.edgeId === "string"
+              ? `edge:${ref.edgeId}`
+              : `${field}:${mediaAssetId ? `asset:${mediaAssetId}` : `url:${String(ref.url)}`}`,
+          edgeId,
+          sourceId,
+          kind: reference
+            ? ref.kind === "audio"
+              ? ("audio" as const)
+              : ref.kind === "video"
+                ? ("video" as const)
+                : ("image" as const)
+            : field === "frame"
+              ? ("image" as const)
+              : ("video" as const),
+          name:
+            typeof ref.name === "string" && ref.name
+              ? ref.name
+              : (sources.find((source) => source.sourceId === sourceId)?.name ??
+                sourceId ??
+                String(index + 1)),
+          url: mediaUrl(ref.url),
+          mediaAssetId,
+          needsRefresh:
+            !!edgeId &&
+            !!(
+              sources.find((source) => source.sourceId === sourceId)?.url ||
+              sources.find((source) => source.sourceId === sourceId)?.mediaAssetId
+            ) &&
+            (sources.find((source) => source.sourceId === sourceId)?.url !== mediaUrl(ref.url) ||
+              sources.find((source) => source.sourceId === sourceId)?.mediaAssetId !==
+                mediaAssetId),
+          preferred:
+            !reference &&
+            field === "frame" &&
+            !!edgeId &&
+            shot.data.preferredFrameEdgeId === edgeId,
+        };
+      })
   );
   const bound = new Set(attached.map((item) => item.edgeId));
   for (const [id, raw] of Object.entries(snapshot.edges)) {
@@ -115,17 +150,33 @@ export function canvasMediaView(snapshot: CanvasSnapshot, nodeId: string) {
   const frames = attached.filter((item) => item.kind === "image");
   const clips = attached.filter((item) => item.kind === "video");
   const explicit = frames.some((item) => item.preferred);
-  if (!explicit && frames[0] && !frames[0].pending) frames[0].preferred = true;
+  if (!reference && !explicit && frames[0] && !frames[0].pending) frames[0].preferred = true;
   return {
-    title: typeof shot.data.label === "string" && shot.data.label ? shot.data.label : nodeId,
+    title:
+      [shot.data.label, shot.data.name, shot.data.prompt].find(
+        (value): value is string => typeof value === "string" && !!value.trim()
+      ) ?? nodeId,
     explicitPreferred:
-      typeof shot.data.preferredFrameEdgeId === "string" && !!shot.data.preferredFrameEdgeId,
+      !reference &&
+      typeof shot.data.preferredFrameEdgeId === "string" &&
+      !!shot.data.preferredFrameEdgeId,
     attached,
     sources: sources
       .filter((item) => !connected.has(item.sourceId))
       .map((item) => ({
         ...item,
-        available: item.kind === "image" ? frames.length < 24 : clips.length < 1,
+        available: reference
+          ? !!target &&
+            target.fields
+              .filter((slot) => slot.kind === item.kind)
+              .reduce(
+                (total, slot) =>
+                  total + Math.max(0, slot.maxItems - (refs[slot.field]?.length ?? 0)),
+                0
+              ) > attached.filter((row) => row.pending && row.kind === item.kind).length
+          : item.kind === "image"
+            ? frames.length < 24
+            : clips.length < 1,
       })),
   };
 }

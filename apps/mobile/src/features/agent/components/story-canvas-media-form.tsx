@@ -1,4 +1,9 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import type {
+  CanvasReferenceEdit,
+  CanvasReferenceTarget,
+} from "../../../../canvas-editor/reference-schema";
+import { loadCanvasReferenceTarget } from "../api/canvas-reference-target";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, View } from "react-native";
 import { uuid } from "expo-modules-core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -63,14 +68,48 @@ export function StoryCanvasMediaForm({
     [error, setError] = useState(initial.error);
   const [phase, setPhase] = useState<"idle" | "refresh" | "encode" | "save">("idle"),
     [fresh, setFresh] = useState<CanvasLoaded>();
+  const reference =
+    (loaded.snapshot.nodes[nodeId] as { type?: string } | undefined)?.type !== "shot";
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const [catalog, setCatalog] = useState<{
+    scope: CanvasEditScope;
+    loaded: CanvasLoaded;
+    nodeId: string;
+    attempt: number;
+    target?: CanvasReferenceTarget;
+    error?: string;
+  }>();
+  const currentCatalog =
+    catalog?.scope === scope &&
+    catalog.loaded === loaded &&
+    catalog.nodeId === nodeId &&
+    catalog.attempt === catalogAttempt
+      ? catalog
+      : undefined;
+  const target = currentCatalog?.target;
+  const catalogError = currentCatalog?.error;
+  useEffect(() => {
+    if (!reference || !canEdit) return;
+    const controller = new AbortController();
+    void loadCanvasReferenceTarget(scope, loaded, nodeId, controller.signal)
+      .then((value) => {
+        if (!controller.signal.aborted)
+          setCatalog({ scope, loaded, nodeId, attempt: catalogAttempt, target: value });
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setCatalog({ scope, loaded, nodeId, attempt: catalogAttempt, error: String(cause) });
+      });
+    return () => controller.abort();
+  }, [scope, loaded, nodeId, reference, canEdit, catalogAttempt]);
   const [preview, setPreview] = useState<{ key: string; attached: boolean }>();
   const view = useMemo(() => {
     try {
-      return { data: canvasMediaView(loaded.snapshot, nodeId) };
+      return { data: canvasMediaView(loaded.snapshot, nodeId, target) };
     } catch (cause) {
       return { error: String(cause) };
     }
-  }, [loaded, nodeId]);
+  }, [loaded, nodeId, target]);
   const life = useRef<AbortController | null>(null),
     busy = useRef(false);
   useLayoutEffect(() => {
@@ -93,10 +132,17 @@ export function StoryCanvasMediaForm({
         edit.action === "attach"
           ? view.data?.sources.find((item) => item.sourceId === edit.sourceId)?.name
           : view.data?.attached.find((item) => item.edgeId === edit.edgeId)?.name;
+      if (reference && edit.action === "prefer") return;
+      let selectedEdit: CanvasMediaDraft["edit"] = edit;
+      if (reference && (edit.action === "attach" || edit.action === "refresh")) {
+        if (!target) throw Error(t("storyCanvas.loadError"));
+        selectedEdit = { ...edit, target };
+      }
       const next = {
-        edit,
+        edit: selectedEdit,
+        ...(reference ? { reference: true as const } : {}),
         title: `${view.data?.title ?? nodeId} · ${selected ?? t("storyCanvas.media.automatic")}`,
-        baseline: canvasMediaBaseline(loaded.snapshot, edit),
+        baseline: canvasMediaBaseline(loaded.snapshot, selectedEdit),
       };
       store.write(next);
       setDraft(next);
@@ -139,10 +185,14 @@ export function StoryCanvasMediaForm({
   };
   const confirmSave = () => {
     if (draft?.edit.action !== "detach" || draft.command) return save();
-    Alert.alert(t("storyCanvas.media.detach"), t("storyCanvas.media.detachBody"), [
-      { text: t("common.cancel"), style: "cancel" },
-      { text: t("storyCanvas.media.detach"), style: "destructive", onPress: save },
-    ]);
+    Alert.alert(
+      t("storyCanvas.media.detach"),
+      t(reference ? "storyCanvas.referencesDetachBody" : "storyCanvas.media.detachBody"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("storyCanvas.media.detach"), style: "destructive", onPress: save },
+      ]
+    );
   };
   const discard = () =>
     Alert.alert(t("storyCanvas.discard"), t("storyCanvas.discardBody"), [
@@ -177,7 +227,9 @@ export function StoryCanvasMediaForm({
         <View
           style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
         >
-          <ThemedText type="smallBold">{t("storyCanvas.media.title")}</ThemedText>
+          <ThemedText type="smallBold">
+            {t(reference ? "storyCanvas.referencesTitle" : "storyCanvas.media.title")}
+          </ThemedText>
           {<MediaAction label={t("agent.close")} onPress={close} />}
         </View>
         <ThemedText type="smallBold">{draft?.title ?? view.data?.title ?? nodeId}</ThemedText>
@@ -208,6 +260,16 @@ export function StoryCanvasMediaForm({
           </>
         ) : (
           <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
+            {reference && canEdit && !target && !catalogError && <ActivityIndicator />}
+            {catalogError && (
+              <>
+                <ThemedText accessibilityRole="alert">{catalogError}</ThemedText>
+                <MediaAction
+                  label={t("common.retry")}
+                  onPress={() => setCatalogAttempt((value) => value + 1)}
+                />
+              </>
+            )}
             {view.error && <ThemedText accessibilityRole="alert">{view.error}</ThemedText>}
             <ThemedText type="smallBold">{t("storyCanvas.media.attached")}</ThemedText>
             {view.data?.attached.length === 0 && (
@@ -218,6 +280,7 @@ export function StoryCanvasMediaForm({
                 key={item.key}
                 item={item}
                 attached
+                reference={reference}
                 canEdit={canEdit && !initial.error}
                 nodeId={nodeId}
                 onChoose={choose}
@@ -242,6 +305,7 @@ export function StoryCanvasMediaForm({
                   <CanvasMediaRow
                     key={item.key}
                     item={item}
+                    reference={reference}
                     attached={false}
                     available={item.available}
                     canEdit={canEdit && !initial.error}
@@ -263,7 +327,7 @@ export function StoryCanvasMediaForm({
             title={t("storyCanvas.title")}
             runtimeError={t("storyCanvas.loadError")}
             onError={failed}
-            onResult={(value) => {
+            onResult={async (value) => {
               if (!current()) return;
               try {
                 if (
@@ -271,6 +335,17 @@ export function StoryCanvasMediaForm({
                   canvasMediaBaseline(value.snapshot, draft.edit) !== draft.baseline
                 )
                   throw Error(t("storyCanvas.changed"));
+                if (draft.reference && "target" in draft.edit) {
+                  const latest = await loadCanvasReferenceTarget(
+                    scope,
+                    value,
+                    nodeId,
+                    life.current!.signal
+                  );
+                  if (!current()) return;
+                  if (JSON.stringify(latest) !== JSON.stringify(draft.edit.target))
+                    throw Error(t("storyCanvas.changed"));
+                }
                 setFresh(value);
                 setPhase("encode");
               } catch (cause) {
@@ -282,7 +357,11 @@ export function StoryCanvasMediaForm({
         {phase === "encode" && fresh && draft && (
           <StoryCanvasEncoder
             loaded={fresh}
-            edit={draft.edit}
+            edit={
+              draft.reference
+                ? { action: "references", references: draft.edit as CanvasReferenceEdit }
+                : (draft.edit as CanvasShotMedia)
+            }
             generation={scope.generation}
             title={t("storyCanvas.title")}
             runtimeError={t("storyCanvas.loadError")}
@@ -322,6 +401,7 @@ function CanvasMediaRow({
   item,
   attached,
   available = true,
+  reference = false,
   canEdit,
   nodeId,
   onChoose,
@@ -330,6 +410,7 @@ function CanvasMediaRow({
   item: CanvasMediaItem;
   attached: boolean;
   available?: boolean;
+  reference?: boolean;
   canEdit: boolean;
   nodeId: string;
   onChoose(edit: CanvasShotMedia): void;
@@ -344,7 +425,17 @@ function CanvasMediaRow({
     >
       <ThemedText type="smallBold">{item.name}</ThemedText>
       <ThemedText type="small">
-        {t(item.kind === "image" ? "storyCanvas.media.frame" : "storyCanvas.media.clip")}
+        {t(
+          item.kind === "audio"
+            ? "storyCanvas.audio"
+            : item.kind === "image"
+              ? reference
+                ? "storyCanvas.image"
+                : "storyCanvas.media.frame"
+              : reference
+                ? "storyCanvas.video"
+                : "storyCanvas.media.clip"
+        )}
         {item.preferred ? ` · ${t("storyCanvas.media.preferred")}` : ""}
       </ThemedText>
       {!item.url && !item.mediaAssetId && (
@@ -369,12 +460,16 @@ function CanvasMediaRow({
                 onPress={() => onChoose({ action: "refresh", nodeId, edgeId: item.edgeId! })}
               />
             )}
-            {item.edgeId && item.kind === "image" && !item.pending && !item.preferred && (
-              <MediaAction
-                label={t("storyCanvas.media.prefer")}
-                onPress={() => onChoose({ action: "prefer", nodeId, edgeId: item.edgeId })}
-              />
-            )}
+            {!reference &&
+              item.edgeId &&
+              item.kind === "image" &&
+              !item.pending &&
+              !item.preferred && (
+                <MediaAction
+                  label={t("storyCanvas.media.prefer")}
+                  onPress={() => onChoose({ action: "prefer", nodeId, edgeId: item.edgeId })}
+                />
+              )}
             {item.edgeId && (
               <MediaAction
                 label={t("storyCanvas.media.detach")}
@@ -398,7 +493,11 @@ function CanvasMediaRow({
                 disabled={!available}
               />
             }
-            {!available && <ThemedText type="small">{t("storyCanvas.media.full")}</ThemedText>}
+            {!available && (
+              <ThemedText type="small">
+                {t(reference ? "storyCanvas.referencesUnavailable" : "storyCanvas.media.full")}
+              </ThemedText>
+            )}
           </>
         ))}
     </View>

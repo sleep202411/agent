@@ -1,3 +1,4 @@
+import { editCanvasReferences } from "./reference-edit";
 import { recordCanvasSubmission } from "./submission-edit";
 import { applyCanvasGeneration } from "./generation-edit";
 import { editCanvasPositions } from "./position-edit";
@@ -45,7 +46,13 @@ function receive(raw: unknown) {
     sequence: message.sequence,
   };
   try {
-    if (message.type === "submission") {
+    if (message.type === "references") {
+      send({
+        type: "edited",
+        ...identity,
+        ...editCanvasReferences(message.snapshot, message.references),
+      });
+    } else if (message.type === "submission") {
       send({
         type: "edited",
         ...identity,

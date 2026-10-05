@@ -5418,5 +5418,8 @@
   "platformActors.confirmDiscard": "Discard insertion",
   "platformActors.discardHelp": "Discard this saved insertion? Existing canvas cards stay unchanged.",
   "platformActors.photoUnavailable": "Photo unavailable",
-  "platformCanvas.editCard": "Edit card"
+  "platformCanvas.editCard": "Edit card",
+  "storyCanvas.referencesTitle": "References",
+  "storyCanvas.referencesDetachBody": "Remove this reference connection? The source media will remain available.",
+  "storyCanvas.referencesUnavailable": "No reference slot is available in the current model mode."
 }

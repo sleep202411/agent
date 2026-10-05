@@ -101,3 +101,61 @@ it("keeps protected actor sources available through durable media identity", () 
     canvasMediaView(snapshot, "shot").sources.find((item) => item.sourceId === "image")
   ).toMatchObject({ mediaAssetId: id, pending: false });
 });
+it("lists generation image/video/audio references without shot preferred-frame controls", () => {
+  const snapshot = {
+    ...fixture(),
+    nodes: {
+      ...fixture().nodes,
+      target: {
+        id: "target",
+        type: "video",
+        data: {
+          name: "Generation",
+          references: {
+            sound: [
+              {
+                edgeId: "sound",
+                sourceNodeId: "audio",
+                kind: "audio",
+                url: "https://example.test/sound",
+              },
+            ],
+          },
+        },
+      },
+      audio: { id: "audio", type: "audioAsset", data: { src: "https://example.test/sound" } },
+    },
+  };
+  const view = canvasMediaView(snapshot, "target", {
+    modelId: "model",
+    fields: [{ field: "images", kind: "image", maxItems: 1 }],
+  });
+  expect(view.title).toBe("Generation");
+  expect(view.explicitPreferred).toBe(false);
+  expect(view.attached[0]).toMatchObject({ kind: "audio", preferred: false, key: "edge:sound" });
+  expect(view.sources.find((row) => row.sourceId === "target")).toBeUndefined();
+  expect(view.sources.find((row) => row.sourceId === "audio")).toBeUndefined();
+  expect(view.sources.find((row) => row.sourceId === "image")).toMatchObject({ available: true });
+  expect(view.sources.find((row) => row.sourceId === "video")).toMatchObject({ available: false });
+});
+it("uses legacy edge identity to avoid offering an already-connected source again", () => {
+  const snapshot = {
+    ...fixture(),
+    nodes: {
+      ...fixture().nodes,
+      target: {
+        id: "target",
+        type: "prompt",
+        data: {
+          references: {
+            images: [{ edgeId: "legacy", kind: "image", url: "https://example.test/old" }],
+          },
+        },
+      },
+    },
+  };
+  snapshot.edges.legacy = { id: "legacy", source: "image", target: "target" };
+  const view = canvasMediaView(snapshot, "target");
+  expect(view.attached[0]).toMatchObject({ sourceId: "image", needsRefresh: true });
+  expect(view.sources.some((row) => row.sourceId === "image")).toBe(false);
+});

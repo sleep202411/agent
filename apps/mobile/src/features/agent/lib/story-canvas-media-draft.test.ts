@@ -97,3 +97,40 @@ it("rejects missing shots or attach sources rather than fabricating baselines", 
   expect(() => canvasMediaBaseline(fixture(), { ...attach, nodeId: "missing" })).toThrow();
   expect(() => canvasMediaBaseline(fixture(), { ...attach, sourceId: "missing" })).toThrow();
 });
+it("preserves reference drafts and detects target mode changes while ignoring prompt text", () => {
+  const snapshot = {
+    ...fixture(),
+    nodes: {
+      ...fixture().nodes,
+      card: {
+        id: "card",
+        type: "prompt",
+        data: { modelId: "model", mode: "image_to_image", prompt: "Original", references: {} },
+      },
+    },
+  };
+  const edit = {
+    ...attach,
+    nodeId: "card",
+    target: {
+      modelId: "model",
+      mode: "image_to_image",
+      fields: [{ field: "images", kind: "image" as const, maxItems: 2 }],
+    },
+  };
+  const baseline = canvasMediaBaseline(snapshot, edit);
+  const draft = {
+    edit,
+    reference: true as const,
+    title: "Reference",
+    baseline,
+    command: { clientKey: edgeId, yjsUpdateBase64: "AAA=" },
+  };
+  const store = canvasMediaDraftStore(scope, "user", storage);
+  store.write(draft);
+  expect(canvasMediaDraftStore(scope, "user", storage).read()).toEqual(draft);
+  snapshot.nodes.card.data.prompt = "Unrelated remote prompt";
+  expect(canvasMediaBaseline(snapshot, edit)).toBe(baseline);
+  snapshot.nodes.card.data.mode = "text_to_image";
+  expect(canvasMediaBaseline(snapshot, edit)).not.toBe(baseline);
+});

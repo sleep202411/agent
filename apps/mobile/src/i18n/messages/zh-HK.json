@@ -5418,5 +5418,8 @@
   "platformActors.confirmDiscard": "放棄新增",
   "platformActors.discardHelp": "放棄此次已儲存的新增操作？現有畫布卡片不會更改。",
   "platformActors.photoUnavailable": "照片暫不可用",
-  "platformCanvas.editCard": "編輯卡片"
+  "platformCanvas.editCard": "編輯卡片",
+  "storyCanvas.referencesTitle": "參考素材",
+  "storyCanvas.referencesDetachBody": "移除此參考素材連接？來源媒體仍會保留。",
+  "storyCanvas.referencesUnavailable": "目前模型模式沒有可用的參考素材插槽。"
 }

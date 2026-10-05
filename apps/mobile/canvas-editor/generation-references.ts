@@ -2,31 +2,8 @@ import * as Y from "yjs";
 import { z } from "zod";
 import type { CanvasGenerationJob } from "./generation-schema";
 
-const references = z.record(
-  z.string(),
-  z.array(
-    z.object({ edgeId: z.string().optional(), sourceNodeId: z.string().optional() }).passthrough()
-  )
-);
-function outputKind(doc: Y.Doc, source: unknown) {
-  if (typeof source !== "string") return undefined;
-  const node = doc.getMap("nodes").get(source);
-  if (!(node instanceof Y.Map)) return undefined;
-  switch (node.get("type")) {
-    case "image":
-    case "panorama":
-    case "prompt":
-      return "image";
-    case "video":
-    case "videoAsset":
-      return "video";
-    case "audio":
-    case "audioAsset":
-      return "audio";
-    default:
-      return undefined;
-  }
-}
+import { canvasReferencesSchema as references, routeCanvasReference } from "./reference-routing";
+
 /** Compute patches before the source/library transaction. Slots are rechecked
  * against fresh CRDT data; stale catalog projections never change a new mode. */
 export function generationReferencePatches(doc: Y.Doc, job: CanvasGenerationJob) {
@@ -61,38 +38,17 @@ export function generationReferencePatches(doc: Y.Doc, job: CanvasGenerationJob)
     const parsed = references.safeParse(patches.get(data) ?? data.get("references") ?? {});
     if (!parsed.success) continue;
     const previous = parsed.data;
-    const otherEdges = [...doc.getMap("edges").entries()]
-      .filter(
-        ([key, candidate]) =>
-          candidate instanceof Y.Map &&
-          candidate.get("id") === key &&
-          key !== id &&
-          candidate.get("target") === targetId
-      )
-      .map(([, candidate]) => candidate as Y.Map<unknown>);
-    const rows = Object.values(previous).flat();
-    if (
-      rows.some((row) => row.sourceNodeId === job.documentBlockId && row.edgeId !== id) ||
-      otherEdges.some((candidate) => candidate.get("source") === job.documentBlockId)
-    )
-      continue;
-    const boundIds = new Set(rows.map((row) => row.edgeId));
-    let reserved = otherEdges.filter(
-      (candidate) =>
-        !boundIds.has(candidate.get("id") as string) &&
-        outputKind(doc, candidate.get("source")) === output.type
-    ).length;
-    const filtered = Object.fromEntries(
-      Object.entries(previous).map(([key, rows]) => [key, rows.filter((row) => row.edgeId !== id)])
+    const routed = routeCanvasReference(
+      doc,
+      job.documentBlockId,
+      targetId,
+      id,
+      output.type,
+      slots,
+      previous
     );
-    const field = slots.fields.find((slot) => {
-      if (slot.kind !== output.type) return false;
-      const available = Math.max(0, slot.maxItems - (filtered[slot.field]?.length ?? 0));
-      if (reserved < available) return true;
-      reserved -= available;
-      return false;
-    })?.field;
-    if (!field) continue;
+    if ("error" in routed) continue;
+    const { field, filtered } = routed;
     const value = JSON.parse(
       JSON.stringify({
         id,

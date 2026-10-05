@@ -415,6 +415,15 @@ export function StoryCanvasPanel({
                             {t("storyCanvas.shot.position")} {node.shotNumber}
                           </ThemedText>
                         )}
+                        {node.canEditPrompt && (
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={() => setMediaNode(node.id)}
+                            style={{ paddingVertical: 10 }}
+                          >
+                            <ThemedText type="small">{t("storyCanvas.referencesTitle")}</ThemedText>
+                          </Pressable>
+                        )}
                         {node.type === "shot" && (
                           <>
                             <Pressable

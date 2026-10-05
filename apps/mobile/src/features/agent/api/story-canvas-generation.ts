@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { loadCanvasReferenceCatalog } from "@/features/ai-lab/catalog-api";
-import { canvasReferenceFields } from "@/features/ai-lab/canvas-modes";
+import { projectCanvasReferenceTarget } from "./canvas-reference-target";
 import { api } from "@/lib/api-client";
 import { generationJob, getGenerationJob, generationSession } from "@/features/ai-lab/jobs-api";
 import {
@@ -139,30 +139,7 @@ export async function loadTrackedCanvasJobs(
     for (const { id, data } of candidates) {
       const model = catalog.models.find((model) => model.id === data.modelId);
       if (!model) continue;
-      const mode =
-        data.mode ??
-        model.generationModes?.find((mode) => mode.startsWith("text_to_")) ??
-        model.generationModes?.[0];
-      targets[id] = {
-        modelId: model.id,
-        mode: data.mode,
-        fields: canvasReferenceFields(model.input_schema, mode).flatMap((field) => {
-          const property = model.input_schema.properties[field]!;
-          const ui = property["x-ui"] as { mediaKind?: string; control?: string } | undefined;
-          const kind =
-            ui?.mediaKind === "image" || ui?.mediaKind === "video" || ui?.mediaKind === "audio"
-              ? ui.mediaKind
-              : ui?.control === "video_upload"
-                ? "video"
-                : ui?.control === "audio_upload"
-                  ? "audio"
-                  : "image";
-          const maxItems = property.type === "array" ? Math.floor(property.maxItems ?? 0) : 1;
-          return maxItems > 0 && (kind === "image" || kind === "video" || kind === "audio")
-            ? [{ field, kind, maxItems }]
-            : [];
-        }),
-      };
+      targets[id] = projectCanvasReferenceTarget(model, data.mode);
     }
   }
   generationSession(scope.generation, signal);

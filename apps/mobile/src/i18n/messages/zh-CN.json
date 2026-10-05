@@ -5418,5 +5418,8 @@
   "platformActors.confirmDiscard": "放弃添加",
   "platformActors.discardHelp": "放弃此次已保存的添加操作？现有画布卡片不会更改。",
   "platformActors.photoUnavailable": "照片暂不可用",
-  "platformCanvas.editCard": "编辑卡片"
+  "platformCanvas.editCard": "编辑卡片",
+  "storyCanvas.referencesTitle": "参考素材",
+  "storyCanvas.referencesDetachBody": "移除此参考素材连接？源媒体仍将保留。",
+  "storyCanvas.referencesUnavailable": "当前模型模式没有可用的参考素材插槽。"
 }

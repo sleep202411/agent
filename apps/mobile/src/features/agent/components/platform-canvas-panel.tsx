@@ -376,13 +376,19 @@ function Document({
                       <ThemedText type="small">{t("storyCanvas.panorama.open")}</ThemedText>
                     </Pressable>
                   )}
-                  {node.type === "shot" && (
+                  {(node.type === "shot" || node.canEditPrompt) && (
                     <Pressable
                       accessibilityRole="button"
                       onPress={() => setMediaNode(node.id)}
                       style={{ minHeight: 44, justifyContent: "center" }}
                     >
-                      <ThemedText type="small">{t("storyCanvas.media.title")}</ThemedText>
+                      <ThemedText type="small">
+                        {t(
+                          node.type === "shot"
+                            ? "storyCanvas.media.title"
+                            : "storyCanvas.referencesTitle"
+                        )}
+                      </ThemedText>
                     </Pressable>
                   )}
                   {canEdit && node.canEditPrompt && (

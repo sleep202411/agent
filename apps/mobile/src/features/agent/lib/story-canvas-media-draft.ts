@@ -1,3 +1,7 @@
+import {
+  canvasReferenceEditSchema,
+  type CanvasReferenceEdit,
+} from "../../../../canvas-editor/reference-schema";
 import { z } from "zod";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
@@ -10,7 +14,8 @@ import type { CanvasEditScope } from "./story-canvas-draft";
 
 export const canvasMediaDraftSchema = z
   .object({
-    edit: canvasShotMediaSchema,
+    edit: z.union([canvasReferenceEditSchema, canvasShotMediaSchema]),
+    reference: z.literal(true).optional(),
     title: z.string(),
     baseline: z.string(),
     command: canvasUpdateSchema.optional(),
@@ -20,10 +25,17 @@ export type CanvasMediaDraft = z.infer<typeof canvasMediaDraftSchema>;
 
 /** Changes relevant to the selected media action only. Dialogue, row ordering,
  * card positions and unrelated assets never make a picture choice stale. */
-export function canvasMediaBaseline(snapshot: CanvasSnapshot, raw: CanvasShotMedia) {
-  const edit = canvasShotMediaSchema.parse(raw);
+export function canvasMediaBaseline(
+  snapshot: CanvasSnapshot,
+  raw: CanvasShotMedia | CanvasReferenceEdit
+) {
+  const edit = z.union([canvasReferenceEditSchema, canvasShotMediaSchema]).parse(raw);
   const target = z
-    .object({ id: z.literal(edit.nodeId), type: z.literal("shot"), data: z.record(z.unknown()) })
+    .object({
+      id: z.literal(edit.nodeId),
+      type: z.enum(["shot", "prompt", "video", "audio"]),
+      data: z.record(z.unknown()),
+    })
     .parse(snapshot.nodes[edit.nodeId]);
   const refs = target.data.references ?? {};
   let value: unknown;
@@ -88,7 +100,17 @@ export function canvasMediaBaseline(snapshot: CanvasSnapshot, raw: CanvasShotMed
       );
     return value;
   };
-  return JSON.stringify(stable(value));
+  return JSON.stringify(
+    stable(
+      target.type === "shot"
+        ? value
+        : {
+            value,
+            modelId: target.data.modelId ?? null,
+            mode: target.data.mode ?? null,
+          }
+    )
+  );
 }
 
 export function canvasMediaDraftStore(
