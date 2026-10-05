@@ -180,6 +180,33 @@ const typeReason = async (text: string) => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 };
+it("recovers revision instructions after a failed submit only after a fresh order read", async () => {
+  h.userId = "buyer";
+  h.load.mockResolvedValue({ ...order, status: "delivered" });
+  h.send.mockRejectedValueOnce(new Error("Response interrupted"));
+  await render();
+  await act(async () => click("orderDetail.action.request_revision"));
+  await typeReason("Please shorten the opening scene and keep the original soundtrack.");
+  await act(async () => click("orderDetail.confirm"));
+  expect(host.textContent).toContain("Response interrupted");
+  expect(host.querySelector("input")).toBeNull();
+  expect(host.textContent).not.toContain("orderDetail.confirm");
+  h.load.mockResolvedValue({ ...order, status: "delivered", version: 2 });
+  await act(async () => click("orderDetail.refresh"));
+  expect(host.querySelector("input")?.value).toBe(
+    "Please shorten the opening scene and keep the original soundtrack."
+  );
+  expect(h.send).toHaveBeenCalledTimes(1);
+  h.send.mockResolvedValue({ ...order, status: "revision_requested", version: 3 });
+  await act(async () => click("orderDetail.confirm"));
+  expect(h.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ version: 2 }),
+    "buyer",
+    "request_revision",
+    "Please shorten the opening scene and keep the original soundtrack."
+  );
+  expect(host.querySelector("input")).toBeNull();
+});
 it("keeps the action draft across a return but waits for renewed access before confirmation", async () => {
   await render();
   await act(async () => click("orderDetail.action.cancel"));

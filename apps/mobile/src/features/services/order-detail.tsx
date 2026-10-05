@@ -121,7 +121,8 @@ function Content({ id, userId, active }: { id: string; userId: string; active: b
           scope,
           error: cause instanceof Error ? cause.message : t("profileEdit.failed"),
         });
-        setAction(undefined);
+        // Keep the draft hidden with the failed snapshot. The next read
+        // restores it only if this action is still available to this account.
       }
     );
   };
