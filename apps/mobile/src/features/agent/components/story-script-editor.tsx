@@ -55,12 +55,14 @@ function ScriptSession({
   const [sessionId] = useState(() => uuid.v4());
   const frame = useRef<ScriptFrameHandle>(null),
     host = useRef<ReturnType<typeof createScriptEditorHost> | null>(null);
+  const refreshRemote = useRef<(() => void) | null>(null);
   const allowed = useRef(canEdit);
   useEffect(() => {
     allowed.current = canEdit;
   }, [canEdit]);
   const [ready, setReady] = useState(false),
     [error, setError] = useState<string>(),
+    [syncError, setSyncError] = useState<string>(),
     [attempt, setAttempt] = useState(0);
   const html = useMemo(
     () =>
@@ -109,16 +111,27 @@ function ScriptSession({
         host.current = instance;
         setReady(true);
         setError(undefined);
+        setSyncError(undefined);
+        let polling = false;
+        const canPoll = () => current() && host.current === instance;
         const poll = async () => {
+          if (!canPoll() || polling) return;
+          clearTimeout(timer);
+          polling = true;
           try {
             const value = await reloadScriptCollaboration(target, controller.signal);
-            if (current()) instance.remote(value);
+            if (canPoll()) {
+              instance.remote(value);
+              setSyncError(undefined);
+            }
           } catch (e) {
-            if (current()) setError(e instanceof Error ? e.message : String(e));
+            if (canPoll()) setSyncError(e instanceof Error ? e.message : String(e));
           } finally {
-            if (current()) timer = setTimeout(() => void poll(), 3000);
+            polling = false;
+            if (canPoll()) timer = setTimeout(() => void poll(), 3000);
           }
         };
+        refreshRemote.current = () => void poll();
         timer = setTimeout(() => void poll(), 3000);
       })
       .catch((e) => {
@@ -127,6 +140,7 @@ function ScriptSession({
     return () => {
       controller.abort();
       clearTimeout(timer);
+      refreshRemote.current = null;
       host.current?.dispose();
       host.current = null;
     };
@@ -136,18 +150,21 @@ function ScriptSession({
   }, [canEdit]);
   const receive = useCallback((raw: unknown) => host.current?.receive(raw), []);
   const retry = () => {
-    if (host.current) host.current.retry();
-    else {
+    if (host.current) {
+      host.current.retry();
+      refreshRemote.current?.();
+    } else {
       setError(undefined);
       setAttempt((n) => n + 1);
     }
   };
+  const visibleError = error ?? syncError;
   return (
     <View style={{ flex: 1 }}>
-      {!ready && !error && <ActivityIndicator />}
-      {error && (
+      {!ready && !visibleError && <ActivityIndicator />}
+      {visibleError && (
         <View style={{ padding: 12, gap: 8 }}>
-          <ThemedText accessibilityRole="alert">{error}</ThemedText>
+          <ThemedText accessibilityRole="alert">{visibleError}</ThemedText>
           <Pressable accessibilityRole="button" onPress={retry}>
             <ThemedText>{t("common.retry")}</ThemedText>
           </Pressable>
