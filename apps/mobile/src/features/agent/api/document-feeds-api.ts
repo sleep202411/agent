@@ -4,7 +4,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 
 const id = z.string().uuid();
 const timestamp = z.string().datetime({ offset: true });
-const comment = z.object({
+export const documentCommentSchema = z.object({
   id,
   threadId: id,
   documentId: id,
@@ -13,7 +13,7 @@ const comment = z.object({
   createdAt: timestamp,
   editedAt: timestamp.nullable(),
 });
-const thread = z.object({
+export const documentThreadSchema = z.object({
   id,
   documentId: id,
   blockId: z.string().nullable(),
@@ -25,7 +25,7 @@ const thread = z.object({
   resolvedAt: timestamp.nullable(),
   createdAt: timestamp,
   updatedAt: timestamp,
-  comments: z.array(comment),
+  comments: z.array(documentCommentSchema),
 });
 const version = z.object({
   id,
@@ -43,7 +43,7 @@ const version = z.object({
   createdById: z.string().min(1),
   createdAt: timestamp,
 });
-export type DocumentThread = z.infer<typeof thread>;
+export type DocumentThread = z.infer<typeof documentThreadSchema>;
 export type DocumentVersion = z.infer<typeof version>;
 function current(generation: number, signal: AbortSignal) {
   signal.throwIfAborted();
@@ -69,7 +69,7 @@ export async function listDocumentThreads(
     retry: false,
   });
   current(generation, signal);
-  const { threads } = z.object({ threads: z.array(thread) }).parse(result);
+  const { threads } = z.object({ threads: z.array(documentThreadSchema) }).parse(result);
   validateRows(threads, documentId);
   const comments = threads.flatMap((row) => row.comments);
   validateRows(comments, documentId);
