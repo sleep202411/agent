@@ -1,3 +1,4 @@
+import { canvasGenerationJobSchema } from "./generation-schema";
 import { canvasPositionEditSchema } from "./position-schema";
 import { canvasGroupEditSchema } from "./group-schema";
 import { canvasShotMediaSchema } from "./shot-media-schema";
@@ -28,6 +29,14 @@ export const canvasSnapshotSchema = z
   })
   .strict();
 export const canvasHostMessage = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("generation"),
+      ...identity,
+      snapshot: encodedCanvasState,
+      job: canvasGenerationJobSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("moveNodes"),

@@ -1,3 +1,4 @@
+import { applyCanvasGeneration } from "./generation-edit";
 import { editCanvasPositions } from "./position-edit";
 import { editCanvasGroup } from "./group-edit";
 import { editCanvasShotMedia, reconcileCanvasShotMedia } from "./shot-media";
@@ -43,7 +44,13 @@ function receive(raw: unknown) {
     sequence: message.sequence,
   };
   try {
-    if (message.type === "moveNodes") {
+    if (message.type === "generation") {
+      send({
+        type: "edited",
+        ...identity,
+        ...applyCanvasGeneration(message.snapshot, message.documentId, message.job),
+      });
+    } else if (message.type === "moveNodes") {
       send({ type: "edited", ...identity, ...editCanvasPositions(message.snapshot, message.move) });
     } else if (message.type === "group") {
       send({ type: "edited", ...identity, ...editCanvasGroup(message.snapshot, message.group) });
