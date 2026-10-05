@@ -10,8 +10,8 @@ import {
   type ProjectSkills,
 } from "./project-skills";
 import { getGenerationProject, type GenerationProject } from "./projects-api";
-import { matchesGenerationScope } from "./generation-scope";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { matchesGenerationScope, scopeFields, generationProjectScope } from "./generation-scope";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import { uuid } from "expo-modules-core";
@@ -101,30 +101,51 @@ function Button({
   );
 }
 const terminal = (job: GenerationJob) => !["in_queue", "in_progress"].includes(job.status);
+export type CanvasGenerationContext = {
+  documentId: string;
+  nodeId: string;
+  mode: "image" | "video" | "audio";
+  beforeSubmit(command: GenerationCommand, signal: AbortSignal): Promise<void>;
+  beforeRetry(command: GenerationRetry, signal: AbortSignal): Promise<void>;
+};
 type PanelProps = {
   userId: string;
   generation: number;
   workspace?: StudioWorkspace;
   project?: GenerationProject;
   onBusyChange?: (busy: boolean) => void;
+  canvas?: CanvasGenerationContext;
 };
 export function GenerationPanel(props: PanelProps) {
   return useIsFocused() && props.generation === getAuthGeneration() ? (
     <Session
-      key={`${props.userId}:${props.generation}:${props.workspace?.id ?? "personal"}:${props.workspace?.role}:${props.workspace?.crewRole}:${props.project?.kind}:${props.project?.id}:${props.project?.canGenerate}`}
+      key={`${props.userId}:${props.generation}:${props.workspace?.id ?? "personal"}:${props.workspace?.role}:${props.workspace?.crewRole}:${props.project?.kind}:${props.project?.id}:${props.project?.canGenerate}:${props.canvas?.documentId}:${props.canvas?.nodeId}:${props.canvas?.mode}`}
       {...props}
     />
   ) : null;
 }
-function Session({ userId, generation, workspace, project, onBusyChange }: PanelProps) {
+function Session({ userId, generation, workspace, project, canvas, onBusyChange }: PanelProps) {
   const active = useScreenActive();
   const locale = useLocale();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation("ai-lab", true);
-  const workspaceId = workspace?.id,
-    storageScope = project ?? (workspace?.isDefault ? undefined : workspaceId);
-  const jobScope = project ?? workspaceId;
+  const workspaceId = project?.workspaceId ?? workspace?.id;
+  const canvasDocumentId = canvas?.documentId,
+    canvasNodeId = canvas?.nodeId;
+  const canvasScope = useMemo(() => {
+    if (canvasDocumentId === undefined) return undefined;
+    if (!project) throw Error("Canvas generation requires its project.");
+    return generationProjectScope.parse({
+      ...project,
+      documentId: canvasDocumentId,
+      documentBlockId: canvasNodeId,
+      sourceSurface: "fizzstudio-canvas",
+    });
+  }, [project, canvasDocumentId, canvasNodeId]);
+  const storageScope = canvasScope ?? project ?? (workspace?.isDefault ? undefined : workspaceId);
+  const jobScope = canvasScope ?? project ?? workspaceId;
+  const skillSurface = canvas ? "fizzstudio-canvas" : "ai-lab";
   const canGenerate = project
     ? project.canGenerate
     : !workspace || canCreateStudioProject(workspace);
@@ -178,7 +199,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
   const controller = useRef<AbortController | null>(null),
     denied = useRef(false),
     selection = useRef<string | null>(null);
-  const mode = draft?.mode ?? "image";
+  const mode = canvas?.mode ?? draft?.mode ?? "image";
   function save(value: GenerationDraft) {
     store.save(value);
     setDraft(value);
@@ -281,7 +302,8 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       !!model &&
       !!preset &&
       canUseGeneration(model, preset, data.rank) &&
-      !schemaChanged;
+      !schemaChanged &&
+      (!canvas || model.type === canvas.mode);
   const unsupportedFields =
     model && draft ? unsupportedFormFields(model.input_schema, draft.values) : [];
   function requestChoose(presetId: string, modelId?: string) {
@@ -293,7 +315,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
   function choose(presetId: string, modelId?: string) {
     const p = data?.catalog.presets.find((p) => p.id === presetId),
       m = data?.catalog.models.find((m) => m.id === (modelId ?? p?.modelIds[0]));
-    if (!p || !m) return;
+    if (!p || !m || (canvas && m.type !== canvas.mode)) return;
     try {
       save({
         mode: m.type,
@@ -465,7 +487,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
   }
   function prepare() {
     if (project && (!skills || loading)) throw new Error(t("aiLab.skillsNotReady"));
-    if (skills && unavailableSkillIds(skills, mode, draft?.skillSelection).length)
+    if (skills && unavailableSkillIds(skills, mode, draft?.skillSelection, skillSurface).length)
       throw new Error(t("aiLab.skillsUnavailable"));
     if (!model || !draft || draft.upload || !data || !preset || !usable)
       throw new Error(t("aiLab.unavailable"));
@@ -522,9 +544,8 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     });
     return generationCommand.parse({
       clientKey: uuid.v4(),
+      ...scopeFields(jobScope),
       workspaceId,
-      projectId: project?.projectId,
-      storyProjectId: project?.storyProjectId,
       skillSelection: draft.skillSelection,
       modelId: model.id,
       presetId: preset.id,
@@ -596,6 +617,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
               throw new Error(t("aiLab.skillsChanged"));
             }
           }
+          await canvas?.beforeSubmit(command, controller.current!.signal);
           await submitPendingGeneration(
             command,
             userId,
@@ -675,6 +697,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
               run(
                 async () => {
                   await assertProjectWrite();
+                  await canvas?.beforeRetry(retryPending, controller.current!.signal);
                   await retryPendingGeneration(
                     retryPending,
                     userId,
@@ -695,7 +718,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       {tab === "create" ? (
         <>
           <View style={{ flexDirection: "row" }}>
-            {(["image", "video", "audio"] as const).map((value) => (
+            {(canvas ? [canvas.mode] : (["image", "video", "audio"] as const)).map((value) => (
               <Button
                 key={value}
                 label={t(`aiLab.${value}`)}
@@ -738,7 +761,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
           {project ? (
             <View style={{ gap: 6 }}>
               <Button
-                label={`${t("aiLab.skills")} (${skills ? skillRows(skills, mode, draft?.skillSelection).filter((row) => row.selected).length : "…"})`}
+                label={`${t("aiLab.skills")} (${skills ? skillRows(skills, mode, draft?.skillSelection, skillSurface).filter((row) => row.selected).length : "…"})`}
                 disabled={op.busy}
                 onPress={() => setSkillsOpen((value) => !value)}
               />
@@ -746,11 +769,11 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                 <>
                   <ThemedText type="small">{t("aiLab.skillsHint")}</ThemedText>
                   {!skills ? <ThemedText>{t("aiLab.skillsNotReady")}</ThemedText> : null}
-                  {skills && !skillRows(skills, mode).length ? (
+                  {skills && !skillRows(skills, mode, undefined, skillSurface).length ? (
                     <ThemedText>{t("aiLab.noSkills")}</ThemedText>
                   ) : null}
                   {skills
-                    ? skillRows(skills, mode, draft?.skillSelection).map((row) => (
+                    ? skillRows(skills, mode, draft?.skillSelection, skillSurface).map((row) => (
                         <Button
                           key={row.id}
                           label={`${row.selected ? "✓ " : ""}${row.name ?? row.slug ?? row.id} · ${row.version.version}${row.defaultEnabled ? ` · ${t("aiLab.skillDefault")}` : ""}`}
@@ -776,7 +799,8 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                         />
                       ))
                     : null}
-                  {skills && unavailableSkillIds(skills, mode, draft?.skillSelection).length ? (
+                  {skills &&
+                  unavailableSkillIds(skills, mode, draft?.skillSelection, skillSurface).length ? (
                     <ThemedText>{t("aiLab.skillsUnavailable")}</ThemedText>
                   ) : null}
                   {draft?.skillSelection ? (
@@ -1269,9 +1293,8 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                       clientKey: uuid.v4(),
                       jobId: selected.id,
                       prompt: selected.prompt,
+                      ...scopeFields(jobScope),
                       workspaceId,
-                      projectId: project?.projectId,
-                      storyProjectId: project?.storyProjectId,
                     });
                     setConfirm("retry");
                   }}
@@ -1324,6 +1347,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                 run(
                   async () => {
                     await assertProjectWrite();
+                    await canvas?.beforeRetry(command, controller.current!.signal);
                     await retryPendingGeneration(
                       command,
                       userId,

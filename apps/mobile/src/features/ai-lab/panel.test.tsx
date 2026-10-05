@@ -192,12 +192,19 @@ const job = {
 };
 const mount = (
   workspace?: import("@/features/agent/api/studio-projects-api").StudioWorkspace,
-  project?: import("./projects-api").GenerationProject
+  project?: import("./projects-api").GenerationProject,
+  canvas?: import("./panel").CanvasGenerationContext
 ) =>
   act(async () =>
     root.render(
       <StrictMode>
-        <GenerationPanel userId="alice" generation={1} workspace={workspace} project={project} />
+        <GenerationPanel
+          userId="alice"
+          generation={1}
+          workspace={workspace}
+          project={project}
+          canvas={canvas}
+        />
       </StrictMode>
     )
   );
@@ -1388,4 +1395,89 @@ it("pauses job polling during background and preserves selected history on retur
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("isolates canvas composer drafts and saves card identity before paid submission", async () => {
+  const id = "44444444-4444-4444-8444-444444444444";
+  const workspaceId = "33333333-3333-4333-8333-333333333333";
+  const project = {
+    id,
+    storyProjectId: id,
+    kind: "story" as const,
+    workspaceId,
+    title: "Story",
+    canGenerate: true,
+  };
+  const base = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, options) =>
+    path === `/story-projects/${id}`
+      ? { id, workspaceId, title: "Story", status: "active", capabilities: ["story.generate"] }
+      : base(path, options)
+  );
+  const beforeSubmit = vi.fn(async () => {});
+  const canvas = {
+    documentId: "55555555-5555-4555-8555-555555555555",
+    nodeId: "card-one",
+    mode: "image" as const,
+    beforeSubmit,
+    beforeRetry: vi.fn(async () => {}),
+  };
+  await mount(undefined, project, canvas);
+  expect(button("aiLab.video")).toBeUndefined();
+  await click("Image preset");
+  await change("Prompt", "Canvas lake");
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(beforeSubmit).toHaveBeenCalledOnce();
+  expect(h.post).toHaveBeenCalledOnce();
+  expect(beforeSubmit.mock.invocationCallOrder[0]).toBeLessThan(
+    h.post.mock.invocationCallOrder[0]!
+  );
+  expect(h.post.mock.calls[0]![1].data).toMatchObject({
+    workspaceId,
+    storyProjectId: id,
+    documentId: canvas.documentId,
+    documentBlockId: "card-one",
+    sourceSurface: "fizzstudio-canvas",
+    input: { prompt: "Canvas lake" },
+  });
+  await mount(undefined, project, { ...canvas, nodeId: "card-two" });
+  expect(input("Prompt")).toBeNull();
+  await mount(undefined, project, canvas);
+  expect(input("Prompt").value).toBe("Canvas lake");
+});
+it("does not submit a canvas job when saving its recovery identity fails", async () => {
+  const id = "44444444-4444-4444-8444-444444444444";
+  const workspaceId = "33333333-3333-4333-8333-333333333333";
+  const project = {
+    id,
+    storyProjectId: id,
+    kind: "story" as const,
+    workspaceId,
+    title: "Story",
+    canGenerate: true,
+  };
+  const base = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, options) =>
+    path === `/story-projects/${id}`
+      ? { id, workspaceId, title: "Story", status: "active", capabilities: ["story.generate"] }
+      : base(path, options)
+  );
+  const canvas = {
+    documentId: "55555555-5555-4555-8555-555555555555",
+    nodeId: "card-one",
+    mode: "image" as const,
+    beforeSubmit: vi.fn(async () => {
+      throw Error("Card save interrupted");
+    }),
+    beforeRetry: vi.fn(async () => {}),
+  };
+  await mount(undefined, project, canvas);
+  await click("Image preset");
+  await change("Prompt", "Lake");
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(host.textContent).toContain("Card save interrupted");
+  expect(h.post).not.toHaveBeenCalled();
+  expect(input("Prompt").value).toBe("Lake");
 });
