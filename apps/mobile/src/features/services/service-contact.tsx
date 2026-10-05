@@ -154,12 +154,13 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
               backgroundColor: theme.backgroundElement,
             }}
           />
+          {locked && <ThemedText>{t("thread.retryHint")}</ThemedText>}
           <Pressable
             accessibilityRole="button"
             disabled={op.busy || !body.trim() || !!initial.error}
             onPress={send}
           >
-            <ThemedText>{t("serviceContact.send")}</ThemedText>
+            <ThemedText>{t(locked ? "inbox.retry" : "serviceContact.send")}</ThemedText>
           </Pressable>
         </>
       )}

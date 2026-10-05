@@ -128,7 +128,8 @@ it("preserves text and idempotency identity for a retry", async () => {
   await compose();
   await act(async () => click("serviceContact.send"));
   expect(host.querySelector("input")!.value).toBe("Hello");
-  await act(async () => click("serviceContact.send"));
+  expect(host.textContent).toContain("thread.retryHint");
+  await act(async () => click("inbox.retry"));
   expect(h.send.mock.calls[0]).toEqual(h.send.mock.calls[1]);
 });
 it("ignores late success after an account change and clears the draft", async () => {
@@ -154,7 +155,8 @@ it("restores the original inquiry after reopening and freezes edits until acknow
   await act(async () => click("serviceContact.title"));
   expect(host.querySelector("input")!.value).toBe("Recovered inquiry");
   expect(host.querySelector("input")!.disabled).toBe(true);
-  await act(async () => click("serviceContact.send"));
+  expect(host.textContent).toContain("thread.retryHint");
+  await act(async () => click("inbox.retry"));
   expect(h.send).toHaveBeenCalledWith("service", "Recovered inquiry", "original-key");
   expect(h.save.mock.invocationCallOrder[0]).toBeLessThan(h.send.mock.invocationCallOrder[0]);
   expect(h.clear).toHaveBeenCalledWith("original-key");
@@ -176,7 +178,7 @@ it("keeps an uncertain send immutable until the same request is acknowledged", a
   await act(async () => click("serviceContact.send"));
   expect(host.querySelector("input")!.disabled).toBe(true);
   expect(h.clear).not.toHaveBeenCalled();
-  await act(async () => click("serviceContact.send"));
+  await act(async () => click("inbox.retry"));
   expect(h.send.mock.calls[0]).toEqual(h.send.mock.calls[1]);
   expect(h.clear).toHaveBeenCalledWith("stable-key");
 });
