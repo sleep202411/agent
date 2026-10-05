@@ -151,3 +151,34 @@ it("projects a whole-group drag with identical deltas and preserves non-members"
   expect(() => canvasDragPositions(snapshot, { nodeId: "a", x: Infinity, y: 0 }, "g")).toThrow();
   expect(snapshot.nodes.b.position).toEqual({ x: 80, y: 40 });
 });
+it("moves an arbitrary selection without moving other group members", async () => {
+  const { canvasDragPositions } = await import("./story-canvas-layout");
+  const snapshot = {
+    meta: {},
+    assets: {},
+    edges: {},
+    groups: { g: { id: "g", nodeIds: ["a", "b"], color: "red" } },
+    nodes: {
+      a: { id: "a", type: "note", data: {}, position: { x: -20, y: 10 } },
+      b: { id: "b", type: "note", data: {}, position: { x: 80, y: 40 } },
+      c: { id: "c", type: "note", data: {}, position: { x: 500, y: 200 } },
+    },
+  };
+  expect(
+    canvasDragPositions(snapshot, { nodeId: "c", x: 525, y: 180 }, undefined, ["a", "c"])
+  ).toEqual({
+    action: "moveNodes",
+    positions: [
+      { nodeId: "a", x: 5, y: -10 },
+      { nodeId: "c", x: 525, y: 180 },
+    ],
+  });
+  expect(snapshot.nodes.b.position).toEqual({ x: 80, y: 40 });
+  for (const ids of [[], ["a"], ["c", "c"], ["c", "missing"]])
+    expect(() =>
+      canvasDragPositions(snapshot, { nodeId: "c", x: 525, y: 180 }, undefined, ids)
+    ).toThrow("selection");
+  expect(() =>
+    canvasDragPositions(snapshot, { nodeId: "a", x: 5, y: 10 }, "g", ["a", "c"])
+  ).toThrow("either");
+});

@@ -1,4 +1,9 @@
 {
+  "storyCanvas.map.selectHint": "点按卡片来选择或取消选择，再点击“移动所选卡片”。",
+  "storyCanvas.map.selectCards": "选择卡片",
+  "storyCanvas.map.cancelSelection": "取消多选",
+  "storyCanvas.map.selectedCount": "已选择：{count}",
+  "storyCanvas.map.moveSelection": "移动所选卡片",
   "aiLab.canvasConflict": "此画布卡片已在其他会话中修改。你的草稿已保留，请在保存前查看最新内容。",
   "aiLab.canvasLatest": "最新保存的卡片",
   "aiLab.canvasKeepDraft": "保留我的草稿",

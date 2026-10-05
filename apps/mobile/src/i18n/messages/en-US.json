@@ -1,4 +1,9 @@
 {
+  "storyCanvas.map.selectHint": "Tap cards to select or deselect them, then choose Move selected cards.",
+  "storyCanvas.map.selectCards": "Select cards",
+  "storyCanvas.map.cancelSelection": "Cancel selection",
+  "storyCanvas.map.selectedCount": "Selected: {count}",
+  "storyCanvas.map.moveSelection": "Move selected cards",
   "aiLab.canvasConflict": "This canvas card changed in another session. Your draft is kept. Review the latest values before saving.",
   "aiLab.canvasLatest": "Latest saved card",
   "aiLab.canvasKeepDraft": "Keep my draft",

@@ -116,7 +116,8 @@ export function panCanvasCamera(camera: CanvasCamera, dx: number, dy: number): C
 export function canvasDragPositions(
   snapshot: CanvasSnapshot,
   anchor: { nodeId: string; x: number; y: number },
-  groupId?: string
+  groupId?: string,
+  selectedIds?: readonly string[]
 ) {
   const layout = canvasLayout(snapshot);
   const origin = layout.nodes.find((node) => node.id === anchor.nodeId);
@@ -124,7 +125,15 @@ export function canvasDragPositions(
   const group = groupId ? layout.groups.find((group) => group.id === groupId) : undefined;
   if (groupId && (!group || !group.nodeIds.includes(anchor.nodeId)))
     throw Error("Canvas group membership changed.");
-  const ids = group?.nodeIds ?? [anchor.nodeId];
+  if (groupId && selectedIds) throw Error("Choose either a group or a card selection.");
+  const ids = selectedIds ?? group?.nodeIds ?? [anchor.nodeId];
+  if (
+    !ids.length ||
+    !ids.includes(anchor.nodeId) ||
+    new Set(ids).size !== ids.length ||
+    ids.some((id) => !layout.nodes.some((node) => node.id === id))
+  )
+    throw Error("Canvas selection changed. Select the cards again.");
   return canvasPositionEditSchema.parse({
     action: "moveNodes",
     ...(groupId ? { groupId } : {}),

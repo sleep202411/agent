@@ -54,6 +54,8 @@ export function StoryCanvasMap({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [movingGroup, setMovingGroup] = useState<string>();
   const [moving, setMoving] = useState(false),
     [movementError, setMovementError] = useState<string>();
@@ -66,15 +68,18 @@ export function StoryCanvasMap({
             nodes: {
               ...loaded.snapshot.nodes,
               ...Object.fromEntries(
-                canvasDragPositions(loaded.snapshot, drag, movingGroup).positions.map(
-                  (position) => [
-                    position.nodeId,
-                    {
-                      ...(loaded.snapshot.nodes[position.nodeId] as Record<string, unknown>),
-                      position: { x: position.x, y: position.y },
-                    },
-                  ]
-                )
+                canvasDragPositions(
+                  loaded.snapshot,
+                  drag,
+                  movingGroup,
+                  selecting ? selectedIds : undefined
+                ).positions.map((position) => [
+                  position.nodeId,
+                  {
+                    ...(loaded.snapshot.nodes[position.nodeId] as Record<string, unknown>),
+                    position: { x: position.x, y: position.y },
+                  },
+                ])
               ),
             },
           }
@@ -83,7 +88,7 @@ export function StoryCanvasMap({
     } catch (cause) {
       return { error: cause instanceof Error ? cause.message : String(cause) };
     }
-  }, [loaded, drag, movingGroup]);
+  }, [loaded, drag, movingGroup, selecting, selectedIds]);
   const [viewport, setViewport] = useState({ width: 320, height: 480 });
   const [camera, setCamera] = useState<CanvasCamera | null>(null),
     [selected, setSelected] = useState<string>();
@@ -129,9 +134,32 @@ export function StoryCanvasMap({
             label={t("storyCanvas.map.zoomIn")}
             onPress={() => setCamera(zoomCanvasCamera(visible, 1.5))}
           />
+          {move && !moving && (
+            <MapAction
+              label={t(
+                selecting ? "storyCanvas.map.cancelSelection" : "storyCanvas.map.selectCards"
+              )}
+              onPress={() => {
+                setSelecting(!selecting);
+                setSelectedIds(!selecting && selected ? [selected] : []);
+                setMovementError(undefined);
+              }}
+            />
+          )}
         </View>
+        {selecting && (
+          <ThemedText type="small">
+            {t("storyCanvas.map.selectedCount").replace("{count}", String(selectedIds.length))}
+          </ThemedText>
+        )}
         <ThemedText type="small">
-          {t(moving ? "storyCanvas.map.moveHint" : "storyCanvas.map.hint")}
+          {t(
+            moving
+              ? "storyCanvas.map.moveHint"
+              : selecting
+                ? "storyCanvas.map.selectHint"
+                : "storyCanvas.map.hint"
+          )}
         </ThemedText>
         {movementError && (
           <ThemedText type="small" accessibilityRole="alert">
@@ -194,8 +222,15 @@ export function StoryCanvasMap({
                   height={item.height}
                   rx={8}
                   fill={theme.background}
-                  stroke={item.id === selected ? theme.brand : "#525252"}
-                  strokeWidth={(item.id === selected ? 2 : 1) / visible.scale}
+                  stroke={
+                    (selecting ? selectedIds.includes(item.id) : item.id === selected)
+                      ? theme.brand
+                      : "#525252"
+                  }
+                  strokeWidth={
+                    ((selecting ? selectedIds.includes(item.id) : item.id === selected) ? 2 : 1) /
+                    visible.scale
+                  }
                 />
                 {lines(item.title, item.width).map((line, index) => (
                   <SvgText
@@ -233,14 +268,18 @@ export function StoryCanvasMap({
             const width = item.width * visible.scale,
               height = item.height * visible.scale;
             if (
-              !(moving && selected === item.id) &&
+              !(moving && (selecting ? selectedIds.includes(item.id) : selected === item.id)) &&
               (left + width < 0 ||
                 top + height < 0 ||
                 left > viewport.width ||
                 top > viewport.height)
             )
               return null;
-            if (moving && selected === item.id && move)
+            if (
+              moving &&
+              (selecting ? selectedIds.includes(item.id) : selected === item.id) &&
+              move
+            )
               return (
                 <DraggableNode
                   key={item.id}
@@ -253,7 +292,14 @@ export function StoryCanvasMap({
                     setMoving(false);
                     if (!position) return;
                     try {
-                      move(canvasDragPositions(loaded.snapshot, position, movingGroup));
+                      move(
+                        canvasDragPositions(
+                          loaded.snapshot,
+                          position,
+                          movingGroup,
+                          selecting ? selectedIds : undefined
+                        )
+                      );
                     } catch (cause) {
                       setMovementError(cause instanceof Error ? cause.message : String(cause));
                     }
@@ -265,9 +311,17 @@ export function StoryCanvasMap({
                 key={item.id}
                 accessibilityRole="button"
                 accessibilityLabel={item.title}
-                accessibilityState={{ selected: selected === item.id }}
+                accessibilityState={{
+                  selected: selecting ? selectedIds.includes(item.id) : selected === item.id,
+                }}
                 onPress={() => {
-                  setSelected(item.id);
+                  if (selecting) {
+                    const ids = selectedIds.includes(item.id)
+                      ? selectedIds.filter((id) => id !== item.id)
+                      : [...selectedIds, item.id];
+                    setSelectedIds(ids);
+                    setSelected(ids.includes(item.id) ? item.id : ids.at(-1));
+                  } else setSelected(item.id);
                   setMoving(false);
                   setMovementError(undefined);
                 }}
@@ -284,7 +338,13 @@ export function StoryCanvasMap({
             </ThemedText>
             {move && (
               <MapAction
-                label={t(moving ? "common.cancel" : "storyCanvas.map.moveNode")}
+                label={t(
+                  moving
+                    ? "common.cancel"
+                    : selecting
+                      ? "storyCanvas.map.moveSelection"
+                      : "storyCanvas.map.moveNode"
+                )}
                 onPress={() => {
                   setCamera(visible);
                   setMovingGroup(undefined);
@@ -293,7 +353,7 @@ export function StoryCanvasMap({
                 }}
               />
             )}
-            {move && group && !moving && (
+            {move && group && !moving && !selecting && (
               <MapAction
                 label={t("storyCanvas.map.moveGroup")}
                 onPress={() => {
