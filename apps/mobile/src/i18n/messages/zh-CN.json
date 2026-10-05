@@ -5271,5 +5271,21 @@
   "play.journeyMap.truncated": "地图较大，部分连接未显示。",
   "play.journeyMap.thumbnailUnavailable": "场景缩略图不可用",
   "play.journeyMap.zoomIn": "放大",
-  "play.journeyMap.zoomOut": "缩小"
+  "play.journeyMap.zoomOut": "缩小",
+  "documentFeed.title": "评论与历史",
+  "documentFeed.comments": "评论",
+  "documentFeed.history": "历史",
+  "documentFeed.refresh": "刷新",
+  "documentFeed.noComments": "暂无评论。",
+  "documentFeed.noHistory": "暂无版本历史。",
+  "documentFeed.thread": "讨论",
+  "documentFeed.open": "未解决",
+  "documentFeed.resolved": "已解决",
+  "documentFeed.node": "节点",
+  "documentFeed.version": "版本",
+  "documentFeed.source.autosave": "自动保存",
+  "documentFeed.source.manual": "手动",
+  "documentFeed.source.import": "导入",
+  "documentFeed.source.ai": "AI",
+  "documentFeed.source.system": "系统"
 }

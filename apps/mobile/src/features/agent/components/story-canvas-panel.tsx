@@ -1,3 +1,4 @@
+import { DocumentFeedPanel } from "./document-feed-panel";
 import { StoryCanvasPositionForm } from "./story-canvas-position-form";
 import {
   canvasPositionDraftStore,
@@ -77,6 +78,7 @@ export function StoryCanvasPanel({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [documentFeed, setDocumentFeed] = useState(false);
   const [positioning, setPositioning] = useState(false),
     [positionRecovery, setPositionRecovery] = useState(false);
   const [mapping, setMapping] = useState(false),
@@ -232,7 +234,8 @@ export function StoryCanvasPanel({
           !grouping &&
           !mapping &&
           !positioning &&
-          !selected && (
+          !selected &&
+          !documentFeed && (
             <StoryCanvasMediaSync
               scope={writeScope}
               userId={userId}
@@ -264,6 +267,23 @@ export function StoryCanvasPanel({
           >
             <ThemedText type="small">{t("storyCanvas.map.title")}</ThemedText>
           </Pressable>
+        )}
+        {loaded && !loading && !error && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setDocumentFeed(true)}
+            style={{ paddingVertical: 10 }}
+          >
+            <ThemedText type="small">{t("documentFeed.title")}</ThemedText>
+          </Pressable>
+        )}
+        {documentFeed && loaded && !loading && !error && (
+          <DocumentFeedPanel
+            key={`${loaded.documentId}:${scope.generation}`}
+            documentId={loaded.documentId}
+            generation={scope.generation}
+            close={() => setDocumentFeed(false)}
+          />
         )}
         {canEdit && positionRecovery && !loading && (
           <Pressable

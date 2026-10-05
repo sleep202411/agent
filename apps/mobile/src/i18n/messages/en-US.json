@@ -5271,5 +5271,21 @@
   "play.journeyMap.truncated": "Some connections are omitted because this map is unusually large.",
   "play.journeyMap.thumbnailUnavailable": "Scene thumbnail unavailable",
   "play.journeyMap.zoomIn": "Zoom in",
-  "play.journeyMap.zoomOut": "Zoom out"
+  "play.journeyMap.zoomOut": "Zoom out",
+  "documentFeed.title": "Comments & history",
+  "documentFeed.comments": "Comments",
+  "documentFeed.history": "History",
+  "documentFeed.refresh": "Refresh",
+  "documentFeed.noComments": "No comments yet.",
+  "documentFeed.noHistory": "No version history yet.",
+  "documentFeed.thread": "Thread",
+  "documentFeed.open": "Open",
+  "documentFeed.resolved": "Resolved",
+  "documentFeed.node": "Node",
+  "documentFeed.version": "Version",
+  "documentFeed.source.autosave": "Autosave",
+  "documentFeed.source.manual": "Manual",
+  "documentFeed.source.import": "Import",
+  "documentFeed.source.ai": "AI",
+  "documentFeed.source.system": "System"
 }

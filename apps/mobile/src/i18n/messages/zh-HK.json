@@ -5271,5 +5271,21 @@
   "play.journeyMap.truncated": "地圖較大，部分連接未顯示。",
   "play.journeyMap.thumbnailUnavailable": "場景縮圖不可用",
   "play.journeyMap.zoomIn": "放大",
-  "play.journeyMap.zoomOut": "縮小"
+  "play.journeyMap.zoomOut": "縮小",
+  "documentFeed.title": "評論與歷史",
+  "documentFeed.comments": "評論",
+  "documentFeed.history": "歷史",
+  "documentFeed.refresh": "重新整理",
+  "documentFeed.noComments": "暫無評論。",
+  "documentFeed.noHistory": "暫無版本歷史。",
+  "documentFeed.thread": "討論",
+  "documentFeed.open": "未解決",
+  "documentFeed.resolved": "已解決",
+  "documentFeed.node": "節點",
+  "documentFeed.version": "版本",
+  "documentFeed.source.autosave": "自動儲存",
+  "documentFeed.source.manual": "手動",
+  "documentFeed.source.import": "匯入",
+  "documentFeed.source.ai": "AI",
+  "documentFeed.source.system": "系統"
 }
