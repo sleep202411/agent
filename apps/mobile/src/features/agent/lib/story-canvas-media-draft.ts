@@ -6,7 +6,7 @@ import {
   type CanvasShotMedia,
 } from "../../../../canvas-editor/shot-media-schema";
 import { canvasUpdateSchema, type CanvasSnapshot } from "../../../../canvas-editor/protocol";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "./story-canvas-draft";
 
 export const canvasMediaDraftSchema = z
   .object({
@@ -92,12 +92,14 @@ export function canvasMediaBaseline(snapshot: CanvasSnapshot, raw: CanvasShotMed
 }
 
 export function canvasMediaDraftStore(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   storage: DurableRecord = durableRecord(
-    "story-canvas-media-draft",
+    "kind" in scope ? "platform-canvas-media-draft" : "story-canvas-media-draft",
     userId,
-    `${scope.projectId}:${scope.documentId}`
+    "kind" in scope
+      ? `${scope.workspaceId}:${scope.projectId}:${scope.sectionId}:${scope.documentId}`
+      : `${scope.projectId}:${scope.documentId}`
   )
 ) {
   const current = () => {

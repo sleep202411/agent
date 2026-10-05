@@ -8,13 +8,18 @@ import {
   type CanvasGenerationJob,
 } from "../../../../canvas-editor/generation-schema";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
-import type { CanvasWriteScope } from "./story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
+import {
+  canvasGenerationOwner,
+  matchesCanvasGenerationOwner,
+} from "../lib/canvas-generation-owner";
+import { readPlatformCanvasDocument } from "./platform-canvas-document";
 import { readStoryCanvasDocument } from "./story-canvas-document";
 
 /** Read only jobs already owned by cards in the current materialized document.
  * A missing response never starts/retries a paid job or clears its card receipt. */
 export async function loadTrackedCanvasJobs(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   loaded: CanvasLoaded,
   signal: AbortSignal
 ): Promise<CanvasGenerationJob[]> {
@@ -41,7 +46,8 @@ export async function loadTrackedCanvasJobs(
     });
   }
   if (!cards.length) return [];
-  await readStoryCanvasDocument(scope, scope.documentId, signal);
+  if ("kind" in scope) await readPlatformCanvasDocument(scope, signal);
+  else await readStoryCanvasDocument(scope, scope.documentId, signal);
   generationSession(scope.generation, signal);
   const jobs: CanvasGenerationJob[] = [];
   for (let start = 0; start < cards.length; start += 4) {
@@ -58,7 +64,8 @@ export async function loadTrackedCanvasJobs(
                 signal,
                 retry: false,
                 params: {
-                  storyProjectId: scope.projectId,
+                  ...canvasGenerationOwner(scope),
+                  ...("kind" in scope ? { workspaceId: scope.workspaceId } : {}),
                   documentId: scope.documentId,
                   documentBlockId: card.nodeId,
                   sourceSurface: "fizzstudio-canvas",
@@ -77,8 +84,7 @@ export async function loadTrackedCanvasJobs(
             throw Error("Generation recovery does not match the saved request.");
         }
         if (
-          job.storyProjectId !== scope.projectId ||
-          job.projectId ||
+          !matchesCanvasGenerationOwner(scope, job) ||
           job.documentId !== scope.documentId ||
           job.documentBlockId !== card.nodeId ||
           job.sourceSurface !== "fizzstudio-canvas" ||
@@ -125,7 +131,11 @@ export async function loadTrackedCanvasJobs(
       : [];
   });
   if (candidates.length) {
-    const catalog = await loadCanvasReferenceCatalog(scope.generation, signal);
+    const catalog = await loadCanvasReferenceCatalog(
+      scope.generation,
+      signal,
+      "kind" in scope ? scope.workspaceId : undefined
+    );
     for (const { id, data } of candidates) {
       const model = catalog.models.find((model) => model.id === data.modelId);
       if (!model) continue;

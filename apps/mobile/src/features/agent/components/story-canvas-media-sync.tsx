@@ -7,7 +7,8 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
+import { openPlatformCanvasDocument } from "../api/platform-canvas-document";
 import { canvasReconciliation } from "../lib/story-canvas-reconciliation";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
@@ -20,7 +21,7 @@ export function StoryCanvasMediaSync({
   onSnapshot,
   onSaved,
 }: {
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   userId: string;
   onSnapshot(value: CanvasLoaded): void;
   onSaved(): void;
@@ -114,6 +115,7 @@ export function StoryCanvasMediaSync({
         <StoryCanvasReader
           key={`${phase}:${attempt}`}
           scope={scope}
+          platform={"kind" in scope ? { scope, load: openPlatformCanvasDocument } : undefined}
           title={t("storyCanvas.title")}
           runtimeError={t("storyCanvas.loadError")}
           onError={failed}

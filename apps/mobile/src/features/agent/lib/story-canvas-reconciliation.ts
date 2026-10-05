@@ -6,27 +6,34 @@ import {
   canvasUpdatePending,
   canvasUpdateSchema,
   type CanvasUpdateCommand,
-  type CanvasWriteScope,
 } from "../api/story-canvas-update";
 import { canvasGroupDraftStore } from "./story-canvas-group-draft";
-import { canvasDraftStore } from "./story-canvas-draft";
+import { platformCanvasUpdatePending } from "../api/platform-canvas-document";
+import { platformActorDraftStore } from "./platform-actor-draft";
+import { canvasDraftStore, type CanvasEditScope } from "./story-canvas-draft";
 import { canvasCreateDraftStore } from "./story-canvas-create-draft";
 import { canvasMediaDraftStore } from "./story-canvas-media-draft";
 
 /** An automatic operation owns its exact bytes separately from the shared
  * transport journal. Never replace a manual draft or recompute a lost write. */
 export function canvasReconciliation(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   dependencies = {
     storage: durableRecord(
-      "story-canvas-reconciliation",
+      "kind" in scope ? "platform-canvas-reconciliation" : "story-canvas-reconciliation",
       userId,
-      `${scope.projectId}:${scope.documentId}`
+      "kind" in scope
+        ? `${scope.workspaceId}:${scope.projectId}:${scope.sectionId}:${scope.documentId}`
+        : `${scope.projectId}:${scope.documentId}`
     ),
-    client: canvasUpdatePending(scope, userId),
+    client:
+      "kind" in scope
+        ? platformCanvasUpdatePending(scope, userId)
+        : canvasUpdatePending(scope, userId),
     hasDraft: () =>
       !!(
+        ("kind" in scope && platformActorDraftStore(scope, userId).read()) ||
         canvasDraftStore(scope, userId).read() ||
         canvasCreateDraftStore(scope, userId).read() ||
         canvasMediaDraftStore(scope, userId).read() ||

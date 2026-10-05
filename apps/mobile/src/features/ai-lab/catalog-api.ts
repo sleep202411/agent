@@ -108,9 +108,20 @@ export function canUseGeneration(model: GenerationModel, preset: GenerationPrese
 }
 
 /** Read catalog constraints for existing canvas wires; no billing/preflight request. */
-export async function loadCanvasReferenceCatalog(generation: number, signal: AbortSignal) {
+export async function loadCanvasReferenceCatalog(
+  generation: number,
+  signal: AbortSignal,
+  workspaceId?: string
+) {
   generationSession(generation, signal);
-  const raw = await api.get("/ai/models", { service: "aurora", signal, retry: false });
+  const raw = await api.get("/ai/models", {
+    service: "aurora",
+    signal,
+    retry: false,
+    ...(workspaceId
+      ? { headers: { "x-fizz-workspace-id": z.string().uuid().parse(workspaceId) } }
+      : {}),
+  });
   generationSession(generation, signal);
   return catalog.parse(raw);
 }

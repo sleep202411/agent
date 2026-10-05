@@ -1,3 +1,7 @@
+import { durableRecord } from "@/lib/durable-record";
+import { platformCanvasUpdatePending } from "../api/platform-canvas-document";
+import { platformActorDraftStore } from "./platform-actor-draft";
+import { canvasMediaDraftStore } from "./story-canvas-media-draft";
 import { beforeEach, expect, it, vi } from "vitest";
 import { canvasReconciliation } from "./story-canvas-reconciliation";
 import type { CanvasUpdateCommand } from "../api/story-canvas-update";
@@ -8,6 +12,7 @@ vi.mock("../api/story-canvas-update", async () => {
   const { canvasUpdateSchema } = await import("../../../../canvas-editor/protocol");
   return { canvasUpdateSchema, canvasUpdatePending: vi.fn() };
 });
+vi.mock("../api/platform-canvas-document", () => ({ platformCanvasUpdatePending: vi.fn() }));
 const key = "00000000-0000-4000-8000-000000000001";
 const command = { clientKey: key, yjsUpdateBase64: "AAA=" };
 const scope = { projectId: key, documentId: key, generation: 1 };
@@ -131,4 +136,49 @@ it("does not replace corrupted recovery data or submit after persistence fails",
   writeFails = true;
   expect(() => setup().prepare(command)).toThrow("Storage full");
   expect(submit).not.toHaveBeenCalled();
+});
+
+it("isolates platform synchronization and protects actor/media drafts using the real stores", async () => {
+  const records = new Map<string, string>();
+  vi.mocked(durableRecord).mockImplementation((...parts) => {
+    const id = JSON.stringify(parts);
+    return {
+      read: () => records.get(id) ?? null,
+      write: (value) => {
+        records.set(id, value);
+      },
+    };
+  });
+  vi.mocked(platformCanvasUpdatePending).mockReturnValue({
+    read: () => other,
+    submit,
+  } as ReturnType<typeof platformCanvasUpdatePending>);
+  const platform = { ...scope, kind: "platform" as const, workspaceId: key, sectionId: key };
+  const queue = canvasReconciliation(platform, "user");
+  expect(queue.canPrepare()).toBe(true);
+  const actor = platformActorDraftStore(platform, "user");
+  actor.write({ actorId: key, clientKey: key });
+  expect(queue.canPrepare()).toBe(false);
+  expect(() => queue.prepare(command)).toThrow("saved canvas action");
+  actor.discardUnprepared(key);
+  const media = canvasMediaDraftStore(platform, "user");
+  media.write({
+    edit: { action: "attach", nodeId: "shot", sourceId: "image", edgeId: key },
+    title: "Shot",
+    baseline: "{}",
+  });
+  expect(queue.canPrepare()).toBe(false);
+  media.write(null);
+  queue.prepare(command);
+  const otherSection = canvasReconciliation({ ...platform, sectionId: "other" }, "user");
+  expect(otherSection.read()).toBeNull();
+  expect(canvasReconciliation(platform, "other-user").read()).toBeNull();
+  submit.mockRejectedValueOnce(Error("Lost platform reply"));
+  await expect(queue.resume(new AbortController().signal)).rejects.toThrow("Lost platform reply");
+  const reopened = canvasReconciliation(platform, "user");
+  expect(reopened.read()).toEqual(command);
+  await reopened.resume(new AbortController().signal);
+  expect(submit.mock.calls.map(([value]) => value)).toEqual([command, command]);
+  expect(reopened.read()).toBeNull();
+  expect(platformCanvasUpdatePending).toHaveBeenCalledWith(platform, "user");
 });

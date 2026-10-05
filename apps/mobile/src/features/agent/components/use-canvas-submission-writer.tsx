@@ -17,7 +17,8 @@ import type {
   CanvasSubmissionRecord,
 } from "../../../../canvas-editor/submission-schema";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
+import { openPlatformCanvasDocument } from "../api/platform-canvas-document";
 import { canvasReconciliation } from "../lib/story-canvas-reconciliation";
 import {
   persistCanvasSubmission,
@@ -30,7 +31,7 @@ import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
 type Request = {
   id: number;
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   userId: string;
   type: CanvasSubmission["type"];
   command: CanvasSubmissionRecord;
@@ -40,7 +41,7 @@ type Request = {
 };
 /** Hidden native runtime bridge; unmount retires reads, saves and their promises. */
 export function useCanvasSubmissionWriter(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   type: CanvasSubmission["type"]
 ) {
@@ -51,7 +52,7 @@ export function useCanvasSubmissionWriter(
     serial = useRef(0);
   const lifetime = useRef<{
     active: boolean;
-    scope: CanvasWriteScope;
+    scope: CanvasEditScope;
     userId: string;
     type: CanvasSubmission["type"];
     controllers: Set<AbortController>;
@@ -237,6 +238,7 @@ export function useCanvasSubmissionWriter(
         <StoryCanvasReader
           key={`read:${request.id}`}
           scope={scope}
+          platform={"kind" in scope ? { scope, load: openPlatformCanvasDocument } : undefined}
           title={t("storyCanvas.title")}
           runtimeError={t("storyCanvas.loadError")}
           onError={(message) => fail(request, message)}

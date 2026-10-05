@@ -6,8 +6,12 @@ import type { CanvasGenerationContext } from "@/features/ai-lab/panel";
 import { StoryCanvasGenerationPanel } from "./story-canvas-generation-panel";
 const h = vi.hoisted(() => ({
   project: vi.fn(),
+  platformProject: vi.fn(),
   generation: 1,
-  reader: null as null | { onResult(value: CanvasLoaded): void },
+  reader: null as null | {
+    onResult(value: CanvasLoaded): void;
+    platform?: { scope: unknown; load: unknown };
+  },
   composer: null as null | { canvas: CanvasGenerationContext; onBusyChange(value: boolean): void },
   beforeSubmit: vi.fn(),
   beforeRetry: vi.fn(),
@@ -42,7 +46,10 @@ vi.mock("react-native", () => ({
     </button>
   ),
 }));
-vi.mock("@/features/ai-lab/projects-api", () => ({ getStoryCanvasGenerationProject: h.project }));
+vi.mock("@/features/ai-lab/projects-api", () => ({
+  getStoryCanvasGenerationProject: h.project,
+  getGenerationProject: h.platformProject,
+}));
 vi.mock("@/features/ai-lab/panel", () => ({
   GenerationPanel: (props: NonNullable<typeof h.composer>) => {
     h.composer = props;
@@ -96,11 +103,11 @@ afterEach(async () => {
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
 });
-const render = () =>
+const render = (selectedScope: import("../lib/story-canvas-draft").CanvasEditScope = scope) =>
   act(async () =>
     root.render(
       <StoryCanvasGenerationPanel
-        scope={scope}
+        scope={selectedScope}
         userId="alice"
         nodeId="card"
         title="Lake card"
@@ -145,3 +152,38 @@ it("rejects a changed document or locked card", async () => {
 });
 
 vi.mock("expo-constants", () => ({ default: { expoConfig: {} } }));
+
+vi.mock("../api/platform-canvas-document", () => ({ openPlatformCanvasDocument: vi.fn() }));
+it("loads platform permission and document data through the platform adapters", async () => {
+  const platform = { ...scope, kind: "platform" as const, workspaceId: id, sectionId: id };
+  h.platformProject.mockResolvedValue({
+    id,
+    kind: "platform",
+    workspaceId: id,
+    projectId: id,
+    title: "Platform",
+    canGenerate: true,
+  });
+  await render(platform);
+  expect(h.project).not.toHaveBeenCalled();
+  expect(h.platformProject).toHaveBeenCalledWith(
+    id,
+    { kind: "platform", id },
+    1,
+    expect.any(AbortSignal)
+  );
+  expect(h.reader!.platform?.scope).toEqual(platform);
+  expect(h.composer).toBeNull();
+  await act(async () => h.reader!.onResult(loaded));
+  expect(h.composer!.canvas).toMatchObject({
+    documentId: id,
+    nodeId: "card",
+    seed: { prompt: "Fresh lake" },
+  });
+});
+it("keeps platform viewers out of the generation composer", async () => {
+  h.platformProject.mockResolvedValue({ canGenerate: false });
+  await render({ ...scope, kind: "platform", workspaceId: id, sectionId: id });
+  expect(host.textContent).toContain("aiLab.projectReadOnly");
+  expect(h.composer).toBeNull();
+});

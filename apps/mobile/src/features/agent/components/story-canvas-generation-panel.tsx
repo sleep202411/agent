@@ -8,11 +8,13 @@ import { useTranslations } from "@/i18n";
 import { GenerationPanel } from "@/features/ai-lab/panel";
 import {
   getStoryCanvasGenerationProject,
+  getGenerationProject,
   type GenerationProject,
 } from "@/features/ai-lab/projects-api";
 import { readCanvasGenerationSeed } from "@/features/ai-lab/canvas-seed";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
+import { openPlatformCanvasDocument } from "../api/platform-canvas-document";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { useCanvasSubmissionWriter } from "./use-canvas-submission-writer";
 
@@ -23,7 +25,7 @@ export function StoryCanvasGenerationPanel({
   title,
   close,
 }: {
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   userId: string;
   nodeId: string;
   title: string;
@@ -91,7 +93,7 @@ function Load({
   onBusyChange,
   retry,
 }: {
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   userId: string;
   nodeId: string;
   onBusyChange(value: boolean): void;
@@ -104,7 +106,16 @@ function Load({
   const [error, setError] = useState("");
   useEffect(() => {
     const controller = new AbortController();
-    void getStoryCanvasGenerationProject(scope.projectId, scope.generation, controller.signal)
+    const request =
+      "kind" in scope
+        ? getGenerationProject(
+            scope.workspaceId,
+            { kind: "platform", id: scope.projectId },
+            scope.generation,
+            controller.signal
+          )
+        : getStoryCanvasGenerationProject(scope.projectId, scope.generation, controller.signal);
+    void request
       .then((value) => {
         if (controller.signal.aborted || getAuthGeneration() !== scope.generation) return;
         if (!value.canGenerate) throw Error(t("aiLab.projectReadOnly"));
@@ -144,6 +155,7 @@ function Load({
       {!loaded && (
         <StoryCanvasReader
           scope={scope}
+          platform={"kind" in scope ? { scope, load: openPlatformCanvasDocument } : undefined}
           title={t("storyCanvas.title")}
           runtimeError={t("storyCanvas.loadError")}
           onError={setError}
@@ -169,7 +181,7 @@ function Composer({
   card,
   onBusyChange,
 }: {
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   userId: string;
   nodeId: string;
   project: GenerationProject;

@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   lookup: vi.fn(),
   post: vi.fn(),
   read: vi.fn(),
+  platformRead: vi.fn(),
   generation: 1,
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -20,6 +21,7 @@ vi.mock("@/features/ai-lab/jobs-api", async (importOriginal) => ({
     if (generation !== h.generation) throw Error("Session expired");
   },
 }));
+vi.mock("./platform-canvas-document", () => ({ readPlatformCanvasDocument: h.platformRead }));
 const projectId = "11111111-1111-4111-8111-111111111111";
 const documentId = "22222222-2222-4222-8222-222222222222";
 const id = "33333333-3333-4333-8333-333333333333";
@@ -249,4 +251,77 @@ it("does not poll converted panorama nodes or recreate their generation state", 
   expect(await loadTrackedCanvasJobs(scope, value, new AbortController().signal)).toEqual([]);
   expect(h.get).not.toHaveBeenCalled();
   expect(h.lookup).not.toHaveBeenCalled();
+});
+
+const platformScope = { ...scope, kind: "platform" as const, workspaceId: id, sectionId: id };
+const platformJob = () => ({ ...job(), workspaceId: id, projectId, storyProjectId: null });
+it("reads tracked platform jobs only after validating the platform document", async () => {
+  h.get.mockResolvedValue(platformJob());
+  const signal = new AbortController().signal;
+  const result = await loadTrackedCanvasJobs(platformScope, loaded(), signal);
+  expect(result[0]).toMatchObject({ id, documentBlockId: "card" });
+  expect(h.platformRead).toHaveBeenCalledWith(platformScope, signal);
+  expect(h.read).not.toHaveBeenCalled();
+  expect(h.platformRead.mock.invocationCallOrder[0]).toBeLessThan(
+    h.get.mock.invocationCallOrder[0]!
+  );
+  expect(h.post).not.toHaveBeenCalled();
+});
+it.each(["workspaceId", "projectId", "storyProjectId", "documentId", "documentBlockId"])(
+  "rejects cross-owner platform job %s",
+  async (field) => {
+    h.get.mockResolvedValue({ ...platformJob(), [field]: documentId });
+    if (field === "documentId") h.get.mockResolvedValue({ ...platformJob(), documentId: id });
+    await expect(
+      loadTrackedCanvasJobs(platformScope, loaded(), new AbortController().signal)
+    ).rejects.toThrow("belong");
+  }
+);
+it("keeps uncertain platform recovery scoped and never resubmits generation", async () => {
+  h.lookup.mockResolvedValue({
+    jobs: [{ ...platformJob(), idempotencyKey: "canvas:attempt" }],
+    nextCursor: null,
+  });
+  const result = await loadTrackedCanvasJobs(
+    platformScope,
+    uncertain(),
+    new AbortController().signal
+  );
+  expect(result).toHaveLength(1);
+  expect(h.lookup).toHaveBeenCalledWith(
+    "/ai/jobs",
+    expect.objectContaining({
+      params: {
+        workspaceId: id,
+        projectId,
+        documentId,
+        documentBlockId: "card",
+        sourceSurface: "fizzstudio-canvas",
+        idempotencyKey: "canvas:attempt",
+        limit: 80,
+      },
+    })
+  );
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("stops platform recovery when document access is revoked", async () => {
+  h.platformRead.mockRejectedValue(Error("Access revoked"));
+  await expect(
+    loadTrackedCanvasJobs(platformScope, uncertain(), new AbortController().signal)
+  ).rejects.toThrow("Access revoked");
+  expect(h.get).not.toHaveBeenCalled();
+  expect(h.lookup).not.toHaveBeenCalled();
+});
+
+it("loads connected platform reference constraints in the owning workspace", async () => {
+  h.get.mockResolvedValue(platformJob());
+  const value = loaded();
+  value.snapshot.nodes.target = { id: "target", type: "video", data: { modelId: "model" } };
+  value.snapshot.edges.wire = { source: "card", target: "target" };
+  h.lookup.mockResolvedValue({ version: "1", region: "global", models: [], presets: [] });
+  await loadTrackedCanvasJobs(platformScope, value, new AbortController().signal);
+  expect(h.lookup).toHaveBeenCalledWith(
+    "/ai/models",
+    expect.objectContaining({ headers: { "x-fizz-workspace-id": id }, retry: false })
+  );
 });

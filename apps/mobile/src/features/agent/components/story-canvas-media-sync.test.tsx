@@ -174,3 +174,5 @@ it("re-reads the document after lookup before encoding against the current card 
   expect(h.encoder!.loaded).toBe(fresh);
   expect(h.jobs).toHaveBeenCalledOnce();
 });
+
+vi.mock("../api/platform-canvas-document", () => ({ openPlatformCanvasDocument: vi.fn() }));
