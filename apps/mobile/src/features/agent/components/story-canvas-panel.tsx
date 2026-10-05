@@ -15,12 +15,9 @@ import { canvasGroupDraftStore } from "../lib/story-canvas-group-draft";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useAuth } from "@/auth";
-import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
-import { useStoryChapterContext } from "../context/story-chapter-context";
 import type { CandidateScope } from "../api/story-candidates-api";
 import { StoryCanvasMediaSync } from "./story-canvas-media-sync";
 import { StoryCanvasReader } from "./story-canvas-reader";
@@ -36,41 +33,6 @@ import { StoryCanvasEditForm } from "./story-canvas-edit-form";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import type { CanvasNodeEdit } from "../../../../canvas-editor/schema";
 
-export function StoryCanvasEntry() {
-  const context = useStoryChapterContext(),
-    auth = useAuth(),
-    active = useScreenActive(),
-    t = useTranslations();
-  const [open, setOpen] = useState(false);
-  const scope = useMemo(
-    () => ({ projectId: context.projectId, generation: auth.generation }),
-    [context.projectId, auth.generation]
-  );
-  if (auth.status !== "authenticated" || !context.capabilities.includes("story.read")) return null;
-  return (
-    <>
-      <Pressable
-        accessibilityRole="button"
-        disabled={context.loading || !!context.error}
-        onPress={() => setOpen(true)}
-        style={{ padding: 10 }}
-      >
-        <ThemedText type="small">{t("storyCanvas.title")}</ThemedText>
-      </Pressable>
-      {open && active && !context.loading && !context.error && (
-        <StoryCanvasPanel
-          key={`${scope.projectId}:${scope.generation}`}
-          scope={scope}
-          userId={String(auth.user?.userId ?? auth.user?.id ?? "")}
-          canEdit={context.capabilities.includes("story.edit")}
-          canGenerate={context.capabilities.includes("story.generate")}
-          canComment={context.capabilities.includes("story.review")}
-          close={() => setOpen(false)}
-        />
-      )}
-    </>
-  );
-}
 export function StoryCanvasPanel({
   scope,
   userId,

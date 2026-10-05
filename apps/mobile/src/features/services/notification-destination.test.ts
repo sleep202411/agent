@@ -185,3 +185,22 @@ it("opens the case carried by an official dispute task-update notification", () 
     )
   ).toEqual({ kind: "web", path: withComment });
 });
+it.each(["global", "cn"] as const)("opens exact Story canvas links in %s", (region) => {
+  expect(
+    notificationDestination(
+      notification(`/zh-HK/story-studio/projects/${task}/canvas`),
+      region,
+      "zh-HK"
+    )
+  ).toEqual({ kind: "native", path: `/agent/${task}/assets?canvas=1` });
+  const origin = region === "cn" ? "https://studio.fizzspace.cn" : "https://studio.fizzdragon.com";
+  for (const path of [
+    `/story-studio/projects/${task}/canvas?node=selected`,
+    `/story-studio/projects/${task}/canvas#comment`,
+    "/story-studio/projects/invalid/canvas",
+  ])
+    expect(notificationDestination(notification(path), region, "en-US")).toEqual({
+      kind: "studio",
+      url: `${origin}/en-US${path}`,
+    });
+});
