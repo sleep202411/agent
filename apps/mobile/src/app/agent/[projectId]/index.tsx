@@ -389,6 +389,7 @@ export default function AgentChatScreen() {
           >
             {pendingInput ? (
               <AgentUserInputCard
+                draftScope={{ projectId, chapterId, workbenchMode }}
                 request={pendingInput}
                 busy={live.sending}
                 onSubmit={(answers) => {

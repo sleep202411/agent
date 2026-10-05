@@ -1,3 +1,7 @@
+import { useMemo } from "react";
+import { useAuth } from "@/auth";
+import { durableRecord } from "@/lib/durable-record";
+import { agentInputRequestKey, type AgentInputDraftStorage } from "../lib/agent-input-draft";
 import { SymbolView } from "expo-symbols";
 import {
   ActivityIndicator,
@@ -20,6 +24,7 @@ import type { AgentOsPendingUserInput } from "../api/agent-os-api";
 const theme = Colors.dark;
 
 type AgentUserInputCardProps = {
+  draftScope: { projectId: string; chapterId: string; workbenchMode: string };
   request: AgentOsPendingUserInput;
   busy: boolean;
   onSubmit: (answers: Record<string, string>) => void;
@@ -27,18 +32,41 @@ type AgentUserInputCardProps = {
 
 /** Multi-step user input gate — mirrors PC `AgentOsUserInputCard`. */
 export function AgentUserInputCard(props: AgentUserInputCardProps) {
-  return <AgentUserInputView key={JSON.stringify(props.request)} {...props} />;
+  const auth = useAuth();
+  const userId = auth.user?.id ?? auth.user?.userId;
+  const identity = JSON.stringify(props.draftScope);
+  const requestKey = agentInputRequestKey(props.request);
+  const storage = useMemo(
+    () =>
+      auth.status === "authenticated" && userId
+        ? { record: durableRecord("story-input-draft", String(userId), identity), requestKey }
+        : undefined,
+    [auth.status, userId, identity, requestKey]
+  );
+  return (
+    <AgentUserInputView
+      key={JSON.stringify([auth.generation, userId, identity, requestKey])}
+      {...props}
+      storage={storage}
+    />
+  );
 }
 
-function AgentUserInputView({ request, busy, onSubmit }: AgentUserInputCardProps) {
+function AgentUserInputView({
+  request,
+  busy,
+  onSubmit,
+  storage,
+}: AgentUserInputCardProps & { storage?: AgentInputDraftStorage }) {
   const t = useTranslations();
   const locale = useLocale();
   const { height } = useWindowDimensions();
   const questions = request.questions;
-  const { step, question, isLast, selected, choose, back, submit } = useAgentInputForm(
+  const { step, question, isLast, selected, choose, back, submit, error } = useAgentInputForm(
     questions,
     busy,
-    onSubmit
+    onSubmit,
+    storage
   );
 
   if (!question) return null;
@@ -58,6 +86,11 @@ function AgentUserInputView({ request, busy, onSubmit }: AgentUserInputCardProps
         style={{ maxHeight: Math.max(140, height * 0.42) }}
         contentContainerStyle={styles.body}
       >
+        {error ? (
+          <Text accessibilityRole="alert" style={{ color: theme.brand }}>
+            {error}
+          </Text>
+        ) : null}
         <View style={styles.stepRow}>
           <Text style={styles.stepLabel}>{stepLabel}</Text>
           <View style={styles.progressTrack}>
