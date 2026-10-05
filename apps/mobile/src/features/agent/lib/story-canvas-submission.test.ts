@@ -103,7 +103,7 @@ it("accepts settled runs and reordered payload keys but never regresses an ackno
   expect(recordCanvasSubmission(settled, documentId, command).yjsUpdateBase64).toBeNull();
 });
 
-it.each(["submission", "edit", "retry", "receipt", "authoring"] as const)(
+it.each(["submission", "platform", "edit", "retry", "receipt", "authoring"] as const)(
   "records %s through the bundled runtime bridge",
   async (kind) => {
     const { runInNewContext } = await import("node:vm");
@@ -193,13 +193,34 @@ it.each(["submission", "edit", "retry", "receipt", "authoring"] as const)(
                         }),
                       },
                     }
-                  : command,
+                  : kind === "platform"
+                    ? {
+                        ...command,
+                        submission: {
+                          ...command.submission,
+                          context: {
+                            ...command.submission.context,
+                            storyProjectId: undefined,
+                            projectId: documentId,
+                          },
+                        },
+                      }
+                    : command,
       })
     );
     const result = canvasRuntimeMessage.parse(received.at(-1));
     if (result.type !== "edited" || !result.yjsUpdateBase64)
       throw Error("Missing submission delta");
     expect(materializeCanvas(snapshot, [result.yjsUpdateBase64]).snapshot).toEqual(result.snapshot);
+    if (kind === "platform") {
+      expect(result.snapshot.nodes.card).toHaveProperty(
+        "data.generation.submission.context.projectId",
+        documentId
+      );
+      expect(result.snapshot.nodes.card).not.toHaveProperty(
+        "data.generation.submission.context.storyProjectId"
+      );
+    }
     if (kind === "edit")
       expect(result.snapshot.nodes.card).toHaveProperty("data.mode", "image_to_image");
     if (kind === "authoring") {
@@ -413,4 +434,18 @@ it("autosaves authoring without creating or replacing a generation job", () => {
   expect(() => recordCanvasSubmission(result.state, documentId, changed)).toThrow("changed");
   const idle = recordCanvasSubmission(fixture(), documentId, authoring);
   expect(idle.snapshot.nodes.card).not.toHaveProperty("data.generation.status");
+});
+
+it("rejects frozen submissions with missing or ambiguous project owners", () => {
+  for (const owner of [
+    { projectId: undefined, storyProjectId: undefined },
+    { projectId: documentId, storyProjectId: documentId },
+  ]) {
+    expect(() =>
+      recordCanvasSubmission(fixture(), documentId, {
+        ...command,
+        submission: { ...command.submission, context: { ...command.submission.context, ...owner } },
+      })
+    ).toThrow();
+  }
 });

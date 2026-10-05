@@ -280,3 +280,119 @@ it("recovers authoring bytes before encoding further edits, without a generation
   expect(encode).toHaveBeenLastCalledWith(authoring, expect.any(AbortSignal));
   expect(queue.resume).toHaveBeenCalledTimes(2);
 });
+
+const platformScope = {
+  ...scope,
+  kind: "platform" as const,
+  workspaceId: id,
+  sectionId: "33333333-3333-4333-8333-333333333333",
+};
+const platformCommand = { ...command, storyProjectId: undefined, projectId: id };
+it("freezes platform ownership without converting it to Story ownership", () => {
+  const saved = canvasSubmissionForCommand(platformScope, "alice", "image", platformCommand);
+  expect(saved.submission.context).toEqual({
+    workspaceId: id,
+    projectId: id,
+    documentId: id,
+    documentBlockId: "card",
+    sourceSurface: "fizzstudio-canvas",
+  });
+  expect(saved.submission.input).toEqual(command.input);
+  expect(() => canvasSubmissionForCommand(platformScope, "alice", "image", command)).toThrow();
+  expect(() => canvasSubmissionForCommand(scope, "alice", "image", platformCommand)).toThrow();
+});
+it.each([
+  { workspaceId: "22222222-2222-4222-8222-222222222222" },
+  { projectId: "22222222-2222-4222-8222-222222222222" },
+  { documentId: "22222222-2222-4222-8222-222222222222" },
+  { storyProjectId: id },
+])(
+  "rejects mismatched platform submissions, retries and receipts before lookup: %j",
+  async (change) => {
+    const raw = { ...platformCommand, ...change };
+    const signal = new AbortController().signal;
+    const readJob = vi.fn<typeof getGenerationJob>();
+    expect(() => canvasSubmissionForCommand(platformScope, "alice", "image", raw)).toThrow();
+    await expect(
+      persistCanvasRetry(
+        platformScope,
+        "alice",
+        "image",
+        { ...raw, jobId: id },
+        signal,
+        { queue, encode },
+        readJob
+      )
+    ).rejects.toThrow();
+    await expect(
+      persistCanvasReceipt(
+        platformScope,
+        "alice",
+        "image",
+        raw,
+        { request_id: id, status: "in_queue" },
+        signal,
+        { queue, encode },
+        readJob
+      )
+    ).rejects.toThrow();
+    expect(readJob).not.toHaveBeenCalled();
+    expect(encode).not.toHaveBeenCalled();
+  }
+);
+it("reads retry and receipt jobs with the exact platform owner and card scope", async () => {
+  const child = "22222222-2222-4222-8222-222222222222";
+  const readJob = vi.fn<typeof getGenerationJob>().mockResolvedValue({
+    id: child,
+    type: "image",
+    status: "failed",
+    idempotencyKey: id,
+  } as Awaited<ReturnType<typeof getGenerationJob>>);
+  const signal = new AbortController().signal;
+  await persistCanvasRetry(
+    platformScope,
+    "alice",
+    "image",
+    { ...platformCommand, jobId: id },
+    signal,
+    { queue, encode },
+    readJob
+  );
+  await persistCanvasReceipt(
+    platformScope,
+    "alice",
+    "image",
+    platformCommand,
+    { request_id: child, status: "in_queue" },
+    signal,
+    { queue, encode },
+    readJob
+  );
+  const expected = {
+    workspaceId: id,
+    projectId: id,
+    documentId: id,
+    documentBlockId: "card",
+    sourceSurface: "fizzstudio-canvas",
+  };
+  expect(readJob).toHaveBeenNthCalledWith(1, id, 1, signal, expected);
+  expect(readJob).toHaveBeenNthCalledWith(2, child, 1, signal, expected);
+});
+it("recovers platform submission bytes before encoding again", async () => {
+  const run = () =>
+    persistCanvasSubmission(
+      platformScope,
+      "alice",
+      "image",
+      platformCommand,
+      new AbortController().signal,
+      { queue, encode }
+    );
+  queue.resume.mockRejectedValueOnce(Error("Lost platform reply"));
+  await expect(run()).rejects.toThrow("Lost platform reply");
+  const original = pending;
+  encode.mockResolvedValueOnce(null);
+  await run();
+  expect(queue.prepare).toHaveBeenCalledExactlyOnceWith(original);
+  expect(queue.resume).toHaveBeenCalledTimes(2);
+});

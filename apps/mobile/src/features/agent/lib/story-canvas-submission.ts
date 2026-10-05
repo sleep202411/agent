@@ -15,11 +15,12 @@ import {
   type CanvasSubmission,
   type CanvasSubmissionRecord,
 } from "../../../../canvas-editor/submission-schema";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "./story-canvas-draft";
+import { canvasGenerationOwner, matchesCanvasGenerationOwner } from "./canvas-generation-owner";
 import type { canvasReconciliation } from "./story-canvas-reconciliation";
 
 export function canvasSubmissionForCommand(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   type: CanvasSubmission["type"],
   raw: GenerationCommand
@@ -27,17 +28,16 @@ export function canvasSubmissionForCommand(
   const command = generationCommand.parse(raw);
   if (
     command.documentId !== scope.documentId ||
-    command.storyProjectId !== scope.projectId ||
-    command.projectId ||
+    !matchesCanvasGenerationOwner(scope, command) ||
     command.sourceSurface !== "fizzstudio-canvas"
   )
-    throw Error("Submission does not belong to this Story canvas.");
+    throw Error("Submission does not belong to this canvas.");
   const {
     clientKey,
     canvasCardEdit,
     workspaceId,
     storyProjectId,
-    projectId: _projectId,
+    projectId,
     documentId,
     documentBlockId,
     sourceSurface,
@@ -52,7 +52,14 @@ export function canvasSubmissionForCommand(
         submission: {
           ...body,
           idempotencyKey: clientKey,
-          context: { workspaceId, storyProjectId, documentId, documentBlockId, sourceSurface },
+          context: {
+            workspaceId,
+            storyProjectId,
+            projectId,
+            documentId,
+            documentBlockId,
+            sourceSurface,
+          },
         },
       })
     )
@@ -65,7 +72,7 @@ type SaveDependencies = {
 };
 /** Resolve older exact bytes before encoding against a fresh document. */
 async function persistRecord(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   command: CanvasSubmissionRecord,
   signal: AbortSignal,
   dependencies: SaveDependencies
@@ -86,7 +93,7 @@ async function persistRecord(
   }
 }
 export async function persistCanvasSubmission(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   type: CanvasSubmission["type"],
   raw: GenerationCommand,
@@ -102,7 +109,7 @@ export async function persistCanvasSubmission(
   );
 }
 export async function persistCanvasRetry(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   type: CanvasSubmission["type"],
   raw: GenerationRetry,
@@ -114,14 +121,13 @@ export async function persistCanvasRetry(
   const command = generationRetryCommand.parse(raw);
   if (
     command.documentId !== scope.documentId ||
-    command.storyProjectId !== scope.projectId ||
-    command.projectId ||
+    !matchesCanvasGenerationOwner(scope, command) ||
     command.sourceSurface !== "fizzstudio-canvas"
   )
-    throw Error("Retry does not belong to this Story canvas.");
+    throw Error("Retry does not belong to this canvas.");
   const job = await readJob(command.jobId, scope.generation, signal, {
     workspaceId: command.workspaceId!,
-    storyProjectId: scope.projectId,
+    ...canvasGenerationOwner(scope),
     documentId: scope.documentId,
     documentBlockId: command.documentBlockId!,
     sourceSurface: "fizzstudio-canvas",
@@ -147,7 +153,7 @@ export async function persistCanvasRetry(
 
 /** Attach only a receipt returned by the original submission/retry endpoint. */
 export async function persistCanvasReceipt(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   type: CanvasSubmission["type"],
   raw: GenerationCommand | GenerationRetry,
@@ -160,14 +166,13 @@ export async function persistCanvasReceipt(
   const command = "jobId" in raw ? generationRetryCommand.parse(raw) : generationCommand.parse(raw);
   if (
     command.documentId !== scope.documentId ||
-    command.storyProjectId !== scope.projectId ||
-    command.projectId ||
+    !matchesCanvasGenerationOwner(scope, command) ||
     command.sourceSurface !== "fizzstudio-canvas"
   )
-    throw Error("Receipt does not belong to this Story canvas.");
+    throw Error("Receipt does not belong to this canvas.");
   const job = await readJob(receipt.request_id, scope.generation, signal, {
     workspaceId: command.workspaceId!,
-    storyProjectId: scope.projectId,
+    ...canvasGenerationOwner(scope),
     documentId: scope.documentId,
     documentBlockId: command.documentBlockId!,
     sourceSurface: "fizzstudio-canvas",
@@ -197,7 +202,7 @@ export async function persistCanvasReceipt(
 }
 
 export async function persistCanvasAuthoring(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   command: CanvasAuthoring,
   signal: AbortSignal,
   dependencies: SaveDependencies

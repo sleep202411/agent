@@ -14,12 +14,16 @@ export const canvasSubmissionSchema = z
         context: z
           .object({
             workspaceId: z.string().uuid(),
-            storyProjectId: z.string().uuid(),
+            storyProjectId: z.string().uuid().optional(),
+            projectId: z.string().uuid().optional(),
             documentId: z.string().uuid(),
             documentBlockId: z.string().min(1).max(128),
             sourceSurface: z.literal("fizzstudio-canvas"),
           })
-          .strict(),
+          .strict()
+          .refine((context) => Boolean(context.projectId) !== Boolean(context.storyProjectId), {
+            message: "A canvas submission must have exactly one project owner.",
+          }),
         idempotencyKey: z.string().min(1),
         modelId: z.string().min(1),
         schemaVersion: z.string().min(1),
