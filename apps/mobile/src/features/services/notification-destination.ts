@@ -107,6 +107,9 @@ export function notificationDestination(
       path: `/crew-agreements/${match[1]}?agreement=${url.searchParams.get("agreement")}`,
     };
   if (target.surface === "studio") {
+    const project = /^\/project\/([^/]+)\/?$/.exec(url.pathname);
+    if (project && uuid.safeParse(project[1]).success && !url.search && !url.hash)
+      return { kind: "native" as const, path: `/studio-project?projectId=${project[1]}` };
     const storyCanvas = /^\/story-studio\/projects\/([^/]+)\/canvas\/?$/.exec(url.pathname);
     if (storyCanvas && uuid.safeParse(storyCanvas[1]).success && !url.search && !url.hash)
       return { kind: "native" as const, path: `/agent/${storyCanvas[1]}/assets?canvas=1` };

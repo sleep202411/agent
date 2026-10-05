@@ -6,6 +6,7 @@ import { ThemedText } from "@/components/themed-text";
 import { PlatformProjectSections } from "@/features/agent/platform-project-sections";
 import {
   readPlatformProject,
+  resolvePlatformProject,
   type PlatformProject,
 } from "@/features/agent/api/platform-projects-api";
 import { isAgentOsId } from "@/features/agent/lib/ids";
@@ -26,11 +27,18 @@ export default function StudioProjectScreen() {
     t = useTranslations();
   const projectId = typeof params.projectId === "string" ? params.projectId.trim() : "";
   const workspaceId = typeof params.workspaceId === "string" ? params.workspaceId.trim() : "";
-  const valid = isAgentOsId(projectId) && isAgentOsId(workspaceId);
-  const close = () =>
+  const valid =
+    isAgentOsId(projectId) && (params.workspaceId === undefined || isAgentOsId(workspaceId));
+  const close = (resolvedWorkspaceId = workspaceId) =>
     router.canGoBack()
       ? router.back()
-      : router.replace(toHref(valid ? `/agent?workspace=${workspaceId}` : "/agent"));
+      : router.replace(
+          toHref(
+            valid && isAgentOsId(resolvedWorkspaceId)
+              ? `/agent?workspace=${resolvedWorkspaceId}`
+              : "/agent"
+          )
+        );
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <Stack.Screen
@@ -43,7 +51,7 @@ export default function StudioProjectScreen() {
       {!valid ? (
         <View style={{ padding: 16, gap: 12 }}>
           <ThemedText accessibilityRole="alert">{t("studioProjects.invalidLink")}</ThemedText>
-          <Pressable accessibilityRole="button" onPress={close}>
+          <Pressable accessibilityRole="button" onPress={() => close()}>
             <ThemedText>{t("common.back")}</ThemedText>
           </Pressable>
         </View>
@@ -78,7 +86,7 @@ function ProjectEntry({
   projectId: string;
   workspaceId: string;
   generation: number;
-  onClose: () => void;
+  onClose: (workspaceId?: string) => void;
 }) {
   const active = useScreenActive(),
     t = useTranslations();
@@ -88,7 +96,11 @@ function ProjectEntry({
   useEffect(() => {
     if (!active || project) return;
     const controller = new AbortController();
-    void readPlatformProject(projectId, workspaceId, generation, controller.signal).then(
+    void (
+      workspaceId
+        ? readPlatformProject(projectId, workspaceId, generation, controller.signal)
+        : resolvePlatformProject(projectId, generation, controller.signal)
+    ).then(
       (value) => {
         if (!controller.signal.aborted) setProject(value);
       },
@@ -105,10 +117,10 @@ function ProjectEntry({
     return (
       <PlatformProjectSections
         projectId={projectId}
-        workspaceId={workspaceId}
+        workspaceId={project.workspaceId}
         name={project.name}
         generation={generation}
-        onClose={onClose}
+        onClose={() => onClose(project.workspaceId)}
       />
     );
   return (
@@ -129,7 +141,7 @@ function ProjectEntry({
       ) : (
         <ActivityIndicator />
       )}
-      <Pressable accessibilityRole="button" onPress={onClose}>
+      <Pressable accessibilityRole="button" onPress={() => onClose()}>
         <ThemedText>{t("common.back")}</ThemedText>
       </Pressable>
     </View>

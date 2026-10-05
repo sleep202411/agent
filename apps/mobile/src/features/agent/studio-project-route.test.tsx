@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   canGoBack: true,
   params: {} as Record<string, unknown>,
   read: vi.fn(),
+  resolve: vi.fn(),
   replace: vi.fn(),
   back: vi.fn(),
   login: vi.fn(),
@@ -28,7 +29,10 @@ vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s }));
 vi.mock("@/lib/navigation", () => ({ toHref: (s: string) => s }));
-vi.mock("@/features/agent/api/platform-projects-api", () => ({ readPlatformProject: h.read }));
+vi.mock("@/features/agent/api/platform-projects-api", () => ({
+  readPlatformProject: h.read,
+  resolvePlatformProject: h.resolve,
+}));
 vi.mock("@/features/agent/platform-project-sections", () => ({
   PlatformProjectSections: ({ projectId, workspaceId, name, onClose }: any) => {
     const [draft, setDraft] = useState(false);
@@ -64,7 +68,8 @@ beforeEach(() => {
   h.active = true;
   h.canGoBack = true;
   h.params = { projectId, workspaceId };
-  h.read.mockResolvedValue({ name: "Current project name" });
+  h.read.mockResolvedValue({ name: "Current project name", workspaceId });
+  h.resolve.mockResolvedValue({ name: "Resolved project", workspaceId });
   host = document.createElement("div");
   root = createRoot(host);
 });
@@ -112,7 +117,7 @@ it("does not read before authentication, and resumes the destination after sign-
 it.each([
   { projectId: "invalid", workspaceId },
   { projectId, workspaceId: [workspaceId, workspaceId] },
-  { projectId },
+  { projectId, workspaceId: "" },
 ])("rejects malformed destination parameters %j", async (params) => {
   h.params = params;
   await render();
@@ -145,4 +150,47 @@ it("retires previous project reads and drafts on destination or account changes"
   await render();
   expect(host.textContent).not.toContain("Retained chapter draft");
   expect(h.read).toHaveBeenLastCalledWith(workspaceId, projectId, 2, expect.any(AbortSignal));
+});
+
+it("resolves a project-only notification and returns to the server-provided workspace", async () => {
+  h.params = { projectId };
+  h.canGoBack = false;
+  await render();
+  expect(h.resolve).toHaveBeenCalledWith(projectId, 1, expect.any(AbortSignal));
+  expect(h.read).not.toHaveBeenCalled();
+  expect(host.textContent).toContain(workspaceId);
+  expect(host.textContent).toContain("Resolved project");
+  await click("Close project");
+  expect(h.replace).toHaveBeenCalledWith(`/agent?workspace=${workspaceId}`);
+});
+it("keeps project-only links through login and retries a denied read", async () => {
+  h.params = { projectId };
+  h.status = "anonymous";
+  await render();
+  expect(h.resolve).not.toHaveBeenCalled();
+  h.status = "authenticated";
+  h.resolve.mockRejectedValueOnce(new Error("Access denied"));
+  await render();
+  expect(host.textContent).toContain("Access denied");
+  expect(host.textContent).not.toContain("Edit chapter");
+  await click("common.retry");
+  expect(host.textContent).toContain("Resolved project");
+});
+it("retires project-only reads on account changes", async () => {
+  h.params = { projectId };
+  let finish!: (value: unknown) => void;
+  h.resolve.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  const signal = h.resolve.mock.calls[0][2] as AbortSignal;
+  h.generation++;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ name: "Stale project", workspaceId }));
+  expect(host.textContent).not.toContain("Stale project");
+  expect(host.textContent).toContain("Resolved project");
 });

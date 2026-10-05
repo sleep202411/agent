@@ -169,19 +169,27 @@ export async function archivePlatformProject(
   }
 }
 
-export async function readPlatformProject(
-  id: string,
-  workspaceId: string,
-  generation: number,
-  signal: AbortSignal
-) {
+/** Resolve an official project-only link without guessing its workspace. */
+export async function resolvePlatformProject(id: string, generation: number, signal: AbortSignal) {
   z.string().uuid().parse(id);
   current(generation, signal);
   const { project } = z
     .object({ project: projectSchema })
     .parse(await api.get(`/projects/${id}`, { service: "aurora", signal }));
   current(generation, signal);
-  if (project.id !== id || project.workspaceId !== workspaceId || project.status !== "active")
+  if (project.id !== id || project.status !== "active")
+    throw new Error("Project is no longer available.");
+  return project;
+}
+export async function readPlatformProject(
+  id: string,
+  workspaceId: string,
+  generation: number,
+  signal: AbortSignal
+) {
+  z.string().uuid().parse(workspaceId);
+  const project = await resolvePlatformProject(id, generation, signal);
+  if (project.workspaceId !== workspaceId)
     throw new Error("Project is no longer available in this workspace.");
   return project;
 }

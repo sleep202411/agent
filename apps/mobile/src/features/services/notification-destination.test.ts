@@ -204,3 +204,19 @@ it.each(["global", "cn"] as const)("opens exact Story canvas links in %s", (regi
       url: `${origin}/en-US${path}`,
     });
 });
+
+it("opens a project-only membership link without guessing a workspace", () => {
+  expect(notificationDestination(notification(`/project/${task}`), "global", "en-US")).toEqual({
+    kind: "native",
+    path: `/studio-project?projectId=${task}`,
+  });
+  for (const path of [
+    `/project/${task}?section=keep`,
+    `/project/${task}#comment`,
+    "/project/invalid",
+  ])
+    expect(notificationDestination(notification(path), "cn", "zh-CN")).toEqual({
+      kind: "studio",
+      url: `https://studio.fizzspace.cn/zh-CN${path}`,
+    });
+});

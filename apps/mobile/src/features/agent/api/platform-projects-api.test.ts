@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import {
   updatePlatformProjectCover,
   readPlatformProject,
+  resolvePlatformProject,
   archivePlatformProject,
   createPlatformProject,
   loadPlatformProjects,
@@ -182,5 +183,35 @@ it("rejects mismatched cover receipts and foreign project reads", async () => {
   ).rejects.toBeInstanceOf(PlatformProjectWriteError);
   await expect(readPlatformProject(id, id, 1, new AbortController().signal)).rejects.toThrow(
     "workspace"
+  );
+});
+
+it("resolves the authoritative workspace for project-only links", async () => {
+  expect(await resolvePlatformProject(id, 1, new AbortController().signal)).toEqual(project);
+  expect(h.get).toHaveBeenCalledWith(
+    `/projects/${id}`,
+    expect.objectContaining({ service: "aurora" })
+  );
+});
+it.each([{ id: workspaceId }, { workspaceId: "invalid" }, { status: "archived" }])(
+  "rejects invalid resolved project %j",
+  async (patch) => {
+    h.get.mockResolvedValue({ project: { ...project, ...patch } });
+    await expect(resolvePlatformProject(id, 1, new AbortController().signal)).rejects.toThrow();
+  }
+);
+it("rejects cancelled or account-stale project resolution", async () => {
+  const controller = new AbortController();
+  h.get.mockImplementationOnce(async () => {
+    controller.abort();
+    return { project };
+  });
+  await expect(resolvePlatformProject(id, 1, controller.signal)).rejects.toThrow("cancelled");
+  h.get.mockImplementationOnce(async () => {
+    h.generation++;
+    return { project };
+  });
+  await expect(resolvePlatformProject(id, 1, new AbortController().signal)).rejects.toThrow(
+    "expired"
   );
 });
