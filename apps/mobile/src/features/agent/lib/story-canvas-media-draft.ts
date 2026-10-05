@@ -39,7 +39,12 @@ export function canvasMediaBaseline(
     .parse(snapshot.nodes[edit.nodeId]);
   const refs = target.data.references ?? {};
   let value: unknown;
-  if (edit.action === "prefer") {
+  if (edit.action === "removeReference") {
+    const references = z.record(z.array(z.record(z.unknown()))).parse(refs);
+    const matches = (references[edit.field] ?? []).filter((row) => row.id === edit.referenceId);
+    if (matches.length !== 1) throw Error("Reference identity changed. Reload the document.");
+    value = { field: edit.field, reference: matches[0] };
+  } else if (edit.action === "prefer") {
     const references = z.record(z.array(z.unknown())).parse(refs);
     value = { frames: references.frame ?? [], preferred: target.data.preferredFrameEdgeId ?? null };
   } else if (edit.action === "detach") {

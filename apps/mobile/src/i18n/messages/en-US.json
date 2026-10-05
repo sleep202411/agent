@@ -5420,6 +5420,8 @@
   "platformActors.photoUnavailable": "Photo unavailable",
   "platformCanvas.editCard": "Edit card",
   "storyCanvas.referencesTitle": "References",
-  "storyCanvas.referencesDetachBody": "Remove this reference connection? The source media will remain available.",
-  "storyCanvas.referencesUnavailable": "No reference slot is available in the current model mode."
+  "storyCanvas.referencesDetachBody": "Remove this reference? The source media will remain available.",
+  "storyCanvas.referencesUnavailable": "No reference slot is available in the current model mode.",
+  "storyCanvas.media.removeReference": "Remove reference",
+  "storyCanvas.referencesMissingSource": "Source card is unavailable"
 }

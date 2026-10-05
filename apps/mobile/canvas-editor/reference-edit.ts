@@ -22,11 +22,12 @@ export function editCanvasReferences(state: string, raw: CanvasReferenceEdit) {
     if (!["prompt", "video", "audio"].includes(String(target.type)))
       throw Error("This node does not accept generation references.");
     const edges = doc.getMap("edges");
-    const edge = edges.get(edit.edgeId);
+    const edge = "edgeId" in edit ? edges.get(edit.edgeId) : undefined;
     if (edit.action === "attach" && edge != null)
       throw Error("Canvas connection ID already exists.");
     if (
       edit.action !== "attach" &&
+      edit.action !== "removeReference" &&
       edge != null &&
       (!(edge instanceof Y.Map) ||
         edge.get("id") !== edit.edgeId ||
@@ -36,7 +37,17 @@ export function editCanvasReferences(state: string, raw: CanvasReferenceEdit) {
     const refs = canvasReferencesSchema.parse(target.data.get("references") ?? {});
     let next = refs;
     let newEdge: Record<string, string> | undefined;
-    if (edit.action === "detach") {
+    if (edit.action === "removeReference") {
+      const matches = (refs[edit.field] ?? []).filter((row) => row.id === edit.referenceId);
+      if (matches.length > 1) throw Error("Reference identity is ambiguous. Reload the document.");
+      if (matches[0]?.edgeId)
+        throw Error("This reference now has a canvas connection. Reload the document.");
+      if (matches.length)
+        next = {
+          ...refs,
+          [edit.field]: refs[edit.field]!.filter((row) => row.id !== edit.referenceId),
+        };
+    } else if (edit.action === "detach") {
       next = Object.fromEntries(
         Object.entries(refs).map(([field, rows]) => [
           field,
@@ -111,7 +122,7 @@ export function editCanvasReferences(state: string, raw: CanvasReferenceEdit) {
       update = encodeCanvasBytes(bytes);
     });
     doc.transact(() => {
-      if (newEdge) edges.set(edit.edgeId, new Y.Map(Object.entries(newEdge)));
+      if (newEdge) edges.set(newEdge.id, new Y.Map(Object.entries(newEdge)));
       if (edit.action === "detach") edges.delete(edit.edgeId);
       if (JSON.stringify(next) !== JSON.stringify(target.data.get("references") ?? {}))
         target.data.set("references", next);

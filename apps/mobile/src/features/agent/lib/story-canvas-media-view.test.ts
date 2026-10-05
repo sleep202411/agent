@@ -159,3 +159,37 @@ it("uses legacy edge identity to avoid offering an already-connected source agai
   expect(view.attached[0]).toMatchObject({ sourceId: "image", needsRefresh: true });
   expect(view.sources.some((row) => row.sourceId === "image")).toBe(false);
 });
+it("shows removable missing-source wires and stable identities for duplicate-media imports", () => {
+  const snapshot = {
+    ...fixture(),
+    nodes: {
+      ...fixture().nodes,
+      target: {
+        id: "target",
+        type: "prompt",
+        data: {
+          references: {
+            images: [
+              { id: "one", kind: "image", url: "https://example.test/same" },
+              { id: "two", kind: "image", url: "https://example.test/same" },
+            ],
+          },
+        },
+      },
+    },
+  };
+  snapshot.edges.missing = { id: "missing", source: "deleted", target: "target" };
+  const view = canvasMediaView(snapshot, "target");
+  expect(view.attached).toHaveLength(3);
+  expect(view.attached[0]).toMatchObject({ referenceId: "one", field: "images" });
+  expect(view.attached[1]).toMatchObject({ referenceId: "two", field: "images" });
+  expect(view.attached[0]!.key).not.toBe(view.attached[1]!.key);
+  expect(view.attached[2]).toMatchObject({
+    key: "edge:missing",
+    edgeId: "missing",
+    missingSource: true,
+  });
+  expect(view.attached[2]!.url).toBeUndefined();
+  snapshot.nodes.target.data.references.images.reverse();
+  expect(canvasMediaView(snapshot, "target").attached[1]!.key).toBe(view.attached[0]!.key);
+});

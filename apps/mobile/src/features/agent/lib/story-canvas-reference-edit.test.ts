@@ -229,3 +229,48 @@ it("refreshes job/asset provenance and obsolete fields without changing the targ
   });
   expect(result.snapshot.nodes.target).toHaveProperty("data.mode", "reference");
 });
+it("removes one imported reference by field/id even when its model is unavailable", () => {
+  const state = mutate(fixture(), (doc) => {
+    const data = dataOf(doc, "target");
+    data.delete("modelId");
+    data.set("references", {
+      images: [
+        { id: "selected", url: "https://example.test/same", assetId: "asset" },
+        { id: "keep", url: "https://example.test/same", assetId: "asset" },
+      ],
+      inactive: [{ id: "selected", url: "https://example.test/keep" }],
+    });
+  });
+  const edit = {
+    action: "removeReference",
+    nodeId: "target",
+    field: "images",
+    referenceId: "selected",
+  } as const;
+  const result = editCanvasReferences(state, edit);
+  expect(result.snapshot.nodes.target).toHaveProperty("data.references", {
+    images: [{ id: "keep", url: "https://example.test/same", assetId: "asset" }],
+    inactive: [{ id: "selected", url: "https://example.test/keep" }],
+  });
+  expect(result.snapshot.assets).toEqual(materializeCanvas(state, []).snapshot.assets);
+  expect(result.snapshot.nodes.source).toEqual(materializeCanvas(state, []).snapshot.nodes.source);
+  expect(
+    materializeCanvas(state, [result.yjsUpdateBase64!, result.yjsUpdateBase64!]).snapshot
+  ).toEqual(result.snapshot);
+  expect(editCanvasReferences(result.state, edit).yjsUpdateBase64).toBeNull();
+});
+it("refuses ambiguous identities or references that have acquired a canvas connection", () => {
+  for (const rows of [[{ id: "ref" }, { id: "ref" }], [{ id: "ref", edgeId: "foreign" }]]) {
+    const state = mutate(fixture(), (doc) =>
+      dataOf(doc, "target").set("references", { images: rows })
+    );
+    expect(() =>
+      editCanvasReferences(state, {
+        action: "removeReference",
+        nodeId: "target",
+        field: "images",
+        referenceId: "ref",
+      })
+    ).toThrow(/identity|connection/);
+  }
+});

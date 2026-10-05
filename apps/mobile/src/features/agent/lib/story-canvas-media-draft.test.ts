@@ -134,3 +134,43 @@ it("preserves reference drafts and detects target mode changes while ignoring pr
   snapshot.nodes.card.data.mode = "text_to_image";
   expect(canvasMediaBaseline(snapshot, edit)).not.toBe(baseline);
 });
+it("tracks the selected imported reference without binding removal to array position", () => {
+  const snapshot = {
+    ...fixture(),
+    nodes: {
+      ...fixture().nodes,
+      card: {
+        id: "card",
+        type: "prompt",
+        data: {
+          references: {
+            images: [
+              { id: "one", url: "https://example.test/one" },
+              { id: "two", url: "https://example.test/two" },
+            ],
+          },
+        },
+      },
+    },
+  };
+  const edit = {
+    action: "removeReference",
+    nodeId: "card",
+    field: "images",
+    referenceId: "one",
+  } as const;
+  const baseline = canvasMediaBaseline(snapshot, edit);
+  canvasMediaDraftStore(scope, "user", storage).write({
+    reference: true,
+    edit,
+    title: "Remove",
+    baseline,
+  });
+  expect(canvasMediaDraftStore(scope, "user", storage).read()?.edit).toEqual(edit);
+  snapshot.nodes.card.data.references.images.reverse();
+  expect(canvasMediaBaseline(snapshot, edit)).toBe(baseline);
+  snapshot.nodes.card.data.references.images[1]!.url = "https://example.test/changed";
+  expect(canvasMediaBaseline(snapshot, edit)).not.toBe(baseline);
+  snapshot.nodes.card.data.references.images.pop();
+  expect(() => canvasMediaBaseline(snapshot, edit)).toThrow("identity changed");
+});

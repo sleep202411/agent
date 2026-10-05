@@ -29,6 +29,8 @@ import {
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
+type MediaSelection = CanvasShotMedia | Extract<CanvasReferenceEdit, { action: "removeReference" }>;
+
 export function StoryCanvasMediaForm({
   scope,
   userId,
@@ -125,14 +127,22 @@ export function StoryCanvasMediaForm({
     setPhase("idle");
     setError(cause instanceof Error ? cause.message : String(cause));
   };
-  const choose = (edit: CanvasShotMedia) => {
+  const choose = (edit: MediaSelection) => {
     if (!current() || !canEdit || busy.current || draft || initial.error) return;
     try {
       const selected =
         edit.action === "attach"
           ? view.data?.sources.find((item) => item.sourceId === edit.sourceId)?.name
-          : view.data?.attached.find((item) => item.edgeId === edit.edgeId)?.name;
-      if (reference && edit.action === "prefer") return;
+          : edit.action === "removeReference"
+            ? view.data?.attached.find(
+                (item) => item.field === edit.field && item.referenceId === edit.referenceId
+              )?.name
+            : view.data?.attached.find((item) => item.edgeId === edit.edgeId)?.name;
+      if (
+        (reference && edit.action === "prefer") ||
+        (!reference && edit.action === "removeReference")
+      )
+        return;
       let selectedEdit: CanvasMediaDraft["edit"] = edit;
       if (reference && (edit.action === "attach" || edit.action === "refresh")) {
         if (!target) throw Error(t("storyCanvas.loadError"));
@@ -184,13 +194,26 @@ export function StoryCanvasMediaForm({
     }
   };
   const confirmSave = () => {
-    if (draft?.edit.action !== "detach" || draft.command) return save();
+    if (!draft || !["detach", "removeReference"].includes(draft.edit.action) || draft.command)
+      return save();
     Alert.alert(
-      t("storyCanvas.media.detach"),
+      t(
+        draft.edit.action === "removeReference"
+          ? "storyCanvas.media.removeReference"
+          : "storyCanvas.media.detach"
+      ),
       t(reference ? "storyCanvas.referencesDetachBody" : "storyCanvas.media.detachBody"),
       [
         { text: t("common.cancel"), style: "cancel" },
-        { text: t("storyCanvas.media.detach"), style: "destructive", onPress: save },
+        {
+          text: t(
+            draft.edit.action === "removeReference"
+              ? "storyCanvas.media.removeReference"
+              : "storyCanvas.media.detach"
+          ),
+          style: "destructive",
+          onPress: save,
+        },
       ]
     );
   };
@@ -308,6 +331,7 @@ export function StoryCanvasMediaForm({
                     reference={reference}
                     attached={false}
                     available={item.available}
+                    availabilityKnown={!reference || !!target}
                     canEdit={canEdit && !initial.error}
                     nodeId={nodeId}
                     onChoose={choose}
@@ -401,6 +425,7 @@ function CanvasMediaRow({
   item,
   attached,
   available = true,
+  availabilityKnown = true,
   reference = false,
   canEdit,
   nodeId,
@@ -410,10 +435,11 @@ function CanvasMediaRow({
   item: CanvasMediaItem;
   attached: boolean;
   available?: boolean;
+  availabilityKnown?: boolean;
   reference?: boolean;
   canEdit: boolean;
   nodeId: string;
-  onChoose(edit: CanvasShotMedia): void;
+  onChoose(edit: MediaSelection): void;
   onPreview(item: CanvasMediaItem): void;
 }) {
   const t = useTranslations(),
@@ -426,15 +452,17 @@ function CanvasMediaRow({
       <ThemedText type="smallBold">{item.name}</ThemedText>
       <ThemedText type="small">
         {t(
-          item.kind === "audio"
-            ? "storyCanvas.audio"
-            : item.kind === "image"
-              ? reference
-                ? "storyCanvas.image"
-                : "storyCanvas.media.frame"
-              : reference
-                ? "storyCanvas.video"
-                : "storyCanvas.media.clip"
+          item.missingSource
+            ? "storyCanvas.referencesMissingSource"
+            : item.kind === "audio"
+              ? "storyCanvas.audio"
+              : item.kind === "image"
+                ? reference
+                  ? "storyCanvas.image"
+                  : "storyCanvas.media.frame"
+                : reference
+                  ? "storyCanvas.video"
+                  : "storyCanvas.media.clip"
         )}
         {item.preferred ? ` · ${t("storyCanvas.media.preferred")}` : ""}
       </ThemedText>
@@ -470,6 +498,19 @@ function CanvasMediaRow({
                   onPress={() => onChoose({ action: "prefer", nodeId, edgeId: item.edgeId })}
                 />
               )}
+            {reference && !item.edgeId && item.referenceId && item.field && (
+              <MediaAction
+                label={t("storyCanvas.media.removeReference")}
+                onPress={() =>
+                  onChoose({
+                    action: "removeReference",
+                    nodeId,
+                    field: item.field!,
+                    referenceId: item.referenceId!,
+                  })
+                }
+              />
+            )}
             {item.edgeId && (
               <MediaAction
                 label={t("storyCanvas.media.detach")}
@@ -493,7 +534,7 @@ function CanvasMediaRow({
                 disabled={!available}
               />
             }
-            {!available && (
+            {!available && availabilityKnown && (
               <ThemedText type="small">
                 {t(reference ? "storyCanvas.referencesUnavailable" : "storyCanvas.media.full")}
               </ThemedText>

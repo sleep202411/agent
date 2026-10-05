@@ -14,6 +14,9 @@ const nodeSchema = z.object({ id: z.string(), type: z.string(), data: z.record(z
 export type CanvasMediaItem = {
   key: string;
   edgeId?: string;
+  field?: string;
+  referenceId?: string;
+  missingSource?: boolean;
   sourceId?: string;
   name: string;
   kind: "image" | "video" | "audio";
@@ -78,6 +81,7 @@ export function canvasMediaView(
     (field) =>
       (refs[field] ?? []).map((ref, index) => {
         const mediaAssetId = assetIdentity(ref.assetId);
+        const referenceId = typeof ref.id === "string" && ref.id ? ref.id : undefined;
         const edgeId = typeof ref.edgeId === "string" ? ref.edgeId : undefined;
         const linked = edgeId
           ? z
@@ -94,8 +98,12 @@ export function canvasMediaView(
           key:
             typeof ref.edgeId === "string"
               ? `edge:${ref.edgeId}`
-              : `${field}:${mediaAssetId ? `asset:${mediaAssetId}` : `url:${String(ref.url)}`}`,
+              : referenceId
+                ? `reference:${JSON.stringify([field, referenceId])}`
+                : `${field}:${mediaAssetId ? `asset:${mediaAssetId}` : `url:${String(ref.url)}`}`,
           edgeId,
+          field,
+          referenceId,
           sourceId,
           kind: reference
             ? ref.kind === "audio"
@@ -144,6 +152,15 @@ export function canvasMediaView(
         url: source.url,
         pending: true,
         needsRefresh: !!source.url || !!source.mediaAssetId,
+      });
+    else if (reference)
+      attached.push({
+        key: `edge:${id}`,
+        edgeId: id,
+        sourceId: edge.source,
+        name: edge.source,
+        kind: "image",
+        missingSource: true,
       });
   }
   const connected = new Set(attached.map((item) => item.sourceId));

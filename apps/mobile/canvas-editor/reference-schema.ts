@@ -21,6 +21,14 @@ const identity = { nodeId: z.string().min(1), edgeId: z.string().min(1) };
 export const canvasReferenceEditSchema = z.discriminatedUnion("action", [
   z
     .object({
+      action: z.literal("removeReference"),
+      nodeId: identity.nodeId,
+      field: z.string().min(1),
+      referenceId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
       ...identity,
       action: z.literal("attach"),
       edgeId: z.string().uuid(),

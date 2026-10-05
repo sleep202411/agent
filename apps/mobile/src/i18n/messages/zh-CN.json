@@ -5420,6 +5420,8 @@
   "platformActors.photoUnavailable": "照片暂不可用",
   "platformCanvas.editCard": "编辑卡片",
   "storyCanvas.referencesTitle": "参考素材",
-  "storyCanvas.referencesDetachBody": "移除此参考素材连接？源媒体仍将保留。",
-  "storyCanvas.referencesUnavailable": "当前模型模式没有可用的参考素材插槽。"
+  "storyCanvas.referencesDetachBody": "移除此参考素材？源媒体仍将保留。",
+  "storyCanvas.referencesUnavailable": "当前模型模式没有可用的参考素材插槽。",
+  "storyCanvas.media.removeReference": "移除参考素材",
+  "storyCanvas.referencesMissingSource": "源卡片已不可用"
 }
