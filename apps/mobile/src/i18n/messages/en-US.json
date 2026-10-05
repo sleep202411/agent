@@ -5289,5 +5289,18 @@
   "documentFeed.source.ai": "AI",
   "documentFeed.source.system": "System",
   "documentFeed.unknownAuthor": "Unknown author",
-  "documentFeed.resolvedBy": "Resolved by"
+  "documentFeed.resolvedBy": "Resolved by",
+  "documentFeed.newThread": "New thread",
+  "documentFeed.reply": "Reply",
+  "documentFeed.resolve": "Resolve",
+  "documentFeed.resolveHint": "Mark this discussion as resolved?",
+  "documentFeed.body": "Comment",
+  "documentFeed.threadTitle": "Title (optional)",
+  "documentFeed.blockId": "Node ID (optional)",
+  "documentFeed.send": "Send",
+  "documentFeed.discard": "Discard draft",
+  "documentFeed.discardHint": "Discard this unsent comment?",
+  "documentFeed.uncertain": "The last action may have been saved. Refresh and review the discussion before continuing. It will not be sent again automatically.",
+  "documentFeed.reviewed": "I reviewed the discussion",
+  "documentFeed.reviewHint": "Clear this pending action and its draft after checking the discussion? This does not delete any posted comment."
 }

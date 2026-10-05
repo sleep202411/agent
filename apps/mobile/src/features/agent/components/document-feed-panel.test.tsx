@@ -7,6 +7,29 @@ const h = vi.hoisted(() => ({
   versions: vi.fn(),
   active: true,
   displays: vi.fn(),
+  write: vi.fn(),
+  pending: null as null | { kind: string; body?: string; clientKey: string },
+  storage: new Map<string, string>(),
+  confirm: undefined as undefined | (() => void),
+}));
+vi.mock("expo-modules-core", () => ({
+  uuid: { v4: () => "11111111-1111-4111-8111-111111111111" },
+}));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => 1 }));
+vi.mock("@/lib/durable-record", () => ({
+  durableRecord: (ns: string, user: string, doc: string) => ({
+    read: () => h.storage.get(`${ns}:${user}:${doc}`) ?? null,
+    write: (v: string) => h.storage.set(`${ns}:${user}:${doc}`, v),
+  }),
+}));
+vi.mock("../api/document-comments-api", () => ({
+  writeDocumentComment: h.write,
+  documentCommentPending: () => ({
+    read: () => h.pending,
+    clear: () => {
+      h.pending = null;
+    },
+  }),
 }));
 vi.mock("@/features/services/user-displays", () => ({ useUserDisplays: h.displays }));
 vi.mock("../api/document-feeds-api", () => ({
@@ -26,6 +49,29 @@ vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
+  Alert: {
+    alert: (_title: string, _message: string, actions: { onPress?: () => void }[]) => {
+      h.confirm = actions.at(-1)?.onPress;
+    },
+  },
+  TextInput: ({
+    value,
+    onChangeText,
+    editable,
+    accessibilityLabel,
+  }: {
+    value: string;
+    onChangeText(v: string): void;
+    editable: boolean;
+    accessibilityLabel: string;
+  }) => (
+    <input
+      aria-label={accessibilityLabel}
+      value={value}
+      disabled={!editable}
+      onChange={(e) => onChangeText(e.target.value)}
+    />
+  ),
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Modal: ({ children, visible }: { children: ReactNode; visible: boolean }) =>
     visible ? <div>{children}</div> : null,
@@ -62,10 +108,16 @@ const row = {
     },
   ],
 };
-const draw = (documentId = "doc", generation = 1) =>
+const draw = (documentId = "doc", generation = 1, canComment = false) =>
   act(async () =>
     root.render(
-      <DocumentFeedPanel documentId={documentId} generation={generation} close={() => {}} />
+      <DocumentFeedPanel
+        documentId={documentId}
+        generation={generation}
+        userId="42"
+        canComment={canComment}
+        close={() => {}}
+      />
     )
   );
 const click = (key: string) =>
@@ -77,6 +129,12 @@ const click = (key: string) =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.active = true;
+  h.pending = null;
+  h.storage.clear();
+  h.confirm = undefined;
+  h.write.mockImplementation(async (_cmd, _doc, _user, _gen, _signal, confirmed) => {
+    confirmed?.();
+  });
   h.threads.mockResolvedValue([row]);
   h.versions.mockResolvedValue([]);
   host = document.createElement("div");
@@ -181,4 +239,78 @@ it("scopes author enrichment to the current feed and clears it after revocation"
   h.threads.mockRejectedValueOnce(Object.assign(new Error("Revoked"), { status: 403 }));
   await click("documentFeed.refresh");
   expect(h.displays).toHaveBeenLastCalledWith(undefined, []);
+});
+
+const fill = (key: string, text: string) =>
+  act(async () => {
+    const input = host.querySelector(`input[aria-label="${key}"]`)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+it("creates a thread, preserves a closed draft, and clears it only after confirmation", async () => {
+  await draw("doc", 1, true);
+  await click("documentFeed.newThread");
+  await fill("documentFeed.body", "New discussion");
+  h.active = false;
+  await draw("doc", 1, true);
+  h.active = true;
+  await draw("doc", 1, true);
+  expect(
+    (host.querySelector('input[aria-label="documentFeed.body"]') as HTMLInputElement).value
+  ).toBe("New discussion");
+  await click("documentFeed.send");
+  expect(h.write).toHaveBeenCalledWith(
+    expect.objectContaining({ kind: "create", body: "New discussion", documentId: "doc" }),
+    "doc",
+    "42",
+    1,
+    expect.any(AbortSignal),
+    expect.any(Function)
+  );
+  expect(host.querySelector('input[aria-label="documentFeed.body"]')).toBeNull();
+});
+it("supports replies and confirmed resolution but exposes no writing controls to readers", async () => {
+  await draw();
+  expect(host.textContent).not.toContain("documentFeed.newThread");
+  await draw("doc", 1, true);
+  await click("documentFeed.reply");
+  await fill("documentFeed.body", "Reply text");
+  await click("documentFeed.send");
+  expect(h.write.mock.calls[0][0]).toMatchObject({
+    kind: "reply",
+    threadId: "t",
+    body: "Reply text",
+  });
+  await click("documentFeed.resolve");
+  expect(h.write).toHaveBeenCalledTimes(1);
+  await act(async () => h.confirm?.());
+  expect(h.write.mock.calls[1][0]).toMatchObject({ kind: "resolve", threadId: "t" });
+});
+it("requires explicit review of uncertain writes and never resends when reopened", async () => {
+  h.write.mockImplementation(async (command) => {
+    h.pending = command;
+    throw new Error("Response lost");
+  });
+  await draw("doc", 1, true);
+  await click("documentFeed.newThread");
+  await fill("documentFeed.body", "Keep me");
+  await click("documentFeed.send");
+  expect(host.textContent).toContain("documentFeed.uncertain");
+  h.active = false;
+  await draw("doc", 1, true);
+  h.active = true;
+  await draw("doc", 1, true);
+  expect(h.write).toHaveBeenCalledTimes(1);
+  await click("documentFeed.reviewed");
+  expect(h.pending).not.toBeNull();
+  await act(async () => h.confirm?.());
+  expect(h.pending).toBeNull();
+  expect(h.write).toHaveBeenCalledTimes(1);
+});
+it("rejects delayed resolution confirmation after permission loss", async () => {
+  await draw("doc", 1, true);
+  await click("documentFeed.resolve");
+  await draw("doc", 1, false);
+  await act(async () => h.confirm?.());
+  expect(h.write).not.toHaveBeenCalled();
 });

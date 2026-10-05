@@ -40,7 +40,8 @@ export async function writeDocumentComment(
   documentId: string,
   userId: string,
   generation: number,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onConfirmed?: () => void
 ) {
   const intent = documentCommentCommand.parse(command);
   if (intent.documentId !== documentId) throw new Error("Comment document mismatch.");
@@ -119,5 +120,6 @@ export async function writeDocumentComment(
     }
   }
   current(generation, signal);
+  onConfirmed?.();
   pending.clear(intent.clientKey);
 }

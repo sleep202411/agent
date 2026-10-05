@@ -5289,5 +5289,18 @@
   "documentFeed.source.ai": "AI",
   "documentFeed.source.system": "系统",
   "documentFeed.unknownAuthor": "未知作者",
-  "documentFeed.resolvedBy": "解决者"
+  "documentFeed.resolvedBy": "解决者",
+  "documentFeed.newThread": "新建讨论",
+  "documentFeed.reply": "回复",
+  "documentFeed.resolve": "解决",
+  "documentFeed.resolveHint": "将此讨论标记为已解决？",
+  "documentFeed.body": "评论",
+  "documentFeed.threadTitle": "标题（可选）",
+  "documentFeed.blockId": "节点 ID（可选）",
+  "documentFeed.send": "发送",
+  "documentFeed.discard": "放弃草稿",
+  "documentFeed.discardHint": "放弃这条未发送的评论？",
+  "documentFeed.uncertain": "上次操作可能已保存。请刷新并检查讨论后再继续。系统不会自动重新发送。",
+  "documentFeed.reviewed": "我已检查讨论",
+  "documentFeed.reviewHint": "检查讨论后清除此待确认操作及草稿？这不会删除已发布的评论。"
 }

@@ -145,3 +145,14 @@ it("does not overwrite another person's completed resolution", async () => {
   expect(h.post).not.toHaveBeenCalled();
   expect(documentCommentPending(doc, "42", 1).read()).toBeNull();
 });
+
+it("retains a confirmed command when local draft cleanup fails", async () => {
+  await expect(
+    writeDocumentComment(create, doc, "42", 1, new AbortController().signal, () => {
+      throw new Error("Storage full");
+    })
+  ).rejects.toThrow("Storage full");
+  expect(documentCommentPending(doc, "42", 1).read()).not.toBeNull();
+  await expect(run()).rejects.toThrow("pending comment");
+  expect(h.post).toHaveBeenCalledTimes(1);
+});

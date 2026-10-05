@@ -5289,5 +5289,18 @@
   "documentFeed.source.ai": "AI",
   "documentFeed.source.system": "系統",
   "documentFeed.unknownAuthor": "未知作者",
-  "documentFeed.resolvedBy": "解決者"
+  "documentFeed.resolvedBy": "解決者",
+  "documentFeed.newThread": "建立討論",
+  "documentFeed.reply": "回覆",
+  "documentFeed.resolve": "解決",
+  "documentFeed.resolveHint": "將此討論標記為已解決？",
+  "documentFeed.body": "評論",
+  "documentFeed.threadTitle": "標題（選填）",
+  "documentFeed.blockId": "節點 ID（選填）",
+  "documentFeed.send": "傳送",
+  "documentFeed.discard": "捨棄草稿",
+  "documentFeed.discardHint": "捨棄這則未傳送的評論？",
+  "documentFeed.uncertain": "上次操作可能已儲存。請重新整理並檢查討論後再繼續。系統不會自動重新傳送。",
+  "documentFeed.reviewed": "我已檢查討論",
+  "documentFeed.reviewHint": "檢查討論後清除此待確認操作及草稿？這不會刪除已發佈的評論。"
 }

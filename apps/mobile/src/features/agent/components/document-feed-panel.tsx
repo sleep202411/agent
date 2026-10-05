@@ -1,3 +1,4 @@
+import { DocumentDiscussion } from "./document-discussion";
 import { useUserDisplays } from "@/features/services/user-displays";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
@@ -19,10 +20,14 @@ type Rows =
 export function DocumentFeedPanel({
   documentId,
   generation,
+  userId = "",
+  canComment = false,
   close,
 }: {
   documentId: string;
   generation: number;
+  userId?: string;
+  canComment?: boolean;
   close(): void;
 }) {
   const t = useTranslations(),
@@ -73,6 +78,8 @@ export function DocumentFeedPanel({
             documentId={documentId}
             generation={generation}
             kind={tab}
+            userId={userId}
+            canComment={canComment}
           />
         )}
       </View>
@@ -83,10 +90,14 @@ function Feed({
   documentId,
   generation,
   kind,
+  userId,
+  canComment,
 }: {
   documentId: string;
   generation: number;
   kind: "comments" | "history";
+  userId: string;
+  canComment: boolean;
 }) {
   const t = useTranslations(),
     locale = useLocale(),
@@ -166,44 +177,18 @@ function Feed({
             {t(kind === "comments" ? "documentFeed.noComments" : "documentFeed.noHistory")}
           </ThemedText>
         )}
-        {rows?.kind === "comments" &&
-          rows.items.map((thread) => (
-            <View
-              key={thread.id}
-              style={{
-                gap: 8,
-                padding: 12,
-                borderRadius: 8,
-                backgroundColor: theme.backgroundElement,
-              }}
-            >
-              <ThemedText type="smallBold">
-                {thread.title || t("documentFeed.thread")} ·{" "}
-                {t(thread.status === "open" ? "documentFeed.open" : "documentFeed.resolved")}
-              </ThemedText>
-              {thread.status === "resolved" && thread.resolvedById && (
-                <ThemedText type="small" themeColor="textSecondary">
-                  {t("documentFeed.resolvedBy")} {author(thread.resolvedById)}
-                </ThemedText>
-              )}
-              {thread.blockId && (
-                <ThemedText type="small" themeColor="textSecondary">
-                  {t("documentFeed.node")} {thread.blockId}
-                </ThemedText>
-              )}
-              {thread.comments.map((comment) => (
-                <View key={comment.id} style={{ gap: 4 }}>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {author(comment.createdById)} ·{" "}
-                    {new Date(comment.createdAt).toLocaleString(locale)}
-                  </ThemedText>
-                  <ThemedText type="small" selectable>
-                    {comment.body}
-                  </ThemedText>
-                </View>
-              ))}
-            </View>
-          ))}
+        {kind === "comments" && (
+          <DocumentDiscussion
+            documentId={documentId}
+            generation={generation}
+            userId={userId}
+            canComment={canComment}
+            ready={!loading && !error && !!rows}
+            threads={rows?.kind === "comments" ? rows.items : []}
+            author={author}
+            refresh={() => setRevision((n) => n + 1)}
+          />
+        )}
         {rows?.kind === "history" &&
           rows.items.map((version) => (
             <View

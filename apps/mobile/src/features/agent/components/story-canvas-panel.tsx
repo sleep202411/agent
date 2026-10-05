@@ -58,6 +58,7 @@ export function StoryCanvasEntry() {
           scope={scope}
           userId={String(auth.user?.userId ?? auth.user?.id ?? "")}
           canEdit={context.capabilities.includes("story.edit")}
+          canComment={context.capabilities.includes("story.review")}
           close={() => setOpen(false)}
         />
       )}
@@ -68,11 +69,13 @@ export function StoryCanvasPanel({
   scope,
   userId,
   canEdit,
+  canComment = false,
   close,
 }: {
   scope: CandidateScope;
   userId: string;
   canEdit: boolean;
+  canComment?: boolean;
   close(): void;
 }) {
   const t = useTranslations(),
@@ -282,6 +285,8 @@ export function StoryCanvasPanel({
             key={`${loaded.documentId}:${scope.generation}`}
             documentId={loaded.documentId}
             generation={scope.generation}
+            userId={userId}
+            canComment={canComment}
             close={() => setDocumentFeed(false)}
           />
         )}
