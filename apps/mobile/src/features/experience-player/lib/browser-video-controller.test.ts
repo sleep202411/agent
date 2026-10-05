@@ -166,3 +166,46 @@ it("forwards external play/pause transitions and detaches listeners on replaceme
   video.dispatchEvent(new Event("play"));
   expect(changed).toHaveBeenCalledTimes(2);
 });
+
+it("retains playback rate across source replacement, provider resets and surface attachment", async () => {
+  player.playbackRate = 1.5;
+  let loading = player.replaceAsync("https://test/first.mp4");
+  video.playbackRate = 1;
+  video.dispatchEvent(new Event("loadedmetadata"));
+  await loading;
+  expect(video.playbackRate).toBe(1.5);
+  player.playbackRate = 2;
+  expect(video.playbackRate).toBe(2);
+  video.playbackRate = 1;
+  video.dispatchEvent(new Event("ratechange"));
+  expect(video.playbackRate).toBe(2);
+  loading = player.replaceAsync("https://test/next.mp4");
+  video.dispatchEvent(new Event("loadedmetadata"));
+  await loading;
+  expect(video.playbackRate).toBe(2);
+  const next = document.createElement("video");
+  player.attach(next);
+  expect(next.playbackRate).toBe(2);
+  expect(player.playbackRate).toBe(2);
+});
+it.each([0, -1, NaN, Infinity])(
+  "rejects invalid playback rate %s without changing the current rate",
+  (rate) => {
+    player.playbackRate = 1.25;
+    expect(() => {
+      player.playbackRate = rate;
+    }).toThrow(RangeError);
+    expect(player.playbackRate).toBe(1.25);
+    expect(video.playbackRate).toBe(1.25);
+  }
+);
+it("keeps the previous rate when the browser rejects a new one", () => {
+  player.playbackRate = 1.5;
+  vi.spyOn(video, "playbackRate", "set").mockImplementation(() => {
+    throw new DOMException("Unsupported rate", "NotSupportedError");
+  });
+  expect(() => {
+    player.playbackRate = 2;
+  }).toThrow("Unsupported rate");
+  expect(player.playbackRate).toBe(1.5);
+});

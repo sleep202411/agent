@@ -11,6 +11,7 @@ let durationMs = 1000;
 let timelineOffsetMs = 2000;
 let initialPositionMs = 0;
 let initiallyCompleted = false;
+let playbackRate = 1;
 const onDisplayed = vi.fn();
 let onHoldComplete = vi.fn();
 const onTimelineTimeMs = vi.fn();
@@ -26,6 +27,7 @@ function Probe() {
     onTimelineTimeMs,
     initialPositionMs,
     initiallyCompleted,
+    playbackRate,
   });
   return null;
 }
@@ -49,6 +51,7 @@ afterEach(async () => {
   timelineOffsetMs = 2000;
   initialPositionMs = 0;
   initiallyCompleted = false;
+  playbackRate = 1;
   onHoldComplete = vi.fn();
 });
 it("resumes a saved still after readiness and pause without repeating its display transition", async () => {
@@ -143,4 +146,50 @@ it("clears active timers on unmount", async () => {
   await advance(1000);
   expect(onHoldComplete).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("changes rate without moving elapsed time backwards or replaying display", async () => {
+  durationMs = 2000;
+  await render();
+  await advance(500);
+  playbackRate = 2;
+  await render();
+  expect(onTimelineTimeMs).toHaveBeenLastCalledWith(2500);
+  await advance(500);
+  expect(onTimelineTimeMs).toHaveBeenLastCalledWith(3500);
+  playbackRate = 1;
+  await render();
+  await advance(500);
+  expect(onHoldComplete).toHaveBeenCalledOnce();
+  expect(onDisplayed).toHaveBeenCalledOnce();
+  expect(onTimelineTimeMs).toHaveBeenLastCalledWith(4000);
+});
+it("does not accrue time when rate changes while paused", async () => {
+  await render();
+  await advance(250);
+  presenting = false;
+  await render();
+  playbackRate = 2;
+  await render();
+  await advance(10000);
+  expect(onHoldComplete).not.toHaveBeenCalled();
+  presenting = true;
+  await render();
+  expect(onTimelineTimeMs).toHaveBeenLastCalledWith(2250);
+  await advance(250);
+  expect(onHoldComplete).not.toHaveBeenCalled();
+  await advance(250);
+  expect(onHoldComplete).toHaveBeenCalledOnce();
+});
+it("resets replacement media while retaining its requested rate", async () => {
+  playbackRate = 2;
+  await render();
+  await advance(250);
+  identity = "replacement";
+  await render();
+  expect(onTimelineTimeMs).toHaveBeenLastCalledWith(2000);
+  await advance(250);
+  expect(onHoldComplete).not.toHaveBeenCalled();
+  await advance(250);
+  expect(onHoldComplete).toHaveBeenCalledOnce();
 });

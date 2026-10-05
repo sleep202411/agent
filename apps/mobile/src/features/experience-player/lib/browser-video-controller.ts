@@ -18,10 +18,26 @@ export class BrowserVideoController {
   private cleanup: () => void = () => {};
   private rejectLoad?: (error: Error) => void;
   private loopValue = false;
+  private rateValue = 1;
   private listeners = new Map<keyof Events, Set<(event: never) => void>>();
   private sequence = 0;
   private playIntent = 0;
 
+  get playbackRate() {
+    return this.rateValue;
+  }
+  set playbackRate(value: number) {
+    if (!Number.isFinite(value) || value <= 0)
+      throw new RangeError("Playback rate must be finite and positive.");
+    const previous = this.rateValue;
+    this.rateValue = value;
+    try {
+      if (this.media) this.media.playbackRate = value;
+    } catch (error) {
+      this.rateValue = previous;
+      throw error;
+    }
+  }
   get loop() {
     return this.loopValue;
   }
@@ -96,7 +112,10 @@ export class BrowserVideoController {
     if (media === this.media) return;
     this.stopSource();
     this.media = media;
-    if (media) media.loop = this.loopValue;
+    if (media) {
+      media.loop = this.loopValue;
+      media.playbackRate = this.rateValue;
+    }
   }
   private stopSource() {
     this.sequence++;
@@ -138,7 +157,11 @@ export class BrowserVideoController {
           reject(new Error(message));
         } else this.emit("statusChange", { status: "error", error: { message } });
       };
+      const rate = () => {
+        if (media.playbackRate !== this.rateValue) media.playbackRate = this.rateValue;
+      };
       const ready = () => {
+        rate();
         loaded = true;
         this.rejectLoad = undefined;
         clearTimeout(timeout);
@@ -156,6 +179,7 @@ export class BrowserVideoController {
       const timeout = setTimeout(() => fail("Video loading timed out"), 30_000);
       this.rejectLoad = reject;
       media.addEventListener("loadedmetadata", ready);
+      media.addEventListener("ratechange", rate);
       media.addEventListener("play", playing);
       media.addEventListener("pause", playing);
       media.addEventListener("ended", ended);
@@ -164,6 +188,7 @@ export class BrowserVideoController {
       this.cleanup = () => {
         clearTimeout(timeout);
         media.removeEventListener("loadedmetadata", ready);
+        media.removeEventListener("ratechange", rate);
         media.removeEventListener("play", playing);
         media.removeEventListener("pause", playing);
         media.removeEventListener("ended", ended);
