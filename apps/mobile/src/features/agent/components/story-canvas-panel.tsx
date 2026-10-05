@@ -1,4 +1,4 @@
-import { StoryCanvasMediaPreview } from "./story-canvas-media-preview";
+import { StoryCanvasMediaPreview, type CanvasMediaTarget } from "./story-canvas-media-preview";
 import { StoryPanoramaPreview } from "./story-panorama-preview";
 import type { CanvasPanoramaSource } from "../api/story-canvas-panorama";
 import { StoryCanvasGenerationPanel } from "./story-canvas-generation-panel";
@@ -89,7 +89,7 @@ export function StoryCanvasPanel({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
-  const [previewAssetId, setPreviewAssetId] = useState<string>();
+  const [mediaPreview, setMediaPreview] = useState<CanvasMediaTarget>();
   const [panorama, setPanorama] = useState<CanvasPanoramaSource>();
   const [generationCard, setGenerationCard] = useState<{ id: string; title: string }>();
   const [documentFeed, setDocumentFeed] = useState<string | null>(null);
@@ -251,7 +251,7 @@ export function StoryCanvasPanel({
           !positioning &&
           !generationCard &&
           !panorama &&
-          !previewAssetId &&
+          !mediaPreview &&
           !selected &&
           documentFeed === null && (
             <StoryCanvasMediaSync
@@ -366,6 +366,21 @@ export function StoryCanvasPanel({
                         }}
                       >
                         <ThemedText type="smallBold">{node.title}</ThemedText>
+                        {node.media.map((media, index) => (
+                          <Pressable
+                            key={media.id}
+                            accessibilityRole="button"
+                            onPress={() =>
+                              setMediaPreview({ node: { nodeId: node.id, mediaKey: media.id } })
+                            }
+                            style={{ minHeight: 44, justifyContent: "center" }}
+                          >
+                            <ThemedText type="small">
+                              {t("storyCandidates.preview")}
+                              {node.media.length > 1 ? ` ${index + 1}` : ""}
+                            </ThemedText>
+                          </Pressable>
+                        ))}
                         {node.panorama && (
                           <Pressable
                             accessibilityRole="button"
@@ -510,7 +525,7 @@ export function StoryCanvasPanel({
                 assets={overview.assets}
                 canEdit={canEdit}
                 onSaveCandidate={setSelected}
-                onPreview={(asset) => setPreviewAssetId(asset.id)}
+                onPreview={(asset) => setMediaPreview({ assetId: asset.id })}
                 onPreviewPanorama={(asset) =>
                   setPanorama({
                     title: asset.name || t("storyCanvas.panorama.title"),
@@ -522,11 +537,11 @@ export function StoryCanvasPanel({
             </ScrollView>
           </>
         )}
-        {previewAssetId && writeScope && loaded && !loading && !error && (
+        {mediaPreview && writeScope && loaded && !loading && !error && (
           <StoryCanvasMediaPreview
             scope={writeScope}
-            assetId={previewAssetId}
-            close={() => setPreviewAssetId(undefined)}
+            {...mediaPreview}
+            close={() => setMediaPreview(undefined)}
           />
         )}
         {panorama && writeScope && loaded && !loading && !error && (

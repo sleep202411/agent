@@ -13,19 +13,22 @@ import { StoryCanvasReader } from "./story-canvas-reader";
 import { canvasOverview, type CanvasLibraryAsset } from "../lib/story-canvas-overview";
 import { loadCanvasMediaAccess } from "../api/story-canvas-media-access";
 import type { CanvasWriteScope } from "../api/story-canvas-update";
-type Props = { scope: CanvasWriteScope; assetId: string; close(): void };
+export type CanvasMediaTarget =
+  | { assetId: string; node?: never }
+  | { assetId?: never; node: { nodeId: string; mediaKey: string } };
+type Props = { scope: CanvasWriteScope; close(): void } & CanvasMediaTarget;
 export function StoryCanvasMediaPreview(props: Props) {
   const active = useScreenActive();
   const [attempt, setAttempt] = useState(0);
   return active && getAuthGeneration() === props.scope.generation ? (
     <Preview
-      key={`${props.scope.generation}:${props.scope.projectId}:${props.scope.documentId}:${props.assetId}:${attempt}`}
+      key={`${props.scope.generation}:${props.scope.projectId}:${props.scope.documentId}:${props.assetId ?? JSON.stringify(props.node)}:${attempt}`}
       {...props}
       retry={() => setAttempt((value) => value + 1)}
     />
   ) : null;
 }
-function Preview({ scope, assetId, close, retry }: Props & { retry(): void }) {
+function Preview({ scope, assetId, node, close, retry }: Props & { retry(): void }) {
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
@@ -122,9 +125,12 @@ function Preview({ scope, assetId, close, retry }: Props & { retry(): void }) {
               void (async () => {
                 if (loaded.documentId !== scope.documentId)
                   throw Error("Canvas document scope mismatch.");
-                const asset = canvasOverview(loaded.snapshot).assets.find(
-                  (row) => row.id === assetId
-                );
+                const overview = canvasOverview(loaded.snapshot);
+                const asset = node
+                  ? overview.nodes
+                      .find((row) => row.id === node.nodeId)
+                      ?.media.find((row) => row.id === node.mediaKey)
+                  : overview.assets.find((row) => row.id === assetId);
                 if (!asset) throw Error("This canvas media is no longer available.");
                 const access = await loadCanvasMediaAccess(scope, asset, controller.signal);
                 if (!controller.signal.aborted && getAuthGeneration() === scope.generation)

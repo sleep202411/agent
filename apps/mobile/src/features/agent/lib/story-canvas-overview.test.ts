@@ -43,3 +43,46 @@ it("derives shot numbers from Web keys while retaining non-shot positions", () =
     ["last", 4],
   ]);
 });
+it("exposes static image/video/audio sources without requiring a library entry", () => {
+  const value = canvasOverview({
+    ...empty,
+    nodes: Object.fromEntries(
+      [
+        ["image", "image"],
+        ["videoAsset", "video"],
+        ["audioAsset", "audio"],
+      ].map(([type, kind]) => [
+        type!,
+        { id: type, type, data: { src: `https://media.test/${kind}`, label: kind } },
+      ])
+    ),
+  });
+  expect(value.nodes.map((row) => row.media[0]?.kind)).toEqual(["image", "video", "audio"]);
+  expect(value.assets).toEqual([]);
+});
+it("keeps output identity through URL refresh and reorder, without duplicate preview actions", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const output = { type: "image", assetId: id, url: "https://media.test/old" };
+  const read = (outputs: unknown[]) =>
+    canvasOverview({
+      ...empty,
+      nodes: { p: { id: "p", type: "prompt", data: { generation: { outputs } } } },
+    }).nodes[0]!.media;
+  const before = read([output, { type: "image", url: "https://media.test/other" }]);
+  const after = read([
+    { type: "image", url: "https://media.test/other" },
+    { ...output, url: "https://media.test/new" },
+    output,
+  ]);
+  expect(after).toHaveLength(2);
+  expect(after.find((row) => row.id === before[0]!.id)?.url).toBe("https://media.test/new");
+  expect(after.find((row) => row.id === before[0]!.id)?.mediaAssetId).toBe(id);
+  expect(read([{ type: "video", url: "https://media.test/wrong" }, {}])).toEqual([]);
+});
+it("does not invent a preview before generation has produced media", () => {
+  const value = canvasOverview({
+    ...empty,
+    nodes: { p: { id: "p", type: "prompt", data: { generation: { status: "generating" } } } },
+  });
+  expect(value.nodes[0]?.media).toEqual([]);
+});

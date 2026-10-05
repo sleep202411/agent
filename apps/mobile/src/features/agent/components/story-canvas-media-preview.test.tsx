@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   reads: 0,
   kind: "image",
   removed: false,
+  nodes: {} as Record<string, unknown>,
 }));
 vi.mock("../api/story-canvas-media-access", () => ({ loadCanvasMediaAccess: h.load }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -52,7 +53,7 @@ vi.mock("./story-canvas-reader", () => ({
       onResult({
         documentId: "d",
         snapshot: {
-          nodes: {},
+          nodes: h.nodes,
           edges: {},
           groups: {},
           meta: {},
@@ -86,6 +87,7 @@ beforeEach(() => {
   h.reads = 0;
   h.kind = "image";
   h.removed = false;
+  h.nodes = {};
   h.load.mockReset();
   h.load.mockResolvedValue({ url: "https://media.test/fresh", expiresAt: null });
   host = document.createElement("div");
@@ -150,4 +152,57 @@ it("ignores access completed after backgrounding", async () => {
   await render();
   await act(async () => resolve({ url: "https://media.test/late", expiresAt: null }));
   expect(host.textContent).toBe("");
+});
+
+it("resolves a node output by durable identity after other results are reordered", async () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  h.nodes = {
+    card: {
+      id: "card",
+      type: "video",
+      data: {
+        generation: {
+          outputs: [
+            { type: "video", url: "https://media.test/other" },
+            { type: "video", assetId: id, url: "https://media.test/current" },
+          ],
+        },
+      },
+    },
+  };
+  await act(async () =>
+    root.render(
+      <StoryCanvasMediaPreview
+        scope={scope}
+        node={{ nodeId: "card", mediaKey: `asset:${id}` }}
+        close={() => {}}
+      />
+    )
+  );
+  expect(h.load.mock.calls[0]![1]).toMatchObject({
+    mediaAssetId: id,
+    url: "https://media.test/current",
+    kind: "video",
+  });
+  expect(host.textContent).toContain("Video player");
+});
+it("rejects a replaced node output instead of opening another result", async () => {
+  h.nodes = {
+    card: {
+      id: "card",
+      type: "video",
+      data: { generation: { outputs: [{ type: "video", url: "https://media.test/new" }] } },
+    },
+  };
+  await act(async () =>
+    root.render(
+      <StoryCanvasMediaPreview
+        scope={scope}
+        node={{ nodeId: "card", mediaKey: "url:https://media.test/old" }}
+        close={() => {}}
+      />
+    )
+  );
+  expect(h.load).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("no longer available");
 });

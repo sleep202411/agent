@@ -17,6 +17,45 @@ const asset = z.object({
   url: z.string(),
   mediaAssetId: z.string().uuid().optional(),
 });
+/** Output identity survives signed-URL refresh when a durable asset is available. */
+function nodeMedia(value: z.infer<typeof node>, title: string) {
+  const kinds: Record<string, "image" | "video" | "audio"> = {
+    image: "image",
+    videoAsset: "video",
+    audioAsset: "audio",
+    prompt: "image",
+    video: "video",
+    audio: "audio",
+  };
+  if (!Object.hasOwn(kinds, value.type)) return [];
+  const kind = kinds[value.type]!;
+  const generated = ["prompt", "video", "audio"].includes(value.type);
+  const generation = value.data.generation;
+  const rows: unknown[] = generated
+    ? generation &&
+      typeof generation === "object" &&
+      Array.isArray((generation as { outputs?: unknown }).outputs)
+      ? (generation as { outputs: unknown[] }).outputs
+      : []
+    : [{ url: value.data.src, assetId: value.data.mediaAssetId }];
+  const seen = new Set<string>();
+  return rows.flatMap((raw) => {
+    const output = z
+      .object({
+        type: z.enum(["image", "video", "audio"]).optional(),
+        url: z.string().optional(),
+        assetId: z.string().uuid().optional(),
+      })
+      .safeParse(raw);
+    if (!output.success || (output.data.type && output.data.type !== kind)) return [];
+    const { url = "", assetId: mediaAssetId } = output.data;
+    if (!mediaAssetId && !url) return [];
+    const id = mediaAssetId ? `asset:${mediaAssetId}` : `url:${url}`;
+    if (seen.has(id)) return [];
+    seen.add(id);
+    return [asset.parse({ id, name: title, kind, url, mediaAssetId })];
+  });
+}
 /** Native read projection only; the original CRDT is never rewritten from this. */
 export function canvasOverview(snapshot: CanvasSnapshot) {
   const shots = canvasShotRows(snapshot);
@@ -42,6 +81,7 @@ export function canvasOverview(snapshot: CanvasSnapshot) {
         ) ?? "";
       const generation = ["prompt", "video", "audio"].includes(value.type);
       return {
+        media: nodeMedia(value, title),
         panorama:
           value.type === "panorama"
             ? {
