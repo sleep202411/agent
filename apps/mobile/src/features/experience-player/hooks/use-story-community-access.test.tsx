@@ -9,25 +9,50 @@ import type { ExperiencePlayerAccess } from "../lib/experience-player-access";
 import type { StoryCommunityAccessQuote } from "../api/story-community-access-api";
 import { useStoryCommunityAccess } from "./use-story-community-access";
 
-const mocks = vi.hoisted(() => ({ quote: vi.fn(), t: (key: string) => key }));
+const mocks = vi.hoisted(() => ({
+  quote: vi.fn(),
+  purchase: vi.fn(),
+  generation: 0,
+  listeners: new Set<() => void>(),
+  t: (key: string) => key,
+}));
 vi.mock("@tabler/icons-react-native", () => ({ IconLock: () => null }));
 vi.mock("expo-router", () => ({ useFocusEffect: () => {} }));
 vi.mock("@/auth", () => ({
   getAuthSnapshot: () => ({ status: "authenticated" }),
   openAuthSheet: vi.fn(),
 }));
+vi.mock("@/auth/auth-store", () => ({
+  getAuthGeneration: () => mocks.generation,
+  subscribeAuth: (fn: () => void) => {
+    mocks.listeners.add(fn);
+    return () => mocks.listeners.delete(fn);
+  },
+}));
 vi.mock("@/features/paywall", () => ({ openPaywall: vi.fn() }));
 vi.mock("@/i18n", () => ({ useTranslations: () => mocks.t }));
 vi.mock("../api/story-community-access-api", () => ({
   fetchStoryCommunityAccessQuote: mocks.quote,
-  purchaseStoryCommunityAccess: vi.fn(),
+  purchaseStoryCommunityAccess: mocks.purchase,
 }));
 vi.mock("react-native", () => {
   const Box = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     View: Box,
     Text: Box,
-    Pressable: Box,
+    Pressable: ({
+      children,
+      onPress,
+      disabled,
+    }: {
+      children?: ReactNode;
+      onPress?: () => void;
+      disabled?: boolean;
+    }) => (
+      <button onClick={onPress} disabled={disabled}>
+        {children}
+      </button>
+    ),
     ActivityIndicator: () => null,
     StyleSheet: { create: (value: unknown) => value, absoluteFill: {} },
   };
@@ -47,8 +72,9 @@ const quote = (keys: string[]): StoryCommunityAccessQuote => ({
   authenticated: true,
 });
 let access: ExperiencePlayerAccess;
+let currentRuntime = runtime;
 function Harness() {
-  const result = useStoryCommunityAccess(runtime, "en-US");
+  const result = useStoryCommunityAccess(currentRuntime, "en-US");
   useEffect(() => {
     access = result.access;
   }, [result.access]);
@@ -58,6 +84,7 @@ let root: Root;
 let host: HTMLDivElement;
 beforeEach(async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  currentRuntime = runtime;
   host = document.createElement("div");
   root = createRoot(host);
   await act(async () => root.render(<Harness />));
@@ -120,3 +147,107 @@ it("rejects pending access on unmount and ignores a late quote", async () => {
 });
 
 vi.mock("@tabler/icons-react-native/IconLock", () => ({ default: () => null }));
+
+async function unlock() {
+  await act(async () => {
+    const button = [...host.querySelectorAll("button")].find(
+      (item) => item.textContent === "play.communityAccess.unlock"
+    );
+    expect(button).toBeTruthy();
+    button!.click();
+  });
+}
+it("does not let an old purchase unlock a replacement request", async () => {
+  mocks.quote.mockResolvedValue(quote([]));
+  let purchased!: () => void;
+  mocks.purchase.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        purchased = resolve;
+      })
+  );
+  const first = vi.fn(),
+    second = vi.fn();
+  await act(async () => {
+    void access.requestAccess(requirement("first")).then(first);
+  });
+  await unlock();
+  await act(async () => {
+    void access.requestAccess(requirement("second")).then(second);
+  });
+  await act(async () => purchased());
+  expect(first).toHaveBeenCalledExactlyOnceWith(false);
+  expect(second).not.toHaveBeenCalled();
+  expect(access.canAccess(requirement("second"))).toBe(false);
+  expect(host.textContent).toContain("second");
+});
+it("invalidates owned keys immediately when the account changes", async () => {
+  mocks.quote.mockResolvedValue(quote(["first"]));
+  await act(async () => {
+    expect(await access.checkAccess!(requirement("first"))).toBe(true);
+  });
+  expect(access.canAccess(requirement("first"))).toBe(true);
+  mocks.generation += 1;
+  expect(access.canAccess(requirement("first"))).toBe(false);
+  await act(async () => mocks.listeners.forEach((fn) => fn()));
+});
+it("rejects account-stale access checks and purchases", async () => {
+  mocks.quote.mockResolvedValue(quote([]));
+  let purchased!: () => void;
+  mocks.purchase.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        purchased = resolve;
+      })
+  );
+  const result = vi.fn();
+  await act(async () => {
+    void access.requestAccess(requirement("first")).then(result);
+  });
+  await unlock();
+  await act(async () => {
+    mocks.generation += 1;
+    mocks.listeners.forEach((fn) => fn());
+  });
+  await act(async () => purchased());
+  expect(result).toHaveBeenCalledExactlyOnceWith(false);
+  expect(access.canAccess(requirement("first"))).toBe(false);
+  let quoted!: (value: StoryCommunityAccessQuote) => void;
+  mocks.quote.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        quoted = resolve;
+      })
+  );
+  let check!: Promise<boolean>;
+  await act(async () => {
+    check = access.checkAccess!(requirement("first"));
+  });
+  await act(async () => {
+    mocks.generation += 1;
+    mocks.listeners.forEach((fn) => fn());
+    quoted(quote(["first"]));
+  });
+  expect(await check).toBe(false);
+});
+
+it("rejects late quotes and old access handles when the film build changes", async () => {
+  let resolve!: (value: StoryCommunityAccessQuote) => void;
+  mocks.quote.mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  const result = vi.fn();
+  const oldAccess = access;
+  await act(async () => {
+    void access.requestAccess(requirement("first")).then(result);
+  });
+  currentRuntime = { ...runtime, buildId: "new-build" };
+  await act(async () => root.render(<Harness />));
+  await act(async () => resolve(quote(["first"])));
+  expect(result).toHaveBeenCalledExactlyOnceWith(false);
+  expect(access.canAccess(requirement("first"))).toBe(false);
+  expect(await oldAccess.requestAccess(requirement("old"))).toBe(false);
+});
