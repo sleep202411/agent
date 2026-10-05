@@ -1,9 +1,0 @@
-{
-  "platforms": ["apple", "android"],
-  "android": {
-    "modules": ["expo.modules.fizztimelineexport.FizzTimelineExportModule"]
-  },
-  "apple": {
-    "modules": ["FizzTimelineExportModule"]
-  }
-}

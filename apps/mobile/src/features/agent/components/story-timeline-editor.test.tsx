@@ -7,7 +7,6 @@ vi.mock("./story-candidates-panel", () => ({
     <button onClick={close}>{mediaAssetId}</button>
   ),
 }));
-vi.mock("./story-timeline-export-panel", () => ({ TimelineExportPanel: () => null }));
 vi.mock("./story-timeline-preview", () => ({ TimelinePreview: () => <span>Saved preview</span> }));
 vi.mock("./story-timeline-generation-panel", () => ({
   TimelineGenerationPanel: () => <span>Generation panel</span>,
