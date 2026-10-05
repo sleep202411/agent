@@ -192,7 +192,7 @@ it.each(["global", "cn"] as const)("opens exact Story canvas links in %s", (regi
       region,
       "zh-HK"
     )
-  ).toEqual({ kind: "native", path: `/agent/${task}/assets?canvas=1` });
+  ).toEqual({ kind: "native", path: `/agent/${task}/assets?graph=1` });
   const origin = region === "cn" ? "https://studio.fizzspace.cn" : "https://studio.fizzdragon.com";
   for (const path of [
     `/story-studio/projects/${task}/canvas?node=selected`,

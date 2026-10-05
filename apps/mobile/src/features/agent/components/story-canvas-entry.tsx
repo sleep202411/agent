@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useLocalSearchParams, useRouter } from "expo-router";
 import { Pressable } from "react-native";
 import { useAuth } from "@/auth";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -13,11 +12,9 @@ export function StoryCanvasEntry() {
     auth = useAuth(),
     active = useScreenActive(),
     t = useTranslations();
-  const { canvas } = useLocalSearchParams<{ canvas?: string | string[] }>();
-  const router = useRouter();
   const identity = `${context.projectId}:${auth.generation}`;
   const [openedIdentity, setOpenedIdentity] = useState<string>();
-  const open = canvas === "1" || openedIdentity === identity;
+  const open = openedIdentity === identity;
   const readable = auth.status === "authenticated" && context.capabilities.includes("story.read");
   const scope = useMemo(
     () => ({ projectId: context.projectId, generation: auth.generation }),
@@ -44,8 +41,6 @@ export function StoryCanvasEntry() {
           canComment={context.capabilities.includes("story.review")}
           close={() => {
             setOpenedIdentity(undefined);
-            // Consume the route intent on close so returning to Assets stays closed.
-            if (canvas === "1") router.setParams({ canvas: undefined });
           }}
         />
       )}

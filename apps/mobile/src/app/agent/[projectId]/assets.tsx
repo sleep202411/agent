@@ -1,4 +1,5 @@
 import { StoryCandidatesEntry } from "@/features/agent/components/story-candidates-panel";
+import { StoryGraphEntry } from "@/features/agent/components/story-graph-entry";
 import { StoryCanvasEntry } from "@/features/agent/components/story-canvas-entry";
 import { StoryReferenceEntry } from "@/features/agent/components/story-reference-panel";
 import { AssetCreateSheet } from "@/features/agent/components/story-asset-create-sheet";
@@ -190,6 +191,7 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
         <StoryTimelineEntry />
         <StoryReferenceEntry />
         <StoryCandidatesEntry />
+        <StoryGraphEntry />
         <StoryCanvasEntry />
         <View style={styles.header}>
           <ThemedText style={styles.pageTitle}>{t("agent.assets.title")}</ThemedText>

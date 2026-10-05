@@ -1,14 +1,16 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { StoryCanvasEntry } from "./story-canvas-entry";
+import { StoryGraphEntry } from "./story-graph-entry";
 const h = vi.hoisted(() => ({
-  canvas: undefined as string | string[] | undefined,
+  graph: undefined as string | string[] | undefined,
   active: true,
   generation: 1,
   status: "authenticated",
   context: {
     projectId: "project",
+    chapterId: "chapter",
+    refresh: vi.fn(),
     capabilities: ["story.read"],
     loading: false,
     error: undefined as string | undefined,
@@ -16,7 +18,7 @@ const h = vi.hoisted(() => ({
   setParams: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
-  useLocalSearchParams: () => ({ canvas: h.canvas }),
+  useLocalSearchParams: () => ({ graph: h.graph }),
   useRouter: () => ({ setParams: h.setParams }),
 }));
 vi.mock("@/auth", () => ({
@@ -43,42 +45,43 @@ vi.mock("react-native", () => ({
     </button>
   ),
 }));
-vi.mock("./story-canvas-panel", () => ({
-  StoryCanvasPanel: ({
+vi.mock("./story-repair-sheet", () => ({
+  StoryRepairSheet: ({
     scope,
-    canEdit,
-    close,
+    onClose,
   }: {
     scope: { projectId: string };
-    canEdit: boolean;
-    close(): void;
+
+    onClose(): void;
   }) => (
-    <div data-canvas={scope.projectId} data-edit={String(canEdit)}>
-      <button onClick={close}>Close canvas</button>
+    <div data-graph={scope.projectId}>
+      <button onClick={onClose}>Close graph</button>
     </div>
   ),
 }));
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-const render = () => act(async () => root.render(<StoryCanvasEntry />));
+const render = () => act(async () => root.render(<StoryGraphEntry />));
 const click = (label: string) =>
   act(async () =>
     [...host.querySelectorAll("button")].find((b) => b.textContent === label)!.click()
   );
 beforeEach(() => {
   vi.clearAllMocks();
-  h.canvas = undefined;
+  h.graph = undefined;
   h.active = true;
   h.generation = 1;
   h.status = "authenticated";
   h.context = {
     projectId: "project",
+    chapterId: "chapter",
+    refresh: vi.fn(),
     capabilities: ["story.read"],
     loading: false,
     error: undefined,
   };
   h.setParams.mockImplementation(() => {
-    h.canvas = undefined;
+    h.graph = undefined;
   });
   host = document.createElement("div");
   root = createRoot(host);
@@ -86,28 +89,28 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
 });
-it("waits for access, opens exact canvas and consumes intent without reopening after close", async () => {
-  h.canvas = "1";
+it("waits for access, opens exact graph and consumes intent without reopening after close", async () => {
+  h.graph = "1";
   h.context.loading = true;
   await render();
   expect(h.setParams).not.toHaveBeenCalled();
   h.context.loading = false;
   await render();
-  expect(host.querySelector("[data-canvas]")?.getAttribute("data-edit")).toBe("false");
+  expect(host.querySelector("[data-graph]")?.getAttribute("data-graph")).toBe("project");
   expect(h.setParams).not.toHaveBeenCalled();
-  await click("Close canvas");
-  expect(h.setParams).toHaveBeenCalledWith({ canvas: undefined });
+  await click("Close graph");
+  expect(h.setParams).toHaveBeenCalledWith({ graph: undefined });
   h.active = false;
   await render();
   h.active = true;
   await render();
-  expect(host.querySelector("[data-canvas]")).toBeNull();
-  h.canvas = "1";
+  expect(host.querySelector("[data-graph]")).toBeNull();
+  h.graph = "1";
   await render();
-  expect(host.querySelector("[data-canvas]")).not.toBeNull();
+  expect(host.querySelector("[data-graph]")).not.toBeNull();
 });
 it("waits through inactivity, authentication and denied access", async () => {
-  h.canvas = "1";
+  h.graph = "1";
   h.active = false;
   await render();
   expect(h.setParams).not.toHaveBeenCalled();
@@ -125,23 +128,39 @@ it("waits through inactivity, authentication and denied access", async () => {
   expect(h.setParams).not.toHaveBeenCalled();
   h.context.capabilities = ["story.read", "story.edit"];
   await render();
-  expect(host.querySelector("[data-canvas]")?.getAttribute("data-edit")).toBe("true");
+  expect(host.querySelector("[data-graph]")).not.toBeNull();
 });
 it.each([undefined, "0", ["1", "1"]])("keeps manual entry for intent %s", async (value) => {
-  h.canvas = value;
+  h.graph = value;
   await render();
-  expect(host.querySelector("[data-canvas]")).toBeNull();
-  await click("storyCanvas.title");
-  expect(host.querySelector("[data-canvas]")).not.toBeNull();
+  expect(host.querySelector("[data-graph]")).toBeNull();
+  await click("storyGraph.title");
+  expect(host.querySelector("[data-graph]")).not.toBeNull();
 });
-it("does not carry open canvas into another account or project", async () => {
+it("does not carry open graph into another account or project", async () => {
   await render();
-  await click("storyCanvas.title");
+  await click("storyGraph.title");
   h.generation++;
   await render();
-  expect(host.querySelector("[data-canvas]")).toBeNull();
-  await click("storyCanvas.title");
+  expect(host.querySelector("[data-graph]")).toBeNull();
+  await click("storyGraph.title");
   h.context.projectId = "other";
   await render();
-  expect(host.querySelector("[data-canvas]")).toBeNull();
+  expect(host.querySelector("[data-graph]")).toBeNull();
+});
+
+it("waits for a chapter and scopes manual graph editing to that chapter", async () => {
+  h.graph = "1";
+  h.context.chapterId = "";
+  await render();
+  expect(host.querySelector("[data-graph]")).toBeNull();
+  h.context.chapterId = "chapter";
+  await render();
+  expect(host.querySelector("[data-graph]")).not.toBeNull();
+  await click("Close graph");
+  await render();
+  await click("storyGraph.title");
+  h.context.chapterId = "another";
+  await render();
+  expect(host.querySelector("[data-graph]")).toBeNull();
 });

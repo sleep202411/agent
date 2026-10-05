@@ -89,6 +89,7 @@ import {
 } from "../lib/story-repair-fields";
 
 type Props = {
+  authoring?: boolean;
   scope: StoryRepairScope;
   userId: string;
   issues: StoryPublicationDiagnostic[];
@@ -102,7 +103,7 @@ export function StoryRepairSheet(props: Props) {
     </Modal>
   );
 }
-function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
+function RepairSession({ scope, userId, issues, onClose, onSaved, authoring = false }: Props) {
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme(),
@@ -315,7 +316,9 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
       <View
         style={{ paddingHorizontal: 16, flexDirection: "row", justifyContent: "space-between" }}
       >
-        <ThemedText type="smallBold">{t("storyRepair.title")}</ThemedText>
+        <ThemedText type="smallBold">
+          {t(authoring ? "storyGraph.title" : "storyRepair.title")}
+        </ThemedText>
         <RepairAction label={t("agent.close")} onPress={onClose} disabled={busy} />
       </View>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -352,7 +355,10 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
             </View>
             {command ? (
               <View style={{ flexDirection: "row", gap: 16 }}>
-                <RepairAction label={t("storyRepair.local")} onPress={() => setShowSaved(false)} />
+                <RepairAction
+                  label={t(authoring ? "storyGraph.local" : "storyRepair.local")}
+                  onPress={() => setShowSaved(false)}
+                />
                 <RepairAction label={t("storyRepair.remote")} onPress={() => setShowSaved(true)} />
               </View>
             ) : null}
@@ -424,7 +430,7 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
               onPress={() => setDuplicating(true)}
             />
             <ThemedText type="small" themeColor="textSecondary">
-              {t("storyRepair.help")}
+              {t(authoring ? "storyGraph.help" : "storyRepair.help")}
             </ThemedText>
             <RepairAction
               label={`${t("storyRepair.entry")}: ${repairTargets(content, locale).find((target) => target.value.kind === "node" && target.value.nodeId === content.graph.entryNodeId)?.label ?? t("storyRepair.entryMissing")}`}
@@ -507,7 +513,9 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
               </View>
             ))}
             {!node ? (
-              <ThemedText>{t("storyRepair.nodeMissing")}</ThemedText>
+              <ThemedText>
+                {t(authoring ? "storyGraph.nodeMissing" : "storyRepair.nodeMissing")}
+              </ThemedText>
             ) : (
               <>
                 <ThemedText type="smallBold">{nodeLabels.get(node.nodeId)}</ThemedText>
@@ -1069,7 +1077,9 @@ function RepairSession({ scope, userId, issues, onClose, onSaved }: Props) {
                 ))}
                 {!repairChoiceExit(content, selected) &&
                 !repairBranches(content, selected, locale).length ? (
-                  <ThemedText>{t("storyRepair.noBranches")}</ThemedText>
+                  <ThemedText>
+                    {t(authoring ? "storyGraph.noBranches" : "storyRepair.noBranches")}
+                  </ThemedText>
                 ) : null}
               </>
             )}
