@@ -64,7 +64,7 @@ function output(path, value) {
   if (process.argv.includes("--check")) {
     if (!existsSync(path) || readFileSync(path, "utf8") !== value)
       throw new Error(
-        `Stale offline editor artifact: ${path}. Run node apps/mobile/scripts/build-canvas-runtime.mjs.`
+        `Stale canvas tidy artifact: ${path}. Run npm run build:canvas-tidy --workspace mobile from the repository root.`
       );
   } else writeFileSync(path, value);
 }
