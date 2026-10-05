@@ -33,6 +33,8 @@ import { canvasOverview } from "../lib/story-canvas-overview";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasMap } from "./story-canvas-map";
 import { StoryCanvasMediaPreview, type CanvasMediaTarget } from "./story-canvas-media-preview";
+import { StoryCanvasGenerationPanel } from "./story-canvas-generation-panel";
+import { StoryCanvasMediaSync } from "./story-canvas-media-sync";
 import { PlatformActorsPanel } from "./platform-actors-panel";
 
 export function PlatformCanvasPanel({
@@ -133,6 +135,7 @@ function Document({
 }) {
   const t = useTranslations(),
     theme = useTheme();
+  const [generationCard, setGenerationCard] = useState<{ id: string; title: string }>();
   const [creating, setCreating] = useState(false);
   const [createRecovery, setCreateRecovery] = useState(false);
   const [libraryAsset, setLibraryAsset] = useState<{ id: string; name?: string }>();
@@ -205,6 +208,26 @@ function Document({
       )}
       {loaded && overview && (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          {canEdit &&
+            !error &&
+            !generationCard &&
+            !creating &&
+            !edit &&
+            !grouping &&
+            !positioning &&
+            !mapping &&
+            !panorama &&
+            !mediaPreview && (
+              <StoryCanvasMediaSync
+                scope={scope}
+                userId={userId}
+                onSnapshot={(value) => {
+                  setOverview(canvasOverview(value.snapshot));
+                  setLoaded(value);
+                }}
+                onSaved={saved}
+              />
+            )}
           {canEdit && (
             <Pressable
               accessibilityRole="button"
@@ -338,6 +361,15 @@ function Document({
                       <ThemedText type="small">{t("storyCanvas.panorama.open")}</ThemedText>
                     </Pressable>
                   )}
+                  {canEdit && node.canEditPrompt && (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setGenerationCard({ id: node.id, title: node.title })}
+                      style={{ minHeight: 44, justifyContent: "center" }}
+                    >
+                      <ThemedText type="small">{t("aiLab.generate")}</ThemedText>
+                    </Pressable>
+                  )}
                   {canEdit && (
                     <Pressable
                       accessibilityRole="button"
@@ -402,6 +434,15 @@ function Document({
             </Pressable>
           )}
         </ScrollView>
+      )}
+      {loaded && generationCard && canEdit && (
+        <StoryCanvasGenerationPanel
+          scope={scope}
+          userId={userId}
+          nodeId={generationCard.id}
+          title={generationCard.title}
+          close={saved}
+        />
       )}
       {loaded && creating && canEdit && (
         <StoryCanvasCreateForm
