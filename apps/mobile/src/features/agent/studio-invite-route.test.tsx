@@ -105,7 +105,9 @@ it("opens the accepted workspace natively and replaces old link content", async 
   h.status = "authenticated";
   await render();
   await act(async () => host.querySelector("button")!.click());
-  expect(h.replace).toHaveBeenCalledWith("/agent?workspace=11111111-1111-4111-8111-111111111111");
+  expect(h.replace).toHaveBeenCalledWith(
+    "/studio-projects?workspaceId=11111111-1111-4111-8111-111111111111"
+  );
   h.link = `https://studio.fizzdragon.com/invite/${"b".repeat(32)}`;
   await render();
   expect(host.textContent).toBe(h.link);

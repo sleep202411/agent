@@ -113,5 +113,5 @@ export function studioInviteTargetRoute(target: StudioInviteTarget) {
     return `/studio-project?projectId=${checked.projectId}&workspaceId=${checked.workspaceId}`;
   if (checked.scope === "story-project")
     return `/agent/${checked.storyProjectId}?mode=story&title=${encodeURIComponent(checked.targetName)}`;
-  return `/agent?workspace=${checked.workspaceId}`;
+  return `/studio-projects?workspaceId=${checked.workspaceId}`;
 }
