@@ -5342,5 +5342,9 @@
   "play.seek.back": "后退 10 秒",
   "play.seek.forward": "前进 10 秒",
   "play.seek.progress": "播放进度",
-  "play.seek.watchedOnly": "只能跳转到已观看的片段。"
+  "play.seek.watchedOnly": "只能跳转到已观看的片段。",
+  "play.topUpReturn.title": "返回影游？",
+  "play.topUpReturn.body": "你曾离开影游进行充值。重新打开后将检查访问权限，并从已保存的进度继续。",
+  "play.topUpReturn.continue": "打开影游",
+  "play.topUpReturn.error": "无法恢复影游"
 }

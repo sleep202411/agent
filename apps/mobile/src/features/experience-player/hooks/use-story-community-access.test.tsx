@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   quote: vi.fn(),
   purchase: vi.fn(),
   paywall: vi.fn(),
+  remember: vi.fn(),
   generation: 0,
   listeners: new Set<() => void>(),
   t: (key: string) => key,
@@ -20,7 +21,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@tabler/icons-react-native", () => ({ IconLock: () => null }));
 vi.mock("expo-router", () => ({ useFocusEffect: () => {} }));
 vi.mock("@/auth", () => ({
-  getAuthSnapshot: () => ({ status: "authenticated" }),
+  getAuthSnapshot: () => ({ status: "authenticated", user: { id: "account" } }),
   openAuthSheet: vi.fn(),
 }));
 vi.mock("@/auth/auth-store", () => ({
@@ -29,6 +30,9 @@ vi.mock("@/auth/auth-store", () => ({
     mocks.listeners.add(fn);
     return () => mocks.listeners.delete(fn);
   },
+}));
+vi.mock("../lib/story-top-up-return", () => ({
+  storyTopUpReturnStore: () => ({ remember: mocks.remember }),
 }));
 vi.mock("@/config", () => ({ webBaseUrl: "https://fizzdragon.com" }));
 vi.mock("@/features/paywall", () => ({ openPaywall: mocks.paywall }));
@@ -265,6 +269,7 @@ it("keeps the film and chapter when opening checkout without purchasing access",
   );
   expect(recharge).toBeDefined();
   await act(async () => recharge!.click());
+  expect(mocks.remember).toHaveBeenCalledExactlyOnceWith("game", "chapter two");
   expect(mocks.paywall).toHaveBeenCalledExactlyOnceWith({
     category: "community_points",
     communityReturnUrl:
@@ -272,4 +277,34 @@ it("keeps the film and chapter when opening checkout without purchasing access",
   });
   expect(mocks.purchase).not.toHaveBeenCalled();
   expect(resolved).not.toHaveBeenCalled();
+});
+
+it("keeps checkout closed and exposes a failed destination save", async () => {
+  mocks.quote.mockResolvedValue({ ...quote([]), balance: "0" });
+  mocks.remember.mockImplementation(() => {
+    throw new Error("Storage full");
+  });
+  await act(async () => {
+    void access.requestAccess(requirement("locked"));
+  });
+  const recharge = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "play.communityAccess.recharge"
+  );
+  await act(async () => recharge!.click());
+  expect(host.textContent).toContain("Storage full");
+  expect(mocks.paywall).not.toHaveBeenCalled();
+});
+
+it("does not save or open top-up from a previous account's dialog", async () => {
+  mocks.quote.mockResolvedValue({ ...quote([]), balance: "0" });
+  await act(async () => {
+    void access.requestAccess(requirement("locked"));
+  });
+  const recharge = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "play.communityAccess.recharge"
+  );
+  mocks.generation++;
+  await act(async () => recharge!.click());
+  expect(mocks.remember).not.toHaveBeenCalled();
+  expect(mocks.paywall).not.toHaveBeenCalled();
 });

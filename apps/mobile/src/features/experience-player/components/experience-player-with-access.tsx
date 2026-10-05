@@ -26,7 +26,12 @@ export function ExperiencePlayerWithAccess({
   ...rest
 }: HostProps) {
   const preview = useStoryPreviewAccess(rest.locale);
-  const commerce = useStoryCommunityAccess(runtime, rest.locale, chapterId);
+  const commerce = useStoryCommunityAccess(
+    runtime,
+    rest.locale,
+    chapterId,
+    accessMode === "published"
+  );
   const gate = accessMode === "preview" ? preview : commerce;
 
   return (

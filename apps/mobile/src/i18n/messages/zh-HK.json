@@ -5342,5 +5342,9 @@
   "play.seek.back": "後退 10 秒",
   "play.seek.forward": "前進 10 秒",
   "play.seek.progress": "播放進度",
-  "play.seek.watchedOnly": "只能跳轉至已觀看的片段。"
+  "play.seek.watchedOnly": "只能跳轉至已觀看的片段。",
+  "play.topUpReturn.title": "返回影遊？",
+  "play.topUpReturn.body": "你曾離開影遊進行充值。重新開啟後將檢查存取權限，並從已儲存的進度繼續。",
+  "play.topUpReturn.continue": "開啟影遊",
+  "play.topUpReturn.error": "無法恢復影遊"
 }

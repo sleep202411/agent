@@ -34,6 +34,7 @@ import {
   type ExperienceGameSummary,
 } from "@/data/interactive-film-api";
 import type { Genre, IpSummary } from "@/data/types";
+import { useStoryTopUpRecovery } from "@/features/experience-player/hooks/use-story-top-up-recovery";
 import { navigateToPlay } from "@/features/experience-player";
 import { useAgentHeaderAction } from "@/hooks/use-agent-header-action";
 import { useTheme } from "@/hooks/use-theme";
@@ -81,6 +82,7 @@ function openGame(game: ExperienceGameSummary) {
 }
 
 export default function IpDiscoveryScreen() {
+  const topUpRecovery = useStoryTopUpRecovery();
   const t = useTranslations();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -289,6 +291,7 @@ export default function IpDiscoveryScreen() {
   const header = (
     <View style={styles.headerStack}>
       <ScreenHeader title={t("home.title")} action={agentAction} />
+      {topUpRecovery}
 
       {featured.length ? (
         <View>
@@ -400,6 +403,7 @@ export default function IpDiscoveryScreen() {
           ]}
         >
           <ScreenHeader title={t("home.title")} action={agentAction} />
+          {topUpRecovery}
           <DiscoverySkeleton width={featuredWidth} />
         </View>
       </View>
@@ -416,6 +420,7 @@ export default function IpDiscoveryScreen() {
           ]}
         >
           <ScreenHeader title={t("home.title")} action={agentAction} />
+          {topUpRecovery}
           <EmptyState
             title={t("home.errorTitle")}
             detail={error}

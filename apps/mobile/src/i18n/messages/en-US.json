@@ -5342,5 +5342,9 @@
   "play.seek.back": "Back 10 seconds",
   "play.seek.forward": "Forward 10 seconds",
   "play.seek.progress": "Playback progress",
-  "play.seek.watchedOnly": "You can skip within footage you have already watched."
+  "play.seek.watchedOnly": "You can skip within footage you have already watched.",
+  "play.topUpReturn.title": "Return to your film?",
+  "play.topUpReturn.body": "You left a film to top up. Reopen it to check access and continue from saved progress.",
+  "play.topUpReturn.continue": "Open film",
+  "play.topUpReturn.error": "Could not recover the film"
 }

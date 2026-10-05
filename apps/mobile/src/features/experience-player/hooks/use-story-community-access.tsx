@@ -17,6 +17,7 @@ import {
   purchaseStoryCommunityAccess,
   type StoryCommunityAccessQuote,
 } from "../api/story-community-access-api";
+import { storyTopUpReturnStore } from "../lib/story-top-up-return";
 import { buildExperiencePlayShareUrl } from "../lib/experience-share";
 import type { ExperiencePlayerAccess } from "../lib/experience-player-access";
 import { communityAccessDialogStyles as styles } from "./community-access-dialog-styles";
@@ -30,7 +31,8 @@ type AccessRequest = {
 export function useStoryCommunityAccess(
   runtime: ExperienceRuntimeManifest,
   locale: string,
-  chapterId?: string
+  chapterId?: string,
+  published = true
 ): {
   access: ExperiencePlayerAccess;
   dialog: ReactNode;
@@ -129,12 +131,23 @@ export function useStoryCommunityAccess(
 
   useFocusEffect(
     useCallback(() => {
+      if (!published) return;
+      const auth = getAuthSnapshot();
+      const accountId =
+        auth.status === "authenticated" ? String(auth.user?.userId ?? auth.user?.id ?? "") : "";
+      if (accountId) {
+        try {
+          storyTopUpReturnStore(accountId).arrived(runtime.gameId, chapterId);
+        } catch (error) {
+          setError(error instanceof Error ? error.message : String(error));
+        }
+      }
       if (!pending.current) return;
       void loadQuote().then((latest) => {
         const current = pending.current;
         if (current && latest?.ownedKeys.includes(current.requirement.key)) finish(true);
       });
-    }, [finish, loadQuote])
+    }, [finish, loadQuote, runtime.gameId, chapterId, published])
   );
 
   const formatPrice = useCallback(
@@ -304,16 +317,34 @@ export function useStoryCommunityAccess(
           ) : insufficient ? (
             <Pressable
               accessibilityRole="button"
-              onPress={() =>
-                openPaywall({
-                  category: "community_points",
-                  communityReturnUrl: buildExperiencePlayShareUrl({
-                    gameId: runtime.gameId,
-                    locale,
-                    chapterId,
-                  }),
-                })
-              }
+              onPress={() => {
+                if (
+                  !mounted.current ||
+                  scopeKeyRef.current !== scopeKey ||
+                  cacheAuthGeneration.current !== getAuthGeneration() ||
+                  pending.current !== request
+                )
+                  return;
+                const auth = getAuthSnapshot();
+                const accountId =
+                  auth.status === "authenticated"
+                    ? String(auth.user?.userId ?? auth.user?.id ?? "")
+                    : "";
+                if (!accountId) return;
+                try {
+                  storyTopUpReturnStore(accountId).remember(runtime.gameId, chapterId);
+                  openPaywall({
+                    category: "community_points",
+                    communityReturnUrl: buildExperiencePlayShareUrl({
+                      gameId: runtime.gameId,
+                      locale,
+                      chapterId,
+                    }),
+                  });
+                } catch (error) {
+                  setError(error instanceof Error ? error.message : String(error));
+                }
+              }}
               style={styles.primaryHit}
             >
               <Text style={styles.primaryText}>{t("play.communityAccess.recharge")}</Text>
