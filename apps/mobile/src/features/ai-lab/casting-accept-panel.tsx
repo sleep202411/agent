@@ -1,7 +1,7 @@
 import { ProjectLikenessConsent } from "./project-likeness-consent";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { Image } from "expo-image";
 import { uuid } from "expo-modules-core";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -9,7 +9,6 @@ import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
-import { appEnv } from "@/config/app-env";
 import { ThemedText } from "@/components/themed-text";
 import { fetchCrewAssetAccess } from "@/features/crew-assets/api";
 import {
@@ -157,10 +156,9 @@ function Session({
       }
     );
   }
-  const studio = `https://${appEnv.appRegion === "cn" ? "studio.fizzspace.cn" : "studio.fizzdragon.com"}/characters`;
   const openLibrary = () => {
     void op.run(
-      () => Linking.openURL(studio),
+      async () => router.push("/character-library"),
       () => {},
       (e) => setError(e instanceof Error ? e.message : String(e))
     );
