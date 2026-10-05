@@ -1,5 +1,7 @@
 import { pickWorkspaceIcon } from "./workspace-icon-upload";
 import { Image } from "expo-image";
+import { useNavigation } from "expo-router";
+import { usePreventRemove } from "expo-router/build/react-navigation/core/usePreventRemove";
 import { appEnv } from "@/config/app-env";
 import {
   workspaceIconPresets,
@@ -117,6 +119,28 @@ function Form({
     pending = useRef<AbortController | null>(null);
   const { onClose } = props;
   const current = () => alive.current && props.generation === getAuthGeneration();
+  const navigation = useNavigation();
+  const completed = useRef(false);
+  const [leave, setLeave] = useState<{ run: () => void }>();
+  const hasEdits =
+    !done &&
+    (name !== (snapshot?.name ?? "") ||
+      description !== (snapshot?.description ?? "") ||
+      avatarUrl !==
+        (snapshot ? snapshot.avatarUrl : workspaceIconUrl("aurora", appEnv.appRegion)) ||
+      uncertain);
+  const requestLeave = (run: () => void) => {
+    if (!active || !current() || operation.current || iconUpload.current) return;
+    if (hasEdits) setLeave({ run });
+    else run();
+  };
+  usePreventRemove(!done && (hasEdits || busy || uploading), ({ data }) => {
+    if (completed.current || props.generation !== getAuthGeneration()) {
+      navigation.dispatch(data.action);
+      return;
+    }
+    requestLeave(() => navigation.dispatch(data.action));
+  });
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -134,11 +158,11 @@ function Form({
   useEffect(() => {
     if (!active) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (!operation.current && !iconUpload.current) onClose();
+      requestLeave(onClose);
       return true;
     });
     return () => sub.remove();
-  }, [active, onClose]);
+  });
   const editable = !snapshot || canEditWorkspace(snapshot);
   const locked = busy || uploading || uncertain || done;
   const valid = workspaceDraftSchema.safeParse({ name, description, icon, customIcon }).success;
@@ -195,12 +219,14 @@ function Form({
           props.generation
         );
         if (current()) {
+          completed.current = true;
           setDone(true);
           if (!c.signal.aborted) props.onDone(created.id);
         }
         return;
       }
       if (current()) {
+        completed.current = true;
         setDone(true);
         if (!c.signal.aborted) props.onDone(remove ? undefined : snapshot!.id);
       }
@@ -215,6 +241,30 @@ function Form({
     }
   }
   if (!active) return null;
+  if (leave)
+    return (
+      <View style={{ padding: 16, gap: 12 }}>
+        <ThemedText>{t("documentEditor.discardQuestion")}</ThemedText>
+        <Action
+          label={t("documentEditor.keepEditing")}
+          disabled={busy || uploading}
+          onPress={() => {
+            if (active && current() && !operation.current && !iconUpload.current)
+              setLeave(undefined);
+          }}
+        />
+        <Action
+          label={t("documentEditor.discard")}
+          disabled={busy || uploading}
+          onPress={() => {
+            if (!active || !current() || operation.current || iconUpload.current) return;
+            const run = leave.run;
+            setLeave(undefined);
+            run();
+          }}
+        />
+      </View>
+    );
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -353,7 +403,11 @@ function Form({
       {uncertain && <ThemedText>{t("studioWorkspace.uncertain")}</ThemedText>}
       {done && <ThemedText>{t("studioWorkspace.done")}</ThemedText>}
       {snapshot && (
-        <Action label={t("studioWorkspace.reload")} disabled={busy || uploading} onPress={reload} />
+        <Action
+          label={t("studioWorkspace.reload")}
+          disabled={busy || uploading}
+          onPress={() => requestLeave(reload)}
+        />
       )}
       {snapshot?.accessScope === "workspace" && (
         <>
@@ -376,7 +430,11 @@ function Form({
         </>
       )}
       {busy && <ActivityIndicator />}
-      <Action label={t("crewTasks.back")} disabled={busy || uploading} onPress={props.onClose} />
+      <Action
+        label={t("crewTasks.back")}
+        disabled={busy || uploading}
+        onPress={() => requestLeave(props.onClose)}
+      />
     </ScrollView>
   );
 }

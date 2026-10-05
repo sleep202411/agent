@@ -7,6 +7,10 @@ vi.mock("./workspace-icon-upload", () => ({ pickWorkspaceIcon: h.upload }));
 vi.mock("expo-image", () => ({ Image: () => <span /> }));
 vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
 const h = vi.hoisted(() => ({
+  prevent: false,
+  routeRemove: undefined as undefined | ((event: { data: { action: { type: string } } }) => void),
+  hardwareBack: undefined as undefined | (() => boolean),
+  dispatch: vi.fn(),
   upload: vi.fn(),
   generation: 1,
   active: true,
@@ -17,6 +21,13 @@ const h = vi.hoisted(() => ({
   remove: vi.fn(),
   done: vi.fn(),
   close: vi.fn(),
+}));
+vi.mock("expo-router", () => ({ useNavigation: () => ({ dispatch: h.dispatch }) }));
+vi.mock("expo-router/build/react-navigation/core/usePreventRemove", () => ({
+  usePreventRemove: (prevent: boolean, callback: typeof h.routeRemove) => {
+    h.prevent = prevent;
+    h.routeRemove = callback;
+  },
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
@@ -37,7 +48,12 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>Loading</span>,
-  BackHandler: { addEventListener: () => ({ remove: vi.fn() }) },
+  BackHandler: {
+    addEventListener: (_: string, callback: () => boolean) => {
+      h.hardwareBack = callback;
+      return { remove: vi.fn() };
+    },
+  },
   Pressable: ({
     children,
     onPress,
@@ -129,6 +145,7 @@ it("keeps failed edits until explicitly discarded", async () => {
   expect(host.querySelector("input")!.value).toBe("Draft");
   expect(button("studioWorkspace.save")!.disabled).toBe(true);
   await click("studioWorkspace.reload");
+  if (button("documentEditor.discard")) await click("documentEditor.discard");
   expect(host.querySelector("input")!.value).toBe("Team");
 });
 it("allows read-only settings without edit or delete controls", async () => {
@@ -281,4 +298,76 @@ it("aborts background uploads and ignores a late result", async () => {
     1,
     expect.any(AbortSignal)
   );
+});
+
+it("preserves edits when Back or reload is cancelled", async () => {
+  await render();
+  await input(0, "Retained name");
+  await click("crewTasks.back");
+  expect(h.close).not.toHaveBeenCalled();
+  await click("documentEditor.keepEditing");
+  expect(host.querySelector("input")!.value).toBe("Retained name");
+  await click("studioWorkspace.reload");
+  await click("documentEditor.keepEditing");
+  expect(h.read).toHaveBeenCalledTimes(1);
+  expect(host.querySelector("input")!.value).toBe("Retained name");
+  await act(async () => {
+    h.hardwareBack!();
+  });
+  await click("documentEditor.discard");
+  expect(h.close).toHaveBeenCalledOnce();
+});
+it("guards icon-only edits and new workspace drafts on route exit", async () => {
+  await render();
+  await click("studioWorkspace.icon_aurora");
+  expect(h.prevent).toBe(true);
+  const action = { type: "GO_BACK" };
+  await act(async () => h.routeRemove!({ data: { action } }));
+  await click("documentEditor.keepEditing");
+  expect(h.dispatch).not.toHaveBeenCalled();
+  await render(true);
+  expect(h.prevent).toBe(false);
+  await input(0, "New workspace");
+  await act(async () => h.routeRemove!({ data: { action } }));
+  await click("documentEditor.discard");
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+});
+it("blocks pending writes but permits successful save navigation immediately", async () => {
+  let finish!: () => void;
+  h.update.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await input(0, "Saving workspace");
+  await click("studioWorkspace.save");
+  const action = { type: "GO_BACK" };
+  await act(async () => h.routeRemove!({ data: { action } }));
+  expect(h.dispatch).not.toHaveBeenCalled();
+  expect(button("documentEditor.discard")).toBeUndefined();
+  h.done.mockImplementation(() => h.routeRemove!({ data: { action } }));
+  await act(async () => finish());
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+  expect(h.prevent).toBe(false);
+});
+it("blocks navigation during icon upload without preventing account retirement", async () => {
+  let finish!: () => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await click("studioWorkspace.uploadIcon");
+  const action = { type: "GO_BACK" };
+  await act(async () => h.routeRemove!({ data: { action } }));
+  expect(h.dispatch).not.toHaveBeenCalled();
+  expect(button("documentEditor.discard")).toBeUndefined();
+  h.generation++;
+  await act(async () => h.routeRemove!({ data: { action } }));
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+  await act(async () => finish());
 });
