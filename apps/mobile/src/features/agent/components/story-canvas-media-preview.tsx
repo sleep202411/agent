@@ -12,23 +12,25 @@ import { ConversationAudio } from "@/features/services/conversation-audio";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { canvasOverview, type CanvasLibraryAsset } from "../lib/story-canvas-overview";
 import { loadCanvasMediaAccess, type CanvasMediaScope } from "../api/story-canvas-media-access";
+import { canvasMediaView } from "../lib/story-canvas-media-view";
 import { openPlatformCanvasDocument } from "../api/platform-canvas-document";
 export type CanvasMediaTarget =
-  | { assetId: string; node?: never }
-  | { assetId?: never; node: { nodeId: string; mediaKey: string } };
+  | { assetId: string; node?: never; shot?: never }
+  | { assetId?: never; shot?: never; node: { nodeId: string; mediaKey: string } }
+  | { assetId?: never; node?: never; shot: { nodeId: string; key: string; attached: boolean } };
 type Props = { scope: CanvasMediaScope; close(): void } & CanvasMediaTarget;
 export function StoryCanvasMediaPreview(props: Props) {
   const active = useScreenActive();
   const [attempt, setAttempt] = useState(0);
   return active && getAuthGeneration() === props.scope.generation ? (
     <Preview
-      key={`${"kind" in props.scope ? `${props.scope.kind}:${props.scope.workspaceId}:${props.scope.sectionId}` : "story"}:${props.scope.generation}:${props.scope.projectId}:${props.scope.documentId}:${props.assetId ?? JSON.stringify(props.node)}:${attempt}`}
+      key={`${"kind" in props.scope ? `${props.scope.kind}:${props.scope.workspaceId}:${props.scope.sectionId}` : "story"}:${props.scope.generation}:${props.scope.projectId}:${props.scope.documentId}:${props.assetId ?? JSON.stringify(props.node ?? props.shot)}:${attempt}`}
       {...props}
       retry={() => setAttempt((value) => value + 1)}
     />
   ) : null;
 }
-function Preview({ scope, assetId, node, close, retry }: Props & { retry(): void }) {
+function Preview({ scope, assetId, node, shot, close, retry }: Props & { retry(): void }) {
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
@@ -131,11 +133,26 @@ function Preview({ scope, assetId, node, close, retry }: Props & { retry(): void
                 if (loaded.documentId !== scope.documentId)
                   throw Error("Canvas document scope mismatch.");
                 const overview = canvasOverview(loaded.snapshot);
-                const asset = node
-                  ? overview.nodes
-                      .find((row) => row.id === node.nodeId)
-                      ?.media.find((row) => row.id === node.mediaKey)
-                  : overview.assets.find((row) => row.id === assetId);
+                const shotView = shot ? canvasMediaView(loaded.snapshot, shot.nodeId) : undefined;
+                const shotItem =
+                  shot && shotView
+                    ? (shot.attached ? shotView.attached : shotView.sources).find(
+                        (item) => item.key === shot.key
+                      )
+                    : undefined;
+                const asset = shot
+                  ? shotItem && {
+                      id: shotItem.key,
+                      name: shotItem.name,
+                      kind: shotItem.kind,
+                      url: shotItem.url ?? "",
+                      mediaAssetId: shotItem.mediaAssetId,
+                    }
+                  : node
+                    ? overview.nodes
+                        .find((row) => row.id === node.nodeId)
+                        ?.media.find((row) => row.id === node.mediaKey)
+                    : overview.assets.find((row) => row.id === assetId);
                 if (!asset) throw Error("This canvas media is no longer available.");
                 const access = await loadCanvasMediaAccess(scope, asset, controller.signal);
                 if (!controller.signal.aborted && getAuthGeneration() === scope.generation)

@@ -88,3 +88,16 @@ it("previews completed unbound sources and identifies stale bound URLs", () => {
     url: "https://example.test/frame",
   });
 });
+
+it("keeps protected actor sources available through durable media identity", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const snapshot = fixture();
+  snapshot.nodes.shot.data.references.frame = [];
+  Object.assign(snapshot.nodes.image.data, {
+    src: `/aurora/media/assets/${id}/content`,
+    mediaAssetId: id,
+  });
+  expect(
+    canvasMediaView(snapshot, "shot").sources.find((item) => item.sourceId === "image")
+  ).toMatchObject({ mediaAssetId: id, pending: false });
+});

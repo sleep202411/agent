@@ -1,13 +1,12 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, View } from "react-native";
-import { Image } from "expo-image";
 import { uuid } from "expo-modules-core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useTranslations } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
 import { ThemedText } from "@/components/themed-text";
-import { ConversationVideo } from "@/features/services/conversation-video";
+import { StoryCanvasMediaPreview } from "./story-canvas-media-preview";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import type { CanvasShotMedia } from "../../../../canvas-editor/shot-media-schema";
 import {
@@ -64,8 +63,7 @@ export function StoryCanvasMediaForm({
     [error, setError] = useState(initial.error);
   const [phase, setPhase] = useState<"idle" | "refresh" | "encode" | "save">("idle"),
     [fresh, setFresh] = useState<CanvasLoaded>();
-  const [preview, setPreview] = useState<CanvasMediaItem>(),
-    [previewError, setPreviewError] = useState(false);
+  const [preview, setPreview] = useState<{ key: string; attached: boolean }>();
   const view = useMemo(() => {
     try {
       return { data: canvasMediaView(loaded.snapshot, nodeId) };
@@ -224,8 +222,7 @@ export function StoryCanvasMediaForm({
                 nodeId={nodeId}
                 onChoose={choose}
                 onPreview={(item) => {
-                  setPreviewError(false);
-                  setPreview(item);
+                  setPreview({ key: item.key, attached: true });
                 }}
               />
             ))}
@@ -251,8 +248,7 @@ export function StoryCanvasMediaForm({
                     nodeId={nodeId}
                     onChoose={choose}
                     onPreview={(item) => {
-                      setPreviewError(false);
-                      setPreview(item);
+                      setPreview({ key: item.key, attached: false });
                     }}
                   />
                 ))}
@@ -310,42 +306,12 @@ export function StoryCanvasMediaForm({
             }}
           />
         )}
-        {preview?.url && (
-          <Modal visible animationType="fade" onRequestClose={() => setPreview(undefined)}>
-            <View
-              style={{
-                flex: 1,
-                padding: 16,
-                paddingTop: insets.top + 16,
-                paddingBottom: insets.bottom + 16,
-                backgroundColor: theme.background,
-                gap: 12,
-              }}
-            >
-              {
-                <MediaAction
-                  label={t("thread.closePreview")}
-                  onPress={() => setPreview(undefined)}
-                />
-              }
-              <ThemedText type="smallBold">{preview.name}</ThemedText>
-              {previewError && (
-                <ThemedText accessibilityRole="alert">{t("thread.previewFailed")}</ThemedText>
-              )}
-              {preview.kind === "image" ? (
-                <Image
-                  source={{ uri: preview.url }}
-                  cachePolicy="none"
-                  contentFit="contain"
-                  style={{ flex: 1 }}
-                  accessibilityLabel={preview.name}
-                  onError={() => setPreviewError(true)}
-                />
-              ) : (
-                <ConversationVideo url={preview.url} onRetry={() => setPreview(undefined)} />
-              )}
-            </View>
-          </Modal>
+        {preview && (
+          <StoryCanvasMediaPreview
+            scope={scope}
+            shot={{ nodeId, ...preview }}
+            close={() => setPreview(undefined)}
+          />
         )}
       </View>
     </Modal>
@@ -381,12 +347,12 @@ function CanvasMediaRow({
         {t(item.kind === "image" ? "storyCanvas.media.frame" : "storyCanvas.media.clip")}
         {item.preferred ? ` · ${t("storyCanvas.media.preferred")}` : ""}
       </ThemedText>
-      {!item.url && (
+      {!item.url && !item.mediaAssetId && (
         <ThemedText type="small">
           {t(item.pending ? "storyCanvas.media.pending" : "storyCanvas.media.unavailable")}
         </ThemedText>
       )}
-      {!!item.url && (
+      {(!!item.url || !!item.mediaAssetId) && (
         <MediaAction
           label={t("storyCandidates.preview")}
           onPress={() => {

@@ -237,3 +237,56 @@ it.each(["image", "video", "audio"])(
     );
   }
 );
+
+it("resolves protected shot references by edge identity after row reordering", async () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  h.nodes = {
+    shot: {
+      id: "shot",
+      type: "shot",
+      data: {
+        references: {
+          frame: [
+            { edgeId: "other", url: "https://media.test/unrelated" },
+            { edgeId: "selected", assetId: id, url: `/aurora/media/assets/${id}/content` },
+          ],
+        },
+      },
+    },
+  };
+  await act(async () =>
+    root.render(
+      <StoryCanvasMediaPreview
+        scope={scope}
+        shot={{ nodeId: "shot", key: "edge:selected", attached: true }}
+        close={() => {}}
+      />
+    )
+  );
+  expect(h.load.mock.calls[0]![1]).toMatchObject({ mediaAssetId: id, kind: "image", url: "" });
+  expect(host.querySelector("[data-image]")?.getAttribute("data-image")).toBe(
+    "https://media.test/fresh"
+  );
+});
+it("does not preview another shot reference when the selected connection was removed", async () => {
+  h.nodes = {
+    shot: {
+      id: "shot",
+      type: "shot",
+      data: {
+        references: { frame: [{ edgeId: "replacement", url: "https://media.test/replacement" }] },
+      },
+    },
+  };
+  await act(async () =>
+    root.render(
+      <StoryCanvasMediaPreview
+        scope={scope}
+        shot={{ nodeId: "shot", key: "edge:removed", attached: true }}
+        close={() => {}}
+      />
+    )
+  );
+  expect(h.load).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("no longer available");
+});
