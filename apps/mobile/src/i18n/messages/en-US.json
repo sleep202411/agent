@@ -1,4 +1,8 @@
 {
+  "aiLab.canvasConflict": "This canvas card changed in another session. Your draft is kept. Review the latest values before generating.",
+  "aiLab.canvasLatest": "Latest saved card",
+  "aiLab.canvasKeepDraft": "Keep my draft",
+  "aiLab.canvasReviewConfirm": "Keep your draft against the latest card? Generating will apply your draft settings and active references.",
   "aiLab.generationMode": "Generation mode",
   "aiLab.mode.text_to_image": "Text to Image",
   "aiLab.mode.text_to_video": "Text to Video",

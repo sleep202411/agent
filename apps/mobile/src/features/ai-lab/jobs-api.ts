@@ -1,3 +1,4 @@
+import { canvasCardEditSchema } from "../../../canvas-editor/card-state-schema";
 import { skillSelection } from "./project-skills";
 import {
   canvasGenerationFields,
@@ -37,6 +38,7 @@ export const jobStatus = z.enum([
 export const generationCommand = z
   .object({
     clientKey: id,
+    canvasCardEdit: canvasCardEditSchema.optional(),
     workspaceId: id.optional(),
     ...canvasGenerationFields,
     skillSelection: skillSelection.optional(),
@@ -51,6 +53,10 @@ export const generationCommand = z
     promptDocument: promptDocument.optional(),
   })
   .refine((v) => !(v.projectId && v.storyProjectId), "Choose one project context.")
+  .refine(
+    (v) => !v.canvasCardEdit || v.sourceSurface === "fizzstudio-canvas",
+    "Card edits require a canvas request."
+  )
   .refine(validCanvasGenerationScope, "Canvas generation requires a project, document and card.")
   .refine(
     (v) => !(v.projectId || v.storyProjectId) || !!v.workspaceId,
@@ -221,7 +227,7 @@ export async function submitGeneration(
   signal: AbortSignal
 ) {
   generationSession(generation, signal);
-  const { clientKey, ...input } = generationCommand.parse(command);
+  const { clientKey, canvasCardEdit: _canvasCardEdit, ...input } = generationCommand.parse(command);
   const value = receipt.parse(
     await api.post("/ai/jobs", {
       service: "aurora",

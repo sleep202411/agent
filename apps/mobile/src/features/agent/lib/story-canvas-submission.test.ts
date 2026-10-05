@@ -2,6 +2,7 @@
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { recordCanvasSubmission } from "../../../../canvas-editor/submission-edit";
+import { canvasCardStateSchema } from "../../../../canvas-editor/card-state-schema";
 import type { CanvasSubmission } from "../../../../canvas-editor/submission-schema";
 import { encodeCanvasBytes, materializeCanvas } from "../../../../canvas-editor/state";
 const documentId = "11111111-1111-4111-8111-111111111111";
@@ -102,7 +103,7 @@ it("accepts settled runs and reordered payload keys but never regresses an ackno
   expect(recordCanvasSubmission(settled, documentId, command).yjsUpdateBase64).toBeNull();
 });
 
-it.each(["submission", "retry", "receipt"] as const)(
+it.each(["submission", "edit", "retry", "receipt"] as const)(
   "records %s through the bundled runtime bridge",
   async (kind) => {
     const { runInNewContext } = await import("node:vm");
@@ -163,13 +164,28 @@ it.each(["submission", "retry", "receipt"] as const)(
                     jobId: documentId,
                   },
                 }
-              : command,
+              : kind === "edit"
+                ? {
+                    ...command,
+                    cardEdit: {
+                      before: canvasCardStateSchema.parse({ settings: { seed: 7 } }),
+                      after: canvasCardStateSchema.parse({
+                        modelId: "model",
+                        prompt: "Lake",
+                        mode: "image_to_image",
+                        settings: { seed: 2 },
+                      }),
+                    },
+                  }
+                : command,
       })
     );
     const result = canvasRuntimeMessage.parse(received.at(-1));
     if (result.type !== "edited" || !result.yjsUpdateBase64)
       throw Error("Missing submission delta");
     expect(materializeCanvas(snapshot, [result.yjsUpdateBase64]).snapshot).toEqual(result.snapshot);
+    if (kind === "edit")
+      expect(result.snapshot.nodes.card).toHaveProperty("data.mode", "image_to_image");
     expect(result.snapshot.nodes.card).toHaveProperty(
       "data.generation.submissionKey",
       kind === "retry" ? `retry:${documentId}` : "attempt"
@@ -272,4 +288,76 @@ it("attaches acknowledged legacy retries without replacing their recovery key or
       receipt
     )
   ).toThrow("replaced");
+});
+
+it("atomically saves authoring fields and detaches removed references with replayable recovery", () => {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Uint8Array.from(Buffer.from(fixture(), "base64")));
+  const node = doc.getMap("nodes").get("card") as Y.Map<unknown>;
+  const data = node.get("data") as Y.Map<unknown>;
+  data.set("references", {
+    referenceImages: [
+      { id: "ref", edgeId: "edge", sourceNodeId: "source", url: "https://example.com/ref.png" },
+    ],
+  });
+  doc
+    .getMap("edges")
+    .set("edge", new Y.Map(Object.entries({ id: "edge", source: "source", target: "card" })));
+  const before = canvasCardStateSchema.parse(data.toJSON());
+  const after = {
+    ...before,
+    prompt: "Lake",
+    modelId: "model",
+    mode: "image_to_image",
+    settings: { seed: 2 },
+    references: { referenceImages: [] },
+  };
+  const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  const edited = { ...command, cardEdit: { before, after } };
+  const result = recordCanvasSubmission(state, documentId, edited);
+  expect(result.snapshot.nodes.card).toHaveProperty("data.settings", { seed: 2 });
+  expect(result.snapshot.nodes.card).toHaveProperty("data.mode", "image_to_image");
+  expect(result.snapshot.nodes.card).toHaveProperty("data.references", { referenceImages: [] });
+  expect(result.snapshot.nodes.card).toHaveProperty("data.name", "Keep name");
+  expect(result.snapshot.edges.edge).toBeUndefined();
+  expect(
+    materializeCanvas(state, [result.yjsUpdateBase64!, result.yjsUpdateBase64!]).snapshot
+  ).toEqual(result.snapshot);
+  expect(recordCanvasSubmission(result.state, documentId, edited).yjsUpdateBase64).toBeNull();
+  const conflict = {
+    ...edited,
+    cardEdit: { ...edited.cardEdit, before: { ...before, prompt: "someone else's version" } },
+  };
+  expect(() => recordCanvasSubmission(state, documentId, conflict)).toThrow(
+    "changed while composing"
+  );
+});
+it("rejects stale unedited authoring fields and rebound edges before starting a job", () => {
+  const before = canvasCardStateSchema.parse({ settings: { seed: 99 } });
+  const after = { ...before, prompt: "Lake", modelId: "model" };
+  expect(() =>
+    recordCanvasSubmission(fixture(), documentId, { ...command, cardEdit: { before, after } })
+  ).toThrow("settings changed");
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Uint8Array.from(Buffer.from(fixture(), "base64")));
+  const data = (doc.getMap("nodes").get("card") as Y.Map<unknown>).get("data") as Y.Map<unknown>;
+  data.set("references", {
+    referenceImages: [{ id: "ref", edgeId: "edge", sourceNodeId: "original" }],
+  });
+  doc
+    .getMap("edges")
+    .set("edge", new Y.Map(Object.entries({ id: "edge", source: "new-source", target: "card" })));
+  const current = canvasCardStateSchema.parse(data.toJSON());
+  const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  expect(() =>
+    recordCanvasSubmission(state, documentId, {
+      ...command,
+      cardEdit: {
+        before: current,
+        after: { ...current, prompt: "Lake", modelId: "model", references: {} },
+      },
+    })
+  ).toThrow("connection changed");
 });

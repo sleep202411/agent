@@ -1,3 +1,8 @@
+import {
+  CANVAS_CARD_CONFLICT,
+  CanvasCardConflictError,
+  canvasCardStateSchema,
+} from "../../../../canvas-editor/card-state-schema";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useTranslations } from "@/i18n";
@@ -168,7 +173,15 @@ export function useCanvasSubmissionWriter(
     return true;
   };
   const fail = (value: Request, message: string) => {
-    if (accept(value)) value.finish(Error(message));
+    if (!accept(value)) return;
+    if (message.startsWith(CANVAS_CARD_CONFLICT) && value.loaded && "submission" in value.command) {
+      const node = value.loaded.snapshot.nodes[value.command.submission.context.documentBlockId] as
+        | { data?: unknown }
+        | undefined;
+      const current = canvasCardStateSchema.safeParse(node?.data);
+      if (current.success) return value.finish(new CanvasCardConflictError(current.data));
+    }
+    value.finish(Error(message));
   };
   const bridge =
     request &&

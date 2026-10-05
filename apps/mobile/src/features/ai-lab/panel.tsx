@@ -1,3 +1,5 @@
+import { CanvasCardConflictError } from "../../../canvas-editor/card-state-schema";
+import { canvasCardEdit } from "./canvas-card-edit";
 import {
   canvasModeLabel,
   canvasModeForm,
@@ -206,7 +208,7 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState<"create" | "history">("create"),
     [confirm, setConfirm] = useState<
-      "generate" | "reset" | "clear" | "cancel" | "retry" | "discardUpload" | null
+      "generate" | "reset" | "clear" | "cancel" | "retry" | "discardUpload" | "reviewCanvas" | null
     >(null),
     [privateDenied, setPrivateDenied] = useState(false),
     [epoch, setEpoch] = useState(0);
@@ -353,6 +355,7 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
         : undefined;
       save({
         generationMode: selectedMode,
+        ...(canvas?.seed?.canvasBase ? { canvasBase: canvas.seed.canvasBase } : {}),
         mode: m.type,
         presetId: p.id,
         modelId: m.id,
@@ -570,7 +573,16 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
     if (project && (!skills || loading)) throw new Error(t("aiLab.skillsNotReady"));
     if (skills && unavailableSkillIds(skills, mode, draft?.skillSelection, skillSurface).length)
       throw new Error(t("aiLab.skillsUnavailable"));
-    if (!model || !draft || !form || draft.upload || !data || !preset || !usable)
+    if (
+      !model ||
+      !draft ||
+      !form ||
+      draft.upload ||
+      draft.canvasConflict ||
+      !data ||
+      !preset ||
+      !usable
+    )
       throw new Error(t("aiLab.unavailable"));
     const values = prepareFormValues(
       form.schema,
@@ -624,6 +636,9 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
     });
     return generationCommand.parse({
       clientKey: uuid.v4(),
+      ...(canvas?.seed
+        ? { canvasCardEdit: canvasCardEdit(canvas.seed, draft, model, generationMode, values) }
+        : {}),
       ...scopeFields(jobScope),
       workspaceId,
       skillSelection: draft.skillSelection,
@@ -703,7 +718,19 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
           if (canvas) {
             // A lost card-save reply must retain the same paid request/key too.
             box.save(command);
-            await canvas.beforeSubmit(command, controller.current!.signal);
+            try {
+              await canvas.beforeSubmit(command, controller.current!.signal);
+            } catch (cause) {
+              // Only a new, never-sent request rejected by the encoder is safe to retire.
+              // Existing/uncertain requests keep their exact outbox for recovery.
+              if (!pending && cause instanceof CanvasCardConflictError) {
+                box.clear(command.clientKey);
+                const current = store.read();
+                if (current) save({ ...current, canvasConflict: cause.current });
+                throw Error(t("aiLab.canvasConflict"));
+              }
+              throw cause;
+            }
           }
           await submitPendingGeneration(
             command,
@@ -715,6 +742,10 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
           );
         },
         () => {
+          if (command.canvasCardEdit) {
+            const current = store.read();
+            if (current) save({ ...current, canvasBase: command.canvasCardEdit.after });
+          }
           setPending(null);
           setTab("history");
           setEpoch((x) => x + 1);
@@ -750,7 +781,35 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
         <Button label={t("common.retry")} disabled={op.busy} onPress={refresh} />
       </View>
       {loading ? <ActivityIndicator /> : null}
-      {error ? <ThemedText>{error}</ThemedText> : null}
+      {error && !(draft?.canvasConflict && error === t("aiLab.canvasConflict")) ? (
+        <ThemedText>{error}</ThemedText>
+      ) : null}
+      {draft?.canvasConflict ? (
+        <View style={{ gap: 8 }}>
+          <ThemedText type="small">{t("aiLab.canvasConflict")}</ThemedText>
+          <ThemedText type="small">{t("aiLab.canvasLatest")}</ThemedText>
+          <ThemedText type="small">{draft.canvasConflict.prompt}</ThemedText>
+          <ThemedText type="small">
+            {draft.canvasConflict.modelId} ·{" "}
+            {draft.canvasConflict.mode ? canvasModeLabel(draft.canvasConflict.mode, t) : ""}
+          </ThemedText>
+          <ThemedText type="small">
+            {Object.entries(draft.canvasConflict.settings)
+              .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+              .join(" · ")}
+          </ThemedText>
+          {Object.entries(draft.canvasConflict.references).map(([field, rows]) => (
+            <ThemedText key={field} type="small">
+              {field}: {rows.map((row) => String(row.name ?? row.url ?? row.id ?? "")).join("\n")}
+            </ThemedText>
+          ))}
+          <Button
+            label={t("aiLab.canvasKeepDraft")}
+            disabled={op.busy || !!pending || !!retryPending}
+            onPress={() => setConfirm("reviewCanvas")}
+          />
+        </View>
+      ) : null}
       {pending ? (
         <View style={{ gap: 8 }}>
           <ThemedText>{t("aiLab.pending")}</ThemedText>
@@ -1237,6 +1296,7 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
           <Button
             label={t("aiLab.generate")}
             disabled={
+              !!draft?.canvasConflict ||
               op.busy ||
               !!pending ||
               !!retryPending ||
@@ -1435,15 +1495,17 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
         <View style={{ padding: 12, gap: 8, backgroundColor: theme.backgroundElement }}>
           <ThemedText>
             {t(
-              confirm === "generate" || confirm === "retry"
-                ? "aiLab.confirmGenerate"
-                : confirm === "cancel"
-                  ? "aiLab.confirmCancel"
-                  : confirm === "clear"
-                    ? "aiLab.confirmClear"
-                    : confirm === "discardUpload"
-                      ? "aiLab.confirmDiscardUpload"
-                      : "aiLab.confirmReset"
+              confirm === "reviewCanvas"
+                ? "aiLab.canvasReviewConfirm"
+                : confirm === "generate" || confirm === "retry"
+                  ? "aiLab.confirmGenerate"
+                  : confirm === "cancel"
+                    ? "aiLab.confirmCancel"
+                    : confirm === "clear"
+                      ? "aiLab.confirmClear"
+                      : confirm === "discardUpload"
+                        ? "aiLab.confirmDiscardUpload"
+                        : "aiLab.confirmReset"
             )}
           </ThemedText>
           {confirm === "retry" && retryTarget ? (
@@ -1456,7 +1518,14 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
             label={t("aiLab.confirm")}
             disabled={op.busy}
             onPress={() => {
-              if (confirm === "generate") submit();
+              if (confirm === "reviewCanvas" && draft?.canvasConflict) {
+                try {
+                  save({ ...draft, canvasBase: draft.canvasConflict, canvasConflict: undefined });
+                  setConfirm(null);
+                } catch (e) {
+                  fail(e);
+                }
+              } else if (confirm === "generate") submit();
               else if (confirm === "retry" && retryTarget) {
                 const command = retryTarget;
                 setRetryTarget(null);

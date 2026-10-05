@@ -1,3 +1,4 @@
+import { canvasCardStateSchema } from "../../../canvas-editor/card-state-schema";
 import { z } from "zod";
 import type { AiObjectSchema } from "@repo/shared";
 import type { CanvasSnapshot } from "../../../canvas-editor/protocol";
@@ -22,7 +23,8 @@ const dataSchema = z.object({
   prompt: z.string().default(""),
   modelId: z.string().optional(),
   mode: z.string().optional(),
-  settings: z.record(z.union([z.string(), z.number().finite(), z.boolean()])).default({}),
+  settings: canvasCardStateSchema.shape.settings,
+  canvasBase: canvasCardStateSchema.optional(),
   references: canvasReferencesSchema.default({}),
   skillSelection: skillSelection.optional(),
   locked: z.boolean().optional(),
@@ -34,6 +36,9 @@ export function readCanvasGenerationSeed(snapshot: CanvasSnapshot, nodeId: strin
     .parse(snapshot.nodes[nodeId]);
   if (node.id !== nodeId) throw Error("Canvas card identity changed.");
   if (node.data.locked) throw Error("This canvas card is locked.");
+  node.data.canvasBase = canvasCardStateSchema.parse(
+    (snapshot.nodes[nodeId] as { data: unknown }).data
+  );
   return { mode: node.type === "prompt" ? ("image" as const) : node.type, seed: node.data };
 }
 function readyReference(row: z.infer<typeof reference>) {

@@ -243,3 +243,15 @@ it("attaches only the returned receipt and permits legacy retry keys after scope
   readJob.mockResolvedValue({ ...job, id });
   await expect(run({ ...command, jobId: id })).rejects.toThrow("does not match");
 });
+
+it("keeps local authoring edits outside the official frozen provider payload", async () => {
+  const { canvasCardStateSchema } = await import("../../../../canvas-editor/card-state-schema");
+  const before = canvasCardStateSchema.parse({});
+  const canvasCardEdit = { before, after: { ...before, prompt: "Lake", modelId: "model" } };
+  const record = canvasSubmissionForCommand(scope, "alice", "image", {
+    ...command,
+    canvasCardEdit,
+  });
+  expect(record.cardEdit).toEqual(canvasCardEdit);
+  expect(record.submission).not.toHaveProperty("canvasCardEdit");
+});

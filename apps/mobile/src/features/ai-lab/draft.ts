@@ -1,3 +1,4 @@
+import { canvasCardStateSchema } from "../../../canvas-editor/card-state-schema";
 import { canvasReferencesSchema } from "./canvas-seed";
 import { skillSelection } from "./project-skills";
 import { generationStorageKey, type GenerationStorageScope } from "./generation-scope";
@@ -8,6 +9,8 @@ import { generationSession } from "./jobs-api";
 const draftSchema = z.object({
   mode: z.enum(["image", "video", "audio"]),
   generationMode: z.string().optional(),
+  canvasBase: canvasCardStateSchema.optional(),
+  canvasConflict: canvasCardStateSchema.optional(),
   deferredCanvasReferences: canvasReferencesSchema.optional(),
   presetId: z.string(),
   modelId: z.string(),

@@ -32,6 +32,7 @@ export function canvasSubmissionForCommand(
     throw Error("Submission does not belong to this Story canvas.");
   const {
     clientKey,
+    canvasCardEdit,
     workspaceId,
     storyProjectId,
     projectId: _projectId,
@@ -45,6 +46,7 @@ export function canvasSubmissionForCommand(
       JSON.stringify({
         ownerId: userId,
         type,
+        cardEdit: canvasCardEdit,
         submission: {
           ...body,
           idempotencyKey: clientKey,

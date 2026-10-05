@@ -1,3 +1,4 @@
+import { CANVAS_CARD_CONFLICT, canvasCardStateSchema } from "./card-state-schema";
 import * as Y from "yjs";
 import { canvasSubmissionRecordSchema, type CanvasSubmissionRecord } from "./submission-schema";
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
@@ -72,11 +73,60 @@ export function recordCanvasSubmission(
       throw Error("The retry target no longer matches this failed card.");
     if (previous && !["done", "failed", "cancelled"].includes(String(previous.status)))
       throw Error("Another generation is still pending on this card.");
+    const cardEdit = "cardEdit" in command ? command.cardEdit : undefined;
+    const patches: [string, unknown][] = [];
+    const removedEdges: string[] = [];
+    const edges = doc.getMap("edges");
+    if (cardEdit) {
+      if (
+        !input ||
+        cardEdit.after.modelId !== input.modelId ||
+        (typeof input.input.prompt === "string" && cardEdit.after.prompt !== input.input.prompt)
+      )
+        throw Error("Card edits do not match the generation request.");
+      const current = canvasCardStateSchema.parse(
+        Object.fromEntries(Object.keys(cardEdit.before).map((name) => [name, data.get(name)]))
+      );
+      for (const key of Object.keys(cardEdit.after) as (keyof typeof current)[]) {
+        if (
+          canonical(current[key]) !== canonical(cardEdit.before[key]) &&
+          canonical(current[key]) !== canonical(cardEdit.after[key])
+        )
+          throw Error(
+            `${CANVAS_CARD_CONFLICT}The canvas ${key} changed while composing. Review before generating.`
+          );
+        if (canonical(current[key]) !== canonical(cardEdit.after[key]))
+          patches.push([key, cardEdit.after[key]]);
+      }
+      const retained = new Set(
+        Object.values(cardEdit.after.references)
+          .flat()
+          .map((row) => row.edgeId)
+      );
+      for (const row of Object.values(cardEdit.before.references).flat()) {
+        if (typeof row.edgeId !== "string" || retained.has(row.edgeId)) continue;
+        const edge = edges.get(row.edgeId);
+        if (!edge) continue;
+        if (
+          !(edge instanceof Y.Map) ||
+          edge.get("id") !== row.edgeId ||
+          edge.get("target") !== context.documentBlockId ||
+          (row.sourceNodeId && edge.get("source") !== row.sourceNodeId)
+        )
+          throw Error("A reference connection changed while composing. Reload before generating.");
+        removedEdges.push(row.edgeId);
+      }
+    }
     let update: string | null = null;
     doc.on("update", (bytes: Uint8Array) => {
       update = encodeCanvasBytes(bytes);
     });
     doc.transact(() => {
+      for (const id of removedEdges) edges.delete(id);
+      for (const [name, value] of patches) {
+        if (value === null) data.delete(name);
+        else data.set(name, value);
+      }
       data.set(
         "generation",
         JSON.parse(
@@ -88,7 +138,7 @@ export function recordCanvasSubmission(
           })
         )
       );
-      if (input) {
+      if (input && !cardEdit) {
         data.set("modelId", input.modelId);
         if (typeof input.input.prompt === "string") data.set("prompt", input.input.prompt);
       }

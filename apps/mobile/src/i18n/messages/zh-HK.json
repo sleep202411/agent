@@ -1,4 +1,8 @@
 {
+  "aiLab.canvasConflict": "此畫布卡片已在其他工作階段中修改。你的草稿已保留，請在生成前查看最新內容。",
+  "aiLab.canvasLatest": "最新儲存的卡片",
+  "aiLab.canvasKeepDraft": "保留我的草稿",
+  "aiLab.canvasReviewConfirm": "以最新卡片為基礎保留你的草稿？生成時將套用草稿設定和目前模式的參考素材。",
   "aiLab.generationMode": "生成模式",
   "aiLab.mode.text_to_image": "文生圖",
   "aiLab.mode.text_to_video": "文生影片",

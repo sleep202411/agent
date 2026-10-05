@@ -457,3 +457,39 @@ it("retains the original retry target after failed acknowledgement or account re
   expect(h.post.mock.calls.map(([path]) => path)).toEqual(Array(3).fill(`/ai/jobs/${jobId}/retry`));
   expect(generationRetryOutbox("alice", 1).read()).toBeNull();
 });
+
+it("freezes canvas edits for recovery without sending local authoring state to the jobs API", async () => {
+  const { canvasCardStateSchema } = await import("../../../canvas-editor/card-state-schema");
+  const before = canvasCardStateSchema.parse({});
+  const canvasCardEdit = { before, after: { ...before, modelId: "model-one", prompt: "A lake" } };
+  const scope = {
+    workspaceId: key,
+    storyProjectId: key,
+    documentId: key,
+    documentBlockId: "card",
+    sourceSurface: "fizzstudio-canvas" as const,
+  };
+  const intent = { ...command(), ...scope, canvasCardEdit };
+  expect(generationCommand.safeParse({ ...command(), canvasCardEdit }).success).toBe(false);
+  h.post.mockRejectedValueOnce(Error("lost reply"));
+  await expect(submitPendingGeneration(intent, "alice", 1, signal(), scope)).rejects.toThrow(
+    "lost reply"
+  );
+  expect(generationOutbox("alice", 1, scope).read()?.canvasCardEdit).toEqual(canvasCardEdit);
+  expect(h.post.mock.calls[0][1].data).not.toHaveProperty("canvasCardEdit");
+  await expect(
+    submitPendingGeneration(
+      {
+        ...intent,
+        canvasCardEdit: { before, after: { ...canvasCardEdit.after, mode: "changed" } },
+      },
+      "alice",
+      1,
+      signal(),
+      scope
+    )
+  ).rejects.toThrow();
+  expect(h.post).toHaveBeenCalledOnce();
+  await submitPendingGeneration(intent, "alice", 1, signal(), scope);
+  expect(h.post.mock.calls[1][1].data).toEqual(h.post.mock.calls[0][1].data);
+});

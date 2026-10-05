@@ -6,7 +6,7 @@ import { useCanvasSubmissionWriter } from "./use-canvas-submission-writer";
 const h = vi.hoisted(() => ({
   generation: 1,
   reader: null as null | { onResult(value: CanvasLoaded): void; onError(message: string): void },
-  encoder: null as null | { onResult(value: string | null): void },
+  encoder: null as null | { onResult(value: string | null): void; onError(message: string): void },
   prepare: vi.fn(),
   resume: vi.fn(),
 }));
@@ -152,5 +152,25 @@ it("retires the previous scope and rejects retained submit callbacks", async () 
   );
   expect(await result).toContain("interrupted");
   await expect(retired(command, new AbortController().signal)).rejects.toThrow("expired");
+  expect(h.prepare).not.toHaveBeenCalled();
+});
+
+it("returns verified authoring conflicts with the fresh card and no write", async () => {
+  const { CANVAS_CARD_CONFLICT, CanvasCardConflictError } =
+    await import("../../../../canvas-editor/card-state-schema");
+  let outcome!: Promise<unknown>;
+  await act(async () => {
+    outcome = writer.beforeSubmit(command, new AbortController().signal).catch((error) => error);
+  });
+  await act(async () =>
+    h.reader!.onResult({
+      documentId: id,
+      snapshot: { nodes: { card: { data: { prompt: "Latest" } } } },
+    } as unknown as CanvasLoaded)
+  );
+  await act(async () => h.encoder!.onError(CANVAS_CARD_CONFLICT + "prompt changed"));
+  const error = await outcome;
+  expect(error).toBeInstanceOf(CanvasCardConflictError);
+  expect((error as InstanceType<typeof CanvasCardConflictError>).current.prompt).toBe("Latest");
   expect(h.prepare).not.toHaveBeenCalled();
 });

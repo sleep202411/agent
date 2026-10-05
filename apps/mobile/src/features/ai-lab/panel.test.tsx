@@ -1486,6 +1486,15 @@ it("does not submit a canvas job when saving its recovery identity fails", async
   expect(h.post).not.toHaveBeenCalled();
   expect(input("Prompt").value).toBe("Lake");
   const original = canvas.beforeSubmit.mock.calls[0];
+  const { CanvasCardConflictError, canvasCardStateSchema } =
+    await import("../../../canvas-editor/card-state-schema");
+  canvas.beforeSubmit.mockRejectedValueOnce(
+    new CanvasCardConflictError(canvasCardStateSchema.parse({ prompt: "Newer" }))
+  );
+  await click("aiLab.recover");
+  expect(button("aiLab.recover")).toBeDefined();
+  expect(button("aiLab.canvasKeepDraft")).toBeUndefined();
+  expect(h.post).not.toHaveBeenCalled();
   canvas.beforeSubmit.mockResolvedValueOnce(undefined);
   await click("aiLab.recover");
   expect(canvas.beforeSubmit.mock.calls[1]).toEqual(original);
@@ -1531,7 +1540,7 @@ it("switches canvas modes without losing references and submits only active inpu
         references: [{ id: "ref", url: "https://example.com/original.png" }],
       },
     },
-    beforeSubmit: vi.fn(async () => {}),
+    beforeSubmit: vi.fn(async (_command: import("./jobs-api").GenerationCommand) => {}),
     beforeRetry: vi.fn(async () => {}),
     afterReceipt: vi.fn(async () => {}),
   };
@@ -1559,8 +1568,72 @@ it("switches canvas modes without losing references and submits only active inpu
   await click("aiLab.generate");
   await click("aiLab.confirm");
   expect(h.post).toHaveBeenCalledTimes(2);
+  expect(canvas.beforeSubmit.mock.calls[1]![0].canvasCardEdit?.before).toEqual(
+    canvas.beforeSubmit.mock.calls[0]![0].canvasCardEdit?.after
+  );
+  expect(
+    canvas.beforeSubmit.mock.calls[1]![0].canvasCardEdit?.after.references.references?.[0]?.url
+  ).toBe("https://example.com/edited.png");
+  expect(h.post.mock.calls[1]![1].data).not.toHaveProperty("canvasCardEdit");
   expect(h.post.mock.calls[1]![1].data.input).toEqual({
     prompt: "Lake",
     references: ["https://example.com/edited.png"],
   });
+});
+
+it("keeps the draft and requires review after a new unsent request meets an authoring conflict", async () => {
+  const { canvasCardStateSchema, CanvasCardConflictError } =
+    await import("../../../canvas-editor/card-state-schema");
+  const id = "44444444-4444-4444-8444-444444444444";
+  const workspaceId = "33333333-3333-4333-8333-333333333333";
+  const project = {
+    id,
+    storyProjectId: id,
+    kind: "story" as const,
+    workspaceId,
+    title: "Story",
+    canGenerate: true,
+  };
+  const base = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, options) =>
+    path === `/story-projects/${id}`
+      ? { id, workspaceId, title: "Story", status: "active", capabilities: ["story.generate"] }
+      : base(path, options)
+  );
+  const latest = canvasCardStateSchema.parse({
+    prompt: "Another editor's scene",
+    modelId: "model",
+    settings: { seed: 8 },
+  });
+  const beforeSubmit = vi
+    .fn(async (_command: import("./jobs-api").GenerationCommand) => {})
+    .mockRejectedValueOnce(new CanvasCardConflictError(latest));
+  const canvas = {
+    documentId: "55555555-5555-4555-8555-555555555555",
+    nodeId: "conflict",
+    mode: "image" as const,
+    seed: { prompt: "My scene", modelId: "model", settings: {}, references: {} },
+    beforeSubmit,
+    beforeRetry: vi.fn(async () => {}),
+    afterReceipt: vi.fn(async () => {}),
+  };
+  await mount(undefined, project, canvas);
+  await click("Image preset");
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post).not.toHaveBeenCalled();
+  expect(button("aiLab.recover")).toBeUndefined();
+  expect(input("Prompt").value).toBe("My scene");
+  expect(host.textContent).toContain("Another editor's scene");
+  expect(button("aiLab.generate").disabled).toBe(true);
+  await mount(undefined, project, { ...canvas, nodeId: "other" });
+  await mount(undefined, project, canvas);
+  expect(host.textContent).toContain("Another editor's scene");
+  await click("aiLab.canvasKeepDraft");
+  await click("aiLab.confirm");
+  expect(input("Prompt").value).toBe("My scene");
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post).toHaveBeenCalledOnce();
+  expect(beforeSubmit.mock.calls[1]![0].canvasCardEdit?.before).toEqual(latest);
 });

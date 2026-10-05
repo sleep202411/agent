@@ -1,3 +1,4 @@
+import { canvasCardEditSchema } from "./card-state-schema";
 import { z } from "zod";
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 const json: z.ZodType<Json> = z.lazy(() =>
@@ -7,6 +8,7 @@ export const canvasSubmissionSchema = z
   .object({
     ownerId: z.string().min(1),
     type: z.enum(["image", "video", "audio"]),
+    cardEdit: canvasCardEditSchema.optional(),
     submission: z
       .object({
         context: z
