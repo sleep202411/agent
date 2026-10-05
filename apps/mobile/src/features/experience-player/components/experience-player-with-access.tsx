@@ -7,6 +7,7 @@ import { useStoryPreviewAccess } from "../hooks/use-story-preview-access";
 
 type HostProps = Omit<ExperiencePlayerProps, "access" | "runtime"> & {
   runtime: ExperienceRuntimeManifest;
+  chapterId?: string;
   /**
    * `preview` — local unlock dialog (playtest / Studio parity).
    * `published` — Nest community-access quote + purchase (H5 parity).
@@ -20,11 +21,12 @@ type HostProps = Omit<ExperiencePlayerProps, "access" | "runtime"> & {
 export function ExperiencePlayerWithAccess({
   runtime,
   accessMode,
+  chapterId,
   worldScope,
   ...rest
 }: HostProps) {
   const preview = useStoryPreviewAccess(rest.locale);
-  const commerce = useStoryCommunityAccess(runtime, rest.locale);
+  const commerce = useStoryCommunityAccess(runtime, rest.locale, chapterId);
   const gate = accessMode === "preview" ? preview : commerce;
 
   return (

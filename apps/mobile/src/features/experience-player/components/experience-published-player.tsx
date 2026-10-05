@@ -278,6 +278,7 @@ function SavedPlayer({
         key={playerGeneration}
         runtime={runtime}
         accessMode="published"
+        chapterId={chapterId}
         copy={
           resolution.checkpoint
             ? { ...playerProps.copy, start: playerProps.copy.continue }

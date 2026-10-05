@@ -12,6 +12,7 @@ import { useStoryCommunityAccess } from "./use-story-community-access";
 const mocks = vi.hoisted(() => ({
   quote: vi.fn(),
   purchase: vi.fn(),
+  paywall: vi.fn(),
   generation: 0,
   listeners: new Set<() => void>(),
   t: (key: string) => key,
@@ -29,7 +30,8 @@ vi.mock("@/auth/auth-store", () => ({
     return () => mocks.listeners.delete(fn);
   },
 }));
-vi.mock("@/features/paywall", () => ({ openPaywall: vi.fn() }));
+vi.mock("@/config", () => ({ webBaseUrl: "https://fizzdragon.com" }));
+vi.mock("@/features/paywall", () => ({ openPaywall: mocks.paywall }));
 vi.mock("@/i18n", () => ({ useTranslations: () => mocks.t }));
 vi.mock("../api/story-community-access-api", () => ({
   fetchStoryCommunityAccessQuote: mocks.quote,
@@ -74,7 +76,7 @@ const quote = (keys: string[]): StoryCommunityAccessQuote => ({
 let access: ExperiencePlayerAccess;
 let currentRuntime = runtime;
 function Harness() {
-  const result = useStoryCommunityAccess(currentRuntime, "en-US");
+  const result = useStoryCommunityAccess(currentRuntime, "en-US", "chapter two");
   useEffect(() => {
     access = result.access;
   }, [result.access]);
@@ -250,4 +252,24 @@ it("rejects late quotes and old access handles when the film build changes", asy
   expect(result).toHaveBeenCalledExactlyOnceWith(false);
   expect(access.canAccess(requirement("first"))).toBe(false);
   expect(await oldAccess.requestAccess(requirement("old"))).toBe(false);
+});
+
+it("keeps the film and chapter when opening checkout without purchasing access", async () => {
+  mocks.quote.mockResolvedValue({ ...quote([]), balance: "0" });
+  const resolved = vi.fn();
+  await act(async () => {
+    void access.requestAccess(requirement("locked")).then(resolved);
+  });
+  const recharge = Array.from(host.querySelectorAll("button")).find(
+    (button) => button.textContent === "play.communityAccess.recharge"
+  );
+  expect(recharge).toBeDefined();
+  await act(async () => recharge!.click());
+  expect(mocks.paywall).toHaveBeenCalledExactlyOnceWith({
+    category: "community_points",
+    communityReturnUrl:
+      "https://fizzdragon.com/en-US/play/interactive-film/game?chapter=chapter+two",
+  });
+  expect(mocks.purchase).not.toHaveBeenCalled();
+  expect(resolved).not.toHaveBeenCalled();
 });

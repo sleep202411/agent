@@ -17,6 +17,7 @@ import {
   purchaseStoryCommunityAccess,
   type StoryCommunityAccessQuote,
 } from "../api/story-community-access-api";
+import { buildExperiencePlayShareUrl } from "../lib/experience-share";
 import type { ExperiencePlayerAccess } from "../lib/experience-player-access";
 import { communityAccessDialogStyles as styles } from "./community-access-dialog-styles";
 
@@ -28,7 +29,8 @@ type AccessRequest = {
 /** H5 `useStoryCommunityAccess` — quote / purchase / recharge for published play. */
 export function useStoryCommunityAccess(
   runtime: ExperienceRuntimeManifest,
-  locale: string
+  locale: string,
+  chapterId?: string
 ): {
   access: ExperiencePlayerAccess;
   dialog: ReactNode;
@@ -302,7 +304,16 @@ export function useStoryCommunityAccess(
           ) : insufficient ? (
             <Pressable
               accessibilityRole="button"
-              onPress={() => openPaywall({ category: "community_points" })}
+              onPress={() =>
+                openPaywall({
+                  category: "community_points",
+                  communityReturnUrl: buildExperiencePlayShareUrl({
+                    gameId: runtime.gameId,
+                    locale,
+                    chapterId,
+                  }),
+                })
+              }
               style={styles.primaryHit}
             >
               <Text style={styles.primaryText}>{t("play.communityAccess.recharge")}</Text>
