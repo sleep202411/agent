@@ -127,7 +127,8 @@ it("retries the identical request after network failure and freezes its inputs",
   await compose();
   await act(async () => click("serviceOrder.submit"));
   expect(host.querySelector("input")!.disabled).toBe(true);
-  await act(async () => click("serviceOrder.submit"));
+  expect(host.textContent).toContain("serviceOrder.retryHint");
+  await act(async () => click("inbox.retry"));
   expect(h.send.mock.calls[0][0]).toEqual(h.send.mock.calls[1][0]);
 });
 it("ignores old-account completion and resets the questionnaire", async () => {
@@ -174,7 +175,15 @@ it("restores original terms and answers even after the service changes", async (
       idempotencyKey: "old-request-key",
     },
     offer: {
-      packages: [{ ...service.packages[1], title: "Original package", price: 20 }],
+      packages: [
+        {
+          ...service.packages[1],
+          title: "Original package",
+          price: 20,
+          deliveryDays: 7,
+          revisions: -1,
+        },
+      ],
       requirementQuestions: [{ id: "old-brief", prompt: "Original question", required: true }],
     },
   };
@@ -183,10 +192,14 @@ it("restores original terms and answers even after the service changes", async (
   await render();
   await act(async () => click("serviceOrder.title"));
   expect(host.textContent).toContain("Original package");
+  expect(host.textContent).toContain(
+    "7 serviceDetail.days · serviceDetail.unlimitedRevisions serviceDetail.revisions"
+  );
   expect(host.textContent).toContain("Original question");
   expect(host.querySelector("input")!.value).toBe("Original brief");
   expect(host.querySelector("input")!.disabled).toBe(true);
-  await act(async () => click("serviceOrder.submit"));
+  expect(host.textContent).toContain("serviceOrder.retryHint");
+  await act(async () => click("inbox.retry"));
   expect(h.send).toHaveBeenCalledWith(pending.payload);
   expect(h.save.mock.invocationCallOrder[0]).toBeLessThan(h.send.mock.invocationCallOrder[0]);
   expect(h.clear).toHaveBeenCalledWith("old-request-key");
@@ -221,7 +234,7 @@ it("allows an original pending order to be recovered when the service is paused"
   h.send.mockResolvedValue("original-order");
   await render("paused");
   await act(async () => click("serviceOrder.title"));
-  await act(async () => click("serviceOrder.submit"));
+  await act(async () => click("inbox.retry"));
   expect(h.send).toHaveBeenCalledWith(payload);
 });
 
@@ -366,7 +379,7 @@ it("requires choosing a remaining package when the selected tier was removed", a
   await act(async () => click("serviceOrder.reviewOffer"));
   await act(async () => click("serviceOrder.submit"));
   expect(h.send).not.toHaveBeenCalled();
-  await act(async () => click("Premium · $30.00"));
+  await act(async () => click("Premium · $30.003 serviceDetail.days · 2 serviceDetail.revisions"));
   h.send.mockResolvedValue("order");
   await act(async () => click("serviceOrder.submit"));
   expect(h.send).toHaveBeenCalledExactlyOnceWith(

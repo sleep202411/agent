@@ -224,6 +224,11 @@ function RequestForm({
                 {pkg.title} ·{" "}
                 {formatServicePrice({ startingPrice: pkg.price, currency: pkg.currency }, locale)}
               </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {pkg.deliveryDays} {t("serviceDetail.days")} ·{" "}
+                {pkg.revisions < 0 ? t("serviceDetail.unlimitedRevisions") : pkg.revisions}{" "}
+                {t("serviceDetail.revisions")}
+              </ThemedText>
             </Pressable>
           ))}
           {offer.requirementQuestions.map((q) => (
@@ -265,13 +270,13 @@ function RequestForm({
               </Pressable>
             </View>
           )}
-          {locked && error && <ThemedText>{t("serviceOrder.retryHint")}</ThemedText>}
+          {locked && <ThemedText>{t("serviceOrder.retryHint")}</ThemedText>}
           <Pressable
             accessibilityRole="button"
             disabled={op.busy || !valid || !!initial.error}
             onPress={send}
           >
-            <ThemedText>{t("serviceOrder.submit")}</ThemedText>
+            <ThemedText>{t(locked ? "inbox.retry" : "serviceOrder.submit")}</ThemedText>
           </Pressable>
         </>
       )}
