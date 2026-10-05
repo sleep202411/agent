@@ -1,3 +1,5 @@
+import { ExperienceJourneyMap } from "./experience-journey-map";
+import { ExperienceJourneyReplay } from "../lib/experience-journey-replay";
 import {
   lazy,
   Suspense,
@@ -38,6 +40,7 @@ import {
   ExperienceCoreWorldModelRendererConfigSchema,
   ExperienceCoreChoiceRendererConfigSchema,
   ExperienceCoreTextRendererConfigSchema,
+  ExperienceCoreVideoRendererConfigSchema,
   ExperienceRuntimeManifestSchema,
   type ExperienceAccessRequirement,
   type ExperienceGraphNode,
@@ -73,6 +76,8 @@ import {
   getExperienceJourneyActiveAccess,
   createExperienceJourney,
   createExperienceJourneyAnchor,
+  projectExperienceJourneyGraph,
+  experienceJourneyEndingNodeId,
   recordExperienceJourney,
 } from "../lib/experience-journey-model";
 import {
@@ -260,6 +265,16 @@ function ActiveExperienceRuntimePlayer({
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [initialPlayback] = useState(() => entryCheckpoint?.playback);
+  const [restoredPresentation, setRestoredPresentation] = useState({
+    epoch: 0,
+    playback: initialPlayback,
+  });
+  const [journeyOpen, setJourneyOpen] = useState(false);
+  const [journeySuspended, setJourneySuspended] = useState(false);
+  const [replayPending, setReplayPending] = useState(false);
+  const [replayError, setReplayError] = useState<string>();
+  const [replayCoordinator] = useState(() => new ExperienceJourneyReplay());
+  const replayPendingRef = useRef(false);
   const [journey, setJourney] = useState(
     () => entryCheckpoint?.journey ?? createExperienceJourney(manifest)
   );
@@ -278,6 +293,8 @@ function ActiveExperienceRuntimePlayer({
   const [checkpointRevision, setCheckpointRevision] = useState(0);
   const checkpointEpochRef = useRef(0);
   const [sceneEpoch, setSceneEpoch] = useState(0);
+  const entryPlayback =
+    restoredPresentation.epoch === sceneEpoch ? restoredPresentation.playback : undefined;
   const recordMediaCheckpoint = useCallback(
     (checkpoint: ExperienceMediaCheckpoint) => {
       if (sceneEpoch !== checkpointEpochRef.current) return;
@@ -344,6 +361,8 @@ function ActiveExperienceRuntimePlayer({
     setLastScreenActive(screenActive);
     if (!screenActive && started) setViewerPaused(true);
   }
+  const replayScopeRef = useRef({ active, screenActive });
+  replayScopeRef.current = { active, screenActive };
   const presentingRef = useRef(false);
   const deferredOutcomesRef = useRef<(() => void)[]>([]);
   const [starting, setStarting] = useState(false);
@@ -361,8 +380,12 @@ function ActiveExperienceRuntimePlayer({
     aliveRef.current = true;
     return () => {
       aliveRef.current = false;
+      replayCoordinator.invalidate();
     };
-  }, []);
+  }, [replayCoordinator]);
+  useEffect(() => {
+    if (!active || !screenActive) replayCoordinator.invalidate();
+  }, [active, screenActive, replayCoordinator]);
   const preload = useExperiencePreload(manifest);
   const playbackLocale = resolvePlaybackLocale(manifest, locale);
   const {
@@ -717,7 +740,14 @@ function ActiveExperienceRuntimePlayer({
    * the host pauses us (chapter switch in flight).
    */
   const presenting =
-    screenActive && active && !viewerPaused && !accessPending && !retryAccess && !runtimeError;
+    screenActive &&
+    active &&
+    !viewerPaused &&
+    !journeyOpen &&
+    !replayPending &&
+    !accessPending &&
+    !retryAccess &&
+    !runtimeError;
 
   useEffect(() => {
     presentingRef.current = presenting;
@@ -738,7 +768,7 @@ function ActiveExperienceRuntimePlayer({
     let frame: number | null = null;
     let ended = fixedClockEndedRef.current;
     if (ended) return;
-    const restoredTime = sceneEpoch === 0 ? (initialPlayback?.sceneTimeMs ?? 0) : 0;
+    const restoredTime = entryPlayback?.sceneTimeMs ?? 0;
     const startedAt = performance.now() - restoredTime;
     let pausedTotal = 0;
     let pausedAt: number | null = presentingRef.current ? null : performance.now();
@@ -780,7 +810,7 @@ function ActiveExperienceRuntimePlayer({
       clockGateRef.current = null;
     };
   }, [
-    initialPlayback,
+    entryPlayback,
     advanceTimeline,
     clockDurationMs,
     clockScene,
@@ -812,7 +842,7 @@ function ActiveExperienceRuntimePlayer({
 
   const checkpointSceneRef = useRef<string | null>(null);
   const emittedCheckpointEpochRef = useRef<number | null>(null);
-  const emitCheckpoint = useEffectEvent(() => {
+  const publishCheckpoint = (override?: ExperienceCheckpointReason) => {
     if (!started || !onCheckpoint) return;
     const currentScene = findGraphNode(manifest, runtimeState.currentSceneId);
     const media = [...mediaCheckpointsRef.current.values()].filter(
@@ -820,14 +850,16 @@ function ActiveExperienceRuntimePlayer({
         currentScene?.kind === "scene" &&
         currentScene.renderers.some((renderer) => renderer.instanceId === item.rendererInstanceId)
     );
-    const reason: ExperienceCheckpointReason = accessPending
-      ? "access"
-      : !presenting
-        ? "pause"
-        : checkpointSceneRef.current !== runtimeState.currentSceneId ||
-            emittedCheckpointEpochRef.current !== sceneEpoch
-          ? "transition"
-          : "progress";
+    const reason: ExperienceCheckpointReason =
+      override ??
+      (accessPending
+        ? "access"
+        : !presenting
+          ? "pause"
+          : checkpointSceneRef.current !== runtimeState.currentSceneId ||
+              emittedCheckpointEpochRef.current !== sceneEpoch
+            ? "transition"
+            : "progress");
     checkpointSceneRef.current = runtimeState.currentSceneId;
     emittedCheckpointEpochRef.current = sceneEpoch;
     const audio = checkpointAudio();
@@ -858,7 +890,8 @@ function ActiveExperienceRuntimePlayer({
       }),
       reason
     );
-  });
+  };
+  const emitCheckpoint = useEffectEvent(() => publishCheckpoint());
   useEffect(() => {
     emitCheckpoint();
   }, [
@@ -953,6 +986,162 @@ function ActiveExperienceRuntimePlayer({
     [timelineHoldGate]
   );
 
+  const openJourney = () => {
+    if (accessPendingRef.current || replayPendingRef.current) return;
+    presentingRef.current = false;
+    playbackHandlesRef.current.forEach((handle) => handle.pause());
+    void suspendAudio().catch((error: unknown) => setReplayError(runtimeErrorMessage(error)));
+    setReplayError(undefined);
+    setJourneyOpen(true);
+  };
+  const replayScene = async (sceneId: string) => {
+    if (replayPendingRef.current || accessPendingRef.current) return;
+    replayPendingRef.current = true;
+    setReplayPending(true);
+    setReplayError(undefined);
+    try {
+      await replayCoordinator.replay({
+        manifest,
+        journey: journeyRef.current,
+        sceneId,
+        watchedAssetIds: controller.state().watchedAssetIds,
+        ownsSession: () =>
+          aliveRef.current && replayScopeRef.current.active && replayScopeRef.current.screenActive,
+        beforePurchase: () => publishCheckpoint("access"),
+        access: access
+          ? {
+              ...access,
+              requestAccess: async (requirement) => {
+                setJourneySuspended(true);
+                try {
+                  return await access.requestAccess(requirement);
+                } finally {
+                  if (aliveRef.current) setJourneySuspended(false);
+                }
+              },
+            }
+          : undefined,
+        commit: (entry, nextJourney) => {
+          playbackHandlesRef.current.forEach((handle) => handle.pause());
+          restoreAudio(entry.playback?.audio);
+          const state = controller.restore(entry.state);
+          deferredOutcomesRef.current = [];
+          worldEndHandlesRef.current.clear();
+          pendingWorldEndsRef.current.clear();
+          pendingCheckpointEventsRef.current = entry.events;
+          timelineCursorRef.current =
+            entry.playback?.cursor ?? createExperienceTimelineCursor(sceneId);
+          fixedClockEndedRef.current = entry.playback?.fixedClockEnded ?? false;
+          openRendererIdsRef.current = new Set(entry.playback?.openRendererIds);
+          setOpenRendererIds(openRendererIdsRef.current);
+          settledGestureIdsRef.current = entry.playback?.settledGestureIds ?? [];
+          parkedGestureEventsRef.current = entry.playback?.parkedEvents ?? [];
+          mediaCheckpointsRef.current = new Map(
+            entry.playback?.media.map((media) => [media.rendererInstanceId, media])
+          );
+          playbackEnabledRef.current = entry.playback?.playbackEnabled ?? true;
+          setPlaybackEnabled(playbackEnabledRef.current);
+          timelineHoldGateRef.current = false;
+          setTimelineHoldGate(false);
+          journeyRef.current = nextJourney;
+          setJourney(nextJourney);
+          const epoch = ++checkpointEpochRef.current;
+          setRestoredPresentation({ epoch, playback: entry.playback });
+          setSceneEpoch(epoch);
+          setSceneTimeMs(entry.playback?.sceneTimeMs ?? 0);
+          setRuntimeState(state);
+          setRetryAccess(null);
+          setRuntimeError(null);
+          setViewerPaused(false);
+          setJourneyOpen(false);
+          void unlockAudio().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
+        },
+      });
+    } catch (error) {
+      if (aliveRef.current) setReplayError(runtimeErrorMessage(error));
+    } finally {
+      replayPendingRef.current = false;
+      if (aliveRef.current) setReplayPending(false);
+    }
+  };
+  const mapDetails: Record<string, { title?: string; thumbnailUrl?: string }> = {};
+  if (journeyOpen) {
+    for (const sceneId of journey.visitedNodeIds) {
+      const node = findGraphNode(manifest, sceneId);
+      if (node?.kind !== "scene") continue;
+      const text = ExperienceCoreTextRendererConfigSchema.safeParse(
+        node.renderers.find((r) => r.rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID)?.config
+      );
+      const choice = ExperienceCoreChoiceRendererConfigSchema.safeParse(
+        node.renderers.find((r) => r.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID)?.config
+      );
+      const title =
+        text.success && text.data.title
+          ? localize(text.data.title, playbackLocale, defaultLocale)
+          : choice.success && choice.data.prompt
+            ? localize(choice.data.prompt, playbackLocale, defaultLocale)
+            : undefined;
+      const video = ExperienceCoreVideoRendererConfigSchema.safeParse(
+        node.renderers.find((r) => r.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID)?.config
+      );
+      const posterId = video.success
+        ? (video.data.posterAssetId ?? video.data.sequence[0]?.posterAssetId)
+        : undefined;
+      const poster = manifest.assets.find((asset) => asset.assetId === posterId);
+      const variant =
+        poster?.kind === "image"
+          ? (poster.variants.find((v) => v.orientation === EXPERIENCE_PLAY_ORIENTATION) ??
+            poster.variants[0])
+          : undefined;
+      mapDetails[sceneId] = {
+        title,
+        thumbnailUrl: variant ? resolveExperienceAssetUrl(variant.uri) : undefined,
+      };
+    }
+    for (const edge of journey.traversedEdges) {
+      if (!("toEndingId" in edge)) continue;
+      const ending = manifest.endings.find((item) => item.endingId === edge.toEndingId);
+      if (ending)
+        mapDetails[experienceJourneyEndingNodeId(ending.endingId)] = {
+          title: localize(ending.title, playbackLocale, defaultLocale),
+        };
+    }
+  }
+  const journeyControls =
+    copy.journeyMap && (started || endingId) ? (
+      <>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={copy.journeyMap.open}
+          disabled={accessPending || replayPending || !!retryAccess}
+          onPress={openJourney}
+          style={styles.journeyControl}
+        >
+          <ThemedText type="small" style={styles.lightText}>
+            {copy.journeyMap.open}
+          </ThemedText>
+        </Pressable>
+        {journeyOpen && !journeySuspended && active && screenActive ? (
+          <ExperienceJourneyMap
+            graph={projectExperienceJourneyGraph(manifest, journey)}
+            nodeDetails={mapDetails}
+            currentSceneId={
+              endingId ? experienceJourneyEndingNodeId(endingId) : runtimeState.currentSceneId
+            }
+            copy={copy.journeyMap}
+            replayPending={replayPending}
+            error={replayError}
+            onClose={() => {
+              if (!replayPendingRef.current) setJourneyOpen(false);
+            }}
+            onReplay={(sceneId) => {
+              void replayScene(sceneId);
+            }}
+          />
+        ) : null}
+      </>
+    ) : null;
+
   if (runtimeError) {
     return (
       <View style={styles.centerPad}>
@@ -977,6 +1166,7 @@ function ActiveExperienceRuntimePlayer({
 
     return (
       <View style={styles.endingPad}>
+        {journeyControls}
         <ThemedText type="code" style={styles.endingEyebrow}>
           {copy.endingEyebrow}
         </ThemedText>
@@ -1125,13 +1315,9 @@ function ActiveExperienceRuntimePlayer({
                 onPlaybackRefused={() => setViewerPaused(true)}
                 onPlaybackHandle={registerPlaybackHandle}
                 onPlaybackProgress={recordMediaCheckpoint}
-                checkpoint={
-                  sceneEpoch === 0
-                    ? initialPlayback?.media.find(
-                        (item) => item.rendererInstanceId === renderer.instanceId
-                      )
-                    : undefined
-                }
+                checkpoint={entryPlayback?.media.find(
+                  (item) => item.rendererInstanceId === renderer.instanceId
+                )}
                 worldScope={worldScope}
                 onWorldEndHandle={registerWorldEndHandle}
               />
@@ -1150,9 +1336,7 @@ function ActiveExperienceRuntimePlayer({
             orientation={EXPERIENCE_PLAY_ORIENTATION}
             onEvents={emitRuntimeEvents}
             onSettledGestureIdsChange={recordSettledGestures}
-            initialSettledGestureIds={
-              sceneEpoch === 0 ? initialPlayback?.settledGestureIds : undefined
-            }
+            initialSettledGestureIds={entryPlayback?.settledGestureIds}
             onRuntimeError={setRuntimeError}
             onTimelineHoldGateChange={setTimelineHoldGate}
             onGestureTapGuardChange={registerGestureTapGuard}
@@ -1199,6 +1383,7 @@ function ActiveExperienceRuntimePlayer({
             </Pressable>
           ) : null
         ) : null}
+        {journeyControls}
         {nodeGate ? <View pointerEvents="none" style={styles.nodeGate} /> : null}
         {retryAccess && started && !nodeGate ? (
           <View style={styles.retryOverlay}>
@@ -1536,6 +1721,17 @@ function isDiscardableLateInput(error: unknown): boolean {
 }
 
 const styles = StyleSheet.create({
+  journeyControl: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    minHeight: 44,
+    padding: 10,
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.8)",
+    zIndex: 100,
+  },
   alert: {
     flex: 1,
     padding: Spacing.four,

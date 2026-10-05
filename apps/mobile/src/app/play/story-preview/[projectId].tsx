@@ -1,3 +1,4 @@
+import { createExperienceJourneyMapCopy } from "@/features/experience-player/lib/experience-player-copy";
 import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react-native";
 import {
   ExperienceRuntimeManifestSchema,
@@ -83,6 +84,7 @@ export default function StoryPreviewScreen() {
 
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
+      journeyMap: createExperienceJourneyMapCopy(t),
       invalidManifest: t("play.invalidManifest"),
       unsupportedRuntime: t("play.unsupportedRuntime"),
       manifestRoot: t("play.manifestRoot"),

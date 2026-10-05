@@ -1,3 +1,4 @@
+import { createExperienceJourneyMapCopy } from "@/features/experience-player/lib/experience-player-copy";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
@@ -73,6 +74,7 @@ export default function PlayGameScreen() {
 
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
+      journeyMap: createExperienceJourneyMapCopy(t),
       invalidManifest: t("play.invalidManifest"),
       unsupportedRuntime: t("play.unsupportedRuntime"),
       manifestRoot: t("play.manifestRoot"),

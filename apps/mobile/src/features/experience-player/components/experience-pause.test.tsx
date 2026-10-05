@@ -8,8 +8,11 @@ import {
   type ExperienceThemeConfig,
 } from "@repo/shared/experience-runtime";
 import { initializeExperienceRuntime, type ExperienceRuntimeState } from "@repo/experience-engine";
-import { ExperiencePlayer } from "./experience-player";
-import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
+import { ExperiencePlayer, type ExperiencePlayerAccess } from "./experience-player";
+import {
+  createExperienceJourneyMapCopy,
+  type ExperiencePlayerCopy,
+} from "../lib/experience-player-copy";
 import type { ExperienceSaveCheckpoint } from "../lib/experience-save-checkpoint";
 import {
   mediaPlaybackSignature,
@@ -25,6 +28,13 @@ const h = vi.hoisted(() => ({
   effects: vi.fn(),
   restoreAudio: vi.fn(),
   start: vi.fn(),
+  restore: vi.fn(),
+  map: {} as {
+    onReplay: (sceneId: string) => void;
+    onClose: () => void;
+    replayPending: boolean;
+    error?: string;
+  },
   restored: undefined as unknown,
   initialGestures: undefined as readonly string[] | undefined,
   checkpointAudio: vi.fn(() => ({ playbacks: [], busGains: {} })),
@@ -89,6 +99,7 @@ vi.mock("../lib/experience-runtime-host", () => ({
     h.restored = options.restore;
     return {
       state: () => h.state,
+      restore: h.restore,
       start: h.start,
       dispatch: h.dispatch,
       emitRendererOutcome: h.outcome,
@@ -98,6 +109,18 @@ vi.mock("../lib/experience-runtime-host", () => ({
 vi.mock("../lib/experience-save-checkpoint", () => ({
   validateExperienceSaveCheckpoint: (_manifest: unknown, checkpoint: unknown) =>
     structuredClone(checkpoint),
+}));
+vi.mock("./experience-journey-map", () => ({
+  ExperienceJourneyMap: (props: typeof h.map) => {
+    h.map = props;
+    return (
+      <div>
+        <button onClick={props.onClose}>Close map</button>
+        <button onClick={() => props.onReplay("scene")}>Replay scene</button>
+        {props.error}
+      </div>
+    );
+  },
 }));
 vi.mock("./experience-spatial-layer", async () => {
   const { useContext } = await import("react");
@@ -206,7 +229,12 @@ function progress(positionMs: number): ExperienceMediaCheckpoint {
     completed: false,
   };
 }
-const copy = { pause: "Pause", resume: "Resume", paused: "Paused" } as ExperiencePlayerCopy;
+const copy = {
+  journeyMap: createExperienceJourneyMapCopy((key) => key),
+  pause: "Pause",
+  resume: "Resume",
+  paused: "Paused",
+} as ExperiencePlayerCopy;
 const loader = () => Promise.resolve({ tokens: {} } as ExperienceThemeConfig);
 let root: Root;
 let container: HTMLDivElement;
@@ -215,12 +243,14 @@ const render = (
   active = true,
   manifest = runtime,
   capture = false,
-  entryCheckpoint?: ExperienceSaveCheckpoint
+  entryCheckpoint?: ExperienceSaveCheckpoint,
+  access?: ExperiencePlayerAccess
 ) =>
   act(async () =>
     root.render(
       <ExperiencePlayer
         runtime={manifest}
+        access={access}
         locale="en-US"
         copy={copy}
         randomSeed="fixed"
@@ -246,6 +276,10 @@ beforeEach(() => {
   h.stage = {};
   h.tapGuard = null;
   vi.clearAllMocks();
+  h.restore.mockImplementation((state) => {
+    h.state = structuredClone(state);
+    return h.state;
+  });
   h.start.mockImplementation(() => ({ state: h.state, effects: [] }));
   h.dispatch.mockImplementation(() => ({ state: h.state, effects: [] }));
   h.outcome.mockImplementation(() => ({ state: h.state, effects: [] }));
@@ -458,6 +492,62 @@ it("preserves the original entry anchor when continuing a mid-scene save", async
   await render(true, runtime, true, saved);
   await click("Start");
   expect(captured.mock.calls.at(-1)![0].journey.anchors).toEqual(saved.journey!.anchors);
+  expect(captured.mock.calls.at(-1)![0].playback.media[0].positionMs).toBe(500);
+});
+
+it("holds playback while the map is open and restores entry state without firing Start twice", async () => {
+  await render(true, runtime, true);
+  await click("Start");
+  await act(async () => h.video.onPlaybackProgress(progress(500)));
+  const oldProgress = h.video.onPlaybackProgress;
+  await click("play.journeyMap.open");
+  expect(h.mediaPresenting).toBe(false);
+  await click("Replay scene");
+  expect(h.restore).toHaveBeenCalledOnce();
+  expect(h.start).toHaveBeenCalledTimes(1);
+  expect(h.mediaPresenting).toBe(true);
+  const saved = captured.mock.calls.at(-1)![0];
+  expect(saved.playback).toMatchObject({ sceneTimeMs: 0, media: [], settledGestureIds: [] });
+  expect(saved.journey.watchedMedia[0].watchedUntilMs).toBe(500);
+  await act(async () => oldProgress(progress(900)));
+  expect(captured.mock.calls.at(-1)![0].journey.watchedMedia[0].watchedUntilMs).toBe(500);
+});
+it("closing the map resumes a playing scene but retains a viewer pause", async () => {
+  await render();
+  await click("Start");
+  await click("play.journeyMap.open");
+  await click("Close map");
+  expect(h.mediaPresenting).toBe(true);
+  await pausePicture();
+  await click("play.journeyMap.open");
+  await click("Close map");
+  expect(h.mediaPresenting).toBe(false);
+});
+it("keeps the current story and map when replay access is declined", async () => {
+  const paid = structuredClone(runtime);
+  paid.graph.nodes[0]!.access = {
+    key: "scene:paid",
+    communityPointPrice: 5,
+    title: { "en-US": "Paid" },
+  };
+  const access = {
+    canAccess: vi.fn(() => true),
+    checkAccess: vi.fn(async () => false),
+    requestAccess: vi.fn(async () => false),
+    formatPrice: String,
+  };
+  await render(true, paid, true, undefined, access);
+  await click("Start");
+  await act(async () => h.video.onPlaybackProgress(progress(500)));
+  await click("play.journeyMap.open");
+  await click("Replay scene");
+  expect(access.requestAccess).toHaveBeenCalledOnce();
+  expect(h.restore).not.toHaveBeenCalled();
+  expect(h.mediaPresenting).toBe(false);
+  expect(container.textContent).toContain("Close map");
+  expect(captured.mock.calls.some((call) => call[1] === "access")).toBe(true);
+  await click("Close map");
+  expect(h.mediaPresenting).toBe(true);
   expect(captured.mock.calls.at(-1)![0].playback.media[0].positionMs).toBe(500);
 });
 

@@ -5,6 +5,7 @@ import { ExperiencePlayer } from "./experience-player";
 import { worldManifestFixture } from "../world/__fixtures__/world-manifest";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 const h = vi.hoisted(() => ({ world: null as any, end: vi.fn(), active: true }));
+vi.mock("./experience-journey-map", () => ({ ExperienceJourneyMap: () => null }));
 vi.mock("react-native", () => ({
   View: ({ children }: any) => <div>{children}</div>,
   Text: "span",
