@@ -59,10 +59,13 @@ export function useAgentChatRoute(options: {
     if (!sameDestination) setChapterDrafts({});
     if (sameDestination && !sameChapter) {
       if (previous.chapterId) setChapterDrafts({ ...chapterDrafts, [previous.chapterId]: draft });
-      setDraftState(
-        previous.prefill !== prefill ? prefill : (chapterDrafts[chapterId ?? ""] ?? "")
-      );
-    } else if (!(sameDestination && sameChapter && previous.prefill === prefill))
+      const savedDraft = chapterDrafts[chapterId ?? ""] ?? "";
+      setDraftState(savedDraft.trim() || previous.prefill === prefill ? savedDraft : prefill);
+    } else if (sameDestination) {
+      // Match Web's composer: suggestions fill an empty composer, never replace
+      // text the creator has already started (including route-param cleanup).
+      if (previous.prefill !== prefill && !draft.trim()) setDraftState(prefill);
+    } else
       setDraftState(
         previous.scope !== scope && (previous.identity === identity || previous.prefill === prefill)
           ? ""

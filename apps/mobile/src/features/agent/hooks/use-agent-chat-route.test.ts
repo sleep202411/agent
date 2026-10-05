@@ -168,7 +168,7 @@ it("keeps a failed initial query editable without overwriting newer text", async
   await act(async () => resolve(false));
   expect(hook.draft).toBe("New text");
 });
-it("uses a new destination's prefill and clears an explicitly removed prefill", async () => {
+it("uses a new destination's prefill without clearing it when the route param is removed", async () => {
   await render();
   await act(async () => hook.setDraft("Old project draft"));
   projectId = "project-b";
@@ -176,6 +176,54 @@ it("uses a new destination's prefill and clears an explicitly removed prefill", 
   await render();
   expect(hook.draft).toBe("New destination");
   prefill = "";
+  await render();
+  expect(hook.draft).toBe("New destination");
+});
+
+it("preserves typed text when suggestions change or are removed", async () => {
+  await render(true);
+  await act(async () => hook.setDraft("My unfinished scene"));
+  prefill = "Suggested scene";
+  await render(true);
+  expect(hook.draft).toBe("My unfinished scene");
+  prefill = "";
+  await render(true);
+  expect(hook.draft).toBe("My unfinished scene");
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("fills a blank composer but does not replay a consumed suggestion after clearing", async () => {
+  await render();
+  await act(async () => hook.setDraft(" \n "));
+  prefill = "Suggested scene";
+  await render();
+  expect(hook.draft).toBe("Suggested scene");
+  await act(async () => hook.setDraft(""));
+  await render();
+  expect(hook.draft).toBe("");
+});
+
+it("restores a chapter's draft ahead of a new suggestion, while a new chapter can accept one", async () => {
+  await render();
+  await act(async () => hook.setDraft("Unfinished A"));
+  chapterId = "chapter-b";
+  prefill = "Suggestion B";
+  await render();
+  expect(hook.draft).toBe("Suggestion B");
+  chapterId = "chapter-a";
+  prefill = "Suggestion A";
+  await render();
+  expect(hook.draft).toBe("Unfinished A");
+  chapterId = "chapter-b";
+  await render();
+  expect(hook.draft).toBe("Suggestion B");
+});
+
+it("clears private text when credentials and a suggestion change together", async () => {
+  await render();
+  await act(async () => hook.setDraft("Private text"));
+  auth.token = "bob";
+  prefill = "Old account suggestion";
   await render();
   expect(hook.draft).toBe("");
 });
