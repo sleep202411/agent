@@ -5306,5 +5306,6 @@
   "documentFeed.wholeDocument": "Entire document",
   "documentFeed.findNode": "Find a canvas item",
   "documentFeed.unavailableNode": "Unavailable canvas item",
-  "documentFeed.chooseAnotherNode": "Choose another item or the entire document before sending."
+  "documentFeed.chooseAnotherNode": "Choose another item or the entire document before sending.",
+  "documentFeed.allDiscussions": "All discussions"
 }

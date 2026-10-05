@@ -112,7 +112,8 @@ const draw = (
   documentId = "doc",
   generation = 1,
   canComment = false,
-  nodes: { id: string; title: string }[] = []
+  nodes: { id: string; title: string }[] = [],
+  initialNodeId?: string
 ) =>
   act(async () =>
     root.render(
@@ -122,6 +123,7 @@ const draw = (
         userId="42"
         canComment={canComment}
         nodes={nodes}
+        initialNodeId={initialNodeId}
         close={() => {}}
       />
     )
@@ -350,4 +352,36 @@ it("retains an unavailable node draft and requires explicit reassignment", async
   await click("documentFeed.send");
   expect(h.write.mock.calls[0][0]).toMatchObject({ body: "Preserve this" });
   expect(h.write.mock.calls[0][0]).not.toHaveProperty("blockId");
+});
+
+it("opens a node discussion, scopes threads, and creates against that node", async () => {
+  await draw("doc", 1, true, [{ id: "shot-1", title: "Rain scene" }], "shot-1");
+  expect(host.textContent).not.toContain("Review <b>this</b>");
+  await click("documentFeed.newThread");
+  await fill("documentFeed.body", "Node-specific");
+  await click("documentFeed.send");
+  expect(h.write.mock.calls[0][0]).toMatchObject({ blockId: "shot-1" });
+  await click("documentFeed.allDiscussions");
+  expect(host.textContent).toContain("Review <b>this</b>");
+});
+it("keeps an existing draft when entering another node's discussion", async () => {
+  h.storage.set(
+    "document-comment-draft:42:doc",
+    JSON.stringify({ target: "new", body: "Existing work", title: "", blockId: "node-1" })
+  );
+  await draw(
+    "doc",
+    1,
+    true,
+    [
+      { id: "shot-1", title: "Rain" },
+      { id: "node-1", title: "Original" },
+    ],
+    "shot-1"
+  );
+  expect(
+    (host.querySelector('input[aria-label="documentFeed.body"]') as HTMLInputElement).value
+  ).toBe("Existing work");
+  await click("documentFeed.send");
+  expect(h.write.mock.calls[0][0]).toMatchObject({ blockId: "node-1", body: "Existing work" });
 });

@@ -5306,5 +5306,6 @@
   "documentFeed.wholeDocument": "整個文件",
   "documentFeed.findNode": "搜尋畫布內容",
   "documentFeed.unavailableNode": "畫布內容不可用",
-  "documentFeed.chooseAnotherNode": "傳送前請選擇其他內容或整個文件。"
+  "documentFeed.chooseAnotherNode": "傳送前請選擇其他內容或整個文件。",
+  "documentFeed.allDiscussions": "全部討論"
 }

@@ -27,6 +27,7 @@ export function DocumentDiscussion({
   canComment,
   ready,
   nodes,
+  nodeId,
   threads,
   author,
   refresh,
@@ -37,6 +38,7 @@ export function DocumentDiscussion({
   canComment: boolean;
   ready: boolean;
   nodes: { id: string; title: string }[];
+  nodeId?: string;
   threads: DocumentThread[];
   author(id: string): string;
   refresh(): void;
@@ -190,7 +192,7 @@ export function DocumentDiscussion({
       {canComment && !draft && !pending && (
         <DiscussionAction
           label={t("documentFeed.newThread")}
-          onPress={() => save({ target: "new", body: "", title: "", blockId: "" })}
+          onPress={() => save({ target: "new", body: "", title: "", blockId: nodeId ?? "" })}
           disabled={locked}
         />
       )}
@@ -305,70 +307,81 @@ export function DocumentDiscussion({
           {error}
         </ThemedText>
       )}
-      {threads.map((thread) => (
-        <View
-          key={thread.id}
-          style={{ gap: 8, padding: 12, borderRadius: 8, backgroundColor: theme.backgroundElement }}
-        >
-          <ThemedText type="smallBold">
-            {thread.title || t("documentFeed.thread")} ·{" "}
-            {t(thread.status === "open" ? "documentFeed.open" : "documentFeed.resolved")}
-          </ThemedText>
-          {thread.status === "resolved" && thread.resolvedById && (
-            <ThemedText type="small" themeColor="textSecondary">
-              {t("documentFeed.resolvedBy")} {author(thread.resolvedById)}
+      {threads
+        .filter(
+          (thread) =>
+            !nodeId || thread.blockId === nodeId || !!pending || draft?.target === thread.id
+        )
+        .map((thread) => (
+          <View
+            key={thread.id}
+            style={{
+              gap: 8,
+              padding: 12,
+              borderRadius: 8,
+              backgroundColor: theme.backgroundElement,
+            }}
+          >
+            <ThemedText type="smallBold">
+              {thread.title || t("documentFeed.thread")} ·{" "}
+              {t(thread.status === "open" ? "documentFeed.open" : "documentFeed.resolved")}
             </ThemedText>
-          )}
-          {thread.blockId && (
-            <ThemedText type="small" themeColor="textSecondary">
-              {t("documentFeed.node")} {nodeLabel(thread.blockId)}
-            </ThemedText>
-          )}
-          {thread.comments.map((comment) => (
-            <View key={comment.id} style={{ gap: 4 }}>
+            {thread.status === "resolved" && thread.resolvedById && (
               <ThemedText type="small" themeColor="textSecondary">
-                {author(comment.createdById)} · {new Date(comment.createdAt).toLocaleString(locale)}
+                {t("documentFeed.resolvedBy")} {author(thread.resolvedById)}
               </ThemedText>
-              <ThemedText type="small" selectable>
-                {comment.body}
+            )}
+            {thread.blockId && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("documentFeed.node")} {nodeLabel(thread.blockId)}
               </ThemedText>
-            </View>
-          ))}
-          {canComment && (
-            <View style={{ flexDirection: "row", gap: 16 }}>
-              {
-                <DiscussionAction
-                  label={t("documentFeed.reply")}
-                  onPress={() => save({ target: thread.id, body: "", title: "", blockId: "" })}
-                  disabled={locked || !!draft}
-                />
-              }
-              {thread.status === "open" && (
-                <DiscussionAction
-                  label={t("documentFeed.resolve")}
-                  onPress={() =>
-                    Alert.alert(t("documentFeed.resolve"), t("documentFeed.resolveHint"), [
-                      { text: t("common.cancel"), style: "cancel" },
-                      {
-                        text: t("documentFeed.resolve"),
-                        onPress: () => {
-                          void send({
-                            kind: "resolve",
-                            clientKey: uuid.v4(),
-                            documentId,
-                            threadId: thread.id,
-                          });
+            )}
+            {thread.comments.map((comment) => (
+              <View key={comment.id} style={{ gap: 4 }}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {author(comment.createdById)} ·{" "}
+                  {new Date(comment.createdAt).toLocaleString(locale)}
+                </ThemedText>
+                <ThemedText type="small" selectable>
+                  {comment.body}
+                </ThemedText>
+              </View>
+            ))}
+            {canComment && (
+              <View style={{ flexDirection: "row", gap: 16 }}>
+                {
+                  <DiscussionAction
+                    label={t("documentFeed.reply")}
+                    onPress={() => save({ target: thread.id, body: "", title: "", blockId: "" })}
+                    disabled={locked || !!draft}
+                  />
+                }
+                {thread.status === "open" && (
+                  <DiscussionAction
+                    label={t("documentFeed.resolve")}
+                    onPress={() =>
+                      Alert.alert(t("documentFeed.resolve"), t("documentFeed.resolveHint"), [
+                        { text: t("common.cancel"), style: "cancel" },
+                        {
+                          text: t("documentFeed.resolve"),
+                          onPress: () => {
+                            void send({
+                              kind: "resolve",
+                              clientKey: uuid.v4(),
+                              documentId,
+                              threadId: thread.id,
+                            });
+                          },
                         },
-                      },
-                    ])
-                  }
-                  disabled={locked || !!draft}
-                />
-              )}
-            </View>
-          )}
-        </View>
-      ))}
+                      ])
+                    }
+                    disabled={locked || !!draft}
+                  />
+                )}
+              </View>
+            )}
+          </View>
+        ))}
     </View>
   );
 }

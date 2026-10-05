@@ -81,7 +81,7 @@ export function StoryCanvasPanel({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
-  const [documentFeed, setDocumentFeed] = useState(false);
+  const [documentFeed, setDocumentFeed] = useState<string | null>(null);
   const [positioning, setPositioning] = useState(false),
     [positionRecovery, setPositionRecovery] = useState(false);
   const [mapping, setMapping] = useState(false),
@@ -238,7 +238,7 @@ export function StoryCanvasPanel({
           !mapping &&
           !positioning &&
           !selected &&
-          !documentFeed && (
+          documentFeed === null && (
             <StoryCanvasMediaSync
               scope={writeScope}
               userId={userId}
@@ -274,13 +274,13 @@ export function StoryCanvasPanel({
         {loaded && !loading && !error && (
           <Pressable
             accessibilityRole="button"
-            onPress={() => setDocumentFeed(true)}
+            onPress={() => setDocumentFeed("")}
             style={{ paddingVertical: 10 }}
           >
             <ThemedText type="small">{t("documentFeed.title")}</ThemedText>
           </Pressable>
         )}
-        {documentFeed && loaded && !loading && !error && (
+        {documentFeed !== null && loaded && !loading && !error && (
           <DocumentFeedPanel
             key={`${loaded.documentId}:${scope.generation}`}
             documentId={loaded.documentId}
@@ -288,7 +288,8 @@ export function StoryCanvasPanel({
             userId={userId}
             canComment={canComment}
             nodes={overview?.nodes ?? []}
-            close={() => setDocumentFeed(false)}
+            initialNodeId={documentFeed || undefined}
+            close={() => setDocumentFeed(null)}
           />
         )}
         {canEdit && positionRecovery && !loading && (
@@ -350,6 +351,13 @@ export function StoryCanvasPanel({
                         }}
                       >
                         <ThemedText type="smallBold">{node.title}</ThemedText>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => setDocumentFeed(node.id)}
+                          style={{ paddingVertical: 10 }}
+                        >
+                          <ThemedText type="small">{t("documentFeed.comments")}</ThemedText>
+                        </Pressable>
                         {!!node.text && node.text !== node.title && (
                           <ThemedText type="small">{node.text}</ThemedText>
                         )}

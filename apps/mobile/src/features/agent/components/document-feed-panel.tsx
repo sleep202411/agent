@@ -23,6 +23,7 @@ export function DocumentFeedPanel({
   userId = "",
   canComment = false,
   nodes = [],
+  initialNodeId,
   close,
 }: {
   documentId: string;
@@ -30,12 +31,14 @@ export function DocumentFeedPanel({
   userId?: string;
   canComment?: boolean;
   nodes?: { id: string; title: string }[];
+  initialNodeId?: string;
   close(): void;
 }) {
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
   const active = useScreenActive();
+  const [nodeId, setNodeId] = useState(initialNodeId);
   const [tab, setTab] = useState<"comments" | "history">("comments");
   return (
     <Modal visible={active} animationType="slide" onRequestClose={close}>
@@ -74,6 +77,20 @@ export function DocumentFeedPanel({
             </Pressable>
           ))}
         </View>
+        {nodeId && tab === "comments" && (
+          <View style={{ gap: 4 }}>
+            <ThemedText type="smallBold">
+              {nodes.find((node) => node.id === nodeId)?.title || t("documentFeed.unavailableNode")}
+            </ThemedText>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setNodeId(undefined)}
+              style={{ paddingVertical: 10 }}
+            >
+              <ThemedText type="small">{t("documentFeed.allDiscussions")}</ThemedText>
+            </Pressable>
+          </View>
+        )}
         {active && (
           <Feed
             key={`${documentId}:${generation}:${tab}`}
@@ -83,6 +100,7 @@ export function DocumentFeedPanel({
             userId={userId}
             canComment={canComment}
             nodes={nodes}
+            nodeId={nodeId}
           />
         )}
       </View>
@@ -96,6 +114,7 @@ function Feed({
   userId,
   canComment,
   nodes,
+  nodeId,
 }: {
   documentId: string;
   generation: number;
@@ -103,6 +122,7 @@ function Feed({
   userId: string;
   canComment: boolean;
   nodes: { id: string; title: string }[];
+  nodeId?: string;
 }) {
   const t = useTranslations(),
     locale = useLocale(),
@@ -177,11 +197,15 @@ function Feed({
         </ThemedText>
       )}
       <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 16 }}>
-        {!loading && !error && rows?.items.length === 0 && (
-          <ThemedText type="small" themeColor="textSecondary">
-            {t(kind === "comments" ? "documentFeed.noComments" : "documentFeed.noHistory")}
-          </ThemedText>
-        )}
+        {!loading &&
+          !error &&
+          (rows?.kind === "comments"
+            ? rows.items.filter((thread) => !nodeId || thread.blockId === nodeId).length === 0
+            : rows?.items.length === 0) && (
+            <ThemedText type="small" themeColor="textSecondary">
+              {t(kind === "comments" ? "documentFeed.noComments" : "documentFeed.noHistory")}
+            </ThemedText>
+          )}
         {kind === "comments" && (
           <DocumentDiscussion
             documentId={documentId}
@@ -189,6 +213,7 @@ function Feed({
             userId={userId}
             canComment={canComment}
             nodes={nodes}
+            nodeId={nodeId}
             ready={!loading && !error && !!rows}
             threads={rows?.kind === "comments" ? rows.items : []}
             author={author}
