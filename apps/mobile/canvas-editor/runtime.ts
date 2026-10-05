@@ -73,7 +73,7 @@ function receive(raw: unknown) {
       send({ type: "edited", ...identity, ...createCanvasNode(message.snapshot, message.create) });
     } else if (message.type === "edit") {
       send({ type: "edited", ...identity, ...editCanvasNode(message.snapshot, message.edit) });
-    } else {
+    } else if (message.type === "load") {
       send({
         type: "loaded",
         ...identity,

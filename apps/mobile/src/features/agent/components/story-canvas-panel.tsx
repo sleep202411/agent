@@ -571,11 +571,16 @@ export function StoryCanvasPanel({
         )}
         {mapping && loaded && (
           <StoryCanvasMap
+            generation={scope.generation}
             loaded={loaded}
             move={
               canEdit && writeScope
-                ? (edit) => {
-                    canvasPositionRecovery(writeScope, userId).stage(loaded.snapshot, edit);
+                ? (edit, selection) => {
+                    canvasPositionRecovery(writeScope, userId).stage(
+                      loaded.snapshot,
+                      edit,
+                      selection
+                    );
                     setMapping(false);
                     setPositioning(true);
                   }

@@ -63,6 +63,7 @@
   "devDependencies": {
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~57.0.0",
+    "elkjs": "^0.11.1",
     "eslint-config-expo": "~57.0.0",
     "jsdom": "^28.1.0",
     "prettier-plugin-tailwindcss": "^0.5.14",
@@ -98,7 +99,9 @@
     "build:world-player": "node ./scripts/build-world-player.mjs",
     "check:world-player": "node ./scripts/build-world-player.mjs --check",
     "build:panorama-runtime": "node ./scripts/build-panorama-runtime.mjs",
-    "check:panorama-runtime": "node ./scripts/build-panorama-runtime.mjs --check"
+    "check:panorama-runtime": "node ./scripts/build-panorama-runtime.mjs --check",
+    "build:canvas-tidy": "node ./scripts/build-canvas-tidy.mjs",
+    "check:canvas-tidy": "node ./scripts/build-canvas-tidy.mjs --check"
   },
   "private": true
 }

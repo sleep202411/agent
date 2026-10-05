@@ -167,3 +167,18 @@ it("accepts recoloring but blocks changed group membership before encoding", () 
   expect(setup().read()?.edit).toEqual(grouped);
   expect(submit).not.toHaveBeenCalled();
 });
+it("rejects a tidy proposal after wires change, but keeps independent text edits", () => {
+  const original = fixture();
+  const snapshot = {
+    ...original,
+    nodes: { a: { ...original.nodes.a, type: "note" }, b: { ...original.nodes.b, type: "note" } },
+    edges: { ab: { id: "ab", source: "a", target: "b" } },
+  };
+  setup().stage(snapshot, edit, []);
+  snapshot.nodes.a.data.text = "Updated";
+  expect(setup().validate(snapshot).tidy?.selection).toEqual([]);
+  expect(() => setup().validate({ ...snapshot, edges: {} })).toThrow("layout changed");
+  expect(submit).not.toHaveBeenCalled();
+  setup().prepare(command);
+  expect(setup().validate({ ...snapshot, edges: {} }).command).toEqual(command);
+});

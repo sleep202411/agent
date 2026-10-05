@@ -4,6 +4,7 @@ import { canvasPositionEditSchema } from "./position-schema";
 import { canvasGroupEditSchema } from "./group-schema";
 import { canvasShotMediaSchema } from "./shot-media-schema";
 import { z } from "zod";
+import { canvasTidyRequestSchema } from "./tidy/schema";
 import { canvasNodeEditSchema, canvasNodeCreateSchema } from "./schema";
 const id = z.string().uuid();
 export const encodedCanvasState = z
@@ -30,6 +31,7 @@ export const canvasSnapshotSchema = z
   })
   .strict();
 export const canvasHostMessage = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("tidy"), ...identity, layout: canvasTidyRequestSchema }).strict(),
   z
     .object({
       type: z.literal("submission"),
@@ -99,6 +101,7 @@ export const canvasHostMessage = z.discriminatedUnion("type", [
     .strict(),
 ]);
 export const canvasRuntimeMessage = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("tidied"), ...identity, move: canvasPositionEditSchema }).strict(),
   z.object({ type: z.literal("ready"), sessionId: id }).strict(),
   z
     .object({

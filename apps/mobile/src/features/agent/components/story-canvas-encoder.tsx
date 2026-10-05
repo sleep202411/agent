@@ -8,6 +8,7 @@ import { View } from "react-native";
 import { uuid } from "expo-modules-core";
 import { getAuthGeneration } from "@/auth/auth-store";
 import type { CanvasNodeEdit, CanvasNodeCreate } from "../../../../canvas-editor/schema";
+import type { CanvasTidyLayoutRequest } from "../../../../canvas-editor/tidy/schema";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import { canvasRuntimeHtml, parseCanvasMessage } from "../lib/story-canvas-bridge";
 import { CanvasRuntimeFrame, type CanvasFrameHandle } from "./story-canvas-runtime-frame";
@@ -20,9 +21,10 @@ export function StoryCanvasEncoder({
   runtimeError,
   onResult,
   onError,
+  tidy,
 }: {
   loaded: CanvasLoaded;
-  edit:
+  edit?:
     | CanvasNodeEdit
     | CanvasNodeCreate
     | CanvasShotMedia
@@ -34,11 +36,19 @@ export function StoryCanvasEncoder({
   generation: number;
   title: string;
   runtimeError: string;
+  tidy?: {
+    layout: CanvasTidyLayoutRequest;
+    html(sessionId: string): string;
+    onResult(move: CanvasPositionEdit): void;
+  };
   onResult(update: string | null): void;
   onError(message: string): void;
 }) {
   const [sessionId] = useState(() => uuid.v4());
-  const html = useMemo(() => canvasRuntimeHtml(sessionId), [sessionId]);
+  const html = useMemo(
+    () => (tidy ? tidy.html(sessionId) : canvasRuntimeHtml(sessionId)),
+    [sessionId, tidy]
+  );
   const frame = useRef<CanvasFrameHandle>(null),
     life = useRef<{ active: boolean; settled: boolean; sent: boolean } | null>(null);
   const callbacks = useRef({ onResult, onError, runtimeError });
@@ -86,6 +96,21 @@ export function StoryCanvasEncoder({
           if (message.type === "ready") {
             if (life.current!.sent) return;
             life.current!.sent = true;
+            if (tidy) {
+              frame.current?.send({
+                type: "tidy",
+                sessionId,
+                requestId: 1,
+                documentId: loaded.documentId,
+                sequence: loaded.sequence,
+                layout: tidy.layout,
+              });
+              return;
+            }
+            if (!edit) {
+              fail(runtimeError);
+              return;
+            }
             frame.current?.send({
               sessionId,
               requestId: 1,
@@ -118,6 +143,10 @@ export function StoryCanvasEncoder({
           )
             return;
           if (message.type === "error") fail(message.message);
+          if (message.type === "tidied" && tidy) {
+            life.current!.settled = true;
+            tidy.onResult(message.move);
+          }
           if (message.type === "edited") {
             life.current!.settled = true;
             callbacks.current.onResult(message.yjsUpdateBase64);

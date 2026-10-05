@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { canvasTidyBaseline } from "./story-canvas-tidy";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import {
@@ -17,6 +18,10 @@ export const canvasPositionDraftSchema = z
   .object({
     edit: canvasPositionEditSchema,
     baseline: z.string(),
+    tidy: z
+      .object({ selection: z.array(z.string()), baseline: z.string() })
+      .strict()
+      .optional(),
     command: canvasUpdateSchema.optional(),
   })
   .strict();
@@ -100,16 +105,33 @@ export function canvasPositionRecovery(
   };
   return {
     read: store.read,
-    stage: (snapshot: CanvasSnapshot, edit: CanvasPositionEdit) => {
+    stage: (snapshot: CanvasSnapshot, edit: CanvasPositionEdit, selection?: readonly string[]) => {
       if (store.read()) throw Error("Finish or discard the saved movement first.");
       available();
-      store.write({ edit, baseline: canvasPositionBaseline(snapshot, edit) });
+      store.write({
+        edit,
+        baseline: canvasPositionBaseline(snapshot, edit),
+        ...(selection
+          ? {
+              tidy: {
+                selection: [...selection],
+                baseline: canvasTidyBaseline(snapshot, selection),
+              },
+            }
+          : {}),
+      });
     },
     validate: (snapshot: CanvasSnapshot) => {
       const draft = requireDraft();
       available(draft.command);
       if (!draft.command && canvasPositionBaseline(snapshot, draft.edit) !== draft.baseline)
         throw Error("Canvas positions changed. Discard the saved movement and try again.");
+      if (
+        !draft.command &&
+        draft.tidy &&
+        canvasTidyBaseline(snapshot, draft.tidy.selection) !== draft.tidy.baseline
+      )
+        throw Error("Canvas layout changed. Discard the saved movement and tidy again.");
       return draft;
     },
     prepare: (command: CanvasUpdateCommand) => {

@@ -1,4 +1,7 @@
 {
+  "storyCanvas.map.tidy": "Tidy canvas",
+  "storyCanvas.map.tidySelection": "Tidy selected cards",
+  "storyCanvas.map.tidying": "Arranging cards…",
   "storyCanvas.createType.uploadedAsset": "Import media",
   "storyCanvas.upload.pickOne": "Choose one image, video or audio file.",
   "storyCanvas.upload.formats": "JPG, PNG or WebP up to 30 MiB; MP4 or MOV up to 2 GiB; MP3 or WAV up to 15 MiB.",

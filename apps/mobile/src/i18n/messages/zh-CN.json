@@ -1,4 +1,7 @@
 {
+  "storyCanvas.map.tidy": "整理画布",
+  "storyCanvas.map.tidySelection": "整理所选卡片",
+  "storyCanvas.map.tidying": "正在整理卡片…",
   "storyCanvas.createType.uploadedAsset": "导入媒体",
   "storyCanvas.upload.pickOne": "请选择一个图片、视频或音频文件。",
   "storyCanvas.upload.formats": "JPG、PNG 或 WebP 最大 30 MiB；MP4 或 MOV 最大 2 GiB；MP3 或 WAV 最大 15 MiB。",

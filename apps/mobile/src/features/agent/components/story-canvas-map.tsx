@@ -1,3 +1,5 @@
+import { StoryCanvasTidy } from "./story-canvas-tidy";
+import { canvasTidyRequest } from "../lib/story-canvas-tidy";
 import type { CanvasPositionEdit } from "../../../../canvas-editor/position-schema";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { Modal, PanResponder, Pressable, View, type GestureResponderEvent } from "react-native";
@@ -45,15 +47,18 @@ export function StoryCanvasMap({
   close,
   inspect,
   move,
+  generation,
 }: {
   loaded: CanvasLoaded;
   close(): void;
   inspect(nodeId: string): void;
-  move?(edit: CanvasPositionEdit): void;
+  move?(edit: CanvasPositionEdit, tidySelection?: string[]): void;
+  generation?: number;
 }) {
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [tidying, setTidying] = useState<string[]>();
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [movingGroup, setMovingGroup] = useState<string>();
@@ -134,7 +139,30 @@ export function StoryCanvasMap({
             label={t("storyCanvas.map.zoomIn")}
             onPress={() => setCamera(zoomCanvasCamera(visible, 1.5))}
           />
-          {move && !moving && (
+          {move &&
+            generation !== undefined &&
+            !moving &&
+            !tidying &&
+            !!projection.value?.nodes.length && (
+              <MapAction
+                label={t(
+                  selecting && selectedIds.length > 1
+                    ? "storyCanvas.map.tidySelection"
+                    : "storyCanvas.map.tidy"
+                )}
+                onPress={() => {
+                  try {
+                    const selection = selecting ? selectedIds : [];
+                    canvasTidyRequest(loaded.snapshot, selection);
+                    setMovementError(undefined);
+                    setTidying(selection);
+                  } catch (cause) {
+                    setMovementError(cause instanceof Error ? cause.message : String(cause));
+                  }
+                }}
+              />
+            )}
+          {move && !moving && !tidying && (
             <MapAction
               label={t(
                 selecting ? "storyCanvas.map.cancelSelection" : "storyCanvas.map.selectCards"
@@ -147,6 +175,29 @@ export function StoryCanvasMap({
             />
           )}
         </View>
+        {tidying && generation !== undefined && (
+          <>
+            <ThemedText type="small">{t("storyCanvas.map.tidying")}</ThemedText>
+            <StoryCanvasTidy
+              loaded={loaded}
+              selection={tidying}
+              generation={generation}
+              title={t("storyCanvas.map.tidy")}
+              onError={(message) => {
+                setTidying(undefined);
+                setMovementError(message);
+              }}
+              onResult={(edit) => {
+                try {
+                  move?.(edit, tidying);
+                } catch (cause) {
+                  setMovementError(cause instanceof Error ? cause.message : String(cause));
+                }
+                setTidying(undefined);
+              }}
+            />
+          </>
+        )}
         {selecting && (
           <ThemedText type="small">
             {t("storyCanvas.map.selectedCount").replace("{count}", String(selectedIds.length))}
@@ -315,6 +366,7 @@ export function StoryCanvasMap({
                   selected: selecting ? selectedIds.includes(item.id) : selected === item.id,
                 }}
                 onPress={() => {
+                  if (tidying) return;
                   if (selecting) {
                     const ids = selectedIds.includes(item.id)
                       ? selectedIds.filter((id) => id !== item.id)
@@ -336,7 +388,7 @@ export function StoryCanvasMap({
             <ThemedText type="small" numberOfLines={2}>
               {node.text}
             </ThemedText>
-            {move && (
+            {move && !tidying && (
               <MapAction
                 label={t(
                   moving
@@ -353,7 +405,7 @@ export function StoryCanvasMap({
                 }}
               />
             )}
-            {move && group && !moving && !selecting && (
+            {move && group && !moving && !selecting && !tidying && (
               <MapAction
                 label={t("storyCanvas.map.moveGroup")}
                 onPress={() => {
