@@ -15,7 +15,7 @@ vi.mock("../api/story-asset-mutations", () => ({
   assetMutationPending: () => ({ read: h.read, save: h.save, submit: h.submit, clear: h.clear }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-const scope = { projectId: "project", chapterId: "chapter", generation: 1 };
+let scope = { projectId: "project", chapterId: "chapter", generation: 1 };
 const command: AssetCommand = {
   action: "archive",
   assetId: "asset",
@@ -37,6 +37,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  scope = { projectId: "project", chapterId: "chapter", generation: 1 };
   h.read.mockReturnValue(null);
   h.submit.mockResolvedValue({});
   host = document.createElement("div");
@@ -88,4 +89,83 @@ it("keeps edits locked when recovery cannot be read", async () => {
   await act(async () => result.submit(command));
   expect(h.save).not.toHaveBeenCalled();
   expect(result.error).toBe("Corrupt recovery");
+});
+
+it("rejects a delayed discard confirmation after changing chapters", async () => {
+  h.read.mockReturnValue(command);
+  await render();
+  const oldClear = result.clear;
+  const next = { ...command, clientKey: "next-key", assetId: "next-asset" };
+  scope = { ...scope, chapterId: "next-chapter" };
+  h.read.mockReturnValue(next);
+  await render();
+  await act(async () => oldClear());
+  expect(h.clear).not.toHaveBeenCalled();
+  expect(h.onSaved).not.toHaveBeenCalled();
+  expect(result.pending).toEqual(next);
+  await act(async () => result.clear());
+  expect(h.clear).toHaveBeenCalledWith("next-key");
+});
+it("rejects retained submissions after edit permission is removed", async () => {
+  await render();
+  const oldSubmit = result.submit;
+  await render(false);
+  await act(async () => oldSubmit(command));
+  expect(h.save).not.toHaveBeenCalled();
+  expect(h.submit).not.toHaveBeenCalled();
+});
+it("invalidates discard confirmations on blur and does not revive them after returning", async () => {
+  h.read.mockReturnValue(command);
+  await render();
+  const oldClear = result.clear;
+  await render(true, false);
+  await act(async () => oldClear());
+  await render();
+  await act(async () => oldClear());
+  expect(h.clear).not.toHaveBeenCalled();
+  expect(result.pending).toEqual(command);
+});
+it("rejects discard after an account change or unmount", async () => {
+  h.read.mockReturnValue(command);
+  await render();
+  const oldClear = result.clear;
+  h.generation = 2;
+  await act(async () => oldClear());
+  expect(h.clear).not.toHaveBeenCalled();
+  h.generation = 1;
+  await act(async () => root.render(null));
+  await act(async () => oldClear());
+  expect(h.clear).not.toHaveBeenCalled();
+});
+it("hides the previous chapter's error while the next chapter loads", async () => {
+  h.submit.mockRejectedValueOnce(Error("Old chapter write failed"));
+  await render();
+  await act(async () => result.submit(command));
+  expect(result.error).toBe("Old chapter write failed");
+  scope = { ...scope, chapterId: "next-chapter" };
+  await render();
+  expect(result.error).toBeUndefined();
+  expect(result.pending).toBeNull();
+});
+it("does not let an earlier discard confirmation erase an in-flight retry", async () => {
+  h.read.mockReturnValue(command);
+  let resolve!: () => void;
+  h.submit.mockReturnValue(
+    new Promise<void>((done) => {
+      resolve = done;
+    })
+  );
+  await render();
+  const oldClear = result.clear;
+  await act(async () => {
+    result.submit(command);
+    oldClear();
+  });
+  expect(h.clear).not.toHaveBeenCalled();
+  await act(async () => oldClear());
+  expect(h.clear).not.toHaveBeenCalled();
+  await render(false);
+  await act(async () => resolve());
+  expect(result.pending).toBeNull();
+  expect(h.onSaved).toHaveBeenCalledOnce();
 });
