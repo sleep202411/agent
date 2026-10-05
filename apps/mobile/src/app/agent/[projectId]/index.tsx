@@ -84,6 +84,7 @@ export default function AgentChatScreen() {
   const chapterFromQuery = params.chapterId?.trim() ?? "";
   const {
     chapterId: chapterFromContext,
+    capabilities,
     loading: chapterLoading,
     error: chapterError,
     refresh: refreshChapter,
@@ -98,9 +99,11 @@ export default function AgentChatScreen() {
     isAgentOsId(chapterFromContext) &&
     (!isAgentOsId(chapterFromQuery) || chapterFromQuery === chapterFromContext);
   const readyProjectId = chapterReady ? projectId : "";
+  const canWrite = chapterReady && capabilities.includes("story.edit");
 
   const live = useAgentOsSession({
     projectId: readyProjectId,
+    canWrite,
     workbenchMode,
     chapterId: isAgentOsId(chapterId) ? chapterId : undefined,
   });
@@ -113,6 +116,7 @@ export default function AgentChatScreen() {
     chapterId,
     workbenchMode,
     configured: !!chapterReady,
+    canWrite,
     query: initialQuery,
     prefill: prefillDraft,
     send: live.send,
@@ -159,7 +163,7 @@ export default function AgentChatScreen() {
     (showStop || waitingUser) &&
     (authoringActivityKey != null || live.activity != null) &&
     (!live.assistantStreaming || live.session.status === "waiting_for_external" || waitingUser);
-  const composerLocked = !chapterReady || isExecuting || restoring || waitingUser;
+  const composerLocked = !canWrite || isExecuting || restoring || waitingUser;
   const composerTurn = useAgentComposerTurn(
     projectOk ? projectId : "",
     workbenchMode,
@@ -266,7 +270,7 @@ export default function AgentChatScreen() {
               conversationId={live.session.conversationId}
               status={live.session.status}
               error={live.session.error}
-              busy={isExecuting || restoring}
+              busy={!canWrite || isExecuting || restoring}
               onNewChat={live.newChat}
             />
           ),
@@ -392,6 +396,7 @@ export default function AgentChatScreen() {
                 draftScope={{ projectId, chapterId, workbenchMode }}
                 request={pendingInput}
                 busy={live.sending}
+                disabled={!canWrite}
                 onSubmit={(answers) => {
                   scrollToLatest(true);
                   void live.answerUserInput(answers);
@@ -404,6 +409,7 @@ export default function AgentChatScreen() {
                 )}
                 assetCount={proposalRun ? storyProposalAssetCount(proposalRun.proposal) : 0}
                 busy={live.sending}
+                disabled={!canWrite}
                 onResolve={(decision, responseText) => {
                   scrollToLatest(true);
                   void live.approve(decision, responseText);
@@ -413,6 +419,7 @@ export default function AgentChatScreen() {
               <AgentApprovalCard
                 approval={pendingApproval}
                 busy={live.sending}
+                disabled={!canWrite}
                 onResolve={(decision) => {
                   scrollToLatest(true);
                   void live.approve(decision);
@@ -424,9 +431,9 @@ export default function AgentChatScreen() {
               value={draft}
               onChangeText={setDraft}
               onSubmit={onSubmit}
-              placeholder={t("agent.threadPlaceholder")}
+              placeholder={t(canWrite ? "agent.threadPlaceholder" : "storyRepair.readOnly")}
               submitAccessibilityLabel={t("agent.send")}
-              busy={showStop}
+              busy={canWrite && showStop}
               onStop={() => void live.cancel()}
               stopAccessibilityLabel={t("agent.stop")}
               sendDisabled={composerLocked || composerTurn.uploading}

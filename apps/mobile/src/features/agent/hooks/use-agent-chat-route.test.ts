@@ -20,6 +20,7 @@ let projectId = "project-a";
 let query = "";
 let prefill = "Initial draft";
 let configured = true;
+let canWrite = true;
 function Probe() {
   const observed = useAgentChatRoute({
     projectId,
@@ -28,6 +29,7 @@ function Probe() {
     prefill,
     workbenchMode: "story",
     configured,
+    canWrite,
     send,
     restore,
   });
@@ -58,6 +60,7 @@ afterEach(async () => {
   query = "";
   prefill = "Initial draft";
   configured = true;
+  canWrite = true;
   vi.resetAllMocks();
 });
 it("restores on credential changes, clears private drafts and rejects retained edits", async () => {
@@ -102,11 +105,13 @@ it("waits for chapter admission and consumes the query only after recovery", asy
   expect(send).not.toHaveBeenCalled();
   expect(restore).not.toHaveBeenCalled();
   configured = true;
+  canWrite = true;
   await render();
   expect(send).toHaveBeenCalledTimes(1);
   configured = false;
   await render();
   configured = true;
+  canWrite = true;
   await render();
   expect(send).toHaveBeenCalledTimes(1);
   expect(restore).toHaveBeenCalledTimes(1);
@@ -117,6 +122,7 @@ it("preserves prefill while the default chapter resolves", async () => {
   await render();
   chapterId = "chapter-a";
   configured = true;
+  canWrite = true;
   await render();
   expect(hook.draft).toBe("Initial draft");
   expect(send).not.toHaveBeenCalled();
@@ -130,6 +136,7 @@ it("preserves an unsent draft through chapter recovery but clears it for a diffe
   expect(hook.draft).toBe("Unsent chapter draft");
   chapterId = "chapter-a";
   configured = true;
+  canWrite = true;
   await render();
   expect(hook.draft).toBe("Unsent chapter draft");
   chapterId = "";
@@ -137,6 +144,7 @@ it("preserves an unsent draft through chapter recovery but clears it for a diffe
   await render();
   chapterId = "chapter-b";
   configured = true;
+  canWrite = true;
   await render();
   expect(hook.draft).toBe("");
 });
@@ -147,6 +155,7 @@ it("does not carry a pending chapter draft across an account change", async () =
   auth.token = "bob";
   chapterId = "chapter-a";
   configured = true;
+  canWrite = true;
   await render();
   expect(hook.draft).toBe("");
 });
@@ -265,6 +274,7 @@ it("preserves chapter drafts across temporary resolution failures without leakin
   await render();
   chapterId = "chapter-b";
   configured = true;
+  canWrite = true;
   await render();
   await act(async () => hook.setDraft("Private B"));
   auth.token = "bob";
@@ -299,4 +309,18 @@ it("clears the chapter cache when leaving the project", async () => {
   chapterId = "chapter-a";
   await render();
   expect(hook.draft).toBe("");
+});
+
+it("restores view-only history and retains a route prompt without sending it on a later grant", async () => {
+  canWrite = false;
+  prefill = "";
+  query = "Create a story";
+  await render();
+  expect(restore).toHaveBeenCalled();
+  expect(send).not.toHaveBeenCalled();
+  expect(hook.draft).toBe(query);
+  canWrite = true;
+  await render();
+  expect(send).not.toHaveBeenCalled();
+  expect(hook.draft).toBe(query);
 });

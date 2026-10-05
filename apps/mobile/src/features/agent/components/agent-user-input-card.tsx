@@ -27,6 +27,7 @@ type AgentUserInputCardProps = {
   draftScope: { projectId: string; chapterId: string; workbenchMode: string };
   request: AgentOsPendingUserInput;
   busy: boolean;
+  disabled?: boolean;
   onSubmit: (answers: Record<string, string>) => void;
 };
 
@@ -57,14 +58,16 @@ function AgentUserInputView({
   busy,
   onSubmit,
   storage,
+  disabled = false,
 }: AgentUserInputCardProps & { storage?: AgentInputDraftStorage }) {
   const t = useTranslations();
   const locale = useLocale();
   const { height } = useWindowDimensions();
   const questions = request.questions;
+  const locked = busy || disabled;
   const { step, question, isLast, selected, choose, back, submit, error } = useAgentInputForm(
     questions,
-    busy,
+    locked,
     onSubmit,
     storage
   );
@@ -124,14 +127,14 @@ function AgentUserInputView({
               <Pressable
                 key={option.value}
                 accessibilityRole="radio"
-                accessibilityState={{ checked, disabled: busy }}
+                accessibilityState={{ checked, disabled: locked }}
                 aria-checked={checked}
-                disabled={busy}
+                disabled={locked}
                 onPress={() => choose(option.value)}
                 style={({ pressed }) => [
                   styles.option,
                   checked && styles.optionSelected,
-                  pressed && !busy && styles.pressed,
+                  pressed && !locked && styles.pressed,
                 ]}
               >
                 <Text style={styles.optionLabel}>
@@ -149,7 +152,7 @@ function AgentUserInputView({
         {step > 0 ? (
           <Pressable
             accessibilityRole="button"
-            disabled={busy}
+            disabled={locked}
             onPress={back}
             style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
           >
@@ -163,16 +166,16 @@ function AgentUserInputView({
         ) : null}
         <Pressable
           accessibilityRole="button"
-          disabled={!selected || busy}
+          disabled={!selected || locked}
           onPress={submit}
           style={({ pressed }) => [
             styles.submitBtn,
-            !selected || busy ? styles.submitDisabled : styles.submitEnabled,
-            pressed && selected && !busy && styles.pressed,
+            !selected || locked ? styles.submitDisabled : styles.submitEnabled,
+            pressed && selected && !locked && styles.pressed,
           ]}
         >
           {busy ? <ActivityIndicator color="#FFFFFF" size="small" style={styles.spinner} /> : null}
-          <Text style={[styles.submitText, (!selected || busy) && styles.submitTextDisabled]}>
+          <Text style={[styles.submitText, (!selected || locked) && styles.submitTextDisabled]}>
             {busy
               ? t("agent.userInputSubmitting")
               : isLast

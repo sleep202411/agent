@@ -8,6 +8,7 @@ export function useAgentChatRoute(options: {
   chapterId?: string;
   workbenchMode: string;
   configured: boolean;
+  canWrite?: boolean;
   query: string;
   prefill: string;
   send: (text: string) => Promise<boolean>;
@@ -15,6 +16,7 @@ export function useAgentChatRoute(options: {
 }) {
   const { projectId, chapterId, workbenchMode, configured, query, prefill, send, restore } =
     options;
+  const canWrite = options.canWrite !== false;
   const identity = JSON.stringify([projectId, chapterId, workbenchMode]);
   const scope = useStoryRequestScope(identity);
   const destination = useStoryRequestScope(JSON.stringify([projectId, workbenchMode]));
@@ -97,6 +99,11 @@ export function useAgentChatRoute(options: {
       const queryKey = JSON.stringify([projectId, query]);
       if (query && !consumedQueries.current.has(queryKey)) {
         consumedQueries.current.add(queryKey);
+        if (!canWrite) {
+          setDraftState((current) => current || query);
+          void actions.current.restore();
+          return;
+        }
         void actions.current.send(query).then((accepted) => {
           if (!accepted && !cancelled && active.current === scope)
             setDraftState((current) => current || query);
@@ -108,7 +115,7 @@ export function useAgentChatRoute(options: {
     return () => {
       cancelled = true;
     };
-  }, [scope, configured, projectId, query]);
+  }, [scope, configured, projectId, query, canWrite]);
 
   return { draft, setDraft, scrollResetKey: `${identity}:${previous.revision}` };
 }
