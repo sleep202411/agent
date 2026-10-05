@@ -28,6 +28,10 @@ vi.mock("@/data/interactive-film-api", () => ({
   listPublishedInteractiveFilms: () => Promise.resolve([]),
 }));
 vi.mock("@/features/experience-player", () => ({ navigateToPlay: vi.fn() }));
+// Checkout recovery has its own lifecycle tests; these tests exercise feed requests.
+vi.mock("@/features/experience-player/hooks/use-story-top-up-recovery", () => ({
+  useStoryTopUpRecovery: () => null,
+}));
 vi.mock("@/hooks/use-agent-header-action", () => ({ useAgentHeaderAction: () => null }));
 vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("@/auth", () => ({ useAuthGate: () => ({ isAuthenticated: true, openLogin: vi.fn() }) }));
