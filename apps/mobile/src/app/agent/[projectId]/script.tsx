@@ -1,3 +1,4 @@
+import { useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -8,6 +9,7 @@ import { useTranslations } from "@/i18n";
 
 export default function AgentScriptScreen() {
   const t = useTranslations();
+  const router = useRouter();
   const { projectId, chapterId, capabilities, loading, error, refresh } = useStoryChapterContext();
   return (
     <ThemedView style={{ flex: 1 }}>
@@ -26,7 +28,13 @@ export default function AgentScriptScreen() {
             projectId={projectId}
             chapterId={chapterId}
             canEdit={capabilities.includes("story.edit")}
-            onImported={refresh}
+            onImported={() => {
+              refresh();
+              router.push({
+                pathname: "/agent/[projectId]/assets",
+                params: { projectId, chapterId, mode: "story", graph: "1" },
+              });
+            }}
           />
           <StoryScriptEditor
             projectId={projectId}
