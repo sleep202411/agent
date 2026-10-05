@@ -714,3 +714,20 @@ it("aborts file selection on route blur and ignores the late picker result", asy
   expect(host.textContent).not.toContain("Retired.mp4");
   expect(h.attach).not.toHaveBeenCalled();
 });
+
+it("shows the customer's revision instructions as plain text in the conversation", async () => {
+  const reason = "Revise shot 2.\n保留结尾 <b>literal markup</b>";
+  h.messages = [
+    {
+      ...message,
+      authorId: null,
+      type: "system",
+      body: "ignored system fallback",
+      payload: { kind: "system", system: { kind: "order.revision_requested", params: { reason } } },
+    },
+  ];
+  await render();
+  expect(host.textContent).toContain(reason);
+  expect(host.textContent).not.toContain("ignored system fallback");
+  expect(host.querySelector("b")).toBeNull();
+});
