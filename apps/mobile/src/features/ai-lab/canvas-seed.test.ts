@@ -1,4 +1,5 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { appEnv } from "@/config";
 import type { AiObjectSchema } from "@repo/shared";
 import { canvasSeedDraft, readCanvasGenerationSeed } from "./canvas-seed";
 const snapshot = (data: unknown, type = "prompt") => ({
@@ -88,3 +89,73 @@ it("keeps frame references positional without shifting mention labels", () => {
 
 vi.mock("@/lib/api-client", () => ({ api: {} }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => 1 }));
+
+it.each(["blob:old-preview", "file:///cache/image.png", "/old/preview", ""])(
+  "recovers asset-backed %s previews without changing the saved canvas",
+  (url) => {
+    const source = snapshot({
+      references: {
+        referenceImages: [{ id: "ref", url, assetId: "asset/id", kind: "image" }],
+      },
+    });
+    const before = JSON.stringify(source);
+    const result = canvasSeedDraft(readCanvasGenerationSeed(source, "card").seed, "model", schema);
+    expect(result.values.referenceImages).toMatchObject([
+      {
+        url: "https://fizzdragon.com/aurora/media/assets/asset%2Fid/content",
+        assetId: "asset/id",
+        refId: "ref",
+      },
+    ]);
+    expect(result.referenceMedia[0]?.url).toBe(
+      "https://fizzdragon.com/aurora/media/assets/asset%2Fid/content"
+    );
+    expect(JSON.stringify(source)).toBe(before);
+  }
+);
+it.each(["blob:old", "file:///cache/a", "/preview", "", "data:image/png;base64,abc"])(
+  "rejects unavailable %s references without a durable asset",
+  (url) => {
+    const seed = readCanvasGenerationSeed(
+      snapshot({
+        references: {
+          referenceImages: [{ id: "ref", url }],
+        },
+      }),
+      "card"
+    ).seed;
+    expect(() => canvasSeedDraft(seed, "model", schema)).toThrow("unavailable");
+  }
+);
+
+vi.mock("expo-constants", () => ({ default: { expoConfig: {} } }));
+
+const originalBase = appEnv.api.auroraBaseUrl;
+afterEach(() => {
+  appEnv.api.auroraBaseUrl = originalBase;
+});
+it("uses the configured CN Aurora host for recovered frame and list references", () => {
+  appEnv.api.auroraBaseUrl = "https://fizzstudio.fizzspace.cn/aurora/";
+  const seed = readCanvasGenerationSeed(
+    snapshot({
+      references: {
+        startFrame: [{ id: "frame", url: "blob:gone", assetId: "frame" }],
+        referenceVideos: [{ id: "video", url: "", assetId: "video" }],
+      },
+    }),
+    "card"
+  ).seed;
+  const result = canvasSeedDraft(seed, "model", {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      startFrame: { type: "string" },
+    },
+  });
+  expect(result.values.startFrame).toBe(
+    "https://fizzstudio.fizzspace.cn/aurora/media/assets/frame/content"
+  );
+  expect(result.values.referenceVideos).toBe(
+    "https://fizzstudio.fizzspace.cn/aurora/media/assets/video/content"
+  );
+});

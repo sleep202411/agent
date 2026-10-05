@@ -143,3 +143,5 @@ it("rejects a changed document or locked card", async () => {
   expect(host.textContent).toContain("document changed");
   expect(h.composer).toBeNull();
 });
+
+vi.mock("expo-constants", () => ({ default: { expoConfig: {} } }));

@@ -1491,3 +1491,5 @@ it("does not submit a canvas job when saving its recovery identity fails", async
   expect(canvas.beforeSubmit.mock.calls[1]).toEqual(original);
   expect(h.post).toHaveBeenCalledOnce();
 });
+
+vi.mock("expo-constants", () => ({ default: { expoConfig: {} } }));

@@ -3,10 +3,11 @@ import type { AiObjectSchema } from "@repo/shared";
 import type { CanvasSnapshot } from "../../../canvas-editor/protocol";
 import { deriveInitialValues } from "./schema";
 import { skillSelection } from "./project-skills";
+import { resolveExperienceAssetUrl } from "@/config";
 
 const reference = z.object({
   id: z.string().min(1),
-  url: z.string().url(),
+  url: z.string(),
   kind: z.enum(["image", "video", "audio"]).optional(),
   assetId: z.string().optional(),
   label: z.string().optional(),
@@ -33,6 +34,23 @@ export function readCanvasGenerationSeed(snapshot: CanvasSnapshot, nodeId: strin
   if (node.data.locked) throw Error("This canvas card is locked.");
   return { mode: node.type === "prompt" ? ("image" as const) : node.type, seed: node.data };
 }
+function readyReference(row: z.infer<typeof reference>) {
+  if (row.uploading) throw Error("Finish uploading the canvas references before generating.");
+  try {
+    const url = new URL(row.url);
+    if (url.protocol === "https:" || url.protocol === "http:") return row;
+  } catch {
+    // A cached preview is not the durable identity of an uploaded asset.
+  }
+  if (row.assetId)
+    return {
+      ...row,
+      url: resolveExperienceAssetUrl(
+        `/aurora/media/assets/${encodeURIComponent(row.assetId)}/content`
+      ),
+    };
+  throw Error("This canvas reference is unavailable. Select or upload it again.");
+}
 /** Seed a new composer draft; never overwrite an existing per-card draft. */
 export function canvasSeedDraft(
   seed: CanvasGenerationSeed,
@@ -54,12 +72,11 @@ export function canvasSeedDraft(
     durationSeconds?: number;
     bytes?: number;
   }[] = [];
-  for (const [name, rows] of Object.entries(seed.references)) {
-    if (!rows.length) continue;
+  for (const [name, sourceRows] of Object.entries(seed.references)) {
+    if (!sourceRows.length) continue;
+    const rows = sourceRows.map(readyReference);
     const field = schema.properties[name];
     if (!field) throw Error(`This model does not accept the canvas reference field ${name}.`);
-    if (rows.some((row) => row.uploading))
-      throw Error("Finish uploading the canvas references before generating.");
     const entries = rows.map((row) => {
       const kind =
         row.kind ??
