@@ -4,6 +4,11 @@ import { View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import type { CandidateScope } from "../api/story-candidates-api";
 import { openStoryCanvasDocument } from "../api/story-canvas-document";
+import type { StoryCanvasDocumentState } from "../api/story-canvas-document";
+import type {
+  PlatformCanvasScope,
+  PlatformCanvasDocumentState,
+} from "../api/platform-canvas-document";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import { canvasRuntimeHtml } from "../lib/story-canvas-bridge";
 import { createCanvasHost } from "../lib/story-canvas-host";
@@ -16,12 +21,17 @@ export function StoryCanvasReader({
   runtimeError,
   onResult,
   onError,
+  platform,
 }: {
   scope: CandidateScope;
   title: string;
   runtimeError: string;
   onResult(value: CanvasLoaded): void;
   onError(message: string): void;
+  platform?: {
+    scope: PlatformCanvasScope;
+    load(scope: PlatformCanvasScope, signal: AbortSignal): Promise<PlatformCanvasDocumentState>;
+  };
 }) {
   const [sessionId] = useState(() => uuid.v4());
   const html = useMemo(() => canvasRuntimeHtml(sessionId), [sessionId]);
@@ -34,8 +44,23 @@ export function StoryCanvasReader({
   }, [onResult, onError, runtimeError]);
   const fail = useRef<() => void>(() => {});
   const { projectId, generation } = scope;
+  const workspaceId = platform?.scope.workspaceId;
+  const sectionId = platform?.scope.sectionId;
+  const documentId = platform?.scope.documentId;
+  const loadPlatform = platform?.load;
+  const invalidPlatform =
+    !!platform &&
+    (platform.scope.kind !== "platform" ||
+      platform.scope.projectId !== projectId ||
+      platform.scope.generation !== generation ||
+      !workspaceId ||
+      !sectionId ||
+      !documentId);
   useEffect(() => {
-    const scope = { projectId, generation };
+    const scope =
+      workspaceId && sectionId && documentId
+        ? { kind: "platform" as const, projectId, generation, workspaceId, sectionId, documentId }
+        : { projectId, generation };
     const controller = new AbortController();
     let settled = false;
     const current = () => !controller.signal.aborted && getAuthGeneration() === scope.generation;
@@ -53,7 +78,12 @@ export function StoryCanvasReader({
       finish(callbacks.current.runtimeError);
       controller.abort();
     }, 30000);
-    void openStoryCanvasDocument(scope, controller.signal)
+    const load: Promise<StoryCanvasDocumentState | PlatformCanvasDocumentState> = invalidPlatform
+      ? Promise.reject(Error("Canvas reader scope mismatch."))
+      : loadPlatform && scope.kind === "platform"
+        ? loadPlatform(scope, controller.signal)
+        : openStoryCanvasDocument(scope, controller.signal);
+    void load
       .then((snapshot) => {
         if (!current() || settled) return;
         host.current = createCanvasHost({
@@ -73,7 +103,16 @@ export function StoryCanvasReader({
       host.current?.dispose();
       host.current = null;
     };
-  }, [projectId, generation, sessionId]);
+  }, [
+    projectId,
+    generation,
+    sessionId,
+    workspaceId,
+    sectionId,
+    documentId,
+    loadPlatform,
+    invalidPlatform,
+  ]);
   return mounted ? (
     <View
       pointerEvents="none"

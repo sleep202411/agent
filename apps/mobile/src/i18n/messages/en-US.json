@@ -5405,5 +5405,7 @@
   "storyCanvas.panorama.reset": "Reset view",
   "storyCanvas.panorama.open": "View panorama",
   "aiLab.canvasAutosave": "Changes sync to the canvas automatically. Incomplete fields stay on this device.",
-  "aiLab.canvasSaveRetry": "Retry canvas save"
+  "aiLab.canvasSaveRetry": "Retry canvas save",
+  "platformCanvas.allCards": "All cards",
+  "platformCanvas.openWeb": "Open in Web Studio"
 }

@@ -15,6 +15,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { studioInviteTargetUrl } from "./api/studio-invite-accept-api";
+import { PlatformCanvasPanel } from "./components/platform-canvas-panel";
 import {
   changePlatformSection,
   fetchPlatformSections,
@@ -48,6 +49,7 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
     error?: string;
   }>();
   const [review, setReview] = useState<Review>();
+  const [canvas, setCanvas] = useState<{ id: string; documentId: string; title: string }>();
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
@@ -84,13 +86,14 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
     if (!active) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (!lock.current) {
-        if (review) setReview(undefined);
+        if (canvas) setCanvas(undefined);
+        else if (review) setReview(undefined);
         else onClose();
       }
       return true;
     });
     return () => sub.remove();
-  }, [active, review, onClose]);
+  }, [active, review, canvas, onClose]);
   const visible = loaded?.scope === scope ? loaded : undefined;
   const data = visible?.data;
   const changed = !!(
@@ -157,6 +160,21 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
     void submit({ snapshot: data, change: { kind: "reorder", ids } });
   }
   if (!active) return null;
+  if (canvas)
+    return (
+      <PlatformCanvasPanel
+        scope={{
+          kind: "platform",
+          projectId,
+          workspaceId,
+          generation,
+          sectionId: canvas.id,
+          documentId: canvas.documentId,
+        }}
+        title={`${name} · ${canvas.title}`}
+        close={() => setCanvas(undefined)}
+      />
+    );
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -295,6 +313,18 @@ function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
               )}
               <Action
                 label={t("studioChapters.open")}
+                disabled={busy}
+                onPress={() => {
+                  if (!current() || lock.current) return;
+                  setCanvas({
+                    id: section.id,
+                    documentId: section.canvasDocumentId,
+                    title: section.title,
+                  });
+                }}
+              />
+              <Action
+                label={t("platformCanvas.openWeb")}
                 disabled={busy}
                 onPress={() => {
                   if (!current() || lock.current) return;

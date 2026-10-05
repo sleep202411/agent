@@ -5405,5 +5405,7 @@
   "storyCanvas.panorama.reset": "重置视角",
   "storyCanvas.panorama.open": "查看全景",
   "aiLab.canvasAutosave": "更改会自动同步到画布。未填写完整的内容保留在本机。",
-  "aiLab.canvasSaveRetry": "重试保存画布"
+  "aiLab.canvasSaveRetry": "重试保存画布",
+  "platformCanvas.allCards": "全部卡片",
+  "platformCanvas.openWeb": "在网页版 Studio 中打开"
 }

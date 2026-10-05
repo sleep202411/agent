@@ -34,6 +34,7 @@ const snapshot = {
     id: id(2),
     owner: { kind: "story_project", projectId: id(1) },
     storyProjectId: id(1),
+    platformProjectId: null,
     currentSequence: 1,
     snapshotSequence: 1,
     crdtStateBase64: "AAA=",
@@ -89,6 +90,70 @@ it("waits for decoded data then releases the hidden runtime", async () => {
   await act(async () => h.receive(JSON.stringify(result)));
   expect(onResult).toHaveBeenCalledExactlyOnceWith(result);
   expect(element.querySelector("[data-frame]")).toBeNull();
+});
+it("loads a platform canvas through its scoped loader without Story bootstrap", async () => {
+  const scope = {
+    kind: "platform" as const,
+    projectId: id(1),
+    generation: 1,
+    workspaceId: id(4),
+    sectionId: id(5),
+    documentId: id(2),
+  };
+  const load = vi.fn().mockResolvedValue({
+    ...snapshot,
+    document: {
+      ...snapshot.document,
+      owner: { kind: "platform_project", projectId: id(1) },
+      storyProjectId: null,
+      platformProjectId: id(1),
+      workspaceId: id(4),
+      sectionId: id(5),
+    },
+  });
+  await act(async () =>
+    root.render(
+      <StoryCanvasReader
+        scope={scope}
+        platform={{ scope, load }}
+        title="Canvas"
+        runtimeError="Please retry"
+        onResult={onResult}
+        onError={onError}
+      />
+    )
+  );
+  expect(load).toHaveBeenCalledWith(scope, expect.any(AbortSignal));
+  expect(h.open).not.toHaveBeenCalled();
+  await ready();
+  await act(async () => h.receive(JSON.stringify(result)));
+  expect(onResult).toHaveBeenCalledExactlyOnceWith(result);
+});
+it("does not fall back to Story bootstrap for inconsistent platform identity", async () => {
+  const scope = {
+    kind: "platform" as const,
+    projectId: id(9),
+    generation: 1,
+    workspaceId: id(4),
+    sectionId: id(5),
+    documentId: id(2),
+  };
+  const load = vi.fn();
+  await act(async () =>
+    root.render(
+      <StoryCanvasReader
+        scope={{ projectId: id(1), generation: 1 }}
+        platform={{ scope, load }}
+        title="Canvas"
+        runtimeError="Please retry"
+        onResult={onResult}
+        onError={onError}
+      />
+    )
+  );
+  expect(load).not.toHaveBeenCalled();
+  expect(h.open).not.toHaveBeenCalled();
+  expect(onError).toHaveBeenCalledExactlyOnceWith("Canvas reader scope mismatch.");
 });
 it("aborts a pending read when leaving and ignores its late response", async () => {
   let resolve!: (value: typeof snapshot) => void;

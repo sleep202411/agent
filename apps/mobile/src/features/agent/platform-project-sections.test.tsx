@@ -10,6 +10,13 @@ const h = vi.hoisted(() => ({
   write: vi.fn(),
   open: vi.fn(),
   close: vi.fn(),
+  canvas: vi.fn(),
+}));
+vi.mock("./components/platform-canvas-panel", () => ({
+  PlatformCanvasPanel: (props: { close(): void }) => {
+    h.canvas(props);
+    return <button onClick={props.close}>Close canvas</button>;
+  },
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
@@ -157,10 +164,25 @@ it("viewers can open a chapter but cannot mutate", async () => {
   await render();
   expect(button("studioChapters.create")).toBeUndefined();
   expect(button("studioChapters.rename")).toBeUndefined();
-  await click("studioChapters.open");
+  await click("platformCanvas.openWeb");
   expect(h.open).toHaveBeenCalledWith(
     `https://studio.fizzdragon.com/project/${projectId}/canvas?ws=${workspaceId}&section=${rows[0].id}`
   );
+});
+it("opens the selected chapter in Mobile and returns without leaving the app", async () => {
+  await render();
+  await click("studioChapters.open");
+  expect(h.canvas.mock.lastCall?.[0].scope).toMatchObject({
+    kind: "platform",
+    projectId,
+    workspaceId,
+    sectionId: rows[0].id,
+    documentId: rows[0].canvasDocumentId,
+    generation: 1,
+  });
+  expect(h.open).not.toHaveBeenCalled();
+  await click("Close canvas");
+  expect(button("studioChapters.open")).toBeDefined();
 });
 it("retains failed edits and blocks retries until reload and explicit review", async () => {
   h.write.mockRejectedValue(new SectionWriteError("Lost response"));
