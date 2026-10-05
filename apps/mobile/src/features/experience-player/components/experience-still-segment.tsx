@@ -27,6 +27,7 @@ export function ExperienceStillSegment({
   initialPositionMs,
   initiallyCompleted,
   playbackRate = 1,
+  onSeekHandle,
 }: {
   uri: string;
   fit: VideoContentFit;
@@ -41,6 +42,7 @@ export function ExperienceStillSegment({
   initialPositionMs?: number;
   initiallyCompleted?: boolean;
   playbackRate?: number;
+  onSeekHandle?: (seek: ((positionMs: number) => boolean) | null) => void;
 }) {
   const [playableUri, setPlayableUri] = useState<string | null>(null);
   const [loadedMediaKey, setLoadedMediaKey] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export function ExperienceStillSegment({
     setLoadedMediaKey(null);
   }
   const reportLoadError = useEffectEvent(() => onLoadError());
-  useStillPlaybackClock({
+  const seek = useStillPlaybackClock({
     identity: mediaKey,
     ready: Boolean(playableUri) && loadedMediaKey === mediaKey,
     presenting,
@@ -72,6 +74,11 @@ export function ExperienceStillSegment({
     initiallyCompleted,
     playbackRate,
   });
+
+  useEffect(() => {
+    onSeekHandle?.(seek);
+    return () => onSeekHandle?.(null);
+  }, [seek, onSeekHandle]);
 
   useEffect(() => {
     const abort = new AbortController();

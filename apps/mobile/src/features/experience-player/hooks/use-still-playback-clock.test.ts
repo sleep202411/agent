@@ -1,4 +1,4 @@
-import { act, createElement } from "react";
+import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useStillPlaybackClock } from "./use-still-playback-clock";
@@ -12,11 +12,12 @@ let timelineOffsetMs = 2000;
 let initialPositionMs = 0;
 let initiallyCompleted = false;
 let playbackRate = 1;
+let seek: (positionMs: number) => boolean;
 const onDisplayed = vi.fn();
 let onHoldComplete = vi.fn();
 const onTimelineTimeMs = vi.fn();
 function Probe() {
-  useStillPlaybackClock({
+  const seekClock = useStillPlaybackClock({
     identity,
     ready,
     presenting,
@@ -29,6 +30,9 @@ function Probe() {
     initiallyCompleted,
     playbackRate,
   });
+  useEffect(() => {
+    seek = seekClock;
+  }, [seekClock]);
   return null;
 }
 async function render() {
@@ -191,5 +195,41 @@ it("resets replacement media while retaining its requested rate", async () => {
   await advance(250);
   expect(onHoldComplete).not.toHaveBeenCalled();
   await advance(250);
+  expect(onHoldComplete).toHaveBeenCalledOnce();
+});
+
+it("seeks a paused still without completing or replaying its display", async () => {
+  durationMs = 2000;
+  await render();
+  await advance(1000);
+  presenting = false;
+  await render();
+  await act(async () => {
+    expect(seek(250)).toBe(true);
+  });
+  expect(onTimelineTimeMs).toHaveBeenLastCalledWith(2250);
+  await advance(10000);
+  expect(onHoldComplete).not.toHaveBeenCalled();
+  presenting = true;
+  playbackRate = 2;
+  await render();
+  await advance(1000);
+  expect(onHoldComplete).toHaveBeenCalledOnce();
+  expect(onDisplayed).toHaveBeenCalledOnce();
+  expect(seek(0)).toBe(false);
+});
+it("does not seek unloaded media and resets the running time anchor on seek", async () => {
+  ready = false;
+  await render();
+  expect(seek(500)).toBe(false);
+  ready = true;
+  await render();
+  await advance(500);
+  await act(async () => {
+    expect(seek(0)).toBe(true);
+  });
+  await advance(500);
+  expect(onHoldComplete).not.toHaveBeenCalled();
+  await advance(500);
   expect(onHoldComplete).toHaveBeenCalledOnce();
 });

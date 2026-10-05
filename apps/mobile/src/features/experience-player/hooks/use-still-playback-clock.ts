@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef } from "react";
 
 const TICK_MS = 250;
 
@@ -90,4 +90,14 @@ export function useStillPlaybackClock({
       stop();
     };
   }, [identity, ready, presenting, durationMs, timelineOffsetMs, playbackRate]);
+  return useCallback(
+    (positionMs: number) => {
+      if (!ready || completed.current || !Number.isFinite(positionMs)) return false;
+      elapsedMs.current = Math.max(0, Math.min(durationMs, positionMs));
+      if (runningSince.current !== null) runningSince.current = performance.now();
+      onTimelineTimeMs(timelineOffsetMs + elapsedMs.current);
+      return true;
+    },
+    [ready, durationMs, timelineOffsetMs, onTimelineTimeMs]
+  );
 }

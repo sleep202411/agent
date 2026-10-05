@@ -10,7 +10,11 @@ import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
 const h = vi.hoisted(() => ({
   active: true,
-  stillProps: null as null | { onTimelineTimeMs: (timeMs: number) => void; playbackRate: number },
+  stillProps: null as null | {
+    onTimelineTimeMs: (timeMs: number) => void;
+    playbackRate: number;
+    onSeekHandle: (seek: ((positionMs: number) => boolean) | null) => void;
+  },
   player: {
     playing: false,
     playbackRate: 1,
@@ -529,4 +533,20 @@ it("accounts for both rates in an observation interval and preserves credit when
   await act(async () => handle!.seek(0));
   await act(async () => update({ currentTime: 1.6 }));
   expect(progress.mock.calls.at(-1)![0].watchedUntilMs).toBe(1500);
+});
+
+it("clamps still seeking to watched time and does not touch the video player", async () => {
+  await render("still-seek", { behavior: "hold-last-frame", durationMs: 3000 }, "image/png");
+  await advance(1000);
+  await act(async () => h.stillProps!.onTimelineTimeMs(1000));
+  const seekStill = vi.fn(() => true);
+  await act(async () => h.stillProps!.onSeekHandle(seekStill));
+  const videoPosition = h.player.currentTime;
+  await act(async () => handle!.seek(20));
+  expect(seekStill).toHaveBeenLastCalledWith(1000);
+  expect(h.player.currentTime).toBe(videoPosition);
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ positionMs: 1000, watchedUntilMs: 1000 });
+  seekStill.mockReturnValue(false);
+  await act(async () => handle!.seek(0));
+  expect(progress.mock.calls.at(-1)![0].positionMs).toBe(1000);
 });

@@ -234,6 +234,10 @@ export function ExperienceVideoRenderer({
     presentingRef.current = presenting;
     watchClock.update(presenting, playbackRate);
   }, [presenting, playbackRate, watchClock]);
+  const stillSeekRef = useRef<((positionMs: number) => boolean) | null>(null);
+  const registerStillSeek = useCallback((seek: ((positionMs: number) => boolean) | null) => {
+    stillSeekRef.current = seek;
+  }, []);
   const progressRef = useRef<ExperienceMediaCheckpoint | null>(null);
   const observedPositionRef = useRef(0);
   const progressListenerRef = useRef(onPlaybackProgress);
@@ -596,13 +600,14 @@ export function ExperienceVideoRenderer({
 
   useEffect(() => {
     if (!onPlaybackHandle) return;
-    if (isStill || !config.autoplay || terminalMode?.kind === "held") {
+    if (!config.autoplay || (!isStill && terminalMode?.kind === "held")) {
       onPlaybackHandle(renderer.instanceId, null);
       return () => onPlaybackHandle(renderer.instanceId, null);
     }
     const handle: ExperienceMediaPlaybackHandle = {
       playbackIdentity,
       play: async (options) => {
+        if (isStill) return;
         if (!presentingRef.current && !options?.userGesture) {
           resumeWhenPresentingRef.current = true;
           return;
@@ -610,6 +615,7 @@ export function ExperienceVideoRenderer({
         continuePlayback();
       },
       pause: () => {
+        if (isStill) return;
         try {
           expectedPauseRef.current = true;
           player.pause();
@@ -623,7 +629,11 @@ export function ExperienceVideoRenderer({
         const positionMs = progress
           ? clampWatchedSeek(seconds * 1000, progress.durationMs, progress.watchedUntilMs)
           : 0;
-        player.currentTime = positionMs / 1000;
+        if (isStill) {
+          if (!stillSeekRef.current?.(positionMs)) return;
+        } else {
+          player.currentTime = positionMs / 1000;
+        }
         observeProgress(positionMs, false);
       },
     };
@@ -730,6 +740,7 @@ export function ExperienceVideoRenderer({
       playbackIdentity={playbackIdentity}
       presenting={presenting}
       playbackRate={playbackRate}
+      onSeekHandle={registerStillSeek}
       initialPositionMs={playbackState.checkpoint?.positionMs}
       initiallyCompleted={playbackState.checkpoint?.completed}
       onDisplayed={handleEnd}
