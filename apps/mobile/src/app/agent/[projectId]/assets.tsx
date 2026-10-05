@@ -274,9 +274,10 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
       </ScrollView>
 
       {!detailAsset && !createKind && recovery}
-      {createKind && active && !chapterLoading && !chapterError && (
+      {createKind && (
         <AssetCreateSheet
           key={`${resourceKey}:${createKind}`}
+          visible={active && !chapterLoading && !chapterError}
           kind={createKind}
           locked={mutation.locked}
           submit={mutation.submit}

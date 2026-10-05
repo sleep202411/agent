@@ -1,6 +1,6 @@
 import { StoryCandidatesPanel } from "./story-candidates-panel";
 import { StoryAssetMediaVersions } from "./story-asset-media-versions";
-import { StoryAssetEditFields } from "./story-asset-edit-fields";
+import { StoryAssetEditFields, initialAssetEditDraft } from "./story-asset-edit-fields";
 import type { AssetCommand } from "../api/story-asset-mutations";
 import { useMemo, useState, type ReactNode } from "react";
 import { AssetGenerationPanel } from "./story-asset-generation-panel";
@@ -46,6 +46,9 @@ export function StoryAssetSpecDetailSheet({
   const insets = useSafeAreaInsets();
   const [candidateId, setCandidateId] = useState<string>();
   const [purpose, setPurpose] = useState<"primary" | "turnaround">();
+  // The route keys this sheet by chapter, asset and version. Retain fields
+  // while an inactive visit hides the modal and unmounts its contents.
+  const draftState = useState(() => initialAssetEditDraft(asset));
   const baseScope = generation?.scope,
     assetId = asset?.id;
   const scope = useMemo(
@@ -155,6 +158,7 @@ export function StoryAssetSpecDetailSheet({
                   <StoryAssetEditFields
                     key={`${asset.id}:${asset.version}`}
                     asset={asset}
+                    draftState={draftState}
                     onSaveCandidate={generation ? setCandidateId : undefined}
                     {...editing}
                     onGenerate={generation && !generation.locked ? setPurpose : undefined}

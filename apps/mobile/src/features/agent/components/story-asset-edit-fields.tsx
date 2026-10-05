@@ -1,5 +1,5 @@
 import { AssetCandidatePicker } from "./story-asset-candidate-picker";
-import { useState } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
 import { Alert, Pressable, TextInput, View } from "react-native";
 import { StoryAssetMediaVersions } from "./story-asset-media-versions";
 import { uuid } from "expo-modules-core";
@@ -8,13 +8,23 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { assetPatchInput, type AssetCommand } from "../api/story-asset-mutations";
 import type { StoryAssetSpec } from "../api/story-production-api";
+export type AssetEditDraft = { name: string; prompt: string; description: string };
+export function initialAssetEditDraft(asset: StoryAssetSpec | null): AssetEditDraft {
+  return {
+    name: asset?.name ?? "",
+    prompt: asset?.imagePrompt ?? "",
+    description: asset?.description ?? "",
+  };
+}
 export function StoryAssetEditFields({
   asset,
   locked,
   submit,
   onGenerate,
   onSaveCandidate,
+  draftState,
 }: {
+  draftState?: [AssetEditDraft, Dispatch<SetStateAction<AssetEditDraft>>];
   onSaveCandidate?: (mediaAssetId: string) => void;
   onGenerate?: (purpose: "primary" | "turnaround") => void;
   asset: StoryAssetSpec;
@@ -23,10 +33,12 @@ export function StoryAssetEditFields({
 }) {
   const t = useTranslations(),
     theme = useTheme();
-  const [name, setName] = useState(asset.name),
-    [prompt, setPrompt] = useState(asset.imagePrompt ?? ""),
-    [description, setDescription] = useState(asset.description ?? ""),
-    [error, setError] = useState<string>();
+  const localDraft = useState(() => initialAssetEditDraft(asset));
+  const [{ name, prompt, description }, setDraft] = draftState ?? localDraft;
+  const setName = (name: string) => setDraft((draft) => ({ ...draft, name }));
+  const setPrompt = (prompt: string) => setDraft((draft) => ({ ...draft, prompt }));
+  const setDescription = (description: string) => setDraft((draft) => ({ ...draft, description }));
+  const [error, setError] = useState<string>();
   const [purpose, setPurpose] = useState<"primary" | "turnaround">();
   const patch = (selectedMediaVersionId?: string | null, sourceMediaAssetId?: string) => {
     try {

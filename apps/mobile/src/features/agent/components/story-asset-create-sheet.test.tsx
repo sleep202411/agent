@@ -19,7 +19,8 @@ vi.mock("react-native", () => ({
   KeyboardAvoidingView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Modal: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Modal: ({ children, visible }: { children: ReactNode; visible: boolean }) =>
+    visible ? <div>{children}</div> : null,
   ActivityIndicator: () => <span>loading</span>,
   Alert: { alert: vi.fn() },
   Pressable: ({
@@ -65,11 +66,12 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-const render = async (locked = false) => {
+const render = async (locked = false, visible = true) => {
   await act(async () =>
     root.render(
       <AssetCreateSheet
         kind="prop"
+        visible={visible}
         locked={locked}
         submit={submit}
         onClose={() => {}}
@@ -109,4 +111,22 @@ it("locks edits during pending recovery and displays the recovery controls", asy
   expect(host.querySelector("input")!.disabled).toBe(true);
   expect(create().disabled).toBe(true);
   expect(host.textContent).toContain("recovery");
+});
+
+it("retains an unsent name when the modal hides during an inactive visit", async () => {
+  await render();
+  await fill("Draft sword");
+  await render(true, false);
+  expect(host.querySelector("input")).toBeNull();
+  await render(true);
+  expect(host.querySelector("input")?.value).toBe("Draft sword");
+  expect(create().disabled).toBe(true);
+  expect(submit).not.toHaveBeenCalled();
+  await render();
+  await act(async () => create().click());
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      input: { kind: "prop", name: "Draft sword", imagePrompt: "Draft sword" },
+    })
+  );
 });

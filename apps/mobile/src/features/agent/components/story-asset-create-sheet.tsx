@@ -21,7 +21,9 @@ export function AssetCreateSheet({
   submit,
   onClose,
   recovery,
+  visible = true,
 }: {
+  visible?: boolean;
   kind: StoryAssetSpecKind;
   locked: boolean;
   submit: (command: AssetCommand) => void;
@@ -43,7 +45,7 @@ export function AssetCreateSheet({
     }
   };
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.55)" }}
