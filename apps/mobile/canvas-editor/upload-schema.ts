@@ -38,7 +38,17 @@ export const canvasUploadCheckpointSchema = z
         storageKey: z.string().min(1),
         kind: z.enum(["ai_reference_image", "ai_reference_video", "ai_reference_audio"]),
         contentType: z.string().refine((value) => Object.hasOwn(canvasUploadPolicies, value)),
-        scope: z.object({ storyProjectId: z.string().uuid() }).strict(),
+        scope: z.union([
+          z.object({ storyProjectId: z.string().uuid() }).strict(),
+          z
+            .object({
+              workspaceId: z.string().uuid(),
+              projectId: z.string().uuid(),
+              sectionId: z.string().uuid(),
+              documentId: z.string().uuid(),
+            })
+            .strict(),
+        ]),
       })
       .strict(),
   })

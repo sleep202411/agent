@@ -1,9 +1,15 @@
 import { loadCanvasModels } from "./story-canvas-models";
 import { beforeEach, expect, it, vi } from "vitest";
-const h = vi.hoisted(() => ({ get: vi.fn(), catalog: vi.fn(), generation: 1 }));
+const h = vi.hoisted(() => ({
+  get: vi.fn(),
+  platformRead: vi.fn(),
+  catalog: vi.fn(),
+  generation: 1,
+}));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/features/ai-lab/catalog-api", () => ({ loadGenerationCatalog: h.catalog }));
+vi.mock("./platform-canvas-document", () => ({ readPlatformCanvasDocument: h.platformRead }));
 const id = "00000000-0000-4000-8000-000000000001",
   workspace = "00000000-0000-4000-8000-000000000002";
 const scope = { projectId: id, generation: 1 };
@@ -62,4 +68,23 @@ it("does not load after cancellation or ignore a catalog failure", async () => {
   await expect(loadCanvasModels(scope, new AbortController().signal)).rejects.toThrow(
     "Catalog unavailable"
   );
+});
+
+it("loads platform defaults only after validating its chapter and editor permission", async () => {
+  const platform = {
+    ...scope,
+    kind: "platform" as const,
+    workspaceId: workspace,
+    documentId: id,
+    sectionId: id,
+  };
+  const signal = new AbortController().signal;
+  await loadCanvasModels(platform, signal);
+  expect(h.platformRead).toHaveBeenCalledWith(platform, signal, true);
+  expect(h.catalog).toHaveBeenCalledWith(1, signal, workspace);
+  expect(h.get).not.toHaveBeenCalled();
+  h.platformRead.mockRejectedValue(Error("Access revoked"));
+  h.catalog.mockClear();
+  await expect(loadCanvasModels(platform, signal)).rejects.toThrow("Access revoked");
+  expect(h.catalog).not.toHaveBeenCalled();
 });

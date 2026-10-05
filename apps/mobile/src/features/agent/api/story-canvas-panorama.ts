@@ -2,12 +2,13 @@ import { z } from "zod";
 import { api, type ApiBinaryResponse } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { readStoryCanvasDocument } from "./story-canvas-document";
-import type { CanvasWriteScope } from "./story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
+import { readPlatformCanvasDocument } from "./platform-canvas-document";
 export type CanvasPanoramaSource = { url?: string; mediaAssetId?: string; title: string };
 const limit = 32 * 1024 * 1024;
 /** The isolated viewer receives image bytes only, never API tokens or cookies. */
 export async function loadCanvasPanorama(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   source: CanvasPanoramaSource,
   signal: AbortSignal
 ) {
@@ -16,7 +17,8 @@ export async function loadCanvasPanorama(
     if (getAuthGeneration() !== scope.generation) throw Error("Canvas session expired.");
   };
   current();
-  await readStoryCanvasDocument(scope, scope.documentId, signal);
+  if ("kind" in scope) await readPlatformCanvasDocument(scope, signal);
+  else await readStoryCanvasDocument(scope, scope.documentId, signal);
   current();
   let binary: ApiBinaryResponse;
   if (source.mediaAssetId) {

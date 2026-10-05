@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   post: vi.fn(),
   confirm: vi.fn(),
   read: vi.fn(),
+  platformRead: vi.fn(),
   generation: 1,
 }));
 vi.mock("@/features/ip-author/selected-media", () => ({ selectedMedia: h.source }));
@@ -14,6 +15,7 @@ vi.mock("@/lib/api-client", () => ({ api: { post: h.post } }));
 vi.mock("@/lib/media-upload", () => ({ confirmMobileMediaUpload: h.confirm }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("./story-canvas-document", () => ({ readStoryCanvasDocument: h.read }));
+vi.mock("./platform-canvas-document", () => ({ readPlatformCanvasDocument: h.platformRead }));
 const id = "00000000-0000-4000-8000-000000000001";
 const scope = { projectId: id, documentId: id, generation: 1 };
 const file = { uri: "file:///scene.mp4", name: "scene.mp4", type: "video/mp4", size: 1 };
@@ -167,4 +169,66 @@ it("rejects unsupported file formats before reading or reserving storage", async
   ).rejects.toThrow("supported");
   expect(h.source).not.toHaveBeenCalled();
   expect(h.post).not.toHaveBeenCalled();
+});
+
+const platformScope = { ...scope, kind: "platform" as const, workspaceId: id, sectionId: id };
+it("signs and confirms platform uploads with workspace headers, retaining exact retry data", async () => {
+  let saved!: CanvasUploadCheckpoint;
+  let confirmations = 0;
+  h.post.mockImplementation(async (path, options) => {
+    expect(options.headers).toEqual({ "x-fizz-workspace-id": id });
+    expect(options.data.scope).toBeUndefined();
+    if (path === "/media/upload-url") return signed;
+    expect(saved.confirmation.storageKey).toBe(options.data.storageKey);
+    if (++confirmations === 1) throw Error("Lost confirmation");
+    return { mediaAssetId: id, url: "https://storage.example/file" };
+  });
+  await expect(
+    uploadCanvasFile(platformScope, file, signal(), (value) => {
+      saved = value;
+    })
+  ).rejects.toThrow("Lost confirmation");
+  expect(saved.confirmation.scope).toEqual({
+    workspaceId: id,
+    projectId: id,
+    sectionId: id,
+    documentId: id,
+  });
+  expect((await confirmCanvasUpload(platformScope, saved, signal())).mediaAssetId).toBe(id);
+  expect(h.put).toHaveBeenCalledTimes(1);
+  expect(h.post).toHaveBeenCalledTimes(3);
+  expect(h.platformRead).toHaveBeenCalledWith(platformScope, expect.any(AbortSignal), true);
+  expect(h.read).not.toHaveBeenCalled();
+  expect(h.confirm).not.toHaveBeenCalled();
+});
+it.each(["workspaceId", "projectId", "sectionId", "documentId"])(
+  "rejects a platform upload checkpoint from another %s before dispatch",
+  async (field) => {
+    const saved = {
+      name: "scene.mp4",
+      createdAt: 1,
+      confirmation: {
+        storageKey: "key",
+        kind: "ai_reference_video" as const,
+        contentType: "video/mp4",
+        scope: {
+          workspaceId: id,
+          projectId: id,
+          sectionId: id,
+          documentId: id,
+          [field]: "00000000-0000-4000-8000-000000000002",
+        },
+      },
+    };
+    await expect(confirmCanvasUpload(platformScope, saved, signal())).rejects.toThrow("mismatch");
+    expect(h.post).not.toHaveBeenCalled();
+  }
+);
+it("blocks platform upload before signing if editor access is revoked", async () => {
+  h.platformRead.mockRejectedValue(Error("Access revoked"));
+  await expect(uploadCanvasFile(platformScope, file, signal(), vi.fn())).rejects.toThrow(
+    "Access revoked"
+  );
+  expect(h.post).not.toHaveBeenCalled();
+  expect(h.put).not.toHaveBeenCalled();
 });

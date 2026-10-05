@@ -4,29 +4,47 @@ import { api } from "@/lib/api-client";
 import { confirmMobileMediaUpload, type MobileUploadFile } from "@/lib/media-upload";
 import { selectedMedia } from "@/features/ip-author/selected-media";
 import { canvasUploadedAssetSchema } from "../../../../canvas-editor/upload-schema";
-import type { CanvasWriteScope } from "./story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
+import { readPlatformCanvasDocument } from "./platform-canvas-document";
+import { canvasUploadOwner, canvasUploadScopeMatches } from "../lib/canvas-upload-scope";
 import { readStoryCanvasDocument } from "./story-canvas-document";
 import {
   canvasUploadPolicies as policies,
   canvasUploadCheckpointSchema,
   type CanvasUploadCheckpoint,
 } from "../../../../canvas-editor/upload-schema";
-function current(scope: CanvasWriteScope, signal: AbortSignal) {
+function current(scope: CanvasEditScope, signal: AbortSignal) {
   signal.throwIfAborted();
   if (getAuthGeneration() !== scope.generation) throw Error("Canvas upload session expired.");
 }
 export async function confirmCanvasUpload(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   raw: CanvasUploadCheckpoint,
   signal: AbortSignal
 ) {
   current(scope, signal);
   const saved = canvasUploadCheckpointSchema.parse(raw);
-  if (saved.confirmation.scope.storyProjectId !== scope.projectId)
-    throw Error("Canvas upload project mismatch.");
-  await readStoryCanvasDocument(scope, scope.documentId, signal);
+  if (!canvasUploadScopeMatches(scope, saved)) throw Error("Canvas upload project mismatch.");
+  if ("kind" in scope) await readPlatformCanvasDocument(scope, signal, true);
+  else await readStoryCanvasDocument(scope, scope.documentId, signal);
   current(scope, signal);
-  const receipt = await confirmMobileMediaUpload(saved.confirmation, signal);
+  const { storageKey, kind, contentType } = saved.confirmation;
+  const confirmation = { storageKey, kind, contentType };
+  const receipt =
+    "kind" in scope
+      ? z.object({ mediaAssetId: z.string().uuid(), url: z.string() }).parse(
+          await api.post("/media/confirm", {
+            service: "aurora",
+            signal,
+            retry: false,
+            headers: { "x-fizz-workspace-id": scope.workspaceId },
+            data: confirmation,
+          })
+        )
+      : await confirmMobileMediaUpload(
+          { ...confirmation, scope: { storyProjectId: scope.projectId } },
+          signal
+        );
   current(scope, signal);
   return canvasUploadedAssetSchema.parse({
     mediaAssetId: receipt.mediaAssetId,
@@ -38,7 +56,7 @@ export async function confirmCanvasUpload(
 }
 /** File-backed on native. Persist the confirmation before sending it; retries never repeat PUT. */
 export async function uploadCanvasFile(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   file: MobileUploadFile,
   signal: AbortSignal,
   checkpoint: (saved: CanvasUploadCheckpoint) => void
@@ -70,7 +88,8 @@ export async function uploadCanvasFile(
     source.size > policy[1] * 1024 * 1024
   )
     throw Error(`Select a non-empty file no larger than ${policy[1]} MiB.`);
-  await readStoryCanvasDocument(scope, scope.documentId, signal);
+  if ("kind" in scope) await readPlatformCanvasDocument(scope, signal, true);
+  else await readStoryCanvasDocument(scope, scope.documentId, signal);
   current(scope, signal);
   const kind = `ai_reference_${policy[0]}` as const;
   const signed = z
@@ -91,12 +110,13 @@ export async function uploadCanvasFile(
         service: "aurora",
         signal,
         retry: false,
+        headers: "kind" in scope ? { "x-fizz-workspace-id": scope.workspaceId } : undefined,
         data: {
           kind,
           contentType: type,
           fileName: file.name.trim(),
           sizeBytes: source.size,
-          scope: { storyProjectId: scope.projectId },
+          ...("kind" in scope ? {} : { scope: { storyProjectId: scope.projectId } }),
         },
       })
     );
@@ -117,7 +137,7 @@ export async function uploadCanvasFile(
       storageKey: signed.storageKey,
       kind,
       contentType: type,
-      scope: { storyProjectId: scope.projectId },
+      scope: canvasUploadOwner(scope),
     },
   });
   checkpoint(saved);

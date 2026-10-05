@@ -18,7 +18,7 @@ export function StoryCanvasMediaLibrary({
   assets: CanvasLibraryAsset[];
   visible: boolean;
   canEdit: boolean;
-  onSaveCandidate: (mediaAssetId: string) => void;
+  onSaveCandidate?: (mediaAssetId: string) => void;
   onAdd?: (asset: CanvasLibraryAsset) => void;
   onPreview?: (asset: CanvasLibraryAsset) => void;
   onPreviewPanorama?: (asset: CanvasLibraryAsset) => void;
@@ -127,7 +127,7 @@ export function StoryCanvasMediaLibrary({
               <ThemedText type="small">{t("storyCanvas.library.add")}</ThemedText>
             </Pressable>
           )}
-          {canEdit && asset.mediaAssetId && (
+          {canEdit && onSaveCandidate && asset.mediaAssetId && (
             <Pressable
               accessibilityRole="button"
               onPress={() => onSaveCandidate(asset.mediaAssetId!)}

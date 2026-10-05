@@ -6,7 +6,8 @@ import {
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import { canvasUpdateSchema, type CanvasSnapshot } from "../../../../canvas-editor/protocol";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "./story-canvas-draft";
+import { canvasUploadScopeMatches } from "./canvas-upload-scope";
 
 export const canvasCreateDraftSchema = z
   .object({
@@ -30,16 +31,18 @@ export const canvasCreateDraftSchema = z
   );
 export type CanvasCreateDraft = z.infer<typeof canvasCreateDraftSchema>;
 export function canvasCreateDraftStore(
-  scope: CanvasWriteScope,
+  scope: CanvasEditScope,
   userId: string,
   storage: DurableRecord = durableRecord(
-    "story-canvas-create-draft",
+    "kind" in scope ? "platform-canvas-create-draft" : "story-canvas-create-draft",
     userId,
-    `${scope.projectId}:${scope.documentId}`
+    "kind" in scope
+      ? `${scope.workspaceId}:${scope.projectId}:${scope.sectionId}:${scope.documentId}`
+      : `${scope.projectId}:${scope.documentId}`
   )
 ) {
   const scopedDraft = canvasCreateDraftSchema.refine(
-    (draft) => !draft.upload || draft.upload.confirmation.scope.storyProjectId === scope.projectId,
+    (draft) => !draft.upload || canvasUploadScopeMatches(scope, draft.upload),
     "Canvas upload project mismatch."
   );
   const current = () => {

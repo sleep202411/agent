@@ -1,3 +1,4 @@
+import { durableRecord } from "@/lib/durable-record";
 import { beforeEach, expect, it, vi } from "vitest";
 import { canvasCreateDraftStore, canvasAppendPosition } from "./story-canvas-create-draft";
 const h = vi.hoisted(() => ({ generation: 1 }));
@@ -79,4 +80,47 @@ it("keeps library source identity and frozen update after reopening", () => {
     canvasCreateDraftStore(scope, "user", storage).write({ ...library, assetId: undefined })
   ).toThrow();
   expect(canvasCreateDraftStore(scope, "user", storage).read()).toEqual(library);
+});
+
+it("isolates platform creation drafts and rejects another chapter's upload checkpoint", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const platform = {
+    kind: "platform" as const,
+    projectId: id,
+    workspaceId: id,
+    documentId: id,
+    sectionId: id,
+    generation: 1,
+  };
+  vi.mocked(durableRecord).mockReturnValue(storage);
+  const store = canvasCreateDraftStore(platform, "user");
+  store.write(draft);
+  expect(durableRecord).toHaveBeenLastCalledWith(
+    "platform-canvas-create-draft",
+    "user",
+    `${id}:${id}:${id}:${id}`
+  );
+  expect(store.read()).toEqual(draft);
+  const upload = {
+    name: "photo.png",
+    createdAt: 1,
+    confirmation: {
+      storageKey: "key",
+      contentType: "image/png",
+      kind: "ai_reference_image" as const,
+      scope: { workspaceId: id, projectId: id, sectionId: id, documentId: id },
+    },
+  };
+  store.write({ ...draft, type: "uploadedAsset", upload });
+  expect(store.read()?.upload).toEqual(upload);
+  expect(() =>
+    canvasCreateDraftStore(
+      { ...platform, sectionId: "00000000-0000-4000-8000-000000000002" },
+      "user",
+      storage
+    ).read()
+  ).toThrow("mismatch");
+  expect(() =>
+    canvasCreateDraftStore({ projectId: id, documentId: id, generation: 1 }, "user", storage).read()
+  ).toThrow("mismatch");
 });

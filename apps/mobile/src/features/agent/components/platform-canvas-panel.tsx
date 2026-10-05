@@ -18,6 +18,11 @@ import {
   canvasPositionRecovery,
 } from "../lib/story-canvas-position-draft";
 import { canvasGroupDraftStore } from "../lib/story-canvas-group-draft";
+import { StoryCanvasCreateForm } from "./story-canvas-create-form";
+import { canvasCreateDraftStore } from "../lib/story-canvas-create-draft";
+import { StoryCanvasMediaLibrary } from "./story-canvas-media-library";
+import { StoryPanoramaPreview } from "./story-panorama-preview";
+import type { CanvasPanoramaSource } from "../api/story-canvas-panorama";
 import { StoryCanvasEditForm } from "./story-canvas-edit-form";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import {
@@ -128,6 +133,11 @@ function Document({
 }) {
   const t = useTranslations(),
     theme = useTheme();
+  const [creating, setCreating] = useState(false);
+  const [createRecovery, setCreateRecovery] = useState(false);
+  const [libraryAsset, setLibraryAsset] = useState<{ id: string; name?: string }>();
+  const [tab, setTab] = useState<"nodes" | "media">("nodes");
+  const [panorama, setPanorama] = useState<CanvasPanoramaSource>();
   const [positioning, setPositioning] = useState(false);
   const [grouping, setGrouping] = useState(false);
   const [positionRecovery, setPositionRecovery] = useState(false);
@@ -178,6 +188,7 @@ function Document({
                 setRecovery(canvasDraftStore(scope, userId).read()?.edit);
                 setPositionRecovery(!!canvasPositionDraftStore(scope, userId).read());
                 setGroupRecovery(!!canvasGroupDraftStore(scope, userId).read());
+                setCreateRecovery(!!canvasCreateDraftStore(scope, userId).read());
                 setLoaded(result);
               } catch (cause) {
                 setError(cause instanceof Error ? cause.message : String(cause));
@@ -194,6 +205,20 @@ function Document({
       )}
       {loaded && overview && (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          {canEdit && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setLibraryAsset(undefined);
+                setCreating(true);
+              }}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <ThemedText type="small">
+                {t(createRecovery ? "storyCanvas.resumeCreate" : "storyCanvas.create")}
+              </ThemedText>
+            </Pressable>
+          )}
           {canEdit && recovery && (
             <Pressable
               accessibilityRole="button"
@@ -235,89 +260,139 @@ function Document({
           >
             <ThemedText type="small">{t("storyCanvas.map.title")}</ThemedText>
           </Pressable>
-          {!overview.nodes.length && <ThemedText type="small">{t("storyCanvas.empty")}</ThemedText>}
-          {(selected ? overview.nodes.filter((node) => node.id === selected) : overview.nodes).map(
-            (node) => (
-              <View
-                key={node.id}
+          <View style={{ flexDirection: "row", gap: 16 }}>
+            {(["nodes", "media"] as const).map((value) => (
+              <Pressable
+                key={value}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: tab === value }}
+                onPress={() => setTab(value)}
                 style={{
-                  backgroundColor: theme.backgroundElement,
-                  padding: 12,
-                  borderRadius: 8,
-                  gap: 8,
+                  minHeight: 44,
+                  justifyContent: "center",
+                  borderBottomWidth: tab === value ? 2 : 0,
+                  borderColor: theme.brand,
                 }}
               >
-                <ThemedText type="smallBold">{node.title}</ThemedText>
-                {node.media.map((media, index) => (
-                  <Pressable
-                    key={media.id}
-                    accessibilityRole="button"
-                    onPress={() =>
-                      setMediaPreview({ node: { nodeId: node.id, mediaKey: media.id } })
-                    }
-                    style={{ minHeight: 44, justifyContent: "center" }}
-                  >
-                    <ThemedText type="small">
-                      {t("storyCandidates.preview")}
-                      {node.media.length > 1 ? ` ${index + 1}` : ""}
-                    </ThemedText>
-                  </Pressable>
-                ))}
-                {canEdit && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: actions === node.id }}
-                    onPress={() => setActions(actions === node.id ? undefined : node.id)}
-                    style={{ minHeight: 44, justifyContent: "center" }}
-                  >
-                    <ThemedText type="small">{t("platformCanvas.editCard")}</ThemedText>
-                  </Pressable>
-                )}
-                {canEdit && actions === node.id && (
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-                    {(
-                      [
-                        ...(node.canRename
-                          ? [{ kind: "rename", label: "storyCanvas.rename" }]
-                          : []),
-                        ...(node.canEditText
-                          ? [{ kind: "text", label: "storyCanvas.editNote" }]
-                          : []),
-                        ...(node.canEditPrompt
-                          ? [{ kind: "prompt", label: "storyCanvas.editPrompt" }]
-                          : []),
-                        ...(node.type === "shot"
-                          ? [
-                              ...CANVAS_SHOT_FIELDS.map((kind) => ({
-                                kind,
-                                label: `storyCanvas.shot.${kind}`,
-                              })),
-                              { kind: "reorderShot", label: "storyCanvas.shot.reorder" },
-                            ]
-                          : []),
-                        { kind: "remove", label: "storyCanvas.remove" },
-                      ] as { kind: CanvasNodeEdit["kind"]; label: Parameters<typeof t>[0] }[]
-                    ).map((action) => (
-                      <Pressable
-                        key={action.kind}
-                        accessibilityRole="button"
-                        onPress={() => setEdit({ nodeId: node.id, kind: action.kind })}
-                        style={{ minHeight: 44, justifyContent: "center" }}
-                      >
-                        <ThemedText type="small">{t(action.label)}</ThemedText>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-                {!!node.text && (
-                  <ThemedText type="small" selectable>
-                    {node.text}
-                  </ThemedText>
-                )}
-              </View>
-            )
+                <ThemedText type="small">
+                  {t(value === "nodes" ? "storyCanvas.nodes" : "storyCanvas.media")} (
+                  {value === "nodes" ? overview.nodes.length : overview.assets.length})
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
+          <StoryCanvasMediaLibrary
+            assets={overview.assets}
+            visible={tab === "media"}
+            canEdit={canEdit}
+            onAdd={(asset) => {
+              setLibraryAsset(asset);
+              setCreating(true);
+            }}
+            onPreview={(asset) => setMediaPreview({ assetId: asset.id })}
+            onPreviewPanorama={(asset) =>
+              setPanorama({
+                title: asset.name || t("storyCanvas.panorama.title"),
+                url: asset.url,
+                mediaAssetId: asset.mediaAssetId,
+              })
+            }
+          />
+          {tab === "nodes" && !overview.nodes.length && (
+            <ThemedText type="small">{t("storyCanvas.empty")}</ThemedText>
           )}
-          {selected && (
+          {tab === "nodes" &&
+            (selected ? overview.nodes.filter((node) => node.id === selected) : overview.nodes).map(
+              (node) => (
+                <View
+                  key={node.id}
+                  style={{
+                    backgroundColor: theme.backgroundElement,
+                    padding: 12,
+                    borderRadius: 8,
+                    gap: 8,
+                  }}
+                >
+                  <ThemedText type="smallBold">{node.title}</ThemedText>
+                  {node.media.map((media, index) => (
+                    <Pressable
+                      key={media.id}
+                      accessibilityRole="button"
+                      onPress={() =>
+                        setMediaPreview({ node: { nodeId: node.id, mediaKey: media.id } })
+                      }
+                      style={{ minHeight: 44, justifyContent: "center" }}
+                    >
+                      <ThemedText type="small">
+                        {t("storyCandidates.preview")}
+                        {node.media.length > 1 ? ` ${index + 1}` : ""}
+                      </ThemedText>
+                    </Pressable>
+                  ))}
+                  {node.panorama && (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setPanorama(node.panorama)}
+                      style={{ minHeight: 44, justifyContent: "center" }}
+                    >
+                      <ThemedText type="small">{t("storyCanvas.panorama.open")}</ThemedText>
+                    </Pressable>
+                  )}
+                  {canEdit && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: actions === node.id }}
+                      onPress={() => setActions(actions === node.id ? undefined : node.id)}
+                      style={{ minHeight: 44, justifyContent: "center" }}
+                    >
+                      <ThemedText type="small">{t("platformCanvas.editCard")}</ThemedText>
+                    </Pressable>
+                  )}
+                  {canEdit && actions === node.id && (
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                      {(
+                        [
+                          ...(node.canRename
+                            ? [{ kind: "rename", label: "storyCanvas.rename" }]
+                            : []),
+                          ...(node.canEditText
+                            ? [{ kind: "text", label: "storyCanvas.editNote" }]
+                            : []),
+                          ...(node.canEditPrompt
+                            ? [{ kind: "prompt", label: "storyCanvas.editPrompt" }]
+                            : []),
+                          ...(node.type === "shot"
+                            ? [
+                                ...CANVAS_SHOT_FIELDS.map((kind) => ({
+                                  kind,
+                                  label: `storyCanvas.shot.${kind}`,
+                                })),
+                                { kind: "reorderShot", label: "storyCanvas.shot.reorder" },
+                              ]
+                            : []),
+                          { kind: "remove", label: "storyCanvas.remove" },
+                        ] as { kind: CanvasNodeEdit["kind"]; label: Parameters<typeof t>[0] }[]
+                      ).map((action) => (
+                        <Pressable
+                          key={action.kind}
+                          accessibilityRole="button"
+                          onPress={() => setEdit({ nodeId: node.id, kind: action.kind })}
+                          style={{ minHeight: 44, justifyContent: "center" }}
+                        >
+                          <ThemedText type="small">{t(action.label)}</ThemedText>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                  {!!node.text && (
+                    <ThemedText type="small" selectable>
+                      {node.text}
+                    </ThemedText>
+                  )}
+                </View>
+              )
+            )}
+          {selected && tab === "nodes" && (
             <Pressable
               accessibilityRole="button"
               onPress={() => setSelected(undefined)}
@@ -327,6 +402,22 @@ function Document({
             </Pressable>
           )}
         </ScrollView>
+      )}
+      {loaded && creating && canEdit && (
+        <StoryCanvasCreateForm
+          scope={scope}
+          userId={userId}
+          libraryAsset={libraryAsset}
+          close={saved}
+          saved={saved}
+        />
+      )}
+      {loaded && panorama && (
+        <StoryPanoramaPreview
+          scope={scope}
+          source={panorama}
+          close={() => setPanorama(undefined)}
+        />
       )}
       {loaded && positioning && canEdit && (
         <StoryCanvasPositionForm
@@ -381,6 +472,7 @@ function Document({
           close={() => setMapping(false)}
           inspect={(nodeId) => {
             setSelected(nodeId);
+            setTab("nodes");
             setMapping(false);
           }}
         />

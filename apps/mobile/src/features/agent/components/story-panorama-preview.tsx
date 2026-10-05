@@ -6,10 +6,10 @@ import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
 import { loadCanvasPanorama, type CanvasPanoramaSource } from "../api/story-canvas-panorama";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
 import { panoramaDocument, type PanoramaLabels } from "../lib/story-panorama-document";
 import { StoryPanoramaFrame } from "./story-panorama-frame";
-type PreviewProps = { scope: CanvasWriteScope; source: CanvasPanoramaSource; close(): void };
+type PreviewProps = { scope: CanvasEditScope; source: CanvasPanoramaSource; close(): void };
 export function StoryPanoramaPreview(props: PreviewProps) {
   const [attempt, setAttempt] = useState(0);
   const key = `${props.scope.generation}:${props.scope.documentId}:${props.source.mediaAssetId ?? props.source.url}:${attempt}`;

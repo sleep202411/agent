@@ -24,12 +24,13 @@ import {
   canvasAppendPosition,
   type CanvasCreateDraft,
 } from "../lib/story-canvas-create-draft";
-import {
-  canvasUpdatePending,
-  type CanvasWriteScope,
-  type CanvasUpdateCommand,
-} from "../api/story-canvas-update";
+import { canvasUpdatePending, type CanvasUpdateCommand } from "../api/story-canvas-update";
 import { loadCanvasModels } from "../api/story-canvas-models";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
+import {
+  openPlatformCanvasDocument,
+  platformCanvasUpdatePending,
+} from "../api/platform-canvas-document";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
@@ -41,7 +42,7 @@ export function StoryCanvasCreateForm({
   saved,
   libraryAsset,
 }: {
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   userId: string;
   close(): void;
   saved(): void;
@@ -51,7 +52,13 @@ export function StoryCanvasCreateForm({
     theme = useTheme(),
     insets = useSafeAreaInsets();
   const store = useMemo(() => canvasCreateDraftStore(scope, userId), [scope, userId]);
-  const client = useMemo(() => canvasUpdatePending(scope, userId), [scope, userId]);
+  const client = useMemo(
+    () =>
+      "kind" in scope
+        ? platformCanvasUpdatePending(scope, userId)
+        : canvasUpdatePending(scope, userId),
+    [scope, userId]
+  );
   const [initial] = useState(() => {
     try {
       return {
@@ -456,6 +463,7 @@ export function StoryCanvasCreateForm({
         {phase === "refresh" && (
           <StoryCanvasReader
             scope={scope}
+            platform={"kind" in scope ? { scope, load: openPlatformCanvasDocument } : undefined}
             title={t("storyCanvas.title")}
             runtimeError={t("storyCanvas.loadError")}
             onError={fail}

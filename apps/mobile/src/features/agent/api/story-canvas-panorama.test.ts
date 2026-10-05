@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { loadCanvasPanorama } from "./story-canvas-panorama";
-const h = vi.hoisted(() => ({ get: vi.fn(), read: vi.fn(), generation: 1, fetch: vi.fn() }));
+const h = vi.hoisted(() => ({
+  get: vi.fn(),
+  platformRead: vi.fn(),
+  read: vi.fn(),
+  generation: 1,
+  fetch: vi.fn(),
+}));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("./story-canvas-document", () => ({ readStoryCanvasDocument: h.read }));
+vi.mock("./platform-canvas-document", () => ({ readPlatformCanvasDocument: h.platformRead }));
 const id = "11111111-1111-4111-8111-111111111111",
   scope = { projectId: id, documentId: id, generation: 1 },
   source = { mediaAssetId: id, title: "Panorama" };
@@ -91,3 +98,15 @@ it("loads URL-only images anonymously and rejects oversized responses before dec
 });
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("uses the platform document grant for panorama bytes and propagates revocation", async () => {
+  const platform = { ...scope, kind: "platform" as const, workspaceId: id, sectionId: id };
+  const signal = new AbortController().signal;
+  expect(await loadCanvasPanorama(platform, source, signal)).toBe("data:image/png;base64,AQID");
+  expect(h.platformRead).toHaveBeenCalledWith(platform, signal);
+  expect(h.read).not.toHaveBeenCalled();
+  h.platformRead.mockRejectedValue(Error("Access revoked"));
+  h.get.mockClear();
+  await expect(loadCanvasPanorama(platform, source, signal)).rejects.toThrow("Access revoked");
+  expect(h.get).not.toHaveBeenCalled();
+});
