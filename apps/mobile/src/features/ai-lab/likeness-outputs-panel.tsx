@@ -69,6 +69,7 @@ function Outputs({
       return { pending: null, error: String(e) };
     }
   });
+  const [reload, setReload] = useState(0);
   const [pending, setPending] = useState(initial.pending),
     [error, setError] = useState(initial.error),
     [rows, setRows] = useState<LikenessOutputJob[]>(),
@@ -89,7 +90,7 @@ function Outputs({
       }
     );
     return () => c.abort();
-  }, [characterId, generation]);
+  }, [characterId, generation, reload]);
   const fail = (e: unknown) => {
     if (controller.current?.signal.aborted || generation !== getAuthGeneration()) return;
     setError(e instanceof Error ? e.message : String(e));
@@ -120,6 +121,9 @@ function Outputs({
         setReceipt(r.blocked);
         setConfirmation(undefined);
         setPreview(undefined);
+        setRows(undefined);
+        setError("");
+        setReload((value) => value + 1);
       },
       fail
     );
