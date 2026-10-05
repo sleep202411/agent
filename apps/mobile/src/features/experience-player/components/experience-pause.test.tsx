@@ -7,6 +7,7 @@ import {
   type ExperienceRuntimeManifest,
   type ExperienceThemeConfig,
 } from "@repo/shared/experience-runtime";
+import { initializeExperienceRuntime, type ExperienceRuntimeState } from "@repo/experience-engine";
 import { ExperiencePlayer } from "./experience-player";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import type { ExperienceSaveCheckpoint } from "../lib/experience-save-checkpoint";
@@ -18,7 +19,7 @@ const h = vi.hoisted(() => ({
   active: true,
   stage: {} as Record<string, (event: any) => any>,
   tapGuard: null as ((guard: ((x: number, y: number) => boolean) | null) => void) | null,
-  state: { currentSceneId: "scene" },
+  state: { currentSceneId: "scene" } as ExperienceRuntimeState,
   unlock: vi.fn().mockResolvedValue(undefined),
   suspend: vi.fn().mockResolvedValue(undefined),
   effects: vi.fn(),
@@ -151,10 +152,20 @@ vi.mock("@repo/shared/experience-runtime", async (importOriginal) => {
 const runtime = {
   buildId: "fixture",
   graph: {
+    entrySceneId: "scene",
     nodes: [
       {
         kind: "scene",
         sceneId: "scene",
+        gestures: [],
+        anchors: [],
+        eventBindings: [
+          {
+            bindingId: "loop",
+            on: { type: "renderer.video.completed" },
+            routes: [{ routeId: "again", actions: [{ kind: "scene.goto", sceneId: "scene" }] }],
+          },
+        ],
         renderers: [
           {
             instanceId: "video",
@@ -173,6 +184,8 @@ const runtime = {
     ],
   },
   metadata: { title: { "en-US": "Fixture" } },
+  stateDefinitions: [],
+  endings: [],
   assets: [
     { assetId: "clip", kind: "video", variants: [{ uri: "/clip.mp4", sha256: "a".repeat(64) }] },
   ],
@@ -229,7 +242,7 @@ const click = (label: string) =>
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
   h.active = true;
-  h.state = { currentSceneId: "scene" };
+  h.state = initializeExperienceRuntime(runtime, { randomSeed: "fixed" });
   h.stage = {};
   h.tapGuard = null;
   vi.clearAllMocks();
@@ -259,6 +272,13 @@ it("captures engine, audio, media and settled gestures only after Start, then re
     h.settled!(["gesture.one"]);
   });
   const snapshot = captured.mock.calls.at(-1)![0];
+  expect(snapshot.journey.anchors).toHaveLength(1);
+  expect(snapshot.journey.anchors[0]).toMatchObject({
+    sceneId: "scene",
+    state: h.state,
+    events: [],
+    playback: { sceneTimeMs: 0, media: [], settledGestureIds: [], playbackEnabled: true },
+  });
   expect(snapshot.journey.visitedNodeIds).toEqual(["scene"]);
   expect(snapshot.journey.watchedMedia[0].watchedUntilMs).toBe(500);
   expect(snapshot.playback).toMatchObject({ media: [media], settledGestureIds: ["gesture.one"] });
@@ -410,6 +430,37 @@ it("does not record a rejected renderer route as explored", async () => {
   expect(captured.mock.calls.at(-1)![0].journey.traversedEdges).toEqual([]);
   expect(captured.mock.calls.at(-1)![0].journey.visitedNodeIds).toEqual(["scene"]);
 });
+it("captures entry commands before renderer mount and does not overwrite entries on progress", async () => {
+  h.start.mockImplementationOnce(() => ({
+    state: h.state,
+    effects: [
+      { kind: "renderer.command", instanceId: "video", commandType: "open", payload: {} },
+      { kind: "renderer.command", instanceId: "video", commandType: "close", payload: {} },
+      { kind: "renderer.command", instanceId: "video", commandType: "pause", payload: {} },
+    ],
+  }));
+  await render(true, runtime, true);
+  await click("Start");
+  const entry = structuredClone(captured.mock.calls.at(-1)![0].journey.anchors[0]);
+  expect(entry.playback).toMatchObject({ playbackEnabled: false, openRendererIds: [] });
+  expect(h.mediaPresenting).toBe(false);
+  await act(async () => h.video.onPlaybackProgress(progress(500)));
+  expect(captured.mock.calls.at(-1)![0].journey.anchors[0]).toEqual(entry);
+});
+
+it("preserves the original entry anchor when continuing a mid-scene save", async () => {
+  await render(true, runtime, true);
+  await click("Start");
+  await act(async () => h.video.onPlaybackProgress(progress(500)));
+  const saved = structuredClone(captured.mock.calls.at(-1)![0]) as ExperienceSaveCheckpoint;
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await render(true, runtime, true, saved);
+  await click("Start");
+  expect(captured.mock.calls.at(-1)![0].journey.anchors).toEqual(saved.journey!.anchors);
+  expect(captured.mock.calls.at(-1)![0].playback.media[0].positionMs).toBe(500);
+});
+
 afterEach(async () => {
   await act(async () => root.unmount());
   vi.useRealTimers();

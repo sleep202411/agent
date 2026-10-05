@@ -30,6 +30,7 @@ vi.mock("../hooks/use-experience-audio-host", () => ({
     unlock: async () => {},
     suspend: async () => {},
     applyEffects: () => {},
+    checkpoint: () => ({ playbacks: [], busGains: {} }),
   }),
 }));
 vi.mock("../hooks/use-experience-preload", () => ({

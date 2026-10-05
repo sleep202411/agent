@@ -72,6 +72,7 @@ import {
 import {
   getExperienceJourneyActiveAccess,
   createExperienceJourney,
+  createExperienceJourneyAnchor,
   recordExperienceJourney,
 } from "../lib/experience-journey-model";
 import {
@@ -324,6 +325,7 @@ function ActiveExperienceRuntimePlayer({
   const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(
     () => new Set(initialPlayback?.openRendererIds)
   );
+  const openRendererIdsRef = useRef(openRendererIds);
   const [sceneTimeMs, setSceneTimeMs] = useState(initialPlayback?.sceneTimeMs ?? 0);
   const [theme, setTheme] = useState<ExperienceThemeConfig | null>(null);
   const [started, setStarted] = useState(false);
@@ -379,7 +381,7 @@ function ActiveExperienceRuntimePlayer({
   const worldEndHandlesRef = useRef(new Map<string, () => Promise<void>>());
   const pendingWorldEndsRef = useRef(new Set<string>());
   const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
-  const [playbackEnabled, setPlaybackEnabled] = useState(initialPlayback?.playbackEnabled ?? false);
+  const [playbackEnabled, setPlaybackEnabled] = useState(initialPlayback?.playbackEnabled ?? true);
   const playbackEnabledRef = useRef(playbackEnabled);
   const defaultLocale = manifest.localization.defaultLocale;
   const title = localize(manifest.metadata.title, locale, defaultLocale);
@@ -403,12 +405,6 @@ function ActiveExperienceRuntimePlayer({
 
   const applyResult = useCallback(
     (result: ExperienceEventQueueResult) => {
-      const nextJourney = recordExperienceJourney(manifest, journeyRef.current, {
-        sceneId: result.state.currentSceneId,
-        effects: result.effects,
-      });
-      journeyRef.current = nextJourney;
-      setJourney(nextJourney);
       setRuntimeState(result.state);
       applyAudioEffects(result.effects);
       result.effects.forEach((effect) => {
@@ -425,11 +421,10 @@ function ActiveExperienceRuntimePlayer({
           return;
         }
         const handle = playbackHandlesRef.current.get(effect.instanceId);
-        if (!handle) return;
         if (effect.commandType === "play") {
           playbackEnabledRef.current = true;
           setPlaybackEnabled(true);
-          if (presentingRef.current && !timelineHoldGateRef.current) {
+          if (handle && presentingRef.current && !timelineHoldGateRef.current) {
             void handle
               .play()
               .catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
@@ -439,12 +434,12 @@ function ActiveExperienceRuntimePlayer({
         if (effect.commandType === "pause") {
           playbackEnabledRef.current = false;
           setPlaybackEnabled(false);
-          handle.pause();
+          handle?.pause();
           return;
         }
         if (effect.commandType === "seek") {
           const timeMs = effect.payload.timeMs;
-          if (typeof timeMs === "number") handle.seek(timeMs / 1_000);
+          if (handle && typeof timeMs === "number") handle.seek(timeMs / 1_000);
         }
       });
       let latestSceneId: string | null = null;
@@ -455,8 +450,8 @@ function ActiveExperienceRuntimePlayer({
           return true;
         }
       );
-      setOpenRendererIds((current) => {
-        let next = new Set(current);
+      {
+        let next = new Set(openRendererIdsRef.current);
         result.effects.forEach((effect) => {
           if (effect.kind === "scene.changed") {
             next = new Set();
@@ -464,9 +459,13 @@ function ActiveExperienceRuntimePlayer({
           if (effect.kind === "renderer.command" && effect.commandType === "open") {
             next.add(effect.instanceId);
           }
+          if (effect.kind === "renderer.command" && effect.commandType === "close") {
+            next.delete(effect.instanceId);
+          }
         });
-        return next;
-      });
+        openRendererIdsRef.current = next;
+        setOpenRendererIds(next);
+      }
       if (sceneChangeEffects.length > 0) {
         checkpointEpochRef.current += sceneChangeEffects.length;
         mediaCheckpointsRef.current.clear();
@@ -480,8 +479,45 @@ function ActiveExperienceRuntimePlayer({
           latestSceneId ?? result.state.currentSceneId
         );
       }
+      // Capture synchronously from the committed engine result and fresh presentation
+      // refs. React state still describes the outgoing scene until the next render.
+      const enteredNode = findGraphNode(manifest, result.state.currentSceneId);
+      const freshEntry = sceneChangeEffects.length > 0 || (!startedRef.current && !entryCheckpoint);
+      const audio = freshEntry ? checkpointAudio() : undefined;
+      const anchor =
+        freshEntry &&
+        enteredNode?.kind === "scene" &&
+        enteredNode.renderers.length > 0 &&
+        !result.state.completedEndingId
+          ? createExperienceJourneyAnchor(manifest, {
+              state: result.state,
+              events: [],
+              playback: {
+                version: 1,
+                sceneId: enteredNode.sceneId,
+                sceneSignature: scenePlaybackSignature(enteredNode),
+                sceneTimeMs: 0,
+                fixedClockEnded: false,
+                cursor: createExperienceTimelineCursor(enteredNode.sceneId),
+                openRendererIds: [...openRendererIdsRef.current],
+                settledGestureIds: [],
+                parkedEvents: [],
+                media: [],
+                playbackEnabled: playbackEnabledRef.current,
+                rate: 1,
+                ...(audio ? { audio } : {}),
+              },
+            })
+          : undefined;
+      const nextJourney = recordExperienceJourney(manifest, journeyRef.current, {
+        sceneId: result.state.currentSceneId,
+        effects: result.effects,
+        ...(anchor ? { anchor } : {}),
+      });
+      journeyRef.current = nextJourney;
+      setJourney(nextJourney);
     },
-    [applyAudioEffects, manifest]
+    [applyAudioEffects, manifest, entryCheckpoint, checkpointAudio]
   );
 
   const run = useCallback(
@@ -549,8 +585,6 @@ function ActiveExperienceRuntimePlayer({
           if (!ok || !aliveRef.current) return;
           setRuntimeError(null);
           if (!startedRef.current) {
-            playbackEnabledRef.current = initialPlayback?.playbackEnabled ?? true;
-            setPlaybackEnabled(playbackEnabledRef.current);
             startedRef.current = true;
             setStarted(true);
           }
@@ -558,7 +592,7 @@ function ActiveExperienceRuntimePlayer({
       };
       return attempt();
     },
-    [access, applyResult, initialPlayback, manifest, suspendAudio]
+    [access, applyResult, manifest, suspendAudio]
   );
 
   useEffect(() => {
@@ -864,8 +898,6 @@ function ActiveExperienceRuntimePlayer({
           await suspendAudio();
           return;
         }
-        playbackEnabledRef.current = initialPlayback?.playbackEnabled ?? true;
-        setPlaybackEnabled(playbackEnabledRef.current);
         startedRef.current = true;
         setStarted(true);
       } catch (error) {
