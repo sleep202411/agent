@@ -35,6 +35,19 @@ function requireCurrent(generation: number, signal?: AbortSignal) {
   if (signal?.aborted || generation !== getAuthGeneration())
     throw new Error("Studio session expired or request cancelled.");
 }
+/** Read the exact workspace in an incoming link; never substitute a default. */
+export async function readStudioWorkspace(id: string, generation: number, signal: AbortSignal) {
+  z.string().uuid().parse(id);
+  requireCurrent(generation, signal);
+  const { workspace } = z
+    .object({ workspace: workspaceSchema })
+    .parse(await api.get(`/workspaces/${id}`, { ...AURORA, signal }));
+  requireCurrent(generation, signal);
+  if (workspace.id !== id || (workspace.status !== undefined && workspace.status !== "active"))
+    throw new Error("Workspace is no longer available.");
+  return workspace;
+}
+
 export async function loadAgentWorkspaces(signal?: AbortSignal): Promise<StudioWorkspace[]> {
   const generation = getAuthGeneration();
   requireCurrent(generation, signal);

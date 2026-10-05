@@ -220,3 +220,25 @@ it("opens a project-only membership link without guessing a workspace", () => {
       url: `https://studio.fizzspace.cn/zh-CN${path}`,
     });
 });
+
+it.each(["cn", "global"] as const)(
+  "opens exact workspace invitations in %s without dropping other intent",
+  (region) => {
+    expect(
+      notificationDestination(notification(`/zh-CN/canvas?ws=${crew}`), region, "zh-CN")
+    ).toEqual({ kind: "native", path: `/studio-projects?workspaceId=${crew}` });
+    const origin =
+      region === "cn" ? "https://studio.fizzspace.cn" : "https://studio.fizzdragon.com";
+    for (const path of [
+      "/canvas",
+      "/canvas?ws=bad",
+      `/canvas?ws=${crew}&ws=${crew}`,
+      `/canvas?ws=${crew}&prompt=keep`,
+      `/canvas?ws=${crew}#details`,
+    ])
+      expect(notificationDestination(notification(path), region, "en-US")).toEqual({
+        kind: "studio",
+        url: `${origin}/en-US${path}`,
+      });
+  }
+);

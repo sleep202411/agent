@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   loadAgentProjects,
+  readStudioWorkspace,
   loadAgentWorkspaces,
   createAgentProject,
   canCreateStudioProject,
@@ -168,5 +169,54 @@ it("retains story administration capability for the invitation entry", async () 
   });
   expect((await loadAgentProjects(undefined, workspaceId)).projects[0].capabilities).toContain(
     "story.admin"
+  );
+});
+
+it("reads an exact linked workspace without creating or selecting a default", async () => {
+  const workspace = {
+    id: workspaceId,
+    name: "Team",
+    isDefault: false,
+    role: "viewer",
+    status: "active",
+  };
+  h.get.mockResolvedValue({ workspace });
+  expect(await readStudioWorkspace(workspaceId, 1, new AbortController().signal)).toEqual(
+    workspace
+  );
+  expect(h.get).toHaveBeenCalledWith(
+    `/workspaces/${workspaceId}`,
+    expect.objectContaining({ service: "aurora" })
+  );
+  expect(h.post).not.toHaveBeenCalled();
+});
+it.each([
+  { id: "22222222-2222-4222-8222-222222222222" },
+  { status: "archived" },
+  { status: "suspended" },
+])("rejects mismatched or inactive linked workspace %j", async (patch) => {
+  h.get.mockResolvedValue({
+    workspace: { id: workspaceId, name: "Team", isDefault: false, ...patch },
+  });
+  await expect(readStudioWorkspace(workspaceId, 1, new AbortController().signal)).rejects.toThrow(
+    "no longer available"
+  );
+});
+it("rejects late linked-workspace responses after account changes or cancellation", async () => {
+  const workspace = { id: workspaceId, name: "Team", isDefault: false };
+  h.get.mockImplementationOnce(async () => {
+    h.generation++;
+    return { workspace };
+  });
+  await expect(readStudioWorkspace(workspaceId, 1, new AbortController().signal)).rejects.toThrow(
+    "expired"
+  );
+  const c = new AbortController();
+  h.get.mockImplementationOnce(async () => {
+    c.abort();
+    return { workspace };
+  });
+  await expect(readStudioWorkspace(workspaceId, h.generation, c.signal)).rejects.toThrow(
+    "cancelled"
   );
 });
