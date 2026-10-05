@@ -41,7 +41,7 @@ export function applyCanvasGeneration(state: string, documentId: string, raw: Ca
     const clean = <T>(value: T): T => JSON.parse(JSON.stringify(value));
     const next = clean({
       jobId: job.id,
-      submissionKey: job.idempotencyKey,
+      submissionKey: job.idempotencyKey ?? previous?.submissionKey,
       status: nextStatus,
       progress: job.progress,
       queuePosition: job.queuePosition,

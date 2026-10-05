@@ -1,3 +1,5 @@
+import { loadTrackedCanvasJobs } from "../api/story-canvas-generation";
+import type { CanvasGenerationJob } from "../../../../canvas-editor/generation-schema";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -26,7 +28,10 @@ export function StoryCanvasMediaSync({
   const t = useTranslations();
   const queue = useMemo(() => canvasReconciliation(scope, userId), [scope, userId]);
   const [attempt, setAttempt] = useState(0);
-  const [phase, setPhase] = useState<"idle" | "read" | "encode" | "save" | "error">("idle");
+  const [phase, setPhase] = useState<
+    "idle" | "read" | "jobs" | "refresh" | "encode" | "save" | "error"
+  >("idle");
+  const [jobs, setJobs] = useState<CanvasGenerationJob[]>([]);
   const [fresh, setFresh] = useState<CanvasLoaded>();
   const [error, setError] = useState<string>();
   const life = useRef<{
@@ -105,9 +110,9 @@ export function StoryCanvasMediaSync({
           </Pressable>
         </View>
       )}
-      {phase === "read" && (
+      {(phase === "read" || phase === "refresh") && (
         <StoryCanvasReader
-          key={`read:${attempt}`}
+          key={`${phase}:${attempt}`}
           scope={scope}
           title={t("storyCanvas.title")}
           runtimeError={t("storyCanvas.loadError")}
@@ -118,7 +123,22 @@ export function StoryCanvasMediaSync({
             try {
               if (!queue.canPrepare()) return idle();
               setFresh(value);
-              setPhase("encode");
+              if (phase === "refresh") {
+                setPhase("encode");
+                return;
+              }
+              setPhase("jobs");
+              const token = life.current!;
+              void loadTrackedCanvasJobs(scope, value, token.controller.signal)
+                .then((found) => {
+                  if (token.controller.signal.aborted || !current()) return;
+                  setJobs(found);
+                  // Re-read after the job lookup: another client may have started a new run.
+                  setPhase(found.length ? "refresh" : "encode");
+                })
+                .catch((cause) => {
+                  if (!token.controller.signal.aborted) failed(cause);
+                });
             } catch (cause) {
               failed(cause);
             }
@@ -127,9 +147,9 @@ export function StoryCanvasMediaSync({
       )}
       {phase === "encode" && fresh && (
         <StoryCanvasEncoder
-          key={`encode:${attempt}`}
+          key={`encode:${attempt}:${jobs[0]?.id ?? "shots"}`}
           loaded={fresh}
-          edit={{ action: "reconcileShotMedia" }}
+          edit={jobs[0] ? { action: "generation", job: jobs[0] } : { action: "reconcileShotMedia" }}
           generation={scope.generation}
           title={t("storyCanvas.title")}
           runtimeError={t("storyCanvas.loadError")}
@@ -138,7 +158,13 @@ export function StoryCanvasMediaSync({
             if (!current()) return;
             try {
               if (!queue.canPrepare()) return idle();
-              if (!update) return idle(fresh);
+              if (!update) {
+                if (jobs.length) {
+                  setJobs((value) => value.slice(1));
+                  return;
+                }
+                return idle(fresh);
+              }
               queue.prepare({ clientKey: uuid.v4(), yjsUpdateBase64: update });
               setPhase("save");
               const token = life.current!;

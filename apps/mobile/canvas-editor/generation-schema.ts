@@ -6,7 +6,7 @@ export const canvasGenerationJobSchema = z.object({
   documentId: z.string().uuid(),
   documentBlockId: z.string().min(1),
   sourceSurface: z.literal("fizzstudio-canvas"),
-  idempotencyKey: z.string().min(1),
+  idempotencyKey: z.string().min(1).optional(),
   modelId: z.string().min(1),
   type: z.enum(["image", "video", "audio"]),
   status: z.enum([
