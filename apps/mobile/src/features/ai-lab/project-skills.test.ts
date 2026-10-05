@@ -106,3 +106,36 @@ it("detects changed installed versions and default settings", () => {
   b.installations[0]!.version.checksum = "new";
   expect(skillSnapshot(a)).not.toBe(skillSnapshot(b));
 });
+
+it("selects canvas defaults without inheriting AI Lab defaults", () => {
+  const v = data();
+  v.installations[0]!.defaults[0]!.sourceSurface = "fizzstudio-canvas";
+  expect(skillRows(v, "image", undefined, "fizzstudio-canvas")[0]!.selected).toBe(true);
+  expect(skillRows(v, "image")[0]!.selected).toBe(false);
+  const excluded = toggleSkill(undefined, id, false);
+  expect(skillRows(v, "image", excluded, "fizzstudio-canvas")[0]!.selected).toBe(false);
+  v.installations[0]!.defaults[0]!.sourceSurface = "ai-lab";
+  expect(skillRows(v, "image", undefined, "fizzstudio-canvas")[0]!.selected).toBe(false);
+  v.installations[0]!.defaults[0]!.sourceSurface = null;
+  expect(skillRows(v, "image", undefined, "fizzstudio-canvas")[0]!.selected).toBe(true);
+  v.installations[0]!.version.workbenchModes = ["storyboard"];
+  expect(skillRows(v, "image", undefined, "fizzstudio-canvas")).toEqual([]);
+  expect(
+    unavailableSkillIds(v, "image", { includeInstallationIds: [id] }, "fizzstudio-canvas")
+  ).toEqual([id]);
+});
+it("rejects both included and excluded audio Skills before the server rejects a paid request", () => {
+  const v = data();
+  v.installations[0]!.version.capabilities = ["audio_generation"];
+  v.installations[0]!.defaults[0]!.scope = "audio_generation";
+  for (const surface of ["ai-lab", "fizzstudio-canvas"] as const) {
+    expect(skillRows(v, "audio", undefined, surface)).toEqual([]);
+    expect(unavailableSkillIds(v, "audio", undefined, surface)).toEqual([]);
+    expect(unavailableSkillIds(v, "audio", { includeInstallationIds: [id] }, surface)).toEqual([
+      id,
+    ]);
+    expect(unavailableSkillIds(v, "audio", { excludeInstallationIds: [id] }, surface)).toEqual([
+      id,
+    ]);
+  }
+});

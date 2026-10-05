@@ -44,11 +44,15 @@ const installations = z.object({
   installations: z.array(skillInstallation),
 });
 export type ProjectSkills = z.infer<typeof installations>;
+export type GenerationSkillSurface = "ai-lab" | "fizzstudio-canvas";
 export function skillRows(
   data: ProjectSkills,
   mode: "image" | "video" | "audio",
-  selection?: SkillSelection
+  selection?: SkillSelection,
+  sourceSurface: GenerationSkillSurface = "ai-lab"
 ) {
+  // The official jobs endpoint does not resolve Skills for audio generation.
+  if (mode === "audio") return [];
   const scope = `${mode}_generation`;
   return data.installations
     .filter(
@@ -63,7 +67,7 @@ export function skillRows(
         (d) =>
           d.scope === scope &&
           !d.workbenchMode &&
-          (!d.sourceSurface || d.sourceSurface === "ai-lab")
+          (!d.sourceSurface || d.sourceSurface === sourceSurface)
       );
       return {
         ...i,
@@ -90,9 +94,15 @@ export function toggleSkill(selection: SkillSelection | undefined, id: string, e
 export function unavailableSkillIds(
   data: ProjectSkills,
   mode: "image" | "video" | "audio",
-  selection?: SkillSelection
+  selection?: SkillSelection,
+  sourceSurface: GenerationSkillSurface = "ai-lab"
 ) {
-  const compatible = new Set(skillRows(data, mode).map((i) => i.id));
+  if (mode === "audio")
+    return [
+      ...(selection?.includeInstallationIds ?? []),
+      ...(selection?.excludeInstallationIds ?? []),
+    ];
+  const compatible = new Set(skillRows(data, mode, undefined, sourceSurface).map((i) => i.id));
   const active = new Set(data.installations.filter((i) => i.status === "active").map((i) => i.id));
   return [
     ...(selection?.includeInstallationIds ?? []).filter((id) => !compatible.has(id)),
