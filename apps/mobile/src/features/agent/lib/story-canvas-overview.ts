@@ -9,6 +9,7 @@ const node = z.object({
 const asset = z.object({
   id: z.string().min(1),
   kind: z.enum(["image", "video", "audio"]),
+  panorama: z.boolean().optional(),
   name: z.string().optional(),
   prompt: z.string().optional(),
   source: z.enum(["generated", "uploaded"]).optional(),
@@ -41,6 +42,15 @@ export function canvasOverview(snapshot: CanvasSnapshot) {
         ) ?? "";
       const generation = ["prompt", "video", "audio"].includes(value.type);
       return {
+        panorama:
+          value.type === "panorama"
+            ? {
+                title,
+                url: typeof value.data.src === "string" ? value.data.src : undefined,
+                mediaAssetId:
+                  typeof value.data.mediaAssetId === "string" ? value.data.mediaAssetId : undefined,
+              }
+            : undefined,
         shotNumber:
           value.type === "shot" ? shots.findIndex((shot) => shot.id === value.id) + 1 : undefined,
         id: value.id,

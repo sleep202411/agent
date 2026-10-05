@@ -128,3 +128,23 @@ it("reconciles changed inventory without mutating its order or filtering snapsho
   expect(host.textContent).not.toContain("Rain image");
   expect(assets.map((a) => a.id)).toEqual(["a", "b", "c"]);
 });
+
+it("opens panorama assets for read-only users without exposing candidate writes", async () => {
+  const preview = vi.fn();
+  const rows = [{ ...assets[0]!, panorama: true }];
+  await act(async () =>
+    root.render(
+      <StoryCanvasMediaLibrary
+        visible
+        assets={rows}
+        canEdit={false}
+        onSaveCandidate={save}
+        onPreviewPanorama={preview}
+      />
+    )
+  );
+  await click("storyCanvas.panorama.open");
+  expect(preview).toHaveBeenCalledExactlyOnceWith(rows[0]);
+  expect(save).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("storyCanvas.saveCandidate");
+});

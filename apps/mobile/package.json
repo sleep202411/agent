@@ -96,7 +96,9 @@
     "build:canvas-runtime": "node ./scripts/build-canvas-runtime.mjs",
     "check:canvas-runtime": "node ./scripts/build-canvas-runtime.mjs --check",
     "build:world-player": "node ./scripts/build-world-player.mjs",
-    "check:world-player": "node ./scripts/build-world-player.mjs --check"
+    "check:world-player": "node ./scripts/build-world-player.mjs --check",
+    "build:panorama-runtime": "node ./scripts/build-panorama-runtime.mjs",
+    "check:panorama-runtime": "node ./scripts/build-panorama-runtime.mjs --check"
   },
   "private": true
 }

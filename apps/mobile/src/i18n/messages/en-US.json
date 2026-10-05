@@ -5377,5 +5377,15 @@
   "storyCanvas.library.generated": "Generated",
   "storyCanvas.library.uploaded": "Uploaded",
   "storyCanvas.library.search": "Search media names or prompts",
-  "storyCanvas.library.noMatches": "No media matches these filters."
+  "storyCanvas.library.noMatches": "No media matches these filters.",
+  "storyCanvas.panorama.title": "Panorama",
+  "storyCanvas.panorama.hint": "Drag to look around. Pinch to zoom.",
+  "storyCanvas.panorama.left": "Look left",
+  "storyCanvas.panorama.right": "Look right",
+  "storyCanvas.panorama.up": "Look up",
+  "storyCanvas.panorama.down": "Look down",
+  "storyCanvas.panorama.zoomIn": "Zoom in",
+  "storyCanvas.panorama.zoomOut": "Zoom out",
+  "storyCanvas.panorama.reset": "Reset view",
+  "storyCanvas.panorama.open": "View panorama"
 }

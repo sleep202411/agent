@@ -5377,5 +5377,15 @@
   "storyCanvas.library.generated": "生成素材",
   "storyCanvas.library.uploaded": "上传素材",
   "storyCanvas.library.search": "搜索素材名称或提示词",
-  "storyCanvas.library.noMatches": "没有符合筛选条件的素材。"
+  "storyCanvas.library.noMatches": "没有符合筛选条件的素材。",
+  "storyCanvas.panorama.title": "全景",
+  "storyCanvas.panorama.hint": "拖动查看四周，双指缩放。",
+  "storyCanvas.panorama.left": "向左看",
+  "storyCanvas.panorama.right": "向右看",
+  "storyCanvas.panorama.up": "向上看",
+  "storyCanvas.panorama.down": "向下看",
+  "storyCanvas.panorama.zoomIn": "放大",
+  "storyCanvas.panorama.zoomOut": "缩小",
+  "storyCanvas.panorama.reset": "重置视角",
+  "storyCanvas.panorama.open": "查看全景"
 }
