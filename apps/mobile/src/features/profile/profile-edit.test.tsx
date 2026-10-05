@@ -4,6 +4,9 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import ProfileEditScreen from "@/app/profile-edit";
 import { profileDraft } from "./api";
 const h = vi.hoisted(() => ({
+  prevent: false,
+  remove: undefined as undefined | ((event: { data: { action: { type: string } } }) => void),
+  dispatch: vi.fn(),
   focused: true,
   generation: 1,
   authenticated: true,
@@ -22,6 +25,13 @@ vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useIsFocused: () => h.focused,
   useRouter: () => ({ back: h.back }),
+  useNavigation: () => ({ dispatch: h.dispatch }),
+}));
+vi.mock("expo-router/build/react-navigation/core/usePreventRemove", () => ({
+  usePreventRemove: (prevent: boolean, callback: typeof h.remove) => {
+    h.prevent = prevent;
+    h.remove = callback;
+  },
 }));
 vi.mock("@/auth", () => ({
   useLoginGateOnFocus: vi.fn(),
@@ -386,4 +396,62 @@ it("keeps a usable sign-in action after the guest closes the login sheet", async
   await act(async () => signIn!.click());
   expect(h.login).toHaveBeenCalledTimes(1);
   expect(h.post).not.toHaveBeenCalled();
+});
+
+it.each(["profileEdit.nickname", "profileEdit.school 1"])(
+  "protects unsaved %s during route removal",
+  async (label) => {
+    await render();
+    expect(h.prevent).toBe(false);
+    await act(async () => change(label, "Retained edit"));
+    expect(h.prevent).toBe(true);
+    const action = { type: "GO_BACK" };
+    await act(async () => h.remove!({ data: { action } }));
+    expect(h.dispatch).not.toHaveBeenCalled();
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((b) => b.textContent === "documentEditor.keepEditing")!
+        .click()
+    );
+    expect(input(label).value).toBe("Retained edit");
+    await act(async () => h.remove!({ data: { action } }));
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((b) => b.textContent === "documentEditor.discard")!
+        .click()
+    );
+    expect(h.dispatch).toHaveBeenCalledWith(action);
+    expect(h.post).not.toHaveBeenCalled();
+  }
+);
+it("blocks departure during save and lets its successful return through", async () => {
+  let finish!: () => void;
+  h.post.mockReturnValueOnce(new Promise<void>((resolve) => (finish = resolve)));
+  await render();
+  await act(async () => change("profileEdit.nickname", "Saved"));
+  await act(async () => save());
+  const action = { type: "GO_BACK" };
+  await act(async () => h.remove!({ data: { action } }));
+  expect(h.dispatch).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("documentEditor.discardQuestion");
+  await act(async () => finish());
+  await act(async () => h.remove!({ data: { action } }));
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+  expect(h.back).toHaveBeenCalledOnce();
+});
+
+it("protects availability changes and permits account retirement", async () => {
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "profileEdit.available")!
+      .click()
+  );
+  expect(h.prevent).toBe(true);
+  const action = { type: "GO_BACK" };
+  await act(async () => h.remove!({ data: { action } }));
+  expect(h.dispatch).not.toHaveBeenCalled();
+  h.generation++;
+  await act(async () => h.remove!({ data: { action } }));
+  expect(h.dispatch).toHaveBeenCalledWith(action);
 });

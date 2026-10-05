@@ -1,5 +1,6 @@
+import { usePreventRemove } from "expo-router/build/react-navigation/core/usePreventRemove";
 import { toHref } from "@/lib/navigation";
-import { Stack, useIsFocused, useRouter } from "expo-router";
+import { Stack, useIsFocused, useRouter, useNavigation } from "expo-router";
 import { useEffect, useEffectEvent, useState, useLayoutEffect, useRef } from "react";
 import {
   ActivityIndicator,
@@ -76,12 +77,35 @@ function ProfileForm() {
   const theme = useTheme();
   const operation = useAuthFormOperation("profile-edit", focused);
   const [draft, setDraft] = useState<ProfileDraft>();
+  const [originalDraft, setOriginalDraft] = useState<ProfileDraft>();
+  const [leave, setLeave] = useState<{ run(): void }>();
+  const navigation = useNavigation();
+  const [generation] = useState(auth.generation);
+  const completed = useRef(false);
+  const scroll = useRef<ScrollView>(null);
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const [originalStudy, setOriginalStudy] = useState("");
   const [editedStudy, setEditedStudy] = useState<string>();
   const [availability, setAvailability] = useState<boolean>();
   const [editedAvailability, setEditedAvailability] = useState<boolean>();
+  const dirty =
+    !!draft &&
+    (JSON.stringify(draft) !== JSON.stringify(originalDraft) ||
+      (editedStudy !== undefined && editedStudy !== originalStudy) ||
+      (editedAvailability !== undefined && editedAvailability !== availability));
+  usePreventRemove(dirty || operation.busy, ({ data }) => {
+    if (completed.current || generation !== getAuthGeneration()) {
+      navigation.dispatch(data.action);
+      return;
+    }
+    if (!focused || operation.busy) return;
+    setLeave({ run: () => navigation.dispatch(data.action) });
+  });
+  useEffect(() => {
+    if (leave) scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [leave]);
+  const locked = operation.busy || !!leave;
   const refresh = auth.refreshCurrentUser;
   const uploadScope = useRef<AbortController | null>(null);
   const [updatedImage, setUpdatedImage] = useState<ProfileImageKind>();
@@ -131,6 +155,7 @@ function ProfileForm() {
           return;
         }
         setDraft(profileDraft(user));
+        setOriginalDraft(profileDraft(user));
         setAvailability(
           "availableForWork" in user && typeof user.availableForWork === "boolean"
             ? user.availableForWork
@@ -154,7 +179,10 @@ function ProfileForm() {
         await updateProfile(draft, editedStudy, editedAvailability);
         if (getAuthGeneration() === generation) await refresh();
       },
-      () => router.back(),
+      () => {
+        completed.current = true;
+        router.back();
+      },
       (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
     );
   };
@@ -163,13 +191,43 @@ function ProfileForm() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.root}
     >
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+      <ScrollView
+        ref={scroll}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.content}
+      >
+        {leave && (
+          <View style={styles.field}>
+            <ThemedText>{t("documentEditor.discardQuestion")}</ThemedText>
+            <Pressable
+              accessibilityRole="button"
+              style={{ minHeight: 44, justifyContent: "center" }}
+              disabled={operation.busy}
+              onPress={() => setLeave(undefined)}
+            >
+              <ThemedText>{t("documentEditor.keepEditing")}</ThemedText>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              style={{ minHeight: 44, justifyContent: "center" }}
+              disabled={operation.busy}
+              onPress={() => {
+                if (!focused || operation.busy || generation !== getAuthGeneration()) return;
+                const run = leave.run;
+                setLeave(undefined);
+                run();
+              }}
+            >
+              <ThemedText>{t("documentEditor.discard")}</ThemedText>
+            </Pressable>
+          </View>
+        )}
         {!draft && !error && <ActivityIndicator />}
         {draft && (
           <View style={styles.field}>
             <Pressable
               accessibilityRole="button"
-              disabled={operation.busy}
+              disabled={locked}
               onPress={() => void changeProfileImage()}
             >
               <ThemedText type="smallBold">{t("profileEdit.avatarChange")}</ThemedText>
@@ -177,7 +235,7 @@ function ProfileForm() {
             <ThemedText>{t("profileEdit.avatarHint")}</ThemedText>
             <Pressable
               accessibilityRole="button"
-              disabled={operation.busy}
+              disabled={locked}
               onPress={() => void changeProfileImage("banner")}
             >
               <ThemedText type="smallBold">{t("profileEdit.bannerChange")}</ThemedText>
@@ -201,7 +259,7 @@ function ProfileForm() {
               <TextInput
                 accessibilityLabel={t(field.label)}
                 value={draft[field.key]}
-                editable={!operation.busy}
+                editable={!locked}
                 multiline={field.multiline}
                 onChangeText={(value) =>
                   setDraft((current) => current && { ...current, [field.key]: value })
@@ -228,9 +286,9 @@ function ProfileForm() {
               aria-checked={editedAvailability ?? availability ?? "mixed"}
               accessibilityState={{
                 checked: editedAvailability ?? availability ?? "mixed",
-                disabled: operation.busy,
+                disabled: locked,
               }}
-              disabled={operation.busy}
+              disabled={locked}
               onPress={() => setEditedAvailability(!(editedAvailability ?? availability ?? false))}
               style={[
                 styles.input,
@@ -250,16 +308,12 @@ function ProfileForm() {
           </View>
         )}
         {draft && (
-          <EducationEditor
-            study={originalStudy}
-            disabled={operation.busy}
-            onChange={setEditedStudy}
-          />
+          <EducationEditor study={originalStudy} disabled={locked} onChange={setEditedStudy} />
         )}
         {draft && (
           <Pressable
             accessibilityRole="button"
-            disabled={operation.busy}
+            disabled={locked}
             onPress={() => router.push(toHref("/profile-experience"))}
           >
             <ThemedText type="smallBold">{t("experienceEdit.manage")}</ThemedText>
@@ -284,13 +338,13 @@ function ProfileForm() {
         {draft && (
           <Pressable
             accessibilityRole="button"
-            disabled={operation.busy || !draft.nickName.trim()}
+            disabled={locked || !draft.nickName.trim()}
             onPress={() => void save()}
             style={[
               styles.button,
               {
                 backgroundColor:
-                  operation.busy || !draft.nickName.trim() ? theme.backgroundSelected : theme.brand,
+                  locked || !draft.nickName.trim() ? theme.backgroundSelected : theme.brand,
               },
             ]}
           >
