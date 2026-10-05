@@ -1,3 +1,4 @@
+import { PlaybackElapsedClock } from "../lib/playback-elapsed-clock";
 import { usePausableTimeout } from "../hooks/use-pausable-timeout";
 import { ExperienceStillSegment } from "./experience-still-segment";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
@@ -227,9 +228,12 @@ export function ExperienceVideoRenderer({
 
   const presenting = useGatedScreenActive();
   const presentingRef = useRef(presenting);
-  useEffect(() => {
+  const [watchClock] = useState(() => new PlaybackElapsedClock());
+  const observedAtRef = useRef(0);
+  useLayoutEffect(() => {
     presentingRef.current = presenting;
-  }, [presenting]);
+    watchClock.update(presenting, playbackRate);
+  }, [presenting, playbackRate, watchClock]);
   const progressRef = useRef<ExperienceMediaCheckpoint | null>(null);
   const observedPositionRef = useRef(0);
   const progressListenerRef = useRef(onPlaybackProgress);
@@ -442,12 +446,13 @@ export function ExperienceVideoRenderer({
       completed: saved?.completed ?? false,
     };
     observedPositionRef.current = position;
+    observedAtRef.current = watchClock.now();
   });
   useEffect(() => {
     initializeProgress();
   }, [playbackIdentity, terminalMode?.kind]);
   const observeProgress = useCallback(
-    (positionMs: number) => {
+    (positionMs: number, natural = true) => {
       const value = progressRef.current;
       if (!value || !Number.isFinite(positionMs)) return;
       const duration =
@@ -457,18 +462,21 @@ export function ExperienceVideoRenderer({
       value.durationMs = Math.max(0, duration);
       const next = Math.max(0, Math.min(positionMs, value.durationMs));
       const previous = observedPositionRef.current;
+      const now = watchClock.now();
       if (
+        natural &&
         presentingRef.current &&
         previous <= value.watchedUntilMs + 1 &&
         next >= previous &&
-        next - previous <= 1500
+        next - previous <= Math.max(0, now - observedAtRef.current) + 250
       )
         value.watchedUntilMs = Math.max(value.watchedUntilMs, next);
       value.positionMs = next;
       observedPositionRef.current = next;
+      observedAtRef.current = now;
       emitProgress();
     },
-    [emitProgress, isStill, player]
+    [emitProgress, isStill, player, watchClock]
   );
 
   useEffect(() => {
@@ -616,8 +624,7 @@ export function ExperienceVideoRenderer({
           ? clampWatchedSeek(seconds * 1000, progress.durationMs, progress.watchedUntilMs)
           : 0;
         player.currentTime = positionMs / 1000;
-        observedPositionRef.current = positionMs;
-        observeProgress(positionMs);
+        observeProgress(positionMs, false);
       },
     };
     onPlaybackHandle(renderer.instanceId, handle);

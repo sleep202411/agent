@@ -485,3 +485,48 @@ it("scales restored held-frame time at double speed", async () => {
   await advance(250);
   expect(progress.mock.calls.at(-1)![0]).toMatchObject({ completed: true, remainingHoldMs: 0 });
 });
+
+it("credits elapsed double-speed playback but rejects an instantaneous forward jump", async () => {
+  playbackRate = 2;
+  await render("watch-rate", { behavior: "advance" });
+  const update = (
+    h.player.addListener.mock.calls as unknown as [string, (event: unknown) => void][]
+  ).find(([name]) => name === "timeUpdate")![1];
+  await advance(1000);
+  await act(async () => update({ currentTime: 2 }));
+  expect(progress.mock.calls.at(-1)![0].watchedUntilMs).toBe(2000);
+  await act(async () => update({ currentTime: 3 }));
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ positionMs: 3000, watchedUntilMs: 2000 });
+});
+it("does not turn background time into viewing credit on resume", async () => {
+  const ending = { behavior: "advance" };
+  await render("watch-pause", ending);
+  const update = (
+    h.player.addListener.mock.calls as unknown as [string, (event: unknown) => void][]
+  ).find(([name]) => name === "timeUpdate")![1];
+  await advance(250);
+  await act(async () => update({ currentTime: 0.25 }));
+  h.active = false;
+  await render("watch-pause", ending);
+  await advance(10000);
+  h.active = true;
+  await render("watch-pause", ending);
+  await act(async () => update({ currentTime: 1.25 }));
+  expect(progress.mock.calls.at(-1)![0].watchedUntilMs).toBe(250);
+});
+it("accounts for both rates in an observation interval and preserves credit when seeking backward", async () => {
+  const ending = { behavior: "advance" };
+  await render("watch-change", ending);
+  const update = (
+    h.player.addListener.mock.calls as unknown as [string, (event: unknown) => void][]
+  ).find(([name]) => name === "timeUpdate")![1];
+  await advance(500);
+  playbackRate = 2;
+  await render("watch-change", ending);
+  await advance(500);
+  await act(async () => update({ currentTime: 1.5 }));
+  expect(progress.mock.calls.at(-1)![0].watchedUntilMs).toBe(1500);
+  await act(async () => handle!.seek(0));
+  await act(async () => update({ currentTime: 1.6 }));
+  expect(progress.mock.calls.at(-1)![0].watchedUntilMs).toBe(1500);
+});
