@@ -24,7 +24,13 @@ it("loads protected bytes after document permission without sending tokens to a 
   ).toBe("data:image/png;base64,AQID");
   expect(h.get).toHaveBeenCalledWith(
     `/media/assets/${id}/content`,
-    expect.objectContaining({ service: "aurora", responseType: "binary", signal, retry: false })
+    expect.objectContaining({
+      service: "aurora",
+      responseType: "binary",
+      params: { documentId: id },
+      signal,
+      retry: false,
+    })
   );
   expect(h.read.mock.invocationCallOrder[0]).toBeLessThan(h.get.mock.invocationCallOrder[0]!);
   expect(h.fetch).not.toHaveBeenCalled();

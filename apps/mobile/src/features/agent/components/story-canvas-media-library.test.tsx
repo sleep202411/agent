@@ -148,3 +148,25 @@ it("opens panorama assets for read-only users without exposing candidate writes"
   expect(save).not.toHaveBeenCalled();
   expect(host.textContent).not.toContain("storyCanvas.saveCandidate");
 });
+
+it("offers ordinary media previews to readers without exposing write actions", async () => {
+  const preview = vi.fn();
+  await act(async () =>
+    root.render(
+      <StoryCanvasMediaLibrary
+        visible
+        canEdit={false}
+        assets={assets}
+        onSaveCandidate={save}
+        onPreview={preview}
+      />
+    )
+  );
+  expect(host.textContent).not.toContain("storyCanvas.saveCandidate");
+  const buttons = [...host.querySelectorAll("button")].filter(
+    (b) => b.textContent === "storyCandidates.preview"
+  );
+  expect(buttons).toHaveLength(3);
+  await act(async () => buttons[0]!.click());
+  expect(preview).toHaveBeenCalledWith(assets[2]);
+});

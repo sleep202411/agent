@@ -24,6 +24,7 @@ export async function loadCanvasPanorama(
     binary = await api.get<ApiBinaryResponse>(`/media/assets/${id}/content`, {
       service: "aurora",
       responseType: "binary",
+      params: { documentId: scope.documentId },
       signal,
       retry: false,
     });

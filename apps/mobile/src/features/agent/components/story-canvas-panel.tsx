@@ -1,3 +1,4 @@
+import { StoryCanvasMediaPreview } from "./story-canvas-media-preview";
 import { StoryPanoramaPreview } from "./story-panorama-preview";
 import type { CanvasPanoramaSource } from "../api/story-canvas-panorama";
 import { StoryCanvasGenerationPanel } from "./story-canvas-generation-panel";
@@ -88,6 +89,7 @@ export function StoryCanvasPanel({
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [previewAssetId, setPreviewAssetId] = useState<string>();
   const [panorama, setPanorama] = useState<CanvasPanoramaSource>();
   const [generationCard, setGenerationCard] = useState<{ id: string; title: string }>();
   const [documentFeed, setDocumentFeed] = useState<string | null>(null);
@@ -249,6 +251,7 @@ export function StoryCanvasPanel({
           !positioning &&
           !generationCard &&
           !panorama &&
+          !previewAssetId &&
           !selected &&
           documentFeed === null && (
             <StoryCanvasMediaSync
@@ -507,6 +510,7 @@ export function StoryCanvasPanel({
                 assets={overview.assets}
                 canEdit={canEdit}
                 onSaveCandidate={setSelected}
+                onPreview={(asset) => setPreviewAssetId(asset.id)}
                 onPreviewPanorama={(asset) =>
                   setPanorama({
                     title: asset.name || t("storyCanvas.panorama.title"),
@@ -517,6 +521,13 @@ export function StoryCanvasPanel({
               />
             </ScrollView>
           </>
+        )}
+        {previewAssetId && writeScope && loaded && !loading && !error && (
+          <StoryCanvasMediaPreview
+            scope={writeScope}
+            assetId={previewAssetId}
+            close={() => setPreviewAssetId(undefined)}
+          />
         )}
         {panorama && writeScope && loaded && !loading && !error && (
           <StoryPanoramaPreview
