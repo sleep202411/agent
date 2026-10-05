@@ -321,3 +321,101 @@ it("retains the original retry after malformed receipts and session changes", as
   await expect(retryPendingGeneration(original, "alice", 1, signal())).rejects.toThrow("expired");
   expect(generationRetryOutbox("alice", 2).read()).toEqual(original);
 });
+
+const canvasScope = () => ({
+  workspaceId: "33333333-3333-4333-8333-333333333333",
+  storyProjectId: "44444444-4444-4444-8444-444444444444",
+  documentId: "55555555-5555-4555-8555-555555555555",
+  documentBlockId: "card-one",
+  sourceSurface: "fizzstudio-canvas" as const,
+});
+it("submits and recovers canvas jobs with their complete card identity", async () => {
+  const scope = canvasScope(),
+    intent = { ...command(), ...scope };
+  h.post.mockImplementation(async (_path, options) => {
+    expect(options.data).toMatchObject({ ...scope, idempotencyKey: key });
+    expect(generationOutbox("alice", 1, scope).read()).toEqual(intent);
+    throw new Error("Reply lost");
+  });
+  await expect(submitPendingGeneration(intent, "alice", 1, signal(), scope)).rejects.toThrow(
+    "Reply lost"
+  );
+  expect(h.get.mock.calls[0]![1].params).toMatchObject({ ...scope, idempotencyKey: key });
+  expect(generationOutbox("alice", 1, scope).read()).toEqual(intent);
+  expect(generationOutbox("alice", 1, { ...scope, documentBlockId: "card-two" }).read()).toBeNull();
+  expect(
+    generationOutbox("alice", 1, {
+      workspaceId: scope.workspaceId,
+      storyProjectId: scope.storyProjectId,
+    }).read()
+  ).toBeNull();
+  h.get.mockResolvedValue({ jobs: [{ ...job(), ...scope }], nextCursor: null });
+  await expect(submitPendingGeneration(intent, "alice", 1, signal(), scope)).resolves.toMatchObject(
+    { request_id: jobId }
+  );
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(generationOutbox("alice", 1, scope).read()).toBeNull();
+});
+it.each(["documentId", "documentBlockId", "sourceSurface", "storyProjectId"] as const)(
+  "rejects incomplete canvas commands missing %s",
+  (field) => {
+    const intent = { ...command(), ...canvasScope() };
+    delete (intent as Record<string, unknown>)[field];
+    expect(generationCommand.safeParse(intent).success).toBe(false);
+  }
+);
+it("rejects another card's recovery, history, read, cancellation and retry", async () => {
+  const scope = canvasScope(),
+    wrong = { ...job(), ...scope, documentBlockId: "other" };
+  h.get.mockResolvedValue({ jobs: [wrong], nextCursor: null });
+  await expect(recoverGeneration({ ...command(), ...scope }, 1, signal())).rejects.toThrow("match");
+  await expect(listGenerationJobs("image", 1, signal(), scope)).rejects.toThrow("match");
+  h.get.mockResolvedValue(wrong);
+  await expect(getGenerationJob(jobId, 1, signal(), scope)).rejects.toThrow("match");
+  await expect(cancelGeneration(jobId, 1, signal(), scope)).rejects.toThrow("match");
+  await expect(
+    retryPendingGeneration({ clientKey: key, jobId, ...scope }, "alice", 1, signal(), scope)
+  ).rejects.toThrow("match");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("never stores canvas commands in account-wide or project-only outboxes", async () => {
+  const scope = canvasScope(),
+    intent = { ...command(), ...scope };
+  for (const storageScope of [
+    undefined,
+    { workspaceId: scope.workspaceId, storyProjectId: scope.storyProjectId },
+  ]) {
+    await expect(
+      submitPendingGeneration(intent, "alice", 1, signal(), storageScope)
+    ).rejects.toThrow("exact document");
+    await expect(
+      retryPendingGeneration(
+        { ...scope, clientKey: key, jobId },
+        "alice",
+        1,
+        signal(),
+        storageScope
+      )
+    ).rejects.toThrow("exact document");
+  }
+  expect(h.records.size).toBe(0);
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("rejects stale sessions and wrong canvas surfaces without clearing recovery", async () => {
+  const scope = canvasScope(),
+    intent = { ...command(), ...scope };
+  generationOutbox("alice", 1, scope).save(intent);
+  h.get.mockResolvedValue({
+    jobs: [{ ...job(), ...scope, sourceSurface: "ai-lab" }],
+    nextCursor: null,
+  });
+  await expect(submitPendingGeneration(intent, "alice", 1, signal(), scope)).rejects.toThrow(
+    "match"
+  );
+  expect(generationOutbox("alice", 1, scope).read()).toEqual(intent);
+  h.generation++;
+  await expect(submitPendingGeneration(intent, "alice", 1, signal(), scope)).rejects.toThrow(
+    "expired"
+  );
+  expect(h.post).not.toHaveBeenCalled();
+});

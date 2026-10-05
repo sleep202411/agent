@@ -1,5 +1,7 @@
 import { skillSelection } from "./project-skills";
 import {
+  canvasGenerationFields,
+  validCanvasGenerationScope,
   generationStorageKey,
   scopeFields,
   matchesGenerationScope,
@@ -36,6 +38,7 @@ export const generationCommand = z
   .object({
     clientKey: id,
     workspaceId: id.optional(),
+    ...canvasGenerationFields,
     skillSelection: skillSelection.optional(),
     projectId: id.optional(),
     storyProjectId: id.optional(),
@@ -48,6 +51,7 @@ export const generationCommand = z
     promptDocument: promptDocument.optional(),
   })
   .refine((v) => !(v.projectId && v.storyProjectId), "Choose one project context.")
+  .refine(validCanvasGenerationScope, "Canvas generation requires a project, document and card.")
   .refine(
     (v) => !(v.projectId || v.storyProjectId) || !!v.workspaceId,
     "Project generation requires its workspace."
@@ -91,6 +95,8 @@ export const generationJob = z
     workspaceId: id.nullish(),
     projectId: id.nullish(),
     storyProjectId: id.nullish(),
+    documentId: id.nullish(),
+    documentBlockId: z.string().nullish(),
     prompt: z.string(),
     input: z.record(z.string(), z.unknown()).nullish(),
     outputs: z.array(output),
@@ -176,13 +182,16 @@ export async function recoverGeneration(
       retry: false,
       params: {
         idempotencyKey: intent.clientKey,
-        sourceSurface: "ai-lab",
+        sourceSurface: intent.sourceSurface ?? "ai-lab",
         limit: 80,
         ...(intent.workspaceId
           ? scopeFields({
               workspaceId: intent.workspaceId,
               projectId: intent.projectId,
               storyProjectId: intent.storyProjectId,
+              documentId: intent.documentId,
+              documentBlockId: intent.documentBlockId,
+              sourceSurface: intent.sourceSurface,
             })
           : {}),
       },
@@ -192,7 +201,7 @@ export async function recoverGeneration(
   const matches = value.jobs.filter(
     (job) =>
       job.idempotencyKey === intent.clientKey &&
-      job.sourceSurface === "ai-lab" &&
+      job.sourceSurface === (intent.sourceSurface ?? "ai-lab") &&
       (!intent.workspaceId || matchesGenerationScope(job, intent as { workspaceId: string })) &&
       (!intent.modelId || job.modelId === intent.modelId)
   );
@@ -214,7 +223,7 @@ export async function submitGeneration(
       signal,
       retry: false,
       timeout: 30_000,
-      data: { ...input, idempotencyKey: clientKey, sourceSurface: "ai-lab" },
+      data: { ...input, idempotencyKey: clientKey, sourceSurface: input.sourceSurface ?? "ai-lab" },
     })
   );
   generationSession(generation, signal);
@@ -229,6 +238,12 @@ export async function submitPendingGeneration(
   storageScope?: GenerationStorageScope
 ) {
   generationSession(generation, signal);
+  if (
+    command.documentId &&
+    (!storageScope ||
+      !matchesGenerationScope(scopeFields(storageScope), command as { workspaceId: string }))
+  )
+    throw new Error("Canvas commands require their exact document and card storage scope.");
   if (storageScope && !matchesGenerationScope(command, storageScope))
     throw new Error("Submission does not match this workspace.");
   const outbox = generationOutbox(userId, generation, storageScope);
@@ -272,10 +287,12 @@ const retryCommand = z
     clientKey: id,
     jobId: id,
     workspaceId: id.optional(),
+    ...canvasGenerationFields,
     projectId: id.optional(),
     storyProjectId: id.optional(),
   })
   .refine((v) => !(v.projectId && v.storyProjectId), "Choose one project context.")
+  .refine(validCanvasGenerationScope, "Canvas generation requires a project, document and card.")
   .refine(
     (v) => !(v.projectId || v.storyProjectId) || !!v.workspaceId,
     "Project generation requires its workspace."
@@ -301,6 +318,12 @@ export async function retryPendingGeneration(
   storageScope?: GenerationStorageScope
 ) {
   generationSession(generation, signal);
+  if (
+    command.documentId &&
+    (!storageScope ||
+      !matchesGenerationScope(scopeFields(storageScope), command as { workspaceId: string }))
+  )
+    throw new Error("Canvas commands require their exact document and card storage scope.");
   if (storageScope && !matchesGenerationScope(command, storageScope))
     throw new Error("Retry does not match this workspace.");
   const box = generationRetryOutbox(userId, generation, storageScope);
