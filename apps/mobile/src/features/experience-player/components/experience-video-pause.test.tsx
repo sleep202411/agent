@@ -10,9 +10,10 @@ import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
 const h = vi.hoisted(() => ({
   active: true,
-  stillProps: null as null | { onTimelineTimeMs: (timeMs: number) => void },
+  stillProps: null as null | { onTimelineTimeMs: (timeMs: number) => void; playbackRate: number },
   player: {
     playing: false,
+    playbackRate: 1,
     status: "readyToPlay",
     duration: 20,
     currentTime: 5,
@@ -58,6 +59,7 @@ let handle: {
   seek: (seconds: number) => void;
 } | null;
 let root: Root;
+let playbackRate = 1;
 let checkpoint: ExperienceMediaCheckpoint | undefined;
 const testCopy = { emptySequence: "No footage" } as ExperiencePlayerCopy;
 const render = (id = "empty", endBehavior?: Record<string, unknown>, mediaType = "video/mp4") =>
@@ -97,6 +99,7 @@ const render = (id = "empty", endBehavior?: Record<string, unknown>, mediaType =
         }
         copy={testCopy}
         checkpoint={checkpoint}
+        playbackRate={playbackRate}
         onPlaybackProgress={progress}
         onPlaybackRefused={refused}
         onPlaybackInterrupted={interrupted}
@@ -119,6 +122,8 @@ beforeEach(() => {
   });
   h.active = true;
   checkpoint = undefined;
+  playbackRate = 1;
+  h.player.playbackRate = 1;
   h.stillProps = null;
   completed.mockClear();
   refused.mockClear();
@@ -430,4 +435,53 @@ it("keeps stale video playback stopped while a still image owns the scene", asyn
   expect(h.player.pause).toHaveBeenCalledOnce();
   expect(interrupted).not.toHaveBeenCalled();
   expect(h.player.replaceAsync).not.toHaveBeenCalled();
+});
+
+it("changes video rate without reloading and forwards rate to stills", async () => {
+  const ending = { behavior: "advance" };
+  await render("rate", ending);
+  const loads = h.player.replaceAsync.mock.calls.length;
+  playbackRate = 2;
+  await render("rate", ending);
+  expect(h.player.playbackRate).toBe(2);
+  expect(h.player.replaceAsync).toHaveBeenCalledTimes(loads);
+  await render("still-rate", ending, "image/png");
+  expect(h.stillProps?.playbackRate).toBe(2);
+});
+it("uses the latest rate when an asynchronous source load completes", async () => {
+  let finish!: () => void;
+  h.player.replaceAsync.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  const ending = { behavior: "advance" };
+  await render("loading-rate", ending);
+  playbackRate = 1.5;
+  await render("loading-rate", ending);
+  h.player.playbackRate = 1;
+  await act(async () => finish());
+  expect(h.player.playbackRate).toBe(1.5);
+  expect(h.player.play).toHaveBeenCalled();
+});
+
+it("scales restored held-frame time at double speed", async () => {
+  playbackRate = 2;
+  checkpoint = {
+    rendererInstanceId: "saved",
+    sequenceIndex: 0,
+    assetId: "clip",
+    terminalMode: { kind: "held" },
+    positionMs: 20000,
+    watchedUntilMs: 20000,
+    remainingHoldMs: 1000,
+    completed: false,
+  } as ExperienceMediaCheckpoint;
+  await render("saved", { behavior: "hold-last-frame", durationMs: 3000 });
+  expect(progress.mock.calls.at(-1)![0].remainingHoldMs).toBe(1000);
+  await advance(250);
+  expect(progress.mock.calls.at(-1)![0].remainingHoldMs).toBe(500);
+  await advance(250);
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ completed: true, remainingHoldMs: 0 });
 });

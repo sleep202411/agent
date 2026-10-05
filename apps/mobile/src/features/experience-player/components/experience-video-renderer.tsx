@@ -68,6 +68,7 @@ const EMPTY_SEQUENCE_HOLD_MS = 6_000;
 async function loadAndPlayClip(
   player: {
     loop: boolean;
+    playbackRate: number;
     currentTime: number;
     replaceAsync: (uri: VideoSource) => Promise<void>;
     play: () => void;
@@ -83,6 +84,7 @@ async function loadAndPlayClip(
      * trip, and starting playback then would run a clip nobody can see.
      */
     isPresenting: () => boolean;
+    getPlaybackRate: () => number;
     onDeferredAutoplay: () => void;
     onPlayableResolved: (playableUri: string) => void;
     signal: AbortSignal;
@@ -94,6 +96,7 @@ async function loadAndPlayClip(
   options.onPlayableResolved(playable.uri);
   await player.replaceAsync(playable);
   if (options.signal.aborted) return;
+  player.playbackRate = options.getPlaybackRate();
   if (options.clipStartTime !== undefined) {
     player.currentTime = options.clipStartTime;
   }
@@ -106,6 +109,10 @@ async function loadAndPlayClip(
 }
 
 /** Native player properties are mutable host state, not React render state. */
+function applyPlaybackRate(player: { playbackRate: number }, rate: number) {
+  player.playbackRate = rate;
+}
+
 function restoreHeldFrame(player: { currentTime: number }, seconds: number) {
   player.currentTime = seconds;
 }
@@ -137,6 +144,7 @@ export function ExperienceVideoRenderer({
   onPlaybackInterrupted,
   checkpoint,
   onPlaybackProgress,
+  playbackRate = 1,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -148,8 +156,12 @@ export function ExperienceVideoRenderer({
   onPlaybackInterrupted?: () => void;
   onPlaybackHandle?: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
   checkpoint?: ExperienceMediaCheckpoint;
+  playbackRate?: number;
   onPlaybackProgress?: (checkpoint: ExperienceMediaCheckpoint) => void;
 }) {
+  if (!Number.isFinite(playbackRate) || playbackRate <= 0)
+    throw new RangeError("Playback rate must be finite and positive.");
+  const rateRef = useRef(playbackRate);
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
     initialCoreVideoPlaybackState(renderer.instanceId, checkpoint)
@@ -207,6 +219,11 @@ export function ExperienceVideoRenderer({
     instance.loop = false;
     instance.staysActiveInBackground = false;
   });
+
+  useLayoutEffect(() => {
+    rateRef.current = playbackRate;
+    applyPlaybackRate(player, playbackRate);
+  }, [player, playbackRate]);
 
   const presenting = useGatedScreenActive();
   const presentingRef = useRef(presenting);
@@ -339,6 +356,7 @@ export function ExperienceVideoRenderer({
       handleEnd();
       return;
     }
+    applyPlaybackRate(player, playbackRate);
     player.play();
   });
 
@@ -383,6 +401,7 @@ export function ExperienceVideoRenderer({
       (playbackState.checkpoint?.terminalMode?.kind !== "held" ||
         loadedIdentity === playbackIdentity),
     durationMs: videoHoldMs ?? 0,
+    playbackRate,
     initialRemainingMs: playbackState.checkpoint?.remainingHoldMs ?? undefined,
     onTimeout: advanceSequence,
   });
@@ -497,6 +516,7 @@ export function ExperienceVideoRenderer({
     enabled: sequenceLength === 0,
     running: presenting,
     durationMs: EMPTY_SEQUENCE_HOLD_MS,
+    playbackRate,
     onTimeout: completeRenderer,
   });
 
@@ -528,6 +548,7 @@ export function ExperienceVideoRenderer({
         (playbackState.checkpoint ? playbackState.checkpoint.positionMs / 1000 : clipStartTime),
       shouldAutoplay,
       isPresenting: () => presentingRef.current,
+      getPlaybackRate: () => rateRef.current,
       onDeferredAutoplay: () => {
         resumeWhenPresentingRef.current = true;
       },
@@ -701,6 +722,7 @@ export function ExperienceVideoRenderer({
       timelineOffsetMs={timelineOffsetMs}
       playbackIdentity={playbackIdentity}
       presenting={presenting}
+      playbackRate={playbackRate}
       initialPositionMs={playbackState.checkpoint?.positionMs}
       initiallyCompleted={playbackState.checkpoint?.completed}
       onDisplayed={handleEnd}

@@ -26,6 +26,7 @@ export function ExperienceStillSegment({
   onLoadError,
   initialPositionMs,
   initiallyCompleted,
+  playbackRate = 1,
 }: {
   uri: string;
   fit: VideoContentFit;
@@ -39,6 +40,7 @@ export function ExperienceStillSegment({
   onLoadError: () => void;
   initialPositionMs?: number;
   initiallyCompleted?: boolean;
+  playbackRate?: number;
 }) {
   const [playableUri, setPlayableUri] = useState<string | null>(null);
   const [loadedMediaKey, setLoadedMediaKey] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export function ExperienceStillSegment({
     onTimelineTimeMs,
     initialPositionMs,
     initiallyCompleted,
+    playbackRate,
   });
 
   useEffect(() => {
