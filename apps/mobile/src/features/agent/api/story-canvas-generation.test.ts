@@ -238,3 +238,15 @@ it("loads current catalog slots only for completed jobs with connected generatio
   await loadTrackedCanvasJobs(scope, value, new AbortController().signal);
   expect(h.lookup).not.toHaveBeenCalled();
 });
+
+it("does not poll converted panorama nodes or recreate their generation state", async () => {
+  const value = loaded();
+  value.snapshot.nodes.card = {
+    id: "card",
+    type: "panorama",
+    data: { src: "https://example.test/pano", mediaAssetId: "asset" },
+  };
+  expect(await loadTrackedCanvasJobs(scope, value, new AbortController().signal)).toEqual([]);
+  expect(h.get).not.toHaveBeenCalled();
+  expect(h.lookup).not.toHaveBeenCalled();
+});

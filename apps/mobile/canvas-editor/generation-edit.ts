@@ -4,6 +4,15 @@ import { canvasGenerationJobSchema, type CanvasGenerationJob } from "./generatio
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
 
 const kinds: Record<string, string> = { prompt: "image", video: "video", audio: "audio" };
+/** Matches Studio: only image outputs within 0.15 of a 2:1 ratio. */
+export function isCanvasPanoramaOutput(output: CanvasGenerationJob["outputs"][number] | undefined) {
+  return (
+    output?.type === "image" &&
+    !!output.width &&
+    !!output.height &&
+    Math.abs(output.width / output.height - 2) < 0.15
+  );
+}
 const terminal = new Set(["done", "failed", "cancelled"]);
 function status(raw: CanvasGenerationJob["status"]) {
   if (raw === "completed") return "done";
@@ -20,6 +29,10 @@ export function applyCanvasGeneration(state: string, documentId: string, raw: Ca
     const node = doc.getMap("nodes").get(job.documentBlockId);
     if (!(node instanceof Y.Map) || node.get("id") !== job.documentBlockId)
       throw Error("Generation card is unavailable. Reload the document.");
+    // A fresh read may already contain Web's converted node. Do not restore
+    // its retired composer when a previously fetched generation reply arrives.
+    if (node.get("type") === "panorama")
+      return { ...captureCanvasState(doc), yjsUpdateBase64: null };
     const data = node.get("data");
     if (!(data instanceof Y.Map) || kinds[String(node.get("type"))] !== job.type)
       throw Error("Generation does not match this card.");
@@ -39,6 +52,12 @@ export function applyCanvasGeneration(state: string, documentId: string, raw: Ca
     // Late running events cannot regress a completed/failed/cancelled card.
     if (previous && terminal.has(String(previous.status)) && !terminal.has(nextStatus))
       return { ...captureCanvasState(doc), yjsUpdateBase64: null };
+    const output = job.outputs[0];
+    const panorama =
+      nextStatus === "done" &&
+      isCanvasPanoramaOutput(output) &&
+      (data.get("mode") === "image_to_panorama" ||
+        /hunyuan|panorama|world/i.test(String(data.get("modelId") ?? "")));
     const clean = <T>(value: T): T => JSON.parse(JSON.stringify(value));
     const next = clean({
       jobId: job.id,
@@ -83,6 +102,7 @@ export function applyCanvasGeneration(state: string, documentId: string, raw: Ca
                 prompt: job.prompt,
                 createdAt: Date.parse(job.createdAt),
                 category: "general",
+                panorama: isCanvasPanoramaOutput(output),
               }),
             };
           })
@@ -93,7 +113,23 @@ export function applyCanvasGeneration(state: string, documentId: string, raw: Ca
       update = encodeCanvasBytes(bytes);
     });
     doc.transact(() => {
-      if (JSON.stringify(previous) !== JSON.stringify(next)) data.set("generation", next);
+      if (panorama) {
+        // Keep the node identity, position, group membership and all incoming
+        // provenance/outgoing wires. Retire only generation-specific data.
+        node.set("type", "panorama");
+        node.set(
+          "data",
+          new Y.Map(
+            Object.entries(
+              clean({
+                src: output!.url,
+                mediaAssetId: output!.assetId,
+                label: data.get("prompt"),
+              })
+            )
+          )
+        );
+      } else if (JSON.stringify(previous) !== JSON.stringify(next)) data.set("generation", next);
       for (const [target, references] of referencePatches) target.set("references", references);
       // Preserve user-renamed media and avoid duplicate writes on reconciliation.
       for (const asset of additions) {
