@@ -624,7 +624,6 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
       });
       const failingService = new CreatorWithdrawalsService(
         failing as unknown as PrismaService,
-        new NotificationService(db as PrismaService),
       );
       await expect(failingService.request(userId, input())).rejects.toThrow(
         'Fixture storage failure',

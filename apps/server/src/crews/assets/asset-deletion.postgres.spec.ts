@@ -1,3 +1,4 @@
+import { ChannelVideosService } from '../../ip-commerce/channel-videos';
 import { IpCommerceService } from '../../ip-commerce/ip-commerce.service';
 import { extendPrismaQueries } from '../../common/__tests__/prisma-query-extension';
 import { randomUUID } from 'node:crypto';
@@ -253,6 +254,167 @@ const app = `crew-delete-${randomUUID()}`;
         }
       },
     );
+    it.each(
+      (['channel', 'cleanup'] as const).flatMap((first) =>
+        (['entry', 'pending'] as const).map((cleanupKind) => ({
+          first,
+          cleanupKind,
+        })),
+      ),
+    )(
+      'serializes channel submissions when $first commits before $cleanupKind cleanup',
+      async ({ first, cleanupKind }) => {
+        if (cleanupKind === 'pending')
+          await db.crewAssetNode.delete({ where: { id: nodeId } });
+        const ip = await db.ip.create({
+          data: {
+            createdById: 'fixture',
+            channelType: 'community',
+            status: 'published',
+            listingVisibility: 'public',
+          },
+        });
+        await db.mediaAsset.update({
+          where: { id: mediaId },
+          data: {
+            createdByUserId: 'fixture',
+            kind: 'video',
+            source: 'user_upload',
+          },
+        });
+        await db.$executeRaw`INSERT INTO ip_channel_submission_settings(ip_id,open,updated_by_id) VALUES (${ip.id}::uuid,true,'fixture')`;
+        const channels = new ChannelVideosService(
+          db as never,
+          { ensurePublicEngagementTarget: jest.fn() } as never,
+          undefined as never,
+        );
+        let release!: () => void, ready!: () => void;
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const started = new Promise<void>((resolve) => {
+          ready = resolve;
+        });
+        const transaction: <T>(
+          callback: (tx: Prisma.TransactionClient) => Promise<T>,
+        ) => Promise<T> = db.$transaction.bind(db) as typeof db.$transaction;
+        const injected = jest
+          .spyOn(db, '$transaction')
+          .mockImplementationOnce(((
+            callback: (tx: Prisma.TransactionClient) => Promise<unknown>,
+          ) =>
+            transaction(async (tx) => {
+              const result = await callback(tx);
+              ready();
+              await gate;
+              return result;
+            })) as never);
+        const report = () =>
+          channels.submit(
+            ip.id,
+            { userId: 'fixture' },
+            {
+              assetId: mediaId,
+              title: 'Retained channel video',
+              description: '',
+            },
+          );
+        const cleanup = () =>
+          cleanupKind === 'pending'
+            ? service.reclaimExpiredPendingUpload(
+                mediaId,
+                new Date(Date.now() + 60_000),
+              )
+            : service.removePermanently(crewId, 'fixture', nodeId);
+        const leading = first === 'channel' ? report() : cleanup();
+        let trailing: Promise<unknown> | undefined;
+        try {
+          await Promise.race([
+            started,
+            leading.then(() => {
+              throw Error('Leading operation did not reach commit gate');
+            }),
+          ]);
+          trailing = (first === 'channel' ? cleanup() : report()).then(
+            () => null,
+            (error: unknown) => error,
+          );
+          const deadline = Date.now() + 2000;
+          while (true) {
+            const [row] = await db.$queryRaw<
+              Array<{ count: bigint }>
+            >`SELECT count(*) FROM pg_stat_activity WHERE application_name=${app} AND wait_event_type='Lock'`;
+            if (Number(row.count)) break;
+            if (Date.now() > deadline)
+              throw Error('Channel submission did not wait for media lock');
+            await new Promise((resolve) => setTimeout(resolve, 10));
+          }
+          release();
+          await leading;
+          const error = await trailing;
+          expect(
+            await db.ipChannelVideoSubmission.count({
+              where: { channelId: ip.id },
+            }),
+          ).toBe(first === 'channel' ? 1 : 0);
+          if (first === 'channel') {
+            expect(error).toBeNull();
+            expect(storage.deleteObject).not.toHaveBeenCalled();
+            expect(
+              await db.mediaAsset.findUniqueOrThrow({ where: { id: mediaId } }),
+            ).toMatchObject({ status: 'ready', deletedAt: null });
+          } else {
+            expect(error).toMatchObject({
+              status: 400,
+            });
+            expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+          }
+        } finally {
+          release();
+          await Promise.allSettled([leading, ...(trailing ? [trailing] : [])]);
+          injected.mockRestore();
+          await db.ip.delete({ where: { id: ip.id } });
+        }
+      },
+    );
+    it('preserves channel bytes during delayed physical cleanup of legacy retired media', async () => {
+      const ip = await db.ip.create({
+        data: { createdById: 'fixture', channelType: 'community' },
+      });
+      try {
+        await db.ipChannelVideoSubmission.create({
+          data: {
+            id: randomUUID(),
+            channelId: ip.id,
+            assetId: mediaId,
+            submittedById: 'fixture',
+            title: 'Existing submission',
+          },
+        });
+        await db.crewAssetNode.delete({ where: { id: nodeId } });
+        await db.mediaAsset.update({
+          where: { id: mediaId },
+          data: {
+            status: 'deleted',
+            deletedAt: new Date(),
+            metadata: {
+              uploadKind: 'crew_asset_file',
+              crewId,
+              crewPhysicalDeletionPending: true,
+            },
+          },
+        });
+        await service.reclaimDeletedCrewUpload(mediaId);
+        expect(storage.deleteObject).not.toHaveBeenCalled();
+        await db.ip.delete({ where: { id: ip.id } });
+        await service.reclaimDeletedCrewUpload(mediaId);
+        expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+        await service.reclaimDeletedCrewUpload(mediaId);
+        expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+      } finally {
+        await db.ip.deleteMany({ where: { id: ip.id } });
+      }
+    });
     it('does not let reservation cleanup bypass retired-media retention', async () => {
       const key = `media/global/crew-asset-file/${randomUUID()}.png`;
       const finalKey = key.replace('/crew-asset-file/', '/crew-asset-final/');

@@ -320,14 +320,20 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       },
     );
     it('bounds database round trips across document and version histories', async () => {
+      const scale = process.env.MEDIA_RETENTION_SCALE === '1';
+      const documentCount = scale ? 512 : 128;
+      const versionCount = scale ? 256 : 64;
+      const nodeCount = scale ? 1000 : 100;
+      const maxQueries =
+        Math.ceil(documentCount / 64) + Math.ceil(versionCount / 64) + 7;
       const doc = new Y.Doc();
-      for (let i = 0; i < 100; i++)
+      for (let i = 0; i < nodeCount; i++)
         doc
           .getMap('nodes')
           .set(`node-${i}`, { title: `Shot ${i}`, x: i, y: i });
       const state = Buffer.from(Y.encodeStateAsUpdate(doc));
       doc.destroy();
-      const documents = Array.from({ length: 128 }, () => ({
+      const documents = Array.from({ length: documentCount }, () => ({
         id: randomUUID(),
         workspaceId,
         platformProjectId: projectId,
@@ -339,7 +345,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       }));
       await db.studioDocument.createMany({ data: documents });
       await db.studioDocumentVersion.createMany({
-        data: Array.from({ length: 64 }, (_, index) => ({
+        data: Array.from({ length: versionCount }, (_, index) => ({
           documentId: documents[0].id,
           versionNumber: index + 1,
           sequence: 0,
@@ -350,11 +356,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         })),
       });
       const query = jest.spyOn(db, '$queryRaw');
+      const started = performance.now();
       try {
         expect(await savedProjectMediaReferences(db, [randomUUID()])).toEqual(
           new Set(),
         );
-        expect(query.mock.calls.length).toBeLessThanOrEqual(10);
+        expect(query.mock.calls.length).toBeLessThanOrEqual(maxQueries);
         const documentRef = randomUUID(),
           versionRef = randomUUID();
         const referenceState = (id: string) => {
@@ -388,10 +395,23 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
             randomUUID(),
           ]),
         ).toEqual(new Set([documentRef, versionRef]));
-        expect(query.mock.calls.length).toBeLessThanOrEqual(10);
+        expect(query.mock.calls.length).toBeLessThanOrEqual(maxQueries);
       } finally {
+        if (scale)
+          console.info(
+            JSON.stringify({
+              audit: 'media-retention-scale',
+              documents: documentCount,
+              versions: versionCount,
+              nodesPerState: nodeCount,
+              twoScansAndReferenceUpdatesMs: Math.round(
+                performance.now() - started,
+              ),
+              finalScanQueries: query.mock.calls.length,
+            }),
+          );
         query.mockRestore();
       }
-    });
+    }, 60_000);
   },
 );

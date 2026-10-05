@@ -23,6 +23,7 @@ import {
 } from '../media/media-moderation-policy';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import { IpCommerceService } from './ip-commerce.service';
+import { lockMediaAssetReference } from '../media/media-asset-lifecycle-lock';
 
 export const VideoSubmissionInput = z
   .object({
@@ -77,6 +78,9 @@ export class ChannelVideosService {
         throw new ConflictException(
           'This channel is not accepting submissions.',
         );
+      // Validate after locking: cleanup may have retired the video while this
+      // submission waited. Hold the shared lock until its reference commits.
+      await lockMediaAssetReference(tx, input.assetId);
       const asset = await tx.mediaAsset.findFirst({
         where: {
           id: input.assetId,
