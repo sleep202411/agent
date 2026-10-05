@@ -1,16 +1,21 @@
 import { getAuthGeneration } from "@/auth/auth-store";
 import type { CandidateScope } from "../api/story-candidates-api";
 import type { StoryCanvasDocumentState } from "../api/story-canvas-document";
+import type {
+  PlatformCanvasDocumentState,
+  PlatformCanvasScope,
+} from "../api/platform-canvas-document";
 import type { CanvasHostMessage, CanvasRuntimeMessage } from "../../../../canvas-editor/protocol";
 import { parseCanvasMessage } from "./story-canvas-bridge";
 
 type Loaded = Extract<CanvasRuntimeMessage, { type: "loaded" }>;
+type CanvasDocumentState = StoryCanvasDocumentState | PlatformCanvasDocumentState;
 /** Transport stays in the app; the isolated runtime receives only document bytes.
  * Each host belongs to one authenticated project/document visit. */
 export function createCanvasHost(options: {
-  scope: CandidateScope;
+  scope: CandidateScope | PlatformCanvasScope;
   sessionId: string;
-  snapshot: StoryCanvasDocumentState;
+  snapshot: CanvasDocumentState;
   send(message: CanvasHostMessage): void;
   onResult(result: Loaded): void;
   onError(message: string): void;
@@ -22,10 +27,25 @@ export function createCanvasHost(options: {
     settled = false;
   const documentId = snapshot.document.id;
   const current = () => !disposed && getAuthGeneration() === options.scope.generation;
-  const validate = (value: StoryCanvasDocumentState) => {
+  const validate = (value: CanvasDocumentState) => {
+    const scope = options.scope;
+    const document = value.document;
+    const owned =
+      "kind" in scope && scope.kind === "platform"
+        ? document.owner.kind === "platform_project" &&
+          document.platformProjectId === scope.projectId &&
+          document.storyProjectId === null &&
+          "workspaceId" in document &&
+          document.workspaceId === scope.workspaceId &&
+          "sectionId" in document &&
+          document.sectionId === scope.sectionId &&
+          document.id === scope.documentId
+        : document.owner.kind === "story_project" &&
+          document.storyProjectId === scope.projectId &&
+          document.platformProjectId === null;
     if (
+      !owned ||
       value.document.id !== documentId ||
-      value.document.storyProjectId !== options.scope.projectId ||
       value.document.owner.projectId !== options.scope.projectId ||
       value.sequence !== value.document.currentSequence ||
       value.sequence < snapshot.sequence
@@ -71,7 +91,7 @@ export function createCanvasHost(options: {
       if (message.type === "loaded") options.onResult(message);
       else options.onError(message.message);
     },
-    remote(value: StoryCanvasDocumentState) {
+    remote(value: CanvasDocumentState) {
       if (!current()) return;
       validate(value);
       snapshot = value;

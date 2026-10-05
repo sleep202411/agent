@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { createCanvasHost } from "./story-canvas-host";
 import { canvasHostInjection, canvasRuntimeHtml, parseCanvasMessage } from "./story-canvas-bridge";
 import type { StoryCanvasDocumentState } from "../api/story-canvas-document";
+import type { PlatformCanvasDocumentState } from "../api/platform-canvas-document";
 const h = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -50,6 +51,71 @@ function setup() {
 }
 beforeEach(() => {
   h.generation = 1;
+});
+const platformScope = {
+  kind: "platform" as const,
+  projectId: id(1),
+  documentId: id(2),
+  workspaceId: id(6),
+  sectionId: id(7),
+  generation: 1,
+};
+const platformSnapshot: PlatformCanvasDocumentState = {
+  ...snapshot,
+  document: {
+    ...snapshot.document,
+    owner: { kind: "platform_project", projectId: id(1) },
+    platformProjectId: id(1),
+    storyProjectId: null,
+    workspaceId: id(6),
+    sectionId: id(7),
+  },
+};
+it("hydrates platform bytes in the same isolated runtime with explicit ownership", () => {
+  const send = vi.fn(),
+    onResult = vi.fn();
+  const host = createCanvasHost({
+    scope: platformScope,
+    sessionId,
+    snapshot: platformSnapshot,
+    send,
+    onResult,
+    onError: vi.fn(),
+  });
+  host.receive(ready);
+  expect(send).toHaveBeenCalledWith(
+    expect.objectContaining({ documentId: id(2), snapshot: "AAA=" })
+  );
+  host.receive(JSON.stringify(result));
+  expect(onResult).toHaveBeenCalledExactlyOnceWith(result);
+  expect(() => host.remote(snapshot)).toThrow("scope");
+});
+it.each([{ workspaceId: id(8) }, { sectionId: id(8) }, { documentId: id(8) }])(
+  "rejects a mismatched platform runtime scope %j",
+  (patch) => {
+    expect(() =>
+      createCanvasHost({
+        scope: { ...platformScope, ...patch },
+        sessionId,
+        snapshot: platformSnapshot,
+        send: vi.fn(),
+        onResult: vi.fn(),
+        onError: vi.fn(),
+      })
+    ).toThrow("scope");
+  }
+);
+it("rejects platform bytes in a Story visit even when project IDs coincide", () => {
+  expect(() =>
+    createCanvasHost({
+      scope: { projectId: id(1), generation: 1 },
+      sessionId,
+      snapshot: platformSnapshot,
+      send: vi.fn(),
+      onResult: vi.fn(),
+      onError: vi.fn(),
+    })
+  ).toThrow("scope");
 });
 it("waits for runtime readiness and supplies bytes even on system markers", () => {
   const { host, send, onResult } = setup();
