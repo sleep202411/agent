@@ -5,6 +5,7 @@ import {
   generationRetryCommand,
   getGenerationJob,
   type GenerationRetry,
+  type GenerationReceipt,
   type GenerationCommand,
 } from "@/features/ai-lab/jobs-api";
 import {
@@ -133,6 +134,57 @@ export async function persistCanvasRetry(
         documentId: scope.documentId,
         documentBlockId: command.documentBlockId!,
         jobId: command.jobId,
+      },
+    },
+    signal,
+    dependencies
+  );
+}
+
+/** Attach only a receipt returned by the original submission/retry endpoint. */
+export async function persistCanvasReceipt(
+  scope: CanvasWriteScope,
+  userId: string,
+  type: CanvasSubmission["type"],
+  raw: GenerationCommand | GenerationRetry,
+  receipt: GenerationReceipt,
+  signal: AbortSignal,
+  dependencies: SaveDependencies,
+  readJob = getGenerationJob
+) {
+  generationSession(scope.generation, signal);
+  const command = "jobId" in raw ? generationRetryCommand.parse(raw) : generationCommand.parse(raw);
+  if (
+    command.documentId !== scope.documentId ||
+    command.storyProjectId !== scope.projectId ||
+    command.projectId ||
+    command.sourceSurface !== "fizzstudio-canvas"
+  )
+    throw Error("Receipt does not belong to this Story canvas.");
+  const job = await readJob(receipt.request_id, scope.generation, signal, {
+    workspaceId: command.workspaceId!,
+    storyProjectId: scope.projectId,
+    documentId: scope.documentId,
+    documentBlockId: command.documentBlockId!,
+    sourceSurface: "fizzstudio-canvas",
+  });
+  generationSession(scope.generation, signal);
+  const retry = "jobId" in command;
+  if (
+    job.type !== type ||
+    (retry ? job.id === command.jobId : job.idempotencyKey !== command.clientKey)
+  )
+    throw Error("Generation receipt does not match the saved request.");
+  return persistRecord(
+    scope,
+    {
+      ownerId: userId,
+      type,
+      receipt: {
+        documentId: scope.documentId,
+        documentBlockId: command.documentBlockId!,
+        submissionKey: retry ? `retry:${command.jobId}` : command.clientKey,
+        jobId: job.id,
       },
     },
     signal,

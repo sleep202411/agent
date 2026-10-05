@@ -419,3 +419,41 @@ it("rejects stale sessions and wrong canvas surfaces without clearing recovery",
   );
   expect(h.post).not.toHaveBeenCalled();
 });
+
+it("retains the paid request until its canvas receipt is acknowledged", async () => {
+  const acknowledge = vi.fn(async (): Promise<void> => {
+    throw Error("Canvas save interrupted");
+  });
+  await expect(
+    submitPendingGeneration(command(), "alice", 1, signal(), undefined, acknowledge)
+  ).rejects.toThrow("Canvas save interrupted");
+  expect(generationOutbox("alice", 1).read()).toEqual(command());
+  h.get.mockResolvedValue({ jobs: [job()], nextCursor: null });
+  acknowledge.mockResolvedValueOnce(undefined);
+  await submitPendingGeneration(command(), "alice", 1, signal(), undefined, acknowledge);
+  expect(h.post).toHaveBeenCalledOnce();
+  expect(acknowledge).toHaveBeenCalledTimes(2);
+  expect(generationOutbox("alice", 1).read()).toBeNull();
+});
+it("retains the original retry target after failed acknowledgement or account retirement", async () => {
+  const command = { clientKey: key, jobId };
+  const acknowledge = vi.fn(async (): Promise<void> => {
+    throw Error("Canvas save interrupted");
+  });
+  await expect(
+    retryPendingGeneration(command, "alice", 1, signal(), undefined, acknowledge)
+  ).rejects.toThrow("interrupted");
+  expect(generationRetryOutbox("alice", 1).read()).toEqual(command);
+  acknowledge.mockImplementationOnce(async () => {
+    h.generation++;
+  });
+  await expect(
+    retryPendingGeneration(command, "alice", 1, signal(), undefined, acknowledge)
+  ).rejects.toThrow("expired");
+  h.generation = 1;
+  expect(generationRetryOutbox("alice", 1).read()).toEqual(command);
+  acknowledge.mockResolvedValueOnce(undefined);
+  await retryPendingGeneration(command, "alice", 1, signal(), undefined, acknowledge);
+  expect(h.post.mock.calls.map(([path]) => path)).toEqual(Array(3).fill(`/ai/jobs/${jobId}/retry`));
+  expect(generationRetryOutbox("alice", 1).read()).toBeNull();
+});

@@ -41,7 +41,9 @@ export function applyCanvasGeneration(state: string, documentId: string, raw: Ca
     const clean = <T>(value: T): T => JSON.parse(JSON.stringify(value));
     const next = clean({
       jobId: job.id,
-      submissionKey: job.idempotencyKey ?? previous?.submissionKey,
+      // Keep the originating retry key even when a legacy child uses another key.
+      submissionKey: previous?.submissionKey ?? job.idempotencyKey,
+      submissionOwnerId: previous?.submissionOwnerId,
       status: nextStatus,
       progress: job.progress,
       queuePosition: job.queuePosition,

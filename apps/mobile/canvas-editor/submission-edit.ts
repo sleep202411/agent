@@ -21,8 +21,9 @@ export function recordCanvasSubmission(
   const command = canvasSubmissionRecordSchema.parse(raw);
   const input = "submission" in command ? command.submission : null;
   const retry = "retry" in command ? command.retry : null;
-  const context = input?.context ?? retry!;
-  const key = input?.idempotencyKey ?? `retry:${retry!.jobId}`;
+  const receipt = "receipt" in command ? command.receipt : null;
+  const context = input?.context ?? retry ?? receipt!;
+  const key = input?.idempotencyKey ?? receipt?.submissionKey ?? `retry:${retry!.jobId}`;
   if (context.documentId !== documentId) throw Error("Submission belongs to another document.");
   return withCanvasState(state, [], (doc) => {
     const node = doc.getMap("nodes").get(context.documentBlockId);
@@ -38,6 +39,24 @@ export function recordCanvasSubmission(
     const previous = data.get("generation") as Record<string, unknown> | null | undefined;
     if (previous != null && (typeof previous !== "object" || Array.isArray(previous)))
       throw Error("Generation card state is invalid.");
+    if (receipt) {
+      if (
+        previous?.submissionKey !== key ||
+        (previous.submissionOwnerId && previous.submissionOwnerId !== command.ownerId)
+      )
+        throw Error("The receipt no longer belongs to this card request.");
+      if (previous.jobId) {
+        if (previous.jobId !== receipt.jobId)
+          throw Error("Generation was replaced by another run.");
+        return { ...captureCanvasState(doc), yjsUpdateBase64: null };
+      }
+      let update: string | null = null;
+      doc.on("update", (bytes: Uint8Array) => {
+        update = encodeCanvasBytes(bytes);
+      });
+      doc.transact(() => data.set("generation", { ...previous, jobId: receipt.jobId }));
+      return { ...captureCanvasState(doc), yjsUpdateBase64: update };
+    }
     if (previous?.submissionKey === key) {
       if (input && previous.submission && canonical(previous.submission) !== canonical(input))
         throw Error("The saved generation request changed. Keep the original request.");

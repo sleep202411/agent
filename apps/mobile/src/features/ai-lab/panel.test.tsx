@@ -1421,6 +1421,7 @@ it("isolates canvas composer drafts and saves card identity before paid submissi
     mode: "image" as const,
     beforeSubmit,
     beforeRetry: vi.fn(async () => {}),
+    afterReceipt: vi.fn(async () => {}),
   };
   await mount(undefined, project, canvas);
   expect(button("aiLab.video")).toBeUndefined();
@@ -1429,6 +1430,7 @@ it("isolates canvas composer drafts and saves card identity before paid submissi
   await click("aiLab.generate");
   await click("aiLab.confirm");
   expect(beforeSubmit).toHaveBeenCalledOnce();
+  expect(canvas.afterReceipt).toHaveBeenCalledOnce();
   expect(h.post).toHaveBeenCalledOnce();
   expect(beforeSubmit.mock.invocationCallOrder[0]).toBeLessThan(
     h.post.mock.invocationCallOrder[0]!
@@ -1471,6 +1473,7 @@ it("does not submit a canvas job when saving its recovery identity fails", async
       throw Error("Card save interrupted");
     }),
     beforeRetry: vi.fn(async () => {}),
+    afterReceipt: vi.fn(async () => {}),
   };
   await mount(undefined, project, canvas);
   await click("Image preset");

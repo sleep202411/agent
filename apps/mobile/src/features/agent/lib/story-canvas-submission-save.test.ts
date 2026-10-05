@@ -4,6 +4,7 @@ import {
   canvasSubmissionForCommand,
   persistCanvasSubmission,
   persistCanvasRetry,
+  persistCanvasReceipt,
 } from "./story-canvas-submission";
 import type { CanvasUpdateCommand } from "../api/story-canvas-update";
 const h = vi.hoisted(() => ({ generation: 1 }));
@@ -189,4 +190,56 @@ it("verifies retry ownership and media type before persisting its recovery recor
   await expect(run()).rejects.toThrow("expired");
   expect(encode).not.toHaveBeenCalled();
   expect(queue.prepare).not.toHaveBeenCalled();
+});
+
+it("attaches only the returned receipt and permits legacy retry keys after scoped lookup", async () => {
+  const readJob = vi.fn<typeof getGenerationJob>();
+  const childId = "22222222-2222-4222-8222-222222222222";
+  const job = { id: childId, type: "image", idempotencyKey: id } as Awaited<
+    ReturnType<typeof getGenerationJob>
+  >;
+  readJob.mockResolvedValue(job);
+  const receipt = { request_id: childId, status: "in_queue" as const };
+  const run = (
+    raw = command as
+      | import("@/features/ai-lab/jobs-api").GenerationCommand
+      | import("@/features/ai-lab/jobs-api").GenerationRetry
+  ) =>
+    persistCanvasReceipt(
+      scope,
+      "alice",
+      "image",
+      raw,
+      receipt,
+      new AbortController().signal,
+      { queue, encode },
+      readJob
+    );
+  await run();
+  expect(encode).toHaveBeenLastCalledWith(
+    {
+      ownerId: "alice",
+      type: "image",
+      receipt: { documentId: id, documentBlockId: "card", submissionKey: id, jobId: childId },
+    },
+    expect.any(AbortSignal)
+  );
+  readJob.mockResolvedValue({ ...job, idempotencyKey: "legacy" });
+  await expect(run()).rejects.toThrow("does not match");
+  await run({ ...command, jobId: id });
+  expect(encode).toHaveBeenLastCalledWith(
+    {
+      ownerId: "alice",
+      type: "image",
+      receipt: {
+        documentId: id,
+        documentBlockId: "card",
+        submissionKey: `retry:${id}`,
+        jobId: childId,
+      },
+    },
+    expect.any(AbortSignal)
+  );
+  readJob.mockResolvedValue({ ...job, id });
+  await expect(run({ ...command, jobId: id })).rejects.toThrow("does not match");
 });

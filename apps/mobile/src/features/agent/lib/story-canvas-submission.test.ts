@@ -102,7 +102,7 @@ it("accepts settled runs and reordered payload keys but never regresses an ackno
   expect(recordCanvasSubmission(settled, documentId, command).yjsUpdateBase64).toBeNull();
 });
 
-it.each(["submission", "retry"] as const)(
+it.each(["submission", "retry", "receipt"] as const)(
   "records %s through the bundled runtime bridge",
   async (kind) => {
     const { runInNewContext } = await import("node:vm");
@@ -131,7 +131,11 @@ it.each(["submission", "retry"] as const)(
       console,
     });
     const snapshot = fixture(
-      kind === "retry" ? { status: "failed", jobId: documentId } : undefined
+      kind === "receipt"
+        ? { status: "submitting", submissionKey: "attempt", submissionOwnerId: "alice" }
+        : kind === "retry"
+          ? { status: "failed", jobId: documentId }
+          : undefined
     );
     host.__fizzCanvasReceive!(
       JSON.stringify({
@@ -148,7 +152,18 @@ it.each(["submission", "retry"] as const)(
                 type: "image",
                 retry: { documentId, documentBlockId: "card", jobId: documentId },
               }
-            : command,
+            : kind === "receipt"
+              ? {
+                  ownerId: "alice",
+                  type: "image",
+                  receipt: {
+                    documentId,
+                    documentBlockId: "card",
+                    submissionKey: "attempt",
+                    jobId: documentId,
+                  },
+                }
+              : command,
       })
     );
     const result = canvasRuntimeMessage.parse(received.at(-1));
@@ -194,4 +209,67 @@ it("records a stable retry key only for the current failed job, preserving card 
     );
   const settled = fixture({ status: "done", jobId: "child", submissionKey: `retry:${documentId}` });
   expect(recordCanvasSubmission(settled, documentId, retry).yjsUpdateBase64).toBeNull();
+});
+
+it("attaches acknowledged legacy retries without replacing their recovery key or a newer run", async () => {
+  const { applyCanvasGeneration } = await import("../../../../canvas-editor/generation-edit");
+  const childId = "22222222-2222-4222-8222-222222222222";
+  const retry = {
+    ownerId: "alice",
+    type: "image" as const,
+    retry: { documentId, documentBlockId: "card", jobId: documentId },
+  };
+  const started = recordCanvasSubmission(
+    fixture({ jobId: documentId, status: "failed" }),
+    documentId,
+    retry
+  );
+  const receipt = {
+    ownerId: "alice",
+    type: "image" as const,
+    receipt: {
+      documentId,
+      documentBlockId: "card",
+      submissionKey: `retry:${documentId}`,
+      jobId: childId,
+    },
+  };
+  const attached = recordCanvasSubmission(started.state, documentId, receipt);
+  expect(materializeCanvas(started.state, [attached.yjsUpdateBase64!]).snapshot).toEqual(
+    attached.snapshot
+  );
+  expect(recordCanvasSubmission(attached.state, documentId, receipt).yjsUpdateBase64).toBeNull();
+  const settled = applyCanvasGeneration(attached.state, documentId, {
+    id: childId,
+    idempotencyKey: "legacy-key",
+    type: "image",
+    modelId: "model",
+    status: "completed",
+    documentId,
+    documentBlockId: "card",
+    sourceSurface: "fizzstudio-canvas",
+    prompt: "Lake",
+    createdAt: "2026-10-05T00:00:00Z",
+    outputs: [],
+  });
+  expect(settled.snapshot.nodes.card).toHaveProperty(
+    "data.generation.submissionKey",
+    `retry:${documentId}`
+  );
+  expect(settled.snapshot.nodes.card).toHaveProperty("data.generation.submissionOwnerId", "alice");
+  expect(recordCanvasSubmission(settled.state, documentId, retry).yjsUpdateBase64).toBeNull();
+  expect(recordCanvasSubmission(settled.state, documentId, receipt).yjsUpdateBase64).toBeNull();
+  expect(() =>
+    recordCanvasSubmission(started.state, documentId, { ...receipt, ownerId: "bob" })
+  ).toThrow("no longer belongs");
+  expect(() =>
+    recordCanvasSubmission(fixture({ submissionKey: "newer" }), documentId, receipt)
+  ).toThrow("no longer belongs");
+  expect(() =>
+    recordCanvasSubmission(
+      fixture({ submissionKey: `retry:${documentId}`, jobId: documentId }),
+      documentId,
+      receipt
+    )
+  ).toThrow("replaced");
 });

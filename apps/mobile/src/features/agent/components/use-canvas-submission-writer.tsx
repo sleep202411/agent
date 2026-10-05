@@ -1,7 +1,11 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useTranslations } from "@/i18n";
-import type { GenerationCommand, GenerationRetry } from "@/features/ai-lab/jobs-api";
+import type {
+  GenerationCommand,
+  GenerationRetry,
+  GenerationReceipt,
+} from "@/features/ai-lab/jobs-api";
 import type {
   CanvasSubmission,
   CanvasSubmissionRecord,
@@ -9,7 +13,11 @@ import type {
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import type { CanvasWriteScope } from "../api/story-canvas-update";
 import { canvasReconciliation } from "../lib/story-canvas-reconciliation";
-import { persistCanvasSubmission, persistCanvasRetry } from "../lib/story-canvas-submission";
+import {
+  persistCanvasSubmission,
+  persistCanvasRetry,
+  persistCanvasReceipt,
+} from "../lib/story-canvas-submission";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
@@ -134,6 +142,19 @@ export function useCanvasSubmissionWriter(
       ),
     [save, scope, userId, type, queue, encode]
   );
+  const afterReceipt = useCallback(
+    (
+      command: GenerationCommand | GenerationRetry,
+      receipt: GenerationReceipt,
+      signal: AbortSignal
+    ) =>
+      save(
+        (active) =>
+          persistCanvasReceipt(scope, userId, type, command, receipt, active, { queue, encode }),
+        signal
+      ),
+    [save, scope, userId, type, queue, encode]
+  );
   const current = (value: Request) =>
     pending.current?.id === value.id &&
     !value.signal.aborted &&
@@ -185,5 +206,5 @@ export function useCanvasSubmissionWriter(
         />
       )
     ) : null;
-  return { beforeSubmit, beforeRetry, bridge };
+  return { beforeSubmit, beforeRetry, afterReceipt, bridge };
 }

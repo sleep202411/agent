@@ -111,6 +111,11 @@ export const generationJob = z
   .passthrough();
 export type GenerationJob = z.infer<typeof generationJob>;
 const receipt = z.object({ request_id: id, status: jobStatus }).passthrough();
+export type GenerationReceipt = z.infer<typeof receipt>;
+export type AcknowledgeGeneration = (
+  value: GenerationReceipt,
+  signal: AbortSignal
+) => Promise<void>;
 const jobList = z.object({ jobs: z.array(generationJob), nextCursor: z.string().nullable() });
 export function generationSession(generation: number, signal?: AbortSignal) {
   if (signal?.aborted || generation !== getAuthGeneration())
@@ -235,7 +240,8 @@ export async function submitPendingGeneration(
   userId: string,
   generation: number,
   signal: AbortSignal,
-  storageScope?: GenerationStorageScope
+  storageScope?: GenerationStorageScope,
+  acknowledge?: AcknowledgeGeneration
 ) {
   generationSession(generation, signal);
   if (
@@ -255,6 +261,8 @@ export async function submitPendingGeneration(
   const value = existing
     ? { request_id: existing.id, status: existing.status }
     : await submitGeneration(frozen, generation, signal);
+  generationSession(generation, signal);
+  if (acknowledge) await acknowledge(value, signal);
   generationSession(generation, signal);
   outbox.clear(frozen.clientKey);
   return value;
@@ -315,7 +323,8 @@ export async function retryPendingGeneration(
   userId: string,
   generation: number,
   signal: AbortSignal,
-  storageScope?: GenerationStorageScope
+  storageScope?: GenerationStorageScope,
+  acknowledge?: AcknowledgeGeneration
 ) {
   generationSession(generation, signal);
   if (
@@ -347,6 +356,8 @@ export async function retryPendingGeneration(
       timeout: 30_000,
     })
   );
+  generationSession(generation, signal);
+  if (acknowledge) await acknowledge(value, signal);
   generationSession(generation, signal);
   box.clear(intent.clientKey);
   return value;

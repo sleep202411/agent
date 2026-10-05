@@ -62,6 +62,7 @@ import {
   generationRetryOutbox,
   retryPendingGeneration,
   type GenerationRetry,
+  type GenerationReceipt,
   cancelGeneration,
   generationCommand,
   generationOutbox,
@@ -107,6 +108,11 @@ export type CanvasGenerationContext = {
   mode: "image" | "video" | "audio";
   beforeSubmit(command: GenerationCommand, signal: AbortSignal): Promise<void>;
   beforeRetry(command: GenerationRetry, signal: AbortSignal): Promise<void>;
+  afterReceipt(
+    command: GenerationCommand | GenerationRetry,
+    receipt: GenerationReceipt,
+    signal: AbortSignal
+  ): Promise<void>;
 };
 type PanelProps = {
   userId: string;
@@ -627,7 +633,8 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
             userId,
             generation,
             controller.current!.signal,
-            storageScope
+            storageScope,
+            canvas ? (receipt, signal) => canvas.afterReceipt(command, receipt, signal) : undefined
           );
         },
         () => {
@@ -710,7 +717,10 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
                     userId,
                     generation,
                     controller.current!.signal,
-                    storageScope
+                    storageScope,
+                    canvas
+                      ? (receipt, signal) => canvas.afterReceipt(retryPending, receipt, signal)
+                      : undefined
                   );
                 },
                 () => {
@@ -1363,7 +1373,10 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
                       userId,
                       generation,
                       controller.current!.signal,
-                      storageScope
+                      storageScope,
+                      canvas
+                        ? (receipt, signal) => canvas.afterReceipt(command, receipt, signal)
+                        : undefined
                     );
                   },
                   () => {
