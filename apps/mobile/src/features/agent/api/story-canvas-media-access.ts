@@ -4,6 +4,8 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import type { CanvasWriteScope } from "./story-canvas-update";
 import type { CanvasLibraryAsset } from "../lib/story-canvas-overview";
 import { readStoryCanvasDocument } from "./story-canvas-document";
+import { readPlatformCanvasDocument, type PlatformCanvasScope } from "./platform-canvas-document";
+export type CanvasMediaScope = CanvasWriteScope | PlatformCanvasScope;
 function mediaUrl(value: string) {
   const url = new URL(value);
   if (!["https:", "http:"].includes(url.protocol) || url.username || url.password)
@@ -12,7 +14,7 @@ function mediaUrl(value: string) {
 }
 /** Call with the asset from a freshly materialized document, not a cached row. */
 export async function loadCanvasMediaAccess(
-  scope: CanvasWriteScope,
+  scope: CanvasMediaScope,
   asset: CanvasLibraryAsset,
   signal: AbortSignal
 ): Promise<{ url: string; expiresAt: string | null }> {
@@ -21,7 +23,8 @@ export async function loadCanvasMediaAccess(
     if (getAuthGeneration() !== scope.generation) throw Error("Canvas session expired.");
   };
   current();
-  await readStoryCanvasDocument(scope, scope.documentId, signal);
+  if ("kind" in scope && scope.kind === "platform") await readPlatformCanvasDocument(scope, signal);
+  else await readStoryCanvasDocument(scope, scope.documentId, signal);
   current();
   if (!asset.mediaAssetId) return { url: mediaUrl(asset.url), expiresAt: null };
   const id = z.string().uuid().parse(asset.mediaAssetId);

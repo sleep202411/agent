@@ -11,18 +11,18 @@ import { ConversationVideo } from "@/features/services/conversation-video";
 import { ConversationAudio } from "@/features/services/conversation-audio";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { canvasOverview, type CanvasLibraryAsset } from "../lib/story-canvas-overview";
-import { loadCanvasMediaAccess } from "../api/story-canvas-media-access";
-import type { CanvasWriteScope } from "../api/story-canvas-update";
+import { loadCanvasMediaAccess, type CanvasMediaScope } from "../api/story-canvas-media-access";
+import { openPlatformCanvasDocument } from "../api/platform-canvas-document";
 export type CanvasMediaTarget =
   | { assetId: string; node?: never }
   | { assetId?: never; node: { nodeId: string; mediaKey: string } };
-type Props = { scope: CanvasWriteScope; close(): void } & CanvasMediaTarget;
+type Props = { scope: CanvasMediaScope; close(): void } & CanvasMediaTarget;
 export function StoryCanvasMediaPreview(props: Props) {
   const active = useScreenActive();
   const [attempt, setAttempt] = useState(0);
   return active && getAuthGeneration() === props.scope.generation ? (
     <Preview
-      key={`${props.scope.generation}:${props.scope.projectId}:${props.scope.documentId}:${props.assetId ?? JSON.stringify(props.node)}:${attempt}`}
+      key={`${"kind" in props.scope ? `${props.scope.kind}:${props.scope.workspaceId}:${props.scope.sectionId}` : "story"}:${props.scope.generation}:${props.scope.projectId}:${props.scope.documentId}:${props.assetId ?? JSON.stringify(props.node)}:${attempt}`}
       {...props}
       retry={() => setAttempt((value) => value + 1)}
     />
@@ -111,6 +111,11 @@ function Preview({ scope, assetId, node, close, retry }: Props & { retry(): void
         {reading && !error && (
           <StoryCanvasReader
             scope={scope}
+            platform={
+              "kind" in scope && scope.kind === "platform"
+                ? { scope, load: openPlatformCanvasDocument }
+                : undefined
+            }
             title={t("storyCanvas.title")}
             runtimeError={t("storyCanvas.loadError")}
             onError={(message) => {

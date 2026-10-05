@@ -15,6 +15,7 @@ import {
 import { canvasOverview } from "../lib/story-canvas-overview";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasMap } from "./story-canvas-map";
+import { StoryCanvasMediaPreview, type CanvasMediaTarget } from "./story-canvas-media-preview";
 import { PlatformActorsPanel } from "./platform-actors-panel";
 
 export function PlatformCanvasPanel({
@@ -106,6 +107,7 @@ function Document({ scope, openActors }: { scope: PlatformCanvasScope; openActor
   const [loaded, setLoaded] = useState<CanvasLoaded>();
   const [overview, setOverview] = useState<ReturnType<typeof canvasOverview>>();
   const [error, setError] = useState<string>();
+  const [mediaPreview, setMediaPreview] = useState<CanvasMediaTarget>();
   const [mapping, setMapping] = useState(false);
   const [selected, setSelected] = useState<string>();
   return (
@@ -162,6 +164,21 @@ function Document({ scope, openActors }: { scope: PlatformCanvasScope; openActor
                 }}
               >
                 <ThemedText type="smallBold">{node.title}</ThemedText>
+                {node.media.map((media, index) => (
+                  <Pressable
+                    key={media.id}
+                    accessibilityRole="button"
+                    onPress={() =>
+                      setMediaPreview({ node: { nodeId: node.id, mediaKey: media.id } })
+                    }
+                    style={{ minHeight: 44, justifyContent: "center" }}
+                  >
+                    <ThemedText type="small">
+                      {t("storyCandidates.preview")}
+                      {node.media.length > 1 ? ` ${index + 1}` : ""}
+                    </ThemedText>
+                  </Pressable>
+                ))}
                 {!!node.text && (
                   <ThemedText type="small" selectable>
                     {node.text}
@@ -180,6 +197,13 @@ function Document({ scope, openActors }: { scope: PlatformCanvasScope; openActor
             </Pressable>
           )}
         </ScrollView>
+      )}
+      {loaded && mediaPreview && (
+        <StoryCanvasMediaPreview
+          scope={scope}
+          {...mediaPreview}
+          close={() => setMediaPreview(undefined)}
+        />
       )}
       {loaded && mapping && (
         <StoryCanvasMap

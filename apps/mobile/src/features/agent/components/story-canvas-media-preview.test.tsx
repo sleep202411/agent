@@ -7,10 +7,12 @@ const h = vi.hoisted(() => ({
   active: true,
   generation: 1,
   reads: 0,
+  platform: undefined as unknown,
   kind: "image",
   removed: false,
   nodes: {} as Record<string, unknown>,
 }));
+vi.mock("../api/platform-canvas-document", () => ({ openPlatformCanvasDocument: vi.fn() }));
 vi.mock("../api/story-canvas-media-access", () => ({ loadCanvasMediaAccess: h.load }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
@@ -47,9 +49,16 @@ vi.mock("@/features/services/conversation-audio", () => ({
   ConversationAudio: () => <span>Audio player</span>,
 }));
 vi.mock("./story-canvas-reader", () => ({
-  StoryCanvasReader: ({ onResult }: { onResult(value: unknown): void }) => {
+  StoryCanvasReader: ({
+    onResult,
+    platform,
+  }: {
+    onResult(value: unknown): void;
+    platform?: unknown;
+  }) => {
     useEffect(() => {
       h.reads++;
+      h.platform = platform;
       onResult({
         documentId: "d",
         snapshot: {
@@ -69,7 +78,7 @@ vi.mock("./story-canvas-reader", () => ({
               },
         },
       });
-    }, [onResult]);
+    }, [onResult, platform]);
     return null;
   },
 }));
@@ -206,3 +215,25 @@ it("rejects a replaced node output instead of opening another result", async () 
   expect(h.load).not.toHaveBeenCalled();
   expect(host.textContent).toContain("no longer available");
 });
+
+it.each(["image", "video", "audio"])(
+  "uses the platform document reader and scope for %s media",
+  async (kind) => {
+    h.kind = kind;
+    const platformScope = { ...scope, kind: "platform" as const, workspaceId: "w", sectionId: "s" };
+    await act(async () =>
+      root.render(
+        <StoryCanvasMediaPreview scope={platformScope} assetId="entry" close={() => {}} />
+      )
+    );
+    expect(h.platform).toEqual({ scope: platformScope, load: expect.any(Function) });
+    expect(h.load).toHaveBeenCalledWith(
+      platformScope,
+      expect.objectContaining({ id: "entry" }),
+      expect.any(AbortSignal)
+    );
+    expect(host.textContent).toContain(
+      kind === "image" ? "Image" : kind === "video" ? "Video player" : "Audio player"
+    );
+  }
+);
