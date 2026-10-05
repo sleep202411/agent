@@ -2,6 +2,7 @@ import {
   CANVAS_CARD_CONFLICT,
   CanvasCardConflictError,
   canvasCardStateSchema,
+  type CanvasCardState,
 } from "../../../../canvas-editor/card-state-schema";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -20,6 +21,7 @@ import type { CanvasWriteScope } from "../api/story-canvas-update";
 import { canvasReconciliation } from "../lib/story-canvas-reconciliation";
 import {
   persistCanvasSubmission,
+  persistCanvasAuthoring,
   persistCanvasRetry,
   persistCanvasReceipt,
 } from "../lib/story-canvas-submission";
@@ -160,6 +162,28 @@ export function useCanvasSubmissionWriter(
       ),
     [save, scope, userId, type, queue, encode]
   );
+  const saveAuthoring = useCallback(
+    (
+      nodeId: string,
+      edit: { before: CanvasCardState; after: CanvasCardState },
+      signal: AbortSignal
+    ) =>
+      save(
+        (active) =>
+          persistCanvasAuthoring(
+            scope,
+            {
+              ownerId: userId,
+              type,
+              authoring: { documentId: scope.documentId, documentBlockId: nodeId, edit },
+            },
+            active,
+            { queue, encode }
+          ),
+        signal
+      ),
+    [save, scope, userId, type, queue, encode]
+  );
   const current = (value: Request) =>
     pending.current?.id === value.id &&
     !value.signal.aborted &&
@@ -174,10 +198,16 @@ export function useCanvasSubmissionWriter(
   };
   const fail = (value: Request, message: string) => {
     if (!accept(value)) return;
-    if (message.startsWith(CANVAS_CARD_CONFLICT) && value.loaded && "submission" in value.command) {
-      const node = value.loaded.snapshot.nodes[value.command.submission.context.documentBlockId] as
-        | { data?: unknown }
-        | undefined;
+    if (
+      message.startsWith(CANVAS_CARD_CONFLICT) &&
+      value.loaded &&
+      ("submission" in value.command || "authoring" in value.command)
+    ) {
+      const nodeId =
+        "authoring" in value.command
+          ? value.command.authoring.documentBlockId
+          : value.command.submission.context.documentBlockId;
+      const node = value.loaded.snapshot.nodes[nodeId] as { data?: unknown } | undefined;
       const current = canvasCardStateSchema.safeParse(node?.data);
       if (current.success) return value.finish(new CanvasCardConflictError(current.data));
     }
@@ -219,5 +249,5 @@ export function useCanvasSubmissionWriter(
         />
       )
     ) : null;
-  return { beforeSubmit, beforeRetry, afterReceipt, bridge };
+  return { beforeSubmit, beforeRetry, afterReceipt, saveAuthoring, bridge };
 }

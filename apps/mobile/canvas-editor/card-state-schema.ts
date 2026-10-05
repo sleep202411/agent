@@ -27,6 +27,6 @@ export const CANVAS_CARD_CONFLICT = "CANVAS_CARD_CONFLICT: ";
 /** The encoder rejected authoring changes before producing a write. */
 export class CanvasCardConflictError extends Error {
   constructor(public readonly current: CanvasCardState) {
-    super("The canvas card changed while composing. Review the latest values before generating.");
+    super("The canvas card changed while composing. Review the latest values before saving.");
   }
 }

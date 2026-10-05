@@ -103,7 +103,7 @@ it("accepts settled runs and reordered payload keys but never regresses an ackno
   expect(recordCanvasSubmission(settled, documentId, command).yjsUpdateBase64).toBeNull();
 });
 
-it.each(["submission", "edit", "retry", "receipt"] as const)(
+it.each(["submission", "edit", "retry", "receipt", "authoring"] as const)(
   "records %s through the bundled runtime bridge",
   async (kind) => {
     const { runInNewContext } = await import("node:vm");
@@ -147,37 +147,53 @@ it.each(["submission", "edit", "retry", "receipt"] as const)(
         sequence: 0,
         snapshot,
         submission:
-          kind === "retry"
+          kind === "authoring"
             ? {
                 ownerId: "alice",
                 type: "image",
-                retry: { documentId, documentBlockId: "card", jobId: documentId },
+                authoring: {
+                  documentId,
+                  documentBlockId: "card",
+                  edit: {
+                    before: canvasCardStateSchema.parse({ settings: { seed: 7 } }),
+                    after: canvasCardStateSchema.parse({
+                      prompt: "Autosaved",
+                      settings: { seed: 7 },
+                    }),
+                  },
+                },
               }
-            : kind === "receipt"
+            : kind === "retry"
               ? {
                   ownerId: "alice",
                   type: "image",
-                  receipt: {
-                    documentId,
-                    documentBlockId: "card",
-                    submissionKey: "attempt",
-                    jobId: documentId,
-                  },
+                  retry: { documentId, documentBlockId: "card", jobId: documentId },
                 }
-              : kind === "edit"
+              : kind === "receipt"
                 ? {
-                    ...command,
-                    cardEdit: {
-                      before: canvasCardStateSchema.parse({ settings: { seed: 7 } }),
-                      after: canvasCardStateSchema.parse({
-                        modelId: "model",
-                        prompt: "Lake",
-                        mode: "image_to_image",
-                        settings: { seed: 2 },
-                      }),
+                    ownerId: "alice",
+                    type: "image",
+                    receipt: {
+                      documentId,
+                      documentBlockId: "card",
+                      submissionKey: "attempt",
+                      jobId: documentId,
                     },
                   }
-                : command,
+                : kind === "edit"
+                  ? {
+                      ...command,
+                      cardEdit: {
+                        before: canvasCardStateSchema.parse({ settings: { seed: 7 } }),
+                        after: canvasCardStateSchema.parse({
+                          modelId: "model",
+                          prompt: "Lake",
+                          mode: "image_to_image",
+                          settings: { seed: 2 },
+                        }),
+                      },
+                    }
+                  : command,
       })
     );
     const result = canvasRuntimeMessage.parse(received.at(-1));
@@ -186,10 +202,14 @@ it.each(["submission", "edit", "retry", "receipt"] as const)(
     expect(materializeCanvas(snapshot, [result.yjsUpdateBase64]).snapshot).toEqual(result.snapshot);
     if (kind === "edit")
       expect(result.snapshot.nodes.card).toHaveProperty("data.mode", "image_to_image");
-    expect(result.snapshot.nodes.card).toHaveProperty(
-      "data.generation.submissionKey",
-      kind === "retry" ? `retry:${documentId}` : "attempt"
-    );
+    if (kind === "authoring") {
+      expect(result.snapshot.nodes.card).toHaveProperty("data.prompt", "Autosaved");
+      expect(result.snapshot.nodes.card).not.toHaveProperty("data.generation.submissionKey");
+    } else
+      expect(result.snapshot.nodes.card).toHaveProperty(
+        "data.generation.submissionKey",
+        kind === "retry" ? `retry:${documentId}` : "attempt"
+      );
   }
 );
 
@@ -360,4 +380,37 @@ it("rejects stale unedited authoring fields and rebound edges before starting a 
       },
     })
   ).toThrow("connection changed");
+});
+
+it("autosaves authoring without creating or replacing a generation job", () => {
+  const generation = { status: "generating", jobId: documentId };
+  const before = canvasCardStateSchema.parse({ settings: { seed: 7 } });
+  const authoring = {
+    ownerId: "alice",
+    type: "image" as const,
+    authoring: {
+      documentId,
+      documentBlockId: "card",
+      edit: {
+        before,
+        after: { ...before, prompt: "", settings: { seed: 9 } },
+      },
+    },
+  };
+  const result = recordCanvasSubmission(fixture(generation), documentId, authoring);
+  expect(result.snapshot.nodes.card).toHaveProperty("data.generation", generation);
+  expect(result.snapshot.nodes.card).toHaveProperty("data.settings.seed", 9);
+  expect(result.snapshot.nodes.card).toHaveProperty("data.name", "Keep name");
+  expect(recordCanvasSubmission(result.state, documentId, authoring).yjsUpdateBase64).toBeNull();
+  expect(() => recordCanvasSubmission(fixture(undefined, true), documentId, authoring)).toThrow();
+  const changed = {
+    ...authoring,
+    authoring: {
+      ...authoring.authoring,
+      edit: { before, after: { ...before, settings: { seed: 11 } } },
+    },
+  };
+  expect(() => recordCanvasSubmission(result.state, documentId, changed)).toThrow("changed");
+  const idle = recordCanvasSubmission(fixture(), documentId, authoring);
+  expect(idle.snapshot.nodes.card).not.toHaveProperty("data.generation.status");
 });

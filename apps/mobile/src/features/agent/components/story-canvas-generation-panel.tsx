@@ -176,22 +176,21 @@ function Composer({
   card: ReturnType<typeof readCanvasGenerationSeed>;
   onBusyChange(value: boolean): void;
 }) {
-  const { beforeSubmit, beforeRetry, afterReceipt, bridge } = useCanvasSubmissionWriter(
-    scope,
-    userId,
-    card.mode
-  );
+  const { beforeSubmit, beforeRetry, afterReceipt, saveAuthoring, bridge } =
+    useCanvasSubmissionWriter(scope, userId, card.mode);
   const canvas = useMemo(
     () => ({
       documentId: scope.documentId,
       nodeId,
       mode: card.mode,
       seed: card.seed,
+      saveAuthoring: (edit: Parameters<typeof saveAuthoring>[1], signal: AbortSignal) =>
+        saveAuthoring(nodeId, edit, signal),
       beforeSubmit,
       beforeRetry,
       afterReceipt,
     }),
-    [scope.documentId, nodeId, card, beforeSubmit, beforeRetry, afterReceipt]
+    [scope.documentId, nodeId, card, beforeSubmit, beforeRetry, afterReceipt, saveAuthoring]
   );
   return (
     <>

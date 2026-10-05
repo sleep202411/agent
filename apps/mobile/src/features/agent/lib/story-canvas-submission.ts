@@ -10,6 +10,8 @@ import {
 } from "@/features/ai-lab/jobs-api";
 import {
   canvasSubmissionSchema,
+  canvasAuthoringSchema,
+  type CanvasAuthoring,
   type CanvasSubmission,
   type CanvasSubmissionRecord,
 } from "../../../../canvas-editor/submission-schema";
@@ -72,11 +74,11 @@ async function persistRecord(
   if (dependencies.queue.read()) await dependencies.queue.resume(signal);
   generationSession(scope.generation, signal);
   if (!dependencies.queue.canPrepare())
-    throw Error("Finish the saved canvas action before generating.");
+    throw Error("Finish the saved canvas action before saving further changes.");
   const update = await dependencies.encode(command, signal);
   generationSession(scope.generation, signal);
   if (!dependencies.queue.canPrepare())
-    throw Error("Finish the saved canvas action before generating.");
+    throw Error("Finish the saved canvas action before saving further changes.");
   if (update) {
     dependencies.queue.prepare({ clientKey: uuid.v4(), yjsUpdateBase64: update });
     await dependencies.queue.resume(signal);
@@ -192,4 +194,17 @@ export async function persistCanvasReceipt(
     signal,
     dependencies
   );
+}
+
+export async function persistCanvasAuthoring(
+  scope: CanvasWriteScope,
+  command: CanvasAuthoring,
+  signal: AbortSignal,
+  dependencies: SaveDependencies
+) {
+  generationSession(scope.generation, signal);
+  const parsed = canvasAuthoringSchema.parse(command);
+  if (parsed.authoring.documentId !== scope.documentId)
+    throw Error("Card belongs to another document.");
+  return persistRecord(scope, parsed, signal, dependencies);
 }

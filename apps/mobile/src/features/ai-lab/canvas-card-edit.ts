@@ -17,7 +17,8 @@ export function canvasCardEdit(
   draft: GenerationDraft,
   model: GenerationModel,
   mode: string | undefined,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  includeInactive = false
 ) {
   const before = draft.canvasBase ?? seed.canvasBase ?? canvasCardStateSchema.parse(seed);
   const referenceNames = Object.entries(model.input_schema.properties)
@@ -33,7 +34,15 @@ export function canvasCardEdit(
     ? canvasReferenceFields(model.input_schema, mode)
     : referenceNames;
   const references: CanvasCardState["references"] = { ...before.references };
-  for (const name of active) {
+  const fields = includeInactive
+    ? referenceNames.filter(
+        (name) =>
+          active.includes(name) ||
+          (Object.hasOwn(draft.values, name) &&
+            !Object.hasOwn(draft.deferredCanvasReferences ?? {}, name))
+      )
+    : active;
+  for (const name of fields) {
     const field = model.input_schema.properties[name]!;
     const ui = fieldUi(field) as { mediaKind?: string; control?: string };
     const kind =
@@ -88,4 +97,52 @@ export function canvasCardEdit(
     skillSelection: draft.skillSelection ?? null,
   });
   return { before, after };
+}
+
+/** Parse editable authoring values without requiring a complete paid-job input. */
+export function canvasAuthoringEdit(
+  seed: CanvasGenerationSeed,
+  draft: GenerationDraft,
+  model: GenerationModel,
+  mode: string | undefined
+) {
+  const input: Record<string, unknown> = {};
+  for (const [name, raw] of Object.entries(draft.values)) {
+    if (raw === undefined) continue;
+    const field = model.input_schema.properties[name];
+    if (!field) throw Error("Review the changed model settings before syncing this draft.");
+    let value = raw;
+    if (typeof raw === "string") {
+      if (field.type === "number" || field.type === "integer") {
+        if (!raw.trim()) continue;
+        value = Number(raw);
+        if (!Number.isFinite(value) || (field.type === "integer" && !Number.isInteger(value)))
+          throw Error("Finish entering a valid number before syncing this draft.");
+      } else if (field.type === "array")
+        value =
+          field.items.type === "string"
+            ? raw
+                .split(/\r?\n/)
+                .map((v) => v.trim())
+                .filter(Boolean)
+            : JSON.parse(raw);
+      else if (field.type === "object") value = JSON.parse(raw);
+    }
+    input[name] = value;
+  }
+  const edit = canvasCardEdit(seed, draft, model, mode, input, true);
+  for (const rows of Object.values(edit.after.references))
+    for (const row of rows) {
+      // Unchanged/deferred Web references are retained, even if their old URL expired.
+      if (
+        Object.values(edit.before.references)
+          .flat()
+          .some((old) => JSON.stringify(old) === JSON.stringify(row))
+      )
+        continue;
+      if (row.uploading || typeof row.url !== "string" || !/^https?:\/\//i.test(row.url))
+        throw Error("Finish selecting or uploading references before syncing this draft.");
+      new URL(row.url);
+    }
+  return edit;
 }

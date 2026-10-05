@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { canvasCardEdit } from "./canvas-card-edit";
+import { canvasCardEdit, canvasAuthoringEdit } from "./canvas-card-edit";
 import { canvasCardStateSchema } from "../../../canvas-editor/card-state-schema";
 import type { GenerationDraft } from "./draft";
 import type { GenerationModel } from "./catalog-api";
@@ -104,4 +104,41 @@ it("does not parse or overwrite inactive draft references in a text-only request
     { prompt: "Lake" }
   );
   expect(edit.after.references).toEqual(base.references);
+});
+
+it("autosaves partial prompts and numeric settings without requiring generation readiness", () => {
+  const edit = canvasAuthoringEdit(
+    seed,
+    { ...draft, values: { prompt: "", seed: "0" } },
+    model,
+    "text_to_image"
+  );
+  expect(edit.after.prompt).toBe("");
+  expect(edit.after.settings.seed).toBe(0);
+  expect(edit.after.references).toEqual(base.references);
+  expect(() =>
+    canvasAuthoringEdit(seed, { ...draft, values: { seed: "-" } }, model, "text_to_image")
+  ).toThrow();
+});
+it("autosaves edited inactive references while retaining deferred references", () => {
+  const edit = canvasAuthoringEdit(seed, draft, model, "text_to_image");
+  expect(edit.after.references.referenceImages?.[0]?.url).toBe("https://example.com/new.png");
+  const deferred = canvasAuthoringEdit(
+    seed,
+    {
+      ...draft,
+      deferredCanvasReferences: {
+        referenceImages: [
+          {
+            id: "ref",
+            url: "https://example.com/old.png",
+            assetId: "asset",
+          },
+        ],
+      },
+    },
+    model,
+    "text_to_image"
+  );
+  expect(deferred.after.references.referenceImages).toEqual(base.references.referenceImages);
 });

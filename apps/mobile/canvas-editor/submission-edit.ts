@@ -1,18 +1,12 @@
-import { CANVAS_CARD_CONFLICT, canvasCardStateSchema } from "./card-state-schema";
+import { canonical, canvasAuthoringPatches } from "./card-edit";
 import * as Y from "yjs";
-import { canvasSubmissionRecordSchema, type CanvasSubmissionRecord } from "./submission-schema";
+import {
+  canvasSubmissionRecordSchema,
+  type CanvasSubmissionRecord,
+  type CanvasAuthoring,
+} from "./submission-schema";
 import { captureCanvasState, encodeCanvasBytes, withCanvasState } from "./state";
 const kinds: Record<string, string> = { prompt: "image", video: "video", audio: "audio" };
-function canonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (value && typeof value === "object")
-    return `{${Object.entries(value)
-      .filter(([, item]) => item !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
-      .join(",")}}`;
-  return JSON.stringify(value);
-}
 /** Persist the same recovery record as Web before the host sends a paid job. */
 export function recordCanvasSubmission(
   state: string,
@@ -20,6 +14,7 @@ export function recordCanvasSubmission(
   raw: CanvasSubmissionRecord
 ) {
   const command = canvasSubmissionRecordSchema.parse(raw);
+  if ("authoring" in command) return recordCanvasAuthoring(state, documentId, command);
   const input = "submission" in command ? command.submission : null;
   const retry = "retry" in command ? command.retry : null;
   const receipt = "receipt" in command ? command.receipt : null;
@@ -84,38 +79,9 @@ export function recordCanvasSubmission(
         (typeof input.input.prompt === "string" && cardEdit.after.prompt !== input.input.prompt)
       )
         throw Error("Card edits do not match the generation request.");
-      const current = canvasCardStateSchema.parse(
-        Object.fromEntries(Object.keys(cardEdit.before).map((name) => [name, data.get(name)]))
-      );
-      for (const key of Object.keys(cardEdit.after) as (keyof typeof current)[]) {
-        if (
-          canonical(current[key]) !== canonical(cardEdit.before[key]) &&
-          canonical(current[key]) !== canonical(cardEdit.after[key])
-        )
-          throw Error(
-            `${CANVAS_CARD_CONFLICT}The canvas ${key} changed while composing. Review before generating.`
-          );
-        if (canonical(current[key]) !== canonical(cardEdit.after[key]))
-          patches.push([key, cardEdit.after[key]]);
-      }
-      const retained = new Set(
-        Object.values(cardEdit.after.references)
-          .flat()
-          .map((row) => row.edgeId)
-      );
-      for (const row of Object.values(cardEdit.before.references).flat()) {
-        if (typeof row.edgeId !== "string" || retained.has(row.edgeId)) continue;
-        const edge = edges.get(row.edgeId);
-        if (!edge) continue;
-        if (
-          !(edge instanceof Y.Map) ||
-          edge.get("id") !== row.edgeId ||
-          edge.get("target") !== context.documentBlockId ||
-          (row.sourceNodeId && edge.get("source") !== row.sourceNodeId)
-        )
-          throw Error("A reference connection changed while composing. Reload before generating.");
-        removedEdges.push(row.edgeId);
-      }
+      const authoring = canvasAuthoringPatches(doc, data, context.documentBlockId, cardEdit);
+      patches.push(...authoring.patches);
+      removedEdges.push(...authoring.removedEdges);
     }
     let update: string | null = null;
     doc.on("update", (bytes: Uint8Array) => {
@@ -141,6 +107,37 @@ export function recordCanvasSubmission(
       if (input && !cardEdit) {
         data.set("modelId", input.modelId);
         if (typeof input.input.prompt === "string") data.set("prompt", input.input.prompt);
+      }
+    });
+    return { ...captureCanvasState(doc), yjsUpdateBase64: update };
+  });
+}
+
+/** Autosave never creates or changes a paid-job recovery record. */
+function recordCanvasAuthoring(state: string, documentId: string, command: CanvasAuthoring) {
+  const { documentBlockId: nodeId, edit } = command.authoring;
+  if (command.authoring.documentId !== documentId) throw Error("Card belongs to another document.");
+  return withCanvasState(state, [], (doc) => {
+    const node = doc.getMap("nodes").get(nodeId);
+    const data = node instanceof Y.Map && node.get("data");
+    if (
+      !(node instanceof Y.Map) ||
+      node.get("id") !== nodeId ||
+      !(data instanceof Y.Map) ||
+      kinds[String(node.get("type"))] !== command.type ||
+      data.get("locked") === true
+    )
+      throw Error("This canvas card cannot be edited.");
+    const { patches, removedEdges } = canvasAuthoringPatches(doc, data, nodeId, edit);
+    let update: string | null = null;
+    doc.on("update", (bytes: Uint8Array) => {
+      update = encodeCanvasBytes(bytes);
+    });
+    doc.transact(() => {
+      for (const id of removedEdges) doc.getMap("edges").delete(id);
+      for (const [name, value] of patches) {
+        if (value === null) data.delete(name);
+        else data.set(name, value);
       }
     });
     return { ...captureCanvasState(doc), yjsUpdateBase64: update };

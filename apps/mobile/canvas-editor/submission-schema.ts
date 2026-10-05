@@ -69,9 +69,24 @@ export const canvasReceiptSchema = z
       .strict(),
   })
   .strict();
+export const canvasAuthoringSchema = z
+  .object({
+    ownerId: z.string().min(1),
+    type: z.enum(["image", "video", "audio"]),
+    authoring: z
+      .object({
+        documentId: z.string().uuid(),
+        documentBlockId: z.string().min(1).max(128),
+        edit: canvasCardEditSchema,
+      })
+      .strict(),
+  })
+  .strict();
+export type CanvasAuthoring = z.infer<typeof canvasAuthoringSchema>;
 export const canvasSubmissionRecordSchema = z.union([
   canvasSubmissionSchema,
   canvasRetrySchema,
   canvasReceiptSchema,
+  canvasAuthoringSchema,
 ]);
 export type CanvasSubmissionRecord = z.infer<typeof canvasSubmissionRecordSchema>;

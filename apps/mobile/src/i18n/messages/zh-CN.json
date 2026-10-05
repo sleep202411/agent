@@ -1,8 +1,8 @@
 {
-  "aiLab.canvasConflict": "此画布卡片已在其他会话中修改。你的草稿已保留，请在生成前查看最新内容。",
+  "aiLab.canvasConflict": "此画布卡片已在其他会话中修改。你的草稿已保留，请在保存前查看最新内容。",
   "aiLab.canvasLatest": "最新保存的卡片",
   "aiLab.canvasKeepDraft": "保留我的草稿",
-  "aiLab.canvasReviewConfirm": "以最新卡片为基础保留你的草稿？生成时将应用草稿设置和当前模式的参考素材。",
+  "aiLab.canvasReviewConfirm": "以最新卡片为基础保留你的草稿？保存时将应用草稿设置和参考素材。",
   "aiLab.generationMode": "生成模式",
   "aiLab.mode.text_to_image": "文生图",
   "aiLab.mode.text_to_video": "文生视频",
@@ -5387,5 +5387,7 @@
   "storyCanvas.panorama.zoomIn": "放大",
   "storyCanvas.panorama.zoomOut": "缩小",
   "storyCanvas.panorama.reset": "重置视角",
-  "storyCanvas.panorama.open": "查看全景"
+  "storyCanvas.panorama.open": "查看全景",
+  "aiLab.canvasAutosave": "更改会自动同步到画布。未填写完整的内容保留在本机。",
+  "aiLab.canvasSaveRetry": "重试保存画布"
 }

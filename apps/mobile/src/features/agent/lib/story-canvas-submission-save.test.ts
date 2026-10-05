@@ -1,3 +1,4 @@
+import { canvasCardStateSchema } from "../../../../canvas-editor/card-state-schema";
 import type { getGenerationJob } from "@/features/ai-lab/jobs-api";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
@@ -5,6 +6,7 @@ import {
   persistCanvasSubmission,
   persistCanvasRetry,
   persistCanvasReceipt,
+  persistCanvasAuthoring,
 } from "./story-canvas-submission";
 import type { CanvasUpdateCommand } from "../api/story-canvas-update";
 const h = vi.hoisted(() => ({ generation: 1 }));
@@ -254,4 +256,27 @@ it("keeps local authoring edits outside the official frozen provider payload", a
   });
   expect(record.cardEdit).toEqual(canvasCardEdit);
   expect(record.submission).not.toHaveProperty("canvasCardEdit");
+});
+
+it("recovers authoring bytes before encoding further edits, without a generation request", async () => {
+  const before = canvasCardStateSchema.parse({ prompt: "Old" });
+  const edit = { before, after: { ...before, prompt: "New" } };
+  const authoring = {
+    ownerId: "alice",
+    type: "image" as const,
+    authoring: { documentId: id, documentBlockId: "card", edit },
+  };
+  const persist = () =>
+    persistCanvasAuthoring(scope, authoring, new AbortController().signal, { queue, encode });
+  queue.resume.mockRejectedValueOnce(Error("Lost authoring reply"));
+  await expect(persist()).rejects.toThrow("Lost authoring reply");
+  const original = pending;
+  encode.mockImplementationOnce(async () => {
+    expect(pending).toBeNull();
+    return null;
+  });
+  await persist();
+  expect(queue.prepare).toHaveBeenCalledExactlyOnceWith(original);
+  expect(encode).toHaveBeenLastCalledWith(authoring, expect.any(AbortSignal));
+  expect(queue.resume).toHaveBeenCalledTimes(2);
 });

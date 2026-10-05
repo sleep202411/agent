@@ -1,3 +1,5 @@
+import { useCanvasAutosave } from "./use-canvas-autosave";
+import type { CanvasCardState } from "../../../canvas-editor/card-state-schema";
 import { CanvasCardConflictError } from "../../../canvas-editor/card-state-schema";
 import { canvasCardEdit } from "./canvas-card-edit";
 import {
@@ -116,6 +118,10 @@ export type CanvasGenerationContext = {
   nodeId: string;
   mode: "image" | "video" | "audio";
   seed?: CanvasGenerationSeed;
+  saveAuthoring?(
+    edit: { before: CanvasCardState; after: CanvasCardState },
+    signal: AbortSignal
+  ): Promise<void>;
   beforeSubmit(command: GenerationCommand, signal: AbortSignal): Promise<void>;
   beforeRetry(command: GenerationRetry, signal: AbortSignal): Promise<void>;
   afterReceipt(
@@ -216,11 +222,14 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
     denied = useRef(false),
     selection = useRef<string | null>(null);
   const mode = canvas?.mode ?? draft?.mode ?? "image";
-  function save(value: GenerationDraft) {
-    store.save(value);
-    setDraft(value);
-    setError("");
-  }
+  const save = useCallback(
+    (value: GenerationDraft) => {
+      store.save(value);
+      setDraft(value);
+      setError("");
+    },
+    [store]
+  );
   const fail = useCallback(
     (e: unknown) => {
       if (e instanceof ApiRequestError && [401, 403].includes(e.status ?? 0)) {
@@ -339,7 +348,34 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
             (!!generationMode && model.generationModes.includes(generationMode)))));
   const unsupportedFields =
     model && draft ? unsupportedFormFields(model.input_schema, draft.values) : [];
+  const autoSignal = useCallback(() => controller.current?.signal, []);
+  const autosave = useCanvasAutosave({
+    enabled:
+      !!canvas?.saveAuthoring &&
+      active &&
+      canGenerate &&
+      !loading &&
+      !privateDenied &&
+      !schemaChanged &&
+      !op.busy &&
+      !pending &&
+      !retryPending &&
+      !confirm,
+    draft,
+    model,
+    mode: generationMode,
+    seed: canvas?.seed,
+    store,
+    saveDraft: save,
+    saveAuthoring: canvas?.saveAuthoring,
+    getSignal: autoSignal,
+    run: op.run,
+  });
   function requestChoose(presetId: string, modelId?: string) {
+    if (draft?.canvasSave) {
+      setError(t("aiLab.canvasSaveRetry"));
+      return;
+    }
     if (draft && (draft.presetId !== presetId || (modelId && draft.modelId !== modelId))) {
       setNextChoice({ presetId, modelId });
       setConfirm("reset");
@@ -783,6 +819,25 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
       {loading ? <ActivityIndicator /> : null}
       {error && !(draft?.canvasConflict && error === t("aiLab.canvasConflict")) ? (
         <ThemedText>{error}</ThemedText>
+      ) : null}
+      {canvas?.saveAuthoring ? (
+        <View style={{ gap: 8 }}>
+          <ThemedText type="small" themeColor="textSecondary">
+            {t("aiLab.canvasAutosave")}
+          </ThemedText>
+          {autosave.error ? (
+            <>
+              <ThemedText type="small" accessibilityRole="alert">
+                {autosave.error}
+              </ThemedText>
+              <Button
+                label={t("aiLab.canvasSaveRetry")}
+                disabled={op.busy}
+                onPress={autosave.retry}
+              />
+            </>
+          ) : null}
+        </View>
       ) : null}
       {draft?.canvasConflict ? (
         <View style={{ gap: 8 }}>
@@ -1296,6 +1351,8 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
           <Button
             label={t("aiLab.generate")}
             disabled={
+              !!draft?.canvasSave ||
+              !!autosave.error ||
               !!draft?.canvasConflict ||
               op.busy ||
               !!pending ||
@@ -1316,7 +1373,9 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
           {draft ? (
             <Button
               label={t("aiLab.reset")}
-              disabled={op.busy || !!pending || !!retryPending || !!draft?.upload}
+              disabled={
+                op.busy || !!pending || !!retryPending || !!draft?.upload || !!draft?.canvasSave
+              }
               onPress={() => {
                 setNextChoice(undefined);
                 setConfirm("reset");

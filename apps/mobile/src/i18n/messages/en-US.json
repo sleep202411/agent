@@ -1,8 +1,8 @@
 {
-  "aiLab.canvasConflict": "This canvas card changed in another session. Your draft is kept. Review the latest values before generating.",
+  "aiLab.canvasConflict": "This canvas card changed in another session. Your draft is kept. Review the latest values before saving.",
   "aiLab.canvasLatest": "Latest saved card",
   "aiLab.canvasKeepDraft": "Keep my draft",
-  "aiLab.canvasReviewConfirm": "Keep your draft against the latest card? Generating will apply your draft settings and active references.",
+  "aiLab.canvasReviewConfirm": "Keep your draft against the latest card? Saving will apply your draft settings and references.",
   "aiLab.generationMode": "Generation mode",
   "aiLab.mode.text_to_image": "Text to Image",
   "aiLab.mode.text_to_video": "Text to Video",
@@ -5387,5 +5387,7 @@
   "storyCanvas.panorama.zoomIn": "Zoom in",
   "storyCanvas.panorama.zoomOut": "Zoom out",
   "storyCanvas.panorama.reset": "Reset view",
-  "storyCanvas.panorama.open": "View panorama"
+  "storyCanvas.panorama.open": "View panorama",
+  "aiLab.canvasAutosave": "Changes sync to the canvas automatically. Incomplete fields stay on this device.",
+  "aiLab.canvasSaveRetry": "Retry canvas save"
 }
