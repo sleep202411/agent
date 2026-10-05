@@ -1,3 +1,4 @@
+import { encodeUserId } from "@repo/shared/user-id-codec";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   createTeamInvitation,
@@ -199,7 +200,7 @@ it("uses explicit ID lookup and preserves that mode in durable send recovery", a
   );
   expect(h.get).toHaveBeenCalledWith(
     "/users/by-id",
-    expect.objectContaining({ params: { id: "42", checkCrewId: "crew" } })
+    expect.objectContaining({ params: { id: "42", idFormat: "public", checkCrewId: "crew" } })
   );
   expect(teamInvitationPending("crew", "actor", 1).read()?.input).toEqual(data);
 });
@@ -212,3 +213,36 @@ it.each(["artist@example.com", "+6512345678", "1234567890123456789"])(
     expect(h.get).not.toHaveBeenCalled();
   }
 );
+
+it.each(["42", "12345678", "123456789012345678"])(
+  "looks up the displayed ID for %s and sends the same public input",
+  async (rawId) => {
+    const publicId = encodeUserId(rawId);
+    h.get.mockImplementation(async (path: string) =>
+      path.endsWith("/me")
+        ? { userId: "actor", permissions: h.permissions }
+        : { userId: rawId, nickname: "Artist", isCrewMember: false }
+    );
+    h.post.mockResolvedValue({ ...row, inviteeUserId: rawId });
+    const data = { ...input, account: ` ${publicId} `, lookupBy: "userId" as const };
+    const target = await lookupTeamInvitee("crew", "actor", 1, data.account, signal(), "userId");
+    await createTeamInvitation("crew", "actor", 1, data, target.userId, signal());
+    expect(h.get).toHaveBeenCalledWith(
+      "/users/by-id",
+      expect.objectContaining({ params: { id: publicId, idFormat: "public", checkCrewId: "crew" } })
+    );
+    expect(h.post).toHaveBeenCalledWith(
+      "/crews/crew/invitations",
+      expect.objectContaining({ data: { ...data, account: publicId }, retry: false })
+    );
+    expect(teamInvitationPending("crew", "actor", 1).read()).toBeNull();
+  }
+);
+it("rejects a damaged public ID checksum before any request", async () => {
+  const valid = encodeUserId("123456789012345678");
+  const damaged = valid.slice(0, -1) + (valid.endsWith("0") ? "1" : "0");
+  await expect(lookupTeamInvitee("crew", "actor", 1, damaged, signal(), "userId")).rejects.toThrow(
+    "Invalid invitation recipient"
+  );
+  expect(h.get).not.toHaveBeenCalled();
+});

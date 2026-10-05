@@ -4713,7 +4713,7 @@
   "play.retryReport": "Retry saving report",
   "teamInvites.useUserId": "Use user ID",
   "teamInvites.useContact": "Use email or phone",
-  "teamInvites.userId": "User ID (1–18 digits)",
+  "teamInvites.userId": "Public user ID",
   "references.title": "Reference pack",
   "references.refresh": "Refresh",
   "references.create": "Add reference",

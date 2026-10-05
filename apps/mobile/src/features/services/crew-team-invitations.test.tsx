@@ -1,3 +1,4 @@
+import { encodeUserId } from "@repo/shared/user-id-codec";
 import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -200,27 +201,28 @@ it("requires confirmation to revoke and refreshes without replay after a lost re
 });
 
 it("requires explicit ID mode and a fresh review after switching modes", async () => {
+  const publicId = encodeUserId("123456789012345678");
   await render();
   await fill("teamInvites.account", "42");
   expect(button("teamInvites.lookup").disabled).toBe(true);
   await act(async () => button("teamInvites.useUserId").click());
-  await fill("teamInvites.userId", "42");
+  await fill("teamInvites.userId", publicId);
   await act(async () => button("teamInvites.lookup").click());
   expect(h.get).toHaveBeenCalledWith(
     "/users/by-id",
-    expect.objectContaining({ params: { id: "42", checkCrewId: "crew" } })
+    expect.objectContaining({ params: { id: publicId, idFormat: "public", checkCrewId: "crew" } })
   );
   await act(async () => button("teamInvites.useContact").click());
   expect(host.textContent).not.toContain("teamInvites.confirmHelp");
   expect(button("teamInvites.lookup").disabled).toBe(true);
   await act(async () => button("teamInvites.useUserId").click());
-  await fill("teamInvites.userId", "42");
+  await fill("teamInvites.userId", publicId);
   await act(async () => button("teamInvites.lookup").click());
   await act(async () => button("teamInvites.send").click());
   expect(h.post).toHaveBeenCalledWith(
     "/crews/crew/invitations",
     expect.objectContaining({
-      data: { account: "42", lookupBy: "userId", policyKeys: [], expiresInDays: 7 },
+      data: { account: publicId, lookupBy: "userId", policyKeys: [], expiresInDays: 7 },
     })
   );
 });

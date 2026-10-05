@@ -4713,7 +4713,7 @@
   "play.retryReport": "重试保存游玩报告",
   "teamInvites.useUserId": "使用用户 ID",
   "teamInvites.useContact": "使用邮箱或手机号",
-  "teamInvites.userId": "用户 ID（1–18 位数字）",
+  "teamInvites.userId": "公开用户 ID",
   "references.title": "参考素材包",
   "references.refresh": "刷新",
   "references.create": "添加参考",

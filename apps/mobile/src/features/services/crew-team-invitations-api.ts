@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parsePublicUserId } from "@repo/shared/user-id-codec";
 import { isPresetPosition } from "@repo/shared/crew";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -8,7 +9,7 @@ const uuid = z.string().uuid();
 const policy = z.enum(["admin", "finance"]);
 function validRecipient(account: string, lookupBy?: "contact" | "userId") {
   return lookupBy === "userId"
-    ? /^\d{1,18}$/.test(account)
+    ? parsePublicUserId(account) !== null
     : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account) || /^\+?\d[\d\s-]{5,32}$/.test(account);
 }
 export const teamInvitationInput = z
@@ -32,7 +33,7 @@ export const teamInvitationInput = z
   .strict()
   .refine((input) => validRecipient(input.account, input.lookupBy), {
     path: ["account"],
-    message: "Enter a valid contact or numeric user ID for the selected lookup mode.",
+    message: "Enter a valid contact or public user ID for the selected lookup mode.",
   });
 export type TeamInvitationInput = z.infer<typeof teamInvitationInput>;
 export const teamInvitation = z.object({
@@ -162,7 +163,7 @@ export async function lookupTeamInvitee(
       signal,
       retry: false,
       params: {
-        ...(lookupBy === "userId" ? { id: value } : { account: value }),
+        ...(lookupBy === "userId" ? { id: value, idFormat: "public" } : { account: value }),
         checkCrewId: crewId,
       },
     })
