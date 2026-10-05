@@ -7,7 +7,6 @@ import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -39,8 +38,7 @@ import { PlatformProjectDirectory } from "@/features/agent/platform-project-dire
 import { StudioWorkspaceSettingsScreen } from "@/features/agent/studio-workspace-settings";
 import { StudioMembers } from "@/features/agent/studio-members";
 import { StudioInviteAccept } from "@/features/agent/studio-invite-accept";
-import { studioInviteTargetUrl } from "@/features/agent/api/studio-invite-accept-api";
-import { appEnv } from "@/config/app-env";
+import { studioInviteTargetRoute } from "@/features/agent/api/studio-invite-accept-api";
 import { StudioInvites } from "@/features/agent/studio-invites";
 import type { StudioInviteScope } from "@/features/agent/api/studio-invites-api";
 import { useTheme } from "@/hooks/use-theme";
@@ -289,7 +287,7 @@ function AgentHubSession({
         onClose={() => setJoiningInvite(false)}
         onOpen={async (target) => {
           if (target.scope === "project") {
-            await Linking.openURL(studioInviteTargetUrl(target, appEnv.appRegion));
+            router.push(toHref(studioInviteTargetRoute(target)));
             return;
           }
           setJoiningInvite(false);

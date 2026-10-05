@@ -46,7 +46,20 @@ vi.mock("@/features/agent/studio-members", () => ({
   StudioMembers: () => <span>Studio Members</span>,
 }));
 vi.mock("@/features/agent/studio-invite-accept", () => ({
-  StudioInviteAccept: () => <span>Accept Invite</span>,
+  StudioInviteAccept: ({ onOpen }: { onOpen: (target: unknown) => void }) => (
+    <button
+      onClick={() =>
+        onOpen({
+          scope: "project",
+          projectId: "22222222-2222-4222-8222-222222222222",
+          workspaceId: "11111111-1111-4111-8111-111111111111",
+          targetName: "Film",
+        })
+      }
+    >
+      Accept Invite
+    </button>
+  ),
 }));
 vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
@@ -358,4 +371,17 @@ it("switches the Story library to the moved project's workspace", async () => {
   expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "destination");
   expect(host.textContent).toContain("Moved Story");
   expect(host.textContent).not.toContain("Editing story");
+});
+
+it("opens a pasted platform-project invitation in the native project screen", async () => {
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "studioJoin.title")!.click()
+  );
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Accept Invite")!.click()
+  );
+  expect(h.push).toHaveBeenCalledExactlyOnceWith(
+    "/studio-project?projectId=22222222-2222-4222-8222-222222222222&workspaceId=11111111-1111-4111-8111-111111111111"
+  );
 });

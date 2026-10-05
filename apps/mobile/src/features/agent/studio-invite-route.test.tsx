@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import StudioInviteScreen from "@/app/studio-invite";
 const h = vi.hoisted(() => ({
+  scope: "workspace",
   status: "anonymous",
   generation: 1,
   link: "",
@@ -53,7 +54,9 @@ vi.mock("@/features/agent/studio-invite-accept", () => ({
     <button
       onClick={() =>
         onOpen({
-          scope: "workspace",
+          scope: h.scope,
+          projectId: "22222222-2222-4222-8222-222222222222",
+          storyProjectId: "33333333-3333-4333-8333-333333333333",
           workspaceId: "11111111-1111-4111-8111-111111111111",
           targetName: "Team",
         })
@@ -68,6 +71,7 @@ let host: HTMLDivElement, root: Root;
 const render = () => act(async () => root.render(<StudioInviteScreen />));
 beforeEach(() => {
   vi.resetAllMocks();
+  h.scope = "workspace";
   h.status = "anonymous";
   h.generation = 1;
   h.focused = true;
@@ -110,7 +114,23 @@ it("waits for hydration before prompting", async () => {
   h.status = "hydrating";
   await render();
   expect(h.login).not.toHaveBeenCalled();
+  h.scope = "workspace";
   h.status = "anonymous";
   await render();
   expect(h.login).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  [
+    "project",
+    "/studio-project?projectId=22222222-2222-4222-8222-222222222222&workspaceId=11111111-1111-4111-8111-111111111111",
+  ],
+  ["story-project", "/agent/33333333-3333-4333-8333-333333333333?mode=story&title=Team"],
+])("opens accepted %s invitations in Mobile", async (scope, destination) => {
+  h.status = "authenticated";
+  h.scope = scope;
+  await render();
+  await act(async () => host.querySelector("button")!.click());
+  expect(h.replace).toHaveBeenCalledExactlyOnceWith(destination);
+  expect(h.open).not.toHaveBeenCalled();
 });

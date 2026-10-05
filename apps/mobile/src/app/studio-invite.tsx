@@ -1,12 +1,12 @@
 import { useCallback, useRef } from "react";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, Linking, Pressable, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { appEnv } from "@/config/app-env";
 import { StudioInviteAccept } from "@/features/agent/studio-invite-accept";
 import { studioInviteRoute } from "@/features/agent/studio-invite-link";
-import { studioInviteTargetUrl } from "@/features/agent/api/studio-invite-accept-api";
+import { studioInviteTargetRoute } from "@/features/agent/api/studio-invite-accept-api";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
@@ -68,18 +68,7 @@ function InviteEntry({ link }: { link?: string }) {
           generation={auth.generation}
           initialLink={link}
           onClose={close}
-          onOpen={async (target) => {
-            if (target.scope === "project")
-              await Linking.openURL(studioInviteTargetUrl(target, appEnv.appRegion));
-            else if (target.scope === "story-project")
-              router.replace(
-                toHref(
-                  `/agent/${target.storyProjectId}?mode=story&title=${encodeURIComponent(target.targetName)}`
-                )
-              );
-            else
-              router.replace(toHref(`/agent?workspace=${encodeURIComponent(target.workspaceId)}`));
-          }}
+          onOpen={(target) => router.replace(toHref(studioInviteTargetRoute(target)))}
         />
       ) : (
         <View style={{ padding: 16, gap: 12 }}>
