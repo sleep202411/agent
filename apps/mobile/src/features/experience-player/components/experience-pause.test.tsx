@@ -231,6 +231,10 @@ function progress(positionMs: number): ExperienceMediaCheckpoint {
   };
 }
 const copy = {
+  speed: {
+    label: "Playback speed",
+    interactionBlocked: "Finish the current interaction before changing speed.",
+  },
   journeyMap: createExperienceJourneyMapCopy((key) => key),
   pause: "Pause",
   resume: "Resume",
@@ -771,4 +775,35 @@ it("temporarily clamps media to normal speed for an interaction hold without los
   expect(captured.mock.calls.at(-1)![0].playback.rate).toBe(2);
   await act(async () => h.hold(false));
   expect(h.video.playbackRate).toBe(2);
+});
+
+it("cycles speed while paused, saves it immediately and retains it on resume", async () => {
+  await render(true, runtime, true);
+  await click("Start");
+  expect(container.textContent).not.toContain("Playback speed");
+  await pausePicture();
+  for (const [before, after] of [
+    [1, 1.25],
+    [1.25, 1.5],
+    [1.5, 2],
+    [2, 1],
+  ]) {
+    await click(`Playback speed: ${before}×`);
+    expect(captured.mock.calls.at(-1)![0].playback.rate).toBe(after);
+    expect(h.video.playbackRate).toBe(after);
+    expect(container.textContent).toContain("Paused");
+  }
+  await click("Playback speed: 1×");
+  await click("Resume");
+  expect(h.video.playbackRate).toBe(1.25);
+  expect(container.textContent).not.toContain("Playback speed");
+});
+it("keeps an interaction-blocked speed unchanged even if its callback is invoked", async () => {
+  await render(true, runtime, true);
+  await click("Start");
+  await pausePicture();
+  await act(async () => h.hold(true));
+  await click("Playback speed: 1×");
+  expect(captured.mock.calls.at(-1)![0].playback.rate).toBe(1);
+  expect(container.textContent).toContain(copy.speed!.interactionBlocked);
 });

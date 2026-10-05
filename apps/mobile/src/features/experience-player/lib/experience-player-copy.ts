@@ -1,5 +1,7 @@
+import type { ExperienceSpeedCopy } from "../components/experience-speed-control";
 import type { ExperienceJourneyMapCopy } from "../components/experience-journey-map";
 export interface ExperiencePlayerCopy {
+  speed?: ExperienceSpeedCopy;
   journeyMap?: ExperienceJourneyMapCopy;
   invalidManifest: string;
   unsupportedRuntime: string;

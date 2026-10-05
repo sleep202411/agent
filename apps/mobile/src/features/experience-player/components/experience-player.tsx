@@ -1,3 +1,4 @@
+import { ExperienceSpeedControl } from "./experience-speed-control";
 import { useFixedPlaybackClock } from "../hooks/use-fixed-playback-clock";
 import { ExperienceJourneyMap } from "./experience-journey-map";
 import { ExperienceJourneyReplay } from "../lib/experience-journey-replay";
@@ -69,6 +70,7 @@ import {
   shouldAdvancePlaybackTimeline,
   type ExperienceCheckpointReason,
   type ExperienceMediaCheckpoint,
+  type ExperiencePlaybackRate,
 } from "../lib/experience-playback-checkpoint";
 import {
   validateExperienceSaveCheckpoint,
@@ -267,7 +269,9 @@ function ActiveExperienceRuntimePlayer({
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [initialPlayback] = useState(() => entryCheckpoint?.playback);
-  const playbackRate = initialPlayback?.rate ?? 1;
+  const [playbackRate, setPlaybackRate] = useState<ExperiencePlaybackRate>(
+    initialPlayback?.rate ?? 1
+  );
   const [restoredPresentation, setRestoredPresentation] = useState({
     epoch: 0,
     playback: initialPlayback,
@@ -759,7 +763,7 @@ function ActiveExperienceRuntimePlayer({
       pending.forEach((deliver) => deliver());
     }
   }, [presenting, timelineHoldGate]);
-  const effectivePlaybackRate = useMemo(() => {
+  const rateBlocked = useMemo(() => {
     // Settled gestures and parked events are updated with this revision.
     void checkpointRevision;
     const pending = parkedGestureEventsRef.current.length > 0;
@@ -772,8 +776,9 @@ function ActiveExperienceRuntimePlayer({
           gesture.activeWindow.endMs >= sceneTimeMs)
       );
     });
-    return timelineHoldGate || pending || interaction ? 1 : playbackRate;
-  }, [scene, runtimeState, sceneTimeMs, timelineHoldGate, playbackRate, checkpointRevision]);
+    return !!(timelineHoldGate || pending || interaction);
+  }, [scene, runtimeState, sceneTimeMs, timelineHoldGate, checkpointRevision]);
+  const effectivePlaybackRate = rateBlocked ? 1 : playbackRate;
   const clockScene = scene?.clock.kind === "fixed" ? scene : null;
   useFixedPlaybackClock({
     identity: `${scene?.sceneId}:${sceneEpoch}`,
@@ -865,6 +870,7 @@ function ActiveExperienceRuntimePlayer({
     presenting,
     accessPending,
     checkpointRevision,
+    playbackRate,
     sceneEpoch,
   ]);
 
@@ -1347,6 +1353,29 @@ function ActiveExperienceRuntimePlayer({
             </Pressable>
           ) : null
         ) : null}
+        {viewerPaused &&
+        scene &&
+        copy.speed &&
+        screenActive &&
+        active &&
+        !journeyOpen &&
+        !replayPending &&
+        !accessPending &&
+        !retryAccess &&
+        !scene.renderers.some(
+          (renderer) => renderer.rendererId === EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID
+        ) ? (
+          <View style={styles.speedControl}>
+            <ExperienceSpeedControl
+              rate={playbackRate}
+              blocked={rateBlocked}
+              copy={copy.speed}
+              onRate={(rate) => {
+                if (!rateBlocked && viewerPaused) setPlaybackRate(rate);
+              }}
+            />
+          </View>
+        ) : null}
         {journeyControls}
         {nodeGate ? <View pointerEvents="none" style={styles.nodeGate} /> : null}
         {retryAccess && started && !nodeGate ? (
@@ -1688,6 +1717,7 @@ function isDiscardableLateInput(error: unknown): boolean {
 }
 
 const styles = StyleSheet.create({
+  speedControl: { position: "absolute", left: 16, right: 16, bottom: 16, zIndex: 1002 },
   journeyControl: {
     position: "absolute",
     top: 12,

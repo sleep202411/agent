@@ -5336,5 +5336,7 @@
   "storyListing.keepDraft": "Keep my draft against this version",
   "storyListing.keepDraftHelp": "Keep your local details using the reviewed project version? This does not save yet. A later save will replace the reviewed listing.",
   "storyListing.reviewServer": "Review server details",
-  "storyListing.serverDetails": "Current server details"
+  "storyListing.serverDetails": "Current server details",
+  "play.speed.label": "Playback speed",
+  "play.speed.interactionBlocked": "Finish the current interaction before changing speed."
 }

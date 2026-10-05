@@ -5336,5 +5336,7 @@
   "storyListing.keepDraft": "在此版本上保留草稿",
   "storyListing.keepDraftHelp": "使用已核對的項目版本保留本機詳情？此操作尚不儲存，之後儲存會取代已核對的詳情。",
   "storyListing.reviewServer": "核對伺服器詳情",
-  "storyListing.serverDetails": "伺服器目前詳情"
+  "storyListing.serverDetails": "伺服器目前詳情",
+  "play.speed.label": "播放速度",
+  "play.speed.interactionBlocked": "請先完成目前互動，再調整播放速度。"
 }

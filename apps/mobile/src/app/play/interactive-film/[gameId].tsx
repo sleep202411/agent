@@ -75,6 +75,10 @@ export default function PlayGameScreen() {
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
       journeyMap: createExperienceJourneyMapCopy(t),
+      speed: {
+        label: t("play.speed.label"),
+        interactionBlocked: t("play.speed.interactionBlocked"),
+      },
       invalidManifest: t("play.invalidManifest"),
       unsupportedRuntime: t("play.unsupportedRuntime"),
       manifestRoot: t("play.manifestRoot"),

@@ -5336,5 +5336,7 @@
   "storyListing.keepDraft": "在此版本上保留草稿",
   "storyListing.keepDraftHelp": "使用已核对的项目版本保留本地详情？此操作尚不保存，之后保存会替换已核对的详情。",
   "storyListing.reviewServer": "核对服务器详情",
-  "storyListing.serverDetails": "服务器当前详情"
+  "storyListing.serverDetails": "服务器当前详情",
+  "play.speed.label": "播放速度",
+  "play.speed.interactionBlocked": "请先完成当前互动，再调整播放速度。"
 }
