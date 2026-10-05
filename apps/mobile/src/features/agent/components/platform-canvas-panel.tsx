@@ -34,6 +34,8 @@ import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasMap } from "./story-canvas-map";
 import { StoryCanvasMediaPreview, type CanvasMediaTarget } from "./story-canvas-media-preview";
 import { StoryCanvasGenerationPanel } from "./story-canvas-generation-panel";
+import { StoryCanvasMediaForm } from "./story-canvas-media-form";
+import { canvasMediaDraftStore } from "../lib/story-canvas-media-draft";
 import { StoryCanvasMediaSync } from "./story-canvas-media-sync";
 import { PlatformActorsPanel } from "./platform-actors-panel";
 
@@ -135,6 +137,8 @@ function Document({
 }) {
   const t = useTranslations(),
     theme = useTheme();
+  const [mediaNode, setMediaNode] = useState<string>();
+  const [mediaRecovery, setMediaRecovery] = useState<string>();
   const [generationCard, setGenerationCard] = useState<{ id: string; title: string }>();
   const [creating, setCreating] = useState(false);
   const [createRecovery, setCreateRecovery] = useState(false);
@@ -189,6 +193,7 @@ function Document({
               try {
                 setOverview(canvasOverview(result.snapshot));
                 setRecovery(canvasDraftStore(scope, userId).read()?.edit);
+                setMediaRecovery(canvasMediaDraftStore(scope, userId).read()?.edit.nodeId);
                 setPositionRecovery(!!canvasPositionDraftStore(scope, userId).read());
                 setGroupRecovery(!!canvasGroupDraftStore(scope, userId).read());
                 setCreateRecovery(!!canvasCreateDraftStore(scope, userId).read());
@@ -211,6 +216,7 @@ function Document({
           {canEdit &&
             !error &&
             !generationCard &&
+            !mediaNode &&
             !creating &&
             !edit &&
             !grouping &&
@@ -240,6 +246,15 @@ function Document({
               <ThemedText type="small">
                 {t(createRecovery ? "storyCanvas.resumeCreate" : "storyCanvas.create")}
               </ThemedText>
+            </Pressable>
+          )}
+          {canEdit && mediaRecovery && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setMediaNode(mediaRecovery)}
+              style={{ minHeight: 44, justifyContent: "center" }}
+            >
+              <ThemedText type="small">{t("storyCanvas.media.resume")}</ThemedText>
             </Pressable>
           )}
           {canEdit && recovery && (
@@ -361,6 +376,15 @@ function Document({
                       <ThemedText type="small">{t("storyCanvas.panorama.open")}</ThemedText>
                     </Pressable>
                   )}
+                  {node.type === "shot" && (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setMediaNode(node.id)}
+                      style={{ minHeight: 44, justifyContent: "center" }}
+                    >
+                      <ThemedText type="small">{t("storyCanvas.media.title")}</ThemedText>
+                    </Pressable>
+                  )}
                   {canEdit && node.canEditPrompt && (
                     <Pressable
                       accessibilityRole="button"
@@ -434,6 +458,17 @@ function Document({
             </Pressable>
           )}
         </ScrollView>
+      )}
+      {loaded && mediaNode && (
+        <StoryCanvasMediaForm
+          scope={scope}
+          userId={userId}
+          loaded={loaded}
+          nodeId={mediaNode}
+          canEdit={canEdit}
+          close={saved}
+          saved={saved}
+        />
       )}
       {loaded && generationCard && canEdit && (
         <StoryCanvasGenerationPanel

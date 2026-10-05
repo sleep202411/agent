@@ -16,11 +16,12 @@ import {
   type CanvasMediaDraft,
 } from "../lib/story-canvas-media-draft";
 import { canvasMediaView, type CanvasMediaItem } from "../lib/story-canvas-media-view";
+import { canvasUpdatePending, type CanvasUpdateCommand } from "../api/story-canvas-update";
+import type { CanvasEditScope } from "../lib/story-canvas-draft";
 import {
-  canvasUpdatePending,
-  type CanvasWriteScope,
-  type CanvasUpdateCommand,
-} from "../api/story-canvas-update";
+  platformCanvasUpdatePending,
+  openPlatformCanvasDocument,
+} from "../api/platform-canvas-document";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
@@ -33,7 +34,7 @@ export function StoryCanvasMediaForm({
   close,
   saved,
 }: {
-  scope: CanvasWriteScope;
+  scope: CanvasEditScope;
   userId: string;
   loaded: CanvasLoaded;
   nodeId: string;
@@ -45,7 +46,13 @@ export function StoryCanvasMediaForm({
     theme = useTheme(),
     insets = useSafeAreaInsets();
   const store = useMemo(() => canvasMediaDraftStore(scope, userId), [scope, userId]);
-  const client = useMemo(() => canvasUpdatePending(scope, userId), [scope, userId]);
+  const client = useMemo(
+    () =>
+      "kind" in scope
+        ? platformCanvasUpdatePending(scope, userId)
+        : canvasUpdatePending(scope, userId),
+    [scope, userId]
+  );
   const [initial] = useState(() => {
     try {
       return { draft: store.read() };
@@ -256,6 +263,7 @@ export function StoryCanvasMediaForm({
         {phase === "refresh" && draft && (
           <StoryCanvasReader
             scope={scope}
+            platform={"kind" in scope ? { scope, load: openPlatformCanvasDocument } : undefined}
             title={t("storyCanvas.title")}
             runtimeError={t("storyCanvas.loadError")}
             onError={failed}
