@@ -875,6 +875,7 @@ enum IpModerationActionType {
 }
 
 enum IpReportReason {
+  payment
   copyright
   unsafe_content
   fraud
@@ -1535,6 +1536,7 @@ model AgentOsExternalHandoffRegistration {
 }
 
 model StudioDocument {
+  storyboardExports StoryboardExportJob[]
   id                   String               @id @default(uuid(7)) @db.Uuid
   workspaceId          String               @map("workspace_id") @db.Uuid
   platformProjectId    String?              @map("platform_project_id") @db.Uuid
@@ -3146,6 +3148,7 @@ model PlatformAuditLog {
 // but each cell owns its own admin users and permissions.
 
 model AdminUser {
+  revenueDrafts CrewRevenueDraft[]
   stageReviews      IpStageApplication[]
   id                String               @id @default(uuid(7)) @db.Uuid
   email             String               @unique @db.VarChar(320)
@@ -4078,6 +4081,7 @@ model IpPriceRule {
 }
 
 model IpPurchaseOrder {
+  reports IpContentReport[]
   id                  String                @id @default(uuid(7)) @db.Uuid
   orderNo             String                @map("order_no") @db.VarChar(64)
   userId              String                @map("user_id") @db.VarChar(64)
@@ -4538,6 +4542,9 @@ model IpRightsDeclaration {
 }
 
 model IpContentReport {
+  purchaseOrderId String? @map("purchase_order_id") @db.Uuid
+  purchaseOrder IpPurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "ip_content_reports_purchase_order_fk")
+  @@index([purchaseOrderId], map: "ip_content_reports_purchase_order_idx")
   id              String         @id @default(uuid(7)) @db.Uuid
   targetType      IpTargetType   @map("target_type")
   targetId        String         @map("target_id") @db.VarChar(64)
@@ -4889,6 +4896,7 @@ enum CrewAgreementArchiveJobStatus {
 }
 
 model Crew {
+  revenueDrafts CrewRevenueDraft[]
   revenueContracts CrewRevenueContract[]
   expenseDrafts       CrewExpenseDraftRevision[]
   originatingIps      IpCrewOrigin[]
@@ -4995,6 +5003,7 @@ model Crew {
 }
 
 model CrewAssetNode {
+  taskContracts CrewTaskContractFile[]
   id                String              @id @default(uuid(7)) @db.Uuid
   crewId            String              @map("crew_id")
   parentId          String?             @map("parent_id") @db.Uuid
@@ -5424,6 +5433,8 @@ model CrewInviteLinkRedemption {
 /// GitHub-Issue-like production unit. Its project/document are the editable
 /// task canvas; submissions point to immutable document versions and assets.
 model CrewTask {
+  contractFiles CrewTaskContractFile[]
+  draftDisputeAttachments CrewDisputeAttachment[]
   inviteLinks          CrewInviteLink[]
   computeRequests CrewComputeRequest[]
   disputes CrewTaskDispute[]
@@ -7878,6 +7889,8 @@ model MediaAssetVariant {
 }
 
 model MediaAssetUsage {
+  storyboardExportJobId String? @map("storyboard_export_job_id") @db.Uuid
+  storyboardExportJob StoryboardExportJob? @relation(fields: [storyboardExportJobId], references: [id], onDelete: Cascade)
   id             String                 @id @default(uuid(7)) @db.Uuid
   assetId        String                 @map("asset_id") @db.Uuid
   variantId      String?                @map("variant_id") @db.Uuid
@@ -7909,6 +7922,7 @@ model MediaAssetUsage {
   @@index([aiJobId, role], map: "media_asset_usages_ai_job_idx")
   @@index([aiJobOutputId], map: "media_asset_usages_ai_output_idx")
   @@index([deletedAt], map: "media_asset_usages_deleted_idx")
+  @@index([storyboardExportJobId], map: "media_asset_usages_storyboard_export_idx")
   @@map("media_asset_usages")
 }
 
@@ -10539,6 +10553,10 @@ model IpChannelSubmission {
 
 /// Task-specific subjective feedback; does not affect cash, trust points or public levels.
 model CrewTaskFeedback {
+  /// Only reviews explicitly submitted with public-profile notice are published.
+  publicOnProfile Boolean @default(false) @map("public_on_profile")
+  scoreMilli Int? @map("score_milli")
+  timelinessScore Int? @map("timeliness_score")
   id            String @id @db.Uuid
   taskId        String @map("task_id") @db.Uuid
   submissionId  String @map("submission_id") @db.Uuid
@@ -10638,6 +10656,8 @@ model CrewTaskExtensionRequest {
 }
 
 model CrewTaskDispute {
+  category String? @db.VarChar(24)
+  desiredResolution String? @map("desired_resolution") @db.VarChar(32)
   attachments CrewDisputeAttachment[]
   id String @id @db.Uuid
   taskId String @map("task_id") @db.Uuid
@@ -10679,8 +10699,11 @@ model CrewTaskDisputeEvent {
 }
 
 model CrewDisputeAttachment {
+  draftTaskId String? @map("draft_task_id") @db.Uuid
+  draftDisputeId String? @map("draft_dispute_id") @db.Uuid
+  draftTask CrewTask? @relation(fields: [draftTaskId], references: [id], onDelete: Restrict)
   id String @id @db.Uuid
-  disputeId String @map("dispute_id") @db.Uuid
+  disputeId String? @map("dispute_id") @db.Uuid
   uploaderUserId String @map("uploader_user_id") @db.VarChar(64)
   name String @db.VarChar(255)
   contentType String @map("content_type") @db.VarChar(100)
@@ -10689,10 +10712,11 @@ model CrewDisputeAttachment {
   finalKey String @map("final_key") @db.Text
   mediaAssetId String? @unique @map("media_asset_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  dispute CrewTaskDispute @relation(fields: [disputeId], references: [id], onDelete: Restrict)
+  dispute CrewTaskDispute? @relation(fields: [disputeId], references: [id], onDelete: Restrict)
   mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
 
   @@index([disputeId, uploaderUserId, createdAt, id])
+  @@index([draftDisputeId, draftTaskId, uploaderUserId])
   @@map("crew_dispute_attachments")
 }
 
@@ -10985,6 +11009,8 @@ model CreatorWithdrawal {
   recipientEncrypted   String                   @map("recipient_encrypted") @db.Text
   recipientLabel       String                   @map("recipient_label") @db.VarChar(200)
   processingAdminId    String?                  @map("processing_admin_id") @db.VarChar(64)
+  paymentProofId       String?                  @map("payment_proof_id") @db.Uuid
+  internalPaymentNote  String?                  @map("internal_payment_note") @db.VarChar(2000)
   paymentReference     String?                  @map("payment_reference") @db.VarChar(180)
   paidAdminId          String?                  @map("paid_admin_id") @db.VarChar(64)
   paidAt               DateTime?                @map("paid_at") @db.Timestamptz(6)
@@ -11016,6 +11042,8 @@ model CreatorWithdrawalEvent {
 
 /// Private uploaded evidence for admin-confirmed Crew revenue. Never a public media URL.
 model CrewRevenueContract {
+  supportingDistributions CrewRevenueSupportingContract[]
+  contentType String @default("application/pdf") @map("content_type") @db.VarChar(32)
   id String @id @default(uuid(7)) @db.Uuid
   crewId String @map("crew_id")
   filename String @db.VarChar(255)
@@ -11036,6 +11064,14 @@ model CrewRevenueContract {
 
 /// Immutable receipt: one confirmed revenue event under a contract, all participants atomically credited.
 model CrewRevenueDistribution {
+  supportingContracts CrewRevenueSupportingContract[]
+  incomeDate DateTime? @map("income_date") @db.Date
+  incomeType String? @map("income_type") @db.VarChar(32)
+  incomeSource String? @map("income_source") @db.VarChar(180)
+  notes String? @db.VarChar(200)
+  contractNumber String? @map("contract_number") @db.VarChar(180)
+  signingParty String? @map("signing_party") @db.VarChar(180)
+  contractExpiresOn DateTime? @map("contract_expires_on") @db.Date
   id String @id @default(uuid(7)) @db.Uuid
   requestId String @unique @map("request_id") @db.Uuid
   contractId String @map("contract_id") @db.Uuid
@@ -11051,4 +11087,75 @@ model CrewRevenueDistribution {
   earnings CrewEarningEntry[]
   @@unique([contractId, revenueReference], map: "crew_revenue_reference_unique")
   @@map("crew_revenue_distributions")
+}
+
+model CrewTaskContractFile {
+  id String @id @default(uuid(7)) @db.Uuid
+  taskId String @map("task_id") @db.Uuid
+  assetNodeId String @map("asset_node_id") @db.Uuid
+  attachedByUserId String? @map("attached_by_user_id") @db.VarChar(64)
+  attachedAt DateTime? @default(now()) @map("attached_at") @db.Timestamptz(6)
+  task CrewTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  assetNode CrewAssetNode @relation(fields: [assetNodeId], references: [id], onDelete: Restrict)
+
+  @@unique([taskId, assetNodeId])
+  @@index([assetNodeId])
+  @@map("crew_task_contract_files")
+}
+
+model CrewRevenueSupportingContract {
+  distributionId String @map("distribution_id") @db.Uuid
+  contractId String @map("contract_id") @db.Uuid
+  distribution CrewRevenueDistribution @relation(fields: [distributionId], references: [id], onDelete: Restrict)
+  contract CrewRevenueContract @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  @@id([distributionId, contractId])
+  @@map("crew_revenue_supporting_contracts")
+}
+
+model CrewRevenueDraft {
+  adminId String @map("admin_id") @db.Uuid
+  crewId String @map("crew_id")
+  revision Int @default(1)
+  data Json? @db.JsonB
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  admin AdminUser @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  crew Crew @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  @@id([adminId, crewId])
+  @@map("crew_revenue_drafts")
+}
+
+enum StoryboardExportStatus {
+  queued
+  running
+  completed
+  failed
+  cancelled
+  expired
+}
+model StoryboardExportJob {
+  id String @id @default(uuid(7)) @db.Uuid
+  requestId String @map("request_id") @db.Uuid
+  requestHash String @map("request_hash") @db.VarChar(64)
+  userId String @map("user_id") @db.VarChar(64)
+  documentId String? @map("document_id") @db.Uuid
+  sequence Int
+  width Int
+  height Int
+  clips Json @db.JsonB
+  status StoryboardExportStatus @default(queued)
+  attempts Int @default(0)
+  leaseToken String? @map("lease_token") @db.Uuid
+  leaseExpiresAt DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  cancelRequested Boolean @default(false) @map("cancel_requested")
+  outputRef Json? @map("output_ref") @db.JsonB
+  error String? @db.VarChar(1000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  document StudioDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  sourceUsages MediaAssetUsage[]
+  @@unique([userId, requestId])
+  @@index([status, leaseExpiresAt, createdAt])
+  @@index([expiresAt])
+  @@map("storyboard_export_jobs")
 }

@@ -175,6 +175,7 @@ export function taxonomyStatusLabel(value: string) {
 
 export function reasonLabel(value: string) {
   const labels: Record<string, string> = {
+    payment: "Payment",
     copyright: "版权",
     unsafe_content: "安全",
     fraud: "欺诈",

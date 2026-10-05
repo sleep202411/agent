@@ -106,6 +106,7 @@ export class CreatorWithdrawalsService {
       items: rows.slice(0, 50).map((row) => ({
         ...publicWithdrawal(row),
         paidAt: row.paidAt?.toISOString() ?? null,
+        hasPaymentProof: row.status === 'paid' && Boolean(row.paymentProofId),
         resolutionReason: row.resolutionReason,
       })),
       nextCursor: rows.length > 50 ? rows[49].id : null,

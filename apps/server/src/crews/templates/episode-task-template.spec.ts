@@ -1,3 +1,6 @@
+jest.mock('../tasks/task-delivery-folder', () => ({
+  provisionTaskDeliveryFolderTx: jest.fn().mockResolvedValue('folder'),
+}));
 import {
   EpisodeTaskTemplateService,
   ApplyEpisodeTemplateSchema,

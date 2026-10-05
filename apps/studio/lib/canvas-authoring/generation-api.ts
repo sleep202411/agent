@@ -328,6 +328,7 @@ export interface GenerationState {
   progress?: number;
   queuePosition?: number;
   etaSeconds?: number;
+  createdAt?: string;
   outputs?: {
     assetId?: string;
     type: FizzAiJobType;
@@ -380,6 +381,7 @@ export function displayGenerationError(
 /** Project an Ai job update / job view / submit response into a card's state. */
 export function generationStateFromJob(job: {
   id: string;
+  createdAt?: string;
   status: string;
   progress?: number | null;
   queuePosition?: number | null;
@@ -403,6 +405,7 @@ export function generationStateFromJob(job: {
     progress: job.progress ?? undefined,
     queuePosition: job.queuePosition ?? undefined,
     etaSeconds: job.estimatedTotalSeconds ?? undefined,
+    createdAt: job.createdAt,
     outputs: job.outputs?.map((output) => ({
       assetId: output.assetId,
       type: output.type,

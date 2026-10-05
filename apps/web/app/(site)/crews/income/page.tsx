@@ -48,6 +48,20 @@ function PersonalIncomeSession() {
   const { open } = useAuthDialog();
   const currency = CREW_CURRENCY;
   const feed = useMyCrewEarnings(currency, crewId, filters);
+  function applyFilters(next: PersonalEarningFilters) {
+    if (!user) return;
+    void client.resetQueries({
+      queryKey: [
+        "crew-personal-earnings",
+        user.id,
+        currency,
+        ...(crewId ? [crewId] : []),
+        ...(Object.keys(next).length ? [next] : []),
+      ],
+      exact: true,
+    });
+    setFilters(next);
+  }
   function selectCrew(next?: string) {
     if (next === crewId || !user) return;
     // Clear the destination cursor before switching, even when returning to cached history.
@@ -68,6 +82,7 @@ function PersonalIncomeSession() {
   const pages = user ? feed.data?.pages : undefined;
   const summary = pages?.[0]?.summary;
   const items = pages?.flatMap((page) => page.items) ?? [];
+  const production = summary?.postedBySource?.find((source) => source.sourceType === "task_reward");
   return (
     <main className="mx-auto w-full max-w-[1800px] px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -78,6 +93,46 @@ function PersonalIncomeSession() {
           <h1 className="text-2xl font-semibold">{t("title")}</h1>
           <p className="text-sm text-muted-foreground">{t("description")}</p>
         </header>
+        {user && (
+          <section aria-label={t("incomeOverview")} className="space-y-5">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold">{t("incomeOverview")}</h2>
+              <p className="text-xs text-muted-foreground">
+                {crewId ? t("selectedCrew", { id: crewId }) : t("allCrews")} · {currency}
+                {filters.recordedFrom && ` · ${t("recordedFrom")}: ${filters.recordedFrom}`}
+                {filters.recordedThrough &&
+                  ` · ${t("recordedThrough")}: ${filters.recordedThrough}`}
+              </p>
+            </div>
+            {summary && (
+              <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {summary.postedThisMonthAmountMinor !== undefined && (
+                  <div className="rounded-lg bg-secondary p-4">
+                    <dt className="text-sm text-muted-foreground">{t("postedThisMonth")}</dt>
+                    <dd className="mt-2 text-xl font-semibold">
+                      {formatCrewMoney(summary.postedThisMonthAmountMinor, locale, currency)}
+                    </dd>
+                  </div>
+                )}
+                {(["posted", "pending", "rejected", "reversed"] as const).map((status) => (
+                  <div key={status} className="rounded-lg bg-secondary p-4">
+                    <dt className="text-sm text-muted-foreground">{t(status)}</dt>
+                    <dd className="mt-2 text-xl font-semibold">
+                      {formatCrewMoney(summary.byStatus[status].amountMinor, locale, currency)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+            <EarningTrend
+              value={summary?.postedDaily}
+              failed={feed.isError}
+              loading={feed.isPending}
+              locale={locale}
+              currency={currency}
+            />
+          </section>
+        )}
         {user && <CreatorWithdrawals />}
         <nav aria-label={t("incomeSources")} className="grid gap-3 md:grid-cols-3">
           {(["referral", "work"] as const).map((source) => (
@@ -97,9 +152,23 @@ function PersonalIncomeSession() {
           ))}
           <a
             href="#production-ledger"
+            onClick={() => {
+              setDraftSource("task_reward");
+              applyFilters({ ...filters, sourceType: "task_reward" });
+            }}
             className="rounded-xl bg-white/[0.035] p-5 text-left transition-colors hover:bg-white/[0.07] focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <span className="block text-sm font-semibold">{t("productionSource")}</span>
+            <span className="block text-sm font-semibold">{t("productionOrders")}</span>
+            {user && summary?.postedBySource && !feed.isError && (
+              <span className="my-3 block space-y-1">
+                <span className="block text-xl font-semibold tabular-nums">
+                  {formatCrewMoney(production?.amountMinor ?? "0", locale, currency)}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {t("productionRecorded", { count: production?.count ?? 0 })}
+                </span>
+              </span>
+            )}
             <span className="mt-2 block text-xs leading-5 text-muted-foreground">
               {t("productionSourceHint")}
             </span>
@@ -134,6 +203,7 @@ function PersonalIncomeSession() {
           </div>
         ) : (
           <>
+            <h2 className="text-lg font-semibold">{t("transactionHistory")}</h2>
             <div
               id="production-ledger"
               className="scroll-mt-28 flex flex-wrap items-center gap-3"
@@ -180,17 +250,7 @@ function PersonalIncomeSession() {
                   through.reportValidity();
                   return;
                 }
-                void client.resetQueries({
-                  queryKey: [
-                    "crew-personal-earnings",
-                    user!.id,
-                    currency,
-                    ...(crewId ? [crewId] : []),
-                    ...(Object.keys(next).length ? [next] : []),
-                  ],
-                  exact: true,
-                });
-                setFilters(next);
+                applyFilters(next);
               }}
             >
               <input type="hidden" name="sourceType" value={draftSource} />
@@ -279,25 +339,6 @@ function PersonalIncomeSession() {
                 </Button>
               </div>
             )}
-            {summary && (
-              <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {(["posted", "pending", "rejected", "reversed"] as const).map((status) => (
-                  <div key={status} className="rounded-lg bg-secondary p-4">
-                    <dt className="text-sm text-muted-foreground">{t(status)}</dt>
-                    <dd className="mt-2 text-xl font-semibold">
-                      {formatCrewMoney(summary.byStatus[status].amountMinor, locale, currency)}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-            <EarningTrend
-              value={summary?.postedDaily}
-              failed={feed.isError}
-              loading={feed.isPending}
-              locale={locale}
-              currency={currency}
-            />
             <p className="text-sm text-muted-foreground">{t("settlementNote")}</p>
             {pages && !items.length && <p>{t("empty")}</p>}
             {items.length > 0 && (

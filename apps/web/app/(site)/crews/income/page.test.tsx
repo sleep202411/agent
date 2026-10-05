@@ -222,3 +222,19 @@ it("opens income sources in a side panel and clears them when the account change
   render();
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
+
+it("shows production rewards separately from revenue shares and suppresses stale totals on failure", () => {
+  const data = state.feed.data as { pages: { summary: Record<string, unknown> }[] };
+  data.pages[0]!.summary.postedBySource = [
+    { sourceType: "task_reward", count: 2, amountMinor: "12345" },
+    { sourceType: "revenue_share", count: 3, amountMinor: "87655" },
+  ];
+  render();
+  const card = container.querySelector('a[href="#production-ledger"]')!;
+  expect(card.textContent).toContain("USD 123.45");
+  expect(card.textContent).not.toContain("876.55");
+  state.feed.isError = true;
+  state.feed.error = new Error("Income read failed");
+  render();
+  expect(card.textContent).not.toContain("123.45");
+});

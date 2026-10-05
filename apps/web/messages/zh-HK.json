@@ -10,7 +10,11 @@
     "retry": "重試",
     "newCrew": "建立新劇組",
     "continue": "繼續建立任務",
-    "signIn": "登入以建立任務"
+    "signIn": "登入以建立任務",
+    "positionTitle": "建立職位",
+    "positionDescription": "選擇此職位所屬的劇組。您可以在下一步將職位關聯到已有任務。",
+    "cannotManagePositions": "您需要此劇組的招聘管理權限。",
+    "continuePosition": "繼續建立職位"
   },
   "taskPaymentTerms": {
     "unspecified": "未指定",
@@ -1775,7 +1779,8 @@
         "misleading": "誤導性描述",
         "privacy": "私隱洩露",
         "harassment": "騷擾或惡意內容",
-        "other": "其他問題"
+        "other": "其他問題",
+        "payment": "付款問題"
       }
     },
     "tabs": {
@@ -1927,7 +1932,7 @@
     "heroTitle2": "讓創作發生",
     "heroDesc": "以劇組為單位組織協作：資料準備好後公開展示、招募、報名、篩選、協作。",
     "createStudio": "建立劇組",
-    "createDialogEyebrow": "STORYOS / 劇組",
+    "createDialogEyebrow": "FizzDragon / Crew",
     "createDialogTitle": "建立劇組",
     "createDialogSubtitle": "先私下建立劇組；資料準備好後，再公開展示到劇組大廳並發佈招募職位。",
     "createKycRequiredDesc": "中國站建立劇組前需要先完成實名認證。",
@@ -2162,7 +2167,7 @@
   "creator": {
     "noMatchesLoaded": "已載入的頁面暫無符合條件的認證藝術家，請載入更多。",
     "qualificationFilter": "認證篩選",
-    "qualificationAll": "全部已認證藝術家",
+    "qualificationAll": "所有創作者",
     "qualificationFd": "FD 認證",
     "qualificationProducer": "AI 製片人",
     "qualificationSkill": "技能認證",
@@ -2198,6 +2203,25 @@
     "contactDesc": "透過 {name} 公開的聯絡方式與其取得聯絡。",
     "contactCopy": "複製",
     "contactCopied": "已複製"
+  },
+  "creatorReviews": {
+    "creator": "創作能力",
+    "manager": "製片能力",
+    "creatorHint": "製作能力、任務理解與溝通",
+    "managerHint": "合作中的管理能力",
+    "reviewCount": "{count} 則評價",
+    "services": "服務包",
+    "reviews": "公開評價",
+    "loading": "正在載入評價…",
+    "retry": "重試",
+    "overall": "綜合評分",
+    "distribution": "評分分佈",
+    "empty": "暫無公開評價。",
+    "more": "載入更多評價",
+    "unrated": "暫無評分",
+    "score": "{value} 分，滿分 5 星",
+    "reviewer": "評價者 {id}",
+    "timeliness": "已記錄的交付時效評分：{score} / 5"
   },
   "creatorCenter": {
     "notFoundTitle": "未找到該創作者",
@@ -2240,7 +2264,7 @@
       "contact": "聯絡方式"
     },
     "tabs": {
-      "services": "服務包",
+      "services": "服務與評價",
       "works": "作品",
       "certificates": "證書",
       "ips": "IP",
@@ -4050,7 +4074,7 @@
     "memberColumnJoined": "加入時間",
     "memberColumnActions": "操作",
     "inviteMember": "邀請成員",
-    "addMemberDialogEyebrow": "STORYOS / 劇組",
+    "addMemberDialogEyebrow": "FizzDragon / Crew",
     "addMemberDialogTitle": "邀請成員",
     "addMemberDialogSubtitle": "透過對方註冊的手機號碼、電郵或用戶 ID 發送邀請；接受後才會獲得劇組權限。",
     "addMemberContactLabel": "手機號 / 電郵",
@@ -4164,7 +4188,7 @@
     "closeJobConfirm": "確定關閉「{name}」招聘？待處理申請將被封存。",
     "closeJobSuccess": "已關閉「{name}」",
     "closeJobFailed": "關閉招聘失敗",
-    "createJobDialogEyebrow": "STORYOS / 劇組",
+    "createJobDialogEyebrow": "FizzDragon / Crew",
     "createJobDialogTitle": "發佈職位",
     "createJobDialogSubtitle": "選擇職位類型、填寫描述、設定招聘人數。",
     "createJobRoleLabel": "職位",
@@ -4818,7 +4842,8 @@
     "commentTwo": "我更新了追逐方向，並替換了第三、第四格。",
     "commentThree": "已通過下一輪審核，請保留上一個版本。",
     "addComment": "新增評論…",
-    "dragMoveHint": "將檔案拖到資料夾上即可移動，也可以勾選多個檔案一起拖動。"
+    "dragMoveHint": "將檔案拖到資料夾上即可移動，也可以勾選多個檔案一起拖動。",
+    "contractReadOnly": "合約 · 唯讀"
   },
   "crewTransfers": {
     "title": "檔案傳輸",
@@ -5850,9 +5875,9 @@
     "subtitleFile": "字幕檔案",
     "sourceFiles": "原素材",
     "episodeUnavailable": "該集不可用。請選擇可用集數或「不關聯集數」。",
-    "deliveryLinkRequired": "請填寫交付連結後提交任務。",
+    "deliveryLinkRequired": "請加入交付連結、附加檔案，或使用此任務關聯的畫布後提交。",
     "deliveryLinkInvalid": "請輸入完整的 http:// 或 https:// 交付連結。",
-    "deliveryLinkHint": "填寫本次交付作品的連結。",
+    "deliveryLinkHint": "填寫作品的交付連結。已附加檔案或關聯任務畫布時可不填。",
     "removeDeliveryFile": "從本次提交中移除 {name}",
     "deliveryUploadPending": "請等待檔案上傳並關聯完成後再提交。",
     "deliveryNoteTooLong": "交付連結和備註合計不得超過 5,000 個字元。",
@@ -10262,6 +10287,8 @@
     "urgentLabel": "緊急"
   },
   "crewPersonalIncome": {
+    "productionRecorded": "{count} 筆已批准任務報酬 · 目前篩選",
+    "productionOrders": "製作訂單",
     "incomeType": "收入類型",
     "allTypes": "全部收入類型",
     "allStatuses": "全部狀態",
@@ -10310,7 +10337,10 @@
     "referralSourceHint": "查看推薦紀錄、佣金和支付狀態。",
     "workSourceHint": "查看已發佈作品的收入。",
     "productionSource": "製作訂單",
-    "productionSourceHint": "查看任務報酬、結算和付款紀錄。"
+    "productionSourceHint": "查看已批准的任務報酬及帳本記錄。收入入帳不代表銀行款項已到帳。",
+    "incomeOverview": "已記錄收入概覽",
+    "postedThisMonth": "本月已入賬（UTC）",
+    "transactionHistory": "收入明細"
   },
   "crewPersonalPayouts": {
     "title": "付款記錄",
@@ -10735,8 +10765,8 @@
     "done": "任務已取消"
   },
   "crewFeedback": {
-    "title": "私密任務評價",
-    "privacy": "僅評價作者和被評價者可查看此評價。不會改變公開評分。",
+    "title": "任務評價",
+    "privacy": "新評價會公開顯示在被評價者的個人主頁上。此前的私密評價和所有回覆仍僅作者與被評價者可見。",
     "signIn": "請登入查看你的評價。",
     "loading": "載入中…",
     "failed": "請求失敗。",
@@ -10752,15 +10782,18 @@
     "evaluate": "評價 {subject}",
     "immutable": "提交後無法修改評分及評語。請逐項選擇分數。",
     "choose": "選擇分數（1–5）",
-    "comment": "評語（3–2,000 字元）",
-    "submit": "提交私密評價",
+    "comment": "評語（選填，最多 2,000 字）",
+    "submit": "發佈評價",
     "productionAbility": "製作能力",
     "understanding": "理解能力",
     "communication": "溝通能力",
     "managementAbility": "管理能力",
     "responseOnce": "僅可記錄一次回覆，提交後無法修改。",
     "respond": "提交回覆",
-    "history": "我的任務評價"
+    "history": "我的任務評價",
+    "publicNotice": "您的評分、選填評語和創作者身份將公開顯示在被評價者的個人主頁並計入評分。任務詳情與私密回覆不會公開。",
+    "publicReview": "已公開的主頁評價",
+    "privateReview": "私密評價"
   },
   "crewCases": {
     "allParticipants": "全部參與",
@@ -10830,7 +10863,31 @@
     "mine": "我的任務",
     "producer": "我管理的任務",
     "relatedTask": "相關任務",
-    "moreTasks": "載入更多任務"
+    "moreTasks": "載入更多任務",
+    "categories": {
+      "copyright": "版權",
+      "payment": "付款",
+      "violation": "違規",
+      "harassment": "騷擾",
+      "other": "其他原因"
+    },
+    "resolutions": {
+      "payment_allocation": "審核款項分配",
+      "warning": "向對方發出正式警告",
+      "takedown": "移除或下架內容"
+    },
+    "requestedResolution": "期望的處理結果：{resolution}",
+    "recordSearch": "尋找關聯任務",
+    "recordSearchHint": "任務、劇組、任務 ID 或你的收入編號",
+    "searchRecords": "搜尋",
+    "noMatchingTasks": "未找到符合條件且可存取的任務。",
+    "relatedRecordType": "關聯記錄類型",
+    "taskRecordType": "任務或任務收入",
+    "contentRecordType": "IP 或內容",
+    "contentReportSubmitted": "內容舉報已提交。編號：{id}",
+    "viewContentReports": "查看我的內容舉報",
+    "anotherContentReport": "舉報其他內容",
+    "purchaseRecordType": "IP 購買"
   },
   "crewTaskDispute": {
     "title": "發起任務爭議",
@@ -10849,7 +10906,28 @@
     "submission": "提交版本 {version} · {id}",
     "submit": "建立私密案件",
     "evidenceChanged": "部分已選提交記錄不再可用。請清空選擇並檢查目前記錄。",
-    "clearEvidence": "清空提交記錄選擇"
+    "clearEvidence": "清空提交記錄選擇",
+    "category": "投訴類型",
+    "chooseCategory": "選擇投訴類型",
+    "desiredResolution": "期望的處理結果（選填）",
+    "noPreference": "無偏好",
+    "categories": {
+      "copyright": "版權",
+      "payment": "付款",
+      "violation": "違規",
+      "harassment": "騷擾",
+      "other": "其他原因"
+    },
+    "resolutions": {
+      "payment_allocation": "審核款項分配",
+      "warning": "向對方發出正式警告",
+      "takedown": "移除或下架內容"
+    },
+    "initialEvidence": "支持證據",
+    "initialEvidenceHint": "最多 5 個 PDF、JPG 或 PNG 檔案，每個不超過 10 MB。提交投訴前，檔案僅供你存取。",
+    "evidenceReady": "已就緒",
+    "evidencePending": "上傳未完成",
+    "removeEvidence": "移除"
   },
   "crewEvidence": {
     "title": "私密證據",
@@ -11652,7 +11730,25 @@
     "blockedCreator": "已封鎖的創作者",
     "unblock": "取消封鎖",
     "unblocking": "正在取消…",
-    "blockedCrew": "已封鎖的劇組"
+    "blockedCrew": "已封鎖的劇組",
+    "newPurchaseReport": "報告 IP 購買問題",
+    "purchaseHint": "選擇您的一筆 IP 購買記錄。提交報告不會取消購買或發起退款。",
+    "purchaseSearch": "按訂單號、購買 ID 或錢包交易 ID 搜尋",
+    "purchaseTarget": "購買記錄",
+    "noPurchases": "此帳戶未找到相符的購買記錄。",
+    "purchaseReference": "購買編號：{id}",
+    "purchaseAmount": "金額：{amount} {currency}",
+    "purchaseStatus": "狀態：{status}",
+    "communityPoints": "社區積分",
+    "purchaseStatuses": {
+      "pending": "待付款",
+      "paid": "已付款",
+      "fulfilled": "已完成",
+      "canceled": "已取消",
+      "failed": "失敗",
+      "refunded": "已退款",
+      "partially_refunded": "部分退款"
+    }
   },
   "communityVideo": {
     "title": "投稿影片",
@@ -11724,7 +11820,10 @@
       "address": "收款人地址",
       "swift": "SWIFT / BIC",
       "branchAddress": "銀行分行地址"
-    }
+    },
+    "viewPaymentProof": "查看付款憑證",
+    "proofLoading": "正在開啟憑證…",
+    "proofFailed": "無法開啟付款憑證，請重試。"
   },
   "creatorDeviceCity": {
     "consent": "使用裝置位置推薦城市。此次查詢會將座標傳送至所在區域的地圖服務商，FizzDragon 不會儲存座標。",
@@ -11743,5 +11842,28 @@
     "expired": "推薦結果已過期。請重新查詢或手動填寫城市。",
     "dispatched": "查詢仍在進行，請稍後查看結果。",
     "uncertain": "無法確認查詢結果。請手動填寫城市，或主動發起新的查詢。"
+  },
+  "taskContractFiles": {
+    "title": "任務合約檔案",
+    "readOnly": "唯讀",
+    "lockedHint": "合約及補充協議附加後保持唯讀，不能編輯、移動或刪除。",
+    "loading": "正在載入合約…",
+    "retry": "重試",
+    "empty": "此檢視中沒有可存取的合約檔案。",
+    "download": "下載",
+    "openDownload": "開啟下載連結",
+    "invalidLink": "下載連結無效或已過期，請重新取得。",
+    "unavailable": "檔案無法使用",
+    "bytes": "{count} 位元組",
+    "upload": "上傳合約或補充協議",
+    "attachNotice": "附加後，此檔案將永久關聯到此任務。你可以繼續新增檔案，但已附加的檔案不能移除或更改。",
+    "attach": "附加檔案",
+    "retryAttach": "重試附加",
+    "lifecycle": "任務封存狀態",
+    "all": "全部任務",
+    "active": "目前任務",
+    "archived": "已封存任務",
+    "more": "載入更多",
+    "clearSelection": "清除選取"
   }
 }

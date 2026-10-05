@@ -1,6 +1,10 @@
+import {
+  revenueContractFileType,
+  REVENUE_CONTRACT_MAX_BYTES,
+} from './revenue-contract-file';
+export { REVENUE_CONTRACT_MAX_BYTES };
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  BadRequestException,
   Injectable,
   Logger,
   type OnApplicationBootstrap,
@@ -17,7 +21,6 @@ import { CURRENT_CELL } from '../common/region/current-cell';
 import { lockLedgerReceipt } from '../crews/earnings/ledger-lock';
 import { requireRevenueAdmin } from './revenue-admin-access';
 
-export const REVENUE_CONTRACT_MAX_BYTES = 20 * 1024 * 1024;
 export interface RevenueContractFile {
   buffer: Buffer;
   originalname: string;
@@ -118,15 +121,8 @@ export class RevenueContractsService
 
   async upload(admin: AdminActor, crewId: string, file?: RevenueContractFile) {
     requireRevenueAdmin(admin);
-    const bytes = file?.buffer;
-    if (
-      !bytes ||
-      bytes.length === 0 ||
-      bytes.length > REVENUE_CONTRACT_MAX_BYTES ||
-      bytes.subarray(0, 5).toString('ascii') !== '%PDF-' ||
-      !bytes.subarray(-1024).includes(Buffer.from('%%EOF'))
-    )
-      throw new BadRequestException('Upload a PDF contract up to 20 MB.');
+    const type = revenueContractFileType(file?.buffer);
+    const bytes = file!.buffer;
     const crew = await this.prisma.crew.findFirst({
       where: { id: crewId, deletedAt: null },
       select: { id: true },
@@ -144,10 +140,10 @@ export class RevenueContractsService
       throw new ServiceUnavailableException(
         'Private contract storage is unavailable.',
       );
-    const key = `crew-revenue-contracts/${randomUUID()}.pdf`;
+    const key = `crew-revenue-contracts/${randomUUID()}.${type.extension}`;
     const placement = await storage.createPrivateUploadUrl({
       storageKey: key,
-      contentType: 'application/pdf',
+      contentType: type.contentType,
       maxBytes: bytes.length,
       expiresInSeconds: 120,
     });
@@ -164,7 +160,7 @@ export class RevenueContractsService
       // capability to overwrite the verified contract after confirmation.
       const response = await fetch(placement.url, {
         method: 'PUT',
-        headers: { ...placement.headers, 'content-type': 'application/pdf' },
+        headers: { ...placement.headers, 'content-type': type.contentType },
         body: new Uint8Array(bytes),
         signal: AbortSignal.timeout(30000),
         redirect: 'error',
@@ -183,7 +179,7 @@ export class RevenueContractsService
       if (
         !stored.exists ||
         stored.sizeBytes !== bytes.length ||
-        stored.contentType?.split(';')[0] !== 'application/pdf'
+        stored.contentType?.split(';')[0] !== type.contentType
       )
         throw new ServiceUnavailableException(
           'The uploaded contract could not be verified.',
@@ -209,7 +205,8 @@ export class RevenueContractsService
           data: {
             crewId,
             checksumSha256,
-            filename: safeFilename(file.originalname),
+            filename: safeFilename(file!.originalname, type.extension),
+            contentType: type.contentType,
             storageProvider: placement.provider,
             bucket: placement.bucket,
             region: placement.region,
@@ -263,7 +260,7 @@ export class RevenueContractsService
       storageKey: row.objectKey,
       region: row.region,
       filename: row.filename,
-      contentType: 'application/pdf',
+      contentType: row.contentType,
       cacheControl: 'private, no-store',
       expiresInSeconds: 60,
     });
@@ -281,7 +278,7 @@ export class RevenueContractsService
   }
 }
 
-function safeFilename(input: string) {
+function safeFilename(input: string, extension: string) {
   const sanitized = Array.from(input)
     .filter(
       (char) =>
@@ -292,14 +289,17 @@ function safeFilename(input: string) {
     .join('');
   const stem =
     sanitized.replaceAll('\\', '/').split('/').at(-1)?.slice(0, 240) ||
-    'contract.pdf';
-  return stem.toLowerCase().endsWith('.pdf') ? stem : `${stem}.pdf`;
+    `contract.${extension}`;
+  return stem.toLowerCase().endsWith(`.${extension}`)
+    ? stem
+    : `${stem}.${extension}`;
 }
 function contractDto(row: CrewRevenueContract) {
   return {
     id: row.id,
     crewId: row.crewId,
     filename: row.filename,
+    contentType: row.contentType,
     sizeBytes: row.sizeBytes.toString(),
     verifiedAt: row.verifiedAt.toISOString(),
   };

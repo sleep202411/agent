@@ -1,3 +1,5 @@
+import { WithdrawalProofsService } from './withdrawal-proofs.service';
+import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
 import { NotificationService } from '../notification/notification.service';
 import {
   WithdrawalAdminService,
@@ -72,6 +74,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
             where: { crewId: { in: crews } },
           });
           await tx.crewPayout.deleteMany({ where: { crewId: { in: crews } } });
+          await tx.$executeRaw`DELETE FROM creator_withdrawal_proofs WHERE withdrawal_id IN (SELECT id FROM creator_withdrawals WHERE user_id = ANY(${users}::text[]))`;
           await tx.creatorWithdrawal.deleteMany({
             where: { userId: { in: users } },
           });
@@ -233,6 +236,264 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
           where: { userId, type: 'crew.earning.posted' },
         }),
       ).toBe(1);
+    });
+    it('uploads verified private proof, audits downloads, and preserves paid evidence during cleanup', async () => {
+      const { userId } = await seed();
+      const request = await service.request(userId, input());
+      const finance = new WithdrawalAdminService(
+        db as PrismaService,
+        new NotificationService(db as PrismaService),
+      );
+      const account = await db.adminUser.create({
+        data: {
+          passwordHash: 'fixture-hash',
+          email: `${randomUUID()}@example.invalid`,
+          displayName: 'Proof fixture',
+          status: 'active',
+        },
+      });
+      const session = await db.adminSession.create({
+        data: {
+          userId: account.id,
+          tokenHash: randomUUID(),
+          expiresAt: new Date(Date.now() + 60000),
+        },
+      });
+      const actor = { ...admin(account.id), sessionId: session.id };
+      const bytes = Buffer.from('%PDF-1.7\nfixture\n%%EOF');
+      const storage = {
+        createPrivateUploadUrl: jest.fn(
+          ({ storageKey }: { storageKey: string }) =>
+            Promise.resolve({
+              storageKey,
+              provider: 's3_compatible',
+              bucket: 'fixture-private',
+              region: null,
+              url: 'https://storage.invalid/put',
+              headers: {},
+            }),
+        ),
+        headStoredObject: jest.fn(() =>
+          Promise.resolve({
+            exists: true,
+            sizeBytes: bytes.length,
+            contentType: 'application/pdf',
+          }),
+        ),
+        createReadUrl: jest.fn(() =>
+          Promise.resolve({
+            url: 'https://storage.invalid/read',
+            expiresAt: new Date(Date.now() + 60000),
+          }),
+        ),
+        deleteObject: jest.fn().mockResolvedValue(undefined),
+      };
+      const proofs = new WithdrawalProofsService(
+        db as PrismaService,
+        { forProvider: () => storage } as unknown as StorageProviderRegistry,
+        finance,
+      );
+      const file = { buffer: bytes, originalname: 'proof.pdf' };
+      const network = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response(null, { status: 200 }));
+      try {
+        await expect(proofs.upload(actor, request.id, file)).rejects.toThrow(
+          'processing claim',
+        );
+        await finance.decide(actor, request.id, {
+          action: 'process',
+          expectedVersion: 1,
+        });
+        await expect(
+          proofs.upload(admin('other'), request.id, file),
+        ).rejects.toThrow('processing claim');
+        await expect(
+          proofs.downloadForCreator(userId, request.id),
+        ).rejects.toThrow('not found');
+        const proof = await proofs.upload(actor, request.id, file);
+        expect(proof).toMatchObject({
+          filename: 'proof.pdf',
+          sizeBytes: bytes.length,
+        });
+        expect(await proofs.upload(actor, request.id, file)).toEqual(proof);
+        expect(network).toHaveBeenCalledTimes(1);
+        await expect(
+          proofs.download(admin('other'), request.id, proof.id),
+        ).rejects.toThrow('not found');
+        await expect(
+          proofs.download(actor, request.id, proof.id),
+        ).resolves.toMatchObject({ url: 'https://storage.invalid/read' });
+        await db.$executeRaw`UPDATE creator_withdrawal_proofs SET next_attempt_at=now()-interval '1 second' WHERE id=${proof.id}::uuid`;
+        await proofs.cleanup(proof.id);
+        expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+        const paidProof = await proofs.upload(actor, request.id, file);
+        await finance.decide(actor, request.id, {
+          action: 'pay',
+          expectedVersion: 2,
+          paymentReference: 'proof-service-test',
+          paymentProofId: paidProof.id,
+        });
+        await expect(
+          proofs.downloadForCreator('another-creator', request.id),
+        ).rejects.toThrow('not found');
+        await expect(
+          proofs.downloadForCreator(userId, request.id),
+        ).resolves.toMatchObject({ url: 'https://storage.invalid/read' });
+        expect(storage.createReadUrl).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            expiresInSeconds: 60,
+            cacheControl: 'private, no-store',
+          }),
+        );
+        const creatorHistory = await service.history(userId);
+        expect(
+          creatorHistory.items.find((row) => row.id === request.id),
+        ).toMatchObject({ hasPaymentProof: true });
+        expect(creatorHistory.items[0]).not.toHaveProperty('internalNote');
+        await proofs.cleanup(paidProof.id);
+        expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+        await expect(
+          proofs.download(actor, request.id, paidProof.id),
+        ).resolves.toMatchObject({ url: 'https://storage.invalid/read' });
+        expect(
+          await db.adminAuditLog.count({
+            where: {
+              resourceId: request.id,
+              action: 'creator.withdrawal.proof.read',
+            },
+          }),
+        ).toBe(2);
+        const interrupted = await seed();
+        const pending = await service.request(interrupted.userId, input());
+        await finance.decide(actor, pending.id, {
+          action: 'process',
+          expectedVersion: 1,
+        });
+        storage.headStoredObject.mockImplementationOnce(async () => {
+          await finance.decide(actor, pending.id, {
+            action: 'pay',
+            expectedVersion: 2,
+            paymentReference: 'paid-during-upload',
+          });
+          return {
+            exists: true,
+            sizeBytes: bytes.length,
+            contentType: 'application/pdf',
+          };
+        });
+        await expect(proofs.upload(actor, pending.id, file)).rejects.toThrow(
+          'processing claim',
+        );
+        const [abandoned] = await db.$queryRaw<
+          { id: string; status: string; next_attempt_at: Date }[]
+        >`SELECT id,status,next_attempt_at FROM creator_withdrawal_proofs WHERE withdrawal_id=${pending.id}::uuid`;
+        expect(abandoned.status).toBe('uploading');
+        expect(abandoned.next_attempt_at.getTime()).toBeGreaterThan(
+          Date.now() + 23 * 60 * 60 * 1000,
+        );
+        await proofs.cleanup(abandoned.id);
+        expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+        await db.$executeRaw`UPDATE creator_withdrawal_proofs SET next_attempt_at=now()-interval '1 second' WHERE id=${abandoned.id}::uuid`;
+        storage.deleteObject.mockRejectedValueOnce(
+          new Error('storage unavailable'),
+        );
+        await expect(proofs.cleanup(abandoned.id)).rejects.toThrow(
+          'storage unavailable',
+        );
+        expect(
+          await db.$queryRaw`SELECT status FROM creator_withdrawal_proofs WHERE id=${abandoned.id}::uuid`,
+        ).toEqual([{ status: 'retired' }]);
+        await db.$executeRaw`UPDATE creator_withdrawal_proofs SET next_attempt_at=now()-interval '1 second' WHERE id=${abandoned.id}::uuid`;
+        await proofs.cleanup(abandoned.id);
+        expect(
+          await db.$queryRaw`SELECT id FROM creator_withdrawal_proofs WHERE id=${abandoned.id}::uuid`,
+        ).toEqual([]);
+      } finally {
+        network.mockRestore();
+        await db.adminAuditLog.deleteMany({
+          where: { actorUserId: account.id },
+        });
+        await db.adminSession.delete({ where: { id: session.id } });
+        await db.adminUser.delete({ where: { id: account.id } });
+      }
+    });
+    it('attaches only ready same-withdrawal proof atomically with payment and preserves it immutably', async () => {
+      const { userId } = await seed();
+      const other = await seed();
+      const first = await service.request(userId, input());
+      const second = await service.request(other.userId, input());
+      const finance = new WithdrawalAdminService(
+        db as PrismaService,
+        new NotificationService(db as PrismaService),
+      );
+      await finance.decide(admin(), first.id, {
+        action: 'process',
+        expectedVersion: 1,
+      });
+      const proofId = randomUUID();
+      await db.$executeRaw`INSERT INTO creator_withdrawal_proofs(id,withdrawal_id,uploaded_by_admin_id,checksum_sha256,filename,content_type,size_bytes,provider,bucket,object_key) VALUES(${proofId}::uuid,${first.id}::uuid,${admin().id},${'a'.repeat(64)},'proof.pdf','application/pdf',100,'s3_compatible','fixture-private',${proofId})`;
+      const payment = {
+        action: 'pay' as const,
+        expectedVersion: 2,
+        paymentReference: 'proof-test',
+        paymentProofId: proofId,
+        internalPaymentNote: 'Finance-only reconciliation note',
+      };
+      await expect(finance.decide(admin(), first.id, payment)).rejects.toThrow(
+        'verified payment proof',
+      );
+      expect((await finance.detail(admin(), first.id)).status).toBe(
+        'processing',
+      );
+      await db.$executeRaw`UPDATE creator_withdrawal_proofs SET status='ready',verified_at=now() WHERE id=${proofId}::uuid`;
+      await finance.decide(admin(), second.id, {
+        action: 'process',
+        expectedVersion: 1,
+      });
+      await expect(finance.decide(admin(), second.id, payment)).rejects.toThrow(
+        'verified payment proof',
+      );
+      await finance.decide(admin(), first.id, payment);
+      expect(await finance.detail(admin(), first.id)).toMatchObject({
+        status: 'paid',
+        paymentProofId: proofId,
+        internalPaymentNote: payment.internalPaymentNote,
+      });
+      const history = await service.history(userId);
+      expect(JSON.stringify(history)).not.toContain(
+        payment.internalPaymentNote,
+      );
+      expect(
+        await db.$queryRaw`SELECT next_attempt_at FROM creator_withdrawal_proofs WHERE id=${proofId}::uuid`,
+      ).toEqual([{ next_attempt_at: null }]);
+      await expect(
+        db.$executeRaw`UPDATE creator_withdrawal_proofs SET status='retired' WHERE id=${proofId}::uuid`,
+      ).rejects.toThrow();
+      await expect(
+        db.$executeRaw`UPDATE creator_withdrawal_proofs SET object_key='replacement' WHERE id=${proofId}::uuid`,
+      ).rejects.toThrow();
+      await expect(
+        db.$executeRaw`UPDATE creator_withdrawal_proofs SET verified_at=now()+interval '1 day' WHERE id=${proofId}::uuid`,
+      ).rejects.toThrow();
+      await expect(
+        db.$executeRaw`DELETE FROM creator_withdrawal_proofs WHERE id=${proofId}::uuid`,
+      ).rejects.toThrow();
+      await expect(
+        db.creatorWithdrawal.update({
+          where: { id: first.id },
+          data: { paymentProofId: null },
+        }),
+      ).rejects.toThrow();
+      await expect(
+        db.creatorWithdrawal.update({
+          where: { id: first.id },
+          data: { internalPaymentNote: 'replacement' },
+        }),
+      ).rejects.toThrow();
+      await expect(finance.decide(admin(), first.id, payment)).rejects.toThrow(
+        'Withdrawal changed',
+      );
     });
     it('serializes competing withdrawals and reserves each earning only once', async () => {
       const { userId } = await seed();
@@ -654,6 +915,73 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
         amountMinor: '1500',
       });
       expect(JSON.stringify(queue)).not.toContain(recipient.accountNumber);
+      const csv = await finance.exportCsv(admin(), {
+        userId,
+        currency: 'USD',
+        minAmountMinor: '1500',
+        maxAmountMinor: '1500',
+      });
+      expect(csv.count).toBe(1);
+      expect(csv.csv).toContain(request.id);
+      expect(csv.csv).toContain('"15.00"');
+      expect(csv.csv).not.toContain(recipient.accountNumber);
+      expect(
+        (
+          await finance.exportCsv(admin(), {
+            userId,
+            currency: 'USD',
+            minAmountMinor: '1501',
+          })
+        ).count,
+      ).toBe(0);
+
+      const today = new Date().toISOString().slice(0, 10);
+      expect(
+        (
+          await finance.queue(admin(), {
+            userId,
+            q: request.id,
+            currency: 'USD',
+            from: today,
+            to: today,
+            minAmountMinor: '1500',
+            maxAmountMinor: '1500',
+          })
+        ).items.map((row) => row.id),
+      ).toEqual([request.id]);
+      expect(
+        (
+          await finance.queue(admin(), {
+            userId,
+            q: 'Fixture',
+            currency: 'USD',
+            maxAmountMinor: '1499',
+          })
+        ).total,
+      ).toBe(0);
+      expect(
+        (
+          await finance.queue(admin(), {
+            userId,
+            from: '2000-01-01',
+            to: '2000-01-02',
+          })
+        ).total,
+      ).toBe(0);
+      await expect(
+        finance.queue(admin(), { minAmountMinor: '1' }),
+      ).rejects.toThrow('Choose a currency');
+      await expect(
+        finance.queue(admin(), {
+          currency: 'USD',
+          minAmountMinor: '2',
+          maxAmountMinor: '1',
+        }),
+      ).rejects.toThrow('Minimum amount');
+      await expect(
+        finance.queue(admin(), { from: '2026-10-07', to: '2026-10-06' }),
+      ).rejects.toThrow('Start date');
+
       await expect(
         finance.queue({ ...admin(), siteScope: 'cn' }, {}),
       ).rejects.toMatchObject({ status: 403 });

@@ -221,3 +221,88 @@ it("shows paid status and loads further withdrawal history", async () => {
   await settle();
   expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
 });
+
+it("offers payment proof only for paid attached rows and preserves retry after failure", async () => {
+  seed();
+  const base = {
+    currency: "USD",
+    amountMinor: "100",
+    percentageBps: 10000,
+    createdAt: "2026-10-06T00:00:00Z",
+    paidAt: null,
+    resolutionReason: null,
+  };
+  vi.mocked(crewApi.get).mockImplementation(async (path) =>
+    path.endsWith("/balances")
+      ? [balance]
+      : {
+          items: [
+            { ...base, id: "paid-proof", status: "paid", hasPaymentProof: true },
+            { ...base, id: "paid-legacy", status: "paid", hasPaymentProof: false },
+            { ...base, id: "processing", status: "processing", hasPaymentProof: true },
+          ],
+          nextCursor: null,
+        }
+  );
+  vi.mocked(crewApi.post).mockRejectedValue(new Error("Proof storage temporarily unavailable"));
+  mount();
+  await settle();
+  expect(
+    [...container.querySelectorAll("button")].filter(
+      (node) => node.textContent === "viewPaymentProof"
+    )
+  ).toHaveLength(1);
+  click("viewPaymentProof");
+  await settle();
+  expect(container.textContent).toContain("Proof storage temporarily unavailable");
+  expect(crewApi.post).toHaveBeenLastCalledWith(
+    "/me/withdrawals/paid-proof/payment-proof/download",
+    {}
+  );
+  click("viewPaymentProof");
+  await settle();
+  expect(
+    vi.mocked(crewApi.post).mock.calls.filter(([path]) => path.includes("payment-proof"))
+  ).toHaveLength(2);
+});
+
+it("ignores a previous account's late payment-proof failure", async () => {
+  seed();
+  vi.mocked(crewApi.get).mockImplementation(async (path) =>
+    path.endsWith("/balances")
+      ? [balance]
+      : {
+          items:
+            session.id === "alice"
+              ? [
+                  {
+                    id: "alice-proof",
+                    currency: "USD",
+                    amountMinor: "100",
+                    status: "paid",
+                    createdAt: "2026-10-06T00:00:00Z",
+                    paidAt: "2026-10-06T01:00:00Z",
+                    hasPaymentProof: true,
+                  },
+                ]
+              : [],
+          nextCursor: null,
+        }
+  );
+  let fail!: (cause: Error) => void;
+  vi.mocked(crewApi.post).mockImplementation(
+    () =>
+      new Promise((_, reject) => {
+        fail = reject;
+      })
+  );
+  const render = mount();
+  await settle();
+  click("viewPaymentProof");
+  session.id = "bob";
+  render();
+  await settle();
+  await act(async () => fail(new Error("Previous account private error")));
+  expect(container.textContent).not.toContain("Previous account private error");
+  expect(container.textContent).not.toContain("viewPaymentProof");
+});

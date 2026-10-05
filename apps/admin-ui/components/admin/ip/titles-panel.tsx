@@ -962,6 +962,11 @@ function IpDetailDrawer({
                           <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">
                             {report.description ?? "举报人未填写详细说明。"}
                           </p>
+                          {report.purchaseOrderId && (
+                            <p className="mt-1 break-all text-xs text-slate-600">
+                              Purchase reference: <code>{report.purchaseOrderId}</code>
+                            </p>
+                          )}
                           <p className="mt-1 text-[11px] text-slate-400">
                             {formatDate(report.createdAt)}
                           </p>

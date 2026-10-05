@@ -66,6 +66,8 @@ async function prepare(share = "100") {
   await act(async () => root.render(<RevenuePanel currency="USD" />));
   await click("Select");
   await input("Saved contract", contract);
+  await input("Income date", "2026-10-05");
+  await input("Income type", "licensing");
   await input("Revenue title", "October revenue");
   await input("Revenue reference", "OCT-001");
   await input("Confirmed revenue", "3.01");
@@ -310,3 +312,111 @@ it.each([false, true])(
     }
   }
 );
+
+it("keeps the former primary contract as supporting evidence when switching files", async () => {
+  const fallback = fetcher.getMockImplementation()!;
+  const second = "22222222-2222-4222-8222-222222222222";
+  fetcher.mockImplementation((url: string, ...args: unknown[]) =>
+    url.endsWith("/contracts")
+      ? Promise.resolve(
+          page([
+            { id: contract, filename: "Agreement.pdf", verifiedAt: "2026-10-05T00:00:00Z" },
+            { id: second, filename: "Addendum.png", verifiedAt: "2026-10-05T00:00:00Z" },
+          ])
+        )
+      : fallback(url, ...args)
+  );
+  await prepare();
+  await click("Edit allocation");
+  await input("Saved contract", second);
+  await input("Source / customer", "Licensing customer");
+  await input("Notes", "October settlement");
+  await click("Preview allocation");
+  const preview = host.querySelector('[aria-label="Allocation preview"]')!;
+  expect(preview.textContent).toContain("Agreement.pdf");
+  expect(preview.textContent).toContain("Licensing customer");
+  expect(preview.textContent).toContain("October settlement");
+  await click("Post confirmed revenue");
+  const post = fetcher.mock.calls.find(
+    ([url]) => url === "/api/admin/creator-revenue/distributions"
+  )!;
+  expect(JSON.parse(post[1].body)).toMatchObject({
+    contractId: second,
+    additionalContractIds: [contract],
+    incomeDate: "2026-10-05",
+    incomeType: "licensing",
+    incomeSource: "Licensing customer",
+    notes: "October settlement",
+  });
+});
+
+it.each([
+  { url: "javascript:alert(1)", expiresAt: "2099-01-01T00:00:00Z" },
+  { url: "https://files.example/contract", expiresAt: "2020-01-01T00:00:00Z" },
+])("rejects invalid or expired contract download links", async (link) => {
+  const fallback = fetcher.getMockImplementation()!;
+  fetcher.mockImplementation((url: string, ...args: unknown[]) =>
+    url.endsWith("/download") ? Promise.resolve(ok(link)) : fallback(url, ...args)
+  );
+  await prepare();
+  await click("Open contract");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("invalid or expired");
+});
+
+it("saves incomplete entries and restores a private draft without posting", async () => {
+  const fallback = fetcher.getMockImplementation()!;
+  let saved: Record<string, unknown> | null = null;
+  let revision = 0;
+  fetcher.mockImplementation((url: string, options: { body?: string }) => {
+    if (url.endsWith("/draft")) {
+      if (options.body) {
+        saved = JSON.parse(options.body).data;
+        revision++;
+      }
+      return Promise.resolve(
+        ok({
+          revision,
+          data: saved,
+          contracts: [
+            { id: contract, filename: "Agreement.pdf", verifiedAt: "2026-10-05T00:00:00Z" },
+          ],
+        })
+      );
+    }
+    return fallback(url, options);
+  });
+  await act(async () => root.render(<RevenuePanel currency="USD" />));
+  await click("Select");
+  await input("Revenue title", "Unfinished settlement");
+  await input("Confirmed revenue", "1.");
+  await click("Save draft");
+  expect(host.textContent).toContain("Draft saved. No earnings have been posted.");
+  await click("Change Crew");
+  await click("Select");
+  await click("Load saved draft");
+  expect((host.querySelector('[aria-label="Revenue title"]') as HTMLInputElement).value).toBe(
+    "Unfinished settlement"
+  );
+  expect((host.querySelector('[aria-label="Confirmed revenue"]') as HTMLInputElement).value).toBe(
+    "1."
+  );
+  expect(
+    fetcher.mock.calls.some(([url]) => url === "/api/admin/creator-revenue/distributions")
+  ).toBe(false);
+  await click("Change Crew");
+  expect(button("Select")).toBeDefined();
+});
+
+it("keeps unsaved entries when cancelling a Crew change", async () => {
+  await act(async () => root.render(<RevenuePanel currency="USD" />));
+  await click("Select");
+  await input("Revenue title", "Unsaved title");
+  await click("Change Crew");
+  const cancel = [...document.querySelectorAll("button")].find(
+    (item) => item.textContent === "Keep editing"
+  )!;
+  await act(async () => cancel.click());
+  expect((host.querySelector('[aria-label="Revenue title"]') as HTMLInputElement).value).toBe(
+    "Unsaved title"
+  );
+});

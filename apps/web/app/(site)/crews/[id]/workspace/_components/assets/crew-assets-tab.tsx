@@ -254,26 +254,34 @@ export function CrewAssetsTab({
       ? undefined
       : sourceItems.find((item) => item.id === (checkedAssetId ?? selectedAssetId));
   const checkedAssets = sourceItems.filter((item) => checkedIds.has(item.id));
-  const movableChecked = checkedAssets.filter((item) =>
-    hasAssetPermission(item.effectivePermission, "edit")
+  const movableChecked = checkedAssets.filter(
+    (item) => !item.contractLocked && hasAssetPermission(item.effectivePermission, "edit")
   );
   const canOrganizeSingle =
     capabilities?.organize === true &&
-    Boolean(actionableAsset && hasAssetPermission(actionableAsset.effectivePermission, "edit"));
+    Boolean(
+      actionableAsset &&
+      !actionableAsset.contractLocked &&
+      hasAssetPermission(actionableAsset.effectivePermission, "edit")
+    );
   const canMoveChecked =
     capabilities?.organize === true && activeSource !== "trash" && movableChecked.length > 0;
   const canShowMove = canOrganizeSingle || canMoveChecked;
   const canTrash =
     capabilities?.trash === true &&
     checkedAssets.length > 0 &&
-    checkedAssets.every((item) => hasAssetPermission(item.effectivePermission, "edit"));
+    checkedAssets.every(
+      (item) => !item.contractLocked && hasAssetPermission(item.effectivePermission, "edit")
+    );
   const canRestore =
     capabilities?.restore === true &&
     checkedAssets.length > 0 &&
     checkedAssets.every((item) => hasAssetPermission(item.effectivePermission, "edit"));
   const canDeleteForever =
     checkedAssets.length > 0 &&
-    checkedAssets.every((item) => hasAssetPermission(item.effectivePermission, "manage"));
+    checkedAssets.every(
+      (item) => !item.contractLocked && hasAssetPermission(item.effectivePermission, "manage")
+    );
 
   const changeSource = (source: CrewAssetSource) => {
     setActiveSource(source);
@@ -551,7 +559,8 @@ export function CrewAssetsTab({
   const assetDragProps = (item: CrewAssetPreviewItem): HTMLAttributes<HTMLElement> => {
     const dragEnabled =
       capabilities?.organize === true && activeSource !== "trash" && !assetActionBusy && !bulkBusy;
-    const editable = dragEnabled && hasAssetPermission(item.effectivePermission, "edit");
+    const editable =
+      dragEnabled && !item.contractLocked && hasAssetPermission(item.effectivePermission, "edit");
     const canDrop = () => {
       const drag = draggedAssets.current;
       return (
@@ -565,6 +574,7 @@ export function CrewAssetsTab({
           const current = sourceItems.find((source) => source.id === target.id);
           return (
             current &&
+            !current.contractLocked &&
             current.id !== item.id &&
             current.parentId !== item.id &&
             hasAssetPermission(current.effectivePermission, "edit")
@@ -583,7 +593,9 @@ export function CrewAssetsTab({
           targets.length === 0 ||
           targets.some(
             (target) =>
-              target.kind === "folder" || !hasAssetPermission(target.effectivePermission, "edit")
+              target.contractLocked ||
+              target.kind === "folder" ||
+              !hasAssetPermission(target.effectivePermission, "edit")
           )
         ) {
           event.preventDefault();
@@ -834,6 +846,9 @@ export function CrewAssetsTab({
                     ["size", t("sortSize")],
                   ]}
                 />
+                {actionableAsset?.contractLocked && (
+                  <span className="text-xs text-muted-foreground">{t("contractReadOnly")}</span>
+                )}
                 {activeSource !== "trash" && canShowMove ? (
                   <>
                     {canOrganizeSingle ? (
@@ -2627,6 +2642,7 @@ function mapAssetNode(node: CrewAssetNodeDTO, contributor: string): CrewAssetPre
     accessMode: node.accessMode,
     permissionVersion: node.permissionVersion,
     effectivePermission: node.effectivePermission,
+    contractLocked: node.contractLocked,
   };
 }
 

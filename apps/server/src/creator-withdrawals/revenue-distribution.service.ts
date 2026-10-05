@@ -22,6 +22,16 @@ import {
 export const PostRevenueDistribution = z.strictObject({
   requestId: z.string().uuid(),
   contractId: z.string().uuid(),
+  additionalContractIds: z.array(z.string().uuid()).max(19).optional(),
+  incomeDate: z.string().date().optional(),
+  incomeType: z
+    .enum(['licensing', 'advertising', 'merchandise', 'course_sales', 'other'])
+    .optional(),
+  incomeSource: z.string().trim().min(1).max(180).optional(),
+  notes: z.string().trim().min(1).max(200).optional(),
+  contractNumber: z.string().trim().min(1).max(180).optional(),
+  signingParty: z.string().trim().min(1).max(180).optional(),
+  contractExpiresOn: z.string().date().optional(),
   revenueReference: z.string().trim().min(1).max(180),
   title: z.string().trim().min(1).max(180),
   allocation: ConfirmedRevenueAllocation,
@@ -41,6 +51,23 @@ export class RevenueDistributionService {
     requireRevenueAdmin(admin);
     const input = PostRevenueDistribution.parse(raw);
     const allocation = allocateConfirmedRevenue(input.allocation);
+    const additionalContractIds = [
+      ...new Set(input.additionalContractIds ?? []),
+    ]
+      .filter((id) => id !== input.contractId)
+      .sort();
+    const details = {
+      ...(additionalContractIds.length ? { additionalContractIds } : {}),
+      ...(input.incomeDate ? { incomeDate: input.incomeDate } : {}),
+      ...(input.incomeType ? { incomeType: input.incomeType } : {}),
+      ...(input.incomeSource ? { incomeSource: input.incomeSource } : {}),
+      ...(input.notes ? { notes: input.notes } : {}),
+      ...(input.contractNumber ? { contractNumber: input.contractNumber } : {}),
+      ...(input.signingParty ? { signingParty: input.signingParty } : {}),
+      ...(input.contractExpiresOn
+        ? { contractExpiresOn: input.contractExpiresOn }
+        : {}),
+    };
     const requestHash = createHash('sha256')
       .update(
         JSON.stringify({
@@ -48,6 +75,7 @@ export class RevenueDistributionService {
           revenueReference: input.revenueReference,
           title: input.title,
           allocation,
+          ...details,
         }),
       )
       .digest('hex');
@@ -93,6 +121,15 @@ export class RevenueDistributionService {
         throw new NotFoundException(
           'Verified contract for an existing Crew not found.',
         );
+      if (
+        additionalContractIds.length &&
+        (await tx.crewRevenueContract.count({
+          where: { id: { in: additionalContractIds }, crewId: contract.crewId },
+        })) !== additionalContractIds.length
+      )
+        throw new ConflictException(
+          'Every supporting contract must belong to the selected Crew.',
+        );
       const members = await tx.crewMember.findMany({
         where: {
           crewId: contract.crewId,
@@ -127,6 +164,18 @@ export class RevenueDistributionService {
           requestHash,
           allocations: participants,
           postedByAdminId: admin.id,
+          incomeDate: input.incomeDate ? new Date(input.incomeDate) : null,
+          incomeType: input.incomeType,
+          incomeSource: input.incomeSource,
+          notes: input.notes,
+          contractNumber: input.contractNumber,
+          signingParty: input.signingParty,
+          contractExpiresOn: input.contractExpiresOn
+            ? new Date(input.contractExpiresOn)
+            : null,
+          supportingContracts: {
+            create: additionalContractIds.map((contractId) => ({ contractId })),
+          },
         },
       });
       for (const participant of participants) {

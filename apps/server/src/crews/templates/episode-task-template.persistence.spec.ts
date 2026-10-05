@@ -1,3 +1,7 @@
+import {
+  deliveryFolderAdapter,
+  deliveryFolderSql,
+} from '../tasks/testing/delivery-folder-sql';
 import { Prisma } from '@prisma/client';
 import { EpisodeTaskTemplateService } from './episode-task-template';
 import { ProjectTaskTemplateService } from './project-task-template.service';
@@ -9,14 +13,8 @@ const episode1 = '01990000-0000-7000-8000-000000000011';
 const episode2 = '01990000-0000-7000-8000-000000000012';
 // Isolated SQL persistence adapter. No application DATABASE_URL or remote database.
 function adapter(sql: Sql) {
-  const raw = (parts: TemplateStringsArray, ...values: unknown[]) =>
-    sql.query(
-      parts.reduce((text, part, i) => text + (i ? `$${i}` : '') + part, ''),
-      values,
-    );
   return {
-    $executeRaw: raw,
-    $queryRaw: raw,
+    ...deliveryFolderAdapter(sql),
     crew: {
       findUniqueOrThrow: () => Promise.resolve({ productionKind: 'series' }),
     },
@@ -115,6 +113,7 @@ describe('Episode template SQL persistence', () => {
   let service: EpisodeTaskTemplateService;
   beforeAll(async () => {
     db = await PGlite.create();
+    await db.exec(deliveryFolderSql);
     await db.exec(`CREATE TABLE crew_episodes(id uuid PRIMARY KEY,crew_id text,version integer,status text);
   CREATE TABLE tasks(id uuid PRIMARY KEY,crew_id text,episode_id uuid,number integer UNIQUE,rank numeric,metadata jsonb);
   CREATE TABLE dependencies(blocking_id uuid REFERENCES tasks(id),blocked_id uuid REFERENCES tasks(id),PRIMARY KEY(blocking_id,blocked_id));
@@ -135,6 +134,7 @@ describe('Episode template SQL persistence', () => {
     );
   }, 30000);
   beforeEach(async () => {
+    await db.exec('TRUNCATE fixture_asset_nodes, crew_task_delivery_folders');
     await db.exec(
       'DELETE FROM dependencies;DELETE FROM tasks;DELETE FROM receipts;DELETE FROM crew_episodes;',
     );
@@ -159,6 +159,9 @@ describe('Episode template SQL persistence', () => {
     expect(first.taskIds).toHaveLength(12);
     expect(retry).toEqual({ ...first, replayed: true });
     expect(second.taskIds).toHaveLength(12);
+    expect(
+      (await db.query('SELECT * FROM crew_task_delivery_folders')).rows,
+    ).toHaveLength(24);
     expect(
       (
         await db.query<{ count: number }>(
@@ -208,6 +211,12 @@ describe('Episode template SQL persistence', () => {
           )
         ).rows[0].count,
       ).toBe(0);
+      expect(
+        (await db.query('SELECT * FROM crew_task_delivery_folders')).rows,
+      ).toHaveLength(0);
+      expect(
+        (await db.query('SELECT * FROM fixture_asset_nodes')).rows,
+      ).toHaveLength(0);
     } finally {
       await db.exec('ALTER TABLE dependencies DROP CONSTRAINT fail_link');
     }

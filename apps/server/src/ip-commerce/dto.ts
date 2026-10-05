@@ -35,6 +35,7 @@ export const IpPriceRuleStatusSchema = z.enum([
 ]);
 export const IpContentCurrencySchema = z.literal('community_point');
 export const IpReportReasonSchema = z.enum([
+  'payment',
   'copyright',
   'unsafe_content',
   'fraud',
@@ -1198,15 +1199,35 @@ export type ListMyContentBlocksQuery = z.infer<
   typeof ListMyContentBlocksSchema
 >;
 
+export const ListReportPurchasesSchema = z
+  .object({
+    query: z.string().trim().max(180).optional(),
+    cursor: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .strict();
+export type ListReportPurchasesQuery = z.infer<
+  typeof ListReportPurchasesSchema
+>;
+
 export const CreateIpContentReportSchema = z
   .object({
+    requestId: z.string().uuid().optional(),
+    purchaseOrderId: z.string().uuid().optional(),
     targetType: z.enum(['ip', 'episode']),
     targetId: z.string().uuid(),
     reason: IpReportReasonSchema,
     description: z.string().trim().max(2000).optional(),
     evidenceAssetId: z.string().uuid().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (input) => input.reason !== 'payment' || Boolean(input.purchaseOrderId),
+    {
+      message: 'Select a verified purchase for a payment complaint.',
+      path: ['purchaseOrderId'],
+    },
+  );
 export type CreateIpContentReportInput = z.infer<
   typeof CreateIpContentReportSchema
 >;

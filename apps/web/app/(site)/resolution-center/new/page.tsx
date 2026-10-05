@@ -1,10 +1,12 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { ContentReportForm } from "../content/content-report-form";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { crewApi } from "../../crews/_hooks/api";
@@ -26,26 +28,138 @@ export default function NewDispute() {
       {isLoading ? (
         <p role="status">{t("loading")}</p>
       ) : user ? (
-        <DisputeTaskSelection key={user.id} userId={user.id} />
+        <ResolutionSession key={user.id} userId={user.id} />
       ) : (
         <Button onClick={() => auth.open()}>{t("signIn")}</Button>
       )}
     </main>
   );
 }
+function ResolutionSession({ userId }: { userId: string }) {
+  const t = useTranslations("crewCases");
+  const locale = useLocale();
+  const client = useQueryClient();
+  const [view, setView] = useState<"task" | "content" | "purchase">("task");
+  const [contentVisited, setContentVisited] = useState(false);
+  const [purchaseVisited, setPurchaseVisited] = useState(false);
+  const [purchaseSubmitted, setPurchaseSubmitted] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  return (
+    <div className="space-y-5">
+      <nav aria-label={t("relatedRecordType")} className="flex flex-wrap gap-2">
+        <Button
+          color="muted"
+          variant={view === "task" ? "solid" : "ghost"}
+          aria-pressed={view === "task"}
+          onClick={() => setView("task")}
+        >
+          {t("taskRecordType")}
+        </Button>
+        <Button
+          color="muted"
+          variant={view === "content" ? "solid" : "ghost"}
+          aria-pressed={view === "content"}
+          onClick={() => {
+            setContentVisited(true);
+            setView("content");
+          }}
+        >
+          {t("contentRecordType")}
+        </Button>
+        <Button
+          color="muted"
+          variant={view === "purchase" ? "solid" : "ghost"}
+          aria-pressed={view === "purchase"}
+          onClick={() => {
+            setPurchaseVisited(true);
+            setView("purchase");
+          }}
+        >
+          {t("purchaseRecordType")}
+        </Button>
+      </nav>
+      <div hidden={view !== "task"}>
+        <DisputeTaskSelection userId={userId} />
+      </div>
+      {purchaseVisited && (
+        <div hidden={view !== "purchase"}>
+          {purchaseSubmitted ? (
+            <div className="space-y-3">
+              <p role="status">{t("contentReportSubmitted", { id: purchaseSubmitted })}</p>
+              <Link
+                href={`/${locale}/resolution-center/content`}
+                className="text-sm underline underline-offset-4"
+              >
+                {t("viewContentReports")}
+              </Link>
+              <Button variant="ghost" color="muted" onClick={() => setPurchaseSubmitted(null)}>
+                {t("anotherContentReport")}
+              </Button>
+            </div>
+          ) : (
+            <ContentReportForm
+              purchase
+              userId={userId}
+              onClose={() => {
+                setPurchaseVisited(false);
+                setView("task");
+              }}
+              onSubmitted={(report) => {
+                setPurchaseSubmitted(report.id);
+                void client.invalidateQueries({ queryKey: ["my-content-reports", userId] });
+              }}
+            />
+          )}
+        </div>
+      )}
+      {contentVisited && (
+        <div hidden={view !== "content"}>
+          {submitted ? (
+            <div className="space-y-3">
+              <p role="status">{t("contentReportSubmitted", { id: submitted })}</p>
+              <Link
+                href={`/${locale}/resolution-center/content`}
+                className="text-sm underline underline-offset-4"
+              >
+                {t("viewContentReports")}
+              </Link>
+              <Button variant="ghost" color="muted" onClick={() => setSubmitted(null)}>
+                {t("anotherContentReport")}
+              </Button>
+            </div>
+          ) : (
+            <ContentReportForm
+              userId={userId}
+              onClose={() => {
+                setContentVisited(false);
+                setView("task");
+              }}
+              onSubmitted={(report) => {
+                setSubmitted(report.id);
+                void client.invalidateQueries({ queryKey: ["my-content-reports", userId] });
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 function DisputeTaskSelection({ userId }: { userId: string }) {
   const t = useTranslations("crewCases");
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
   const [scope, setScope] = useState("mine");
   const [taskId, setTaskId] = useState("");
   const tasks = useInfiniteQuery({
-    queryKey: ["dispute-task-options", userId, scope],
+    queryKey: ["dispute-task-options", userId, scope, query],
     retry: false,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ signal, pageParam }) =>
       crewApi.get<{ items: TrackingTask[]; nextCursor: string | null }>("/crew-task-center", {
         signal,
         cache: "no-store",
-        query: { scope, status: "all", limit: 30, cursor: pageParam },
+        query: { scope, status: "all", limit: 30, cursor: pageParam, ...(query ? { query } : {}) },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
@@ -53,6 +167,28 @@ function DisputeTaskSelection({ userId }: { userId: string }) {
   return (
     <section className="space-y-4">
       <p className="text-sm text-muted-foreground">{t("selectTaskHint")}</p>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setTaskId("");
+          setQuery(search.trim());
+        }}
+      >
+        <label className="grid flex-1 gap-1 text-sm" htmlFor="case-record-search">
+          {t("recordSearch")}
+          <Input
+            id="case-record-search"
+            value={search}
+            maxLength={180}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("recordSearchHint")}
+          />
+        </label>
+        <Button type="submit" disabled={tasks.isFetching}>
+          {t("searchRecords")}
+        </Button>
+      </form>
       <nav className="flex gap-2">
         {(["mine", "managed"] as const).map((value) => (
           <Button
@@ -89,6 +225,11 @@ function DisputeTaskSelection({ userId }: { userId: string }) {
             ))}
         </NativeSelect>
       )}
+      {!tasks.isPending &&
+        !tasks.isError &&
+        !tasks.data?.pages.some((page) => page.items.length) && (
+          <p className="text-sm text-muted-foreground">{t("noMatchingTasks")}</p>
+        )}
       {tasks.hasNextPage && !tasks.isError ? (
         <Button disabled={tasks.isFetching} onClick={() => void tasks.fetchNextPage()}>
           {t("moreTasks")}

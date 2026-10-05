@@ -6,6 +6,7 @@ import { IconUpload } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
 import { uploadFileViaSignedUrl, type UploadFileCheckpoint } from "@/src/lib/media-upload";
+import { crewApi } from "@/app/(site)/crews/_hooks/api";
 import { crewKeys } from "@/app/(site)/crews/_hooks/shared";
 import {
   attachCrewAssetFile,
@@ -23,6 +24,7 @@ type Job = {
 /** Each mounted field owns its retry receipt; changing task/account/template remounts it. */
 export function TaskDeliveryUpload({
   crewId,
+  taskId,
   parentId,
   label,
   disabled,
@@ -30,6 +32,7 @@ export function TaskDeliveryUpload({
   onBusyChange,
 }: {
   crewId: string;
+  taskId?: string;
   parentId: string | null;
   label: string;
   disabled: boolean;
@@ -74,6 +77,16 @@ export function TaskDeliveryUpload({
     setError(null);
     callbacks.current.onBusyChange(true);
     try {
+      if (taskId && !current.parentId) {
+        const task = await crewApi.put<{ deliveryFolder: { id: string } | null }>(
+          `/crew-tasks/${encodeURIComponent(taskId)}/delivery-folder`,
+          { body: { deliveryFolderId: null }, signal: controller.signal }
+        );
+        if (controller.signal.aborted) return;
+        if (!task.deliveryFolder?.id) throw new Error(t("uploadFailed"));
+        current.parentId = task.deliveryFolder.id;
+        void client.invalidateQueries({ queryKey: crewKeys.task(taskId) }).catch(() => undefined);
+      }
       if (!current.mediaAssetId) {
         const uploaded = await uploadFileViaSignedUrl(current.file, {
           kind: "crew_asset_file",

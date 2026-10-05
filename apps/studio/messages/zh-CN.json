@@ -1709,7 +1709,9 @@
     "requiresPlan": "需要 {plan} 套餐",
     "unavailableOnPlan": "当前套餐不可用",
     "lockedForOpExpired": "会员已过期，续费后可使用 {op}",
-    "membershipExpired": "会员已过期"
+    "membershipExpired": "会员已过期",
+    "statusGeneratingRemaining": "生成中 · 预计剩余 {seconds} 秒",
+    "statusGeneratingLonger": "仍在生成 · 用时超出预估"
   },
   "canvasEditors": {
     "reset": "重置",
@@ -2596,6 +2598,30 @@
       "later": "将分镜 {number} 后移",
       "removeVideo": "移除分镜 {number} 中的视频",
       "activeMode": "拖拽模式已开启 — 将画布视频拖入下方分镜"
+    },
+    "export": {
+      "open": "导出 MP4",
+      "title": "导出分镜",
+      "description": "按已保存的镜头顺序导出，每个镜头使用第一个就绪视频。下载有效期为24小时。",
+      "format": "输出尺寸",
+      "waitForSave": "请等待画布更改全部保存后重试。",
+      "failed": "导出未能完成。",
+      "invalidDownload": "下载链接无效或已过期，请重试。",
+      "submitting": "提交中…",
+      "retry": "重试请求",
+      "create": "创建导出",
+      "uncertain": "响应中断。重试将检查同一请求，不会重复创建导出。",
+      "loading": "正在加载导出…",
+      "refresh": "刷新",
+      "empty": "暂无导出。",
+      "history": "最近导出",
+      "queued": "排队中",
+      "running": "渲染中",
+      "completed": "可下载",
+      "cancelled": "已取消",
+      "expired": "已过期",
+      "cancel": "取消",
+      "download": "下载"
     }
   },
   "invite": {

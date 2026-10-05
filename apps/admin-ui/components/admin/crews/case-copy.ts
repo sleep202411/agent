@@ -1,5 +1,19 @@
 export const caseCopy = {
   "en-US": {
+    category: "Complaint type",
+    desiredResolution: "Desired resolution (optional)",
+    categories: {
+      copyright: "Copyright",
+      payment: "Payment",
+      violation: "Violation",
+      harassment: "Harassment",
+      other: "Other reason",
+    },
+    resolutions: {
+      payment_allocation: "Review payment allocation",
+      warning: "Official warning to counterparty",
+      takedown: "Content removal / Takedown",
+    },
     title: "Task disputes and feedback appeals",
     user: "Participant",
     admin: "Operations",
@@ -51,6 +65,20 @@ export const caseCopy = {
     expired: "Link expired. Authorize another download.",
   },
   "zh-CN": {
+    category: "投诉类型",
+    desiredResolution: "期望的处理结果（选填）",
+    categories: {
+      copyright: "版权",
+      payment: "付款",
+      violation: "违规",
+      harassment: "骚扰",
+      other: "其他原因",
+    },
+    resolutions: {
+      payment_allocation: "审核款项分配",
+      warning: "向对方发出正式警告",
+      takedown: "移除或下架内容",
+    },
     title: "任务争议与评价申诉",
     user: "当事人",
     admin: "运营",
@@ -100,6 +128,20 @@ export const caseCopy = {
     expired: "链接已过期，请重新授权下载。",
   },
   "zh-HK": {
+    category: "投訴類型",
+    desiredResolution: "期望的處理結果（選填）",
+    categories: {
+      copyright: "版權",
+      payment: "付款",
+      violation: "違規",
+      harassment: "騷擾",
+      other: "其他原因",
+    },
+    resolutions: {
+      payment_allocation: "審核款項分配",
+      warning: "向對方發出正式警告",
+      takedown: "移除或下架內容",
+    },
     title: "任務爭議與評價申訴",
     user: "當事人",
     admin: "營運",
@@ -149,4 +191,4 @@ export const caseCopy = {
     expired: "連結已過期，請重新授權下載。",
   },
 };
-export type CaseCopy = { [K in keyof (typeof caseCopy)["en-US"]]: string };
+export type CaseCopy = (typeof caseCopy)["en-US"];

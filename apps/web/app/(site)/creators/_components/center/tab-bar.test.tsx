@@ -16,19 +16,19 @@ afterEach(async () => {
 });
 
 function Harness() {
-  const [active, setActive] = useState<CreatorTabId>("ips");
+  const [active, setActive] = useState<CreatorTabId>("services");
   return <CreatorTabBar mode="tabs" active={active} onPick={setActive} />;
 }
 
-it("shows IP first and preserves keyboard navigation including restored services", async () => {
+it("shows services first and preserves keyboard navigation", async () => {
   await act(async () => root.render(<Harness />));
   const tabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
   expect(tabs.map((tab) => tab.textContent)).toEqual([
+    "tabs.services",
     "tabs.ips",
     "tabs.works",
     "tabs.certificates",
     "tabs.crews",
-    "tabs.services",
   ]);
   expect(tabs[0].getAttribute("aria-selected")).toBe("true");
   await act(async () =>

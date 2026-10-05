@@ -3,12 +3,64 @@ import { CrewAssetPermission, type Prisma } from '@prisma/client';
 import { availableCrewAssetName } from '../assets/asset-name';
 import { lockCrewAssetFolderNames } from '../assets/upload-lock';
 import type { CrewAssetAccessService } from '../assets/asset-access.service';
+import { taskAssetCategory } from './task-asset-category';
+
+type DeliveryTask = {
+  id: string;
+  crewId: string;
+  title: string;
+  taskKind?: string | null;
+  metadata?: unknown;
+};
+
+function deliveryCategoryKey(task: DeliveryTask): string | null {
+  if (task.taskKind === 'voice') return 'music.voices';
+  const category = taskAssetCategory(task.metadata, task.taskKind ?? null);
+  return (
+    (
+      {
+        scripts: 'script',
+        characters: 'art.characters',
+        scenes: 'art.scenes',
+        props: 'art.props',
+        art: 'art',
+        music: 'music',
+        production: 'video',
+      } as Record<string, string>
+    )[category] ?? null
+  );
+}
+
+/** Organizational provisioning is part of an already-authorized task creation.
+ * The new folder inherits its category ACL; this grants no upload or read access. */
+export function provisionTaskDeliveryFolderTx(
+  tx: Prisma.TransactionClient,
+  task: DeliveryTask,
+  userId: string,
+) {
+  return resolveTaskDeliveryFolderTx(tx, undefined, task, userId);
+}
 
 /** Called within the task write transaction, after its task serialization lock. */
-export async function taskDeliveryFolderTx(
+export function taskDeliveryFolderTx(
   tx: Prisma.TransactionClient,
   access: CrewAssetAccessService,
-  task: { id: string; crewId: string; title: string },
+  task: DeliveryTask,
+  userId: string,
+  requestedFolderId?: string,
+) {
+  return resolveTaskDeliveryFolderTx(
+    tx,
+    access,
+    task,
+    userId,
+    requestedFolderId,
+  );
+}
+async function resolveTaskDeliveryFolderTx(
+  tx: Prisma.TransactionClient,
+  access: CrewAssetAccessService | undefined,
+  task: DeliveryTask,
   userId: string,
   requestedFolderId?: string,
 ): Promise<string> {
@@ -31,7 +83,7 @@ export async function taskDeliveryFolderTx(
       throw new BadRequestException(
         'The task delivery folder is unavailable. Select an active folder in this Crew.',
       );
-    await access.requireContainerPermission(
+    await access?.requireContainerPermission(
       task.crewId,
       folderId,
       userId,
@@ -40,16 +92,34 @@ export async function taskDeliveryFolderTx(
     );
     selectedId = folder.id;
   } else {
-    await access.requireContainerPermission(
+    // Stable seeded keys survive renaming/localization. Never infer a folder
+    // from its displayed name or silently route around a restricted folder.
+    const categoryKey = deliveryCategoryKey(task);
+    const category = categoryKey
+      ? await tx.crewAssetNode.findFirst({
+          where: {
+            crewId: task.crewId,
+            folderKey: categoryKey,
+            kind: 'folder',
+          },
+          select: { id: true, status: true },
+        })
+      : null;
+    if (category && category.status !== 'active')
+      throw new BadRequestException(
+        'The task category folder is unavailable. Restore it or update the task delivery folder.',
+      );
+    const parentId = category?.id ?? null;
+    await access?.requireContainerPermission(
       task.crewId,
-      null,
+      parentId,
       userId,
       CrewAssetPermission.upload,
       tx,
     );
-    await lockCrewAssetFolderNames(tx, task.crewId, null);
+    await lockCrewAssetFolderNames(tx, task.crewId, parentId);
     const siblings = await tx.crewAssetNode.findMany({
-      where: { crewId: task.crewId, parentId: null, status: 'active' },
+      where: { crewId: task.crewId, parentId, status: 'active' },
       select: { name: true },
     });
     const name = availableCrewAssetName(
@@ -60,6 +130,7 @@ export async function taskDeliveryFolderTx(
       data: {
         crewId: task.crewId,
         kind: 'folder',
+        parentId,
         name,
         createdByUserId: userId,
         updatedByUserId: userId,
@@ -79,7 +150,7 @@ export async function taskDeliveryFolderTx(
 export async function publishTaskDeliveryAssetsTx(
   tx: Prisma.TransactionClient,
   access: CrewAssetAccessService,
-  task: { id: string; crewId: string; title: string },
+  task: DeliveryTask,
   userId: string,
   assetIds: string[],
 ) {

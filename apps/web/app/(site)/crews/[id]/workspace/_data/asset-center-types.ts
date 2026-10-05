@@ -1,6 +1,7 @@
 export type CrewAssetKind = "folder" | "pdf" | "image" | "video" | "audio" | "design" | "doc";
 
 export interface CrewAssetPreviewItem {
+  contractLocked?: boolean;
   id: string;
   parentId?: string | null;
   kind: CrewAssetKind;

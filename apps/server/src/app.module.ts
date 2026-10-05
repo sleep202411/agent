@@ -37,6 +37,7 @@ import { LegacyPointsModule } from './legacy-points/legacy-points.module';
 import { LegacyProjectsModule } from './legacy-projects/legacy-projects.module';
 import { IpCommerceModule } from './ip-commerce';
 import { MediaModule } from './media/media.module';
+import { StoryboardExportModule } from './storyboard-export/storyboard-export.module';
 import { RealtimeModule } from './infra/realtime/realtime.module';
 import { RedisModule } from './infra/redis/redis.module';
 import { NotificationModule } from './notification';
@@ -101,6 +102,7 @@ const agentOsGatewayEnabled = (() => {
     StoryStudioModule,
     StoryPlaybackModule,
     MediaModule,
+    StoryboardExportModule,
     AiActorsModule,
     CrewsModule,
     CreatorServicesModule,

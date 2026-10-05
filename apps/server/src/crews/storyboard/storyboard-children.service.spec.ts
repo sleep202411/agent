@@ -1,3 +1,6 @@
+jest.mock('../tasks/task-delivery-folder', () => ({
+  provisionTaskDeliveryFolderTx: jest.fn().mockResolvedValue('folder'),
+}));
 import { ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { StoryboardChildrenService } from './storyboard-children.service';

@@ -15,6 +15,7 @@ import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { cn } from "@/lib/utils";
 import { useStoryboard } from "./use-storyboard";
 import { ShotThumbnail } from "./shot-thumbnail";
+import { StoryboardExport } from "./storyboard-export";
 import { StoryboardPlayback } from "./storyboard-playback";
 
 const SHOT_MIME = "application/x-fizz-storyboard-shot";
@@ -167,6 +168,7 @@ export function CanvasStoryboard({ children }: { children: ReactNode }) {
               {armed ? t("instructions") : t("reorder")}
             </p>
             <StoryboardPlayback rows={rows} />
+            <StoryboardExport disabled={!rows.length} />
             {canEdit && (
               <Button size="sm" variant="secondary" onClick={() => insertShot(rows.length)}>
                 <IconPlus />

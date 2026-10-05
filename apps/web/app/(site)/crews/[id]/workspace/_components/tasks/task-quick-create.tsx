@@ -214,27 +214,37 @@ export function TaskQuickCreate({
     }
     return activeCycle?.id ?? "";
   }, [activeCycle?.id, activeView.filters.cycleIds, project.cycles]);
+  const creationStates = useMemo(
+    () =>
+      project.workflowStates.filter(
+        (state) =>
+          !state.archived && ["open", "in_progress", "revision_requested"].includes(state.semantic)
+      ),
+    [project.workflowStates]
+  );
   const defaultWorkflowStateId = useMemo(() => {
     if (
       presetWorkflowStateId &&
-      project.workflowStates.some((state) => state.id === presetWorkflowStateId && !state.archived)
+      creationStates.some((state) => state.id === presetWorkflowStateId && !state.archived)
     ) {
       return presetWorkflowStateId;
     }
     const filtered = activeView.filters.workflowStateIds ?? [];
     if (filtered.length === 1) {
-      const filteredState = project.workflowStates.find(
+      const filteredState = creationStates.find(
         (state) => state.id === filtered[0] && !state.archived
       );
       if (filteredState) return filteredState.id;
     }
     return (
-      project.workflowStates.find((state) => !state.archived && state.systemKey === "open")?.id ??
-      project.workflowStates.find((state) => !state.archived)?.id ??
+      creationStates.find((state) => !state.archived && state.systemKey === "open")?.id ??
+      creationStates.find((state) => !state.archived)?.id ??
       ""
     );
-  }, [activeView.filters.workflowStateIds, presetWorkflowStateId, project.workflowStates]);
-  const resolvedWorkflowStateId = workflowStateId ?? defaultWorkflowStateId;
+  }, [activeView.filters.workflowStateIds, presetWorkflowStateId, creationStates]);
+  const resolvedWorkflowStateId = creationStates.some((state) => state.id === workflowStateId)
+    ? workflowStateId!
+    : defaultWorkflowStateId;
   const resolvedCycleId = cycleId ?? defaultCycleId;
 
   useEffect(() => {
@@ -768,12 +778,10 @@ export function TaskQuickCreate({
               label={activeState ? workflowStateLabel(activeState, projectT) : t("planningState")}
               ariaLabel={t("planningState")}
               onChange={setWorkflowStateId}
-              options={project.workflowStates
-                .filter((state) => !state.archived)
-                .map((state) => ({
-                  value: state.id,
-                  label: workflowStateLabel(state, projectT),
-                }))}
+              options={creationStates.map((state) => ({
+                value: state.id,
+                label: workflowStateLabel(state, projectT),
+              }))}
             />
             {(
               [

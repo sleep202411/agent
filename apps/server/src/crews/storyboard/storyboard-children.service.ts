@@ -1,3 +1,4 @@
+import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import {
   BadRequestException,
   ConflictException,
@@ -583,8 +584,8 @@ export class StoryboardChildrenService {
           createdByUserId: userId,
           metadata,
         },
-        select: { id: true },
       });
+      await provisionTaskDeliveryFolderTx(tx, created, userId);
 
       return { taskId: created.id };
     });

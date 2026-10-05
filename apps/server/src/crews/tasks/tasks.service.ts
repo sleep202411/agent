@@ -1,3 +1,4 @@
+import { recordTaskContractFile } from '../assets/task-contract-retention';
 import { TASK_PAYMENT_TERMS } from '@repo/shared/crew';
 import { readDocumentCrdtState } from '../../documents/document-persisted-state';
 import { validateTaskCustomFieldValues } from './task-custom-field-values';
@@ -26,6 +27,7 @@ import {
 } from './task-timeliness';
 import {
   taskDeliveryFolderTx,
+  provisionTaskDeliveryFolderTx,
   publishTaskDeliveryAssetsTx,
 } from './task-delivery-folder';
 import { assertNewCrewCurrency } from '../earnings/ledger-currency';
@@ -1678,7 +1680,7 @@ export class CrewTasksService {
         ? { metadata: { path: ['contractAssetNodeId'], not: Prisma.AnyNull } }
         : {}),
       ...(query.query
-        ? { title: { contains: query.query, mode: 'insensitive' } }
+        ? { OR: taskCenterSearchWhere(query.query, userId) }
         : {}),
     };
     const categories = await this.prisma.crewTask.groupBy({
@@ -2273,6 +2275,13 @@ export class CrewTasksService {
         },
         include: taskInclude,
       });
+      await provisionTaskDeliveryFolderTx(tx, created, userId);
+      await recordTaskContractFile(
+        tx,
+        created.id,
+        input.contractAssetNodeId,
+        userId,
+      );
       await this.writeActivity(tx, created.id, 'task.created', userId, {
         title: created.title,
         assigneeUserIds: uniqueAssigneeIds,
@@ -2298,7 +2307,11 @@ export class CrewTasksService {
           tx,
         );
       }
-      return created;
+      // Include the folder inserted after task creation in the returned DTO.
+      return tx.crewTask.findUniqueOrThrow({
+        where: { id: created.id },
+        include: taskInclude,
+      });
     });
     await this.conversations.broadcastCrewTaskChange(
       crewId,
@@ -2919,6 +2932,12 @@ export class CrewTasksService {
           },
           include: taskInclude,
         });
+        await recordTaskContractFile(
+          tx,
+          taskId,
+          input.contractAssetNodeId,
+          userId,
+        );
         await this.writeActivity(tx, taskId, 'task.updated', userId, {
           changedFields,
           addedAssigneeUserIds: addedAssigneeIds,
@@ -5547,4 +5566,26 @@ function taskContractAssetId(
 ): string | null {
   const value = (metadata as Prisma.JsonObject | null)?.contractAssetNodeId;
   return typeof value === 'string' ? value : null;
+}
+
+/** A financial reference only discovers a task when it belongs to the viewer;
+ * the outer task-center scope still enforces live Crew/task permissions. */
+export function taskCenterSearchWhere(
+  query: string,
+  userId: string,
+): Prisma.CrewTaskWhereInput[] {
+  const term = query.trim();
+  const clauses: Prisma.CrewTaskWhereInput[] = [
+    { title: { contains: term, mode: 'insensitive' } },
+    { crew: { name: { contains: term, mode: 'insensitive' } } },
+  ];
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(term)
+  ) {
+    clauses.push(
+      { id: term },
+      { earningEntries: { some: { id: term, userId } } },
+    );
+  }
+  return clauses;
 }

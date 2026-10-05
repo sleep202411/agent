@@ -1,0 +1,179 @@
+{
+  "date": "2026-10-06",
+  "scope": "Locally actionable Pax feedback 4, item 5, feedback 6, and Isaac service/countdown restoration. Mobile excluded. No deployment or remote database operation performed.",
+  "authority": [
+    "../docs/pax-feedback-4/Chat History.txt and 10 screenshots",
+    "../docs/pax-item-5/Chat History.txt, Chat History 2.txt, checklist workbook and HTML references",
+    "../docs/pax-feedback-6/Chat History.txt and 4 screenshots",
+    "../docs/codex-archives/fizzdragon-web.md",
+    "User: Pax product direction and Isaac technical guidance authoritative; future reviews public with notice, historical reviews private"
+  ],
+  "implemented": [
+    {
+      "area": "Task entry and recruitment",
+      "result": "Existing/new Crew entry, fixed Crew context, assign/recruit/invite actions, task-bound invitation acceptance atomically grants membership and claims the task. Direct Create position entry from Crew Openings supports a linked task.",
+      "evidence": [
+        "apps/web/app/(site)/crews/_components/create-task-entry-dialog.tsx",
+        "apps/web/app/(site)/crews/[id]/workspace/_components/tasks/task-quick-create.tsx",
+        "apps/server/src/crews/invitations/task-invite-accept.postgres.spec.ts"
+      ],
+      "validation": "Real local PostgreSQL task creation/invitation/race/retry; actual web components with fixture identity/API, including new-Crew continuation and desktop/mobile layout."
+    },
+    {
+      "area": "Submission and delivery organization",
+      "result": "File/canvas-only submission; expanded attachment picker; task/type folders provisioned transactionally for every audited creation path. Upload resolves the authorized folder before bytes, and attachment retries reuse the uploaded media. Admin-maintained versioned delivery templates.",
+      "evidence": [
+        "apps/server/src/crews/tasks/task-delivery-folder.postgres.spec.ts",
+        "apps/server/src/crews/tasks/delivery-catalog.postgres.spec.ts",
+        "apps/web/app/(site)/crews/[id]/workspace/_components/tasks/task-dialogs.tsx"
+      ],
+      "validation": "PostgreSQL creation/template/permission races; combined actual UI/hook browser journey from required template fields and upload retry through submission, producer approval retry and public review. 1280/390 widths; server/media/identity fixtures."
+    },
+    {
+      "area": "Reviews and service restoration",
+      "result": "Directional immutable reviews, optional comments, evidenced creator timeliness, future public notice and historical privacy, profile averages/yellow stars and Service & Comment first. Service packages restored after review of bede441250acf4d4b6b42e8c9f021a61ddd800a9.",
+      "evidence": [
+        "apps/server/src/crews/accountability/task-feedback.postgres.spec.ts",
+        "apps/web/app/(site)/crews/_components/task-feedback-panel.tsx",
+        "apps/web/app/(site)/creators/_components/center/creator-center.tsx"
+      ],
+      "validation": "PostgreSQL privacy/score/retry, AuthGuard HTTP, producer review-form tests, profile pagination and public review browser checks. No producer response SLA invented."
+    },
+    {
+      "area": "Recorded income and revenue administration",
+      "result": "Exact-currency income codes/provenance, filters, monthly summary/trend above withdrawals, approved Production Orders totals and ledger drill-down. Confirmed contract-backed Crew distributions, multiple immutable contract files, income metadata, revisioned admin drafts, exact allocation and reversal.",
+      "evidence": [
+        "apps/server/src/creator-withdrawals/revenue-distribution.postgres.spec.ts",
+        "apps/admin-ui/components/admin/revenue/revenue-panel.tsx",
+        "apps/web/app/(site)/crews/income/page.tsx"
+      ],
+      "validation": "1000-beneficiary PostgreSQL exact-sum/idempotency/reversal test; admin draft/concurrency/contract tests; 21 income/filter tests and 1280/1024/390 browser source totals/drill-down. Full four-stream design and IP-first four-party allocation remain incomplete for the reasons below."
+    },
+    {
+      "area": "Withdrawals and proof",
+      "result": "Atomic reservation, admin claim/manual payment/retry, batch recording with per-record references and reconciliation, filtered masked CSV, optional private proof and notes. Creator can download only their attached paid proof; no internal notes exposed.",
+      "evidence": [
+        "apps/server/src/creator-withdrawals/creator-withdrawals.postgres.spec.ts",
+        "apps/server/src/creator-withdrawals/withdrawal-proofs.controller.ts",
+        "apps/web/app/(site)/crews/income/withdrawals.tsx"
+      ],
+      "validation": "Real PostgreSQL ownership/reservation/claim/payment races; actual guard and multipart HTTP checks; admin batch partial retry and creator proof error/retry/download browser checks using fixture APIs/storage. No bank transfer performed."
+    },
+    {
+      "area": "Contracts",
+      "result": "Multiple immutable originals/addenda, archived-task discovery, current task/file authorization, fresh private download links, database and asset-service retention guards.",
+      "evidence": [
+        "apps/server/src/crews/tasks/task-contracts.postgres.spec.ts",
+        "apps/server/src/crews/assets/task-contract-retention.postgres.spec.ts",
+        "apps/web/app/(site)/contracts/page.tsx"
+      ],
+      "validation": "PostgreSQL concurrent append/retry, old-writer retention and membership revocation; actual page browser grouped files/archived filter/download link at1280/390 with fixture signing."
+    },
+    {
+      "area": "Resolution",
+      "result": "Task classification/requested outcome, initial private evidence, related task/own-income lookup, IP and owned-purchase reporting with immutable order association and retry identity. Admin tracking/resolution and creator history.",
+      "evidence": [
+        "apps/server/src/crews/tasks/dispute-list.postgres.spec.ts",
+        "apps/server/src/ip-commerce/report-purchases.postgres.spec.ts",
+        "apps/web/app/(site)/resolution-center/new/page.tsx"
+      ],
+      "validation": "PostgreSQL authorization/atomic evidence and purchase-reference invariants, HTTP guards, actual admin-to-creator case browser journey and purchase reporting with fixture APIs. No automatic financial/refund mutation."
+    },
+    {
+      "area": "Storyboard",
+      "result": "Canvas timeline, pointer drag mode, ordered playback/reorder with shared-document persistence. Creative-project saved storyboard export uses durable jobs, bounded source spooling, FFmpeg, private output, authorization rechecks, cancellation and expiry. Interactive Story merging/export excluded per Isaac.",
+      "evidence": [
+        "apps/studio/app/[locale]/project/_modes/storyboard/storyboard-document.test.tsx",
+        "apps/server/src/storyboard-export/saved-storyboard.postgres.spec.ts",
+        "apps/server/src/storyboard-export/storyboard-export-queue.postgres.spec.ts"
+      ],
+      "validation": "15 document/panel/playback tests passed after updating the document fixture for optional project context. Actual local PostgreSQL and FFmpeg pipeline passed; storage provider fixture. Browser local MP4 sequence, pointer drag and export dialog/error/history checked."
+    },
+    {
+      "area": "Feedback 4 polish",
+      "result": "Removed quick-create Episode control and obsolete recruitment hint, title-case task labels and red required markers, valid initial planning-state selection, immutable Crew display and direct task entry. Useful drafts retained; no user draft deletion inferred from obsolete UI copy.",
+      "evidence": [
+        "apps/web/app/(site)/crews/[id]/workspace/_components/tasks/task-quick-create.tsx",
+        "apps/web/app/(site)/crews/[id]/workspace/_components/tasks/task-quick-create.test.tsx",
+        "apps/web/messages/en-US.json"
+      ],
+      "validation": "All ten source screenshots inspected; task creation and recruitment tests plus rendered fixture browser flows."
+    },
+    {
+      "area": "Feedback 6",
+      "result": "Direct position entry, server-timestamp-based live generation countdown with overrun state, removal of default certification discovery gate, muted IP hover/focus previews with reduced-motion and visibility handling.",
+      "evidence": [
+        "apps/web/app/(site)/creators/_hooks/use-creator.ts",
+        "apps/studio/components/canvas/authoring/generation-estimate.tsx",
+        "apps/web/app/(site)/ips/_components/ip-hover-preview.tsx"
+      ],
+      "validation": "Creator list/search/filter, position authorization/publish/new-Crew continuation, countdown tick/remount/overrun, real local MP4 hover and hero/rail exclusivity browser checks. Actual regional APIs/identity/provider events were not exercised."
+    }
+  ],
+  "unfinished_external_or_decision_dependent": [
+    {
+      "requirement": "Academy purchase, homework, teacher-only review, badge issue and teaching income; full Teaching Income card/workspace",
+      "needed": "Authoritative external Java contracts and Yuanzheng settlement rules, course/skill mapping, pricing and configurable instructor share. Current course APIs provide CRUD/browse/playback/instructor association, not the requested atomic purchase-to-badge/teacher-income workflow. Community credits must not be treated as cash.",
+      "sources": [
+        "apps/web/src/services/courses.ts",
+        "apps/web/src/services/courses-public.ts",
+        "apps/admin-ui/lib/admin-courses.ts",
+        "docs/admin-courses-api.md"
+      ]
+    },
+    {
+      "requirement": "Complete four-stream cash income layout and Business Referral cash totals",
+      "needed": "Isaac-confirmed referral earning/cash settlement rules and integration contract. Existing referral/work records remain accessible in their own units; no combined fabricated cash balance. Teaching and verified IP cash data also depend on the items listed here."
+    },
+    {
+      "requirement": "IP-first four-party contract allocation and verified IP royalty card",
+      "needed": "Resolve whether only the creator pool or all mapped beneficiaries become withdrawable, and define authoritative IP contract/rate-to-beneficiary mappings. Existing CrewRevenueDistribution is Crew-contract-backed without an immutable IP link; its records cannot simply be relabeled as IP royalties. No example 20/30/45/5 or 50 percent became a default."
+    },
+    {
+      "requirement": "Pax OPC account diagnosis and task skill catalog",
+      "needed": "Live account/qualification response and verified regional qualification catalog. Default discovery no longer drops uncertified creators; no guessed OPC qualification ID was added."
+    },
+    {
+      "requirement": "Producer response timeliness score",
+      "needed": "Authoritative response deadline/SLA. Producer management score is available; no inferred lateness penalty."
+    },
+    {
+      "requirement": "Resolution policy, retention and external cash complaints",
+      "needed": "Approved policy URL/response commitment, abandoned evidence retention duration, and external Java general cash-transaction contract. Draft evidence stays private; no arbitrary data deletion schedule or automatic refund."
+    },
+    {
+      "requirement": "Additional payout methods and contract signature states",
+      "needed": "Supported payment-rail/profile contracts for PayPal/Wise/country/email filters; verified signature association for task-file Signed/Needs attention labels. Manual bank payment and actual task archive states are implemented."
+    },
+    {
+      "requirement": "Production acceptance",
+      "needed": "Lead-owned COM/CN storage, provider/Ably, actual account and FFmpeg worker capacity checks after deployment. Missing services do not invalidate completed independent local checks; fixture/browser tests do not establish production acceptance."
+    }
+  ],
+  "validation": {
+    "changed_area_regression": {
+      "web": 213,
+      "studio": 26,
+      "admin": 61,
+      "server": 170,
+      "note": "470 passing tests in the changed-area run; focused subsequent runs overlap and must not be added as unique totals."
+    },
+    "postgres": "14 suites: 96 passed, one opt-in scale skipped in that run. Scale subsequently enabled and passed within a 39-test revenue/delivery-catalog/template run with no skips.",
+    "additional": "22 admin catalog/case tests;17 producer review-form tests;21 income/filter tests;15 storyboard document/panel/playback tests passed.",
+    "compiler": "Web/server/admin/studio TypeScript and changed-area lint passed. Final server production build (Prisma generate, Nest build, catalog-update tsc) passed. This does not claim frontend production builds were run.",
+    "migrations": "411 migrations found and applied in isolated local audit_migrations_20261005 at127.0.0.1:55441; prisma migrate status reports up to date. No remote DB used.",
+    "browser": "Actual rendered components/CSS, desktop/mobile walkthroughs with fixtures; inspected screenshots. Covered task invite, submission/review/profile, contracts, income, proof, case resolution, storyboard, creator discovery, direct position, countdown and hover preview.",
+    "limitations": "Auth/API/storage fixture boundaries are described per area. No live bank transfer, regional storage, external Java Academy settlement, provider generation or production deployment verified."
+  },
+  "release": {
+    "branches": "Authorized main and develop alignment; fast-forward-only, no remote overwrite; Mobile excluded. Commit SHA is the Git commit containing this report.",
+    "deploy_owner": "Isaac/Yuanzheng; commands are handoff only.",
+    "com": "From clean main with Azure login: deploy/deploy-com-aks.sh server web studio admin-ui. Script builds immutable SHA images and commits/pushes image tags to main; server migration init container enabled.",
+    "cn": [
+      "deploy/deploy-cn-services.sh --full --build-only server studio web admin-ui",
+      "CN_RDS_BACKUP_ID=<verified-recent-manual-backup-id> CONFIRM_CN_PROD_MIGRATION=YES deploy/run-cn-migrations.sh --tag <release-sha>",
+      "deploy/deploy-cn-services.sh --deploy-only server studio web admin-ui"
+    ],
+    "cn_note": "CN disables migrateOnStart; explicit migration job is required between build and rollout. Migration script verifies a successful manual backup no older than6hours. If chart fingerprint differs, review the manifest diff before rerunning deploy-only with --allow-chart-update. Run CN sequence before COM script changes HEAD, or use a separate clean checkout at the release SHA."
+  }
+}

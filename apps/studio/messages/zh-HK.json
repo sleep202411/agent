@@ -1709,7 +1709,9 @@
     "requiresPlan": "需要 {plan} 方案",
     "unavailableOnPlan": "目前方案不可用",
     "lockedForOpExpired": "會員已過期，續費後可使用 {op}",
-    "membershipExpired": "會員已過期"
+    "membershipExpired": "會員已過期",
+    "statusGeneratingRemaining": "生成中 · 預計剩餘 {seconds} 秒",
+    "statusGeneratingLonger": "仍在生成 · 用時超出預估"
   },
   "canvasEditors": {
     "reset": "重設",
@@ -2596,6 +2598,30 @@
       "later": "將分鏡 {number} 後移",
       "removeVideo": "移除分鏡 {number} 中的影片",
       "activeMode": "拖曳模式已開啟 — 將畫布影片拖入下方分鏡"
+    },
+    "export": {
+      "open": "匯出 MP4",
+      "title": "匯出分鏡",
+      "description": "按已儲存的鏡頭順序匯出，每個鏡頭使用第一個就緒影片。下載有效期為24小時。",
+      "format": "輸出尺寸",
+      "waitForSave": "請等待畫布變更全部儲存後重試。",
+      "failed": "匯出未能完成。",
+      "invalidDownload": "下載連結無效或已過期，請重試。",
+      "submitting": "提交中…",
+      "retry": "重試請求",
+      "create": "建立匯出",
+      "uncertain": "回應中斷。重試將檢查同一請求，不會重複建立匯出。",
+      "loading": "正在載入匯出…",
+      "refresh": "重新整理",
+      "empty": "暫無匯出。",
+      "history": "最近匯出",
+      "queued": "排隊中",
+      "running": "渲染中",
+      "completed": "可下載",
+      "cancelled": "已取消",
+      "expired": "已過期",
+      "cancel": "取消",
+      "download": "下載"
     }
   },
   "invite": {

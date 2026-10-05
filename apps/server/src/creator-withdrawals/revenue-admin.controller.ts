@@ -1,4 +1,8 @@
 import {
+  RevenueDraftsService,
+  SaveRevenueDraft,
+} from './revenue-drafts.service';
+import {
   Body,
   Controller,
   Get,
@@ -58,7 +62,30 @@ export class RevenueAdminController {
     private readonly contracts: RevenueContractsService,
     private readonly distributions: RevenueDistributionService,
     private readonly read: RevenueAdminReadService,
+    private readonly drafts: RevenueDraftsService,
   ) {}
+
+  @Get('crews/:crewId/draft')
+  @Header('Cache-Control', 'private, no-store')
+  async draft(
+    @CurrentAdmin() admin: AdminActor,
+    @Param('crewId', new ZodValidationPipe(z.string().min(1).max(128)))
+    crewId: string,
+  ) {
+    return { code: 200, data: await this.drafts.get(admin, crewId) };
+  }
+  @Post('crews/:crewId/draft')
+  @HttpCode(200)
+  @Header('Cache-Control', 'private, no-store')
+  async saveDraft(
+    @CurrentAdmin() admin: AdminActor,
+    @Param('crewId', new ZodValidationPipe(z.string().min(1).max(128)))
+    crewId: string,
+    @Body(new ZodValidationPipe(SaveRevenueDraft))
+    input: z.infer<typeof SaveRevenueDraft>,
+  ) {
+    return { code: 200, data: await this.drafts.save(admin, crewId, input) };
+  }
 
   @Get('crews')
   @Header('Cache-Control', 'private, no-store')

@@ -23,7 +23,8 @@ suite('Cross-Crew task center against local PostgreSQL', () => {
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       !(
         (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
-        (url.port === '55439' && url.pathname === '/task01')
+        (url.port === '55439' && url.pathname === '/task01') ||
+        (url.port === '55441' && url.pathname === '/audit_migrations_20261005')
       )
     )
       throw new Error('Explicitly allowed loopback test database required');
@@ -48,6 +49,14 @@ suite('Cross-Crew task center against local PostgreSQL', () => {
   });
   afterAll(async () => {
     if (!db) return;
+    await db.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        'SET LOCAL session_replication_role = replica',
+      );
+      await tx.crewEarningEntry.deleteMany({
+        where: { crewId: { in: crewIds } },
+      });
+    });
     await db.crewTaskAssignee.deleteMany({
       where: { crewId: { in: crewIds } },
     });
@@ -143,6 +152,78 @@ suite('Cross-Crew task center against local PostgreSQL', () => {
       [...first.items, ...second.items].map((task) => task.id).sort(),
     ).toEqual(expected.sort());
     expect((await service.listCenter(randomUUID(), query)).items).toEqual([]);
+    expect(
+      (
+        await service.listCenter(viewer, {
+          ...query,
+          query: 'allowed',
+          limit: 30,
+        })
+      ).items
+        .map((row) => row.id)
+        .sort(),
+    ).toEqual(expected.sort());
+    expect(
+      (
+        await service.listCenter(viewer, { ...query, query: expected[0] })
+      ).items.map((row) => row.id),
+    ).toEqual([expected[0]]);
+    const task = await db.crewTask.findUniqueOrThrow({
+      where: { id: expected[0] },
+    });
+    const earning = await db.crewEarningEntry.create({
+      data: {
+        crewId: task.crewId,
+        taskId: task.id,
+        crewMemberId: allowedMember,
+        userId: viewer,
+        currency: 'USD',
+        sourceType: 'task_reward',
+        status: 'posted',
+        postedAt: new Date(),
+        approvedByUserId: viewer,
+        title: 'Income reference search fixture',
+        amountMinor: 100n,
+        idempotencyKey: randomUUID(),
+        createdByUserId: viewer,
+      },
+    });
+    expect(
+      (
+        await service.listCenter(viewer, { ...query, query: earning.id })
+      ).items.map((row) => row.id),
+    ).toEqual([task.id]);
+    const otherId = randomUUID();
+    const other = await db.crewMember.create({
+      data: {
+        id: randomUUID(),
+        crewId: task.crewId,
+        userId: otherId,
+        joinedVia: 'invitation',
+        status: 'active',
+      },
+    });
+    const privateEarning = await db.crewEarningEntry.create({
+      data: {
+        crewId: task.crewId,
+        taskId: task.id,
+        crewMemberId: other.id,
+        userId: otherId,
+        currency: 'USD',
+        sourceType: 'task_reward',
+        status: 'posted',
+        postedAt: new Date(),
+        approvedByUserId: viewer,
+        title: 'Other income',
+        amountMinor: 100n,
+        idempotencyKey: randomUUID(),
+        createdByUserId: viewer,
+      },
+    });
+    expect(
+      (await service.listCenter(viewer, { ...query, query: privateEarning.id }))
+        .items,
+    ).toEqual([]);
     await db.crewMember.update({
       where: { id: allowedMember },
       data: { status: 'removed', removedAt: new Date() },

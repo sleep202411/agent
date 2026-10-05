@@ -1,8 +1,13 @@
 import {
+  ListReportPurchasesSchema,
+  type ListReportPurchasesQuery,
+} from './dto';
+import {
   Body,
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -703,7 +708,21 @@ export class IpCommerceController {
     };
   }
 
+  @Get('me/report-purchases')
+  @Header('Cache-Control', 'private, no-store')
+  async reportPurchases(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListReportPurchasesSchema))
+    query: ListReportPurchasesQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.ipCommerce.listMyReportPurchases(user, query),
+    };
+  }
+
   @Get('me/reports')
+  @Header('Cache-Control', 'private, no-store')
   async myContentReports(
     @CurrentUser() user: AuthUser,
     @Query(new ZodValidationPipe(ListMyContentReportsSchema))

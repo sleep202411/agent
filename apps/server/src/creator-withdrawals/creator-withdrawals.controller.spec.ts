@@ -1,3 +1,9 @@
+import {
+  CreatorWithdrawalProofsController,
+  WithdrawalProofsController,
+} from './withdrawal-proofs.controller';
+import { WithdrawalProofsService } from './withdrawal-proofs.service';
+import { RevenueDraftsService } from './revenue-drafts.service';
 import { Test } from '@nestjs/testing';
 import { APP_GUARD } from '@nestjs/core';
 import { UnauthorizedException, type INestApplication } from '@nestjs/common';
@@ -27,9 +33,21 @@ import {
 describe('Withdrawal HTTP access and request contract', () => {
   let app: INestApplication;
   let server: Server;
+  const creatorProofDownload = jest
+    .fn()
+    .mockResolvedValue({ url: 'https://storage.invalid/read' });
+  const proofUpload = jest.fn().mockResolvedValue({ id: 'proof' });
+  const proofDownload = jest
+    .fn()
+    .mockResolvedValue({ url: 'https://storage.invalid/read' });
   const balances = jest
     .fn<Promise<unknown[]>, [string]>()
     .mockResolvedValue([]);
+  const exportCsv = jest.fn().mockResolvedValue({
+    csv: 'fixture',
+    filename: 'withdrawals.csv',
+    count: 0,
+  });
   const queue = jest.fn().mockResolvedValue({ items: [] });
   const upload = jest.fn().mockResolvedValue({ id: 'verified-contract' });
   const postRevenue = jest.fn().mockResolvedValue({ id: 'revenue-receipt' });
@@ -46,8 +64,25 @@ describe('Withdrawal HTTP access and request contract', () => {
         CreatorWithdrawalsController,
         CreatorWithdrawalsAdminController,
         RevenueAdminController,
+        WithdrawalProofsController,
+        CreatorWithdrawalProofsController,
       ],
       providers: [
+        {
+          provide: WithdrawalProofsService,
+          useValue: {
+            upload: proofUpload,
+            download: proofDownload,
+            downloadForCreator: creatorProofDownload,
+          },
+        },
+        {
+          provide: RevenueDraftsService,
+          useValue: {
+            get: jest.fn().mockResolvedValue({ revision: 0, data: null }),
+            save: jest.fn().mockResolvedValue({ revision: 1, data: null }),
+          },
+        },
         { provide: APP_GUARD, useClass: AuthGuard },
         {
           provide: AuthService,
@@ -87,7 +122,7 @@ describe('Withdrawal HTTP access and request contract', () => {
           provide: CreatorWithdrawalsService,
           useValue: { balances, request: jest.fn() },
         },
-        { provide: WithdrawalAdminService, useValue: { queue } },
+        { provide: WithdrawalAdminService, useValue: { queue, exportCsv } },
         { provide: RevenueContractsService, useValue: { upload } },
         {
           provide: RevenueAdminReadService,
@@ -105,6 +140,82 @@ describe('Withdrawal HTTP access and request contract', () => {
   });
   afterAll(async () => {
     await app?.close();
+  });
+  it('authenticates creator proof access and takes ownership only from the session', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const path = `/me/withdrawals/${id}/payment-proof/download`;
+    await request(server).post(path).expect(401);
+    await request(server)
+      .post(path)
+      .set('Authorization', 'Bearer finance')
+      .expect(401);
+    await request(server)
+      .post('/me/withdrawals/invalid/payment-proof/download')
+      .set('Cookie', 'satoken=creator')
+      .expect(400);
+    const response = await request(server)
+      .post(path)
+      .set('Cookie', 'satoken=creator')
+      .send({ userId: 'another-user' })
+      .expect(200);
+    expect(response.headers['cache-control']).toBe('private, no-store');
+    expect(creatorProofDownload).toHaveBeenLastCalledWith(
+      'verified-creator',
+      id,
+    );
+  });
+  it('protects proof uploads with the finance guard and accepts one bounded file', async () => {
+    const path =
+      '/admin/creator-withdrawals/11111111-1111-4111-8111-111111111111/proofs';
+    await request(server).post(path).expect(401);
+    await request(server)
+      .post(path)
+      .set('Cookie', 'fd_admin_session=ordinary')
+      .expect(403);
+    const bytes = Buffer.from('%PDF-1.7\n%%EOF');
+    await request(server)
+      .post(path)
+      .set('Cookie', 'fd_admin_session=finance')
+      .attach('file', bytes, 'proof.pdf')
+      .expect('Cache-Control', 'private, no-store')
+      .expect(201);
+    expect(proofUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'admin' }),
+      '11111111-1111-4111-8111-111111111111',
+      expect.objectContaining({ buffer: bytes, originalname: 'proof.pdf' }),
+    );
+    await request(server)
+      .post(path)
+      .set('Cookie', 'fd_admin_session=finance')
+      .attach('file', Buffer.alloc(10 * 1024 * 1024 + 1), 'large.pdf')
+      .expect(413);
+    await request(server)
+      .post(path)
+      .set('Cookie', 'fd_admin_session=finance')
+      .field('withdrawalId', 'injected')
+      .attach('file', bytes, 'proof.pdf')
+      .expect(400);
+  });
+  it('requires finance access and UUID scope for proof download links', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    await request(server)
+      .post(`/admin/creator-withdrawals/${id}/proofs/${id}/download`)
+      .set('Cookie', 'fd_admin_session=ordinary')
+      .expect(403);
+    await request(server)
+      .post(`/admin/creator-withdrawals/${id}/proofs/invalid/download`)
+      .set('Cookie', 'fd_admin_session=finance')
+      .expect(400);
+    await request(server)
+      .post(`/admin/creator-withdrawals/${id}/proofs/${id}/download`)
+      .set('Cookie', 'fd_admin_session=finance')
+      .expect('Cache-Control', 'private, no-store')
+      .expect(200);
+    expect(proofDownload).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'admin' }),
+      id,
+      id,
+    );
   });
   it('rejects anonymous and expired creator sessions', async () => {
     await request(server).get('/me/withdrawals/balances').expect(401);
@@ -157,6 +268,27 @@ describe('Withdrawal HTTP access and request contract', () => {
       .expect('Cache-Control', 'no-store')
       .expect(200);
     expect(queue).toHaveBeenCalledTimes(1);
+  });
+  it('protects filtered CSV exports and routes them before UUID details', async () => {
+    await request(server).get('/admin/creator-withdrawals/export').expect(401);
+    await request(server)
+      .get('/admin/creator-withdrawals/export')
+      .set('Authorization', 'Bearer ordinary')
+      .expect(403);
+    await request(server)
+      .get('/admin/creator-withdrawals/export?currency=USD&minAmountMinor=29')
+      .set('Authorization', 'Bearer finance')
+      .expect('Cache-Control', 'private, no-store')
+      .expect(200);
+    expect(exportCsv).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'admin' }),
+      { currency: 'USD', minAmountMinor: '29', page: 1 },
+    );
+    await request(server)
+      .get('/admin/creator-withdrawals/export?minAmountMinor=29')
+      .set('Authorization', 'Bearer finance')
+      .expect(400);
+    expect(exportCsv).toHaveBeenCalledTimes(1);
   });
   it('validates admin identifiers and transition inputs before invoking payment logic', async () => {
     await request(server)
@@ -316,5 +448,34 @@ describe('Withdrawal HTTP access and request contract', () => {
       .send({ contractId: 'invalid', status: 'paid' })
       .expect(400);
     expect(postRevenue).not.toHaveBeenCalled();
+  });
+  it('protects private income drafts with revenue permission and validates revisions', async () => {
+    const path = '/admin/creator-revenue/crews/crew/draft';
+    await request(server).get(path).expect(401);
+    await request(server)
+      .get(path)
+      .set('Authorization', 'Bearer withdrawal-only')
+      .expect(403);
+    await request(server)
+      .get(path)
+      .set('Authorization', 'Bearer finance')
+      .expect('Cache-Control', 'private, no-store')
+      .expect(200);
+    await request(server)
+      .post(path)
+      .set('Authorization', 'Bearer withdrawal-only')
+      .send({ revision: 0, data: null })
+      .expect(403);
+    await request(server)
+      .post(path)
+      .set('Authorization', 'Bearer finance')
+      .send({ revision: -1, data: null })
+      .expect(400);
+    await request(server)
+      .post(path)
+      .set('Authorization', 'Bearer finance')
+      .send({ revision: 0, data: null })
+      .expect('Cache-Control', 'private, no-store')
+      .expect(200);
   });
 });

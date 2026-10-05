@@ -1,3 +1,9 @@
+import { WithdrawalProofsService } from './withdrawal-proofs.service';
+import {
+  CreatorWithdrawalProofsController,
+  WithdrawalProofsController,
+} from './withdrawal-proofs.controller';
+import { RevenueDraftsService } from './revenue-drafts.service';
 import { NotificationModule } from '../notification/notification.module';
 import { StorageModule } from '../infra/storage/storage.module';
 import { RevenueContractsService } from './revenue-contracts.service';
@@ -25,12 +31,16 @@ import { validateRecipientEncryptionKey } from './recipient-encryption';
   providers: [
     CreatorWithdrawalsService,
     WithdrawalAdminService,
+    WithdrawalProofsService,
     RevenueContractsService,
     RevenueDistributionService,
     RevenueAdminReadService,
+    RevenueDraftsService,
   ],
   controllers: [
     RevenueAdminController,
+    WithdrawalProofsController,
+    CreatorWithdrawalProofsController,
     CreatorWithdrawalsController,
     CreatorWithdrawalsAdminController,
   ],

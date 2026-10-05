@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 
 /** Attach and retire under the same tree lock, so neither can race the other. */
@@ -21,14 +22,16 @@ export async function requireNoTaskContractReferences(
   const references = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
     SELECT id FROM crew_tasks
     WHERE crew_id = ${crewId}
-      AND metadata->>'contractAssetNodeId' IN (${Prisma.join(nodeIds)})
+      AND (metadata->>'contractAssetNodeId' IN (${Prisma.join(nodeIds)})
+        OR EXISTS (SELECT 1 FROM crew_task_contract_files f WHERE f.task_id=crew_tasks.id
+          AND f.asset_node_id::text IN (${Prisma.join(nodeIds)})))
     LIMIT 1
   `);
   if (references.length) {
     throw new ConflictException({
       code: 'CREW_TASK_CONTRACT_LOCKED',
       message:
-        'This file or folder contains an attached task contract and cannot be deleted.',
+        'This file or folder contains an attached task contract and cannot be edited, moved or deleted.',
     });
   }
 }
@@ -48,4 +51,18 @@ export async function requireAvailableTaskContractAsset(
     throw new BadRequestException({
       message: 'The contract file is unavailable in this crew.',
     });
+}
+
+/** Caller already validated file availability/permission under the asset tree lock. */
+export async function recordTaskContractFile(
+  tx: Prisma.TransactionClient,
+  taskId: string,
+  assetNodeId: string | null | undefined,
+  userId: string,
+) {
+  if (!assetNodeId) return;
+  await tx.$queryRaw`SELECT id FROM crew_asset_nodes WHERE id=${assetNodeId}::uuid FOR UPDATE`;
+  await tx.$executeRaw`INSERT INTO crew_task_contract_files(id,task_id,asset_node_id,attached_by_user_id)
+    VALUES (${randomUUID()}::uuid,${taskId}::uuid,${assetNodeId}::uuid,${userId})
+    ON CONFLICT(task_id,asset_node_id) DO NOTHING`;
 }

@@ -127,3 +127,28 @@ it("hands new Crew creation to the existing eligibility flow", () => {
   act(() => button("newCrew").click());
   expect(h.newCrew).toHaveBeenCalledTimes(1);
 });
+
+it("opens direct position creation only with openings management permission", () => {
+  const selected = vi.fn();
+  const show = () =>
+    act(() =>
+      root.render(
+        <CreateTaskEntryDialog
+          mode="position"
+          open
+          onOpenChange={h.change}
+          onNewCrew={h.newCrew}
+          onSelectCrew={selected}
+        />
+      )
+    );
+  show();
+  select();
+  expect(document.body.textContent).toContain("cannotManagePositions");
+  expect(button("continuePosition")).toBeUndefined();
+  h.permissions = ["openings.manage"];
+  show();
+  act(() => button("continuePosition").click());
+  expect(selected).toHaveBeenCalledWith("crew");
+  expect(document.querySelector("a")).toBeNull();
+});

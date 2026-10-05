@@ -1,3 +1,4 @@
+import { requireDisputeParticipants } from './dispute-participants';
 import {
   BadRequestException,
   Body,
@@ -80,7 +81,15 @@ export class CrewDisputeAttachmentsService {
     tx: Prisma.TransactionClient,
     disputeId: string,
     userId: string,
+    draftTaskId?: string,
   ) {
+    if (draftTaskId) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:dispute-id:${disputeId}`},0))`;
+      if (await tx.crewTaskDispute.findUnique({ where: { id: disputeId } }))
+        throw new ConflictException('This case has already been submitted.');
+      await requireDisputeParticipants(tx, draftTaskId, [userId]);
+      return { id: disputeId };
+    }
     await tx.$queryRaw`SELECT id FROM crew_task_disputes WHERE id=${disputeId}::uuid FOR UPDATE`;
     return this.disputes.attachmentAccess(
       disputeId,
@@ -93,16 +102,22 @@ export class CrewDisputeAttachmentsService {
     id: string,
     userId: string,
     raw: z.infer<typeof DisputeUpload>,
+    draftTaskId?: string,
   ) {
     const input = DisputeUpload.parse(raw);
     return this.db.$transaction(async (tx) => {
       // UUID identity locks also serialize accidental cross-case ID reuse.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:dispute-upload:${id}`},0))`;
-      const dispute = await this.lock(tx, disputeId, userId);
+      await this.lock(tx, disputeId, userId, draftTaskId);
+      const scope = draftTaskId
+        ? { disputeId: null, draftTaskId, draftDisputeId: disputeId }
+        : { disputeId, draftTaskId: null, draftDisputeId: null };
       const old = await tx.crewDisputeAttachment.findUnique({ where: { id } });
       if (old) {
         if (
-          old.disputeId !== disputeId ||
+          old.disputeId !== scope.disputeId ||
+          old.draftTaskId !== scope.draftTaskId ||
+          old.draftDisputeId !== scope.draftDisputeId ||
           old.uploaderUserId !== userId ||
           old.name !== input.name ||
           old.contentType !== input.contentType ||
@@ -123,7 +138,7 @@ export class CrewDisputeAttachmentsService {
       // Resolved cases permit private preparation of evidence for an appeal.
       if (
         (await tx.crewDisputeAttachment.count({
-          where: { disputeId: dispute.id, uploaderUserId: userId },
+          where: { ...scope, uploaderUserId: userId },
         })) >= 100
       )
         throw new ConflictException(
@@ -138,7 +153,7 @@ export class CrewDisputeAttachmentsService {
       await tx.crewDisputeAttachment.create({
         data: {
           id,
-          disputeId,
+          ...scope,
           uploaderUserId: userId,
           ...input,
           placement: placement as unknown as Prisma.InputJsonValue,
@@ -148,12 +163,20 @@ export class CrewDisputeAttachmentsService {
       return placement;
     });
   }
-  async confirm(disputeId: string, id: string, userId: string) {
+  async confirm(
+    disputeId: string,
+    id: string,
+    userId: string,
+    draftTaskId?: string,
+  ) {
     return this.db.$transaction(
       async (tx) => {
-        await this.lock(tx, disputeId, userId);
+        await this.lock(tx, disputeId, userId, draftTaskId);
+        const scope = draftTaskId
+          ? { disputeId: null, draftTaskId, draftDisputeId: disputeId }
+          : { disputeId, draftTaskId: null, draftDisputeId: null };
         const attachment = await tx.crewDisputeAttachment.findFirst({
-          where: { id, disputeId, uploaderUserId: userId },
+          where: { id, ...scope, uploaderUserId: userId },
         });
         if (!attachment) throw new NotFoundException('Attachment not found.');
         if (attachment.mediaAssetId) return { id };
@@ -361,5 +384,31 @@ export class CrewDisputeAttachmentsAdminController {
     @CurrentAdmin() admin: AdminActor,
   ) {
     return this.svc.read(p.disputeId, p.id, { kind: 'admin', admin });
+  }
+}
+
+const DraftParams = z.object({
+  taskId: z.string().uuid(),
+  disputeId: z.string().uuid(),
+  id: z.string().uuid(),
+});
+@Controller('crew-tasks/:taskId/dispute-drafts/:disputeId/attachments')
+export class CrewDisputeDraftAttachmentsController {
+  constructor(private readonly svc: CrewDisputeAttachmentsService) {}
+  @Post(':id')
+  issue(
+    @Param(new ZodValidationPipe(DraftParams)) p: z.infer<typeof DraftParams>,
+    @CurrentUser() u: AuthUser,
+    @Body(new ZodValidationPipe(DisputeUpload))
+    input: z.infer<typeof DisputeUpload>,
+  ) {
+    return this.svc.issue(p.disputeId, p.id, u.userId, input, p.taskId);
+  }
+  @Post(':id/confirm')
+  confirm(
+    @Param(new ZodValidationPipe(DraftParams)) p: z.infer<typeof DraftParams>,
+    @CurrentUser() u: AuthUser,
+  ) {
+    return this.svc.confirm(p.disputeId, p.id, u.userId, p.taskId);
   }
 }

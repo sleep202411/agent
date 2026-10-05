@@ -10,8 +10,8 @@ import {
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ path?: string[] }> };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// The server enforces a 20 MB PDF limit; allow bounded multipart overhead here.
-const UPLOAD_LIMIT = 20 * 1024 * 1024 + 64 * 1024;
+// The server enforces a 10 MB contract-file limit; allow bounded multipart overhead here.
+const UPLOAD_LIMIT = 10 * 1024 * 1024 + 64 * 1024;
 const JSON_LIMIT = 256 * 1024;
 
 function noStore(response: Response) {
@@ -65,8 +65,15 @@ async function forward(request: NextRequest, context: Context) {
           path[1].length <= 128 &&
           ![".", ".."].includes(path[1]) &&
           !/[\\/]/.test(path[1]) &&
-          ["members", "contracts", "distributions"].includes(path[2]))
+          ["members", "contracts", "distributions", "draft"].includes(path[2]))
       : upload ||
+        (path.length === 3 &&
+          path[0] === "crews" &&
+          path[1].length > 0 &&
+          path[1].length <= 128 &&
+          ![".", ".."].includes(path[1]) &&
+          !/[\\/]/.test(path[1]) &&
+          path[2] === "draft") ||
         (path.length === 3 &&
           path[0] === "distributions" &&
           UUID.test(path[1]) &&
@@ -87,7 +94,7 @@ async function forward(request: NextRequest, context: Context) {
     )
       return error(
         415,
-        upload ? "A multipart PDF upload is required." : "A JSON request is required."
+        upload ? "A multipart contract-file upload is required." : "A JSON request is required."
       );
     const body =
       request.method === "POST"

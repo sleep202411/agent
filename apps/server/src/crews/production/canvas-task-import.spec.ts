@@ -1,3 +1,6 @@
+jest.mock('../tasks/task-delivery-folder', () => ({
+  provisionTaskDeliveryFolderTx: jest.fn().mockResolvedValue('folder'),
+}));
 import { CrewCanvasTaskImportService } from './canvas-task-import';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,

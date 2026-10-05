@@ -289,6 +289,16 @@ export class RevenueAdminReadService {
         postedByAdminId: true,
         postedAt: true,
         allocations: true,
+        incomeDate: true,
+        incomeType: true,
+        incomeSource: true,
+        notes: true,
+        contractNumber: true,
+        signingParty: true,
+        contractExpiresOn: true,
+        supportingContracts: {
+          select: { contract: { select: { id: true, filename: true } } },
+        },
         contract: {
           select: {
             id: true,
@@ -321,6 +331,15 @@ export class RevenueAdminReadService {
       amountMinor: row.amountMinor.toString(),
       postedByAdminId: row.postedByAdminId,
       postedAt: row.postedAt.toISOString(),
+      incomeDate: row.incomeDate?.toISOString().slice(0, 10) ?? null,
+      incomeType: row.incomeType,
+      incomeSource: row.incomeSource,
+      notes: row.notes,
+      contractNumber: row.contractNumber,
+      signingParty: row.signingParty,
+      contractExpiresOn:
+        row.contractExpiresOn?.toISOString().slice(0, 10) ?? null,
+      supportingContracts: row.supportingContracts.map((item) => item.contract),
       crew: row.contract.crew,
       contract: { id: row.contract.id, filename: row.contract.filename },
       participants: ReceiptAllocations.parse(row.allocations).map(

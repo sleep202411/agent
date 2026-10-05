@@ -20,6 +20,8 @@ import { useMyCrews } from "../_hooks/use-crew-list";
 import { useCrewMembership } from "../_hooks/use-members";
 
 export function CreateTaskEntryDialog(props: {
+  mode?: "task" | "position";
+  onSelectCrew?: (crewId: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNewCrew: () => void;
@@ -34,7 +36,11 @@ function EntrySession({
   onOpenChange,
   onNewCrew,
   signedIn,
+  mode = "task",
+  onSelectCrew,
 }: {
+  mode?: "task" | "position";
+  onSelectCrew?: (crewId: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onNewCrew: () => void;
@@ -56,15 +62,17 @@ function EntrySession({
     validSelection &&
     !membership.isFetching &&
     !membership.isError &&
-    membership.data?.permissions.includes("tasks.manage");
+    membership.data?.permissions.includes(mode === "position" ? "openings.manage" : "tasks.manage");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>{t("title")}</DialogTitle>
+          <DialogTitle>{t(mode === "position" ? "positionTitle" : "title")}</DialogTitle>
         </DialogHeader>
         <DialogBody>
-          <p className="text-sm text-muted-foreground">{t("description")}</p>
+          <p className="text-sm text-muted-foreground">
+            {t(mode === "position" ? "positionDescription" : "description")}
+          </p>
           {signedIn && (
             <>
               {crews.isPending && <p role="status">{t("loading")}</p>}
@@ -106,20 +114,30 @@ function EntrySession({
                 ) : membership.isPending || membership.isFetching ? (
                   <p role="status">{t("loading")}</p>
                 ) : (
-                  !allowed && <p role="status">{t("cannotManage")}</p>
+                  !allowed && (
+                    <p role="status">
+                      {t(mode === "position" ? "cannotManagePositions" : "cannotManage")}
+                    </p>
+                  )
                 ))}
-              {allowed && (
-                <Button asChild className="w-full">
-                  <Link
-                    href={localizePath(
-                      `/crews/${encodeURIComponent(selected)}/workspace?tab=tasks&createTask=1`,
-                      locale
-                    )}
-                    onClick={() => onOpenChange(false)}
-                  >
-                    {t("continue")}
-                  </Link>
+              {allowed && mode === "position" ? (
+                <Button className="w-full" onClick={() => onSelectCrew?.(selected)}>
+                  {t("continuePosition")}
                 </Button>
+              ) : (
+                allowed && (
+                  <Button asChild className="w-full">
+                    <Link
+                      href={localizePath(
+                        `/crews/${encodeURIComponent(selected)}/workspace?tab=tasks&createTask=1`,
+                        locale
+                      )}
+                      onClick={() => onOpenChange(false)}
+                    >
+                      {t("continue")}
+                    </Link>
+                  </Button>
+                )
               )}
             </>
           )}

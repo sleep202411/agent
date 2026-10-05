@@ -19,6 +19,7 @@ Object.defineProperty(document, "elementFromPoint", { configurable: true, value:
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/app/[locale]/project/_components/project-context", () => ({
   useProjectContext: () => ({ catalog: { data: undefined } }),
+  useOptionalProjectContext: () => null,
   useProjectPayerWorkspace: () => null,
 }));
 vi.mock("@/lib/media-upload", () => ({ uploadFileViaSignedUrl: vi.fn() }));

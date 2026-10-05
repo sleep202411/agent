@@ -1,3 +1,4 @@
+import { requireDisputeParticipants } from './dispute-participants';
 import { requireDisputeAttachments } from './dispute-attachment-evidence';
 import { CURRENT_CELL } from '../../common/region';
 import { writeAdminAudit } from '../../admin-auth/admin-audit';
@@ -43,6 +44,17 @@ export const OpenDispute = z
     title: z.string().trim().min(1).max(180),
     message: z.string().trim().min(1).max(4000),
     submissionIds: Evidence,
+    attachmentIds: z
+      .array(z.string().uuid())
+      .max(5)
+      .transform((ids) => [...new Set(ids)].sort())
+      .optional(),
+    category: z
+      .enum(['copyright', 'payment', 'violation', 'harassment', 'other'])
+      .optional(),
+    desiredResolution: z
+      .enum(['payment_allocation', 'warning', 'takedown'])
+      .optional(),
   })
   .strict();
 export const DisputeUpdate = z
@@ -226,41 +238,10 @@ export class CrewTaskDisputesService {
           where: { id: prior.id },
         });
       }
-      const initial = await tx.crewTask.findUnique({
-        where: { id: taskId },
-        select: { crewId: true },
-      });
-      if (!initial) throw new NotFoundException('Task not found.');
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${initial.crewId}`},0))`;
-      const task = await tx.crewTask.findFirst({
-        where: { id: taskId },
-        include: {
-          assignees: true,
-          crew: { include: { ownership: { include: { member: true } } } },
-        },
-      });
-      if (!task) throw new NotFoundException('Task not found.');
-      const participants = new Set([
-        task.createdByUserId,
-        task.approvedByUserId,
-        task.crew.ownership?.member.userId,
-        ...task.assignees.map((a) => a.userId),
+      await requireDisputeParticipants(tx, taskId, [
+        userId,
+        input.respondentUserId,
       ]);
-      for (const id of [userId, input.respondentUserId]) {
-        if (
-          !participants.has(id) &&
-          !(await tx.crewTaskSubmission.findFirst({
-            where: {
-              taskId,
-              OR: [{ submittedByUserId: id }, { reviewedByUserId: id }],
-            },
-            select: { id: true },
-          }))
-        )
-          throw new ForbiddenException(
-            'Dispute parties must have participated in this task.',
-          );
-      }
       if (userId === input.respondentUserId)
         throw new ConflictException(
           'Choose another task participant as the respondent.',
@@ -270,6 +251,19 @@ export class CrewTaskDisputesService {
           'A dispute between these parties is already open for this task.',
         );
       await this.evidence(tx, taskId, input.submissionIds);
+      if (input.attachmentIds?.length) {
+        const rows = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+          SELECT r.id FROM crew_dispute_attachments r JOIN media_assets a ON a.id=r.media_asset_id
+          WHERE r.id IN (${Prisma.join(input.attachmentIds.map((id) => Prisma.sql`${id}::uuid`))})
+          AND r.dispute_id IS NULL AND r.draft_dispute_id=${input.id}::uuid
+          AND r.draft_task_id=${taskId}::uuid AND r.uploader_user_id=${userId}
+          AND a.status='ready' AND a.deleted_at IS NULL AND a.moderation_status <> 'blocked'
+          FOR UPDATE OF r FOR SHARE OF a`);
+        if (rows.length !== input.attachmentIds.length)
+          throw new ConflictException(
+            'One or more initial attachments are unavailable for this case.',
+          );
+      }
       const row = await tx.crewTaskDispute.create({
         data: {
           id: input.id,
@@ -277,8 +271,16 @@ export class CrewTaskDisputesService {
           openedByUserId: userId,
           respondentUserId: input.respondentUserId,
           title: input.title,
+          category: input.category,
+          desiredResolution: input.desiredResolution,
         },
       });
+      if (input.attachmentIds?.length) {
+        await tx.crewDisputeAttachment.updateMany({
+          where: { id: { in: input.attachmentIds } },
+          data: { disputeId: row.id, draftTaskId: null, draftDisputeId: null },
+        });
+      }
       await tx.crewTaskDisputeEvent.create({
         data: {
           id: randomUUID(),
@@ -289,6 +291,7 @@ export class CrewTaskDisputesService {
           actorId: userId,
           actorKind: 'user',
           action: 'open',
+          attachmentIds: input.attachmentIds ?? [],
           message: input.message,
           submissionIds: input.submissionIds,
         },

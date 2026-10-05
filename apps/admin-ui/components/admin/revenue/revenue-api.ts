@@ -45,6 +45,14 @@ export type RevenueReceipt = {
   postedByAdminId: string;
 };
 export type RevenueReceiptDetail = RevenueReceipt & {
+  incomeDate?: string | null;
+  incomeType?: string | null;
+  incomeSource?: string | null;
+  notes?: string | null;
+  contractNumber?: string | null;
+  signingParty?: string | null;
+  contractExpiresOn?: string | null;
+  supportingContracts?: { id: string; filename: string }[];
   crew: { id: string; name: string };
   contract: { id: string; filename: string };
   participants: {

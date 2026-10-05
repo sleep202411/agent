@@ -680,10 +680,35 @@ export interface SubmitIpReviewInput {
   changeSummary?: string;
 }
 
+export interface ReportPurchase {
+  id: string;
+  orderNo: string;
+  ipId: string;
+  episodeId: string | null;
+  targetType: "ip" | "episode";
+  currency: string;
+  totalAmount: string;
+  status: string;
+  createdAt: string;
+}
+
+export function listMyReportPurchases(
+  params: { query?: string; cursor?: string; limit: number },
+  signal?: AbortSignal
+) {
+  return api.get<{ items: ReportPurchase[]; nextCursor: string | null }>(
+    "/aurora/ip-commerce/me/report-purchases",
+    { params, signal }
+  );
+}
+
 export interface CreateIpReportInput {
+  requestId?: string;
+  purchaseOrderId?: string;
   targetType: "ip" | "episode";
   targetId: string;
   reason:
+    | "payment"
     | "copyright"
     | "unsafe_content"
     | "fraud"

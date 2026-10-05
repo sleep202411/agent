@@ -129,6 +129,7 @@ let bulkMove = false;
 let allowOrganize = true;
 let folderPermission = "manage";
 let filePermission = "manage";
+let contractLocked = false;
 let movedSecond = false;
 let memberReadFails = false;
 let accessVersion = 1;
@@ -286,6 +287,7 @@ function installFetch() {
                     ? { ...item, name: "Collaborator.png", updatedAt: "2026-09-23T10:00:00.000Z" }
                     : {
                         ...item,
+                        contractLocked: item.kind === "file" && contractLocked,
                         effectivePermission:
                           item.kind === "folder" ? folderPermission : filePermission,
                       }
@@ -393,6 +395,7 @@ afterEach(() => {
   allowOrganize = true;
   folderPermission = "manage";
   filePermission = "manage";
+  contractLocked = false;
   movedSecond = false;
   memberReadFails = false;
   accessVersion = 1;
@@ -1386,4 +1389,17 @@ it("expands and collapses nested folders without navigating until selected", asy
   );
   await click(toggle);
   expect(rail.textContent).not.toContain("Subtitled");
+});
+
+it("marks attached contracts read-only and removes unavailable edit actions", async () => {
+  contractLocked = true;
+  await render();
+  const checkbox = document.querySelector<HTMLInputElement>(
+    'input[aria-label="Select concept.png"]'
+  )!;
+  await act(async () => checkbox.click());
+  expect(document.body.textContent).toContain("Contract · Read-only");
+  for (const label of ["Rename", "Move", "Move to trash"]) {
+    expect(document.querySelector(`button[aria-label="${label}"]`)).toBeNull();
+  }
 });

@@ -31,6 +31,7 @@ type Feedback = {
   response: string | null;
   createdAt: string;
   respondedAt: string | null;
+  publicOnProfile?: boolean;
 };
 type Request = { path: string; method: "post" | "put"; body: Record<string, unknown>; key: string };
 type Props = { task?: CrewTaskDTO };
@@ -151,6 +152,7 @@ function FeedbackSession({
     setFinished((previous) => new Set([...previous, request.key]));
     await Promise.allSettled([
       client.invalidateQueries({ queryKey: ["crew-task-feedback", userId] }),
+      client.invalidateQueries({ queryKey: ["creator-profile-reviews"] }),
     ]);
     pending.current = false;
     if (alive.current) setBusy(false);
@@ -207,12 +209,15 @@ function FeedbackSession({
               {!taskId && <p>{t("task", { id: item.taskId })}</p>}
               <p>{t("participants", { author: item.authorUserId, subject: item.subjectUserId })}</p>
               <p>{new Date(item.createdAt).toLocaleString(locale)}</p>
+              <p className="text-xs text-muted-foreground">
+                {t(item.publicOnProfile ? "publicReview" : "privateReview")}
+              </p>
               {ratingValues(item.ratings).map(([key, value]) => (
                 <p key={key}>
                   {t(key)}: {String(value)} / 5
                 </p>
               ))}
-              <p className="whitespace-pre-wrap">{item.comment}</p>
+              {item.comment && <p className="whitespace-pre-wrap">{item.comment}</p>}
               {item.response !== null ? (
                 <div>
                   <p>{t("response")}</p>
@@ -273,7 +278,6 @@ function FeedbackForm({
       ? ["productionAbility", "understanding", "communication"]
       : ["managementAbility"];
   const valid =
-    comment.trim().length >= 3 &&
     comment.trim().length <= 2000 &&
     dimensions.every(
       (key) =>
@@ -285,6 +289,7 @@ function FeedbackForm({
     <fieldset disabled={disabled} className="space-y-2">
       <p>{t("evaluate", { subject: subjectId })}</p>
       <p className="text-sm text-muted-foreground">{t("immutable")}</p>
+      <p className="text-sm text-muted-foreground">{t("publicNotice")}</p>
       {dimensions.map((key) => (
         <label key={key} className="block">
           {t(key)}
@@ -313,6 +318,7 @@ function FeedbackForm({
           if (!disabled && valid)
             onSubmit({
               subjectUserId: subjectId,
+              publicOnProfile: true,
               ratings: {
                 direction,
                 ...Object.fromEntries(dimensions.map((key) => [key, Number(scores[key])])),

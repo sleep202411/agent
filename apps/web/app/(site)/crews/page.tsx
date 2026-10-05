@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { KycGateDialog } from "@/app/_components/kyc-gate-dialog";
 import { useCrewList, useMyCrews, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { CreateTaskEntryDialog } from "./_components/create-task-entry-dialog";
+import { CreateCrewJobDialog } from "./_components/create-crew-job-dialog";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { PositionsTab } from "@/app/(site)/crews/_components/positions-tab";
@@ -101,6 +102,8 @@ export default function CrewsPage() {
 
   const taskEntryT = useTranslations("taskEntry");
   const [taskEntryOpen, setTaskEntryOpen] = useState(false);
+  const [entryMode, setEntryMode] = useState<"task" | "position">("task");
+  const [positionCrew, setPositionCrew] = useState<string | null>(null);
   const [createForTask, setCreateForTask] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [kycGateOpen, setKycGateOpen] = useState(false);
@@ -159,6 +162,11 @@ export default function CrewsPage() {
       }
     >
       <CreateTaskEntryDialog
+        mode={entryMode}
+        onSelectCrew={(crewId) => {
+          setTaskEntryOpen(false);
+          setPositionCrew(crewId);
+        }}
         open={taskEntryOpen}
         onOpenChange={setTaskEntryOpen}
         onNewCrew={() => {
@@ -166,18 +174,30 @@ export default function CrewsPage() {
           void requestCreateCrew(true);
         }}
       />
+      {positionCrew && (
+        <CreateCrewJobDialog
+          key={`${user?.id}:${positionCrew}`}
+          crewId={positionCrew}
+          open
+          onOpenChange={(open) => {
+            if (!open) setPositionCrew(null);
+          }}
+        />
+      )}
       <CreateCrewDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={
           createForTask
             ? (crew) =>
-                router.push(
-                  localizePath(
-                    `/crews/${encodeURIComponent(crew.id)}/workspace?tab=tasks&createTask=1`,
-                    locale
-                  )
-                )
+                entryMode === "position"
+                  ? setPositionCrew(crew.id)
+                  : router.push(
+                      localizePath(
+                        `/crews/${encodeURIComponent(crew.id)}/workspace?tab=tasks&createTask=1`,
+                        locale
+                      )
+                    )
             : undefined
         }
       />
@@ -194,12 +214,29 @@ export default function CrewsPage() {
           className={workspaceView ? "min-w-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col" : "min-w-0"}
         >
           <CrewSectionNavigation active={view} onViewChange={setView} sticky={!workspaceView}>
-            <div className="ml-auto flex shrink-0 gap-2 pb-2">
+            <div className="ml-auto flex shrink-0 flex-wrap gap-2 pb-2">
+              {view === "positions" && (
+                <Button
+                  type="button"
+                  size="lg"
+                  className="h-11 gap-2 px-5 text-sm"
+                  onClick={() => {
+                    setEntryMode("position");
+                    setTaskEntryOpen(true);
+                  }}
+                >
+                  <IconPlus className="size-4" />
+                  {taskEntryT("positionTitle")}
+                </Button>
+              )}
               <Button
                 type="button"
                 size="lg"
                 className="h-11 gap-2 px-5 text-sm"
-                onClick={() => setTaskEntryOpen(true)}
+                onClick={() => {
+                  setEntryMode("task");
+                  setTaskEntryOpen(true);
+                }}
               >
                 <IconPlus className="size-4" />
                 {taskEntryT("title")}

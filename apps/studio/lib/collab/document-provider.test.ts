@@ -207,3 +207,19 @@ it("does not reconnect on retry after access revocation", () => {
   expect(provider.getError()).toBe("Your access to this document was revoked.");
   expect(provider.getStatus()).toBe("offline");
 });
+it("exposes an export revision only after local changes are acknowledged", () => {
+  expect(provider.getSavedSequence()).toBeNull();
+  const socket = Socket.instances[0]!;
+  socket.open();
+  socket.sync();
+  expect(provider.getSavedSequence()).toBe(0);
+  provider.doc.getText("content").insert(0, "export me");
+  expect(provider.getSavedSequence()).toBeNull();
+  const operation = socket.operations()[0]!;
+  socket.frame("operation_ack", {
+    operation: { sequence: 1, clientMutationId: operation.data.clientMutationId },
+  });
+  expect(provider.getSavedSequence()).toBe(1);
+  socket.close();
+  expect(provider.getSavedSequence()).toBeNull();
+});

@@ -1,3 +1,4 @@
+import { RevenueDraftsService } from './revenue-drafts.service';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -81,6 +82,9 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
       await tx.$executeRawUnsafe(
         'SET LOCAL session_replication_role = replica',
       );
+      await tx.crewRevenueDraft.deleteMany({
+        where: { crewId: { in: crews } },
+      });
       await tx.creatorWithdrawalEvent.deleteMany({
         where: { withdrawal: { userId: { in: users } } },
       });
@@ -104,6 +108,9 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
       });
       await tx.crewEarningEntry.deleteMany({
         where: { crewId: { in: crews } },
+      });
+      await tx.crewRevenueSupportingContract.deleteMany({
+        where: { distribution: { contract: { crewId: { in: crews } } } },
       });
       await tx.crewRevenueDistribution.deleteMany({
         where: { contract: { crewId: { in: crews } } },
@@ -1112,5 +1119,189 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
         await tx.crewEarningEntry.delete({ where: { id: earning.id } });
       }),
     ).rejects.toThrow(/Revenue allocation|append-only/);
+  });
+  it('stores immutable revenue details and all supporting files without changing allocation totals', async () => {
+    const t = await seed(),
+      other = await seed();
+    const supplemental = await db.crewRevenueContract.create({
+      data: {
+        crewId: t.crewId,
+        filename: 'scan.png',
+        contentType: 'image/png',
+        storageProvider: 's3_compatible',
+        bucket: 'fixture-private',
+        objectKey: randomUUID(),
+        sizeBytes: 100n,
+        checksumSha256: randomUUID().replaceAll('-', '').padEnd(64, '0'),
+        uploadedByAdminId: actor.id,
+        verifiedAt: new Date(),
+      },
+    });
+    const input = {
+      ...t.input,
+      additionalContractIds: [supplemental.id],
+      incomeDate: '2026-10-05',
+      incomeType: 'licensing' as const,
+      incomeSource: 'Studio customer',
+      notes: 'October license',
+      contractNumber: 'CT-100',
+      signingParty: 'Fixture Studio',
+      contractExpiresOn: '2027-10-05',
+    };
+    const result = await service.post(actor, input);
+    expect(
+      await service.post(actor, {
+        ...input,
+        additionalContractIds: [supplemental.id, supplemental.id],
+      }),
+    ).toMatchObject({ id: result.id });
+    const saved = await db.crewRevenueDistribution.findUniqueOrThrow({
+      where: { id: result.id },
+      include: { supportingContracts: true },
+    });
+    expect(saved.supportingContracts.map((row) => row.contractId)).toEqual([
+      supplemental.id,
+    ]);
+    expect(saved).toMatchObject({
+      incomeType: 'licensing',
+      incomeSource: 'Studio customer',
+      contractNumber: 'CT-100',
+      notes: 'October license',
+    });
+    expect(saved.incomeDate?.toISOString().slice(0, 10)).toBe('2026-10-05');
+    const reader = new RevenueAdminReadService(
+      db as PrismaService,
+      {} as LegacyCreatorsService,
+    );
+    expect(await reader.distribution(actor, result.id)).toMatchObject({
+      incomeDate: '2026-10-05',
+      contractExpiresOn: '2027-10-05',
+      supportingContracts: [{ id: supplemental.id, filename: 'scan.png' }],
+    });
+    await expect(
+      service.post(actor, { ...input, notes: 'Changed after posting' }),
+    ).rejects.toThrow('different allocation');
+    await expect(
+      db.crewRevenueDistribution.update({
+        where: { id: result.id },
+        data: { incomeSource: 'Changed' },
+      }),
+    ).rejects.toThrow('immutable');
+    await expect(
+      db.crewRevenueSupportingContract.deleteMany({
+        where: { distributionId: result.id },
+      }),
+    ).rejects.toThrow('immutable');
+    await expect(
+      service.post(actor, {
+        ...other.input,
+        additionalContractIds: [supplemental.id],
+      }),
+    ).rejects.toThrow('selected Crew');
+    expect(
+      await db.crewRevenueDistribution.count({
+        where: { contractId: other.contract.id },
+      }),
+    ).toBe(0);
+  });
+  it('preserves detected image MIME in private storage and download signing', async () => {
+    const t = await seed(),
+      fixture = uploadFixture();
+    const buffer = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0d8AAAAASUVORK5CYII=',
+      'base64',
+    );
+    fixture.storage.headStoredObject.mockResolvedValue({
+      exists: true,
+      sizeBytes: buffer.length,
+      contentType: 'image/png',
+    });
+    const write = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    try {
+      const record = await fixture.contracts.upload(actor, t.crewId, {
+        buffer,
+        originalname: 'scanned-contract.png',
+      });
+      expect(record).toMatchObject({
+        filename: 'scanned-contract.png',
+        contentType: 'image/png',
+      });
+      expect(fixture.storage.createPrivateUploadUrl).toHaveBeenCalledWith(
+        expect.objectContaining({ contentType: 'image/png' }),
+      );
+      await fixture.contracts.download(actor, record.id);
+      expect(fixture.storage.createReadUrl).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentType: 'image/png',
+          filename: 'scanned-contract.png',
+        }),
+      );
+    } finally {
+      write.mockRestore();
+    }
+  });
+  it('keeps income drafts private, prevents concurrent overwrites and never posts earnings', async () => {
+    const t = await seed();
+    const drafts = new RevenueDraftsService(db as PrismaService);
+    const data = {
+      currency: 'USD' as const,
+      contract: t.contract.id,
+      additionalContracts: [],
+      incomeDate: '',
+      incomeType: '' as const,
+      incomeSource: '',
+      notes: 'Unfinished settlement',
+      contractNumber: '',
+      signingParty: '',
+      contractExpiresOn: '',
+      amount: '1.',
+      reference: '',
+      title: '',
+      shares: {},
+    };
+    expect(await drafts.get(actor, t.crewId)).toMatchObject({
+      revision: 0,
+      data: null,
+    });
+    const results = await Promise.allSettled([
+      drafts.save(actor, t.crewId, { revision: 0, data }),
+      drafts.save(actor, t.crewId, {
+        revision: 0,
+        data: { ...data, notes: 'Other session' },
+      }),
+    ]);
+    expect(results.filter((row) => row.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((row) => row.status === 'rejected')).toHaveLength(1);
+    const saved = await drafts.get(actor, t.crewId);
+    expect(saved.revision).toBe(1);
+    expect(saved.contracts.map((file) => file.id)).toEqual([t.contract.id]);
+    expect(
+      await drafts.get({ ...actor, id: randomUUID() }, t.crewId),
+    ).toMatchObject({ data: null, revision: 0 });
+    await expect(
+      drafts.get({ ...actor, permissions: [] }, t.crewId),
+    ).rejects.toThrow('permission');
+    const other = await seed();
+    await expect(
+      drafts.save(actor, t.crewId, {
+        revision: 1,
+        data: { ...data, contract: other.contract.id },
+      }),
+    ).rejects.toThrow('does not belong');
+    expect(
+      await db.crewRevenueDistribution.count({
+        where: { contractId: t.contract.id },
+      }),
+    ).toBe(0);
+    await drafts.save(actor, t.crewId, { revision: 1, data: null });
+    expect(await drafts.get(actor, t.crewId)).toMatchObject({
+      revision: 2,
+      data: null,
+    });
+    await expect(
+      drafts.save(actor, t.crewId, { revision: 1, data }),
+    ).rejects.toThrow('another session');
   });
 });

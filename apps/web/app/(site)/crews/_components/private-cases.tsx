@@ -154,6 +154,12 @@ function CaseDetail({ userId, caseId }: { userId: string; caseId: string }) {
         <>
           <h2 className="text-lg font-semibold">{row.title}</h2>
           <p>{t(`status.${row.status}`)}</p>
+          {row.category && <p>{t(`categories.${row.category}`)}</p>}
+          {row.desiredResolution && (
+            <p>
+              {t("requestedResolution", { resolution: t(`resolutions.${row.desiredResolution}`) })}
+            </p>
+          )}
           <p>{t("parties", { opener: row.openedByUserId, respondent: row.respondentUserId })}</p>
           <p>{row.ownerAdminId ? t("owner", { id: row.ownerAdminId }) : t("unassigned")}</p>
           <p className="text-sm text-muted-foreground">{t("task", { id: row.taskId })}</p>

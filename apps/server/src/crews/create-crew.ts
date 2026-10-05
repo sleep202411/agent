@@ -1,3 +1,4 @@
+import { provisionTaskDeliveryFolderTx } from './tasks/task-delivery-folder';
 import { bindTaskDeliveryCategoryKey } from './production/production-bootstrap';
 import { CrewTaskKind } from '@prisma/client';
 import { availableCrewAssetName } from './assets/asset-name';
@@ -260,6 +261,7 @@ export async function createCrewTx(
                 metadata: { plotTreeNodeId: nodeId },
               },
             });
+            await provisionTaskDeliveryFolderTx(tx, parentTask, creatorUserId);
             currentRank = currentRank.plus(1024);
             plotNodeTaskMap.set(nodeId, parentTask);
           }

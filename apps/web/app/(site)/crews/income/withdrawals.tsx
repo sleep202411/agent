@@ -24,6 +24,7 @@ interface Withdrawal {
   status: "pending" | "processing" | "paid" | "rejected" | "cancelled";
   createdAt: string;
   paidAt: string | null;
+  hasPaymentProof?: boolean;
   resolutionReason: string | null;
 }
 interface Recipient {
@@ -210,6 +211,9 @@ function WithdrawalSession({ userId }: { userId: string }) {
                     {row.paidAt
                       ? new Date(row.paidAt).toLocaleDateString(locale)
                       : row.resolutionReason || "—"}
+                    {row.status === "paid" && row.hasPaymentProof && (
+                      <PaymentProofDownload withdrawalId={row.id} />
+                    )}
                   </td>
                 </tr>
               ))}
@@ -409,5 +413,54 @@ function WithdrawalForm({
         </>
       )}
     </form>
+  );
+}
+
+function PaymentProofDownload({ withdrawalId }: { withdrawalId: string }) {
+  const t = useTranslations("creatorWithdrawals");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const active = useRef(true);
+  const busy = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  return (
+    <div className="mt-2 max-w-32 space-y-1">
+      <Button
+        size="sm"
+        className="h-auto whitespace-normal py-1 text-left"
+        variant="outline"
+        disabled={pending}
+        onClick={async () => {
+          if (busy.current) return;
+          busy.current = true;
+          setPending(true);
+          setError(null);
+          try {
+            const result = await crewApi.post<{ url: string; expiresAt: string }>(
+              `/me/withdrawals/${encodeURIComponent(withdrawalId)}/payment-proof/download`,
+              {}
+            );
+            if (active.current) window.location.assign(result.url);
+          } catch (cause) {
+            if (active.current) setError(cause instanceof Error ? cause.message : t("proofFailed"));
+          } finally {
+            busy.current = false;
+            if (active.current) setPending(false);
+          }
+        }}
+      >
+        {t(pending ? "proofLoading" : "viewPaymentProof")}
+      </Button>
+      {error && (
+        <p role="alert" className="break-words text-xs text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

@@ -1709,7 +1709,9 @@
     "requiresPlan": "{plan} plan",
     "unavailableOnPlan": "Not on your plan",
     "lockedForOpExpired": "Your membership expired — renew to use {op}",
-    "membershipExpired": "Membership expired"
+    "membershipExpired": "Membership expired",
+    "statusGeneratingRemaining": "Generating · about {seconds}s remaining",
+    "statusGeneratingLonger": "Still generating · taking longer than estimated"
   },
   "canvasEditors": {
     "reset": "Reset",
@@ -2596,6 +2598,30 @@
       "later": "Move shot {number} later",
       "removeVideo": "Remove video from shot {number}",
       "activeMode": "Drag Mode active — drag canvas videos into the storyboard below"
+    },
+    "export": {
+      "open": "Export MP4",
+      "title": "Export storyboard",
+      "description": "Export the saved shot order using each shot’s first ready video. Downloads are available for 24 hours.",
+      "format": "Output size",
+      "waitForSave": "Wait for all canvas changes to finish saving, then try again.",
+      "failed": "Export could not finish.",
+      "invalidDownload": "The download link is invalid or expired. Try again.",
+      "submitting": "Submitting…",
+      "retry": "Retry request",
+      "create": "Create export",
+      "uncertain": "The response was interrupted. Retry checks the same request without creating a duplicate export.",
+      "loading": "Loading exports…",
+      "refresh": "Refresh",
+      "empty": "No exports yet.",
+      "history": "Recent exports",
+      "queued": "Queued",
+      "running": "Rendering",
+      "completed": "Ready",
+      "cancelled": "Cancelled",
+      "expired": "Expired",
+      "cancel": "Cancel",
+      "download": "Download"
     }
   },
   "invite": {

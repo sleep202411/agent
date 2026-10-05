@@ -142,3 +142,29 @@ it("forwards global revenue history filters with private caching", async () => {
   );
   expect(response.headers.get("cache-control")).toBe("private, no-store");
 });
+
+it("forwards private draft reads and versioned saves", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(() => Promise.resolve(new Response('{"code":200,"data":{}}')))
+  );
+  const params = Promise.resolve({ path: ["crews", "crew", "draft"] });
+  const read = await GET(new NextRequest(origin), { params });
+  expect(read.headers.get("cache-control")).toBe("private, no-store");
+  const body = JSON.stringify({ revision: 2, data: null });
+  const save = await POST(
+    new NextRequest(origin, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+    }),
+    { params }
+  );
+  expect(save.status).toBe(200);
+  expect(vi.mocked(fetch).mock.calls[1][0]).toBe(
+    "http://server/admin/creator-revenue/crews/crew/draft"
+  );
+  expect(new TextDecoder().decode(vi.mocked(fetch).mock.calls[1][1]?.body as Uint8Array)).toBe(
+    body
+  );
+});

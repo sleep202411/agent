@@ -33,6 +33,14 @@ const url = process.env.CONTRACT_RETENTION_TEST_DATABASE_URL;
     });
     afterAll(async () => {
       if (db) {
+        await db.$transaction(async (tx) => {
+          await tx.$executeRawUnsafe(
+            'SET LOCAL session_replication_role = replica',
+          );
+          await tx.crewTaskContractFile.deleteMany({
+            where: { task: { crewId: { in: crews } } },
+          });
+        });
         await db.crew.deleteMany({ where: { id: { in: crews } } });
         await db.mediaAsset.deleteMany({ where: { id: { in: mediaIds } } });
         await db.$disconnect();
@@ -181,6 +189,31 @@ const url = process.env.CONTRACT_RETENTION_TEST_DATABASE_URL;
             expect(
               await db.crewTask.findUnique({ where: { id: task.id } }),
             ).toMatchObject({ metadata: { contractAssetNodeId: node.id } });
+            for (const input of [{ name: 'Changed.pdf' }, { parentId: null }]) {
+              await expect(
+                assets(db).update(crew.id, 'fixture', node.id, {
+                  ...input,
+                  expectedUpdatedAt: node.updatedAt.toISOString(),
+                }),
+              ).rejects.toMatchObject({
+                response: { code: 'CREW_TASK_CONTRACT_LOCKED' },
+              });
+            }
+            await db.crewTask.update({
+              where: { id: task.id },
+              data: { deletedAt: new Date() },
+            });
+            await expect(
+              assets(db).update(crew.id, 'fixture', node.id, {
+                name: 'Changed-after-archive.pdf',
+                expectedUpdatedAt: node.updatedAt.toISOString(),
+              }),
+            ).rejects.toMatchObject({
+              response: { code: 'CREW_TASK_CONTRACT_LOCKED' },
+            });
+            expect(
+              await db.crewAssetNode.findUnique({ where: { id: node.id } }),
+            ).toMatchObject({ name: 'Contract.pdf', parentId: null });
           } else {
             expect(result).toMatchObject({
               error: {

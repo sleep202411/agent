@@ -3,6 +3,8 @@ export type CaseRecord = {
   id: string;
   taskId: string;
   title: string;
+  category?: "copyright" | "payment" | "violation" | "harassment" | "other" | null;
+  desiredResolution?: "payment_allocation" | "warning" | "takedown" | null;
   status: "open" | "in_review" | "resolved" | "appealed";
   ownerAdminId: string | null;
   openedByUserId: string;

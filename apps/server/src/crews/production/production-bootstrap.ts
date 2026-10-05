@@ -1,3 +1,4 @@
+import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import { randomUUID } from 'node:crypto';
 import type { PlotTreeImportInput } from '../templates/project-task-template.types';
 import {
@@ -304,6 +305,11 @@ export async function seedCrewProductionTasks(
     plotTree?: PlotTreeImportInput;
   },
 ) {
+  const createTask = async (args: Prisma.CrewTaskCreateArgs) => {
+    const task = await tx.crewTask.create(args);
+    await provisionTaskDeliveryFolderTx(tx, task, input.userId);
+    return task;
+  };
   const existing = await tx.crewTask.count({ where: { crewId: input.crewId } });
   if (existing > 0) return;
 
@@ -351,7 +357,7 @@ export async function seedCrewProductionTasks(
 
     // 1. 剧本上传 (top-level)
     const scriptTaskId = randomUUID();
-    await tx.crewTask.create({
+    await createTask({
       data: {
         id: scriptTaskId,
         crewId: input.crewId,
@@ -369,7 +375,7 @@ export async function seedCrewProductionTasks(
     rank = rank.plus(1024);
 
     // 2. 情节树 (top-level)
-    await tx.crewTask.create({
+    await createTask({
       data: {
         id: randomUUID(),
         crewId: input.crewId,
@@ -394,7 +400,7 @@ export async function seedCrewProductionTasks(
 
     // 3. 美术资产 (parent) -> 人物, 场景, 道具 (children)
     const artParentId = randomUUID();
-    await tx.crewTask.create({
+    await createTask({
       data: {
         id: artParentId,
         crewId: input.crewId,
@@ -415,7 +421,7 @@ export async function seedCrewProductionTasks(
       ['scenes', titles.artScene[input.locale]],
       ['props', titles.artProp[input.locale]],
     ] as const) {
-      await tx.crewTask.create({
+      await createTask({
         data: {
           id: randomUUID(),
           crewId: input.crewId,
@@ -436,7 +442,7 @@ export async function seedCrewProductionTasks(
 
     // 4. 音乐 (parent) -> 背景音乐, 人物音色 (children)
     const musicParentId = randomUUID();
-    await tx.crewTask.create({
+    await createTask({
       data: {
         id: musicParentId,
         crewId: input.crewId,
@@ -456,7 +462,7 @@ export async function seedCrewProductionTasks(
       titles.musicBgm[input.locale],
       titles.musicVoice[input.locale],
     ]) {
-      await tx.crewTask.create({
+      await createTask({
         data: {
           id: randomUUID(),
           crewId: input.crewId,
@@ -476,7 +482,7 @@ export async function seedCrewProductionTasks(
 
     // 5. 制作任务 (parent) -> per-episode children
     const prodParentId = randomUUID();
-    await tx.crewTask.create({
+    await createTask({
       data: {
         id: prodParentId,
         crewId: input.crewId,
@@ -504,7 +510,7 @@ export async function seedCrewProductionTasks(
           : input.locale === 'en-US'
             ? `Episode ${ep.number}`
             : `第 ${ep.number} 集`;
-        await tx.crewTask.create({
+        await createTask({
           data: {
             id: randomUUID(),
             crewId: input.crewId,
@@ -524,7 +530,7 @@ export async function seedCrewProductionTasks(
     } else {
       // Fallback to input.episodeId if no episodes query found
       const fallbackTitle = input.locale === 'en-US' ? 'Episode 1' : '第 1 集';
-      await tx.crewTask.create({
+      await createTask({
         data: {
           id: randomUUID(),
           crewId: input.crewId,
@@ -543,7 +549,7 @@ export async function seedCrewProductionTasks(
     }
 
     // 6. 其他任务 (top-level)
-    await tx.crewTask.create({
+    await createTask({
       data: {
         id: randomUUID(),
         crewId: input.crewId,
@@ -568,7 +574,7 @@ export async function seedCrewProductionTasks(
   let number = 1;
   for (const task of pipeline) {
     const id = randomUUID();
-    await tx.crewTask.create({
+    await createTask({
       data: {
         id,
         crewId: input.crewId,

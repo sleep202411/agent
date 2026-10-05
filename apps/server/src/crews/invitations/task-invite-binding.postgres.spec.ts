@@ -19,8 +19,11 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       const target = postgresFixtureUrl(url!);
       if (
         target.hostname !== '127.0.0.1' ||
-        target.port !== '55439' ||
-        target.pathname !== '/task01'
+        !(
+          (target.port === '55439' && target.pathname === '/task01') ||
+          (target.port === '55441' &&
+            target.pathname === '/audit_migrations_20261005')
+        )
       )
         throw new Error('Owned loopback fixture required');
       db = new PrismaClient({

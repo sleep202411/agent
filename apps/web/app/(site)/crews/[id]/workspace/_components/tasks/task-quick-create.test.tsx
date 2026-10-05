@@ -1146,3 +1146,30 @@ it("does not open invitations when task creation fails", async () => {
   });
   expect(invite).not.toHaveBeenCalled();
 });
+
+it("does not inherit an approved workflow filter when creating a new task", () => {
+  renderQuickCreate(
+    vi.fn(),
+    vi.fn(),
+    {
+      ...project,
+      workflowStates: [
+        ...project.workflowStates,
+        {
+          ...project.workflowStates[0]!,
+          id: "already-approved",
+          semantic: "approved",
+          systemKey: "approved",
+          name: "Already approved",
+        },
+      ],
+    },
+    {
+      activeView: { ...view, filters: { ...view.filters, workflowStateIds: ["already-approved"] } },
+    }
+  );
+  expect(document.querySelector('[aria-label="Planning State"]')?.textContent).not.toContain(
+    "Already approved"
+  );
+  expect(document.querySelector('[aria-label="Planning State"]')).not.toBeNull();
+});

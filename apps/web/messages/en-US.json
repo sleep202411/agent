@@ -10,7 +10,11 @@
     "retry": "Retry",
     "newCrew": "Create a new Crew",
     "continue": "Continue to task",
-    "signIn": "Sign in to create a task"
+    "signIn": "Sign in to create a task",
+    "positionTitle": "Create position",
+    "positionDescription": "Choose the Crew for this opening. You can link the position to an existing task in the next step.",
+    "cannotManagePositions": "You need permission to manage openings in this Crew.",
+    "continuePosition": "Continue to position"
   },
   "taskPaymentTerms": {
     "unspecified": "Not specified",
@@ -1775,7 +1779,8 @@
         "misleading": "Misleading description",
         "privacy": "Privacy exposure",
         "harassment": "Harassment or abusive content",
-        "other": "Other issue"
+        "other": "Other issue",
+        "payment": "Payment issue"
       }
     },
     "tabs": {
@@ -1927,7 +1932,7 @@
     "heroTitle2": "Make Creation Happen",
     "heroDesc": "Organize collaboration around crews: show your crew when it is ready, recruit, apply, screen, and collaborate.",
     "createStudio": "Create Crew",
-    "createDialogEyebrow": "STORYOS / CREW",
+    "createDialogEyebrow": "FizzDragon / Crew",
     "createDialogTitle": "Create Crew",
     "createDialogSubtitle": "Create privately first. When the crew profile is ready, show it in Crew Hall and publish open roles.",
     "createKycRequiredDesc": "Complete identity verification before creating a crew in the China region.",
@@ -2162,7 +2167,7 @@
   "creator": {
     "noMatchesLoaded": "No matching certified artists on the loaded pages. Load more to continue.",
     "qualificationFilter": "Qualification",
-    "qualificationAll": "All Certified Artists",
+    "qualificationAll": "All Artists",
     "qualificationFd": "FD Certification",
     "qualificationProducer": "AI Producer",
     "qualificationSkill": "Certified Skills",
@@ -2198,6 +2203,25 @@
     "contactDesc": "Reach out to {name} via the channel they've shared below.",
     "contactCopy": "Copy",
     "contactCopied": "Copied"
+  },
+  "creatorReviews": {
+    "creator": "Creator ability",
+    "manager": "Producer ability",
+    "creatorHint": "Production, understanding and communication",
+    "managerHint": "Management of the collaboration",
+    "reviewCount": "{count} reviews",
+    "services": "Service Packages",
+    "reviews": "Public Reviews",
+    "loading": "Loading reviews…",
+    "retry": "Retry",
+    "overall": "Overall rating",
+    "distribution": "Rating distribution",
+    "empty": "No public reviews yet.",
+    "more": "Load more reviews",
+    "unrated": "Not rated yet",
+    "score": "{value} out of 5 stars",
+    "reviewer": "Reviewer {id}",
+    "timeliness": "Recorded delivery timeliness: {score} / 5"
   },
   "creatorCenter": {
     "notFoundTitle": "Creator not found",
@@ -2240,7 +2264,7 @@
       "contact": "Contact"
     },
     "tabs": {
-      "services": "Service packages",
+      "services": "Service & Comment",
       "works": "Works",
       "certificates": "Certificates",
       "ips": "IPs",
@@ -4050,7 +4074,7 @@
     "memberColumnJoined": "Joined",
     "memberColumnActions": "Actions",
     "inviteMember": "Invite Member",
-    "addMemberDialogEyebrow": "STORYOS / CREW",
+    "addMemberDialogEyebrow": "FizzDragon / Crew",
     "addMemberDialogTitle": "Invite Member",
     "addMemberDialogSubtitle": "Invite by registered phone, email or User ID. Access begins after acceptance.",
     "addMemberContactLabel": "Phone or Email",
@@ -4164,7 +4188,7 @@
     "closeJobConfirm": "Close the “{name}” recruitment slot? Pending applications will be archived.",
     "closeJobSuccess": "“{name}” closed",
     "closeJobFailed": "Failed to close job",
-    "createJobDialogEyebrow": "STORYOS / CREW",
+    "createJobDialogEyebrow": "FizzDragon / Crew",
     "createJobDialogTitle": "Publish Job",
     "createJobDialogSubtitle": "Pick a role, write the brief, set how many you need to recruit.",
     "createJobRoleLabel": "Role",
@@ -4818,7 +4842,8 @@
     "commentTwo": "I updated the chase direction and replaced panels three and four.",
     "commentThree": "Approved for the next review. Please retain the previous version.",
     "addComment": "Add a comment…",
-    "dragMoveHint": "Drag files onto a folder to move them. Select multiple files to move them together."
+    "dragMoveHint": "Drag files onto a folder to move them. Select multiple files to move them together.",
+    "contractReadOnly": "Contract · Read-only"
   },
   "crewTransfers": {
     "title": "File transfers",
@@ -5850,9 +5875,9 @@
     "subtitleFile": "Subtitle file",
     "sourceFiles": "Source files",
     "episodeUnavailable": "This episode is unavailable. Choose an available episode or No episode.",
-    "deliveryLinkRequired": "Enter a delivery link to submit this task.",
+    "deliveryLinkRequired": "Add a delivery link, attach a file, or use the linked task canvas to submit this task.",
     "deliveryLinkInvalid": "Enter a complete http:// or https:// delivery link.",
-    "deliveryLinkHint": "Link to the work being delivered.",
+    "deliveryLinkHint": "Link to the work being delivered. Optional when files or a task canvas are included.",
     "removeDeliveryFile": "Remove {name} from this submission",
     "deliveryUploadPending": "Wait for uploads to finish and attach before submitting.",
     "deliveryNoteTooLong": "The delivery link and notes must total 5,000 characters or fewer.",
@@ -10262,6 +10287,8 @@
     "urgentLabel": "Urgent"
   },
   "crewPersonalIncome": {
+    "productionRecorded": "{count} approved task rewards · current filters",
+    "productionOrders": "Production Orders",
     "incomeType": "Income type",
     "allTypes": "All income types",
     "allStatuses": "All statuses",
@@ -10310,7 +10337,10 @@
     "referralSourceHint": "Review referrals, commissions, and payment status.",
     "workSourceHint": "Review revenue from your published work.",
     "productionSource": "Production orders",
-    "productionSourceHint": "Track task rewards, settlements, and payout history."
+    "productionSourceHint": "View approved task rewards and their ledger records. Recorded income is separate from bank settlement.",
+    "incomeOverview": "Recorded income overview",
+    "postedThisMonth": "Posted this month (UTC)",
+    "transactionHistory": "Transaction history"
   },
   "crewPersonalPayouts": {
     "title": "Payout history",
@@ -10735,8 +10765,8 @@
     "done": "Task cancelled"
   },
   "crewFeedback": {
-    "title": "Private task feedback",
-    "privacy": "Only the feedback author and subject can read this feedback. It does not change public ratings.",
+    "title": "Task Reviews",
+    "privacy": "New reviews are published on the recipient’s profile. Earlier private feedback and all responses remain visible only to the author and recipient.",
     "signIn": "Sign in to view your feedback.",
     "loading": "Loading…",
     "failed": "Request failed.",
@@ -10752,15 +10782,18 @@
     "evaluate": "Evaluate {subject}",
     "immutable": "Ratings and comments cannot be edited after submission. Select each score deliberately.",
     "choose": "Select a score (1–5)",
-    "comment": "Comment (3–2,000 characters)",
-    "submit": "Submit private feedback",
+    "comment": "Comment (optional, up to 2,000 characters)",
+    "submit": "Publish review",
     "productionAbility": "Production ability",
     "understanding": "Understanding",
     "communication": "Communication",
     "managementAbility": "Management ability",
     "responseOnce": "You may record one response. It cannot be edited after submission.",
     "respond": "Submit response",
-    "history": "My Task Feedback"
+    "history": "My Task Feedback",
+    "publicNotice": "Your ratings, optional comment and creator identity will be public on the recipient’s profile and included in their score. Task details and private responses are not published.",
+    "publicReview": "Published profile review",
+    "privateReview": "Private feedback"
   },
   "crewCases": {
     "allParticipants": "All participation",
@@ -10830,7 +10863,31 @@
     "mine": "My tasks",
     "producer": "Tasks I manage",
     "relatedTask": "Related task",
-    "moreTasks": "Load more tasks"
+    "moreTasks": "Load more tasks",
+    "categories": {
+      "copyright": "Copyright",
+      "payment": "Payment",
+      "violation": "Violation",
+      "harassment": "Harassment",
+      "other": "Other reason"
+    },
+    "resolutions": {
+      "payment_allocation": "Review payment allocation",
+      "warning": "Official warning to counterparty",
+      "takedown": "Content removal / Takedown"
+    },
+    "requestedResolution": "Requested outcome: {resolution}",
+    "recordSearch": "Find a related task",
+    "recordSearchHint": "Task, Crew, task ID or your income code",
+    "searchRecords": "Search",
+    "noMatchingTasks": "No accessible tasks match this search.",
+    "relatedRecordType": "Related record type",
+    "taskRecordType": "Task or task income",
+    "contentRecordType": "IP or content",
+    "contentReportSubmitted": "Your content report was submitted. Reference: {id}",
+    "viewContentReports": "View my content reports",
+    "anotherContentReport": "Report another item",
+    "purchaseRecordType": "IP purchase"
   },
   "crewTaskDispute": {
     "title": "Open task dispute",
@@ -10849,7 +10906,28 @@
     "submission": "Submission {version} · {id}",
     "submit": "Open private case",
     "evidenceChanged": "Some selected submissions are no longer available. Clear the selection and review the current records.",
-    "clearEvidence": "Clear submission selection"
+    "clearEvidence": "Clear submission selection",
+    "category": "Complaint type",
+    "chooseCategory": "Select a complaint type",
+    "desiredResolution": "Desired resolution (optional)",
+    "noPreference": "No preference",
+    "categories": {
+      "copyright": "Copyright",
+      "payment": "Payment",
+      "violation": "Violation",
+      "harassment": "Harassment",
+      "other": "Other reason"
+    },
+    "resolutions": {
+      "payment_allocation": "Review payment allocation",
+      "warning": "Official warning to counterparty",
+      "takedown": "Content removal / Takedown"
+    },
+    "initialEvidence": "Supporting evidence",
+    "initialEvidenceHint": "Up to 5 PDF, JPG or PNG files, 10 MB each. Files remain private until you submit this complaint.",
+    "evidenceReady": "Ready",
+    "evidencePending": "Upload incomplete",
+    "removeEvidence": "Remove"
   },
   "crewEvidence": {
     "title": "Private evidence",
@@ -11652,7 +11730,25 @@
     "blockedCreator": "Blocked creator",
     "unblock": "Unblock",
     "unblocking": "Unblocking…",
-    "blockedCrew": "Blocked Crew"
+    "blockedCrew": "Blocked Crew",
+    "newPurchaseReport": "Report an IP purchase",
+    "purchaseHint": "Select one of your IP purchases. Submitting a report does not cancel the purchase or issue a refund.",
+    "purchaseSearch": "Search by order number, purchase ID or wallet transaction ID",
+    "purchaseTarget": "Purchase",
+    "noPurchases": "No matching purchases were found in this account.",
+    "purchaseReference": "Purchase reference: {id}",
+    "purchaseAmount": "Amount: {amount} {currency}",
+    "purchaseStatus": "Status: {status}",
+    "communityPoints": "Community Points",
+    "purchaseStatuses": {
+      "pending": "Pending",
+      "paid": "Paid",
+      "fulfilled": "Fulfilled",
+      "canceled": "Canceled",
+      "failed": "Failed",
+      "refunded": "Refunded",
+      "partially_refunded": "Partially refunded"
+    }
   },
   "communityVideo": {
     "title": "Submit video",
@@ -11724,7 +11820,10 @@
       "address": "Account holder address",
       "swift": "SWIFT / BIC",
       "branchAddress": "Bank branch address"
-    }
+    },
+    "viewPaymentProof": "View payment proof",
+    "proofLoading": "Opening proof…",
+    "proofFailed": "Could not open payment proof. Try again."
   },
   "creatorDeviceCity": {
     "consent": "Use your device location to suggest a city. Your coordinates are sent to our regional map provider for this lookup and are not saved by FizzDragon.",
@@ -11743,5 +11842,28 @@
     "expired": "This suggestion has expired. You can request a new lookup or enter your city manually.",
     "dispatched": "Lookup is still pending. Check the result again shortly.",
     "uncertain": "The lookup could not be confirmed. Enter your city manually or explicitly request a new lookup."
+  },
+  "taskContractFiles": {
+    "title": "Task contract files",
+    "readOnly": "Read-only",
+    "lockedHint": "Contracts and addenda stay read-only after attachment. Files cannot be edited, moved or deleted.",
+    "loading": "Loading contracts…",
+    "retry": "Retry",
+    "empty": "No accessible contract files in this view.",
+    "download": "Download",
+    "openDownload": "Open download",
+    "invalidLink": "The download link is invalid or expired. Request a new link.",
+    "unavailable": "File unavailable",
+    "bytes": "{count} bytes",
+    "upload": "Upload contract or addendum",
+    "attachNotice": "Attaching this file permanently links it to the task. You can add more files later; attached files cannot be removed or changed.",
+    "attach": "Attach file",
+    "retryAttach": "Retry attachment",
+    "lifecycle": "Task archive status",
+    "all": "All tasks",
+    "active": "Current tasks",
+    "archived": "Archived tasks",
+    "more": "Load more",
+    "clearSelection": "Clear selection"
   }
 }

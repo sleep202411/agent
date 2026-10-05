@@ -1,6 +1,6 @@
 "use client";
 import { TaskInviteDialog } from "@/app/(site)/crews/_components/task-invite-dialog";
-import { TaskContractLink } from "@/app/(site)/crews/_components/task-contract-link";
+import { TaskContractFiles } from "@/app/(site)/crews/_components/task-contract-files";
 
 import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
 import { CustomFieldControl, normalizeCustomFieldDraft } from "./task-custom-field-control";
@@ -382,7 +382,7 @@ export function TaskIssueDetail({
             </section>
 
             {canSubmit ? submissionForm : null}
-            <TaskContractLink crewId={task.crewId} assetId={task.contractAssetNodeId} />
+            <TaskContractFiles crewId={task.crewId} taskId={task.id} canManage={isOwner} />
             <TaskDeliverySummary task={task} />
             <details className="my-3">
               <summary className="cursor-pointer text-xs text-muted-foreground">

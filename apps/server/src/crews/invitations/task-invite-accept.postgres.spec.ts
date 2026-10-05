@@ -1,3 +1,5 @@
+import { CrewTasksService } from '../tasks/tasks.service';
+import { CrewAssetAccessService } from '../assets/asset-access.service';
 import { randomUUID, createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -14,13 +16,15 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
     let crewId: string;
     let ownerId: string;
     let stateId: string;
-    let sequence = 0;
     beforeAll(async () => {
       const target = postgresFixtureUrl(url!);
       if (
         target.hostname !== '127.0.0.1' ||
-        target.port !== '55439' ||
-        target.pathname !== '/task01'
+        !(
+          (target.port === '55439' && target.pathname === '/task01') ||
+          (target.port === '55441' &&
+            target.pathname === '/audit_migrations_20261005')
+        )
       )
         throw new Error('Owned loopback fixture required');
       db = new PrismaClient({
@@ -65,25 +69,13 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         await db.notificationOutbox.deleteMany({ where: { userId: ownerId } });
         await db.notification.deleteMany({ where: { userId: ownerId } });
         await db.crewInviteLink.deleteMany({ where: { crewId } });
+        await db.crewTaskDeliveryFolder.deleteMany({ where: { crewId } });
         await db.crewTask.deleteMany({ where: { crewId } });
         await db.crew.delete({ where: { id: crewId } });
       }
       await db?.$disconnect();
     });
     async function fixture() {
-      const task = await db.crewTask.create({
-        data: {
-          crewId,
-          title: 'Animate scene',
-          number: ++sequence,
-          workflowStateId: stateId,
-          createdByUserId: ownerId,
-          metadata: {
-            compensation: { rewardUsdMinor: 12500 },
-            requiredSkills: [],
-          },
-        },
-      });
       const notifications = new NotificationService(db as never);
       // External collaboration/chat dependencies are fixtures. All admission,
       // claim, authorization, redemption and notification writes use PostgreSQL.
@@ -95,6 +87,28 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         persistSystem: jest.fn().mockResolvedValue({ id: 'fixture-message' }),
         broadcastMessage: jest.fn(),
       };
+      const auth = new CrewAuthorizationService(db as never);
+      const tasks = new CrewTasksService(
+        db as never,
+        auth,
+        new CrewAssetAccessService(db as never, auth),
+        notifications,
+        { broadcastCrewTaskChange: jest.fn() } as never,
+        {} as never,
+      );
+      const task = await tasks.create(crewId, ownerId, {
+        title: 'Animate scene',
+        description: 'Deliver animation',
+        workflowStateId: stateId,
+        priority: 'normal',
+        taskKind: 'storyboard',
+        assignees: [],
+        labelIds: [],
+        blockedByTaskIds: [],
+        customFieldValues: [],
+        rewardUsdMinor: 12500,
+      });
+      expect(task.deliveryFolder?.id).toBeTruthy();
       const service = new CrewInviteLinksService(
         db as never,
         new CrewAuthorizationService(db as never),

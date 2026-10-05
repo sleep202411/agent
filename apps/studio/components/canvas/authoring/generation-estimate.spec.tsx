@@ -61,3 +61,41 @@ it.each([0, -1, NaN, Infinity, undefined])(
     }
   }
 );
+
+it.each([
+  ["en-US", en],
+  ["zh-CN", cn],
+  ["zh-HK", hk],
+] as const)(
+  "%s counts down across remounts and remains generating after the estimate",
+  async (locale, messages) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-06T00:00:00Z"));
+    const host = document.createElement("div");
+    let root = createRoot(host);
+    const view = (
+      <NextIntlClientProvider locale={locale} messages={messages}>
+        <GenerationEstimate seconds={315} createdAt="2026-10-06T00:00:00Z" />
+      </NextIntlClientProvider>
+    );
+    try {
+      await act(async () => root.render(view));
+      await act(async () => vi.advanceTimersByTime(1_000));
+      expect(host.textContent).toContain("314");
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(host.textContent).toContain("254");
+      await act(async () => root.unmount());
+      await act(async () => vi.advanceTimersByTime(20_000));
+      root = createRoot(host);
+      await act(async () => root.render(view));
+      await act(async () => vi.advanceTimersByTime(0));
+      expect(host.textContent).toContain("234");
+      await act(async () => vi.advanceTimersByTime(300_000));
+      expect(host.textContent).toBe(messages.canvasOps.statusGeneratingLonger);
+    } finally {
+      await act(async () => root.unmount());
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    }
+  }
+);

@@ -103,8 +103,10 @@ async function field(selector: string, value: string) {
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-async function choose(value: string) {
-  await act(async () => host.querySelector<HTMLButtonElement>('[role="combobox"]')!.click());
+async function choose(value: string, index = 0) {
+  await act(async () =>
+    host.querySelectorAll<HTMLButtonElement>('[role="combobox"]')[index]!.click()
+  );
   const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
     (o) => o.textContent === value
   );
@@ -115,6 +117,7 @@ async function prepare() {
   await render();
   await click("title");
   await choose("reviewer");
+  await choose("categories.payment", 1);
   await field("input:not([type=hidden])", "Delivery disagreement");
   await field("textarea", "Please review the submission");
 }
@@ -134,6 +137,7 @@ it("opens a case with explicit participant, title, message and selected submissi
       id: expect.any(String),
       respondentUserId: "reviewer",
       title: "Delivery disagreement",
+      category: "payment",
       message: "Please review the submission",
       submissionIds: ["submission"],
     },
@@ -168,6 +172,8 @@ it("blocks missing required fields and uses text length boundaries", async () =>
   await field("input:not([type=hidden])", "x".repeat(181));
   expect(button("submit").disabled).toBe(true);
   await field("input:not([type=hidden])", "Title");
+  expect(button("submit").disabled).toBe(true);
+  await choose("categories.payment", 1);
   expect(button("submit").disabled).toBe(false);
 });
 it("keeps exact retry through collapse, task changes and failed participant reads", async () => {
@@ -268,4 +274,101 @@ it("requires clearing unavailable evidence before starting a new request", async
   expect(button("submit").disabled).toBe(false);
   await click("submit");
   expect(h.post.mock.calls[0][1].body.submissionIds).toEqual([]);
+});
+
+it("records an optional requested outcome without implying an automatic decision", async () => {
+  await prepare();
+  await choose("resolutions.warning", 2);
+  await click("submit");
+  expect(h.post.mock.calls[0][1].body).toMatchObject({
+    category: "payment",
+    desiredResolution: "warning",
+  });
+});
+
+async function attach(file: File) {
+  await act(async () => {
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+it("recovers confirmation after collapse and shares only ready initial evidence", async () => {
+  const put = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+  vi.stubGlobal("fetch", put);
+  let confirms = 0;
+  h.post.mockImplementation(async (path: string) => {
+    if (path.endsWith("/confirm")) {
+      if (++confirms === 1) throw new Error("Confirmation response lost");
+      return { id: "attachment" };
+    }
+    if (path.endsWith("/disputes")) return { id: "case-a" };
+    return {
+      url: "https://storage.test/put",
+      method: "PUT",
+      headers: {},
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    };
+  });
+  try {
+    await prepare();
+    await attach(new File(["pdf"], "evidence.pdf", { type: "application/pdf" }));
+    expect(button("submit").disabled).toBe(true);
+    expect(host.textContent).toContain("Confirmation response lost");
+    const firstConfirm = h.post.mock.calls.find(([path]) => path.endsWith("/confirm"))![0];
+    await click("title");
+    await click("title");
+    expect(host.textContent).toContain("evidence.pdf");
+    await click("retry");
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(h.post.mock.calls.filter(([path]) => path === firstConfirm)).toHaveLength(2);
+    expect(button("submit").disabled).toBe(false);
+    await click("submit");
+    const body = h.post.mock.calls.find(([path]) => path.endsWith("/disputes"))![1].body;
+    expect(firstConfirm).toContain(
+      `/dispute-drafts/${body.id}/attachments/${body.attachmentIds[0]}/confirm`
+    );
+    expect(body.attachmentIds).toHaveLength(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+it("caps initial evidence at five files and permits removal before submission", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
+  h.post.mockImplementation(async (path: string) =>
+    path.endsWith("/confirm")
+      ? {}
+      : {
+          url: "https://storage.test/put",
+          method: "PUT",
+          headers: {},
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+        }
+  );
+  try {
+    await prepare();
+    for (let i = 0; i < 5; i++)
+      await attach(new File(["pdf"], `${i}.pdf`, { type: "application/pdf" }));
+    expect(host.querySelector<HTMLInputElement>('input[type="file"]')!.disabled).toBe(true);
+    await attach(new File(["pdf"], "sixth.pdf", { type: "application/pdf" }));
+    expect(h.post).toHaveBeenCalledTimes(10);
+    await click("removeEvidence");
+    expect(host.querySelector<HTMLInputElement>('input[type="file"]')!.disabled).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+it("rejects unsupported initial evidence without making an upload request", async () => {
+  await prepare();
+  await attach(new File(["script"], "unsafe.html", { type: "text/html" }));
+  expect(h.post).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("fileInvalid");
+});
+
+it("uses the reference complaint description limit", async () => {
+  await prepare();
+  await field("textarea", "x".repeat(1001));
+  expect(button("submit").disabled).toBe(true);
+  await field("textarea", "x".repeat(1000));
+  expect(button("submit").disabled).toBe(false);
 });

@@ -153,10 +153,16 @@ through i18n. Translations land in the same PR.
 - Commit message style: `<type>(<scope>): <short>` body free-form. See
   `git log --oneline` for examples.
 
-### Product ownership and self-review — Pax's direction (2026-10-02)
+### Product ownership and self-review — Pax and Isaac's direction
 
-Pax's product direction, explicitly adopted by the user, is authoritative
-for implementation and review:
+Pax's product direction and Isaac's technical guidance are authoritative
+for implementation and review, as explicitly reconfirmed by the user.
+Follow their latest applicable guidance over older project assumptions.
+If their directions conflict or leave a material rule undefined, identify
+the specific ambiguity instead of inventing a product or technical rule.
+User instructions remain the final authority.
+
+Apply this direction throughout implementation and review:
 
 - **Use the product as its user.** Walk complete journeys as a Crew owner,
   project creator, applicant and contributor. Check the next action, context,

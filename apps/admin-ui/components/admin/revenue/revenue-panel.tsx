@@ -26,6 +26,47 @@ import {
   type Allocation,
 } from "./revenue-api";
 
+type RevenueDraft = {
+  currency: "USD" | "CNY";
+  contract: string;
+  additionalContracts: string[];
+  incomeDate: string;
+  incomeType: string;
+  incomeSource: string;
+  notes: string;
+  contractNumber: string;
+  signingParty: string;
+  contractExpiresOn: string;
+  amount: string;
+  reference: string;
+  title: string;
+  shares: Record<string, string>;
+};
+type SavedDraft = {
+  revision: number;
+  data: RevenueDraft | null;
+  updatedAt: string | null;
+  contracts?: RevenueContract[];
+};
+function draftSnapshot(data: RevenueDraft) {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries({
+        ...data,
+        shares: Object.fromEntries(
+          Object.entries(data.shares).sort(([a], [b]) => a.localeCompare(b))
+        ),
+      }).sort(([a], [b]) => a.localeCompare(b))
+    )
+  );
+}
+const incomeTypes: Record<string, string> = {
+  licensing: "Licensing",
+  advertising: "Advertising",
+  merchandise: "Merchandise",
+  course_sales: "Course sales",
+  other: "Other",
+};
 const selectClass = "w-full rounded-md border bg-background px-3 py-2 text-sm";
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "The request failed.";
@@ -164,9 +205,22 @@ function CrewRevenue({
   const members = useRevenuePage<RevenueMember>(`${base}/members`);
   const contracts = useRevenuePage<RevenueContract>(`${base}/contracts`);
   const history = useRevenuePage<RevenueReceipt>(`${base}/distributions`);
+  const [draftRevision, setDraftRevision] = useState(0);
+  const [changeOpen, setChangeOpen] = useState(false);
+  const [loadOpen, setLoadOpen] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const [contract, setContract] = useState("");
-  const [uploaded, setUploaded] = useState<RevenueContract | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [uploaded, setUploaded] = useState<RevenueContract[]>([]);
+  const [additionalContracts, setAdditionalContracts] = useState<string[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [incomeDate, setIncomeDate] = useState("");
+  const [incomeType, setIncomeType] = useState("");
+  const [incomeSource, setIncomeSource] = useState("");
+  const [notes, setNotes] = useState("");
+  const [contractNumber, setContractNumber] = useState("");
+  const [signingParty, setSigningParty] = useState("");
+  const [contractExpiresOn, setContractExpiresOn] = useState("");
   const [amount, setAmount] = useState("");
   const [reference, setReference] = useState("");
   const [title, setTitle] = useState("");
@@ -203,10 +257,110 @@ function CrewRevenue({
       }
     }
   }
+  async function openContract(id: string, signal: AbortSignal) {
+    const link = await revenueApi<{ url: string; expiresAt: string }>(
+      `/contracts/${encodeURIComponent(id)}/download`,
+      signal,
+      {}
+    );
+    if (signal.aborted) return;
+    const url = new URL(link.url);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      !Number.isFinite(Date.parse(link.expiresAt)) ||
+      Date.parse(link.expiresAt) <= Date.now()
+    )
+      throw new Error("The contract download link is invalid or expired. Try again.");
+    const anchor = document.createElement("a");
+    anchor.href = url.href;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    anchor.click();
+  }
+  const draft: RevenueDraft = {
+    currency,
+    contract,
+    additionalContracts,
+    incomeDate,
+    incomeType,
+    incomeSource,
+    notes,
+    contractNumber,
+    signingParty,
+    contractExpiresOn,
+    amount,
+    reference,
+    title,
+    shares,
+  };
+  const snapshot = draftSnapshot(draft);
+  const hasValues = Boolean(
+    contract ||
+    additionalContracts.length ||
+    incomeDate ||
+    incomeType ||
+    incomeSource ||
+    notes ||
+    contractNumber ||
+    signingParty ||
+    contractExpiresOn ||
+    amount ||
+    reference ||
+    title ||
+    Object.keys(shares).length
+  );
+  const dirty = Boolean(
+    files.length || (savedSnapshot === null ? hasValues : savedSnapshot !== snapshot)
+  );
+  useEffect(() => {
+    if (!dirty && !uncertain) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, uncertain]);
+  async function loadDraft() {
+    await run(async (signal) => {
+      const result = await revenueApi<SavedDraft>(`${base}/draft`, signal);
+      if (signal.aborted) return;
+      setDraftRevision(result.revision);
+      if (!result.data) {
+        setSuccess("No saved draft for this Crew.");
+        return;
+      }
+      const data = result.data;
+      if (data.currency !== currency)
+        throw new Error("This draft belongs to a different site currency.");
+      setContract(data.contract);
+      setAdditionalContracts(data.additionalContracts);
+      setIncomeDate(data.incomeDate);
+      setIncomeType(data.incomeType);
+      setIncomeSource(data.incomeSource);
+      setNotes(data.notes);
+      setContractNumber(data.contractNumber);
+      setSigningParty(data.signingParty);
+      setContractExpiresOn(data.contractExpiresOn);
+      setAmount(data.amount);
+      setReference(data.reference);
+      setTitle(data.title);
+      setShares(data.shares);
+      setUploaded((previous) => [
+        ...new Map(
+          [...previous, ...(result.contracts ?? [])].map((file) => [file.id, file])
+        ).values(),
+      ]);
+      setFiles([]);
+      if (fileInput.current) fileInput.current.value = "";
+      setSavedSnapshot(draftSnapshot(data));
+      setSuccess("Saved draft loaded. Review it before posting.");
+    });
+  }
   const allContracts = [
-    ...new Map(
-      [...contracts.items, ...(uploaded ? [uploaded] : [])].map((row) => [row.id, row])
-    ).values(),
+    ...new Map([...contracts.items, ...uploaded].map((row) => [row.id, row])).values(),
   ];
   const selectedContract = allContracts.find((row) => row.id === contract);
   const selectedMembers = members.items.filter((member) => Object.hasOwn(shares, member.id));
@@ -218,10 +372,60 @@ function CrewRevenue({
         <Button
           variant="outline"
           disabled={busy || uncertain || reversalPending !== null}
-          onClick={onBack}
+          onClick={() => (dirty || preview ? setChangeOpen(true) : onBack())}
         >
           Change Crew
         </Button>
+      </div>
+      <ConfirmDialog
+        open={changeOpen}
+        onOpenChange={setChangeOpen}
+        title="Change Crew?"
+        description="Unsaved entries and the current preview will be cleared. Any saved draft remains available for this Crew."
+        confirmLabel="Change Crew"
+        cancelLabel="Keep editing"
+        onConfirm={onBack}
+      />
+      <ConfirmDialog
+        open={loadOpen}
+        onOpenChange={setLoadOpen}
+        title="Load saved draft?"
+        description="This replaces your current entries with the saved draft."
+        confirmLabel="Load draft"
+        cancelLabel="Keep editing"
+        onConfirm={loadDraft}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          disabled={frozen}
+          onClick={() => (dirty ? setLoadOpen(true) : void loadDraft())}
+        >
+          Load saved draft
+        </Button>
+        <Button
+          variant="outline"
+          disabled={frozen || !hasValues || files.length > 0}
+          onClick={() =>
+            void run(async (signal) => {
+              const result = await revenueApi<SavedDraft>(`${base}/draft`, signal, {
+                revision: draftRevision,
+                data: draft,
+              });
+              if (signal.aborted) return;
+              setDraftRevision(result.revision);
+              setSavedSnapshot(snapshot);
+              setSuccess("Draft saved. No earnings have been posted.");
+            })
+          }
+        >
+          Save draft
+        </Button>
+        {files.length > 0 && (
+          <span className="text-xs text-muted-foreground">
+            Upload selected files before saving a draft.
+          </span>
+        )}
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -243,7 +447,15 @@ function CrewRevenue({
               className={selectClass}
               value={contract}
               disabled={frozen}
-              onChange={(event) => setContract(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value;
+                setAdditionalContracts((previous) =>
+                  [...new Set([...previous, ...(contract ? [contract] : [])])].filter(
+                    (id) => id !== next
+                  )
+                );
+                setContract(next);
+              }}
             >
               <option value="">Select a contract</option>
               {allContracts.map((row) => (
@@ -256,33 +468,78 @@ function CrewRevenue({
           </label>
           <div className="flex items-end gap-2">
             <Input
+              ref={fileInput}
               type="file"
-              aria-label="PDF contract"
-              accept="application/pdf,.pdf"
+              aria-label="Contract files"
+              accept="application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png"
+              multiple
               disabled={frozen}
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
             />
             <Button
-              disabled={frozen || !file}
+              disabled={frozen || !files.length}
               onClick={() =>
                 void run(async (signal) => {
-                  if (!file || file.size > 20 * 1024 * 1024 || file.size === 0)
-                    throw new Error("Choose a PDF contract up to 20 MB.");
-                  const body = new FormData();
-                  body.set("crewId", crew.id);
-                  body.set("file", file);
-                  const result = await revenueApi<RevenueContract>("/contracts", signal, body);
-                  if (signal.aborted) return;
-                  setUploaded(result);
-                  setContract(result.id);
+                  if (
+                    !files.length ||
+                    files.length > 20 ||
+                    files.some(
+                      (file) =>
+                        file.size > 10 * 1024 * 1024 ||
+                        file.size === 0 ||
+                        !["application/pdf", "image/jpeg", "image/png"].includes(file.type)
+                    )
+                  )
+                    throw new Error("Choose up to 20 PDF, JPG or PNG files, each up to 10 MB.");
+                  let primary = contract;
+                  for (const file of files) {
+                    const body = new FormData();
+                    body.set("crewId", crew.id);
+                    body.set("file", file);
+                    const result = await revenueApi<RevenueContract>("/contracts", signal, body);
+                    if (signal.aborted) return;
+                    setUploaded((previous) => [
+                      ...new Map([...previous, result].map((row) => [row.id, row])).values(),
+                    ]);
+                    if (!primary) {
+                      primary = result.id;
+                      setContract(result.id);
+                    } else if (result.id !== primary)
+                      setAdditionalContracts((previous) => [...new Set([...previous, result.id])]);
+                  }
+                  setFiles([]);
+                  if (fileInput.current) fileInput.current.value = "";
                   contracts.refresh();
                 })
               }
             >
-              Upload PDF
+              Upload files
             </Button>
           </div>
         </div>
+        {allContracts.length > 1 && (
+          <fieldset disabled={frozen} className="space-y-2">
+            <legend className="text-sm font-medium">Supporting contract files</legend>
+            {allContracts
+              .filter((row) => row.id !== contract)
+              .map((row) => (
+                <label key={row.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={additionalContracts.includes(row.id)}
+                    onChange={(event) =>
+                      setAdditionalContracts((previous) =>
+                        event.target.checked
+                          ? [...new Set([...previous, row.id])]
+                          : previous.filter((id) => id !== row.id)
+                      )
+                    }
+                  />
+                  {row.filename}
+                </label>
+              ))}
+          </fieldset>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <PageControls data={contracts} />
           {selectedContract && (
@@ -292,18 +549,7 @@ function CrewRevenue({
               disabled={busy}
               onClick={() =>
                 void run(async (signal) => {
-                  const link = await revenueApi<{ url: string }>(
-                    `/contracts/${encodeURIComponent(contract)}/download`,
-                    signal,
-                    {}
-                  );
-                  if (!signal.aborted) {
-                    const anchor = document.createElement("a");
-                    anchor.href = link.url;
-                    anchor.target = "_blank";
-                    anchor.rel = "noopener noreferrer";
-                    anchor.click();
-                  }
+                  await openContract(contract, signal);
                 })
               }
             >
@@ -318,6 +564,10 @@ function CrewRevenue({
           event.preventDefault();
           void run(async (signal) => {
             if (!selectedContract) throw new Error("Select a verified contract.");
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(incomeDate) || !incomeType)
+              throw new Error("Enter the income date and income type.");
+            if (additionalContracts.filter((id) => id !== contract).length > 19)
+              throw new Error("Select at most 20 contract files including the primary contract.");
             const participants = Object.entries(shares).map(([crewMemberId, share]) => ({
               crewMemberId,
               shareBps: revenueShareBps(share),
@@ -340,6 +590,81 @@ function CrewRevenue({
         }}
       >
         <fieldset disabled={frozen} className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="space-y-1 text-sm">
+              Income date{" "}
+              <Input
+                type="date"
+                aria-label="Income date"
+                value={incomeDate}
+                onChange={(event) => setIncomeDate(event.target.value)}
+                required
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              Income type{" "}
+              <select
+                aria-label="Income type"
+                className={selectClass}
+                value={incomeType}
+                onChange={(event) => setIncomeType(event.target.value)}
+                required
+              >
+                <option value="">Select income type</option>
+                {Object.entries(incomeTypes).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 text-sm">
+              Source / customer{" "}
+              <Input
+                aria-label="Source / customer"
+                value={incomeSource}
+                maxLength={180}
+                onChange={(event) => setIncomeSource(event.target.value)}
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              Contract number{" "}
+              <Input
+                aria-label="Contract number"
+                value={contractNumber}
+                maxLength={180}
+                onChange={(event) => setContractNumber(event.target.value)}
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              Signing party{" "}
+              <Input
+                aria-label="Signing party"
+                value={signingParty}
+                maxLength={180}
+                onChange={(event) => setSigningParty(event.target.value)}
+              />
+            </label>
+            <label className="space-y-1 text-sm">
+              Contract expiry{" "}
+              <Input
+                type="date"
+                aria-label="Contract expiry"
+                value={contractExpiresOn}
+                onChange={(event) => setContractExpiresOn(event.target.value)}
+              />
+            </label>
+            <label className="space-y-1 text-sm md:col-span-3">
+              Notes{" "}
+              <Input
+                aria-label="Notes"
+                value={notes}
+                maxLength={200}
+                onChange={(event) => setNotes(event.target.value)}
+              />
+              <span className="text-xs text-muted-foreground">{notes.length} / 200</span>
+            </label>
+          </div>
           <div className="grid gap-3 md:grid-cols-4">
             <label className="space-y-1 text-sm">
               Revenue title
@@ -450,6 +775,28 @@ function CrewRevenue({
             {title} · {reference} · {selectedContract?.filename}. Posting makes these earnings
             available for withdrawal.
           </p>
+          <dl className="grid gap-2 text-sm sm:grid-cols-2">
+            {Object.entries({
+              "Income date": incomeDate,
+              "Income type": incomeTypes[incomeType],
+              "Source / customer": incomeSource,
+              Notes: notes,
+              "Contract number": contractNumber,
+              "Signing party": signingParty,
+              "Contract expiry": contractExpiresOn,
+              "Supporting files": allContracts
+                .filter((row) => additionalContracts.includes(row.id) && row.id !== contract)
+                .map((row) => row.filename)
+                .join(", "),
+            })
+              .filter(([, value]) => value)
+              .map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="break-words">{value}</dd>
+                </div>
+              ))}
+          </dl>
           <Table>
             <TableHeader>
               <TableRow>
@@ -502,6 +849,14 @@ function CrewRevenue({
                     const result = await revenueApi<RevenueReceipt>("/distributions", signal, {
                       requestId: requestId.current,
                       contractId: contract,
+                      additionalContractIds: additionalContracts.filter((id) => id !== contract),
+                      incomeDate,
+                      incomeType,
+                      ...(incomeSource.trim() ? { incomeSource: incomeSource.trim() } : {}),
+                      ...(notes.trim() ? { notes: notes.trim() } : {}),
+                      ...(contractNumber.trim() ? { contractNumber: contractNumber.trim() } : {}),
+                      ...(signingParty.trim() ? { signingParty: signingParty.trim() } : {}),
+                      ...(contractExpiresOn ? { contractExpiresOn } : {}),
                       revenueReference: reference.trim(),
                       title: title.trim(),
                       allocation: {
@@ -520,7 +875,22 @@ function CrewRevenue({
                     setAmount("");
                     setReference("");
                     setTitle("");
-                    setSuccess(`Revenue posted. Receipt ${result.id}`);
+                    let draftNotice = "";
+                    if (draftRevision > 0) {
+                      try {
+                        const cleared = await revenueApi<SavedDraft>(`${base}/draft`, signal, {
+                          revision: draftRevision,
+                          data: null,
+                        });
+                        if (signal.aborted) return;
+                        setDraftRevision(cleared.revision);
+                      } catch {
+                        draftNotice =
+                          " The saved draft could not be cleared; load it before saving another draft.";
+                      }
+                    }
+                    setSavedSnapshot(null);
+                    setSuccess(`Revenue posted. Receipt ${result.id}${draftNotice}`);
                     history.refresh();
                   } catch (failure) {
                     if (!signal.aborted)
@@ -621,8 +991,40 @@ function CrewRevenue({
               </div>
               <div>
                 <dt className="text-muted-foreground">Contract</dt>
-                <dd>{receipt.contract.filename}</dd>
+                <dd className="space-y-1">
+                  {[receipt.contract, ...(receipt.supportingContracts ?? [])].map((file) => (
+                    <div key={file.id}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => void run((signal) => openContract(file.id, signal))}
+                      >
+                        Open {file.filename}
+                      </Button>
+                    </div>
+                  ))}
+                </dd>
               </div>
+              {Object.entries({
+                "Income date": receipt.incomeDate,
+                "Income type": receipt.incomeType
+                  ? (incomeTypes[receipt.incomeType] ?? receipt.incomeType)
+                  : null,
+                "Source / customer": receipt.incomeSource,
+                Notes: receipt.notes,
+                "Contract number": receipt.contractNumber,
+                "Signing party": receipt.signingParty,
+                "Contract expiry": receipt.contractExpiresOn,
+              })
+                .filter(([, value]) => value)
+                .map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="break-words">{value}</dd>
+                  </div>
+                ))}
               <div>
                 <dt className="text-muted-foreground">Posted</dt>
                 <dd>{new Date(receipt.postedAt).toLocaleString()}</dd>

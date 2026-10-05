@@ -35,7 +35,7 @@ let root: Root | undefined;
 let host: HTMLDivElement;
 const onSubmitted = vi.fn();
 const onOpenChange = vi.fn();
-function render(taskId: string, open = true) {
+function render(taskId: string, open = true, extra: Partial<CrewTaskDTO> = {}) {
   if (!root) {
     host = document.createElement("div");
     document.body.append(host);
@@ -46,7 +46,7 @@ function render(taskId: string, open = true) {
       <SubmitTaskDialog
         open={open}
         crewId="crew-1"
-        task={{ id: taskId } as CrewTaskDTO}
+        task={{ id: taskId, ...extra } as CrewTaskDTO}
         onSubmitted={onSubmitted}
         onOpenChange={onOpenChange}
       />
@@ -294,7 +294,10 @@ it("requires nonblank text and a still-attached file, preserving answers after v
   act(clickSubmit);
   expect(submit).not.toHaveBeenCalled();
   act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
-  const picker = () => document.querySelector<HTMLButtonElement>('details [role="checkbox"]')!;
+  const picker = () =>
+    document.querySelector<HTMLButtonElement>(
+      'section[aria-label="attachAssets"] [role="checkbox"]'
+    )!;
   const field = () => document.querySelector<HTMLButtonElement>('section [role="checkbox"]')!;
   act(() => field().click());
   act(() => picker().click()); // Removing the file invalidates its required answer.
@@ -354,4 +357,53 @@ it("explains missing and invalid links instead of silently disabling submission"
   expect(submit).toHaveBeenCalledWith(
     expect.objectContaining({ note: "https://example.com/final" })
   );
+});
+
+it("submits attached files without requiring a duplicate delivery link and uses the automatic folder", async () => {
+  render("task-1");
+  act(() => fillLink(""));
+  expect(document.querySelector("details")).toBeNull();
+  expect(document.querySelector('[aria-label="deliveryFolder"]')).toBeNull();
+  expect(document.body.textContent).toContain("automaticDeliveryFolder");
+  act(() =>
+    document
+      .querySelector<HTMLButtonElement>('[aria-label="attachAssets"] [role="checkbox"]')!
+      .click()
+  );
+  expect(document.body.textContent).not.toContain("deliveryLinkRequired");
+  submit.mockResolvedValue({ id: "task-1" });
+  await act(async () => clickSubmit());
+  expect(submit).toHaveBeenCalledWith({ taskId: "task-1", note: "", assetNodeIds: ["asset-1"] });
+});
+
+it("requires delivery again after the last attachment is removed and rejects malformed optional links", () => {
+  render("task-1");
+  act(() => fillLink(""));
+  const pick = () =>
+    document
+      .querySelector<HTMLButtonElement>('[aria-label="attachAssets"] [role="checkbox"]')!
+      .click();
+  act(pick);
+  act(() => fillLink("invalid"));
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("deliveryLinkInvalid");
+  act(() => fillLink(""));
+  act(pick);
+  expect(document.body.textContent).toContain("deliveryLinkRequired");
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+});
+
+it("allows the linked canvas as delivery and shows the existing task destination", async () => {
+  render("task-1", true, {
+    canvasHref: "/studio/canvas/task-1",
+    deliveryFolder: { id: "folder-1", name: "Script / Task one" },
+  });
+  act(() => fillLink(""));
+  expect(document.body.textContent).toContain("Script / Task one");
+  expect(document.body.textContent).not.toContain("deliveryLinkRequired");
+  submit.mockResolvedValue({ id: "task-1" });
+  await act(async () => clickSubmit());
+  expect(submit).toHaveBeenCalledWith({ taskId: "task-1", note: "", assetNodeIds: [] });
 });

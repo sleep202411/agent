@@ -77,6 +77,16 @@ export class CreatorWithdrawalsAdminController {
   ) {
     return { code: 200, data: await this.withdrawals.queue(admin, query) };
   }
+  @Get('export')
+  @Header('Cache-Control', 'private, no-store')
+  async exportCsv(
+    @CurrentAdmin() admin: AdminActor,
+    @Query(new ZodValidationPipe(WithdrawalQueueQuery))
+    query: z.infer<typeof WithdrawalQueueQuery>,
+  ) {
+    return { code: 200, data: await this.withdrawals.exportCsv(admin, query) };
+  }
+
   @Get('overview')
   @Header('Cache-Control', 'no-store')
   async overview(@CurrentAdmin() admin: AdminActor) {

@@ -1,5 +1,7 @@
 import { eligibleCashEarningsSql } from './eligible-cash-earnings';
+import type { Prisma } from '@prisma/client';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -16,14 +18,40 @@ import { NotificationService } from '../notification/notification.service';
 
 export const WITHDRAWAL_MANAGE_PERMISSION =
   ADMIN_PERMISSION_KEYS.CreatorWithdrawalsManage;
-export const WithdrawalQueueQuery = z.strictObject({
-  status: z
-    .enum(['pending', 'processing', 'paid', 'rejected', 'cancelled'])
-    .optional(),
-  currency: z.enum(['USD', 'CNY']).optional(),
-  userId: z.string().trim().min(1).max(64).optional(),
-  page: z.coerce.number().int().min(1).max(100000).default(1),
-});
+const minorAmount = z
+  .string()
+  .regex(/^\d{1,19}$/)
+  .refine((value) => BigInt(value) <= 9_223_372_036_854_775_807n);
+export const WithdrawalQueueQuery = z
+  .strictObject({
+    status: z
+      .enum(['pending', 'processing', 'paid', 'rejected', 'cancelled'])
+      .optional(),
+    currency: z.enum(['USD', 'CNY']).optional(),
+    userId: z.string().trim().min(1).max(64).optional(),
+    q: z.string().trim().min(1).max(120).optional(),
+    from: z.iso.date().optional(),
+    to: z.iso.date().optional(),
+    minAmountMinor: minorAmount.optional(),
+    maxAmountMinor: minorAmount.optional(),
+    page: z.coerce.number().int().min(1).max(100000).default(1),
+  })
+  .refine(
+    (value) => !value.from || !value.to || value.from <= value.to,
+    'Start date must not follow end date.',
+  )
+  .refine(
+    (value) =>
+      !value.minAmountMinor ||
+      !value.maxAmountMinor ||
+      BigInt(value.minAmountMinor) <= BigInt(value.maxAmountMinor),
+    'Minimum amount must not exceed maximum amount.',
+  )
+  .refine(
+    (value) =>
+      value.currency || (!value.minAmountMinor && !value.maxAmountMinor),
+    'Choose a currency for amount filters.',
+  );
 export const WithdrawalDecision = z.discriminatedUnion('action', [
   z.strictObject({
     action: z.literal('takeover'),
@@ -39,6 +67,8 @@ export const WithdrawalDecision = z.discriminatedUnion('action', [
     action: z.literal('pay'),
     expectedVersion: z.number().int().positive(),
     paymentReference: z.string().trim().min(1).max(180),
+    paymentProofId: z.uuid().optional(),
+    internalPaymentNote: z.string().trim().max(2000).optional(),
   }),
   z.strictObject({
     action: z.literal('reject'),
@@ -54,7 +84,7 @@ export class WithdrawalAdminService {
     private readonly notifications: NotificationService,
   ) {}
 
-  private requireAdmin(admin: AdminActor) {
+  assertAccess(admin: AdminActor) {
     if (
       !admin?.id ||
       admin.id.length > 58 ||
@@ -69,8 +99,8 @@ export class WithdrawalAdminService {
   }
 
   async queue(admin: AdminActor, raw: z.input<typeof WithdrawalQueueQuery>) {
-    this.requireAdmin(admin);
-    const { page, ...where } = WithdrawalQueueQuery.parse(raw);
+    this.assertAccess(admin);
+    const { page, where } = withdrawalQueueFilter(raw);
     const [items, total] = await this.prisma.$transaction([
       this.prisma.creatorWithdrawal.findMany({
         where,
@@ -111,8 +141,72 @@ export class WithdrawalAdminService {
     };
   }
 
+  async exportCsv(
+    admin: AdminActor,
+    raw: z.input<typeof WithdrawalQueueQuery>,
+  ) {
+    this.assertAccess(admin);
+    const { where } = withdrawalQueueFilter(raw);
+    const rows = await this.prisma.creatorWithdrawal.findMany({
+      where,
+      take: 10001,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        userId: true,
+        recipientLabel: true,
+        currency: true,
+        amountMinor: true,
+        status: true,
+        paymentReference: true,
+        createdAt: true,
+        paidAt: true,
+      },
+    });
+    if (rows.length > 10000)
+      throw new BadRequestException(
+        'Export exceeds 10,000 withdrawals. Narrow the date or amount filters and try again.',
+      );
+    const lines = [
+      [
+        'Withdrawal ID',
+        'Creator ID',
+        'Recipient (masked)',
+        'Currency',
+        'Amount',
+        'Status',
+        'Payment reference',
+        'Requested (UTC)',
+        'Paid (UTC)',
+      ]
+        .map(withdrawalCsvCell)
+        .join(','),
+    ];
+    for (const row of rows)
+      lines.push(
+        [
+          row.id,
+          row.userId,
+          row.recipientLabel,
+          row.currency,
+          `${row.amountMinor / 100n}.${(row.amountMinor % 100n).toString().padStart(2, '0')}`,
+          row.status,
+          row.paymentReference ?? '',
+          row.createdAt.toISOString(),
+          row.paidAt?.toISOString() ?? '',
+        ]
+          .map(withdrawalCsvCell)
+          .join(','),
+      );
+    return {
+      filename: `withdrawals-${new Date().toISOString().slice(0, 10)}.csv`,
+      count: rows.length,
+      csv: '\uFEFF' + lines.join('\r\n') + '\r\n',
+    };
+  }
+
   async overview(admin: AdminActor) {
-    this.requireAdmin(admin);
+    this.assertAccess(admin);
     return this.prisma.$queryRaw<
       {
         currency: string;
@@ -148,7 +242,7 @@ export class WithdrawalAdminService {
   }
 
   async detail(admin: AdminActor, id: string) {
-    this.requireAdmin(admin);
+    this.assertAccess(admin);
     z.uuid().parse(id);
     const row = await this.prisma.creatorWithdrawal.findUnique({
       where: { id },
@@ -190,6 +284,8 @@ export class WithdrawalAdminService {
       processingAdminId: row.processingAdminId,
       paidAdminId: row.paidAdminId,
       paymentReference: row.paymentReference,
+      paymentProofId: row.paymentProofId,
+      internalPaymentNote: row.internalPaymentNote,
       resolutionReason: row.resolutionReason,
       createdAt: row.createdAt.toISOString(),
       paidAt: row.paidAt?.toISOString() ?? null,
@@ -217,7 +313,7 @@ export class WithdrawalAdminService {
   }
 
   async recipient(admin: AdminActor, id: string) {
-    this.requireAdmin(admin);
+    this.assertAccess(admin);
     z.uuid().parse(id);
     return this.prisma.$transaction(async (tx) => {
       const row = await tx.creatorWithdrawal.findUnique({ where: { id } });
@@ -248,7 +344,7 @@ export class WithdrawalAdminService {
     id: string,
     raw: z.input<typeof WithdrawalDecision>,
   ) {
-    this.requireAdmin(admin);
+    this.assertAccess(admin);
     z.uuid().parse(id);
     const input = WithdrawalDecision.parse(raw);
     const identity = await this.prisma.creatorWithdrawal.findUnique({
@@ -339,6 +435,16 @@ export class WithdrawalAdminService {
         throw new ConflictException(
           'Another administrator is processing this withdrawal.',
         );
+      if (input.action === 'pay' && input.paymentProofId) {
+        const [proof] = await tx.$queryRaw<
+          Array<{ id: string }>
+        >`SELECT id FROM creator_withdrawal_proofs WHERE id=${input.paymentProofId}::uuid AND withdrawal_id=${id}::uuid AND status='ready' FOR SHARE`;
+        if (!proof)
+          throw new ConflictException(
+            'Upload a verified payment proof for this withdrawal.',
+          );
+        await tx.$executeRaw`UPDATE creator_withdrawal_proofs SET next_attempt_at=NULL WHERE id=${proof.id}::uuid`;
+      }
       const now = new Date();
       const nextStatus =
         input.action === 'process'
@@ -405,6 +511,8 @@ export class WithdrawalAdminService {
                 paidAdminId: admin.id,
                 paidAt: now,
                 paymentReference: input.paymentReference,
+                paymentProofId: input.paymentProofId ?? null,
+                internalPaymentNote: input.internalPaymentNote || null,
               }
             : {}),
           ...(input.action === 'reject'
@@ -456,4 +564,53 @@ export class WithdrawalAdminService {
       };
     });
   }
+}
+
+function withdrawalQueueFilter(raw: z.input<typeof WithdrawalQueueQuery>) {
+  const { page, q, from, to, minAmountMinor, maxAmountMinor, ...filters } =
+    WithdrawalQueueQuery.parse(raw);
+  const where: Prisma.CreatorWithdrawalWhereInput = {
+    ...filters,
+    ...(q
+      ? {
+          OR: [
+            { userId: { contains: q, mode: 'insensitive' } },
+            { recipientLabel: { contains: q, mode: 'insensitive' } },
+            ...(z.uuid().safeParse(q).success ? [{ id: q }] : []),
+          ],
+        }
+      : {}),
+    ...(from || to
+      ? {
+          createdAt: {
+            ...(from ? { gte: new Date(`${from}T00:00:00.000Z`) } : {}),
+            ...(to
+              ? {
+                  lt: new Date(
+                    new Date(`${to}T00:00:00.000Z`).getTime() + 86400000,
+                  ),
+                }
+              : {}),
+          },
+        }
+      : {}),
+    ...(minAmountMinor || maxAmountMinor
+      ? {
+          amountMinor: {
+            ...(minAmountMinor ? { gte: BigInt(minAmountMinor) } : {}),
+            ...(maxAmountMinor ? { lte: BigInt(maxAmountMinor) } : {}),
+          },
+        }
+      : {}),
+  };
+  return { page, where };
+}
+
+/** Quote CSV syntax and neutralize spreadsheet formula prefixes, including
+ * those hidden behind whitespace/control characters in user-supplied text. */
+export function withdrawalCsvCell(value: string): string {
+  // Intentional control-character check: spreadsheet imports may ignore these.
+  // eslint-disable-next-line no-control-regex
+  const safe = /^[\s\u0000-\u001f]*[=+@-]/.test(value) ? `'${value}` : value;
+  return `"${safe.replaceAll('"', '""')}"`;
 }

@@ -15,6 +15,8 @@ describe('Task contract retention query', () => {
     await db.exec(`CREATE TABLE crew_tasks (
       id text, crew_id text, metadata jsonb, deleted_at timestamptz
     );
+    CREATE TABLE crew_task_contract_files (task_id text, asset_node_id text);
+    INSERT INTO crew_task_contract_files VALUES ('empty','addendum');
     INSERT INTO crew_tasks VALUES
       ('archived','crew','{"contractAssetNodeId":"contract"}',now()),
       ('foreign','other','{"contractAssetNodeId":"foreign-file"}',null),
@@ -25,7 +27,11 @@ describe('Task contract retention query', () => {
   });
   it('retains a contract referenced by an archived task inside a folder subtree', async () => {
     await expect(
-      requireNoTaskContractReferences(tx, 'crew', ['folder', 'contract']),
+      requireNoTaskContractReferences(tx, 'crew', [
+        'folder',
+        'contract',
+        'addendum',
+      ]),
     ).rejects.toMatchObject({
       response: { code: 'CREW_TASK_CONTRACT_LOCKED' },
     });
