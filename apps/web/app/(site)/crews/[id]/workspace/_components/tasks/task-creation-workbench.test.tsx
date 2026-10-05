@@ -40,6 +40,7 @@ const state = vi.hoisted(() => ({
     description?: string;
     priority?: string;
     taskKind?: string;
+    isRecruiting?: boolean;
     assignees?: { userId: string }[];
   }>,
   taskLoading: false,
@@ -833,4 +834,42 @@ it("does not carry a recovered draft episode into a new category task", async ()
   expect(state.create).toHaveBeenCalledWith(
     expect.objectContaining({ taskKind: "music", episodeId: null })
   );
+});
+
+it("distinguishes recruiting, unassigned and assigned task cards", async () => {
+  state.tasks = [
+    {
+      id: "recruit",
+      title: "Recruit task",
+      parentId: null,
+      status: "open",
+      assetCategory: "scripts",
+      isRecruiting: true,
+    },
+    {
+      id: "unassigned",
+      title: "Unassigned task",
+      parentId: null,
+      status: "open",
+      assetCategory: "scripts",
+    },
+    {
+      id: "assigned",
+      title: "Assigned task",
+      parentId: null,
+      status: "open",
+      assetCategory: "scripts",
+      isRecruiting: true,
+      assignees: [{ userId: "assigned-user" }],
+    },
+  ];
+  await render();
+  expect(host.textContent).toContain("Unassigned");
+  const recruiting = Array.from(host.querySelectorAll("span")).filter(
+    (node) => node.textContent === "Recruiting" && node.classList.contains("rounded-full")
+  );
+  expect(recruiting).toHaveLength(1);
+  expect(recruiting[0]!.className).toContain("rounded-full");
+  expect(recruiting[0]!.className).not.toContain("underline");
+  expect(host.textContent).toContain("assigned-user");
 });

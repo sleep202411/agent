@@ -1,3 +1,4 @@
+import { DeviceCityService, DeviceCityController } from './device-city';
 import {
   CreatorGeocodingService,
   CreatorGeocodingController,
@@ -27,12 +28,14 @@ import { CreatorServicesService } from './creator-services.service';
 @Module({
   imports: [AuthModule, LegacyCreatorsModule],
   controllers: [
+    DeviceCityController,
     CreatorServicesController,
     CreatorLocationsController,
     CreatorGeocodingController,
     CreatorDiscoveryController,
   ],
   providers: [
+    DeviceCityService,
     CreatorServicesService,
     CreatorLocationsService,
     CreatorGeocodingService,

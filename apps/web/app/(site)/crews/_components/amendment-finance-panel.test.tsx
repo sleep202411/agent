@@ -54,6 +54,7 @@ const row: ApplicationAmendment = {
     expectedVersion: 2,
     expectedTaskVersion: 5,
     scope: "Agreed private scope",
+    paymentTerms: "half_upfront",
     feeAmount: "10000000000",
     currency: "USD",
     feePeriod: "project",
@@ -135,6 +136,7 @@ it("uses the finance-only Crew queue and requires explicit review and confirmati
     true
   );
   expect(host.textContent).toContain("USD 100000000.00");
+  expect(host.textContent).toContain("label: half_upfront");
   expect(host.textContent).toContain("1.25%");
   expect(button("apply")).toBeUndefined();
   expect(h.post).not.toHaveBeenCalled();

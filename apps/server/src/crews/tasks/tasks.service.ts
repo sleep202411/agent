@@ -1,9 +1,11 @@
+import { TASK_PAYMENT_TERMS } from '@repo/shared/crew';
 import { readDocumentCrdtState } from '../../documents/document-persisted-state';
 import { validateTaskCustomFieldValues } from './task-custom-field-values';
 import { taskAssetCategory } from './task-asset-category';
 import { CloseCrewTaskSchema, type CloseCrewTaskInput } from '../dto';
 import { assertRecruitedTaskAssignees } from '../task-recruitment';
 import { assertDeliveryTemplateEditable } from './task-delivery-template';
+import { requireAvailableTaskContractAsset } from '../assets/task-contract-retention';
 import {
   overdueTaskPredicate,
   TASK_ADVANCE_WARNING_MS,
@@ -128,6 +130,14 @@ const taskInclude = {
   },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
+  recruitmentPositions: {
+    where: {
+      status: 'open' as const,
+      deletedAt: null,
+      moderationStatus: 'ok' as const,
+    },
+    select: { closeDate: true },
+  },
   deliveryFolder: {
     include: {
       folder: { select: { id: true, name: true } },
@@ -178,6 +188,14 @@ const taskCardInclude = {
   },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
+  recruitmentPositions: {
+    where: {
+      status: 'open' as const,
+      deletedAt: null,
+      moderationStatus: 'ok' as const,
+    },
+    select: { closeDate: true },
+  },
   deliveryFolder: {
     include: {
       folder: { select: { id: true, name: true } },
@@ -1762,14 +1780,7 @@ export class CrewTasksService {
     assetId: string | null | undefined,
   ) {
     if (!assetId) return;
-    const node = await tx.crewAssetNode.findFirst({
-      where: { id: assetId, crewId, status: 'active', kind: 'file' },
-      select: { id: true },
-    });
-    if (!node)
-      throw new BadRequestException({
-        message: 'The contract file is unavailable in this crew.',
-      });
+    await requireAvailableTaskContractAsset(tx, crewId, assetId);
     await this.assetAccess.requireNodesPermission(
       crewId,
       [assetId],
@@ -2210,6 +2221,7 @@ export class CrewTasksService {
             positionRole: input.positionRole ?? null,
             contractAssetNodeId: input.contractAssetNodeId ?? null,
             compensation: {
+              paymentTerms: input.paymentTerms ?? null,
               rewardUsdMinor: input.rewardUsdMinor ?? null,
               profitShareBps: input.profitShareBps ?? null,
             },
@@ -2782,13 +2794,25 @@ export class CrewTasksService {
           });
         }
 
+        const priorMetadata = (locked.metadata ?? {}) as Prisma.JsonObject;
+        const attachedContractId = taskContractAssetId(priorMetadata);
+        if (
+          attachedContractId &&
+          input.contractAssetNodeId !== undefined &&
+          input.contractAssetNodeId !== attachedContractId
+        ) {
+          throw new ConflictException({
+            code: 'CREW_TASK_CONTRACT_LOCKED',
+            message:
+              'An attached task contract cannot be replaced or removed. Keep the original contract when updating the task.',
+          });
+        }
         await this.assertContractAsset(
           tx,
           locked.crewId,
           userId,
           input.contractAssetNodeId,
         );
-        const priorMetadata = (locked.metadata ?? {}) as Prisma.JsonObject;
         recordChange(
           'contractAssetNodeId',
           priorMetadata.contractAssetNodeId ?? null,
@@ -2810,6 +2834,11 @@ export class CrewTasksService {
           'rewardUsdMinor',
           priorCompensation.rewardUsdMinor ?? null,
           input.rewardUsdMinor,
+        );
+        recordChange(
+          'paymentTerms',
+          priorCompensation.paymentTerms ?? null,
+          input.paymentTerms,
         );
         recordChange(
           'profitShareBps',
@@ -2836,6 +2865,7 @@ export class CrewTasksService {
                   : null,
             estimatePoints: input.estimatePoints,
             metadata:
+              input.paymentTerms !== undefined ||
               input.rewardUsdMinor !== undefined ||
               input.profitShareBps !== undefined ||
               input.requiredSkills !== undefined ||
@@ -2852,11 +2882,15 @@ export class CrewTasksService {
                     ...(input.requiredSkills !== undefined
                       ? { requiredSkills: [...new Set(input.requiredSkills)] }
                       : {}),
-                    ...(input.rewardUsdMinor !== undefined ||
+                    ...(input.paymentTerms !== undefined ||
+                    input.rewardUsdMinor !== undefined ||
                     input.profitShareBps !== undefined
                       ? {
                           compensation: {
                             ...priorCompensation,
+                            ...(input.paymentTerms !== undefined
+                              ? { paymentTerms: input.paymentTerms }
+                              : {}),
                             ...(input.rewardUsdMinor !== undefined
                               ? { rewardUsdMinor: input.rewardUsdMinor }
                               : {}),
@@ -5084,6 +5118,9 @@ function taskCompensation(metadata: Prisma.JsonValue | null) {
     | Prisma.JsonObject
     | undefined;
   return {
+    paymentTerms:
+      TASK_PAYMENT_TERMS.find((term) => term === compensation?.paymentTerms) ??
+      null,
     rewardUsdMinor:
       typeof compensation?.rewardUsdMinor === 'number'
         ? compensation.rewardUsdMinor
@@ -5132,6 +5169,13 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     number: task.number,
     title: task.title,
     description: task.description,
+    isRecruiting:
+      task.recruitmentPositions?.some(
+        (position) =>
+          !position.closeDate ||
+          position.closeDate.getTime() >=
+            new Date(new Date().toISOString().slice(0, 10)).getTime(),
+      ) ?? false,
     taskKind: task.taskKind,
     assetCategory: taskAssetCategory(task.metadata, task.taskKind),
     storyboardClipId:

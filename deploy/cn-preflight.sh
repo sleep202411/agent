@@ -111,6 +111,7 @@ else
   [ "$PHASE" = migration ] || secret_has_key fizzdragon-secrets REDIS_URL
   if has_service server && [ "$PHASE" = deploy ]; then
     secret_has_key fizzdragon-server-secrets JAVA_ADMIN_API_TOKEN
+    secret_has_key fizzdragon-server-secrets CREATOR_PAYOUT_DETAILS_KEY
     secret_has_key fizzdragon-server-secrets REALTIME_WS_SECRET
     secret_has_key fizzdragon-server-secrets ABLY_API_KEY
     # These are required by the selected CN write path and enabled providers.

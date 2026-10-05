@@ -248,9 +248,14 @@ function Earnings({ userId, embedded }: { userId: string; embedded: boolean }) {
                   variant="ghost"
                   color="muted"
                   className="mt-3"
-                  onClick={() =>
-                    router.replace(localizePath("/profile/earnings", locale), { scroll: false })
-                  }
+                  onClick={() => {
+                    if (embedded) {
+                      setPanelFilters(new URLSearchParams());
+                      setPageIndex(0);
+                    } else {
+                      router.replace(localizePath("/profile/earnings", locale), { scroll: false });
+                    }
+                  }}
                 >
                   {t("clearFilters")}
                 </Button>

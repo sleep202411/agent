@@ -33,6 +33,7 @@ import {
   useCreateCrewEpisode,
   type CreateCrewTaskInput,
   type CrewMemberDTO,
+  type CrewTaskDTO,
   type CrewTaskProjectDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { EpisodeTemplatePreview } from "./episode-template-preview";
@@ -65,6 +66,7 @@ export type Draft = {
   input: CreateCrewTaskInput;
   state: "staged" | "creating" | "created" | "uncertain";
   taskId?: string;
+  isRecruiting?: boolean;
 };
 
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
@@ -87,6 +89,7 @@ function TaskCreationSession({
   onSelectTask,
   onViewTasks,
   onPublishTask,
+  onInviteTask,
 }: {
   crewId: string;
   crewName: string;
@@ -99,6 +102,7 @@ function TaskCreationSession({
   onSelectTask: (id: string) => void;
   onViewTasks?: () => void;
   onPublishTask?: (taskId: string) => void;
+  onInviteTask?: (task: CrewTaskDTO) => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
   const folderT = useTranslations("crewAssetFolders");
@@ -139,6 +143,7 @@ function TaskCreationSession({
     ...savedTasks.map((task, index) => ({
       id: -index - 1,
       taskId: task.id,
+      isRecruiting: task.isRecruiting,
       state: "created" as const,
       input: {
         title: task.title,
@@ -608,6 +613,19 @@ function TaskCreationSession({
                                         : t("noDeadline")}
                                     </span>
                                     <span className="flex flex-wrap items-center gap-3">
+                                      {!draft.input.assignees.length ? (
+                                        <span
+                                          className={
+                                            draft.isRecruiting
+                                              ? "rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary"
+                                              : "text-muted-foreground"
+                                          }
+                                        >
+                                          {draft.isRecruiting
+                                            ? t("recruiting")
+                                            : taskT("unassigned")}
+                                        </span>
+                                      ) : null}
                                       {draft.input.assignees.map(({ userId }) => (
                                         <span
                                           key={userId}
@@ -944,6 +962,7 @@ function TaskCreationSession({
           presetEpisodeId={episodeId}
           presetTaskKind={presetTaskKind}
           onPublishTask={onPublishTask}
+          onInviteTask={onInviteTask}
           onCreated={() => {
             void tasks.refetch();
           }}

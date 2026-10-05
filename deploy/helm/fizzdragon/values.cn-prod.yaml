@@ -133,6 +133,10 @@ serverSecrets:
     - kv: java-admin-api-token
       env: JAVA_ADMIN_API_TOKEN
     # CN v1: no Airwallex (billing not enabled on CN yet).
+    # Required before server rollout: 32 random bytes encoded as 64 hex characters.
+    # Preserve this key; saved creator bank details depend on it.
+    - kv: creator-payout-details-key
+      env: CREATOR_PAYOUT_DETAILS_KEY
     - kv: admin-mfa-secret-key
       env: ADMIN_MFA_SECRET_KEY
     # Token-signing secret for the self-hosted realtime WS plane

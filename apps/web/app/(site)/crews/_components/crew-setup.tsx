@@ -304,6 +304,7 @@ function SetupSession({ crewId }: { crewId: string }) {
                   members={members}
                   isOwner={permissions.can("tasks.manage")}
                   canCreate={permissions.can("tasks.manage")}
+                  canInvite={permissions.can("tasks.manage") && permissions.can("members.invite")}
                   canReview={permissions.can("tasks.review")}
                   canSubmitAssigned={permissions.can("tasks.submit_assigned")}
                   canComment={permissions.can("tasks.comment")}

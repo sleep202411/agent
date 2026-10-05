@@ -2564,6 +2564,38 @@
         "character": "Character",
         "scene": "Scene"
       }
+    },
+    "playback": {
+      "open": "Play",
+      "title": "Storyboard Playback",
+      "missing": "No ready video in this shot. Choose another shot or add a video on the canvas.",
+      "position": "Shot {current} / {count}",
+      "previous": "Previous shot",
+      "next": "Next shot",
+      "shots": "Storyboard shots",
+      "shot": "Shot {number}",
+      "error": "This video could not be played. Retry or choose another shot.",
+      "retry": "Retry",
+      "loading": "Loading video…",
+      "video": "Shot video"
+    },
+    "drag": {
+      "title": "Storyboard",
+      "mode": "Drag to storyboard",
+      "instructions": "Select a canvas video, drag it to a shot, then drop.",
+      "reorder": "Drag the shot handle to reorder",
+      "video": "Video",
+      "placed": "Video added to shot",
+      "add": "Add shot",
+      "collapse": "Collapse storyboard",
+      "expand": "Expand storyboard",
+      "empty": "Add a shot, then drag a video from the canvas.",
+      "shot": "Shot {number}",
+      "placeSelected": "Place selected",
+      "earlier": "Move shot {number} earlier",
+      "later": "Move shot {number} later",
+      "removeVideo": "Remove video from shot {number}",
+      "activeMode": "Drag Mode active — drag canvas videos into the storyboard below"
     }
   },
   "invite": {

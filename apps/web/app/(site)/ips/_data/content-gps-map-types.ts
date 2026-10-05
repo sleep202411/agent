@@ -11,6 +11,8 @@ export type GpsMapFeature = {
   selected: boolean;
   count: number;
   entityId: string | null;
+  /** A fictional community anchor, never an entity location or geographic cluster. */
+  virtualDestination?: string;
 };
 export type GpsMapConfig =
   | { provider: "google"; key: string; mapId: string }

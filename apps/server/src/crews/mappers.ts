@@ -151,6 +151,7 @@ export function toPositionDTO(
     employmentType: p.employmentType as CrewPositionDTO['employmentType'],
     experienceLevel: p.experienceLevel as CrewPositionDTO['experienceLevel'],
     requiredSkills: p.requiredSkills,
+    paymentTerms: (p.paymentTerms as CrewPositionDTO['paymentTerms']) ?? null,
     salary: {
       period: (p.salaryPeriod as CrewPositionDTO['salary']['period']) ?? null,
       currency:

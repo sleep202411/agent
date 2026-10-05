@@ -72,23 +72,31 @@ function build() {
     }),
   };
   const storage = {
-    upload: jest
+    upload: jest.fn(),
+    createPrivateUploadUrl: jest
+      .fn()
+      .mockImplementation(({ storageKey }: { storageKey: string }) =>
+        Promise.resolve({
+          url: 'https://private.invalid/upload',
+          method: 'PUT',
+          headers: { 'x-private-write': 'fixture' },
+          storageKey,
+          provider: MediaStorageProvider.s3_compatible,
+          bucket: 'private-contracts',
+          region: 'auto',
+        }),
+      ),
+    headStoredObject: jest
       .fn()
       .mockResolvedValueOnce({
-        url: 'private://signed',
-        storagePath: 'crew-agreements/crew-1/signed.pdf',
-        bytes: 15,
-        provider: MediaStorageProvider.s3_compatible,
-        bucket: 'crew-assets',
-        region: 'auto',
+        exists: true,
+        sizeBytes: 15,
+        contentType: 'application/pdf',
       })
       .mockResolvedValueOnce({
-        url: 'private://audit',
-        storagePath: 'crew-agreements/crew-1/audit.pdf',
-        bytes: 14,
-        provider: MediaStorageProvider.s3_compatible,
-        bucket: 'crew-assets',
-        region: 'auto',
+        exists: true,
+        sizeBytes: 14,
+        contentType: 'application/pdf',
       }),
   };
   const storageRegistry = {
@@ -103,6 +111,14 @@ function build() {
 }
 
 describe('CrewAgreementArchiveWorker', () => {
+  beforeEach(() => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 200 }));
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
   it.each(['claim', 'archive'] as const)(
     'finishes active work but stops new claims during shutdown at %s',
     async (stage) => {
@@ -263,30 +279,98 @@ describe('CrewAgreementArchiveWorker', () => {
 
     await internals.archiveOne(job);
 
+    expect(t.storage.upload).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledWith(
+      'https://private.invalid/upload',
+      expect.objectContaining({
+        method: 'PUT',
+        redirect: 'error',
+        headers: {
+          'x-private-write': 'fixture',
+          'content-type': 'application/pdf',
+        },
+      }),
+    );
     expect(t.provider.downloadSignedDocument).toHaveBeenCalledWith(
       'document-1',
     );
     expect(t.provider.downloadAuditTrail).toHaveBeenCalledWith('document-1');
-    expect(t.storage.upload).toHaveBeenNthCalledWith(
+    expect(t.storage.createPrivateUploadUrl).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        key: `crew-agreements/crew-1/${AGREEMENT_ID}/signed.pdf`,
+        storageKey: `crew-agreements/crew-1/${AGREEMENT_ID}/signed.pdf`,
         contentType: 'application/pdf',
       }),
     );
-    expect(t.storage.upload).toHaveBeenNthCalledWith(
+    expect(t.storage.createPrivateUploadUrl).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        key: `crew-agreements/crew-1/${AGREEMENT_ID}/audit-trail.pdf`,
+        storageKey: `crew-agreements/crew-1/${AGREEMENT_ID}/audit-trail.pdf`,
         contentType: 'application/pdf',
       }),
     );
     expect(persistArchive).toHaveBeenCalledWith(
       job,
-      expect.objectContaining({ kind: 'signed_document' }),
+      expect.objectContaining({
+        kind: 'signed_document',
+        result: expect.objectContaining({
+          bucket: 'private-contracts',
+          url: '',
+        }) as unknown,
+      }),
       expect.objectContaining({ kind: 'audit_trail' }),
     );
   });
+
+  it.each([
+    'private-unavailable',
+    'wrong-key',
+    'upload-failed',
+    'missing',
+    'size',
+    'type',
+  ])(
+    'does not publish an archive when private storage fails: %s',
+    async (failure) => {
+      const t = build();
+      if (failure === 'private-unavailable')
+        t.storage.createPrivateUploadUrl.mockRejectedValueOnce(
+          new Error('Private storage unavailable'),
+        );
+      if (failure === 'wrong-key')
+        t.storage.createPrivateUploadUrl.mockResolvedValueOnce({
+          storageKey: 'other',
+          bucket: 'private-contracts',
+        });
+      if (failure === 'upload-failed')
+        jest
+          .mocked(fetch)
+          .mockResolvedValueOnce(new Response(null, { status: 503 }));
+      if (['missing', 'size', 'type'].includes(failure)) {
+        t.storage.headStoredObject.mockReset().mockResolvedValue({
+          exists: failure !== 'missing',
+          sizeBytes: failure === 'size' ? 1 : 15,
+          contentType: failure === 'type' ? 'text/html' : 'application/pdf',
+        });
+      }
+      const internals = t.worker as unknown as {
+        archiveOne(job: ReturnType<typeof archiveJob>): Promise<void>;
+        persistArchive: jest.Mock;
+      };
+      internals.persistArchive = jest.fn();
+      await internals.archiveOne(archiveJob());
+      expect(internals.persistArchive).not.toHaveBeenCalled();
+      expect(t.storage.upload).not.toHaveBeenCalled();
+      expect(t.prisma.crewAgreementArchiveJob.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: CrewAgreementArchiveJobStatus.pending,
+            attempt: 1,
+          }) as unknown,
+        }),
+      );
+    },
+  );
 
   it('releases the lease and schedules bounded retry after provider failure', async () => {
     const t = build();

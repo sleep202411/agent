@@ -1,3 +1,4 @@
+import { TASK_PAYMENT_TERMS } from '@repo/shared/crew';
 /**
  * Crew invite links — "anyone with this link can join", the counterpart to the
  * named invitation flow in CrewInvitationsService.
@@ -15,6 +16,7 @@
  * pair buys.
  */
 import {
+  ConflictException,
   ForbiddenException,
   GoneException,
   Injectable,
@@ -36,6 +38,12 @@ import { CrewCollaborationService } from '../collaboration/crew-collaboration.se
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import type { CreateCrewInviteLinkInput } from '../dto';
 import { resolveCrewLogoUrl } from '../mappers';
+import { CrewQualificationsService } from '../crew-qualifications.service';
+import { z } from 'zod';
+import {
+  claimTaskInviteTarget,
+  lockTaskInviteTarget,
+} from './task-invite-claim';
 import { joinCrewInTransaction } from './join-crew';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -51,6 +59,8 @@ export interface CrewInviteLinkDTO {
   crewId: string;
   kind: 'member' | 'community';
   policyKeys: string[];
+  taskId: string | null;
+  taskVersion: number | null;
   maxUses: number | null;
   useCount: number;
   expiresAt: string | null;
@@ -83,6 +93,8 @@ function toDTO(link: CrewInviteLink): CrewInviteLinkDTO {
     crewId: link.crewId,
     kind: link.kind,
     policyKeys: link.policyKeys,
+    taskId: link.taskId ?? null,
+    taskVersion: link.taskVersion ?? null,
     maxUses: link.maxUses,
     useCount: link.useCount,
     expiresAt: link.expiresAt?.toISOString() ?? null,
@@ -100,6 +112,7 @@ export class CrewInviteLinksService {
     private readonly conversations: ConversationsService,
     private readonly collaboration: CrewCollaborationService,
     private readonly notifications: NotificationService,
+    private readonly qualifications: CrewQualificationsService,
   ) {}
 
   /** Mint a link. The raw token is returned here and nowhere else, ever. */
@@ -110,6 +123,8 @@ export class CrewInviteLinksService {
   ): Promise<CrewInviteLinkDTO & { token: string }> {
     await this.requireCrew(crewId);
     return this.prisma.$transaction(async (tx) => {
+      if (input.taskId)
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:ownership:${crewId}`})::bigint)`;
       const actor = await this.authorization.require(
         crewId,
         userId,
@@ -133,6 +148,22 @@ export class CrewInviteLinksService {
         );
       }
 
+      let target: Awaited<ReturnType<typeof lockTaskInviteTarget>> | null =
+        null;
+      if (input.taskId) {
+        await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+        target = await lockTaskInviteTarget(
+          tx,
+          crewId,
+          input.taskId,
+          input.taskVersion!,
+        );
+        if (await tx.crewPosition.count({ where: { taskId: target.id } }))
+          throw new ConflictException(
+            'This task uses recruitment. Assign an approved applicant.',
+          );
+        taskInviteOffer(target);
+      }
       const { token, tokenHash } = generateInviteToken();
       const link = await tx.crewInviteLink.create({
         data: {
@@ -141,7 +172,9 @@ export class CrewInviteLinksService {
           tokenHash,
           policyKeys,
           createdByUserId: userId,
-          maxUses: input.maxUses ?? null,
+          maxUses: target ? 1 : (input.maxUses ?? null),
+          taskId: target?.id ?? null,
+          taskVersion: target?.version ?? null,
           expiresAt:
             input.expiresInDays == null
               ? null
@@ -157,6 +190,8 @@ export class CrewInviteLinksService {
           after: {
             linkId: link.id,
             kind,
+            taskId: link.taskId,
+            taskVersion: link.taskVersion,
             policyKeys,
             maxUses: link.maxUses,
             expiresAt: link.expiresAt?.toISOString() ?? null,
@@ -231,7 +266,7 @@ export class CrewInviteLinksService {
   }
 
   /** What a visitor may see before signing in — crew identity and nothing else. */
-  async preview(link: CrewInviteLink) {
+  async preview(link: CrewInviteLink, user?: AuthUser) {
     const crew = await this.prisma.crew.findFirst({
       where: { id: link.crewId, deletedAt: null },
       select: { id: true, name: true, logo: true, tagline: true },
@@ -244,6 +279,47 @@ export class CrewInviteLinksService {
           },
         })
       : 0;
+    let task: ReturnType<typeof taskInviteOffer> | null = null;
+    let status = crew ? crewInviteLinkState(link) : 'expired';
+    let acceptedHref: string | null = null;
+    if (crew && link.taskId) {
+      if (user) {
+        const redemption =
+          await this.prisma.crewInviteLinkRedemption.findUnique({
+            where: { linkId_userId: { linkId: link.id, userId: user.userId } },
+          });
+        if (
+          redemption?.memberId &&
+          (await this.prisma.crewMember.findFirst({
+            where: {
+              id: redemption.memberId,
+              crewId: link.crewId,
+              userId: user.userId,
+              status: 'active',
+              removedAt: null,
+            },
+            select: { id: true },
+          }))
+        )
+          acceptedHref = `/crews/${link.crewId}/workspace?tab=tasks&task=${link.taskId}`;
+      }
+      if (status === 'active' && !acceptedHref) {
+        const target = await this.prisma.crewTask.findFirst({
+          where: { id: link.taskId, crewId: link.crewId, deletedAt: null },
+          include: { assignees: true, workflowState: true },
+        });
+        if (
+          !target ||
+          target.version !== link.taskVersion ||
+          target.assignees.length ||
+          ['submitted', 'approved', 'cancelled'].includes(
+            target.workflowState.semantic,
+          )
+        )
+          status = 'expired';
+        else task = taskInviteOffer(target);
+      }
+    }
     return {
       scope:
         link.kind === CrewInviteLinkKind.community
@@ -256,7 +332,9 @@ export class CrewInviteLinksService {
       memberCount,
       // A crew that was deleted after the link went out reads as expired
       // rather than leaking that the id ever existed.
-      status: crew ? crewInviteLinkState(link) : 'expired',
+      status,
+      task,
+      acceptedHref,
       expiresAt: link.expiresAt?.toISOString() ?? null,
     };
   }
@@ -268,6 +346,7 @@ export class CrewInviteLinksService {
   async accept(
     link: CrewInviteLink,
     user: AuthUser,
+    cookie?: string,
   ): Promise<
     | {
         scope: 'crew';
@@ -284,6 +363,7 @@ export class CrewInviteLinksService {
         channelHref: string;
       }
   > {
+    if (link.taskId) return this.acceptTask(link, user, cookie);
     if (link.kind === CrewInviteLinkKind.community) {
       return this.acceptCommunity(link, user);
     }
@@ -425,6 +505,185 @@ export class CrewInviteLinksService {
     };
   }
 
+  /** Task assignment, admission, redemption and durable alert commit together. */
+  private async acceptTask(
+    link: CrewInviteLink,
+    user: AuthUser,
+    cookie?: string,
+  ) {
+    const crew = await this.requireCrew(link.crewId);
+    const prior = await this.prisma.crewInviteLinkRedemption.findUnique({
+      where: { linkId_userId: { linkId: link.id, userId: user.userId } },
+    });
+    // Verify external qualifications before taking database locks. The task
+    // version is checked again under the shared task-write lock below.
+    let verifiedVersion: number | null = null;
+    if (!prior) {
+      const snapshot = await this.prisma.crewTask.findFirst({
+        where: { id: link.taskId!, crewId: link.crewId, deletedAt: null },
+      });
+      if (!snapshot || snapshot.version !== link.taskVersion)
+        throw new ConflictException(
+          'This task changed. Ask for a new invitation.',
+        );
+      const requirements = z
+        .object({
+          requiredSkills: z.array(z.string().trim().min(1)).default([]),
+        })
+        .safeParse(snapshot.metadata);
+      if (!requirements.success)
+        throw new ConflictException('The task requirements are incomplete.');
+      await this.qualifications.assertEligible(user.userId, cookie, {
+        experienceLevel: 'any',
+        requiredSkills: requirements.data.requiredSkills,
+      });
+      verifiedVersion = snapshot.version;
+    }
+    const pendingMessages: Message[] = [];
+    const memberId = await this.prisma.$transaction(async (tx) => {
+      // Match task approval and member removal lock ordering.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:ownership:${link.crewId}`})::bigint)`;
+      await tx.$queryRaw`SELECT id FROM crew_invite_links WHERE id = ${link.id}::uuid FOR UPDATE`;
+      const current = await tx.crewInviteLink.findUnique({
+        where: { id: link.id },
+      });
+      if (
+        !current ||
+        current.crewId !== link.crewId ||
+        current.taskId !== link.taskId ||
+        current.taskVersion !== link.taskVersion ||
+        current.kind !== CrewInviteLinkKind.member ||
+        current.maxUses !== 1
+      )
+        throw new ConflictException('This task invitation is no longer valid.');
+      const already = await tx.crewInviteLinkRedemption.findUnique({
+        where: { linkId_userId: { linkId: current.id, userId: user.userId } },
+      });
+      if (already) {
+        const member = await tx.crewMember.findFirst({
+          where: {
+            id: already.memberId ?? '',
+            crewId: current.crewId,
+            userId: user.userId,
+            status: CrewMembershipStatus.active,
+            removedAt: null,
+          },
+        });
+        if (!member)
+          throw new ForbiddenException('Active Crew membership is required.');
+        return member.id;
+      }
+      if (crewInviteLinkState(current) !== 'active')
+        throw new GoneException('This task invitation is no longer active.');
+      if (verifiedVersion === null || verifiedVersion !== current.taskVersion)
+        throw new ConflictException(
+          'Please reopen the invitation to verify the task requirements.',
+        );
+      const task = await lockTaskInviteTarget(
+        tx,
+        current.crewId,
+        current.taskId!,
+        verifiedVersion,
+      );
+      await this.authorization.require(
+        current.crewId,
+        current.createdByUserId,
+        'members.invite',
+        tx,
+      );
+      await this.authorization.require(
+        current.crewId,
+        current.createdByUserId,
+        'tasks.manage',
+        tx,
+      );
+      if (current.policyKeys.length)
+        await this.authorization.require(
+          current.crewId,
+          current.createdByUserId,
+          'members.permissions.manage',
+          tx,
+        );
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:invite-membership:${current.crewId}:${user.userId}`}, 0))`;
+      const existing = await tx.crewMember.findFirst({
+        where: { crewId: current.crewId, userId: user.userId },
+      });
+      if (
+        existing &&
+        (existing.status !== CrewMembershipStatus.active || existing.removedAt)
+      )
+        throw new ForbiddenException(
+          'Ask the Crew owner to restore your membership before accepting.',
+        );
+      let recipientId = existing?.id;
+      if (!recipientId) {
+        const joined = await joinCrewInTransaction(
+          tx,
+          {
+            conversations: this.conversations,
+            collaboration: this.collaboration,
+          },
+          {
+            crewId: current.crewId,
+            userId: user.userId,
+            policyKeys: current.policyKeys,
+            grantedByUserId: current.createdByUserId,
+            action: 'member.joined.task_invite_link',
+            auditAfter: { linkId: current.id, taskId: task.id },
+          },
+        );
+        recipientId = joined.memberId;
+        pendingMessages.push(joined.systemMessage);
+      }
+      await claimTaskInviteTarget(
+        tx,
+        task,
+        recipientId,
+        user.userId,
+        current.createdByUserId,
+        current.id,
+      );
+      await tx.crewInviteLinkRedemption.create({
+        data: {
+          linkId: current.id,
+          userId: user.userId,
+          memberId: recipientId,
+        },
+      });
+      await tx.crewInviteLink.update({
+        where: { id: current.id },
+        data: { useCount: { increment: 1 } },
+      });
+      await this.notifications.send(
+        {
+          userId: current.createdByUserId,
+          type: 'crew.invitation.accepted',
+          title: 'Task invitation accepted',
+          body: `A creator accepted "${task.title}".`,
+          meta: {
+            crewId: current.crewId,
+            taskId: task.id,
+            userId: user.userId,
+            inviteLinkId: current.id,
+            deeplink: `/crews/${current.crewId}/workspace?tab=tasks&task=${task.id}`,
+          },
+          idempotencyKey: `crew.task_invite.accepted:${current.id}:${user.userId}`,
+        },
+        tx,
+      );
+      return recipientId;
+    });
+    for (const message of pendingMessages)
+      await this.conversations.broadcastMessage(message);
+    return {
+      scope: 'crew' as const,
+      crewId: crew.id,
+      memberId,
+      targetName: crew.name,
+      workspaceHref: `/crews/${crew.id}/workspace?tab=tasks&task=${link.taskId}`,
+    };
+  }
+
   /** Redeem a community link without creating or mutating a crew membership. */
   private async acceptCommunity(
     link: CrewInviteLink,
@@ -534,3 +793,45 @@ export class CrewInviteLinksService {
 }
 
 export type { Prisma };
+
+/** Only the terms the bearer is being asked to accept; no private canvas/assets. */
+function taskInviteOffer(task: {
+  id: string;
+  version: number;
+  title: string;
+  description: string | null;
+  dueAt: Date | null;
+  metadata: Prisma.JsonValue;
+}) {
+  const parsed = z
+    .object({
+      requiredSkills: z.array(z.string().trim().min(1)).default([]),
+      compensation: z.object({
+        paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
+        rewardUsdMinor: z.number().int().nonnegative().safe().nullable(),
+        profitShareBps: z
+          .number()
+          .int()
+          .min(0)
+          .max(10000)
+          .nullable()
+          .optional(),
+      }),
+    })
+    .safeParse(task.metadata);
+  if (!parsed.success)
+    throw new ConflictException(
+      'The task terms are incomplete. Ask the producer to update the task.',
+    );
+  return {
+    id: task.id,
+    version: task.version,
+    title: task.title,
+    description: task.description,
+    dueAt: task.dueAt?.toISOString() ?? null,
+    requiredSkills: parsed.data.requiredSkills,
+    paymentTerms: parsed.data.compensation.paymentTerms ?? null,
+    rewardUsdMinor: parsed.data.compensation.rewardUsdMinor,
+    profitShareBps: parsed.data.compensation.profitShareBps ?? null,
+  };
+}

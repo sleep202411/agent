@@ -248,7 +248,8 @@ it("lists only participant cases and paginates using case cursors", async () => 
   expect(h.get.mock.calls[1][1].query).toEqual({
     limit: 20,
     beforeId: "case-a",
-    view: "initiated",
+    view: "all",
+    lifecycle: "all",
   });
 });
 it.each([true, false])("does not query while unauthenticated/loading (%s)", async (loading) => {
@@ -336,12 +337,43 @@ it("switches case tabs with a fresh cursor and independent query", async () => {
     )
   );
   await flush();
-  expect(h.get.mock.calls[0][1].query.view).toBe("initiated");
+  expect(h.get.mock.calls[0][1].query.view).toBe("all");
   await click("responses");
   await flush();
   expect(h.get.mock.calls.at(-1)![1].query).toEqual({
     limit: 20,
     view: "responses",
+    lifecycle: "all",
     beforeId: undefined,
   });
+});
+
+it("changes lifecycle without carrying the previous page cursor", async () => {
+  h.get.mockResolvedValue({ items: [row], nextBeforeId: "case-a" });
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={qc}>
+        <PrivateCasesScreen />
+      </QueryClientProvider>
+    )
+  );
+  await flush();
+  await click("moreCases");
+  expect(h.get.mock.calls.at(-1)![1].query.beforeId).toBe("case-a");
+  await click("lifecycle.archived");
+  expect(h.get.mock.calls.at(-1)![1].query).toEqual({
+    limit: 20,
+    view: "all",
+    lifecycle: "archived",
+    beforeId: undefined,
+  });
+  await click("responses");
+  expect(h.get.mock.calls.at(-1)![1].query).toEqual({
+    limit: 20,
+    view: "responses",
+    lifecycle: "archived",
+    beforeId: undefined,
+  });
+  await click("lifecycle.active");
+  expect(h.get.mock.calls.at(-1)![1].query.lifecycle).toBe("active");
 });

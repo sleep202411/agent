@@ -1,4 +1,4 @@
-import { SALARY_PERIODS } from '@repo/shared/crew';
+import { SALARY_PERIODS, TASK_PAYMENT_TERMS } from '@repo/shared/crew';
 import {
   Body,
   ConflictException,
@@ -29,6 +29,7 @@ export const ApplicationTermsInput = z
     feeAmount: z.string().regex(/^(0|[1-9][0-9]{0,15})$/),
     currency: z.enum(['USD', 'CNY']),
     feePeriod: z.enum(SALARY_PERIODS),
+    paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
     revenueShareBp: z.number().int().min(0).max(5000),
     shareBasis: z.string().trim().min(1).max(5000).nullable(),
   })
@@ -167,6 +168,7 @@ export class CrewApplicationTermsService {
           previous.feeAmount === BigInt(input.feeAmount) &&
           previous.currency === input.currency &&
           previous.feePeriod === input.feePeriod &&
+          (previous.paymentTerms ?? null) === (input.paymentTerms ?? null) &&
           previous.revenueShareBp === input.revenueShareBp &&
           previous.shareBasis === input.shareBasis
         )
@@ -189,6 +191,7 @@ export class CrewApplicationTermsService {
           feeAmount: BigInt(input.feeAmount),
           currency: input.currency,
           feePeriod: input.feePeriod,
+          paymentTerms: input.paymentTerms ?? null,
           revenueShareBp: input.revenueShareBp,
           shareBasis: input.shareBasis,
           proposedByUserId: userId,

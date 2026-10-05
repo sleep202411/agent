@@ -40,6 +40,18 @@ interface CrewInvitePreview {
   memberCount: number;
   status: "active" | "revoked" | "expired" | "exhausted";
   expiresAt: string | null;
+  acceptedHref?: string | null;
+  task?: {
+    id: string;
+    version: number;
+    title: string;
+    description: string | null;
+    dueAt: string | null;
+    requiredSkills: string[];
+    paymentTerms?: import("@repo/shared/crew").TaskPaymentTerms | null;
+    rewardUsdMinor: number | null;
+    profitShareBps: number | null;
+  } | null;
 }
 
 type CrewInviteAccepted =
@@ -90,6 +102,7 @@ export default function CrewInvitePage() {
 
 function CrewInviteSession({ token }: { token: string }) {
   const t = useTranslations("crewInvite");
+  const paymentT = useTranslations("taskPaymentTerms");
   const tc = useTranslations("crewCommunityInvite");
   const router = useRouter();
   const locale = useLocale() as Locale;
@@ -122,6 +135,15 @@ function CrewInviteSession({ token }: { token: string }) {
         const preview = unwrap(body);
         if (preview.scope !== "crew" && preview.scope !== "crew_community") {
           setView({ kind: "invalid" });
+          return;
+        }
+        if (preview.acceptedHref) {
+          setView({
+            kind: "joined",
+            scope: preview.scope,
+            crewName: preview.targetName,
+            destinationHref: preview.acceptedHref,
+          });
           return;
         }
         setView(
@@ -180,11 +202,11 @@ function CrewInviteSession({ token }: { token: string }) {
         promptSignIn();
         return;
       }
-      if (err instanceof CrewApiError && err.status === 403) {
+      if (err instanceof CrewApiError && err.status === 403 && !view.preview.task) {
         setView({ kind: "removed" });
         return;
       }
-      if (err instanceof CrewApiError && err.status === 409) {
+      if (err instanceof CrewApiError && err.status === 409 && !view.preview.task) {
         // Already a member through some other door — that is a success here.
         setView({
           kind: "joined",
@@ -276,6 +298,69 @@ function CrewInviteSession({ token }: { token: string }) {
                   : t("memberCount", { count: view.preview.memberCount })}
               </p>
             </div>
+            {view.preview.task ? (
+              <section
+                className="w-full space-y-4 rounded-xl bg-white/[0.04] p-4 text-left"
+                aria-label={t("taskOffer")}
+              >
+                <h2 className="break-words text-base font-semibold text-white">
+                  {view.preview.task.title}
+                </h2>
+                {view.preview.task.description ? (
+                  <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-white/70">
+                    {view.preview.task.description}
+                  </p>
+                ) : null}
+                <dl className="space-y-2 text-sm">
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <dt className="text-white/55">{t("taskReward")}</dt>
+                    <dd>
+                      {view.preview.task.rewardUsdMinor === null
+                        ? t("taskUnspecified")
+                        : new Intl.NumberFormat(locale, {
+                            style: "currency",
+                            currency: "USD",
+                          }).format(view.preview.task.rewardUsdMinor / 100)}
+                    </dd>
+                  </div>
+                  {view.preview.task.paymentTerms && (
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <dt className="text-white/55">{paymentT("label")}</dt>
+                      <dd>{paymentT(view.preview.task.paymentTerms)}</dd>
+                    </div>
+                  )}
+                  {view.preview.task.profitShareBps !== null ? (
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <dt className="text-white/55">{t("taskShare")}</dt>
+                      <dd>{view.preview.task.profitShareBps / 100}%</dd>
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <dt className="text-white/55">{t("taskDeadline")}</dt>
+                    <dd>
+                      {view.preview.task.dueAt
+                        ? new Date(view.preview.task.dueAt).toLocaleString(locale)
+                        : t("taskUnspecified")}
+                    </dd>
+                  </div>
+                </dl>
+                {view.preview.task.requiredSkills.length ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-white/55">{t("taskSkills")}</p>
+                    <ul className="flex flex-wrap gap-2">
+                      {view.preview.task.requiredSkills.map((skill) => (
+                        <li key={skill} className="rounded-md bg-white/[0.06] px-2 py-1 text-xs">
+                          {skill}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                <p className="text-xs leading-relaxed text-white/55">
+                  {t("taskAcceptExplanation")}
+                </p>
+              </section>
+            ) : null}
             {error ? <p className="m-0 text-sm text-[#ff6b6b]">{error}</p> : null}
             <Button onClick={() => void join()} disabled={joining} className="h-11 w-full">
               {joining ? <IconLoader2 className="mr-2 size-4 animate-spin" /> : null}
@@ -283,9 +368,11 @@ function CrewInviteSession({ token }: { token: string }) {
                 ? view.preview.scope === "crew_community"
                   ? tc("joining")
                   : t("joining")
-                : view.preview.scope === "crew_community"
-                  ? tc("join")
-                  : t("join")}
+                : view.preview.task
+                  ? t("acceptTask")
+                  : view.preview.scope === "crew_community"
+                    ? tc("join")
+                    : t("join")}
             </Button>
           </div>
         )}

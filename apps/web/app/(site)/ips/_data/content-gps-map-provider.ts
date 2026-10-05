@@ -29,14 +29,22 @@ function assertFeatures(features: GpsMapFeature[], system: GpsViewport["coordina
 }
 function visual(feature: GpsMapFeature) {
   const node = document.createElement("span");
-  node.textContent = `${feature.selected ? "◆" : feature.matched ? "✓" : "○"} ${feature.selected ? feature.label : feature.count}`;
+  node.textContent = feature.virtualDestination
+    ? `◇ ${feature.label}`
+    : `${feature.selected ? "◆" : feature.matched ? "✓" : "○"} ${feature.selected ? feature.label : feature.count}`;
   node.className =
     "inline-flex min-h-11 min-w-11 max-w-48 items-center justify-center gap-1 rounded-full px-3 text-xs font-semibold shadow-lg";
   Object.assign(node.style, {
-    background: feature.selected ? "#fff" : feature.matched ? "#E52227" : "#333",
+    background: feature.virtualDestination
+      ? "#20252b"
+      : feature.selected
+        ? "#fff"
+        : feature.matched
+          ? "#E52227"
+          : "#333",
     color: feature.selected ? "#111" : "#fff",
     border: feature.selected ? "3px solid #E52227" : "1px solid #aaa",
-    whiteSpace: "nowrap",
+    whiteSpace: feature.virtualDestination ? "normal" : "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
   });

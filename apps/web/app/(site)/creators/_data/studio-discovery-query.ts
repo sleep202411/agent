@@ -4,6 +4,7 @@ import {
 } from "@repo/shared/creator-location";
 
 export type StudioDiscoveryDraft = {
+  location: string;
   text: string;
   category: string;
   basedCountry: string;
@@ -14,6 +15,7 @@ export type StudioDiscoveryDraft = {
   available: string;
 };
 export const EMPTY_STUDIO_QUERY: StudioDiscoveryDraft = {
+  location: "",
   text: "",
   category: "",
   basedCountry: "",
@@ -36,6 +38,7 @@ export function normalizeStudioQuery(draft: StudioDiscoveryDraft) {
   // Unrecognized URL boolean values must not silently relax the query.
   const bool = (value: string) => (value === "1" ? true : value === "" ? false : value);
   return CreatorDiscoveryQuerySchema.safeParse({
+    ...(draft.location ? { islandOnly: draft.location === "island" ? true : draft.location } : {}),
     text: draft.text,
     category: draft.category || null,
     basedIn: city(draft.basedCountry, draft.basedCity),
@@ -54,6 +57,7 @@ export function studioDraftFromQuery(
   query: CreatorDiscoveryRequest["query"]
 ): StudioDiscoveryDraft {
   return {
+    location: query.islandOnly ? "island" : "",
     text: query.text,
     category: query.category ?? "",
     basedCountry: query.basedIn?.countryCode ?? "",

@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   eligible: true,
+  push: vi.fn(),
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({
@@ -35,7 +36,7 @@ vi.mock("@/src/i18n/i18n", () => ({
         dictionaries[state.locale as keyof typeof dictionaries]
       ),
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: state.push }) }));
 vi.mock("posthog-js", () => ({ default: { capture: vi.fn(), captureException: vi.fn() } }));
 vi.mock("@/src/services/user", () => ({ uploadBanner: vi.fn() }));
 vi.mock("@/app/(site)/creators/_components/center/dialogs/level-apply-dialog", () => ({
@@ -57,11 +58,18 @@ afterEach(async () => {
   vi.clearAllMocks();
   state.eligible = true;
 });
-function Fixture({ edit = false }: { edit?: boolean }) {
+function Fixture({
+  edit = false,
+  onCreated,
+}: {
+  edit?: boolean;
+  onCreated?: (crew: { id: string }) => void;
+}) {
   const [open, setOpen] = useState(true);
   return (
     <CreateCrewDialog
       open={open}
+      onCreated={onCreated}
       onOpenChange={setOpen}
       initial={
         edit
@@ -135,4 +143,46 @@ it("shows the qualification notice instead of the form to an uncertified user", 
   expect(document.querySelector('a[href^="mailto:"]')).toBeTruthy();
   expect(document.querySelector("input")).toBeNull();
   expect(state.create).not.toHaveBeenCalled();
+});
+
+async function submitCreation(onCreated?: (crew: { id: string }) => void) {
+  state.locale = "en-US";
+  await act(async () => root.render(<Fixture onCreated={onCreated} />));
+  await act(async () => {
+    const name = document.querySelector("input:not([type=file])")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      name,
+      "New Crew"
+    );
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+    const description = document.querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      description,
+      "Production team"
+    );
+    description.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    const form = document.querySelector("form");
+    if (form) form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    else
+      Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent === en.crew.createSubmit)!
+        .click();
+  });
+}
+it("hands a successfully created Crew to task creation instead of setup", async () => {
+  const onCreated = vi.fn();
+  await submitCreation(onCreated);
+  expect(state.create).toHaveBeenCalledTimes(1);
+  expect(onCreated).not.toHaveBeenCalled();
+  await act(async () => state.create.mock.calls[0]![1].onSuccess({ id: "new-crew" }));
+  expect(onCreated).toHaveBeenCalledWith({ id: "new-crew" });
+  expect(state.push).not.toHaveBeenCalled();
+});
+it("retains setup navigation for ordinary Crew creation", async () => {
+  await submitCreation();
+  expect(state.create).toHaveBeenCalledTimes(1);
+  await act(async () => state.create.mock.calls[0]![1].onSuccess({ id: "new-crew" }));
+  expect(state.push).toHaveBeenCalledWith("/en-US/crews/new-crew/setup");
 });

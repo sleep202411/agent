@@ -1,4 +1,24 @@
 {
+  "taskEntry": {
+    "title": "建立任務",
+    "description": "為此任務選擇劇組，或建立新劇組。",
+    "crew": "劇組",
+    "choose": "選擇劇組",
+    "empty": "你尚未加入劇組。",
+    "cannotManage": "你沒有在此劇組建立任務的權限。",
+    "loading": "載入中…",
+    "retry": "重試",
+    "newCrew": "建立新劇組",
+    "continue": "繼續建立任務",
+    "signIn": "登入以建立任務"
+  },
+  "taskPaymentTerms": {
+    "unspecified": "未指定",
+    "label": "付款方式",
+    "monthly": "月結",
+    "half_upfront": "50%預付款",
+    "on_completion": "完成後結算"
+  },
   "common": {
     "appName": "FizzDragon Studio",
     "loading": "載入中...",
@@ -2250,7 +2270,7 @@
       "noMedia": "此作品尚無可播放的影片。"
     },
     "levels": {
-      "heading": "FD 認證",
+      "heading": "FizzDragon Passport",
       "emptyOwner": "尚未獲得 FD 等級。完成專案並提交評審即可解鎖徽章。",
       "emptyVisitor": "尚未獲得 FD 等級。",
       "apply": {
@@ -4612,7 +4632,9 @@
     "addMemberUserIdLabel": "用戶 ID",
     "addMemberUserIdHint": "輸入對方個人資料中顯示的用戶 ID。",
     "addMemberUserIdInvalid": "請輸入對方個人資料中顯示的有效用戶 ID。",
-    "addMemberLookupRetry": "重試查詢"
+    "addMemberLookupRetry": "重試查詢",
+    "taskInviteTitle": "邀請創作者",
+    "taskInviteIntro": "創作者接受此連結後，將以普通成員權限加入劇組並領取「{task}」。僅限一位創作者領取。"
   },
   "crewAssets": {
     "title": "劇組資產中心",
@@ -5153,6 +5175,7 @@
     "create": "建立",
     "initiateTask": "發起任務",
     "workbench": {
+      "recruiting": "招聘中",
       "title": "任務建立工作台",
       "assets": "項目資產庫",
       "assetsHelp": "本劇組共享的劇本、美術資產與音樂。",
@@ -5262,6 +5285,7 @@
       "emptyCanvas": "此影遊尚無可匯入場景。請在 Studio 中新增場景後重新預覽。",
       "publishJob": "招募創作者",
       "publishOpening": "招募創作者",
+      "createAndInvite": "建立並邀請",
       "unassignedOnly": "招募將清除已選負責人",
       "savedCount": "{count} 個已儲存任務",
       "recoverTemplates": "已儲存的範本草稿（{count}）",
@@ -5561,6 +5585,7 @@
     }
   },
   "crewTasks": {
+    "crewLabel": "劇組",
     "briefTooLong": "任務說明不能超過 10,000 個字元。",
     "deletion": {
       "label": "刪除任務",
@@ -9812,6 +9837,20 @@
           "title": "發放單已作廢",
           "body": "{grossAmount} 對應的 {amount} 已作廢，金額已重新可用。"
         }
+      },
+      "withdrawal": {
+        "processing": {
+          "title": "提現處理中",
+          "body": "FizzDragon 正在審核你的提現申請。請在「我的收益」查看進度。"
+        },
+        "paid": {
+          "title": "提現已支付",
+          "body": "FizzDragon 已記錄付款。請在「我的收益」查看詳情。"
+        },
+        "rejected": {
+          "title": "提現已駁回",
+          "body": "提現申請已駁回，預留收益已恢復可提現。請在「我的收益」查看原因。"
+        }
       }
     }
   },
@@ -9910,7 +9949,15 @@
     "alreadyMember": "你已經是這個劇組的成員了。",
     "removedTitle": "無法透過連結重新加入",
     "removedBody": "你已被移出該劇組，請讓管理者重新邀請你。",
-    "failed": "加入失敗，請重試。"
+    "failed": "加入失敗，請重試。",
+    "taskOffer": "任務邀請",
+    "taskReward": "報酬（美元）",
+    "taskShare": "收益分成",
+    "taskDeadline": "截止時間",
+    "taskSkills": "所需技能",
+    "taskUnspecified": "未設定",
+    "taskAcceptExplanation": "接受後，你將加入此劇組並領取該任務。",
+    "acceptTask": "接受任務"
   },
   "tv": {
     "checkingAccess": "正在查詢劇集權限…",
@@ -10215,6 +10262,19 @@
     "urgentLabel": "緊急"
   },
   "crewPersonalIncome": {
+    "incomeType": "收入類型",
+    "allTypes": "全部收入類型",
+    "allStatuses": "全部狀態",
+    "recordedFrom": "記錄開始日期（UTC）",
+    "recordedThrough": "記錄結束日期（UTC）",
+    "applyFilters": "套用篩選",
+    "invalidDateRange": "結束日期不得早於開始日期。",
+    "incomeCode": "收入編號",
+    "confirmedRevenue": "已確認分潤",
+    "revenueShare": "你的分潤比例：{percentage}%",
+    "revenueReference": "收益編號",
+    "distributionContract": "分潤合約",
+    "distributionReceipt": "分潤記錄編號",
     "title": "我的收入",
     "back": "劇組大廳",
     "description": "查看你在各劇組的收入記錄。",
@@ -10703,6 +10763,13 @@
     "history": "我的任務評價"
   },
   "crewCases": {
+    "allParticipants": "全部參與",
+    "caseStatusFilter": "案件狀態",
+    "lifecycle": {
+      "all": "全部案件",
+      "active": "處理中",
+      "archived": "已歸檔"
+    },
     "title": "爭議與調解中心",
     "privacy": "處理任務爭議、交付問題和申訴。僅案件當事人和授權客服可查看；離開劇組後仍可存取。",
     "loading": "載入中…",
@@ -11154,6 +11221,12 @@
     "remote": "可提供遠端服務"
   },
   "studioDiscovery": {
+    "manageLocation": "管理我的位置",
+    "searchCreators": "搜尋創作者",
+    "selectedCreator": "已選創作者",
+    "selectCreator": "選擇創作者",
+    "creatorSelectHint": "選擇創作者以查看其主頁。",
+    "islandEmpty": "沒有符合這些篩選條件的島上創作者。",
     "title": "尋找工作室",
     "description": "尋找提供本地內容和服務的創作者。了解他們的作品，再透過工作室主頁聯絡。",
     "allCreators": "全部創作者",
@@ -11200,7 +11273,12 @@
     "selectStudio": "選取工作室",
     "selectedStudio": "已選取工作室",
     "unpinned": "沒有公開城市圖釘",
-    "resultsChanged": "結果已變更，請重新整理以同步地圖和列表。"
+    "resultsChanged": "結果已變更，請重新整理以同步地圖和列表。",
+    "islandDescription": "虛擬社區 · 暫無公開地圖位置",
+    "islandBrowse": "瀏覽 FizzDragon Island",
+    "islandCount": "{count} 位符合條件的創作者",
+    "viewCreator": "查看創作者主頁",
+    "islandLeave": "顯示所有位置"
   },
   "contentGpsMap": {
     "title": "IP地點",
@@ -11602,5 +11680,68 @@
     "reject": "拒絕",
     "closed": "此頻道暫不接受投稿。",
     "signIn": "登入後投稿影片"
+  },
+  "creatorWithdrawals": {
+    "title": "收益提現",
+    "description": "提現已確認的任務收益和平台確認的分潤收益。",
+    "withdraw": "提現",
+    "currency": "幣種",
+    "refresh": "重新整理",
+    "loading": "載入中…",
+    "available": "可提現",
+    "reserved": "等待付款",
+    "paid": "已支付",
+    "submitted": "提現申請已提交，可在下方查看進度。",
+    "history": "提現記錄",
+    "empty": "暫無提現申請。",
+    "date": "申請日期",
+    "amount": "提現金額",
+    "status": "狀態",
+    "details": "支付日期或原因",
+    "loadMore": "載入更多",
+    "formTitle": "申請提現",
+    "cancel": "取消",
+    "retry": "重試",
+    "percentage": "提現比例（%）",
+    "invalidPercentage": "請輸入 0.01–100%，且提現金額至少為 0.01。",
+    "bankHint": "提交時儲存銀行資料，之後可重複使用。FizzDragon 完成轉帳後會更新支付狀態。",
+    "retryHint": "系統可能已收到申請，重試會傳送同一申請，不會重複建立。",
+    "submit": "提交提現申請",
+    "submitting": "提交中…",
+    "submitFailed": "無法提交提現申請。",
+    "loadFailed": "無法載入已儲存的銀行資料。",
+    "reviewBalance": "關閉並重新整理餘額",
+    "states": {
+      "pending": "等待付款",
+      "processing": "處理中",
+      "paid": "已支付",
+      "rejected": "已拒絕",
+      "cancelled": "已取消"
+    },
+    "bank": {
+      "fullName": "收款人姓名",
+      "accountNumber": "銀行帳號",
+      "address": "收款人地址",
+      "swift": "SWIFT / BIC",
+      "branchAddress": "銀行分行地址"
+    }
+  },
+  "creatorDeviceCity": {
+    "consent": "使用裝置位置推薦城市。此次查詢會將座標傳送至所在區域的地圖服務商，FizzDragon 不會儲存座標。",
+    "locate": "使用裝置位置",
+    "check": "查看查詢結果",
+    "unsupported": "裝置定位需要支援的瀏覽器和安全連線。您可以手動填寫城市。",
+    "denied": "定位權限被拒絕。您可以手動填寫城市。",
+    "unavailable": "無法取得裝置位置。請重試或手動填寫城市。",
+    "loading": "正在尋找城市…",
+    "suggestion": "推薦城市：{city}，{country}",
+    "confirmHint": "僅在此處為您的工作室所在地時確認。之後仍需儲存資料；是否在地圖上展示由您另行選擇。",
+    "confirm": "使用此城市",
+    "dismiss": "略過",
+    "completed": "未找到明確的城市。請手動填寫。",
+    "missing": "沒有查詢記錄。您可以再次請求裝置定位。",
+    "expired": "推薦結果已過期。請重新查詢或手動填寫城市。",
+    "dispatched": "查詢仍在進行，請稍後查看結果。",
+    "uncertain": "無法確認查詢結果。請手動填寫城市，或主動發起新的查詢。"
   }
 }

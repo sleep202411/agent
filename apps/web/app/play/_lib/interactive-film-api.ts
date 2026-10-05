@@ -188,6 +188,14 @@ export async function loadPublishedInteractiveFilm(
   const document = await downloadReleaseDocument(fetcher, game.manifestUrl);
 
   if (!isExperienceGameManifest(document)) {
+    // A standalone release has no named chapter slots. Old shared chapter
+    // links must not silently open different content after a release changes.
+    if (options.chapterId) {
+      throw new InteractiveFilmLoadError(
+        "CHAPTER_NOT_FOUND",
+        `This release has no chapter ${options.chapterId}.`
+      );
+    }
     return {
       game,
       manifest: verifyRuntimeManifest(document, {

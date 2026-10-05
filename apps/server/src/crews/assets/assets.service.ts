@@ -1,4 +1,5 @@
 import { crewStorageUsage, lockCrewStorage } from './storage-quota';
+import { requireNoTaskContractReferences } from './task-contract-retention';
 import {
   BadRequestException,
   ConflictException,
@@ -1153,6 +1154,10 @@ export class CrewAssetsService {
         node.kind === CrewAssetNodeKind.folder
           ? await this.collectDescendantIds(tx, crewId, node.id)
           : [];
+      await requireNoTaskContractReferences(tx, crewId, [
+        node.id,
+        ...descendantIds,
+      ]);
       if (descendantIds.length > 0) {
         await tx.crewAssetNode.updateMany({
           where: {
@@ -1274,6 +1279,7 @@ export class CrewAssetsService {
           ? await this.collectDescendantIds(tx, crewId, node.id)
           : [];
       const subtreeIds = [node.id, ...descendantIds];
+      await requireNoTaskContractReferences(tx, crewId, subtreeIds);
       const linkedNodes = await tx.crewAssetNode.findMany({
         where: { id: { in: subtreeIds }, crewId },
         select: { mediaAssetId: true },

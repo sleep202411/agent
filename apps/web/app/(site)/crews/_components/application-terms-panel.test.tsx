@@ -41,7 +41,10 @@ afterEach(async () => {
   qc.clear();
   host.remove();
 });
-async function render(reviewer = false) {
+async function render(
+  reviewer = false,
+  advertisedPaymentTerms?: "monthly" | "half_upfront" | "on_completion" | null
+) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={qc}>
@@ -50,6 +53,7 @@ async function render(reviewer = false) {
           applicantId="applicant"
           status="pending"
           reviewer={reviewer}
+          advertisedPaymentTerms={advertisedPaymentTerms}
           taskLinked
           onReady={h.ready}
         />
@@ -155,6 +159,7 @@ it("proposes the displayed base version with exact cash and share units", async 
       feeAmount: "12345",
       currency: CREW_CURRENCY,
       feePeriod: "project",
+      paymentTerms: null,
       revenueShareBp: 250,
       shareBasis: "Gross receipts under existing agreement",
     },
@@ -227,6 +232,7 @@ it("discards old values before starting a proposal against the latest version", 
       feeAmount: "20000",
       currency: CREW_CURRENCY,
       feePeriod: "project",
+      paymentTerms: null,
       revenueShareBp: 0,
       shareBasis: null,
     },
@@ -240,3 +246,41 @@ it("discards old values before starting a proposal against the latest version", 
     finish({});
   });
 });
+
+it("shows the offered payment timing to the applicant before confirmation", async () => {
+  h.get.mockResolvedValue({
+    currentVersion: 2,
+    items: [{ ...term, paymentTerms: "half_upfront" }],
+  });
+  await render();
+  expect(host.textContent).toContain("half_upfront");
+  expect(h.post).not.toHaveBeenCalled();
+});
+
+it.each([
+  [null, "monthly", "monthly"],
+  ["half_upfront", "monthly", "half_upfront"],
+  ["unspecified", "monthly", "unspecified"],
+] as const)(
+  "prefills %s existing timing with %s advertised timing as %s",
+  async (existing, advertised, expected) => {
+    h.user = "reviewer";
+    h.get.mockResolvedValue(
+      existing === null
+        ? { currentVersion: 0, items: [] }
+        : {
+            currentVersion: 2,
+            items: [{ ...term, paymentTerms: existing === "unspecified" ? null : existing }],
+          }
+    );
+    await render(true, advertised);
+    await act(async () => {
+      const details = host.querySelector("details")!;
+      details.open = true;
+      details.dispatchEvent(new Event("toggle"));
+    });
+    expect(host.querySelector('[role="combobox"][aria-label="label"]')?.textContent).toContain(
+      expected
+    );
+  }
+);

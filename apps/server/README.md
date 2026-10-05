@@ -180,6 +180,16 @@ BoldSign 确认 `Sent` 后，合同绑定成员可调用
 达到上限后 UI 会显示归档失败，管理员可调用
 `POST /crew-agreements/:agreementId/archive/retry` 重新入队。Webhook 不承担外部文件 IO。
 
+Agreement archives use the provider's separate private upload destination
+(`S3_PRIVATE_BUCKET` globally, `OSS_PRIVATE_BUCKET` in CN). The worker keeps
+the signed write URL server-side and verifies stored size/type before linking
+the restricted assets. Missing private storage fails the job; it never falls
+back to the media bucket. This applies to new archives only. Before rollout,
+operators should inventory existing `crew_agreement_archive` media placements
+and verify their buckets deny anonymous reads. Existing objects in public media
+storage need a separate migration and public-copy cleanup; this worker change
+does not relocate them.
+
 ## Story project publication gateway
 
 Authenticated Studio clients use the project gateway instead of Java's
@@ -615,3 +625,96 @@ dispatcher，不开 HTTP 监听。
 ### 认证
 
 所有请求需要透传用户的 `satoken` cookie。在代码中通过 `headers` 参数传递。
+
+### Creator manual withdrawals
+
+Creator withdrawals reserve confirmed task earnings in their original USD/CNY
+currency. FizzDragon finance records bank transfers made outside the platform;
+these endpoints do not initiate a payment or convert community points into cash.
+
+Before deploying this module, provision `CREATOR_PAYOUT_DETAILS_KEY` in the
+server-only regional secret: 32 cryptographically random bytes represented by
+64 hexadecimal characters. The international Key Vault mapping uses
+`creator-payout-details-key`; CN uses the existing `fizzdragon-server-secrets`.
+Startup fails if this key is absent or malformed. Preserve and back up the key
+with the database; replacing it without re-encrypting stored records makes saved
+bank details and withdrawal recipient snapshots unreadable. Never expose it to
+Web, Studio, admin-ui, logs, or source control.
+
+Admin access requires `creator.withdrawals.manage` and a matching site scope.
+Bank-detail reads are audited before details are returned. Payment transitions
+require a processing claim, current request version, and a transfer reference.
+
+### Creator device city suggestions
+
+`POST /creator-location/me/device-city` requires the authenticated owner, a UUID
+`requestId`, `consent: true`, device latitude/longitude and locale. A lookup only
+suggests a city: it does not save a profile, enable public discovery, or resolve
+public map coordinates. The creator must confirm the city, save their location
+profile, and separately choose map visibility. Manual city entry remains usable.
+
+Enable with `CREATOR_DEVICE_CITY_ENABLED=true` only after configuring
+`CREATOR_GPS_GEOCODING_REGION` (`global` or `cn`),
+`CREATOR_GPS_GEOCODING_KEY`, `CREATOR_DEVICE_CITY_DAILY_LIMIT` (provider-call
+budget, UTC day) and `CREATOR_DEVICE_CITY_MAX_IN_FLIGHT` (concurrent attempts).
+These are explicit **additional** budgets, separate from saved-city forward
+geocoding. Enabled misconfiguration fails startup. CN reserves two calls (GPS
+conversion and reverse lookup); global reserves one. Accounts are limited to
+five attempts per rolling hour. Providers have a bounded ten-second deadline;
+there are no automatic provider retries.
+
+Apply migration `20261005120000_creator_device_city` before starting this code.
+The private SQL ledger stores attempt metadata and city/country only. Coordinates
+are sent in the POST body and to the regional provider, never persisted by this
+feature. Keep request-body capture disabled in proxies/APM for this endpoint.
+City suggestions expire after ten minutes; the worker removes expired city data
+on its next one-minute sweep. Quota/replay metadata is retained. Owner-only
+`GET /creator-location/me/device-city/:requestId` recovers an interrupted response
+without dispatching another lookup; replaying the same UUID never calls a provider
+again. Uncertain attempts require an explicit new request or manual entry.
+
+Local validation uses mocked Google/Amap responses and a dedicated PostgreSQL
+fixture. Real device accuracy, provider credentials, regional availability and
+provider retention policies still need deployment-owner verification.
+
+### Private revenue-contract upload recovery
+
+Migration `20261005123000_revenue_contract_upload_recovery` adds the SQL-owned
+`crew_revenue_contract_uploads` queue; preserve it during schema reconciliation.
+The server records private placement before sending bytes. Publication and
+cleanup share an object-specific transaction lock. Successful publication removes
+the queue record atomically with the contract and audit. Cleanup rechecks contract
+references and permanently retires unreferenced uploads before deleting bytes;
+retired/missing attempts cannot subsequently become contract evidence.
+
+The service sweeps up to 50 due uploads every minute. Interrupted pending writes
+become eligible after 24 hours, well beyond the server-held two-minute write URL
+and 30-second PUT timeout. Failed requests attempt immediate safe cleanup;
+failed deletions remain durable and retry after 15 minutes. Concurrent replicas
+claim under the same lock. A database failure after object deletion is safe to
+retry. No signed URLs, document contents or bank information are stored in this
+queue. This recovers newly recorded uploads, not historical orphan objects that
+predate the queue. Live regional object-store deletion remains a release check.
+
+### Storyboard export rendering core (integration pending)
+
+`src/storyboard-export/local-video-renderer.ts` renders ordered local MP4/WebM
+clips with FFmpeg into H.264/AAC MP4. It preserves clip audio offsets, supplies
+silence for clips without audio, fits the requested even-sized output dimensions,
+and normalizes to 30 fps (duration rounds to the nearest frame). It accepts only
+owned local input filenames, refuses symlinks/network protocols, bounds input
+bytes/duration/clip count and output size, and cleans temporary output on failure.
+The successful caller must invoke `dispose()` after storing the result privately.
+Real-codec tests run with `STORYBOARD_RENDER_INTEGRATION=1`.
+
+This core has no HTTP route or export button yet. Before exposing it, implement
+authenticated durable job admission around the saved-storyboard capture,
+media retention and permission checks, bounded worker leases/cancellation,
+authorized source spooling, private output publication and protected download.
+Worker capacity/disk isolation and COM/CN deployment acceptance remain necessary.
+
+Saved export capture folds the persisted Yjs checkpoint and acknowledged tail
+under the document mutation lock, checks the expected sequence, rejects pending
+insert/delete dependencies, and projects saved shot order without rewriting the
+canvas. Media IDs/URLs in this projection are identity hints, not authorization
+or fetch capabilities; the admission path must resolve and pin canonical media.

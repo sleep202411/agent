@@ -27,6 +27,7 @@ export function OpeningDetails({
   embedded?: boolean;
 }) {
   const locale = useLocale();
+  const paymentT = useTranslations("taskPaymentTerms");
   const t = useTranslations("crewOpening");
   const common = useTranslations("common");
   const crewT = useTranslations("crew");
@@ -86,6 +87,11 @@ export function OpeningDetails({
                 .filter(Boolean)
                 .join(" · ")}
             </p>
+            {position.paymentTerms && (
+              <p>
+                {paymentT("label")}: {paymentT(position.paymentTerms)}
+              </p>
+            )}
             {salary && <p className="font-medium">{salary}</p>}
           </header>
           <div className="flex flex-wrap gap-3">

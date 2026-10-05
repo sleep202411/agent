@@ -10,6 +10,8 @@ export const ADMIN_PERMISSION_KEYS = {
   IpRead: 'ip.read',
   IpPublish: 'ip.publish',
   IpModerate: 'ip.moderate',
+  CreatorRevenueManage: 'creator.revenue.manage',
+  CreatorWithdrawalsManage: 'creator.withdrawals.manage',
   BillingRead: 'billing.read',
   BillingWrite: 'billing.write',
   AiModelOpsRead: 'ai_model_ops.read',
@@ -36,6 +38,15 @@ export type AdminRoleKey =
   (typeof ADMIN_ROLE_KEYS)[keyof typeof ADMIN_ROLE_KEYS];
 
 export const ADMIN_PERMISSION_CATALOG = [
+  {
+    key: ADMIN_PERMISSION_KEYS.CreatorRevenueManage,
+    description: 'Upload Crew contracts and allocate confirmed creator revenue',
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.CreatorWithdrawalsManage,
+    description:
+      'Review creator bank details and record manual withdrawal payments',
+  },
   { key: ADMIN_PERMISSION_KEYS.NewsRead, description: 'Read news and tags' },
   {
     key: ADMIN_PERMISSION_KEYS.NewsWrite,
@@ -134,6 +145,8 @@ export const ADMIN_ROLE_CATALOG: Array<{
     permissions: [
       ADMIN_PERMISSION_KEYS.CrewManage,
       ADMIN_PERMISSION_KEYS.CrewComputeReview,
+      ADMIN_PERMISSION_KEYS.CreatorWithdrawalsManage,
+      ADMIN_PERMISSION_KEYS.CreatorRevenueManage,
     ],
   },
   {

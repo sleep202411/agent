@@ -313,6 +313,7 @@ function MembersManagerView({
     <div className="min-w-0 space-y-3">
       {canManage && (
         <Tabs
+          className="min-w-0"
           value={invitationMode}
           onValueChange={(value) => setInvitationMode(value as "member" | "link")}
         >
@@ -330,7 +331,7 @@ function MembersManagerView({
               {t("inviteByLink")}
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="member">
+          <TabsContent value="member" className="min-w-0">
             <form
               className="flex flex-wrap items-center gap-2"
               onSubmit={(event) => {
@@ -372,7 +373,7 @@ function MembersManagerView({
               </Button>
             </form>
           </TabsContent>
-          <TabsContent value="link" className="space-y-3">
+          <TabsContent value="link" className="min-w-0 space-y-3">
             <p className="text-xs text-muted-foreground">
               {t("inviteLinkHint", {
                 scope: scope.kind === "workspace" ? t("thisTeam") : t("thisProject"),
@@ -380,7 +381,7 @@ function MembersManagerView({
             </p>
 
             {created && (
-              <div className="flex items-center gap-2 rounded-lg bg-input/30 px-2.5 py-1.5">
+              <div className="flex min-w-0 items-center gap-2 rounded-lg bg-input/30 px-2.5 py-1.5">
                 <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                   {inviteUrl(created.token)}
                 </code>

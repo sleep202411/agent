@@ -49,6 +49,112 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
     afterAll(async () => {
       await db?.$disconnect();
     });
+    it.each(['draft', 'frozen', 'single-release'] as const)(
+      'retains promotional media from a %s store listing',
+      async (kind) => {
+        const rollback = new Error('rollback store-listing fixture');
+        await expect(
+          db.$transaction(async (tx) => {
+            const referenced = randomUUID();
+            await tx.workspaceMember.create({
+              data: {
+                workspaceId,
+                userId: 'fixture',
+                role: 'owner',
+                status: 'active',
+              },
+            });
+            const project = await tx.storyProject.create({
+              data: {
+                workspaceId,
+                writeState: { create: {} },
+                title: 'Listing retention',
+                createdByUserId: 'fixture',
+                frameProfile: 'landscape_16_9',
+                members: {
+                  create: {
+                    userId: 'fixture',
+                    role: 'owner',
+                    status: 'active',
+                    grantedByUserId: 'fixture',
+                  },
+                },
+                ...(kind === 'draft'
+                  ? { storeListing: { screenshotAssetIds: [referenced] } }
+                  : {}),
+              },
+            });
+            if (kind === 'single-release') {
+              const revision = await tx.storyRevision.create({
+                data: {
+                  storyProjectId: project.id,
+                  number: 1,
+                  sourceDraftRevision: 1,
+                  schemaVersion: 'fixture',
+                  content: {},
+                  contentHash: 'a'.repeat(64),
+                  source: 'creator',
+                  createdByUserId: 'fixture',
+                },
+              });
+              const buildId = randomUUID();
+              const build = await tx.storyBuild.create({
+                data: {
+                  storyProjectId: project.id,
+                  sourceRevisionId: revision.id,
+                  buildNumber: 1,
+                  submissionKey: randomUUID(),
+                  requestFingerprint: 'a'.repeat(64),
+                  kind: 'production',
+                  id: buildId,
+                  status: 'ready',
+                  completedAt: new Date(),
+                  runtimeHash: 'a'.repeat(64),
+                  runtimeJson: {
+                    channel: 'production',
+                    buildId,
+                    gameId: project.id,
+                    contentVersion: buildId,
+                  },
+                  scope: { kind: 'full' },
+                  sourceDraftRevision: 1,
+                  videoSnapshotHash: 'a'.repeat(64),
+                  inputHash: 'a'.repeat(64),
+                  inputManifestHash: 'a'.repeat(64),
+                  createdByUserId: 'fixture',
+                },
+              });
+              await tx.storyExperienceDraftRelease.create({
+                data: {
+                  storyProjectId: project.id,
+                  buildId: build.id,
+                  gameId: project.id,
+                  contentVersion: build.id,
+                  requestHash: 'a'.repeat(64),
+                  requestedByUserId: 'fixture',
+                  listingSnapshot: { coverAssetId: referenced },
+                },
+              });
+            }
+            if (kind === 'frozen')
+              await tx.storyExperienceGameRelease.create({
+                data: {
+                  storyProjectId: project.id,
+                  gameId: project.id,
+                  contentVersion: randomUUID(),
+                  requestHash: 'a'.repeat(64),
+                  requestedByUserId: 'fixture',
+                  listingSnapshot: { listing: { trailerAssetId: referenced } },
+                },
+              });
+            expect(await savedProjectMediaReferences(tx, [referenced])).toEqual(
+              new Set([referenced]),
+            );
+            throw rollback;
+          }),
+        ).rejects.toBe(rollback);
+      },
+    );
     it('handles mixed non-CRDT references and unreferenced candidates', async () => {
       const referenced = randomUUID(),
         unused = randomUUID();

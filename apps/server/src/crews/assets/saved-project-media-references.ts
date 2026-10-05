@@ -24,6 +24,15 @@ export async function savedProjectMediaReferences(
     WHERE EXISTS (
       SELECT 1 FROM platform_projects p WHERE p.cover_asset_id = candidate.id::uuid
     ) OR EXISTS (
+      SELECT 1 FROM story_projects p
+      WHERE strpos(lower(p.store_listing::text), lower(candidate.id)) > 0
+    ) OR EXISTS (
+      SELECT 1 FROM story_experience_draft_releases r
+      WHERE strpos(lower(r.listing_snapshot::text), lower(candidate.id)) > 0
+    ) OR EXISTS (
+      SELECT 1 FROM story_experience_game_releases r
+      WHERE strpos(lower(r.listing_snapshot::text), lower(candidate.id)) > 0
+    ) OR EXISTS (
       SELECT 1 FROM ai_jobs j
       WHERE strpos(lower(j.reference_snapshot::text), lower(candidate.id)) > 0
          OR strpos(lower(j.input::text), lower(candidate.id)) > 0

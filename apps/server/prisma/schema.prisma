@@ -3585,7 +3585,6 @@ model Ip {
   contentGpsLocationRevisions IpContentGpsLocationRevision[]
   creationKey String? @map("creation_key") @db.VarChar(128)
   creationFingerprint String? @map("creation_fingerprint") @db.VarChar(64)
-  @@unique([createdById, creationKey], map: "ips_creator_creation_key_unique")
   submissionSettings IpChannelSubmissionSettings?
   incomingWorks IpChannelSubmission[] @relation("ChannelWorks")
   submittedToChannels IpChannelSubmission[] @relation("SubmittedWorks")
@@ -3659,6 +3658,7 @@ model Ip {
   likes                    IpLike[]
   publisherAssignments     IpPublisherAssignment[]
 
+  @@unique([createdById, creationKey], map: "ips_creator_creation_key_unique")
   /// Public slug uniqueness is locale-aware and enforced on
   /// IpLocalization by partial unique SQL.
   @@index([createdById, status, updatedAt(sort: Desc)], map: "ips_creator_recent_idx")
@@ -4889,6 +4889,7 @@ enum CrewAgreementArchiveJobStatus {
 }
 
 model Crew {
+  revenueContracts CrewRevenueContract[]
   expenseDrafts       CrewExpenseDraftRevision[]
   originatingIps      IpCrewOrigin[]
   likes               CrewLike[]
@@ -5142,6 +5143,7 @@ model CrewPosition {
   /// 'project' = single project fee (lump sum on completion).
   /// When `salaryNegotiable = true`, min/max are ignored and the UI
   /// shows "面议" (negotiable on application).
+  paymentTerms     String? @map("payment_terms") @db.VarChar(32)
   salaryPeriod     String? @map("salary_period") @db.VarChar(16)
   /// ISO 4217 currency code. cn cell allows only CNY; com cell allows
   /// the whitelist defined in `apps/server/src/crews/currency.ts`.
@@ -5365,6 +5367,10 @@ model CrewInvitation {
 /// at creation. Access granted on redemption is fixed when the link is minted,
 /// so a link can never widen someone's permissions after the fact.
 model CrewInviteLink {
+  /// Task links admit one member and claim this exact reviewed task version.
+  taskId          String?            @map("task_id") @db.Uuid
+  taskVersion     Int?               @map("task_version")
+  task            CrewTask?          @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: NoAction)
   id              String             @id @default(uuid(7)) @db.Uuid
   crewId          String             @map("crew_id")
   /// Member links enter the private workspace; community links enter only the
@@ -5387,6 +5393,7 @@ model CrewInviteLink {
   crew        Crew                       @relation(fields: [crewId], references: [id], onDelete: Cascade)
   redemptions CrewInviteLinkRedemption[]
 
+  @@index([taskId], map: "crew_invite_links_task_idx")
   @@index([crewId, kind, createdAt(sort: Desc)], map: "crew_invite_links_crew_kind_created_idx")
   @@map("crew_invite_links")
 }
@@ -5417,6 +5424,7 @@ model CrewInviteLinkRedemption {
 /// GitHub-Issue-like production unit. Its project/document are the editable
 /// task canvas; submissions point to immutable document versions and assets.
 model CrewTask {
+  inviteLinks          CrewInviteLink[]
   computeRequests CrewComputeRequest[]
   disputes CrewTaskDispute[]
   extensionRequests CrewTaskExtensionRequest[]
@@ -5945,6 +5953,9 @@ model CrewTaskSubmissionAsset {
 /// Immutable Crew compensation ledger, separate from compute and wallet credits.
 /// CNY/USD amounts are integer minor units. CrewPayout records settlement evidence.
 model CrewEarningEntry {
+  revenueDistributionId String? @map("revenue_distribution_id") @db.Uuid
+  revenueDistribution CrewRevenueDistribution? @relation(fields: [revenueDistributionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@unique([revenueDistributionId, userId], map: "crew_revenue_beneficiary_unique")
   amendmentId String? @unique(map: "crew_earning_amendment_unique") @map("amendment_id") @db.Uuid
   /// Required CNY/USD currency; amounts are integer minor units.
   currency         String                @db.VarChar(3)
@@ -5980,9 +5991,9 @@ model CrewEarningEntry {
   events            CrewEarningEvent[]
   payoutAllocations CrewPayoutAllocation[]
 
+  @@unique([id, crewId], name: "uniq_crew_earning_id_crew", map: "crew_earning_entries_id_crew_unique")
   // Original earnings retain a partial unique index in SQL; amendment entries use amendmentId.
   @@index([taskId, userId, sourceType], map: "crew_earning_entries_task_user_source_idx")
-  @@unique([id, crewId], name: "uniq_crew_earning_id_crew", map: "crew_earning_entries_id_crew_unique")
   @@index([crewId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_entries_crew_status_created_idx")
   @@index([crewId, sourceType, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_entries_crew_source_created_idx")
   @@index([userId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_entries_user_status_created_idx")
@@ -5997,6 +6008,8 @@ model CrewEarningEntry {
 /// Finance may record statutory withholding; paid allocations remain the
 /// anti-double-pay boundary.
 model CrewPayout {
+  platformWithdrawalId   String?            @map("platform_withdrawal_id") @db.Uuid
+  platformWithdrawal     CreatorWithdrawal? @relation(fields: [platformWithdrawalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   /// Required CNY/USD currency; amounts are integer minor units.
   currency               String            @db.VarChar(3)
   id                     String            @id @default(uuid(7)) @db.Uuid
@@ -6031,6 +6044,7 @@ model CrewPayout {
   @@index([crewId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_payouts_crew_status_created_idx")
   @@index([userId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_payouts_user_status_created_idx")
   @@index([crewMemberId, createdAt(sort: Desc)], map: "crew_payouts_member_created_idx")
+  @@index([platformWithdrawalId], map: "crew_payouts_platform_withdrawal_idx")
   @@map("crew_payouts")
 }
 
@@ -10495,13 +10509,13 @@ model AiActorUse {
   @@map("ai_actor_uses")
 }
 
-
 model IpChannelSubmissionSettings {
   ipId String @id @map("ip_id") @db.Uuid
   open Boolean @default(false)
   updatedById String @map("updated_by_id") @db.VarChar(64)
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
   ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
   @@map("ip_channel_submission_settings")
 }
 
@@ -10517,6 +10531,7 @@ model IpChannelSubmission {
   reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
   channel Ip @relation("ChannelWorks", fields: [channelId], references: [id], onDelete: Cascade)
   work Ip @relation("SubmittedWorks", fields: [workId], references: [id], onDelete: Cascade)
+
   @@unique([channelId, workId])
   @@index([channelId, createdAt(sort: Desc), id(sort: Desc)], map: "ip_channel_submissions_recent")
   @@map("ip_channel_submissions")
@@ -10537,6 +10552,7 @@ model CrewTaskFeedback {
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   task          CrewTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
   submission    CrewTaskSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
   @@unique([taskId, authorUserId, subjectUserId], map: "crew_task_feedback_once")
   @@index([taskId, createdAt(sort: Desc), id(sort: Desc)], map: "crew_task_feedback_page")
   @@map("crew_task_feedback")
@@ -10552,12 +10568,14 @@ model CrewApplicationTerms {
   feeAmount BigInt @map("fee_amount")
   currency String @db.VarChar(3)
   feePeriod String @map("fee_period") @db.VarChar(16)
+  paymentTerms     String?         @map("payment_terms") @db.VarChar(32)
   revenueShareBp Int @map("revenue_share_bp")
   shareBasis String? @map("share_basis") @db.Text
   proposedByUserId String @map("proposed_by_user_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz(6)
   application CrewApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
   @@unique([applicationId, version])
   @@map("crew_application_terms")
 }
@@ -10574,6 +10592,7 @@ model CrewPositionInvitation {
   applicationId String? @map("application_id")
   position CrewPosition @relation(fields: [positionId], references: [id], onDelete: Restrict)
   application CrewApplication? @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+
   @@index([inviteeUserId, createdAt])
   @@index([positionId, inviteeUserId])
   @@map("crew_position_invitations")
@@ -10592,6 +10611,7 @@ model CrewApplicationInterviewEvent {
   message String @db.Text
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   application CrewApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+
   @@unique([applicationId, version])
   @@unique([applicationId, requestKey])
   @@map("crew_application_interview_events")
@@ -10612,6 +10632,7 @@ model CrewTaskExtensionRequest {
   decidedAt DateTime? @map("decided_at") @db.Timestamptz(6)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   task CrewTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
   @@index([taskId, createdAt, id])
   @@map("crew_task_extension_requests")
 }
@@ -10630,6 +10651,7 @@ model CrewTaskDispute {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   task CrewTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
   events CrewTaskDisputeEvent[]
+
   @@index([openedByUserId, createdAt, id])
   @@index([respondentUserId, createdAt, id])
   @@index([status, createdAt, id])
@@ -10650,6 +10672,7 @@ model CrewTaskDisputeEvent {
   submissionIds String[] @default([]) @map("submission_ids") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   dispute CrewTaskDispute @relation(fields: [disputeId], references: [id], onDelete: Restrict)
+
   @@unique([disputeId, version])
   @@unique([disputeId, requestKey])
   @@map("crew_task_dispute_events")
@@ -10668,6 +10691,7 @@ model CrewDisputeAttachment {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   dispute CrewTaskDispute @relation(fields: [disputeId], references: [id], onDelete: Restrict)
   mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
   @@index([disputeId, uploaderUserId, createdAt, id])
   @@map("crew_dispute_attachments")
 }
@@ -10705,6 +10729,7 @@ model CrewComputeRequest {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   requestKey String @map("request_key") @db.Uuid
   task CrewTask @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Restrict)
+
   @@unique([crewId, userId, requestKey], map: "crew_compute_requests_crew_user_key_unique")
   @@index([crewId, createdAt, id])
   @@index([taskId, userId, status])
@@ -10809,6 +10834,7 @@ model IpContentGpsGeocode {
   result Json? @db.JsonB
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
   @@index([ipId, locale, sourceFingerprint, analysisVersion, locationId, provider, createdAt(sort: Desc)], map: "gps_geocode_location")
   @@index([createdAt, status], map: "gps_geocode_quota")
   @@map("ip_content_gps_geocodes")
@@ -10824,6 +10850,7 @@ model CreatorLocationGeocode {
   result Json? @db.JsonB
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
   @@index([creatorId, version, provider, createdAt(sort: Desc)], map: "creator_geocode_revision")
   @@index([createdAt, status], map: "creator_geocode_quota")
   @@map("creator_location_geocodes")
@@ -10854,6 +10881,7 @@ model CrewSavedPosition {
   positionId String @map("position_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   position CrewPosition @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
   @@id([userId, positionId])
   @@index([userId, createdAt(sort: Desc)])
   @@map("crew_saved_positions")
@@ -10921,7 +10949,106 @@ model IpChannelVideoSubmission {
   reviewedById String? @map("reviewed_by_id") @db.VarChar(64)
   channel Ip @relation(fields: [channelId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   asset MediaAsset @relation(fields: [assetId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
   @@unique([channelId, assetId, submittedById], map: "channel_video_submission_unique")
   @@index([channelId, createdAt(sort: Desc), id(sort: Desc)], map: "ip_channel_video_submissions_recent")
   @@map("ip_channel_video_submissions")
+}
+
+// Platform-managed settlement of creator earnings; separate from Crew finance.
+model CreatorPayoutAccount {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  userId           String   @map("user_id") @db.VarChar(64)
+  version          Int      @default(1)
+  // Server-encrypted bank details. Never include in ordinary earnings/list DTOs.
+  detailsEncrypted String   @map("details_encrypted") @db.Text
+  displayLabel     String   @map("display_label") @db.VarChar(200)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([userId], map: "creator_payout_accounts_user_unique")
+  @@map("creator_payout_accounts")
+}
+
+model CreatorWithdrawal {
+  id                   String                   @id @default(uuid(7)) @db.Uuid
+  userId               String                   @map("user_id") @db.VarChar(64)
+  requestId            String                   @map("request_id") @db.Uuid
+  version              Int                      @default(1)
+  status               String                   @default("pending") @db.VarChar(16)
+  // Percentage of confirmed, unallocated task earnings in one currency.
+  percentageBps        Int                      @map("percentage_bps")
+  availableAmountMinor BigInt                   @map("available_amount_minor")
+  currency             String                   @db.VarChar(3)
+  amountMinor          BigInt                   @map("amount_minor")
+  // Freeze recipient details at submission; profile edits cannot redirect payment.
+  recipientEncrypted   String                   @map("recipient_encrypted") @db.Text
+  recipientLabel       String                   @map("recipient_label") @db.VarChar(200)
+  processingAdminId    String?                  @map("processing_admin_id") @db.VarChar(64)
+  paymentReference     String?                  @map("payment_reference") @db.VarChar(180)
+  paidAdminId          String?                  @map("paid_admin_id") @db.VarChar(64)
+  paidAt               DateTime?                @map("paid_at") @db.Timestamptz(6)
+  resolutionReason     String?                  @map("resolution_reason") @db.VarChar(2000)
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payouts              CrewPayout[]
+  events               CreatorWithdrawalEvent[]
+
+  @@unique([userId, requestId], map: "creator_withdrawals_request_unique")
+  @@index([userId, createdAt(sort: Desc), id], map: "creator_withdrawals_user_recent_idx")
+  @@index([status, createdAt, id], map: "creator_withdrawals_queue_idx")
+  @@map("creator_withdrawals")
+}
+
+model CreatorWithdrawalEvent {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  withdrawalId String            @map("withdrawal_id") @db.Uuid
+  actorType    String            @map("actor_type") @db.VarChar(16)
+  actorId      String            @map("actor_id") @db.VarChar(64)
+  action       String            @db.VarChar(32)
+  version      Int
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  withdrawal   CreatorWithdrawal @relation(fields: [withdrawalId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([withdrawalId, version], map: "creator_withdrawal_events_version_unique")
+  @@map("creator_withdrawal_events")
+}
+
+/// Private uploaded evidence for admin-confirmed Crew revenue. Never a public media URL.
+model CrewRevenueContract {
+  id String @id @default(uuid(7)) @db.Uuid
+  crewId String @map("crew_id")
+  filename String @db.VarChar(255)
+  storageProvider MediaStorageProvider @map("storage_provider")
+  bucket String @db.VarChar(255)
+  region String? @db.VarChar(128)
+  objectKey String @map("object_key") @db.VarChar(1024)
+  sizeBytes BigInt @map("size_bytes")
+  checksumSha256 String @map("checksum_sha256") @db.VarChar(64)
+  uploadedByAdminId String @map("uploaded_by_admin_id") @db.Uuid
+  verifiedAt DateTime @map("verified_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew Crew @relation(fields: [crewId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  distributions CrewRevenueDistribution[]
+  @@unique([crewId, checksumSha256], map: "crew_revenue_contract_file_unique")
+  @@map("crew_revenue_contracts")
+}
+
+/// Immutable receipt: one confirmed revenue event under a contract, all participants atomically credited.
+model CrewRevenueDistribution {
+  id String @id @default(uuid(7)) @db.Uuid
+  requestId String @unique @map("request_id") @db.Uuid
+  contractId String @map("contract_id") @db.Uuid
+  revenueReference String @map("revenue_reference") @db.VarChar(180)
+  title String @db.VarChar(180)
+  currency String @db.VarChar(3)
+  amountMinor BigInt @map("amount_minor")
+  requestHash String @map("request_hash") @db.VarChar(64)
+  allocations Json @db.JsonB
+  postedByAdminId String @map("posted_by_admin_id") @db.Uuid
+  postedAt DateTime @default(now()) @map("posted_at") @db.Timestamptz(6)
+  contract CrewRevenueContract @relation(fields: [contractId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  earnings CrewEarningEntry[]
+  @@unique([contractId, revenueReference], map: "crew_revenue_reference_unique")
+  @@map("crew_revenue_distributions")
 }

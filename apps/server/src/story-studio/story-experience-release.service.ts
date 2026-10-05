@@ -1,3 +1,4 @@
+import { lockMediaAssetReferences } from '../media/media-asset-lifecycle-lock';
 import {
   ConflictException,
   Injectable,
@@ -647,6 +648,7 @@ async function assertCandidateListingAssets(
   tx: Prisma.TransactionClient,
   snapshot: StoryPublicationListingSnapshot,
 ): Promise<void> {
+  await lockMediaAssetReferences(tx, listingAssetIds(snapshot));
   const expected = new Map<string, 'image' | 'video'>([
     [snapshot.coverAssetId, 'image'],
     ...snapshot.listing.screenshotAssetIds.map((id) => [id, 'image'] as const),

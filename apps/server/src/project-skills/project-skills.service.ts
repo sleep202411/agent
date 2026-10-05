@@ -368,48 +368,6 @@ export class ProjectSkillsService {
     requestId?: string,
   ) {
     const context = await this.requireManage(user.userId, ownerKind, projectId);
-    const skill = await this.prisma.skillCatalogItem.findFirst({
-      where: {
-        id: body.skillId,
-        status: 'published',
-        AND: [catalogAccessWhere(context)],
-      },
-      include: { latestPublishedVersion: true },
-    });
-    if (!skill?.latestPublishedVersion) {
-      throw new NotFoundException({
-        code: 'PROJECT_SKILL_NOT_FOUND',
-        msg: 'Skill not found in the published catalog.',
-      });
-    }
-    const version = body.versionId
-      ? await this.prisma.skillVersion.findFirst({
-          where: {
-            id: body.versionId,
-            skillId: body.skillId,
-            status: { in: ['published', 'deprecated'] },
-          },
-        })
-      : skill.latestPublishedVersion;
-    if (!version) {
-      throw new NotFoundException({
-        code: 'PROJECT_SKILL_VERSION_NOT_FOUND',
-        msg: 'The requested published Skill version was not found.',
-      });
-    }
-    this.assertCompatible(version.projectKinds, ownerKind);
-    const config = body.config ?? {};
-    this.assertConfig(version.configSchema, config);
-    const capabilities = stringArray(version.capabilities);
-    const defaultScopes = [...new Set(body.defaultScopes ?? [])];
-    for (const scope of defaultScopes) {
-      if (!capabilities.includes(scope)) {
-        throw new BadRequestException({
-          code: 'PROJECT_SKILL_SCOPE_INCOMPATIBLE',
-          msg: `${skill.name} does not support ${scope}.`,
-        });
-      }
-    }
     await this.ensureState(context);
 
     return this.executeIdempotent(
@@ -419,6 +377,48 @@ export class ProjectSkillsService {
       'install',
       body,
       async (tx) => {
+        const skill = await tx.skillCatalogItem.findFirst({
+          where: {
+            id: body.skillId,
+            status: 'published',
+            AND: [catalogAccessWhere(context)],
+          },
+          include: { latestPublishedVersion: true },
+        });
+        if (!skill?.latestPublishedVersion) {
+          throw new NotFoundException({
+            code: 'PROJECT_SKILL_NOT_FOUND',
+            msg: 'Skill not found in the published catalog.',
+          });
+        }
+        const version = body.versionId
+          ? await tx.skillVersion.findFirst({
+              where: {
+                id: body.versionId,
+                skillId: body.skillId,
+                status: { in: ['published', 'deprecated'] },
+              },
+            })
+          : skill.latestPublishedVersion;
+        if (!version) {
+          throw new NotFoundException({
+            code: 'PROJECT_SKILL_VERSION_NOT_FOUND',
+            msg: 'The requested published Skill version was not found.',
+          });
+        }
+        this.assertCompatible(version.projectKinds, ownerKind);
+        const config = body.config ?? {};
+        this.assertConfig(version.configSchema, config);
+        const capabilities = stringArray(version.capabilities);
+        const defaultScopes = [...new Set(body.defaultScopes ?? [])];
+        for (const scope of defaultScopes) {
+          if (!capabilities.includes(scope)) {
+            throw new BadRequestException({
+              code: 'PROJECT_SKILL_SCOPE_INCOMPATIBLE',
+              msg: `${skill.name} does not support ${scope}.`,
+            });
+          }
+        }
         const projectRevision = await this.bumpProjectRevision(
           tx,
           context,

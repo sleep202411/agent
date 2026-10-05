@@ -11,6 +11,7 @@ import { IpEngagementActions } from "./ip-engagement-actions";
 
 import { EpisodeFeedback } from "../../_components/episode-feedback";
 import { IpProductionStage } from "../../_components/ip-production-stage";
+import { IpReleaseLinks } from "../../_components/ip-release-links";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -641,6 +642,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
 
           <aside className="min-w-0 space-y-5 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:pr-1">
             <CreatorTeamCard ip={detailIp} bannerUrl={ipCoverUrl} t={t} />
+            {!detailIp.previewMode && <IpReleaseLinks ipId={detailIp.id} />}
             <EpisodePlaylist
               ipTitle={detailIp.title}
               episodes={detailIp.episodes}

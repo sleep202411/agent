@@ -356,6 +356,10 @@ export class CrewPayoutsService {
     detail: PayCrewPayoutInput | VoidCrewPayoutInput,
   ) {
     const current = await this.requirePayout(payoutId);
+    if (current.platformWithdrawalId)
+      throw new ConflictException(
+        'This payout belongs to a platform withdrawal. FizzDragon finance must process it through the withdrawal queue.',
+      );
     await this.authorization.require(
       current.crewId,
       userId,

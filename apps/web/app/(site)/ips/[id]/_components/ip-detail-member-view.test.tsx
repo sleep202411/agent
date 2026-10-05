@@ -104,6 +104,11 @@ vi.mock("../../_components/channel-submissions", () => ({ ChannelSubmissions: ()
 vi.mock("../../_components/ip-fan-community", () => ({ IpFanCommunity: () => null }));
 vi.mock("../../_components/episode-feedback", () => ({ EpisodeFeedback: () => null }));
 vi.mock("../../_components/ip-production-stage", () => ({ IpProductionStage: () => null }));
+vi.mock("../../_components/ip-release-links", () => ({
+  IpReleaseLinks: ({ ipId, editable = false }: { ipId: string; editable?: boolean }) => (
+    <div data-release-ip={ipId} data-release-editable={String(editable)} />
+  ),
+}));
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({ useUserDisplays: () => new Map() }));
 vi.mock("@/components/payment/community-recharge-dialog", () => ({
   CommunityRechargeDialog: ({ open }: { open: boolean }) => (open ? <div data-recharge /> : null),
@@ -155,6 +160,14 @@ function render() {
     )
   );
 }
+it("exposes the current IP's public release platforms to guests", () => {
+  state.user = null;
+  render();
+  expect(host.querySelector('[data-release-ip="ip"]')?.getAttribute("data-release-editable")).toBe(
+    "false"
+  );
+});
+
 it("withholds full media while access is pending even when no price is present", async () => {
   render();
   expect(state.player).toBeNull();

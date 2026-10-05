@@ -416,13 +416,18 @@ const app = `crew-delete-${randomUUID()}`;
     it.each(
       (['cover', 'deletion'] as const).flatMap((first) =>
         ['entry', 'pending'].flatMap((cleanup) =>
-          ['cover', 'candidate', 'story-cover', 'reference', 'job'].map(
-            (binding) => ({
-              first,
-              cleanup,
-              binding,
-            }),
-          ),
+          [
+            'cover',
+            'candidate',
+            'story-cover',
+            'store-listing',
+            'reference',
+            'job',
+          ].map((binding) => ({
+            first,
+            cleanup,
+            binding,
+          })),
         ),
       ),
     )(
@@ -456,6 +461,7 @@ const app = `crew-delete-${randomUUID()}`;
         if (
           binding === 'candidate' ||
           binding === 'story-cover' ||
+          binding === 'store-listing' ||
           binding === 'reference'
         )
           await db.workspaceMember.create({
@@ -469,6 +475,7 @@ const app = `crew-delete-${randomUUID()}`;
         const story =
           binding === 'candidate' ||
           binding === 'story-cover' ||
+          binding === 'store-listing' ||
           binding === 'reference'
             ? await db.storyProject.create({
                 data: {
@@ -604,9 +611,19 @@ const app = `crew-delete-${randomUUID()}`;
                   ],
                 })
               : story
-                ? binding === 'story-cover'
+                ? binding === 'story-cover' || binding === 'store-listing'
                   ? stories.patch({ userId: 'fixture' } as never, story.id, {
-                      coverAssetId: mediaId,
+                      ...(binding === 'store-listing'
+                        ? {
+                            storeListing: {
+                              description: 'Saved draft',
+                              tags: [],
+                              developer: '',
+                              trailerAssetId: null,
+                              screenshotAssetIds: [mediaId],
+                            },
+                          }
+                        : { coverAssetId: mediaId }),
                       expectedProjectVersion: story.version,
                     })
                   : stories.addCandidateAsset(
@@ -676,7 +693,11 @@ const app = `crew-delete-${randomUUID()}`;
               await db.storyProject.findUniqueOrThrow({
                 where: { id: story.id },
               }),
-            ).toMatchObject({ coverAssetId: mediaId });
+            ).toMatchObject(
+              binding === 'store-listing'
+                ? { storeListing: { screenshotAssetIds: [mediaId] } }
+                : { coverAssetId: mediaId },
+            );
           else if (binding === 'job') {
             expect(await db.aiJob.count({ where: { id: jobId } })).toBe(1);
             expect(
@@ -704,6 +725,13 @@ const app = `crew-delete-${randomUUID()}`;
                 where: { referenceSlotId: slot.id },
               }),
             ).toBe(0);
+          if (binding === 'store-listing' && story) {
+            expect(
+              await db.storyProject.findUniqueOrThrow({
+                where: { id: story.id },
+              }),
+            ).toMatchObject({ storeListing: null });
+          }
           expect(candidateCount).toBe(0);
           expect(stored.coverAssetId).toBeNull();
           expect(storage.deleteObject).toHaveBeenCalledTimes(1);

@@ -11,6 +11,7 @@ function setup() {
     $queryRaw: jest.fn().mockResolvedValue([]),
     mediaAsset: { count: jest.fn().mockResolvedValue(1) },
     mediaAssetVariant: {
+      findFirst: jest.fn().mockResolvedValue(null),
       upsert: jest.fn().mockResolvedValue({ id: 'poster' }),
     },
     mediaObjectPlacement: {
@@ -75,7 +76,7 @@ describe('VideoPosterService', () => {
       expect.objectContaining({
         body: bytes,
         contentType: 'image/jpeg',
-        key: expect.stringMatching(/^posters\/.+\/[a-f0-9]{20}\.jpg$/),
+        key: expect.stringMatching(/^posters\/.+\/[a-f0-9-]{36}\.jpg$/),
       }),
     );
     expect(tx.mediaAssetVariant.upsert).toHaveBeenCalledWith(
@@ -132,6 +133,28 @@ describe('VideoPosterService', () => {
       'Video is no longer available.',
     );
     expect(tx.mediaAssetVariant.upsert).not.toHaveBeenCalled();
+    expect(storage.deleteObject).toHaveBeenCalledWith({
+      bucket: 'cn-media',
+      region: 'cn-hangzhou',
+      storageKey: 'posters/result.jpg',
+    });
+  });
+  it('isolates uploaded bytes between overlapping attempts', async () => {
+    const { service, storage } = setup();
+    await Promise.all([service.generate(assetId), service.generate(assetId)]);
+    const keys = storage.upload.mock.calls.map(
+      ([input]) => (input as { key: string }).key,
+    );
+    expect(new Set(keys).size).toBe(2);
+  });
+  it('keeps the poster another worker published while extraction was running', async () => {
+    const { service, tx, storage } = setup();
+    tx.mediaAssetVariant.findFirst.mockResolvedValue({ id: 'winner' });
+    await expect(service.generate(assetId)).resolves.toEqual({
+      variantId: 'winner',
+    });
+    expect(tx.mediaAssetVariant.upsert).not.toHaveBeenCalled();
+    expect(tx.mediaObjectPlacement.upsert).not.toHaveBeenCalled();
     expect(storage.deleteObject).toHaveBeenCalledWith({
       bucket: 'cn-media',
       region: 'cn-hangzhou',

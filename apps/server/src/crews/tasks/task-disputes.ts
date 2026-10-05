@@ -63,6 +63,7 @@ const Page = z
   .object({
     beforeId: z.string().uuid().optional(),
     view: z.enum(['all', 'initiated', 'responses']).optional(),
+    lifecycle: z.enum(['all', 'active', 'archived']).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
   })
   .strict();
@@ -485,6 +486,8 @@ export class CrewTaskDisputesService {
                 ],
               }
         : {};
+    if (page.lifecycle === 'archived') scope.status = 'resolved';
+    if (page.lifecycle === 'active') scope.status = { not: 'resolved' };
     const cursor = page.beforeId
       ? await this.db.crewTaskDispute.findFirst({
           where: { AND: [scope, { id: page.beforeId }] },

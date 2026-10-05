@@ -428,6 +428,7 @@ function ApplicationReviewSession({
             applicantId={application.applicantId}
             status={application.status}
             taskLinked={Boolean(position.taskId)}
+            advertisedPaymentTerms={position.paymentTerms}
             reviewer
             onReady={setTermsReady}
           />

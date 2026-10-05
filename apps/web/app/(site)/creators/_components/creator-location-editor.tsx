@@ -1,5 +1,6 @@
 "use client";
 
+import { CreatorDeviceCity } from "./creator-device-city";
 import { CreatorCityGeocode } from "./creator-city-geocode";
 import type { CreatorLocationProfile } from "@repo/shared/creator-location";
 import { REGIONS, regionLabel } from "@repo/shared/regions";
@@ -99,6 +100,12 @@ function Editor({ userId }: { userId: string }) {
             <fieldset className="min-w-0 space-y-3">
               <legend className="mb-2 font-medium">{t("basedIn")}</legend>
               <p className="text-muted-foreground">{t("basedInHint")}</p>
+              <CreatorDeviceCity
+                key={`${userId}:${locale}:${state.result.version}`}
+                disabled={disabled}
+                confirm={(basedIn) => change({ ...profile, basedIn })}
+                onDenied={state.failure}
+              />
               {profile.basedIn ? (
                 <>
                   <CityFields

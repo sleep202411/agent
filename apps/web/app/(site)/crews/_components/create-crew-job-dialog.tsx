@@ -1,4 +1,5 @@
 "use client";
+import { TASK_PAYMENT_TERMS, type TaskPaymentTerms } from "@repo/shared/crew";
 import { RequiredSkillsSelect } from "./required-skills-select";
 
 /**
@@ -186,6 +187,10 @@ function PositionForm({
   );
 
   // ─── Step 3: Salary + Tenure + Lifecycle ────
+  const paymentT = useTranslations("taskPaymentTerms");
+  const [paymentTerms, setPaymentTerms] = useState<TaskPaymentTerms | null>(
+    editingPosition?.paymentTerms ?? null
+  );
   const [salaryPeriod, setSalaryPeriod] = useState<SalaryPeriod>(
     (editingPosition?.salary.period ?? "month") as SalaryPeriod
   );
@@ -253,6 +258,7 @@ function PositionForm({
     setRequiredSkills((current) =>
       current.length ? current : (taskToImport.requiredSkills ?? [])
     );
+    setPaymentTerms(taskToImport.paymentTerms ?? null);
     const amount = taskToImport.rewardUsdMinor;
     if (amount != null && !salaryMin && !salaryMax) {
       setSalaryCurrency("USD");
@@ -322,6 +328,7 @@ function PositionForm({
     employmentType,
     experienceLevel,
     requiredSkills,
+    paymentTerms,
     salary: salaryNegotiable
       ? { negotiable: true, period: null, currency: null, min: null, max: null }
       : {
@@ -657,6 +664,28 @@ function PositionForm({
           {/* ─── Step 3 ─── */}
           {step === 3 ? (
             <FieldGroup>
+              <Field>
+                <FieldLabel>{paymentT("label")}</FieldLabel>
+                <Select
+                  value={paymentTerms ?? "unspecified"}
+                  onValueChange={(value) =>
+                    setPaymentTerms(value === "unspecified" ? null : (value as TaskPaymentTerms))
+                  }
+                  disabled={submitting}
+                >
+                  <SelectTrigger className="w-full" aria-label={paymentT("label")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unspecified">{paymentT("unspecified")}</SelectItem>
+                    {TASK_PAYMENT_TERMS.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {paymentT(value)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
               <Field>
                 <FieldLabel>{t("createJobSalaryPeriodLabel")}</FieldLabel>
                 <div className={showCurrencyPicker ? "grid grid-cols-2 gap-2" : ""}>

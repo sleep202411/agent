@@ -16,6 +16,7 @@ vi.mock("./payout-history", () => ({
     return null;
   },
 }));
+vi.mock("./withdrawals", () => ({ CreatorWithdrawals: () => null }));
 const state = vi.hoisted(() => ({
   user: { id: "alice" } as { id: string } | null,
   currency: "",
@@ -130,12 +131,35 @@ it("hides cached private financial records on logout", () => {
   expect(container.textContent).not.toContain("900.00");
   expect(container.textContent).toContain("signInRequired");
 });
+it("renders confirmed revenue provenance and the creator's own share", () => {
+  const data = state.feed.data as { pages: { items: Record<string, unknown>[] }[] };
+  Object.assign(data.pages[0]!.items[0]!, {
+    crew: { id: "crew-a", name: "The City Wall" },
+    revenueDistribution: {
+      id: "distribution-1",
+      revenueReference: "OCT-001",
+      confirmedAt: "2026-10-05T00:00:00Z",
+      contract: { id: "contract-1", filename: "Distribution agreement.pdf" },
+      shareBps: 5000,
+    },
+  });
+  render();
+  expect(container.textContent).toContain("The City Wall");
+  expect(container.textContent).toContain("confirmedRevenue");
+  expect(container.textContent).toContain("revenueShare");
+  expect(container.textContent).toContain("revenueReference: OCT-001");
+  expect(container.textContent).toContain("distributionContract: Distribution agreement.pdf");
+  expect(container.textContent).toContain("distributionReceipt: distribution-1");
+  expect(container.querySelector('a[href*="contract-1"]')).toBeNull();
+});
 it.each(["en-US", "zh-CN", "zh-HK"])(
   "keeps site currency fixed in %s without a picker",
   (locale) => {
     state.locale = locale;
     render();
-    expect(container.querySelector('select, [role="combobox"]')).toBeNull();
+    expect(
+      container.querySelector('select[name="currency"], [role="combobox"][aria-label="currency"]')
+    ).toBeNull();
     expect(state.currency).toBe("USD");
     expect(state.payoutCurrency).toBe("USD");
     expect(container.textContent).toContain("USD");

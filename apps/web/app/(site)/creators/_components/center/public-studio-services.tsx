@@ -10,7 +10,7 @@ import type { Creator } from "../../_hooks/use-creator";
 import { usePublicStudioProfile } from "../../_hooks/use-public-studio-profile";
 import { ServicesTab } from "./tabs/services-tab";
 
-/** Keep the existing portfolio first; public service offers follow it. Owner
+/** Public service offers are independent of optional studio location metadata. Owner
  * editing remains at /profile/services and is never enabled by this panel. */
 export function PublicStudioServices({ creator }: { creator: Creator }) {
   const { user, isLoading } = useCurrentUser();
@@ -31,11 +31,10 @@ function Panel({ creator, viewerId }: { creator: Creator; viewerId: string | nul
   const query = usePublicStudioProfile(creator.id, viewerId);
   const place = (city: NonNullable<CreatorLocationProfile["basedIn"]>) =>
     `${city.city}, ${regionLabel(city.countryCode, locale)}`;
-  if (query.error instanceof ApiRequestError && query.error.status === 404) return null;
+  const unavailable = query.error instanceof ApiRequestError && query.error.status === 404;
   return (
-    <section id="services" aria-label={t("title")} className="mt-12 min-w-0 scroll-mt-24 space-y-4">
-      <h2 className="text-lg font-semibold">{t("title")}</h2>
-      {query.isFetching ? (
+    <section id="services" aria-label={t("title")} className="min-w-0 space-y-4">
+      {unavailable ? null : query.isFetching ? (
         <p role="status" className="text-sm text-muted-foreground">
           {t("loading")}
         </p>
@@ -75,9 +74,9 @@ function Panel({ creator, viewerId }: { creator: Creator; viewerId: string | nul
               </div>
             )}
           </dl>
-          <ServicesTab creator={creator} isOwner={false} />
         </>
       ) : null}
+      <ServicesTab creator={creator} isOwner={false} />
     </section>
   );
 }

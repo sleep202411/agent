@@ -2564,6 +2564,38 @@
         "character": "角色",
         "scene": "場景"
       }
+    },
+    "playback": {
+      "open": "播放",
+      "title": "分鏡播放",
+      "missing": "此分鏡暫無可播放的影片。請選擇其他分鏡或在畫布中新增影片。",
+      "position": "分鏡 {current} / {count}",
+      "previous": "上一個分鏡",
+      "next": "下一個分鏡",
+      "shots": "分鏡列表",
+      "shot": "分鏡 {number}",
+      "error": "無法播放此影片。請重試或選擇其他分鏡。",
+      "retry": "重試",
+      "loading": "正在載入影片…",
+      "video": "分鏡影片"
+    },
+    "drag": {
+      "title": "分鏡",
+      "mode": "拖入分鏡",
+      "instructions": "選擇畫布影片，拖到分鏡上，然後放下。",
+      "reorder": "拖動分鏡手柄調整順序",
+      "video": "影片",
+      "placed": "影片已新增至分鏡",
+      "add": "新增分鏡",
+      "collapse": "收起分鏡",
+      "expand": "展開分鏡",
+      "empty": "新增分鏡後，將畫布影片拖入。",
+      "shot": "分鏡 {number}",
+      "placeSelected": "放入所選影片",
+      "earlier": "將分鏡 {number} 前移",
+      "later": "將分鏡 {number} 後移",
+      "removeVideo": "移除分鏡 {number} 中的影片",
+      "activeMode": "拖曳模式已開啟 — 將畫布影片拖入下方分鏡"
     }
   },
   "invite": {

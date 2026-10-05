@@ -481,3 +481,14 @@ it("preserves an oversized task brief for editing and blocks advancing the publi
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("publicBriefTooLong");
   expect(state.create).not.toHaveBeenCalled();
 });
+
+it.each(["monthly", "half_upfront", "on_completion", null] as const)(
+  "preserves saved payment timing %s through editing",
+  async (paymentTerms) => {
+    await render(true, "crew", { ...position, paymentTerms });
+    await next();
+    await next();
+    await save();
+    expect(state.save.mock.calls[0][0].paymentTerms).toBe(paymentTerms);
+  }
+);

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import {
   MediaAssetVariantKind,
@@ -55,7 +55,8 @@ export class VideoPosterService {
     const checksumSha256 = createHash('sha256').update(body).digest('hex');
     const stored = await this.storage.upload({
       body,
-      key: `posters/${assetId}/${checksumSha256.slice(0, 20)}.jpg`,
+      // Each attempt owns its bytes; rollback must never delete another worker's poster.
+      key: `posters/${assetId}/${randomUUID()}.jpg`,
       contentType: 'image/jpeg',
     });
 
@@ -72,6 +73,20 @@ export class VideoPosterService {
         },
       });
       if (!available) return null;
+      const published = await tx.mediaAssetVariant.findFirst({
+        where: {
+          assetId,
+          variantKey: VIDEO_POSTER_VARIANT_KEY,
+          status: 'ready',
+          deletedAt: null,
+          placements: {
+            some: { role: 'primary', status: 'active', deletedAt: null },
+          },
+        },
+        select: { id: true },
+      });
+      if (published) return { variantId: published.id, reused: true };
+
       const variant = await tx.mediaAssetVariant.upsert({
         where: {
           assetId_variantKey: { assetId, variantKey: VIDEO_POSTER_VARIANT_KEY },
@@ -121,17 +136,17 @@ export class VideoPosterService {
           region: stored.region,
         },
       });
-      return { variantId: variant.id };
+      return { variantId: variant.id, reused: false };
     });
-    if (!result) {
+    if (!result || result.reused) {
       await this.storage.deleteObject({
         bucket: stored.bucket,
         region: stored.region,
         storageKey: stored.storagePath,
       });
-      throw new Error('Video is no longer available.');
     }
-    return result;
+    if (!result) throw new Error('Video is no longer available.');
+    return { variantId: result.variantId };
   }
 }
 

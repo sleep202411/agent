@@ -1,4 +1,5 @@
 "use client";
+import { TASK_PAYMENT_TERMS, type TaskPaymentTerms } from "@repo/shared/crew";
 
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,6 +22,7 @@ export function ApplicationTermsPanel(props: {
   applicantId: string;
   status: string;
   taskLinked?: boolean;
+  advertisedPaymentTerms?: TaskPaymentTerms | null;
   acceptOffer?: boolean;
   taskTitle?: string;
   dueAt?: string | null;
@@ -37,6 +39,7 @@ function TermsSession({
   applicantId,
   status,
   taskLinked,
+  advertisedPaymentTerms,
   acceptOffer,
   taskTitle,
   dueAt,
@@ -45,6 +48,8 @@ function TermsSession({
   userId,
 }: Parameters<typeof ApplicationTermsPanel>[0] & { userId: string }) {
   const t = useTranslations("crewTerms");
+  const paymentT = useTranslations("taskPaymentTerms");
+  const [paymentTerms, setPaymentTerms] = useState<TaskPaymentTerms | null>(null);
   const locale = useLocale();
   const query = useApplicationTerms(applicationId);
   const client = useQueryClient();
@@ -103,6 +108,7 @@ function TermsSession({
                 feeAmount: amount,
                 currency,
                 feePeriod: taskLinked ? "project" : period,
+                paymentTerms,
                 revenueShareBp: Number(shareBp),
                 shareBasis: BigInt(shareBp!) > 0n ? basis.trim() : null,
               },
@@ -177,6 +183,14 @@ function TermsSession({
                     </span>
                   </dd>
                 </div>
+                {latest.paymentTerms && (
+                  <div>
+                    <dt className="text-xs text-muted-foreground">{paymentT("label")}</dt>
+                    <dd className="mt-1 text-base font-semibold">
+                      {paymentT(latest.paymentTerms)}
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-xs text-muted-foreground">{t("share")}</dt>
                   <dd className="mt-1 text-base font-semibold">
@@ -208,8 +222,13 @@ function TermsSession({
           {reviewer && userId !== applicantId && status === "pending" && (
             <details
               onToggle={(event) => {
-                if (event.currentTarget.open)
-                  setDraftVersion((version) => version ?? query.data.currentVersion);
+                if (event.currentTarget.open && draftVersion === null) {
+                  setDraftVersion(query.data.currentVersion);
+                  // Existing agreed terms outrank today's advertised terms.
+                  setPaymentTerms(
+                    latest ? (latest.paymentTerms ?? null) : (advertisedPaymentTerms ?? null)
+                  );
+                }
               }}
             >
               <summary className="cursor-pointer text-sm">
@@ -232,6 +251,9 @@ function TermsSession({
                       setScope("");
                       setFee("");
                       setPeriod("project");
+                      setPaymentTerms(
+                        latest ? (latest.paymentTerms ?? null) : (advertisedPaymentTerms ?? null)
+                      );
                       setShare("0");
                       setBasis("");
                       setError("");
@@ -260,6 +282,26 @@ function TermsSession({
                     value={fee}
                     onChange={(e) => setFee(e.target.value)}
                   />
+                </label>
+                <label className="block text-sm">
+                  {paymentT("label")}
+                  <NativeSelect
+                    aria-label={paymentT("label")}
+                    value={paymentTerms ?? "unspecified"}
+                    onChange={(value) => {
+                      const term = TASK_PAYMENT_TERMS.find((item) => item === value);
+                      if (term || value === "unspecified") setPaymentTerms(term ?? null);
+                    }}
+                  >
+                    <NativeSelectOption value="unspecified">
+                      {paymentT("unspecified")}
+                    </NativeSelectOption>
+                    {TASK_PAYMENT_TERMS.map((value) => (
+                      <NativeSelectOption key={value} value={value}>
+                        {paymentT(value)}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
                 </label>
                 <label className="block text-sm">
                   {t("period")}

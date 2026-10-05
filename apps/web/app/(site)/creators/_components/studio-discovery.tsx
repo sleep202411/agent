@@ -73,8 +73,22 @@ export function StudioDiscovery({ factory }: { factory?: GpsMapFactory } = {}) {
             {t("creatorMode")}
           </span>
         </nav>
-        <h1 className="text-2xl font-semibold">{t("title")}</h1>
-        <p className="max-w-2xl text-sm text-muted-foreground">{t("description")}</p>
+        <h1 className="text-2xl font-semibold">
+          {normalized.success && normalized.data.islandOnly ? "FizzDragon Island" : t("title")}
+        </h1>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          {t(
+            normalized.success && normalized.data.islandOnly ? "islandDescription" : "description"
+          )}
+        </p>
+        {viewerId && !isLoading && (
+          <Link
+            href={localizePath("/profile/services", locale)}
+            className="inline-flex min-h-11 items-center rounded-lg bg-muted px-4 text-sm font-medium hover:bg-muted/80"
+          >
+            {t("manageLocation")}
+          </Link>
+        )}
       </header>
       <StudioControls
         key={`${viewerId ?? "guest"}:${locale}`}
@@ -279,7 +293,7 @@ function SearchForm({
       )}
       <div className="flex flex-wrap gap-3">
         <Button type="submit" className="min-h-11">
-          {t("search")}
+          {t(draft.location === "island" ? "searchCreators" : "search")}
         </Button>
         <Button
           type="button"
@@ -374,6 +388,11 @@ function StudioResults({
   const t = useTranslations("studioDiscovery");
   const locale = useLocale() as Locale;
   const { open } = useAuthDialog();
+  const router = useRouter();
+  const islandHref = localizePath(
+    `/creators/studios?${studioQueryUrl({ ...studioDraftFromQuery(query), location: "island", basedCountry: "", basedCity: "" })}`,
+    locale
+  );
   const state = useStudioDiscovery(query, viewerId, locale);
   const client = useQueryClient();
   const [configuration] = useState<{ config: GpsMapConfig | null; error: boolean }>(() => {
@@ -480,7 +499,7 @@ function StudioResults({
       )}
       {current && !state.isError && (
         <p role="status" className="text-sm text-muted-foreground">
-          {t("count", { count: current.matchedCount })}
+          {t(query.islandOnly ? "islandCount" : "count", { count: current.matchedCount })}
         </p>
       )}
       {!countsAgree && (
@@ -511,22 +530,69 @@ function StudioResults({
       )}
       <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(250px,1fr)]">
         <div className="min-w-0">
-          <ContentGpsMap
-            kind="creator"
-            config={configuration.config}
-            initialViewport={viewport}
-            features={
-              mapData
-                ? studioMapFeatures(mapData, (count, matched) =>
-                    t(matched ? "matchedPins" : "otherPins", { count })
-                  )
-                : []
-            }
-            loading={!mapReady}
-            onViewport={setViewport}
-            onSelect={setSelection}
-            factory={factory}
-          />
+          <div className="relative">
+            <ContentGpsMap
+              kind="creator"
+              config={configuration.config}
+              initialViewport={viewport}
+              features={
+                mapData
+                  ? studioMapFeatures(
+                      mapData,
+                      (count, matched) => t(matched ? "matchedPins" : "otherPins", { count }),
+                      `FizzDragon Island · ${t("islandDescription")}`
+                    )
+                  : []
+              }
+              loading={!mapReady}
+              onViewport={setViewport}
+              onSelect={setSelection}
+              onVirtualSelect={(destination) => {
+                if (destination === "fizzdragon-island") router.push(islandHref, { scroll: false });
+              }}
+              factory={factory}
+            />
+            {mapData && (
+              <Link
+                href={localizePath(
+                  `/creators/studios?${studioQueryUrl({ ...studioDraftFromQuery(query), location: query.islandOnly ? "" : "island", basedCountry: "", basedCity: "" })}`,
+                  locale
+                )}
+                className="mt-3 flex w-fit max-w-full items-center gap-3 rounded-xl bg-card p-3 text-foreground hover:bg-muted"
+                aria-label={t(query.islandOnly ? "islandLeave" : "islandBrowse")}
+              >
+                <svg
+                  viewBox="0 0 64 64"
+                  className="size-12 shrink-0 text-primary"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M8 48 Q16 36 31 38 Q48 34 57 48 Q43 58 24 54 Z"
+                    fill="currentColor"
+                    opacity=".2"
+                  />
+                  <path
+                    d="M28 44 Q37 27 32 17 M32 19 Q17 7 12 25 Q24 18 32 19 M32 19 Q43 7 53 23 Q43 18 32 19 M7 57 Q15 61 23 57 Q31 53 39 57 Q47 61 57 57"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span className="min-w-0 space-y-1">
+                  <span className="block text-sm font-semibold">FizzDragon Island</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {t("islandDescription")}
+                  </span>
+                  <span className="block text-xs">
+                    {t(query.islandOnly ? "islandLeave" : "islandCount", {
+                      count: mapData.island.matchedCreatorCount,
+                    })}
+                  </span>
+                </span>
+              </Link>
+            )}
+          </div>
           {mapData?.map && (
             <p className="mt-3 text-xs text-muted-foreground">
               {t("mapCount", {
@@ -536,10 +602,13 @@ function StudioResults({
             </p>
           )}
         </div>
-        <aside aria-label={t("selection")} className="min-w-0 space-y-3 rounded-xl bg-muted/20 p-4">
-          <h2 className="font-semibold">{t("selection")}</h2>
+        <aside
+          aria-label={t(query.islandOnly ? "selectedCreator" : "selection")}
+          className="min-w-0 space-y-3 rounded-xl bg-muted/20 p-4"
+        >
+          <h2 className="font-semibold">{t(query.islandOnly ? "selectedCreator" : "selection")}</h2>
           {!selection ? (
-            <p>{t("selectHint")}</p>
+            <p>{t(query.islandOnly ? "creatorSelectHint" : "selectHint")}</p>
           ) : !mapReady ? (
             <p role="status">{t("loading")}</p>
           ) : mapData?.selected ? (
@@ -559,7 +628,7 @@ function StudioResults({
           )}
         </aside>
       </div>
-      {current && items.length === 0 && <p>{t("empty")}</p>}
+      {current && items.length === 0 && <p>{t(query.islandOnly ? "islandEmpty" : "empty")}</p>}
       <div className="grid gap-5 min-[480px]:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => (
           <StudioCard
@@ -630,7 +699,15 @@ function StudioCard({
           aria-pressed={selected}
           onClick={onSelect}
         >
-          {t(selected ? "selectedStudio" : "selectStudio")}
+          {t(
+            studio.serviceCount === 0
+              ? selected
+                ? "selectedCreator"
+                : "selectCreator"
+              : selected
+                ? "selectedStudio"
+                : "selectStudio"
+          )}
         </Button>
       )}
       {!studio.point && <p className="text-xs text-muted-foreground">{t("unpinned")}</p>}
@@ -651,14 +728,14 @@ function StudioCard({
       <div className="space-y-1 text-sm text-muted-foreground">
         {studio.remote && <p>{t("remote")}</p>}
         {studio.openToWork && <p>{t("available")}</p>}
-        <p>{t("services", { count: studio.matchingServiceCount })}</p>
+        {studio.serviceCount > 0 && <p>{t("services", { count: studio.matchingServiceCount })}</p>}
       </div>
       <Link
-        href={`${profile}#services`}
+        href={studio.serviceCount > 0 ? `${profile}#services` : profile}
         prefetch={false}
         className="inline-flex min-h-11 items-center text-sm font-medium underline underline-offset-4"
       >
-        {t("viewStudio")}
+        {t(studio.serviceCount > 0 ? "viewStudio" : "viewCreator")}
       </Link>
     </article>
   );

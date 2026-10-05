@@ -107,6 +107,7 @@ describe('community invitation replay', () => {
       conversations as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     return { service, conversations, tx };
   }
@@ -242,6 +243,7 @@ describe('invite link audit atomicity', () => {
         {} as never,
         {} as never,
         {} as never,
+        {} as never,
       );
       const request =
         action === 'create'
@@ -289,6 +291,7 @@ describe('invite link revocation serialization', () => {
         {} as never,
         {} as never,
         {} as never,
+        {} as never,
       );
       await expect(service.revoke('crew', 'actor', 'link')).rejects.toThrow();
       expect(tx.crewInviteLink.update).not.toHaveBeenCalled();
@@ -324,6 +327,7 @@ it('lists both community and member links without returning their bearer secrets
   const service = new CrewInviteLinksService(
     prisma as never,
     authorization as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,

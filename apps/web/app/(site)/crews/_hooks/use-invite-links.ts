@@ -12,6 +12,8 @@ export interface CrewInviteLinkDTO {
   crewId: string;
   kind: "member" | "community";
   policyKeys: string[];
+  taskId?: string | null;
+  taskVersion?: number | null;
   maxUses: number | null;
   useCount: number;
   expiresAt: string | null;
@@ -22,6 +24,8 @@ export interface CrewInviteLinkDTO {
 
 export interface CreateCrewInviteLinkInput {
   kind?: "member" | "community";
+  taskId?: string;
+  taskVersion?: number;
   policyKeys?: string[];
   /** Omit for a link that never expires. */
   expiresInDays?: number;

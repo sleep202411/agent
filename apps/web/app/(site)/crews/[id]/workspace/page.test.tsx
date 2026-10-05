@@ -190,14 +190,21 @@ vi.mock("@/app/(site)/crews/[id]/workspace/_components/chat/crew-chat-tab", () =
 }));
 vi.mock("@/app/(site)/crews/[id]/workspace/_components/tasks/crew-tasks-tab", () => ({
   CrewTasksTab: ({
+    createTaskRequested,
+    onCreateTaskRequestHandled,
     deeplinkTaskId,
     onSelectedTaskChange,
   }: {
+    createTaskRequested?: boolean;
+    onCreateTaskRequestHandled?: () => void;
     deeplinkTaskId?: string | null;
     onSelectedTaskChange?: (taskId: string | null) => void;
   }) => (
     <div data-pane="tasks" data-deeplink-task-id={deeplinkTaskId ?? ""}>
       tasks
+      {createTaskRequested && (
+        <button onClick={onCreateTaskRequestHandled}>Close requested creation</button>
+      )}
       {deeplinkTaskId ? (
         <button type="button" onClick={() => onSelectedTaskChange?.(null)}>
           Close mocked task
@@ -702,3 +709,16 @@ it.each(["en-US", "zh-CN", "zh-HK"])(
     ).toBe(`/${locale}/crews/crew_1`);
   }
 );
+
+it("passes task creation intent to Tasks and removes only that flag when handled", () => {
+  nav.search = new URLSearchParams("tab=tasks&createTask=1&context=keep");
+  render();
+  const close = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent === "Close requested creation"
+  );
+  expect(close).toBeTruthy();
+  act(() => close!.click());
+  expect(nav.search.get("createTask")).toBeNull();
+  expect(nav.search.get("tab")).toBe("tasks");
+  expect(nav.search.get("context")).toBe("keep");
+});

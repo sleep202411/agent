@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { KycGateDialog } from "@/app/_components/kyc-gate-dialog";
 import { useCrewList, useMyCrews, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
+import { CreateTaskEntryDialog } from "./_components/create-task-entry-dialog";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { PositionsTab } from "@/app/(site)/crews/_components/positions-tab";
@@ -98,6 +99,9 @@ export default function CrewsPage() {
     locale,
   ]);
 
+  const taskEntryT = useTranslations("taskEntry");
+  const [taskEntryOpen, setTaskEntryOpen] = useState(false);
+  const [createForTask, setCreateForTask] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [kycGateOpen, setKycGateOpen] = useState(false);
   const [checkingKyc, setCheckingKyc] = useState(false);
@@ -120,7 +124,8 @@ export default function CrewsPage() {
   });
   const items = useMemo<CrewDTO[]>(() => (data?.pages ?? []).flatMap((p) => p.items), [data]);
 
-  const requestCreateCrew = async () => {
+  const requestCreateCrew = async (forTask = false) => {
+    setCreateForTask(forTask);
     if (!isCnRegion) {
       setCreateOpen(true);
       return;
@@ -153,7 +158,29 @@ export default function CrewsPage() {
           : "min-h-[calc(100dvh-8rem)] bg-background"
       }
     >
-      <CreateCrewDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CreateTaskEntryDialog
+        open={taskEntryOpen}
+        onOpenChange={setTaskEntryOpen}
+        onNewCrew={() => {
+          setTaskEntryOpen(false);
+          void requestCreateCrew(true);
+        }}
+      />
+      <CreateCrewDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={
+          createForTask
+            ? (crew) =>
+                router.push(
+                  localizePath(
+                    `/crews/${encodeURIComponent(crew.id)}/workspace?tab=tasks&createTask=1`,
+                    locale
+                  )
+                )
+            : undefined
+        }
+      />
       <KycGateDialog
         open={kycGateOpen}
         onOpenChange={setKycGateOpen}
@@ -167,10 +194,20 @@ export default function CrewsPage() {
           className={workspaceView ? "min-w-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col" : "min-w-0"}
         >
           <CrewSectionNavigation active={view} onViewChange={setView} sticky={!workspaceView}>
-            <div className="ml-auto shrink-0 pb-2">
+            <div className="ml-auto flex shrink-0 gap-2 pb-2">
               <Button
                 type="button"
                 size="lg"
+                className="h-11 gap-2 px-5 text-sm"
+                onClick={() => setTaskEntryOpen(true)}
+              >
+                <IconPlus className="size-4" />
+                {taskEntryT("title")}
+              </Button>
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
                 onClick={() => void requestCreateCrew()}
                 disabled={checkingKyc}
                 className="h-11 gap-2 px-5 text-sm"

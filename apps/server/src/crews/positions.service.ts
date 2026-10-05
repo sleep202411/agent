@@ -505,6 +505,7 @@ export class PositionsService {
           employmentType: input.employmentType,
           experienceLevel: input.experienceLevel,
           requiredSkills: input.requiredSkills,
+          paymentTerms: input.paymentTerms ?? null,
           salaryPeriod: input.salary?.period ?? null,
           salaryCurrency: ccy,
           salaryMinAmount:
@@ -583,6 +584,9 @@ export class PositionsService {
             : {}),
           ...(input.requiredSkills !== undefined
             ? { requiredSkills: input.requiredSkills }
+            : {}),
+          ...(input.paymentTerms !== undefined
+            ? { paymentTerms: input.paymentTerms }
             : {}),
           ...(input.salary?.period !== undefined
             ? { salaryPeriod: input.salary.period }

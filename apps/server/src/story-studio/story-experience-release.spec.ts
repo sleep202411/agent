@@ -673,6 +673,7 @@ function serviceDependencies({
     $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
       Promise.resolve(
         callback({
+          $executeRaw: jest.fn().mockResolvedValue(0),
           $queryRaw: jest
             .fn()
             .mockResolvedValue([{ version: finalProjectVersion }]),

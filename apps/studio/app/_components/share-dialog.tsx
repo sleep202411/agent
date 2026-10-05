@@ -36,10 +36,10 @@ export function ShareDialog({
         className={
           isStory
             ? "flex max-h-[calc(100dvh-2rem)] min-w-0 flex-col overflow-hidden p-5 sm:max-w-4xl sm:p-6"
-            : "sm:max-w-md"
+            : "flex max-h-[calc(100dvh-2rem)] min-w-0 flex-col sm:max-w-md"
         }
       >
-        <DialogHeader className={isStory ? "shrink-0 pr-7" : undefined}>
+        <DialogHeader className="min-w-0 shrink-0 break-words pr-7">
           <DialogTitle>{t("share.title", { name: scope.name })}</DialogTitle>
           <DialogDescription>
             {scope.kind === "workspace"
@@ -49,11 +49,7 @@ export function ShareDialog({
                 : t("share.descriptionProject")}
           </DialogDescription>
         </DialogHeader>
-        <div
-          className={
-            isStory ? "min-h-0 min-w-0 overflow-y-auto overscroll-contain pr-1" : undefined
-          }
-        >
+        <div className="min-h-0 min-w-0 overflow-y-auto overscroll-contain pr-1">
           <MembersManager
             scope={scope}
             canManage={canManage}
@@ -65,10 +61,12 @@ export function ShareDialog({
                 : undefined
             }
           />
-        </div>
-        {/* Per-project only: cast a real person to lend their likeness without
+          {/* Per-project only: cast a real person to lend their likeness without
             joining the project (director casting invites). */}
-        {scope.kind === "project" && <CastingManager projectId={scope.id} canManage={canManage} />}
+          {scope.kind === "project" && (
+            <CastingManager projectId={scope.id} canManage={canManage} />
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

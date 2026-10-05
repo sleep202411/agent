@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import EarningsPage from "./page";
+import EarningsContent from "./earnings-content";
 import { formatEarnings } from "./_hooks/use-earnings";
 
 const mocks = vi.hoisted(() => ({
@@ -55,12 +56,13 @@ const response = {
   entries: [entry],
   nextCursor: null,
 };
+const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
 let root: Root, container: HTMLDivElement, client: QueryClient;
-async function render() {
+async function render(embedded = false) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
-        <EarningsPage />
+        {embedded ? <EarningsContent embedded /> : <EarningsPage />}
       </QueryClientProvider>
     )
   );
@@ -71,6 +73,10 @@ async function render() {
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
   mocks.search = "";
   mocks.user = { id: "creator-one" };
   mocks.get.mockResolvedValue(response);
@@ -83,6 +89,9 @@ afterEach(async () => {
   await act(async () => root.unmount());
   client.clear();
   container.remove();
+  if (originalScroll)
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScroll);
+  else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
 });
 
 it("opens a credited transaction with separate sale and personal earnings, using only a read request", async () => {
@@ -187,4 +196,26 @@ it("keeps the current page on fetch failure and advances after a successful retr
   await clickPage("retry");
   expect(container.textContent).toContain("The return");
   expect(container.textContent).not.toContain("The tower");
+});
+
+it("clears embedded income filters without leaving the Crew income panel", async () => {
+  mocks.get.mockResolvedValue({ ...response, entries: [] });
+  await render(true);
+  const trigger = container.querySelector('[aria-label="timeFilter"]');
+  await act(async () => {
+    trigger!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  });
+  const option = [...document.querySelectorAll('[role="option"]')].find(
+    (item) => item.textContent === "period.30"
+  );
+  expect(option).toBeTruthy();
+  await act(async () => (option as HTMLElement).click());
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(container.textContent).toContain("noMatches");
+  await clickPage("clearFilters");
+  expect(mocks.replace).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("emptyTitle");
+  expect(container.textContent).not.toContain("noMatches");
 });

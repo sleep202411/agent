@@ -45,8 +45,9 @@ export function PrivateCasesScreen({ caseId }: { caseId?: string }) {
   );
 }
 function CaseList({ userId }: { userId: string }) {
-  const [view, setView] = useState<"initiated" | "responses">("initiated");
-  const query = usePrivateCases(userId, view);
+  const [view, setView] = useState<"all" | "initiated" | "responses">("all");
+  const [lifecycle, setLifecycle] = useState<"all" | "active" | "archived">("all");
+  const query = usePrivateCases(userId, view, lifecycle);
   const t = useTranslations("crewCases"),
     locale = useLocale();
   const items = query.isSuccess
@@ -58,7 +59,7 @@ function CaseList({ userId }: { userId: string }) {
         className="flex flex-wrap items-center gap-2 border-b border-border pb-3"
         aria-label={t("title")}
       >
-        {(["initiated", "responses"] as const).map((tab) => (
+        {(["all", "initiated", "responses"] as const).map((tab) => (
           <Button
             key={tab}
             variant={view === tab ? "solid" : "ghost"}
@@ -66,7 +67,7 @@ function CaseList({ userId }: { userId: string }) {
             aria-pressed={view === tab}
             onClick={() => setView(tab)}
           >
-            {t(tab)}
+            {t(tab === "all" ? "allParticipants" : tab)}
           </Button>
         ))}
         <Link
@@ -75,6 +76,19 @@ function CaseList({ userId }: { userId: string }) {
         >
           {t("newCase")}
         </Link>
+      </nav>
+      <nav className="flex flex-wrap gap-2" aria-label={t("caseStatusFilter")}>
+        {(["all", "active", "archived"] as const).map((value) => (
+          <Button
+            key={value}
+            variant={lifecycle === value ? "solid" : "ghost"}
+            color="muted"
+            aria-pressed={lifecycle === value}
+            onClick={() => setLifecycle(value)}
+          >
+            {t(`lifecycle.${value}`)}
+          </Button>
+        ))}
       </nav>
       <Button variant="outline" disabled={query.isFetching} onClick={() => void query.refetch()}>
         {t("refresh")}

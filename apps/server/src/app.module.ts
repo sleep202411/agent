@@ -1,3 +1,4 @@
+import { CreatorWithdrawalsModule } from './creator-withdrawals/creator-withdrawals.module';
 import { DiscoveryAssistantModule } from './discovery-assistant/discovery-assistant.module';
 import { AiActorsModule } from './ai-actors/ai-actors.module';
 import { Module } from '@nestjs/common';
@@ -103,6 +104,7 @@ const agentOsGatewayEnabled = (() => {
     AiActorsModule,
     CrewsModule,
     CreatorServicesModule,
+    CreatorWithdrawalsModule,
     ReferralsModule,
     StorySavesModule,
     ConversationsModule,

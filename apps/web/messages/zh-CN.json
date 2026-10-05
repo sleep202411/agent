@@ -1,4 +1,24 @@
 {
+  "taskEntry": {
+    "title": "创建任务",
+    "description": "为此任务选择剧组，或创建新剧组。",
+    "crew": "剧组",
+    "choose": "选择剧组",
+    "empty": "你尚未加入剧组。",
+    "cannotManage": "你没有在此剧组创建任务的权限。",
+    "loading": "加载中…",
+    "retry": "重试",
+    "newCrew": "创建新剧组",
+    "continue": "继续创建任务",
+    "signIn": "登录以创建任务"
+  },
+  "taskPaymentTerms": {
+    "unspecified": "未指定",
+    "label": "付款方式",
+    "monthly": "月结",
+    "half_upfront": "50%预付款",
+    "on_completion": "完成后结算"
+  },
   "common": {
     "appName": "FizzDragon Studio",
     "loading": "加载中...",
@@ -2250,7 +2270,7 @@
       "noMedia": "该作品暂无可播放的视频。"
     },
     "levels": {
-      "heading": "FD 认证",
+      "heading": "FizzDragon Passport",
       "emptyOwner": "尚未获得 FD 等级。完成项目并提交评审即可解锁徽章。",
       "emptyVisitor": "尚未获得 FD 等级。",
       "apply": {
@@ -4612,7 +4632,9 @@
     "addMemberUserIdLabel": "用户 ID",
     "addMemberUserIdHint": "输入对方个人资料中显示的用户 ID。",
     "addMemberUserIdInvalid": "请输入对方个人资料中显示的有效用户 ID。",
-    "addMemberLookupRetry": "重试查询"
+    "addMemberLookupRetry": "重试查询",
+    "taskInviteTitle": "邀请创作者",
+    "taskInviteIntro": "创作者接受此链接后，将以普通成员权限加入剧组并领取「{task}」。仅限一位创作者领取。"
   },
   "crewAssets": {
     "title": "剧组资产中心",
@@ -5153,6 +5175,7 @@
     "create": "创建",
     "initiateTask": "发起任务",
     "workbench": {
+      "recruiting": "招聘中",
       "title": "任务创建工作台",
       "assets": "项目资产库",
       "assetsHelp": "本剧组共享的剧本、美术资产与音乐。",
@@ -5262,6 +5285,7 @@
       "emptyCanvas": "此影游尚无可导入场景。请在 Studio 中添加场景后重新预览。",
       "publishJob": "招募创作者",
       "publishOpening": "招募创作者",
+      "createAndInvite": "创建并邀请",
       "unassignedOnly": "招募将清除已选负责人",
       "savedCount": "{count} 个已保存任务",
       "recoverTemplates": "已保存的模板草稿（{count}）",
@@ -5561,6 +5585,7 @@
     }
   },
   "crewTasks": {
+    "crewLabel": "剧组",
     "briefTooLong": "任务说明不能超过 10,000 个字符。",
     "deletion": {
       "label": "删除任务",
@@ -9812,6 +9837,20 @@
           "title": "发放单已作废",
           "body": "{grossAmount} 对应的 {amount} 已作废，金额已重新可用。"
         }
+      },
+      "withdrawal": {
+        "processing": {
+          "title": "提现处理中",
+          "body": "FizzDragon 正在审核你的提现申请。请在「我的收益」查看进度。"
+        },
+        "paid": {
+          "title": "提现已支付",
+          "body": "FizzDragon 已记录付款。请在「我的收益」查看详情。"
+        },
+        "rejected": {
+          "title": "提现已驳回",
+          "body": "提现申请已驳回，预留收益已恢复可提现。请在「我的收益」查看原因。"
+        }
       }
     }
   },
@@ -9910,7 +9949,15 @@
     "alreadyMember": "你已经是这个剧组的成员了。",
     "removedTitle": "无法通过链接重新加入",
     "removedBody": "你已被移出该剧组，请让管理者重新邀请你。",
-    "failed": "加入失败，请重试。"
+    "failed": "加入失败，请重试。",
+    "taskOffer": "任务邀请",
+    "taskReward": "报酬（美元）",
+    "taskShare": "收益分成",
+    "taskDeadline": "截止时间",
+    "taskSkills": "所需技能",
+    "taskUnspecified": "未设置",
+    "taskAcceptExplanation": "接受后，你将加入此剧组并领取该任务。",
+    "acceptTask": "接受任务"
   },
   "tv": {
     "checkingAccess": "正在查询剧集权限…",
@@ -10215,6 +10262,19 @@
     "urgentLabel": "紧急"
   },
   "crewPersonalIncome": {
+    "incomeType": "收入类型",
+    "allTypes": "全部收入类型",
+    "allStatuses": "全部状态",
+    "recordedFrom": "记录开始日期（UTC）",
+    "recordedThrough": "记录结束日期（UTC）",
+    "applyFilters": "应用筛选",
+    "invalidDateRange": "结束日期不得早于开始日期。",
+    "incomeCode": "收入编号",
+    "confirmedRevenue": "已确认分润",
+    "revenueShare": "你的分润比例：{percentage}%",
+    "revenueReference": "收益编号",
+    "distributionContract": "分润合同",
+    "distributionReceipt": "分润记录编号",
     "title": "我的收入",
     "back": "剧组大厅",
     "description": "查看你在各剧组的收入记录。",
@@ -10703,6 +10763,13 @@
     "history": "我的任务评价"
   },
   "crewCases": {
+    "allParticipants": "全部参与",
+    "caseStatusFilter": "案件状态",
+    "lifecycle": {
+      "all": "全部案件",
+      "active": "处理中",
+      "archived": "已归档"
+    },
     "title": "争议与调解中心",
     "privacy": "处理任务争议、交付问题和申诉。仅案件当事人和授权客服可查看；离开剧组后仍可访问。",
     "loading": "加载中…",
@@ -11154,6 +11221,12 @@
     "remote": "可提供远程服务"
   },
   "studioDiscovery": {
+    "manageLocation": "管理我的位置",
+    "searchCreators": "搜索创作者",
+    "selectedCreator": "已选创作者",
+    "selectCreator": "选择创作者",
+    "creatorSelectHint": "选择创作者以查看其主页。",
+    "islandEmpty": "没有符合这些筛选条件的岛上创作者。",
     "title": "寻找工作室",
     "description": "寻找提供本地内容和服务的创作者。了解他们的作品，再通过工作室主页联系。",
     "allCreators": "全部创作者",
@@ -11200,7 +11273,12 @@
     "selectStudio": "选择工作室",
     "selectedStudio": "已选择工作室",
     "unpinned": "没有公开城市图钉",
-    "resultsChanged": "结果已变化，请刷新以同步地图和列表。"
+    "resultsChanged": "结果已变化，请刷新以同步地图和列表。",
+    "islandDescription": "虚拟社区 · 暂无公开地图位置",
+    "islandBrowse": "浏览 FizzDragon Island",
+    "islandCount": "{count} 位匹配的创作者",
+    "viewCreator": "查看创作者主页",
+    "islandLeave": "显示所有位置"
   },
   "contentGpsMap": {
     "title": "IP地点",
@@ -11602,5 +11680,68 @@
     "reject": "拒绝",
     "closed": "此频道暂不接受投稿。",
     "signIn": "登录后投稿视频"
+  },
+  "creatorWithdrawals": {
+    "title": "收益提现",
+    "description": "提现已确认的任务收益和平台确认的分润收益。",
+    "withdraw": "提现",
+    "currency": "币种",
+    "refresh": "刷新",
+    "loading": "加载中…",
+    "available": "可提现",
+    "reserved": "等待付款",
+    "paid": "已支付",
+    "submitted": "提现申请已提交，可在下方查看进度。",
+    "history": "提现记录",
+    "empty": "暂无提现申请。",
+    "date": "申请日期",
+    "amount": "提现金额",
+    "status": "状态",
+    "details": "支付日期或原因",
+    "loadMore": "加载更多",
+    "formTitle": "申请提现",
+    "cancel": "取消",
+    "retry": "重试",
+    "percentage": "提现比例（%）",
+    "invalidPercentage": "请输入 0.01–100%，且提现金额至少为 0.01。",
+    "bankHint": "提交时保存银行信息，之后可重复使用。FizzDragon 完成转账后会更新支付状态。",
+    "retryHint": "系统可能已收到申请，重试会发送同一申请，不会重复创建。",
+    "submit": "提交提现申请",
+    "submitting": "提交中…",
+    "submitFailed": "无法提交提现申请。",
+    "loadFailed": "无法加载已保存的银行信息。",
+    "reviewBalance": "关闭并刷新余额",
+    "states": {
+      "pending": "等待付款",
+      "processing": "处理中",
+      "paid": "已支付",
+      "rejected": "已拒绝",
+      "cancelled": "已取消"
+    },
+    "bank": {
+      "fullName": "收款人姓名",
+      "accountNumber": "银行账号",
+      "address": "收款人地址",
+      "swift": "SWIFT / BIC",
+      "branchAddress": "银行支行地址"
+    }
+  },
+  "creatorDeviceCity": {
+    "consent": "使用设备位置推荐城市。此次查询会将坐标发送至所在区域的地图服务商，FizzDragon 不会保存坐标。",
+    "locate": "使用设备位置",
+    "check": "查看查询结果",
+    "unsupported": "设备定位需要支持的浏览器和安全连接。您可以手动填写城市。",
+    "denied": "定位权限被拒绝。您可以手动填写城市。",
+    "unavailable": "无法获取设备位置。请重试或手动填写城市。",
+    "loading": "正在查找城市…",
+    "suggestion": "推荐城市：{city}，{country}",
+    "confirmHint": "仅在此处为您的工作室所在地时确认。之后仍需保存资料；是否在地图上展示由您另行选择。",
+    "confirm": "使用此城市",
+    "dismiss": "忽略",
+    "completed": "未找到明确的城市。请手动填写。",
+    "missing": "没有查询记录。您可以再次请求设备定位。",
+    "expired": "推荐结果已过期。请重新查询或手动填写城市。",
+    "dispatched": "查询仍在进行，请稍后查看结果。",
+    "uncertain": "无法确认查询结果。请手动填写城市，或主动发起新的查询。"
   }
 }

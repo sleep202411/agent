@@ -1,4 +1,6 @@
 "use client";
+import { TASK_PAYMENT_TERMS, type TaskPaymentTerms } from "@repo/shared/crew";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -32,6 +34,7 @@ type Props = {
 };
 type Draft = {
   base: ApplicationTerms;
+  paymentTerms: TaskPaymentTerms | null;
   taskVersion: number;
   scope: string;
   fee: string;
@@ -59,6 +62,7 @@ function AmendmentsSession({
   reviewer,
   userId,
 }: Props & { userId: string }) {
+  const paymentT = useTranslations("taskPaymentTerms");
   const t = useTranslations("crewAmendments"),
     client = useQueryClient();
   const history = useApplicationAmendments(applicationId, userId);
@@ -202,6 +206,7 @@ function AmendmentsSession({
       taskVersion: task.data.version,
       scope: effective.scope,
       fee: exactMajorUnits(effective.feeAmount),
+      paymentTerms: effective.paymentTerms ?? null,
       share: exactMajorUnits(String(effective.revenueShareBp)),
       basis: effective.shareBasis ?? "",
       reason: "",
@@ -283,6 +288,28 @@ function AmendmentsSession({
                     />
                   </label>
                   <label className="block">
+                    {paymentT("label")}
+                    <NativeSelect
+                      aria-label={paymentT("label")}
+                      value={draft.paymentTerms ?? "unspecified"}
+                      onChange={(value) =>
+                        setDraft({
+                          ...draft,
+                          paymentTerms: TASK_PAYMENT_TERMS.find((term) => term === value) ?? null,
+                        })
+                      }
+                    >
+                      <NativeSelectOption value="unspecified">
+                        {paymentT("unspecified")}
+                      </NativeSelectOption>
+                      {TASK_PAYMENT_TERMS.map((value) => (
+                        <NativeSelectOption key={value} value={value}>
+                          {paymentT(value)}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                  <label className="block">
                     {t("share")}
                     <Input
                       inputMode="decimal"
@@ -319,6 +346,7 @@ function AmendmentsSession({
                             scope: draft.scope.trim(),
                             currency: draft.base.currency,
                             feePeriod: "project",
+                            paymentTerms: draft.paymentTerms,
                             feeAmount: fee!,
                             revenueShareBp: Number(share),
                             shareBasis: BigInt(share!) > 0n ? draft.basis.trim() : null,
@@ -365,11 +393,17 @@ function AmendmentsSession({
   );
 }
 function TermsView({ terms }: { terms: ApplicationTerms | AmendmentProposal }) {
+  const paymentT = useTranslations("taskPaymentTerms");
   const t = useTranslations("crewAmendments"),
     unitT = useTranslations("crewTerms");
   return (
     <div className="space-y-1 text-sm">
       <p className="whitespace-pre-wrap">{terms.scope}</p>
+      {terms.paymentTerms && (
+        <p>
+          {paymentT("label")}: {paymentT(terms.paymentTerms)}
+        </p>
+      )}
       <p>
         {terms.currency} {exactMajorUnits(terms.feeAmount)} · {unitT(terms.feePeriod)}
       </p>
