@@ -10,6 +10,24 @@ export function createCanvasNode(state: string, raw: CanvasNodeCreate) {
   const command = canvasNodeCreateSchema.parse(raw);
   return withCanvasState(state, [], (doc) => {
     const nodes = doc.getMap("nodes");
+    if (command.type === "aiActor") {
+      if (command.actor.nodeId !== command.nodeId) throw Error("Actor node identity mismatch.");
+      const existing = nodes.get(command.nodeId);
+      if (existing instanceof Y.Map) {
+        const data = existing.get("data");
+        if (
+          existing.get("id") === command.nodeId &&
+          existing.get("type") === "image" &&
+          data instanceof Y.Map &&
+          data.get("aiActorId") === command.actor.actorId &&
+          data.get("mediaAssetId") === command.actor.mediaAssetId
+        ) {
+          // A previous save may have succeeded before its local acknowledgement.
+          // Do not overwrite later user edits to the label, source or position.
+          return { ...captureCanvasState(doc), yjsUpdateBase64: null };
+        }
+      }
+    }
     if (nodes.has(command.nodeId))
       throw Error("Canvas node ID already exists. Reload the document.");
     let fields: Record<string, unknown>;
@@ -26,7 +44,15 @@ export function createCanvasNode(state: string, raw: CanvasNodeCreate) {
           category: string;
         }
       | undefined;
-    if (command.type === "uploadedAsset") {
+    if (command.type === "aiActor") {
+      type = "image";
+      fields = {
+        src: command.actor.url,
+        mediaAssetId: command.actor.mediaAssetId,
+        label: command.actor.name,
+        aiActorId: command.actor.actorId,
+      };
+    } else if (command.type === "uploadedAsset") {
       const asset = command.asset;
       if (doc.getMap("assets").has(asset.mediaAssetId))
         throw Error("This upload is already in the library. Add it from the library instead.");

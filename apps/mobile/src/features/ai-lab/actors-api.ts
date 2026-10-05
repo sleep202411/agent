@@ -3,6 +3,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "@/lib/api-client";
 import { durableRecord, type DurableRecord } from "@/lib/durable-record";
 import { pendingRequest } from "@/lib/pending-request";
+import { canvasActorReceiptSchema } from "../../../canvas-editor/actor-schema";
 
 const id = z.string().uuid();
 const contentPath = z
@@ -28,13 +29,7 @@ const scopeSchema = z
 export type ActorProjectScope = z.infer<typeof scopeSchema>;
 export const actorUseIntent = z.object({ actorId: id, clientKey: id }).strict();
 export type ActorUseIntent = z.infer<typeof actorUseIntent>;
-const useReceipt = z.object({
-  nodeId: id,
-  actorId: id,
-  name: z.string().min(1),
-  mediaAssetId: id,
-  url: contentPath,
-});
+const useReceipt = canvasActorReceiptSchema;
 export type ActorUseReceipt = z.infer<typeof useReceipt>;
 
 /** The canvas owner clears this only after its node-save acknowledgement. A use

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { canvasUploadedAssetSchema } from "./upload-schema";
+import { canvasActorReceiptSchema } from "./actor-schema";
 import { CANVAS_SHOT_FIELDS } from "./shot-fields";
 /** Web CANVAS_ROOT_SCHEMA / Server document-modes.ts: all roots are Y.Maps. */
 export const CANVAS_ROOTS = ["meta", "nodes", "edges", "groups", "assets"] as const;
@@ -27,6 +28,7 @@ const newNode = {
   position: z.object({ x: z.number().finite(), y: z.number().finite() }).strict(),
 };
 export const canvasNodeCreateSchema = z.discriminatedUnion("type", [
+  z.object({ ...newNode, type: z.literal("aiActor"), actor: canvasActorReceiptSchema }).strict(),
   z
     .object({ ...newNode, type: z.literal("uploadedAsset"), asset: canvasUploadedAssetSchema })
     .strict(),

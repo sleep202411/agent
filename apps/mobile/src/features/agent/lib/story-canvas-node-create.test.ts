@@ -14,6 +14,85 @@ const empty = () => {
     doc.destroy();
   }
 };
+const actor = {
+  nodeId: id,
+  actorId: second,
+  mediaAssetId: second,
+  name: "Actor",
+  url: `/aurora/media/assets/${second}/content`,
+};
+it("inserts the official actor image shape without changing the asset library", () => {
+  const result = createCanvasNode(empty(), { type: "aiActor", nodeId: id, position, actor });
+  expect(result.snapshot.nodes[id]).toEqual({
+    id,
+    type: "image",
+    position,
+    data: { src: actor.url, mediaAssetId: second, label: "Actor", aiActorId: second },
+  });
+  expect(result.snapshot.assets).toEqual({});
+  expect(
+    materializeCanvas(empty(), [result.yjsUpdateBase64!, result.yjsUpdateBase64!]).snapshot.nodes
+  ).toEqual(result.snapshot.nodes);
+});
+it("recognizes an acknowledged actor insertion without replacing subsequent Web edits", () => {
+  const result = createCanvasNode(empty(), { type: "aiActor", nodeId: id, position, actor });
+  const web = new Y.Doc();
+  try {
+    Y.applyUpdate(
+      web,
+      Uint8Array.from(atob(result.state), (c) => c.charCodeAt(0))
+    );
+    const node = web.getMap("nodes").get(id) as Y.Map<unknown>;
+    (node.get("data") as Y.Map<unknown>).set("label", "Edited on Web");
+    (node.get("position") as Y.Map<unknown>).set("x", 900);
+    const retry = createCanvasNode(encodeCanvasBytes(Y.encodeStateAsUpdate(web)), {
+      type: "aiActor",
+      nodeId: id,
+      position,
+      actor,
+    });
+    expect(retry.yjsUpdateBase64).toBeNull();
+    expect(retry.snapshot.nodes[id]).toMatchObject({
+      position: { x: 900 },
+      data: { label: "Edited on Web" },
+    });
+  } finally {
+    web.destroy();
+  }
+});
+it.each([{ nodeId: second }, { url: "https://other.example/image" }])(
+  "rejects mismatched actor receipts %j",
+  (patch) => {
+    expect(() =>
+      createCanvasNode(empty(), {
+        type: "aiActor",
+        nodeId: id,
+        position,
+        actor: { ...actor, ...patch },
+      })
+    ).toThrow();
+  }
+);
+it("never overwrites a colliding ordinary card or another actor", () => {
+  const ordinary = createCanvasNode(empty(), {
+    type: "note",
+    nodeId: id,
+    position,
+    data: { text: "Keep" },
+  });
+  expect(() =>
+    createCanvasNode(ordinary.state, { type: "aiActor", nodeId: id, position, actor })
+  ).toThrow("already exists");
+  const created = createCanvasNode(empty(), { type: "aiActor", nodeId: id, position, actor });
+  expect(() =>
+    createCanvasNode(created.state, {
+      type: "aiActor",
+      nodeId: id,
+      position,
+      actor: { ...actor, actorId: id },
+    })
+  ).toThrow("already exists");
+});
 it.each(["prompt", "video", "audio"] as const)(
   "creates a Web-editable %s generation card",
   (type) => {
