@@ -1,3 +1,9 @@
+import {
+  canvasModeLabel,
+  canvasModeForm,
+  canvasReferenceFields,
+  initialCanvasMode,
+} from "./canvas-modes";
 import { canvasSeedDraft, type CanvasGenerationSeed } from "./canvas-seed";
 import { resultDetails, resultCreatedAt } from "./result-details";
 import { setStringAsync } from "expo-clipboard";
@@ -303,6 +309,20 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
   }, [active, mode, generation, epoch, fail, jobScope]);
   const preset = data?.catalog.presets.find((p) => p.id === draft?.presetId),
     model = data?.catalog.models.find((m) => m.id === draft?.modelId),
+    generationMode =
+      canvas && model
+        ? (draft?.generationMode ??
+          initialCanvasMode(
+            model,
+            canvas.seed?.modelId === model.id ? canvas.seed.mode : undefined
+          ))
+        : undefined,
+    form =
+      model && draft
+        ? canvas
+          ? canvasModeForm(model, generationMode, draft.values)
+          : { schema: model.input_schema, values: draft.values }
+        : undefined,
     schemaChanged = !!model && draft?.schemaVersion !== model.schemaVersion,
     usable =
       canGenerate &&
@@ -311,7 +331,10 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
       !!preset &&
       canUseGeneration(model, preset, data.rank) &&
       !schemaChanged &&
-      (!canvas || model.type === canvas.mode);
+      (!canvas ||
+        (model.type === canvas.mode &&
+          (!model.generationModes?.length ||
+            (!!generationMode && model.generationModes.includes(generationMode)))));
   const unsupportedFields =
     model && draft ? unsupportedFormFields(model.input_schema, draft.values) : [];
   function requestChoose(presetId: string, modelId?: string) {
@@ -325,14 +348,62 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
       m = data?.catalog.models.find((m) => m.id === (modelId ?? p?.modelIds[0]));
     if (!p || !m || (canvas && m.type !== canvas.mode)) return;
     try {
+      const selectedMode = canvas
+        ? initialCanvasMode(m, canvas.seed?.modelId === m.id ? canvas.seed.mode : undefined)
+        : undefined;
       save({
+        generationMode: selectedMode,
         mode: m.type,
         presetId: p.id,
         modelId: m.id,
         schemaVersion: m.schemaVersion,
         ...(canvas?.seed
-          ? canvasSeedDraft(canvas.seed, m.id, m.input_schema)
+          ? canvasSeedDraft(
+              canvas.seed,
+              m.id,
+              m.input_schema,
+              m.generationModes?.length
+                ? canvasReferenceFields(m.input_schema, selectedMode)
+                : undefined
+            )
           : { values: deriveInitialValues(m.input_schema) }),
+      });
+    } catch (e) {
+      fail(e);
+    }
+  }
+  function changeGenerationMode(nextMode: string) {
+    if (
+      !canvas ||
+      !draft ||
+      !model ||
+      !model.generationModes?.includes(nextMode) ||
+      op.busy ||
+      pending ||
+      retryPending ||
+      draft.upload
+    )
+      return;
+    try {
+      const active = canvasReferenceFields(model.input_schema, nextMode);
+      const seeded = canvasSeedDraft(
+        { prompt: "", settings: {}, references: draft.deferredCanvasReferences ?? {} },
+        model.id,
+        model.input_schema,
+        active
+      );
+      const newlyActive = Object.fromEntries(
+        Object.entries(seeded.values).filter(
+          ([name]) =>
+            active.includes(name) && Object.hasOwn(draft.deferredCanvasReferences ?? {}, name)
+        )
+      );
+      save({
+        ...draft,
+        generationMode: nextMode,
+        values: { ...draft.values, ...newlyActive },
+        referenceMedia: [...(draft.referenceMedia ?? []), ...seeded.referenceMedia],
+        deferredCanvasReferences: seeded.deferredCanvasReferences,
       });
     } catch (e) {
       fail(e);
@@ -447,7 +518,7 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
     objectItems = false,
     kind: ReferenceKind = "image"
   ) {
-    if (!draft || draft.upload || !canGenerate || !model) return;
+    if (!draft || draft.upload || !canGenerate || !model || !form) return;
     run(async () => {
       await assertProjectWrite();
       const persist = (value: ReferenceCheckpoint) => {
@@ -463,8 +534,8 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
       const checkpoint =
         kind !== "image"
           ? await (kind === "audio" ? pickReferenceAudio : pickReferenceVideo)(
-              model.input_schema,
-              draft.values,
+              form.schema,
+              form.values,
               field,
               generation,
               controller.current!.signal,
@@ -473,7 +544,7 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
                 .filter(
                   (row) =>
                     (row.kind === "video" || row.kind === "audio") &&
-                    keyHasUrl(referenceValues(model.input_schema, draft.values)[row.field], row.url)
+                    keyHasUrl(referenceValues(form.schema, form.values)[row.field], row.url)
                 )
                 .map((row) => ({
                   field: row.field,
@@ -499,11 +570,11 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
     if (project && (!skills || loading)) throw new Error(t("aiLab.skillsNotReady"));
     if (skills && unavailableSkillIds(skills, mode, draft?.skillSelection, skillSurface).length)
       throw new Error(t("aiLab.skillsUnavailable"));
-    if (!model || !draft || draft.upload || !data || !preset || !usable)
+    if (!model || !draft || !form || draft.upload || !data || !preset || !usable)
       throw new Error(t("aiLab.unavailable"));
     const values = prepareFormValues(
-      model.input_schema,
-      referenceInputValues(fieldDescriptors(model.input_schema, draft.values), draft.values),
+      form.schema,
+      referenceInputValues(fieldDescriptors(form.schema, form.values), form.values),
       {
         required: (label) => t("aiLab.required").replace("{label}", label),
         minLength: (label, min) =>
@@ -522,7 +593,7 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
         invalidUrl: (label) => t("aiLab.fieldUrl").replace("{label}", label),
       }
     );
-    for (const descriptor of fieldDescriptors(model.input_schema, draft.values)) {
+    for (const descriptor of fieldDescriptors(form.schema, form.values)) {
       const chosen = readOptions(descriptor.field).find((o) => o.value === values[descriptor.name]);
       if (chosen && optionLocked(chosen, data.rank, planRank))
         throw new Error(t("aiLab.unavailable"));
@@ -530,7 +601,7 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
     const activeRaw = Object.fromEntries(
       Object.keys(values).map((key) => [key, draft.values[key]])
     );
-    const media = referenceSnapshots(model.input_schema, activeRaw, [
+    const media = referenceSnapshots(form.schema, activeRaw, [
       ...(draft.referenceMedia ?? []).filter((row) => keyHasUrl(values[row.field], row.url)),
       ...(draft.uploadedReferences ?? [])
         .filter(
@@ -546,9 +617,9 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
           bytes: row.bytes,
         })),
     ]);
-    validateReferenceMedia(model.input_schema, values, media);
+    validateReferenceMedia(form.schema, values, media);
     const structured = ["referenceImages", "referenceVideos", "referenceAudios"].filter((name) => {
-      const field = model.input_schema.properties[name];
+      const field = form.schema.properties[name];
       return field?.type === "array" && field.items.type === "object";
     });
     return generationCommand.parse({
@@ -611,6 +682,9 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
               !canUseGeneration(freshModel, freshPreset, fresh.rank) ||
               freshModel.schemaVersion !== command.schemaVersion ||
               JSON.stringify(freshModel.input_schema) !== JSON.stringify(model?.input_schema) ||
+              (canvas &&
+                JSON.stringify(freshModel.generationModes) !==
+                  JSON.stringify(model?.generationModes)) ||
               JSON.stringify(freshPreset.billingPolicy) !== JSON.stringify(preset?.billingPolicy) ||
               freshPreset.campaignId !== command.campaignId ||
               fresh.rank !== data?.rank
@@ -784,6 +858,23 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
                 onPress={() => requestChoose(preset!.id, m.id)}
               />
             ))}
+          {canvas && model && draft && !!model.generationModes?.length ? (
+            <View style={{ gap: 4 }}>
+              <ThemedText type="smallBold">{t("aiLab.generationMode")}</ThemedText>
+              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                {model.generationModes.map((value) => (
+                  <Button
+                    key={value}
+                    label={`${value === generationMode ? "✓ " : ""}${canvasModeLabel(value, t)}`}
+                    disabled={
+                      op.busy || !!pending || !!retryPending || !!draft.upload || schemaChanged
+                    }
+                    onPress={() => changeGenerationMode(value)}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
           {project ? (
             <View style={{ gap: 6 }}>
               <Button
@@ -889,8 +980,8 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
               ))}
             </View>
           )}
-          {model && draft
-            ? fieldDescriptors(model.input_schema, draft.values).map((descriptor) => {
+          {model && draft && form
+            ? fieldDescriptors(form.schema, form.values).map((descriptor) => {
                 const { name, field, enabled } = descriptor,
                   options = readOptions(field),
                   value = draft.values[name],

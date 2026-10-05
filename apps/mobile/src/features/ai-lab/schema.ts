@@ -258,7 +258,7 @@ function schemaUi(schema: AiLabSchema): AiUiSchema | undefined {
   return "groups" in ui && Array.isArray(ui.groups) ? ui : undefined;
 }
 
-function fieldUi(field: AiLabField): AiFieldUi {
+export function fieldUi(field: AiLabField): AiFieldUi {
   const ui = field["x-ui"];
   if (!ui || typeof ui !== "object" || "groups" in ui) return {};
   return ui;

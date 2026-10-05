@@ -17,11 +17,13 @@ const reference = z.object({
   width: z.number().finite().nonnegative().nullish(),
   height: z.number().finite().nonnegative().nullish(),
 });
+export const canvasReferencesSchema = z.record(z.array(reference));
 const dataSchema = z.object({
   prompt: z.string().default(""),
   modelId: z.string().optional(),
+  mode: z.string().optional(),
   settings: z.record(z.union([z.string(), z.number().finite(), z.boolean()])).default({}),
-  references: z.record(z.array(reference)).default({}),
+  references: canvasReferencesSchema.default({}),
   skillSelection: skillSelection.optional(),
   locked: z.boolean().optional(),
 });
@@ -55,9 +57,11 @@ function readyReference(row: z.infer<typeof reference>) {
 export function canvasSeedDraft(
   seed: CanvasGenerationSeed,
   modelId: string,
-  schema: AiObjectSchema
+  schema: AiObjectSchema,
+  activeReferenceFields?: readonly string[]
 ) {
   const values = deriveInitialValues(schema);
+  const deferredCanvasReferences: CanvasGenerationSeed["references"] = {};
   if (seed.modelId === modelId)
     for (const [name, value] of Object.entries(seed.settings))
       if (Object.hasOwn(schema.properties, name)) values[name] = value;
@@ -74,6 +78,10 @@ export function canvasSeedDraft(
   }[] = [];
   for (const [name, sourceRows] of Object.entries(seed.references)) {
     if (!sourceRows.length) continue;
+    if (activeReferenceFields && !activeReferenceFields.includes(name)) {
+      deferredCanvasReferences[name] = sourceRows;
+      continue;
+    }
     const rows = sourceRows.map(readyReference);
     const field = schema.properties[name];
     if (!field) throw Error(`This model does not accept the canvas reference field ${name}.`);
@@ -117,6 +125,7 @@ export function canvasSeedDraft(
   return {
     values,
     referenceMedia,
+    ...(Object.keys(deferredCanvasReferences).length ? { deferredCanvasReferences } : {}),
     ...(seed.skillSelection ? { skillSelection: seed.skillSelection } : {}),
   };
 }

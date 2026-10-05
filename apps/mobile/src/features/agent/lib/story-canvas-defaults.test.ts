@@ -66,6 +66,7 @@ it("uses audio modes and rejects duplicate or malformed models", () => {
   const audio = model("audio", "audio", ["audio_to_audio", "text_to_audio"]);
   expect(canvasGenerationDefaults([audio], "audio").mode).toBe("text_to_audio");
   expect(() => canvasGenerationDefaults([audio, audio], "audio")).toThrow("Duplicate");
-  audio.generationModes = 1;
+  // Deliberately malformed runtime catalog data.
+  audio.generationModes = 1 as unknown as string[];
   expect(() => canvasGenerationDefaults([audio], "audio")).toThrow();
 });

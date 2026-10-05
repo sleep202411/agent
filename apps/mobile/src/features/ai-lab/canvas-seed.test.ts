@@ -159,3 +159,24 @@ it("uses the configured CN Aurora host for recovered frame and list references",
     "https://fizzstudio.fizzspace.cn/aurora/media/assets/video/content"
   );
 });
+
+it("defers inactive references intact until their mode becomes active", () => {
+  const seed = readCanvasGenerationSeed(
+    snapshot({
+      mode: "text_to_image",
+      references: {
+        referenceImages: [{ id: "pending", url: "blob:pending", uploading: true }],
+      },
+    }),
+    "card"
+  ).seed;
+  const draft = canvasSeedDraft(seed, "model", schema, []);
+  expect(seed.mode).toBe("text_to_image");
+  expect(draft.deferredCanvasReferences).toEqual(seed.references);
+  expect(draft.referenceMedia).toEqual([]);
+  expect(() =>
+    canvasSeedDraft({ ...seed, references: draft.deferredCanvasReferences! }, "model", schema, [
+      "referenceImages",
+    ])
+  ).toThrow("uploading");
+});

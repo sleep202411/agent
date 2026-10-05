@@ -1,3 +1,4 @@
+import { canvasReferencesSchema } from "./canvas-seed";
 import { skillSelection } from "./project-skills";
 import { generationStorageKey, type GenerationStorageScope } from "./generation-scope";
 import { z } from "zod";
@@ -6,6 +7,8 @@ import { referenceCheckpoint } from "./reference-image";
 import { generationSession } from "./jobs-api";
 const draftSchema = z.object({
   mode: z.enum(["image", "video", "audio"]),
+  generationMode: z.string().optional(),
+  deferredCanvasReferences: canvasReferencesSchema.optional(),
   presetId: z.string(),
   modelId: z.string(),
   schemaVersion: z.string(),

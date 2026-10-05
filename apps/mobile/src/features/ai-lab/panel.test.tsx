@@ -1493,3 +1493,74 @@ it("does not submit a canvas job when saving its recovery identity fails", async
 });
 
 vi.mock("expo-constants", () => ({ default: { expoConfig: {} } }));
+
+it("switches canvas modes without losing references and submits only active inputs", async () => {
+  const id = "44444444-4444-4444-8444-444444444444";
+  const workspaceId = "33333333-3333-4333-8333-333333333333";
+  const project = {
+    id,
+    storyProjectId: id,
+    kind: "story" as const,
+    workspaceId,
+    title: "Story",
+    canGenerate: true,
+  };
+  const modesModel = {
+    ...model,
+    generationModes: ["text_to_image", "image_to_image"],
+    input_schema: { ...model.input_schema, required: ["prompt", "references"] },
+  };
+  const base = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, options) =>
+    path === "/ai/models"
+      ? { ...catalog, models: [modesModel] }
+      : path === `/story-projects/${id}`
+        ? { id, workspaceId, title: "Story", status: "active", capabilities: ["story.generate"] }
+        : base(path, options)
+  );
+  const canvas = {
+    documentId: "55555555-5555-4555-8555-555555555555",
+    nodeId: "modes",
+    mode: "image" as const,
+    seed: {
+      prompt: "Lake",
+      modelId: "model",
+      mode: "text_to_image",
+      settings: {},
+      references: {
+        references: [{ id: "ref", url: "https://example.com/original.png" }],
+      },
+    },
+    beforeSubmit: vi.fn(async () => {}),
+    beforeRetry: vi.fn(async () => {}),
+    afterReceipt: vi.fn(async () => {}),
+  };
+  await mount(undefined, project, canvas);
+  await click("Image preset");
+  expect(input("References")).toBeNull();
+  await click("image to image");
+  expect(input("References").value).toBe("https://example.com/original.png");
+  await change("References", "https://example.com/edited.png");
+  await click("text to image");
+  expect(input("References")).toBeNull();
+  await mount(undefined, project, { ...canvas, nodeId: "other" });
+  await mount(undefined, project, canvas);
+  expect(button("✓ text to image")).toBeDefined();
+  await click("image to image");
+  expect(input("References").value).toBe("https://example.com/edited.png");
+  await click("text to image");
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post).toHaveBeenCalledOnce();
+  expect(h.post.mock.calls[0]![1].data.input).toEqual({ prompt: "Lake" });
+  expect(h.post.mock.calls[0]![1].data.referenceBindings).toBeUndefined();
+  await click("aiLab.create");
+  await click("image to image");
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post).toHaveBeenCalledTimes(2);
+  expect(h.post.mock.calls[1]![1].data.input).toEqual({
+    prompt: "Lake",
+    references: ["https://example.com/edited.png"],
+  });
+});

@@ -17,6 +17,7 @@ const model = z
     name: z.string(),
     description: z.string().optional(),
     type: z.enum(["image", "video", "audio"]),
+    generationModes: z.array(z.string().min(1)).optional(),
     enabled: z.boolean(),
     disabledReason: z.string().optional(),
     schemaVersion: z.string().min(1),
