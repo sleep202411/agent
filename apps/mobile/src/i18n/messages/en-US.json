@@ -5430,5 +5430,14 @@
   "storyCanvas.referencesDetachBody": "Remove this reference? The source media will remain available.",
   "storyCanvas.referencesUnavailable": "No reference slot is available in the current model mode.",
   "storyCanvas.media.removeReference": "Remove reference",
-  "storyCanvas.referencesMissingSource": "Source card is unavailable"
+  "storyCanvas.referencesMissingSource": "Source card is unavailable",
+  "agent.userInputProfile.aspect_ratio.header": "Aspect ratio",
+  "agent.userInputProfile.aspect_ratio.question": "Which frame aspect ratio should the project use?",
+  "agent.userInputProfile.target_runtime.header": "Target runtime",
+  "agent.userInputProfile.target_runtime.question": "What is the target runtime?",
+  "agent.userInputProfile.visual_direction.header": "Visual direction",
+  "agent.userInputProfile.visual_direction.question": "Which visual style should the project use?",
+  "agent.userInputProfile.story_language.header": "Story language",
+  "agent.userInputProfile.story_language.question": "Which language should the story use?",
+  "agent.userInputStep": "Step {current}/{total}"
 }

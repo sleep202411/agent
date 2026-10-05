@@ -5430,5 +5430,14 @@
   "storyCanvas.referencesDetachBody": "移除此參考素材？來源媒體仍會保留。",
   "storyCanvas.referencesUnavailable": "目前模型模式沒有可用的參考素材插槽。",
   "storyCanvas.media.removeReference": "移除參考素材",
-  "storyCanvas.referencesMissingSource": "來源卡片已無法使用"
+  "storyCanvas.referencesMissingSource": "來源卡片已無法使用",
+  "agent.userInputProfile.aspect_ratio.header": "畫面比例",
+  "agent.userInputProfile.aspect_ratio.question": "本項目使用甚麼畫面比例？",
+  "agent.userInputProfile.target_runtime.header": "目標時長",
+  "agent.userInputProfile.target_runtime.question": "目標體驗時長是多少？",
+  "agent.userInputProfile.visual_direction.header": "視覺風格",
+  "agent.userInputProfile.visual_direction.question": "本項目採用哪種視覺風格？",
+  "agent.userInputProfile.story_language.header": "故事語言",
+  "agent.userInputProfile.story_language.question": "劇本與故事內容使用哪種語言？",
+  "agent.userInputStep": "步驟 {current}/{total}"
 }

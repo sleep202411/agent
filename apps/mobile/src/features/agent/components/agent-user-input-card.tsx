@@ -1,9 +1,19 @@
 import { SymbolView } from "expo-symbols";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
 import { useLocale, useTranslations } from "@/i18n";
 
+import { agentInputQuestionCopy, agentInputOptionLabel } from "../lib/agent-input-copy";
+import { fillMessageTemplate } from "../api/story-production-api";
 import { useAgentInputForm } from "../hooks/use-agent-input-form";
 import type { AgentOsPendingUserInput } from "../api/agent-os-api";
 
@@ -23,6 +33,7 @@ export function AgentUserInputCard(props: AgentUserInputCardProps) {
 function AgentUserInputView({ request, busy, onSubmit }: AgentUserInputCardProps) {
   const t = useTranslations();
   const locale = useLocale();
+  const { height } = useWindowDimensions();
   const questions = request.questions;
   const { step, question, isLast, selected, choose, back, submit } = useAgentInputForm(
     questions,
@@ -31,65 +42,76 @@ function AgentUserInputView({ request, busy, onSubmit }: AgentUserInputCardProps
   );
 
   if (!question) return null;
+  const questionCopy = agentInputQuestionCopy(request.formId, question, t);
 
-  const stepLabel =
-    locale === "en-US"
-      ? `Step ${step + 1}/${questions.length}`
-      : locale === "zh-HK"
-        ? `步驟 ${step + 1}/${questions.length}`
-        : `步骤 ${step + 1}/${questions.length}`;
+  const stepLabel = fillMessageTemplate(t("agent.userInputStep"), {
+    current: step + 1,
+    total: questions.length,
+  });
 
   return (
     <View style={styles.card}>
-      <View style={styles.stepRow}>
-        <Text style={styles.stepLabel}>{stepLabel}</Text>
-        <View style={styles.progressTrack}>
-          {questions.map((item, index) => (
-            <View
-              key={item.id}
-              style={[
-                styles.progressSegment,
-                index <= step ? styles.progressActive : styles.progressIdle,
-              ]}
-            />
-          ))}
+      <ScrollView
+        key={question.id}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        style={{ maxHeight: Math.max(140, height * 0.42) }}
+        contentContainerStyle={styles.body}
+      >
+        <View style={styles.stepRow}>
+          <Text style={styles.stepLabel}>{stepLabel}</Text>
+          <View style={styles.progressTrack}>
+            {questions.map((item, index) => (
+              <View
+                key={item.id}
+                style={[
+                  styles.progressSegment,
+                  index <= step ? styles.progressActive : styles.progressIdle,
+                ]}
+              />
+            ))}
+          </View>
         </View>
-      </View>
 
-      <View style={styles.questionHeader}>
-        <View style={styles.qBadge}>
-          <Text style={styles.qBadgeText}>Q{step + 1}</Text>
+        <View style={styles.questionHeader}>
+          <View style={styles.qBadge}>
+            <Text style={styles.qBadgeText}>Q{step + 1}</Text>
+          </View>
+          {questionCopy.header ? (
+            <Text style={styles.questionHeaderText}>{questionCopy.header}</Text>
+          ) : null}
+          <Text style={styles.requiredMark}>*</Text>
         </View>
-        {question.header ? <Text style={styles.questionHeaderText}>{question.header}</Text> : null}
-        <Text style={styles.requiredMark}>*</Text>
-      </View>
-      <Text style={styles.questionBody}>{question.question}</Text>
+        <Text style={styles.questionBody}>{questionCopy.question}</Text>
 
-      <View style={styles.optionsGrid}>
-        {question.options.map((option) => {
-          const checked = option.value === selected;
-          return (
-            <Pressable
-              key={option.value}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: checked }}
-              disabled={busy}
-              onPress={() => choose(option.value)}
-              style={({ pressed }) => [
-                styles.option,
-                checked && styles.optionSelected,
-                pressed && !busy && styles.pressed,
-              ]}
-            >
-              <Text style={styles.optionLabel}>{option.label}</Text>
-              {option.description ? (
-                <Text style={styles.optionDescription}>{option.description}</Text>
-              ) : null}
-            </Pressable>
-          );
-        })}
-      </View>
-
+        <View style={styles.optionsGrid}>
+          {question.options.map((option) => {
+            const checked = option.value === selected;
+            return (
+              <Pressable
+                key={option.value}
+                accessibilityRole="radio"
+                accessibilityState={{ checked, disabled: busy }}
+                aria-checked={checked}
+                disabled={busy}
+                onPress={() => choose(option.value)}
+                style={({ pressed }) => [
+                  styles.option,
+                  checked && styles.optionSelected,
+                  pressed && !busy && styles.pressed,
+                ]}
+              >
+                <Text style={styles.optionLabel}>
+                  {agentInputOptionLabel(request.formId, question.id, option, locale, t)}
+                </Text>
+                {option.description ? (
+                  <Text style={styles.optionDescription}>{option.description}</Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
       <View style={styles.actions}>
         {step > 0 ? (
           <Pressable
@@ -131,6 +153,7 @@ function AgentUserInputView({ request, busy, onSubmit }: AgentUserInputCardProps
 }
 
 const styles = StyleSheet.create({
+  body: { gap: Spacing.three },
   card: {
     backgroundColor: "rgba(255,255,255,0.04)",
     borderRadius: 22,
