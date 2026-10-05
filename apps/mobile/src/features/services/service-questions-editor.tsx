@@ -76,7 +76,12 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
       return copy;
     });
   const button = (label: string, onPress: () => void, disabled = false) => (
-    <Pressable accessibilityRole="button" disabled={op.busy || disabled} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      disabled={op.busy || disabled}
+      onPress={onPress}
+      style={{ minHeight: 44, justifyContent: "center", opacity: op.busy || disabled ? 0.45 : 1 }}
+    >
       <ThemedText>{label}</ThemedText>
     </Pressable>
   );
