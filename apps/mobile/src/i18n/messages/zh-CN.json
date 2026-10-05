@@ -5338,5 +5338,9 @@
   "storyListing.reviewServer": "核对服务器详情",
   "storyListing.serverDetails": "服务器当前详情",
   "play.speed.label": "播放速度",
-  "play.speed.interactionBlocked": "请先完成当前互动，再调整播放速度。"
+  "play.speed.interactionBlocked": "请先完成当前互动，再调整播放速度。",
+  "play.seek.back": "后退 10 秒",
+  "play.seek.forward": "前进 10 秒",
+  "play.seek.progress": "播放进度",
+  "play.seek.watchedOnly": "只能跳转到已观看的片段。"
 }

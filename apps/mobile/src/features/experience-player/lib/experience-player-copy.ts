@@ -1,6 +1,8 @@
+import type { ExperienceSeekCopy } from "../components/experience-seek-control";
 import type { ExperienceSpeedCopy } from "../components/experience-speed-control";
 import type { ExperienceJourneyMapCopy } from "../components/experience-journey-map";
 export interface ExperiencePlayerCopy {
+  seek?: ExperienceSeekCopy;
   speed?: ExperienceSpeedCopy;
   journeyMap?: ExperienceJourneyMapCopy;
   invalidManifest: string;

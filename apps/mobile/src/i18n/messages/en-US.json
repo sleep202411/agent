@@ -5338,5 +5338,9 @@
   "storyListing.reviewServer": "Review server details",
   "storyListing.serverDetails": "Current server details",
   "play.speed.label": "Playback speed",
-  "play.speed.interactionBlocked": "Finish the current interaction before changing speed."
+  "play.speed.interactionBlocked": "Finish the current interaction before changing speed.",
+  "play.seek.back": "Back 10 seconds",
+  "play.seek.forward": "Forward 10 seconds",
+  "play.seek.progress": "Playback progress",
+  "play.seek.watchedOnly": "You can skip within footage you have already watched."
 }

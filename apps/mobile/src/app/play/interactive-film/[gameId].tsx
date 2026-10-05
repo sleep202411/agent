@@ -75,6 +75,12 @@ export default function PlayGameScreen() {
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
       journeyMap: createExperienceJourneyMapCopy(t),
+      seek: {
+        back: t("play.seek.back"),
+        forward: t("play.seek.forward"),
+        progress: t("play.seek.progress"),
+        watchedOnly: t("play.seek.watchedOnly"),
+      },
       speed: {
         label: t("play.speed.label"),
         interactionBlocked: t("play.speed.interactionBlocked"),

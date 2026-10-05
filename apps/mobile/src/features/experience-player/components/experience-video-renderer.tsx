@@ -130,7 +130,7 @@ export type ExperienceMediaPlaybackHandle = {
   readonly playbackIdentity: string;
   play(options?: { userGesture?: boolean }): Promise<void>;
   pause(): void;
-  seek(seconds: number): void;
+  seek(seconds: number): boolean | void;
 };
 
 export function ExperienceVideoRenderer({
@@ -630,11 +630,12 @@ export function ExperienceVideoRenderer({
           ? clampWatchedSeek(seconds * 1000, progress.durationMs, progress.watchedUntilMs)
           : 0;
         if (isStill) {
-          if (!stillSeekRef.current?.(positionMs)) return;
+          if (!stillSeekRef.current?.(positionMs)) return false;
         } else {
           player.currentTime = positionMs / 1000;
         }
         observeProgress(positionMs, false);
+        return true;
       },
     };
     onPlaybackHandle(renderer.instanceId, handle);

@@ -1,3 +1,4 @@
+import { ExperienceSeekControl } from "./experience-seek-control";
 import { ExperienceSpeedControl } from "./experience-speed-control";
 import { useFixedPlaybackClock } from "../hooks/use-fixed-playback-clock";
 import { ExperienceJourneyMap } from "./experience-journey-map";
@@ -66,6 +67,7 @@ import type { ExperiencePlayerAccess } from "../lib/experience-player-access";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import { createExperienceRuntime } from "../lib/experience-runtime-host";
 import {
+  clampWatchedSeek,
   scenePlaybackSignature,
   shouldAdvancePlaybackTimeline,
   type ExperienceCheckpointReason,
@@ -678,8 +680,11 @@ function ActiveExperienceRuntimePlayer({
   );
 
   const advanceTimeline = useCallback(
-    (rendererInstanceId: string | null, positionMs: number) => {
-      if (!presentingRef.current || (rendererInstanceId !== null && timelineHoldGateRef.current))
+    (rendererInstanceId: string | null, positionMs: number, viewerSeek = false) => {
+      if (
+        (!presentingRef.current && !viewerSeek) ||
+        (rendererInstanceId !== null && timelineHoldGateRef.current)
+      )
         return;
       const currentState = controller.state();
       const activeNode = findGraphNode(manifest, currentState.currentSceneId);
@@ -779,6 +784,62 @@ function ActiveExperienceRuntimePlayer({
     return !!(timelineHoldGate || pending || interaction);
   }, [scene, runtimeState, sceneTimeMs, timelineHoldGate, checkpointRevision]);
   const effectivePlaybackRate = rateBlocked ? 1 : playbackRate;
+  const seekProgress = useMemo(() => {
+    void checkpointRevision;
+    const renderer = visibleRenderers.find(
+      (item) =>
+        item.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID &&
+        (scene?.clock.kind !== "renderer" || item.instanceId === scene.clock.rendererInstanceId)
+    );
+    return renderer ? mediaCheckpointsRef.current.get(renderer.instanceId) : undefined;
+  }, [visibleRenderers, scene, checkpointRevision]);
+  const seekWatchedPosition = (targetMs: number) => {
+    if (
+      !Number.isFinite(targetMs) ||
+      rateBlocked ||
+      !viewerPaused ||
+      !screenActive ||
+      !active ||
+      !playbackEnabled ||
+      journeyOpen ||
+      replayPending ||
+      accessPendingRef.current ||
+      retryAccess ||
+      !scene ||
+      sceneEpoch !== checkpointEpochRef.current ||
+      controller.state().currentSceneId !== scene.sceneId ||
+      !seekProgress
+    )
+      return;
+    const progress = mediaCheckpointsRef.current.get(seekProgress.rendererInstanceId);
+    const handle = playbackHandlesRef.current.get(seekProgress.rendererInstanceId);
+    if (!progress || !handle || progress.completed || (progress.terminalMode && !progress.isStill))
+      return;
+    const target = clampWatchedSeek(targetMs, progress.durationMs, progress.watchedUntilMs);
+    const sceneTarget = Math.max(0, sceneTimeMs - progress.positionMs + target);
+    if (
+      target > progress.positionMs &&
+      scene.gestures.some(
+        (gesture) =>
+          !settledGestureIdsRef.current.includes(gesture.gestureId) &&
+          gesture.activeWindow &&
+          sceneTimeMs < gesture.activeWindow.startMs &&
+          sceneTarget >= gesture.activeWindow.startMs
+      )
+    )
+      return;
+    if (handle.seek(target / 1000) === false) return;
+    mediaCheckpointsRef.current.set(progress.rendererInstanceId, {
+      ...progress,
+      positionMs: target,
+    });
+    setCheckpointRevision((value) => value + 1);
+    if (
+      scene.clock.kind === "renderer" &&
+      scene.clock.rendererInstanceId === progress.rendererInstanceId
+    )
+      advanceTimeline(progress.rendererInstanceId, sceneTarget, true);
+  };
   const clockScene = scene?.clock.kind === "fixed" ? scene : null;
   useFixedPlaybackClock({
     identity: `${scene?.sceneId}:${sceneEpoch}`,
@@ -1329,7 +1390,10 @@ function ActiveExperienceRuntimePlayer({
                 }
                 setViewerPaused(false);
               }}
-              style={styles.pauseOverlay}
+              style={[
+                styles.pauseOverlay,
+                copy.speed && { paddingBottom: copy.seek && seekProgress ? 144 : 72 },
+              ]}
             >
               <ThemedText type="smallBold" style={styles.lightText}>
                 {copy.paused}
@@ -1366,6 +1430,19 @@ function ActiveExperienceRuntimePlayer({
           (renderer) => renderer.rendererId === EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID
         ) ? (
           <View style={styles.speedControl}>
+            {copy.seek &&
+            seekProgress &&
+            !seekProgress.completed &&
+            (!seekProgress.terminalMode || seekProgress.isStill) ? (
+              <ExperienceSeekControl
+                positionMs={seekProgress.positionMs}
+                durationMs={seekProgress.durationMs}
+                limitMs={seekProgress.watchedUntilMs}
+                blocked={rateBlocked || !playbackEnabled}
+                copy={copy.seek}
+                onSeek={seekWatchedPosition}
+              />
+            ) : null}
             <ExperienceSpeedControl
               rate={playbackRate}
               blocked={rateBlocked}

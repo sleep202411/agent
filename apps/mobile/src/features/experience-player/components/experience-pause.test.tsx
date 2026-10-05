@@ -231,6 +231,12 @@ function progress(positionMs: number): ExperienceMediaCheckpoint {
   };
 }
 const copy = {
+  seek: {
+    back: "Back 10 seconds",
+    forward: "Forward 10 seconds",
+    progress: "Playback progress",
+    watchedOnly: "Watched footage only",
+  },
   speed: {
     label: "Playback speed",
     interactionBlocked: "Finish the current interaction before changing speed.",
@@ -806,4 +812,107 @@ it("keeps an interaction-blocked speed unchanged even if its callback is invoked
   await click("Playback speed: 1×");
   expect(captured.mock.calls.at(-1)![0].playback.rate).toBe(1);
   expect(container.textContent).toContain(copy.speed!.interactionBlocked);
+});
+
+it("seeks within watched footage while paused and preserves viewing credit", async () => {
+  await render(true, runtime, true);
+  await click("Start");
+  const seek = vi.fn(() => true);
+  await act(async () => {
+    h.video.onPlaybackHandle("video", {
+      playbackIdentity: "clip",
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      seek,
+    });
+    h.video.onPlaybackProgress({ ...progress(5000), watchedUntilMs: 8000 });
+  });
+  await pausePicture();
+  await click("Back 10 seconds");
+  expect(seek).toHaveBeenLastCalledWith(0);
+  expect(captured.mock.calls.at(-1)![0].playback.media[0]).toMatchObject({
+    positionMs: 0,
+    watchedUntilMs: 8000,
+  });
+  await click("Forward 10 seconds");
+  expect(seek).toHaveBeenLastCalledWith(8);
+  expect(captured.mock.calls.at(-1)![0].playback.media[0]).toMatchObject({
+    positionMs: 8000,
+    watchedUntilMs: 8000,
+  });
+  expect(container.textContent).toContain("Paused");
+});
+it("does not publish a seek rejected by unloaded media or an interaction hold", async () => {
+  await render(true, runtime, true);
+  await click("Start");
+  const seek = vi.fn(() => false);
+  await act(async () => {
+    h.video.onPlaybackHandle("video", {
+      playbackIdentity: "clip",
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      seek,
+    });
+    h.video.onPlaybackProgress(progress(5000));
+  });
+  await pausePicture();
+  await click("Back 10 seconds");
+  expect(captured.mock.calls.at(-1)![0].playback.media[0].positionMs).toBe(5000);
+  seek.mockClear();
+  await act(async () => h.hold(true));
+  await click("Back 10 seconds");
+  expect(seek).not.toHaveBeenCalled();
+});
+it("rejects forward seeking over an unresolved interaction and allows it once settled", async () => {
+  const manifest = structuredClone(runtime);
+  const scene = manifest.graph.nodes[0]!;
+  if (scene.kind !== "scene") throw Error("Expected scene");
+  scene.gestures = [
+    { gestureId: "future", activeWindow: { startMs: 5000, endMs: 6000 } },
+  ] as typeof scene.gestures;
+  await render(true, manifest, true);
+  await click("Start");
+  const seek = vi.fn(() => true);
+  await act(async () => {
+    h.video.onPlaybackHandle("video", {
+      playbackIdentity: "clip",
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      seek,
+    });
+    h.video.onPlaybackProgress({ ...progress(0), watchedUntilMs: 8000 });
+  });
+  await pausePicture();
+  await click("Forward 10 seconds");
+  expect(seek).not.toHaveBeenCalled();
+  expect(captured.mock.calls.at(-1)![0].playback.media[0].positionMs).toBe(0);
+  await act(async () => h.settled!(["future"]));
+  await click("Forward 10 seconds");
+  expect(seek).toHaveBeenLastCalledWith(8);
+});
+it("rewinds a renderer-driven scene while paused without replaying timeline cues", async () => {
+  const manifest = structuredClone(runtime);
+  const scene = manifest.graph.nodes[0]!;
+  if (scene.kind !== "scene") throw Error("Expected scene");
+  scene.clock = { kind: "renderer", rendererInstanceId: "video" };
+  await render(true, manifest, true, savedCheckpoint());
+  await click("Start");
+  const seek = vi.fn(() => true);
+  await act(async () => {
+    h.video.onPlaybackHandle("video", {
+      playbackIdentity: "clip",
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      seek,
+    });
+    h.video.onPlaybackProgress(progress(8000));
+  });
+  await pausePicture();
+  h.dispatch.mockClear();
+  await click("Back 10 seconds");
+  expect(captured.mock.calls.at(-1)![0].playback).toMatchObject({
+    sceneTimeMs: 0,
+    cursor: { positionMs: 8000 },
+  });
+  expect(h.dispatch).not.toHaveBeenCalled();
 });
