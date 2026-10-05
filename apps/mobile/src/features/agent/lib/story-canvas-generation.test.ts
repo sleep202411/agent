@@ -243,6 +243,7 @@ it("backfills a connected generation input, preserves other references and repla
         id: "wire",
         edgeId: "wire",
         sourceNodeId: "card",
+        sourceJobId: job.id,
         url: job.outputs[0]!.url,
         kind: "image",
         name: "A lake",
@@ -324,7 +325,7 @@ it("ignores removed wires and targets whose model changed since catalog discover
     ).toHaveProperty("data.references", {});
   }
 });
-it("allocates multiple wires against fresh capacity without causing a reconciliation write loop", () => {
+it("rejects duplicate source wires without deleting the graph or causing a write loop", () => {
   const doc = new Y.Doc();
   Y.applyUpdate(doc, Uint8Array.from(Buffer.from(connected(), "base64")));
   doc
@@ -333,7 +334,8 @@ it("allocates multiple wires against fresh capacity without causing a reconcilia
   const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
   doc.destroy();
   const result = applyCanvasGeneration(state, documentId, routedJob);
-  expect(result.snapshot.nodes.target).toHaveProperty("data.references.referenceImages.length", 2);
+  expect(result.snapshot.nodes.target).toHaveProperty("data.references", {});
+  expect(Object.keys(result.snapshot.edges)).toEqual(expect.arrayContaining(["wire", "wire2"]));
   expect(applyCanvasGeneration(result.state, documentId, routedJob).yjsUpdateBase64).toBeNull();
 });
 it.each(["video", "audio"] as const)(
@@ -382,4 +384,93 @@ it("routes to the second frame when the first frame is occupied", () => {
     { id: "existing" },
   ]);
   expect(result.snapshot.nodes.target).toHaveProperty("data.references.endFrame.0.edgeId", "wire");
+});
+
+it.each(["prompt", "image", "panorama", "video", "audio"])(
+  "respects pending %s reservations when routing a completed image",
+  (type) => {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, Uint8Array.from(Buffer.from(connected(), "base64")));
+    doc.getMap("nodes").set("pending", new Y.Map(Object.entries({ id: "pending", type })));
+    doc.getMap("edges").set(
+      "pending-wire",
+      new Y.Map(
+        Object.entries({
+          id: "pending-wire",
+          source: "pending",
+          target: "target",
+        })
+      )
+    );
+    const state = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+    doc.destroy();
+    const reservesImage = ["prompt", "image", "panorama"].includes(type);
+    const limitedJob: CanvasGenerationJob = {
+      ...routedJob,
+      referenceTargets: {
+        target: {
+          ...routedJob.referenceTargets!.target!,
+          fields: [{ field: "startFrame", kind: "image", maxItems: 1 }],
+        },
+      },
+    };
+    const limited = applyCanvasGeneration(state, documentId, limitedJob);
+    expect(limited.snapshot.nodes.target).toHaveProperty(
+      reservesImage ? "data.references" : "data.references.startFrame.0.edgeId",
+      reservesImage ? {} : "wire"
+    );
+    expect(limited.snapshot.assets.result).toBeDefined();
+    const expandedJob: CanvasGenerationJob = {
+      ...limitedJob,
+      referenceTargets: {
+        target: {
+          ...limitedJob.referenceTargets!.target!,
+          fields: [
+            { field: "startFrame", kind: "image", maxItems: 1 },
+            { field: "endFrame", kind: "image", maxItems: 1 },
+          ],
+        },
+      },
+    };
+    const expanded = applyCanvasGeneration(state, documentId, expandedJob);
+    expect(expanded.snapshot.nodes.target).toHaveProperty(
+      `data.references.${reservesImage ? "endFrame" : "startFrame"}.0.sourceJobId`,
+      job.id
+    );
+    expect(
+      applyCanvasGeneration(expanded.state, documentId, expandedJob).yjsUpdateBase64
+    ).toBeNull();
+  }
+);
+it("does not duplicate a manually bound reference to the same source", () => {
+  const state = connected({ referenceImages: [{ id: "manual", sourceNodeId: "card" }] });
+  const result = applyCanvasGeneration(state, documentId, routedJob);
+  expect(result.snapshot.nodes.target).toEqual(materializeCanvas(state, []).snapshot.nodes.target);
+});
+it("counts a bound wire once and refreshes its neighbour within full capacity", () => {
+  const state = connected({
+    referenceImages: [
+      { id: "other", edgeId: "other", sourceNodeId: "image", url: "https://example.test/image" },
+      { id: "wire", edgeId: "wire", sourceNodeId: "card", url: "https://example.test/old" },
+    ],
+  });
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, Uint8Array.from(Buffer.from(state, "base64")));
+  doc.getMap("nodes").set("image", new Y.Map(Object.entries({ id: "image", type: "image" })));
+  doc
+    .getMap("edges")
+    .set("other", new Y.Map(Object.entries({ id: "other", source: "image", target: "target" })));
+  const connectedState = encodeCanvasBytes(Y.encodeStateAsUpdate(doc));
+  doc.destroy();
+  const result = applyCanvasGeneration(connectedState, documentId, routedJob);
+  expect(result.snapshot.nodes.target).toHaveProperty("data.references.referenceImages.length", 2);
+  expect(result.snapshot.nodes.target).toHaveProperty(
+    "data.references.referenceImages.1.url",
+    job.outputs[0]!.url
+  );
+  expect(result.snapshot.nodes.target).toHaveProperty(
+    "data.references.referenceImages.0.url",
+    "https://example.test/image"
+  );
+  expect(applyCanvasGeneration(result.state, documentId, routedJob).yjsUpdateBase64).toBeNull();
 });
