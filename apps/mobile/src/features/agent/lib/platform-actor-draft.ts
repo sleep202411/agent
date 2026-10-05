@@ -72,5 +72,11 @@ export function platformActorDraftStore(
         throw Error("Actor insertion acknowledgement mismatch.");
       record.write(JSON.stringify({ version: 1, draft: null }));
     },
+    discardUnprepared: (clientKey: string) => {
+      const previous = read();
+      if (!previous || previous.clientKey !== clientKey || previous.command)
+        throw Error("A prepared actor save must be confirmed before it can be cleared.");
+      record.write(JSON.stringify({ version: 1, draft: null }));
+    },
   };
 }

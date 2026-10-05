@@ -1,15 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import {
-  listAiActors,
-  unlockAiActor,
-  requestActorUse,
-  pendingActorUse,
-  type ActorProjectScope,
-} from "./actors-api";
+import { listAiActors, unlockAiActor, requestActorUse, type ActorProjectScope } from "./actors-api";
 const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), generation: 1 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/lib/durable-record", () => ({ durableRecord: vi.fn() }));
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const projectId = "22222222-2222-4222-8222-222222222222";
 const actorId = "33333333-3333-4333-8333-333333333333";
@@ -65,7 +58,7 @@ it("rejects a mismatched unlock receipt", async () => {
   h.post.mockResolvedValue({ actorId, workspaceId: projectId });
   await expect(unlockAiActor(workspaceId, actorId, 1, signal())).rejects.toThrow("receipt");
 });
-it("reuses the persisted intent after an uncertain use response", async () => {
+it("reuses the caller request identity after an uncertain use response", async () => {
   h.post.mockRejectedValueOnce(Error("reply lost"));
   await expect(requestActorUse(scope, intent, signal())).rejects.toThrow("reply lost");
   expect(await requestActorUse(scope, intent, signal())).toEqual(receipt);
@@ -127,56 +120,4 @@ it("preserves the server's photo-change error for explicit recovery", async () =
   });
   h.post.mockRejectedValue(error);
   await expect(requestActorUse(scope, intent, signal())).rejects.toBe(error);
-});
-
-it("persists before dispatch, resumes after remount, and clears only after insertion", async () => {
-  let stored: string | null = null;
-  const storage = {
-    read: () => stored,
-    write: (value: string) => {
-      stored = value;
-    },
-  };
-  const first = pendingActorUse(scope, "alice", projectId, storage);
-  h.post.mockImplementationOnce(async () => {
-    expect(first.read()).toEqual(intent);
-    throw Error("reply lost");
-  });
-  await expect(first.submit(intent, signal())).rejects.toThrow("reply lost");
-  const resumed = pendingActorUse(scope, "alice", projectId, storage);
-  expect(resumed.read()).toEqual(intent);
-  expect(await resumed.submit(resumed.read()!, signal())).toEqual(receipt);
-  expect(resumed.read()).toEqual(intent);
-  expect(() => resumed.acknowledgeInsertion({ ...receipt, nodeId: actorId })).toThrow(
-    "acknowledgement"
-  );
-  expect(resumed.read()).toEqual(intent);
-  resumed.acknowledgeInsertion(receipt);
-  expect(resumed.read()).toBeNull();
-});
-it("does not overwrite an unresolved actor use with a different actor", async () => {
-  let stored: string | null = null;
-  const pending = pendingActorUse(scope, "alice", projectId, {
-    read: () => stored,
-    write: (value) => {
-      stored = value;
-    },
-  });
-  await pending.submit(intent, signal());
-  await expect(pending.submit({ actorId: projectId, clientKey }, signal())).rejects.toThrow(
-    "pending"
-  );
-  expect(pending.read()).toEqual(intent);
-  expect(h.post).toHaveBeenCalledTimes(1);
-});
-it("does not dispatch when durable storage fails", async () => {
-  const pending = pendingActorUse(scope, "alice", projectId, {
-    read: () => null,
-    write: () => {
-      throw Error("disk full");
-    },
-  });
-  await expect(pending.submit(intent, signal())).rejects.toThrow("disk full");
-  expect(h.get).not.toHaveBeenCalled();
-  expect(h.post).not.toHaveBeenCalled();
 });

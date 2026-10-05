@@ -1,8 +1,6 @@
 import { z } from "zod";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "@/lib/api-client";
-import { durableRecord, type DurableRecord } from "@/lib/durable-record";
-import { pendingRequest } from "@/lib/pending-request";
 import { canvasActorReceiptSchema } from "../../../canvas-editor/actor-schema";
 
 const id = z.string().uuid();
@@ -31,49 +29,6 @@ export const actorUseIntent = z.object({ actorId: id, clientKey: id }).strict();
 export type ActorUseIntent = z.infer<typeof actorUseIntent>;
 const useReceipt = canvasActorReceiptSchema;
 export type ActorUseReceipt = z.infer<typeof useReceipt>;
-
-/** The canvas owner clears this only after its node-save acknowledgement. A use
- * receipt alone is not proof that the actor card was inserted into the canvas. */
-export function pendingActorUse(
-  rawScope: ActorProjectScope,
-  userId: string,
-  documentId: string,
-  storage?: DurableRecord
-) {
-  const scope = scopeSchema.parse(rawScope);
-  id.parse(documentId);
-  const pending = pendingRequest(
-    actorUseIntent,
-    scope.generation,
-    storage ??
-      durableRecord(
-        "canvas-actor-use",
-        userId,
-        `${scope.workspaceId}:${scope.projectId}:${documentId}`
-      )
-  );
-  return {
-    read: pending.read,
-    submit: async (raw: ActorUseIntent, signal: AbortSignal) => {
-      current(scope.generation, signal);
-      const intent = actorUseIntent.parse(raw);
-      pending.save(intent);
-      return requestActorUse(scope, intent, signal);
-    },
-    acknowledgeInsertion: (raw: ActorUseReceipt) => {
-      const receipt = useReceipt.parse(raw);
-      const intent = pending.read();
-      if (
-        !intent ||
-        receipt.actorId !== intent.actorId ||
-        receipt.nodeId !== intent.clientKey ||
-        receipt.url !== `/aurora/media/assets/${receipt.mediaAssetId}/content`
-      )
-        throw Error("Actor insertion acknowledgement does not match the pending use.");
-      pending.clear(intent.clientKey);
-    },
-  };
-}
 
 function current(generation: number, signal: AbortSignal) {
   signal.throwIfAborted();

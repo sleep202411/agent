@@ -5407,5 +5407,15 @@
   "aiLab.canvasAutosave": "Changes sync to the canvas automatically. Incomplete fields stay on this device.",
   "aiLab.canvasSaveRetry": "Retry canvas save",
   "platformCanvas.allCards": "All cards",
-  "platformCanvas.openWeb": "Open in Web Studio"
+  "platformCanvas.openWeb": "Open in Web Studio",
+  "platformActors.title": "AI Actors",
+  "platformActors.pending": "This actor insertion is saved on this device. Retry to finish adding it.",
+  "platformActors.empty": "No actors are available.",
+  "platformActors.add": "Add to canvas",
+  "platformActors.unlock": "Unlock for workspace",
+  "platformActors.previous": "Previous page",
+  "platformActors.next": "Next page",
+  "platformActors.confirmDiscard": "Discard insertion",
+  "platformActors.discardHelp": "Discard this saved insertion? Existing canvas cards stay unchanged.",
+  "platformActors.photoUnavailable": "Photo unavailable"
 }

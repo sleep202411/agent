@@ -5407,5 +5407,15 @@
   "aiLab.canvasAutosave": "更改会自动同步到画布。未填写完整的内容保留在本机。",
   "aiLab.canvasSaveRetry": "重试保存画布",
   "platformCanvas.allCards": "全部卡片",
-  "platformCanvas.openWeb": "在网页版 Studio 中打开"
+  "platformCanvas.openWeb": "在网页版 Studio 中打开",
+  "platformActors.title": "AI 演员",
+  "platformActors.pending": "此演员添加操作已保存在本设备上。重试以完成添加。",
+  "platformActors.empty": "暂无可用演员。",
+  "platformActors.add": "添加到画布",
+  "platformActors.unlock": "为工作区解锁",
+  "platformActors.previous": "上一页",
+  "platformActors.next": "下一页",
+  "platformActors.confirmDiscard": "放弃添加",
+  "platformActors.discardHelp": "放弃此次已保存的添加操作？现有画布卡片不会更改。",
+  "platformActors.photoUnavailable": "照片暂不可用"
 }

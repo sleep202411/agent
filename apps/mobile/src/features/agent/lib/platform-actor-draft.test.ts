@@ -81,3 +81,13 @@ it("rejects late checkpoint writes after account changes", () => {
   expect(() => store.write({ ...intent, receipt })).toThrow("session");
   expect(() => store.read()).toThrow("session");
 });
+it("allows explicit discard before encoding but retains uncertain prepared saves", () => {
+  const store = platformActorDraftStore(scope, "user", storage);
+  store.write({ ...intent, receipt });
+  expect(() => store.discardUnprepared(id)).toThrow("prepared");
+  store.discardUnprepared(other);
+  expect(store.read()).toBeNull();
+  store.write({ ...intent, receipt, command });
+  expect(() => store.discardUnprepared(other)).toThrow("prepared");
+  expect(store.read()).toEqual({ ...intent, receipt, command });
+});

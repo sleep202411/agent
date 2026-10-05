@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getAuthGeneration } from "@/auth/auth-store";
+import { useAuth } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
@@ -14,6 +15,7 @@ import {
 import { canvasOverview } from "../lib/story-canvas-overview";
 import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasMap } from "./story-canvas-map";
+import { PlatformActorsPanel } from "./platform-actors-panel";
 
 export function PlatformCanvasPanel({
   scope,
@@ -47,6 +49,9 @@ function Session({
     theme = useTheme(),
     insets = useSafeAreaInsets();
   const [revision, setRevision] = useState(0);
+  const auth = useAuth();
+  const [actors, setActors] = useState(false);
+  if (auth.status !== "authenticated" || auth.generation !== scope.generation) return null;
   return (
     <Modal visible animationType="slide" onRequestClose={close}>
       <View
@@ -63,21 +68,39 @@ function Session({
             <Pressable accessibilityRole="button" onPress={close} style={{ padding: 8 }}>
               <ThemedText type="small">{t("agent.close")}</ThemedText>
             </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setRevision((n) => n + 1)}
-              style={{ padding: 8 }}
-            >
-              <ThemedText type="small">{t("storyCanvas.refresh")}</ThemedText>
-            </Pressable>
+            {!actors && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setRevision((n) => n + 1)}
+                style={{ padding: 8 }}
+              >
+                <ThemedText type="small">{t("storyCanvas.refresh")}</ThemedText>
+              </Pressable>
+            )}
           </View>
         </View>
-        <Document key={revision} scope={scope} />
+        {actors && auth.status === "authenticated" ? (
+          <PlatformActorsPanel
+            scope={scope}
+            userId={String(auth.user?.userId ?? auth.user?.id ?? "")}
+            close={() => setActors(false)}
+            saved={() => {
+              setActors(false);
+              setRevision((n) => n + 1);
+            }}
+          />
+        ) : (
+          <Document
+            key={revision}
+            scope={scope}
+            openActors={auth.status === "authenticated" ? () => setActors(true) : undefined}
+          />
+        )}
       </View>
     </Modal>
   );
 }
-function Document({ scope }: { scope: PlatformCanvasScope }) {
+function Document({ scope, openActors }: { scope: PlatformCanvasScope; openActors?: () => void }) {
   const t = useTranslations(),
     theme = useTheme();
   const [loaded, setLoaded] = useState<CanvasLoaded>();
@@ -114,6 +137,11 @@ function Document({ scope }: { scope: PlatformCanvasScope }) {
       )}
       {loaded && overview && (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          {openActors && (
+            <Pressable accessibilityRole="button" onPress={openActors} style={{ padding: 10 }}>
+              <ThemedText type="small">{t("platformActors.title")}</ThemedText>
+            </Pressable>
+          )}
           <Pressable
             accessibilityRole="button"
             onPress={() => setMapping(true)}
