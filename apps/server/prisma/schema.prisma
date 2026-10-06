@@ -11159,3 +11159,32 @@ model StoryboardExportJob {
   @@index([expiresAt])
   @@map("storyboard_export_jobs")
 }
+
+// Pax daily discovery foundations; no scheduler or delivery is enabled yet.
+model DiscoveryPreference {
+  site         String               @db.VarChar(8)
+  actorId      String               @map("actor_id") @db.VarChar(64)
+  revision     Int
+  preferences  Json?
+  mutationId   String               @map("mutation_id") @db.Uuid
+  mutationHash String               @map("mutation_hash") @db.VarChar(64)
+  updatedAt    DateTime             @default(now()) @map("updated_at") @db.Timestamptz(6)
+  plans        DiscoveryDailyPlan[]
+
+  @@id([site, actorId])
+  @@map("discovery_preferences")
+}
+
+model DiscoveryDailyPlan {
+  site               String              @db.VarChar(8)
+  actorId            String              @map("actor_id") @db.VarChar(64)
+  localDay           DateTime            @map("local_day") @db.Date
+  preferenceRevision Int                 @map("preference_revision")
+  timeZone           String              @map("time_zone") @db.VarChar(100)
+  status             String              @db.VarChar(16)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  preference         DiscoveryPreference @relation(fields: [site, actorId], references: [site, actorId], onDelete: Cascade)
+
+  @@id([site, actorId, localDay])
+  @@map("discovery_daily_plans")
+}

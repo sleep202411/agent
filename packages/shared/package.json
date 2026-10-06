@@ -130,6 +130,10 @@
       "types": "./dist/creator-location.d.ts",
       "default": "./dist/creator-location.js"
     },
+    "./discovery-preferences": {
+      "types": "./dist/discovery-preferences.d.ts",
+      "default": "./dist/discovery-preferences.js"
+    },
     "./discovery-assistant": {
       "types": "./dist/discovery-assistant.d.ts",
       "default": "./dist/discovery-assistant.js"
