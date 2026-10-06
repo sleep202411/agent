@@ -1,6 +1,7 @@
 {
   "taskEntry": {
-    "title": "Create task",
+    "actionHelp": "Positions recruit people; tasks define work and deliverables.",
+    "title": "Create Task",
     "description": "Choose a Crew for this task, or create a new one.",
     "crew": "Crew",
     "choose": "Choose a Crew",
@@ -11,7 +12,7 @@
     "newCrew": "Create a new Crew",
     "continue": "Continue to task",
     "signIn": "Sign in to create a task",
-    "positionTitle": "Create position",
+    "positionTitle": "Create Position",
     "positionDescription": "Choose the Crew for this opening. You can link the position to an existing task in the next step.",
     "cannotManagePositions": "You need permission to manage openings in this Crew.",
     "continuePosition": "Continue to position"
@@ -5318,7 +5319,7 @@
       "savedTasks": "Tasks",
       "openDelivery": "Open task & submit delivery",
       "saveThenRecruit": "Save this task and continue to the job form.",
-      "completeDraftFields": "Complete the required fields in “{{title}}” before creating tasks."
+      "completeDraftFields": "Complete the required fields in “{title}” before creating tasks."
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
@@ -5887,7 +5888,7 @@
     "viewContract": "View contract",
     "removeContract": "Remove attachment",
     "requiredReward": "Reward (USD)",
-    "requiredTaskFields": "Complete the required fields: {{fields}}."
+    "requiredTaskFields": "Complete the required fields: {fields}."
   },
   "crewInvitations": {
     "signIn": "Sign in",
@@ -7980,7 +7981,7 @@
     }
   },
   "messages": {
-    "centerTitle": "Message center",
+    "centerTitle": "Message Center",
     "chatTab": "Chats",
     "notificationTab": "Notifications",
     "inboxTitle": "Messages",
@@ -10185,7 +10186,7 @@
     "completionRequired": "Feedback opens when the project is completed.",
     "communityPoints": "Completion community points",
     "rewardNotConfigured": "Completion rewards are not configured yet. The points amount and authorized approvers must be set before awards can be issued.",
-    "rewardPolicy": "{{points}} consumable community points per verified project completion, valid for {{days}} days. Awarded once per creator and project by an authorized approver. These points do not change reliability.",
+    "rewardPolicy": "{points} consumable community points per verified project completion, valid for {days} days. Awarded once per creator and project by an authorized approver. These points do not change reliability.",
     "awardPoints": "Verify contribution and award points",
     "previous": "Previous",
     "next": "Next",
@@ -11710,7 +11711,7 @@
     "responsesHint": "Completed moderation outcomes for IPs you currently own. Reporter identities and evidence remain private.",
     "initiatedHint": "Track complaints you submitted about content on the platform.",
     "retry": "Retry",
-    "reference": "Reference: {{id}}",
+    "reference": "Reference: {id}",
     "empty": "No complaints in this view.",
     "more": "Load more",
     "search": "Search by IP name or room number",
@@ -11758,12 +11759,12 @@
     "intro": "Video description",
     "channel": "Community channel",
     "search": "Search Community channels",
-    "selected": "Selected: {{name}}",
+    "selected": "Selected: {name}",
     "loading": "Loading…",
     "retry": "Retry",
     "empty": "No Community channels found.",
     "more": "Load more",
-    "uploading": "Uploading · {{progress}}%",
+    "uploading": "Uploading · {progress}%",
     "submit": "Submit for review",
     "success": "Your video was submitted for channel review.",
     "failed": "Video submission failed.",

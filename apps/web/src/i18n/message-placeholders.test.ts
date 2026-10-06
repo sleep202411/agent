@@ -39,6 +39,7 @@ import { describe, expect, it } from "vitest";
 import enUS from "@/messages/en-US.json";
 import zhCN from "@/messages/zh-CN.json";
 import zhHK from "@/messages/zh-HK.json";
+import i18n from "./i18n";
 
 const CATALOGS: Record<string, unknown> = {
   "en-US": enUS,
@@ -191,6 +192,19 @@ const scanned = SOURCE_DIRS.flatMap((dir) => sourceFiles(join(APP_ROOT, dir))).m
 const callSites = scanned.flatMap((r) => r.sites);
 
 describe("message placeholders", () => {
+  it.each(Object.keys(CATALOGS))("uses the configured single-brace syntax in %s", (locale) => {
+    expect(JSON.stringify(CATALOGS[locale])).not.toMatch(/\{\{[A-Za-z0-9_]+\}\}/);
+  });
+
+  it.each(Object.keys(CATALOGS))("interpolates missing task fields in %s", (locale) => {
+    const message = i18n.t("crewTasks.requiredTaskFields", {
+      lng: locale,
+      fields: "Deadline, Reward",
+    });
+    expect(message).toContain("Deadline, Reward");
+    expect(message).not.toMatch(/[{}]/);
+  });
+
   it("resolves the bulk of the app's translation call sites", () => {
     expect(callSites.length).toBeGreaterThan(SCANNED_AT_LEAST);
   });

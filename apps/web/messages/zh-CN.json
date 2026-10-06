@@ -1,5 +1,6 @@
 {
   "taskEntry": {
+    "actionHelp": "职位用于招募成员；任务用于明确工作内容和交付要求。",
     "title": "创建任务",
     "description": "为此任务选择剧组，或创建新剧组。",
     "crew": "剧组",
@@ -5318,7 +5319,7 @@
       "savedTasks": "任务",
       "openDelivery": "查看任务并提交交付",
       "saveThenRecruit": "保存任务并继续填写招聘信息。",
-      "completeDraftFields": "创建任务前，请补全“{{title}}”的必填项。"
+      "completeDraftFields": "创建任务前，请补全“{title}”的必填项。"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",
@@ -5887,7 +5888,7 @@
     "viewContract": "查看合同",
     "removeContract": "移除附件",
     "requiredReward": "报酬（USD）",
-    "requiredTaskFields": "请填写必填项：{{fields}}。"
+    "requiredTaskFields": "请填写必填项：{fields}。"
   },
   "crewInvitations": {
     "signIn": "登录",
@@ -10185,7 +10186,7 @@
     "completionRequired": "项目完成后开放评价。",
     "communityPoints": "完成项目的社区积分",
     "rewardNotConfigured": "完成奖励尚未配置。设置积分数量及获授权的审批人后，才可发放奖励。",
-    "rewardPolicy": "每次经验证的项目完成奖励 {{points}} 可消费社区积分，有效期 {{days}} 天。由获授权的审批人发放，每位创作者在同一项目仅奖励一次。积分不影响可靠性。",
+    "rewardPolicy": "每次经验证的项目完成奖励 {points} 可消费社区积分，有效期 {days} 天。由获授权的审批人发放，每位创作者在同一项目仅奖励一次。积分不影响可靠性。",
     "awardPoints": "验证贡献并发放积分",
     "previous": "上一页",
     "next": "下一页",
@@ -11710,7 +11711,7 @@
     "responsesHint": "查看您当前拥有的 IP 的已完成审核结果。投诉人的身份与证据保持私密。",
     "initiatedHint": "查看您针对平台内容提交的投诉及处理进度。",
     "retry": "重试",
-    "reference": "编号：{{id}}",
+    "reference": "编号：{id}",
     "empty": "暂无相关投诉。",
     "more": "加载更多",
     "search": "搜索 IP 名称或房间号",
@@ -11758,12 +11759,12 @@
     "intro": "视频介绍",
     "channel": "社区频道",
     "search": "搜索社区频道",
-    "selected": "已选择：{{name}}",
+    "selected": "已选择：{name}",
     "loading": "加载中…",
     "retry": "重试",
     "empty": "未找到社区频道。",
     "more": "加载更多",
-    "uploading": "上传中 · {{progress}}%",
+    "uploading": "上传中 · {progress}%",
     "submit": "提交审核",
     "success": "视频已提交，等待频道审核。",
     "failed": "视频投稿失败。",

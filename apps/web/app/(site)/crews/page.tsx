@@ -16,7 +16,13 @@ import { CrewSectionNavigation } from "./_components/crew-section-navigation";
 import { CrewWorkspace } from "./_components/crew-workspace";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { IconBriefcase, IconEye, IconLoader2, IconPlus } from "@tabler/icons-react";
+import {
+  IconBriefcase,
+  IconEye,
+  IconLoader2,
+  IconListCheck,
+  IconUsersPlus,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -214,18 +220,19 @@ export default function CrewsPage() {
           className={workspaceView ? "min-w-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col" : "min-w-0"}
         >
           <CrewSectionNavigation active={view} onViewChange={setView} sticky={!workspaceView}>
-            <div className="ml-auto flex shrink-0 flex-wrap gap-2 pb-2">
+            <div className="ml-auto flex max-w-full min-w-0 flex-wrap gap-2 pb-2">
               {view === "positions" && (
                 <Button
                   type="button"
                   size="lg"
                   className="h-11 gap-2 px-5 text-sm"
+                  aria-describedby="production-action-help"
                   onClick={() => {
                     setEntryMode("position");
                     setTaskEntryOpen(true);
                   }}
                 >
-                  <IconPlus className="size-4" />
+                  <IconBriefcase className="size-4 shrink-0" aria-hidden="true" />
                   {taskEntryT("positionTitle")}
                 </Button>
               )}
@@ -233,12 +240,13 @@ export default function CrewsPage() {
                 type="button"
                 size="lg"
                 className="h-11 gap-2 px-5 text-sm"
+                aria-describedby={view === "positions" ? "production-action-help" : undefined}
                 onClick={() => {
                   setEntryMode("task");
                   setTaskEntryOpen(true);
                 }}
               >
-                <IconPlus className="size-4" />
+                <IconListCheck className="size-4 shrink-0" aria-hidden="true" />
                 {taskEntryT("title")}
               </Button>
               <Button
@@ -252,12 +260,17 @@ export default function CrewsPage() {
                 {checkingKyc ? (
                   <IconLoader2 className="size-4 animate-spin" />
                 ) : (
-                  <IconPlus className="size-4" />
+                  <IconUsersPlus className="size-4 shrink-0" aria-hidden="true" />
                 )}
                 {tCrew("createStudio")}
               </Button>
             </div>
           </CrewSectionNavigation>
+          {view === "positions" && (
+            <p id="production-action-help" className="mb-4 text-sm text-muted-foreground">
+              {taskEntryT("actionHelp")}
+            </p>
+          )}
 
           {view === "mine" ? (
             <section className="lg:min-h-0 lg:flex-1" aria-label={tCrew("myCrewsTitle")}>
