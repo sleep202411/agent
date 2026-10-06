@@ -1,8 +1,17 @@
+# Current ownership — Pax / user direction (2026-10-06)
+
+- Hu Xuan (`sleepy202411`) owns Mobile development, including the scrolling screen.
+- Ric's current focus is Web My Income / My Contracts and Pax's spreadsheet checks.
+- Earlier Mobile development and parity integration authorization below is historical;
+  it does not authorize further Mobile implementation or Mobile branch pushes by Ric.
+- Preserve the already integrated work (`b3b673b7d`) and existing shared API contracts.
+  Further Mobile work requires a new explicit assignment coordinated with its owner.
+
 # Expo HAS CHANGED
 
 Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before writing any code.
 
-## Mobile release branches (2026-09-30)
+## Historical Mobile release branches (2026-09-30)
 
 - All of Ric's (ch0002ic-cell) subsequent Mobile development belongs exclusively on
   `feat/mobile-2.4.0-scrolling-screen`. This supersedes the older instruction to
@@ -29,7 +38,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before 
   on tasks assigned to Ric; new Mobile work or Web-to-Mobile adaptation must
   first be coordinated with Isaac. Respect the assigned developers' task order.
 
-## Current scope clarification (2026-10-01)
+## Historical scope clarification (2026-10-01)
 
 - Current official `main` / `develop` define the supported feature scope. Remove
   Mobile adaptations of features rolled back there; historical parity work is
@@ -47,7 +56,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before 
   the official payment release and shared media components used by Crew tasks
   and assets. Courses/Discovery remain removed under official 2.3.1 navigation.
 
-## Authorized parity integration (2026-10-06)
+## Completed parity integration (2026-10-06)
 
 The user explicitly authorized completing parity on
 `feat/mobile-2.4.0-scrolling-screen`, then merging that completed branch into

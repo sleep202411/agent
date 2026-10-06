@@ -115,13 +115,12 @@ Branches:
 - `feat/*` — optional, for risky multi-file refactors or AI-driven
   large changes; otherwise commit on develop directly
 
-**Mobile exception (current user direction):** all of Ric's (ch0002ic-cell) subsequent Mobile development
-belongs exclusively on `feat/mobile-2.4.0-scrolling-screen`. Do not commit, push,
-merge or cherry-pick Mobile development into `main` or `develop`, even when
-finished. Updates from official `main` and the assigned developer's
-`feat/mobile-2.3.1-pay` branch may be merged into 2.4.0; do not modify or push
-2.3.1. This supersedes the older
-instruction to start each Mobile feature from `main`. Follow `apps/mobile/AGENTS.md`.
+**Mobile ownership (latest user/Pax direction, 2026-10-06):** Hu Xuan
+(`sleepy202411`) owns Mobile development, including the scrolling screen.
+Ric focuses on Web, especially My Income / My Contracts and Pax's spreadsheet
+acceptance checks. Do not continue Mobile implementation or push Mobile feature
+branches under the earlier parity authorization. Shared backend changes for Web
+must preserve existing Mobile API contracts. Follow `apps/mobile/AGENTS.md`.
 
 ## Commands at the repo root
 
@@ -267,11 +266,8 @@ This doc is a navigation hub. When something here gets too detailed,
 push it down into the app-specific AGENTS.md or DESIGN.md. Keep this
 file under ~200 lines — it should be readable in one scroll.
 
-## Authorized parity integration (2026-10-06)
+## Historical parity integration (2026-10-06)
 
-The user explicitly authorized completing parity on
-`feat/mobile-2.4.0-scrolling-screen`, then merging that completed branch into
-`main` and `develop`, aligned to the same verified commit. This instruction
-supersedes the earlier outbound-merge prohibition for this parity integration.
-Preserve concurrent work, validate before publishing, and do not force-push.
-The 2.3.1 branch and deployment ownership remain unchanged.
+The previously authorized parity integration was published as `b3b673b7d`.
+It is completed history, not continuing Mobile authorization. The later Mobile
+ownership handoff above supersedes the earlier parity scope and branch rules.
