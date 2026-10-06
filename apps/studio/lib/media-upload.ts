@@ -149,6 +149,35 @@ function contentTypeForFile(file: File, explicit?: string): string {
   return file.type || "application/octet-stream";
 }
 
+/** Detect supported raster signatures before signing. This is metadata correction,
+ * not validation: the Server still decodes and validates the complete upload. */
+async function imageUploadMetadata(file: File, declared: string) {
+  if (!declared.startsWith("image/")) return { contentType: declared, fileName: file.name };
+  const bytes = await new Promise<Uint8Array>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result as ArrayBuffer));
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read image header"));
+    reader.readAsArrayBuffer(file.slice(0, 12));
+  });
+  const starts = (signature: number[]) => signature.every((byte, index) => bytes[index] === byte);
+  const detected = starts([137, 80, 78, 71, 13, 10, 26, 10])
+    ? { type: "image/png", extension: "png" }
+    : starts([255, 216, 255])
+      ? { type: "image/jpeg", extension: "jpg" }
+      : starts([82, 73, 70, 70]) &&
+          bytes.length >= 12 &&
+          [87, 69, 66, 80].every((byte, index) => bytes[index + 8] === byte)
+        ? { type: "image/webp", extension: "webp" }
+        : null;
+  if (!detected) return { contentType: declared, fileName: file.name };
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  const matches = extension && CONTENT_TYPE_BY_EXTENSION[extension] === detected.type;
+  return {
+    contentType: detected.type,
+    fileName: matches ? file.name : `${file.name.replace(/\.[^.]+$/, "")}.${detected.extension}`,
+  };
+}
+
 function putBytesToStorage(
   info: SignedUrlResponse,
   file: File,
@@ -239,7 +268,11 @@ export async function uploadFileViaSignedUrl(
   if (opts.signal?.aborted) {
     throw new DOMException("Upload aborted", "AbortError");
   }
-  const contentType = contentTypeForFile(file, opts.contentType);
+  const { contentType, fileName } = await imageUploadMetadata(
+    file,
+    contentTypeForFile(file, opts.contentType)
+  );
+  assertUploadActive(opts.signal);
   const scopedHeaders =
     !opts.scope?.storyProjectId && opts.workspaceId
       ? { "x-fizz-workspace-id": opts.workspaceId }
@@ -249,7 +282,7 @@ export async function uploadFileViaSignedUrl(
     {
       kind: opts.kind,
       contentType,
-      fileName: file.name,
+      fileName,
       sizeBytes: file.size,
       ...(opts.scope ? { scope: opts.scope } : {}),
     },

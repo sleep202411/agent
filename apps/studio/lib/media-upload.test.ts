@@ -12,6 +12,42 @@ afterEach(() => {
 });
 
 describe("uploadFileViaSignedUrl", () => {
+  it.each([
+    [
+      "screenshot.jpg",
+      "image/jpeg",
+      [137, 80, 78, 71, 13, 10, 26, 10],
+      "image/png",
+      "screenshot.png",
+    ],
+    ["photo.png", "image/png", [255, 216, 255, 224], "image/jpeg", "photo.jpg"],
+    [
+      "frame.jpg",
+      "image/jpeg",
+      [82, 73, 70, 70, 16, 0, 0, 0, 87, 69, 66, 80],
+      "image/webp",
+      "frame.webp",
+    ],
+  ] as const)(
+    "corrects mislabeled %s consistently across signing, storage and confirmation",
+    async (name, type, bytes, expected, normalizedName) => {
+      const fetchMock = mockUploadPipeline({});
+      vi.stubGlobal("fetch", fetchMock);
+      await uploadFileViaSignedUrl(new File([new Uint8Array(bytes)], name, { type }), {
+        kind: "canvas_input_image",
+        contentType: type,
+      });
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+        contentType: expected,
+        fileName: normalizedName,
+      });
+      expect(FakeXMLHttpRequest.instances[0]?.headers.get("Content-Type")).toBe(expected);
+      expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+        contentType: expected,
+      });
+    }
+  );
+
   it("uses the canonical extension content type when the browser omits file.type", async () => {
     const fetchMock = mockUploadPipeline({ "x-storage-header": "signed" });
     vi.stubGlobal("fetch", fetchMock);
