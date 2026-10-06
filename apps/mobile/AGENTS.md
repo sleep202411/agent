@@ -1,3 +1,17 @@
+## Final parity integration and exclusive Mobile handoff (2026-10-06)
+
+The user explicitly authorized one final parity completion: merge latest
+`main` / `develop` into `feat/mobile-2.4.0-scrolling-screen`, finish and validate
+that work, then align all three remote branches to the same verified commit.
+This is a one-time exception to the earlier completed handoff below.
+
+After this final integration, only Hu Xuan (`sleepy202411`), the assigned Mobile
+developer, may handle Mobile development. Ric and this agent must stop Mobile
+implementation, parity follow-ups and Mobile feature-branch development/pushes.
+Do not treat this final authorization as permission for further Mobile work.
+Shared Web/backend work must preserve the handed-off Mobile API contracts.
+Deployment and real-device acceptance remain with their assigned owners.
+
 # Current ownership — Pax / user direction (2026-10-06)
 
 - Hu Xuan (`sleepy202411`) owns Mobile development, including the scrolling screen.

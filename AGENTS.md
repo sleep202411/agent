@@ -1,5 +1,19 @@
 # AGENTS.md — FizzDragon Platform
 
+## Final parity integration and exclusive Mobile handoff (2026-10-06)
+
+The user explicitly authorized one final parity completion: merge latest
+`main` / `develop` into `feat/mobile-2.4.0-scrolling-screen`, finish and validate
+that work, then align all three remote branches to the same verified commit.
+This is a one-time exception to the earlier completed handoff below.
+
+After this final integration, only Hu Xuan (`sleepy202411`), the assigned Mobile
+developer, may handle Mobile development. Ric and this agent must stop Mobile
+implementation, parity follow-ups and Mobile feature-branch development/pushes.
+Do not treat this final authorization as permission for further Mobile work.
+Shared Web/backend work must preserve the handed-off Mobile API contracts.
+Deployment and real-device acceptance remain with their assigned owners.
+
 Repo-level orientation for AI coding agents and humans new to the
 monorepo. Scope is **navigation + cross-cutting conventions only** —
 each `apps/*` and `packages/*` ships its own deep guide.

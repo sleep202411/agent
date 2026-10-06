@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-06",
+  "timezone": "Asia/Singapore",
+  "upstream": "9b8e682a9f94b1873084f80275926fdfe725a5cb",
+  "sequence": "User requires Web/Mobile parity completion first, then aligned main/develop/2.4.0 publication, then exclusive Mobile handoff to Hu Xuan.",
+  "audit": [
+    "Preserved and integrated concurrent 2.4.0 discovery-preference transport work at b3b673b7d before integrating latest main/develop.",
+    "Shared discovery preference schemas, authenticated identity/site checks, abort/auth-generation checks, revision conflict and unchanged-command retry match the official foundations. Presentation and delivery activation remain awaiting design.",
+    "Added the official immutable-attachment explanation to the existing native My Contracts file groups. Existing native lifecycle filters, read-only rows, downloads, access-error handling and recovery remain intact.",
+    "Official Web badge artwork recovery and contract styling changes do not require replacing native text level tags or native layouts.",
+    "Regional qualification catalogue configuration is a backend/deployment change; mobile uses the existing official API contract."
+  ],
+  "validation": {
+    "shared_build": "passed; rebuilt the newly added shared export before final validation",
+    "mobile_full_suite": "795 files / 7764 tests passed",
+    "mobile_types": "passed",
+    "mobile_lint": "passed with the existing native-payment-sdks require warning",
+    "server_preferences": "9 tests passed with isolated PGlite persistence",
+    "web_preferences_and_badge": "2 suites / 9 tests passed",
+    "browser": "Actual native-web MyContracts and file rows with HTTP/auth fixture adapters in local Chrome. EN320/CN390/HK430: immutable notice, archive selection, failed-refresh stale-file removal and retry recovery; no horizontal overflow. EN rendered screenshot inspected.",
+    "limits": "No new device, native export, live account, storage, payment, production database or deployment acceptance claimed."
+  },
+  "handoff": {
+    "owner": "Hu Xuan (sleepy202411)",
+    "effective": "After this final verified branch integration",
+    "rule": "Only Hu Xuan may handle Mobile development thereafter. Ric and this agent stop further Mobile implementation, parity follow-ups and Mobile feature-branch development/pushes.",
+    "remaining_owner_acceptance": [
+      "Real-device validation and regional authenticated-service acceptance.",
+      "Existing live finance/contract route and populated ledger/proof acceptance remains with assigned release owners; see pax-income-contracts-recheck-2026-10-06.json.",
+      "Future discovery presentation and delivery require approved design and explicit owner work; foundation saving does not activate delivery."
+    ]
+  },
+  "publication": "Fast-forward origin/main, origin/develop and origin/feat/mobile-2.4.0-scrolling-screen together; preserve divergent historical local branch refs and do not force-push."
+}

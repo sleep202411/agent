@@ -113,6 +113,7 @@ function ContractFiles(props: Props) {
               {item.files.map((file) => (
                 <ContractFileRow key={file.id} file={file} generation={props.generation} />
               ))}
+              <ThemedText type="small">{t("taskContractFiles.lockedHint")}</ThemedText>
             </View>
           ))}
           {list.hasMore && (
