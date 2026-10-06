@@ -75,7 +75,7 @@ function ExperienceSection({ creatorId, canEdit }: { creatorId: string; canEdit:
       aria-label={center("about.experienceHeading")}
     >
       <header className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h2 className="text-xs font-semibold tracking-wide text-muted-foreground">
           {center("about.experienceHeading")}
         </h2>
         {canEdit && (

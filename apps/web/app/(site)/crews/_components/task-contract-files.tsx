@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { IconDownload, IconFileText, IconLock } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -51,8 +52,11 @@ export function ContractFileRow({ file }: { file: TaskContractFile }) {
     return () => clearTimeout(timer);
   }, [link]);
   return (
-    <li className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3">
-      <div className="min-w-0 flex-1">
+    <li className="flex flex-wrap items-center gap-3 rounded-lg bg-muted/50 px-4 py-3">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <IconFileText aria-hidden="true" className="size-5" />
+      </span>
+      <div className="min-w-0 flex-1 basis-32">
         <p className="break-all text-sm font-medium">{file.name}</p>
         <p className="text-xs text-muted-foreground">
           {file.sizeBytes
@@ -67,7 +71,10 @@ export function ContractFileRow({ file }: { file: TaskContractFile }) {
           {file.attachedAt ? ` · ${new Date(file.attachedAt).toLocaleDateString(locale)}` : null}
         </p>
       </div>
-      <span className="text-xs text-muted-foreground">{t("readOnly")}</span>
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+        <IconLock aria-hidden="true" className="size-3" />
+        {t("readOnly")}
+      </span>
       {!file.available ? (
         <span>{t("unavailable")}</span>
       ) : link ? (
@@ -76,12 +83,14 @@ export function ContractFileRow({ file }: { file: TaskContractFile }) {
           target="_blank"
           rel="noopener noreferrer"
           referrerPolicy="no-referrer"
-          className="text-sm text-primary underline"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
+          <IconDownload aria-hidden="true" className="size-4" />
           {t("openDownload")}
         </a>
       ) : (
         <Button size="sm" disabled={download.isPending} onClick={() => download.mutate()}>
+          <IconDownload aria-hidden="true" className="size-4" />
           {t("download")}
         </Button>
       )}

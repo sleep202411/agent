@@ -1,6 +1,7 @@
 "use client";
 import { ContractFileRow, type TaskContractFile } from "../crews/_components/task-contract-files";
 import { useState } from "react";
+import { IconChevronDown, IconFileText, IconFolderOpen, IconLock } from "@tabler/icons-react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -39,12 +40,13 @@ function ContractsSession({ userId }: { userId: string }) {
   const [section, setSection] = useState<"agreements" | "files">("agreements");
   return (
     <>
-      <nav className="flex gap-2" aria-label={t("title")}>
+      <nav className="flex gap-7 border-b border-border" aria-label={t("title")}>
         {(["agreements", "files"] as const).map((tab) => (
           <Button
             key={tab}
             color="muted"
-            variant={section === tab ? "solid" : "ghost"}
+            variant="ghost"
+            className={`rounded-none border-b-2 px-0 pb-3 ${section === tab ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
             aria-pressed={section === tab}
             onClick={() => setSection(tab)}
           >
@@ -95,6 +97,7 @@ function TaskContracts({ userId }: { userId: string }) {
             key={value}
             variant={lifecycle === value ? "solid" : "ghost"}
             color="muted"
+            className={`rounded-full ${lifecycle === value ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}
             aria-pressed={lifecycle === value}
             onClick={() => setLifecycle(value)}
           >
@@ -111,21 +114,40 @@ function TaskContracts({ userId }: { userId: string }) {
           </Button>
         </div>
       )}
-      {query.isSuccess && !items.length && !query.hasNextPage && <p>{t("empty")}</p>}
+      {query.isSuccess && !items.length && !query.hasNextPage && (
+        <div className="flex flex-col items-center gap-3 rounded-xl bg-muted/30 py-16 text-center text-muted-foreground">
+          <IconFolderOpen aria-hidden="true" className="size-9" />
+          <p className="text-sm">{t("empty")}</p>
+        </div>
+      )}
       {items.map((item) => (
-        <details key={item.id} open className="rounded-lg border border-border p-4">
-          <summary className="cursor-pointer text-sm font-medium">
-            {item.title}
-            <span className="ml-2 text-xs text-muted-foreground">
-              {item.crew.name} · #{item.number}
-              {item.archived ? ` · ${t("archived")}` : ""}
+        <details key={item.id} open className="group overflow-hidden rounded-xl bg-muted/30">
+          <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4 hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <IconFileText aria-hidden="true" className="size-5" />
             </span>
+            <span className="min-w-0 flex-1">
+              <span className="block break-words text-sm font-semibold">{item.title}</span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {item.crew.name} · #{item.number}
+                {item.archived ? ` · ${t("archived")}` : ""}
+              </span>
+            </span>
+            <IconChevronDown
+              aria-hidden="true"
+              className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+            />
           </summary>
-          <ul className="mt-4 space-y-2">
+          <div className="mx-5 border-t border-border" />
+          <ul className="space-y-2.5 px-4 py-3">
             {item.files.map((file) => (
               <ContractFileRow key={file.id} file={file} />
             ))}
           </ul>
+          <p className="flex items-start gap-2 px-5 pb-4 text-xs text-muted-foreground">
+            <IconLock aria-hidden="true" className="mt-0.5 size-3 shrink-0" />
+            {t("lockedHint")}
+          </p>
         </details>
       ))}
       {query.hasNextPage && !query.isError && (

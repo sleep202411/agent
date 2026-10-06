@@ -151,7 +151,7 @@ export function CreatorLeftRail({
           of imagePath icons, name underneath, full description on
           hover. Empty state encourages owners to earn one and reads
           as "not yet" rather than "broken" for visitors. */}
-      <RailCard title={t("levels.heading")} action={levelApplyAction} preserveCase>
+      <RailCard title={t("levels.heading")} action={levelApplyAction}>
         {levels.length === 0 ? (
           <div className="space-y-2.5">
             <EmptyHint body={isOwner ? t("levels.emptyOwner") : t("levels.emptyVisitor")} />
@@ -261,21 +261,15 @@ function RailCard({
   title,
   action,
   children,
-  preserveCase = false,
 }: {
   title: string;
-  preserveCase?: boolean;
   action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="rounded-2xl bg-card px-5 py-4">
       <header className="mb-3 flex items-center justify-between">
-        <h2
-          className={`text-[10px] font-semibold tracking-wider text-muted-foreground${preserveCase ? "" : " uppercase"}`}
-        >
-          {title}
-        </h2>
+        <h2 className="text-xs font-semibold tracking-wide text-muted-foreground">{title}</h2>
         {action}
       </header>
       {children}
@@ -296,11 +290,12 @@ function EmptyHint({ body }: { body: string }) {
   return <p className="text-xs text-muted-foreground">{body}</p>;
 }
 
-function LevelBadge({ level }: { level: CreatorLevel }) {
+export function LevelBadge({ level }: { level: CreatorLevel }) {
   // Image-first: render the resolved imagePath when present, fall back
   // to a generic check chip when the badge graphic is missing or 404s
   // so the cell never collapses to a broken-image glyph.
-  const [imageOk, setImageOk] = useState(Boolean(level.iconUrl));
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const imageOk = Boolean(level.iconUrl) && failedUrl !== level.iconUrl;
   const tooltipBody = level.description?.trim() || level.name;
 
   return (
@@ -327,7 +322,7 @@ function LevelBadge({ level }: { level: CreatorLevel }) {
                   alt={level.name}
                   className="size-full object-contain"
                   loading="lazy"
-                  onError={() => setImageOk(false)}
+                  onError={() => setFailedUrl(level.iconUrl)}
                 />
               ) : (
                 <IconCircleCheck className="size-8" />
