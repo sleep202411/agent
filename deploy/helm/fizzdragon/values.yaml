@@ -303,7 +303,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 21f855b65fc59e347027308b71ad8225156ddeb6
+    tag: 0be5f8d36facc568c7dacbc9f8ba5c6bcdb42c8d
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -329,7 +329,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 21f855b65fc59e347027308b71ad8225156ddeb6
+    tag: 0be5f8d36facc568c7dacbc9f8ba5c6bcdb42c8d
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
