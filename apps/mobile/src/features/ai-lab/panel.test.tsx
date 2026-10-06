@@ -1724,3 +1724,29 @@ it("does not carry late clipboard feedback into another selected job", async () 
   expect(host.textContent).toContain("Second failure");
   expect(host.textContent).not.toContain("aiLab.failureDetails.copied");
 });
+
+it.each([
+  ["Request blocked because the quota was exhausted.", "UNKNOWN", true],
+  ["Organization policy does not allow this model.", "UNKNOWN", true],
+  ["Safety service is temporarily unavailable.", "UNKNOWN", true],
+  ["Requested deadline exceeded the maximum permitted value.", "VALIDATION_ERROR", false],
+] as const)("preserves the server classification for %s", async (message, code, retryable) => {
+  const failed = { ...job, status: "failed", error: { userMessage: message, code, retryable } };
+  jobs = [failed];
+  const oldGet = h.get.getMockImplementation()!;
+  h.get.mockImplementation((path, ...args) =>
+    path === `/ai/jobs/${job.id}` ? failed : oldGet(path, ...args)
+  );
+  h.copy.mockResolvedValue(true);
+  await mount();
+  await click("aiLab.history");
+  await click("Image model · aiLab.status.failed");
+  expect(host.textContent).toContain(message);
+  expect(Boolean(button("aiLab.retryJob"))).toBe(retryable);
+  await click("aiLab.failureDetails.open");
+  await click("aiLab.failureDetails.copy");
+  expect(h.copy).toHaveBeenCalledWith(
+    `${message}\naiLab.failureDetails.taskId: ${job.id}\naiLab.failureDetails.model: model\naiLab.failureDetails.code: ${code}`
+  );
+  expect(h.post).not.toHaveBeenCalled();
+});
