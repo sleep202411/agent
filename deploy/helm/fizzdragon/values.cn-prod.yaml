@@ -225,6 +225,8 @@ server:
   extraSecretRefs: []
   env:
     NEXT_PUBLIC_SITE_REGION: cn
+    # Do not inherit COM certificate IDs. Provision from the CN Java catalogue.
+    CREW_QUALIFICATION_CATALOG_JSON: null
     REFERRAL_INVITE_BASE_URL: https://fizzdragon.fizzspace.cn
     # Legacy Java stores project covers as relative keys in the CN `shotive`
     # bucket. This explicit override prevents the CN cell from ever inheriting

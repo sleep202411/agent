@@ -1,0 +1,45 @@
+{
+  "site": "COM",
+  "verified_on": "2026-10-06 Asia/Singapore",
+  "source": "https://www.fizzdragon.com/user/levels/options",
+  "source_result": "HTTP 200 and Java envelope code 200; 18 definitions returned through existing authenticated session.",
+  "mapping": {
+    "fdLevels": [
+      {
+        "id": 1,
+        "rank": 1
+      },
+      {
+        "id": 2,
+        "rank": 2
+      },
+      {
+        "id": 3,
+        "rank": 3
+      },
+      {
+        "id": 7,
+        "rank": 4
+      },
+      {
+        "id": 8,
+        "rank": 5
+      }
+    ],
+    "skills": {
+      "AI Producer": [13],
+      "Art Director": [14],
+      "Director": [15],
+      "Editor": [16],
+      "Music Composer": [17],
+      "Instructor": [18],
+      "Writer": [19]
+    }
+  },
+  "interpretation": "FD-I through FD-V names establish ranks 1–5. Skill labels use catalogue English remarks without the Certified prefix. Each maps only to its own type-4 certificate.",
+  "excluded": {
+    "FDY youth levels": [9, 10, 11],
+    "founder, city partner and distributor": [4, 5, 12]
+  },
+  "deployment": "Public mapping in server.env; CN explicitly removes the inherited COM value. No image tags, permissions or certificate assignments changed. Live rollout acceptance must be checked separately."
+}

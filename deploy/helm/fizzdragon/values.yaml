@@ -433,6 +433,9 @@ server:
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
     JAVA_ADMIN_API_TOKEN_HEADER: X-Admin-Api-Token
+    # COM Java /user/levels/options verified 2026-10-06. FDY is not FD.
+    # Public catalogue IDs, not credentials; CN must supply its own mapping.
+    CREW_QUALIFICATION_CATALOG_JSON: '{"fdLevels":[{"id":1,"rank":1},{"id":2,"rank":2},{"id":3,"rank":3},{"id":7,"rank":4},{"id":8,"rank":5}],"skills":{"AI Producer":[13],"Art Director":[14],"Director":[15],"Editor":[16],"Music Composer":[17],"Instructor":[18],"Writer":[19]}}'
     # Emergency pause: Java still calls register_bonus after disabling its
     # legacy 500-point grant. Nest answers successfully without minting points.
     REGISTRATION_COMPUTE_BONUS_PAUSED: "true"
