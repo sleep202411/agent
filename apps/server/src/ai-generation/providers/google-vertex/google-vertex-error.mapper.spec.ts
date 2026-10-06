@@ -114,6 +114,19 @@ describe('Google Vertex error mapping', () => {
     expect(mapped.userMessage).toBe('Only one start image is allowed.');
     expect(JSON.stringify(mapped)).not.toContain('must-not-display');
   });
+  it('honors an explicit HTTP rejection before timeout wording in the message', () => {
+    const mapped = mapGoogleVertexUnknownError(
+      Object.assign(
+        new Error('Requested deadline exceeded the maximum permitted value.'),
+        { status: 400 },
+      ),
+    );
+    expect(mapped).toMatchObject({
+      code: 'VALIDATION_ERROR',
+      retryable: false,
+    });
+  });
+
   it('does not expose a response object when an HTTP error has no message', () => {
     const mapped = mapGoogleVertexUnknownError({
       status: 400,

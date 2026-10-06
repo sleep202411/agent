@@ -40,19 +40,19 @@ export function mapGoogleVertexUnknownError(error: unknown): AiJobError {
     return mapGoogleApiError(error.status, error.message);
   }
 
+  // Interactions uses its own APIError hierarchy, not @google/genai ApiError.
+  // Both expose an HTTP status; do not turn actionable failures into UNKNOWN.
+  if (error && typeof error === 'object') {
+    const status = numericStatus(error as Record<string, unknown>);
+    if (status) return mapGoogleApiError(status, errorMessage(error));
+  }
+
   if (isAbortOrTimeout(error)) {
     return googleVertexError(
       'PROVIDER_TIMEOUT',
       `Google Vertex AI request timed out: ${errorMessage(error)}`,
       'Google Vertex AI did not respond in time. Please try again.',
     ).payload;
-  }
-
-  // Interactions uses its own APIError hierarchy, not @google/genai ApiError.
-  // Both expose an HTTP status; do not turn actionable failures into UNKNOWN.
-  if (error && typeof error === 'object') {
-    const status = numericStatus(error as Record<string, unknown>);
-    if (status) return mapGoogleApiError(status, errorMessage(error));
   }
 
   return googleVertexError(
@@ -150,7 +150,7 @@ function mapGoogleMessage(message: string): AiJobError {
   return googleVertexError('UNKNOWN', `Google Vertex AI: ${message}`).payload;
 }
 
-function isGoogleContentPolicyViolation(message: string): boolean {
+export function isGoogleContentPolicyViolation(message: string): boolean {
   if (isContentPolicyViolation(message)) return true;
   const normalized = message.toLowerCase();
   const refusal =

@@ -12,6 +12,7 @@ import { GoogleAuth } from 'google-auth-library';
 import { GoogleVertexConfigService } from './google-vertex-config.service';
 import {
   googleVertexError,
+  isGoogleContentPolicyViolation,
   mapGoogleVertexUnknownError,
 } from './google-vertex-error.mapper';
 import {
@@ -583,8 +584,12 @@ function omniOperationResult(
     .map((error) => error.message?.trim())
     .filter((message): message is string => Boolean(message))
     .join(' ');
-  const contentFiltered = /safety|policy|prohibited|blocked/i.test(
-    providerErrors,
+  // Account/quota blocks and unavailable safety services are not moderation
+  // refusals. Reuse the same conservative detector as synchronous failures.
+  const contentFiltered = (response.errors ?? []).some((error) =>
+    isGoogleContentPolicyViolation(
+      [error.code, error.message].filter(Boolean).join(' '),
+    ),
   );
   return {
     state: 'failed',
