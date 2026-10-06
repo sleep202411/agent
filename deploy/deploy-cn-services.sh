@@ -4,6 +4,9 @@
 #   build ECS -> CN ACR -> ACK Helm release.
 # Helm owns the whole release, so a chart/config change requires the explicit
 # --allow-chart-update acknowledgement even for a one-service image release.
+# Parse the procedure before long-running commands so an edited script cannot
+# resume at a stale byte offset after a build finishes.
+main() {
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -55,6 +58,15 @@ if [ "$PHASE" != deploy ] && [ "$FULL" -ne 1 ]; then
 fi
 
 TAG="$(git rev-parse HEAD)"
+BRANCH="$(git symbolic-ref --quiet --short HEAD || true)"
+assert_checkout_unchanged() {
+  if [ "$(git rev-parse HEAD)" != "$TAG" ] || \
+     [ "$(git symbolic-ref --quiet --short HEAD || true)" != "$BRANCH" ] || \
+     ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "FATAL: checkout changed; preserve local work, reconcile and rerun the CN release." >&2
+    exit 1
+  fi
+}
 ECS_ID="${CN_BUILD_ECS_ID:-i-bp11r90r4g91u39iimnx}"
 DEPLOY_KEY="${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}"
 NAMESPACE="${CN_NAMESPACE:-fizzdragon}"
@@ -87,21 +99,34 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
   "$ROOT/deploy/cn-preflight.sh" --phase deploy "${SERVICES[@]}"
 fi
 
+RELEASE_DIR=""
 TMP_DIR=""
 ECS_IP=""
 MANIFEST_FILE=""
 RELAY_KEY=""
 cleanup() {
   [ -z "$RELAY_KEY" ] || node "$ROOT/deploy/cn-source-relay.cjs" delete "$RELAY_KEY" >/dev/null 2>&1 || true
-  [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
+  [ -z "$RELEASE_DIR" ] || rm -rf "$RELEASE_DIR"
   [ -z "$MANIFEST_FILE" ] || rm -f "$MANIFEST_FILE"
-  rm -f /tmp/cn-git-archive.tar /tmp/cn-src.tar.gz /tmp/cn-build-services.log
   if [ -n "$ECS_IP" ] && [ "${KEEP_CN_BUILD_ECS:-0}" != 1 ]; then
     echo "==> stopping CN build ECS"
     aliyun ecs StopInstance --InstanceId "$ECS_ID" --StoppedMode StopCharging --profile default >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
+
+assert_checkout_unchanged
+RELEASE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/fizz-cn-release.XXXXXX")"
+TMP_DIR="$RELEASE_DIR/source"
+mkdir "$TMP_DIR"
+GIT_ARCHIVE="$RELEASE_DIR/source.tar"
+SOURCE_ARCHIVE="$RELEASE_DIR/source.tar.gz"
+git archive "$TAG" -o "$GIT_ARCHIVE"
+tar -xf "$GIT_ARCHIVE" -C "$TMP_DIR"
+# Build inputs, the ECS build script and Helm chart all belong to this revision.
+CHART="$TMP_DIR/deploy/helm/fizzdragon"
+CN_VALUES="$CHART/values.cn-prod.yaml"
+printf '%s\n' "$TAG" > "$TMP_DIR/.fizzdragon-source-revision"
 
 if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   echo "==> start CN build ECS (tag=$TAG services=${SERVICES[*]})"
@@ -123,21 +148,16 @@ if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   "${SSH[@]}" "root@$ECS_IP" true >/dev/null
 
   echo "==> full secret-free source sync"
-  TMP_DIR="$(mktemp -d)"
-  GIT_ARCHIVE="/tmp/cn-git-archive.tar"
-  git archive HEAD -o "$GIT_ARCHIVE"
-  tar -xf "$GIT_ARCHIVE" -C "$TMP_DIR"
-  printf '%s\n' "$TAG" > "$TMP_DIR/.fizzdragon-source-revision"
   find "$TMP_DIR" -type f -name '.env*' ! -path '*/apps/web/.env.production.cn' -delete
   sed -i'' -e "s#^NEXT_PUBLIC_PARENT_ORIGIN=.*#NEXT_PUBLIC_PARENT_ORIGIN=$LIVE_ORIGIN#" "$TMP_DIR/apps/web/.env.production.cn"
   # macOS bsdtar otherwise attaches AppleDouble/provenance xattrs to every
   # archived file, producing thousands of irrelevant warnings on Linux tar.
-  COPYFILE_DISABLE=1 tar --no-xattrs -czf /tmp/cn-src.tar.gz -C "$TMP_DIR" .
-  archive_sha="$(shasum -a 256 /tmp/cn-src.tar.gz | awk '{print $1}')"
+  COPYFILE_DISABLE=1 tar --no-xattrs -czf "$SOURCE_ARCHIVE" -C "$TMP_DIR" .
+  archive_sha="$(shasum -a 256 "$SOURCE_ARCHIVE" | awk '{print $1}')"
   # Direct scp from outside China crawls (single-digit KB/s on bad days); the
   # private relay bucket is reached over OSS acceleration and read in-region.
   RELAY_KEY="src/${TAG}-$(openssl rand -hex 8).tar.gz"
-  relay_url="$(node "$ROOT/deploy/cn-source-relay.cjs" put /tmp/cn-src.tar.gz "$RELAY_KEY")"
+  relay_url="$(node "$ROOT/deploy/cn-source-relay.cjs" put "$SOURCE_ARCHIVE" "$RELAY_KEY")"
   printf '%s\n' "$relay_url" | "${SSH[@]}" "root@$ECS_IP" \
     'set -e; read -r url; rm -f /root/src.tar.gz; curl -fsS --retry 3 --max-time 900 -o /root/src.tar.gz "$url"'
   unset relay_url
@@ -149,13 +169,14 @@ if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   echo "==> in-region build and push"
   "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-username.txt" "root@$ECS_IP:/root/.acr_user"
   "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
-  "${SCP[@]}" "$ROOT/deploy/cn-remote-build-services.sh" "root@$ECS_IP:/root/cn-remote-build-services.sh"
+  "${SCP[@]}" "$TMP_DIR/deploy/cn-remote-build-services.sh" "root@$ECS_IP:/root/cn-remote-build-services.sh"
   "${SSH[@]}" "root@$ECS_IP" "sed -i 's/\r$//' /root/cn-remote-build-services.sh && TAG='$TAG' EXPECTED_REVISION='$TAG' SERVICES='${SERVICES[*]}' bash /root/cn-remote-build-services.sh" \
-    | tee /tmp/cn-build-services.log
+    | tee "$RELEASE_DIR/build.log"
   echo "==> images built and pushed; no ACK workload changed"
 fi
 
 if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
+  assert_checkout_unchanged
   export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config-fizzdragon-cn}"
   fingerprint="$(chart_fingerprint)"
   live_fingerprint="$(helm get values "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null \
@@ -205,6 +226,7 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
     exit 1
   fi
 
+  assert_checkout_unchanged
   echo "==> atomic ACK Helm upgrade (services=${SERVICES[*]} tag=$TAG)"
   helm upgrade "$RELEASE" "$CHART" \
     -f "$CHART/values.yaml" \
@@ -223,3 +245,6 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
   curl --fail --silent --show-error --max-time 20 https://fizzstudio.fizzspace.cn/aurora/ready >/dev/null
   echo "DONE: CN release is healthy at $TAG"
 fi
+
+}
+main "$@"; exit
