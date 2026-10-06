@@ -1,5 +1,6 @@
 {
   "taskEntry": {
+    "actionHelp": "職位用於招募成員；任務用於明確工作內容和交付要求。",
     "title": "建立任務",
     "description": "為此任務選擇劇組，或建立新劇組。",
     "crew": "劇組",
@@ -5318,7 +5319,7 @@
       "savedTasks": "任務",
       "openDelivery": "查看任務並提交交付",
       "saveThenRecruit": "儲存任務並繼續填寫招聘資訊。",
-      "completeDraftFields": "建立任務前，請補全「{{title}}」的必填項。"
+      "completeDraftFields": "建立任務前，請補全「{title}」的必填項。"
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",
@@ -5887,7 +5888,7 @@
     "viewContract": "查看合約",
     "removeContract": "移除附件",
     "requiredReward": "報酬（USD）",
-    "requiredTaskFields": "請填寫必填項：{{fields}}。"
+    "requiredTaskFields": "請填寫必填項：{fields}。"
   },
   "crewInvitations": {
     "signIn": "登入",
@@ -10185,7 +10186,7 @@
     "completionRequired": "專案完成後開放評價。",
     "communityPoints": "完成專案的社區積分",
     "rewardNotConfigured": "完成獎勵尚未配置。設定積分數量及獲授權的審批人後，才可發放獎勵。",
-    "rewardPolicy": "每次經驗證的專案完成獎勵 {{points}} 可消費社區積分，有效期 {{days}} 天。由獲授權的審批人發放，每位創作者在同一專案僅獎勵一次。積分不影響可靠性。",
+    "rewardPolicy": "每次經驗證的專案完成獎勵 {points} 可消費社區積分，有效期 {days} 天。由獲授權的審批人發放，每位創作者在同一專案僅獎勵一次。積分不影響可靠性。",
     "awardPoints": "驗證貢獻並發放積分",
     "previous": "上一頁",
     "next": "下一頁",
@@ -11710,7 +11711,7 @@
     "responsesHint": "查看您目前擁有的 IP 的已完成審核結果。投訴人的身分與證據保持私密。",
     "initiatedHint": "查看您針對平台內容提交的投訴及處理進度。",
     "retry": "重試",
-    "reference": "編號：{{id}}",
+    "reference": "編號：{id}",
     "empty": "暫無相關投訴。",
     "more": "載入更多",
     "search": "搜尋 IP 名稱或房間號",
@@ -11758,12 +11759,12 @@
     "intro": "影片介紹",
     "channel": "社區頻道",
     "search": "搜尋社區頻道",
-    "selected": "已選擇：{{name}}",
+    "selected": "已選擇：{name}",
     "loading": "載入中…",
     "retry": "重試",
     "empty": "找不到社區頻道。",
     "more": "載入更多",
-    "uploading": "上傳中 · {{progress}}%",
+    "uploading": "上傳中 · {progress}%",
     "submit": "提交審核",
     "success": "影片已提交，等待頻道審核。",
     "failed": "影片投稿失敗。",

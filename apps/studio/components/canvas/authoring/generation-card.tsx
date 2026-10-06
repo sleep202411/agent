@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GenerationStatusUnavailable } from "./generation-status-unavailable";
 import { GenerationEstimate } from "./generation-estimate";
 import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1040,13 +1041,18 @@ function GenerationCard({
                 className="size-full object-contain select-none"
               />
             )
+          ) : busy && statusUnavailable(generation?.jobId) ? (
+            <GenerationStatusUnavailable
+              jobId={generation?.jobId}
+              onCopyId={() => {
+                if (generation?.jobId) void copyTaskId(generation.jobId);
+              }}
+            />
           ) : busy ? (
             <>
               <IconLoader2 className="size-7 animate-spin text-white/50" stroke={1.8} />
               <p role="status" className="px-4 text-center text-sm text-white/55">
-                {statusUnavailable(generation?.jobId) ? (
-                  t("statusReadUnavailable")
-                ) : generation?.status === "submitting" ? (
+                {generation?.status === "submitting" ? (
                   t("statusSubmitting")
                 ) : generation?.status === "queued" ? (
                   generation.queuePosition != null ? (

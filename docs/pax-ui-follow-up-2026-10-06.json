@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-06",
+  "timezone": "Asia/Singapore",
+  "source": "Pax screenshots supplied by the user: canvas status unavailable; Production icons, task/position distinction and capitalization; unavailable creator-skill catalogue; literal fields placeholder.",
+  "changes": [
+    "Distinguish failed canvas status reads from active generation with a cloud-alert icon, clearer localized copy and a copyable job ID. Preserve automatic reconciliation and duplicate-submission protection.",
+    "Use distinct position/task/Crew icons, consistent English action capitalization and a visible explanation that positions recruit people while tasks define work and deliverables.",
+    "Allow the Production action row to wrap within narrow viewports; browser fixtures exposed overflow in the previous shrink-disabled container.",
+    "Correct six messages containing seven double-brace placeholders in each Web locale to the configured single-brace interpolation syntax. Add catalogue-wide syntax and real i18next task-message regressions."
+  ],
+  "validation": {
+    "web": "6 suites, 78 tests passed: task quick-create, task entry, Crew page, skills selector, locale parity and placeholders. Six new placeholder assertions failed before the fix.",
+    "studio": "22 canvas generation tests passed, including failed/missing status reads, automatic recovery, scope isolation and no duplicate submission.",
+    "types": "Web and Studio full type checks passed.",
+    "lint": "Changed TypeScript files passed ESLint.",
+    "browser": "Real status component and Crew page in local Chromium fixtures, 1280px and 390px, all three locales. Verified no horizontal overflow, copy-to-clipboard, distinct task/position action modes and no progress spinner for unavailable status. Data, navigation, dialogs and translations were fixture adapters; not production acceptance or a complete task-creation journey.",
+    "boundaries": "No production generation, payments, database/configuration changes or deployment executed. Mobile and legacy Agent untouched."
+  },
+  "unresolved": [
+    {
+      "report": "Creator-skill catalogue repeatedly fails",
+      "evidence": "The exact screenshot message is thrown by readCatalog() when CREW_QUALIFICATION_CATALOG_JSON is missing or fails JSON/schema parsing. No production environment value was read.",
+      "owner_action": "Isaac/Yuanzheng: provision the authoritative regional Java catalogue in the serving Server environment, then roll out and verify GET /aurora/crew-qualification-catalog and real recruitment eligibility. The existing Helm server.env and secret injection support this setting. No fixture IDs or qualification bypass.",
+      "contract": "fdLevels: positive safe Java certificate IDs mapped to ranks 1 through 5; skills: names mapped to nonempty arrays of positive safe certificate IDs. FD IDs must be distinct, all five ranks present, skill names unique ignoring case, and skill certificate IDs disjoint from FD IDs.",
+      "tracking": "#209; #557 was already consolidated into #209 and remains closed."
+    },
+    {
+      "report": "Canvas status unavailable for MiniMax/Wan jobs",
+      "evidence": "The UI marks a job unavailable when GET /aurora/ai/jobs fails or omits a requested job. Automatic checks run every 5 seconds without realtime or 15 seconds with realtime while the document is visible. This alone does not prove a generation-provider failure.",
+      "owner_action": "Capture the affected job ID and status lookup response plus serving release/project scope; diagnose transport, access, missing job or backend behavior against that evidence.",
+      "tracking": "#209; distinguish this status-read report from the Google provider failure investigation in #623."
+    }
+  ]
+}
