@@ -333,3 +333,32 @@ it("uses the official workspace icon kind for reservation and image confirmation
     { kind: "workspace_icon", contentType: "image/png", storageKey: "issued-key" },
   ]);
 });
+
+it("corrects image metadata consistently through signing, upload and saved confirmation", async () => {
+  const blob = new Blob([new Uint8Array([255, 216, 255, 0])], { type: "image/png" });
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => blob })
+    .mockResolvedValueOnce({ ok: true });
+  const saved = vi.fn();
+  await uploadMobileMediaFile(
+    { ...file, name: "icon.png", type: "image/png" },
+    { kind: "workspace_icon", beforeConfirm: saved }
+  );
+  expect(api.post).toHaveBeenNthCalledWith(
+    1,
+    "/media/upload-url",
+    expect.objectContaining({
+      data: expect.objectContaining({ contentType: "image/jpeg", fileName: "icon.jpg" }),
+    })
+  );
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    2,
+    signed.uploadUrl,
+    expect.objectContaining({
+      body: blob,
+      headers: expect.objectContaining({ "Content-Type": "image/jpeg" }),
+    })
+  );
+  expect(saved).toHaveBeenCalledWith(expect.objectContaining({ contentType: "image/jpeg" }));
+});

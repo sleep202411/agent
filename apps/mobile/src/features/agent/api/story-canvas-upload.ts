@@ -3,6 +3,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "@/lib/api-client";
 import { confirmMobileMediaUpload, type MobileUploadFile } from "@/lib/media-upload";
 import { selectedMedia } from "@/features/ip-author/selected-media";
+import { imageUploadMetadata } from "@/lib/image-upload-metadata";
 import { canvasUploadedAssetSchema } from "../../../../canvas-editor/upload-schema";
 import type { CanvasEditScope } from "../lib/story-canvas-draft";
 import { readPlatformCanvasDocument } from "./platform-canvas-document";
@@ -73,11 +74,11 @@ export async function uploadCanvasFile(
     mp3: "audio/mpeg",
     wav: "audio/wav",
   };
-  const type = Object.hasOwn(policies, suppliedType)
+  const declaredType = Object.hasOwn(policies, suppliedType)
     ? suppliedType
     : (extensionTypes[file.name.split(".").pop()?.toLowerCase() ?? ""] ?? "");
-  const policy = Object.hasOwn(policies, type)
-    ? policies[type as keyof typeof policies]
+  const policy = Object.hasOwn(policies, declaredType)
+    ? policies[declaredType as keyof typeof policies]
     : undefined;
   if (!policy || !file.name.trim()) throw Error("Select a supported image, video or audio file.");
   const source = await selectedMedia(file.uri, signal);
@@ -88,6 +89,12 @@ export async function uploadCanvasFile(
     source.size > policy[1] * 1024 * 1024
   )
     throw Error(`Select a non-empty file no larger than ${policy[1]} MiB.`);
+  const { contentType: type, fileName } = await imageUploadMetadata(
+    file.name.trim(),
+    declaredType,
+    source.readHeader
+  );
+  current(scope, signal);
   if ("kind" in scope) await readPlatformCanvasDocument(scope, signal, true);
   else await readStoryCanvasDocument(scope, scope.documentId, signal);
   current(scope, signal);
@@ -114,7 +121,7 @@ export async function uploadCanvasFile(
         data: {
           kind,
           contentType: type,
-          fileName: file.name.trim(),
+          fileName,
           sizeBytes: source.size,
           ...("kind" in scope ? {} : { scope: { storyProjectId: scope.projectId } }),
         },
@@ -131,7 +138,7 @@ export async function uploadCanvasFile(
   current(scope, signal);
   if (!response.ok) throw Error(`Media upload failed with HTTP ${response.status}`);
   const saved = canvasUploadCheckpointSchema.parse({
-    name: file.name.trim(),
+    name: fileName,
     createdAt: Date.now(),
     confirmation: {
       storageKey: signed.storageKey,

@@ -1,7 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { selectedMedia } from "./selected-media.native";
-const h = vi.hoisted(() => ({ fetch: vi.fn(), file: { exists: true, size: 1024 * 1024 * 1024 } }));
+const h = vi.hoisted(() => ({
+  fetch: vi.fn(),
+  file: { exists: true, size: 1024 * 1024 * 1024, open: vi.fn() },
+}));
 vi.mock("expo-file-system", () => ({
+  FileMode: { ReadOnly: "r" },
   File: class {
     constructor() {
       return h.file;
@@ -37,4 +41,20 @@ it("rejects an unavailable file or canceled selection", async () => {
   c.abort();
   await expect(selectedMedia("file:///missing", c.signal)).rejects.toThrow();
   expect(h.fetch).not.toHaveBeenCalled();
+});
+
+it("reads only a bounded header and closes the handle on success and failure", async () => {
+  const close = vi.fn();
+  const readBytes = vi.fn().mockReturnValue(new Uint8Array([255, 216, 255]));
+  h.file.open.mockReturnValue({ readBytes, close });
+  const media = await selectedMedia("file:///image.jpg", new AbortController().signal);
+  expect(media.readHeader()).toEqual(new Uint8Array([255, 216, 255]));
+  expect(h.file.open).toHaveBeenCalledWith("r");
+  expect(readBytes).toHaveBeenCalledWith(12);
+  expect(close).toHaveBeenCalledTimes(1);
+  readBytes.mockImplementation(() => {
+    throw Error("unreadable");
+  });
+  expect(() => media.readHeader()).toThrow("unreadable");
+  expect(close).toHaveBeenCalledTimes(2);
 });

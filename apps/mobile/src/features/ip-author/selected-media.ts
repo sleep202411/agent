@@ -1,3 +1,4 @@
+import { readBlobImageHeader } from "@/lib/image-upload-metadata";
 /** Web keeps the browser Blob; native resolves the file-backed implementation. */
 export async function selectedMedia(uri: string, signal: AbortSignal) {
   const response = await fetch(uri, { signal });
@@ -6,6 +7,7 @@ export async function selectedMedia(uri: string, signal: AbortSignal) {
   signal.throwIfAborted();
   return {
     size: blob.size,
+    readHeader: () => readBlobImageHeader(blob),
     put: (url: string, headers: Record<string, string>, signal: AbortSignal) =>
       fetch(url, {
         method: "PUT",

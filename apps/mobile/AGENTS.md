@@ -1,3 +1,20 @@
+## Completed parity integration and exclusive Mobile handoff (2026-10-07)
+
+This integration closes the user's temporary Mobile development exception.
+Latest main/develop was merged into `feat/mobile-2.4.0-scrolling-screen`;
+the completed parity changes are authorized for alignment of all three remote
+branches to this integration commit. The restored Home/recommended vertical
+preview feed preserves Hu Xuan's five-tab navigation and existing Home layout.
+This explicitly reopened that feed only; Courses and the separate daily
+Discovery assistant remain deferred.
+
+Local regression, type, lint, regional export and fixture-backed browser checks
+were performed. Real-device and live-service acceptance belongs to Hu Xuan.
+Only Hu Xuan (`sleepy202411`) may now develop Mobile; Ric and this agent must
+stop Mobile implementation and parity follow-ups after publishing this
+integration. Earlier exceptions below are historical, not continuing authority.
+Deployment assistance remains separate and does not reopen development.
+
 ## Final parity integration and exclusive Mobile handoff (2026-10-06)
 
 The user explicitly authorized one final parity completion: merge latest

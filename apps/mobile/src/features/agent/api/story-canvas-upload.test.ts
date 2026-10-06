@@ -29,7 +29,7 @@ const signal = () => new AbortController().signal;
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
-  h.source.mockResolvedValue({ size: 1024, put: h.put });
+  h.source.mockResolvedValue({ size: 1024, put: h.put, readHeader: () => new Uint8Array() });
   h.post.mockResolvedValue(signed);
   h.put.mockResolvedValue({ ok: true });
   h.confirm.mockResolvedValue({
@@ -95,13 +95,17 @@ it("recovers an uncertain confirmation without uploading bytes again", async () 
 it.each([0, -1, NaN, 2048 * 1024 * 1024 + 1])(
   "rejects invalid actual size %s before signing",
   async (size) => {
-    h.source.mockResolvedValue({ size, put: h.put });
+    h.source.mockResolvedValue({ size, put: h.put, readHeader: () => new Uint8Array() });
     await expect(uploadCanvasFile(scope, file, signal(), vi.fn())).rejects.toThrow("2048 MiB");
     expect(h.post).not.toHaveBeenCalled();
   }
 );
 it.each(["image/png", "audio/wav"])("applies the smaller %s limit", async (type) => {
-  h.source.mockResolvedValue({ size: 31 * 1024 * 1024, put: h.put });
+  h.source.mockResolvedValue({
+    size: 31 * 1024 * 1024,
+    put: h.put,
+    readHeader: () => new Uint8Array(),
+  });
   await expect(uploadCanvasFile(scope, { ...file, type }, signal(), vi.fn())).rejects.toThrow(
     "MiB"
   );
@@ -232,3 +236,56 @@ it("blocks platform upload before signing if editor access is revoked", async ()
   expect(h.post).not.toHaveBeenCalled();
   expect(h.put).not.toHaveBeenCalled();
 });
+
+it("uses corrected raster metadata for signing, PUT, and a recoverable confirmation", async () => {
+  h.source.mockResolvedValue({
+    size: 100,
+    put: h.put,
+    readHeader: () => new Uint8Array([255, 216, 255]),
+  });
+  h.confirm.mockRejectedValueOnce(Error("Lost confirmation"));
+  const saved = vi.fn();
+  await expect(
+    uploadCanvasFile(scope, { ...file, name: "scene.png", type: "image/png" }, signal(), saved)
+  ).rejects.toThrow("Lost confirmation");
+  expect(h.post).toHaveBeenCalledWith(
+    "/media/upload-url",
+    expect.objectContaining({
+      data: expect.objectContaining({ contentType: "image/jpeg", fileName: "scene.jpg" }),
+    })
+  );
+  expect(h.put).toHaveBeenCalledWith(
+    signed.uploadUrl,
+    expect.objectContaining({ "Content-Type": "image/jpeg" }),
+    expect.anything()
+  );
+  const receipt = saved.mock.calls[0][0];
+  expect(receipt).toMatchObject({ name: "scene.jpg", confirmation: { contentType: "image/jpeg" } });
+  await confirmCanvasUpload(scope, receipt, signal());
+  expect(h.put).toHaveBeenCalledTimes(1);
+  expect(h.confirm).toHaveBeenLastCalledWith(
+    expect.objectContaining({ contentType: "image/jpeg" }),
+    expect.anything()
+  );
+});
+it.each(["abort", "account", "read failure"])(
+  "does not reserve storage after header %s",
+  async (reason) => {
+    const controller = new AbortController();
+    h.source.mockResolvedValue({
+      size: 100,
+      put: h.put,
+      readHeader: async () => {
+        if (reason === "abort") controller.abort();
+        if (reason === "account") h.generation++;
+        if (reason === "read failure") throw Error("unreadable");
+        return new Uint8Array([255, 216, 255]);
+      },
+    });
+    await expect(
+      uploadCanvasFile(scope, { ...file, type: "image/png" }, controller.signal, vi.fn())
+    ).rejects.toThrow();
+    expect(h.post).not.toHaveBeenCalled();
+    expect(h.put).not.toHaveBeenCalled();
+  }
+);

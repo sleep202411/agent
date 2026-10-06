@@ -5759,5 +5759,19 @@
   "storyCanvas.statusReadUnavailableTitle": "暫時無法查詢生成狀態",
   "storyCanvas.statusReadUnavailable": "我們會自動重新查詢，請勿重複提交生成任務。",
   "storyCanvas.copyTaskId": "複製任務 ID",
-  "storyCanvas.taskIdCopied": "任務 ID 已複製"
+  "storyCanvas.taskIdCopied": "任務 ID 已複製",
+  "discovery.title": "發現",
+  "discovery.entry": "觀看推薦預告",
+  "discovery.skip": "下一部作品（不儲存偏好）",
+  "discovery.open": "查看作品",
+  "discovery.like": "喜歡",
+  "discovery.unlike": "取消喜歡",
+  "discovery.end": "已瀏覽至最後。",
+  "discovery.empty": "沒有符合篩選條件的作品。",
+  "discovery.previewFailed": "預告暫不可用，請重試。",
+  "discovery.noPreview": "暫無影片預告",
+  "discovery.pause": "暫停",
+  "discovery.play": "播放",
+  "discovery.mute": "靜音",
+  "discovery.unmute": "開啟聲音"
 }

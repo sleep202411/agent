@@ -1,6 +1,7 @@
 import { UploadKindSchema, type UploadKind } from "@repo/shared/media-upload";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "./api-client";
+import { imageUploadMetadata, readBlobImageHeader } from "./image-upload-metadata";
 
 const AURORA = { service: "aurora" } as const;
 
@@ -99,7 +100,12 @@ export async function uploadMobileMediaFile(
       blob.size > options.maxBytes)
   )
     throw new Error("Selected file exceeds the allowed upload size");
-  const contentType = file.type || blob.type || "application/octet-stream";
+  const { contentType, fileName } = await imageUploadMetadata(
+    file.name,
+    file.type || blob.type || "application/octet-stream",
+    () => readBlobImageHeader(blob)
+  );
+  assertCurrent();
 
   // 1. Request signed URL
   const signed = await api.post<SignedUrlResponse>("/media/upload-url", {
@@ -107,7 +113,7 @@ export async function uploadMobileMediaFile(
     data: {
       kind: options.kind,
       contentType,
-      fileName: file.name,
+      fileName,
       sizeBytes: blob.size,
       ...(scope ? { scope } : {}),
     },

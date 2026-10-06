@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "@/lib/api-client";
 import { selectedMedia } from "@/features/ip-author/selected-media";
+import { imageUploadMetadata } from "@/lib/image-upload-metadata";
 import {
   canEditPlatformProject,
   readPlatformProject,
@@ -34,18 +35,24 @@ export async function uploadPlatformProjectCover(
   current();
   if (picked.canceled) return null;
   const file = picked.assets[0];
-  const contentType = file?.file?.type || file?.mimeType;
+  const declaredType = file?.file?.type || file?.mimeType;
   if (
     picked.assets.length !== 1 ||
     !file?.uri ||
     !file.name ||
-    !["image/jpeg", "image/png", "image/webp"].includes(contentType ?? "")
+    !["image/jpeg", "image/png", "image/webp"].includes(declaredType ?? "")
   )
     throw Error("Select a JPEG, PNG or WebP image.");
   const media = await selectedMedia(file.uri, signal);
   current();
   if (!Number.isSafeInteger(media.size) || media.size <= 0 || media.size > 30 * 1024 ** 2)
     throw Error("Choose a non-empty image up to 30 MiB.");
+  const { contentType, fileName } = await imageUploadMetadata(
+    file.name,
+    declaredType!,
+    media.readHeader
+  );
+  current();
   const fresh = await readPlatformProject(project.id, project.workspaceId, generation, signal);
   if (!canEditPlatformProject(fresh)) throw Error("Project editor permission is required.");
   if (fresh.version !== project.version) throw Error("Project changed. Refresh before uploading.");
@@ -68,7 +75,7 @@ export async function uploadPlatformProjectCover(
         data: {
           kind: "ai_reference_image",
           contentType,
-          fileName: file.name,
+          fileName,
           sizeBytes: media.size,
         },
       })

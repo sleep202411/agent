@@ -5759,5 +5759,19 @@
   "storyCanvas.statusReadUnavailableTitle": "Can’t check generation status",
   "storyCanvas.statusReadUnavailable": "We’ll check again automatically. Please don’t submit another generation.",
   "storyCanvas.copyTaskId": "Copy task ID",
-  "storyCanvas.taskIdCopied": "Task ID copied"
+  "storyCanvas.taskIdCopied": "Task ID copied",
+  "discovery.title": "Discover",
+  "discovery.entry": "Watch recommended previews",
+  "discovery.skip": "Next work (not saved)",
+  "discovery.open": "View work",
+  "discovery.like": "Like",
+  "discovery.unlike": "Unlike",
+  "discovery.end": "You have reached the end.",
+  "discovery.empty": "No works match these filters.",
+  "discovery.previewFailed": "Preview unavailable. Try again.",
+  "discovery.noPreview": "No video preview available",
+  "discovery.pause": "Pause",
+  "discovery.play": "Play",
+  "discovery.mute": "Mute",
+  "discovery.unmute": "Turn sound on"
 }

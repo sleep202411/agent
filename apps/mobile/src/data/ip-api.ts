@@ -508,6 +508,25 @@ async function fetchUserDisplays(userIds: string[]): Promise<Map<string, LookupU
   return map;
 }
 
+/** Resolve only the official public preview; never infer a full-episode URL. */
+export async function fetchIpPreview(id: string, signal: AbortSignal): Promise<string | undefined> {
+  signal.throwIfAborted();
+  const res = await api.get<DetailResponse>(`/ip-commerce/ips/${encodeURIComponent(id)}`, {
+    ...AURORA,
+    params: { locale: locale() },
+    signal,
+  });
+  signal.throwIfAborted();
+  if (!res?.ip) return undefined;
+  if (res.ip.id !== id) throw new Error("Preview identity mismatch");
+  const url = mapDetail(res.ip).previewVideoUrl;
+  if (!url) return undefined;
+  const parsed = new URL(url);
+  if (!["https:", "http:"].includes(parsed.protocol) || parsed.username || parsed.password)
+    throw new Error("Invalid preview URL");
+  return url;
+}
+
 export async function fetchIpDetail(id: string): Promise<IpDetail | undefined> {
   const res = await api.get<DetailResponse>(`/ip-commerce/ips/${id}`, {
     ...AURORA,

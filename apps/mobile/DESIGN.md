@@ -67,6 +67,14 @@ desktop page composition.
 
 ## Discovery Surfaces
 
+- The user explicitly reopened the vertical preview feed on 2026-10-07.
+  Home's "Watch recommended previews" entry opens `/discovery`; preserve the
+  existing five-tab navigation and Home card layout. This separate route pages
+  through the public IP catalogue, playing only the selected public preview.
+  Scrolling pauses playback; backgrounding or leaving the route releases it.
+  Missing previews remain explicit, and full-work access stays on IP detail.
+  This does not reopen Courses or the daily Discovery assistant.
+
 - IP image cards use stable 16:9 media wherever the card is consumed as a
   horizontal preview rail. Fixed aspect ratios are required so loading states,
   tags, and title wrapping do not resize the surrounding rail.

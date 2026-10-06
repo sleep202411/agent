@@ -37,7 +37,7 @@ beforeEach(() => {
     canceled: false,
     assets: [{ uri: "file:///image.jpg", name: "image.jpg", mimeType: "image/jpeg", size: 999 }],
   });
-  h.media.mockResolvedValue({ size: 4, put: h.put });
+  h.media.mockResolvedValue({ size: 4, put: h.put, readHeader: () => new Uint8Array() });
   h.put.mockResolvedValue({ ok: true });
   h.read.mockResolvedValue(project);
   h.post
@@ -87,7 +87,7 @@ it("cancellation reserves no storage", async () => {
 it.each([0, 30 * 1024 ** 2 + 1])(
   "rejects invalid actual size %s before reservation",
   async (size) => {
-    h.media.mockResolvedValue({ size, put: h.put });
+    h.media.mockResolvedValue({ size, put: h.put, readHeader: () => new Uint8Array() });
     await expect(uploadPlatformProjectCover(project, 1, signal())).rejects.toThrow("30 MiB");
     expect(h.post).not.toHaveBeenCalled();
   }
@@ -114,4 +114,25 @@ it("rejects credential-bearing storage instructions", async () => {
   });
   await expect(uploadPlatformProjectCover(project, 1, signal())).rejects.toThrow("credentials");
   expect(h.put).not.toHaveBeenCalled();
+});
+
+it("corrects mislabeled cover bytes before signing and confirmation", async () => {
+  h.media.mockResolvedValue({
+    size: 100,
+    put: h.put,
+    readHeader: () => new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+  });
+  await uploadPlatformProjectCover(project, 1, signal());
+  expect(h.post).toHaveBeenNthCalledWith(
+    1,
+    "/media/upload-url",
+    expect.objectContaining({
+      data: expect.objectContaining({ contentType: "image/png", fileName: "image.png" }),
+    })
+  );
+  expect(h.post).toHaveBeenNthCalledWith(
+    2,
+    "/media/confirm",
+    expect.objectContaining({ data: expect.objectContaining({ contentType: "image/png" }) })
+  );
 });
