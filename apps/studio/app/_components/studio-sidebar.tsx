@@ -7,7 +7,6 @@ import { useRef, type ComponentType, type ReactNode } from "react";
 import {
   IconBrandDiscord,
   IconDeviceGamepad2,
-  IconDeviceDesktopDown,
   IconHelpCircle,
   IconHome,
   IconLayoutGrid,
@@ -28,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { useSiteRegion } from "@/app/_components/region-provider";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AppDownloadMenu } from "./app-download-menu";
 import { useStudioSidebar } from "./studio-sidebar-context";
 
@@ -433,7 +433,7 @@ export function StudioSidebar() {
         <div className={cn("shrink-0 pt-3 pb-4", collapsed ? "px-4" : "px-3")}>
           <div
             className={cn(
-              collapsed ? "flex flex-col items-center gap-1" : "grid grid-cols-5 gap-1"
+              collapsed ? "flex flex-col items-center gap-1" : "grid grid-cols-4 gap-1"
             )}
           >
             <SidebarUtilityButton
@@ -444,19 +444,49 @@ export function StudioSidebar() {
                 onClick: () => openSettings("account"),
               }}
             />
-            <SidebarUtilityButton
-              item={{ label: t("nav.discord"), icon: IconBrandDiscord, disabled: true }}
-            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("nav.discord")}
+                  className="relative flex size-9 items-center justify-center rounded-xl text-white/60 transition-colors hover:bg-white/[0.07] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+                >
+                  <IconBrandDiscord className="size-[18px]" stroke={1.8} aria-hidden />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="start"
+                collisionPadding={12}
+                aria-label={t("nav.discord")}
+                className="w-48 p-3 text-center"
+              >
+                <a
+                  href={`${webBaseUrl}/discord-qr.png`}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={t("nav.discord")}
+                >
+                  {/* Use the same maintained community QR as the public site. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`${webBaseUrl}/discord-qr.png`}
+                    alt={t("nav.discord")}
+                    width={168}
+                    height={168}
+                    className="aspect-square w-full rounded-md object-contain"
+                  />
+                </a>
+                <p className="text-sm font-medium">{t("nav.discord")}</p>
+              </PopoverContent>
+            </Popover>
             <AppDownloadMenu />
             <SidebarUtilityButton
               item={{
-                label: t("nav.downloadDesktop"),
-                icon: IconDeviceDesktopDown,
-                disabled: true,
+                label: t("nav.help"),
+                icon: IconHelpCircle,
+                href: `${webBaseUrl}/${locale}/faq`,
               }}
-            />
-            <SidebarUtilityButton
-              item={{ label: t("nav.help"), icon: IconHelpCircle, disabled: true }}
             />
           </div>
         </div>

@@ -59,6 +59,7 @@ const UNREFERENCED_CREW_MEDIA = {
   ipDiscoveryMobileImages: { none: {} },
   ipDiscoveryTrailerMedia: { none: {} },
   ipReportEvidence: { none: {} },
+  channelVideoSubmissions: { none: {} },
   characterCovers: { none: {} },
   characterMedia: { none: {} },
   storyProjectCovers: { none: {} },

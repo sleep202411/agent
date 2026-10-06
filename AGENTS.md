@@ -101,9 +101,11 @@ Two production deployments running off the same monorepo:
 - **`fizzdragon.com`** — international (Singapore / OSS-AP-Southeast-1)
 - **`fizzdragon.fizzspace.cn`** — China (Alibaba Cloud CN, separate OSS)
 
-Both are Alibaba Cloud ECS hosted. The CN deployment is **not** a
-mirror — env vars differ (different Java backends, different OSS
-buckets, different AI keys). Region-aware behaviour gates off
+COM runs on **Azure AKS**, deployed through ACR builds and ArgoCD. CN runs
+on **Aliyun ACK**, with images built on a separate ECS host. Follow the
+region-specific commands in `README.md`; deployment credentials and migration
+steps differ. The Java services remain external. CN is not a mirror: Java
+backends, storage and AI credentials differ. Region-aware behaviour gates off
 `NEXT_PUBLIC_SITE_REGION` (`global` vs `cn`).
 
 Branches:

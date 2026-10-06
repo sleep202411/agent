@@ -1,0 +1,85 @@
+{
+  "date": "2026-10-06",
+  "scope": "Follow-up platform work after the signed-in COM audit; Mobile excluded.",
+  "changes": [
+    {
+      "area": "Channel video retention",
+      "problem": "Crew permanent deletion and pending cleanup ignored channel video references; submission could validate a video before concurrent retirement committed.",
+      "fix": "Lock the media row for sharing before submission validation and hold it through insertion; include channel submissions in every Crew retirement/reclamation reference filter.",
+      "evidence": "Four real PostgreSQL cases failed before and passed after: submission-first and cleanup-first, each for permanent library deletion and pending-upload reclamation. Lock wait observed rather than timing-only assertions."
+    },
+    {
+      "area": "Studio navigation",
+      "fix": "Help opens the localized regional FAQ; Discord opens the existing community QR; unsupported desktop-download placeholder removed. Pax checklist supersedes the older Coming soon convention.",
+      "evidence": "Local Chrome: English and Chinese FAQ targets, working QR popover/image, zero sidebar Coming soon labels, no horizontal overflow. Studio TypeScript/lint/format passed."
+    },
+    {
+      "area": "Validation maintenance",
+      "fix": "Remove stale extra constructor dependency from withdrawal rollback fixture; add reusable loopback-only S3 and larger retention checks."
+    }
+  ],
+  "validation": {
+    "migrations": "All 411 tracked migrations applied to a fresh disposable local PostgreSQL instance; older fixture preserved.",
+    "retention_publication_poster": {
+      "suites": 4,
+      "passed": 92,
+      "storage": "Mocked in these race tests."
+    },
+    "unit_contracts": {
+      "suites": 4,
+      "passed": 47,
+      "areas": ["channel videos", "Crew assets", "cleanup worker", "multipart provider signing"]
+    },
+    "publication_review_store_playback": {
+      "suites": 5,
+      "passed": 74,
+      "boundary": "Real local store persistence plus service/HTTP tests; external Java publication authority remains a fixture."
+    },
+    "withdrawals": {
+      "passed": 18,
+      "database": "Existing isolated audit database; no bank transfer."
+    },
+    "storage_integration": {
+      "passed": 3,
+      "provider": "Cached MinIO RELEASE.2025-09-07T16-13-09Z bound only to 127.0.0.1:59000",
+      "coverage": [
+        "signed multipart PUT, repeated part upload, list/resume, exact byte completion, idempotent abort/delete",
+        "private bucket selection, rejection of wrong signed content type, private promotion, anonymous denial, authorized exact-byte read",
+        "real Crew library deletion preserves submitted channel bytes; last-reference removal permits real object reclamation"
+      ],
+      "boundary": "Real local PostgreSQL/S3 calls; authorization and notification collaborators are fixtures, media bytes are opaque, not a codec/playback test. Does not establish R2/OSS regional behavior.",
+      "fixture_cleanup": "Disposable PostgreSQL/MinIO containers removed after tests; original test database container preserved."
+    },
+    "retention_scale": {
+      "passed": 12,
+      "documents": 512,
+      "saved_versions": 256,
+      "nodes_per_state": 1000,
+      "two_scans_and_reference_updates_ms": 14350,
+      "final_scan_queries": 15,
+      "boundary": "Owned synthetic workload on local hardware, not a production capacity guarantee. Count overlaps the retention run."
+    },
+    "server_types": "Passed: all 1,361 roots across nine sequential programs, including source, tests, seeds and scripts.",
+    "server_production_build": "Passed: Prisma generate, Nest build and catalog-update TypeScript.",
+    "changed_area_lint": "Passed; changed source/test files and Studio navigation.",
+    "legacy_retired_channel_media": {
+      "passed": 1,
+      "boundary": "Focused recovery check; unrelated cases skipped by test-name filter, already covered in the earlier full retention run."
+    },
+    "formatting": "Prettier and git diff --check passed."
+  },
+  "review": [
+    "Checked both lock orderings and both destructive entry points; the shared media lock is held until the new reference commits, and post-lock validation rejects retired media.",
+    "Channel references are retained regardless of moderation status; removing a library node does not revoke an existing submission.",
+    "Reviewed Crew reservations, pending/retired cleanup, poster generation cleanup, multipart discard, private contract/proof cleanup and storyboard output expiry. Specialized private uploads and AI actor uploads have separate upload-kind/ownership contracts.",
+    "No schema migration or new product policy introduced by this follow-up."
+  ],
+  "remaining": [
+    "Verify actual COM Server rollout, migrations and aurora routing: live missing withdrawal/task-contract/public-review/purchase-report routes and rejected lifecycle query are unresolved. ACR image exists; AKS read access was denied.",
+    "Authenticated task/submission/review and populated canvas acceptance needs an AI Producer certified test account or authorized Crew. The approved private QA Crew could not pass the live certification gate.",
+    "Academy purchase/homework/badges/teacher income, referral cash settlement and IP contract/four-party allocation need authoritative external contracts and decisions.",
+    "Producer-response SLA, dispute policy/retention, extra payout rails/signature associations, affected CN/OPC accounts, GPS/providers and existing private archive inventory need owners or approved policy.",
+    "Regional object-store policies, legacy object placement, external publication/payment/provider behavior and actual workload capacity remain release-owner acceptance. No production deletion, payment, paid generation or deployment was performed."
+  ],
+  "release": "This commit contains the verified follow-up. Main and develop are to be aligned and pushed atomically; deployment is a separate owner-run step."
+}

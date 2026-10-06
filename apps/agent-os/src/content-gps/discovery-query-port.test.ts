@@ -34,6 +34,7 @@ const payload = {
   matchedCount: 0,
   accessibleCount: 1,
   requiresLogin: false,
+  island: { creatorCount: 1, matchedCreatorCount: 0 },
   countScope: "public_platform_creators_with_listed_services",
   map: null,
 };

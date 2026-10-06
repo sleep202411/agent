@@ -156,6 +156,74 @@ suite('notifications against local Postgres', () => {
     expect(await db.notification.count({ where: { userId: owner } })).toBe(0);
   });
 
+  it('deduplicates overlapping batches and single sends with one outbox per notification', async () => {
+    const args = Array.from({ length: 260 }, (_, index) => ({
+      userId: owner,
+      type: 'system.account.notice',
+      title: `Batch ${index}`,
+      body: 'Owned fixture',
+      idempotencyKey: `batch-${index}`,
+    }));
+    await service.send(args[0]);
+    await Promise.all([
+      service.sendMany([...args, args[0]]),
+      service.sendMany([...args].reverse()),
+    ]);
+    const rows = await db.notification.findMany({ where: { userId: owner } });
+    const outbox = await db.notificationOutbox.findMany({
+      where: { userId: owner },
+    });
+    expect(rows).toHaveLength(260);
+    expect(outbox).toHaveLength(260);
+    expect(new Set(outbox.map((row) => row.notificationId)).size).toBe(260);
+    for (const row of rows) {
+      expect(
+        outbox.find((event) => event.notificationId === row.id)?.payload,
+      ).toEqual({
+        id: row.id,
+        type: row.type,
+        title: row.title,
+        body: row.body,
+        meta: row.meta,
+        readAt: null,
+        createdAt: row.createdAt.toISOString(),
+      });
+    }
+  });
+
+  it('rolls back earlier chunks if a later batch outbox insert fails', async () => {
+    let calls = 0;
+    const failingDb = extendPrismaQueries(db, {
+      query: {
+        notificationOutbox: {
+          createMany: ({ args, query }) => {
+            if (++calls === 2) throw new Error('Late batch failure');
+            return query(args);
+          },
+        },
+      },
+    });
+    const failingService = new NotificationService(
+      failingDb as unknown as PrismaService,
+    );
+    await expect(
+      failingService.sendMany(
+        Array.from({ length: 251 }, (_, index) => ({
+          userId: owner,
+          type: 'system.account.notice',
+          title: 'Rollback',
+          body: 'Fixture',
+          idempotencyKey: `rollback-batch-${index}`,
+        })),
+      ),
+    ).rejects.toThrow('Late batch failure');
+    expect(calls).toBe(2);
+    expect(await db.notification.count({ where: { userId: owner } })).toBe(0);
+    expect(
+      await db.notificationOutbox.count({ where: { userId: owner } }),
+    ).toBe(0);
+  });
+
   it('rejects unknown filters without querying an unfiltered inbox', async () => {
     await expect(
       controller.list(actor, '30', undefined, 'typo'),

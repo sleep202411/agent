@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   ConflictException,
   Injectable,
@@ -12,7 +12,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification/notification.service';
 import {
   lockLedgerReceipt,
-  lockMemberPayouts,
+  lockMembersPayouts,
 } from '../crews/earnings/ledger-lock';
 import {
   allocateConfirmedRevenue,
@@ -147,8 +147,11 @@ export class RevenueDistributionService {
           'Every beneficiary must be a distinct member of the contract Crew.',
         );
       const userByMember = new Map(members.map((m) => [m.id, m.userId]));
-      for (const userId of members.map((m) => m.userId).sort())
-        await lockMemberPayouts(tx, contract.crewId, userId);
+      await lockMembersPayouts(
+        tx,
+        contract.crewId,
+        members.map((m) => m.userId),
+      );
       const participants = allocation.participants.map((p) => ({
         ...p,
         userId: userByMember.get(p.crewMemberId)!,
@@ -178,58 +181,59 @@ export class RevenueDistributionService {
           },
         },
       });
-      for (const participant of participants) {
-        if (participant.amountMinor === '0') continue;
-        const earning = await tx.crewEarningEntry.create({
-          data: {
-            crewId: contract.crewId,
-            crewMemberId: participant.crewMemberId,
-            userId: participant.userId,
-            revenueDistributionId: distribution.id,
-            sourceType: 'revenue_share',
-            status: 'posted',
+      const beneficiaries = participants
+        .filter((p) => p.amountMinor !== '0')
+        .map((p) => ({ ...p, earningId: randomUUID() }));
+      await tx.crewEarningEntry.createMany({
+        data: beneficiaries.map((p) => ({
+          id: p.earningId,
+          crewId: contract.crewId,
+          crewMemberId: p.crewMemberId,
+          userId: p.userId,
+          revenueDistributionId: distribution.id,
+          sourceType: 'revenue_share',
+          status: 'posted',
+          currency: allocation.currency,
+          amountMinor: BigInt(p.amountMinor),
+          title: input.title,
+          idempotencyKey: `revenue:${distribution.id}:${p.crewMemberId}`,
+          createdByUserId: `admin:${admin.id}`,
+          approvedByUserId: `admin:${admin.id}`,
+          postedAt: distribution.postedAt,
+        })),
+      });
+      await tx.crewEarningEvent.createMany({
+        data: beneficiaries.map((p) => ({
+          crewId: contract.crewId,
+          earningId: p.earningId,
+          actorUserId: `admin:${admin.id}`,
+          action: 'earning.posted',
+          after: {
+            distributionId: distribution.id,
+            contractId: contract.id,
+            amountMinor: p.amountMinor,
             currency: allocation.currency,
-            amountMinor: BigInt(participant.amountMinor),
-            title: input.title,
-            idempotencyKey: `revenue:${distribution.id}:${participant.crewMemberId}`,
-            createdByUserId: `admin:${admin.id}`,
-            approvedByUserId: `admin:${admin.id}`,
-            postedAt: distribution.postedAt,
           },
-        });
-        await tx.crewEarningEvent.create({
-          data: {
+        })),
+      });
+      await this.notifications.sendMany(
+        beneficiaries.map((p) => ({
+          userId: p.userId,
+          type: 'crew.earning.posted',
+          title: `Revenue share confirmed: ${input.title}`,
+          body: 'Your confirmed revenue share is available in My income.',
+          idempotencyKey: `crew.earning.posted:${p.earningId}`,
+          meta: {
             crewId: contract.crewId,
-            earningId: earning.id,
-            actorUserId: `admin:${admin.id}`,
-            action: 'earning.posted',
-            after: {
-              distributionId: distribution.id,
-              contractId: contract.id,
-              amountMinor: participant.amountMinor,
-              currency: allocation.currency,
-            },
+            earningId: p.earningId,
+            sourceType: 'revenue_share',
+            amountMinor: p.amountMinor,
+            currency: allocation.currency,
+            deeplink: '/crews/income',
           },
-        });
-        await this.notifications.send(
-          {
-            userId: participant.userId,
-            type: 'crew.earning.posted',
-            title: `Revenue share confirmed: ${input.title}`,
-            body: 'Your confirmed revenue share is available in My income.',
-            idempotencyKey: `crew.earning.posted:${earning.id}`,
-            meta: {
-              crewId: contract.crewId,
-              earningId: earning.id,
-              sourceType: 'revenue_share',
-              amountMinor: participant.amountMinor,
-              currency: allocation.currency,
-              deeplink: '/crews/income',
-            },
-          },
-          tx,
-        );
-      }
+        })),
+        tx,
+      );
       await tx.adminAuditLog.create({
         data: {
           actorUserId: admin.id,
@@ -274,8 +278,11 @@ export class RevenueDistributionService {
         select: { userId: true },
         orderBy: { userId: 'asc' },
       });
-      for (const { userId } of identities)
-        await lockMemberPayouts(tx, distribution.contract.crewId, userId);
+      await lockMembersPayouts(
+        tx,
+        distribution.contract.crewId,
+        identities.map(({ userId }) => userId),
+      );
       const earnings = await tx.crewEarningEntry.findMany({
         where: { revenueDistributionId: id },
       });
@@ -306,50 +313,55 @@ export class RevenueDistributionService {
           'This revenue is reserved for or included in a payout. Resolve the payout before correcting the distribution.',
         );
       const now = new Date();
-      for (const earning of earnings) {
-        await tx.crewEarningEntry.update({
-          where: { id: earning.id },
-          data: {
+      const updated = await tx.crewEarningEntry.updateMany({
+        where: {
+          id: { in: earnings.map((earning) => earning.id) },
+          status: 'posted',
+        },
+        data: {
+          status: 'reversed',
+          reversedAt: now,
+          reversedByUserId: `admin:${admin.id}`,
+          reversalReason: reason,
+          version: { increment: 1 },
+        },
+      });
+      if (updated.count !== earnings.length)
+        throw new ConflictException(
+          'Revenue changed during reversal. Refresh and retry.',
+        );
+      await tx.crewEarningEvent.createMany({
+        data: earnings.map((earning) => ({
+          crewId: earning.crewId,
+          earningId: earning.id,
+          actorUserId: `admin:${admin.id}`,
+          action: 'earning.reversed',
+          before: { status: earning.status, version: earning.version },
+          after: {
             status: 'reversed',
-            reversedAt: now,
-            reversedByUserId: `admin:${admin.id}`,
-            reversalReason: reason,
-            version: { increment: 1 },
+            version: earning.version + 1,
+            revenueDistributionId: id,
+            reason,
           },
-        });
-        await tx.crewEarningEvent.create({
-          data: {
+        })),
+      });
+      await this.notifications.sendMany(
+        earnings.map((earning) => ({
+          userId: earning.userId,
+          type: 'crew.earning.reversed',
+          title: `Revenue share corrected: ${distribution.title}`,
+          body: reason,
+          idempotencyKey: `crew.earning.reversed:${earning.id}`,
+          meta: {
             crewId: earning.crewId,
             earningId: earning.id,
-            actorUserId: `admin:${admin.id}`,
-            action: 'earning.reversed',
-            before: { status: earning.status, version: earning.version },
-            after: {
-              status: 'reversed',
-              version: earning.version + 1,
-              revenueDistributionId: id,
-              reason,
-            },
+            amountMinor: earning.amountMinor.toString(),
+            currency: earning.currency,
+            deeplink: '/crews/income',
           },
-        });
-        await this.notifications.send(
-          {
-            userId: earning.userId,
-            type: 'crew.earning.reversed',
-            title: `Revenue share corrected: ${distribution.title}`,
-            body: reason,
-            idempotencyKey: `crew.earning.reversed:${earning.id}`,
-            meta: {
-              crewId: earning.crewId,
-              earningId: earning.id,
-              amountMinor: earning.amountMinor.toString(),
-              currency: earning.currency,
-              deeplink: '/crews/income',
-            },
-          },
-          tx,
-        );
-      }
+        })),
+        tx,
+      );
       await tx.adminAuditLog.create({
         data: {
           actorUserId: admin.id,

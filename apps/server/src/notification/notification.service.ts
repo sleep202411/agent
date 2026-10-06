@@ -42,6 +42,50 @@ interface SendArgs {
 export class NotificationService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Batch writes retain the same atomic notification/outbox deduplication as send. */
+  async sendMany(args: SendArgs[], db: TxClient = this.prisma): Promise<void> {
+    if (!args.length) return;
+    if (db === this.prisma) {
+      return this.prisma.$transaction((tx) => this.sendMany(args, tx));
+    }
+    // Consistent unique-key order avoids deadlocks between overlapping batches
+    // whose callers supplied opposite recipient orders. Keep duplicate order stable.
+    const ordered = [...args].sort((a, b) => {
+      if (a.userId !== b.userId) return a.userId < b.userId ? -1 : 1;
+      return a.idempotencyKey < b.idempotencyKey
+        ? -1
+        : a.idempotencyKey > b.idempotencyKey
+          ? 1
+          : 0;
+    });
+    for (let offset = 0; offset < ordered.length; offset += 250) {
+      const inserted = await db.notification.createManyAndReturn({
+        data: ordered.slice(offset, offset + 250).map((item) => ({
+          id: newShortId(),
+          userId: item.userId,
+          type: item.type,
+          title: item.title,
+          body: item.body,
+          meta: (item.meta ?? {}) as Prisma.InputJsonValue,
+          idempotencyKey: item.idempotencyKey,
+        })),
+        skipDuplicates: true,
+      });
+      // RETURNING includes only rows inserted by this transaction, including
+      // under concurrent replay. Existing rows must never enqueue again.
+      if (inserted.length) {
+        await db.notificationOutbox.createMany({
+          data: inserted.map((row) => ({
+            id: newShortId(),
+            notificationId: row.id,
+            userId: row.userId,
+            payload: toDTO(row) as unknown as Prisma.InputJsonValue,
+          })),
+        });
+      }
+    }
+  }
+
   async send(
     args: SendArgs,
     db: TxClient = this.prisma,

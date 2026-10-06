@@ -118,6 +118,13 @@ vi.mock("@/app/(site)/crews/_components/task-agreed-fee", () => ({
     <button onClick={() => onUse("USD", state.quoteFee!)}>Use agreed fee</button>
   ),
 }));
+// Private contract browsing/upload is covered by task-contract-files.test.tsx.
+vi.mock("@/app/(site)/crews/_components/task-contract-files", () => ({
+  TaskContractFiles: () => null,
+}));
+vi.mock("@/app/(site)/crews/_components/task-invite-dialog", () => ({
+  TaskInviteDialog: () => null,
+}));
 vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
 vi.mock("./delete-task-button", () => ({ DeleteTaskButton: () => null }));
 vi.mock("./task-review-form", () => ({

@@ -32,7 +32,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e": "jest --config ./test/jest-e2e.cjs",
     "db:up": "docker compose -f docker-compose.dev.yml up -d",
     "db:down": "docker compose -f docker-compose.dev.yml down",
     "db:generate": "prisma generate",
@@ -42,12 +42,13 @@
     "seed:tv-local": "tsx scripts/seed-tv-local.ts",
     "test:crew-migrations": "node scripts/verify-crew-migrations.mjs",
     "test:workspace-migration": "node scripts/verify-workspace-migration.mjs",
-    "test:story-project-move": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-story-project-move.ts",
+    "test:story-project-move": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx --import ./test/unit-env.ts scripts/verify-story-project-move.ts",
     "test:workspace-permissions": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-workspace-permissions.ts",
     "media:inspect": "tsx scripts/inspect-media.ts",
     "test:integration:audit": "node scripts/test-audit-integration.mjs",
     "test:integration:gps": "node scripts/test-gps.mjs",
-    "test:typecheck-runner": "node --test scripts/check-types.test.mjs"
+    "test:typecheck-runner": "node --test scripts/check-types.test.mjs",
+    "test:integration:platform": "node scripts/test-platform-integration.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed/seed.ts"
@@ -158,7 +159,12 @@
     "moduleNameMapper": {
       "^@repo/shared$": "<rootDir>/../../../packages/shared/src/index.ts",
       "^@repo/shared/(.*)$": "<rootDir>/../../../packages/shared/src/$1.ts",
-      "^(\\.{1,2}/.*)\\.js$": "$1"
+      "^(\\.{1,2}/.*)\\.js$": "$1",
+      "^@repo/agent-skills$": "<rootDir>/../../../packages/agent-skills/src/index.ts",
+      "^@repo/agent-capabilities$": "<rootDir>/../../../packages/agent-capabilities/src/index.ts",
+      "^@repo/agent-tools$": "<rootDir>/../../../packages/agent-tools/src/index.ts",
+      "^@repo/agent-policy$": "<rootDir>/../../../packages/agent-policy/src/index.ts",
+      "^@repo/agent-protocol$": "<rootDir>/../../../packages/agent-protocol/src/index.ts"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
@@ -169,6 +175,8 @@
       "<rootDir>",
       "<rootDir>/../prisma/seed"
     ],
-    "maxWorkers": 2
+    "maxWorkers": 2,
+    "testTimeout": 30000,
+    "workerIdleMemoryLimit": "512MB"
   }
 }

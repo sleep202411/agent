@@ -79,6 +79,7 @@ function fixture(responses: AIMessage[]) {
         matchedCount: 1,
         accessibleCount: 8,
         requiresLogin: false,
+        island: { creatorCount: 8, matchedCreatorCount: 1 },
         countScope: "public_platform_creators_with_listed_services",
         map: null,
       })

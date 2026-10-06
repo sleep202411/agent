@@ -343,7 +343,17 @@
     "promptPlaceholder": "Describe what you want to create…",
     "mode": "Mode",
     "chooseModel": "Choose model",
-    "settings": "Settings"
+    "settings": "Settings",
+    "failureDetails": {
+      "open": "Details",
+      "title": "Generation failure",
+      "taskId": "Task ID",
+      "model": "Model",
+      "code": "Error code",
+      "copy": "Copy error details",
+      "copied": "Error details copied",
+      "copyFailed": "Could not copy. Select the details above to copy manually."
+    }
   },
   "studioModes": {
     "feed": {

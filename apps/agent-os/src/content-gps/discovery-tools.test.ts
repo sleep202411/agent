@@ -49,6 +49,7 @@ function fixture() {
       matchedCount: 0,
       accessibleCount: 0,
       requiresLogin: false,
+      island: { creatorCount: 0, matchedCreatorCount: 0 },
       countScope: "public_platform_creators_with_listed_services",
       map: null,
     })),

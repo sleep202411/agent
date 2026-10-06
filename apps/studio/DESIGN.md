@@ -389,7 +389,7 @@ imagine.art reference, whose buttons hold a single ~12–14px radius throughout.
   viewport creates a temporary expanded sidebar that closes from the outside
   scrim. The workspace switcher remains in its canonical header position
   between Upgrade and Account. Primary navigation sits at the top; Settings,
-  Discord, mobile download, desktop download, and Help are grouped at the
+  Discord, mobile download, and Help are grouped at the
   bottom. There is no floating outer pill or detached Settings puck. The product
   header and content occupy the remaining width and animate with the sidebar;
   fixed bottom composers retain a 16px working gap from its edge.
@@ -491,6 +491,8 @@ Built from the `components/ui/` primitives (`FrostedPanel`, `GlassRim`, the
 - When importing a tweakcn (or any) theme: the app is dark-only — take
   the values from the theme's `.dark` block into `:root` and discard its
   light block.
-- Honest UI: features without a backing implementation render disabled
-  with a "Coming soon" tooltip (see the sidebar), never as live-looking
-  dead controls.
+- Honest UI: following Pax's platform checklist, omit unfinished placeholder
+  controls without a backing implementation. Repair useful controls when an
+  existing destination is available: sidebar Help opens the public site's
+  localized FAQ, and Discord shows its maintained community QR code.
+  Keep recoverable errors and permission-dependent actions visible.

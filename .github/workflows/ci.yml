@@ -89,6 +89,9 @@ jobs:
       - name: Test orchestration contract
         run: npm run test:orchestration
 
+      - name: Repository maintenance script regressions
+        run: node --test scripts/cleanup-branches.test.mjs scripts/content-gps/offline-extraction.test.mjs
+
       - name: Generate database client
         run: npm run db:generate -w server
 
@@ -100,6 +103,14 @@ jobs:
 
       - name: Create dedicated concurrency fixture database
         run: docker exec "${{ job.services.postgres-gps.id }}" createdb -U fizzdragon fd_audit
+
+      - name: Create dedicated platform regression database
+        run: docker exec "${{ job.services.postgres-gps.id }}" createdb -U fizzdragon audit_migrations_20261005
+
+      - name: Migrate dedicated platform regression database
+        env:
+          DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+        run: npm run db:deploy -w server
 
       - name: Migrate dedicated AI Actor fixture
         env:
@@ -119,6 +130,25 @@ jobs:
 
       - name: Type check
         run: npx turbo run check-types --concurrency=1
+
+      - name: Migration and workspace permission regressions
+        run: |
+          npm run test:crew-migrations -w server
+          npm run test:workspace-migration -w server
+          npm run test:workspace-permissions -w server
+
+      - name: Create dedicated project-move database
+        run: docker exec "${{ job.services.postgres.id }}" createdb -U fizzdragon story_workspace_preview
+
+      - name: Project-move and payer-isolation regressions
+        env:
+          DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55439/story_workspace_preview
+        run: |
+          npm run db:deploy -w server
+          npm run test:story-project-move -w server
+
+      - name: Health HTTP regressions
+        run: npm run test:e2e -w server -- --runInBand
 
       - name: Install media test dependencies
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -146,6 +176,9 @@ jobs:
           LEGACY_AGENT_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55439/fizzdragon_legacy_agent_test?sslmode=disable
         run: npx turbo run test --concurrency=2
 
+      - name: Server-rendered experience player regressions
+        run: npm run test:experience-player -w web
+
       # GPS suites create/drop overlapping fixture tables: run serially on
       # their dedicated loopback database, never the migrated product database.
       - name: GPS database regressions
@@ -166,6 +199,28 @@ jobs:
           TASK01_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
           EPISODE_UPLOAD_INTEGRATION: "1"
         run: npm run test -w server -- --runInBand --runTestsByPath src/media/episode-upload.integration.spec.ts
+
+      # Serial and fail-closed: these suites must execute, not report skipped.
+      - name: Platform finance, contracts, exports and storage regressions
+        env:
+          CONTENT_GPS_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+          LOCAL_AUDIT_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55439/task01
+          TASK01_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55439/task01
+          PROJECT_SECTIONS_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55439/task01
+          PROJECT_SKILLS_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55439/task01
+          CONTRACT_RETENTION_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+          DISPUTE_LIST_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+          REPORT_PURCHASE_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+          STORYBOARD_EXPORT_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+          TASK_CONTRACTS_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+          TASK_DELIVERY_FOLDER_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+          TASK_FEEDBACK_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+          WITHDRAWAL_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55441/audit_migrations_20261005
+          S3_LOCAL_INTEGRATION: "1"
+          STORYBOARD_RENDER_INTEGRATION: "1"
+          MEDIA_RETENTION_SCALE: "1"
+          WITHDRAWAL_SCALE_TEST: "1"
+        run: npm run test:integration:platform -w server
 
       # Build-only fixtures: no production credentials or live service calls.
       - name: Build
