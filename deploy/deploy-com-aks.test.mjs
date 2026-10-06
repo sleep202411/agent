@@ -67,6 +67,7 @@ if (args[0] === 'account') process.exit(0);
 const scenario = process.env.AZ_TEST_SCENARIO;
 if (args[1] === 'build') {
   if (fs.readFileSync('apps/server/source.txt', 'utf8') !== 'committed' || fs.existsSync('apps/server/untracked.txt')) process.exit(41);
+  if (scenario === 'script-edit') fs.writeFileSync(process.env.AZ_TEST_REPO+'/deploy/deploy-com-aks.sh', 'echo MUST_NOT_EXECUTE\\n'.repeat(1000));
   if (scenario === 'edit') fs.writeFileSync(process.env.AZ_TEST_REPO+'/apps/server/source.txt', 'concurrent edit');
   if (scenario === 'remote') {
     const r = spawnSync('git', ['push', 'origin', process.env.AZ_TEST_FUTURE+':main'], {cwd:process.env.AZ_TEST_REPO});
@@ -133,6 +134,7 @@ for (const scenario of [
   "stale",
   "remote",
   "edit",
+  "script-edit",
   "failed",
   "missing-image",
   "bad-id",
@@ -147,6 +149,13 @@ for (const scenario of [
     assert.equal(readFileSync(values, "utf8"), original);
     if (scenario === "stale" || scenario === "fetch-failed")
       assert.equal(calls.length, 0, "reject before Azure calls");
+    if (scenario === "script-edit") {
+      assert.match(result.stderr, /Branch or tracked files changed during the build/);
+      assert.doesNotMatch(
+        result.stdout + result.stderr,
+        /MUST_NOT_EXECUTE|No such file or directory/
+      );
+    }
     if (scenario === "edit")
       assert.equal(readFileSync(join(repo, "apps/server/source.txt"), "utf8"), "concurrent edit");
   });

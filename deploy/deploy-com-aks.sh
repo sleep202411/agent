@@ -19,6 +19,10 @@
 #
 # 前提：① 已 az login 到 fizzdragon-ai-prod ② 工作区干净 ③ 在 main 分支
 #       （prod 只从 main 出；ArgoCD 盯 main）。覆盖：FORCE=1 跳过分支检查。
+# Parse the complete release procedure before executing any long-running build.
+# Otherwise Bash can resume reading at an obsolete byte offset if git/editor
+# changes this file during ACR execution. Keep exit in the same parsed command.
+main() {
 set -euo pipefail
 
 # --- config ---------------------------------------------------------------
@@ -247,3 +251,6 @@ echo "✅ 镜像和 Git tag 已推送；运行中的版本尚未验证。ArgoCD 
 echo "只读检查 Server rollout（需要 AKS / ArgoCD 读取权限）："
 echo "  node deploy/diagnose-com-server.mjs $SHA"
 echo "随后验证已登录的业务接口；/healthz 或 /ready 成功不代表新路由已上线。"
+
+}
+main "$@"; exit
