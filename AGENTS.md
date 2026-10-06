@@ -12,7 +12,10 @@ developer, may handle Mobile development. Ric and this agent must stop Mobile
 implementation, parity follow-ups and Mobile feature-branch development/pushes.
 Do not treat this final authorization as permission for further Mobile work.
 Shared Web/backend work must preserve the handed-off Mobile API contracts.
-Deployment and real-device acceptance remain with their assigned owners.
+The user subsequently authorized Ric and this agent to help Hu Xuan deploy.
+Deployment assistance does not authorize Mobile implementation or parity work;
+Hu Xuan retains Mobile development ownership and real-device acceptance.
+Branch alignment may be performed when explicitly requested by the user.
 
 Repo-level orientation for AI coding agents and humans new to the
 monorepo. Scope is **navigation + cross-cutting conventions only** —
