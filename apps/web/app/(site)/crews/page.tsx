@@ -321,8 +321,8 @@ export default function CrewsPage() {
               )}
             </section>
           ) : view === "crews" ? (
-            <section>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+            <section className="pt-6">
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {isLoading ? (
                   <CardSkeleton count={10} />
                 ) : items.length === 0 && !isError ? (
@@ -438,7 +438,7 @@ function CrewCardInner({ item }: { item: CrewDTO }) {
   const positionOverflow = Math.max(0, openCount - positionPreview.length);
 
   return (
-    <div className="flex flex-1 flex-col p-3">
+    <div className="flex flex-1 flex-col p-4">
       {/* ─── Header: logo + identity ─── */}
       <div className="flex items-start gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -449,8 +449,8 @@ function CrewCardInner({ item }: { item: CrewDTO }) {
           loading="lazy"
         />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <h3 className="truncate text-sm font-bold text-foreground">{item.name}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="min-w-0 break-words text-sm font-bold text-foreground">{item.name}</h3>
             {openCount > 0 ? (
               <span className="shrink-0 rounded-md bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
                 {openCount} {tCrew("hiringBadge")}

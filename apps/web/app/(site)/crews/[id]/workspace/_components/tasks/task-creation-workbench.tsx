@@ -8,6 +8,7 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
 import {
   IconPlus,
+  IconSearch,
   IconX,
   IconFolder,
   IconFile,
@@ -387,7 +388,7 @@ function TaskCreationSession({
           </div>
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+          <header className="flex flex-col gap-4 border-b border-white/10 px-4 py-4">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-sm font-semibold">{t("title")}</h2>
               <button
@@ -401,7 +402,7 @@ function TaskCreationSession({
                   : ""}
               </button>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3">
               {onViewTasks &&
               (drafts.some((draft) => draft.state === "created") ||
                 batches.some((batch) => batch.created) ||
@@ -410,7 +411,13 @@ function TaskCreationSession({
                   {t("viewTasks")}
                 </Button>
               ) : null}
-              <Button variant="ghost" color="muted" size="sm" onClick={() => setSearchOpen(true)}>
+              <Button
+                variant="outline"
+                color="muted"
+                size="sm"
+                icon={<IconSearch />}
+                onClick={() => setSearchOpen(true)}
+              >
                 {t("searchAssets")}
               </Button>
               {canManage ? (
