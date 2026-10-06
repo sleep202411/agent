@@ -12,7 +12,7 @@ const { PGlite } = process.getBuiltinModule('module').createRequire(__filename)(
   '@electric-sql/pglite',
 ) as typeof import('@electric-sql/pglite');
 type Sql = Pick<import('@electric-sql/pglite').PGlite, 'query' | 'transaction'>;
-function adapter(sql: Sql): unknown {
+function queryAdapter(sql: Pick<Sql, 'query'>) {
   const query = (
     parts: TemplateStringsArray | Prisma.Sql,
     ...values: unknown[]
@@ -31,8 +31,14 @@ function adapter(sql: Sql): unknown {
       parts: TemplateStringsArray | Prisma.Sql,
       ...values: unknown[]
     ) => (await query(parts, ...values)).affectedRows,
-    $transaction: (run: (tx: unknown) => Promise<unknown>) =>
-      sql.transaction((tx) => run(adapter(tx as Sql))),
+  };
+}
+function adapter(sql: Sql) {
+  return {
+    ...queryAdapter(sql),
+    $transaction: (
+      run: (tx: ReturnType<typeof queryAdapter>) => Promise<unknown>,
+    ) => sql.transaction((tx) => run(queryAdapter(tx))),
   };
 }
 const originalSite = process.env.NEXT_PUBLIC_SITE_REGION;

@@ -426,22 +426,33 @@ describe('Episode template task custom fields', () => {
     expect(templates.instantiateTasks).not.toHaveBeenCalled();
   });
   it.each([
-    [{ templateKey: 'foreign', values: [] }],
-    [
-      { templateKey: 'script', values: [] },
-      { templateKey: 'script', values: [] },
-    ],
-    [{ templateKey: 'script', values: [{ fieldId, value: 'x' }] }],
-  ])(
-    'rejects foreign tasks, repeated tasks and foreign crew fields',
-    async (taskFields) => {
-      const { service, templates } = setup();
-      await expect(
-        service.apply('crew', 'episode', 'user', { ...input, taskFields }),
-      ).rejects.toThrow();
-      expect(templates.instantiateTasks).not.toHaveBeenCalled();
+    {
+      name: 'foreign tasks',
+      taskFields: [{ templateKey: 'foreign', values: [] }],
+      error: 'Custom fields must reference tasks in the reviewed template.',
     },
-  );
+    {
+      name: 'repeated tasks',
+      taskFields: [
+        { templateKey: 'script', values: [] },
+        { templateKey: 'script', values: [] },
+      ],
+      error: 'Each template task can have only one custom-field entry.',
+    },
+    {
+      name: 'foreign crew fields',
+      taskFields: [
+        { templateKey: 'script', values: [{ fieldId, value: 'x' }] },
+      ],
+      error: 'Every custom field must belong to this crew.',
+    },
+  ])('rejects $name', async ({ taskFields, error }) => {
+    const { service, templates } = setup();
+    await expect(
+      service.apply('crew', 'episode', 'user', { ...input, taskFields }),
+    ).rejects.toThrow(error);
+    expect(templates.instantiateTasks).not.toHaveBeenCalled();
+  });
   it('replays an identical field command but refuses changed values', async () => {
     const { service, tx, templates } = setup();
     tx.crewProductionActivity.findFirst.mockResolvedValue({

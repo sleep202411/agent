@@ -71,16 +71,34 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "✋ 工作区有未提交改动——sha tag 必须如实对应已提交代码。先 commit/stash。" >&2
   exit 1
 fi
+SHA="$(git rev-parse HEAD)"
+# Refuse stale/diverged releases before spending time building images.
+fetch_branch() {
+  git fetch --no-tags origin "refs/heads/$BRANCH" || return 1
+  git rev-parse FETCH_HEAD
+}
+REMOTE_SHA="$(fetch_branch)"
+if ! git merge-base --is-ancestor "$REMOTE_SHA" "$SHA"; then
+  echo "✋ origin/$BRANCH has changes missing locally. Integrate them and rerun deployment." >&2
+  exit 1
+fi
+
+# A SHA-tagged image must contain only that commit, including its build args.
+# Untracked files and edits made while ACR builds never enter this snapshot.
+BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fizz-com-build.XXXXXX")"
+trap 'rm -rf "$BUILD_ROOT"' EXIT
+mkdir "$BUILD_ROOT/context"
+git archive "$SHA" | tar -x -C "$BUILD_ROOT/context"
+WEB_ENV="$BUILD_ROOT/context/$WEB_ENV"
 az account show >/dev/null 2>&1 || { echo "✋ 未登录 az，请先 az login。" >&2; exit 1; }
 az account set --subscription "$SUBSCRIPTION"
 
-SHA="$(git rev-parse HEAD)"
 SHORT="${SHA:0:7}"
 echo "▶ 部署 [${SERVICES[*]}] @ ${SHORT}  (registry=$REGISTRY)"
 
 # Windows Git Bash: az acr build 流式日志含 Unicode（如 U+2022 •），GBK 控制台会
-# UnicodeEncodeError 误报失败。用 --no-logs + 轮询 tag 代替。
-# 覆盖：任意环境设 AZ_ACR_BUILD_NO_LOGS=1 强制 --no-logs。
+# UnicodeEncodeError 误报失败。轮询本次提交的 run ID，避免流式日志。
+# AZ_ACR_BUILD_NO_LOGS=1 also enables the Windows encoding/path safeguards.
 is_windows_acr_cli() {
   [ "${AZ_ACR_BUILD_NO_LOGS:-}" = "1" ] && return 0
   case "$(uname -s 2>/dev/null)" in
@@ -94,37 +112,37 @@ is_windows_acr_cli() {
   return 1
 }
 
-ACR_BUILD_EXTRA=()
 if is_windows_acr_cli; then
   export PYTHONUTF8=1
   export AZURE_CORE_NO_COLOR=true
-  ACR_BUILD_EXTRA+=(--no-logs)
-  echo "ℹ Windows 检测到：az acr build 使用 --no-logs（规避 GBK 日志编码崩溃）"
 fi
 
 wait_for_acr_image() {
-  local repo="$1" tag="$2"
-  echo "  · 等待 ACR 镜像 $repo:$tag …"
+  local run_id="$1" repo="$2" tag="$3" run_status
+  echo "  · 等待 ACR run $run_id ($repo:$tag) …"
   local deadline=$((SECONDS + 3600))
   while [ "$SECONDS" -lt "$deadline" ]; do
-    if az acr repository show-tags --name "$ACR" --repository "$repo" \
-      --query "contains(@, '${tag}')" -o tsv 2>/dev/null | grep -qi true; then
-      echo "  · 镜像已就绪"
-      return 0
-    fi
-    local run_status run_id
-    run_status="$(az acr task list-runs --registry "$ACR" --top 1 --query "[0].status" -o tsv 2>/dev/null || true)"
-    run_id="$(az acr task list-runs --registry "$ACR" --top 1 --query "[0].runId" -o tsv 2>/dev/null || true)"
-    if [ "$run_status" = "Failed" ]; then
-      echo "  ✋ ACR 构建失败 (run $run_id)。日志：" >&2
-      echo "     az acr task logs --registry $ACR --run-id $run_id > build.log" >&2
-      exit 1
-    fi
-    [ -n "$run_status" ] && echo "  · 构建中 ($run_status)…"
+    run_status="$(az acr task show-run --registry "$ACR" --run-id "$run_id" --query status -o tsv)"
+    run_status="${run_status//$'\r'/}"
+    case "$run_status" in
+      Succeeded)
+        # Check this run's outputs, not a tag left behind by an older build.
+        if [ "$(az acr task show-run --registry "$ACR" --run-id "$run_id" \
+          --query "length(outputImages[?repository == '$repo' && tag == '$tag'])" -o tsv | tr -d '\r')" != "1" ]; then
+          echo "✋ ACR run $run_id did not produce $repo:$tag." >&2
+          return 1
+        fi
+        return 0 ;;
+      Queued|Started|Running) echo "  · 构建中 ($run_status)…" ;;
+      *)
+        echo "✋ ACR run $run_id ended with status '$run_status'." >&2
+        echo "az acr task logs --registry $ACR --run-id $run_id > build.log" >&2
+        return 1 ;;
+    esac
     sleep 20
   done
-  echo "  ✋ 超时：ACR 未出现 $repo:$tag" >&2
-  exit 1
+  echo "✋ Timed out waiting for ACR run $run_id; inspect it before retrying." >&2
+  return 1
 }
 
 # --- build (az acr build, 镜像在 ACR 里构建) ------------------------------
@@ -169,16 +187,20 @@ build_one() {
   if is_windows_acr_cli; then
     acr_env=(env MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*')
   fi
-  ${acr_env[@]+"${acr_env[@]}"} az acr build --registry "$ACR" \
-    --image "${image}:${SHA}" \
-    --file "$dockerfile" \
-    --platform linux/amd64 \
-    ${ACR_BUILD_EXTRA[@]+"${ACR_BUILD_EXTRA[@]}"} \
-    ${args[@]+"${args[@]}"} \
-    .
-  if [ "${#ACR_BUILD_EXTRA[@]}" -gt 0 ]; then
-    wait_for_acr_image "$image" "$SHA"
+  local run_id
+  run_id="$(cd "$BUILD_ROOT/context" && \
+    ${acr_env[@]+"${acr_env[@]}"} az acr build --registry "$ACR" \
+      --image "${image}:${SHA}" \
+      --file "$dockerfile" \
+      --platform linux/amd64 \
+      --no-wait --query runId -o tsv \
+      ${args[@]+"${args[@]}"} .)"
+  run_id="${run_id//$'\r'/}"
+  if [[ ! "$run_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "✋ ACR did not return a valid run ID; no deployment will be published." >&2
+    return 1
   fi
+  wait_for_acr_image "$run_id" "$image" "$SHA"
 }
 
 # awk 改某 repository 块的下一行 tag（自动覆盖 agent 的两处块），不依赖 yq
@@ -194,6 +216,16 @@ for s in "${SERVICES[@]}"; do
   IFS=":" read -r image dockerfile _paths <<< "$(svc_spec "$s")"
   build_one "$s" "$image" "$dockerfile"
 done
+
+# Do not overwrite concurrent edits or publish an old build over newer code.
+CURRENT_REMOTE_SHA="$(fetch_branch)"
+if [ "$CURRENT_REMOTE_SHA" != "$REMOTE_SHA" ] || \
+   [ "$(git rev-parse HEAD)" != "$SHA" ] || \
+   [ "$(git rev-parse --abbrev-ref HEAD)" != "$BRANCH" ] || \
+   ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "✋ Branch or tracked files changed during the build. Changes are preserved; reconcile and rerun deployment." >&2
+  exit 1
+fi
 
 # --- bump values.yaml (只动本次构建的服务) --------------------------------
 echo "▶ 更新 $VALUES 的 tag → $SHA"
