@@ -221,6 +221,56 @@ describe('GoogleVertexClient Gemini Omni interactions', () => {
     },
   );
 
+  it.each([
+    ['Request blocked because the quota was exhausted.', 'UNKNOWN'],
+    ['Organization policy does not allow this model.', 'UNKNOWN'],
+    ['Safety service is temporarily unavailable.', 'UNKNOWN'],
+    ['Request blocked by safety policy.', 'PROVIDER_CONTENT_FILTER'],
+  ])('classifies terminal error accurately: %s', async (message, code) => {
+    const get = jest.fn().mockResolvedValue({
+      id: 'failed-interaction',
+      status: 'failed',
+      errors: [{ message }],
+    });
+    const client = new GoogleVertexClient(
+      { config: { enabled: true, requestTimeoutMs: 300000 } } as never,
+      {} as never,
+    );
+    (client as unknown as { clients: Map<string, unknown> }).clients.set(
+      'global',
+      { interactions: { get } },
+    );
+    const result = await client.pollOmni('failed-interaction');
+    expect(result.failure?.code).toBe(code);
+    if (code === 'UNKNOWN') expect(result.failure?.userMessage).toBe(message);
+  });
+
+  it('does not combine unrelated error messages into a moderation refusal', async () => {
+    const get = jest.fn().mockResolvedValue({
+      id: 'failed-interaction',
+      status: 'failed',
+      errors: [
+        { message: 'Request blocked because the quota was exhausted.' },
+        { message: 'Safety service is temporarily unavailable.' },
+      ],
+    });
+    const client = new GoogleVertexClient(
+      { config: { enabled: true, requestTimeoutMs: 300000 } } as never,
+      {} as never,
+    );
+    (client as unknown as { clients: Map<string, unknown> }).clients.set(
+      'global',
+      { interactions: { get } },
+    );
+    expect((await client.pollOmni('failed-interaction')).failure).toMatchObject(
+      {
+        code: 'UNKNOWN',
+        userMessage:
+          'Request blocked because the quota was exhausted. Safety service is temporarily unavailable.',
+      },
+    );
+  });
+
   it('retains a terminal interaction error message instead of a generic retry', async () => {
     const get = jest.fn().mockResolvedValue({
       id: 'failed-interaction',

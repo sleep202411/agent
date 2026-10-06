@@ -90,7 +90,7 @@ jobs:
         run: npm run test:orchestration
 
       - name: Repository maintenance script regressions
-        run: node --test scripts/cleanup-branches.test.mjs scripts/content-gps/offline-extraction.test.mjs
+        run: node --test scripts/cleanup-branches.test.mjs scripts/content-gps/offline-extraction.test.mjs deploy/diagnose-com-server.test.mjs
 
       - name: Generate database client
         run: npm run db:generate -w server

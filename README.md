@@ -155,6 +155,19 @@ deploy/deploy-com-aks.sh all            # 全部：web studio admin-ui server ag
 > ⚠️ **不要 `kubectl set image` / `helm upgrade` 直推**——ArgoCD `selfHeal` 会在几分钟内
 > 还原。部署只走 `deploy-com-aks.sh`（git 路径）。Helm 是底座（ArgoCD 渲染它），不手动 upgrade。
 
+发布镜像和推送 tag 不等于 rollout 成功。具备集群读取权限的发布负责人可运行：
+
+```bash
+node deploy/diagnose-com-server.mjs <完整镜像SHA> [kubectl-context]
+```
+
+默认 context 为 `aks-fizzdragon-com`。该只读命令输出 ArgoCD 同步状态、Server
+期望/实际镜像、Pod/init 状态和 Service/Ingress 目标；不读取 Secret 或执行容器命令。
+读取失败、旧 Pod 仍在服务或 rollout 未完成时返回非零。若卡在 init，检查 `db-migrate`；
+若挂载失败，检查 CSI/Key Vault 配置；若进程重启，检查启动日志。尤其确认
+`creator-payout-details-key` 已按 Server README 配置，不能通过移除密钥校验绕过。
+健康探针成功后仍需验证已登录的 withdrawals、task-contracts、reviews 和 disputes 接口。
+
 - 镜像仓库：ACR `acrfizzdragoncom.azurecr.io`
 - 集群：`aks-fizzdragon-com`（southeastasia），namespace `fizzdragon-com`
 - ArgoCD app：`fizzdragon-com`（auto-sync + prune + selfHeal）
