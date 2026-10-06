@@ -266,3 +266,12 @@ starting a non-trivial task.
 This doc is a navigation hub. When something here gets too detailed,
 push it down into the app-specific AGENTS.md or DESIGN.md. Keep this
 file under ~200 lines — it should be readable in one scroll.
+
+## Authorized parity integration (2026-10-06)
+
+The user explicitly authorized completing parity on
+`feat/mobile-2.4.0-scrolling-screen`, then merging that completed branch into
+`main` and `develop`, aligned to the same verified commit. This instruction
+supersedes the earlier outbound-merge prohibition for this parity integration.
+Preserve concurrent work, validate before publishing, and do not force-push.
+The 2.3.1 branch and deployment ownership remain unchanged.

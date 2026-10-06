@@ -41,6 +41,9 @@ export default function OpeningsScreen() {
       >
         <ThemedText>{t("taskEntry.positionTitle")}</ThemedText>
       </Pressable>
+      <ThemedText type="small" style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
+        {t("taskEntry.actionHelp")}
+      </ThemedText>
       {active && auth.status !== "hydrating" ? (
         <Openings key={`${auth.generation}:${locale}`} generation={auth.generation} />
       ) : (

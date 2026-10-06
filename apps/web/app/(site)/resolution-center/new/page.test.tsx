@@ -142,6 +142,12 @@ async function click(label: string) {
 }
 async function fillContentReport() {
   await click("contentRecordType");
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(host.querySelector('select[aria-label="target"] option[value="ip-1"]')).not.toBeNull();
+  });
   await act(async () => {
     const select = host.querySelector<HTMLSelectElement>('select[aria-label="target"]')!;
     select.value = "ip-1";
@@ -207,6 +213,14 @@ it("preserves an owned purchase draft and retries an ambiguous submission with t
   await render();
   expect(state.purchases).not.toHaveBeenCalled();
   await click("purchaseRecordType");
+  await vi.waitFor(async () => {
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(
+      host.querySelector('select[aria-label="purchaseTarget"] option[value="purchase-1"]')
+    ).not.toBeNull();
+  });
   await act(async () => {
     const select = host.querySelector<HTMLSelectElement>('select[aria-label="purchaseTarget"]')!;
     select.value = "purchase-1";

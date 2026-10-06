@@ -1,3 +1,4 @@
+import { GenerationStatusUnavailable } from "./generation-status-unavailable";
 import { loadTrackedCanvasJobs } from "../api/story-canvas-generation";
 import type { CanvasGenerationJob } from "../../../../canvas-editor/generation-schema";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -14,7 +15,8 @@ import { StoryCanvasReader } from "./story-canvas-reader";
 import { StoryCanvasEncoder } from "./story-canvas-encoder";
 
 /** Mounted only while an editable canvas is foregrounded with no open forms.
- * Idle polling discovers completed outputs; failures require an explicit retry. */
+ * Idle polling discovers completed outputs; status lookup failures retry automatically.
+ * Write failures retain their journal and require an explicit retry. */
 export function StoryCanvasMediaSync({
   scope,
   userId,
@@ -30,7 +32,7 @@ export function StoryCanvasMediaSync({
   const queue = useMemo(() => canvasReconciliation(scope, userId), [scope, userId]);
   const [attempt, setAttempt] = useState(0);
   const [phase, setPhase] = useState<
-    "idle" | "read" | "jobs" | "refresh" | "encode" | "save" | "error"
+    "idle" | "read" | "jobs" | "refresh" | "encode" | "save" | "error" | "unavailable"
   >("idle");
   const [jobs, setJobs] = useState<CanvasGenerationJob[]>([]);
   const [fresh, setFresh] = useState<CanvasLoaded>();
@@ -97,6 +99,9 @@ export function StoryCanvasMediaSync({
   };
   return (
     <>
+      {phase === "unavailable" && fresh && (
+        <GenerationStatusUnavailable loaded={fresh} error={error} />
+      )}
       {phase === "error" && (
         <View style={{ gap: 4 }}>
           <ThemedText type="small" accessibilityRole="alert">
@@ -139,7 +144,12 @@ export function StoryCanvasMediaSync({
                   setPhase(found.length ? "refresh" : "encode");
                 })
                 .catch((cause) => {
-                  if (!token.controller.signal.aborted) failed(cause);
+                  if (token.controller.signal.aborted || !current()) return;
+                  setError(cause instanceof Error ? cause.message : String(cause));
+                  setPhase("unavailable");
+                  token.timer = setTimeout(() => {
+                    if (current()) setAttempt((n) => n + 1);
+                  }, 15000);
                 });
             } catch (cause) {
               failed(cause);

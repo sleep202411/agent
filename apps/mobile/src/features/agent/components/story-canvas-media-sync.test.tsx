@@ -176,3 +176,35 @@ it("re-reads the document after lookup before encoding against the current card 
 });
 
 vi.mock("../api/platform-canvas-document", () => ({ openPlatformCanvasDocument: vi.fn() }));
+
+vi.mock("expo-clipboard", () => ({ setStringAsync: vi.fn().mockResolvedValue(true) }));
+it("distinguishes status lookup failure, retains receipts and automatically checks again", async () => {
+  vi.useFakeTimers();
+  try {
+    h.jobs.mockRejectedValueOnce(Error("Status service unavailable"));
+    const snapshotWithJob = {
+      ...loaded,
+      snapshot: {
+        nodes: { card: { type: "video", data: { generation: { jobId: "job-123" } } } },
+        edges: {},
+      },
+    } as unknown as CanvasLoaded;
+    await render();
+    await act(async () => h.reader!.onResult(snapshotWithJob));
+    expect(host.textContent).toContain("storyCanvas.statusReadUnavailableTitle");
+    expect(host.textContent).toContain("Status service unavailable");
+    expect(host.textContent).toContain("job-123");
+    expect(h.prepare).not.toHaveBeenCalled();
+    expect(h.resume).not.toHaveBeenCalled();
+    await act(async () => host.querySelector("button")!.click());
+    const { setStringAsync } = await import("expo-clipboard");
+    expect(setStringAsync).toHaveBeenCalledWith("job-123");
+    await act(async () => vi.advanceTimersByTime(15000));
+    expect(host.textContent).not.toContain("storyCanvas.statusReadUnavailableTitle");
+    await act(async () => h.reader!.onResult(snapshotWithJob));
+    expect(h.jobs).toHaveBeenCalledTimes(2);
+    expect(h.prepare).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});

@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-06",
+  "timezone": "Asia/Singapore",
+  "upstream": "0be5f8d36facc568c7dacbc9f8ba5c6bcdb42c8d",
+  "authorization": "User explicitly requested completion on 2.4.0 followed by integration into main/develop aligned to the same commit.",
+  "changes": [
+    "Distinguish canvas status lookup failures from generation or save failures; retain receipts and automatically retry reads after 15 seconds while mounted in the foreground.",
+    "Display selectable/copyable known generation job IDs and clipboard failure feedback using existing native layouts.",
+    "Adopt official task/position explanation and English action capitalization. Existing mobile complaint-reference replacement already handles its double-brace placeholder correctly.",
+    "Stabilize Web report tests by waiting for real options; pin the mobile task-creation test clock while retaining explicit expired-deadline coverage.",
+    "Record the explicit exception to the older outbound Mobile merge prohibition."
+  ],
+  "validation": {
+    "mobile_full_run": {
+      "suites_passed": 793,
+      "suites_failed": 1,
+      "tests_passed": 7753,
+      "tests_failed": 2,
+      "failure": "Two task-create cases used a deadline that expired on the current date."
+    },
+    "mobile_corrected_suite": {
+      "suites_passed": 1,
+      "tests_passed": 40,
+      "result": "Controlled clock fixes both failures; all 794 files and 7755 tests accounted for across full run and focused rerun."
+    },
+    "focused_mobile": "3 suites / 33 tests passed",
+    "web": "4 suites / 28 tests passed after asynchronous option-readiness test repairs",
+    "server": "2 suites / 34 template tests passed, including local PGlite persistence",
+    "studio": "1 suite / 22 generation tests passed",
+    "types": "Mobile full typecheck passed",
+    "lint": "Mobile lint passed with existing native-payment-sdks require warning; changed Web test lint passed",
+    "browser": "Real native-web status component and task-center entry in Chromium fixtures: EN320/CN390/HK430, copy failure/recovery, task guidance/navigation, no status spinner or horizontal overflow; rendered EN screenshot inspected. Clipboard/auth/navigation adapters; no live-service acceptance.",
+    "exports": "Unsigned development exports passed for global/CN on iOS, Android and Web. Hermes bytecode/assets, distinct native region hashes and embedded Web region configuration verified; 99 HTML files per region."
+  },
+  "remaining_external": [
+    "Real-device and authenticated regional service acceptance remains with release owners.",
+    "Upstream reports still require serving-environment qualification catalogue configuration and affected generation-job/status lookup evidence."
+  ],
+  "boundaries": [
+    "No production generation, payments, database changes or deployment commands executed.",
+    "No force pushes or rewriting divergent local historical main/develop refs. Requested branch alignment targets origin."
+  ]
+}

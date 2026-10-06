@@ -30,6 +30,9 @@ export default function TaskCenterScreen() {
       >
         <ThemedText>{t("taskEntry.title")}</ThemedText>
       </Pressable>
+      <ThemedText type="small" style={{ paddingHorizontal: 16, paddingBottom: 12 }}>
+        {t("taskEntry.actionHelp")}
+      </ThemedText>
       {auth.status === "hydrating" ? (
         <ActivityIndicator />
       ) : auth.status !== "authenticated" ? (

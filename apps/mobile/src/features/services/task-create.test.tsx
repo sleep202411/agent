@@ -101,6 +101,7 @@ const type = (n: number, text: string) => {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-01T00:00:00Z"));
   h.generation = 1;
   h.active = true;
   h.suspended = false;
@@ -135,6 +136,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.restoreAllMocks();
 });
 
 vi.mock("@/config", () => ({ appEnv: { siteRegion: "cn" } }));

@@ -5642,7 +5642,7 @@
   "purchaseReportReasons.other": "Other issue",
   "purchaseReportReasons.payment": "Payment issue",
   "contentReports.reason.payment": "Payment issue",
-  "taskEntry.title": "Create task",
+  "taskEntry.title": "Create Task",
   "taskEntry.description": "Choose a Crew for this task, or create a new one.",
   "taskEntry.crew": "Crew",
   "taskEntry.choose": "Choose a Crew",
@@ -5653,7 +5653,7 @@
   "taskEntry.newCrew": "Create a new Crew",
   "taskEntry.continue": "Continue to task",
   "taskEntry.signIn": "Sign in to create a task",
-  "taskEntry.positionTitle": "Create position",
+  "taskEntry.positionTitle": "Create Position",
   "taskEntry.positionDescription": "Choose the Crew for this opening. You can link the position to an existing task in the next step.",
   "taskEntry.cannotManagePositions": "You need permission to manage openings in this Crew.",
   "taskEntry.continuePosition": "Continue to position",
@@ -5754,5 +5754,10 @@
   "aiLab.failureDetails.copy": "Copy error details",
   "aiLab.failureDetails.copied": "Error details copied",
   "aiLab.failureDetails.copyFailed": "Could not copy. Select the details above to copy manually.",
-  "settings.community": "Discord"
+  "settings.community": "Discord",
+  "taskEntry.actionHelp": "Positions recruit people; tasks define work and deliverables.",
+  "storyCanvas.statusReadUnavailableTitle": "Can’t check generation status",
+  "storyCanvas.statusReadUnavailable": "We’ll check again automatically. Please don’t submit another generation.",
+  "storyCanvas.copyTaskId": "Copy task ID",
+  "storyCanvas.taskIdCopied": "Task ID copied"
 }

@@ -5754,5 +5754,10 @@
   "aiLab.failureDetails.copy": "複製錯誤詳情",
   "aiLab.failureDetails.copied": "錯誤詳情已複製",
   "aiLab.failureDetails.copyFailed": "無法複製，請選取上方詳情手動複製。",
-  "settings.community": "Discord"
+  "settings.community": "Discord",
+  "taskEntry.actionHelp": "職位用於招募成員；任務用於明確工作內容和交付要求。",
+  "storyCanvas.statusReadUnavailableTitle": "暫時無法查詢生成狀態",
+  "storyCanvas.statusReadUnavailable": "我們會自動重新查詢，請勿重複提交生成任務。",
+  "storyCanvas.copyTaskId": "複製任務 ID",
+  "storyCanvas.taskIdCopied": "任務 ID 已複製"
 }
