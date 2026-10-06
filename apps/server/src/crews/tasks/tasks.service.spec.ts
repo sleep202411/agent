@@ -726,7 +726,10 @@ describe('CrewTasksService', () => {
         where: expect.objectContaining({
           crewId: { in: ['allowed'] },
           workflowState: { semantic: { notIn: ['approved', 'cancelled'] } },
-          title: { contains: 'review', mode: 'insensitive' },
+          OR: [
+            { title: { contains: 'review', mode: 'insensitive' } },
+            { crew: { name: { contains: 'review', mode: 'insensitive' } } },
+          ],
           crew: {
             deletedAt: null,
             members: { some: { userId: ASSIGNEE_ID, status: 'active' } },

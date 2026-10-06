@@ -579,6 +579,10 @@ function omniOperationResult(
   }
 
   const providerErrors = JSON.stringify(response.errors ?? []);
+  const providerMessage = (response.errors ?? [])
+    .map((error) => error.message?.trim())
+    .filter((message): message is string => Boolean(message))
+    .join(' ');
   const contentFiltered = /safety|policy|prohibited|blocked/i.test(
     providerErrors,
   );
@@ -589,7 +593,8 @@ function omniOperationResult(
       message: `Gemini Omni interaction ${response.id} ended with status ${response.status}: ${providerErrors || 'no provider error detail'}`,
       userMessage: contentFiltered
         ? 'This video request was blocked by Google safety filters. Adjust the prompt or references and try again.'
-        : 'Gemini Omni did not complete the video. Please try again.',
+        : providerMessage ||
+          'Gemini Omni did not complete the video. Please try again.',
     },
     ...common,
   };

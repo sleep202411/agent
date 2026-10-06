@@ -19,7 +19,7 @@ import { S3CompatibleStorageService } from './s3-storage.service';
 (process.env.S3_LOCAL_INTEGRATION === '1' ? describe : describe.skip)(
   'S3 storage against local MinIO',
   () => {
-    const endpoint = 'http://127.0.0.1:59000';
+    const endpoint = 'http://127.0.0.1:19000';
     const publicBucket = `pax-public-${randomUUID()}`;
     const privateBucket = `pax-private-${randomUUID()}`;
     const environment = { ...process.env };
@@ -33,8 +33,8 @@ import { S3CompatibleStorageService } from './s3-storage.service';
         S3_REGION: 'us-east-1',
         S3_BUCKET: publicBucket,
         S3_PRIVATE_BUCKET: privateBucket,
-        S3_ACCESS_KEY_ID: 'pax-local-test',
-        S3_ACCESS_KEY_SECRET: 'pax-local-test-only-password',
+        S3_ACCESS_KEY_ID: 'fizz-local-test',
+        S3_ACCESS_KEY_SECRET: 'fizz-local-test-password',
         S3_FORCE_PATH_STYLE: 'true',
         MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: `${endpoint}/${publicBucket}`,
       });
@@ -43,8 +43,8 @@ import { S3CompatibleStorageService } from './s3-storage.service';
         region: 'us-east-1',
         forcePathStyle: true,
         credentials: {
-          accessKeyId: 'pax-local-test',
-          secretAccessKey: 'pax-local-test-only-password',
+          accessKeyId: 'fizz-local-test',
+          secretAccessKey: 'fizz-local-test-password',
         },
       });
       for (const Bucket of [publicBucket, privateBucket]) {
@@ -125,9 +125,8 @@ import { S3CompatibleStorageService } from './s3-storage.service';
         const read = await storage.createReadUrl(ref);
         const response = await fetch(read.url);
         expect(response.status).toBe(200);
-        expect(Buffer.from(await response.arrayBuffer())).toEqual(
-          Buffer.concat(chunks),
-        );
+        const downloaded = Buffer.from(await response.arrayBuffer());
+        expect(downloaded.equals(Buffer.concat(chunks))).toBe(true);
         await storage.abortMultipartUpload(ref);
         expect((await storage.headStoredObject(ref)).exists).toBe(true);
         await storage.deleteObject(ref);

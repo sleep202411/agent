@@ -435,10 +435,13 @@ integration('IP entitlement concurrency (owned PostgreSQL)', () => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ip:entitlement:${viewer}:${ipId}`})::bigint)`;
       locked();
       await gate;
-      await tx.ipContentEntitlement.update({
-        where: { id: original.entitlement.id },
-        data: { endsAt: new Date(Date.now() - 1) },
-      });
+      // The service evaluates expiry with PostgreSQL's clock after acquiring
+      // the lock. Use that same clock: the fixture may run in a separate VM.
+      await tx.$executeRaw`
+        UPDATE ip_content_entitlements
+        SET ends_at = clock_timestamp() - interval '1 millisecond'
+        WHERE id = ${original.entitlement.id}::uuid
+      `;
     });
     await ready;
     const pending = grant();

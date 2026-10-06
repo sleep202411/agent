@@ -1,0 +1,146 @@
+{
+  "date": "2026-10-06",
+  "scope": "Iterative repository-wide local audit and fixes; Mobile remains isolated on its feature branch and legacy Agent is not extended.",
+  "base_commit": "30c67a7a87171d3ff0f9a44cf07b1451c3d9df8b",
+  "changes": [
+    {
+      "area": "Integration orchestration",
+      "finding": "15 integration settings were absent from Turbo, including an additional withdrawal scale switch found during execution.",
+      "fix": "Pass/hash all 47 configured settings; discover integration switches from tracked test sources so omissions fail the contract check."
+    },
+    {
+      "area": "Continuous integration",
+      "finding": "New database/storage suites and several separate verification commands were never enabled in CI.",
+      "fix": "Provision/migrate isolated platform and project-move databases; execute 18 platform suites serially with mandatory flags and reject skipped assertions. Reuse the existing local MinIO fixture. Add migration, workspace permission, project move, maintenance script, server-rendered player and health HTTP checks."
+    },
+    {
+      "area": "Test harnesses",
+      "finding": "The old HTTP suite expected a removed Hello World endpoint; internal ESM package imports, two Crew component fixtures and three Agent OS discovery fixtures had stale test wiring.",
+      "fix": "Use real health/readiness HTTP routes with owned dependency fixtures, map internal Agent packages to their real TypeScript source in Jest, isolate new children in parent Crew tests, and include the current island-count contract in creator-discovery fixtures."
+    },
+    {
+      "area": "Revenue scalability",
+      "finding": "The supported 1000-beneficiary reversal exceeded the existing 15-second transaction timeout while issuing thousands of per-recipient queries.",
+      "fix": "Batch ordered member locks, earning/event writes and notification/outbox writes in the same transaction. Preserve existing receipt keys, payout reservations, immutable accounting events and atomic rollback. Posting and reversal each assert fewer than 50 database queries at 1000 beneficiaries."
+    },
+    {
+      "area": "Notification batching",
+      "fix": "RETURNING identifies only newly inserted notification rows for outbox enqueue. Sort unique keys consistently across overlapping batches; bounded 250-row chunks; late failures roll back earlier chunks. Existing single-send behavior remains unchanged."
+    },
+    {
+      "area": "Test timing",
+      "fix": "Use Buffer.equals for exact multi-megabyte storage comparisons. Give the opt-in large retention fixture enough setup/scan time without weakening query-count assertions. Server mixed unit/integration tests use a 30-second default for tests/hooks; production transaction/request timeouts remain unchanged. Recycle default Jest workers above 512 MB between suites to bound retained module contexts; targeted serial suites remain available."
+    },
+    {
+      "area": "Deployment guidance",
+      "fix": "Correct AGENTS.md to COM Azure AKS/ArgoCD and CN Aliyun ACK with an ECS build host."
+    },
+    {
+      "area": "Entitlement concurrency fixture",
+      "finding": "The broad PostgreSQL run exposed a host/VM clock dependency in an expiry-after-lock test.",
+      "fix": "Set the competing expiry using PostgreSQL clock_timestamp(), matching the service clock and preserving the lock-wait assertion."
+    },
+    {
+      "area": "Google video failure diagnostics",
+      "finding": "The installed Google Interactions SDK throws a separate APIError hierarchy, so HTTP validation, permission and quota errors bypassed the ApiError mapping and became generic UNKNOWN failures. Long-running operation google.rpc.Code values also bypassed HTTP-only mapping. Terminal Omni responses discarded their message. Failed tiles truncated errors and provided no task identifier.",
+      "fix": "Map both SDK error families and canonical operation codes through existing categories/retry rules; preserve terminal provider messages. Add a localized, copyable failure-details dialog with the existing public message, task ID, model and error code. Historical jobs remain reportable by ID; no raw response or headers are added to the UI."
+    }
+  ],
+  "validation": {
+    "platform_integration": {
+      "suites": 18,
+      "passed": 121,
+      "skipped": 0,
+      "conditions": "Owned PostgreSQL and MinIO plus local FFmpeg; includes 1000-beneficiary accounting and 512-document/256-version retention fixtures. Synthetic capacity only."
+    },
+    "health_http": {
+      "passed": 6,
+      "conditions": "Real Nest routing with storage/database/Redis collaborators replaced by owned fixtures, not a full production boot."
+    },
+    "web": "379 suites passed on the full run; two stale fixtures repaired. Four affected/related suites then passed all 71 tests.",
+    "studio": "Full run: 289 suites/2069 tests passed; one 5-second media-upload timeout passed unchanged in isolation (1 test).",
+    "shared_packages": {
+      "shared": 229,
+      "experience_engine": 52,
+      "experience_player_react": 461,
+      "agent_tools": 31,
+      "agent_skills": 21,
+      "agent_capabilities": 9,
+      "note": "Skill catalog initially needed local IPC permission; rerun passed. Other unchanged package checks are recorded in the preceding audit turn."
+    },
+    "maintenance_scripts": 27,
+    "server_rendered_player": 11,
+    "workspace_permissions": 7,
+    "migration_checks": "Crew historical migration and workspace cutover PGlite checks passed; 411 migrations applied to fresh local task01 and project-move databases.",
+    "project_move": "Passed owner/version authorization, atomic rollback, document/media access, historical/new payer separation, wallet/generation hold/settlement and concurrent admission.",
+    "orchestration": "All 47 settings reached the disposable Turbo task with distinct cache hashes; build-cache contract passed.",
+    "helm": "Default/CN chart render and invalid-configuration checks passed.",
+    "web_types": "Passed.",
+    "admin_ui": "Full run: 99 suites/633 tests passed; two redirect tests needed local listener permission and both passed unchanged on the permitted rerun.",
+    "agent_os": "All 19 enabled suites/181 tests passed after repairing three stale response fixtures; both opt-in PostgreSQL checkpoint tests subsequently passed. Type check passed.",
+    "resource_note": "Initial oversized VM and interrupted checks are excluded. VM reduced to 2 GiB. Monolithic and six-batch serial Jest attempts exhausted their 3 GiB heaps; these are not completion evidence. Complete Server tests rerun with the default two-worker mode and 512 MB idle worker recycling. Type/build checks run separately with the VM stopped.",
+    "live_route_probe": "After the separate COM tag commit, unauthenticated read-only probes for withdrawals, task contracts and purchase-report selection were rejected by Cloudflare (403/1010). No runtime or authenticated acceptance conclusion follows.",
+    "server": "Completed full default-worker run: 521 suites/5359 tests passed, 1 suite/1 test failed, 29 suites/228 tests skipped. The sole failure was a stale task-search expectation; repaired affected suite then passed all 70 tests. Opt-in checks are recorded separately below; no claim of a single all-green full run.",
+    "opt_in_checks": {
+      "gps": {
+        "suites": 7,
+        "passed": 108
+      },
+      "audit": {
+        "suites": 5,
+        "passed": 16
+      },
+      "episode_upload": {
+        "passed": 2
+      },
+      "note": "Together with the 18-suite platform run, these exercise the 29 opt-in suites skipped by the full Server run; overlapping enabled tests are not counted as unique additions."
+    },
+    "studio_types": "Passed.",
+    "google_errors": {
+      "suites": 3,
+      "passed": 26,
+      "conditions": "Includes the real installed SDK against mocked HTTP, adapter rejection/polling, canonical RPC retry classification and terminal error details; no paid generation. Includes missing-message errors with private headers/request fields, which remain absent from public diagnostics."
+    },
+    "failure_details": {
+      "suites": 2,
+      "passed": 14,
+      "browser": "Actual FailedTile/Dialog components, fresh Studio Tailwind styles and all three locale messages exercised in Chromium at 1280 and 390 widths. Verified full message, IDs, real clipboard readback, close/Escape, historical generic failure, layout bounds and retry only after explicit click. Desktop English and narrow Simplified Chinese screenshots visually inspected. Isolated fixtures, not an authenticated live-provider generation."
+    },
+    "server_types": "All 1361 roots passed across 9 sequential programs; the affected Google test group was rechecked after the final privacy guard.",
+    "server_build": "Prisma generation, Nest production build and catalog-update compilation passed.",
+    "changed_file_lint": "Passed for all 22 changed/new TypeScript and TSX files across Server, Studio, Web and Agent OS; no auto-fix used.",
+    "ci_syntax": "YAML parses and the platform step supplies all 17 required fixture settings."
+  },
+  "adversarial_review": [
+    "Member advisory-lock keys match the existing single-member path, with consistent sorted order; PostgreSQL EXPLAIN confirms ordinality-preserving function scan.",
+    "Real PostgreSQL tests cover concurrent receipt replay, reversal versus withdrawal, failed notification/audit rollback and cross-chunk outbox failure.",
+    "Overlapping reversed-order batches plus an existing single-send receipt produce one notification and one outbox row per unique key; payloads match stored notification DTOs.",
+    "No production database, payment, invite, generation or deployment performed. No monetary conversion or product-policy changes."
+  ],
+  "remaining_external": "Regional rollout/routing and private-storage acceptance; certified task-test accounts; authoritative Academy/referral/IP-beneficiary contracts; response SLA, retention and signature/payout decisions remain tracked in #209/#621/#615 and dedicated issues. Pax’s specific failed generation still needs its task/provider response and deployed retry verification; screenshot alone does not identify the cause.",
+  "final_audit_status": "Completed bounded repository-wide local pass: confirmed findings fixed and validated; final source, diff, orchestration and issue review found no additional independently actionable implementation work within the agreed scope. This is not whole-product or production acceptance.",
+  "final_source_scan": {
+    "areas": [
+      "Server",
+      "Web",
+      "Studio",
+      "Admin UI",
+      "Agent OS",
+      "shared packages",
+      "test orchestration",
+      "CI/deployment scripts"
+    ],
+    "remaining_markers": "Course count/rating APIs and Java token/catalog follow-up require upstream contracts; real-person character gates are documented feature switches; regional Admin link activation requires deployment evidence. No new product behavior inferred from TODO markers. Final marker scan also confirms unsupported refund providers, approval actions and IP cash-out stay explicit; their product/provider contracts are not inferred.",
+    "issues": "10 existing open issues rechecked; all have zero comments and none meet closure criteria. Created #623 for Pax’s video/API failure with one concise bullet-point description and zero comments. Release handoff updates #209/#621/#623 descriptions with the final commit; remaining issues retain their specific acceptance criteria."
+  },
+  "intervening_commit": {
+    "commit": "d38e3d4e8d2a5411517feb489e07517a29f78b43",
+    "description": "Separate COM image-tag deployment commit for 30c67a7 appeared on main during validation. Preserved unchanged; not executed by this goal. Running health is not established by the commit."
+  },
+  "pax_video_follow_up": {
+    "statement": "我认为这个主要是API的原因",
+    "interpretation": "Pax suspects the API is the main cause. Consistent with the observed provider-error visibility gap, but not proof of the specific incident cause. Preserve actionable upstream errors; do not change model parameters, credentials or provider routing without evidence.",
+    "issue": "https://github.com/Fizzdragon-Pte-Ltd-2/fizzdragon-platform/issues/623"
+  },
+  "fixture_cleanup": "Removed goal-owned containers/volumes and fd_audit database, and stopped the goal-started Colima VM. Preserved pre-existing databases, containers and Studio development server."
+}

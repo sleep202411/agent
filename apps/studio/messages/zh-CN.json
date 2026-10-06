@@ -343,7 +343,17 @@
     "promptPlaceholder": "描述你想创作的内容…",
     "mode": "模式",
     "chooseModel": "选择模型",
-    "settings": "设置"
+    "settings": "设置",
+    "failureDetails": {
+      "open": "详情",
+      "title": "生成失败详情",
+      "taskId": "任务 ID",
+      "model": "模型",
+      "code": "错误代码",
+      "copy": "复制错误详情",
+      "copied": "错误详情已复制",
+      "copyFailed": "无法复制，请选中上方详情手动复制。"
+    }
   },
   "studioModes": {
     "feed": {

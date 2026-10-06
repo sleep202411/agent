@@ -19,6 +19,7 @@ import { CrewAuthorizationService } from '../crews/crew-authorization.service';
 const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
 (url ? describe : describe.skip)('Confirmed revenue (local PostgreSQL)', () => {
   let db: PrismaClient;
+  let queryCount = 0;
   let service: RevenueDistributionService;
   let notifications: NotificationService;
   let actor: AdminActor;
@@ -35,10 +36,15 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
       )
     )
       throw new Error('Dedicated local withdrawal fixture required');
-    db = new PrismaClient({
+    const measured = new PrismaClient({
       adapter: new PrismaPg({ connectionString: url }),
       transactionOptions: { maxWait: 5000, timeout: 15000 },
+      log: [{ emit: 'event', level: 'query' }],
     });
+    measured.$on('query', () => {
+      queryCount += 1;
+    });
+    db = measured;
     process.env.CREATOR_PAYOUT_DETAILS_KEY = 'ab'.repeat(32);
     notifications = new NotificationService(db as PrismaService);
     service = new RevenueDistributionService(
@@ -181,8 +187,10 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
     'posts and reverses the supported 1000-beneficiary allocation without partial receipts',
     async () => {
       const fixture = await seed(1000);
+      queryCount = 0;
       const started = Date.now();
       const posted = await service.post(actor, fixture.input);
+      expect(queryCount).toBeLessThan(50);
       const postedMs = Date.now() - started;
       expect(
         await db.crewEarningEntry.count({
@@ -203,8 +211,10 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
         }),
       ).toBe(1000);
       expect((await service.post(actor, fixture.input)).id).toBe(posted.id);
+      queryCount = 0;
       const reversing = Date.now();
       await service.reverse(actor, posted.id, { reason: 'Fixture correction' });
+      expect(queryCount).toBeLessThan(50);
       expect(
         await db.crewEarningEntry.count({
           where: { revenueDistributionId: posted.id, status: 'reversed' },
@@ -945,7 +955,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
       const fixture = await seed();
       const posted = await service.post(actor, fixture.input);
       const brokenNotifications = {
-        send: jest
+        sendMany: jest
           .fn()
           .mockRejectedValue(new Error('Notification unavailable')),
       } as unknown as NotificationService;
@@ -1019,12 +1029,12 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
   it('rolls back the entire distribution after a late notification failure', async () => {
     const t = await seed();
     const realNotifications = new NotificationService(db as PrismaService);
-    const original: NotificationService['send'] = (...args) =>
-      realNotifications.send(...args);
     const failure = jest
-      .spyOn(notifications, 'send')
-      .mockImplementationOnce(original)
-      .mockRejectedValueOnce(new Error('Outbox unavailable'));
+      .spyOn(notifications, 'sendMany')
+      .mockImplementationOnce(async (args, tx) => {
+        await realNotifications.sendMany(args, tx);
+        throw new Error('Outbox unavailable');
+      });
     try {
       await expect(service.post(actor, t.input)).rejects.toThrow(
         'Outbox unavailable',

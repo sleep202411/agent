@@ -9,6 +9,18 @@ NestJS 后端，负责 AI 智能体、剧本拆解 Pipeline、AI 图像/视频�
 npx turbo dev --filter=server
 ```
 
+## Server test resources
+
+The Server Jest suite includes real local PostgreSQL/Redis workflows and uses
+a 30-second default for tests and fixture hooks. The default two-worker run
+uses [Jest worker recycling](https://jestjs.io/docs/configuration#workeridlememorylimit-numberstring)
+above 512 MB between suites to avoid accumulating imported module contexts
+across the full repository. This recycling does not apply to
+`--runInBand`; reserve that mode for targeted integration suites. Explicit per-test limits and
+asserted transaction/query budgets remain in force. This allows migrated
+fixture setup and multi-step integration journeys on slower development/CI
+machines; it does not change production request or transaction timeouts.
+
 ## Full type checking
 
 `npm run check-types -w server` covers every root in `tsconfig.spec.json`,
@@ -31,6 +43,42 @@ named `gps_test` on `127.0.0.1:55441`. The runner rejects missing or non-fixture
 URLs and runs all seven suites serially because they create/drop shared fixture
 tables. CI provisions this database separately from the migrated product-test
 DB. Do not run these fixtures concurrently or against a production database.
+
+## HTTP and project-move regressions
+
+`npm run test:e2e -w server` tests the real `/healthz` and `/ready` HTTP
+routes with owned dependency fixtures: success, dependency failure, recovery,
+and self-hosted realtime configuration. It does not start production workers
+or connect to external services.
+
+`npm run test:story-project-move -w server` verifies owner permissions,
+atomic moves, document/media access, historical versus new payers, generation
+holds/settlement and concurrent admission. It requires `DATABASE_URL` pointing
+to a migrated disposable loopback database whose name ends in
+`_workspace_preview`. The script uses test-only environment defaults and
+leaves fixture rows in that disposable database; remove the fixture afterward.
+CI creates a separate database for this check.
+
+## Platform integration regressions
+
+`npm run test:integration:platform -w server` runs finance, immutable contracts,
+feedback, dispute/purchase reporting, referral cash totals, device city consent,
+project concurrency, saved storyboard rendering and real S3 storage tests serially. The runner fails on missing
+configuration, failures or skipped tests. CI provisions and migrates its two
+owned PostgreSQL fixtures, installs FFmpeg and starts MinIO; see the
+“Platform finance, contracts, exports and storage regressions” step in
+`.github/workflows/ci.yml` for the complete environment mapping.
+
+For a local run, use disposable databases only: `task01` on
+`127.0.0.1:55439` and `audit_migrations_20261005` on `127.0.0.1:55441`.
+Apply all Prisma migrations to both. Set each test URL to its matching fixture
+without URL options; never use a production database. MinIO uses
+`127.0.0.1:19000`, user `fizz-local-test`, password `fizz-local-test-password`
+(test-only values shared with the existing multipart fixture). Set
+`S3_LOCAL_INTEGRATION`, `STORYBOARD_RENDER_INTEGRATION`,
+`MEDIA_RETENTION_SCALE` and `WITHDRAWAL_SCALE_TEST` to `1`. Scaled retention is
+a synthetic regression, not a production capacity claim. No external AI, payment or storage credentials
+are required.
 
 ## Prisma Migration 策略
 

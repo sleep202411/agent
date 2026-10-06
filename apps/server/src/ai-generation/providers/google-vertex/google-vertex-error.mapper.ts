@@ -48,6 +48,13 @@ export function mapGoogleVertexUnknownError(error: unknown): AiJobError {
     ).payload;
   }
 
+  // Interactions uses its own APIError hierarchy, not @google/genai ApiError.
+  // Both expose an HTTP status; do not turn actionable failures into UNKNOWN.
+  if (error && typeof error === 'object') {
+    const status = numericStatus(error as Record<string, unknown>);
+    if (status) return mapGoogleApiError(status, errorMessage(error));
+  }
+
   return googleVertexError(
     'UNKNOWN',
     `Google Vertex AI request failed: ${errorMessage(error)}`,
@@ -57,7 +64,27 @@ export function mapGoogleVertexUnknownError(error: unknown): AiJobError {
 export function errorFromGoogleOperation(
   error: Record<string, unknown>,
 ): AiJobError {
-  const code = numericStatus(error);
+  // Long-running operations return google.rpc.Code, not an HTTP status.
+  // https://github.com/googleapis/googleapis/blob/master/google/rpc/code.proto
+  const rpcHttpStatuses: Record<number, number> = {
+    1: 499,
+    2: 500,
+    3: 400,
+    4: 504,
+    5: 404,
+    6: 409,
+    7: 403,
+    8: 429,
+    9: 400,
+    10: 409,
+    11: 400,
+    12: 501,
+    13: 500,
+    14: 503,
+    15: 500,
+    16: 401,
+  };
+  const code = numericStatus(error) ?? rpcHttpStatuses[Number(error.code)];
   const message = errorMessage(error);
   return code ? mapGoogleApiError(code, message) : mapGoogleMessage(message);
 }
@@ -152,15 +179,24 @@ function isAbortOrTimeout(error: unknown): boolean {
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
   if (error && typeof error === 'object') {
     const record = error as Record<string, unknown>;
-    if (typeof record.message === 'string') return record.message;
-    try {
-      return JSON.stringify(redactGoogleError(record));
-    } catch {
-      return 'Unknown provider error';
+    // SDK Interactions errors retain the response body separately from the
+    // status-prefixed Error.message. Prefer only its human-readable message.
+    if (record.error && typeof record.error === 'object') {
+      const body = record.error as Record<string, unknown>;
+      if (typeof body.message === 'string' && body.message.trim())
+        return body.message;
+      if (body.error && typeof body.error === 'object') {
+        const nested = body.error as Record<string, unknown>;
+        if (typeof nested.message === 'string' && nested.message.trim())
+          return nested.message;
+      }
     }
+    if (typeof record.message === 'string') return record.message;
+    // A status-bearing object can include response headers or request details.
+    // Never serialize it into the public validation message.
+    return 'Unknown provider error';
   }
   return String(error);
 }

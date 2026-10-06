@@ -178,4 +178,66 @@ describe('GoogleVertexClient Gemini Omni interactions', () => {
     expect(completed.output?.buffer).toEqual(Buffer.from('video-output'));
     expect(mediaLoader.loadVideo).not.toHaveBeenCalled();
   });
+  it.each(['submit', 'poll'])(
+    'preserves Interactions %s rejection details',
+    async (phase) => {
+      const rejection = Object.assign(new Error('400 provider response'), {
+        status: 400,
+        error: { message: 'Reference image dimensions are unsupported.' },
+      });
+      const create = jest.fn().mockRejectedValue(rejection);
+      const get = jest.fn().mockRejectedValue(rejection);
+      const client = new GoogleVertexClient(
+        { config: { enabled: true, requestTimeoutMs: 300000 } } as never,
+        { loadImages: jest.fn().mockResolvedValue([]) } as never,
+      );
+      (client as unknown as { clients: Map<string, unknown> }).clients.set(
+        'global',
+        { interactions: { create, get } },
+      );
+      const pending =
+        phase === 'poll'
+          ? client.pollOmni('failed-interaction')
+          : client.startOmni({
+              kind: 'omni',
+              model: 'gemini-omni-flash-preview',
+              location: 'global',
+              prompt: 'Fixture',
+              task: 'text_to_video',
+              referenceUrls: [],
+              aspectRatio: '16:9',
+              resolution: '720p',
+              durationSeconds: 8,
+              labels: {},
+            });
+      await expect(pending).rejects.toMatchObject({
+        payload: {
+          code: 'VALIDATION_ERROR',
+          retryable: false,
+          userMessage: 'Reference image dimensions are unsupported.',
+        },
+      });
+      expect(phase === 'poll' ? get : create).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('retains a terminal interaction error message instead of a generic retry', async () => {
+    const get = jest.fn().mockResolvedValue({
+      id: 'failed-interaction',
+      status: 'failed',
+      errors: [{ message: 'Reference video could not be decoded.' }],
+    });
+    const client = new GoogleVertexClient(
+      { config: { enabled: true, requestTimeoutMs: 300000 } } as never,
+      {} as never,
+    );
+    (client as unknown as { clients: Map<string, unknown> }).clients.set(
+      'global',
+      { interactions: { get } },
+    );
+    expect(await client.pollOmni('failed-interaction')).toMatchObject({
+      state: 'failed',
+      failure: { userMessage: 'Reference video could not be decoded.' },
+    });
+  });
 });

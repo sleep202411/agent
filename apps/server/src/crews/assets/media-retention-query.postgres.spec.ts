@@ -8,6 +8,9 @@ import { DocumentCompactionService } from '../../documents/document-compaction.s
 import { DocumentAutosaveService } from '../../documents/document-autosave.service';
 import { PrismaService } from '../../infra/db/db.module';
 const url = process.env.TASK01_TEST_DATABASE_URL;
+// Query-growth regression, not a hardware-specific wall-clock SLA.
+const scanTestTimeout =
+  process.env.MEDIA_RETENTION_SCALE === '1' ? 180_000 : 60_000;
 (url ? describe : describe.skip)(
   'Media retention scans (owned PostgreSQL)',
   () => {
@@ -319,99 +322,103 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         }
       },
     );
-    it('bounds database round trips across document and version histories', async () => {
-      const scale = process.env.MEDIA_RETENTION_SCALE === '1';
-      const documentCount = scale ? 512 : 128;
-      const versionCount = scale ? 256 : 64;
-      const nodeCount = scale ? 1000 : 100;
-      const maxQueries =
-        Math.ceil(documentCount / 64) + Math.ceil(versionCount / 64) + 7;
-      const doc = new Y.Doc();
-      for (let i = 0; i < nodeCount; i++)
-        doc
-          .getMap('nodes')
-          .set(`node-${i}`, { title: `Shot ${i}`, x: i, y: i });
-      const state = Buffer.from(Y.encodeStateAsUpdate(doc));
-      doc.destroy();
-      const documents = Array.from({ length: documentCount }, () => ({
-        id: randomUUID(),
-        workspaceId,
-        platformProjectId: projectId,
-        type: 'canvas' as const,
-        title: 'Fixture',
-        createdById: 'fixture',
-        contentSnapshot: {},
-        crdtState: state,
-      }));
-      await db.studioDocument.createMany({ data: documents });
-      await db.studioDocumentVersion.createMany({
-        data: Array.from({ length: versionCount }, (_, index) => ({
-          documentId: documents[0].id,
-          versionNumber: index + 1,
-          sequence: 0,
-          schemaVersion: '1',
-          snapshot: {},
-          crdtState: state,
+    it(
+      'bounds database round trips across document and version histories',
+      async () => {
+        const scale = process.env.MEDIA_RETENTION_SCALE === '1';
+        const documentCount = scale ? 512 : 128;
+        const versionCount = scale ? 256 : 64;
+        const nodeCount = scale ? 1000 : 100;
+        const maxQueries =
+          Math.ceil(documentCount / 64) + Math.ceil(versionCount / 64) + 7;
+        const doc = new Y.Doc();
+        for (let i = 0; i < nodeCount; i++)
+          doc
+            .getMap('nodes')
+            .set(`node-${i}`, { title: `Shot ${i}`, x: i, y: i });
+        const state = Buffer.from(Y.encodeStateAsUpdate(doc));
+        doc.destroy();
+        const documents = Array.from({ length: documentCount }, () => ({
+          id: randomUUID(),
+          workspaceId,
+          platformProjectId: projectId,
+          type: 'canvas' as const,
+          title: 'Fixture',
           createdById: 'fixture',
-        })),
-      });
-      const query = jest.spyOn(db, '$queryRaw');
-      const started = performance.now();
-      try {
-        expect(await savedProjectMediaReferences(db, [randomUUID()])).toEqual(
-          new Set(),
-        );
-        expect(query.mock.calls.length).toBeLessThanOrEqual(maxQueries);
-        const documentRef = randomUUID(),
-          versionRef = randomUUID();
-        const referenceState = (id: string) => {
-          const referenceDoc = new Y.Doc();
-          referenceDoc.getMap('nodes').set('image', { mediaAssetId: id });
-          const bytes = Buffer.from(Y.encodeStateAsUpdate(referenceDoc));
-          referenceDoc.destroy();
-          return bytes;
-        };
-        const lastDocument = documents
-          .map((row) => row.id)
-          .sort()
-          .at(-1)!;
-        const lastVersion = await db.studioDocumentVersion.findFirstOrThrow({
-          where: { documentId: documents[0].id },
-          orderBy: { id: 'desc' },
+          contentSnapshot: {},
+          crdtState: state,
+        }));
+        await db.studioDocument.createMany({ data: documents });
+        await db.studioDocumentVersion.createMany({
+          data: Array.from({ length: versionCount }, (_, index) => ({
+            documentId: documents[0].id,
+            versionNumber: index + 1,
+            sequence: 0,
+            schemaVersion: '1',
+            snapshot: {},
+            crdtState: state,
+            createdById: 'fixture',
+          })),
         });
-        await db.studioDocument.update({
-          where: { id: lastDocument },
-          data: { crdtState: referenceState(documentRef) },
-        });
-        await db.studioDocumentVersion.update({
-          where: { id: lastVersion.id },
-          data: { crdtState: referenceState(versionRef) },
-        });
-        query.mockClear();
-        expect(
-          await savedProjectMediaReferences(db, [
-            documentRef,
-            versionRef,
-            randomUUID(),
-          ]),
-        ).toEqual(new Set([documentRef, versionRef]));
-        expect(query.mock.calls.length).toBeLessThanOrEqual(maxQueries);
-      } finally {
-        if (scale)
-          console.info(
-            JSON.stringify({
-              audit: 'media-retention-scale',
-              documents: documentCount,
-              versions: versionCount,
-              nodesPerState: nodeCount,
-              twoScansAndReferenceUpdatesMs: Math.round(
-                performance.now() - started,
-              ),
-              finalScanQueries: query.mock.calls.length,
-            }),
+        const query = jest.spyOn(db, '$queryRaw');
+        const started = performance.now();
+        try {
+          expect(await savedProjectMediaReferences(db, [randomUUID()])).toEqual(
+            new Set(),
           );
-        query.mockRestore();
-      }
-    }, 60_000);
+          expect(query.mock.calls.length).toBeLessThanOrEqual(maxQueries);
+          const documentRef = randomUUID(),
+            versionRef = randomUUID();
+          const referenceState = (id: string) => {
+            const referenceDoc = new Y.Doc();
+            referenceDoc.getMap('nodes').set('image', { mediaAssetId: id });
+            const bytes = Buffer.from(Y.encodeStateAsUpdate(referenceDoc));
+            referenceDoc.destroy();
+            return bytes;
+          };
+          const lastDocument = documents
+            .map((row) => row.id)
+            .sort()
+            .at(-1)!;
+          const lastVersion = await db.studioDocumentVersion.findFirstOrThrow({
+            where: { documentId: documents[0].id },
+            orderBy: { id: 'desc' },
+          });
+          await db.studioDocument.update({
+            where: { id: lastDocument },
+            data: { crdtState: referenceState(documentRef) },
+          });
+          await db.studioDocumentVersion.update({
+            where: { id: lastVersion.id },
+            data: { crdtState: referenceState(versionRef) },
+          });
+          query.mockClear();
+          expect(
+            await savedProjectMediaReferences(db, [
+              documentRef,
+              versionRef,
+              randomUUID(),
+            ]),
+          ).toEqual(new Set([documentRef, versionRef]));
+          expect(query.mock.calls.length).toBeLessThanOrEqual(maxQueries);
+        } finally {
+          if (scale)
+            console.info(
+              JSON.stringify({
+                audit: 'media-retention-scale',
+                documents: documentCount,
+                versions: versionCount,
+                nodesPerState: nodeCount,
+                twoScansAndReferenceUpdatesMs: Math.round(
+                  performance.now() - started,
+                ),
+                finalScanQueries: query.mock.calls.length,
+              }),
+            );
+          query.mockRestore();
+        }
+      },
+      scanTestTimeout,
+    );
   },
 );

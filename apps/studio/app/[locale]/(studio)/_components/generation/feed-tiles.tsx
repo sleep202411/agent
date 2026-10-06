@@ -9,6 +9,7 @@ import {
   IconMaximize,
   IconRefresh,
 } from "@tabler/icons-react";
+import { GenerationFailureDetails } from "./generation-failure-details";
 import { downloadOutput } from "./download-output";
 import { cn } from "@/lib/utils";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
@@ -138,14 +139,14 @@ export function FailedTile({
   const tc = useTranslations("common");
   return (
     <div
-      className="relative flex flex-col items-start justify-between overflow-hidden rounded-xl bg-card p-3"
+      className="relative flex min-h-44 flex-col items-start justify-between gap-2 overflow-hidden rounded-xl bg-card p-3"
       style={{ aspectRatio: ratio }}
     >
       <span className="flex items-center gap-1.5 rounded-full bg-destructive/15 px-2.5 py-1 text-[11px] font-medium text-destructive">
         <IconAlertTriangle className="size-3" stroke={2} />
         {t("failed")}
       </span>
-      <div className="min-h-0">
+      <div className="min-h-0 overflow-hidden">
         <p className="line-clamp-3 text-xs leading-5 text-white/75">
           {job.errorCode === "PROVIDER_CONTENT_FILTER"
             ? t("contentPolicyBlocked")
@@ -155,14 +156,17 @@ export function FailedTile({
           {job.prompt}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="flex h-7 items-center gap-1.5 rounded-full bg-white/[0.08] px-3 text-xs font-medium transition-colors hover:bg-white/[0.14]"
-      >
-        <IconRefresh className="size-3.5" stroke={2} />
-        {tc("retry")}
-      </button>
+      <div className="flex shrink-0 flex-wrap items-center gap-1">
+        <button
+          type="button"
+          onClick={onRetry}
+          className="flex h-7 items-center gap-1.5 rounded-full bg-white/[0.08] px-3 text-xs font-medium transition-colors hover:bg-white/[0.14]"
+        >
+          <IconRefresh className="size-3.5" stroke={2} />
+          {tc("retry")}
+        </button>
+        <GenerationFailureDetails job={job} />
+      </div>
     </div>
   );
 }

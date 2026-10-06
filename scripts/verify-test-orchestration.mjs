@@ -4,36 +4,34 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execFileSync } from "node:child_process";
 const require = createRequire(import.meta.url);
 const turbo = process.argv[2] ?? require.resolve("turbo/bin/turbo");
 const config = JSON.parse(readFileSync(new URL("../turbo.json", import.meta.url), "utf8"));
-const flags = [
-  "FD_TEMPLATE_TEST_DATABASE_URL",
-  "IP_FEEDBACK_SQL_TEST",
-  "AI_ACTOR_TEST_DATABASE_URL",
-  "IP_FEEDBACK_POSTGRES_TEST",
-  "IP_ORIGIN_POSTGRES_TEST",
-  "IP_COMMENTS_POSTGRES_TEST",
-  "IP_RELEASE_LINKS_POSTGRES_TEST",
-  "IP_GAME_POSTGRES_TEST",
-  "STORY_COMMERCE_POSTGRES_TEST",
-  "CREATOR_EARNINGS_POSTGRES_TEST",
-  "AI_ACTOR_TEST_DATABASE_URL",
-  "CONTENT_GPS_TEST_DATABASE_URL",
-  "STORY_AGENT_POSTGRES_INTEGRATION",
-  "STORY_PRODUCTION_GENERATION_POSTGRES_INTEGRATION",
-  "AGENT_OS_START_POSTGRES_INTEGRATION",
-  "AGENT_OS_TOOL_RECEIPT_POSTGRES_INTEGRATION",
-  "COPILOT_POSTGRES_INTEGRATION",
-  "CONVERSATIONS_POSTGRES_INTEGRATION",
-  "CREW_ACCOUNTABILITY_POSTGRES_INTEGRATION",
-  "NOTIFICATION_POSTGRES_INTEGRATION",
-  "CREW_LEGACY_TEST_DATABASE_URL",
-  "CREW_QUOTA_TEST_DATABASE_URL",
-  "NOTIFICATION_TEST_DATABASE_URL",
-  "REDIS_RATE_LIMIT_INTEGRATION_URL",
-];
+// Discover integration switches from tracked test sources so adding a suite
+// cannot silently bypass this contract. Never read local .env files.
+const repoRoot = new URL("../", import.meta.url);
+const sources = execFileSync("git", ["ls-files", "apps", "packages"], {
+  cwd: repoRoot,
+  encoding: "utf8",
+})
+  .trim()
+  .split("\n")
+  .filter((path) => /\.(?:spec|test)\.[cm]?[jt]sx?$/.test(path));
+const discovered = sources.flatMap((path) =>
+  [...readFileSync(new URL(path, repoRoot), "utf8").matchAll(/process\.env\.([A-Z][A-Z0-9_]+)/g)]
+    .map((match) => match[1])
+    .filter((name) =>
+      /INTEGRATION|TEST_DATABASE|AUDIT_DATABASE|POSTGRES_TEST|_SQL_TEST|RETENTION_SCALE|_SCALE_TEST|TEST_REDIS_URL/.test(
+        name
+      )
+    )
+);
+const flags = [...new Set([...config.tasks.test.env, ...discovered])].sort();
+for (const flag of discovered) {
+  assert.ok(config.tasks.test.env.includes(flag), `${flag} must be passed and hashed by Turbo`);
+}
+
 const dir = mkdtempSync(join(tmpdir(), "fizz-test-orchestration-"));
 function json(path, value) {
   writeFileSync(join(dir, path), JSON.stringify(value));

@@ -56,6 +56,8 @@ vi.mock("./_components/crew-workspace", () => ({
     </div>
   ),
 }));
+// Task-entry behavior has its own component suite; this suite exercises the Crew feed.
+vi.mock("./_components/create-task-entry-dialog", () => ({ CreateTaskEntryDialog: () => null }));
 vi.mock("./_components/create-crew-dialog", () => ({ CreateCrewDialog: () => null }));
 vi.mock("./_components/positions-tab", () => ({ PositionsTab: () => null }));
 vi.mock("@/app/_components/kyc-gate-dialog", () => ({ KycGateDialog: () => null }));
