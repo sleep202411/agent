@@ -1637,3 +1637,90 @@ it("keeps the draft and requires review after a new unsent request meets an auth
   expect(h.post).toHaveBeenCalledOnce();
   expect(beforeSubmit.mock.calls[1]![0].canvasCardEdit?.before).toEqual(latest);
 });
+
+it.each([true, false, "rejected"])(
+  "exposes full failure diagnostics and handles clipboard outcome %s",
+  async (outcome) => {
+    const message = "Provider explanation\n".repeat(100);
+    const failed = {
+      ...job,
+      status: "failed",
+      error: {
+        userMessage: message,
+        code: "PROVIDER_5XX",
+        retryable: true,
+        raw: { secret: "DO NOT COPY" },
+      },
+    };
+    jobs = [failed];
+    const oldGet = h.get.getMockImplementation()!;
+    h.get.mockImplementation((path, ...args) =>
+      path === `/ai/jobs/${job.id}` ? failed : oldGet(path, ...args)
+    );
+    if (outcome === "rejected") h.copy.mockRejectedValue(new Error("denied"));
+    else h.copy.mockResolvedValue(outcome);
+    await mount();
+    await click("aiLab.history");
+    await click("Image model · aiLab.status.failed");
+    expect(host.textContent).not.toContain("aiLab.failureDetails.taskId");
+    await click("aiLab.failureDetails.open");
+    expect(host.textContent).toContain("PROVIDER_5XX");
+    await click("aiLab.failureDetails.copy");
+    expect(h.copy).toHaveBeenCalledWith(
+      `${message.trim()}\naiLab.failureDetails.taskId: ${job.id}\naiLab.failureDetails.model: model\naiLab.failureDetails.code: PROVIDER_5XX`
+    );
+    expect(host.textContent).toContain(
+      outcome === true ? "aiLab.failureDetails.copied" : "aiLab.failureDetails.copyFailed"
+    );
+    expect(host.textContent).not.toContain("DO NOT COPY");
+    h.active = false;
+    await mount();
+    expect(host.textContent).not.toContain("PROVIDER_5XX");
+  }
+);
+
+it("does not carry late clipboard feedback into another selected job", async () => {
+  const first = {
+    ...job,
+    status: "failed",
+    error: { userMessage: "First failure", retryable: false },
+  };
+  const second = {
+    ...first,
+    id: "22222222-2222-4222-8222-222222222222",
+    error: { userMessage: "Second failure", retryable: false },
+  };
+  jobs = [first, second];
+  const oldGet = h.get.getMockImplementation()!;
+  h.get.mockImplementation((path, ...args) =>
+    path === `/ai/jobs/${first.id}`
+      ? first
+      : path === `/ai/jobs/${second.id}`
+        ? second
+        : oldGet(path, ...args)
+  );
+  let finish!: (value: boolean) => void;
+  h.copy.mockImplementation(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      })
+  );
+  await mount();
+  await click("aiLab.history");
+  await click("Image model · aiLab.status.failed");
+  await click("aiLab.failureDetails.open");
+  expect(host.textContent).not.toContain("aiLab.failureDetails.code");
+  await click("aiLab.failureDetails.copy");
+  await click("aiLab.failureDetails.copy");
+  expect(h.copy).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .filter((b) => b.textContent === "Image model · aiLab.status.failed")[1]
+      .click()
+  );
+  await act(async () => finish(true));
+  await click("aiLab.failureDetails.open");
+  expect(host.textContent).toContain("Second failure");
+  expect(host.textContent).not.toContain("aiLab.failureDetails.copied");
+});

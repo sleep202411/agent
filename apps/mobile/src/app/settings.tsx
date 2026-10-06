@@ -37,7 +37,9 @@ export default function SettingsScreen() {
       setLinkError(undefined);
       void (async () => {
         try {
-          if (path === "/faq") await WebBrowser.openBrowserAsync(`${webBaseUrl}/${locale}/faq`);
+          if (path === "/discord-qr.png") await WebBrowser.openBrowserAsync(`${webBaseUrl}${path}`);
+          else if (path === "/faq")
+            await WebBrowser.openBrowserAsync(`${webBaseUrl}/${locale}/faq`);
           else await openLegal(path, locale);
         } catch (cause) {
           if (mounted.current)
@@ -108,6 +110,11 @@ export default function SettingsScreen() {
       key: "faq",
       label: t("settings.faq"),
       publicPage: "/faq",
+    },
+    {
+      key: "community",
+      label: t("settings.community"),
+      publicPage: "/discord-qr.png",
     },
     {
       key: "checkUpdate",

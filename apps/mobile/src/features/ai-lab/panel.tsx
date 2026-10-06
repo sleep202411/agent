@@ -9,6 +9,7 @@ import {
   initialCanvasMode,
 } from "./canvas-modes";
 import { canvasSeedDraft, type CanvasGenerationSeed } from "./canvas-seed";
+import { GenerationFailureDetails } from "./generation-failure-details";
 import { resultDetails, resultCreatedAt } from "./result-details";
 import { setStringAsync } from "expo-clipboard";
 import { saveOutput } from "./save-output";
@@ -1458,9 +1459,16 @@ function Session({ userId, generation, workspace, project, canvas, onBusyChange 
                   }}
                 />
               ) : null}
-              <ThemedText>
-                {selected.error?.userMessage ?? t(`aiLab.status.${selected.status}` as const)}
-              </ThemedText>
+              {selected.status === "failed" ? (
+                <GenerationFailureDetails
+                  key={`${selected.id}:${selected.error?.userMessage}:${selected.error?.code}`}
+                  job={selected}
+                />
+              ) : (
+                <ThemedText>
+                  {selected.error?.userMessage ?? t(`aiLab.status.${selected.status}` as const)}
+                </ThemedText>
+              )}
               {selected.status === "completed" &&
               selected.type === "audio" &&
               !selected.outputs.some(

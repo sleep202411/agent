@@ -5745,5 +5745,14 @@
   "ipReleaseLinks.add": "添加平台",
   "ipReleaseLinks.save": "保存链接",
   "ipReleaseLinks.reload": "重新加载已保存链接",
-  "ipReleaseLinks.retry": "重试"
+  "ipReleaseLinks.retry": "重试",
+  "aiLab.failureDetails.open": "详情",
+  "aiLab.failureDetails.title": "生成失败详情",
+  "aiLab.failureDetails.taskId": "任务 ID",
+  "aiLab.failureDetails.model": "模型",
+  "aiLab.failureDetails.code": "错误代码",
+  "aiLab.failureDetails.copy": "复制错误详情",
+  "aiLab.failureDetails.copied": "错误详情已复制",
+  "aiLab.failureDetails.copyFailed": "无法复制，请选中上方详情手动复制。",
+  "settings.community": "Discord"
 }

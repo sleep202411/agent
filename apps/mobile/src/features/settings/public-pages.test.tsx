@@ -130,3 +130,15 @@ it("offers KYC only in CN and defers navigation until authentication", async () 
   h.auth.mock.calls[0][0].onAuthenticated();
   expect(h.push).toHaveBeenCalledWith("/kyc");
 });
+
+it.each(["https://fizzdragon.com", "https://fizzdragon.fizzspace.cn"])(
+  "opens the maintained community QR on %s without authentication",
+  async (base) => {
+    h.base = base;
+    await mount();
+    await click("settings.community");
+    expect(h.open).toHaveBeenCalledWith(`${base}/discord-qr.png`);
+    expect(h.auth).not.toHaveBeenCalled();
+    expect(h.legal).not.toHaveBeenCalled();
+  }
+);

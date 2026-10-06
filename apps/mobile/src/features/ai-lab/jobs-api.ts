@@ -110,7 +110,10 @@ export const generationJob = z
     queuePosition: z.number().nullish(),
     estimatedTotalSeconds: z.number().nullish(),
     schemaVersion: z.string().optional(),
-    error: z.object({ userMessage: z.string(), retryable: z.boolean() }).passthrough().nullish(),
+    error: z
+      .object({ userMessage: z.string(), retryable: z.boolean(), code: z.string().optional() })
+      .passthrough()
+      .nullish(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })

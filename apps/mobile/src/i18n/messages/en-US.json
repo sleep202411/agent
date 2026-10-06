@@ -5745,5 +5745,14 @@
   "ipReleaseLinks.add": "Add platform",
   "ipReleaseLinks.save": "Save links",
   "ipReleaseLinks.reload": "Reload saved links",
-  "ipReleaseLinks.retry": "Retry"
+  "ipReleaseLinks.retry": "Retry",
+  "aiLab.failureDetails.open": "Details",
+  "aiLab.failureDetails.title": "Generation failure",
+  "aiLab.failureDetails.taskId": "Task ID",
+  "aiLab.failureDetails.model": "Model",
+  "aiLab.failureDetails.code": "Error code",
+  "aiLab.failureDetails.copy": "Copy error details",
+  "aiLab.failureDetails.copied": "Error details copied",
+  "aiLab.failureDetails.copyFailed": "Could not copy. Select the details above to copy manually.",
+  "settings.community": "Discord"
 }
