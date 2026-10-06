@@ -211,4 +211,7 @@ fi
 git add "$VALUES"
 git commit -m "deploy(com): ${SERVICES[*]} -> ${SHORT}"
 git push origin "$BRANCH"
-echo "✅ 已推送。ArgoCD 将自动同步（约几分钟）。查看：kubectl -n fizzdragon-com get deploy"
+echo "✅ 镜像和 Git tag 已推送；运行中的版本尚未验证。ArgoCD 将自动同步。"
+echo "只读检查 Server rollout（需要 AKS / ArgoCD 读取权限）："
+echo "  node deploy/diagnose-com-server.mjs $SHA"
+echo "随后验证已登录的业务接口；/healthz 或 /ready 成功不代表新路由已上线。"
