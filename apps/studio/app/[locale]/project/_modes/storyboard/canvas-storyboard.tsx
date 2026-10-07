@@ -103,8 +103,8 @@ export function CanvasStoryboard({ children }: { children: (control: ReactNode) 
   const toggle = (
     <Button
       size="sm"
-      variant={open ? "default" : "secondary"}
-      className="shrink-0"
+      variant="secondary"
+      className={cn("shrink-0", open && "bg-accent text-foreground")}
       aria-expanded={open}
       onClick={() => {
         reset();
