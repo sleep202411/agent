@@ -152,7 +152,14 @@ export function CanvasStoryboard({ children }: { children: (control: ReactNode) 
         )}
       </div>
       {open && (
-        <section className="z-20 shrink-0 bg-card" aria-label={t("title")}>
+        <section
+          className="z-20 min-w-0 shrink-0 bg-card"
+          aria-label={t("title")}
+          style={{
+            paddingLeft: "var(--project-canvas-left-overlay-inset, 0px)",
+            paddingRight: "var(--project-canvas-right-overlay-inset, 0px)",
+          }}
+        >
           <header className="flex flex-wrap items-center gap-2 px-4 py-2">
             <h2 className="text-sm font-medium">{t("title")}</h2>
             <p className="mr-auto text-xs text-muted-foreground">

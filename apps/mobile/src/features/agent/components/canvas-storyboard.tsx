@@ -126,6 +126,8 @@ function Timeline({ loaded, scope, userId, canEdit, saved, close }: Props & { cl
           backgroundColor: theme.background,
           paddingTop: insets.top,
           paddingBottom: insets.bottom,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
         }}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 12 }}>

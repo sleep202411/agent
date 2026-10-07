@@ -122,6 +122,8 @@ export function StoryCanvasMap({
           padding: 16,
           paddingTop: insets.top + 16,
           paddingBottom: insets.bottom + 16,
+          paddingLeft: insets.left + 16,
+          paddingRight: insets.right + 16,
           gap: 12,
         }}
       >
