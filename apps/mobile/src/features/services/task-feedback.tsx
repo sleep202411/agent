@@ -25,6 +25,7 @@ export function TaskFeedbackHistory(props: Props) {
 function History(props: Props) {
   const t = useTranslations(),
     locale = useLocale();
+  const loadedPages = useRef(new Set<string | null>());
   const [rows, setRows] = useState<TaskFeedback[]>([]),
     [cursor, setCursor] = useState<string | null>(null),
     [next, setNext] = useState<string | null>(null),
@@ -33,10 +34,14 @@ function History(props: Props) {
     [error, setError] = useState<string>(),
     [web, setWeb] = useState<string>();
   useEffect(() => {
+    if (web) return;
     const c = new AbortController();
+    let busy = true;
     void fetchTaskFeedback(props.userId, props.generation, cursor, c.signal)
       .then((page) => {
         if (c.signal.aborted) return;
+        if (!cursor) loadedPages.current.clear();
+        loadedPages.current.add(cursor);
         setRows((old) =>
           cursor
             ? [...new Map([...old, ...page.items].map((row) => [row.id, row])).values()]
@@ -52,10 +57,53 @@ function History(props: Props) {
         }
       })
       .finally(() => {
+        busy = false;
         if (!c.signal.aborted) setLoading(false);
       });
-    return () => c.abort();
-  }, [props.userId, props.generation, cursor, revision]);
+    const timer = setInterval(async () => {
+      if (busy || c.signal.aborted) return;
+      busy = true;
+      const fresh: TaskFeedback[] = [];
+      const seen = new Set<string>();
+      const pageLimit = Math.max(1, loadedPages.current.size);
+      let pageCursor: string | null = null;
+      try {
+        // Refresh every loaded page atomically. Stable row keys preserve response
+        // and appeal drafts while current permissions and responses are checked.
+        while (true) {
+          const page = await fetchTaskFeedback(
+            props.userId,
+            props.generation,
+            pageCursor,
+            c.signal
+          );
+          if (c.signal.aborted) return;
+          fresh.push(...page.items);
+          if (!page.nextCursor || seen.size + 1 >= pageLimit) {
+            setRows([...new Map(fresh.map((row) => [row.id, row])).values()]);
+            setNext(page.nextCursor);
+            setError(undefined);
+            break;
+          }
+          if (seen.has(page.nextCursor)) throw new Error("Feedback pagination did not advance");
+          seen.add(page.nextCursor);
+          pageCursor = page.nextCursor;
+        }
+      } catch (cause) {
+        if (!c.signal.aborted) {
+          setRows([]);
+          setNext(null);
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
+      } finally {
+        busy = false;
+      }
+    }, 30_000);
+    return () => {
+      clearInterval(timer);
+      c.abort();
+    };
+  }, [props.userId, props.generation, cursor, revision, web]);
   const refresh = () => {
     setLoading(true);
     setError(undefined);

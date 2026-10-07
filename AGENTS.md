@@ -2,6 +2,16 @@
 
 ## Completed parity integration and exclusive Mobile handoff (2026-10-07)
 
+The later same-day resumption incorporates official main/develop through
+`8848b1312` and aligns Mobile recruitment defaults, submission eligibility and
+foreground feedback/task refresh with the new Web behavior. It preserves
+existing private recruitment records, native layouts and the restored feed.
+This renewed exception also ends when this integration is published.
+
+Web feature deferral alone is not authority to remove an independently assigned
+Mobile feature. Verify platform-specific scope before any future parity removal;
+Pax's separate Mobile communication must be considered alongside Web direction.
+
 This integration closes the user's temporary Mobile development exception.
 Latest main/develop was merged into `feat/mobile-2.4.0-scrolling-screen`;
 the completed parity changes are authorized for alignment of all three remote

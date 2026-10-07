@@ -79,10 +79,7 @@ export function PositionCreate(props: {
     [currency, setCurrency] = useState<CurrencyCode>(
       initial?.salary.currency ?? (isChinaRegion ? "CNY" : "USD")
     ),
-    [negotiable, setNegotiable] = useState(initial?.salary.negotiable ?? false),
-    [visibility, setVisibility] = useState<"public" | "private">(
-      initial?.recruitmentVisibility ?? "public"
-    );
+    [negotiable, setNegotiable] = useState(initial?.salary.negotiable ?? false);
   const [paymentTerms, setPaymentTerms] = useState<NewPosition["paymentTerms"]>(
     initial?.paymentTerms ?? null
   );
@@ -287,7 +284,7 @@ export function PositionCreate(props: {
           : task
             ? { taskId: task.id }
             : {}),
-        recruitmentVisibility: visibility,
+        recruitmentVisibility: initial?.recruitmentVisibility ?? "public",
       });
     } catch {
       setError(t("positionCreate.invalid"));
@@ -448,21 +445,11 @@ export function PositionCreate(props: {
                   t("positionCreate.clearTask"),
                   () => {
                     setTask(undefined);
-                    setVisibility("public");
                   },
                   locked
                 )}
             </>
           )}
-          {!props.editing &&
-            task &&
-            choice(
-              "positionCreate.visibility",
-              visibility,
-              ["public", "private"] as const,
-              setVisibility,
-              (v) => t(`positionCreate.${v}`)
-            )}
           <ThemedText>
             {t(props.editing ? "positionEdit.help" : "positionCreate.visibilityHelp")}
           </ThemedText>

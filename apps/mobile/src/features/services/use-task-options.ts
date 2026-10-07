@@ -91,11 +91,60 @@ export function useTaskOptions(owner: string | undefined, crewId: string, query:
     };
     current.current = session;
     void load(session);
+    // Revalidate the loaded recruitment window without resetting the picker or
+    // exposing an old task that has since been assigned. Other pickers do not poll.
+    const timer = query.recruitmentOnly
+      ? setInterval(async () => {
+          if (session.busy || session.abort.signal.aborted) return;
+          session.busy = true;
+          const items: TaskOption[] = [];
+          const seen = new Set<string>();
+          let cursor: string | null = null;
+          try {
+            do {
+              const page = await fetchTaskOptions(
+                crewId,
+                JSON.parse(queryKey) as TaskQuery,
+                cursor,
+                session.abort.signal
+              );
+              if (session.abort.signal.aborted) return;
+              items.push(...page.items);
+              cursor = page.nextCursor;
+              if (cursor && seen.has(cursor)) throw new Error("Task pagination did not advance");
+              if (cursor) seen.add(cursor);
+            } while (cursor && items.length < session.items.length);
+            session.items = [...new Map(items.map((item) => [item.id, item])).values()];
+            session.cursor = cursor;
+            session.seen = seen;
+            session.more = !!cursor;
+            session.failed = false;
+            setSnapshot({ key, items: session.items, loading: false, more: session.more });
+          } catch (cause) {
+            if (session.abort.signal.aborted) return;
+            session.items = [];
+            session.cursor = null;
+            session.seen.clear();
+            session.more = true;
+            session.failed = true;
+            setSnapshot({
+              key,
+              items: [],
+              loading: false,
+              more: true,
+              error: cause instanceof Error ? cause.message : "Unable to load Crew tasks",
+            });
+          } finally {
+            session.busy = false;
+          }
+        }, 30_000)
+      : undefined;
     return () => {
+      clearInterval(timer);
       session.abort.abort();
       current.current = undefined;
     };
-  }, [key, owner, revision, load]);
+  }, [key, owner, revision, load, query.recruitmentOnly, crewId, queryKey]);
   const more = (retry: boolean) => {
     const session = current.current;
     if (

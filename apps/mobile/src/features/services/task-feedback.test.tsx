@@ -111,6 +111,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.useRealTimers();
 });
 it("renders personal history and clears it on a failed refresh or backgrounding", async () => {
   await mount();
@@ -152,4 +153,61 @@ it("opens the exact confirmed appeal case and retains the native history on retu
   expect(host.textContent).toContain(`/crews/cases/${id(4)}`);
   await click("feedbackHistory.back");
   expect(host.textContent).toContain("Useful review");
+});
+
+it("refreshes feedback without erasing response drafts and stops in the background", async () => {
+  vi.useFakeTimers();
+  await mount();
+  await type("feedbackHistory.response", "Unsent response");
+  h.get.mockResolvedValue({ items: [{ ...row, comment: "Updated review" }], nextCursor: null });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  expect(host.textContent).toContain("Updated review");
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="feedbackHistory.response"]')!.value
+  ).toBe("Unsent response");
+  h.get.mockRejectedValue(new Error("Access revoked"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(30_000);
+  });
+  expect(host.textContent).not.toContain("Updated review");
+  expect(host.textContent).toContain("Access revoked");
+  h.active = false;
+  await mount();
+  const calls = h.get.mock.calls.length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(60_000);
+  });
+  expect(h.get).toHaveBeenCalledTimes(calls);
+});
+
+it("refreshes all loaded feedback pages and does not overlap a slow request", async () => {
+  vi.useFakeTimers();
+  const second = { ...row, id: id(5), comment: "Second review" };
+  h.get
+    .mockResolvedValueOnce({ items: [row], nextCursor: id(4) })
+    .mockResolvedValueOnce({ items: [second], nextCursor: null });
+  await mount();
+  await click("crewAssets.more");
+  let finish!: (page: unknown) => void;
+  h.get
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    )
+    .mockResolvedValueOnce({
+      items: [{ ...second, comment: "Updated second review" }],
+      nextCursor: null,
+    });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(60_000);
+  });
+  expect(h.get).toHaveBeenCalledTimes(3);
+  await act(async () => finish({ items: [row], nextCursor: id(4) }));
+  expect(host.textContent).toContain("Useful review");
+  expect(host.textContent).toContain("Updated second review");
+  expect(h.get).toHaveBeenCalledTimes(4);
 });

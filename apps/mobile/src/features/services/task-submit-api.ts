@@ -44,8 +44,7 @@ export async function fetchTaskSubmitPermission(
   if (member.userId !== userId) throw new Error("Crew membership account mismatch");
   return (
     member.permissions.includes("tasks.submit_assigned") &&
-    (member.permissions.includes("tasks.manage") ||
-      task.assignees.some((a) => a.userId === userId)) &&
+    task.assignees.some((a) => a.userId === userId) &&
     ["open", "in_progress", "revision_requested"].includes(task.status)
   );
 }

@@ -58,7 +58,7 @@ const input = {
   },
 };
 beforeEach(() => vi.resetAllMocks());
-it("requires explicit submit permission plus assignment or management", async () => {
+it("requires explicit submit permission and assignment even for managers", async () => {
   const signal = new AbortController().signal;
   vi.mocked(api.get).mockResolvedValue({ userId: "1", permissions: ["tasks.manage"] });
   expect(await fetchTaskSubmitPermission(task, "1", signal)).toBe(false);
@@ -73,7 +73,7 @@ it("requires explicit submit permission plus assignment or management", async ()
     userId: "1",
     permissions: ["tasks.submit_assigned", "tasks.manage"],
   });
-  expect(await fetchTaskSubmitPermission({ ...task, assignees: [] }, "1", signal)).toBe(true);
+  expect(await fetchTaskSubmitPermission({ ...task, assignees: [] }, "1", signal)).toBe(false);
 });
 it("requires current template revision and all mandatory answers", () => {
   expect(validateTaskSubmission(input, template).professionalDelivery?.answers.description).toBe(

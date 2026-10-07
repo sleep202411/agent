@@ -178,31 +178,29 @@ it("publishes role, skills and salary in display units", async () => {
   expect(host.textContent).toContain("positionCreate.saved");
   expect(button("positionCreate.publish")).toBeUndefined();
 });
-it("requests only recruitable tasks and permits private task recruitment", async () => {
+it("requests only recruitable tasks and creates public recruitment", async () => {
   await render();
   await type("positionCreate.description", "Direct a shot");
   await click("positionCreate.task");
   await click("Pick true");
-  await click("positionCreate.visibility · positionCreate.public");
-  await click("positionCreate.private");
+  expect(button("positionCreate.visibility · positionCreate.public")).toBeUndefined();
   await click("positionCreate.publish");
   expect(h.post).toHaveBeenCalledWith(
     "/crews/crew/positions",
     expect.objectContaining({
       data: expect.objectContaining({
         taskId: "00000000-0000-4000-8000-000000000001",
-        recruitmentVisibility: "private",
+        recruitmentVisibility: "public",
       }),
     })
   );
 });
-it("clearing the task returns visibility to public", async () => {
+it("clearing the task keeps the new opening public", async () => {
   await render();
   await type("positionCreate.description", "Direct a shot");
   await click("positionCreate.task");
   await click("Pick true");
-  await click("positionCreate.visibility · positionCreate.public");
-  await click("positionCreate.private");
+  expect(button("positionCreate.visibility · positionCreate.public")).toBeUndefined();
   await click("positionCreate.clearTask");
   await click("positionCreate.publish");
   expect(h.post.mock.calls[0]![1].data.recruitmentVisibility).toBe("public");
@@ -521,4 +519,35 @@ it("imports task payment terms and includes them in the advertised opening", asy
   expect(button("● taskPaymentTerms.monthly")).toBeDefined();
   await click("positionCreate.publish");
   expect(h.post.mock.calls[0]![1].data.paymentTerms).toBe("monthly");
+});
+
+it("preserves existing private recruitment when editing another field", async () => {
+  const existing = {
+    ...editing,
+    taskId: "00000000-0000-4000-8000-000000000001",
+    recruitmentVisibility: "private" as const,
+  };
+  h.get.mockImplementation(async (path: string) =>
+    path.endsWith("members/me")
+      ? { userId: "manager", permissions: ["openings.manage"] }
+      : { items: [existing], nextCursor: null }
+  );
+  await act(async () =>
+    root.render(
+      <PositionCreate
+        crewId="crew"
+        userId="manager"
+        generation={1}
+        onClose={h.close}
+        editing={existing}
+      />
+    )
+  );
+  await type("positionCreate.description", "Updated private role");
+  h.patch.mockResolvedValue({ ...existing, description: "Updated private role" });
+  await click("positionEdit.save");
+  expect(h.patch).toHaveBeenCalledWith("/crews/crew/positions/position", {
+    service: "aurora",
+    data: { description: "Updated private role" },
+  });
 });

@@ -2238,7 +2238,7 @@
   "positionCreate.visibility": "招聘可見性",
   "positionCreate.public": "公開",
   "positionCreate.private": "私密",
-  "positionCreate.visibilityHelp": "私密招聘必須關聯任務。劇組和職位符合條件時，公開職位會出現在探索列表。",
+  "positionCreate.visibilityHelp": "劇組和職位符合條件時，公開職位會出現在探索列表。",
   "positionCreate.publish": "發佈職位",
   "positionCreate.saved": "職位 {id} 已建立。請返回職位列表查看。",
   "positionCreate.recheck": "結果尚未確認。請返回重新整理後的職位列表，確認新職位是否已建立，再決定是否重新建立。",
