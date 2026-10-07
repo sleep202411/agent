@@ -157,3 +157,24 @@ describe('private storyboard input spool', () => {
     expect(await files()).toEqual(before);
   });
 });
+
+it.each([
+  ['image/png', 'png'],
+  ['image/jpeg', 'jpg'],
+  ['image/webp', 'webp'],
+] as const)(
+  'spools %s with the correct local image extension',
+  async (contentType, extension) => {
+    const result = await spoolStoryboard(
+      [{ ...source, contentType }],
+      storage(),
+      signal(),
+      jest.fn().mockResolvedValue(new Response('abc')),
+    );
+    try {
+      expect(result.filenames).toEqual([`input-0.${extension}`]);
+    } finally {
+      await result.dispose();
+    }
+  },
+);

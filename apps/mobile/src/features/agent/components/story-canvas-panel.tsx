@@ -1,3 +1,4 @@
+import { CanvasStoryboard } from "./canvas-storyboard";
 import { StoryCanvasMediaPreview, type CanvasMediaTarget } from "./story-canvas-media-preview";
 import { StoryPanoramaPreview } from "./story-panorama-preview";
 import type { CanvasPanoramaSource } from "../api/story-canvas-panorama";
@@ -227,6 +228,15 @@ export function StoryCanvasPanel({
               onSaved={reload}
             />
           )}
+        {loaded && writeScope && !loading && (
+          <CanvasStoryboard
+            loaded={loaded}
+            scope={writeScope}
+            userId={userId}
+            canEdit={canEdit}
+            saved={reload}
+          />
+        )}
         {loaded && !loading && (
           <Pressable
             accessibilityRole="button"
@@ -542,6 +552,17 @@ export function StoryCanvasPanel({
         )}
         {mapping && loaded && (
           <StoryCanvasMap
+            storyboard={
+              writeScope && (
+                <CanvasStoryboard
+                  loaded={loaded}
+                  scope={writeScope}
+                  userId={userId}
+                  canEdit={canEdit}
+                  saved={reload}
+                />
+              )
+            }
             generation={scope.generation}
             loaded={loaded}
             move={

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { IconChevronLeft, IconChevronRight, IconPlayerPlay } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/
 import { useCanvasDocumentId } from "@/components/canvas/authoring/canvas-document-context";
 import { useMediaPlaybackSource } from "@/components/media/use-media-playback-source";
 import { cn } from "@/lib/utils";
-import { ShotThumbnail, playbackVideo } from "./shot-thumbnail";
+import { ShotThumbnail, playbackMedia } from "./shot-thumbnail";
 import type { ShotRow } from "./use-storyboard";
 
 /** Playback is a projection of saved shots, never another timeline document. */
@@ -52,8 +52,8 @@ export function StoryboardSequence({ rows }: { rows: ShotRow[] }) {
     rows.findIndex((row) => row.id === selectedId)
   );
   const shot = rows[index];
-  // A shot may hold alternatives. Use its first ready video in saved edge order.
-  const video = playbackVideo(shot);
+  // Match the export selection: first ready video, otherwise preferred still.
+  const video = playbackMedia(shot);
   const select = (next: number, resume = false) => {
     if (!rows[next]) return;
     setSelectedId(rows[next].id);
@@ -63,9 +63,10 @@ export function StoryboardSequence({ rows }: { rows: ShotRow[] }) {
     <div className="flex min-h-0 flex-col gap-3">
       <div className="flex min-h-0 items-center justify-center overflow-hidden rounded-lg bg-black">
         {video?.url ? (
-          <SequenceVideo
+          <SequenceMedia
             key={`${shot.id}:${video.edgeId}:${video.url}`}
             src={video.url}
+            still={video.kind === "image"}
             autoPlay={playing}
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
@@ -132,13 +133,15 @@ export function StoryboardSequence({ rows }: { rows: ShotRow[] }) {
   );
 }
 
-function SequenceVideo({
+function SequenceMedia({
+  still,
   src,
   autoPlay,
   onPlay,
   onPause,
   onEnded,
 }: {
+  still: boolean;
   src: string;
   autoPlay: boolean;
   onPlay: () => void;
@@ -150,6 +153,24 @@ function SequenceVideo({
   const source = useMediaPlaybackSource(src, true, undefined, documentId);
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const remaining = useRef(5000);
+  useEffect(() => {
+    if (!still || !autoPlay || failed || source.error || !source.src || loadedSrc !== source.src)
+      return;
+    const started = performance.now();
+    let finished = false;
+    const timer = window.setTimeout(() => {
+      finished = true;
+      remaining.current = 5000;
+      onEnded();
+    }, remaining.current);
+    return () => {
+      window.clearTimeout(timer);
+      if (!finished)
+        remaining.current = Math.max(0, remaining.current - (performance.now() - started));
+    };
+  }, [still, autoPlay, failed, source.error, source.src, loadedSrc, onEnded]);
   if (failed || source.error)
     return (
       <div
@@ -162,6 +183,7 @@ function SequenceVideo({
           size="sm"
           onClick={async () => {
             await source.refresh();
+            setLoadedSrc(null);
             setFailed(false);
             setAttempt((value) => value + 1);
           }}
@@ -177,6 +199,30 @@ function SequenceVideo({
         className="flex aspect-video w-full items-center justify-center text-sm text-muted-foreground"
       >
         {t("loading")}
+      </div>
+    );
+  if (still)
+    return (
+      <div className="relative w-full">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          key={attempt}
+          src={source.src}
+          alt={t("image")}
+          className="aspect-video max-h-[65dvh] w-full object-contain"
+          onLoad={() => setLoadedSrc(source.src!)}
+          onError={() => {
+            setLoadedSrc(null);
+            setFailed(true);
+            onPause();
+          }}
+        />
+        <div className="flex items-center justify-center gap-3 p-2">
+          <Button variant="secondary" size="sm" onClick={autoPlay ? onPause : onPlay}>
+            {t(autoPlay ? "pause" : "play")}
+          </Button>
+          <span className="text-xs text-muted-foreground">{t("stillDuration")}</span>
+        </div>
       </div>
     );
   return (

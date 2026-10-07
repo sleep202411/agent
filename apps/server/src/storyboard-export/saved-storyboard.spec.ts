@@ -43,15 +43,15 @@ it('does not substitute the latest generated media ID for a selected older outpu
     mediaAssetId: null,
   });
 });
-it('requires a video for every shot and rejects incomplete generation', () => {
+it('requires media for every shot and rejects incomplete generation', () => {
   const raw = snapshot();
   delete (raw.edges as Partial<typeof raw.edges>).e1;
-  expect(() => projectSavedStoryboard(raw)).toThrow('first has no ready video');
+  expect(() => projectSavedStoryboard(raw)).toThrow('first has no ready media');
   const running = snapshot();
   Object.assign(running.nodes.video.data, {
     generation: { status: 'generating' },
   });
-  expect(() => projectSavedStoryboard(running)).toThrow('no ready video');
+  expect(() => projectSavedStoryboard(running)).toThrow('no ready media');
 });
 it('rejects inconsistent identities and browser-only media', () => {
   const raw = snapshot();
@@ -102,4 +102,44 @@ it('detects a pending deletion until its referenced content arrives', () => {
     builder.destroy();
     client.destroy();
   }
+});
+
+it('uses a preferred still, while keeping ready video priority', () => {
+  const nodes = {
+    shot: { id: 'shot', type: 'shot', data: { preferredFrameEdgeId: 'e2' } },
+    first: {
+      id: 'first',
+      type: 'image',
+      data: { src: 'https://media.invalid/first.png', mediaAssetId: asset },
+    },
+    second: {
+      id: 'second',
+      type: 'prompt',
+      data: {
+        generation: {
+          status: 'done',
+          outputs: [
+            { url: 'https://media.invalid/second.png', assetId: asset },
+          ],
+        },
+      },
+    },
+  };
+  const edges = {
+    e1: { id: 'e1', source: 'first', target: 'shot' },
+    e2: { id: 'e2', source: 'second', target: 'shot' },
+  };
+  expect(projectSavedStoryboard({ nodes, edges })[0].sourceNodeId).toBe(
+    'second',
+  );
+  expect(
+    projectSavedStoryboard({
+      nodes: { ...nodes, video: source },
+      edges: { ...edges, ev: { id: 'ev', source: 'video', target: 'shot' } },
+    })[0].sourceNodeId,
+  ).toBe('video');
+  nodes.second.data.generation.status = 'generating';
+  expect(projectSavedStoryboard({ nodes, edges })[0].sourceNodeId).toBe(
+    'first',
+  );
 });

@@ -1,3 +1,4 @@
+import { CanvasStoryboard } from "./canvas-storyboard";
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -213,6 +214,13 @@ function Document({
       )}
       {loaded && overview && (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+          <CanvasStoryboard
+            loaded={loaded}
+            scope={scope}
+            userId={userId}
+            canEdit={canEdit}
+            saved={saved}
+          />
           {canEdit &&
             !error &&
             !generationCard &&
@@ -540,6 +548,17 @@ function Document({
       )}
       {loaded && mapping && (
         <StoryCanvasMap
+          storyboard={
+            scope && (
+              <CanvasStoryboard
+                loaded={loaded}
+                scope={scope}
+                userId={userId}
+                canEdit={canEdit}
+                saved={saved}
+              />
+            )
+          }
           generation={scope.generation}
           move={
             canEdit

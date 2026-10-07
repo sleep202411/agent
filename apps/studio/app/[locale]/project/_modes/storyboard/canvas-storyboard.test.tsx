@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   select: vi.fn(),
   move: vi.fn(),
   canEdit: true,
+  kind: "video",
 }));
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("./storyboard-playback", () => ({ StoryboardPlayback: () => null }));
@@ -19,7 +20,7 @@ vi.mock("@/lib/canvas-core/canvas-graph-context", () => ({
 vi.mock("./use-storyboard", () => ({
   useStoryboard: () => ({
     rows: [{ id: "shot", pictures: [] }],
-    canvasSources: [{ nodeId: "video", kind: "video", label: "Clip" }],
+    canvasSources: [{ nodeId: "video", kind: mocks.kind, label: "Clip" }],
     canEdit: mocks.canEdit,
     attachSource: mocks.attach,
     moveShotToIndex: mocks.move,
@@ -39,6 +40,7 @@ beforeEach(() => {
     }
   );
   mocks.canEdit = true;
+  mocks.kind = "video";
   vi.clearAllMocks();
   mocks.attach.mockReturnValue(true);
   Object.defineProperty(Element.prototype, "setPointerCapture", {
@@ -88,7 +90,8 @@ describe("Canvas to storyboard gestures", () => {
     expect(mocks.select).not.toHaveBeenCalled();
     expect(mocks.attach).not.toHaveBeenCalled();
   });
-  it("selects then attaches the video on a moved pointer drop", async () => {
+  it.each(["video", "image"])("selects then attaches %s on a moved pointer drop", async (kind) => {
+    mocks.kind = kind;
     await render();
     await click("mode");
     vi.spyOn(document, "elementFromPoint").mockReturnValue(

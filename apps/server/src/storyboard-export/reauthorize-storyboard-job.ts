@@ -12,7 +12,13 @@ const Source = z.strictObject({
   bucket: z.string().min(1),
   region: z.string().nullable(),
   objectKey: z.string().min(1),
-  contentType: z.enum(['video/mp4', 'video/webm']),
+  contentType: z.enum([
+    'video/mp4',
+    'video/webm',
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+  ]),
   sizeBytes: z
     .string()
     .regex(/^[1-9]\d*$/)

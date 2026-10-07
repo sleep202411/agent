@@ -12,25 +12,24 @@ export function playbackVideo(row: ShotRow | undefined) {
   );
 }
 
-/** Fetch posters only as the filmstrip cells enter view. Never load a decoder
- * for every offscreen shot, and never use an unrelated image as a video cover. */
-export function ShotThumbnail({ row }: { row: ShotRow }) {
-  const video = playbackVideo(row);
-  const cover =
-    row.pictures.find(
-      (picture) =>
-        picture.edgeId === row.preferredFrameEdgeId &&
-        picture.kind === "image" &&
-        picture.status === "ready" &&
-        picture.url
+export function playbackMedia(row: ShotRow | undefined) {
+  return (
+    playbackVideo(row) ??
+    row?.pictures.find(
+      (p) =>
+        p.kind === "image" && p.status === "ready" && p.url && p.edgeId === row.preferredFrameEdgeId
     ) ??
-    row.pictures.find(
-      (picture) => picture.kind === "image" && picture.status === "ready" && picture.url
-    );
-  return video?.url ? (
-    <VideoThumbnail key={video.url} src={video.url} />
+    row?.pictures.find((p) => p.kind === "image" && p.status === "ready" && p.url)
+  );
+}
+
+/** Load video posters lazily; image selection matches playback and export. */
+export function ShotThumbnail({ row }: { row: ShotRow }) {
+  const media = playbackMedia(row);
+  return media?.kind === "video" && media.url ? (
+    <VideoThumbnail key={media.url} src={media.url} />
   ) : (
-    <ThumbnailImage src={cover?.url} />
+    <ThumbnailImage src={media?.url} />
   );
 }
 

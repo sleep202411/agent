@@ -17,7 +17,12 @@ export interface StoryboardSourceObject {
   bucket: string;
   region: string | null;
   objectKey: string;
-  contentType: 'video/mp4' | 'video/webm';
+  contentType:
+    | 'video/mp4'
+    | 'video/webm'
+    | 'image/png'
+    | 'image/jpeg'
+    | 'image/webp';
   sizeBytes: string | null;
 }
 
@@ -41,7 +46,7 @@ export async function captureAuthorizedStoryboard(
   const ids = captured.clips.map((clip) => {
     if (!clip.mediaAssetId)
       throw new BadRequestException(
-        'A storyboard video has no saved media identity. Reattach its uploaded or generated media before exporting.',
+        'A storyboard asset has no saved media identity. Reattach its uploaded or generated media before exporting.',
       );
     return clip.mediaAssetId;
   });
@@ -54,7 +59,7 @@ export async function captureAuthorizedStoryboard(
   });
   if (totalBytes > 2n * 1024n * 1024n * 1024n)
     throw new BadRequestException(
-      'Storyboard videos exceed the total export size limit.',
+      'Storyboard media exceed the total export size limit.',
     );
   await documents.requireDocumentRef(userId, documentId, 'read');
   return { document: captured.document, sequence: captured.sequence, clips };
@@ -91,12 +96,12 @@ export async function resolveStoryboardSources(
   for (const id of [...new Set(ids)]) {
     const asset = assets.find((row) => row.id === id);
     if (!asset || asset.deletedAt)
-      throw new NotFoundException('A storyboard video is no longer available.');
+      throw new NotFoundException('A storyboard asset is no longer available.');
     const denial = media.denialForUse(userId, asset);
     if (denial) throw denial;
-    if (asset.kind !== 'video')
+    if (asset.kind !== 'video' && asset.kind !== 'image')
       throw new BadRequestException(
-        'Every storyboard shot must reference a video asset.',
+        'Every storyboard shot must reference an image or video asset.',
       );
     // The captured saved canvas is the canonical sharing context. Its current
     // read grant covers these exact referenced IDs, including acknowledged edits
@@ -104,7 +109,7 @@ export async function resolveStoryboardSources(
     // gates above still apply, exactly as for canvas media consumption.
     const original = asset.variants[0];
     if (original && original.status !== 'ready')
-      throw new ConflictException('An original storyboard video is not ready.');
+      throw new ConflictException('An original storyboard asset is not ready.');
     const placements = original ? original.placements : asset.placements;
     const placement = placements.find(
       (row) =>
@@ -115,26 +120,36 @@ export async function resolveStoryboardSources(
     );
     if (placements.length && !placement)
       throw new ConflictException(
-        'No active managed storage copy is available for a storyboard video.',
+        'No active managed storage copy is available for a storyboard media.',
       );
     if (original && !placement)
       throw new ConflictException(
-        'The original storyboard video has no active storage copy.',
+        'The original storyboard asset has no active storage copy.',
       );
     const ref = placement ?? asset;
     if (ref.storageProvider === 'external_url' || !ref.bucket || !ref.objectKey)
       throw new BadRequestException(
-        'Upload external storyboard videos to platform storage before exporting.',
+        'Upload external storyboard media to platform storage before exporting.',
       );
     const contentType = original?.contentType ?? asset.contentType;
-    if (contentType !== 'video/mp4' && contentType !== 'video/webm')
+    if (
+      contentType !== 'video/mp4' &&
+      contentType !== 'video/webm' &&
+      contentType !== 'image/png' &&
+      contentType !== 'image/jpeg' &&
+      contentType !== 'image/webp'
+    )
       throw new BadRequestException(
-        'Storyboard export supports original MP4 and WebM videos.',
+        'Storyboard export supports original MP4/WebM videos and PNG/JPEG/WebP images.',
+      );
+    if (!contentType.startsWith(`${asset.kind}/`))
+      throw new BadRequestException(
+        'Storyboard media type does not match its asset kind.',
       );
     const size = original?.sizeBytes ?? asset.sizeBytes;
     if (size !== null && (size <= 0n || size > 512n * 1024n * 1024n))
       throw new BadRequestException(
-        'A storyboard video exceeds the export size limit.',
+        'A storyboard asset exceeds the export size limit.',
       );
     objects.set(id, {
       assetId: id,

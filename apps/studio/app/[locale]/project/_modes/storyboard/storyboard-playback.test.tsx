@@ -48,6 +48,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -126,4 +127,37 @@ describe("Storyboard sequence playback", () => {
       true
     );
   });
+});
+
+it("plays the preferred still for five seconds, pauses, then advances to video", async () => {
+  vi.useFakeTimers();
+  const image = {
+    ...rows[0],
+    preferredFrameEdgeId: "preferred",
+    pictures: [
+      { ...rows[0].pictures[0], kind: "image", url: "https://assets.invalid/first.png" },
+      {
+        ...rows[0].pictures[0],
+        kind: "image",
+        edgeId: "preferred",
+        url: "https://assets.invalid/preferred.png",
+      },
+    ],
+  } as ShotRow;
+  await render([image, rows[1]]);
+  const img = container.querySelector<HTMLImageElement>('img[alt="image"]')!;
+  expect(img.src).toContain("preferred.png");
+  await act(async () => img.dispatchEvent(new Event("load")));
+  const control = () =>
+    [...container.querySelectorAll("button")].find((b) =>
+      ["play", "pause"].includes(b.textContent ?? "")
+    )!;
+  await act(async () => control().click());
+  await act(async () => vi.advanceTimersByTime(2000));
+  await act(async () => control().click());
+  await act(async () => vi.advanceTimersByTime(6000));
+  expect(container.querySelector("video")).toBeNull();
+  await act(async () => control().click());
+  await act(async () => vi.advanceTimersByTime(3000));
+  expect(container.querySelector("video")?.src).toContain("b.mp4");
 });

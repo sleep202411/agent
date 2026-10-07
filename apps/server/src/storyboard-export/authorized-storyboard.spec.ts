@@ -188,3 +188,14 @@ it('requires saved asset identity and does not resolve arbitrary URLs', async ()
   await expect(h.run()).rejects.toThrow('no saved media identity');
   expect(h.tx.mediaAsset.findMany).not.toHaveBeenCalled();
 });
+
+it.each(['image/png', 'image/jpeg', 'image/webp'])(
+  'authorizes managed %s images with the same access gates',
+  async (contentType) => {
+    const h = fixture();
+    Object.assign(h.asset, { kind: 'image', contentType });
+    expect((await h.run()).clips[0].source.contentType).toBe(contentType);
+    h.media.denialForUse.mockReturnValue(new GoneException('Blocked image'));
+    await expect(h.run()).rejects.toThrow('Blocked image');
+  },
+);

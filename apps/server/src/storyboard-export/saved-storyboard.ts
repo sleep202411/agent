@@ -48,7 +48,7 @@ export interface StoryboardExportSource {
   sourceUrl: string;
 }
 /** Mirrors the canvas storyboard projection: saved fractional shot order,
- * then the first ready video in saved incoming-edge order. No still fallback. */
+ * then the first ready video, or the preferred/first ready still image. */
 export function projectSavedStoryboard(raw: unknown): StoryboardExportSource[] {
   const snapshot = Snapshot.parse(raw);
   for (const [id, node] of Object.entries(snapshot.nodes))
@@ -66,9 +66,7 @@ export function projectSavedStoryboard(raw: unknown): StoryboardExportSource[] {
       ),
     );
   if (!shots.length || shots.length > 100)
-    throw new BadRequestException(
-      'Export requires between 1 and 100 video shots.',
-    );
+    throw new BadRequestException('Export requires between 1 and 100 shots.');
   return shots.map((shot) => {
     const references = z
       .record(z.string(), z.array(Reference))
@@ -79,21 +77,35 @@ export function projectSavedStoryboard(raw: unknown): StoryboardExportSource[] {
         .filter((r) => r.edgeId)
         .map((r) => [r.edgeId!, r]),
     );
-    for (const edge of Object.values(snapshot.edges).filter(
+    const incoming = Object.values(snapshot.edges).filter(
       (e) => e.target === shot.id,
-    )) {
+    );
+    // Stable sorting preserves saved edge order within each media priority.
+    const priority = (edge: z.infer<typeof Edge>) => {
+      const type = snapshot.nodes[edge.source]?.type;
+      if (type === 'video' || type === 'videoAsset') return 0;
+      return edge.id === shot.data.preferredFrameEdgeId ? 1 : 2;
+    };
+    for (const edge of incoming.sort((a, b) => priority(a) - priority(b))) {
       const source = snapshot.nodes[edge.source];
-      if (!source || !['video', 'videoAsset'].includes(source.type)) continue;
+      if (
+        !source ||
+        !['video', 'videoAsset', 'image', 'panorama', 'prompt'].includes(
+          source.type,
+        )
+      )
+        continue;
       const generation = source.data.generation
         ? Generation.parse(source.data.generation)
         : null;
       if (generation && !['done', 'cancelled'].includes(generation.status))
         continue;
-      const output =
-        source.type === 'video' ? generation?.outputs?.[0] : undefined;
+      const output = ['video', 'prompt'].includes(source.type)
+        ? generation?.outputs?.[0]
+        : undefined;
       const sourceUrl =
         output?.url ??
-        (source.type === 'videoAsset'
+        (['videoAsset', 'image', 'panorama'].includes(source.type)
           ? z.string().optional().parse(source.data.src)
           : undefined);
       const reference = bound.get(edge.id);
@@ -101,11 +113,11 @@ export function projectSavedStoryboard(raw: unknown): StoryboardExportSource[] {
       if (!url) continue;
       if (url.length > 4096 || /^(blob|data|file):/i.test(url))
         throw new BadRequestException(
-          'A storyboard video is not saved as platform media.',
+          'Storyboard media is not saved as platform media.',
         );
       const sourceId =
         output?.assetId ??
-        (source.type === 'videoAsset'
+        (['videoAsset', 'image', 'panorama'].includes(source.type)
           ? z.string().uuid().optional().parse(source.data.mediaAssetId)
           : undefined);
       // A bound reference can point to an older, deliberately selected output.
@@ -120,7 +132,7 @@ export function projectSavedStoryboard(raw: unknown): StoryboardExportSource[] {
       };
     }
     throw new BadRequestException(
-      `Shot ${shot.id} has no ready video. Attach a video before exporting.`,
+      `Shot ${shot.id} has no ready media. Attach an image or video before exporting.`,
     );
   });
 }

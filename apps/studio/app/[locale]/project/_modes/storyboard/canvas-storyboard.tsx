@@ -35,7 +35,9 @@ export function CanvasStoryboard({ children }: { children: ReactNode }) {
   const [preview, setPreview] = useState<{ x: number; y: number; label: string } | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const gesture = useRef<Gesture | null>(null);
-  const sources = canvasSources.filter((source) => source.kind === "video");
+  const sources = canvasSources.filter(
+    (source) => source.kind === "video" || source.kind === "image"
+  );
   const selected = sources.find((source) =>
     graph.nodes.some((node) => node.id === source.nodeId && node.selected)
   );
@@ -215,20 +217,24 @@ export function CanvasStoryboard({ children }: { children: ReactNode }) {
               >
                 <div className="mb-2 flex items-center justify-between text-xs">
                   <span>{t("shot", { number: index + 1 })}</span>
-                  {canEdit && row.pictures.some((picture) => picture.kind === "video") && (
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={t("removeVideo", { number: index + 1 })}
-                      title={t("removeVideo", { number: index + 1 })}
-                      onClick={() => {
-                        for (const picture of row.pictures)
-                          if (picture.kind === "video") detachPicture(row.id, picture.edgeId);
-                      }}
-                    >
-                      <IconUnlink />
-                    </Button>
-                  )}
+                  {canEdit &&
+                    row.pictures.some(
+                      (picture) => picture.kind === "video" || picture.kind === "image"
+                    ) && (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={t("removeVideo", { number: index + 1 })}
+                        title={t("removeVideo", { number: index + 1 })}
+                        onClick={() => {
+                          for (const picture of row.pictures)
+                            if (picture.kind === "video" || picture.kind === "image")
+                              detachPicture(row.id, picture.edgeId);
+                        }}
+                      >
+                        <IconUnlink />
+                      </Button>
+                    )}
                   {canEdit && (
                     <span
                       draggable

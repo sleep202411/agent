@@ -1,7 +1,7 @@
 import { StoryCanvasTidy } from "./story-canvas-tidy";
 import { canvasTidyRequest } from "../lib/story-canvas-tidy";
 import type { CanvasPositionEdit } from "../../../../canvas-editor/position-schema";
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { Modal, PanResponder, Pressable, View, type GestureResponderEvent } from "react-native";
 import Svg, { G, Path, Rect, Text as SvgText } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,12 +48,14 @@ export function StoryCanvasMap({
   inspect,
   move,
   generation,
+  storyboard,
 }: {
   loaded: CanvasLoaded;
   close(): void;
   inspect(nodeId: string): void;
   move?(edit: CanvasPositionEdit, tidySelection?: string[]): void;
   generation?: number;
+  storyboard?: ReactNode;
 }) {
   const t = useTranslations(),
     theme = useTheme(),
@@ -129,6 +131,7 @@ export function StoryCanvasMap({
           <ThemedText type="smallBold">{t("storyCanvas.map.title")}</ThemedText>
           <MapAction label={t("agent.close")} onPress={close} />
         </View>
+        {storyboard}
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
           <MapAction label={t("storyCanvas.map.fit")} onPress={() => setCamera(null)} />
           <MapAction

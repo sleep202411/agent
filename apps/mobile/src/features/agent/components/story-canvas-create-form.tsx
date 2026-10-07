@@ -41,12 +41,14 @@ export function StoryCanvasCreateForm({
   close,
   saved,
   libraryAsset,
+  initialType = "prompt",
 }: {
   scope: CanvasEditScope;
   userId: string;
   close(): void;
   saved(): void;
   libraryAsset?: { id: string; name?: string };
+  initialType?: "prompt" | "shot";
 }) {
   const t = useTranslations(),
     theme = useTheme(),
@@ -72,7 +74,7 @@ export function StoryCanvasCreateForm({
                 text: "",
                 assetId: libraryAsset.id,
               }
-            : { nodeId: uuid.v4(), type: "prompt" as const, name: "", text: "" }),
+            : { nodeId: uuid.v4(), type: initialType, name: "", text: "" }),
       };
     } catch (cause) {
       return { error: cause instanceof Error ? cause.message : String(cause) };

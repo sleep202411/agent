@@ -16,12 +16,15 @@ const Probe = z.object({
       }),
     )
     .max(32),
-  format: z.object({ duration: z.string(), format_name: z.string() }),
+  format: z.object({
+    duration: z.string().optional(),
+    format_name: z.string(),
+  }),
 });
 const Options = z.strictObject({
   directory: z.string().min(1),
   filenames: z
-    .array(z.string().regex(/^input-\d+\.(mp4|webm)$/))
+    .array(z.string().regex(/^input-\d+\.(mp4|webm|png|jpg|webp)$/))
     .min(1)
     .max(100),
   width: z
@@ -50,6 +53,7 @@ export async function renderLocalStoryboard(
   const directory = await realpath(input.directory);
   const sources: {
     path: string;
+    still: boolean;
     frames: number;
     audio: boolean;
     videoStart: number;
@@ -77,7 +81,19 @@ export async function renderLocalStoryboard(
     const probe = await inspect(path, deadline);
     const videos = probe.streams.filter((s) => s.codec_type === 'video');
     const video = videos[0];
-    const duration = Number(video?.duration ?? probe.format.duration);
+    const still = /\.(png|jpg|webp)$/.test(filename);
+    const expectedFormat = filename.endsWith('.png')
+      ? 'png_pipe'
+      : filename.endsWith('.jpg')
+        ? 'jpeg_pipe'
+        : 'webp_pipe';
+    if (still && probe.format.format_name !== expectedFormat)
+      throw new Error(
+        'Storyboard still image format does not match its saved media type.',
+      );
+    const duration = still
+      ? 5
+      : Number(video?.duration ?? probe.format.duration);
     if (
       videos.length !== 1 ||
       !video.width ||
@@ -96,8 +112,9 @@ export async function renderLocalStoryboard(
       throw new Error('Storyboard export exceeds the ten-minute render limit.');
     sources.push({
       path,
+      still,
       frames,
-      audio: probe.streams.some((s) => s.codec_type === 'audio'),
+      audio: !still && probe.streams.some((s) => s.codec_type === 'audio'),
       videoStart: Number(video.start_time ?? '0'),
     });
   }
@@ -123,7 +140,7 @@ export async function renderLocalStoryboard(
         '-protocol_whitelist',
         'file',
         '-format_whitelist',
-        'mov,matroska',
+        'mov,matroska,png_pipe,jpeg_pipe,webp_pipe',
         '-i',
         source.path,
       );
@@ -131,7 +148,7 @@ export async function renderLocalStoryboard(
     sources.forEach((source, i) => {
       const duration = source.frames / FPS;
       filters.push(
-        `[${i}:v:0]setpts=PTS-STARTPTS,scale=${input.width}:${input.height}:force_original_aspect_ratio=decrease,pad=${input.width}:${input.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${FPS},tpad=stop_mode=clone:stop_duration=0.034,trim=end_frame=${source.frames},setpts=PTS-STARTPTS[v${i}]`,
+        `[${i}:v:0]${source.still ? 'trim=end_frame=1,' : ''}setpts=PTS-STARTPTS,scale=${input.width}:${input.height}:force_original_aspect_ratio=decrease,pad=${input.width}:${input.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,tpad=stop_mode=clone:stop_duration=${source.still ? 5 : 0.034},fps=${FPS},trim=end_frame=${source.frames},setpts=PTS-STARTPTS[v${i}]`,
       );
       filters.push(
         source.audio
@@ -213,7 +230,7 @@ async function inspect(path: string, signal: AbortSignal) {
       '-protocol_whitelist',
       'file',
       '-format_whitelist',
-      'mov,matroska',
+      'mov,matroska,png_pipe,jpeg_pipe,webp_pipe',
       '-show_entries',
       'stream=codec_type,width,height,duration,start_time:format=duration,format_name',
       '-of',

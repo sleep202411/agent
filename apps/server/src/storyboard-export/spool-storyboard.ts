@@ -31,9 +31,15 @@ export async function spoolStoryboard(
         ) ||
         !source.bucket ||
         !source.objectKey ||
-        !['video/mp4', 'video/webm'].includes(source.contentType)
+        ![
+          'video/mp4',
+          'video/webm',
+          'image/png',
+          'image/jpeg',
+          'image/webp',
+        ].includes(source.contentType)
       )
-        throw new Error('Storyboard source is not a managed video.');
+        throw new Error('Storyboard source is not a managed media.');
       const expected =
         source.sizeBytes === null ? null : Number(source.sizeBytes);
       if (
@@ -88,7 +94,14 @@ export async function spoolStoryboard(
           throw new Error(
             'Storyboard source size changed or exceeds the export limit.',
           );
-        const filename = `input-${index}.${source.contentType === 'video/mp4' ? 'mp4' : 'webm'}`;
+        const extension = {
+          'video/mp4': 'mp4',
+          'video/webm': 'webm',
+          'image/png': 'png',
+          'image/jpeg': 'jpg',
+          'image/webp': 'webp',
+        }[source.contentType];
+        const filename = `input-${index}.${extension}`;
         const file = await open(join(directory, filename), 'wx', 0o600);
         let bytes = 0;
         const reader = response.body.getReader();

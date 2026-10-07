@@ -107,6 +107,45 @@ import { renderLocalStoryboard } from './local-video-renderer';
       }
       await expect(access(result.path)).rejects.toThrow();
     });
+    it.each(['png', 'jpg', 'webp'])(
+      'renders a %s still for five seconds between video clips',
+      async (extension) => {
+        const filename = `input-8.${extension}`;
+        if (extension === 'webp') {
+          // Static lime fixture; testing WebP decoding does not require a WebP encoder.
+          await writeFile(
+            join(directory, filename),
+            Buffer.from(
+              'UklGRmgAAABXRUJQVlA4IFwAAADwBgCdASqgAFoAPm02mUmkIyKhIIgAgA2JaW7hdJlwH4AfgAABaX57Yi8QVHPbEXiCo57Yi8QVHPbEXiCo57WgAP79h2///a0Bwar/Ts//+++GW92/8xQAAAAAAA==',
+              'base64',
+            ),
+          );
+        } else
+          execFileSync('ffmpeg', [
+            '-v',
+            'error',
+            '-f',
+            'lavfi',
+            '-i',
+            'color=c=lime:s=160x90',
+            '-frames:v',
+            '1',
+            '-threads',
+            '1',
+            join(directory, filename),
+          ]);
+        const result = await render(['input-0.mp4', filename, 'input-1.mp4']);
+        try {
+          expect(result.durationMs).toBe(6033);
+          expect(pixel(result.path, 0.2)[0]).toBeGreaterThan(200);
+          expect(pixel(result.path, 2)[1]).toBeGreaterThan(200);
+          expect(pixel(result.path, 5.3)[1]).toBeGreaterThan(200);
+          expect(pixel(result.path, 5.7)[2]).toBeGreaterThan(200);
+        } finally {
+          await result.dispose();
+        }
+      },
+    );
     it('honors a different shot order', async () => {
       const result = await render(['input-1.mp4', 'input-0.mp4']);
       try {
