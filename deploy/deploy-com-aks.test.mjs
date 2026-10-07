@@ -74,6 +74,9 @@ if (args[1] === 'build') {
     if (r.status !== 0) process.exit(42);
   }
   if (scenario === 'request-failed') process.exit(43);
+  // Azure CLI's core discards the result for supports_no_wait commands.
+  if (args.includes('--no-wait')) process.exit(0);
+  if (!args.includes('--no-logs')) process.exit(46);
   console.log(scenario === 'bad-id' ? 'unexpected output' : 'own-run-123');
 } else if (args[1] === 'task' && args[2] === 'show-run') {
   if (args[args.indexOf('--run-id')+1] !== 'own-run-123') process.exit(44);
@@ -113,7 +116,9 @@ if (args[1] === 'build') {
     assert.notEqual(resolve(call.cwd), resolve(repo));
     assert.equal(existsSync(call.cwd), false, "snapshot cleaned up");
     assert.equal(call.msys, "1");
-    assert.ok(call.args.includes("--no-wait"));
+    assert.ok(call.args.includes("--no-logs"));
+    assert.ok(!call.args.includes("--no-wait"));
+    assert.equal(call.args[call.args.indexOf("--query") + 1], "runId");
     assert.ok(call.args.includes(`fizzdragon-server:${sha}`));
   }
   return { result, calls, git, sha, values, original, repo };

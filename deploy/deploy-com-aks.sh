@@ -191,13 +191,15 @@ build_one() {
   if is_windows_acr_cli; then
     acr_env=(env MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*')
   fi
+  # Azure CLI suppresses all result output with --no-wait, including --query.
+  # --no-logs waits for this build and returns its Run object without streaming logs.
   local run_id
   run_id="$(cd "$BUILD_ROOT/context" && \
     ${acr_env[@]+"${acr_env[@]}"} az acr build --registry "$ACR" \
       --image "${image}:${SHA}" \
       --file "$dockerfile" \
       --platform linux/amd64 \
-      --no-wait --query runId -o tsv \
+      --no-logs --query runId -o tsv \
       ${args[@]+"${args[@]}"} .)"
   run_id="${run_id//$'\r'/}"
   if [[ ! "$run_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
