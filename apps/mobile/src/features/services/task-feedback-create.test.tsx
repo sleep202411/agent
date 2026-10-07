@@ -44,12 +44,14 @@ vi.mock("react-native", () => ({
     children,
     onPress,
     disabled,
+    accessibilityLabel,
   }: {
     children: ReactNode;
     onPress: () => void;
     disabled: boolean;
+    accessibilityLabel?: string;
   }) => (
-    <button onClick={onPress} disabled={disabled}>
+    <button onClick={onPress} disabled={disabled} aria-label={accessibilityLabel}>
       {children}
     </button>
   ),
@@ -94,7 +96,13 @@ const mount = () =>
   act(async () => root.render(<TaskFeedbackCreate task={task} userId="creator" generation={1} />));
 const click = (label: string) =>
   act(async () => {
-    [...host.querySelectorAll("button")].find((b) => b.textContent === label)!.click();
+    [...host.querySelectorAll("button")]
+      .find(
+        (b) =>
+          b.textContent === label ||
+          b.getAttribute("aria-label") === `feedbackHistory.managementAbility ${label}`
+      )!
+      .click();
   });
 beforeEach(() => {
   vi.clearAllMocks();

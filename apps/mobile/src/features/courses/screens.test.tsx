@@ -5,6 +5,7 @@ import { CourseScreen, CoursesScreen } from "./screens";
 import { api } from "@/lib/api-client";
 import { appTabItems } from "@/components/app-tab-items";
 import { lessonProgressKey } from "./lesson-progress";
+vi.mock("./learning-ui", () => ({ CourseLearning: () => <div>Course enrollment</div> }));
 vi.mock("./course-certificate", () => ({ CourseCertificate: () => <div>Mapped certificate</div> }));
 const h = vi.hoisted(() => ({
   locale: "en-US",

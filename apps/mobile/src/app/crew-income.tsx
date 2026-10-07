@@ -1,3 +1,4 @@
+import { TeachingIncome } from "@/features/courses/teaching";
 import { IncomeFilterFields } from "@/features/earnings/income-filters";
 import { CreatorWithdrawals } from "@/features/earnings/creator-withdrawals";
 import { useState } from "react";
@@ -81,7 +82,7 @@ function Income({ userId, owner }: { userId: string; owner: string }) {
           <Pressable accessibilityRole="button" onPress={() => router.push("/referrals")}>
             <ThemedText type="small">{t("creatorEarnings.referralIncome")}</ThemedText>
           </Pressable>
-          <ThemedText type="small">{t("creatorEarnings.incomeSourcesHint")}</ThemedText>
+          <TeachingIncome />
           <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
             {(["earnings", "payouts"] as const).map((value) => (
               <Pressable

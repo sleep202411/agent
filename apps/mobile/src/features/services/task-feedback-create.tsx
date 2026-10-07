@@ -134,16 +134,26 @@ function Form({
                 key={value}
                 accessibilityRole="radio"
                 accessibilityLabel={`${t(`feedbackHistory.${key}`)} ${value}`}
-                accessibilityState={{ selected: scores[key] === value, disabled: locked }}
+                accessibilityState={{ checked: scores[key] === value, disabled: locked }}
                 disabled={locked}
                 onPress={() => setScores((v) => ({ ...v, [key]: value }))}
                 style={{
-                  padding: 10,
+                  minHeight: 44,
+                  minWidth: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
                   borderRadius: 6,
-                  backgroundColor: scores[key] === value ? theme.brand : theme.background,
+                  backgroundColor: theme.background,
                 }}
               >
-                <ThemedText>{value}</ThemedText>
+                <ThemedText
+                  style={{
+                    color: value <= (scores[key] ?? 0) ? "#FFD84D" : theme.textSecondary,
+                    fontSize: 24,
+                  }}
+                >
+                  {value <= (scores[key] ?? 0) ? "★" : "☆"}
+                </ThemedText>
               </Pressable>
             ))}
           </View>

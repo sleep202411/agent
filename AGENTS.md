@@ -215,3 +215,12 @@ file under ~200 lines — it should be readable in one scroll.
   Hu Xuan (`sleepy202411`) owns Mobile development and device/live acceptance.
   Further Mobile implementation requires a new assignment; deployment
   assistance remains allowed.
+
+## Academy parity handoff — 2026-10-07
+
+- A renewed user exception covers native enrollment, homework uploads, teacher
+  reviews, teaching income and withdrawals using the same regional APIs as Web.
+- Release requires the platform Academy migration and the Java playback gate;
+  local checks do not replace production or physical-device acceptance.
+- Daily Discovery remains deferred. Hu Xuan (`sleepy202411`) retains Mobile
+  ownership after this parity pass; deployment assistance remains allowed.
