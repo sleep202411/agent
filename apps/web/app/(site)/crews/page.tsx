@@ -226,7 +226,6 @@ export default function CrewsPage() {
                   type="button"
                   size="lg"
                   className="h-11 gap-2 px-5 text-sm"
-                  aria-describedby="production-action-help"
                   onClick={() => {
                     setEntryMode("position");
                     setTaskEntryOpen(true);
@@ -240,7 +239,6 @@ export default function CrewsPage() {
                 type="button"
                 size="lg"
                 className="h-11 gap-2 px-5 text-sm"
-                aria-describedby={view === "positions" ? "production-action-help" : undefined}
                 onClick={() => {
                   setEntryMode("task");
                   setTaskEntryOpen(true);
@@ -266,11 +264,6 @@ export default function CrewsPage() {
               </Button>
             </div>
           </CrewSectionNavigation>
-          {view === "positions" && (
-            <p id="production-action-help" className="mb-4 text-sm text-muted-foreground">
-              {taskEntryT("actionHelp")}
-            </p>
-          )}
 
           {view === "mine" ? (
             <section className="lg:min-h-0 lg:flex-1" aria-label={tCrew("myCrewsTitle")}>
@@ -375,7 +368,10 @@ export default function CrewsPage() {
               )}
             </section>
           ) : (
-            <PositionsTab />
+            <PositionsTab
+              key={searchParams.get("saved") ?? "all"}
+              initiallySaved={searchParams.get("saved") === "true"}
+            />
           )}
         </div>
       </div>

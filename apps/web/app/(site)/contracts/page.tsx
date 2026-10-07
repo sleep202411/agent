@@ -179,7 +179,6 @@ function AgreementsSession({ userId }: { userId: string }) {
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   return (
     <>
-      <p className="text-sm text-muted-foreground">{t("description")}</p>
       <nav className="flex flex-wrap gap-2" aria-label={t("title")}>
         {(["all", "active", "signed", "attention"] as const).map((tab) => (
           <Button

@@ -19,6 +19,7 @@ const options = () => ({
   rows: [row("a"), row("b")],
   references: { a: "BANK-A", b: "BANK-B" },
   adminId: "finance",
+  ensureProof: vi.fn().mockResolvedValue("verified-proof"),
   signal: new AbortController().signal,
   onResult: vi.fn<(id: string, result: BatchResult) => void>(),
 });
@@ -50,6 +51,7 @@ it("uses each authoritative version, continues after a claim conflict, and repor
   expect(api.mock.calls[1][2]).toEqual({ action: "process", expectedVersion: 1 });
   expect(api.mock.calls[3][2]).toEqual({
     action: "pay",
+    paymentProofId: "verified-proof",
     expectedVersion: 4,
     paymentReference: "BANK-B",
   });
@@ -102,7 +104,25 @@ it("claims a pending request before recording the completed transfer", async () 
   await recordWithdrawalBatch({ ...options(), rows: [row("a")], api });
   expect(api.mock.calls[2][2]).toEqual({
     action: "pay",
+    paymentProofId: "verified-proof",
     expectedVersion: 2,
     paymentReference: "BANK-A",
+  });
+});
+
+it("never records payment when proof upload fails", async () => {
+  const input = {
+    ...options(),
+    rows: [row("a")],
+    ensureProof: vi.fn().mockRejectedValue(new Error("Proof verification failed")),
+  };
+  const api = vi
+    .fn()
+    .mockResolvedValueOnce({ ...current("a"), status: "processing", processingAdminId: "finance" });
+  await recordWithdrawalBatch({ ...input, api });
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(input.onResult).toHaveBeenCalledWith("a", {
+    status: "failed",
+    message: "Proof verification failed",
   });
 });

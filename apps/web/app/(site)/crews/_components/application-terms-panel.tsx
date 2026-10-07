@@ -144,8 +144,15 @@ function TermsSession({
       {(!acceptOffer || latest) && (
         <h3 className="text-sm font-semibold text-foreground">{t("title")}</h3>
       )}
-      {taskTitle && latest && !query.isError && (
-        <h4 className="text-base font-semibold">{taskTitle}</h4>
+      {taskTitle && !query.isError && (
+        <div className="space-y-1">
+          <h4 className="text-base font-semibold">{taskTitle}</h4>
+          {!latest && dueAt && (
+            <p className="text-xs text-muted-foreground">
+              {t("taskDeadline")}: {new Date(dueAt).toLocaleDateString(locale)}
+            </p>
+          )}
+        </div>
       )}
       {query.isPending && <p>{t("loading")}</p>}
       {query.isError && <p role="alert">{query.error.message}</p>}

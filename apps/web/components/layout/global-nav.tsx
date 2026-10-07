@@ -26,6 +26,8 @@ import { AppDownloadMenu, APP_DOWNLOADS } from "./app-download-menu";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconBook2,
+  IconMail,
+  IconHeart,
   IconScale,
   IconFileText,
   IconCoins,
@@ -299,6 +301,22 @@ export function GlobalNav() {
                 <BellButton />
               </span>
             </span>
+            <Link
+              href={localizePath("/messages", locale)}
+              aria-label={t("messagesShortcut")}
+              title={t("messagesShortcut")}
+              className="flex size-11 items-center justify-center rounded-full border border-white/15 text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <IconMail aria-hidden="true" className="size-5" />
+            </Link>
+            <Link
+              href={localizePath("/crews?view=positions&saved=true", locale)}
+              aria-label={t("savedJobsShortcut")}
+              title={t("savedJobsShortcut")}
+              className="flex size-11 items-center justify-center rounded-full border border-white/15 text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <IconHeart aria-hidden="true" className="size-5" />
+            </Link>
             <SecretAccountMenu
               user={user}
               locale={locale}
@@ -450,6 +468,11 @@ export function GlobalNav() {
                         [
                           { href: "/crews/income", label: "myIncome", icon: IconCoins },
                           { href: "/contracts", label: "myContracts", icon: IconFileText },
+                          {
+                            href: "/crews?view=positions&saved=true",
+                            label: "savedJobsShortcut",
+                            icon: IconHeart,
+                          },
                           {
                             href: "/resolution-center",
                             label: "resolutionCenter",
@@ -624,6 +647,11 @@ function SecretAccountMenu({
               [
                 { href: "/crews/income", label: "myIncome", icon: IconCoins },
                 { href: "/contracts", label: "myContracts", icon: IconFileText },
+                {
+                  href: "/crews?view=positions&saved=true",
+                  label: "savedJobsShortcut",
+                  icon: IconHeart,
+                },
               ] as const
             ).map(({ href, label, icon: Icon }) => (
               <Link

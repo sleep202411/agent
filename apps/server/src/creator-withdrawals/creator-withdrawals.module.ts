@@ -1,3 +1,4 @@
+import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { WithdrawalProofsService } from './withdrawal-proofs.service';
 import {
   CreatorWithdrawalProofsController,
@@ -24,6 +25,7 @@ import { validateRecipientEncryptionKey } from './recipient-encryption';
 @Module({
   imports: [
     AdminAuthModule,
+    WorkspacesModule,
     NotificationModule,
     StorageModule,
     LegacyCreatorsModule,

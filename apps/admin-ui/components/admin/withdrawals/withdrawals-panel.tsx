@@ -205,6 +205,8 @@ export function WithdrawalsPanel({
   async function decide(action: "process" | "pay" | "reject" | "takeover") {
     if (!detail) return;
     await run(async (signal) => {
+      if (action === "pay" && !proofFile)
+        throw new Error("Upload payment proof before recording the payment.");
       let proofId = uploadedProof?.file === proofFile ? uploadedProof.id : undefined;
       if (action === "pay" && proofFile && !proofId) {
         const form = new FormData();
@@ -469,7 +471,7 @@ export function WithdrawalsPanel({
                   </Button>
                 )}
                 {detail.resolutionReason && <p>{detail.resolutionReason}</p>}
-                <h3 className="text-sm font-semibold">Task earnings in this withdrawal</h3>
+                <h3 className="text-sm font-semibold">Earnings in this withdrawal</h3>
                 <ul className="space-y-2 text-sm">
                   {detail.earnings.map((e, i) => (
                     <li key={`${e.id}:${i}`} className="flex justify-between gap-4">
@@ -536,11 +538,12 @@ export function WithdrawalsPanel({
                   <div className="space-y-3">
                     <div className="space-y-1">
                       <label className="text-sm" htmlFor="withdrawal-proof">
-                        Payment proof (optional)
+                        Payment proof *
                       </label>
                       <Input
                         key={proofInputKey}
                         id="withdrawal-proof"
+                        required
                         type="file"
                         accept=".pdf,.jpg,.jpeg,.png"
                         disabled={busy}
@@ -558,7 +561,7 @@ export function WithdrawalsPanel({
                         }}
                       />
                       <p className="text-xs text-muted-foreground">
-                        PDF, JPG or PNG · Up to 10 MB · Finance access only
+                        PDF, JPG or PNG · Up to 10 MB · Visible to the recipient after payment
                       </p>
                       {proofFile && (
                         <Button
@@ -624,7 +627,11 @@ export function WithdrawalsPanel({
                         }
                         confirmLabel="Confirm paid"
                         cancelLabel="Cancel"
-                        trigger={<Button disabled={busy || !reference.trim()}>Mark as paid</Button>}
+                        trigger={
+                          <Button disabled={busy || !reference.trim() || !proofFile}>
+                            Mark as paid
+                          </Button>
+                        }
                         onConfirm={() => decide("pay")}
                       />
                     </div>

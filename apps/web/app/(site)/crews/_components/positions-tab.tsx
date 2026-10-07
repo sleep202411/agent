@@ -58,7 +58,7 @@ interface PublicPositionsResult {
 
 type SortMode = "newest" | "oldest";
 
-export function PositionsTab() {
+export function PositionsTab({ initiallySaved = false }: { initiallySaved?: boolean }) {
   const t = useTranslations("crew");
   const tw = useTranslations("workspace");
   const tc = useTranslations("common");
@@ -83,7 +83,7 @@ export function PositionsTab() {
     salaryPeriod?: string;
   }>({});
   const [salaryError, setSalaryError] = useState("");
-  const [savedOnly, setSavedOnly] = useState(false);
+  const [savedOnly, setSavedOnly] = useState(initiallySaved);
   const openingT = useTranslations("crewOpening");
   const [employment, setEmployment] = useState<Set<EmploymentType>>(new Set());
   const [skills, setSkills] = useState<Set<string>>(new Set());
@@ -170,7 +170,7 @@ export function PositionsTab() {
           {openingT("savedJobs")}
         </Button>
         <form
-          className="space-y-3"
+          className="space-y-3 rounded-xl bg-white/[0.035] p-4"
           onSubmit={(event) => {
             event.preventDefault();
             const min = salaryMin.trim() ? exactMinorUnits(salaryMin.trim()) : undefined;
@@ -231,28 +231,30 @@ export function PositionsTab() {
             </p>
           )}
         </form>
-        <label className="block space-y-2 text-sm font-semibold">
-          {filterT("category")}
-          <NativeSelect value={category} onChange={setCategory}>
-            <option value="">{filterT("all")}</option>
-            {PRESET_POSITIONS.map((item) => (
-              <option key={item.value} value={item.value}>
-                {positionLabel(item.value)}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
-        <label className="block space-y-2 text-sm font-semibold">
-          {filterT("genre")}
-          <NativeSelect value={genre} onChange={setGenre}>
-            <option value="">{filterT("all")}</option>
-            {CREW_GENRES.map((value) => (
-              <option key={value} value={value}>
-                {filterT(`genres.${value}`)}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
+        <div className="space-y-4 rounded-xl bg-white/[0.035] p-4">
+          <label className="block space-y-2 text-sm font-semibold">
+            {filterT("category")}
+            <NativeSelect value={category} onChange={setCategory}>
+              <option value="">{filterT("all")}</option>
+              {PRESET_POSITIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {positionLabel(item.value)}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+          <label className="block space-y-2 text-sm font-semibold">
+            {filterT("genre")}
+            <NativeSelect value={genre} onChange={setGenre}>
+              <option value="">{filterT("all")}</option>
+              {CREW_GENRES.map((value) => (
+                <option key={value} value={value}>
+                  {filterT(`genres.${value}`)}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+        </div>
         <Button
           variant="ghost"
           onClick={() => {
@@ -555,7 +557,7 @@ function FilterSection<T extends string>({
   maxSelected?: number;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
+    <div className="rounded-xl bg-white/[0.035] p-4">
       <h3 className="mb-3 text-sm font-semibold text-foreground">{label}</h3>
       <ul className="space-y-2">
         {options.map((o) => {

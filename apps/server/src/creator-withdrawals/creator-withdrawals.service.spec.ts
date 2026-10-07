@@ -1,5 +1,6 @@
 import type { Prisma, CreatorWithdrawal } from '@prisma/client';
 import { CreatorWithdrawalsService } from './creator-withdrawals.service';
+import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
 import { PrismaService } from '../infra/db/db.module';
 const recipient = {
   fullName: 'Creator',
@@ -18,6 +19,7 @@ const request = {
 function fixture() {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([]),
     creatorWithdrawal: {
       findUnique: jest
         .fn<
@@ -35,6 +37,10 @@ function fixture() {
             createdAt: new Date(),
           } as CreatorWithdrawal),
         ),
+    },
+    academyWithdrawalAllocation: { create: jest.fn() },
+    walletAccount: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'wallet' }),
     },
     crewEarningEntry: {
       findMany: jest
@@ -66,9 +72,14 @@ function fixture() {
     $transaction: (fn: (value: typeof tx) => unknown) =>
       Promise.resolve(fn(tx)),
   };
+  const wallet = { postEntryTx: jest.fn() };
   return {
     tx,
-    service: new CreatorWithdrawalsService(prisma as unknown as PrismaService),
+    wallet,
+    service: new CreatorWithdrawalsService(
+      prisma as unknown as PrismaService,
+      wallet as unknown as WalletLedgerService,
+    ),
   };
 }
 const old = process.env.CREATOR_PAYOUT_DETAILS_KEY;
@@ -130,4 +141,34 @@ it('replays the same request without allocating again, but rejects changed recip
       recipient: { ...recipient, accountNumber: 'other' },
     }),
   ).rejects.toThrow('different details');
+});
+
+it('allows a teacher without Crew earnings to withdraw only the requested share of approved income', async () => {
+  const f = fixture();
+  f.tx.crewEarningEntry.findMany.mockReset().mockResolvedValue([]);
+  f.tx.$queryRaw.mockResolvedValue([{ id: 'enrollment', available: '200' }]);
+  const result = await f.service.request('teacher', {
+    ...request,
+    expectedAvailableAmountMinor: '200',
+  });
+  expect(result.amountMinor).toBe('100');
+  expect(f.tx.crewPayout.create).not.toHaveBeenCalled();
+  expect(f.tx.academyWithdrawalAllocation.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: expect.objectContaining({
+        enrollmentId: 'enrollment',
+        amountMinor: 100n,
+        currency: 'USD',
+      }) as unknown,
+    }),
+  );
+  expect(f.wallet.postEntryTx).toHaveBeenCalledWith(
+    f.tx,
+    expect.objectContaining({
+      entryType: 'hold',
+      amount: 100n,
+      heldDelta: 100n,
+      availableDelta: -100n,
+    }),
+  );
 });

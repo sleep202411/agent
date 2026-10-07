@@ -53,6 +53,7 @@ beforeEach(() => {
         ])
       );
     if (url.includes("?")) return Promise.resolve(ok({ items: [row], total: 1, pageSize: 50 }));
+    if (url.endsWith("/proofs")) return Promise.resolve(ok({ id: "proof-id" }));
     if (url.endsWith("/recipient")) return Promise.resolve(ok({ recipient: bank }));
     if (url.endsWith("/decision"))
       return Promise.resolve(ok({ id, status: "processing", version: 2 }));
@@ -137,7 +138,10 @@ it("shows a failed payment response inside the open confirmation without reporti
     );
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
+  expect(button("Mark as paid").disabled).toBe(true);
+  await selectProof(host.querySelector<HTMLInputElement>("#withdrawal-proof")!);
   await click("Mark as paid");
+  fetcher.mockImplementationOnce(() => Promise.resolve(ok({ id: "proof-id" })));
   fetcher.mockImplementationOnce(() =>
     Promise.resolve(
       new Response(JSON.stringify({ message: "Withdrawal changed. Refresh before continuing." }), {
@@ -342,6 +346,9 @@ it("requires a reference and explicit confirmation before recording a selected b
   });
   expect(button("Confirm paid").disabled).toBe(true);
   await act(async () => dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  expect(button("Confirm paid").disabled).toBe(true);
+  await selectProof(dialog.querySelector<HTMLInputElement>(`[id="batch-proof-${id}"]`)!);
+  await act(async () => dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
   await click("Confirm paid");
   expect(dialog.textContent).toContain("1 of 1 payments recorded");
   expect(
@@ -350,9 +357,24 @@ it("requires a reference and explicit confirmation before recording a selected b
       .map(([, options]) => JSON.parse(options.body))
   ).toEqual([
     { action: "process", expectedVersion: 1 },
-    { action: "pay", expectedVersion: 2, paymentReference: "BANK-BATCH" },
+    {
+      action: "pay",
+      expectedVersion: 2,
+      paymentReference: "BANK-BATCH",
+      paymentProofId: "proof-id",
+    },
   ]);
   await click("Done");
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(button("Record batch payments").disabled).toBe(true);
 });
+
+async function selectProof(input: HTMLInputElement) {
+  await act(async () => {
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["%PDF-1.7\n%%EOF"], "proof.pdf", { type: "application/pdf" })],
+    });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}

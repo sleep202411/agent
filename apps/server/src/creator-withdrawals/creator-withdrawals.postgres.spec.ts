@@ -211,6 +211,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
         action: 'pay',
         expectedVersion: 2,
         paymentReference: 'fixture-task-settlement',
+        paymentProofId: await readyPaymentProof(db, request.id),
       });
       expect((await service.request(userId, requestInput)).id).toBe(request.id);
       expect((await service.history(userId)).items[0]).toMatchObject({
@@ -375,6 +376,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
             action: 'pay',
             expectedVersion: 2,
             paymentReference: 'paid-during-upload',
+            paymentProofId: await readyPaymentProof(db, pending.id),
           });
           return {
             exists: true,
@@ -673,12 +675,14 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
           action: 'pay',
           expectedVersion: 2,
           paymentReference: 'transfer-1',
+          paymentProofId: await readyPaymentProof(db, request.id),
         }),
       ).rejects.toMatchObject({ status: 409 });
       await finance.decide(owner, request.id, {
         action: 'pay',
         expectedVersion: 2,
         paymentReference: 'transfer-1',
+        paymentProofId: await readyPaymentProof(db, request.id),
       });
       expect(
         await db.crewPayout.count({
@@ -699,6 +703,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
           action: 'pay',
           expectedVersion: 2,
           paymentReference: 'transfer-1',
+          paymentProofId: await readyPaymentProof(db, request.id),
         }),
       ).rejects.toMatchObject({ status: 409 });
       expect(
@@ -761,6 +766,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
                   action,
                   expectedVersion,
                   paymentReference: 'fixture-transfer',
+                  paymentProofId: await readyPaymentProof(db, request.id),
                 }
               : action === 'reject'
                 ? { action, expectedVersion, reason: 'Check bank details' }
@@ -819,6 +825,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
           action: 'pay',
           expectedVersion: 2,
           paymentReference: 'fixture-transfer',
+          paymentProofId: await readyPaymentProof(db, request.id),
         }),
       ).rejects.toThrow('Fixture audit failure');
       expect((await service.history(userId)).items[0]).toMatchObject({
@@ -854,6 +861,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
           action: 'pay',
           expectedVersion: 1,
           paymentReference: 'transfer',
+          paymentProofId: await readyPaymentProof(db, request.id),
         }),
       ).rejects.toMatchObject({ status: 409 });
       await finance.decide(admin(), request.id, {
@@ -1092,12 +1100,14 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
             action: 'pay',
             expectedVersion: 3,
             paymentReference: 'duplicate',
+            paymentProofId: await readyPaymentProof(db, request.id),
           }),
         ).rejects.toMatchObject({ status: 409 });
         await finance.decide(controller, request.id, {
           action: 'pay',
           expectedVersion: 3,
           paymentReference: 'verified-transfer',
+          paymentProofId: await readyPaymentProof(db, request.id),
         });
         await expect(
           finance.decide({ ...controller, id: 'other' }, request.id, {
@@ -1220,3 +1230,10 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
     });
   },
 );
+
+async function readyPaymentProof(db: PrismaClient, withdrawalId: string) {
+  const id = randomUUID();
+  await db.$executeRaw`INSERT INTO creator_withdrawal_proofs(id,withdrawal_id,uploaded_by_admin_id,checksum_sha256,filename,content_type,size_bytes,provider,bucket,object_key,status,verified_at)
+ VALUES(${id}::uuid,${withdrawalId}::uuid,'fixture-finance',${id.replaceAll('-', '').repeat(2)},'proof.pdf','application/pdf',100,'s3_compatible','fixture-private',${id},'ready',now())`;
+  return id;
+}

@@ -14,7 +14,11 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("next/image", () => ({ default: () => null }));
 vi.mock("next/link", () => ({
-  default: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  default: ({ children, href, ...props }: React.ComponentProps<"a">) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
 }));
 vi.mock("@gsap/react", () => ({ useGSAP: () => {} }));
 vi.mock("@/src/hooks/use-user", () => ({
@@ -108,4 +112,23 @@ it("does not navigate when choosing the current language", () => {
   click("English");
   expect(state.replace).not.toHaveBeenCalled();
   expect(state.language).not.toHaveBeenCalled();
+});
+
+it("links the message and saved-job shortcuts to localized destinations", () => {
+  state.locale = "zh-HK";
+  state.pathname = "/zh-HK/crews";
+  window.history.replaceState(null, "", state.pathname);
+  act(() => root.render(<GlobalNav />));
+  expect(container.querySelector('a[aria-label="messagesShortcut"]')?.getAttribute("href")).toBe(
+    "/zh-HK/messages"
+  );
+  expect(container.querySelector('a[aria-label="savedJobsShortcut"]')?.getAttribute("href")).toBe(
+    "/zh-HK/crews?view=positions&saved=true"
+  );
+  click("menu");
+  expect(
+    Array.from(container.querySelectorAll("a")).filter(
+      (link) => link.getAttribute("href") === "/zh-HK/crews?view=positions&saved=true"
+    ).length
+  ).toBeGreaterThan(1);
 });

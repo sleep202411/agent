@@ -10,6 +10,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import type { PublicCourseDetailView } from "@/src/hooks/use-courses-public";
 import { resolveCourseCoverUrl } from "@/src/services/courses-public";
+import { CourseEnrollment } from "../_learning/course-enrollment";
 import { CourseCertificate } from "./CourseCertificate";
 
 interface PublicCourseDetailPanelProps {
@@ -47,6 +48,7 @@ export function PublicCourseDetailPanel({ detail, onVideoSelect }: PublicCourseD
         ) : null}
 
         <CourseCertificate key={detail.courseId} courseId={detail.courseId} />
+        <CourseEnrollment key={`learning:${detail.courseId}`} courseId={String(detail.courseId)} />
         {detail.instructors.length > 0 ? (
           <div className="mt-3 flex flex-col gap-1.5">
             <span className="text-[11px] font-medium text-[#6f7585]">{t("instructors")}</span>

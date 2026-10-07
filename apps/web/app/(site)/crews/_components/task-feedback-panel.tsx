@@ -1,12 +1,12 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { IconStarFilled } from "@tabler/icons-react";
 import { crewApi, CrewApiError } from "../_hooks/api";
 import type { CrewTaskDTO } from "../_hooks/types";
 
@@ -32,6 +32,7 @@ type Feedback = {
   createdAt: string;
   respondedAt: string | null;
   publicOnProfile?: boolean;
+  timelinessScore?: number | null;
 };
 type Request = { path: string; method: "post" | "put"; body: Record<string, unknown>; key: string };
 type Props = { task?: CrewTaskDTO };
@@ -217,10 +218,23 @@ function FeedbackSession({
                 {t(item.publicOnProfile ? "publicReview" : "privateReview")}
               </p>
               {ratingValues(item.ratings).map(([key, value]) => (
-                <p key={key}>
-                  {t(key)}: {String(value)} / 5
-                </p>
+                <div
+                  key={key}
+                  className="flex flex-wrap items-center justify-between gap-3 text-sm"
+                >
+                  <span>{t(key)}</span>
+                  <RatingStars value={value} label={t("starRating", { count: value })} />
+                </div>
               ))}
+              {item.timelinessScore != null && (
+                <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                  <span>{t("systemTimeliness")}</span>
+                  <RatingStars
+                    value={item.timelinessScore}
+                    label={t("starRating", { count: item.timelinessScore })}
+                  />
+                </div>
+              )}
               {item.comment && <p className="whitespace-pre-wrap">{item.comment}</p>}
               {item.response !== null ? (
                 <div>
@@ -275,6 +289,7 @@ function FeedbackForm({
   onSubmit: (body: Record<string, unknown>) => void;
 }) {
   const t = useTranslations("crewFeedback");
+  const ratingId = useId();
   const [scores, setScores] = useState<Record<string, string>>({});
   const [comment, setComment] = useState("");
   const dimensions =
@@ -295,22 +310,31 @@ function FeedbackForm({
       <p className="text-sm text-muted-foreground">{t("immutable")}</p>
       <p className="text-sm text-muted-foreground">{t("publicNotice")}</p>
       {dimensions.map((key) => (
-        <label key={key} className="block">
-          {t(key)}
-          <NativeSelect
-            value={scores[key] ?? ""}
-            aria-label={t(key)}
-            disabled={disabled}
-            onChange={(value) => setScores((previous) => ({ ...previous, [key]: value }))}
-          >
-            <NativeSelectOption value="">{t("choose")}</NativeSelectOption>
+        <fieldset key={key} className="rounded-xl bg-white/[0.035] p-4">
+          <legend className="px-1 text-sm font-medium">{t(key)}</legend>
+          <div className="flex gap-1">
             {[1, 2, 3, 4, 5].map((score) => (
-              <NativeSelectOption key={score} value={String(score)}>
-                {score}
-              </NativeSelectOption>
+              <label
+                key={score}
+                className="relative flex size-11 cursor-pointer items-center justify-center rounded-md hover:bg-white/5"
+              >
+                <input
+                  type="radio"
+                  name={`${ratingId}-${key}`}
+                  value={score}
+                  checked={scores[key] === String(score)}
+                  onChange={() => setScores((previous) => ({ ...previous, [key]: String(score) }))}
+                  aria-label={t("starRating", { count: score })}
+                  className="peer sr-only"
+                />
+                <IconStarFilled
+                  aria-hidden="true"
+                  className={`size-7 rounded-sm peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-ring ${score <= Number(scores[key] ?? 0) ? "text-[#FFD84D]" : "text-muted-foreground/30"}`}
+                />
+              </label>
             ))}
-          </NativeSelect>
-        </label>
+          </div>
+        </fieldset>
       ))}
       <label className="block">
         {t("comment")}
@@ -373,4 +397,18 @@ function ratingValues(ratings: Ratings): [string, number][] {
         ["communication", ratings.communication],
       ]
     : [["managementAbility", ratings.managementAbility]];
+}
+
+function RatingStars({ value, label }: { value: number; label: string }) {
+  return (
+    <span role="img" aria-label={label} className="inline-flex gap-1">
+      {[1, 2, 3, 4, 5].map((star) => (
+        <IconStarFilled
+          key={star}
+          aria-hidden="true"
+          className={`size-5 ${star <= value ? "text-[#FFD84D]" : "text-muted-foreground/30"}`}
+        />
+      ))}
+    </span>
+  );
 }

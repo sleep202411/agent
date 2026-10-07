@@ -24,6 +24,8 @@ export function WithdrawalBatchDialog({
   money: (amount: string, currency: string) => string;
   onClose: () => void;
 }) {
+  const [files, setFiles] = useState<Record<string, File>>({});
+  const proofs = useRef<Record<string, { file: File; id: string }>>({});
   const [references, setReferences] = useState<Record<string, string>>({});
   const [results, setResults] = useState<Record<string, BatchResult>>({});
   const [confirmed, setConfirmed] = useState(false);
@@ -34,7 +36,9 @@ export function WithdrawalBatchDialog({
   const remaining = rows.filter((row) => results[row.id]?.status !== "paid");
   const done = rows.length - remaining.length;
   const ready =
-    remaining.length > 0 && remaining.every((row) => references[row.id]?.trim()) && confirmed;
+    remaining.length > 0 &&
+    remaining.every((row) => references[row.id]?.trim() && files[row.id]) &&
+    confirmed;
   async function record() {
     if (operation.current || !ready) return;
     const controller = new AbortController();
@@ -45,6 +49,24 @@ export function WithdrawalBatchDialog({
       await recordWithdrawalBatch({
         rows: remaining,
         references,
+        ensureProof: async (id, signal) => {
+          const file = files[id];
+          if (!file) throw new Error("Upload payment proof for this withdrawal.");
+          if (proofs.current[id]?.file === file) return proofs.current[id].id;
+          const form = new FormData();
+          form.set("file", file);
+          const result = await parseAdminEnvelope<{ id: string }>(
+            await fetch(adminUiApiPath(`/api/admin/creator-withdrawals/${id}/proofs`), {
+              method: "POST",
+              body: form,
+              signal,
+              cache: "no-store",
+            })
+          );
+          signal.throwIfAborted();
+          proofs.current[id] = { file, id: result.id };
+          return result.id;
+        },
         adminId,
         signal: controller.signal,
         api: async <T,>(path: string, signal: AbortSignal, body?: unknown) =>
@@ -91,7 +113,8 @@ export function WithdrawalBatchDialog({
           <DialogTitle>Record batch payments</DialogTitle>
           <DialogDescription>
             Confirm completed bank transfers for each request. This records payments; it does not
-            send money. Use individual request details to attach payment proof.
+            send money. Attach payment proof for each request; the recipient can view it after
+            payment.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -120,6 +143,32 @@ export function WithdrawalBatchDialog({
                 onChange={(event) => {
                   setReferences((previous) => ({ ...previous, [row.id]: event.target.value }));
                   setConfirmed(false);
+                }}
+              />
+              <label className="block text-sm" htmlFor={`batch-proof-${row.id}`}>
+                Payment proof *
+              </label>
+              <Input
+                id={`batch-proof-${row.id}`}
+                type="file"
+                required
+                accept=".pdf,.jpg,.jpeg,.png"
+                disabled={busy || results[row.id]?.status === "paid"}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  delete proofs.current[row.id];
+                  setConfirmed(false);
+                  const valid = file && file.size > 0 && file.size <= 10 * 1024 * 1024;
+                  setFiles((previous) => {
+                    const next = { ...previous };
+                    if (valid) next[row.id] = file;
+                    else delete next[row.id];
+                    return next;
+                  });
+                  setError(
+                    file && !valid ? "Upload a PDF, JPG or PNG payment proof up to 10 MB." : ""
+                  );
+                  if (file && !valid) event.target.value = "";
                 }}
               />
               {results[row.id]?.status === "paid" && <p className="text-sm">Payment recorded</p>}

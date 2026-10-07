@@ -90,13 +90,10 @@ async function render(taskScope = true) {
   await flush();
 }
 async function rate(...values: string[]) {
-  const controls = host.querySelectorAll<HTMLButtonElement>('[role="combobox"]');
+  const controls = host.querySelectorAll<HTMLFieldSetElement>("fieldset fieldset");
   for (const [index, value] of values.entries()) {
-    await act(async () => controls[index].click());
-    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
-      (item) => item.textContent === value
-    );
-    expect(option).toBeDefined();
+    const option = controls[index].querySelector<HTMLInputElement>(`input[value="${value}"]`);
+    expect(option).not.toBeNull();
     await act(async () => option!.click());
   }
 }
@@ -123,7 +120,7 @@ async function field(selector: string, value: string) {
 
 it("requires explicit scores and includes the actual reviewer’s optional comment", async () => {
   await render();
-  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(1);
+  expect(host.querySelectorAll("fieldset fieldset")).toHaveLength(1);
   expect(button("submit")?.disabled).toBe(true);
   await field("textarea", "Clear management");
   await rate("4");
@@ -140,7 +137,7 @@ it("requires explicit scores and includes the actual reviewer’s optional comme
 it("lets the actual reviewer rate all three creator dimensions", async () => {
   h.user = "reviewer";
   await render();
-  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(3);
+  expect(host.querySelectorAll("fieldset fieldset")).toHaveLength(3);
   await rate("3", "4", "5");
   await field("textarea", "Good delivery");
   await click("submit");
@@ -306,4 +303,31 @@ it.each(["creator", "reviewer"])("allows %s to submit ratings without a comment"
       subjectUserId: user === "creator" ? "reviewer" : "creator",
     }),
   });
+});
+
+it("keeps star groups independent and submits only explicitly chosen scores", async () => {
+  h.user = "reviewer";
+  await render();
+  await rate("2");
+  expect(host.querySelectorAll('input[type="radio"]:checked')).toHaveLength(1);
+  expect(button("submit")?.disabled).toBe(true);
+  await rate("5", "3", "4");
+  await click("submit");
+  expect(h.post).toHaveBeenCalledWith("/crew-tasks/task/feedback", {
+    body: expect.objectContaining({
+      ratings: {
+        direction: "creator",
+        productionAbility: 5,
+        understanding: 3,
+        communication: 4,
+      },
+    }),
+  });
+});
+
+it("shows system timeliness only when supplied by the server", async () => {
+  h.get.mockResolvedValue({ items: [{ ...feedback, timelinessScore: 3 }], nextCursor: null });
+  await render();
+  expect(host.textContent).toContain("systemTimeliness");
+  expect(host.querySelectorAll('article [role="img"]')).toHaveLength(4);
 });

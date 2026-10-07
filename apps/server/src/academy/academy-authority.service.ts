@@ -22,7 +22,10 @@ const Certificate = z.object({
 /** Always reads this deployment's Java authority; never infers relationships from names. */
 @Injectable()
 export class AcademyAuthorityService {
-  private async read(path: string): Promise<unknown> {
+  private async read(
+    path: string,
+    body?: Record<string, unknown>,
+  ): Promise<unknown> {
     const token = process.env.JAVA_ADMIN_API_TOKEN?.trim();
     if (!token)
       throw new ServiceUnavailableException(
@@ -30,7 +33,12 @@ export class AcademyAuthorityService {
       );
     try {
       const response = await fetch(`${JAVA_CONTENT_URL}/api/admin/${path}`, {
-        headers: { 'X-Admin-Api-Token': token },
+        method: body ? 'POST' : 'GET',
+        headers: {
+          'X-Admin-Api-Token': token,
+          'Content-Type': 'application/json',
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
         redirect: 'error',
         signal: AbortSignal.timeout(JAVA_REQUEST_TIMEOUT_MS),
       });
@@ -69,6 +77,14 @@ export class AcademyAuthorityService {
         published: z
           .union([z.boolean(), z.literal(0), z.literal(1)])
           .transform((value) => value === true || value === 1),
+        instructors: z
+          .array(
+            z.object({
+              userId: z.union([z.string(), z.number()]),
+              nickName: z.string().nullish(),
+            }),
+          )
+          .optional(),
         localized: z
           .record(z.string(), z.object({ title: z.string().nullish() }))
           .nullish(),
@@ -79,6 +95,37 @@ export class AcademyAuthorityService {
     if (!result.success || String(result.data.id) !== id)
       throw new NotFoundException('Course not found in this region.');
     return result.data;
+  }
+
+  async grantSkill(userId: string, certificateId: number) {
+    if (!/^\d+$/.test(userId) || !Number.isSafeInteger(Number(userId)))
+      throw new ServiceUnavailableException(
+        'A valid regional Academy user is required.',
+      );
+    if (!(await this.certificates()).some((c) => c.id === certificateId))
+      throw new NotFoundException(
+        'Academy skill certificate is no longer available.',
+      );
+    // Read first: retries after a lost response must not remove/recreate an
+    // existing Java relation or overwrite a separately awarded certificate.
+    const existing = z
+      .array(
+        z.object({ userId: z.coerce.string(), levelId: z.coerce.number() }),
+      )
+      .parse(
+        await this.read(
+          `user-levels?userId=${encodeURIComponent(userId)}&levelId=${certificateId}&page=1&pageSize=10`,
+        ),
+      );
+    if (
+      existing.some((r) => r.userId === userId && r.levelId === certificateId)
+    )
+      return;
+    await this.read('user-levels', {
+      userId: Number(userId),
+      levelId: certificateId,
+      remark: 'Academy homework approved',
+    });
   }
 
   async certificates() {

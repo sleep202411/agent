@@ -1,3 +1,5 @@
+import { resolveAcademyIncome, academyTotalsSql } from './academy-withdrawals';
+import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
 import { eligibleCashEarningsSql } from './eligible-cash-earnings';
 import type { Prisma } from '@prisma/client';
 import {
@@ -67,7 +69,7 @@ export const WithdrawalDecision = z.discriminatedUnion('action', [
     action: z.literal('pay'),
     expectedVersion: z.number().int().positive(),
     paymentReference: z.string().trim().min(1).max(180),
-    paymentProofId: z.uuid().optional(),
+    paymentProofId: z.uuid(),
     internalPaymentNote: z.string().trim().max(2000).optional(),
   }),
   z.strictObject({
@@ -82,6 +84,9 @@ export class WithdrawalAdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationService,
+    private readonly wallet: WalletLedgerService = new WalletLedgerService(
+      prisma,
+    ),
   ) {}
 
   assertAccess(admin: AdminActor) {
@@ -225,7 +230,7 @@ export class WithdrawalAdminService {
       JOIN crew_earning_entries e ON e.id=a.earning_id
       WHERE ${eligibleCashEarningsSql} AND e.status='posted' AND p.status IN ('pending','paid')
       GROUP BY e.currency
-    ), withdrawals AS (
+    ), academy AS (${academyTotalsSql} HAVING COUNT(*)>0), withdrawals AS (
       SELECT currency,
         SUM(amount_minor) FILTER (WHERE status='paid') AS paid,
         SUM(amount_minor) FILTER (WHERE status IN ('pending','processing')) AS pending,
@@ -235,9 +240,10 @@ export class WithdrawalAdminService {
     ) SELECT c.currency, COALESCE(w.paid,0)::text AS "paidAmountMinor",
       COALESCE(w.pending,0)::text AS "pendingAmountMinor",
       COALESCE(w.month_paid,0)::text AS "paidThisMonthAmountMinor",
-      (COALESCE(e.confirmed,0)-COALESCE(a.reserved_or_paid,0))::text AS "availableAmountMinor"
+      (COALESCE(e.confirmed,0)-COALESCE(a.reserved_or_paid,0)+COALESCE(ac.confirmed,0)-COALESCE(ac.reserved,0)-COALESCE(ac.paid,0))::text AS "availableAmountMinor"
       FROM currencies c LEFT JOIN earnings e ON e.currency=c.currency
       LEFT JOIN allocated a ON a.currency=c.currency
+      LEFT JOIN academy ac ON ac.currency=c.currency
       LEFT JOIN withdrawals w ON w.currency=c.currency ORDER BY c.currency`;
   }
 
@@ -248,6 +254,7 @@ export class WithdrawalAdminService {
       where: { id },
       include: {
         events: { orderBy: { version: 'asc' } },
+        academyAllocations: { include: { enrollment: true } },
         payouts: {
           orderBy: [{ crewId: 'asc' }, { id: 'asc' }],
           include: {
@@ -289,18 +296,35 @@ export class WithdrawalAdminService {
       resolutionReason: row.resolutionReason,
       createdAt: row.createdAt.toISOString(),
       paidAt: row.paidAt?.toISOString() ?? null,
-      earnings: row.payouts.flatMap((payout) =>
-        payout.allocations.map((allocation) => ({
-          id: allocation.earning.id,
-          taskId: allocation.earning.taskId,
-          title: allocation.earning.title,
-          crewId: payout.crewId,
-          crewName: payout.crew.name,
-          earnedAmountMinor: allocation.earning.amountMinor.toString(),
-          withdrawalAmountMinor: allocation.amountMinor.toString(),
-          confirmedAt: allocation.earning.postedAt?.toISOString() ?? null,
+      earnings: [
+        ...row.payouts.flatMap((payout) =>
+          payout.allocations.map((allocation) => ({
+            id: allocation.earning.id,
+            taskId: allocation.earning.taskId,
+            title: allocation.earning.title,
+            crewId: payout.crewId,
+            crewName: payout.crew.name,
+            earnedAmountMinor: allocation.earning.amountMinor.toString(),
+            withdrawalAmountMinor: allocation.amountMinor.toString(),
+            confirmedAt: allocation.earning.postedAt?.toISOString() ?? null,
+          })),
+        ),
+        ...row.academyAllocations.map((a) => ({
+          id: a.enrollmentId,
+          taskId: null,
+          title: `Course ${a.enrollment.courseId}`,
+          crewId: null,
+          crewName: 'Academy',
+          earnedAmountMinor: a.enrollment.teacherCredits.toString(),
+          withdrawalAmountMinor: a.amountMinor.toString(),
+          confirmedAt: a.enrollment.reviewedAt?.toISOString() ?? null,
         })),
-      ),
+      ],
+      academyEarnings: row.academyAllocations.map((a) => ({
+        courseId: a.enrollment.courseId,
+        earnedAmountMinor: a.enrollment.teacherCredits.toString(),
+        withdrawalAmountMinor: a.amountMinor.toString(),
+      })),
       events: row.events.map((event) => ({
         id: event.id,
         actorType: event.actorType,
@@ -498,6 +522,14 @@ export class WithdrawalAdminService {
           });
         }
       }
+      if (input.action === 'pay' || input.action === 'reject')
+        await resolveAcademyIncome(
+          tx,
+          this.wallet,
+          row.userId,
+          id,
+          input.action,
+        );
       const updated = await tx.creatorWithdrawal.update({
         where: { id },
         data: {

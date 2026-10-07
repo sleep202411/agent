@@ -328,7 +328,9 @@
     "appQrUnavailable": "請點擊下方按鈕下載",
     "resolutionCenter": "爭議與調解中心",
     "myIncome": "我的收入",
-    "myContracts": "我的合約"
+    "myContracts": "我的合約",
+    "messagesShortcut": "訊息",
+    "savedJobsShortcut": "收藏職位"
   },
   "auth": {
     "close": "關閉",
@@ -10339,9 +10341,9 @@
     "selectedCrew": "劇組：{id}",
     "crewFilter": "收入劇組篩選",
     "incomeSources": "收入來源",
-    "referralIncome": "引薦收入與獎勵",
+    "referralIncome": "業務推薦",
     "crewIncome": "劇組收入",
-    "workIncome": "影視與故事收入",
+    "workIncome": "共創 IP 收入",
     "incomeSourcesHint": "各收入來源分別顯示記錄和計價單位，此處不合併計算。",
     "referralSourceHint": "查看推薦紀錄、佣金和支付狀態。",
     "workSourceHint": "查看已發佈作品的收入。",
@@ -10349,7 +10351,9 @@
     "productionSourceHint": "查看已批准的任務報酬及帳本記錄。收入入帳不代表銀行款項已到帳。",
     "incomeOverview": "已記錄收入概覽",
     "postedThisMonth": "本月已入賬（UTC）",
-    "transactionHistory": "收入明細"
+    "transactionHistory": "收入明細",
+    "teachingIncome": "授課收入",
+    "teachingSourceHint": "審核通過的教學收入可在「我的收入」提現。100 已賺取社區積分 = 1 美元。"
   },
   "crewPersonalPayouts": {
     "title": "付款記錄",
@@ -10802,7 +10806,9 @@
     "history": "我的任務評價",
     "publicNotice": "您的評分、選填評語和創作者身份將公開顯示在被評價者的個人主頁並計入評分。任務詳情與私密回覆不會公開。",
     "publicReview": "已公開的主頁評價",
-    "privateReview": "私密評價"
+    "privateReview": "私密評價",
+    "starRating": "5 星中的 {count} 星",
+    "systemTimeliness": "時效性 · 系統評分"
   },
   "crewCases": {
     "allParticipants": "全部參與",
@@ -11237,7 +11243,9 @@
     "worksLoading": "正在載入作品…",
     "retryWorks": "重新載入作品",
     "noPastWork": "暫無公開作品",
-    "untitledWork": "未命名作品"
+    "untitledWork": "未命名作品",
+    "myApplicationBadge": "我的申請",
+    "myTaskBadge": "我的任務"
   },
   "contentGpsOwner": {
     "title": "IP地點",
@@ -11788,9 +11796,9 @@
     "signIn": "登入後投稿影片"
   },
   "creatorWithdrawals": {
-    "title": "收益提現",
-    "description": "提現已確認的任務收益和平台確認的分潤收益。",
-    "withdraw": "提現",
+    "title": "提現中心",
+    "description": "提取已確認的任務收入、教學收入及平台確認的分潤收入。",
+    "withdraw": "申請提現",
     "currency": "幣種",
     "refresh": "重新整理",
     "loading": "載入中…",
@@ -11875,5 +11883,46 @@
     "archived": "已封存任務",
     "more": "載入更多",
     "clearSelection": "清除選取"
+  },
+  "academyLearning": {
+    "learning": "課程學習",
+    "teacherWorkspace": "教師工作台",
+    "income": "授課收入",
+    "creditIncomeNote": "審核通過的教學收入可在「我的收入」提現。100 已賺取社區積分 = 1 美元。",
+    "signIn": "請登入查看教師工作台。",
+    "loading": "載入中…",
+    "failed": "請求失敗。",
+    "retry": "重試",
+    "empty": "暫無學生報名您的課程。",
+    "course": "課程",
+    "student": "學生",
+    "status": "狀態",
+    "action": "操作",
+    "review": "審批作業",
+    "more": "載入更多",
+    "close": "關閉",
+    "score": "評分（0–100）",
+    "feedback": "評語",
+    "approve": "通過並提交",
+    "return": "退回修改",
+    "attachment": "附件 {number}",
+    "attachments": "附件（PDF、JPG 或 PNG，最多 10 個）",
+    "description": "作業描述",
+    "submit": "提交作業",
+    "working": "處理中…",
+    "enroll": "使用社區積分報名",
+    "price": "課程價格：{amount} 社區積分",
+    "credits": "{amount} 社區積分",
+    "enrolled": "已報名",
+    "submitted": "待審批",
+    "revision": "需修改",
+    "approved": "已通過",
+    "badgeIssued": "已獲得技能徽章。",
+    "badgePending": "已通過，技能徽章正在發放。",
+    "unavailable": "此課程暫未開放報名。",
+    "courses": "課程",
+    "students": "報名人數",
+    "pending": "待審批",
+    "earnedCredits": "授課收益（社區積分）"
   }
 }

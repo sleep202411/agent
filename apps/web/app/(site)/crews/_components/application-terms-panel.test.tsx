@@ -55,6 +55,8 @@ async function render(
           reviewer={reviewer}
           advertisedPaymentTerms={advertisedPaymentTerms}
           taskLinked
+          taskTitle="Deliver opening scene"
+          dueAt="2026-10-23T12:00:00Z"
           onReady={h.ready}
         />
       </QueryClientProvider>
@@ -284,3 +286,11 @@ it.each([
     );
   }
 );
+
+it("shows the linked task before the first offer is created", async () => {
+  h.get.mockResolvedValue({ currentVersion: 0, items: [] });
+  await render(true);
+  expect(host.textContent).toContain("Deliver opening scene");
+  expect(host.textContent).toContain("taskDeadline");
+  expect(host.textContent).toContain("10/23/2026");
+});

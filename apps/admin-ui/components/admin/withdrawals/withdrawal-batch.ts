@@ -21,11 +21,12 @@ export async function recordWithdrawalBatch(options: {
   rows: BatchWithdrawal[];
   references: Record<string, string>;
   adminId: string;
+  ensureProof: (id: string, signal: AbortSignal) => Promise<string>;
   signal: AbortSignal;
   api: Api;
   onResult: (id: string, result: BatchResult) => void;
 }) {
-  const { rows, references, adminId, signal, api, onResult } = options;
+  const { rows, references, adminId, signal, api, onResult, ensureProof } = options;
   if (!rows.length || rows.length > 50) throw new Error("Select between 1 and 50 withdrawals.");
   if (new Set(rows.map((row) => row.id)).size !== rows.length)
     throw new Error("A withdrawal can appear only once in a batch.");
@@ -61,8 +62,12 @@ export async function recordWithdrawalBatch(options: {
           throw new Error("This withdrawal is no longer available to you for payment recording.");
         }
         signal.throwIfAborted();
+        const paymentProofId = await ensureProof(snapshot.id, signal);
+        signal.throwIfAborted();
+        if (!paymentProofId) throw new Error("Upload payment proof before recording the payment.");
         await api(`/${snapshot.id}/decision`, signal, {
           action: "pay",
+          paymentProofId,
           expectedVersion: version,
           paymentReference,
         });

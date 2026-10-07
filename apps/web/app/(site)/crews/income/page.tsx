@@ -12,10 +12,11 @@ import { ReferralDashboardPage } from "../../referral/_components/referral-dashb
 import EarningsContent from "../../profile/earnings/earnings-content";
 import { EarningTrend } from "../_components/earning-trend";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { isCrewCursorError } from "../_hooks/api";
 
+import { learningApi } from "../../courses/_learning/api";
 import { CreatorWithdrawals } from "./withdrawals";
 import { PayoutHistory } from "./payout-history";
 import Link from "next/link";
@@ -46,6 +47,13 @@ function PersonalIncomeSession() {
   const locale = useLocale() as Locale;
   const { user, isLoading } = useCurrentUser();
   const { open } = useAuthDialog();
+  const teaching = useQuery({
+    queryKey: ["academy-teaching-summary", user?.id],
+    enabled: !!user,
+    queryFn: ({ signal }) => learningApi.summary(signal),
+    refetchInterval: 15000,
+    retry: false,
+  });
   const currency = CREW_CURRENCY;
   const feed = useMyCrewEarnings(currency, crewId, filters);
   function applyFilters(next: PersonalEarningFilters) {
@@ -168,6 +176,11 @@ function PersonalIncomeSession() {
             </div>
           </section>
         )}
+        {user && (
+          <div id="withdrawals" className="scroll-mt-28">
+            <CreatorWithdrawals />
+          </div>
+        )}
         <h2 className="text-lg font-semibold">{t("incomeSources")}</h2>
         <nav aria-label={t("incomeSources")} className="grid gap-5 md:grid-cols-3">
           {(["referral", "work"] as const).map((source) => (
@@ -208,6 +221,21 @@ function PersonalIncomeSession() {
               {t("productionSourceHint")}
             </span>
           </a>
+          <a
+            href={`/${locale}/academy/teaching`}
+            className="rounded-2xl bg-white/[0.035] p-6 text-left hover:bg-white/[0.07]"
+          >
+            <span className="block text-sm font-semibold">{t("teachingIncome")}</span>
+            {teaching.data && (
+              <span className="my-3 block text-xl font-semibold tabular-nums">
+                {formatCrewMoney(teaching.data.earnedCredits, locale, "USD")}
+              </span>
+            )}
+            {teaching.error && <span role="alert">{teaching.error.message}</span>}
+            <span className="mt-2 block text-xs leading-5 text-muted-foreground">
+              {t("teachingSourceHint")}
+            </span>
+          </a>
         </nav>
         <Sheet
           open={Boolean(incomePanel)}
@@ -229,11 +257,6 @@ function PersonalIncomeSession() {
           </SheetContent>
         </Sheet>
         <p className="text-xs text-muted-foreground">{t("incomeSourcesHint")}</p>
-        {user && (
-          <div id="withdrawals" className="scroll-mt-28">
-            <CreatorWithdrawals />
-          </div>
-        )}
         {isLoading ? (
           <p role="status">{t("loading")}</p>
         ) : !user ? (

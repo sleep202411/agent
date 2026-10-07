@@ -1,4 +1,10 @@
 import {
+  availableAcademyIncome,
+  reserveAcademyIncome,
+  academyTotalsSql,
+} from './academy-withdrawals';
+import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
+import {
   eligibleCashEarnings,
   eligibleCashEarningsSql,
 } from './eligible-cash-earnings';
@@ -21,7 +27,12 @@ import { decryptRecipient, encryptRecipient } from './recipient-encryption';
 
 @Injectable()
 export class CreatorWithdrawalsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly wallet: WalletLedgerService = new WalletLedgerService(
+      prisma,
+    ),
+  ) {}
   /** A single SQL snapshot keeps the displayed balance coherent while requests
    * are being processed. Each currency remains separate; points are not cash. */
   async balances(userId: string) {
@@ -42,7 +53,7 @@ export class CreatorWithdrawalsService {
       FROM crew_payout_allocations a JOIN crew_payouts p ON p.id=a.payout_id
       WHERE p.user_id=${userId} AND p.status IN ('pending','paid')
       GROUP BY a.earning_id
-    ), totals AS (
+    ), crew_totals AS (
       SELECT e.currency,
         COALESCE(SUM(e.amount_minor) FILTER (WHERE e.status='pending'),0) AS pending,
         COALESCE(SUM(e.amount_minor) FILTER (WHERE e.status='posted'),0) AS confirmed,
@@ -52,7 +63,11 @@ export class CreatorWithdrawalsService {
       WHERE e.user_id=${userId} AND ${eligibleCashEarningsSql}
         AND e.currency IN ('USD','CNY')
       GROUP BY e.currency
-    ) SELECT currency, pending::text AS "pendingAmountMinor",
+    ), academy_totals AS (${academyTotalsSql} AND e.teacher_id=${userId} HAVING COUNT(*)>0), totals AS (
+ SELECT currency,SUM(pending) AS pending,SUM(confirmed) AS confirmed,SUM(reserved) AS reserved,SUM(paid) AS paid FROM (
+ SELECT * FROM crew_totals UNION ALL SELECT currency,0 AS pending,confirmed,reserved,paid FROM academy_totals
+ ) sources GROUP BY currency
+ ) SELECT currency, pending::text AS "pendingAmountMinor",
       confirmed::text AS "confirmedAmountMinor", reserved::text AS "reservedAmountMinor",
       paid::text AS "paidAmountMinor", (confirmed-reserved-paid)::text AS "availableAmountMinor"
       FROM totals ORDER BY currency`;
@@ -175,10 +190,17 @@ export class CreatorWithdrawalsService {
           earning.amountMinor -
           earning.payoutAllocations.reduce((n, a) => n + a.amountMinor, 0n),
       }));
-      const available = eligible.reduce(
-        (n, e) => n + (e.available > 0n ? e.available : 0n),
+      const academy = await availableAcademyIncome(tx, userId, input.currency);
+      const academyAvailable = academy.reduce(
+        (sum, e) => sum + (BigInt(e.available) > 0n ? BigInt(e.available) : 0n),
         0n,
       );
+      const available =
+        academyAvailable +
+        eligible.reduce(
+          (n, e) => n + (e.available > 0n ? e.available : 0n),
+          0n,
+        );
       if (available !== BigInt(input.expectedAvailableAmountMinor))
         throw new ConflictException(
           'Your available earnings changed. Refresh and review the withdrawal amount.',
@@ -274,6 +296,14 @@ export class CreatorWithdrawalsService {
           },
         });
       }
+      await reserveAcademyIncome(
+        tx,
+        this.wallet,
+        userId,
+        id,
+        remaining,
+        academy,
+      );
       await tx.creatorPayoutAccount.upsert({
         where: { userId },
         create: {

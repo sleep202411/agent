@@ -2,7 +2,10 @@ import { AcademyAuthorityService } from './academy-authority.service';
 
 describe('Academy regional authority', () => {
   const service = new AcademyAuthorityService();
-  let fetchMock: jest.SpyInstance;
+  let fetchMock: jest.SpyInstance<
+    ReturnType<typeof fetch>,
+    Parameters<typeof fetch>
+  >;
   beforeEach(() => {
     fetchMock = jest.spyOn(globalThis, 'fetch');
   });
@@ -60,5 +63,40 @@ describe('Academy regional authority', () => {
     await expect(service.certificates()).rejects.toThrow(
       'catalogue is invalid',
     );
+  });
+
+  it('does not replace an already awarded certificate on retry', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply([{ id: 13, name: 'Skill', type: 4 }]))
+      .mockResolvedValueOnce(reply([{ userId: 100, levelId: 13 }]));
+    await service.grantSkill('100', 13);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(
+      fetchMock.mock.calls.every(([, options]) => options?.method === 'GET'),
+    ).toBe(true);
+  });
+  it('uses the stored course certificate ID when granting the badge', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply([{ id: 13, name: 'Skill', type: 4 }]))
+      .mockResolvedValueOnce(reply([]))
+      .mockResolvedValueOnce(reply(undefined));
+    await service.grantSkill('100', 13);
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({
+      method: 'POST',
+      body: JSON.stringify({
+        userId: 100,
+        levelId: 13,
+        remark: 'Academy homework approved',
+      }),
+    });
+  });
+  it('does not mark a rejected Java grant successful even on HTTP 200', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply([{ id: 13, name: 'Skill', type: 4 }]))
+      .mockResolvedValueOnce(reply([]))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 500, msg: 'Grant failed' })),
+      );
+    await expect(service.grantSkill('100', 13)).rejects.toThrow('Grant failed');
   });
 });

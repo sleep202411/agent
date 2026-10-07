@@ -11017,6 +11017,7 @@ model CreatorWithdrawal {
   resolutionReason     String?                  @map("resolution_reason") @db.VarChar(2000)
   createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  academyAllocations   AcademyWithdrawalAllocation[]
   payouts              CrewPayout[]
   events               CreatorWithdrawalEvent[]
 
@@ -11199,4 +11200,74 @@ model DiscoveryDailyPlan {
 
   @@id([site, actorId, localDay])
   @@map("discovery_daily_plans")
+}
+
+
+/// Explicit Admin-configured Academy commerce terms. Existing courses stay free
+/// until enabled; every purchase retains its original terms.
+model AcademyOffering {
+  courseId String @id @map("course_id") @db.VarChar(128)
+  teacherId String @map("teacher_id") @db.VarChar(64)
+  priceCredits BigInt @map("price_credits")
+  teacherShareBps Int @map("teacher_share_bps")
+  enabled Boolean @default(false)
+  version Int @default(1)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@map("academy_offerings")
+}
+
+model AcademyEnrollment {
+  id String @id @default(uuid(7)) @db.Uuid
+  courseId String @map("course_id") @db.VarChar(128)
+  studentId String @map("student_id") @db.VarChar(64)
+  teacherId String @map("teacher_id") @db.VarChar(64)
+  certificateId Int @map("certificate_id")
+  priceCredits BigInt @map("price_credits")
+  teacherCredits BigInt @map("teacher_credits")
+  offeringVersion Int @map("offering_version")
+  status String @default("enrolled") @db.VarChar(24)
+  version Int @default(1)
+  description String? @db.Text
+  assetIds String[] @default([]) @map("asset_ids") @db.Uuid
+  score Int?
+  feedback String? @db.Text
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  badgeIssuedAt DateTime? @map("badge_issued_at") @db.Timestamptz(6)
+  badgeError String? @map("badge_error") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  withdrawalAllocations AcademyWithdrawalAllocation[]
+  events AcademyEnrollmentEvent[]
+  @@unique([courseId, studentId])
+  @@index([teacherId, status, createdAt])
+  @@map("academy_enrollments")
+}
+
+model AcademyEnrollmentEvent {
+  id String @id @default(uuid(7)) @db.Uuid
+  enrollmentId String @map("enrollment_id") @db.Uuid
+  enrollment AcademyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+  actorId String @map("actor_id") @db.VarChar(64)
+  version Int
+  kind String @db.VarChar(24)
+  details Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([enrollmentId, version])
+  @@map("academy_enrollment_events")
+}
+
+// Academy's documented settlement unit is one earned credit = one USD cent.
+// Source-specific allocations never convert the unrelated referral wallet pool.
+model AcademyWithdrawalAllocation {
+ id String @id @default(uuid(7)) @db.Uuid
+ withdrawalId String @map("withdrawal_id") @db.Uuid
+ enrollmentId String @map("enrollment_id") @db.Uuid
+ amountMinor BigInt @map("amount_minor")
+ currency String @default("USD") @db.VarChar(3)
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ withdrawal CreatorWithdrawal @relation(fields:[withdrawalId],references:[id],onDelete:Restrict)
+ enrollment AcademyEnrollment @relation(fields:[enrollmentId],references:[id],onDelete:Restrict)
+ @@unique([withdrawalId,enrollmentId])
+ @@index([enrollmentId])
+ @@map("academy_withdrawal_allocations")
 }

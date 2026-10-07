@@ -328,7 +328,9 @@
     "appQrUnavailable": "请点击下方按钮下载",
     "resolutionCenter": "争议与调解中心",
     "myIncome": "我的收入",
-    "myContracts": "我的合同"
+    "myContracts": "我的合同",
+    "messagesShortcut": "消息",
+    "savedJobsShortcut": "收藏职位"
   },
   "auth": {
     "close": "关闭",
@@ -10339,9 +10341,9 @@
     "selectedCrew": "剧组：{id}",
     "crewFilter": "收入剧组筛选",
     "incomeSources": "收入来源",
-    "referralIncome": "引荐收入与奖励",
+    "referralIncome": "业务推荐",
     "crewIncome": "剧组收入",
-    "workIncome": "影视与故事收入",
+    "workIncome": "共创 IP 收入",
     "incomeSourcesHint": "各收入来源分别显示记录和计价单位，此处不合并计算。",
     "referralSourceHint": "查看推荐记录、佣金和支付状态。",
     "workSourceHint": "查看已发布作品的收入。",
@@ -10349,7 +10351,9 @@
     "productionSourceHint": "查看已批准的任务报酬及账本记录。收入入账不代表银行款项已到账。",
     "incomeOverview": "已记录收入概览",
     "postedThisMonth": "本月已入账（UTC）",
-    "transactionHistory": "收入明细"
+    "transactionHistory": "收入明细",
+    "teachingIncome": "授课收入",
+    "teachingSourceHint": "审核通过的教学收入可在“我的收入”提现。100 已赚取社区积分 = 1 美元。"
   },
   "crewPersonalPayouts": {
     "title": "付款记录",
@@ -10802,7 +10806,9 @@
     "history": "我的任务评价",
     "publicNotice": "您的评分、选填评语和创作者身份将公开显示在被评价者的个人主页并计入评分。任务详情与私密回复不会公开。",
     "publicReview": "已公开的主页评价",
-    "privateReview": "私密评价"
+    "privateReview": "私密评价",
+    "starRating": "5 星中的 {count} 星",
+    "systemTimeliness": "时效性 · 系统评分"
   },
   "crewCases": {
     "allParticipants": "全部参与",
@@ -11237,7 +11243,9 @@
     "worksLoading": "正在加载作品…",
     "retryWorks": "重新加载作品",
     "noPastWork": "暂无公开作品",
-    "untitledWork": "未命名作品"
+    "untitledWork": "未命名作品",
+    "myApplicationBadge": "我的申请",
+    "myTaskBadge": "我的任务"
   },
   "contentGpsOwner": {
     "title": "IP地点",
@@ -11788,9 +11796,9 @@
     "signIn": "登录后投稿视频"
   },
   "creatorWithdrawals": {
-    "title": "收益提现",
-    "description": "提现已确认的任务收益和平台确认的分润收益。",
-    "withdraw": "提现",
+    "title": "提现中心",
+    "description": "提取已确认的任务收入、教学收入及平台确认的分润收入。",
+    "withdraw": "申请提现",
     "currency": "币种",
     "refresh": "刷新",
     "loading": "加载中…",
@@ -11875,5 +11883,46 @@
     "archived": "已归档任务",
     "more": "加载更多",
     "clearSelection": "清除选择"
+  },
+  "academyLearning": {
+    "learning": "课程学习",
+    "teacherWorkspace": "教师工作台",
+    "income": "授课收入",
+    "creditIncomeNote": "审核通过的教学收入可在“我的收入”提现。100 已赚取社区积分 = 1 美元。",
+    "signIn": "请登录查看教师工作台。",
+    "loading": "加载中…",
+    "failed": "请求失败。",
+    "retry": "重试",
+    "empty": "暂无学生报名您的课程。",
+    "course": "课程",
+    "student": "学生",
+    "status": "状态",
+    "action": "操作",
+    "review": "审批作业",
+    "more": "加载更多",
+    "close": "关闭",
+    "score": "评分（0–100）",
+    "feedback": "评语",
+    "approve": "通过并提交",
+    "return": "退回修改",
+    "attachment": "附件 {number}",
+    "attachments": "附件（PDF、JPG 或 PNG，最多 10 个）",
+    "description": "作业描述",
+    "submit": "提交作业",
+    "working": "处理中…",
+    "enroll": "使用社区积分报名",
+    "price": "课程价格：{amount} 社区积分",
+    "credits": "{amount} 社区积分",
+    "enrolled": "已报名",
+    "submitted": "待审批",
+    "revision": "需修改",
+    "approved": "已通过",
+    "badgeIssued": "已获得技能徽章。",
+    "badgePending": "已通过，技能徽章正在发放。",
+    "unavailable": "此课程暂未开放报名。",
+    "courses": "课程",
+    "students": "报名人数",
+    "pending": "待审批",
+    "earnedCredits": "授课收益（社区积分）"
   }
 }

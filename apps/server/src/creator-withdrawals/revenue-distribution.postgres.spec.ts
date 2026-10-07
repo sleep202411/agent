@@ -871,6 +871,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
       action: 'pay',
       expectedVersion: 2,
       paymentReference: 'FIXTURE-EXTERNAL-TRANSFER',
+      paymentProofId: await readyPaymentProof(db, request.id),
     });
     await expect(
       service.reverse(actor, posted.id, { reason: 'Wrong amount' }),
@@ -1315,3 +1316,10 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
     ).rejects.toThrow('another session');
   });
 });
+
+async function readyPaymentProof(db: PrismaClient, withdrawalId: string) {
+  const id = randomUUID();
+  await db.$executeRaw`INSERT INTO creator_withdrawal_proofs(id,withdrawal_id,uploaded_by_admin_id,checksum_sha256,filename,content_type,size_bytes,provider,bucket,object_key,status,verified_at)
+ VALUES(${id}::uuid,${withdrawalId}::uuid,'fixture-finance',${id.replaceAll('-', '').repeat(2)},'proof.pdf','application/pdf',100,'s3_compatible','fixture-private',${id},'ready',now())`;
+  return id;
+}

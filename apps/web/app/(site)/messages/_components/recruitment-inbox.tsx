@@ -69,25 +69,34 @@ function MyApplications({
   const c = useTranslations("crewCommunications");
   const positionLabel = useTranslatePositionValue();
   const locale = useLocale();
-  const [scope, setScope] = useState<"sent" | "received">("sent");
   const [selected, setSelected] = useState<string | null>(requestedApplication);
   const [search, setSearch] = useState("");
   const [reviewing, setReviewing] = useState(false);
-  const query = useInfiniteQuery({
-    queryKey: ["my-crew-applications", userId, scope],
-    queryFn: ({ pageParam, signal }) =>
-      crewApi.get<{ items: Application[]; nextCursor: string | null }>("/me/crew-applications", {
-        query: { limit: 20, cursor: pageParam, scope },
-        signal,
-        cache: "no-store",
-      }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
-    retry: false,
-    refetchInterval: 15000,
-  });
+  const sent = useRecruitmentApplications(userId, "sent");
+  const received = useRecruitmentApplications(userId, "received");
+  const query = {
+    isError: sent.isError || received.isError,
+    error: sent.error ?? received.error,
+    isPending: sent.isPending || received.isPending,
+    isSuccess: sent.isSuccess && received.isSuccess,
+    isFetching: sent.isFetching || received.isFetching,
+    hasNextPage: sent.hasNextPage || received.hasNextPage,
+    data: { pages: [...(sent.data?.pages ?? []), ...(received.data?.pages ?? [])] },
+    refetch: () => Promise.all([sent.refetch(), received.refetch()]),
+    fetchNextPage: () =>
+      Promise.all([
+        ...(sent.hasNextPage ? [sent.fetchNextPage()] : []),
+        ...(received.hasNextPage ? [received.fetchNextPage()] : []),
+      ]),
+  };
   // The selected conversation must obey the same access/error state as the inbox.
-  const items = query.isError ? [] : (query.data?.pages.flatMap((page) => page.items) ?? []);
+  const items = query.isError
+    ? []
+    : [
+        ...new Map(
+          query.data.pages.flatMap((page) => page.items).map((item) => [item.id, item])
+        ).values(),
+      ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const peerId = (item: Application) =>
     item.applicantId !== userId ? item.applicantId : item.ownerUserId;
   const detail = useQuery({
@@ -137,26 +146,6 @@ function MyApplications({
           )}
         >
           <div className="space-y-2 border-b border-white/10 p-3">
-            <div className="flex gap-2" aria-label={c("direction")}>
-              {(["sent", "received"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={scope === value}
-                  className={cn(
-                    "rounded-full px-3 py-2 text-xs",
-                    scope === value ? "bg-white/10 text-white" : "text-muted-foreground"
-                  )}
-                  onClick={() => {
-                    setScope(value);
-                    setSelected(null);
-                    setReviewing(false);
-                  }}
-                >
-                  {c(value)}
-                </button>
-              ))}
-            </div>
             <Input
               type="search"
               value={search}
@@ -173,7 +162,7 @@ function MyApplications({
             {query.isPending && <p className="p-3">{t("loading")}</p>}
             {query.isError ? (
               <div role="alert" className="p-3">
-                <p>{query.error.message}</p>
+                <p>{query.error?.message}</p>
                 <Button onClick={() => void query.refetch()}>{t("refresh")}</Button>
               </div>
             ) : (
@@ -205,6 +194,16 @@ function MyApplications({
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">
                             {peerName(item)}
+                          </span>
+                          <span
+                            className={cn(
+                              "mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium",
+                              item.applicantId === userId
+                                ? "bg-sky-400/10 text-sky-300"
+                                : "bg-amber-400/10 text-amber-300"
+                            )}
+                          >
+                            {c(item.applicantId === userId ? "myApplicationBadge" : "myTaskBadge")}
                           </span>
                           <span className="mt-1 block truncate text-xs text-muted-foreground">
                             {item.taskTitle ?? positionLabel(item.positionType)} · {item.crewName}
@@ -400,4 +399,20 @@ function MyApplications({
       </div>
     </main>
   );
+}
+
+function useRecruitmentApplications(userId: string, scope: "sent" | "received") {
+  return useInfiniteQuery({
+    queryKey: ["my-crew-applications", userId, scope],
+    queryFn: ({ pageParam, signal }) =>
+      crewApi.get<{ items: Application[]; nextCursor: string | null }>("/me/crew-applications", {
+        query: { limit: 20, cursor: pageParam, scope },
+        signal,
+        cache: "no-store",
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    retry: false,
+    refetchInterval: 15000,
+  });
 }
