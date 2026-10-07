@@ -2,7 +2,7 @@
 
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { CrewSaveActions } from "@/components/canvas/authoring/crew-save-actions";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { IconLoader2 } from "@tabler/icons-react";
@@ -21,7 +21,13 @@ import { CollabCursors } from "./collab-presence";
 import { useApplyPreset } from "@/app/[locale]/canvas/_lib/use-apply-preset";
 import { createWorkflowPresets } from "@/app/[locale]/canvas/_lib/workflow-presets";
 
-function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
+function CollaborativeCanvasInner({
+  canEdit,
+  toolbarActions,
+}: {
+  canEdit: boolean;
+  toolbarActions?: ReactNode;
+}) {
   const t = useTranslations("canvas");
   const tCanvasControls = useTranslations("canvasControls");
   const { projectId, setShellInset, uploadKinds, catalog } = useProjectContext();
@@ -101,6 +107,7 @@ function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
         canEdit={canEdit}
       >
         <MediaAuthoringCanvas
+          toolbarActions={toolbarActions}
           canEdit={canEdit}
           ready={documentStatus === "ready" && connectionStatus === "synced"}
           documentId={documentId}
@@ -157,14 +164,16 @@ function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
 
 export function CollaborativeCanvasView({
   projectId,
+  toolbarActions,
   canEdit = true,
 }: {
   projectId: string;
   canEdit?: boolean;
+  toolbarActions?: ReactNode;
 }) {
   return (
     <ReactFlowProvider>
-      <CollaborativeCanvasInner key={projectId} canEdit={canEdit} />
+      <CollaborativeCanvasInner key={projectId} canEdit={canEdit} toolbarActions={toolbarActions} />
     </ReactFlowProvider>
   );
 }

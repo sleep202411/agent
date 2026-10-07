@@ -66,9 +66,16 @@ async function render() {
   await act(async () =>
     root.render(
       <CanvasStoryboard>
-        <div className="react-flow__node" data-id="video">
-          Canvas clip
-        </div>
+        {(control) => (
+          <>
+            <div role="toolbar" aria-label="Canvas tools">
+              {control}
+            </div>
+            <div className="react-flow__node" data-id="video">
+              Canvas clip
+            </div>
+          </>
+        )}
       </CanvasStoryboard>
     )
   );
@@ -84,6 +91,22 @@ async function pointer(type: string, x: number, y: number) {
   await act(async () => container.querySelector(".react-flow__node")!.dispatchEvent(event));
 }
 describe("Canvas to storyboard gestures", () => {
+  it("opens and closes the timeline from the labelled canvas toolbar entry", async () => {
+    await render();
+    const button = container.querySelector('[role="toolbar"] button')!;
+    expect(button.textContent).toBe("title");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("section")).toBeNull();
+    await click("title");
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector("section")).not.toBeNull();
+    await click("mode");
+    await click("title");
+    expect(container.querySelector("section")).toBeNull();
+    await pointer("pointerdown", 0, 0);
+    expect(mocks.select).not.toHaveBeenCalled();
+  });
+
   it("leaves normal canvas dragging alone until the mode is enabled", async () => {
     await render();
     await pointer("pointerdown", 0, 0);
@@ -93,6 +116,7 @@ describe("Canvas to storyboard gestures", () => {
   it.each(["video", "image"])("selects then attaches %s on a moved pointer drop", async (kind) => {
     mocks.kind = kind;
     await render();
+    await click("title");
     await click("mode");
     vi.spyOn(document, "elementFromPoint").mockReturnValue(
       container.querySelector("[data-storyboard-shot]")
@@ -105,6 +129,7 @@ describe("Canvas to storyboard gestures", () => {
   });
   it("a click only selects; it does not attach", async () => {
     await render();
+    await click("title");
     await click("mode");
     vi.spyOn(document, "elementFromPoint").mockReturnValue(
       container.querySelector("[data-storyboard-shot]")
@@ -115,6 +140,7 @@ describe("Canvas to storyboard gestures", () => {
   });
   it("cancels a gesture without creating an attachment", async () => {
     await render();
+    await click("title");
     await click("mode");
     vi.spyOn(document, "elementFromPoint").mockReturnValue(
       container.querySelector("[data-storyboard-shot]")

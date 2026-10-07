@@ -8,6 +8,7 @@ import {
   IconGripVertical,
   IconPlus,
   IconVideo,
+  IconLayoutBottombar,
   IconUnlink,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,7 @@ type Gesture = { nodeId: string; pointerId: number; x: number; y: number; moved:
 
 /** Canvas placement and storyboard placement use distinct gestures. While armed,
  * capture a media-node drag before React Flow can move its saved canvas position. */
-export function CanvasStoryboard({ children }: { children: ReactNode }) {
+export function CanvasStoryboard({ children }: { children: (control: ReactNode) => ReactNode }) {
   const t = useTranslations("storyboard.drag");
   const graph = useCanvasGraphContext();
   const { rows, canvasSources, canEdit, attachSource, detachPicture, insertShot, moveShotToIndex } =
@@ -99,6 +100,22 @@ export function CanvasStoryboard({ children }: { children: ReactNode }) {
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
   };
+  const toggle = (
+    <Button
+      size="sm"
+      variant={open ? "default" : "secondary"}
+      className="shrink-0"
+      aria-expanded={open}
+      onClick={() => {
+        reset();
+        setOpen(!open);
+        if (open) setArmed(false);
+      }}
+    >
+      <IconLayoutBottombar aria-hidden="true" />
+      {t("title")}
+    </Button>
+  );
   return (
     <div
       className="relative flex h-full min-h-0 flex-col"
@@ -122,7 +139,7 @@ export function CanvasStoryboard({ children }: { children: ReactNode }) {
       }}
     >
       <div className="relative min-h-0 flex-1">
-        {children}
+        {children(toggle)}
         {armed && canEdit && (
           <div className="pointer-events-none absolute inset-x-4 top-24 z-20 flex justify-center">
             <p
@@ -133,34 +150,6 @@ export function CanvasStoryboard({ children }: { children: ReactNode }) {
             </p>
           </div>
         )}
-        <div className="absolute right-4 bottom-4 z-20 flex gap-2">
-          {canEdit && (
-            <Button
-              size="sm"
-              variant={armed ? "default" : "secondary"}
-              aria-pressed={armed}
-              onClick={() => {
-                reset();
-                setArmed(!armed);
-                setOpen(true);
-              }}
-            >
-              {t("mode")}
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="secondary"
-            aria-expanded={open}
-            onClick={() => {
-              reset();
-              setOpen(!open);
-              if (open) setArmed(false);
-            }}
-          >
-            {t("title")}
-          </Button>
-        </div>
       </div>
       {open && (
         <section className="z-20 shrink-0 bg-card" aria-label={t("title")}>
@@ -169,6 +158,19 @@ export function CanvasStoryboard({ children }: { children: ReactNode }) {
             <p className="mr-auto text-xs text-muted-foreground">
               {armed ? t("instructions") : t("reorder")}
             </p>
+            {canEdit && (
+              <Button
+                size="sm"
+                variant={armed ? "default" : "secondary"}
+                aria-pressed={armed}
+                onClick={() => {
+                  reset();
+                  setArmed(!armed);
+                }}
+              >
+                {t("mode")}
+              </Button>
+            )}
             <StoryboardPlayback rows={rows} />
             <StoryboardExport disabled={!rows.length} />
             {canEdit && (

@@ -97,6 +97,7 @@ export interface MediaAuthoringCanvasProps {
   renderViewportLayers?: (nodes: Node[]) => ReactNode;
   topChrome?: ReactNode;
   panels?: ReactNode;
+  toolbarActions?: ReactNode;
   statusOverlay?: ReactNode | ((interaction: MediaAuthoringCanvasStatusContext) => ReactNode);
   loadingOverlay?: ReactNode;
   renderErrorOverlay?: (nodes: Node[]) => ReactNode;
@@ -130,6 +131,7 @@ export function MediaAuthoringCanvas({
   renderViewportLayers,
   topChrome,
   panels,
+  toolbarActions,
   statusOverlay,
   loadingOverlay,
   renderErrorOverlay,
@@ -385,8 +387,12 @@ export function MediaAuthoringCanvas({
               onChange={onPickFiles}
             />
 
-            {canEdit ? (
-              <CanvasAuthoringDock actions={addNodeActions} onAdd={addNodeFromDock} />
+            {canEdit || toolbarActions ? (
+              <CanvasAuthoringDock
+                actions={canEdit ? addNodeActions : []}
+                onAdd={addNodeFromDock}
+                toolbarActions={toolbarActions}
+              />
             ) : null}
             {canEdit ? (
               <CanvasHistoryControls

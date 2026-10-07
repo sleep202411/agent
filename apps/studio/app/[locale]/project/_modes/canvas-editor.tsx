@@ -15,7 +15,9 @@ export function CanvasEditor() {
   const { projectId, canEdit } = useProjectContext();
   return (
     <CanvasStoryboard>
-      <CanvasView projectId={projectId} canEdit={canEdit} />
+      {(toolbarActions) => (
+        <CanvasView projectId={projectId} canEdit={canEdit} toolbarActions={toolbarActions} />
+      )}
     </CanvasStoryboard>
   );
 }

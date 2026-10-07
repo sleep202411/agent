@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useReactFlow, useViewport, type FitViewOptions } from "@xyflow/react";
 import {
@@ -148,36 +148,40 @@ export function CanvasAuthoringControls({
 export function CanvasAuthoringDock({
   actions = DEFAULT_ADD_NODE_ACTIONS,
   onAdd,
+  toolbarActions,
 }: {
   actions?: readonly AddNodeAction[];
   onAdd: (action: AddNodeAction) => void;
+  toolbarActions?: ReactNode;
 }) {
   const t = useTranslations("canvas");
   return (
     <div
       className={cn(
-        "absolute bottom-5 left-1/2 z-20 flex h-[48px] -translate-x-1/2 items-center gap-1 rounded-2xl px-2.5",
+        "absolute left-1/2 z-20 flex h-[48px] max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-1 rounded-2xl px-2.5",
+        toolbarActions ? "bottom-16" : "bottom-5",
         CANVAS_FLOATING_PANEL
       )}
     >
-      {actions.map((action) => {
-        const Icon = ADD_NODE_ICONS[action];
-        const label = t(`dock.${ADD_NODE_LABEL_KEYS[action]}`);
-        return (
-          <button
-            key={action}
-            type="button"
-            aria-label={label}
-            onClick={() => onAdd(action)}
-            className="group relative flex size-10 items-center justify-center rounded-full text-white/72 transition-colors hover:bg-white/[0.1] hover:text-white"
-          >
-            <Icon className="size-5" stroke={1.7} />
-            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-xs font-medium whitespace-nowrap text-background opacity-0 shadow-md transition-opacity group-hover:opacity-100">
-              {label}
-            </span>
-          </button>
-        );
-      })}
+      <div className="flex min-w-0 items-center gap-1 overflow-x-auto [&>*]:shrink-0">
+        {actions.map((action) => {
+          const Icon = ADD_NODE_ICONS[action];
+          const label = t(`dock.${ADD_NODE_LABEL_KEYS[action]}`);
+          return (
+            <ControlTooltip key={action} label={label}>
+              <button
+                type="button"
+                aria-label={label}
+                onClick={() => onAdd(action)}
+                className="group relative flex size-10 items-center justify-center rounded-full text-white/72 transition-colors hover:bg-white/[0.1] hover:text-white"
+              >
+                <Icon className="size-5" stroke={1.7} />
+              </button>
+            </ControlTooltip>
+          );
+        })}
+      </div>
+      {toolbarActions}
     </div>
   );
 }

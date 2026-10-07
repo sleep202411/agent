@@ -139,9 +139,14 @@ it.each(["video", "image"])(
       return (
         <CanvasGraphProvider value={graph}>
           <CanvasStoryboard>
-            <div className="react-flow__node" data-id="video" onPointerDown={moveNode}>
-              Video
-            </div>
+            {(control) => (
+              <>
+                {control}
+                <div className="react-flow__node" data-id="video" onPointerDown={moveNode}>
+                  Video
+                </div>
+              </>
+            )}
           </CanvasStoryboard>
         </CanvasGraphProvider>
       );
@@ -154,6 +159,11 @@ it.each(["video", "image"])(
     const hit = vi.spyOn(document, "elementFromPoint");
     try {
       await act(async () => root.render(<Harness document={doc} />));
+      await act(async () =>
+        [...host.querySelectorAll("button")]
+          .find((button) => button.textContent === "title")!
+          .click()
+      );
       await act(async () =>
         [...host.querySelectorAll("button")]
           .find((button) => button.textContent === "mode")!

@@ -1,3 +1,4 @@
+import { IconLayoutBottombar } from "@tabler/icons-react-native";
 import { StoryboardSource } from "./canvas-storyboard-source";
 import { useMemo, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, View } from "react-native";
@@ -26,12 +27,30 @@ type Props = {
 };
 export function CanvasStoryboard(props: Props) {
   const t = useTranslations(),
+    theme = useTheme(),
     active = useScreenActive();
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Pressable accessibilityRole="button" onPress={() => setOpen(true)} style={{ padding: 12 }}>
-        <ThemedText>{t("storyboard.title")}</ThemedText>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("storyboard.title")}
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen(true)}
+        style={({ pressed }) => ({
+          minHeight: 44,
+          padding: 12,
+          borderRadius: 12,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement,
+        })}
+      >
+        <IconLayoutBottombar size={20} color={theme.text} accessible={false} />
+        <ThemedText type="smallBold" style={{ flexShrink: 1 }}>
+          {t("storyboard.title")}
+        </ThemedText>
       </Pressable>
       {open && active && props.scope.generation === getAuthGeneration() && (
         <Timeline {...props} close={() => setOpen(false)} />
