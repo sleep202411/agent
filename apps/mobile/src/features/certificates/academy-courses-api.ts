@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { api } from "@/lib/api-client";
-import { webBaseUrl } from "@/config";
 
 const courseId = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
 const localeSchema = z.enum(["en-US", "zh-CN", "zh-HK"]);
@@ -36,8 +35,4 @@ export async function fetchCertificateCourses(
   )
     throw new Error("Invalid Academy course mapping response.");
   return result;
-}
-
-export function academyCourseUrl(id: string, locale: string) {
-  return `${webBaseUrl.replace(/\/+$/, "")}/${localeSchema.parse(locale)}/courses/${encodeURIComponent(courseId.parse(id))}`;
 }

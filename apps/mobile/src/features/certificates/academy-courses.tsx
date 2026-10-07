@@ -1,15 +1,11 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
-import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
 import { ThemedText } from "@/components/themed-text";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
-import {
-  academyCourseUrl,
-  fetchCertificateCourses,
-  type AcademyCourses,
-} from "./academy-courses-api";
+import { fetchCertificateCourses, type AcademyCourses } from "./academy-courses-api";
 
 export function AcademyCoursesForCertificate({ certificateId }: { certificateId: number }) {
   const locale = useLocale();
@@ -19,6 +15,7 @@ export function AcademyCoursesForCertificate({ certificateId }: { certificateId:
   ) : null;
 }
 function CourseLinks({ certificateId, locale }: { certificateId: number; locale: string }) {
+  const router = useRouter();
   const t = useTranslations();
   const theme = useTheme();
   const [page, setPage] = useState<AcademyCourses | null>(null);
@@ -80,15 +77,12 @@ function CourseLinks({ certificateId, locale }: { certificateId: number; locale:
           key={course.courseId}
           accessibilityRole="link"
           style={{ borderRadius: 8, backgroundColor: theme.backgroundElement, padding: 12 }}
-          onPress={() => {
-            void WebBrowser.openBrowserAsync(academyCourseUrl(course.courseId, locale)).catch(
-              (cause) =>
-                setError(cause instanceof Error ? cause.message : t("academyCourses.failed"))
-            );
-          }}
+          onPress={() =>
+            router.push({ pathname: "/courses/[id]", params: { id: course.courseId } })
+          }
         >
           <ThemedText>{course.title}</ThemedText>
-          <ThemedText>{t("academyCourses.openWeb")}</ThemedText>
+          <ThemedText>{t("academyCourses.openNative")}</ThemedText>
         </Pressable>
       ))}
       {!busy && !error && page && !page.items.length && !page.nextCursor ? (

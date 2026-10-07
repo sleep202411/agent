@@ -73,7 +73,8 @@ desktop page composition.
   through the public IP catalogue, playing only the selected public preview.
   Scrolling pauses playback; backgrounding or leaving the route releases it.
   Missing previews remain explicit, and full-work access stays on IP detail.
-  This does not reopen Courses or the daily Discovery assistant.
+  The daily Discovery assistant remains deferred. Native Courses was
+  subsequently reopened separately by the user.
 
 - IP image cards use stable 16:9 media wherever the card is consumed as a
   horizontal preview rail. Fixed aspect ratios are required so loading states,
@@ -118,3 +119,12 @@ not inline TSX.
 - Root brand rules: `../../DESIGN.md`
 - Token source: `src/config/theme-tokens.json`
 - NativeWind implementation: `tailwind.config.js`
+
+## Academy Courses
+
+- Native Courses uses separate catalogue and lesson-detail routes, reached from
+  Home, Mine and mapped certification applications. Keep all five tabs intact.
+- Use the same regional Java catalogue, signed lesson URLs and Academy badge
+  mappings as Web. Guest browsing remains public; enforce service access errors.
+- Resume lesson progress on this device, scoped by account and region. Stop
+  playback on background/navigation; never interpret watch progress as a badge.

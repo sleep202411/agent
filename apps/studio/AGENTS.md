@@ -14,14 +14,6 @@ monochrome zero-chroma tokens, no control borders, brand red never as a
 token, English-only strings). Do not import the web or admin-ui design
 language.
 
-## Interactive-movie export scope — Isaac's clarification
-
-Video merging and merged-film export are deliberately outside the current
-interactive-movie scope. Do not add browser merge/export buttons to the Story
-timeline editor. Keep timeline editing and preview available. Revisit merged
-video export only after a confirmed product need and a server-side design;
-browser encoder work is not a current Story delivery requirement.
-
 ## State management
 
 Every piece of state has exactly one home. Pick by where its truth lives:

@@ -122,7 +122,7 @@ old code only when its current consumer is being refactored anyway.
 ## Dev
 
 ```bash
-npm run dev  # → next dev --port 9527 (Turbopack by default)
+npm run dev  # → next dev --port 3000 (Turbopack by default)
 npm run build
 npm run check-types
 ```

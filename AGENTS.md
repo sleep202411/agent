@@ -1,49 +1,5 @@
 # AGENTS.md — FizzDragon Platform
 
-## Completed parity integration and exclusive Mobile handoff (2026-10-07)
-
-The later same-day resumption incorporates official main/develop through
-`8848b1312` and aligns Mobile recruitment defaults, submission eligibility and
-foreground feedback/task refresh with the new Web behavior. It preserves
-existing private recruitment records, native layouts and the restored feed.
-This renewed exception also ends when this integration is published.
-
-Web feature deferral alone is not authority to remove an independently assigned
-Mobile feature. Verify platform-specific scope before any future parity removal;
-Pax's separate Mobile communication must be considered alongside Web direction.
-
-This integration closes the user's temporary Mobile development exception.
-Latest main/develop was merged into `feat/mobile-2.4.0-scrolling-screen`;
-the completed parity changes are authorized for alignment of all three remote
-branches to this integration commit. The restored Home/recommended vertical
-preview feed preserves Hu Xuan's five-tab navigation and existing Home layout.
-This explicitly reopened that feed only; Courses and the separate daily
-Discovery assistant remain deferred.
-
-Local regression, type, lint, regional export and fixture-backed browser checks
-were performed. Real-device and live-service acceptance belongs to Hu Xuan.
-Only Hu Xuan (`sleepy202411`) may now develop Mobile; Ric and this agent must
-stop Mobile implementation and parity follow-ups after publishing this
-integration. Earlier exceptions below are historical, not continuing authority.
-Deployment assistance remains separate and does not reopen development.
-
-## Final parity integration and exclusive Mobile handoff (2026-10-06)
-
-The user explicitly authorized one final parity completion: merge latest
-`main` / `develop` into `feat/mobile-2.4.0-scrolling-screen`, finish and validate
-that work, then align all three remote branches to the same verified commit.
-This is a one-time exception to the earlier completed handoff below.
-
-After this final integration, only Hu Xuan (`sleepy202411`), the assigned Mobile
-developer, may handle Mobile development. Ric and this agent must stop Mobile
-implementation, parity follow-ups and Mobile feature-branch development/pushes.
-Do not treat this final authorization as permission for further Mobile work.
-Shared Web/backend work must preserve the handed-off Mobile API contracts.
-The user subsequently authorized Ric and this agent to help Hu Xuan deploy.
-Deployment assistance does not authorize Mobile implementation or parity work;
-Hu Xuan retains Mobile development ownership and real-device acceptance.
-Branch alignment may be performed when explicitly requested by the user.
-
 Repo-level orientation for AI coding agents and humans new to the
 monorepo. Scope is **navigation + cross-cutting conventions only** —
 each `apps/*` and `packages/*` ships its own deep guide.
@@ -102,7 +58,6 @@ or transliterate the brand name.
 - **Web UI design system** → `@apps/web/DESIGN.md`
 - **Admin UI design system** → `@apps/admin-ui/DESIGN.md`
 - **Web frontend (Next.js)** → `@apps/web/AGENTS.md`
-- **Mobile development + release branches** → `@apps/mobile/AGENTS.md`
 - **Agent OS (target Agent product)** → `@apps/agent-os/AGENTS.md` and
   `@docs/agent-os/README.md`. Nest control plane:
   `apps/server/src/agent-os-gateway` (`AGENT_OS_ENABLED=true`). Design authority:
@@ -124,32 +79,14 @@ public creator surfaces.
 
 ## Production deployment
 
-### Local validation and deployment ownership (2026-09-28)
-
-Isaac and Yuanzheng own deployments. There is currently no staging or
-canary environment: deployment goes directly to production. Run feasible
-local checks, then hand off environment-dependent validation to the leads
-for testing after deployment. Do not copy production secrets into local
-configuration to enable those tests. Real R2 access is currently unavailable
-locally; Isaac is following up on the six missing variables. Report exactly
-which checks ran: type checks and unit tests do not imply a browser smoke
-test passed. Missing R2 configuration does not by itself require blocking
-the handoff, and does not excuse unrelated failing local checks.
-Isaac confirmed (2026-09-30): run local development and browser checks for
-features that do not depend on R2 or Ably even when those services are absent.
-Report service-dependent checks separately; do not treat missing integrations
-as a blanket blocker for local validation.
-
 Two production deployments running off the same monorepo:
 
 - **`fizzdragon.com`** — international (Singapore / OSS-AP-Southeast-1)
 - **`fizzdragon.fizzspace.cn`** — China (Alibaba Cloud CN, separate OSS)
 
-COM runs on **Azure AKS**, deployed through ACR builds and ArgoCD. CN runs
-on **Aliyun ACK**, with images built on a separate ECS host. Follow the
-region-specific commands in `README.md`; deployment credentials and migration
-steps differ. The Java services remain external. CN is not a mirror: Java
-backends, storage and AI credentials differ. Region-aware behaviour gates off
+Both are Alibaba Cloud ECS hosted. The CN deployment is **not** a
+mirror — env vars differ (different Java backends, different OSS
+buckets, different AI keys). Region-aware behaviour gates off
 `NEXT_PUBLIC_SITE_REGION` (`global` vs `cn`).
 
 Branches:
@@ -158,13 +95,6 @@ Branches:
 - `main` — production; merge from develop on explicit request only
 - `feat/*` — optional, for risky multi-file refactors or AI-driven
   large changes; otherwise commit on develop directly
-
-**Mobile ownership (latest user/Pax direction, 2026-10-06):** Hu Xuan
-(`sleepy202411`) owns Mobile development, including the scrolling screen.
-Ric focuses on Web, especially My Income / My Contracts and Pax's spreadsheet
-acceptance checks. Do not continue Mobile implementation or push Mobile feature
-branches under the earlier parity authorization. Shared backend changes for Web
-must preserve existing Mobile API contracts. Follow `apps/mobile/AGENTS.md`.
 
 ## Commands at the repo root
 
@@ -193,50 +123,9 @@ through i18n. Translations land in the same PR.
 - **No auto-commit.** Don't `git commit` unprompted — wait for explicit
   ask.
 - **No auto-merge to main.** Commit + push to `develop` is the default;
-  merge develop → main only when the user says so. Mobile follows the
-  feature-branch exception above.
+  merge develop → main only when the user says so.
 - Commit message style: `<type>(<scope>): <short>` body free-form. See
   `git log --oneline` for examples.
-
-### Product ownership and self-review — Pax and Isaac's direction
-
-Pax's product direction and Isaac's technical guidance are authoritative
-for implementation and review, as explicitly reconfirmed by the user.
-Follow their latest applicable guidance over older project assumptions.
-If their directions conflict or leave a material rule undefined, identify
-the specific ambiguity instead of inventing a product or technical rule.
-User instructions remain the final authority.
-
-Apply this direction throughout implementation and review:
-
-- **Use the product as its user.** Walk complete journeys as a Crew owner,
-  project creator, applicant and contributor. Check the next action, context,
-  permissions and outcome across pages, not only each component in isolation.
-- **Own the review before handoff.** Run feasible local browser walkthroughs
-  and inspect the rendered UI. Include empty/loading/error states, editing,
-  saved drafts, navigation, return visits and interrupted work. Fix confirmed
-  problems before asking Pax to review; missing external services do not
-  excuse skipping independent checks.
-- **Keep the experience clean and coherent.** Match the surrounding platform's
-  typography, spacing, colors, navigation and interaction patterns. Every
-  visible control must have a useful, understandable purpose. Remove redundant
-  controls, dead ends and unfinished placeholder copy; preserve useful recovery
-  actions and user-created drafts/data. Do not invent unsupported functionality.
-- **Repair useful UI rather than hiding failures.** Trace non-working controls
-  through their route, state and API contracts; fix and exercise the complete
-  flow. Remove a control only when it is redundant or intentionally outside
-  the agreed product scope. Missing integrations must be reported explicitly,
-  not disguised as completed repairs by hiding the affected UI.
-- **Separate evidence from assumptions.** Report exactly what was exercised,
-  what used fixtures and what still needs real accounts, devices or services.
-  Passing tests does not establish whole-product usability or Pax's acceptance.
-  Do not declare development exhausted or wholly externally blocked while
-  independent implementation or validation remains possible.
-- **Keep scope and issues clear.** Distinguish agreed missing functionality,
-  external acceptance and proposed features requiring product decisions.
-  Reconcile issues against current evidence; use one concise bullet-point
-  description per issue and add zero comments. Remove completed items from
-  remaining-work lists; close only when the issue's acceptance is satisfied.
 
 ### Engineering standards (the bar for non-trivial work)
 
@@ -310,8 +199,19 @@ This doc is a navigation hub. When something here gets too detailed,
 push it down into the app-specific AGENTS.md or DESIGN.md. Keep this
 file under ~200 lines — it should be readable in one scroll.
 
-## Historical parity integration (2026-10-06)
+## Native Courses handoff — 2026-10-07
 
-The previously authorized parity integration was published as `b3b673b7d`.
-It is completed history, not continuing Mobile authorization. The later Mobile
-ownership handoff above supersedes the earlier parity scope and branch rules.
+- The user's temporary Mobile exception reopened native Courses. Catalogue,
+  search, lessons, playback/resume and Academy certificate mappings now use the
+  regional Web APIs; Home, Creators, Crews, News and Mine remain the five tabs.
+- The native Courses deferral is superseded. The separate daily Discovery
+  assistant remains deferred pending Pax's final design. Watching a course
+  does not award a certificate; real course/badge assignments belong in Admin.
+- Local tests, type/lint checks, regional browser fixtures and native bundle
+  exports validate this integration; they do not establish production or
+  physical-device acceptance.
+- This integration is authorized for `main`, `develop` and
+  `feat/mobile-2.4.0-scrolling-screen`, aligned without force-pushing. Afterwards,
+  Hu Xuan (`sleepy202411`) owns Mobile development and device/live acceptance.
+  Further Mobile implementation requires a new assignment; deployment
+  assistance remains allowed.

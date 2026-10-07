@@ -10,10 +10,8 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("./academy-courses-api", () => ({
   fetchCertificateCourses: h.fetch,
-  academyCourseUrl: (id: string, locale: string) =>
-    `https://www.fizzdragon.com/${locale}/courses/${id}`,
 }));
-vi.mock("expo-web-browser", () => ({ openBrowserAsync: h.open }));
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.open }) }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ backgroundElement: "#222" }) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => h.t, useLocale: () => "en-US" }));
@@ -55,10 +53,10 @@ beforeEach(() => {
   root = createRoot(host);
 });
 afterEach(() => act(() => root.unmount()));
-it("opens the mapped Web course without a native Courses route", async () => {
+it("opens the mapped native course", async () => {
   await render();
   await act(async () => host.querySelector("button")!.click());
-  expect(h.open).toHaveBeenCalledWith("https://www.fizzdragon.com/en-US/courses/42");
+  expect(h.open).toHaveBeenCalledWith({ pathname: "/courses/[id]", params: { id: "42" } });
 });
 it("discards stale courses when the selected certificate changes", async () => {
   let finish!: (value: typeof page) => void;

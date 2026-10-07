@@ -298,6 +298,13 @@ export default function IpDiscoveryScreen() {
       >
         <ThemedText>{t("discovery.entry")}</ThemedText>
       </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push(toHref("/courses"))}
+        style={{ paddingVertical: Spacing.three, minHeight: 44 }}
+      >
+        <ThemedText>{t("courses.title")}</ThemedText>
+      </Pressable>
       {topUpRecovery}
 
       {featured.length ? (

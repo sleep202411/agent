@@ -24,7 +24,10 @@ vi.mock("@/lib/durable-record", () => ({
   }),
 }));
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
-vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
+vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
+  useRouter: () => ({ push: vi.fn() }),
+}));
 vi.mock("@/hooks/use-app-active", () => ({
   useScreenActive: () => h.active,
   useAppActiveChange: (fn: (active: boolean) => void) => {

@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
-import { academyCourseUrl, fetchCertificateCourses } from "./academy-courses-api";
+import { fetchCertificateCourses } from "./academy-courses-api";
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
 vi.mock("@/config", () => ({ webBaseUrl: "https://fizzdragon.fizzspace.cn" }));
 const reply = {
@@ -20,10 +20,6 @@ it("uses the shared regional mapping and passes cancellation", async () => {
     signal,
     retry: false,
   });
-});
-it("opens only the configured regional Web course", () => {
-  expect(academyCourseUrl("42", "zh-CN")).toBe("https://fizzdragon.fizzspace.cn/zh-CN/courses/42");
-  expect(() => academyCourseUrl("https://evil.test", "en-US")).toThrow();
 });
 it("rejects unrelated and duplicate mapping responses", async () => {
   vi.mocked(api.get).mockResolvedValueOnce({ ...reply, certificateId: 14 });

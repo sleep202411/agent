@@ -445,6 +445,13 @@ export default function MineScreen() {
             >
               <ThemedText type="smallBold">{t("aiLab.heading")}</ThemedText>
             </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              style={{ padding: 16 }}
+              onPress={() => router.push(toHref("/courses"))}
+            >
+              <ThemedText type="smallBold">{t("courses.title")}</ThemedText>
+            </Pressable>
             {tab === "ips" && (
               <Pressable
                 accessibilityRole="button"
