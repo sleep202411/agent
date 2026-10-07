@@ -232,6 +232,83 @@ const url = process.env.TASK_DELIVERY_FOLDER_TEST_DATABASE_URL;
         }),
       ).toBe(0);
     });
+    it('repairs a legacy task folder when classified and preserves it on later edits', async () => {
+      await db.crewAssetNode.update({
+        where: { id: categoryId },
+        data: { status: 'active', trashedAt: null, trashedByUserId: null },
+      });
+      sequence =
+        (
+          await db.crewTask.aggregate({
+            where: { crewId },
+            _max: { number: true },
+          })
+        )._max.number ?? 0;
+      const legacy = await createTask();
+      await db.crewTask.update({
+        where: { id: legacy.id },
+        data: { taskKind: null },
+      });
+      const service = new CrewTasksService(
+        db as PrismaService,
+        new CrewAuthorizationService(db as PrismaService),
+        access,
+        { send: jest.fn() } as never,
+        { broadcastCrewTaskChange: jest.fn() } as never,
+        {} as never,
+      );
+      await expect(
+        service.update(legacy.id, member, {
+          expectedVersion: legacy.version,
+          taskKind: 'script',
+        }),
+      ).rejects.toThrow();
+      expect(
+        await db.crewTaskDeliveryFolder.count({ where: { taskId: legacy.id } }),
+      ).toBe(0);
+      await db.crewAssetNode.update({
+        where: { id: categoryId },
+        data: { status: 'trashed' },
+      });
+      await expect(
+        service.update(legacy.id, owner, {
+          expectedVersion: legacy.version,
+          taskKind: 'script',
+        }),
+      ).rejects.toThrow('category folder is unavailable');
+      expect(
+        await db.crewTask.findUniqueOrThrow({ where: { id: legacy.id } }),
+      ).toMatchObject({
+        taskKind: null,
+        version: legacy.version,
+      });
+      expect(
+        await db.crewTaskDeliveryFolder.count({ where: { taskId: legacy.id } }),
+      ).toBe(0);
+      await db.crewAssetNode.update({
+        where: { id: categoryId },
+        data: { status: 'active' },
+      });
+      const updated = await service.update(legacy.id, owner, {
+        expectedVersion: legacy.version,
+        taskKind: 'script',
+      });
+      expect(updated.assetCategory).toBe('scripts');
+      expect(updated.deliveryFolder).not.toBeNull();
+      const folder = await db.crewAssetNode.findUniqueOrThrow({
+        where: { id: updated.deliveryFolder!.id },
+      });
+      expect(folder.parentId).toBe(categoryId);
+      const edited = await service.update(legacy.id, owner, {
+        expectedVersion: updated.version,
+        taskKind: 'art',
+      });
+      expect(edited.assetCategory).toBe('art');
+      expect(edited.deliveryFolder?.id).toBe(folder.id);
+      expect(
+        await db.crewTaskDeliveryFolder.count({ where: { taskId: legacy.id } }),
+      ).toBe(1);
+    });
     it('provisions every bootstrap and template task with real persisted folders', async () => {
       const freshCrew = randomUUID();
       try {

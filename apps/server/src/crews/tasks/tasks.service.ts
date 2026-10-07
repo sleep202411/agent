@@ -2932,6 +2932,17 @@ export class CrewTasksService {
           },
           include: taskInclude,
         });
+        if (input.taskKind !== undefined && !updated.deliveryFolder) {
+          // Explicitly classifying an older task also repairs its missing
+          // delivery destination. Existing folder links and ACLs stay intact.
+          await provisionTaskDeliveryFolderTx(tx, updated, userId);
+          updated.deliveryFolder = (
+            await tx.crewTask.findUniqueOrThrow({
+              where: { id: taskId },
+              include: taskInclude,
+            })
+          ).deliveryFolder;
+        }
         await recordTaskContractFile(
           tx,
           taskId,
