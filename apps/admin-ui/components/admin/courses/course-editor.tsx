@@ -28,6 +28,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { ErrorBanner, Field, StatusPill } from "@/components/admin/news/shared";
 import { FormLabel, TextInput } from "@/components/admin/billing/shared";
 import { InstructorPicker } from "@/components/admin/courses/instructor-picker";
+import { CourseCertificateEditor } from "@/components/admin/courses/course-certificate-editor";
 import {
   COURSE_LOCALES,
   COURSE_PRIMARY_LOCALE,
@@ -658,6 +659,7 @@ function CourseEditorContent({
         }
       />
 
+      <CourseCertificateEditor key={course.id} courseId={course.id} />
       {error ? <ErrorBanner message={error} /> : null}
       {notice ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">

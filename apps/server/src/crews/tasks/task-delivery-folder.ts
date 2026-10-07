@@ -3,6 +3,10 @@ import { CrewAssetPermission, type Prisma } from '@prisma/client';
 import { availableCrewAssetName } from '../assets/asset-name';
 import { lockCrewAssetFolderNames } from '../assets/upload-lock';
 import type { CrewAssetAccessService } from '../assets/asset-access.service';
+import {
+  SHARED_FOLDERS,
+  type FolderSeed,
+} from '../production/production-folders';
 import { taskAssetCategory } from './task-asset-category';
 
 type DeliveryTask = {
@@ -13,7 +17,7 @@ type DeliveryTask = {
   metadata?: unknown;
 };
 
-function deliveryCategoryKey(task: DeliveryTask): string | null {
+function deliveryCategoryKey(task: DeliveryTask): string {
   if (task.taskKind === 'voice') return 'music.voices';
   const category = taskAssetCategory(task.metadata, task.taskKind ?? null);
   return (
@@ -27,8 +31,73 @@ function deliveryCategoryKey(task: DeliveryTask): string | null {
         music: 'music',
         production: 'video',
       } as Record<string, string>
-    )[category] ?? null
+    )[category] ?? 'other'
   );
+}
+
+/** Called under the Crew asset-tree lock; existing IDs and ACLs remain authoritative. */
+async function ensureCategoryFolder(
+  tx: Prisma.TransactionClient,
+  crewId: string,
+  key: string,
+  userId: string,
+  access?: CrewAssetAccessService,
+): Promise<string> {
+  const path: FolderSeed[] = [];
+  function locate(nodes: FolderSeed[]): boolean {
+    for (const node of nodes) {
+      path.push(node);
+      if (node.key === key || (node.children && locate(node.children)))
+        return true;
+      path.pop();
+    }
+    return false;
+  }
+  if (!locate(SHARED_FOLDERS))
+    throw new BadRequestException('Unknown task category.');
+  let parentId: string | null = null;
+  for (const seed of path) {
+    const existing = await tx.crewAssetNode.findFirst({
+      where: { crewId, folderKey: seed.key, kind: 'folder' },
+      select: { id: true, status: true },
+    });
+    if (existing) {
+      if (existing.status !== 'active')
+        throw new BadRequestException(
+          'The task category folder is unavailable. Restore it or update the task delivery folder.',
+        );
+      parentId = existing.id;
+      continue;
+    }
+    await access?.requireContainerPermission(
+      crewId,
+      parentId,
+      userId,
+      CrewAssetPermission.upload,
+      tx,
+    );
+    await lockCrewAssetFolderNames(tx, crewId, parentId);
+    const siblings = await tx.crewAssetNode.findMany({
+      where: { crewId, parentId, status: 'active' },
+      select: { name: true },
+    });
+    const folder: { id: string } = await tx.crewAssetNode.create({
+      data: {
+        crewId,
+        parentId,
+        kind: 'folder',
+        folderKey: seed.key,
+        name: availableCrewAssetName(
+          seed.names['en-US'],
+          new Set(siblings.map((node) => node.name.toLowerCase())),
+        ),
+        createdByUserId: userId,
+        updatedByUserId: userId,
+      },
+    });
+    parentId = folder.id;
+  }
+  return parentId!;
 }
 
 /** Organizational provisioning is part of an already-authorized task creation.
@@ -95,21 +164,13 @@ async function resolveTaskDeliveryFolderTx(
     // Stable seeded keys survive renaming/localization. Never infer a folder
     // from its displayed name or silently route around a restricted folder.
     const categoryKey = deliveryCategoryKey(task);
-    const category = categoryKey
-      ? await tx.crewAssetNode.findFirst({
-          where: {
-            crewId: task.crewId,
-            folderKey: categoryKey,
-            kind: 'folder',
-          },
-          select: { id: true, status: true },
-        })
-      : null;
-    if (category && category.status !== 'active')
-      throw new BadRequestException(
-        'The task category folder is unavailable. Restore it or update the task delivery folder.',
-      );
-    const parentId = category?.id ?? null;
+    const parentId = await ensureCategoryFolder(
+      tx,
+      task.crewId,
+      categoryKey,
+      userId,
+      access,
+    );
     await access?.requireContainerPermission(
       task.crewId,
       parentId,

@@ -6960,7 +6960,13 @@
     "play": "Play",
     "empty": "No courses match the current filters",
     "loadFailedTitle": "Failed to load courses",
-    "loadFailedDescription": "Please refresh the page and try again."
+    "loadFailedDescription": "Please refresh the page and try again.",
+    "skillCertificate": "Skill Certificate",
+    "certificateLoading": "Loading certificate…",
+    "certificateUnavailable": "Certificate information is unavailable.",
+    "certificateRetry": "Retry",
+    "certificateApproval": "A badge requires approval of your coursework; watching the course does not award it.",
+    "certificateUnassigned": "No certificate has been assigned to this course."
   },
   "about": {
     "version": "Version v{version}",
@@ -11184,6 +11190,7 @@
     "remove": "Remove"
   },
   "crewAssetFolders": {
+    "other": "Other Tasks",
     "script": "Script",
     "art": "Art",
     "art_characters": "Characters",

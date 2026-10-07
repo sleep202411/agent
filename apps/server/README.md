@@ -879,3 +879,28 @@ Initial evidence remains private until the uploader explicitly submits it with
 an authorized case. Submission binds at most five verified attachments atomically
 to the case; other participants cannot list unsubmitted drafts. Abandoned drafts
 currently remain private and retained; no automatic deletion period is implied.
+
+### Academy course → skill certificate mappings
+
+`AcademyModule` stores explicit regional course associations in
+`academy_course_certificates`. Apply the normal Prisma migrations before releasing
+this module. The existing `JAVA_CONTENT_URL` and `JAVA_ADMIN_API_TOKEN` must reach
+that region's Java Admin courses and `/api/admin/user-levels/levels` APIs.
+
+In Admin → Courses → a saved course, use **Academy Skill Certificate** to choose
+and save a live type-4 certificate. Empty means unassigned. Saves require
+`courses.write` for the deployment's site, use an expected revision, and write
+an Admin audit entry in the same transaction. Removal retains the revision;
+changes do not alter certificates already awarded to students.
+
+- Admin: `GET` / `PUT /admin/academy/course-certificates/:courseId`.
+- Web / Mobile: `GET /academy/course-certificates/:courseId` for the published
+  course's certificate; `GET /academy/certificates/:certificateId/courses`
+  for published related courses (`locale`, optional `after` cursor).
+- These routes are under the server's normal `/aurora` prefix on Web. Mobile
+  uses its regional Aurora base and opens the corresponding regional Web course.
+
+There are no seeded course/certificate pairs. Existing skill-to-certificate
+configuration does not establish a course relationship. Saving an association
+also does not award a badge: student qualification remains governed by the
+existing Java review and certification flow, not playback progress.

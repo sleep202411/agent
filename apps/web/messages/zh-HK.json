@@ -6960,7 +6960,13 @@
     "play": "播放",
     "empty": "目前沒有符合條件的課程",
     "loadFailedTitle": "課程載入失敗",
-    "loadFailedDescription": "請稍後重新整理頁面再試。"
+    "loadFailedDescription": "請稍後重新整理頁面再試。",
+    "skillCertificate": "技能證書",
+    "certificateLoading": "正在載入證書…",
+    "certificateUnavailable": "證書資訊暫不可用。",
+    "certificateRetry": "重試",
+    "certificateApproval": "徽章需在作業審核通過後獲得，觀看課程不會自動授予徽章。",
+    "certificateUnassigned": "此課程尚未關聯證書。"
   },
   "about": {
     "version": "版本 v{version}",
@@ -11184,6 +11190,7 @@
     "remove": "移出"
   },
   "crewAssetFolders": {
+    "other": "其他任務",
     "script": "劇本",
     "art": "美術資源",
     "art_characters": "角色",

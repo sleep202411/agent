@@ -26,6 +26,7 @@ import {
   type ApplicationIpChoice,
 } from "./level-application-choices";
 import { pickLevelApplicationAttachment } from "./level-application-upload";
+import { AcademyCoursesForCertificate } from "./academy-courses";
 
 type Props = { userId: string; generation: number; onClose: () => void; lockedLevelId?: number };
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -271,6 +272,10 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
             ))}
           {!levels.some((v) => lockedLevelId === undefined || v.id === lockedLevelId) ? (
             <ThemedText>{t("levelApplication.unavailable")}</ThemedText>
+          ) : null}
+          {levelId !== undefined &&
+          levels.some((level) => level.id === levelId && level.type === 4) ? (
+            <AcademyCoursesForCertificate certificateId={levelId} />
           ) : null}
           {selectedPending ? <ThemedText>{t("levelApplication.alreadyPending")}</ThemedText> : null}
           <AssociationChoice

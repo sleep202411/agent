@@ -64,12 +64,14 @@ describe('production bootstrap templates', () => {
       'art',
       'music',
       'video',
+      'other',
     ]);
     expect(film.map((folder) => folder.key)).toEqual([
       'script',
       'art',
       'music',
       'video',
+      'other',
       'plot_tree',
       'playtest',
     ]);

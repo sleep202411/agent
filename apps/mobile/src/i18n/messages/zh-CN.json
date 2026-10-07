@@ -5773,5 +5773,12 @@
   "discovery.pause": "暂停",
   "discovery.play": "播放",
   "discovery.mute": "静音",
-  "discovery.unmute": "开启声音"
+  "discovery.unmute": "开启声音",
+  "academyCourses.title": "相关学院课程",
+  "academyCourses.loading": "正在加载课程",
+  "academyCourses.failed": "无法加载学院课程。",
+  "academyCourses.retry": "重试",
+  "academyCourses.openWeb": "打开网页课程",
+  "academyCourses.empty": "此证书尚未关联已发布的课程。",
+  "academyCourses.more": "更多课程"
 }

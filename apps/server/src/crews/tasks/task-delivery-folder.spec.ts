@@ -12,7 +12,9 @@ function fixture() {
     $queryRaw: jest.fn().mockResolvedValue([]),
     crewAssetNode: {
       findMany: jest.fn().mockResolvedValue([]),
-      findFirst: jest.fn().mockResolvedValue({ id: 'existing' }),
+      findFirst: jest
+        .fn()
+        .mockResolvedValue({ id: 'existing', status: 'active' }),
       create: jest.fn().mockResolvedValue({ id: 'created' }),
       updateMany: jest.fn(),
       count: jest.fn().mockResolvedValue(1),
@@ -40,7 +42,7 @@ it('creates a named folder once and reuses the task mapping on subsequent submis
     data: {
       crewId: 'crew',
       kind: 'folder',
-      parentId: null,
+      parentId: 'existing',
       name: 'Final cut',
       createdByUserId: 'actor',
       updatedByUserId: 'actor',
@@ -97,7 +99,7 @@ it('allocates a distinct folder when another task already uses the same title', 
     data: {
       crewId: 'crew',
       kind: 'folder',
-      parentId: null,
+      parentId: 'existing',
       name: 'Final cut (2)',
       createdByUserId: 'actor',
       updatedByUserId: 'actor',
@@ -180,3 +182,45 @@ it('keeps a previously selected task folder when its task type changes', async (
   });
   expect(f.tx.crewAssetNode.create).not.toHaveBeenCalled();
 });
+
+it.each([
+  ['script', undefined, ['script']],
+  ['art', { assetCategory: 'characters' }, ['art', 'art.characters']],
+  ['voice', undefined, ['music', 'music.voices']],
+  ['other', undefined, ['other']],
+])(
+  'creates missing category hierarchy for %s before its task folder',
+  async (kind, metadata, keys) => {
+    const f = fixture();
+    f.tx.crewAssetNode.findFirst.mockResolvedValue(null);
+    let sequence = 0;
+    f.tx.crewAssetNode.create.mockImplementation(() =>
+      Promise.resolve({
+        id: `folder-${++sequence}`,
+      }),
+    );
+    await taskDeliveryFolderTx(
+      f.tx as never,
+      f.access as never,
+      { ...task, taskKind: kind, metadata },
+      'actor',
+    );
+    const data = (
+      f.tx.crewAssetNode.create.mock.calls as unknown as Array<
+        [
+          {
+            data: { folderKey?: string; parentId: string | null; name: string };
+          },
+        ]
+      >
+    ).map((call) => call[0].data);
+    expect(data.map((item) => item.folderKey).filter(Boolean)).toEqual(keys);
+    expect(data[0].parentId).toBeNull();
+    for (let index = 1; index < data.length; index++)
+      expect(data[index].parentId).toBe(`folder-${index}`);
+    expect(data.at(-1)).toMatchObject({
+      name: task.title,
+      parentId: `folder-${keys.length}`,
+    });
+  },
+);

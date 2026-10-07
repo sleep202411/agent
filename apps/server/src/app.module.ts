@@ -1,3 +1,4 @@
+import { AcademyModule } from './academy/academy.module';
 import { CreatorWithdrawalsModule } from './creator-withdrawals/creator-withdrawals.module';
 import { DiscoveryAssistantModule } from './discovery-assistant/discovery-assistant.module';
 import { AiActorsModule } from './ai-actors/ai-actors.module';
@@ -107,6 +108,7 @@ const agentOsGatewayEnabled = (() => {
     CrewsModule,
     CreatorServicesModule,
     CreatorWithdrawalsModule,
+    AcademyModule,
     ReferralsModule,
     StorySavesModule,
     ConversationsModule,

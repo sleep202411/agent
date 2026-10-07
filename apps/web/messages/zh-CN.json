@@ -6960,7 +6960,13 @@
     "play": "播放",
     "empty": "目前没有符合条件的课程",
     "loadFailedTitle": "课程加载失败",
-    "loadFailedDescription": "请稍后刷新页面重试。"
+    "loadFailedDescription": "请稍后刷新页面重试。",
+    "skillCertificate": "技能证书",
+    "certificateLoading": "正在加载证书…",
+    "certificateUnavailable": "证书信息暂不可用。",
+    "certificateRetry": "重试",
+    "certificateApproval": "徽章需在作业审核通过后获得，观看课程不会自动授予徽章。",
+    "certificateUnassigned": "此课程尚未关联证书。"
   },
   "about": {
     "version": "版本 v{version}",
@@ -11184,6 +11190,7 @@
     "remove": "移出"
   },
   "crewAssetFolders": {
+    "other": "其他任务",
     "script": "剧本",
     "art": "美术资源",
     "art_characters": "角色",

@@ -5773,5 +5773,12 @@
   "discovery.pause": "暫停",
   "discovery.play": "播放",
   "discovery.mute": "靜音",
-  "discovery.unmute": "開啟聲音"
+  "discovery.unmute": "開啟聲音",
+  "academyCourses.title": "相關學院課程",
+  "academyCourses.loading": "正在載入課程",
+  "academyCourses.failed": "無法載入學院課程。",
+  "academyCourses.retry": "重試",
+  "academyCourses.openWeb": "開啟網頁課程",
+  "academyCourses.empty": "此證書尚未關聯已發佈的課程。",
+  "academyCourses.more": "更多課程"
 }

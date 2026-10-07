@@ -5773,5 +5773,12 @@
   "discovery.pause": "Pause",
   "discovery.play": "Play",
   "discovery.mute": "Mute",
-  "discovery.unmute": "Turn sound on"
+  "discovery.unmute": "Turn sound on",
+  "academyCourses.title": "Related Academy Courses",
+  "academyCourses.loading": "Loading courses",
+  "academyCourses.failed": "Could not load Academy courses.",
+  "academyCourses.retry": "Retry",
+  "academyCourses.openWeb": "Open Web Course",
+  "academyCourses.empty": "No published courses are linked to this certificate yet.",
+  "academyCourses.more": "More Courses"
 }

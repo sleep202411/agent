@@ -51,12 +51,21 @@ export function deliveryFolderAdapter(sql: Sql) {
       create: async ({
         data,
       }: {
-        data: Pick<Node, 'crewId' | 'parentId' | 'name' | 'kind'>;
+        data: Pick<Node, 'crewId' | 'parentId' | 'name' | 'kind'> & {
+          folderKey?: string;
+        };
       }) => {
         const id = randomUUID();
         await sql.query(
-          'INSERT INTO fixture_asset_nodes(id,crew_id,parent_id,name,kind) VALUES($1,$2,$3,$4,$5)',
-          [id, data.crewId, data.parentId, data.name, data.kind],
+          'INSERT INTO fixture_asset_nodes(id,crew_id,parent_id,name,kind,folder_key) VALUES($1,$2,$3,$4,$5,$6)',
+          [
+            id,
+            data.crewId,
+            data.parentId,
+            data.name,
+            data.kind,
+            data.folderKey ?? null,
+          ],
         );
         return { id, ...data, status: 'active' };
       },

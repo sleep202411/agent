@@ -11161,6 +11161,18 @@ model StoryboardExportJob {
 }
 
 // Pax daily discovery foundations; no scheduler or delivery is enabled yet.
+// Java owns courses and skill certificates; this regional sidecar owns their explicit association.
+// Null mappings retain their version so concurrent edits cannot resurrect a removed association.
+model AcademyCourseCertificate {
+  courseId      String   @id @map("course_id") @db.VarChar(128)
+  certificateId Int?     @map("certificate_id")
+  version       Int      @default(1)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([certificateId], map: "academy_course_certificate_idx")
+  @@map("academy_course_certificates")
+}
+
 model DiscoveryPreference {
   site         String               @db.VarChar(8)
   actorId      String               @map("actor_id") @db.VarChar(64)

@@ -198,6 +198,21 @@ describe('Canvas import isolated SQL persistence', () => {
     expect(
       (await db.query('SELECT * FROM crew_task_delivery_folders')).rows,
     ).toHaveLength(2);
+    // Every delivery folder is nested in its category, and repeated imports
+    // reuse one category instead of creating a root-level task folder.
+    expect(
+      (
+        await db.query(`SELECT f.id FROM fixture_asset_nodes f
+      JOIN crew_task_delivery_folders d ON d.folder_id=f.id
+      WHERE f.parent_id IS NULL`)
+      ).rows,
+    ).toHaveLength(0);
+    expect(
+      (
+        await db.query(`SELECT folder_key FROM fixture_asset_nodes
+      WHERE folder_key IS NOT NULL GROUP BY folder_key HAVING count(*) > 1`)
+      ).rows,
+    ).toHaveLength(0);
     expect((await db.query('SELECT * FROM activity')).rows).toHaveLength(1);
   });
   it('rolls back every task when a later task write fails', async () => {
