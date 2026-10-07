@@ -5,16 +5,11 @@ import { TaskContractFiles } from "@/app/(site)/crews/_components/task-contract-
 import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
 import { CustomFieldControl, normalizeCustomFieldDraft } from "./task-custom-field-control";
 
-import { TaskDisputeControl } from "@/app/(site)/crews/_components/task-dispute-control";
 import { TaskFeedbackPanel } from "@/app/(site)/crews/_components/task-feedback-panel";
 import { TaskClosureControl } from "@/app/(site)/crews/_components/task-closure-control";
-import { TaskExtensionPanel } from "@/app/(site)/crews/_components/task-extension-panel";
 import { TaskAgreedFee } from "@/app/(site)/crews/_components/task-agreed-fee";
 
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
-import { TaskCommitments } from "@/app/(site)/crews/_components/accountability/task-commitments";
-
-import { TaskDeliveryTemplatePanel } from "./task-delivery-template";
 
 import {
   CREW_CURRENCY,
@@ -131,7 +126,6 @@ interface TaskIssueDetailProps {
   viewerUserId?: string;
   displays: ReturnType<typeof useUserDisplays>;
   onSubmit: () => void;
-  submissionForm?: React.ReactNode;
   onReviewed: (decision: "approve" | "request_revision") => void;
   onClose?: () => void;
 }
@@ -150,7 +144,6 @@ export function TaskIssueDetail({
   viewerUserId,
   displays,
   onSubmit,
-  submissionForm,
   onReviewed,
   onClose,
 }: TaskIssueDetailProps) {
@@ -381,18 +374,8 @@ export function TaskIssueDetail({
               </p>
             </section>
 
-            {canSubmit ? submissionForm : null}
             <TaskContractFiles crewId={task.crewId} taskId={task.id} canManage={isOwner} />
             <TaskDeliverySummary task={task} />
-            <details className="my-3">
-              <summary className="cursor-pointer text-xs text-muted-foreground">
-                {t("deliveryOptions")}
-              </summary>
-              <TaskCommitments task={task} canManage={isOwner} />
-              <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
-              <TaskExtensionPanel task={task} canManage={isOwner} />
-              <TaskDisputeControl task={task} />
-            </details>
 
             <div className="mb-5 flex items-center gap-2 border-t border-white/[0.055] pt-7">
               <IconMessage className="size-4 text-[#8c929c]" />
@@ -481,9 +464,11 @@ export function TaskIssueDetail({
           {canReview && task.status === "submitted" ? (
             <TaskReviewForm task={task} onReviewed={onReviewed} />
           ) : null}
-          <div className="mb-6">
-            <TaskFeedbackPanel task={task} />
-          </div>
+          {task.submissions.length > 0 ? (
+            <div className="mb-6">
+              <TaskFeedbackPanel task={task} />
+            </div>
+          ) : null}
           <RailSection title={projectT("properties")}>
             <RailRow icon={<IconCircle className="size-4" />}>
               {isOwner && !["submitted", "approved", "cancelled"].includes(task.status) ? (

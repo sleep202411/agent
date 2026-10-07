@@ -87,6 +87,8 @@ function FeedbackSession({
   const query = useInfiniteQuery({
     queryKey: ["crew-task-feedback", userId, taskId ?? "mine"],
     retry: false,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       crewApi.get<{ items: Feedback[]; nextCursor: string | null }>(
@@ -164,13 +166,15 @@ function FeedbackSession({
       {query.isPending && <p>{t("loading")}</p>}
       {query.isError && <p role="alert">{query.error.message}</p>}
       {error && <p role="alert">{error}</p>}
-      <Button
-        variant="outline"
-        disabled={busy || query.isFetching}
-        onClick={() => void query.refetch()}
-      >
-        {t("refresh")}
-      </Button>
+      {query.isError && (
+        <Button
+          variant="outline"
+          disabled={busy || query.isFetching}
+          onClick={() => void query.refetch()}
+        >
+          {t("retry")}
+        </Button>
+      )}
       {readable && (
         <>
           {retry && (

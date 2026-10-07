@@ -48,6 +48,7 @@ describe('Withdrawal HTTP access and request contract', () => {
     filename: 'withdrawals.csv',
     count: 0,
   });
+  const savedRecipient = jest.fn().mockResolvedValue(null);
   const queue = jest.fn().mockResolvedValue({ items: [] });
   const upload = jest.fn().mockResolvedValue({ id: 'verified-contract' });
   const postRevenue = jest.fn().mockResolvedValue({ id: 'revenue-receipt' });
@@ -120,7 +121,7 @@ describe('Withdrawal HTTP access and request contract', () => {
         },
         {
           provide: CreatorWithdrawalsService,
-          useValue: { balances, request: jest.fn() },
+          useValue: { balances, savedRecipient, request: jest.fn() },
         },
         { provide: WithdrawalAdminService, useValue: { queue, exportCsv } },
         { provide: RevenueContractsService, useValue: { upload } },
@@ -140,6 +141,25 @@ describe('Withdrawal HTTP access and request contract', () => {
   });
   afterAll(async () => {
     await app?.close();
+  });
+  it('returns JSON for a creator without a saved withdrawal recipient', async () => {
+    savedRecipient.mockResolvedValueOnce(null);
+    const response = await request(server)
+      .get('/me/withdrawals/recipient')
+      .set('Cookie', 'satoken=creator')
+      .expect(200)
+      .expect('Content-Type', /json/);
+    expect(JSON.parse(response.text)).toBeNull();
+    expect(savedRecipient).toHaveBeenLastCalledWith('verified-creator');
+  });
+  it('preserves an existing withdrawal recipient response', async () => {
+    const saved = { version: 2, recipient: { fullName: 'Fixture recipient' } };
+    savedRecipient.mockResolvedValueOnce(saved);
+    const response = await request(server)
+      .get('/me/withdrawals/recipient')
+      .set('Cookie', 'satoken=creator')
+      .expect(200);
+    expect(response.body).toEqual(saved);
   });
   it('authenticates creator proof access and takes ownership only from the session', async () => {
     const id = '11111111-1111-4111-8111-111111111111';

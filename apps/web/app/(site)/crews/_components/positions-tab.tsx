@@ -454,7 +454,12 @@ function PositionCard({
 
   return (
     <article
-      className={`flex flex-col gap-3 border-b border-white/10 border-l-2 p-4 transition-colors ${selected ? "border-l-primary bg-white/5" : "border-l-transparent hover:bg-white/[0.025]"}`}
+      onClick={(event) => {
+        // Keep Crew links and explicit controls independent of card selection.
+        if ((event.target as HTMLElement).closest("a,button,input,select,textarea")) return;
+        onSelect();
+      }}
+      className={`cursor-pointer flex flex-col gap-3 border-b border-white/10 border-l-2 p-4 transition-colors ${selected ? "border-l-primary bg-white/5" : "border-l-transparent hover:bg-white/[0.025]"}`}
     >
       {/* Identity row: crew logo + crew name */}
       <Link href={crewHref} className="flex items-center gap-2.5">

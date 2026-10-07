@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
   canLink: true,
   taskError: false,
   brief: "Storyboard requirements",
+  reward: null as number | null,
   save: vi.fn(),
   create: vi.fn(),
   close: vi.fn(),
@@ -20,7 +21,12 @@ vi.mock("../_hooks/use-tasks", () => ({
   useCrewTask: () => ({
     isSuccess: true,
     isError: state.taskError,
-    data: { id: "task-one", crewId: "crew", description: state.brief },
+    data: {
+      id: "task-one",
+      crewId: "crew",
+      description: state.brief,
+      rewardUsdMinor: state.reward,
+    },
   }),
   useCrewTaskOptions: () => ({
     data: [{ id: "task-one", number: 1, title: "Storyboard" }],
@@ -90,6 +96,7 @@ beforeEach(() => {
   state.canLink = true;
   state.taskError = false;
   state.brief = "Storyboard requirements";
+  state.reward = null;
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -347,29 +354,21 @@ it("does not submit an immutable task link when editing", async () => {
   expect(state.save.mock.calls[0]?.[0]).not.toHaveProperty("taskId");
 });
 
-it("publishes private visibility only with the explicitly linked task", async () => {
+it("publishes linked recruitment without a visibility or routine refresh control", async () => {
   await createWithTask();
-  await act(async () => {
-    const select = container.querySelectorAll("select")[2]!;
-    select.value = "private";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  expect(container.textContent).not.toContain("recruitmentVisibility");
+  expect(container.textContent).not.toContain("recruitmentTaskRefresh");
   await next();
   await next();
   await save();
   expect(state.create.mock.calls[0]?.[0]).toMatchObject({
     taskId: "task-one",
-    recruitmentVisibility: "private",
+    recruitmentVisibility: "public",
   });
 });
 
-it("clears private visibility when removing the task link", async () => {
+it("omits recruitment visibility when removing the task link", async () => {
   await createWithTask();
-  await act(async () => {
-    const visibility = container.querySelectorAll("select")[2]!;
-    visibility.value = "private";
-    visibility.dispatchEvent(new Event("change", { bubbles: true }));
-  });
   await act(async () => {
     const task = container.querySelectorAll("select")[1]!;
     task.value = "none";
@@ -492,3 +491,15 @@ it.each(["monthly", "half_upfront", "on_completion", null] as const)(
     expect(state.save.mock.calls[0][0].paymentTerms).toBe(paymentTerms);
   }
 );
+
+it("keeps a linked task’s USD 200 reward in the submitted position", async () => {
+  state.reward = 20000;
+  await createWithTask();
+  await next();
+  await next();
+  await save();
+  expect(state.create.mock.calls[0]?.[0]).toMatchObject({
+    taskId: "task-one",
+    salary: { currency: "USD", min: 200, max: 200, period: "project" },
+  });
+});

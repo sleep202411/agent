@@ -252,7 +252,10 @@ it("hides cached private feedback after permission loss", async () => {
   h.get.mockResolvedValue({ ...page, items: [feedback] });
   await render(false);
   h.get.mockRejectedValue(new CrewApiError(403, { message: "Denied" }));
-  await click("refresh");
+  await act(async () => {
+    await qc.refetchQueries();
+  });
+  await flush();
   expect(host.textContent).not.toContain("Private evaluation");
   expect(button("respond")).toBeUndefined();
   expect(button("appealFeedback")).toBeUndefined();

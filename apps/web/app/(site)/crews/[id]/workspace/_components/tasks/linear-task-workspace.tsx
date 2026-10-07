@@ -59,6 +59,7 @@ import { TaskIssueDetail } from "./task-issue-detail";
 import { TaskProjectView } from "./task-project-views";
 import { ProjectSettingsDialog } from "./task-project-settings";
 import { TaskQuickCreate } from "./task-quick-create";
+import { TaskDeliveryProgress } from "./task-delivery-progress";
 import { SubmitTaskDialog } from "./task-dialogs";
 import { TaskSelect } from "./task-select";
 import { ProductionOverview } from "./production-overview";
@@ -158,7 +159,7 @@ function LinearTaskSession({
     state: CrewTaskWorkflowStateDTO | null;
     afterStateId: string | null;
   } | null>(null);
-  const [submitTask, setSubmitTask] = useState<CrewTaskDTO | null>(null);
+  const [submissionOpen, setSubmissionOpen] = useState(false);
   const [favorite, setFavorite] = useState(false);
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
@@ -166,11 +167,13 @@ function LinearTaskSession({
   const [previousDeeplinkTaskId, setPreviousDeeplinkTaskId] = useState(deeplinkTaskId);
   if (previousDeeplinkTaskId !== deeplinkTaskId) {
     setPreviousDeeplinkTaskId(deeplinkTaskId);
+    setSubmissionOpen(false);
     setSelectedTaskId(deeplinkTaskId ?? null);
   }
 
   const selectTask = useCallback(
     (taskId: string | null) => {
+      setSubmissionOpen(false);
       setSelectedTaskId(taskId);
       onSelectedTaskChange?.(taskId);
     },
@@ -193,8 +196,8 @@ function LinearTaskSession({
   const taskAccessUnavailable =
     taskQuery.error instanceof CrewApiError &&
     [401, 403, 404, 410].includes(taskQuery.error.status);
-  if (taskAccessUnavailable && submitTask !== null) {
-    setSubmitTask(null);
+  if (taskAccessUnavailable && submissionOpen) {
+    setSubmissionOpen(false);
   }
   const tasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
   const productionActivity = useMemo(
@@ -576,6 +579,10 @@ function LinearTaskSession({
         canManageEpisodes={productionOverviewQuery.data?.capabilities.manage === true}
         active={section === "production"}
         onSelectTask={selectTask}
+        onSubmitTask={(taskId) => {
+          selectTask(taskId);
+          setSubmissionOpen(true);
+        }}
         onViewTasks={() => {
           setQuery("");
           setPriority("all");
@@ -809,6 +816,26 @@ function LinearTaskSession({
                 {t("issues")}
               </button>
             </div>
+          ) : taskQuery.data &&
+            submissionOpen &&
+            canSubmitAssigned &&
+            taskQuery.data.assignees.some((assignee) => assignee.userId === viewerUserId) &&
+            ["open", "in_progress", "revision_requested"].includes(taskQuery.data.status) ? (
+            <div className="space-y-6 p-6">
+              <h2 className="text-lg font-semibold">{taskQuery.data.title}</h2>
+              <TaskDeliveryProgress status={taskQuery.data.status} />
+              <SubmitTaskDialog
+                inline
+                key={`${viewerUserId}:${taskQuery.data.id}`}
+                open
+                onOpenChange={(open) => {
+                  if (!open) selectTask(null);
+                }}
+                crewId={crewId}
+                task={taskQuery.data}
+                onSubmitted={() => selectTask(null)}
+              />
+            </div>
           ) : taskQuery.data ? (
             <TaskIssueDetail
               key={taskQuery.data.id}
@@ -831,24 +858,7 @@ function LinearTaskSession({
               viewerUserId={viewerUserId}
               displays={displays}
               onClose={() => selectTask(null)}
-              onSubmit={() => setSubmitTask(taskQuery.data)}
-              submissionForm={
-                canSubmitAssigned &&
-                submitTask?.id === taskQuery.data.id && (
-                  <SubmitTaskDialog
-                    inline
-                    key={`${viewerUserId}:${taskQuery.data.id}`}
-                    open={Boolean(submitTask)}
-                    onOpenChange={(open) => !open && setSubmitTask(null)}
-                    crewId={crewId}
-                    task={taskQuery.data}
-                    onSubmitted={(taskId) => {
-                      setSubmitTask(null);
-                      selectTask(taskId);
-                    }}
-                  />
-                )
-              }
+              onSubmit={() => setSubmissionOpen(true)}
               onReviewed={() => undefined}
             />
           ) : null}

@@ -9,13 +9,13 @@
     "cannotManage": "You do not have permission to create tasks in this Crew.",
     "loading": "Loading…",
     "retry": "Retry",
-    "newCrew": "Create a new Crew",
-    "continue": "Continue to task",
+    "newCrew": "Create a New Crew",
+    "continue": "Continue to Task",
     "signIn": "Sign in to create a task",
     "positionTitle": "Create Position",
     "positionDescription": "Choose the Crew for this opening. You can link the position to an existing task in the next step.",
     "cannotManagePositions": "You need permission to manage openings in this Crew.",
-    "continuePosition": "Continue to position"
+    "continuePosition": "Continue to Position"
   },
   "taskPaymentTerms": {
     "unspecified": "Not specified",
@@ -5318,6 +5318,7 @@
       "templateDraftHelp": "These previews are saved only in this browser. Create their tasks below, or discard them. New imports save directly to Tasks.",
       "savedTasks": "Tasks",
       "openDelivery": "Open task & submit delivery",
+      "assigned": "Assigned",
       "saveThenRecruit": "Save this task and continue to the job form.",
       "completeDraftFields": "Complete the required fields in “{title}” before creating tasks."
     },
@@ -10288,6 +10289,7 @@
     "urgentLabel": "Urgent"
   },
   "crewPersonalIncome": {
+    "withdrawEarnings": "Withdraw Earnings",
     "productionRecorded": "{count} approved task rewards · current filters",
     "productionOrders": "Production Orders",
     "incomeType": "Income type",
@@ -10303,7 +10305,7 @@
     "revenueReference": "Revenue reference",
     "distributionContract": "Distribution contract",
     "distributionReceipt": "Distribution receipt",
-    "title": "My income",
+    "title": "Income Center",
     "back": "Crew hall",
     "description": "Your recorded earnings across Crews.",
     "loading": "Loading…",
@@ -11683,12 +11685,12 @@
     "academy": "Explore Academy"
   },
   "myContracts": {
-    "title": "My contracts",
+    "title": "My Contracts",
     "description": "Agreements you created or were invited to sign in your active Crews.",
     "all": "All",
     "active": "Active",
     "signed": "Signed",
-    "attention": "Needs attention",
+    "attention": "Needs Attention",
     "loading": "Loading contracts…",
     "signIn": "Sign in",
     "retry": "Retry",
@@ -11696,7 +11698,7 @@
     "more": "Load more",
     "close": "Close",
     "agreements": "Agreements",
-    "files": "Task contract files",
+    "files": "Task Contract Files",
     "filesDescription": "Contract attachments from your accessible tasks. Uploading a file does not electronically sign it.",
     "filesEmpty": "No task contract files yet."
   },

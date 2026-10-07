@@ -3,7 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { CreatorReviews } from "./creator-reviews";
-import { api } from "@/src/lib/api";
+const respond = vi.fn();
+const fetcher = vi.fn();
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
@@ -12,7 +13,7 @@ vi.mock("@/src/i18n/i18n", () => ({
 vi.mock("../../_hooks/use-creator", () => ({
   useCreatorDetail: (id: string) => ({ data: { name: `Creator ${id}` } }),
 }));
-vi.mock("@/src/lib/api", () => ({ api: { get: vi.fn() } }));
+
 const row = {
   id: "review-1",
   authorUserId: "123",
@@ -50,16 +51,25 @@ async function render(id = "creator") {
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.resetAllMocks();
+  fetcher.mockImplementation(
+    async () =>
+      new Response(JSON.stringify(await respond()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+  );
+  vi.stubGlobal("fetch", fetcher);
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  vi.mocked(api.get).mockResolvedValue({ summary, items: [row], nextCursor: null });
+  respond.mockResolvedValue({ summary, items: [row], nextCursor: null });
 });
 afterEach(async () => {
   await act(async () => root.unmount());
   client.clear();
   host.remove();
+  vi.unstubAllGlobals();
 });
 it("renders actual averages and published comments without task links or private history", async () => {
   await render();
@@ -67,13 +77,13 @@ it("renders actual averages and published comments without task links or private
   expect(host.querySelector('[role="img"]')?.getAttribute("aria-label")).toContain("4.25");
   expect(host.querySelector("a")?.getAttribute("href")).toMatch(/^\/en-US\/creators\//);
   expect(host.querySelector('a[href*="crew"]')).toBeNull();
-  expect(api.get).toHaveBeenCalledWith(
-    "/aurora/creator-profiles/creator/reviews",
-    expect.objectContaining({ credentials: "omit", params: { limit: 20, cursor: undefined } })
+  expect(fetcher).toHaveBeenCalledWith(
+    "/aurora/creator-profiles/creator/reviews?limit=20",
+    expect.objectContaining({ credentials: "omit", cache: "no-store" })
   );
 });
 it("shows unrated empty scores without inventing five stars", async () => {
-  vi.mocked(api.get).mockResolvedValue({
+  respond.mockResolvedValue({
     summary: {
       creator: { count: 0, average: null },
       manager: { count: 0, average: null },
@@ -91,7 +101,7 @@ it("shows unrated empty scores without inventing five stars", async () => {
 });
 it("retains service controls during a review error and retries without stale comments", async () => {
   await render();
-  vi.mocked(api.get).mockRejectedValueOnce(new Error("Reviews unavailable"));
+  respond.mockRejectedValueOnce(new Error("Reviews unavailable"));
   await act(async () => {
     await client.invalidateQueries({ queryKey: ["creator-profile-reviews"] });
   });
@@ -104,9 +114,9 @@ it("retains service controls during a review error and retries without stale com
   expect(host.textContent).toContain("Excellent collaboration");
 });
 it("paginates once and resets review history when visiting another creator", async () => {
-  vi.mocked(api.get).mockResolvedValueOnce({ summary, items: [row], nextCursor: "review-1" });
+  respond.mockResolvedValueOnce({ summary, items: [row], nextCursor: "review-1" });
   await render();
-  vi.mocked(api.get).mockResolvedValueOnce({
+  respond.mockResolvedValueOnce({
     summary,
     items: [{ ...row, id: "review-2", comment: "Second review" }],
     nextCursor: null,
@@ -114,11 +124,10 @@ it("paginates once and resets review history when visiting another creator", asy
   await act(async () => host.querySelector("button")!.click());
   await flush();
   expect(host.textContent).toContain("Second review");
-  expect(vi.mocked(api.get).mock.calls.at(-1)?.[1]?.params).toEqual({
-    limit: 20,
-    cursor: "review-1",
-  });
+  expect(fetcher.mock.calls.at(-1)?.[0]).toBe(
+    "/aurora/creator-profiles/creator/reviews?limit=20&cursor=review-1"
+  );
   await render("other");
   expect(host.textContent).not.toContain("Second review");
-  expect(vi.mocked(api.get).mock.calls.at(-1)?.[0]).toBe("/aurora/creator-profiles/other/reviews");
+  expect(fetcher.mock.calls.at(-1)?.[0]).toBe("/aurora/creator-profiles/other/reviews?limit=20");
 });

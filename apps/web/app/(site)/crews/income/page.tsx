@@ -84,13 +84,13 @@ function PersonalIncomeSession() {
   const items = pages?.flatMap((page) => page.items) ?? [];
   const production = summary?.postedBySource?.find((source) => source.sourceType === "task_reward");
   return (
-    <main className="mx-auto w-full max-w-[1800px] px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-6xl space-y-6">
+    <main className="mx-auto w-full max-w-[1400px] px-4 py-8 sm:px-6 lg:px-10">
+      <div className="mx-auto space-y-8">
         <header className="space-y-2">
           <Link href={localizePath("/crews", locale)} className="text-sm text-muted-foreground">
             {t("back")}
           </Link>
-          <h1 className="text-2xl font-semibold">{t("title")}</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">{t("title")}</h1>
           <p className="text-sm text-muted-foreground">{t("description")}</p>
         </header>
         {user && (
@@ -104,43 +104,78 @@ function PersonalIncomeSession() {
                   ` · ${t("recordedThrough")}: ${filters.recordedThrough}`}
               </p>
             </div>
-            {summary && (
-              <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {summary.postedThisMonthAmountMinor !== undefined && (
-                  <div className="rounded-lg bg-secondary p-4">
-                    <dt className="text-sm text-muted-foreground">{t("postedThisMonth")}</dt>
-                    <dd className="mt-2 text-xl font-semibold">
-                      {formatCrewMoney(summary.postedThisMonthAmountMinor, locale, currency)}
-                    </dd>
-                  </div>
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+              <div className="min-w-0 rounded-2xl bg-white/[0.035] p-6">
+                <p className="text-xs font-medium text-muted-foreground">{t("posted")}</p>
+                <p className="mt-3 text-4xl font-semibold tabular-nums">
+                  {summary && !feed.isError
+                    ? formatCrewMoney(summary.byStatus.posted.amountMinor, locale, currency)
+                    : "—"}
+                </p>
+                {summary && !feed.isError && summary.postedThisMonthAmountMinor !== undefined && (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {t("postedThisMonth")} ·{" "}
+                    {formatCrewMoney(summary.postedThisMonthAmountMinor, locale, currency)}
+                  </p>
                 )}
-                {(["posted", "pending", "rejected", "reversed"] as const).map((status) => (
-                  <div key={status} className="rounded-lg bg-secondary p-4">
-                    <dt className="text-sm text-muted-foreground">{t(status)}</dt>
-                    <dd className="mt-2 text-xl font-semibold">
-                      {formatCrewMoney(summary.byStatus[status].amountMinor, locale, currency)}
-                    </dd>
+                <EarningTrend
+                  value={summary?.postedDaily}
+                  failed={feed.isError}
+                  loading={feed.isPending}
+                  locale={locale}
+                  currency={currency}
+                />
+              </div>
+              <div className="flex flex-col gap-4">
+                <dl className="flex-1 rounded-2xl bg-white/[0.035] p-6">
+                  <dt className="text-xs font-medium text-muted-foreground">{t("pending")}</dt>
+                  <dd className="mt-3 text-2xl font-semibold tabular-nums">
+                    {summary && !feed.isError
+                      ? formatCrewMoney(summary.byStatus.pending.amountMinor, locale, currency)
+                      : "—"}
+                  </dd>
+                  <div className="mt-6 grid grid-cols-2 gap-4">
+                    {(["rejected", "reversed"] as const).map((status) => (
+                      <div key={status}>
+                        <dt className="text-xs text-muted-foreground">{t(status)}</dt>
+                        <dd className="mt-2 text-sm tabular-nums">
+                          {summary && !feed.isError
+                            ? formatCrewMoney(
+                                summary.byStatus[status].amountMinor,
+                                locale,
+                                currency
+                              )
+                            : "—"}
+                        </dd>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </dl>
-            )}
-            <EarningTrend
-              value={summary?.postedDaily}
-              failed={feed.isError}
-              loading={feed.isPending}
-              locale={locale}
-              currency={currency}
-            />
+                </dl>
+                <div className="rounded-2xl bg-white/[0.035] p-6">
+                  <p className="text-sm leading-6 text-muted-foreground">{t("settlementNote")}</p>
+                  <Button asChild className="mt-4 w-full" variant="outline">
+                    <a href="#withdrawals">{t("withdrawEarnings")}</a>
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  disabled={feed.isFetching}
+                  onClick={() => void feed.refetch()}
+                >
+                  {t("refresh")}
+                </Button>
+              </div>
+            </div>
           </section>
         )}
-        {user && <CreatorWithdrawals />}
-        <nav aria-label={t("incomeSources")} className="grid gap-3 md:grid-cols-3">
+        <h2 className="text-lg font-semibold">{t("incomeSources")}</h2>
+        <nav aria-label={t("incomeSources")} className="grid gap-5 md:grid-cols-3">
           {(["referral", "work"] as const).map((source) => (
             <button
               key={source}
               type="button"
               onClick={() => (user ? setIncomePanel(source) : open())}
-              className="rounded-xl bg-white/[0.035] p-5 text-left transition-colors hover:bg-white/[0.07] focus-visible:outline-2 focus-visible:outline-ring"
+              className="rounded-2xl bg-white/[0.035] p-6 text-left transition-colors hover:bg-white/[0.07] focus-visible:outline-2 focus-visible:outline-ring"
             >
               <span className="block text-sm font-semibold">
                 {t(source === "referral" ? "referralIncome" : "workIncome")}
@@ -156,7 +191,7 @@ function PersonalIncomeSession() {
               setDraftSource("task_reward");
               applyFilters({ ...filters, sourceType: "task_reward" });
             }}
-            className="rounded-xl bg-white/[0.035] p-5 text-left transition-colors hover:bg-white/[0.07] focus-visible:outline-2 focus-visible:outline-ring"
+            className="rounded-2xl bg-white/[0.035] p-6 text-left transition-colors hover:bg-white/[0.07] focus-visible:outline-2 focus-visible:outline-ring"
           >
             <span className="block text-sm font-semibold">{t("productionOrders")}</span>
             {user && summary?.postedBySource && !feed.isError && (
@@ -194,6 +229,11 @@ function PersonalIncomeSession() {
           </SheetContent>
         </Sheet>
         <p className="text-xs text-muted-foreground">{t("incomeSourcesHint")}</p>
+        {user && (
+          <div id="withdrawals" className="scroll-mt-28">
+            <CreatorWithdrawals />
+          </div>
+        )}
         {isLoading ? (
           <p role="status">{t("loading")}</p>
         ) : !user ? (

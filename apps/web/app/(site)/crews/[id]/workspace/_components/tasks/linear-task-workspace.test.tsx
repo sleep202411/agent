@@ -1,6 +1,16 @@
 vi.mock("./task-creation-workbench", () => ({
-  TaskCreationWorkbench: ({ active }: { active: boolean }) =>
-    active ? <div data-workbench /> : null,
+  TaskCreationWorkbench: ({
+    active,
+    onSubmitTask,
+  }: {
+    active: boolean;
+    onSubmitTask: (id: string) => void;
+  }) =>
+    active ? (
+      <div data-workbench>
+        <button onClick={() => onSubmitTask("delivery")}>Submit from workbench</button>
+      </div>
+    ) : null,
 }));
 vi.mock("./trust-appeal-link", () => ({
   TrustAppealLink: () => <span data-trust-appeals>Trust appeals</span>,
@@ -18,6 +28,9 @@ import { LinearTaskWorkspace } from "./linear-task-workspace";
 const state = vi.hoisted(() => ({
   locale: "en-US",
   owner: false,
+  canSubmit: false,
+  assignee: "alice",
+  taskStatus: "open",
   layout: "board",
   account: "alice",
   projectFailed: false,
@@ -78,7 +91,15 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
     }),
     useCrewProductionActivity: () => ({ data: { pages: [] } }),
     useCrewTask: (id: string) => ({
-      data: id && !state.missing ? { id, title: "Selected task", assignees: [] } : undefined,
+      data:
+        id && !state.missing
+          ? {
+              id,
+              title: "Selected task",
+              status: state.taskStatus,
+              assignees: [{ userId: state.assignee }],
+            }
+          : undefined,
       isError: state.failed,
       error: state.failed
         ? state.failureStatus
@@ -178,10 +199,15 @@ vi.mock("./task-quick-create", () => ({
       </div>
     ) : null,
 }));
-vi.mock("./task-dialogs", () => ({ SubmitTaskDialog: () => null }));
+vi.mock("./task-dialogs", () => ({
+  SubmitTaskDialog: () => <div data-delivery-form>Shared delivery form</div>,
+}));
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {
   state.owner = false;
+  state.canSubmit = false;
+  state.assignee = "alice";
+  state.taskStatus = "open";
   state.projectFailed = false;
   state.projectMissing = false;
   state.projectFetching = false;
@@ -226,7 +252,8 @@ async function render(
         isOwner={state.owner}
         canCreate={state.owner}
         canReview={false}
-        canSubmitAssigned={false}
+        canSubmitAssigned={state.canSubmit}
+        viewerUserId={state.account}
         canComment={false}
       />
     )
@@ -560,3 +587,26 @@ it("does not open a requested task editor without create permission", async () =
   await render(undefined, false, true, true);
   expect(document.querySelector("[data-create-task]")).toBeNull();
 });
+
+it.each([
+  [true, "alice", "open", true],
+  [true, "alice", "revision_requested", true],
+  [false, "alice", "open", false],
+  [true, "bob", "open", false],
+  [true, "alice", "approved", false],
+])(
+  "checks capability %s, assignee %s and status %s before opening submission",
+  async (capability, assignee, status, allowed) => {
+    state.canSubmit = capability;
+    state.assignee = assignee;
+    state.taskStatus = status;
+    await render(undefined, false, true);
+    await act(async () =>
+      [...document.querySelectorAll("button")]
+        .find((b) => b.textContent === "Submit from workbench")!
+        .click()
+    );
+    expect(Boolean(document.querySelector("[data-delivery-form]"))).toBe(allowed);
+    if (allowed) expect(document.body.textContent).not.toContain("Edit draft");
+  }
+);

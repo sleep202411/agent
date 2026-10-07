@@ -141,7 +141,6 @@ function PositionForm({
 
   const permissions = useCrewPermissions(crewId);
   const canLinkTask = permissions.can("tasks.manage") && permissions.can("tasks.view");
-  const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [taskId, setTaskId] = useState(initialTaskId ?? "");
   const tasks = useCrewTaskOptions(crewId, { recruitmentOnly: true }, !isEdit && canLinkTask);
   useEffect(() => {
@@ -299,7 +298,6 @@ function PositionForm({
 
   const countOk = Number.isInteger(parsedCount) && parsedCount >= 1 && parsedCount <= 99;
   const step1Valid =
-    (visibility !== "private" || Boolean(taskId)) &&
     taskValid &&
     positionType.length > 0 &&
     description.trim().length > 0 &&
@@ -319,7 +317,7 @@ function PositionForm({
   // ─── Submit ────────────────────────
   // The immutable task link is sent only during creation.
   const buildBody = (): CreatePositionInput => ({
-    ...(!isEdit && taskId ? { taskId, recruitmentVisibility: visibility } : {}),
+    ...(!isEdit && taskId ? { taskId, recruitmentVisibility: "public" as const } : {}),
     positionType,
     description: description.trim(),
     targetCount: parsedCount,
@@ -509,7 +507,6 @@ function PositionForm({
                     value={taskId || "none"}
                     onValueChange={(value) => {
                       setTaskId(value === "none" ? "" : value);
-                      if (value === "none") setVisibility("public");
                     }}
                     disabled={submitting}
                   >
@@ -527,37 +524,19 @@ function PositionForm({
                         : null}
                     </SelectContent>
                   </Select>
-                  {taskId && (
-                    <>
-                      <FieldLabel>{t("recruitmentVisibility")}</FieldLabel>
-                      <Select
-                        value={visibility}
-                        onValueChange={(value) => setVisibility(value as "public" | "private")}
-                        disabled={submitting}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="public">{t("recruitmentPublic")}</SelectItem>
-                          <SelectItem value="private">{t("recruitmentPrivate")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </>
-                  )}
                   <p className="text-sm text-muted-foreground">{t("recruitmentTaskHelp")}</p>
                   {tasks.isPending && canLinkTask ? <p role="status">{tc("loading")}</p> : null}
                   {tasks.isError || !taskValid ? (
                     <p role="alert">{t("recruitmentTaskUnavailable")}</p>
                   ) : null}
-                  {canLinkTask ? (
+                  {canLinkTask && tasks.isError ? (
                     <Button
                       type="button"
                       variant="ghost"
                       disabled={tasks.isFetching || submitting}
                       onClick={() => void tasks.refetch()}
                     >
-                      {t("recruitmentTaskRefresh")}
+                      {tc("retry")}
                     </Button>
                   ) : null}
                 </Field>

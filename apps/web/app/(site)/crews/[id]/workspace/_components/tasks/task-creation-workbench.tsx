@@ -2,19 +2,10 @@
 import { missingTaskFields } from "./task-required-fields";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
-import {
-  IconPlus,
-  IconSearch,
-  IconX,
-  IconFolder,
-  IconFile,
-  IconUsers,
-  IconChevronDown,
-} from "@tabler/icons-react";
+import { IconX, IconUsers, IconChevronDown } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +17,6 @@ import {
 } from "@/components/ui/dialog";
 import { UserAvatar } from "@/components/user-avatar";
 import { Input } from "@/components/ui/input";
-import { useCrewAssets } from "../../_hooks/use-crew-assets";
 import {
   useCreateCrewTask,
   useCrewTaskView,
@@ -38,7 +28,6 @@ import {
   type CrewTaskProjectDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { EpisodeTemplatePreview } from "./episode-template-preview";
-import { assetFolderLabel } from "./workbench-asset-folder";
 import { WorkbenchCanvasImport } from "./workbench-canvas-import";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 import { TaskQuickCreate } from "./task-quick-create";
@@ -88,6 +77,7 @@ function TaskCreationSession({
   canManageEpisodes,
   active,
   onSelectTask,
+  onSubmitTask,
   onViewTasks,
   onPublishTask,
   onInviteTask,
@@ -101,25 +91,23 @@ function TaskCreationSession({
   canManageEpisodes: boolean;
   active: boolean;
   onSelectTask: (id: string) => void;
+  onSubmitTask?: (id: string) => void;
   onViewTasks?: () => void;
   onPublishTask?: (taskId: string) => void;
   onInviteTask?: (task: CrewTaskDTO) => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
-  const folderT = useTranslations("crewAssetFolders");
   const [presetTaskKind, setPresetTaskKind] = useState<CreateCrewTaskInput["taskKind"]>();
   const displays = useUserDisplays(members.map((member) => member.userId));
   const taskT = useTranslations("crewTasks");
   const client = useQueryClient();
   const { user } = useCurrentUser();
-  const [assetSearch, setAssetSearch] = useState("");
   const [assetsExpanded, setAssetsExpanded] = useState(false);
   const [showEpisodes, setShowEpisodes] = useState(false);
   const { drafts, setDrafts, batches, setBatches, storageError } = useWorkbenchDrafts(
     user!.id,
     crewId
   );
-  const [searchOpen, setSearchOpen] = useState(false);
   const [productionOpen, setProductionOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
@@ -157,11 +145,6 @@ function TaskCreationSession({
     })),
     ...drafts.filter((draft) => canManage && draft.state !== "created"),
   ];
-  const assets = useCrewAssets(
-    crewId,
-    { source: "recent", sort: "name", query: assetSearch.trim() || undefined },
-    active && searchOpen
-  );
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -411,15 +394,6 @@ function TaskCreationSession({
                   {t("viewTasks")}
                 </Button>
               ) : null}
-              <Button
-                variant="outline"
-                color="muted"
-                size="sm"
-                icon={<IconSearch />}
-                onClick={() => setSearchOpen(true)}
-              >
-                {t("searchAssets")}
-              </Button>
               {canManage ? (
                 <>
                   <Button
@@ -429,14 +403,6 @@ function TaskCreationSession({
                     onClick={() => setProductionOpen(true)}
                   >
                     {t("canvasImport")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={busy || unresolved}
-                    onClick={() => openTask()}
-                    icon={<IconPlus />}
-                  >
-                    {t("createTask")}
                   </Button>
                 </>
               ) : null}
@@ -593,7 +559,11 @@ function TaskCreationSession({
                                       draft.state === "creating" ||
                                       draft.state === "uncertain"
                                     }
-                                    aria-label={t("editDraft", { title: draft.input.title })}
+                                    aria-label={
+                                      draft.taskId
+                                        ? `${t("openTask")}: ${draft.input.title}`
+                                        : t("editDraft", { title: draft.input.title })
+                                    }
                                     onClick={() => {
                                       if (draft.taskId) {
                                         onSelectTask(draft.taskId);
@@ -620,7 +590,9 @@ function TaskCreationSession({
                                         : t("noDeadline")}
                                     </span>
                                     <span className="flex flex-wrap items-center gap-3">
-                                      {!draft.input.assignees.length ? (
+                                      {draft.input.assignees.length ? (
+                                        <span>{t("assigned")}</span>
+                                      ) : (
                                         <span
                                           className={
                                             draft.isRecruiting
@@ -632,7 +604,7 @@ function TaskCreationSession({
                                             ? t("recruiting")
                                             : taskT("unassigned")}
                                         </span>
-                                      ) : null}
+                                      )}
                                       {draft.input.assignees.map(({ userId }) => (
                                         <span
                                           key={userId}
@@ -683,21 +655,22 @@ function TaskCreationSession({
                                       {t("publishJob")}
                                     </button>
                                   ) : null}
-                                  {draft.taskId ? (
+                                  {draft.taskId &&
+                                  onSubmitTask &&
+                                  canSubmitAssigned &&
+                                  ["open", "in_progress", "revision_requested"].includes(
+                                    savedTasks.find((task) => task.id === draft.taskId)?.status ??
+                                      ""
+                                  ) &&
+                                  draft.input.assignees.some(
+                                    (assignee) => assignee.userId === user?.id
+                                  ) ? (
                                     <button
-                                      className="relative z-10 mt-2 inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-white transition-colors hover:bg-primary/85"
-                                      onClick={() => onSelectTask(draft.taskId!)}
+                                      type="button"
+                                      className="relative z-10 mt-2 inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-white hover:bg-primary/85"
+                                      onClick={() => onSubmitTask(draft.taskId!)}
                                     >
-                                      {canSubmitAssigned &&
-                                      ["open", "in_progress", "revision_requested"].includes(
-                                        savedTasks.find((task) => task.id === draft.taskId)
-                                          ?.status ?? ""
-                                      ) &&
-                                      draft.input.assignees.some(
-                                        (assignee) => assignee.userId === user?.id
-                                      )
-                                        ? t("openDelivery")
-                                        : t("openTask")}
+                                      {taskT("submit")}
                                     </button>
                                   ) : null}
                                 </article>
@@ -720,63 +693,6 @@ function TaskCreationSession({
                 </DialogHeader>
                 <DialogBody>
                   <WorkbenchCanvasImport crewId={crewId} />
-                </DialogBody>
-              </DialogContent>
-            </Dialog>
-            <Dialog open={searchOpen && active} onOpenChange={setSearchOpen}>
-              <DialogContent className="bg-[#090a0c] sm:max-w-lg" aria-describedby={undefined}>
-                <DialogHeader>
-                  <DialogTitle>{t("searchAssets")}</DialogTitle>
-                </DialogHeader>
-                <DialogBody>
-                  <Input
-                    aria-label={t("searchAssets")}
-                    placeholder={t("searchAssets")}
-                    value={assetSearch}
-                    onChange={(event) => setAssetSearch(event.target.value)}
-                  />
-                  {assets.isError ? (
-                    <p role="alert" className="mt-3 text-xs text-destructive">
-                      {assets.error.message}
-                    </p>
-                  ) : null}
-                  {assets.isFetching ? <p className="mt-3 text-xs">{t("loading")}</p> : null}
-                  {!assets.isFetching &&
-                  !assets.isError &&
-                  !assets.hasNextPage &&
-                  !assets.data?.items.length ? (
-                    <p className="mt-3 text-xs text-muted-foreground">{t("noAssetsFound")}</p>
-                  ) : null}
-                  <ul className="mt-3 space-y-1 text-xs">
-                    {(!assets.isError ? assets.data?.items : [])?.map((asset) => (
-                      <li key={asset.id}>
-                        <Link
-                          className="flex items-center gap-2 rounded px-2 py-2 hover:bg-white/5"
-                          href={`?crew=${encodeURIComponent(crewId)}&tab=assets&asset=${encodeURIComponent(asset.id)}`}
-                        >
-                          {asset.kind === "folder" ? (
-                            <IconFolder className="size-3.5 shrink-0" />
-                          ) : (
-                            <IconFile className="size-3.5 shrink-0" />
-                          )}
-                          <span className="truncate">{assetFolderLabel(asset, folderT)}</span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                  {assets.hasNextPage || assets.isError ? (
-                    <Button
-                      variant="ghost"
-                      color="muted"
-                      size="sm"
-                      disabled={assets.isFetching}
-                      onClick={() =>
-                        void (assets.isError ? assets.refetch() : assets.fetchNextPage())
-                      }
-                    >
-                      {assets.isError ? t("retry") : t("more")}
-                    </Button>
-                  ) : null}
                 </DialogBody>
               </DialogContent>
             </Dialog>

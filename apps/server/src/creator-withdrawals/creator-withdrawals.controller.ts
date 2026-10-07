@@ -7,9 +7,11 @@ import {
   Param,
   Post,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import { z } from 'zod';
+import type { Response } from 'express';
 import { CurrentUser, SkipEndUserAuth, type AuthUser } from '../auth';
 import {
   AdminAuthGuard,
@@ -39,8 +41,10 @@ export class CreatorWithdrawalsController {
   }
   @Get('recipient')
   @Header('Cache-Control', 'no-store')
-  recipient(@CurrentUser() user: AuthUser) {
-    return this.withdrawals.savedRecipient(user.userId);
+  async recipient(@CurrentUser() user: AuthUser, @Res() response: Response) {
+    // Serialize null explicitly: Nest otherwise sends an empty body. Preserve
+    // the nullable response contract shared by Web and Mobile.
+    response.json(await this.withdrawals.savedRecipient(user.userId));
   }
   @Get()
   @Header('Cache-Control', 'no-store')

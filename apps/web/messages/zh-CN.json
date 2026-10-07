@@ -5318,6 +5318,7 @@
       "templateDraftHelp": "这些预览仅保存在此浏览器中。请在下方创建任务，或丢弃预览。新的导入会直接保存到任务列表。",
       "savedTasks": "任务",
       "openDelivery": "查看任务并提交交付",
+      "assigned": "已分配",
       "saveThenRecruit": "保存任务并继续填写招聘信息。",
       "completeDraftFields": "创建任务前，请补全“{title}”的必填项。"
     },
@@ -10288,6 +10289,7 @@
     "urgentLabel": "紧急"
   },
   "crewPersonalIncome": {
+    "withdrawEarnings": "提取收益",
     "productionRecorded": "{count} 笔已批准任务报酬 · 当前筛选",
     "productionOrders": "制作订单",
     "incomeType": "收入类型",
@@ -10303,7 +10305,7 @@
     "revenueReference": "收益编号",
     "distributionContract": "分润合同",
     "distributionReceipt": "分润记录编号",
-    "title": "我的收入",
+    "title": "收入中心",
     "back": "剧组大厅",
     "description": "查看你在各剧组的收入记录。",
     "loading": "加载中…",

@@ -5318,6 +5318,7 @@
       "templateDraftHelp": "這些預覽僅儲存在此瀏覽器中。請在下方建立任務，或捨棄預覽。新的匯入會直接儲存到任務列表。",
       "savedTasks": "任務",
       "openDelivery": "查看任務並提交交付",
+      "assigned": "已分配",
       "saveThenRecruit": "儲存任務並繼續填寫招聘資訊。",
       "completeDraftFields": "建立任務前，請補全「{title}」的必填項。"
     },
@@ -10288,6 +10289,7 @@
     "urgentLabel": "緊急"
   },
   "crewPersonalIncome": {
+    "withdrawEarnings": "提取收益",
     "productionRecorded": "{count} 筆已批准任務報酬 · 目前篩選",
     "productionOrders": "製作訂單",
     "incomeType": "收入類型",
@@ -10303,7 +10305,7 @@
     "revenueReference": "收益編號",
     "distributionContract": "分潤合約",
     "distributionReceipt": "分潤記錄編號",
-    "title": "我的收入",
+    "title": "收入中心",
     "back": "劇組大廳",
     "description": "查看你在各劇組的收入記錄。",
     "loading": "載入中…",

@@ -179,6 +179,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
 });
+const submitTask = vi.fn();
 async function render(
   canManage = true,
   active = true,
@@ -199,6 +200,7 @@ async function render(
         active={active}
         onPublishTask={publishCallback}
         onSelectTask={() => undefined}
+        onSubmitTask={submitTask}
       />
     )
   );
@@ -437,7 +439,7 @@ it("restores confirmed tasks as links without offering duplicate creation", asyn
   await stage();
   await click("Create All Tasks");
   await remount();
-  expect(host.textContent).toContain("Open Task");
+  expect(host.querySelector('button[aria-label^="Open Task:"]')).not.toBeNull();
   expect(button("Create All Tasks")).toBeUndefined();
   expect(state.create).toHaveBeenCalledTimes(1);
 });
@@ -454,34 +456,15 @@ it("restores an interrupted create as uncertain instead of retrying", async () =
   await click("Create All Tasks");
   await remount();
   expect(host.textContent).toContain("Check Creation Result");
-  expect(button("Create Task").disabled).toBe(true);
+  expect(button("Create Task · Scripts").disabled).toBe(true);
   expect(state.create).toHaveBeenCalledTimes(1);
   await act(async () => resolve({ id: "created" }));
 });
-it("opens all accessible asset search separately from collapsed progress", async () => {
+it("omits redundant workbench controls while retaining category creation", async () => {
   await render();
-  const toggle = button("Approved / Created Tasks");
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  await click("Approved / Created Tasks");
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  await click("Search Assets…");
-  expect(state.assetQuery).toHaveBeenLastCalledWith(
-    { source: "recent", sort: "name", query: undefined },
-    true
-  );
-  expect(host.querySelector('[role="dialog"] a')?.getAttribute("href")).toContain("asset=folder");
-  const input = host.querySelector<HTMLInputElement>('input[aria-label="Search Assets…"]')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      input,
-      "nested"
-    );
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  expect(state.assetQuery).toHaveBeenLastCalledWith(
-    { source: "recent", sort: "name", query: "nested" },
-    true
-  );
+  expect(button("Search Assets…")).toBeUndefined();
+  expect(button("Create Task")).toBeUndefined();
+  expect(button("Create Task · Scripts")).toBeDefined();
 });
 it("restores a reviewed batch without altering its idempotent command", async () => {
   seedBatch();
@@ -539,7 +522,7 @@ it("lets users dismiss a checked uncertain notice without retrying or deleting a
   await stage();
   await click("Create All Tasks");
   await click("I checked Tasks — dismiss this notice");
-  expect(button("Create Task").disabled).toBe(false);
+  expect(button("Create Task · Scripts").disabled).toBe(false);
   expect(state.create).toHaveBeenCalledTimes(1);
   await remount();
   expect(host.textContent).not.toContain("Check Creation Result");
@@ -733,7 +716,9 @@ it("lets an assigned non-manager find a saved task for delivery without creation
   ];
   await render(false);
   expect(host.textContent).toContain("Assigned delivery");
-  expect(host.textContent).toContain("Open task & submit delivery");
+  expect(host.textContent).toContain("Assigned");
+  await click("submit");
+  expect(submitTask).toHaveBeenCalledWith("assigned");
   expect(
     [...host.querySelectorAll("button")].some((button) =>
       button.getAttribute("aria-label")?.startsWith("Create Task")

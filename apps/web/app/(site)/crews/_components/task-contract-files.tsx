@@ -163,7 +163,6 @@ function ContractSession({
   return (
     <section className="space-y-3 py-3" aria-label={t("title")}>
       <h3 className="text-sm font-semibold">{t("title")}</h3>
-      <p className="text-xs text-muted-foreground">{t("lockedHint")}</p>
       {query.isPending && <p role="status">{t("loading")}</p>}
       {query.error && (
         <div role="alert">
@@ -179,9 +178,6 @@ function ContractSession({
             <ContractFileRow key={file.id} file={file} />
           ))}
         </ul>
-      )}
-      {query.isSuccess && !query.data.items.length && (
-        <p className="text-sm text-muted-foreground">{t("empty")}</p>
       )}
       {canManage && query.isSuccess && (
         <>

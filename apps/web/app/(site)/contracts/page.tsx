@@ -46,7 +46,7 @@ function ContractsSession({ userId }: { userId: string }) {
             key={tab}
             color="muted"
             variant="ghost"
-            className={`rounded-none border-b-2 px-0 pb-3 ${section === tab ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
+            className={`rounded-none border-transparent border-b-2 px-0 pb-3 ${section === tab ? "border-b-foreground text-foreground" : "text-muted-foreground"}`}
             aria-pressed={section === tab}
             onClick={() => setSection(tab)}
           >

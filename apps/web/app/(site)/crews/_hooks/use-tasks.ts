@@ -144,6 +144,8 @@ export function useCrewTaskOptions(
         },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
+    refetchInterval: input.recruitmentOnly ? 30_000 : false,
+    refetchOnWindowFocus: true,
   });
   useCompleteTaskPages(result, enabled && Boolean(accountUserId) && Boolean(crewId));
   return {
