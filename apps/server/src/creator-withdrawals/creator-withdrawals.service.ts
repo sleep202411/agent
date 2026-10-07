@@ -1,4 +1,9 @@
 import {
+  availableReferralIncome,
+  reserveReferralIncome,
+  referralTotalsSql,
+} from './referral-withdrawals';
+import {
   availableAcademyIncome,
   reserveAcademyIncome,
   academyTotalsSql,
@@ -63,9 +68,9 @@ export class CreatorWithdrawalsService {
       WHERE e.user_id=${userId} AND ${eligibleCashEarningsSql}
         AND e.currency IN ('USD','CNY')
       GROUP BY e.currency
-    ), academy_totals AS (${academyTotalsSql} AND e.teacher_id=${userId} HAVING COUNT(*)>0), totals AS (
+    ), academy_totals AS (${academyTotalsSql} AND e.teacher_id=${userId} HAVING COUNT(*)>0), referral_totals AS (${referralTotalsSql} AND r.user_id=${userId} GROUP BY COALESCE(i.currency,r.currency)), totals AS (
  SELECT currency,SUM(pending) AS pending,SUM(confirmed) AS confirmed,SUM(reserved) AS reserved,SUM(paid) AS paid FROM (
- SELECT * FROM crew_totals UNION ALL SELECT currency,0 AS pending,confirmed,reserved,paid FROM academy_totals
+ SELECT * FROM crew_totals UNION ALL SELECT currency,0 AS pending,confirmed,reserved,paid FROM academy_totals UNION ALL SELECT currency,0 AS pending,confirmed,reserved,paid FROM referral_totals
  ) sources GROUP BY currency
  ) SELECT currency, pending::text AS "pendingAmountMinor",
       confirmed::text AS "confirmedAmountMinor", reserved::text AS "reservedAmountMinor",
@@ -195,7 +200,17 @@ export class CreatorWithdrawalsService {
         (sum, e) => sum + (BigInt(e.available) > 0n ? BigInt(e.available) : 0n),
         0n,
       );
+      const referrals = await availableReferralIncome(
+        tx,
+        userId,
+        input.currency,
+      );
+      const referralAvailable = referrals.reduce(
+        (sum, e) => sum + (BigInt(e.available) > 0n ? BigInt(e.available) : 0n),
+        0n,
+      );
       const available =
+        referralAvailable +
         academyAvailable +
         eligible.reduce(
           (n, e) => n + (e.available > 0n ? e.available : 0n),
@@ -296,13 +311,24 @@ export class CreatorWithdrawalsService {
           },
         });
       }
+      const academyAmount =
+        remaining < academyAvailable ? remaining : academyAvailable;
       await reserveAcademyIncome(
         tx,
         this.wallet,
         userId,
         id,
-        remaining,
+        academyAmount,
         academy,
+      );
+      await reserveReferralIncome(
+        tx,
+        this.wallet,
+        userId,
+        id,
+        remaining - academyAmount,
+        input.currency,
+        referrals,
       );
       await tx.creatorPayoutAccount.upsert({
         where: { userId },

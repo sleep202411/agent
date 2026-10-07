@@ -209,7 +209,7 @@ export function SubmitTaskDialog({
   const content = (
     <>
       {inline ? (
-        <header className="space-y-2">
+        <header className="shrink-0 space-y-2">
           <h2 className="text-base font-semibold">{t("submitTitle")}</h2>
           <p className="text-sm text-muted-foreground">{t("submitDescription")}</p>
         </header>
@@ -490,7 +490,7 @@ export function SubmitTaskDialog({
           {t("deliveryNoteTooLong")}
         </p>
       ) : null}
-      <DialogFooter>
+      <DialogFooter className="shrink-0">
         <Button variant="outline" color="muted" onClick={() => close(false)}>
           {t("cancel")}
         </Button>
@@ -515,7 +515,10 @@ export function SubmitTaskDialog({
   );
   if (inline)
     return open ? (
-      <section className="mb-6 min-w-0 space-y-4" aria-label={t("submitTitle")}>
+      <section
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden"
+        aria-label={t("submitTitle")}
+      >
         {content}
       </section>
     ) : null;

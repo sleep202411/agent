@@ -1095,7 +1095,7 @@ it("stages the selected payment terms alongside the reward", async () => {
   const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Payment terms"]')!;
   await act(async () => click(trigger));
   const option = [...document.querySelectorAll('[role="option"]')].find((node) =>
-    node.textContent?.includes("50% upfront")
+    node.textContent?.includes("Reward 50% Upfront")
   );
   expect(option).toBeDefined();
   await act(async () =>

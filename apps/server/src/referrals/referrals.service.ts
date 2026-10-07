@@ -1470,12 +1470,9 @@ export class ReferralsService {
         );
         break;
       case 'cash':
-        // Cash → the WITHDRAWABLE community_point pool, 1 point = 1 minor unit of
-        // the reward currency (1 point = 1 US cent in com, 1 CNY 分 in cn). Cells
-        // are separate deployments so a user's withdrawable pool is single-
-        // currency; crediting amountMinor 1:1 holds the money faithfully. The
-        // 提现 cash-out (points → real money, e.g. WeChat 企业付款) is a separate
-        // unbuilt step — until it ships the balance simply accrues.
+        // Cash enters the withdrawable wallet as source-currency minor units.
+        // Creator withdrawals allocate granted cash items by their recorded
+        // currency; the pooled wallet balance is never treated as USD/CNY income.
         if (currency !== 'USD' && currency !== 'CNY') {
           throw new BadRequestException(
             `Cash referral payout supports USD/CNY only (got ${currency ?? 'null'})`,

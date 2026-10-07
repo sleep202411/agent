@@ -74,7 +74,7 @@ function fixture() {
   };
   return { service, input, app, tx };
 }
-it.each(['monthly', 'half_upfront', 'on_completion'] as const)(
+it.each(['monthly', 'half_upfront', 'on_completion', 'demo_promise'] as const)(
   'persists %s separately from the project fee basis and confirms that version',
   async (paymentTerms) => {
     const { service, input, tx } = fixture();

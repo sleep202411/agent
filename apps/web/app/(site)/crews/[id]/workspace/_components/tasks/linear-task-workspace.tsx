@@ -821,9 +821,11 @@ function LinearTaskSession({
             canSubmitAssigned &&
             taskQuery.data.assignees.some((assignee) => assignee.userId === viewerUserId) &&
             ["open", "in_progress", "revision_requested"].includes(taskQuery.data.status) ? (
-            <div className="space-y-6 p-6">
-              <h2 className="text-lg font-semibold">{taskQuery.data.title}</h2>
-              <TaskDeliveryProgress status={taskQuery.data.status} />
+            <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden p-6">
+              <div className="shrink-0 space-y-6">
+                <h2 className="text-lg font-semibold">{taskQuery.data.title}</h2>
+                <TaskDeliveryProgress status={taskQuery.data.status} />
+              </div>
               <SubmitTaskDialog
                 inline
                 key={`${viewerUserId}:${taskQuery.data.id}`}

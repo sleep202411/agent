@@ -5466,7 +5466,7 @@
   "feedbackHistory.publicNotice": "Your ratings, optional comment and creator identity will be public on the recipient’s profile and included in their score. Task details and private responses are not published.",
   "feedbackHistory.privateRetryNotice": "This unfinished review was started as private. Retrying will preserve its original visibility.",
   "creatorWithdrawals.title": "Withdraw earnings",
-  "creatorWithdrawals.description": "Withdraw confirmed task earnings, teaching earnings and platform-confirmed revenue shares.",
+  "creatorWithdrawals.description": "Withdraw confirmed task rewards, referral cash rewards, teaching earnings and platform-confirmed revenue shares.",
   "creatorWithdrawals.withdraw": "Withdraw",
   "creatorWithdrawals.currency": "Currency",
   "creatorWithdrawals.refresh": "Refresh",
@@ -5687,8 +5687,8 @@
   "taskPaymentTerms.unspecified": "Not specified",
   "taskPaymentTerms.label": "Payment terms",
   "taskPaymentTerms.monthly": "Monthly settlement",
-  "taskPaymentTerms.half_upfront": "50% upfront",
-  "taskPaymentTerms.on_completion": "Payment on completion",
+  "taskPaymentTerms.half_upfront": "Reward 50% Upfront",
+  "taskPaymentTerms.on_completion": "Reward on Completion",
   "workspace.taskInviteTitle": "Invite creator",
   "workspace.taskInviteIntro": "A creator who accepts this link joins the Crew with standard access and receives “{task}”. Only one creator can claim it.",
   "taskSubmit.deliveryLink": "Delivery link",
@@ -5845,5 +5845,10 @@
   "academyLearning.remove": "Remove Attachment",
   "academyLearning.add": "Add Attachment",
   "academyLearning.myIncome": "My Income",
-  "academyLearning.invalidReview": "Enter a whole-number score from 0 to 100 and feedback."
+  "academyLearning.invalidReview": "Enter a whole-number score from 0 to 100 and feedback.",
+  "taskPaymentTerms.demo_promise": "Demo Promise",
+  "taskPaymentTerms.help": "Payment terms help",
+  "taskPaymentTerms.half_upfrontHelp": "The client pays FD, which escrows the funds. Once an FD Admin confirms production has reached 50%, FD releases payment to the creator.",
+  "taskPaymentTerms.on_completionHelp": "The client pays FD, which escrows the funds. Once production is completed, FD releases payment to the creator.",
+  "taskPaymentTerms.demo_promiseHelp": "For demo projects, if the project is commercialized, the creator will be engaged for the work."
 }

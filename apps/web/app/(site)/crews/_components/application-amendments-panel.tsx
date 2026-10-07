@@ -1,5 +1,9 @@
 "use client";
-import { TASK_PAYMENT_TERMS, type TaskPaymentTerms } from "@repo/shared/crew";
+import {
+  CURRENT_TASK_PAYMENT_TERMS,
+  TASK_PAYMENT_TERMS,
+  type TaskPaymentTerms,
+} from "@repo/shared/crew";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -302,7 +306,12 @@ function AmendmentsSession({
                       <NativeSelectOption value="unspecified">
                         {paymentT("unspecified")}
                       </NativeSelectOption>
-                      {TASK_PAYMENT_TERMS.map((value) => (
+                      {draft.paymentTerms === "monthly" && (
+                        <NativeSelectOption value="monthly">
+                          {paymentT("monthly")}
+                        </NativeSelectOption>
+                      )}
+                      {CURRENT_TASK_PAYMENT_TERMS.map((value) => (
                         <NativeSelectOption key={value} value={value}>
                           {paymentT(value)}
                         </NativeSelectOption>

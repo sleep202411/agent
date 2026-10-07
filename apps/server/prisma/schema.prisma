@@ -8352,6 +8352,7 @@ model ReferralRewardTierItem {
 /// (primary) for the already-shipped mobile app. `grantedAt` gives per-item
 /// idempotency so a multi-item claim is re-claim-safe.
 model ReferralRewardItem {
+  withdrawalAllocations ReferralWithdrawalAllocation[]
   id          String             @id @default(uuid(7)) @db.Uuid
   rewardId    String             @map("reward_id") @db.Uuid
   reward      ReferralReward     @relation(fields: [rewardId], references: [id], onDelete: Cascade)
@@ -11017,6 +11018,7 @@ model CreatorWithdrawal {
   resolutionReason     String?                  @map("resolution_reason") @db.VarChar(2000)
   createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime                 @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  referralAllocations  ReferralWithdrawalAllocation[]
   academyAllocations   AcademyWithdrawalAllocation[]
   payouts              CrewPayout[]
   events               CreatorWithdrawalEvent[]
@@ -11270,4 +11272,33 @@ model AcademyWithdrawalAllocation {
  @@unique([withdrawalId,enrollmentId])
  @@index([enrollmentId])
  @@map("academy_withdrawal_allocations")
+}
+
+model ReferralWithdrawalAllocation {
+  id String @id @default(uuid(7)) @db.Uuid
+  withdrawalId String @map("withdrawal_id") @db.Uuid
+  rewardItemId String @map("reward_item_id") @db.Uuid
+  amountMinor BigInt @map("amount_minor")
+  currency String @db.VarChar(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  withdrawal CreatorWithdrawal @relation(fields: [withdrawalId], references: [id], onDelete: Restrict)
+  rewardItem ReferralRewardItem @relation(fields: [rewardItemId], references: [id], onDelete: Restrict)
+  @@unique([withdrawalId, rewardItemId])
+  @@index([rewardItemId])
+  @@map("referral_withdrawal_allocations")
+}
+
+model TaskPaymentRelease {
+ id String @id @default(uuid(7)) @db.Uuid
+ taskId String @map("task_id") @db.Uuid
+ userId String @map("user_id") @db.VarChar(64)
+ amountMinor BigInt @map("amount_minor")
+ currency String @db.VarChar(3)
+ paymentTerms String @map("payment_terms") @db.VarChar(32)
+ receiptReference String @map("receipt_reference") @db.VarChar(180)
+ milestoneEvidence String @map("milestone_evidence") @db.VarChar(2000)
+ confirmedByAdminId String @map("confirmed_by_admin_id") @db.Uuid
+ createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+ @@unique([taskId,userId])
+ @@map("task_payment_releases")
 }

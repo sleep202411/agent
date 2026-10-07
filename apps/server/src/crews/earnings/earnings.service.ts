@@ -402,7 +402,11 @@ export class CrewEarningsService {
         where: { id: earningId },
         include: earningInclude,
       });
-      if (locked.revenueDistributionId) {
+      if (
+        locked.revenueDistributionId ||
+        (locked.sourceType === 'task_reward' &&
+          locked.createdByUserId.startsWith('admin:'))
+      ) {
         throw new ConflictException(
           'Platform-confirmed revenue must be corrected by platform finance.',
         );

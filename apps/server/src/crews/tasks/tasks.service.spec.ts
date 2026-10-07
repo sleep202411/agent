@@ -179,6 +179,7 @@ function build() {
     updatedAt: new Date('2026-07-29T10:00:00.000Z'),
   });
   const tx = {
+    crewApplication: { findFirst: jest.fn().mockResolvedValue(null) },
     crewAssetNode: { findFirst: jest.fn().mockResolvedValue({ id: TASK_ID }) },
     crewTaskCommitment: { findFirst: jest.fn().mockResolvedValue(null) },
     crewParticipationRecord: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -1761,6 +1762,23 @@ describe('CrewTasksService', () => {
       ).rejects.toThrow('Permission revoked');
       expect(t.tx.crewTask.update).toHaveBeenCalled();
       expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['half_upfront', 'on_completion', 'demo_promise'])(
+    'does not auto-release a reward under %s terms',
+    async (paymentTerms) => {
+      const t = build();
+      t.tx.crewApplication.findFirst.mockResolvedValue({
+        termsVersion: 1,
+        terms: [{ version: 1, paymentTerms, confirmedAt: new Date() }],
+      });
+      await t.service.review(TASK_ID, OWNER_ID, {
+        expectedSubmissionId: 'submission-1',
+        decision: 'approve',
+        note: 'Approved.',
+      });
+      expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
     },
   );
 

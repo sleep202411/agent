@@ -1,3 +1,7 @@
+import {
+  resolveReferralIncome,
+  referralTotalsSql,
+} from './referral-withdrawals';
 import { resolveAcademyIncome, academyTotalsSql } from './academy-withdrawals';
 import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
 import { eligibleCashEarningsSql } from './eligible-cash-earnings';
@@ -230,7 +234,7 @@ export class WithdrawalAdminService {
       JOIN crew_earning_entries e ON e.id=a.earning_id
       WHERE ${eligibleCashEarningsSql} AND e.status='posted' AND p.status IN ('pending','paid')
       GROUP BY e.currency
-    ), academy AS (${academyTotalsSql} HAVING COUNT(*)>0), withdrawals AS (
+    ), academy AS (${academyTotalsSql} HAVING COUNT(*)>0), referrals AS (${referralTotalsSql} GROUP BY COALESCE(i.currency,r.currency)), withdrawals AS (
       SELECT currency,
         SUM(amount_minor) FILTER (WHERE status='paid') AS paid,
         SUM(amount_minor) FILTER (WHERE status IN ('pending','processing')) AS pending,
@@ -240,10 +244,11 @@ export class WithdrawalAdminService {
     ) SELECT c.currency, COALESCE(w.paid,0)::text AS "paidAmountMinor",
       COALESCE(w.pending,0)::text AS "pendingAmountMinor",
       COALESCE(w.month_paid,0)::text AS "paidThisMonthAmountMinor",
-      (COALESCE(e.confirmed,0)-COALESCE(a.reserved_or_paid,0)+COALESCE(ac.confirmed,0)-COALESCE(ac.reserved,0)-COALESCE(ac.paid,0))::text AS "availableAmountMinor"
+      (COALESCE(e.confirmed,0)-COALESCE(a.reserved_or_paid,0)+COALESCE(ac.confirmed,0)-COALESCE(ac.reserved,0)-COALESCE(ac.paid,0)+COALESCE(r.confirmed,0)-COALESCE(r.reserved,0)-COALESCE(r.paid,0))::text AS "availableAmountMinor"
       FROM currencies c LEFT JOIN earnings e ON e.currency=c.currency
       LEFT JOIN allocated a ON a.currency=c.currency
       LEFT JOIN academy ac ON ac.currency=c.currency
+      LEFT JOIN referrals r ON r.currency=c.currency
       LEFT JOIN withdrawals w ON w.currency=c.currency ORDER BY c.currency`;
   }
 
@@ -254,6 +259,9 @@ export class WithdrawalAdminService {
       where: { id },
       include: {
         events: { orderBy: { version: 'asc' } },
+        referralAllocations: {
+          include: { rewardItem: { include: { reward: true } } },
+        },
         academyAllocations: { include: { enrollment: true } },
         payouts: {
           orderBy: [{ crewId: 'asc' }, { id: 'asc' }],
@@ -309,6 +317,16 @@ export class WithdrawalAdminService {
             confirmedAt: allocation.earning.postedAt?.toISOString() ?? null,
           })),
         ),
+        ...row.referralAllocations.map((a) => ({
+          id: a.rewardItemId,
+          taskId: null,
+          title: a.rewardItem.reward.title,
+          crewId: null,
+          crewName: 'Referrals',
+          earnedAmountMinor: a.rewardItem.amountMinor.toString(),
+          withdrawalAmountMinor: a.amountMinor.toString(),
+          confirmedAt: a.rewardItem.grantedAt?.toISOString() ?? null,
+        })),
         ...row.academyAllocations.map((a) => ({
           id: a.enrollmentId,
           taskId: null,
@@ -528,6 +546,15 @@ export class WithdrawalAdminService {
           this.wallet,
           row.userId,
           id,
+          input.action,
+        );
+      if (input.action === 'pay' || input.action === 'reject')
+        await resolveReferralIncome(
+          tx,
+          this.wallet,
+          row.userId,
+          id,
+          row.currency,
           input.action,
         );
       const updated = await tx.creatorWithdrawal.update({

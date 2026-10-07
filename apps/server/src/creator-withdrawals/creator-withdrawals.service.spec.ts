@@ -38,6 +38,7 @@ function fixture() {
           } as CreatorWithdrawal),
         ),
     },
+    referralWithdrawalAllocation: { create: jest.fn() },
     academyWithdrawalAllocation: { create: jest.fn() },
     walletAccount: {
       findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'wallet' }),
@@ -72,7 +73,9 @@ function fixture() {
     $transaction: (fn: (value: typeof tx) => unknown) =>
       Promise.resolve(fn(tx)),
   };
-  const wallet = { postEntryTx: jest.fn() };
+  const wallet = {
+    postEntryTx: jest.fn<Promise<unknown>, [unknown, { amount: bigint }]>(),
+  };
   return {
     tx,
     wallet,
@@ -146,7 +149,9 @@ it('replays the same request without allocating again, but rejects changed recip
 it('allows a teacher without Crew earnings to withdraw only the requested share of approved income', async () => {
   const f = fixture();
   f.tx.crewEarningEntry.findMany.mockReset().mockResolvedValue([]);
-  f.tx.$queryRaw.mockResolvedValue([{ id: 'enrollment', available: '200' }]);
+  f.tx.$queryRaw
+    .mockResolvedValueOnce([{ id: 'enrollment', available: '200' }])
+    .mockResolvedValueOnce([]);
   const result = await f.service.request('teacher', {
     ...request,
     expectedAvailableAmountMinor: '200',
@@ -169,6 +174,51 @@ it('allows a teacher without Crew earnings to withdraw only the requested share 
       amount: 100n,
       heldDelta: 100n,
       availableDelta: -100n,
+    }),
+  );
+});
+
+it('reserves a mixed request across Crew, Academy and exact-currency referral sources', async () => {
+  const f = fixture();
+  f.tx.$queryRaw
+    .mockResolvedValueOnce([{ id: 'course', available: '200' }])
+    .mockResolvedValueOnce([{ id: 'referral', available: '500' }]);
+  const result = await f.service.request('alice', {
+    ...request,
+    percentageBps: 10000,
+    expectedAvailableAmountMinor: '3700',
+  });
+  expect(result.amountMinor).toBe('3700');
+  expect(f.tx.referralWithdrawalAllocation.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: expect.objectContaining({
+        rewardItemId: 'referral',
+        amountMinor: 500n,
+        currency: 'USD',
+      }) as unknown,
+    }),
+  );
+  expect(
+    f.wallet.postEntryTx.mock.calls.map(([, entry]) => entry.amount),
+  ).toEqual([200n, 500n]);
+});
+it('withdraws CNY referral cash without converting Academy points into CNY', async () => {
+  const f = fixture();
+  f.tx.crewEarningEntry.findMany.mockReset().mockResolvedValue([]);
+  f.tx.$queryRaw.mockResolvedValue([{ id: 'cash', available: '800' }]);
+  await f.service.request('alice', {
+    ...request,
+    currency: 'CNY',
+    expectedAvailableAmountMinor: '800',
+  });
+  expect(f.tx.academyWithdrawalAllocation.create).not.toHaveBeenCalled();
+  expect(f.tx.referralWithdrawalAllocation.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: expect.objectContaining({
+        rewardItemId: 'cash',
+        amountMinor: 400n,
+        currency: 'CNY',
+      }) as unknown,
     }),
   );
 });

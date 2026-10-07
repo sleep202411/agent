@@ -1,5 +1,5 @@
 "use client";
-import { TASK_PAYMENT_TERMS, type TaskPaymentTerms } from "@repo/shared/crew";
+import { CURRENT_TASK_PAYMENT_TERMS, type TaskPaymentTerms } from "@repo/shared/crew";
 import { RequiredSkillsSelect } from "./required-skills-select";
 
 /**
@@ -657,7 +657,7 @@ function PositionForm({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unspecified">{paymentT("unspecified")}</SelectItem>
-                    {TASK_PAYMENT_TERMS.map((value) => (
+                    {CURRENT_TASK_PAYMENT_TERMS.map((value) => (
                       <SelectItem key={value} value={value}>
                         {paymentT(value)}
                       </SelectItem>

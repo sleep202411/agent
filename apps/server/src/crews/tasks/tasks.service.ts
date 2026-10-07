@@ -1,3 +1,4 @@
+import { assignedPaymentTerm } from './task-payment-policy';
 import { recordTaskContractFile } from '../assets/task-contract-retention';
 import { TASK_PAYMENT_TERMS } from '@repo/shared/crew';
 import { readDocumentCrdtState } from '../../documents/document-persisted-state';
@@ -4022,6 +4023,19 @@ export class CrewTasksService {
               candidate.rewardAmountMinor != null &&
               candidate.rewardAmountMinor > 0n,
           )) {
+            const paymentTerm = await assignedPaymentTerm(
+              tx,
+              taskId,
+              assignee.userId,
+              locked.metadata,
+            );
+            if (
+              paymentTerm &&
+              ['half_upfront', 'on_completion', 'demo_promise'].includes(
+                paymentTerm,
+              )
+            )
+              continue;
             await this.earnings.postTaskRewardTx(tx, {
               crewId: locked.crewId,
               taskId,

@@ -21,8 +21,13 @@
     "unspecified": "Not specified",
     "label": "Payment terms",
     "monthly": "Monthly settlement",
-    "half_upfront": "50% upfront",
-    "on_completion": "Payment on completion"
+    "half_upfront": "Reward 50% Upfront",
+    "on_completion": "Reward on Completion",
+    "demo_promise": "Demo Promise",
+    "help": "Payment terms help",
+    "half_upfrontHelp": "The client pays FD, which escrows the funds. Once an FD Admin confirms production has reached 50%, FD releases payment to the creator.",
+    "on_completionHelp": "The client pays FD, which escrows the funds. Once production is completed, FD releases payment to the creator.",
+    "demo_promiseHelp": "For demo projects, if the project is commercialized, the creator will be engaged for the work."
   },
   "common": {
     "appName": "FizzDragon Studio",
@@ -11797,7 +11802,7 @@
   },
   "creatorWithdrawals": {
     "title": "Withdrawal Center",
-    "description": "Withdraw confirmed task earnings, teaching earnings and platform-confirmed revenue shares.",
+    "description": "Withdraw confirmed task rewards, referral cash rewards, teaching earnings and platform-confirmed revenue shares.",
     "withdraw": "Request Withdrawal",
     "currency": "Currency",
     "refresh": "Refresh",

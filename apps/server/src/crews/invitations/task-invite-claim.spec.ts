@@ -89,7 +89,7 @@ describe('task invitation claim safeguards', () => {
       expect(db.crewTaskAssignee.create).not.toHaveBeenCalled();
     },
   );
-  it.each(['monthly', 'half_upfront', 'on_completion'])(
+  it.each(['monthly', 'half_upfront', 'on_completion', 'demo_promise'])(
     'records accepted %s terms independently of subsequent task metadata',
     async (paymentTerms) => {
       const { db, task, claim } = harness();
@@ -112,8 +112,8 @@ describe('task invitation claim safeguards', () => {
               paymentTerms,
               profitShareBps: 250,
             },
-          }),
-        }),
+          }) as unknown,
+        }) as unknown,
       });
     },
   );

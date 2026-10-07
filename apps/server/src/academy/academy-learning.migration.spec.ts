@@ -14,6 +14,8 @@ beforeAll(async () => {
  CREATE TABLE crew_payouts(id uuid,platform_withdrawal_id uuid,user_id text,currency text,status text,amount_minor bigint,net_amount_minor bigint,withholding_amount_minor bigint);
  CREATE TABLE crew_earning_entries(id uuid,currency text,amount_minor bigint,status text,user_id text,source_type text,revenue_distribution_id uuid);
  CREATE TABLE crew_payout_allocations(earning_id uuid,payout_id uuid,amount_minor bigint);`);
+  await db.exec(`CREATE TABLE referral_rewards(id uuid PRIMARY KEY,user_id text,currency text,status text);
+ CREATE TABLE referral_reward_items(id uuid PRIMARY KEY,reward_id uuid REFERENCES referral_rewards(id),amount_minor bigint,currency text,payout_type text,granted_at timestamptz);`);
   await db.exec(
     readFileSync(
       join(
@@ -22,6 +24,18 @@ beforeAll(async () => {
       ),
       'utf8',
     ),
+  );
+  await db.exec(
+    readFileSync(
+      join(
+        __dirname,
+        '../../prisma/migrations/20261007171000_referral_withdrawals/migration.sql',
+      ),
+      'utf8',
+    ),
+  );
+  await db.exec(
+    `CREATE CONSTRAINT TRIGGER creator_withdrawal_test_consistency AFTER INSERT OR UPDATE ON creator_withdrawals DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_creator_withdrawal_payouts();`,
   );
 });
 afterAll(async () => {
@@ -185,4 +199,100 @@ it('shows source-specific available, reserved and paid teaching cash for only th
     paidAmountMinor: '30',
   });
   expect(await service.balances('outsider')).toEqual([]);
+});
+
+async function referral(
+  currency = 'USD',
+  amount = 100,
+  payoutType = 'cash',
+  granted = true,
+) {
+  const reward = randomUUID(),
+    item = randomUUID(),
+    user = randomUUID();
+  await db.query(`INSERT INTO referral_rewards VALUES($1,$2,$3,'paid_out')`, [
+    reward,
+    user,
+    currency,
+  ]);
+  await db.query(
+    `INSERT INTO referral_reward_items VALUES($1,$2,$3,NULL,$4,$5)`,
+    [
+      item,
+      reward,
+      amount,
+      payoutType,
+      granted ? new Date().toISOString() : null,
+    ],
+  );
+  return { item, user, reward };
+}
+async function allocateReferral(
+  item: string,
+  user: string,
+  amount: number,
+  currency = 'USD',
+) {
+  const w = randomUUID();
+  await db.transaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO creator_withdrawals VALUES($1,'pending',$2,$3,$4)`,
+      [w, user, currency, amount],
+    );
+    await tx.query(
+      `INSERT INTO referral_withdrawal_allocations(id,withdrawal_id,reward_item_id,amount_minor,currency) VALUES($1,$2,$3,$4,$5)`,
+      [randomUUID(), w, item, amount, currency],
+    );
+  });
+  return w;
+}
+it('referral allocations cannot overdraw, switch currency or cross beneficiaries', async () => {
+  const r = await referral('CNY');
+  await allocateReferral(r.item, r.user, 60, 'CNY');
+  await expect(allocateReferral(r.item, r.user, 41, 'CNY')).rejects.toThrow(
+    'already reserved',
+  );
+  await expect(allocateReferral(r.item, r.user, 10, 'USD')).rejects.toThrow(
+    'must match',
+  );
+  await expect(allocateReferral(r.item, 'outsider', 10, 'CNY')).rejects.toThrow(
+    'must match',
+  );
+});
+it('referral rejection releases source availability; paid allocations remain consumed', async () => {
+  const r = await referral();
+  const first = await allocateReferral(r.item, r.user, 100);
+  await db.query(
+    `UPDATE creator_withdrawals SET status='rejected' WHERE id=$1`,
+    [first],
+  );
+  const second = await allocateReferral(r.item, r.user, 100);
+  await db.query(`UPDATE creator_withdrawals SET status='paid' WHERE id=$1`, [
+    second,
+  ]);
+  await expect(allocateReferral(r.item, r.user, 1)).rejects.toThrow(
+    'already reserved',
+  );
+});
+it('does not accept points or ungranted referral rewards as cash', async () => {
+  for (const r of [
+    await referral('USD', 100, 'community_points'),
+    await referral('USD', 100, 'cash', false),
+  ])
+    await expect(allocateReferral(r.item, r.user, 10)).rejects.toThrow(
+      'must match',
+    );
+});
+it('freezes granted referral source amount and beneficiary', async () => {
+  const r = await referral();
+  await expect(
+    db.query(`UPDATE referral_reward_items SET amount_minor=1000 WHERE id=$1`, [
+      r.item,
+    ]),
+  ).rejects.toThrow('immutable');
+  await expect(
+    db.query(`UPDATE referral_rewards SET user_id='other' WHERE id=$1`, [
+      r.reward,
+    ]),
+  ).rejects.toThrow('immutable');
 });

@@ -267,7 +267,13 @@ describe('PositionsService.update recruitment status', () => {
     return { service, tx };
   }
 
-  it.each(['monthly', 'half_upfront', 'on_completion', null] as const)(
+  it.each([
+    'monthly',
+    'half_upfront',
+    'on_completion',
+    'demo_promise',
+    null,
+  ] as const)(
     'persists and exposes payment timing %s without changing fee basis',
     async (paymentTerms) => {
       const { service } = editor('open', 0);

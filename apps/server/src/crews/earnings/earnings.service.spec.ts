@@ -374,6 +374,25 @@ describe('CrewEarningsService', () => {
     expect(t.notifications.send).not.toHaveBeenCalled();
   });
 
+  it('does not allow Crew finance to reverse FD Admin-released task payments', async () => {
+    const t = build();
+    const posted = earning({
+      status: CrewEarningStatus.posted,
+      createdByUserId: 'admin:finance',
+      sourceType: CrewEarningSourceType.task_reward,
+    });
+    t.prisma.crewEarningEntry.findUnique.mockResolvedValue(posted);
+    t.tx.crewEarningEntry.findUniqueOrThrow.mockResolvedValue(posted);
+    await expect(
+      t.service.reverse(EARNING_ID, ACTOR_ID, {
+        expectedVersion: 1,
+        reason: 'Change the contract',
+      }),
+    ).rejects.toThrow('platform finance');
+    expect(t.tx.crewEarningEntry.update).not.toHaveBeenCalled();
+    expect(t.notifications.send).not.toHaveBeenCalled();
+  });
+
   it('waits for an in-flight payout before deciding whether an earning can be reversed', async () => {
     const t = build();
     const posted = earning({ status: CrewEarningStatus.posted, version: 2 });

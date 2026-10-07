@@ -21,8 +21,13 @@
     "unspecified": "未指定",
     "label": "付款方式",
     "monthly": "月结",
-    "half_upfront": "50%预付款",
-    "on_completion": "完成后结算"
+    "half_upfront": "制作进度50%付款",
+    "on_completion": "完成后付款",
+    "demo_promise": "Demo合作承诺",
+    "help": "付款条款说明",
+    "half_upfrontHelp": "客户向FD付款，由FD托管资金。FD管理员确认制作进度达到50%后，FD向创作者释放款项。",
+    "on_completionHelp": "客户向FD付款，由FD托管资金。制作完成后，FD向创作者释放款项。",
+    "demo_promiseHelp": "对于Demo项目，如果项目商业化，将聘请该创作者参与制作。"
   },
   "common": {
     "appName": "FizzDragon Studio",
@@ -11797,7 +11802,7 @@
   },
   "creatorWithdrawals": {
     "title": "提现中心",
-    "description": "提取已确认的任务收入、教学收入及平台确认的分润收入。",
+    "description": "提现已确认的任务报酬、推荐现金奖励、教学收入和平台确认的分成。",
     "withdraw": "申请提现",
     "currency": "币种",
     "refresh": "刷新",

@@ -1,5 +1,9 @@
 "use client";
-import { TASK_PAYMENT_TERMS, type TaskPaymentTerms } from "@repo/shared/crew";
+import {
+  CURRENT_TASK_PAYMENT_TERMS,
+  TASK_PAYMENT_TERMS,
+  type TaskPaymentTerms,
+} from "@repo/shared/crew";
 
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -303,7 +307,10 @@ function TermsSession({
                     <NativeSelectOption value="unspecified">
                       {paymentT("unspecified")}
                     </NativeSelectOption>
-                    {TASK_PAYMENT_TERMS.map((value) => (
+                    {paymentTerms === "monthly" && (
+                      <NativeSelectOption value="monthly">{paymentT("monthly")}</NativeSelectOption>
+                    )}
+                    {CURRENT_TASK_PAYMENT_TERMS.map((value) => (
                       <NativeSelectOption key={value} value={value}>
                         {paymentT(value)}
                       </NativeSelectOption>

@@ -1,3 +1,5 @@
+import { TaskPaymentsService } from './tasks/task-payments.service';
+import { TaskPaymentsController } from './tasks/task-payments.controller';
 import {
   CrewTaskContractsController,
   CrewTaskContractsService,
@@ -170,6 +172,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    TaskPaymentsController,
     CrewQualificationCatalogController,
     EpisodeTaskTemplateController,
     CrewApplicationAmendmentsController,
@@ -221,6 +224,7 @@ import { CrewProductionService } from './production/production.service';
     StoryStoryboardChildrenController,
   ],
   providers: [
+    TaskPaymentsService,
     CrewStudioRevocationService,
     EpisodeTaskTemplateService,
     StoryboardChildrenService,

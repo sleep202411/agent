@@ -1,5 +1,10 @@
 "use client";
-import { TASK_PAYMENT_TERMS, type TaskPaymentTerms } from "@repo/shared/crew";
+import { TaskPaymentHelp } from "../../../../_components/task-payment-help";
+import {
+  CURRENT_TASK_PAYMENT_TERMS,
+  TASK_PAYMENT_TERMS,
+  type TaskPaymentTerms,
+} from "@repo/shared/crew";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { missingTaskFields } from "./task-required-fields";
 import { TaskDeliveryUpload } from "./task-delivery-upload";
@@ -813,6 +818,10 @@ export function TaskQuickCreate({
               </label>
             ))}
             <div className="min-w-0 space-y-2">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {paymentT("label")}
+                <TaskPaymentHelp />
+              </div>
               <SelectChip
                 icon={<IconCoin className="size-3.5" />}
                 value={paymentTerms}
@@ -825,7 +834,10 @@ export function TaskQuickCreate({
                     setPaymentTerms(term);
                   }
                 }}
-                options={TASK_PAYMENT_TERMS.map((value) => ({ value, label: paymentT(value) }))}
+                options={CURRENT_TASK_PAYMENT_TERMS.map((value) => ({
+                  value,
+                  label: paymentT(value),
+                }))}
               />
             </div>
             <div className="min-w-0 space-y-2">

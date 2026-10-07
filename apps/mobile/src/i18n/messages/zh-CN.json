@@ -5466,7 +5466,7 @@
   "feedbackHistory.publicNotice": "您的评分、选填评语和创作者身份将公开显示在被评价者的个人主页并计入评分。任务详情与私密回复不会公开。",
   "feedbackHistory.privateRetryNotice": "这条未完成的评价原本为私密评价。重试将保留原有的可见范围。",
   "creatorWithdrawals.title": "收益提现",
-  "creatorWithdrawals.description": "提取已确认的任务收入、教学收入及平台确认的分润收入。",
+  "creatorWithdrawals.description": "提现已确认的任务报酬、推荐现金奖励、教学收入和平台确认的分成。",
   "creatorWithdrawals.withdraw": "提现",
   "creatorWithdrawals.currency": "币种",
   "creatorWithdrawals.refresh": "刷新",
@@ -5687,8 +5687,8 @@
   "taskPaymentTerms.unspecified": "未指定",
   "taskPaymentTerms.label": "付款方式",
   "taskPaymentTerms.monthly": "月结",
-  "taskPaymentTerms.half_upfront": "50%预付款",
-  "taskPaymentTerms.on_completion": "完成后结算",
+  "taskPaymentTerms.half_upfront": "制作进度50%付款",
+  "taskPaymentTerms.on_completion": "完成后付款",
   "workspace.taskInviteTitle": "邀请创作者",
   "workspace.taskInviteIntro": "创作者接受此链接后，将以普通成员权限加入剧组并领取「{task}」。仅限一位创作者领取。",
   "taskSubmit.deliveryLink": "交付作品链接",
@@ -5845,5 +5845,10 @@
   "academyLearning.remove": "移除附件",
   "academyLearning.add": "添加附件",
   "academyLearning.myIncome": "我的收入",
-  "academyLearning.invalidReview": "请输入 0 至 100 的整数评分和评语。"
+  "academyLearning.invalidReview": "请输入 0 至 100 的整数评分和评语。",
+  "taskPaymentTerms.demo_promise": "Demo合作承诺",
+  "taskPaymentTerms.help": "付款条款说明",
+  "taskPaymentTerms.half_upfrontHelp": "客户向FD付款，由FD托管资金。FD管理员确认制作进度达到50%后，FD向创作者释放款项。",
+  "taskPaymentTerms.on_completionHelp": "客户向FD付款，由FD托管资金。制作完成后，FD向创作者释放款项。",
+  "taskPaymentTerms.demo_promiseHelp": "对于Demo项目，如果项目商业化，将聘请该创作者参与制作。"
 }

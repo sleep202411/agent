@@ -84,6 +84,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     permission: "creator.withdrawals.manage",
   },
   {
+    key: "/task-payments",
+    href: "/task-payments",
+    label: "Task Payments",
+    icon: IconWallet,
+    permission: "creator.revenue.manage",
+  },
+  {
     key: "/revenue",
     href: "/revenue",
     label: "Crew revenue",

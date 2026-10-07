@@ -5466,7 +5466,7 @@
   "feedbackHistory.publicNotice": "您的評分、選填評語和創作者身份將公開顯示在被評價者的個人主頁並計入評分。任務詳情與私密回覆不會公開。",
   "feedbackHistory.privateRetryNotice": "這條未完成的評價原本為私人評價。重試將保留原有的可見範圍。",
   "creatorWithdrawals.title": "收益提現",
-  "creatorWithdrawals.description": "提取已確認的任務收入、教學收入及平台確認的分潤收入。",
+  "creatorWithdrawals.description": "提現已確認的任務報酬、推薦現金獎勵、教學收入和平台確認的分成。",
   "creatorWithdrawals.withdraw": "提現",
   "creatorWithdrawals.currency": "幣種",
   "creatorWithdrawals.refresh": "重新整理",
@@ -5687,8 +5687,8 @@
   "taskPaymentTerms.unspecified": "未指定",
   "taskPaymentTerms.label": "付款方式",
   "taskPaymentTerms.monthly": "月結",
-  "taskPaymentTerms.half_upfront": "50%預付款",
-  "taskPaymentTerms.on_completion": "完成後結算",
+  "taskPaymentTerms.half_upfront": "製作進度50%付款",
+  "taskPaymentTerms.on_completion": "完成後付款",
   "workspace.taskInviteTitle": "邀請創作者",
   "workspace.taskInviteIntro": "創作者接受此連結後，將以普通成員權限加入劇組並領取「{task}」。僅限一位創作者領取。",
   "taskSubmit.deliveryLink": "交付作品連結",
@@ -5845,5 +5845,10 @@
   "academyLearning.remove": "移除附件",
   "academyLearning.add": "新增附件",
   "academyLearning.myIncome": "我的收入",
-  "academyLearning.invalidReview": "請輸入 0 至 100 的整數評分及評語。"
+  "academyLearning.invalidReview": "請輸入 0 至 100 的整數評分及評語。",
+  "taskPaymentTerms.demo_promise": "Demo合作承諾",
+  "taskPaymentTerms.help": "付款條款說明",
+  "taskPaymentTerms.half_upfrontHelp": "客戶向FD付款，由FD託管資金。FD管理員確認製作進度達到50%後，FD向創作者釋放款項。",
+  "taskPaymentTerms.on_completionHelp": "客戶向FD付款，由FD託管資金。製作完成後，FD向創作者釋放款項。",
+  "taskPaymentTerms.demo_promiseHelp": "對於Demo項目，如果項目商業化，將聘請該創作者參與製作。"
 }
