@@ -4,6 +4,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 
 INSTANCE = "cri-9fw21oj7s91k326l"
 
@@ -13,17 +14,57 @@ def query(action, **parameters):
             "--InstanceId", INSTANCE]
     for key, value in parameters.items():
         args += ["--" + key, str(value)]
-    try:
-        result = subprocess.run(args, capture_output=True, text=True, check=True, timeout=45)
-        payload = json.loads(result.stdout)
-    except (subprocess.SubprocessError, ValueError):
-        raise RuntimeError(f"CN ACR {action} could not be read; check CLI access/connectivity") from None
-    if payload.get("IsSuccess") is not True or payload.get("Code") != "success":
-        code = payload.get("Code", "unknown")
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+", str(code)):
-            code = "unknown"
-        raise RuntimeError(f"CN ACR {action} failed ({code}); verify permissions and build the selected tag")
-    return payload
+    for attempt in range(4):
+        retryable = True
+        try:
+            result = subprocess.run(args, capture_output=True, text=True, check=True, timeout=45)
+            payload = json.loads(result.stdout)
+            if not isinstance(payload, dict):
+                reason = "invalid JSON response shape"
+            elif payload.get("IsSuccess") is True and payload.get("Code") == "success":
+                return payload
+            else:
+                code = safe_code(payload.get("Code", "unknown"))
+                reason = f"API error {code}"
+                retryable = transient_code(code)
+        except subprocess.TimeoutExpired:
+            reason = "CLI request timed out after 45 seconds"
+        except subprocess.CalledProcessError as error:
+            # Never print raw CLI output: it may contain signed requests.
+            detail = (error.stderr or "") + "\n" + (error.stdout or "")
+            match = re.search(r"(?:ErrorCode|Code)[\"']?\s*[:=]\s*[\"']?([A-Za-z0-9_.-]+)", detail)
+            code = safe_code(match[1]) if match else None
+            if code:
+                reason = f"CLI API error {code}"
+                retryable = transient_code(code)
+            elif re.search(r"forbidden|accessdenied|invalidaccesskey|signaturedoesnotmatch|unauthorized|credential", detail, re.I):
+                reason = "CLI authentication or permission failure"
+                retryable = False
+            else:
+                reason = f"CLI exited {error.returncode} (transport or CLI failure)"
+        except ValueError:
+            reason = "CLI returned invalid JSON"
+        if not retryable or attempt == 3:
+            raise RuntimeError(
+                f"CN ACR {action} failed after {attempt + 1} attempt(s): {reason}. "
+                "Release remains saved; correct access/connectivity and resume."
+            ) from None
+        delay = (2, 5, 10)[attempt]
+        print(f"==> CN ACR {action}: {reason}; retry {attempt + 2}/4 in {delay}s",
+              file=sys.stderr, flush=True)
+        time.sleep(delay)
+
+
+def safe_code(value):
+    return str(value) if re.fullmatch(r"[A-Za-z0-9_.-]+", str(value)) else "unknown"
+
+
+def transient_code(code):
+    return code.lower().startswith((
+        "throttl", "serviceunavailable", "internalerror", "internalfailure",
+        "requesttimeout", "sdk.timeout", "sdk.serverunreachable",
+        "sdk.readtimeout", "sdk.connecttimeout", "sdk.networkerror",
+    ))
 
 
 def verify(tag, services):
