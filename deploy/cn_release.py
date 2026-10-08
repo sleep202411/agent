@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+"""CN release coordinator. State contains identifiers only, never credentials."""
+import argparse
+import contextlib
+import datetime as dt
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from cn_registry import verify
+
+ROOT = Path(__file__).resolve().parent.parent
+RDS = "pgm-1ud5k5e8ed864ld6"
+REGION = "cn-hangzhou"
+
+
+def run(*args, capture=False, env=None, input=None):
+    result = subprocess.run([str(a) for a in args], cwd=ROOT, text=True,
+                            input=input, stdout=subprocess.PIPE if capture else None,
+                            env=env, check=True)
+    return result.stdout.strip() if capture else None
+
+
+def read_json(*args):
+    return json.loads(run(*args, capture=True))
+
+
+def rds(action, **params):
+    args = ["aliyun", "rds", action, "--DBInstanceId", RDS,
+            "--RegionId", REGION, "--profile", "default"]
+    for key, value in params.items():
+        args += ["--" + key, str(value)]
+    return read_json(*args)
+
+
+def revision(value):
+    tag = run("git", "rev-parse", "--verify", f"{value}^{{commit}}", capture=True)
+    if not re.fullmatch(r"[0-9a-f]{40}", tag):
+        raise RuntimeError("Invalid immutable revision")
+    run("git", "merge-base", "--is-ancestor", tag, "main")
+    return tag
+
+
+def save(path, state):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Atomic write before each remote mutation so a timeout cannot lose its intent.
+    fd, name = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            json.dump(state, stream, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(name, path)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+class ExpiredBackup(RuntimeError):
+    pass
+
+
+def validate_backup(backup_id):
+    rows = rds("DescribeBackups", BackupId=backup_id).get("Items", {}).get("Backup", [])
+    if len(rows) != 1 or str(rows[0].get("BackupId")) != str(backup_id):
+        raise RuntimeError(f"BackupId {backup_id} not found (a BackupJobId is not a BackupId)")
+    backup = rows[0]
+    if backup.get("BackupMode") != "Manual" or backup.get("BackupStatus") != "Success" or backup.get("IsAvail") != 1:
+        raise RuntimeError(f"Backup {backup_id} is not a successful available manual backup")
+    ended = dt.datetime.fromisoformat(backup["BackupEndTime"].replace("Z", "+00:00"))
+    if not 0 <= (dt.datetime.now(dt.timezone.utc) - ended).total_seconds() <= 21600:
+        raise ExpiredBackup(f"Backup {backup_id} expired; create a fresh backup before migration")
+    return backup
+
+
+def ensure_backup(state, persist, supplied=None):
+    if supplied:
+        validate_backup(supplied)
+        state["backupId"] = supplied
+        persist()
+        return supplied
+    if state.get("backupId"):
+        try:
+            validate_backup(state["backupId"])
+            return state["backupId"]
+        except ExpiredBackup:
+            state.setdefault("previousBackupIds", []).append(state.pop("backupId"))
+            state.pop("backupJobId", None)
+            state.pop("backupRequested", None)
+            persist()
+    if state.get("backupRequested") and not state.get("backupJobId"):
+        # CreateBackup has no idempotency token. Do not duplicate an uncertain request.
+        raise RuntimeError("Backup request outcome is unknown. Find its completed BackupId in RDS and resume with --backup-id; no second backup was requested")
+    if not state.get("backupJobId"):
+        state["backupRequested"] = True
+        persist()
+        print("==> creating manual CN RDS backup", flush=True)
+        response = rds("CreateBackup", BackupMethod="Physical")
+        job_id = str(response.get("BackupJobId", ""))
+        if not job_id.isdigit():
+            raise RuntimeError("CreateBackup did not return a BackupJobId")
+        state["backupJobId"] = job_id
+        persist()
+    deadline = time.monotonic() + 3600
+    while time.monotonic() < deadline:
+        rows = rds("DescribeBackupTasks", BackupJobId=state["backupJobId"]).get("Items", {}).get("BackupJob", [])
+        rows = [b for b in rows if str(b.get("BackupJobId")) == state["backupJobId"]]
+        if len(rows) > 1:
+            raise RuntimeError("Ambiguous RDS backup task response")
+        if rows:
+            task = rows[0]
+            if task.get("BackupStatus") == "Failed":
+                raise RuntimeError("RDS manual backup failed; inspect the backup task before retrying")
+            if task.get("BackupStatus") == "Finished" and task.get("BackupId"):
+                backup_id = str(task["BackupId"])
+                validate_backup(backup_id)
+                state["backupId"] = backup_id
+                persist()
+                print(f"==> verified completed BackupId {backup_id}", flush=True)
+                return backup_id
+        print(f"==> waiting for RDS backup job {state['backupJobId']}", flush=True)
+        time.sleep(15)
+    raise RuntimeError("Backup wait timed out; resume to keep waiting for the same backup job")
+
+
+def kubectl(*args, capture=False):
+    return run("kubectl", *args, capture=capture)
+
+
+def cluster_server():
+    return kubectl("config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}", capture=True)
+
+
+def get_job(name, namespace):
+    value = kubectl("get", "job", name, "-n", namespace, "--ignore-not-found", "-o", "json", capture=True)
+    return json.loads(value) if value else None
+
+
+def job_state(job, image, tag):
+    metadata = job.get("metadata", {})
+    containers = job.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [])
+    if len(containers) != 1 or containers[0].get("image") != image or containers[0].get("command") != ["npm", "run", "db:deploy"] or metadata.get("labels", {}).get("fizzdragon.com/revision") != tag or not metadata.get("annotations", {}).get("fizzdragon.com/rds-backup-id"):
+        raise RuntimeError("Existing migration job does not match the pinned release and backup audit")
+    conditions = job.get("status", {}).get("conditions", [])
+    if any(c.get("type") == "Complete" and c.get("status") == "True" for c in conditions):
+        return "complete"
+    if any(c.get("type") == "Failed" and c.get("status") == "True" for c in conditions):
+        raise RuntimeError("Migration job failed. Inspect its logs and database state; automatic deletion/re-execution is disabled")
+    return "active"
+
+
+@contextlib.contextmanager
+def chart_snapshot(tag):
+    with tempfile.TemporaryDirectory(prefix="fizz-cn-chart-") as directory:
+        archive = Path(directory) / "chart.tar"
+        run("git", "archive", tag, "deploy/helm/fizzdragon", "-o", archive)
+        run("tar", "-xf", archive, "-C", directory)
+        yield Path(directory) / "deploy/helm/fizzdragon"
+
+
+def migration(tag, backup_id=None, state=None, persist=None, render_only=False):
+    namespace = os.environ.get("CN_NAMESPACE", "fizzdragon")
+    release = os.environ.get("CN_RELEASE", "fizzdragon")
+    name = f"{release}-db-migrate-{tag}"[:63].rstrip("-")
+    run(ROOT / "deploy/cn-preflight.sh", "--phase", "migration", "--tag", tag, "server")
+    with chart_snapshot(tag) as chart:
+        def render(backup):
+            return run("helm", "template", release, chart, "--namespace", namespace,
+                       "-f", chart / "values.yaml", "-f", chart / "values.cn-prod.yaml",
+                       "--show-only", "templates/server-migration-job.yaml",
+                       "--set-string", f"server.image.tag={tag}",
+                       "--set", "server.migrationJob.enabled=true",
+                       "--set-string", f"server.migrationJob.revision={tag}",
+                       "--set-string", f"server.migrationJob.backupId={backup}", capture=True)
+        if render_only:
+            print(render(backup_id or "render-only-unverified"))
+            return
+        if os.environ.get("CONFIRM_CN_PROD_MIGRATION") != "YES":
+            raise RuntimeError("Set CONFIRM_CN_PROD_MIGRATION=YES to authorize production migrations")
+        # Resolve the exact image from this revision's chart, not today's checkout.
+        rendered = render(backup_id or "pending")
+        image_match = re.search(r'^\s+image:\s*"([^"\n]+)"', rendered, re.M)
+        if not image_match or not image_match[1].endswith(f"/fizzdragon-server:{tag}"):
+            raise RuntimeError("Unexpected migration image in pinned chart")
+        image = image_match[1]
+        existing = get_job(name, namespace)
+        if existing and job_state(existing, image, tag) == "complete":
+            print(f"==> migration already completed: {name}", flush=True)
+            return
+        verify(tag, ["server"])
+        if not existing:
+            if state is not None:
+                backup_id = ensure_backup(state, persist, backup_id)
+            elif backup_id:
+                validate_backup(backup_id)
+            else:
+                raise RuntimeError("CN_RDS_BACKUP_ID is required for standalone migration")
+            # Creation is atomic. If another operator wins, stop and resume against its job.
+            kubectl_input = render(backup_id)
+            run("kubectl", "create", "-f", "-", input=kubectl_input)
+        print(f"==> waiting for migration job {name} (resume reattaches, never deletes)", flush=True)
+        deadline = time.monotonic() + 1800
+        while time.monotonic() < deadline:
+            current = get_job(name, namespace)
+            if not current:
+                raise RuntimeError("Migration job disappeared; investigate before retrying")
+            if job_state(current, image, tag) == "complete":
+                break
+            time.sleep(10)
+        else:
+            raise RuntimeError(f"Migration wait timed out. Inspect kubectl -n {namespace} describe job {name}; resume the same release")
+        print(f"DONE: migrations completed for {tag}", flush=True)
+
+
+def release(args):
+    run("git", "diff", "--exit-code", "--quiet")
+    run("git", "diff", "--cached", "--exit-code", "--quiet")
+    if run("git", "branch", "--show-current", capture=True) != "main":
+        raise RuntimeError("Start or resume CN releases from main")
+    git_dir = Path(run("git", "rev-parse", "--path-format=absolute", "--git-common-dir", capture=True))
+    directory = git_dir / "fizzdragon-releases"
+    directory.mkdir(exist_ok=True)
+    path = directory / "cn.json"
+    # OS lock is released on exit/crash. Never delete another process's lock.
+    with (directory / "cn.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError("Another CN release is running from this repository") from None
+        previous = json.loads(path.read_text()) if path.exists() else None
+        if args.resume:
+            if not previous:
+                raise RuntimeError("No CN release receipt exists to resume")
+            state = previous
+            if args.services and sorted(args.services) != sorted(state["services"]):
+                raise RuntimeError("Resume must use the original service set")
+            if args.tag and revision(args.tag) != state["tag"]:
+                raise RuntimeError("Resume must use the pinned revision")
+        else:
+            if previous and not previous.get("complete"):
+                raise RuntimeError("An unfinished CN release exists. Use --resume; its pinned revision is " + previous["tag"])
+            services = args.services or ["web", "server", "studio", "admin-ui"]
+            if any(s not in ("web", "server", "studio", "admin-ui", "agent-os") for s in services):
+                raise RuntimeError("Invalid service set")
+            state = {"version": 1, "tag": revision(args.tag or "HEAD"), "services": sorted(set(services)),
+                     "namespace": os.environ.get("CN_NAMESPACE", "fizzdragon"),
+                     "release": os.environ.get("CN_RELEASE", "fizzdragon"),
+                     "context": kubectl("config", "current-context", capture=True),
+                     "clusterServer": cluster_server(),
+                     "useExistingImages": bool(args.use_existing_images)}
+            save(path, state)
+        if state.get("complete"):
+            print(f"DONE: saved CN release {state['tag']} already completed; no deployment repeated")
+            return
+        if "server" in state["services"] and os.environ.get("CONFIRM_CN_PROD_MIGRATION") != "YES":
+            raise RuntimeError("Set CONFIRM_CN_PROD_MIGRATION=YES for the automated backup/migration workflow")
+        # Refuse accidental resume against another cluster, namespace or Helm release.
+        if state.get("clusterServer") != cluster_server() or state.get("version") != 1 or state["namespace"] != os.environ.get("CN_NAMESPACE", "fizzdragon") or state["release"] != os.environ.get("CN_RELEASE", "fizzdragon") or state["context"] != kubectl("config", "current-context", capture=True):
+            raise RuntimeError("Release target differs from the saved receipt")
+        tag = revision(state["tag"])
+        services = state["services"]
+        persist = lambda: save(path, state)
+        print(f"==> CN pinned release {tag}; receipt {path}", flush=True)
+        print("Resume with: CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --resume --allow-chart-update", flush=True)
+        if not state.get("built"):
+            if not state.get("useExistingImages", False):
+                run(ROOT / "deploy/deploy-cn-services.sh", "--tag", tag, "--full", "--build-only", *services)
+            else:
+                print("==> verifying existing CN images; no rebuild requested", flush=True)
+            state["digests"] = verify(tag, services)
+            state["built"] = True
+            persist()
+        else:
+            if verify(tag, services) != state["digests"]:
+                raise RuntimeError("Pinned image digests changed; refusing to deploy overwritten tags")
+        if "server" in services:
+            migration(tag, args.backup_id, state, persist)
+        if verify(tag, services) != state["digests"]:
+            raise RuntimeError("Pinned image digests changed during migration; refusing deployment")
+        deploy_args = [ROOT / "deploy/deploy-cn-services.sh", "--tag", tag, "--deploy-only"]
+        if args.allow_chart_update:
+            deploy_args.append("--allow-chart-update")
+        run(*deploy_args, *services)
+        state["complete"] = True
+        persist()
+        print(f"DONE: CN release {tag} verified", flush=True)
+
+
+def main():
+    os.environ.setdefault("KUBECONFIG", str(Path.home() / ".kube/config-fizzdragon-cn"))
+    os.environ.setdefault("DEPLOY_KEY", str(Path.home() / ".ssh/id_ed25519_fizzdragon_cn"))
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="action", required=True)
+    p = sub.add_parser("release")
+    p.add_argument("--tag")
+    p.add_argument("--resume", action="store_true")
+    p.add_argument("--use-existing-images", action="store_true", help="Verify and reuse all selected images at the pinned tag without building")
+    p.add_argument("--allow-chart-update", action="store_true")
+    p.add_argument("--backup-id", help="Completed manual BackupId for recovery, not BackupJobId")
+    p.add_argument("services", nargs="*")
+    p = sub.add_parser("migrate")
+    p.add_argument("--tag", default="HEAD")
+    p.add_argument("--render-only", action="store_true")
+    args = parser.parse_args()
+    if args.action == "release":
+        release(args)
+    else:
+        migration(revision(args.tag), os.environ.get("CN_RDS_BACKUP_ID"), render_only=args.render_only)
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (RuntimeError, ValueError, OSError, subprocess.CalledProcessError) as error:
+        print(f"FATAL: {error}", file=sys.stderr)
+        sys.exit(1)

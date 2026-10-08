@@ -16,14 +16,16 @@ PHASE=all
 FULL=0
 ALLOW_CHART_UPDATE=0
 REQUESTED=()
+PINNED_TAG=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --tag) PINNED_TAG="${2:?--tag requires a Git SHA}"; shift 2 ;;
     --full) FULL=1; shift ;;
     --build-only) PHASE=build; shift ;;
     --deploy-only) PHASE=deploy; shift ;;
     --allow-chart-update) ALLOW_CHART_UPDATE=1; shift ;;
     -h|--help)
-      echo "Usage: $0 [--full] [--build-only|--deploy-only] [--allow-chart-update] <service...|platform>"
+      echo "Usage: $0 [--tag <git-sha>] [--full] [--build-only|--deploy-only] [--allow-chart-update] <service...|platform>"
       echo "Services: web studio admin-ui server agent-os; legacy agent requires ALLOW_LEGACY_AGENT_DEPLOY=1"
       exit 0
       ;;
@@ -57,10 +59,12 @@ if [ "$PHASE" != deploy ] && [ "$FULL" -ne 1 ]; then
   exit 2
 fi
 
-TAG="$(git rev-parse HEAD)"
+TAG="$(git rev-parse --verify "${PINNED_TAG:-HEAD}^{commit}")"
+[[ "$TAG" =~ ^[0-9a-f]{40}$ ]] || exit 2
+git merge-base --is-ancestor "$TAG" main || { echo "FATAL: release revision must belong to main" >&2; exit 2; }
 BRANCH="$(git symbolic-ref --quiet --short HEAD || true)"
 assert_checkout_unchanged() {
-  if [ "$(git rev-parse HEAD)" != "$TAG" ] || \
+  if { [ -z "$PINNED_TAG" ] && [ "$(git rev-parse HEAD)" != "$TAG" ]; } || \
      [ "$(git symbolic-ref --quiet --short HEAD || true)" != "$BRANCH" ] || \
      ! git diff --quiet || ! git diff --cached --quiet; then
     echo "FATAL: checkout changed; preserve local work, reconcile and rerun the CN release." >&2
@@ -93,10 +97,10 @@ chart_fingerprint() {
 }
 
 if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
-  "$ROOT/deploy/cn-preflight.sh" --phase build "${SERVICES[@]}"
+  "$ROOT/deploy/cn-preflight.sh" --phase build --tag "$TAG" "${SERVICES[@]}"
 fi
 if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
-  "$ROOT/deploy/cn-preflight.sh" --phase deploy "${SERVICES[@]}"
+  "$ROOT/deploy/cn-preflight.sh" --phase deploy --tag "$TAG" "${SERVICES[@]}"
 fi
 
 RELEASE_DIR=""
@@ -177,6 +181,7 @@ fi
 
 if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
   assert_checkout_unchanged
+  python3 "$ROOT/deploy/cn_registry.py" "$TAG" "${SERVICES[@]}"
   export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config-fizzdragon-cn}"
   fingerprint="$(chart_fingerprint)"
   live_fingerprint="$(helm get values "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null \

@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
-function run(t, scenario, phase = "all") {
+function run(t, scenario, phase = "all", pinned = false) {
   const root = mkdtempSync(join(tmpdir(), "cn-release-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const repo = join(root, "repo");
@@ -32,6 +32,7 @@ function run(t, scenario, phase = "all") {
     mkdirSync(join(repo, file, ".."), { recursive: true });
     writeFileSync(join(repo, file), contents, { mode: 0o755 });
   };
+  put("deploy/cn_registry.py", "import os, sys\nsys.exit(1 if os.environ.get('QA_SCENARIO') == 'missing-image' else 0)\n");
   put("deploy/cn-preflight.sh", "#!/bin/bash\nexit 0\n");
   put("deploy/cn-remote-build-services.sh", "# snapshot A\n");
   put("deploy/cn-source-relay.cjs", "// mocked relay\n");
@@ -104,6 +105,7 @@ if(cmd==='aliyun') {
     [
       "deploy/deploy-cn-services.sh",
       "--full",
+      ...(pinned ? ["--tag", revision] : []),
       "--allow-chart-update",
       ...(phase === "all" ? [] : [`--${phase}-only`]),
       "server",
@@ -171,4 +173,16 @@ test("deploy-only preserves selective release without rebuilding", (t) => {
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(upgrades.length, 1);
   assert.ok(upgrades[0].args.includes("server.image.tag=" + revision));
+});
+
+test("explicit revision survives a later checkout commit", (t) => {
+  const { result, upgrades, revision } = run(t, "advance", "all", true);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(upgrades.length, 1);
+  assert.ok(upgrades[0].args.includes("server.image.tag=" + revision));
+});
+test("missing image prevents Helm mutation", (t) => {
+  const { result, upgrades } = run(t, "missing-image");
+  assert.notEqual(result.status, 0);
+  assert.equal(upgrades.length, 0);
 });

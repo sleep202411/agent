@@ -253,6 +253,8 @@ echo "✅ 镜像和 Git tag 已推送；运行中的版本尚未验证。ArgoCD 
 echo "只读检查 Server rollout（需要 AKS / ArgoCD 读取权限）："
 echo "  node deploy/diagnose-com-server.mjs $SHA"
 echo "随后验证已登录的业务接口；/healthz 或 /ready 成功不代表新路由已上线。"
+echo "CN release of the same source revision (builds CN images separately):"
+echo "  CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --tag $SHA --allow-chart-update ${SERVICES[*]}"
 
 }
 main "$@"; exit

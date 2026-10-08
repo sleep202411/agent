@@ -10,9 +10,13 @@ RELEASE="${CN_RELEASE:-fizzdragon}"
 ECS_ID="${CN_BUILD_ECS_ID:-i-bp11r90r4g91u39iimnx}"
 PHASE=deploy
 SERVICES=()
+TARGET=HEAD
+SNAPSHOT=""
+trap '[ -z "$SNAPSHOT" ] || rm -rf "$SNAPSHOT"' EXIT
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --tag) TARGET="${2:?--tag requires a Git SHA}"; shift 2 ;;
     --phase)
       PHASE="${2:?--phase requires build, deploy, or migration}"
       shift 2
@@ -73,6 +77,13 @@ elif [ "${ALLOW_DIRTY:-0}" = 1 ]; then
 else
   fail "tracked worktree is dirty"
 fi
+
+TARGET="$(git -C "$ROOT" rev-parse --verify "$TARGET^{commit}")" || exit 2
+git -C "$ROOT" merge-base --is-ancestor "$TARGET" main || { fail "release revision must belong to main"; exit 2; }
+SNAPSHOT="$(mktemp -d)" || exit 1
+git -C "$ROOT" archive "$TARGET" deploy/helm/fizzdragon | tar -x -C "$SNAPSHOT" || exit 1
+CHART="$SNAPSHOT/deploy/helm/fizzdragon"
+CN_VALUES="$CHART/values.cn-prod.yaml"
 
 if helm lint "$CHART" -f "$CHART/values.yaml" -f "$CN_VALUES" >/dev/null 2>&1; then
   ok "CN Helm chart lints"
@@ -138,10 +149,10 @@ else
   if has_service server && [ "$PHASE" = deploy ]; then
     live_server_tag="$(kubectl get deploy fizzdragon-server -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | awk -F: '{print $NF}')"
     if [ -n "$live_server_tag" ] && git -C "$ROOT" cat-file -e "$live_server_tag^{commit}" 2>/dev/null; then
-      migration_count="$(git -C "$ROOT" diff --name-only "$live_server_tag"..HEAD -- apps/server/prisma/migrations | wc -l | tr -d ' ')"
+      migration_count="$(git -C "$ROOT" diff --name-only "$live_server_tag".."$TARGET" -- apps/server/prisma/migrations | wc -l | tr -d ' ')"
       if [ "$migration_count" -gt 0 ]; then
-        target_revision="$(git -C "$ROOT" rev-parse HEAD)"
-        migration_job="fizzdragon-db-migrate-$target_revision"
+        target_revision="$TARGET"
+        migration_job="$(printf '%s-db-migrate-%s' "$RELEASE" "$target_revision" | cut -c1-63 | sed 's/-$//')"
         migration_complete="$(kubectl get job "$migration_job" -n "$NAMESPACE" -o jsonpath='{range .status.conditions[?(@.type=="Complete")]}{.status}{end}' 2>/dev/null || true)"
         if [ "$migration_complete" = True ]; then
           backup_id="$(kubectl get job "$migration_job" -n "$NAMESPACE" -o 'jsonpath={.metadata.annotations.fizzdragon\.com/rds-backup-id}' 2>/dev/null || true)"
