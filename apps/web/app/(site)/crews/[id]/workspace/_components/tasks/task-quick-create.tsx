@@ -374,6 +374,7 @@ export function TaskQuickCreate({
       taskKind: taskKind || null,
       description,
       workflowStateId: resolvedWorkflowStateId ?? undefined,
+      rewardCurrency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
       rewardUsdMinor: rewardUsd.trim() ? Number(rewardUsd) * 100 : null,
       dueAt: dueDate || null,
     });
@@ -437,6 +438,7 @@ export function TaskQuickCreate({
             : dateEndIso(dueDate || null),
         startAt: draft ? dateStartIso(draft.startDate ?? null) : (initialInput?.startAt ?? null),
         paymentTerms,
+        rewardCurrency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
         rewardUsdMinor: rewardUsd === "" ? null : Math.round(Number(rewardUsd) * 100),
         profitShareBps: profitShare === "" ? null : Math.round(Number(profitShare) * 100),
         estimatePoints: estimatePoints === "" ? null : Number(estimatePoints),
@@ -796,7 +798,9 @@ export function TaskQuickCreate({
               <label key={field.key} className="block min-w-0 space-y-2">
                 <span className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
                   <IconCoin className="size-3.5" />
-                  {projectT(`workbench.${field.key}`)}{" "}
+                  {projectT(`workbench.${field.key}`, {
+                    currency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
+                  })}{" "}
                   <span aria-hidden="true" className="text-primary">
                     *
                   </span>
@@ -807,7 +811,9 @@ export function TaskQuickCreate({
                   max={field.max}
                   step="0.01"
                   value={field.value}
-                  aria-label={projectT(`workbench.${field.key}`)}
+                  aria-label={projectT(`workbench.${field.key}`, {
+                    currency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
+                  })}
                   aria-required="true"
                   className="h-10 data-[size=default]:h-10 w-full min-w-0 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-white outline-none focus:border-primary"
                   onChange={(event) => {

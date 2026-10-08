@@ -45,6 +45,27 @@ function harness() {
 }
 
 describe('task invitation claim safeguards', () => {
+  it('preserves CNY amounts in the assignment and accepted-offer audit', async () => {
+    const { task, db, claim } = harness();
+    Object.assign(task.metadata.compensation, { rewardCurrency: 'CNY' });
+    await claim();
+    const assignments = db.crewTaskAssignee.create.mock.calls as unknown[][];
+    expect(assignments[0]?.[0]).toMatchObject({
+      data: { currency: 'CNY', rewardAmountMinor: 12500n },
+    });
+    const events = db.crewAuthorizationEvent.create.mock.calls as unknown[][];
+    expect(events[0]?.[0]).toMatchObject({
+      data: {
+        after: { compensation: { currency: 'CNY', rewardAmountMinor: 12500 } },
+      },
+    });
+  });
+  it('rejects invalid recorded currency rather than relabeling an offer', async () => {
+    const { task, db, claim } = harness();
+    Object.assign(task.metadata.compensation, { rewardCurrency: 'BAD' });
+    await expect(claim()).rejects.toThrow('compensation is incomplete');
+    expect(db.crewTaskAssignee.create).not.toHaveBeenCalled();
+  });
   it('rejects a deleted or foreign-Crew target', async () => {
     const { db, claim } = harness();
     db.crewTask.findFirst.mockResolvedValue(null);

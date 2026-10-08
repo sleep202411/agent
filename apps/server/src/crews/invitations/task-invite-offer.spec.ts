@@ -100,7 +100,9 @@ it('creates a single-use link bound to the reviewed version', async () => {
     'tasks.manage',
     h.tx,
   );
-  expect(h.tx.crewInviteLink.create.mock.calls[0]?.[0]).toMatchObject({
+  expect(
+    (h.tx.crewInviteLink.create.mock.calls as unknown[][])[0]?.[0],
+  ).toMatchObject({
     data: {
       taskId,
       taskVersion: 3,
@@ -155,5 +157,13 @@ it('allows a previously accepted recipient to return after the link is exhausted
     status: 'exhausted',
     task: null,
     acceptedHref: `/crews/crew/workspace?tab=tasks&task=${taskId}`,
+  });
+});
+
+it('previews the recorded CNY reward without converting or relabeling it', async () => {
+  const h = harness();
+  Object.assign(h.target.metadata.compensation, { rewardCurrency: 'CNY' });
+  expect(await h.service.preview(h.link as never)).toMatchObject({
+    task: { rewardCurrency: 'CNY', rewardUsdMinor: 12000 },
   });
 });

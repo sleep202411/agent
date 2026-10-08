@@ -631,6 +631,7 @@ export const CreateCrewTaskSchema = z
       .max(1_000_000)
       .nullable()
       .optional(),
+    rewardCurrency: z.enum(['USD', 'CNY']).optional(),
     rewardUsdMinor: z
       .number()
       .int()

@@ -259,8 +259,13 @@ function PositionForm({
     );
     setPaymentTerms(taskToImport.paymentTerms ?? null);
     const amount = taskToImport.rewardUsdMinor;
-    if (amount != null && !salaryMin && !salaryMax) {
-      setSalaryCurrency("USD");
+    if (
+      amount != null &&
+      !salaryMin &&
+      !salaryMax &&
+      currencyOptions.includes(taskToImport.rewardCurrency ?? "USD")
+    ) {
+      setSalaryCurrency(taskToImport.rewardCurrency ?? "USD");
       setSalaryMin(String(amount / 100));
       setSalaryMax(String(amount / 100));
       setSalaryPeriod("project");

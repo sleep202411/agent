@@ -540,6 +540,7 @@ export interface CrewTaskDTO {
   positionRole?: string | null;
   contractAssetNodeId?: string | null;
   paymentTerms?: TaskPaymentTerms | null;
+  rewardCurrency?: "USD" | "CNY";
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints: number | null;
@@ -736,6 +737,7 @@ export interface CreateCrewTaskInput {
   positionRole?: string | null;
   contractAssetNodeId?: string | null;
   paymentTerms?: TaskPaymentTerms | null;
+  rewardCurrency?: "USD" | "CNY";
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints?: number | null;
@@ -984,6 +986,7 @@ export interface CrewTaskDraftDTO {
   startDate: string | null;
   dueDate: string | null;
   paymentTerms?: TaskPaymentTerms | null;
+  rewardCurrency?: "USD" | "CNY";
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
   estimatePoints: number | null;

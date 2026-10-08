@@ -7,7 +7,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
-import { parseCrewMoney, formatCrewMoneyInput } from "@/src/lib/crew-money";
+import { CREW_CURRENCY, parseCrewMoney, formatCrewMoneyInput } from "@/src/lib/crew-money";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,7 +31,7 @@ const blank = (): Definition => ({
   category: "",
   purpose: "",
   occurredOn: null,
-  currency: "USD",
+  currency: CREW_CURRENCY,
   amountMinor: null,
   evidenceNote: "",
 });

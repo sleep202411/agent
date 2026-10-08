@@ -31,7 +31,10 @@ import {
   provisionTaskDeliveryFolderTx,
   publishTaskDeliveryAssetsTx,
 } from './task-delivery-folder';
-import { assertNewCrewCurrency } from '../earnings/ledger-currency';
+import {
+  assertNewCrewCurrency,
+  crewCurrency,
+} from '../earnings/ledger-currency';
 import {
   BadRequestException,
   ConflictException,
@@ -2117,6 +2120,7 @@ export class CrewTasksService {
   }
 
   async create(crewId: string, userId: string, input: CreateCrewTaskInput) {
+    if (input.rewardCurrency) assertNewCrewCurrency(input.rewardCurrency);
     await this.authorization.require(crewId, userId, 'tasks.manage');
     if (input.dueAt && new Date(input.dueAt).getTime() < Date.now()) {
       throw new BadRequestException('Choose today or a future deadline.');
@@ -2225,6 +2229,8 @@ export class CrewTasksService {
             contractAssetNodeId: input.contractAssetNodeId ?? null,
             compensation: {
               paymentTerms: input.paymentTerms ?? null,
+              // Legacy API amount key; currency is explicit for all new tasks.
+              rewardCurrency: crewCurrency(),
               rewardUsdMinor: input.rewardUsdMinor ?? null,
               profitShareBps: input.profitShareBps ?? null,
             },
@@ -5165,6 +5171,10 @@ function taskCompensation(metadata: Prisma.JsonValue | null) {
     paymentTerms:
       TASK_PAYMENT_TERMS.find((term) => term === compensation?.paymentTerms) ??
       null,
+    rewardCurrency:
+      compensation?.rewardCurrency === 'CNY'
+        ? ('CNY' as const)
+        : ('USD' as const),
     rewardUsdMinor:
       typeof compensation?.rewardUsdMinor === 'number'
         ? compensation.rewardUsdMinor

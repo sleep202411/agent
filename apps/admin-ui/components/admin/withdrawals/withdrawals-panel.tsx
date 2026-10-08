@@ -69,14 +69,16 @@ export function withdrawalMoney(amount: string, currency: string) {
 const time = (value: string) => new Date(value).toLocaleString();
 export function WithdrawalsPanel({
   adminId,
+  defaultCurrency = "USD",
   canTakeOver = false,
 }: {
   adminId: string;
+  defaultCurrency?: "USD" | "CNY";
   canTakeOver?: boolean;
 }) {
   const [query, setQuery] = useState({
     status: "pending",
-    currency: "USD",
+    currency: defaultCurrency,
     userId: "",
     q: "",
     from: "",
@@ -274,7 +276,9 @@ export function WithdrawalsPanel({
             className="ml-2 rounded-md border bg-background p-2"
             disabled={busy}
             value={query.currency}
-            onChange={(e) => reload({ currency: e.target.value, page: 1 })}
+            onChange={(e) =>
+              reload({ currency: e.target.value === "CNY" ? "CNY" : "USD", page: 1 })
+            }
           >
             <option>USD</option>
             <option>CNY</option>

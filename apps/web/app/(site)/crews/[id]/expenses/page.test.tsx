@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { it, expect, vi } from "vitest";
 import Page from "./page";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
+vi.mock("@/src/lib/region/cell", () => ({ CURRENT_CELL: "cn" }));
 const state = vi.hoisted(() => ({ account: "a" }));
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "crew" }) }));
 vi.mock("next/link", () => ({ default: "a" }));
@@ -52,6 +53,7 @@ it("retains failed drafts, submits saved identity and resets private edits on ac
     expect(container.textContent).toContain("Offline");
     expect(container.querySelector("textarea")!.value).toBe("Meeting");
     const failed = vi.mocked(crewApi.post).mock.calls[0];
+    expect(JSON.stringify(failed)).toContain('"currency":"CNY"');
     const definition = {
       category: "Travel",
       purpose: "Meeting",

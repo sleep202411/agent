@@ -6,6 +6,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 export function TaskCompensationFields({
   reward,
+  rewardCurrency = "USD",
   share,
   onReward,
   onShare,
@@ -15,6 +16,7 @@ export function TaskCompensationFields({
   onPaymentTerms,
 }: {
   reward: string;
+  rewardCurrency?: "USD" | "CNY";
   share: string;
   onReward: (value: string) => void;
   onShare: (value: string) => void;
@@ -34,9 +36,14 @@ export function TaskCompensationFields({
         ] as const
       ).map((field) => (
         <View key={field.key}>
-          <ThemedText>{t(`taskCompensation.${field.key}`)}</ThemedText>
+          <ThemedText>
+            {t(`taskCompensation.${field.key}`).replace("{currency}", rewardCurrency)}
+          </ThemedText>
           <TextInput
-            accessibilityLabel={t(`taskCompensation.${field.key}`)}
+            accessibilityLabel={t(`taskCompensation.${field.key}`).replace(
+              "{currency}",
+              rewardCurrency
+            )}
             value={field.value}
             onChangeText={field.change}
             editable={!locked}

@@ -203,6 +203,7 @@ function Editor({
       <TaskCompensationFields
         paymentTerms={draft.paymentTerms}
         onPaymentTerms={(value) => session.change("paymentTerms", value)}
+        rewardCurrency={snapshot.rewardCurrency ?? "USD"}
         reward={reward}
         share={share}
         onReward={(v) => session.change("reward", v)}
@@ -283,7 +284,7 @@ function Editor({
             {t("taskPlanning.revisionLimit")}: {snapshot.revisionLimit ?? t("thread.taskUnset")}
           </ThemedText>
           <ThemedText>
-            {t("taskCompensation.reward")}:{" "}
+            {t("taskCompensation.reward").replace("{currency}", snapshot.rewardCurrency ?? "USD")}:{" "}
             {compensationText(snapshot.rewardUsdMinor) || t("thread.taskUnset")}
           </ThemedText>
           <ThemedText>

@@ -808,6 +808,7 @@ function taskInviteOffer(task: {
       requiredSkills: z.array(z.string().trim().min(1)).default([]),
       compensation: z.object({
         paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
+        rewardCurrency: z.enum(['USD', 'CNY']).default('USD'),
         rewardUsdMinor: z.number().int().nonnegative().safe().nullable(),
         profitShareBps: z
           .number()
@@ -831,6 +832,7 @@ function taskInviteOffer(task: {
     dueAt: task.dueAt?.toISOString() ?? null,
     requiredSkills: parsed.data.requiredSkills,
     paymentTerms: parsed.data.compensation.paymentTerms ?? null,
+    rewardCurrency: parsed.data.compensation.rewardCurrency,
     rewardUsdMinor: parsed.data.compensation.rewardUsdMinor,
     profitShareBps: parsed.data.compensation.profitShareBps ?? null,
   };

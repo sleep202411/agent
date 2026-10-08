@@ -706,7 +706,7 @@ it("reopens a staged draft, preserves unchanged metadata and saves through stagi
   expect(h.update).not.toHaveBeenCalled();
 });
 
-it("creates exact USD and percentage terms and rejects excessive precision", async () => {
+it("creates exact CNY and percentage terms and rejects excessive precision", async () => {
   h.update.mockResolvedValue({ id: "new" });
   await render();
   await act(async () => {
@@ -719,7 +719,7 @@ it("creates exact USD and percentage terms and rejects excessive precision", asy
   await act(async () => button("taskCreate.submit")!.click());
   expect(h.update).toHaveBeenCalledWith(
     "crew",
-    expect.objectContaining({ rewardUsdMinor: 12345, profitShareBps: 125 })
+    expect.objectContaining({ rewardCurrency: "CNY", rewardUsdMinor: 12345, profitShareBps: 125 })
   );
 });
 it("keeps an expired form editable and rejects a deadline that passes while the form is open", async () => {

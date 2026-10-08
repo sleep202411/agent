@@ -378,3 +378,11 @@ async function selectProof(input: HTMLInputElement) {
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
+
+it("uses CNY for the CN queue while retaining recorded USD row amounts", async () => {
+  await act(async () => root.render(<WithdrawalsPanel adminId="finance" defaultCurrency="CNY" />));
+  expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("currency=CNY"))).toBe(
+    true
+  );
+  expect(host.textContent).toContain("USD 15.00");
+});

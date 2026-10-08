@@ -601,6 +601,31 @@ describe('CrewTasksService', () => {
     expect(result).toMatchObject({ rewardUsdMinor: 3025, profitShareBps: 250 });
   });
 
+  it.each(['CNY', 'USD'])(
+    'keeps %s reward currency while editing the amount',
+    async (rewardCurrency) => {
+      const t = build();
+      const current = task({
+        canvasProjectId: null,
+        metadata: { compensation: { rewardCurrency, rewardUsdMinor: 3000 } },
+      });
+      t.prisma.crewTask.findUnique.mockResolvedValue(current);
+      t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+      t.tx.crewTask.update.mockResolvedValue(current);
+      const result = await t.service.update(TASK_ID, OWNER_ID, {
+        expectedVersion: 1,
+        rewardUsdMinor: 5000,
+      });
+      expect(
+        firstCallArgument<Prisma.CrewTaskUpdateArgs>(t.tx.crewTask.update).data
+          .metadata,
+      ).toMatchObject({
+        compensation: { rewardCurrency, rewardUsdMinor: 5000 },
+      });
+      expect(result.rewardCurrency).toBe(rewardCurrency);
+    },
+  );
+
   it('exposes stable asset categories without exposing raw metadata', async () => {
     const t = build();
     t.prisma.crewTask.findUnique.mockResolvedValue(

@@ -41,6 +41,7 @@ const compensationSchema = z.object({
   compensation: z.object({
     paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
     profitShareBps: z.number().int().min(0).max(10000).nullable().optional(),
+    rewardCurrency: z.enum(['USD', 'CNY']).default('USD'),
     rewardUsdMinor: z.number().int().nonnegative().safe().nullable(),
   }),
 });
@@ -78,7 +79,11 @@ export async function claimTaskInviteTarget(
       'The task compensation is incomplete. Ask the producer to update the task.',
     );
   const rewardAmountMinor = parsed.data.compensation.rewardUsdMinor;
-  const assignment = { userId, currency: 'USD', rewardAmountMinor };
+  const assignment = {
+    userId,
+    currency: parsed.data.compensation.rewardCurrency,
+    rewardAmountMinor,
+  };
   await assertRecruitedTaskAssignees(tx, task.id, [assignment]);
   const updated = await tx.crewTask.updateMany({
     where: {
@@ -133,7 +138,7 @@ export async function claimTaskInviteTarget(
         taskVersion: task.version,
         // Capture what the recipient accepted independently of later task edits.
         compensation: {
-          currency: 'USD',
+          currency: parsed.data.compensation.rewardCurrency,
           rewardAmountMinor,
           paymentTerms: parsed.data.compensation.paymentTerms ?? null,
           profitShareBps: parsed.data.compensation.profitShareBps ?? null,

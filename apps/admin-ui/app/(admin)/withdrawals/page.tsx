@@ -8,6 +8,7 @@ export default async function WithdrawalsPage() {
     <WithdrawalsPanel
       key={`${session.site.key}:${session.user.id}:${session.session.id}`}
       adminId={session.user.id}
+      defaultCurrency={session.site.key === "cn" ? "CNY" : "USD"}
       canTakeOver={session.user.roleKeys.some(
         (role) => role === "super_admin" || role === "master_financial_controller"
       )}

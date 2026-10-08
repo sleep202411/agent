@@ -13,6 +13,7 @@ const taskOffer = z.object({
   dueAt: z.string().datetime({ offset: true }).nullable(),
   requiredSkills: z.array(z.string()),
   paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable(),
+  rewardCurrency: z.enum(["USD", "CNY"]).optional(),
   rewardUsdMinor: z.number().int().nonnegative().safe().nullable(),
   profitShareBps: z.number().int().min(0).max(10000).nullable(),
 });

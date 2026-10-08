@@ -49,6 +49,7 @@ interface CrewInvitePreview {
     dueAt: string | null;
     requiredSkills: string[];
     paymentTerms?: import("@repo/shared/crew").TaskPaymentTerms | null;
+    rewardCurrency?: "USD" | "CNY";
     rewardUsdMinor: number | null;
     profitShareBps: number | null;
   } | null;
@@ -319,7 +320,7 @@ function CrewInviteSession({ token }: { token: string }) {
                         ? t("taskUnspecified")
                         : new Intl.NumberFormat(locale, {
                             style: "currency",
-                            currency: "USD",
+                            currency: view.preview.task.rewardCurrency ?? "USD",
                           }).format(view.preview.task.rewardUsdMinor / 100)}
                     </dd>
                   </div>

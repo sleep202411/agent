@@ -223,6 +223,7 @@ function Editor({
       taskKind,
       estimatePoints: parsePlanningNumber(estimate, 1_000_000),
       paymentTerms,
+      rewardCurrency: appEnv.siteRegion === "cn" ? "CNY" : "USD",
       rewardUsdMinor: parseCompensation(reward, 100_000_000_000),
       profitShareBps: parseCompensation(share, 10_000),
       revisionLimit: parsePlanningNumber(revisionLimit, 100),
@@ -404,6 +405,7 @@ function Editor({
       <TaskCompensationFields
         paymentTerms={paymentTerms}
         onPaymentTerms={setPaymentTerms}
+        rewardCurrency={appEnv.siteRegion === "cn" ? "CNY" : "USD"}
         rewardRequired
         reward={reward}
         share={share}

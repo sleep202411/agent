@@ -337,3 +337,12 @@ it("sends selected payment terms and rejects a receipt with different terms", as
   vi.mocked(api.post).mockResolvedValue({ ...detail, paymentTerms: "monthly" });
   await expect(createTask("crew", { ...input, paymentTerms: "half_upfront" })).rejects.toThrow();
 });
+
+it("verifies the saved CN reward currency as well as its amount", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, rewardCurrency: "CNY" });
+  expect((await createTask("crew", { ...input, rewardCurrency: "CNY" })).rewardCurrency).toBe(
+    "CNY"
+  );
+  vi.mocked(api.post).mockResolvedValue({ ...detail, rewardCurrency: "USD" });
+  await expect(createTask("crew", { ...input, rewardCurrency: "CNY" })).rejects.toThrow();
+});

@@ -160,8 +160,13 @@ export function PositionCreate(props: {
     }
     setDescription((current) => (current.trim() ? current : data.description));
     setSkills((current) => (current.length ? current : (data.requiredSkills ?? [])));
-    if (data.rewardUsdMinor != null && !min && !max && positionCurrencies.includes("USD")) {
-      setCurrency("USD");
+    if (
+      data.rewardUsdMinor != null &&
+      !min &&
+      !max &&
+      positionCurrencies.includes(data.rewardCurrency ?? "USD")
+    ) {
+      setCurrency(data.rewardCurrency ?? "USD");
       setMin(String(data.rewardUsdMinor / 100));
       setMax(String(data.rewardUsdMinor / 100));
       setPeriod("project");
@@ -438,9 +443,10 @@ export function PositionCreate(props: {
                   )}
                 </>
               )}
-              {taskSource?.data?.rewardUsdMinor != null && !positionCurrencies.includes("USD") && (
-                <ThemedText>{t("positionCreate.taskUsdReward")}</ThemedText>
-              )}
+              {taskSource?.data?.rewardUsdMinor != null &&
+                !positionCurrencies.includes(taskSource.data.rewardCurrency ?? "USD") && (
+                  <ThemedText>{t("positionCreate.taskUsdReward")}</ThemedText>
+                )}
               {task &&
                 action(
                   t("positionCreate.clearTask"),

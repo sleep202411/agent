@@ -705,6 +705,7 @@ export function TaskIssueDetail({
                       ? projectT("workbench.rewardUnset")
                       : projectT("workbench.rewardValue", {
                           amount: (task.rewardUsdMinor / 100).toFixed(2),
+                          currency: task.rewardCurrency ?? "USD",
                         })}
                   </p>
                   <p>

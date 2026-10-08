@@ -1,4 +1,5 @@
 "use client";
+import { CREW_CURRENCY } from "@/src/lib/crew-money";
 import { missingTaskFields } from "./task-required-fields";
 
 import { useEffect, useRef, useState } from "react";
@@ -908,6 +909,7 @@ function TaskCreationSession({
                 <span>{t("count", { count: pendingCount })}</span>
                 <span>
                   {t("rewardValue", {
+                    currency: CREW_CURRENCY,
                     amount: (
                       pending.reduce(
                         (total, draft) => total + (draft.input.rewardUsdMinor ?? 0),

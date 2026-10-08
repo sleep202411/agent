@@ -3,6 +3,7 @@ import { z } from "zod";
 
 export const taskCompensationShape = {
   paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
+  rewardCurrency: z.enum(["USD", "CNY"]).optional(),
   rewardUsdMinor: z.number().int().min(0).max(100_000_000_000).nullable().optional(),
   profitShareBps: z.number().int().min(0).max(10_000).nullable().optional(),
 };

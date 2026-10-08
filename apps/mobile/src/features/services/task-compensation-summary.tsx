@@ -5,9 +5,11 @@ import { useTranslations } from "@/i18n";
 export function TaskCompensationSummary({
   paymentTerms,
   rewardUsdMinor,
+  rewardCurrency = "USD",
   profitShareBps,
 }: {
   paymentTerms?: TaskPaymentTerms | null;
+  rewardCurrency?: "USD" | "CNY";
   rewardUsdMinor?: number | null;
   profitShareBps?: number | null;
 }) {
@@ -24,7 +26,7 @@ export function TaskCompensationSummary({
           {t("taskCompensation.rewardSummary")}:{" "}
           {rewardUsdMinor === null
             ? t("taskPlanning.unset")
-            : `USD ${(rewardUsdMinor / 100).toFixed(2)}`}
+            : `${rewardCurrency} ${(rewardUsdMinor / 100).toFixed(2)}`}
         </ThemedText>
       )}
       {profitShareBps !== undefined && (

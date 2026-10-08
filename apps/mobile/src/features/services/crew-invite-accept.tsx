@@ -178,9 +178,10 @@ function Session({ generation, onClose, onOpen, initialLink }: Props) {
                 {t("crewInvite.taskReward")}:{" "}
                 {review.value.task.rewardUsdMinor === null
                   ? t("crewInvite.taskUnspecified")
-                  : new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(
-                      review.value.task.rewardUsdMinor / 100
-                    )}
+                  : new Intl.NumberFormat(locale, {
+                      style: "currency",
+                      currency: review.value.task.rewardCurrency ?? "USD",
+                    }).format(review.value.task.rewardUsdMinor / 100)}
               </ThemedText>
               {review.value.task.paymentTerms && (
                 <ThemedText>{t(`taskPaymentTerms.${review.value.task.paymentTerms}`)}</ThemedText>
