@@ -9,6 +9,7 @@ import { generateObject } from 'ai';
 import { AgentActionStatus, AgentMemoryStatus } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { IpCommerceService } from '../ip-commerce/ip-commerce.service';
 import { AgentUsersService } from './agent-users.service';
 
@@ -94,6 +95,7 @@ export class AgentUserRunnerService
   ) {}
 
   onModuleInit() {
+    const backgroundEnabled = backgroundTasksEnabled();
     if (!this.config.enabled) {
       this.logger.log('Agent User runner disabled.');
       return;
@@ -103,6 +105,7 @@ export class AgentUserRunnerService
         'AGENT_USER_RUNNER_ENABLED=true requires ALIBABA_API_KEY.',
       );
     }
+    if (!backgroundEnabled) return;
     this.timer = setInterval(
       () => void this.runTick({ trigger: 'scheduler' }),
       this.config.intervalMs,
@@ -122,6 +125,9 @@ export class AgentUserRunnerService
   }
 
   async runTick(input: { trigger: string; agentUserId?: string }) {
+    if (!backgroundTasksEnabled()) {
+      return { skipped: true, reason: 'background_tasks_disabled' };
+    }
     if (this.ticking) {
       return { skipped: true, reason: 'runner_busy' };
     }

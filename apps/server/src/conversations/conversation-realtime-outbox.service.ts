@@ -24,6 +24,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, type Message } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { ConversationsService } from './conversations.service';
 
 const DISPATCH_INTERVAL_MS = 1_000;
@@ -57,7 +58,7 @@ export class ConversationRealtimeOutboxService
   ) {}
 
   onApplicationBootstrap(): void {
-    if (this.stopped || this.timer) return;
+    if (!backgroundTasksEnabled() || this.stopped || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), DISPATCH_INTERVAL_MS);
     void this.drainOnce();
     this.logger.log(
@@ -74,7 +75,7 @@ export class ConversationRealtimeOutboxService
 
   /** Public for deterministic health checks and focused tests. */
   async drainOnce(): Promise<void> {
-    if (this.stopped) return;
+    if (!backgroundTasksEnabled() || this.stopped) return;
     if (this.draining) return;
     this.draining = this.drain().finally(() => {
       this.draining = null;

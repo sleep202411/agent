@@ -67,3 +67,87 @@ describe.each([
     );
   },
 );
+
+describe.each([
+  [
+    AgentOsRunStartDispatcherService,
+    'listPendingRunStarts',
+    'claimRunStartDispatch',
+    'startRun',
+  ],
+  [
+    AgentOsRunContinuationDispatcherService,
+    'listPendingRunContinuations',
+    'claimRunContinuationDispatch',
+    'resumeContinuation',
+  ],
+] as const)(
+  '%s background task isolation',
+  (Service, listMethod, claimMethod, workerMethod) => {
+    let previous: string | undefined;
+
+    beforeEach(() => {
+      previous = process.env.BACKGROUND_TASKS_ENABLED;
+      process.env.BACKGROUND_TASKS_ENABLED = 'false';
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      if (previous === undefined) delete process.env.BACKGROUND_TASKS_ENABLED;
+      else process.env.BACKGROUND_TASKS_ENABLED = previous;
+      jest.useRealTimers();
+    });
+
+    it('does not schedule, claim or send runs through any admission entry', async () => {
+      const list = jest.fn().mockResolvedValue(['run']);
+      const claim = jest
+        .fn()
+        .mockResolvedValue({ kind: 'claimed', command: {} });
+      const send = jest.fn();
+      const complete = jest.fn();
+      const service = new Service(
+        {
+          [listMethod]: list,
+          [claimMethod]: claim,
+          completeRunStartDispatch: complete,
+          completeRunContinuationDispatch: complete,
+        } as never,
+        { [workerMethod]: send } as never,
+      );
+
+      service.onModuleInit();
+      await (service as unknown as { drainOnce(): Promise<void> }).drainOnce();
+      await expect(service.dispatch('run')).resolves.toBeNull();
+
+      expect(jest.getTimerCount()).toBe(0);
+      expect(list).not.toHaveBeenCalled();
+      expect(claim).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+      service.onApplicationShutdown();
+    });
+
+    it('checks the gate again after an asynchronous claim before worker IO', async () => {
+      process.env.BACKGROUND_TASKS_ENABLED = 'true';
+      const claim = jest.fn(() => {
+        process.env.BACKGROUND_TASKS_ENABLED = 'false';
+        return Promise.resolve({ kind: 'claimed', command: {} });
+      });
+      const send = jest.fn();
+      const complete = jest.fn();
+      const service = new Service(
+        {
+          [claimMethod]: claim,
+          completeRunStartDispatch: complete,
+          completeRunContinuationDispatch: complete,
+        } as never,
+        { [workerMethod]: send } as never,
+      );
+
+      await expect(service.dispatch('run')).resolves.toBeNull();
+      expect(claim).toHaveBeenCalledTimes(1);
+      expect(send).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+    });
+  },
+);

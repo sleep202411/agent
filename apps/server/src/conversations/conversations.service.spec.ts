@@ -1219,6 +1219,67 @@ describe('clientKey dedupe', () => {
     delegates.crewMember.findFirst.mockResolvedValue({ id: 'cm-1' });
   }
 
+  describe('background task isolation', () => {
+    let previous: string | undefined;
+
+    beforeEach(() => {
+      previous = process.env.BACKGROUND_TASKS_ENABLED;
+      process.env.BACKGROUND_TASKS_ENABLED = 'false';
+    });
+
+    afterEach(() => {
+      if (previous === undefined) delete process.env.BACKGROUND_TASKS_ENABLED;
+      else process.env.BACKGROUND_TASKS_ENABLED = previous;
+    });
+
+    it('persists a sent message and outbox without immediate delivery or acknowledgement', async () => {
+      const { service, prisma, delegates, realtime } = buildHarness();
+      arrangeSendable(delegates);
+      delegates.message.create.mockImplementation(
+        ({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve(message({ ...data })),
+      );
+
+      const sent = await service.sendText(CONV_ID, MEMBER, 'hello', 'key-1');
+      await service.deliverMessageRealtime(sent);
+
+      expect(sent.body).toBe('hello');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(delegates.message.create).toHaveBeenCalledTimes(1);
+      const statements = callsOf<[Prisma.Sql | TemplateStringsArray]>(
+        delegates.$executeRaw,
+      ).map(([sql]) => ('sql' in sql ? sql.sql : sql.join('?')));
+      expect(
+        statements.some((sql) =>
+          sql.includes('INSERT INTO conversation_realtime_outbox'),
+        ),
+      ).toBe(true);
+      expect(realtime.publishCrewMessage).not.toHaveBeenCalled();
+      expect(realtime.publishUserFrame).not.toHaveBeenCalled();
+      expect(
+        delegates.conversationRealtimeOutbox.updateMany,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('preserves ordinary request-driven business broadcasts outside the outbox gate', async () => {
+      const { service, realtime } = buildHarness();
+
+      await service.broadcastCrewTaskChange(
+        CREW_ID,
+        'task-1',
+        'updated',
+        MEMBER,
+      );
+
+      expect(realtime.publishUserFrame).toHaveBeenCalledTimes(2);
+      expect(realtime.publishUserFrame).toHaveBeenCalledWith(
+        MEMBER,
+        expect.objectContaining({ event: 'crew.task.changed' }),
+        expect.any(String),
+      );
+    });
+  });
+
   it('returns the row the first attempt wrote instead of appending a duplicate', async () => {
     const { service, delegates } = buildHarness();
     arrangeSendable(delegates);

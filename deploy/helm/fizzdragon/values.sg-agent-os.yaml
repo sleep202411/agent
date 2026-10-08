@@ -1,0 +1,20 @@
+# Agent OS configuration layer, not a complete release or an enable switch.
+# Target: 5332868355276356 / ap-southeast-1 / fizzdragon-com-sg
+# cb3e336c4059a4112b65c783e7bf67f1e / namespace fizzdragon.
+# Review against the live configuration before infrastructure changes.
+# Ordinary image releases preserve the existing runtime configuration.
+agentOs:
+  datastore:
+    caConfigMapName: fizzdragon-datastore-ca
+    caMountPath: /etc/fizzdragon/certs
+  model:
+    baseUrl: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+  networkPolicy:
+    # Terway uses addresses inside this VPC; Service CIDR is separate.
+    clusterCidrs:
+      - 10.80.0.0/16
+      - 10.82.0.0/20
+    # pgm-gs50h257n9e0hthu.pgsql.singapore.rds.aliyuncs.com, 2026-10-08.
+    databaseCidr: 10.80.0.107/32
+  nodeSelector: null
+  tolerations: null

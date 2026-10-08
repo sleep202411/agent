@@ -40,6 +40,10 @@ const copy: ExperiencePlayerCopy = {
   interactiveFilm: "Interactive film",
   starting: "Starting",
   start: "Start",
+  mainMenu: "Main menu",
+  returnToMenu: "Return to main menu",
+  continueGame: "Continue game",
+  codeMenu: { failed: "Custom menu failed", retry: "Retry", restore: "Use default menu" },
   endingEyebrow: "Ending",
   unknownEnding: (endingId) => endingId,
   playAgain: "Play again",
@@ -470,7 +474,7 @@ describe("ExperiencePlayer core.text", () => {
       />
     );
 
-    expect(html).toContain(">Start<");
+    expect(html).toContain(">Loading</button>");
     expect(html).not.toContain("Choose before start");
   });
 
@@ -516,7 +520,7 @@ describe("ExperiencePlayer core.text", () => {
     expect(html).not.toContain(">Start<");
   });
 
-  it("keeps Start for an entry with no media to wait for", () => {
+  it("holds an entry with no media until its theme is loaded", () => {
     const html = renderToStaticMarkup(
       <ExperiencePlayer
         runtime={runtimeFixture({ experienceProfile: "narrative", completion: "continue" })}
@@ -526,8 +530,8 @@ describe("ExperiencePlayer core.text", () => {
       />
     );
 
-    expect(html).toContain(">Start<");
-    expect(html).not.toContain(">Loading<");
+    expect(html).toContain(">Loading</button>");
+    expect(html).toContain('disabled=""');
   });
 });
 

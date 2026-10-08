@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import {
@@ -74,6 +75,7 @@ export class StoryAgentRunContinuationWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || this.timer) return;
     if (!this.enabled) {
       this.logger.log('Story Agent continuation worker is disabled');
@@ -99,6 +101,7 @@ export class StoryAgentRunContinuationWorkerService
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (!this.enabled || this.stopping || this.draining) return;
     this.draining = true;
     try {

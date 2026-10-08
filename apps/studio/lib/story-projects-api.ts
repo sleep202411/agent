@@ -1,3 +1,8 @@
+import type {
+  ExperienceAppearance,
+  GameUIProject,
+  GameUISource,
+} from "@repo/shared/experience-runtime";
 import { api, ApiRequestError } from "@/lib/api";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS, type StoryVisualStyleSkillSlug } from "@repo/shared";
 import type {
@@ -121,6 +126,8 @@ export interface StoryProjectSummary {
   tags: string[];
   /** Publication introduction authored by the creator; null when unset. */
   storeListing: StoryStoreListing | null;
+  appearance: ExperienceAppearance | null;
+  gameUi?: GameUIProject | null;
   sourceIpId: string | null;
   projectVersion: number;
   draftRevision: number;
@@ -731,6 +738,8 @@ export async function updateStoryProject(
     visibility?: StoryVisibility;
     tags?: string[];
     storeListing?: StoryStoreListing | null;
+    appearance?: ExperienceAppearance | null;
+    gameUiSource?: GameUISource | null;
     frameProfile?: StoryFrameProfile;
     durationPreset?: StoryDurationPreset;
     visualStyle?: StoryVisualStyle;
@@ -1184,6 +1193,16 @@ export async function moveStoryProject(
 ): Promise<{ projectId: string; workspaceId: string; projectVersion: number }> {
   return api.post(`/aurora/story-projects/${encodeURIComponent(projectId)}/move`, {
     data: input,
+    requestScope: "project",
+  });
+}
+
+export async function getStoryProject(
+  projectId: string,
+  signal?: AbortSignal
+): Promise<StoryProjectSummary> {
+  return api.get<StoryProjectSummary>(`/aurora/story-projects/${encodeURIComponent(projectId)}`, {
+    signal,
     requestScope: "project",
   });
 }

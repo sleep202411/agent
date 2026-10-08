@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { journalErrorText } from './agent-os-journal.mapper';
 import { AgentOsRunJournalService } from './agent-os-run-journal.service';
 
@@ -40,7 +41,7 @@ export class AgentOsExternalHandoffReconcilerService
   ) {}
 
   onApplicationBootstrap(): void {
-    if (this.stopped || this.timer) return;
+    if (!backgroundTasksEnabled() || this.stopped || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), SWEEP_INTERVAL_MS);
     this.timer.unref();
     queueMicrotask(() => void this.drainOnce());
@@ -53,7 +54,7 @@ export class AgentOsExternalHandoffReconcilerService
   }
 
   async drainOnce(): Promise<void> {
-    if (this.stopped || this.draining) return;
+    if (!backgroundTasksEnabled() || this.stopped || this.draining) return;
     this.draining = true;
     try {
       const candidates = await this.prisma.$queryRaw<
@@ -80,7 +81,7 @@ export class AgentOsExternalHandoffReconcilerService
         LIMIT ${BATCH_SIZE}
       `);
       for (const candidate of candidates) {
-        if (this.stopped) break;
+        if (!backgroundTasksEnabled() || this.stopped) break;
         try {
           await this.journal.reconcileExternalHandoff(candidate.externalJobId);
         } catch (error) {

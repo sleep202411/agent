@@ -1,4 +1,5 @@
 import { CDN_PURGE_LOCK_TTL_MS } from './media-worker-leases';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import {
   Injectable,
   Logger,
@@ -48,6 +49,7 @@ export class CdnPurgeWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (process.env.MEDIA_CDN_PURGE_WORKER_ENABLED === 'false') return;
     const intervalMs = positiveInt(
@@ -69,6 +71,7 @@ export class CdnPurgeWorkerService
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (this.draining) return this.draining;
     this.draining = this.drain(batch).finally(() => {

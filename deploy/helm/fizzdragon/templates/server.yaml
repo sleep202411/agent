@@ -1,14 +1,42 @@
 {{- if .Values.server.enabled -}}
+{{- if .Values.gameAgent.enabled -}}
+{{- include "fizzdragon.gameAgent.validate" . -}}
+{{- end -}}
 {{- $component := "server" -}}
 {{- $ctx := merge (dict "component" $component) . -}}
 {{- $googleVertex := .Values.server.googleVertex -}}
+{{- $datastore := .Values.server.datastore -}}
+{{- $databaseSecretEnabled := or (not (empty $datastore.databaseSecret.name)) (not (empty $datastore.databaseSecret.key)) -}}
+{{- $datastoreEnabled := or $databaseSecretEnabled (not (empty $datastore.configMapName)) (not (empty $datastore.caConfigMapName)) -}}
+{{- if $databaseSecretEnabled -}}
+{{- $_ := required "server.datastore.databaseSecret.name is required" $datastore.databaseSecret.name -}}
+{{- $_ := required "server.datastore.databaseSecret.key is required" $datastore.databaseSecret.key -}}
+{{- if or (hasKey .Values.sharedEnv "DATABASE_URL") (hasKey .Values.server.env "DATABASE_URL") -}}
+{{- fail "DATABASE_URL must come only from server.datastore.databaseSecret when configured" -}}
+{{- end -}}
+{{- end -}}
+{{- if $datastoreEnabled -}}
+{{- if .Values.server.migrateOnStart -}}
+{{- fail "server.migrateOnStart must be false with datastore configuration; automatic schema migration cannot reuse the application connection" -}}
+{{- end -}}
+{{- $_ := required "server.datastore.configMapName is required with datastore CA configuration" $datastore.configMapName -}}
+{{- $_ := required "server.datastore.caConfigMapName is required with datastore configuration" $datastore.caConfigMapName -}}
+{{- $_ := required "server.datastore.caMountPath is required with datastore configuration" $datastore.caMountPath -}}
+{{- if not (hasPrefix "/" $datastore.caMountPath) -}}
+{{- fail "server.datastore.caMountPath must be an absolute path" -}}
+{{- end -}}
+{{- end -}}
 {{- $vertexProject := "" -}}
 {{- $vertexImageLocation := "" -}}
 {{- $vertexVideoLocation := "" -}}
 {{- $vertexServiceAccount := "" -}}
+{{- $vertexKubernetesServiceAccount := "" -}}
 {{- if $googleVertex.enabled -}}
 {{- if not .Values.azure.enabled -}}
-{{- fail "server.googleVertex.enabled requires the AKS workload-identity deployment path; disable it in non-Azure cells" -}}
+{{- $vertexKubernetesServiceAccount = required "server.googleVertex.workloadIdentityFederation.kubernetesServiceAccountName is required outside Azure" $googleVertex.workloadIdentityFederation.kubernetesServiceAccountName -}}
+{{- if or (eq $vertexKubernetesServiceAccount "default") (gt (len $vertexKubernetesServiceAccount) 63) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $vertexKubernetesServiceAccount)) -}}
+{{- fail "server.googleVertex.workloadIdentityFederation.kubernetesServiceAccountName must be a dedicated DNS label" -}}
+{{- end -}}
 {{- end -}}
 {{- $vertexProject = required "server.googleVertex.project is required" $googleVertex.project -}}
 {{- $vertexImageLocation = required "server.googleVertex.imageLocation is required" $googleVertex.imageLocation -}}
@@ -35,13 +63,16 @@ spec:
         {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
     spec:
       terminationGracePeriodSeconds: {{ .Values.server.terminationGracePeriodSeconds | default 30 }}
+      {{- include "fizzdragon.podAccess" (dict "component" "server" "settings" .Values.server "forceNoToken" false) | nindent 6 }}
       {{- if .Values.azure.enabled }}
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- else if $googleVertex.enabled }}
+      serviceAccountName: {{ $vertexKubernetesServiceAccount | quote }}
       {{- end }}
       {{- if .Values.server.migrateOnStart }}
       initContainers:
         - name: db-migrate
-          image: "{{ .Values.image.registry }}/{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          image: {{ include "fizzdragon.componentImage" (dict "component" "server" "registry" .Values.image.registry "image" .Values.server.image) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["npm", "run", "db:deploy"]
           env:
@@ -54,8 +85,14 @@ spec:
             - secretRef:
                 name: {{ .Values.serverSecrets.projectedName }}
             {{- end }}
-          {{- if .Values.azure.enabled }}
+            {{- if $datastoreEnabled }}
+            - configMapRef:
+                name: {{ $datastore.configMapName | quote }}
+                optional: false
+            {{- end }}
+          {{- if or .Values.azure.enabled $datastoreEnabled }}
           volumeMounts:
+            {{- if .Values.azure.enabled }}
             - name: kv-secrets
               mountPath: /mnt/secrets
               readOnly: true
@@ -64,13 +101,19 @@ spec:
               mountPath: /mnt/server-secrets
               readOnly: true
             {{- end }}
+            {{- end }}
+            {{- if $datastoreEnabled }}
+            - name: datastore-ca
+              mountPath: {{ $datastore.caMountPath | quote }}
+              readOnly: true
+            {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
       {{- end }}
       containers:
         - name: {{ $component }}
-          image: "{{ .Values.image.registry }}/{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          image: {{ include "fizzdragon.componentImage" (dict "component" "server" "registry" .Values.image.registry "image" .Values.server.image) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -78,6 +121,14 @@ spec:
           env:
             {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
             {{- include "fizzdragon.componentEnv" .Values.server | nindent 12 }}
+            {{- if $databaseSecretEnabled }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $datastore.databaseSecret.name | quote }}
+                  key: {{ $datastore.databaseSecret.key | quote }}
+                  optional: false
+            {{- end }}
             {{- if $googleVertex.enabled }}
             - name: GOOGLE_VERTEX_ENABLED
               value: "true"
@@ -92,6 +143,19 @@ spec:
             {{- end }}
             - name: AGENT_OS_ENABLED
               value: {{ .Values.agentOs.enabled | quote }}
+            {{- if .Values.gameAgent.enabled }}
+            - name: GAME_AGENT_ENABLED
+              value: "true"
+            - name: GAME_AGENT_WORKER_URL
+              value: {{ printf "http://%s:4396" (include "fizzdragon.componentName" (merge (dict "component" "game-agent") .)) | quote }}
+            - name: GAME_AGENT_STUDIO_ORIGIN
+              value: {{ .Values.gameAgent.studioOrigin | quote }}
+            - name: GAME_AGENT_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gameAgent.secrets.internalToken.name | quote }}
+                  key: {{ .Values.gameAgent.secrets.internalToken.key | quote }}
+            {{- end }}
             {{- if .Values.agentOs.enabled }}
             {{- /* Derived from the rendered Service, never a literal — the
                    gateway's default is 127.0.0.1:4301, which in a pod is itself. */}}
@@ -119,8 +183,14 @@ spec:
             - secretRef:
                 name: {{ .Values.agentOsServerSecrets.projectedName }}
             {{- end }}
-          {{- if .Values.azure.enabled }}
+            {{- if $datastoreEnabled }}
+            - configMapRef:
+                name: {{ $datastore.configMapName | quote }}
+                optional: false
+            {{- end }}
+          {{- if or .Values.azure.enabled $datastoreEnabled $googleVertex.enabled }}
           volumeMounts:
+            {{- if .Values.azure.enabled }}
             - name: kv-secrets
               mountPath: /mnt/secrets
               readOnly: true
@@ -134,12 +204,18 @@ spec:
               mountPath: /mnt/server-secrets
               readOnly: true
             {{- end }}
+            {{- end }}
             {{- if $googleVertex.enabled }}
             - name: google-vertex-identity
               mountPath: /var/run/google-vertex-identity
               readOnly: true
             - name: google-vertex-credential
               mountPath: /etc/gcp
+              readOnly: true
+            {{- end }}
+            {{- if $datastoreEnabled }}
+            - name: datastore-ca
+              mountPath: {{ $datastore.caMountPath | quote }}
               readOnly: true
             {{- end }}
           {{- end }}
@@ -168,8 +244,9 @@ spec:
                 # Service before SIGTERM — new + in-flight connections drain to
                 # healthy pods; the WS gateway then closes sockets on shutdown.
                 command: ["sh", "-c", "sleep 8"]
-      {{- if .Values.azure.enabled }}
+      {{- if or .Values.azure.enabled $datastoreEnabled $googleVertex.enabled }}
       volumes:
+        {{- if .Values.azure.enabled }}
         - name: kv-secrets
           csi:
             driver: secrets-store.csi.k8s.io
@@ -192,6 +269,7 @@ spec:
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-server-kv
         {{- end }}
+        {{- end }}
         {{- if $googleVertex.enabled }}
         - name: google-vertex-identity
           projected:
@@ -203,6 +281,12 @@ spec:
         - name: google-vertex-credential
           configMap:
             name: {{ include "fizzdragon.componentName" (merge (dict "component" "server-google-vertex-credential") .) }}
+        {{- end }}
+        {{- if $datastoreEnabled }}
+        - name: datastore-ca
+          configMap:
+            name: {{ $datastore.caConfigMapName | quote }}
+            optional: false
         {{- end }}
       {{- end }}
       {{- with .Values.server.nodeSelector }}
@@ -245,6 +329,18 @@ spec:
     matchLabels:
       {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
 {{- if $googleVertex.enabled }}
+{{- if not .Values.azure.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $vertexKubernetesServiceAccount | quote }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+# Only the explicit audience-bound token below is needed. No Kubernetes RBAC.
+automountServiceAccountToken: false
+{{- end }}
 ---
 # ADC external-account configuration only. It contains no secret or private
 # key; the projected, audience-bound K8s token is rotated by kubelet and

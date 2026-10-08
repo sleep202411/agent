@@ -14,6 +14,10 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { WsAdapter } from '@nestjs/platform-ws';
 import { AppModule } from './app.module';
+import { backgroundTasksEnabled } from './common/background-tasks';
+import { RoutedWsAdapter } from './common/routed-ws-adapter';
+import { gameAgentEnabled } from './game-agent/game-agent.config';
+import { GameAgentWebTransportService } from './game-agent/game-agent-web-transport.service';
 
 // Outbound fetch — Node 18+ uses undici under the hood. Its default
 // `headersTimeout` is 5 min (the time between request sent and the
@@ -67,6 +71,10 @@ async function bootstrapWorker(): Promise<void> {
 }
 
 async function bootstrap() {
+  const backgroundEnabled = backgroundTasksEnabled();
+  new Logger('Bootstrap').log(
+    `Background tasks ${backgroundEnabled ? 'enabled' : 'disabled'}`,
+  );
   if (process.env.WORKER_ONLY === 'true') {
     await bootstrapWorker();
     return;
@@ -111,7 +119,11 @@ async function bootstrap() {
   // Native `ws` adapter for the remaining platform-owned realtime surfaces
   // (for example entity events and collaborative documents). Conversations,
   // crew chat, crew-domain events, and notifications use Ably.
-  app.useWebSocketAdapter(new WsAdapter(app));
+  app.useWebSocketAdapter(
+    gameAgentEnabled()
+      ? new RoutedWsAdapter(app, app.get(GameAgentWebTransportService))
+      : new WsAdapter(app),
+  );
 
   // Long-lived endpoints — produce-mode `/produce/script-draft/sync`
   // proxies an in-process Mastra workflow that can run up to 30 min.

@@ -25,7 +25,7 @@ spec:
       {{- end }}
       containers:
         - name: {{ $component }}
-          image: "{{ .Values.image.registry }}/{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
+          image: {{ include "fizzdragon.componentImage" (dict "registry" .Values.image.registry "image" .Values.web.image "component" "web") | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -33,9 +33,11 @@ spec:
           env:
             {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
             {{- include "fizzdragon.componentEnv" .Values.web | nindent 12 }}
+          {{- if .Values.web.useSharedSecrets }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.projectedName }}
+          {{- end }}
           {{- if .Values.azure.enabled }}
           volumeMounts:
             - name: kv-secrets

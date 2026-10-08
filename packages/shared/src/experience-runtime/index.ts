@@ -15,3 +15,9 @@ export * from "./integrity.js";
 export * from "./release-protocol.js";
 export * from "./player-protocol.js";
 export * from "./journey.js";
+export * from "./ui.js";
+export * from "./ui-theme.js";
+
+export * from "./appearance.js";
+export * from "./game-ui.js";
+export * from "./appearance-migration.js";

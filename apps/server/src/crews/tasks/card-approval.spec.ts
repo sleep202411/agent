@@ -3,11 +3,19 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { prepareCardApproval } from './card-approval';
-import { readTaskDeliveryTemplate } from './task-delivery-template';
+import {
+  readTaskDeliveryTemplate,
+  type TaskDeliveryTemplate,
+} from './task-delivery-template';
 import type { CrewQualificationsService } from '../crew-qualifications.service';
 jest.mock('./task-delivery-template', () => ({
   readTaskDeliveryTemplate: jest.fn(),
 }));
+const readTemplateMock = readTaskDeliveryTemplate as jest.MockedFunction<
+  (
+    ...args: Parameters<typeof readTaskDeliveryTemplate>
+  ) => Promise<TaskDeliveryTemplate | null>
+>;
 function fixture(fd3: string[] = []) {
   const db = {
     crewMember: {
@@ -42,11 +50,26 @@ function fixture(fd3: string[] = []) {
 }
 beforeEach(() => {
   jest.resetAllMocks();
-  jest.mocked(readTaskDeliveryTemplate).mockResolvedValue({
+  readTemplateMock.mockResolvedValue({
     categoryId: 'category',
     version: 1,
-    definition: { approvalPolicy: 'fd3_or_production_lead' },
-  } as never);
+    definition: {
+      approvalPolicy: 'fd3_or_production_lead',
+      name: 'Card generation',
+      description: '',
+      status: 'active',
+      prices: [],
+      fields: [
+        {
+          key: 'delivery',
+          label: 'Delivery',
+          instructions: '',
+          type: 'attachment',
+          required: true,
+        },
+      ],
+    },
+  });
 });
 it('accepts a currently qualified FD3 reviewer', async () => {
   const f = fixture(['1']);
@@ -91,6 +114,6 @@ it('invalidates prepared approval when roster or director changes', async () => 
 it('does not reuse a stale or removed template proof', async () => {
   const f = fixture(['1']);
   const proof = await f.prepare();
-  jest.mocked(readTaskDeliveryTemplate).mockResolvedValue(null);
+  readTemplateMock.mockResolvedValue(null);
   await expect(proof.validate(f.db as never)).rejects.toThrow('changed');
 });

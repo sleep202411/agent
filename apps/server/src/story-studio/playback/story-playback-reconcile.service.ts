@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../../common/background-tasks';
 import {
   ConflictException,
   Inject,
@@ -498,6 +499,7 @@ export class StoryPlaybackReconcileService
       }
     }
     if (problems.length > 0) throw new Error(problems.join('; '));
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     this.timer = setInterval(() => {
       if (!this.stopped) void this.runCycle('schedule');
@@ -514,13 +516,17 @@ export class StoryPlaybackReconcileService
   }
 
   /**
-   * Run one cycle under the cluster-wide lock. Never throws: a lock miss is
-   * `already_running`; any failure is a `failed` run carrying the first error
-   * verbatim (and the heartbeat records it).
+   * Run one cycle under the cluster-wide lock. Paused cells reject the request
+   * before acquiring a lock. Otherwise, a lock miss is `already_running`; a
+   * cycle failure is a `failed` run carrying the first error verbatim.
    */
   async runCycle(
     trigger: 'schedule' | 'admin',
   ): Promise<StoryPlaybackReconcileResult> {
+    if (!backgroundTasksEnabled())
+      throw new ConflictException(
+        'Background tasks are disabled in this environment.',
+      );
     const task = this.lockedCycle(trigger);
     this.running.add(task);
     try {

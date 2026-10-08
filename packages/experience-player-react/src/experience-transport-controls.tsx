@@ -1,7 +1,12 @@
 "use client";
 
 import { useId, type ReactNode } from "react";
-import { IconRewindBackward10, IconRewindForward10 } from "@tabler/icons-react";
+import {
+  IconRewindBackward10,
+  IconRewindForward10,
+  IconPlayerPauseFilled,
+  IconPlayerPlayFilled,
+} from "@tabler/icons-react";
 import { classNames } from "./class-names";
 import type { ExperiencePlayerTransportCopy } from "./experience-player-copy";
 
@@ -18,6 +23,9 @@ export interface ExperiencePlaybackTransportControlsProps {
   onSeek: (positionMs: number) => void;
   onRate: (rate: number) => void;
   trailingControls?: ReactNode;
+  paused?: boolean;
+  pauseLabel?: string;
+  onTogglePause?: () => void;
 }
 
 const RATES = [1, 1.25, 1.5, 2] as const;
@@ -36,6 +44,9 @@ export function ExperiencePlaybackTransportControls({
   onSeek,
   onRate,
   trailingControls,
+  paused,
+  pauseLabel,
+  onTogglePause,
 }: ExperiencePlaybackTransportControlsProps) {
   const hintId = useId();
   const duration = nonnegativeFinite(durationMs);
@@ -61,10 +72,28 @@ export function ExperiencePlaybackTransportControls({
       role="group"
       aria-label={copy.controlsLabel}
       data-experience-transport-controls=""
-      className="pointer-events-auto w-full bg-gradient-to-b from-transparent to-black/60 px-2 text-white/90 sm:px-3"
+      data-ui-part="controls"
+      className="@container pointer-events-auto w-full bg-gradient-to-b from-transparent to-black/60 px-2 text-white/90 sm:px-3"
       onClick={(event) => event.stopPropagation()}
     >
       <div className="flex h-11 items-center gap-1 sm:gap-2">
+        {onTogglePause && (
+          <button
+            type="button"
+            data-ui-part="pause"
+            aria-label={pauseLabel}
+            title={pauseLabel}
+            disabled={disabled}
+            onClick={onTogglePause}
+            className={classNames(CONTROL, "grid size-11 shrink-0 place-items-center")}
+          >
+            {paused ? (
+              <IconPlayerPlayFilled className="size-5" aria-hidden="true" />
+            ) : (
+              <IconPlayerPauseFilled className="size-5" aria-hidden="true" />
+            )}
+          </button>
+        )}
         <button
           type="button"
           aria-label={copy.rewind10}
@@ -72,7 +101,10 @@ export function ExperiencePlaybackTransportControls({
           aria-describedby={description ? hintId : undefined}
           disabled={seekDisabled || position <= 0}
           onClick={() => seek(position - 10_000)}
-          className={classNames(CONTROL, "grid size-11 shrink-0 place-items-center")}
+          className={classNames(
+            CONTROL,
+            "grid size-11 shrink-0 place-items-center @max-[380px]:hidden"
+          )}
         >
           <IconRewindBackward10 className="size-5" aria-hidden="true" />
         </button>
@@ -83,7 +115,10 @@ export function ExperiencePlaybackTransportControls({
           aria-describedby={description ? hintId : undefined}
           disabled={seekDisabled || position >= seekLimit}
           onClick={() => seek(position + 10_000)}
-          className={classNames(CONTROL, "grid size-11 shrink-0 place-items-center")}
+          className={classNames(
+            CONTROL,
+            "grid size-11 shrink-0 place-items-center @max-[380px]:hidden"
+          )}
         >
           <IconRewindForward10 className="size-5" aria-hidden="true" />
         </button>
@@ -92,9 +127,10 @@ export function ExperiencePlaybackTransportControls({
           aria-hidden="true"
         >
           {formatTime(position)}
-          <span className="hidden min-[360px]:inline"> / {formatTime(duration)}</span>
+          <span className="hidden @min-[380px]:inline"> / {formatTime(duration)}</span>
         </span>
         <input
+          data-ui-part="progress"
           type="range"
           min={0}
           max={duration}
@@ -108,12 +144,13 @@ export function ExperiencePlaybackTransportControls({
           onChange={(event) => seek(Number(event.currentTarget.value))}
           className="block h-11 min-w-0 flex-1 cursor-pointer appearance-none bg-transparent bg-[length:100%_3px] bg-center bg-no-repeat outline-none focus-visible:rounded-full focus-visible:ring-2 focus-visible:ring-white/60 disabled:cursor-not-allowed disabled:opacity-40 [&::-moz-range-thumb]:size-2.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-moz-range-track]:h-[3px] [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:-mt-[3.5px] [&::-webkit-slider-thumb]:size-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
           style={{
-            backgroundImage: `linear-gradient(to right, #fff 0%, #fff ${percentage}%, rgba(255,255,255,0.4) ${percentage}%, rgba(255,255,255,0.4) ${watchedPercentage}%, rgba(255,255,255,0.12) ${watchedPercentage}%, rgba(255,255,255,0.12) 100%)`,
+            backgroundImage: `linear-gradient(to right, var(--appearance-transport-progressColor, #fff) 0%, var(--appearance-transport-progressColor, #fff) ${percentage}%, var(--appearance-transport-watchedColor, rgba(255,255,255,0.4)) ${percentage}%, var(--appearance-transport-watchedColor, rgba(255,255,255,0.4)) ${watchedPercentage}%, var(--appearance-transport-trackColor, rgba(255,255,255,0.12)) ${watchedPercentage}%, var(--appearance-transport-trackColor, rgba(255,255,255,0.12)) 100%)`,
           }}
         />
         <button
           type="button"
           aria-label={`${copy.speedLabel}: ${currentRate}×`}
+          data-ui-part="rate"
           aria-describedby={disabled && description ? hintId : undefined}
           title={[copy.speedLabel, hint].filter(Boolean).join(". ")}
           disabled={disabled}

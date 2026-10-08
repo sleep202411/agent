@@ -1,6 +1,14 @@
 {{- if .Values.agentOs.enabled -}}
 {{- $agentOs := .Values.agentOs -}}
 {{- $policy := $agentOs.networkPolicy -}}
+{{- if not (empty $policy.databaseCidr) -}}
+{{- if or (not $policy.databasePort) (not (regexMatch "^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$" $policy.databaseCidr)) -}}
+{{- fail "agentOs.networkPolicy.databaseCidr requires an exact IPv4 /32 and databasePort" -}}
+{{- end -}}
+{{- if or (hasPrefix "169.254." $policy.databaseCidr) (hasPrefix "127." $policy.databaseCidr) (hasPrefix "0." $policy.databaseCidr) -}}
+{{- fail "agentOs.networkPolicy.databaseCidr must not allow metadata or loopback" -}}
+{{- end -}}
+{{- end -}}
 {{/*
   Guards, not defaults. Every one of these renders perfectly well when wrong and
   fails only in the cluster — a policy without DNS lets the pod start and turns
@@ -65,6 +73,15 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.server.containerPort }}
+    {{- if not (empty $policy.databaseCidr) }}
+    # Private RDS can be inside the VPC excluded from broad external access.
+    - to:
+        - ipBlock:
+            cidr: {{ $policy.databaseCidr | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $policy.databasePort }}
+    {{- end }}
     {{- /*
       The model endpoint and Ably are anycast estates with no contracted
       addresses — enumerating their IPs is stale the day someone rotates a load
@@ -83,7 +100,7 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $policy.httpsPort }}
-        {{- if $policy.databasePort }}
+        {{- if and $policy.databasePort (empty $policy.databaseCidr) }}
         # Only used once a checkpoint database URL is mapped; without it the
         # first run hangs inside PostgresSaver.setup() with no error.
         - protocol: TCP

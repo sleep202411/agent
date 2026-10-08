@@ -1,7 +1,10 @@
+import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from release_revision import latest_source
 import cn_release
 
@@ -36,24 +39,23 @@ class RevisionTests(unittest.TestCase):
 
     def test_local_committed_update_and_dirty_work_are_distinct(self):
         (self.repo / 'app.txt').write_text('unsaved')
-        self.assertEqual(latest_source(self.repo, self.source), self.source)
+        self.assertEqual(latest_source(self.repo, self.source, cn=True), self.source)
         new = self.commit('app.txt', 'next')
-        self.assertEqual(latest_source(self.repo, self.source), new)
+        self.assertEqual(latest_source(self.repo, self.source, cn=True), new)
 
     def test_remote_update_does_not_move_operator_checkout(self):
         new = self.commit('app.txt', 'next')
         self.git('push', 'origin', 'main')
         self.git('reset', '--hard', self.source)
-        self.assertEqual(latest_source(self.repo, self.source), new)
+        self.assertEqual(latest_source(self.repo, self.source, cn=True), new)
         self.assertEqual(self.git('rev-parse', 'HEAD'), self.source)
 
     def test_deployment_only_update_reuses_images(self):
         self.commit('deploy/script.sh', 'updated tooling')
-        self.assertEqual(latest_source(self.repo, self.source), self.source)
+        self.assertEqual(latest_source(self.repo, self.source, cn=True), self.source)
 
     def test_cn_chart_updates_require_a_new_cycle(self):
         new = self.commit('deploy/helm/fizzdragon/values.yaml', 'new chart')
-        self.assertEqual(latest_source(self.repo, self.source), self.source)
         self.assertEqual(latest_source(self.repo, self.source, cn=True), new)
 
     def test_com_image_tag_update_does_not_restart_cn(self):
@@ -76,7 +78,7 @@ class RevisionTests(unittest.TestCase):
         self.git('reset', '--hard', self.source)
         self.commit('app.txt', 'local')
         with self.assertRaisesRegex(RuntimeError, 'diverged'):
-            latest_source(self.repo, self.source)
+            latest_source(self.repo, self.source, cn=True)
 
     def test_isolated_cn_tooling_preserves_operator_changes(self):
         original = cn_release.ROOT
@@ -91,6 +93,24 @@ class RevisionTests(unittest.TestCase):
             self.assertEqual((self.repo / 'app.txt').read_text(), 'work in progress')
         finally:
             cn_release.ROOT = original
+
+
+class RetiredComTests(unittest.TestCase):
+    def test_old_default_stops_before_fetch_or_other_git_operations(self):
+        with patch('release_revision.git') as git:
+            with self.assertRaisesRegex(RuntimeError, 'retired; use deploy/deploy-com.sh'):
+                latest_source(Path('/missing'), 'a'*40)
+            git.assert_not_called()
+
+    def test_old_cli_stops_without_git(self):
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name('release_revision.py')),
+             '/missing', 'a'*40, 'main'],
+            env={**os.environ, 'PATH': '/nonexistent'}, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('retired; use deploy/deploy-com.sh', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
 
 
 if __name__ == '__main__':

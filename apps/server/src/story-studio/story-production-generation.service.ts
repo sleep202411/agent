@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import {
   BadRequestException,
   ConflictException,
@@ -319,6 +320,7 @@ export class StoryProductionGenerationService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || this.unregisterObserver) return;
     this.unregisterObserver = this.completionObservers.register(this);
     if (
@@ -984,12 +986,14 @@ export class StoryProductionGenerationService
   }
 
   async onAiGenerationCompleted(job: AiJob): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || job.sourceSurface !== STORY_STUDIO_WORKBENCH_SURFACE)
       return;
     await this.reconcileCompletedGeneration(job.id, true, true);
   }
 
   async drainOnce(batch = DEFAULT_RECONCILE_BATCH_SIZE): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || this.draining) return;
     this.draining = true;
     try {

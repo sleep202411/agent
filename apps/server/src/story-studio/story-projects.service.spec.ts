@@ -111,6 +111,7 @@ function projectRow(overrides: Record<string, unknown> = {}) {
     defaultLocale: 'zh-CN',
     coverAssetId: null,
     tags: [],
+    appearance: null as Prisma.JsonValue,
     sourceIpId: null,
     nextBuildNumber: 1,
     version: 0,
@@ -2097,5 +2098,177 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       clipCount: 1,
       currentVideoCount: 0,
     });
+  });
+});
+
+describe('project player appearance persistence', () => {
+  const source = {
+    apiVersion: 1 as const,
+    surface: 'main-menu' as const,
+    entry: 'menu.js',
+    files: [{ path: 'menu.js', content: 'export function mount() {}' }],
+  };
+  it('builds source behind edit permission and commits source plus artifact in one version CAS', async () => {
+    const tx = {
+      storyProject: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const { service, permissions } = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(summaryProject({ version: 5 })),
+      },
+    });
+    await service.patch(USER as never, PROJECT_ID, {
+      expectedProjectVersion: 4,
+      gameUiSource: source,
+    });
+    expect(permissions.requireProject).toHaveBeenCalledWith(
+      USER.userId,
+      PROJECT_ID,
+      'story.edit',
+      {},
+    );
+    expect(tx.storyProject.updateMany).toHaveBeenCalledWith({
+      where: { id: PROJECT_ID, status: StoryProjectStatus.active, version: 4 },
+      data: {
+        gameUi: {
+          source,
+          artifact: expect.objectContaining({
+            surface: 'main-menu',
+            sourceHash: expect.any(String) as unknown,
+            javascript: expect.any(String) as unknown,
+          }) as unknown,
+        },
+        version: { increment: 1 },
+      },
+    });
+  });
+  it('leaves the project untouched on compiler failure and reports the actual source error', async () => {
+    const transaction = jest.fn();
+    const { service } = serviceWith({ $transaction: transaction });
+    await expect(
+      service.patch(USER as never, PROJECT_ID, {
+        expectedProjectVersion: 4,
+        gameUiSource: {
+          ...source,
+          files: [{ path: 'menu.js', content: 'export function mount( {' }],
+        },
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'STORY_GAME_UI_BUILD_FAILED',
+        message: expect.stringContaining('menu.js') as unknown,
+      },
+    });
+    expect(transaction).not.toHaveBeenCalled();
+  });
+  it('rejects stale code commits and allows restoring the native menu without changing story data', async () => {
+    const tx = {
+      storyProject: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    };
+    const { service } = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(projectRow({ version: 5 })),
+      },
+    });
+    await expect(
+      service.patch(USER as never, PROJECT_ID, {
+        expectedProjectVersion: 4,
+        gameUiSource: source,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    tx.storyProject.updateMany.mockResolvedValue({ count: 1 });
+    const saved = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(summaryProject()),
+      },
+    });
+    await saved.service.patch(USER as never, PROJECT_ID, {
+      expectedProjectVersion: 4,
+      gameUiSource: null,
+    });
+    expect(tx.storyProject.updateMany).toHaveBeenLastCalledWith({
+      where: { id: PROJECT_ID, status: StoryProjectStatus.active, version: 4 },
+      data: { gameUi: Prisma.DbNull, version: { increment: 1 } },
+    });
+  });
+  const appearance = {
+    version: 1 as const,
+  };
+  it('requires edit permission and atomically increments the project version', async () => {
+    const tx = {
+      storyProject: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    };
+    const { service, permissions, writeGuard } = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(summaryProject({ version: 5, appearance })),
+      },
+    });
+    await expect(
+      service.patch(USER as never, PROJECT_ID, {
+        expectedProjectVersion: 4,
+        appearance,
+      }),
+    ).resolves.toMatchObject({ projectVersion: 5, appearance });
+    expect(permissions.requireProject).toHaveBeenCalledWith(
+      USER.userId,
+      PROJECT_ID,
+      'story.edit',
+      {},
+    );
+    expect(writeGuard.assertHumanWriteAllowed).toHaveBeenCalledWith(
+      tx,
+      PROJECT_ID,
+    );
+    expect(tx.storyProject.updateMany).toHaveBeenCalledWith({
+      where: { id: PROJECT_ID, status: StoryProjectStatus.active, version: 4 },
+      data: { appearance, version: { increment: 1 } },
+    });
+  });
+  it('converts stored legacy styles at read ingress without mutating the stored row', async () => {
+    const legacy = {
+      choices: 'paper',
+      transport: 'glass',
+      layout: 'column',
+      size: 1,
+      accent: '#e52227',
+    };
+    const row = summaryProject({ appearance: legacy });
+    const { service } = serviceWith({
+      storyProject: { findUnique: jest.fn().mockResolvedValue(row) },
+    });
+    const result = await service.get(USER as never, PROJECT_ID);
+    expect(result.appearance).toMatchObject({
+      version: 1,
+      presentation: {
+        theme: {
+          css: expect.stringContaining('flex-direction:column') as unknown,
+        },
+      },
+    });
+    expect(result.appearance).not.toHaveProperty('choices');
+    expect(row.appearance).toBe(legacy);
+  });
+  it('rejects stale project versions instead of overwriting a newer appearance', async () => {
+    const tx = {
+      storyProject: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    };
+    const { service } = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(projectRow({ version: 5 })),
+      },
+    });
+    await expect(
+      service.patch(USER as never, PROJECT_ID, {
+        expectedProjectVersion: 4,
+        appearance,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

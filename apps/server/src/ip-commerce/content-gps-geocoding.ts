@@ -13,6 +13,7 @@ import { Prisma } from '@prisma/client';
 import { ContentGpsMetadataSchema } from '@repo/shared/content-gps';
 import type { AuthUser } from '../auth/auth.types';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import {
   ContentGpsSourcesService,
   gpsSnapshotFingerprint,
@@ -35,6 +36,7 @@ export class ContentGpsGeocodingService
   private cleaning = false;
   private readonly logger = new Logger(ContentGpsGeocodingService.name);
   onModuleInit() {
+    if (!backgroundTasksEnabled()) return;
     const clean = () => {
       if (this.cleaning) return;
       this.cleaning = true;

@@ -17,7 +17,7 @@ class LockTests(unittest.TestCase):
         write.assert_called_once_with(None, 'mine')
 
     def test_conflict_retries_lookup(self):
-        lock = Lock('com')
+        lock = Lock('cn')
         with patch.object(lock, 'read', return_value=None) as read, patch.object(lock, 'write', side_effect=[False, True]), patch('release_lock.time.sleep'):
             lock.acquire('mine')
         self.assertEqual(read.call_count, 2)
@@ -30,7 +30,7 @@ class LockTests(unittest.TestCase):
             write.assert_not_called()
 
     def test_release_requires_owner(self):
-        lock = Lock('com')
+        lock = Lock('cn')
         with patch.object(lock, 'read', return_value={'data': {'owner': 'other'}}), patch.object(lock, 'write') as write:
             with self.assertRaisesRegex(RuntimeError, 'ownership changed'):
                 lock.release('mine')
@@ -48,13 +48,27 @@ class LockTests(unittest.TestCase):
     def test_permissions_fail_closed(self):
         with patch.object(Lock, 'call', return_value=subprocess.CompletedProcess([], 1, '', 'Forbidden')):
             with self.assertRaises(RuntimeError):
-                Lock('com').read()
+                Lock('cn').read()
             with self.assertRaises(RuntimeError):
-                Lock('com').write(None, 'mine')
+                Lock('cn').write(None, 'mine')
 
     def test_explicit_region_not_current_context(self):
-        self.assertIn('aks-fizzdragon-com-admin', Lock('com').command)
         self.assertIn('218059191361846222-c72d2039c68624a3e8d0dee257a13d451', Lock('cn').command)
+
+    def test_retired_com_stops_before_kubernetes_and_child_process(self):
+        with patch('release_lock.subprocess.run') as command:
+            with self.assertRaisesRegex(RuntimeError, 'retired; use deploy/deploy-com.sh'):
+                Lock('com')
+            command.assert_not_called()
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name('release_lock.py')),
+             'com', '--', '/must-not-run'],
+            env={**os.environ, 'PATH': '/nonexistent', 'FD_REGIONAL_LOCK_COM': 'old-owner'},
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('retired; use deploy/deploy-com.sh', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
 
     def test_process_success_release_failure_retain_and_recovery(self):
         with tempfile.TemporaryDirectory() as directory:

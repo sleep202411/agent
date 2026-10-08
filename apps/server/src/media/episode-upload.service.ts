@@ -15,6 +15,7 @@ import {
   type EpisodeUploadSession,
 } from '@repo/shared';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
 import type {
   MultipartUploadRef,
@@ -64,6 +65,7 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || this.timer) return;
     this.timer = setInterval(() => void this.sweepExpired(), 60_000);
     this.timer.unref();
@@ -411,6 +413,7 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
   }
 
   async sweepExpired() {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping) return;
     if (this.sweeping) return this.sweeping;
     this.sweeping = this.cleanupExpired().finally(() => {

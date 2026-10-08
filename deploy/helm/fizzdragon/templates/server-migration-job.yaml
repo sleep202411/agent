@@ -1,6 +1,26 @@
 {{- if .Values.server.migrationJob.enabled -}}
 {{- $component := "db-migrate" -}}
 {{- $ctx := merge (dict "component" $component) . -}}
+{{- $datastore := .Values.server.datastore -}}
+{{- $datastoreEnabled := or (not (empty $datastore.configMapName)) (not (empty $datastore.caConfigMapName)) -}}
+{{- $databaseSecret := .Values.server.migrationJob.databaseSecret | default dict -}}
+{{- $dedicatedDatabase := or $datastoreEnabled (not (empty $databaseSecret.name)) (not (empty $databaseSecret.key)) -}}
+{{- if $dedicatedDatabase -}}
+{{- $_ := required "server.migrationJob.databaseSecret.name is required with a dedicated migration database connection" $databaseSecret.name -}}
+{{- $_ := required "server.migrationJob.databaseSecret.key is required with a dedicated migration database connection" $databaseSecret.key -}}
+{{- if or (hasKey .Values.sharedEnv "DATABASE_URL") (hasKey .Values.server.env "DATABASE_URL") -}}
+{{- fail "DATABASE_URL must come only from server.migrationJob.databaseSecret for the migration Job" -}}
+{{- end -}}
+{{- end -}}
+{{- $mountAzureSecrets := and .Values.azure.enabled (not $dedicatedDatabase) -}}
+{{- if $datastoreEnabled -}}
+{{- $_ := required "server.datastore.configMapName is required with datastore CA configuration" $datastore.configMapName -}}
+{{- $_ := required "server.datastore.caConfigMapName is required with datastore configuration" $datastore.caConfigMapName -}}
+{{- $_ := required "server.datastore.caMountPath is required with datastore configuration" $datastore.caMountPath -}}
+{{- if not (hasPrefix "/" $datastore.caMountPath) -}}
+{{- fail "server.datastore.caMountPath must be an absolute path" -}}
+{{- end -}}
+{{- end -}}
 {{- $revision := required "server.migrationJob.revision is required" .Values.server.migrationJob.revision | toString -}}
 {{- $backupId := required "server.migrationJob.backupId is required" .Values.server.migrationJob.backupId | toString -}}
 ---
@@ -22,29 +42,53 @@ spec:
       labels:
         {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
         fizzdragon.com/revision: {{ $revision | quote }}
+        {{- if $mountAzureSecrets }}
         {{- include "fizzdragon.workloadIdentityLabels" . | nindent 8 }}
+        {{- end }}
     spec:
       restartPolicy: Never
-      {{- if .Values.azure.enabled }}
+      {{- include "fizzdragon.podAccess" (dict "component" "server" "settings" .Values.server "forceNoToken" $dedicatedDatabase) | nindent 6 }}
+      {{- if $mountAzureSecrets }}
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
       {{- end }}
       containers:
         - name: db-migrate
-          image: "{{ .Values.image.registry }}/{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          image: {{ include "fizzdragon.componentImage" (dict "component" "server" "registry" .Values.image.registry "image" .Values.server.image) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["npm", "run", "db:deploy"]
           env:
+            {{- if $dedicatedDatabase }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $databaseSecret.name | quote }}
+                  key: {{ $databaseSecret.key | quote }}
+                  optional: false
+            - name: DOTENV_CONFIG_PATH
+              value: /dev/null
+            {{- else }}
             {{- include "fizzdragon.sharedEnv" . | nindent 12 }}
             {{- include "fizzdragon.componentEnv" .Values.server | nindent 12 }}
+            {{- end }}
+          {{- if or (not $dedicatedDatabase) $datastoreEnabled }}
           envFrom:
+            {{- if not $dedicatedDatabase }}
             - secretRef:
                 name: {{ .Values.secrets.projectedName }}
             {{- if .Values.serverSecrets.mapping }}
             - secretRef:
                 name: {{ .Values.serverSecrets.projectedName }}
             {{- end }}
-          {{- if .Values.azure.enabled }}
+            {{- end }}
+            {{- if $datastoreEnabled }}
+            - configMapRef:
+                name: {{ $datastore.configMapName | quote }}
+                optional: false
+            {{- end }}
+          {{- end }}
+          {{- if or $mountAzureSecrets $datastoreEnabled }}
           volumeMounts:
+            {{- if $mountAzureSecrets }}
             - name: kv-secrets
               mountPath: /mnt/secrets
               readOnly: true
@@ -53,11 +97,18 @@ spec:
               mountPath: /mnt/server-secrets
               readOnly: true
             {{- end }}
+            {{- end }}
+            {{- if $datastoreEnabled }}
+            - name: datastore-ca
+              mountPath: {{ $datastore.caMountPath | quote }}
+              readOnly: true
+            {{- end }}
           {{- end }}
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
-      {{- if .Values.azure.enabled }}
+      {{- if or $mountAzureSecrets $datastoreEnabled }}
       volumes:
+        {{- if $mountAzureSecrets }}
         - name: kv-secrets
           csi:
             driver: secrets-store.csi.k8s.io
@@ -71,6 +122,13 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-server-kv
+        {{- end }}
+        {{- end }}
+        {{- if $datastoreEnabled }}
+        - name: datastore-ca
+          configMap:
+            name: {{ $datastore.caConfigMapName | quote }}
+            optional: false
         {{- end }}
       {{- end }}
       {{- with .Values.server.nodeSelector }}

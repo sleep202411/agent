@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Find existing regional images by committed service build inputs, across operators.
+"""Find existing CN images by committed service build inputs, across operators.
 
 Never treats registry/API failures as cache misses. Existing SHA tags are retained;
 we do not relabel an old image as if it had been built from a newer checkout.
@@ -16,6 +16,14 @@ from cn_registry import query, verify, INSTANCE
 SERVICES = ('web', 'server', 'studio', 'admin-ui', 'agent', 'agent-os')
 SHA = re.compile(r'^[0-9a-f]{40}$')
 DIGEST = re.compile(r'^sha256:[0-9a-f]{64}$')
+RETIRED_COM = 'The Azure .com image path has retired; use deploy/deploy-com.sh instead'
+
+
+def require_cn(region):
+    if region == 'com':
+        raise RuntimeError(RETIRED_COM)
+    if region != 'cn':
+        raise ValueError('Invalid image region')
 
 
 def git(root, *args):
@@ -25,7 +33,8 @@ def git(root, *args):
 
 @lru_cache(maxsize=256)
 def inputs(root, revision, service, region):
-    if service not in SERVICES or region not in ('com', 'cn') or not SHA.fullmatch(revision):
+    require_cn(region)
+    if service not in SERVICES or not SHA.fullmatch(revision):
         raise ValueError('Invalid image input identity')
     entries = git(root, 'ls-tree', '-r', '-z', revision).split(b'\0')
     # Resolve workspace dependencies at each revision rather than assuming every
@@ -77,29 +86,13 @@ def inputs(root, revision, service, region):
                 continue
         selected.append(entry)
     # Include build arguments/recipe, but not publication, chart or polling code.
-    recipe_path = 'deploy/cn-remote-build-services.sh' if region == 'cn' else 'deploy/deploy-com-aks.sh'
-    recipe = git(root, 'show', f'{revision}:{recipe_path}')
-    if region == 'com':
-        start = recipe.find(b'build_one()')
-        end = recipe.find(b'\nbump_tag()', start)
-        if start < 0 or end < 0:
-            raise RuntimeError('Cannot identify COM build recipe')
-        recipe = recipe[start:end]
+    recipe = git(root, 'show', f'{revision}:deploy/cn-remote-build-services.sh')
     return hashlib.sha256(region.encode() + b'\0' + service.encode() + b'\0' + b'\0'.join(selected) + recipe).hexdigest()
 
 
-def az(*args):
-    result = subprocess.run(['az', 'acr', *args, '-o', 'json'], capture_output=True, text=True, check=True, timeout=60)
-    return json.loads(result.stdout)
-
-
 def candidates(region, service):
+    require_cn(region)
     repo = f'fizzdragon-{service}'
-    if region == 'com':
-        rows = az('repository', 'show-tags', '--name', 'acrfizzdragoncom', '--repository', repo, '--detail', '--orderby', 'time_desc')
-        if not isinstance(rows, list):
-            raise RuntimeError('Invalid COM tag listing')
-        return [(r.get('name', ''), r.get('digest', '')) for r in rows]
     listing = query('ListRepository', RepoNamespaceName='fizzdragon', RepoName=repo)
     repositories = [r for r in listing.get('Repositories', []) if r.get('RepoName') == repo and r.get('RepoNamespaceName') == 'fizzdragon' and r.get('InstanceId') == INSTANCE and r.get('RepoStatus') == 'NORMAL']
     if len(repositories) != 1 or listing.get('TotalCount') != 1:
@@ -122,12 +115,8 @@ def candidates(region, service):
 
 
 def digest(region, service, tag):
-    if region == 'cn':
-        return verify(tag, [service])[service]
-    value = az('repository', 'show', '--name', 'acrfizzdragoncom', '--image', f'fizzdragon-{service}:{tag}').get('digest', '')
-    if not DIGEST.fullmatch(value):
-        raise RuntimeError('COM image has no valid digest')
-    return value
+    require_cn(region)
+    return verify(tag, [service])[service]
 
 
 def find(root, source, region, service):
@@ -149,6 +138,9 @@ def find(root, source, region, service):
 
 
 if __name__ == '__main__':
+    if sys.argv[1:2] == ['com']:
+        print(f'FATAL: {RETIRED_COM}', file=sys.stderr)
+        sys.exit(1)
     try:
         region, root, source, service = sys.argv[1:]
         result = find(Path(root), source, region, service)

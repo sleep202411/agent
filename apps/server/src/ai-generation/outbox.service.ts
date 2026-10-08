@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 /**
  * Event outbox — durable Web PubSub fan-out.
  *
@@ -91,6 +92,7 @@ export class AiGenerationOutboxService
   }
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), DISPATCH_INTERVAL_MS);
     this.logger.log(
@@ -108,6 +110,7 @@ export class AiGenerationOutboxService
   }
 
   private async drainOnce(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped || this.draining) return;
     this.draining = this.drain().finally(() => {
       this.draining = null;
@@ -116,6 +119,7 @@ export class AiGenerationOutboxService
   }
 
   private async drain(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     try {
       const now = new Date();
       const candidates = await this.prisma.aiEventOutbox.findMany({
@@ -152,6 +156,7 @@ export class AiGenerationOutboxService
 
   /** Immediate publication uses the same ready-row claim as the retry worker. */
   private async tryDispatch(rowId: string): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     const dispatch = this.dispatchOne(rowId);
     this.immediateDispatches.add(dispatch);
@@ -165,6 +170,7 @@ export class AiGenerationOutboxService
   }
 
   private async dispatchOne(rowId: string): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     // Claim only this item when ready to publish. SKIP LOCKED avoids aging a
     // newly minted lease while waiting for another writer; database time is

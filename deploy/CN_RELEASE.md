@@ -1,16 +1,17 @@
-# Production releases: .com and CN
+# CN production releases
 
-Start from clean, committed `main`. Both release coordinators automatically
-check local and remote `main` at stage boundaries. If application inputs change,
-they rebuild the entire selected service set at the newer commit before rollout.
-A CN migration already running finishes first. If a commit arrives during an
-atomic rollout, that rollout finishes and another release cycle follows.
+Use `release-cn.sh` for the coordinated CN build, backup, migration and rollout.
+International `.com` releases use [deploy-com.sh](deploy-com.sh) and the
+[Singapore runbook](aliyun-sg/README.md); they do not use this CN coordinator,
+Azure ArgoCD or its release-lock procedure.
 
-Each cycle has one immutable source SHA for the release. Each selected service
-may reuse an older immutable image tag whose application/build inputs match that
-source. Images are regional: a successful
-.com build does not create CN images. The scripts preserve the operator's
-checkout, including edits or branch changes made after startup.
+Start CN releases from clean, committed `main`. The CN coordinator checks local
+and remote `main` at stage boundaries. If application inputs change, it rebuilds
+the selected service set at the newer commit before rollout. An already running
+migration finishes first; an atomic rollout finishes before another source cycle.
+Each cycle pins one source SHA and verified regional image digests. Matching
+committed inputs can reuse older CN images. The scripts preserve checkout edits
+or branch changes made after startup.
 
 ## 1. Update the checkout
 
@@ -20,45 +21,9 @@ git pull --ff-only origin main
 ```
 
 Select every service affected by application or shared dependency changes.
-For the regional currency changes, select all four services below.
+Select all four services when shared changes affect them.
 
-## 2. Build and publish .com
-
-```bash
-deploy/deploy-com-aks.sh web server studio admin-ui
-```
-
-The script first searches the regional registry for each selected service. It
-reuses a verified image with matching committed build inputs, including images
-built by another operator. Only services without a matching image are built
-from a committed snapshot; every new ACR run is verified.
-It publishes image tags from a disposable checkout of the latest remote branch.
-Concurrent GitOps commits are preserved; a rejected push is refetched and
-retried. It refuses to overwrite a newer or divergent published image.
-
-Deployment-only commits do not rebuild .com application images. Their changes
-are retained in the publication base. The running tooling stays frozen for the
-invocation. The script reports the final source SHA; do not infer it from
-`HEAD~1` or assume your starting SHA is still the final one.
-
-ArgoCD applies the published GitOps commit asynchronously. Verify using an
-authorized context (the provisioned admin context here):
-
-```bash
-export KUBECONFIG="$HOME/.kube/config"
-kubectl --context aks-fizzdragon-com-admin -n fizzdragon-com \
-  get deployments -o 'custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[*].image'
-for service in web server studio admin-ui; do
-  kubectl --context aks-fizzdragon-com-admin -n fizzdragon-com \
-    rollout status "deployment/fizzdragon-$service" --timeout=300s || break
-done
-```
-
-Compare each selected service with the expected image tag and digest printed by
-the release; unchanged services can legitimately retain older image tags. Ready old pods do not prove that ArgoCD has applied the new tags.
-Then verify the affected signed-in UI/API workflows.
-
-## 3. Build, back up, migrate and deploy CN
+## 2. Build, back up, migrate and deploy CN
 
 ```bash
 export DEPLOY_KEY="$HOME/.ssh/id_ed25519_fizzdragon_cn"
@@ -90,7 +55,7 @@ The Aliyun `default` profile needs ECS, ACR and RDS access; ACK credentials,
 registry credentials and the build-ECS SSH allowlist must already be configured.
 Use the private SSH key, not its `.pub` file.
 
-## 4. Recover an interrupted CN release
+## 3. Recover an interrupted CN release
 
 ```bash
 CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --resume --allow-chart-update
@@ -116,7 +81,7 @@ BackupId in RDS and resume with `--backup-id BACKUP_ID`. Image-pull errors still
 require checking pod events and cluster registry access; existing registry
 images alone do not establish that ACK can pull them.
 
-## 5. Verify CN
+## 4. Verify CN
 
 ```bash
 kubectl -n fizzdragon get deployments \
@@ -151,7 +116,7 @@ can run concurrently because their registries and clusters are separate.
 
 ## Image reuse and transient RDS failures
 
-Both coordinators discover reusable images from the regional registry, not just
+The CN coordinator discovers reusable images from the regional registry, not just
 an operator's local receipt. Reuse requires a full Git SHA in the selected
 source's ancestry, matching committed service inputs, and a verified digest.
 Inputs include the selected app, workspace manifests, shared packages, lockfiles,
@@ -161,11 +126,11 @@ recompilation. Shared build inputs are conservatively included.
 
 Images keep their original SHA tags; they are never retagged as a newer source.
 A previously built image can be reused even if an earlier rollout failed or was
-replaced. GitOps/Helm still reconciles desired deployment state; reuse is not a
+replaced. Helm still reconciles desired deployment state; reuse is not a
 claim that the image is already running. CN skips Helm upgrade when its rendered
 manifest already matches, and still checks rollout/readiness. Registry access
 errors or a digest changing during verification stop the release, never cause a
-fallback build. COM rollout remains asynchronous under ArgoCD.
+fallback build.
 
 RDS `DescribeBackupTasks` and `DescribeBackups` retry transient reads up to four
 times with 2/5/10-second backoff and 45-second request timeouts. Authorization
@@ -177,25 +142,19 @@ only the coordinator manages backup, migration and source cycles.
 
 ## Shared release lock across operators
 
-All operators must use these updated entry points. `.com` and CN each use an
-atomic Kubernetes ConfigMap lock named `fizzdragon-release-lock` in their own
-production namespace. Lock acquisition happens before source snapshots and image
-lookup, and lasts through publication/deployment. A second operator waits (up to
-four hours), then checks regional registry images again; equivalent inputs reuse
-the existing image. CN's shared ECS and Helm release are serialized too. The
-regions do not block each other. Older scripts or manual cloud commands do not
-participate in this protocol and must not run concurrently.
+All CN operators must use these entry points. An atomic Kubernetes ConfigMap
+lock named `fizzdragon-release-lock` in the CN namespace serializes the shared
+ECS builder and Helm release. It is acquired before source snapshots/image
+lookup and held through deployment. A second operator waits up to four hours,
+then checks for reusable regional images. Older scripts and manual cloud commands
+do not participate and must not run concurrently.
 
-The current entry points use `~/.kube/config`, context
-`aks-fizzdragon-com-admin`, namespace `fizzdragon-com` for .com, and
-`~/.kube/config-fizzdragon-cn`, context
-`218059191361846222-c72d2039c68624a3e8d0dee257a13d451`, namespace `fizzdragon`
-for CN. These explicit targets avoid acquiring a lock in the wrong current
-cluster. Operators need `get`, `create`, and `update` ConfigMap permissions;
-missing permission/connectivity fails before any build. The lock contains only
-an owner UUID, region and timestamp. Do not delete it or place it in Helm/GitOps
-pruning ownership. Nested commands validate inherited ownership rather than
-acquiring the same lock twice.
+The CN entry points use `~/.kube/config-fizzdragon-cn`, context
+`218059191361846222-c72d2039c68624a3e8d0dee257a13d451`, namespace `fizzdragon`.
+Operators need `get`, `create` and `update` ConfigMap permissions; missing access
+or connectivity fails before builds. The lock records an owner UUID, region and
+timestamp. Keep it outside Helm pruning ownership. Nested commands validate the
+inherited owner rather than acquiring it again.
 
 A successful command releases the lock automatically using a resource-version
 compare-and-swap. Failed, interrupted or killed commands leave the lock held:
@@ -208,7 +167,6 @@ or completed. Then use the printed UUID (not an image SHA):
 ```bash
 CONFIRM_REMOTE_RELEASE_STOPPED=YES python3 deploy/release_lock.py \
   --recover-owner "$FD_FAILED_LOCK_OWNER" cn
-# For .com, replace the final cn with com.
 ```
 
 Recovery checks both the exact owner UUID and resource version; it will not

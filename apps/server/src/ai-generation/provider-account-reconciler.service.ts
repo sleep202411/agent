@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 /**
  * ProviderAccountReconciler
  *
@@ -32,6 +33,7 @@ export class ProviderAccountReconciler implements OnApplicationBootstrap {
   constructor(private readonly prisma: PrismaService) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const reconciled: string[] = [];
     for (const provider of AI_PROVIDER_KEYS) {
       try {

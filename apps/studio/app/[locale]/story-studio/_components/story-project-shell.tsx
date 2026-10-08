@@ -23,10 +23,12 @@ export function StoryProjectShell({
 }) {
   const segment = useSelectedLayoutSegment();
 
-  if (segment === "edit") {
+  if (segment === "edit" || segment === "playtest") {
     return (
       <div
-        data-slot="story-project-editor-shell"
+        data-slot={
+          segment === "playtest" ? "story-project-preview-shell" : "story-project-editor-shell"
+        }
         className="grid h-dvh min-h-0 min-w-0 overflow-hidden bg-[var(--canvas-background)] text-white"
       >
         {children}

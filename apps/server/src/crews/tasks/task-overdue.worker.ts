@@ -5,6 +5,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/db/db.module';
+import { backgroundTasksEnabled } from '../../common/background-tasks';
 import { NotificationService } from '../../notification';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { taskReminderPredicate } from './task-deadline';
@@ -27,6 +28,7 @@ export class CrewTaskOverdueWorker
   ) {}
 
   onApplicationBootstrap() {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped || this.timer) return;
     this.timer = setInterval(() => this.schedule(), 60_000);
     this.timer.unref?.();
@@ -49,6 +51,7 @@ export class CrewTaskOverdueWorker
   }
 
   async drainOnce(now = new Date()): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (this.draining) return this.draining;
     this.draining = this.drain(now).finally(() => {

@@ -1,0 +1,228 @@
+{{/* Shared validation also protects the Nest-side wiring when rendering selected templates. */}}
+{{- define "fizzdragon.gameAgent.validate" -}}
+{{- $agent := .Values.gameAgent -}}
+{{- if not (kindIs "bool" $agent.enabled) -}}
+{{- fail "gameAgent.enabled must be a boolean" -}}
+{{- end -}}
+{{- if .Values.azure.enabled -}}
+{{- fail "gameAgent is supported only in explicitly configured non-Azure deployments" -}}
+{{- end -}}
+{{- if not .Values.server.enabled -}}
+{{- fail "gameAgent requires server.enabled for authenticated admission" -}}
+{{- end -}}
+{{- if ne ($agent.replicaCount | toString) "1" -}}
+{{- fail "gameAgent.replicaCount must be 1; durable workspaces have one worker owner" -}}
+{{- end -}}
+{{- if ne ($agent.containerPort | toString) "4396" -}}
+{{- fail "gameAgent.containerPort must be 4396" -}}
+{{- end -}}
+{{- if or (not (regexMatch "^[0-9]+$" ($agent.terminationGracePeriodSeconds | toString))) (lt (int $agent.terminationGracePeriodSeconds) 30) -}}
+{{- fail "gameAgent.terminationGracePeriodSeconds must be at least 30" -}}
+{{- end -}}
+{{- if ne ($agent.persistence.enabled | toString) "true" -}}
+{{- fail "gameAgent.persistence.enabled must be true; ephemeral workspaces are forbidden" -}}
+{{- end -}}
+{{- $_ := required "gameAgent.persistence.storageClassName is required" $agent.persistence.storageClassName -}}
+{{- $_ := required "gameAgent.persistence.size is required" $agent.persistence.size -}}
+{{- $_ := required "image.registry is required when gameAgent is enabled" .Values.image.registry -}}
+{{- $_ := required "gameAgent.image.repository is required" $agent.image.repository -}}
+{{- $tag := required "gameAgent.image.tag is required" $agent.image.tag | toString -}}
+{{- if not (regexMatch "^[a-f0-9]{7,64}$" $tag) -}}
+{{- fail "gameAgent.image.tag must be an immutable source revision of 7-64 lowercase hexadecimal characters" -}}
+{{- end -}}
+{{- $model := required "gameAgent.model.name is required" $agent.model.name | toString -}}
+{{- if or (ne $model (trim $model)) (gt (len $model) 128) -}}
+{{- fail "gameAgent.model.name must be a non-empty model identifier of at most 128 characters" -}}
+{{- end -}}
+{{- $baseUrl := required "gameAgent.model.baseUrl is required" $agent.model.baseUrl | toString -}}
+{{- $provider := urlParse $baseUrl -}}
+{{- if or (not (has $provider.scheme (list "http" "https"))) (empty $provider.host) $provider.userinfo $provider.query $provider.fragment (ne $baseUrl (trim $baseUrl)) -}}
+{{- fail "gameAgent.model.baseUrl must be a complete HTTP(S) provider URL without credentials, query or fragment" -}}
+{{- end -}}
+{{- if not (has ($agent.model.thinking | toString) (list "true" "false")) -}}
+{{- fail "gameAgent.model.thinking must be true or false" -}}
+{{- end -}}
+{{- if or (not (regexMatch "^[0-9]+$" ($agent.model.maxTokens | toString))) (lt (int $agent.model.maxTokens) 1) (gt (int $agent.model.maxTokens) 200000) -}}
+{{- fail "gameAgent.model.maxTokens must be an integer between 1 and 200000" -}}
+{{- end -}}
+{{- $origin := required "gameAgent.studioOrigin is required" $agent.studioOrigin | toString -}}
+{{- $studio := urlParse $origin -}}
+{{- if or (ne $studio.scheme "https") (empty $studio.host) $studio.userinfo $studio.path $studio.query $studio.fragment (ne $origin (printf "https://%s" $studio.host)) -}}
+{{- fail "gameAgent.studioOrigin must be an exact HTTPS Studio origin without a path or trailing slash" -}}
+{{- end -}}
+{{- $apiSecret := required "gameAgent.secrets.apiKey.name is required" $agent.secrets.apiKey.name -}}
+{{- $tokenSecret := required "gameAgent.secrets.internalToken.name is required" $agent.secrets.internalToken.name -}}
+{{- if eq $apiSecret $tokenSecret -}}
+{{- fail "gameAgent API-key and internal-token Secret names must be distinct" -}}
+{{- end -}}
+{{- if ne $agent.secrets.apiKey.key "GAME_AGENT_OPENAI_API_KEY" -}}
+{{- fail "gameAgent.secrets.apiKey.key must be GAME_AGENT_OPENAI_API_KEY" -}}
+{{- end -}}
+{{- if ne $agent.secrets.internalToken.key "GAME_AGENT_INTERNAL_TOKEN" -}}
+{{- fail "gameAgent.secrets.internalToken.key must be GAME_AGENT_INTERNAL_TOKEN" -}}
+{{- end -}}
+{{- range $key := list "GAME_AGENT_ENABLED" "GAME_AGENT_WORKER_URL" "GAME_AGENT_INTERNAL_TOKEN" "GAME_AGENT_STUDIO_ORIGIN" -}}
+{{- if or (hasKey $.Values.sharedEnv $key) (hasKey $.Values.server.env $key) -}}
+{{- fail (printf "%s is chart-owned when gameAgent is enabled; remove the sharedEnv/server.env override" $key) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- if .Values.gameAgent.enabled -}}
+{{- include "fizzdragon.gameAgent.validate" . -}}
+{{- $agent := .Values.gameAgent -}}
+{{- $ctx := merge (dict "component" "game-agent") . -}}
+{{- $name := include "fizzdragon.componentName" $ctx -}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-workspaces
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+  annotations:
+    # Removing/disabling this workload must never discard authored work/history.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ $agent.persistence.storageClassName | quote }}
+  resources:
+    requests:
+      storage: {{ $agent.persistence.size | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: {{ $agent.terminationGracePeriodSeconds }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: game-agent
+          image: {{ include "fizzdragon.componentImage" (dict "component" "gameAgent" "registry" .Values.image.registry "image" $agent.image) | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 4396
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: GAME_AGENT_PORT
+              value: "4396"
+            - name: GAME_AGENT_BIND_ADDRESS
+              value: "0.0.0.0"
+            # The fsGroup-writable PVC root may be owned by root. The worker
+            # creates this private 0700 child as UID 1001 and fsyncs its parent.
+            - name: GAME_AGENT_WORKSPACE_ROOT
+              value: /var/lib/game-agent/workspaces/sessions
+            - name: GAME_AGENT_MODEL
+              value: {{ $agent.model.name | quote }}
+            - name: GAME_AGENT_OPENAI_BASE_URL
+              value: {{ $agent.model.baseUrl | quote }}
+            - name: GAME_AGENT_THINKING
+              value: {{ $agent.model.thinking | quote }}
+            - name: GAME_AGENT_MAX_TOKENS
+              value: {{ $agent.model.maxTokens | quote }}
+            # Never inherit broad application/Agent OS credential bundles.
+            - name: GAME_AGENT_OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $agent.secrets.apiKey.name | quote }}
+                  key: {{ $agent.secrets.apiKey.key | quote }}
+            - name: GAME_AGENT_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $agent.secrets.internalToken.name | quote }}
+                  key: {{ $agent.secrets.internalToken.key | quote }}
+          volumeMounts:
+            - name: workspaces
+              mountPath: /var/lib/game-agent/workspaces
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml $agent.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: workspaces
+          persistentVolumeClaim:
+            claimName: {{ $name }}-workspaces
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+      {{- with $agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 4396
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "fizzdragon.componentSelector" $ctx | nindent 4 }}
+{{- end }}

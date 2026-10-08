@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { ExperienceAppearanceSchema } from "./appearance.js";
+import { GameUIArtifactSchema } from "./game-ui.js";
 import { ExperienceRuntimeAssetSchema, type ExperienceRuntimeAsset } from "./assets.js";
 import { ExperienceAudioDefinitionSchema } from "./audio.js";
 import {
@@ -11,11 +13,7 @@ import {
   type ExperienceValueExpression,
   uniqueById,
 } from "./common.js";
-import {
-  ExperienceEventBindingSchema,
-  type ExperienceEventBinding,
-  type ExperienceRuntimeAction,
-} from "./logic.js";
+import { type ExperienceEventBinding, type ExperienceRuntimeAction } from "./logic.js";
 import { ExperienceRendererRequirementSchema } from "./renderer.js";
 import {
   ExperienceEndingSchema,
@@ -23,7 +21,6 @@ import {
   type ExperienceGraphNode,
 } from "./scene.js";
 import {
-  ExperienceConditionSchema,
   ExperienceStateDefinitionSchema,
   type ExperienceCondition,
   type ExperienceStateDefinition,
@@ -95,6 +92,8 @@ const ExperienceRuntimeManifestBaseSchema = z
     rendererRequirements: z.array(ExperienceRendererRequirementSchema).min(1),
     assets: z.array(ExperienceRuntimeAssetSchema).default([]),
     theme: ExperienceThemeReferenceSchema,
+    appearance: ExperienceAppearanceSchema.optional(),
+    gameUi: GameUIArtifactSchema.optional(),
     audio: ExperienceAudioDefinitionSchema.optional(),
     telemetryDefinitions: z.array(ExperienceTelemetryDefinitionSchema).default([]),
     endings: z.array(ExperienceEndingSchema).default([]),

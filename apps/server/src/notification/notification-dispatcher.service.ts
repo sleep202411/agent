@@ -31,6 +31,7 @@ import {
   type ConversationRealtimePublisher,
 } from '../conversations/conversation-realtime.service';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 
 const DISPATCH_INTERVAL_MS = 2_000;
 const DISPATCH_BATCH = 50;
@@ -72,7 +73,7 @@ export class NotificationDispatcherService
   ) {}
 
   onApplicationBootstrap() {
-    if (this.stopped || this.timer) return;
+    if (!backgroundTasksEnabled() || this.stopped || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), DISPATCH_INTERVAL_MS);
     void this.drainOnce();
     this.logger.log(
@@ -95,7 +96,7 @@ export class NotificationDispatcherService
    *   4. GC old dispatched rows once per cycle.
    */
   async drainOnce(): Promise<void> {
-    if (this.stopped) return;
+    if (!backgroundTasksEnabled() || this.stopped) return;
     if (this.draining) return;
     this.draining = this.drain().finally(() => {
       this.draining = null;

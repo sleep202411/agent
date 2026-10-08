@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { MediaAssetStatus } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
+import { backgroundTasksEnabled } from '../../common/background-tasks';
 import { CrewAssetsService } from './assets.service';
 
 const DEFAULT_POLL_INTERVAL_MS = 15 * 60 * 1_000;
@@ -59,6 +60,7 @@ export class CrewAssetUploadCleanupWorker
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     this.timer = setInterval(
       () => this.runScheduledDrain(),
@@ -92,6 +94,7 @@ export class CrewAssetUploadCleanupWorker
   }
 
   async drainOnce(now = new Date()): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (this.draining) return this.draining;
     this.draining = this.drain(now).finally(() => {

@@ -9583,7 +9583,7 @@
     "manifestRoot": "manifest",
     "interactiveFilm": "Interactive film",
     "starting": "Starting…",
-    "start": "Start experience",
+    "start": "Start",
     "endingEyebrow": "Playback complete",
     "unknownEnding": "Route complete",
     "playAgain": "Play again",
@@ -9651,7 +9651,15 @@
       "unlocking": "Unlocking…",
       "failed": "Unable to unlock. Please try again."
     },
-    "retryReport": "Retry saving report"
+    "retryReport": "Retry saving report",
+    "mainMenu": "Main menu",
+    "returnToMenu": "Return to main menu",
+    "continueGame": "Continue game",
+    "codeMenu": {
+      "failed": "The custom game menu could not load.",
+      "retry": "Try again",
+      "restore": "Use the default menu"
+    }
   },
   "games": {
     "back": "Back to IP plaza",

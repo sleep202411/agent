@@ -11,6 +11,13 @@
 {{- end -}}
 {{- $component := "agent-os" -}}
 {{- $ctx := merge (dict "component" $component) . -}}
+{{- $datastore := $agentOs.datastore -}}
+{{- if not (empty $datastore.caConfigMapName) -}}
+{{- $_ := required "agentOs.datastore.caMountPath is required with a CA ConfigMap" $datastore.caMountPath -}}
+{{- if not (hasPrefix "/" $datastore.caMountPath) -}}
+{{- fail "agentOs.datastore.caMountPath must be an absolute path" -}}
+{{- end -}}
+{{- end -}}
 {{- $serverName := include "fizzdragon.componentName" (merge (dict "component" "server") .) -}}
 ---
 apiVersion: apps/v1
@@ -40,6 +47,8 @@ spec:
       enableServiceLinks: false
       {{- if .Values.azure.enabled }}
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- else }}
+      automountServiceAccountToken: false
       {{- end }}
       securityContext:
         runAsNonRoot: true
@@ -50,7 +59,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: {{ $component }}
-          image: "{{ .Values.image.registry }}/{{ required "agentOs.image.repository is required" $agentOs.image.repository }}:{{ $imageTag }}"
+          image: {{ include "fizzdragon.componentImage" (dict "registry" .Values.image.registry "image" $agentOs.image "component" "agentOs") | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
@@ -81,6 +90,14 @@ spec:
               value: {{ $agentOs.checkpoint.poolMax | quote }}
             - name: AGENT_OS_CHECKPOINT_LOCK_POOL_MAX
               value: {{ $agentOs.checkpoint.lockPoolMax | quote }}
+            {{- if $datastore.databaseSecret.name }}
+            - name: AGENT_OS_CHECKPOINT_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $datastore.databaseSecret.name | quote }}
+                  key: {{ required "agentOs.datastore.databaseSecret.key is required" $datastore.databaseSecret.key | quote }}
+                  optional: false
+            {{- end }}
           {{- /*
             ONLY the scoped projection. The worker's explicit checkpoint DSN
             points to the same PostgreSQL authority as public.agent_os_runs,
@@ -90,6 +107,11 @@ spec:
             - secretRef:
                 name: {{ .Values.agentOsSecrets.projectedName }}
           volumeMounts:
+            {{- if not (empty $datastore.caConfigMapName) }}
+            - name: datastore-ca
+              mountPath: {{ $datastore.caMountPath | quote }}
+              readOnly: true
+            {{- end }}
             {{- if .Values.azure.enabled }}
             - name: agent-os-secrets
               mountPath: /mnt/agent-os-secrets
@@ -139,6 +161,12 @@ spec:
                 */}}
                 command: ["sh", "-c", "sleep 8"]
       volumes:
+        {{- if not (empty $datastore.caConfigMapName) }}
+        - name: datastore-ca
+          configMap:
+            name: {{ $datastore.caConfigMapName | quote }}
+            optional: false
+        {{- end }}
         {{- if .Values.azure.enabled }}
         - name: agent-os-secrets
           csi:

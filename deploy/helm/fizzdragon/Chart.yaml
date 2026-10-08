@@ -1,6 +1,6 @@
 apiVersion: v2
 name: fizzdragon
-description: Fizzdragon platform — web, server, studio, admin UI, Agent OS, and the legacy Mastra agent workloads
+description: FizzDragon platform — web, server, studio, admin UI, independent Harness Game Agent, Agent OS, and legacy Mastra workloads
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

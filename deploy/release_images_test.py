@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import subprocess
 import tempfile
 import unittest
@@ -23,7 +25,6 @@ class InputTests(unittest.TestCase):
             'apps/studio/source.ts': 'studio', 'packages/shared/index.ts': 'shared',
             'package-lock.json': '{}', 'apps/server/package.json': '{}',
             'apps/web/.env.production.cn': 'cn', 'apps/web/.env.production.com': 'com',
-            'deploy/deploy-com-aks.sh': 'build_one() {\necho build\n}\nbump_tag() { echo publish; }',
             'deploy/cn-remote-build-services.sh': 'docker build',
         }.items(): self.write(path, content)
         self.source = self.commit()
@@ -37,7 +38,7 @@ class InputTests(unittest.TestCase):
         self.git('add', '.')
         self.git('commit', '-m', 'fixture')
         return self.git('rev-parse', 'HEAD')
-    def compare(self, path, expected, service='web', region='com'):
+    def compare(self, path, expected, service='web', region='cn'):
         self.write(path, '{"version":"2"}' if path.endswith('.json') else 'changed')
         newer = self.commit()
         self.assertEqual(images.inputs(self.root, self.source, service, region) == images.inputs(self.root, newer, service, region), expected)
@@ -48,7 +49,7 @@ class InputTests(unittest.TestCase):
     def test_workspace_manifest_rebuilds(self): self.compare('apps/server/package.json', False)
     def test_documentation_does_not_rebuild(self): self.compare('docs/release.md', True)
     def test_chart_does_not_rebuild_images(self): self.compare('deploy/helm/values.yaml', True)
-    def test_cn_env_does_not_invalidate_com(self): self.compare('apps/web/.env.production.cn', True)
+    def test_com_env_does_not_invalidate_cn(self): self.compare('apps/web/.env.production.com', True)
     def test_cn_env_invalidates_studio(self): self.compare('apps/web/.env.production.cn', False, 'studio', 'cn')
     def test_cn_recipe_change_invalidates(self): self.compare('deploy/cn-remote-build-services.sh', False, region='cn')
     def test_existing_image_from_another_operator_is_reused(self):
@@ -56,7 +57,7 @@ class InputTests(unittest.TestCase):
         source = self.commit()
         digest = 'sha256:' + 'a' * 64
         with patch.object(images, 'candidates', return_value=[(self.source, digest)]), patch.object(images, 'digest', return_value=digest):
-            self.assertEqual(images.find(self.root, source, 'com', 'web'), {'tag': self.source, 'digest': digest})
+            self.assertEqual(images.find(self.root, source, 'cn', 'web'), {'tag': self.source, 'digest': digest})
     def test_changed_application_is_not_reused(self):
         self.write('apps/web/source.ts', 'new app')
         source = self.commit()
@@ -70,6 +71,31 @@ class InputTests(unittest.TestCase):
     def test_registry_failure_is_not_cache_miss(self):
         with patch.object(images, 'candidates', side_effect=RuntimeError('Forbidden')):
             with self.assertRaises(RuntimeError): images.find(self.root, self.source, 'cn', 'web')
+
+
+class RetiredComTests(unittest.TestCase):
+    def test_public_helpers_reject_com_before_git_or_cloud_lookup(self):
+        with patch.object(images, 'git') as git, patch.object(images, 'query') as cloud, \
+                patch.object(images, 'verify') as verify:
+            operations = [
+                lambda: images.inputs(Path('/missing'), 'a'*40, 'web', 'com'),
+                lambda: images.candidates('com', 'web'),
+                lambda: images.digest('com', 'web', 'a'*40),
+                lambda: images.find(Path('/missing'), 'a'*40, 'com', 'web'),
+            ]
+            for operation in operations:
+                with self.assertRaisesRegex(RuntimeError, 'retired; use deploy/deploy-com.sh'):
+                    operation()
+            git.assert_not_called(); cloud.assert_not_called(); verify.assert_not_called()
+
+    def test_cli_rejects_com_without_any_available_cloud_or_git_tool(self):
+        result = subprocess.run(
+            [sys.executable, str(Path(images.__file__)), 'com', '/missing', 'a'*40, 'web'],
+            env={**os.environ, 'PATH': '/nonexistent'}, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('retired; use deploy/deploy-com.sh', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
 
 
 class CoordinatorTests(unittest.TestCase):

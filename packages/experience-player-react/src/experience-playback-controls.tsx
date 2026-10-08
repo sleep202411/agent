@@ -14,6 +14,17 @@ import { classNames } from "./class-names";
 import type { ExperiencePlayerCopy, ExperiencePlayerPlaybackCopy } from "./experience-player-copy";
 import type { ExperienceViewerPauseReason } from "./experience-playback-holds";
 import { PRIMARY_BUTTON } from "./experience-player-styles";
+import type { ExperiencePauseUIProps } from "./experience-ui";
+
+/** Native pause UI implements the same contract as a creator's trusted renderer. */
+export function ExperienceDefaultPauseUI({
+  resumeRef,
+  copy,
+  reason,
+  onResume,
+}: ExperiencePauseUIProps) {
+  return <ExperiencePausedScrim ref={resumeRef} copy={copy} reason={reason} onResume={onResume} />;
+}
 
 /** The frame's glass controls: a frosted body that reads over any footage, under a rim light. */
 const FROSTED_CONTROL =

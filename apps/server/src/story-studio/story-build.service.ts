@@ -1,3 +1,9 @@
+import {
+  migrateStoredExperienceAppearance,
+  GameUIProjectSchema,
+  type GameUIProject,
+  type ExperienceAppearance,
+} from '@repo/shared/experience-runtime';
 import { StoryCommunityAccessService } from './story-community-access.service';
 import { readStoryPoster } from './story-build-poster';
 import { randomUUID } from 'node:crypto';
@@ -200,7 +206,7 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
-export const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 7;
+export const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 9;
 
 interface BuildCursor {
   number: number;
@@ -215,6 +221,8 @@ interface ValidatedBuildSnapshot {
     summary: string | null;
     defaultLocale: string;
     frameProfile: StoryFrameProfile;
+    appearance: ExperienceAppearance | null;
+    gameUi: GameUIProject | null;
   };
   draft: {
     revision: number;
@@ -316,6 +324,8 @@ export class StoryBuildService {
                 kind === StoryBuildKind.production ? 'production' : 'preview',
               scope: input.scope,
               frameProfile: snapshot.project.frameProfile,
+              appearance: snapshot.project.appearance ?? undefined,
+              gameUi: snapshot.project.gameUi?.artifact,
               defaultLocale: snapshot.project.defaultLocale,
               metadata: {
                 title: snapshot.project.title,
@@ -952,6 +962,8 @@ async function loadValidatedBuildSnapshot(
       summary: true,
       defaultLocale: true,
       frameProfile: true,
+      appearance: true,
+      gameUi: true,
     },
   });
   if (!project) throw projectNotFound();
@@ -1055,6 +1067,14 @@ async function loadValidatedBuildSnapshot(
   return {
     project: {
       ...project,
+      appearance:
+        project.appearance == null
+          ? null
+          : migrateStoredExperienceAppearance(project.appearance),
+      gameUi:
+        project.gameUi == null
+          ? null
+          : GameUIProjectSchema.parse(project.gameUi),
       frameProfile: project.frameProfile,
     },
     draft: {
@@ -1270,7 +1290,7 @@ export function storyBuildInputManifest(
   sourceRevisionId: string,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 7,
+    schemaVersion: 8,
     compilerSemanticVersion: STORY_BUILD_COMPILER_SEMANTIC_VERSION,
     runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
     scope: input.scope,
@@ -1280,6 +1300,8 @@ export function storyBuildInputManifest(
       defaultLocale: snapshot.project.defaultLocale,
       title: snapshot.project.title,
       summary: snapshot.project.summary,
+      appearance: snapshot.project.appearance,
+      gameUi: snapshot.project.gameUi,
     },
     story: {
       sourceRevisionId,

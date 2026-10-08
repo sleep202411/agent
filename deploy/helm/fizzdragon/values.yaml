@@ -300,10 +300,14 @@ adminUiSecrets:
 # ---------------------------------------------------------------------------
 web:
   enabled: true
+  # Existing production cells retain their current injection. A frontend can omit
+  # backend credentials from this frontend entirely.
+  useSharedSecrets: true
   replicaCount: 1
   image:
     repository: fizzdragon-web
     tag: bafee484bfa01f5823c92c8c9a49416bb520d31c
+    digest: ""
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -327,9 +331,13 @@ web:
 studio:
   enabled: true
   replicaCount: 1
+  # null preserves each existing cell's Kubernetes defaults.
+  automountServiceAccountToken: null
+  enableServiceLinks: null
   image:
     repository: fizzdragon-studio
     tag: 39fb16b650525d2d53a16e99d48ab50c3a8a28d9
+    digest: ""
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -356,6 +364,7 @@ adminUi:
   image:
     repository: fizzdragon-admin-ui
     tag: bafee484bfa01f5823c92c8c9a49416bb520d31c
+    digest: ""
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -402,15 +411,34 @@ server:
   # Graceful drain window: the preStop sleep deregisters the pod from the Service,
   # then the WS gateway closes sockets so clients reconnect to a healthy pod.
   terminationGracePeriodSeconds: 45
+  # Public connection options and CA files. Credentials stay in scoped Secrets.
+  datastore:
+    configMapName: ""
+    caConfigMapName: ""
+    caMountPath: /etc/fizzdragon/certs
+    # Explicit runtime connection, overriding every inherited envFrom source.
+    # Missing Secret/key blocks boot.
+    databaseSecret:
+      name: ""
+      key: ""
+  # Explicit false removes ambient Kubernetes access in a private validation cell.
+  # null retains existing production/workload-identity behavior.
+  automountServiceAccountToken: null
+  enableServiceLinks: null
   migrateOnStart: true
   migrationJob:
     enabled: false
     revision: ""
     backupId: ""
+    # A dedicated native migration URL; never reuse the application adapter URL.
+    databaseSecret:
+      name: ""
+      key: ""
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
     tag: bafee484bfa01f5823c92c8c9a49416bb520d31c
+    digest: ""
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -418,9 +446,9 @@ server:
   extraSecretRefs:
     - fizzdragon-r2
   # Direct Google media generation through Vertex AI. ADC is supplied by
-  # AKS→GCP Workload Identity Federation; no API key or service-account key is
-  # stored in Kubernetes. These identifiers restore the already-provisioned
-  # federation previously used by the retired agent platform worker.
+  # Kubernetes→GCP Workload Identity Federation; no API key or service-account
+  # key is stored in Kubernetes. Defaults reference the existing AKS provider.
+  # Other clusters require their own scoped provider and dedicated K8s identity.
   googleVertex:
     enabled: true
     project: glass-proxy-501907-d2
@@ -431,11 +459,16 @@ server:
       pool: fizzdragon-aks
       provider: aks-com
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
+      # Azure uses azure.workloadIdentity.serviceAccountName. Outside Azure this
+      # is required; the chart creates it without RBAC or a default API token.
+      kubernetesServiceAccountName: ""
   env:
     JAVA_ADMIN_API_TOKEN_HEADER: X-Admin-Api-Token
     # COM Java /user/levels/options verified 2026-10-06. FDY is not FD.
     # Public catalogue IDs, not credentials; CN must supply its own mapping.
     CREW_QUALIFICATION_CATALOG_JSON: '{"fdLevels":[{"id":1,"rank":1},{"id":2,"rank":2},{"id":3,"rank":3},{"id":7,"rank":4},{"id":8,"rank":5}],"skills":{"AI Producer":[13],"Art Director":[14],"Director":[15],"Editor":[16],"Music Composer":[17],"Instructor":[18],"Writer":[19]}}'
+    # Operational pause for autonomous workers; not an HTTP side-effect sandbox.
+    BACKGROUND_TASKS_ENABLED: "true"
     # Emergency pause: Java still calls register_bonus after disabling its
     # legacy 500-point grant. Nest answers successfully without minting points.
     REGISTRATION_COMPUTE_BONUS_PAUSED: "true"
@@ -563,6 +596,51 @@ server:
       value: worker
       effect: NoSchedule
 # ---------------------------------------------------------------------------
+# game-agent — independent official Harness authoring, separate from Agent OS.
+# Disabled until its image, private persistent storage and scoped Secret refs
+# are configured in a deliberate non-Azure deployment overlay. No credentials
+# belong in values files. The worker must never receive sharedEnv/shared Secrets.
+# ---------------------------------------------------------------------------
+gameAgent:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: fizzdragon-game-agent
+    # Required immutable source revision when enabled; never latest/local tags.
+    tag: ""
+    # Deployment pin; tag retains the shared source revision when digest is set.
+    digest: ""
+  containerPort: 4396
+  terminationGracePeriodSeconds: 30
+  persistence:
+    enabled: true
+    # Explicit regional StorageClass; validate capacity/permissions on that class.
+    storageClassName: ""
+    size: 20Gi
+  model:
+    name: ""
+    # Complete compatibility URL, including the provider's API path.
+    baseUrl: ""
+    thinking: false
+    maxTokens: 8192
+  # Exact HTTPS Studio origin. No path/trailing slash; required when enabled.
+  studioOrigin: ""
+  secrets:
+    # Worker-only provider Secret; created outside this chart.
+    apiKey:
+      name: ""
+      key: GAME_AGENT_OPENAI_API_KEY
+    # Independent Secret shared only by Nest and this worker.
+    internalToken:
+      name: ""
+      key: GAME_AGENT_INTERNAL_TOKEN
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 2000m, memory: 2Gi }
+  nodeSelector: {}
+  tolerations: []
+
+# ---------------------------------------------------------------------------
 # agent-os — the Agent OS worker (LangGraph interactive runtime, apps/agent-os).
 # A plain long-lived HTTP service on ClusterIP; the Nest server pod is its only
 # caller. Every /v1 route checks x-agent-os-internal-token; /health is open so
@@ -577,6 +655,7 @@ agentOs:
   image:
     repository: fizzdragon-agent-os
     tag: 345482a8866edf93590cf6ba374f12d9e8f65ce9
+    digest: ""
   containerPort: 4301
   # Covers the preStop drain only — the process installs no SIGTERM handler, so
   # a longer window buys nothing.
@@ -591,6 +670,15 @@ agentOs:
     # only while a graph owns a conversation. Keep explicit for replica sizing.
     poolMax: 10
     lockPoolMax: 20
+  datastore:
+    # A scoped checkpoint DSN can require an RDS CA file. Mount only that public
+    # CA, never the Server's datastore env/credentials or its broad Secret.
+    caConfigMapName: ""
+    caMountPath: /etc/fizzdragon/certs
+    # Explicit checkpoint database connection.
+    databaseSecret:
+      name: ""
+      key: AGENT_OS_CHECKPOINT_DATABASE_URL
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { cpu: 2000m, memory: 2Gi }
@@ -609,6 +697,9 @@ agentOs:
       - 10.244.0.0/16
     httpsPort: 443
     databasePort: 5432
+    # Optional exact private checkpoint endpoint, re-resolved at preflight.
+    # When set, 5432 is removed from the broad external rule below.
+    databaseCidr: ""
   nodeSelector:
     pool: worker
   tolerations:

@@ -5,6 +5,7 @@ import {
   StudioDocumentType,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { encodeDocumentSnapshot } from './document-crdt';
 import { rootSchemaFor } from './document-modes';
 
@@ -20,6 +21,7 @@ export class StudioDocumentStateService implements OnApplicationBootstrap {
   constructor(private readonly prisma: PrismaService) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     let converted = 0;
     for (;;) {
       const rows = await this.prisma.studioDocument.findMany({

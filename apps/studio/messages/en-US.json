@@ -4427,7 +4427,7 @@
     "manifestRoot": "Manifest root",
     "interactiveFilm": "Interactive story",
     "starting": "Starting…",
-    "start": "Start experience",
+    "start": "Start",
     "restart": "Restart",
     "regionLabel": "Interactive story playtest",
     "playback": {
@@ -4469,19 +4469,14 @@
       "left": "Move left",
       "right": "Move right",
       "finish": "Finish world experience"
-    }
-  },
-  "agentOs": {
-    "readOnlyProject": "This project is read-only. Editing access is required to use FizzAgent.",
-    "title": "FizzAgent",
-    "subtitle": "Chat with an execution agent — tools write to your project",
-    "close": "Close FizzAgent",
-    "collapse": "Collapse FizzAgent",
-    "open": "Open FizzAgent",
-    "launcherPrompts": {
-      "create": "What would you like to create?",
-      "ask": "I'm FizzAgent — ask me anything.",
-      "help": "I can help refine your story and canvas."
+    },
+    "mainMenu": "Main menu",
+    "returnToMenu": "Return to main menu",
+    "continueGame": "Continue game",
+    "codeMenu": {
+      "failed": "The custom game menu could not load.",
+      "retry": "Try again",
+      "restore": "Use the default menu"
     },
     "emptyHint": "Attach a script, tell FizzAgent what to do, approve writes, and keep going.",
     "emptyHintStory": "Attach source material or tell FizzAgent how to evolve this chapter, then keep refining the story.",
@@ -4710,5 +4705,43 @@
     "columnOption": "Option",
     "columnChapter": "Chapter",
     "columnNode": "Node"
+  },
+  "appearancePreview": {
+    "resizePanels": "Resize preview and chat panels",
+    "resizePanelsHint": "Drag to resize · Double-click to reset · Arrow keys to adjust",
+    "panelSize": "Preview {percent}%",
+    "back": "Back to Studio",
+    "project": "A Dream of Jinling",
+    "saveFailed": "Not saved",
+    "preview": "Appearance preview",
+    "question": "Where will you go next?",
+    "options": {
+      "0": "Follow her into the courtyard",
+      "1": "Stay outside and observe"
+    },
+    "projectFallback": "Your story",
+    "backProject": "Return to project",
+    "previewTitle": "Story preview",
+    "chat": {
+      "label": "FizzAgent appearance conversation",
+      "undo": "Undo",
+      "generating": "Updating the appearance…",
+      "generatingFor": "Updating the appearance · {duration}",
+      "connecting": "Connecting…",
+      "reconnect": "Reconnect"
+    },
+    "saveProject": "Save",
+    "savingProject": "Saving…",
+    "savedProject": "Saved",
+    "hideChat": "Hide design chat",
+    "showChat": "Show design chat",
+    "reloadProject": "Refresh project · keep my draft",
+    "restoreDraftFailed": "Your saved draft could not be restored. The original data has been preserved.",
+    "retryDraftSave": "Retry saving draft",
+    "draftSaveFailed": "Changes are kept in this window but could not be saved in your browser.",
+    "playerWindow": "Player preview window",
+    "playerConnecting": "Opening player…",
+    "playerFailed": "The player could not open. Retry to reconnect.",
+    "playerRetry": "Reload player"
   }
 }

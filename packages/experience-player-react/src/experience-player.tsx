@@ -1,4 +1,15 @@
 "use client";
+import { DEFAULT_EXPERIENCE_APPEARANCE } from "@repo/shared/experience-runtime";
+import { ExperienceAppearanceStage } from "./experience-appearance-stage";
+import { ExperienceThemedPauseUI } from "./experience-themed-pause";
+import type { ExperiencePlayerUI } from "./experience-ui";
+import { createGameSession, type GameSessionHost, type GameSnapshot } from "@repo/game-sdk";
+import { ExperienceDefaultMainMenuUI } from "./experience-main-menu";
+import { ExperienceCodeMenu } from "./experience-code-menu";
+import menuStyles from "./experience-main-menu.module.css";
+import { ExperienceDefaultStartUI, ExperienceDefaultChoicesUI } from "./experience-ui-defaults";
+import { ExperienceDefaultPauseUI } from "./experience-playback-controls";
+
 import { usePlaySessionReporter } from "./use-play-session-reporter";
 import { useExperienceTransportVisibility } from "./use-experience-transport-visibility";
 
@@ -24,6 +35,7 @@ import {
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
   EXPERIENCE_RENDERER_MAX_LAYER,
+  resolveExperienceStartLabel,
   ExperienceCoreChoiceRendererConfigSchema,
   ExperienceCoreTextRendererConfigSchema,
   ExperienceCoreVideoRendererConfigSchema,
@@ -65,8 +77,7 @@ import {
 import {
   IconAlertTriangle,
   IconArrowRight,
-  IconLock,
-  IconPlayerPlay,
+  IconHome,
   IconRefresh,
   IconRoute,
 } from "@tabler/icons-react";
@@ -102,7 +113,6 @@ import {
 } from "./experience-playback-holds";
 import {
   ExperienceFrameControls,
-  ExperiencePausedScrim,
   nearAvailableExperienceGesture,
 } from "./experience-playback-controls";
 import { resolveExperiencePlaybackRejection } from "./experience-playback-rejection";
@@ -180,6 +190,7 @@ export interface ExperienceAccessCheckpoint {
 }
 
 export interface ExperiencePlayerProps {
+  ui?: ExperiencePlayerUI;
   /** Where a host returning from a purchase resumes. The first run only. */
   accessCheckpoint?: ExperienceAccessCheckpoint;
   /**
@@ -225,6 +236,7 @@ const SECONDARY_BUTTON =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-white/[0.12] px-5 text-sm font-semibold text-white outline-none transition-colors hover:bg-white/[0.2] focus-visible:ring-2 focus-visible:ring-white/60 motion-reduce:transition-none";
 
 export function ExperiencePlayer({
+  ui,
   runtime,
   locale,
   coverUrl,
@@ -332,33 +344,44 @@ export function ExperiencePlayer({
     );
   }
 
+  const appearance =
+    ui?.appearance ?? prepared.manifest.appearance ?? DEFAULT_EXPERIENCE_APPEARANCE;
+  const resolvedUI: ExperiencePlayerUI = {
+    apiVersion: 1,
+    ...ui,
+    copy: appearance.presentation?.copy ?? ui?.copy,
+    pause: ui?.pause ?? (appearance.presentation?.theme ? ExperienceThemedPauseUI : undefined),
+  };
   return (
-    <ExperiencePlaybackDeliveryContext.Provider value={delivery}>
-      <ActiveExperienceRuntimePlayer
-        key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
-        access={access}
-        previewAccess={previewAccess}
-        entryCheckpoint={prepared.entryCheckpoint}
-        onAccessCheckpoint={onAccessCheckpoint}
-        onStateChange={onStateChange}
-        onCheckpoint={onCheckpoint}
-        playbackStatus={playbackStatus}
-        manifest={prepared.manifest}
-        controller={prepared.controller}
-        delivery={delivery}
-        locale={locale}
-        copy={copy}
-        coverUrl={coverUrl}
-        frameProfile={frameProfile}
-        loadTheme={loadTheme}
-        renderWorldModel={renderWorldModel}
-        endingExtra={endingExtra}
-        onRestart={() => {
-          setRandomSeed(globalThis.crypto.randomUUID());
-          setRestartEpoch((value) => value + 1);
-        }}
-      />
-    </ExperiencePlaybackDeliveryContext.Provider>
+    <ExperienceAppearanceStage appearance={appearance}>
+      <ExperiencePlaybackDeliveryContext.Provider value={delivery}>
+        <ActiveExperienceRuntimePlayer
+          key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
+          access={access}
+          previewAccess={previewAccess}
+          entryCheckpoint={prepared.entryCheckpoint}
+          onAccessCheckpoint={onAccessCheckpoint}
+          onStateChange={onStateChange}
+          onCheckpoint={onCheckpoint}
+          playbackStatus={playbackStatus}
+          manifest={prepared.manifest}
+          controller={prepared.controller}
+          delivery={delivery}
+          locale={locale}
+          copy={copy}
+          coverUrl={coverUrl}
+          frameProfile={frameProfile}
+          loadTheme={loadTheme}
+          ui={resolvedUI}
+          renderWorldModel={renderWorldModel}
+          endingExtra={endingExtra}
+          onRestart={() => {
+            setRandomSeed(globalThis.crypto.randomUUID());
+            setRestartEpoch((value) => value + 1);
+          }}
+        />
+      </ExperiencePlaybackDeliveryContext.Provider>
+    </ExperienceAppearanceStage>
   );
 }
 
@@ -372,6 +395,7 @@ function ActiveExperienceRuntimePlayer({
   frameProfile,
   loadTheme,
   renderWorldModel,
+  ui,
   onRestart,
   access,
   previewAccess,
@@ -403,6 +427,7 @@ function ActiveExperienceRuntimePlayer({
   frameProfile: ExperiencePlayerFrameProfile;
   loadTheme: ExperienceThemeLoader;
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
+  ui?: ExperiencePlayerUI;
   onRestart: () => void;
 }) {
   const completedPlaySessionId = useSyncExternalStore(
@@ -416,6 +441,14 @@ function ActiveExperienceRuntimePlayer({
     controller.getPlaySessionReportError
   );
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
+  const completedEndingRef = useRef(Boolean(runtimeState.completedEndingId));
+  const [menuOpen, setMenuOpen] = useState(true);
+  const menuOpenRef = useRef(true);
+  const menuRegionRef = useRef<HTMLDivElement | null>(null);
+  const menuOriginRef = useRef<HTMLElement | null>(null);
+  const menuFocusPendingRef = useRef(false);
+  const gameFocusPendingRef = useRef(false);
+  const returnMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const [initialJourney] = useState(() =>
     entryCheckpoint?.journey
       ? validateExperienceJourney(manifest, entryCheckpoint.journey)
@@ -428,16 +461,23 @@ function ActiveExperienceRuntimePlayer({
   const journeyWasPlayingRef = useRef(false);
   const journeyMapCornerButtonRef = useRef<HTMLButtonElement | null>(null);
   const journeyMapTransportButtonRef = useRef<HTMLButtonElement | null>(null);
-  const journeyMapOriginRef = useRef<"corner" | "transport">("corner");
+  const journeyMapOriginRef = useRef<"corner" | "transport" | "menu">("corner");
   const restoreJourneyFocusRef = useRef(false);
   useLayoutEffect(() => {
     if (!journeyMapOpen && restoreJourneyFocusRef.current) {
       restoreJourneyFocusRef.current = false;
       const origin =
-        journeyMapOriginRef.current === "transport"
-          ? journeyMapTransportButtonRef.current
-          : journeyMapCornerButtonRef.current;
-      (origin ?? journeyMapCornerButtonRef.current)?.focus({ preventScroll: true });
+        journeyMapOriginRef.current === "menu"
+          ? menuOriginRef.current
+          : journeyMapOriginRef.current === "transport"
+            ? journeyMapTransportButtonRef.current
+            : journeyMapCornerButtonRef.current;
+      queueMicrotask(() => {
+        if (!aliveRef.current || journeyMapOpenRef.current) return;
+        (origin?.isConnected ? origin : journeyMapCornerButtonRef.current)?.focus({
+          preventScroll: true,
+        });
+      });
     }
   });
   const [journeyReplayPending, setJourneyReplayPending] = useState(false);
@@ -483,6 +523,7 @@ function ActiveExperienceRuntimePlayer({
   const onCheckpointRef = useRef(onCheckpoint);
   onCheckpointRef.current = onCheckpoint;
   const [starting, setStarting] = useState(false);
+  const startingRef = useRef(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const accessPendingRef = useRef(false);
   const [accessPending, setAccessPending] = useState(false);
@@ -622,6 +663,7 @@ function ActiveExperienceRuntimePlayer({
     nodeGate: nodeGate !== null,
     chargeGate: timelineHoldGate,
     journeyMap: journeyMapOpen,
+    mainMenu: menuOpen,
   };
   const holds = resolveExperiencePlaybackHolds(playbackGates);
   const committedGatesRef = useRef(playbackGates);
@@ -635,6 +677,7 @@ function ActiveExperienceRuntimePlayer({
         viewerPause: viewerPauseRef.current,
         accessPending: accessPendingRef.current,
         journeyMap: journeyMapOpenRef.current,
+        mainMenu: menuOpenRef.current,
       }),
     []
   );
@@ -659,7 +702,7 @@ function ActiveExperienceRuntimePlayer({
   // The cover is the only art that exists before any clip has played, so it is
   // what the loading and title screen should stand on — otherwise the viewer
   // waits on a black rectangle. Absent cover simply falls back to that.
-  const coverUri =
+  const declaredCoverUri =
     coverUrl ??
     (manifest.metadata.coverAssetId
       ? resolveImageUri(manifest.assets, manifest.metadata.coverAssetId, orientation)
@@ -737,6 +780,7 @@ function ActiveExperienceRuntimePlayer({
 
   const applyResult = useCallback(
     (result: ExperienceEventQueueResult) => {
+      completedEndingRef.current = Boolean(result.state.completedEndingId);
       setRuntimeState(result.state);
       pendingCheckpointEventsRef.current = [];
       applyAudioEffects(result.effects);
@@ -941,6 +985,12 @@ function ActiveExperienceRuntimePlayer({
   ];
   const entryLocked =
     !previewAccess && entryRequirements.some((requirement) => !access?.canAccess(requirement));
+  const menuEntry = findGraphNode(manifest, manifest.graph.entrySceneId);
+  const coverUri =
+    declaredCoverUri ??
+    (menuEntry && !entryLocked
+      ? resolveLockedScenePreview(manifest, menuEntry, orientation).posterUri
+      : undefined);
   const scene = !entryLocked && currentNode?.kind === "scene" ? currentNode : null;
   const interactionActive =
     Boolean(
@@ -1464,6 +1514,7 @@ function ActiveExperienceRuntimePlayer({
   // take focus from a pointer, so a pause made with one still finds it where
   // the viewer had it.
   useEffect(() => {
+    if (menuOpen || journeyMapOpen) return;
     if (viewerPause === "refused") {
       if (focusIsFree(shellRef.current)) pausedFrameRef.current?.focus({ preventScroll: true });
       return;
@@ -1476,10 +1527,20 @@ function ActiveExperienceRuntimePlayer({
     if (!holds.running || !focusIsFree(shellRef.current)) return;
     if (target?.isConnected) target.focus({ preventScroll: true });
     else if (pausedFrameFocused) toggleRef.current?.focus({ preventScroll: true });
-  }, [holds.running, viewerPause]);
+  }, [holds.running, viewerPause, menuOpen, journeyMapOpen]);
 
-  const begin = () => {
-    if (started || starting || !theme || entryMediaPending) return;
+  const begin = (): Promise<boolean> => {
+    if (
+      !aliveRef.current ||
+      startedRef.current ||
+      startingRef.current ||
+      started ||
+      !theme ||
+      entryMediaPending ||
+      journeyMapOpenRef.current
+    )
+      return Promise.resolve(false);
+    startingRef.current = true;
     playbackEnabledRef.current = initialPlayback?.playbackEnabled ?? true;
     // Inside the click, before anything is awaited. The entry clip is not
     // paused again here: that pause would be delivered as its own task and land
@@ -1493,7 +1554,7 @@ function ActiveExperienceRuntimePlayer({
     void unlockAudio().catch(reportAudioError);
     setStarting(true);
     let entryAudioRestored = false;
-    void run(() => {
+    return run(() => {
       // A save can carry state obtained behind an earlier gate, even when the
       // current scene is public. Validate that branch before exposing it.
       for (const requirement of entryRequirements) {
@@ -1510,17 +1571,24 @@ function ActiveExperienceRuntimePlayer({
       return entryCheckpoint ? controller.dispatch(entryCheckpoint.events) : controller.start();
     })
       .then((entered) => {
-        if (!entered) {
+        if (!entered || !aliveRef.current) {
           playbackHandlesRef.current.forEach((handle) => handle.pause());
-          return;
+          return false;
         }
         // The clip hold lifts with this, and its effect plays the entry clip
         // through `playHandle`: a refusal is a pause and a tap, not a dialog.
         startedRef.current = true;
+        menuOpenRef.current = false;
+        setMenuOpen(false);
         setStarted(true);
+        gameFocusPendingRef.current = true;
         publishCheckpoint("transition");
+        return true;
       })
-      .finally(() => setStarting(false));
+      .finally(() => {
+        startingRef.current = false;
+        if (aliveRef.current) setStarting(false);
+      });
   };
 
   const isCurrentPresentation = useCallback(
@@ -1532,9 +1600,37 @@ function ActiveExperienceRuntimePlayer({
   );
   const emitCurrentOutcome = useCallback(
     (...args: Parameters<typeof emitOutcome>) => {
-      if (isCurrentPresentation()) emitOutcome(...args);
+      if (!isCurrentPresentation()) return;
+      if (args[1] === "choice-selected") {
+        if (holdsNow().storyHeld || !startedRef.current) return;
+        const node = findGraphNode(manifest, controller.state().currentSceneId);
+        if (!node || node.kind !== "scene") return;
+        const renderer = node.renderers.find((item) => item.instanceId === args[0]);
+        if (
+          !renderer ||
+          !isExperienceRendererVisible(manifest, controller.state(), renderer.instanceId)
+        )
+          return;
+        const parsed = ExperienceCoreChoiceRendererConfigSchema.safeParse(renderer.config);
+        if (
+          !parsed.success ||
+          (!parsed.data.initiallyOpen && !openRendererIdsRef.current.has(renderer.instanceId))
+        )
+          return;
+        const id = args[2].choiceId;
+        const choice = parsed.data.choices.find((item) => item.choiceId === id);
+        if (
+          !choice ||
+          (choice.visibleWhen &&
+            !evaluateExperienceCondition(choice.visibleWhen, controller.state(), {
+              type: "runtime.visibility",
+            }))
+        )
+          return;
+      }
+      emitOutcome(...args);
     },
-    [isCurrentPresentation, emitOutcome]
+    [isCurrentPresentation, emitOutcome, holdsNow, manifest, controller]
   );
   const reportCurrentRuntimeError = useCallback(
     (error: string) => {
@@ -1647,9 +1743,14 @@ function ActiveExperienceRuntimePlayer({
       onPlaybackRefused={refuseCurrentPlayback}
       onSoundBlocked={blockCurrentSound}
       onContentSize={measureCurrentContent}
+      ui={ui}
       renderWorldModel={renderWorldModel}
     />
   );
+
+  const StartUI = ui?.start ?? ExperienceDefaultStartUI;
+  const PauseUI = ui?.pause ?? ExperienceDefaultPauseUI;
+  const PlaybackUI = ui?.playback ?? ExperiencePlaybackTransportControls;
 
   const gatePreview = nodeGate ? resolveLockedScenePreview(manifest, nodeGate, orientation) : null;
   const transportBlocked =
@@ -1657,9 +1758,14 @@ function ActiveExperienceRuntimePlayer({
     !playbackEnabledRef.current ||
     Boolean((mediaProgress?.terminalMode && !mediaProgress.isStill) || mediaProgress?.completed) ||
     (holds.mediaHeld && viewerPause === null);
+  const transportBlockedRef = useRef(transportBlocked);
+  useLayoutEffect(() => {
+    transportBlockedRef.current = transportBlocked;
+  });
+  const canUseCurrentTransport = () =>
+    isCurrentPresentation() && holdsNow().pauseUi && !transportBlockedRef.current;
   const seekWatchedPosition = (targetMs: number) => {
-    if (transportBlocked || !mediaProgress || !startedRef.current || accessPendingRef.current)
-      return;
+    if (!canUseCurrentTransport() || !Number.isFinite(targetMs) || !mediaProgress) return;
     const progress = mediaCheckpointsRef.current.get(mediaProgress.rendererInstanceId);
     const handle = playbackHandlesRef.current.get(mediaProgress.rendererInstanceId);
     if (!progress || !handle || (progress.terminalMode && !progress.isStill) || progress.completed)
@@ -1691,7 +1797,13 @@ function ActiveExperienceRuntimePlayer({
     publishCheckpoint("seek");
   };
 
-  const mapAvailable = started && !runtimeError && !accessPending && !retryAccess && !nodeGate;
+  const mapAvailable =
+    (started || !entryLocked) &&
+    !starting &&
+    !runtimeError &&
+    !accessPending &&
+    !retryAccess &&
+    !nodeGate;
   const mapNodeDetails = useMemo(() => {
     const details: Record<string, { title?: string; thumbnailUrl?: string }> = {};
     for (const sceneId of journeyForMap.visitedNodeIds) {
@@ -1739,25 +1851,44 @@ function ActiveExperienceRuntimePlayer({
     }
     return details;
   }, [journeyForMap, manifest, orientation, playbackLocale]);
-  const openJourneyMap = (origin: "corner" | "transport") => {
-    if (!mapAvailable || journeyMapOpenRef.current) return;
+  const openJourneyMap = (origin: "corner" | "transport" | "menu") => {
+    if (
+      !aliveRef.current ||
+      !mapAvailable ||
+      startingRef.current ||
+      accessPendingRef.current ||
+      journeyMapOpenRef.current
+    )
+      return false;
+    if (origin === "menu")
+      menuOriginRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
     journeyMapOriginRef.current = origin;
     journeyWasPlayingRef.current = viewerPauseRef.current === null && !holdsNow().storyHeld;
-    pauseStory("user");
+    if (!menuOpenRef.current) pauseStory("user");
     journeyMapOpenRef.current = true;
     setJourneyMapOpen(true);
     setJourneyForMap(journeyRef.current);
     setJourneyReplayError(null);
+    return true;
   };
   const closeJourneyMap = () => {
-    if (journeyReplayPendingRef.current) return;
+    if (!aliveRef.current || journeyReplayPendingRef.current || !journeyMapOpenRef.current)
+      return false;
     journeyMapOpenRef.current = false;
     setJourneyMapOpen(false);
     if (journeyWasPlayingRef.current) resumeStory("gesture");
     restoreJourneyFocusRef.current = true;
+    return true;
   };
   const replayJourneyScene = async (sceneId: string) => {
-    if (journeyReplayPendingRef.current || accessPendingRef.current) return;
+    if (
+      !aliveRef.current ||
+      !startedRef.current ||
+      journeyReplayPendingRef.current ||
+      accessPendingRef.current
+    )
+      return;
     journeyReplayPendingRef.current = true;
     setJourneyReplayPending(true);
     setJourneyReplayError(null);
@@ -1792,6 +1923,7 @@ function ActiveExperienceRuntimePlayer({
         watchedAssetIds: controller.state().watchedAssetIds,
       });
       const state = controller.restore(checkpoint.state);
+      completedEndingRef.current = Boolean(state.completedEndingId);
       journeyRef.current = rewindExperienceJourney(journeyRef.current, sceneId);
       // Entry anchors are already settled; dispatching scene.entered again
       // would apply state changes and awards twice.
@@ -1822,6 +1954,8 @@ function ActiveExperienceRuntimePlayer({
       setRuntimeState(state);
       journeyMapOpenRef.current = false;
       setJourneyMapOpen(false);
+      menuOpenRef.current = false;
+      setMenuOpen(false);
       viewerPauseRef.current = null;
       setViewerPause(null);
       storyClock.resume();
@@ -1836,6 +1970,14 @@ function ActiveExperienceRuntimePlayer({
       if (aliveRef.current) setJourneyMapSuspended(false);
     }
   };
+  const mapGraph = useMemo(() => {
+    const graph = projectExperienceJourneyGraph(manifest, journeyForMap);
+    // A restored save has not passed its start/access flow yet. Browsing its
+    // explored map must not offer replay buttons that cannot execute.
+    return started
+      ? graph
+      : { ...graph, nodes: graph.nodes.map((node) => ({ ...node, replayable: false })) };
+  }, [manifest, journeyForMap, started]);
   const mapButton = mapAvailable ? (
     <button
       type="button"
@@ -1851,7 +1993,7 @@ function ActiveExperienceRuntimePlayer({
     </button>
   ) : null;
   const cornerMapButton =
-    mapAvailable && !journeyMapOpen ? (
+    started && mapAvailable && !menuOpen && !journeyMapOpen ? (
       <button
         type="button"
         ref={journeyMapCornerButtonRef}
@@ -1866,9 +2008,163 @@ function ActiveExperienceRuntimePlayer({
       </button>
     ) : null;
 
+  const readGameSnapshot = (): GameSnapshot => {
+    const gates = committedGatesRef.current;
+    const ended = completedEndingRef.current;
+    const blocked =
+      gates.failed ||
+      accessPendingRef.current ||
+      gates.retryAccess ||
+      gates.nodeGate ||
+      startingRef.current ||
+      journeyReplayPendingRef.current;
+    const inMenu = menuOpenRef.current;
+    const map = journeyMapOpenRef.current;
+    return {
+      screen: inMenu ? "menu" : "game",
+      started: startedRef.current,
+      status: gates.failed
+        ? "failed"
+        : ended
+          ? "completed"
+          : startingRef.current
+            ? "starting"
+            : !startedRef.current
+              ? !theme || entryMediaPending
+                ? "loading"
+                : "ready"
+              : viewerPauseRef.current
+                ? "paused"
+                : "playing",
+      mapOpen: map,
+      actions: {
+        start:
+          !blocked && inMenu && !map && !startedRef.current && Boolean(theme) && !entryMediaPending,
+        continue: !blocked && inMenu && !map && startedRef.current && !ended,
+        restart: !blocked && !map && ended,
+        "open-map": !blocked && !map && (startedRef.current || !entryLocked),
+        "close-map": map && !journeyReplayPendingRef.current && !accessPendingRef.current,
+        "return-menu": !blocked && !inMenu && !map && startedRef.current,
+      },
+    };
+  };
+  const gameHostRef = useRef<GameSessionHost>(null!);
+  gameHostRef.current = {
+    isActive: () => aliveRef.current,
+    read: readGameSnapshot,
+    execute: (action) => {
+      // Recheck immediately: refs change before React commits a new snapshot.
+      if (!readGameSnapshot().actions[action]) return false;
+      switch (action) {
+        case "start":
+          return begin();
+        case "continue":
+          gameFocusPendingRef.current = true;
+          menuOpenRef.current = false;
+          setMenuOpen(false);
+          resumeStory("gesture");
+          return true;
+        case "restart":
+          onRestart();
+          return true;
+        case "open-map":
+          return openJourneyMap(menuOpenRef.current ? "menu" : "corner");
+        case "close-map":
+          return closeJourneyMap();
+        case "return-menu":
+          pauseStory("user");
+          menuOpenRef.current = true;
+          setMenuOpen(true);
+          menuFocusPendingRef.current = true;
+          publishCheckpoint("pause");
+          return true;
+      }
+    },
+  };
+  const [gameAdapter] = useState(() =>
+    createGameSession({
+      isActive: () => gameHostRef.current.isActive(),
+      read: () => gameHostRef.current.read(),
+      execute: (action) => gameHostRef.current.execute(action),
+    })
+  );
+  useLayoutEffect(() => {
+    gameAdapter.publish();
+    if (!menuOpen && gameFocusPendingRef.current && !journeyMapOpen) {
+      queueMicrotask(() => {
+        if (!aliveRef.current || menuOpenRef.current || journeyMapOpenRef.current) return;
+        gameFocusPendingRef.current = false;
+        if (!focusedWithin(storyLayerRef.current) && focusIsFree(shellRef.current))
+          (toggleRef.current ?? returnMenuButtonRef.current)?.focus({ preventScroll: true });
+      });
+    }
+    if (menuOpen && menuFocusPendingRef.current && !journeyMapOpen) {
+      // Publish first: the custom screen may need its new snapshot to enable
+      // Continue. Focus its committed controls after that render finishes.
+      queueMicrotask(() => {
+        if (!aliveRef.current || !menuOpenRef.current || journeyMapOpenRef.current) return;
+        menuFocusPendingRef.current = false;
+        menuRegionRef.current
+          ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+          ?.focus({ preventScroll: true });
+      });
+    }
+  });
+  useEffect(
+    () => () => {
+      // StrictMode replays effects on the same instance. Revoke only after its
+      // layout ownership has actually ended, including restarts and navigation.
+      queueMicrotask(() => {
+        if (!aliveRef.current) gameAdapter.dispose();
+      });
+    },
+    [gameAdapter]
+  );
+  const MainMenuUI = ui?.mainMenu ?? ExperienceDefaultMainMenuUI;
+  const codeMenu = ui?.gameUi !== undefined ? ui.gameUi : manifest.gameUi;
+  const menuTitle = localize(
+    manifest.metadata.title,
+    playbackLocale,
+    manifest.localization.defaultLocale
+  );
+  const menuSummary = manifest.metadata.summary
+    ? localize(manifest.metadata.summary, playbackLocale, manifest.localization.defaultLocale)
+    : undefined;
+  const menuCopy = {
+    start: resolveExperienceStartLabel(ui?.copy, locale, copy.start),
+    starting: copy.starting,
+    loading: copy.loadingMedia,
+    continue: copy.continueGame,
+    restart: copy.playAgain,
+    map: copy.journeyMap.open,
+  };
+  const returnMenuButton =
+    started &&
+    !menuOpen &&
+    !journeyMapOpen &&
+    !runtimeError &&
+    !accessPending &&
+    !retryAccess &&
+    !nodeGate ? (
+      <button
+        type="button"
+        data-game-action="return-menu"
+        ref={returnMenuButtonRef}
+        aria-label={copy.returnToMenu}
+        onClick={() => {
+          void gameAdapter.session.invoke("return-menu");
+        }}
+        className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full bg-black/65 px-4 text-sm font-semibold text-white outline-none hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-white/70"
+      >
+        <IconHome className="size-5" aria-hidden="true" />
+        {copy.mainMenu}
+      </button>
+    ) : null;
+
   return (
     <PlayerFrame
       shellRef={shellRef}
+      menuOpen={menuOpen}
       orientation={orientation}
       experienceProfile={experienceProfile}
       stageProfile={stageProfile}
@@ -1884,8 +2180,9 @@ function ActiveExperienceRuntimePlayer({
       }}
       cornerControls={
         <>
+          {returnMenuButton}
           {cornerMapButton}
-          {playbackStatus}
+          {!menuOpen && playbackStatus}
         </>
       }
       stage={
@@ -1899,7 +2196,7 @@ function ActiveExperienceRuntimePlayer({
             ref={storyLayerRef}
             data-experience-story-layer=""
             data-experience-paused={viewerPause ?? undefined}
-            inert={viewerPause !== null}
+            inert={viewerPause !== null || menuOpen || journeyMapOpen}
             className="absolute inset-0"
             style={
               {
@@ -1956,17 +2253,35 @@ function ActiveExperienceRuntimePlayer({
           {/* The pause is part of the picture: the paused frame and the controls
               sit in the film frame and turn with it. Neither shows over an
               access flow, the locked-scene gate, the ending or a failure.
-              The frame keeps no pause toggle of its own where the picture
-              offers one — a missed tap pauses, Space pauses — only over a
-              world stream, which takes its taps and its Space for moves, does
-              the toggle stand in the frame's corner. */}
+              The transport also offers an explicit pause action. The corner
+              toggle is reserved for a world stream, which takes picture taps
+              and Space for its own moves. */}
           {holds.pauseUi && viewerPause !== null ? (
-            <ExperiencePausedScrim
-              ref={pausedFrameRef}
-              copy={copy.playback}
-              reason={viewerPause}
-              onResume={() => resumeStory("gesture")}
-            />
+            <div
+              data-experience-ui-region="pause"
+              data-experience-pause-menu=""
+              className="absolute inset-0 pointer-events-auto"
+              style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 1 }}
+            >
+              <PauseUI
+                resumeRef={pausedFrameRef}
+                restartLabel={copy.restart}
+                onRestart={() => {
+                  if (
+                    isCurrentPresentation() &&
+                    holdsNow().pauseUi &&
+                    viewerPauseRef.current !== null
+                  )
+                    onRestart();
+                }}
+                copy={copy.playback}
+                reason={viewerPause}
+                onResume={() => {
+                  if (isCurrentPresentation() && holdsNow().pauseUi)
+                    resumeStoryRef.current("gesture");
+                }}
+              />
+            </div>
           ) : null}
           {holds.pauseUi ? (
             <ExperienceFrameControls
@@ -1982,6 +2297,7 @@ function ActiveExperienceRuntimePlayer({
           ) : null}
           {transportAvailable && mediaProgress ? (
             <div
+              data-experience-ui-region="playback"
               data-experience-controls-visible={transportChrome.visible ? "true" : "false"}
               onFocusCapture={transportChrome.onFocusCapture}
               onBlurCapture={transportChrome.onBlurCapture}
@@ -1995,7 +2311,12 @@ function ActiveExperienceRuntimePlayer({
               )}
               style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 2 }}
             >
-              <ExperiencePlaybackTransportControls
+              <PlaybackUI
+                paused={viewerPause !== null}
+                pauseLabel={viewerPause !== null ? copy.playback.resume : copy.playback.pause}
+                onTogglePause={() => {
+                  if (isCurrentPresentation() && holdsNow().pauseUi) togglePause();
+                }}
                 copy={copy.playback.transport}
                 positionMs={mediaProgress.positionMs}
                 durationMs={mediaProgress.durationMs}
@@ -2005,7 +2326,7 @@ function ActiveExperienceRuntimePlayer({
                 disabledReason={copy.playback.transport.interactionBlocked}
                 onSeek={seekWatchedPosition}
                 onRate={(rate) => {
-                  if (transportBlocked || ![1, 1.25, 1.5, 2].includes(rate)) return;
+                  if (!canUseCurrentTransport() || ![1, 1.25, 1.5, 2].includes(rate)) return;
                   playbackRateRef.current = rate as ExperiencePlaybackRate;
                   setPlaybackRate(rate as ExperiencePlaybackRate);
                   const effective = approachingInteraction ? 1 : rate;
@@ -2027,7 +2348,7 @@ function ActiveExperienceRuntimePlayer({
           style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 30 }}
         >
           <ExperienceJourneyMap
-            graph={projectExperienceJourneyGraph(manifest, journeyForMap)}
+            graph={mapGraph}
             nodeDetails={mapNodeDetails}
             currentSceneId={
               runtimeState.completedEndingId
@@ -2085,59 +2406,81 @@ function ActiveExperienceRuntimePlayer({
         />
       ) : null}
 
-      {!started && !runtimeError && !nodeGate ? (
+      {menuOpen && !runtimeError && !nodeGate ? (
         <div
-          className={classNames(
-            "pointer-events-auto absolute inset-0 z-40 grid place-items-center p-6 text-center",
-            experienceProfile === "cinematic"
-              ? "bg-black/68 backdrop-blur-sm"
-              : "bg-[var(--experience-color-background,#111)]"
-          )}
+          ref={menuRegionRef}
+          data-experience-main-menu=""
+          data-experience-ui-region="start"
+          role="region"
+          aria-label={copy.mainMenu}
+          inert={journeyMapOpen}
+          className={menuStyles.screen}
         >
-          {coverUri ? (
-            <img
-              src={coverUri}
-              alt=""
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 -z-10 size-full object-cover opacity-40"
+          {coverUri && (
+            <img src={coverUri} alt="" aria-hidden="true" className={menuStyles.background} />
+          )}
+          {codeMenu ? (
+            <ExperienceCodeMenu
+              key={codeMenu.artifactHash}
+              artifact={codeMenu}
+              coverUrl={coverUri ?? undefined}
+              title={menuTitle}
+              summary={menuSummary}
+              eyebrow={experienceProfile === "cinematic" ? copy.interactiveFilm : undefined}
+              session={gameAdapter.session}
+              copy={menuCopy}
+              failureCopy={copy.codeMenu}
             />
-          ) : null}
-          <div className="max-w-lg">
-            {experienceProfile === "cinematic" ? (
-              <p className="text-[11px] font-semibold tracking-[0.18em] text-white/48 uppercase">
-                {copy.interactiveFilm}
-              </p>
-            ) : null}
-            <h1 className="mt-3 text-2xl font-semibold tracking-[-0.025em] text-white sm:text-3xl">
-              {localize(
-                manifest.metadata.title,
-                playbackLocale,
-                manifest.localization.defaultLocale
-              )}
-            </h1>
-            {manifest.metadata.summary ? (
-              <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-white/58">
-                {localize(
-                  manifest.metadata.summary,
-                  playbackLocale,
-                  manifest.localization.defaultLocale
-                )}
-              </p>
-            ) : null}
-            <button
-              type="button"
-              className={`${PRIMARY_BUTTON} mt-6`}
-              disabled={!theme || starting || entryMediaPending}
-              onClick={begin}
-            >
-              <IconPlayerPlay className="size-4 fill-current" />
-              {starting ? copy.starting : entryMediaPending ? copy.loadingMedia : copy.start}
-            </button>
-          </div>
+          ) : ui?.start && !ui.mainMenu ? (
+            <div className="flex max-h-full w-full max-w-sm flex-col gap-4 overflow-y-auto">
+              <StartUI
+                title={menuTitle}
+                summary={menuSummary}
+                eyebrow={experienceProfile === "cinematic" ? copy.interactiveFilm : undefined}
+                state={starting ? "starting" : !theme || entryMediaPending ? "loading" : "ready"}
+                actionLabel={
+                  endingId
+                    ? copy.playAgain
+                    : started
+                      ? copy.continueGame
+                      : starting
+                        ? copy.starting
+                        : !theme || entryMediaPending
+                          ? copy.loadingMedia
+                          : menuCopy.start
+                }
+                onStart={() => {
+                  void gameAdapter.session.invoke(
+                    endingId ? "restart" : started ? "continue" : "start"
+                  );
+                }}
+              />
+              <button
+                type="button"
+                data-ui-part="secondary"
+                className="min-h-11 rounded-xl bg-white/10 p-3"
+                aria-haspopup="dialog"
+                disabled={!mapAvailable}
+                onClick={() => {
+                  void gameAdapter.session.invoke("open-map");
+                }}
+              >
+                {copy.journeyMap.open}
+              </button>
+            </div>
+          ) : (
+            <MainMenuUI
+              title={menuTitle}
+              summary={menuSummary}
+              eyebrow={experienceProfile === "cinematic" ? copy.interactiveFilm : undefined}
+              session={gameAdapter.session}
+              copy={menuCopy}
+            />
+          )}
         </div>
       ) : null}
 
-      {endingId && !runtimeError ? (
+      {endingId && !runtimeError && !menuOpen ? (
         <div
           role="dialog"
           aria-modal="true"
@@ -2227,8 +2570,10 @@ function CoreRenderer({
   onSoundBlocked,
   onContentSize,
   renderWorldModel,
+  ui,
   formatPrice,
 }: {
+  ui?: ExperiencePlayerUI;
   formatPrice?: (amount: number) => string;
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -2325,6 +2670,8 @@ function CoreRenderer({
         locale={locale}
         copy={copy}
         formatPrice={formatPrice}
+        ui={ui}
+        paused={paused}
         onSelect={(choiceId) => onOutcome(renderer.instanceId, "choice-selected", { choiceId })}
       />
     );
@@ -3277,6 +3624,8 @@ function CoreChoiceRenderer({
   open,
   locale,
   copy,
+  ui,
+  paused,
   onSelect,
   formatPrice,
 }: {
@@ -3284,132 +3633,69 @@ function CoreChoiceRenderer({
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   runtimeState: ExperienceRuntimeState;
+  ui?: ExperiencePlayerUI;
+  paused: boolean;
   active: boolean;
   open: boolean;
   locale: string;
   copy: ExperiencePlayerCopy;
   onSelect: (choiceId: string) => void;
 }) {
-  const promptId = useId();
   const config = ExperienceCoreChoiceRendererConfigSchema.parse(renderer.config);
   if (!active || (!config.initiallyOpen && !open)) return null;
-  const promptText = config.prompt
+  const prompt = config.prompt
     ? localize(config.prompt, locale, manifest.localization.defaultLocale).trim()
-    : "";
-  const choices = config.choices.filter(
-    (choice) =>
-      !choice.visibleWhen ||
-      evaluateExperienceCondition(choice.visibleWhen, runtimeState, {
-        type: "runtime.visibility",
-      })
-  );
-  // Sized off the film frame, never the window: the stage is a size container,
-  // so `cq*` units here are fractions of the picture the choices sit on. A phone
-  // held sideways and a desktop monitor show the same composition, scaled.
-  // `cqmin` is the frame's short side — its height for a landscape film — so a
-  // portrait film keeps the same proportions; every clamp keeps the text legible
-  // and the tap target at least 44px.
+    : undefined;
+  const choices = config.choices
+    .filter(
+      (choice) =>
+        !choice.visibleWhen ||
+        evaluateExperienceCondition(choice.visibleWhen, runtimeState, {
+          type: "runtime.visibility",
+        })
+    )
+    .map((choice) => {
+      const requirement = manifest.graph.nodes
+        .flatMap((node) => node.eventBindings)
+        .filter(
+          (binding) =>
+            binding.on.type === "renderer.outcome" &&
+            binding.on.sourceId === renderer.instanceId &&
+            binding.on.qualifierId === "choice-selected"
+        )
+        .flatMap((binding) => binding.routes)
+        .find(
+          (route) =>
+            !route.when ||
+            evaluateExperienceCondition(route.when, runtimeState, {
+              type: "renderer.outcome",
+              sourceId: renderer.instanceId,
+              qualifierId: "choice-selected",
+              payload: { choiceId: choice.choiceId },
+            })
+        )?.access;
+      return {
+        id: choice.choiceId,
+        label: localize(choice.label, locale, manifest.localization.defaultLocale),
+        accessibilityLabel: choice.accessibilityLabel
+          ? localize(choice.accessibilityLabel, locale, manifest.localization.defaultLocale)
+          : undefined,
+        price:
+          requirement && formatPrice ? formatPrice(requirement.communityPointPrice) : undefined,
+      };
+    });
+  const ChoicesUI = ui?.choices ?? ExperienceDefaultChoicesUI;
   return (
-    <div
-      role="group"
-      aria-labelledby={promptText ? promptId : undefined}
-      data-experience-choice-overlay=""
-      className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-linear-to-t from-black/80 via-black/45 to-transparent px-[clamp(12px,3cqw,40px)] pt-[clamp(24px,10cqmin,96px)] pb-[max(clamp(10px,2.5cqmin,22px),var(--experience-choice-control-clearance,0px))]"
-      style={{ zIndex: renderer.layer }}
-    >
-      <div className="pointer-events-auto w-full max-w-[86cqw]">
-        {promptText ? (
-          <p
-            id={promptId}
-            className="mb-[0.75em] text-center text-[length:clamp(12px,2cqmin,16px)] leading-[1.45] font-medium tracking-[0.04em] text-balance text-white/70"
-          >
-            {promptText}
-          </p>
-        ) : null}
-        {choices.length > 0 ? (
-          <div className="flex flex-row items-stretch justify-center gap-[clamp(8px,1.2cqw,16px)]">
-            {choices.map((choice, index) => {
-              const requirement = manifest.graph.nodes
-                .flatMap((node) => node.eventBindings)
-                .filter(
-                  (binding) =>
-                    binding.on.type === "renderer.outcome" &&
-                    binding.on.sourceId === renderer.instanceId &&
-                    binding.on.qualifierId === "choice-selected"
-                )
-                .flatMap((binding) => binding.routes)
-                .find(
-                  (route) =>
-                    !route.when ||
-                    evaluateExperienceCondition(route.when, runtimeState, {
-                      type: "renderer.outcome",
-                      sourceId: renderer.instanceId,
-                      qualifierId: "choice-selected",
-                      payload: { choiceId: choice.choiceId },
-                    })
-                )?.access;
-              const price =
-                requirement && formatPrice ? formatPrice(requirement.communityPointPrice) : null;
-              return (
-                <button
-                  key={choice.choiceId}
-                  type="button"
-                  onClick={() => onSelect(choice.choiceId)}
-                  className={classNames(
-                    // Inner proportions are in `em` of the label, so the badge,
-                    // the price and the corners scale with the clamped text.
-                    "group flex min-h-[clamp(44px,7cqmin,56px)] min-w-0 max-w-[clamp(140px,40cqmin,420px)] flex-1 basis-0 items-center gap-[0.75em] rounded-[1.05em] border px-[clamp(10px,1.5cqw,20px)] py-[0.45em] text-left text-[length:clamp(13px,2.2cqmin,18px)] leading-[1.3] font-medium text-white",
-                    "bg-white/10 shadow-[0_10px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl",
-                    "transition-[background-color,border-color,transform] duration-200",
-                    "hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none active:scale-[0.99]",
-                    price ? undefined : "border-white/15 hover:border-white/30"
-                  )}
-                  style={
-                    price
-                      ? {
-                          borderColor:
-                            "color-mix(in srgb, var(--brand-yellow, #ffd84d) 45%, transparent)",
-                        }
-                      : undefined
-                  }
-                  aria-label={
-                    choice.accessibilityLabel
-                      ? localize(
-                          choice.accessibilityLabel,
-                          locale,
-                          manifest.localization.defaultLocale
-                        )
-                      : undefined
-                  }
-                >
-                  <span className="grid size-[2.2em] shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 text-[0.73em] leading-none font-semibold text-white/60 tabular-nums group-hover:border-white/30 group-hover:text-white">
-                    {index + 1}
-                  </span>
-                  <span className="min-w-0 flex-1 wrap-anywhere">
-                    {localize(choice.label, locale, manifest.localization.defaultLocale)}
-                  </span>
-                  {price ? (
-                    <span
-                      className="flex max-w-[42%] shrink-0 items-center gap-[0.3em] text-[0.8em] leading-[1.3] font-medium tabular-nums"
-                      style={{ color: "var(--brand-yellow, #ffd84d)" }}
-                    >
-                      <IconLock className="size-[1.15em] shrink-0" stroke={1.8} aria-hidden />
-                      {price}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <p
-            role="alert"
-            className="text-center text-[length:clamp(11px,2cqmin,16px)] text-white/52"
-          >
-            {copy.noVisibleChoices}
-          </p>
-        )}
-      </div>
+    <div className="absolute inset-0 pointer-events-none" style={{ zIndex: renderer.layer }}>
+      <ChoicesUI
+        prompt={prompt}
+        choices={choices}
+        emptyLabel={copy.noVisibleChoices}
+        disabled={paused}
+        onChoose={(id) => {
+          if (!paused && choices.some((choice) => choice.id === id)) onSelect(id);
+        }}
+      />
     </div>
   );
 }
@@ -3444,6 +3730,7 @@ const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
  */
 function PlayerFrame({
   shellRef,
+  menuOpen = false,
   orientation,
   experienceProfile,
   stageProfile,
@@ -3458,6 +3745,7 @@ function PlayerFrame({
   children,
 }: {
   shellRef: React.RefObject<HTMLDivElement | null>;
+  menuOpen?: boolean;
   orientation: ExperienceOrientation;
   experienceProfile: ExperienceProfile;
   stageProfile: ExperienceProfile;
@@ -3520,6 +3808,7 @@ function PlayerFrame({
       aria-label={copy.regionLabel}
       // Keep the fitted stage from scrolling the shell when focus moves.
       style={{ ...style, overflow: "clip" }}
+      data-experience-screen={menuOpen ? "menu" : "game"}
       data-experience-profile={experienceProfile}
       data-experience-stage-profile={stageProfile}
       className="relative isolate h-full min-h-[inherit] w-full bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
@@ -3527,10 +3816,13 @@ function PlayerFrame({
     >
       <div
         data-experience-landscape-viewport=""
+        inert={menuOpen}
+        aria-hidden={menuOpen || undefined}
         data-experience-frame-rotated={turned ? "" : undefined}
         className="absolute left-1/2 top-1/2 isolate z-0"
         style={{
           ...viewportStyle,
+          visibility: menuOpen ? "hidden" : "visible",
           transform: turned ? "translate(-50%, -50%) rotate(90deg)" : "translate(-50%, -50%)",
         }}
       >

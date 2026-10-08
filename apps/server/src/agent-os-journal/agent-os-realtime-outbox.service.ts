@@ -16,6 +16,7 @@ import {
   type AgentOsAblyRunSnapshot,
 } from '@repo/shared';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import {
   ABLY_REST_CLIENT,
   type AblyRestClient,
@@ -105,6 +106,7 @@ export class AgentOsRealtimeOutboxService
   ) {}
 
   onModuleInit(): void {
+    if (!backgroundTasksEnabled()) return;
     this.sweepTimer = setInterval(() => {
       void this.flushPending();
     }, SWEEP_INTERVAL_MS);
@@ -118,6 +120,7 @@ export class AgentOsRealtimeOutboxService
   }
 
   schedule(runId: string): void {
+    if (!backgroundTasksEnabled()) return;
     void this.publishRun(runId).catch((error) => {
       this.logger.warn(
         `Agent OS realtime outbox scheduling failed run=${runId}: ${journalErrorText(error)}`,
@@ -130,6 +133,7 @@ export class AgentOsRealtimeOutboxService
    * run in that conversation. Public for focused operational tests.
    */
   async publishRun(runId: string): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const leaseId = randomUUID();
     let claimed = await this.claimConversation(runId, leaseId);
     if (!claimed) return;
@@ -513,7 +517,7 @@ export class AgentOsRealtimeOutboxService
   }
 
   private async flushPending(): Promise<void> {
-    if (this.sweepActive) return;
+    if (!backgroundTasksEnabled() || this.sweepActive) return;
     this.sweepActive = true;
     try {
       const candidates = await this.prisma.$queryRaw<Array<{ id: string }>>(

@@ -1,4 +1,8 @@
 import {
+  migrateStoredExperienceAppearance,
+  GameUIProjectSchema,
+} from '@repo/shared/experience-runtime';
+import {
   ConflictException,
   Injectable,
   NotFoundException,
@@ -120,6 +124,8 @@ export class StoryWorkingPreviewService {
       title: string;
       summary: string | null;
       coverAssetId: string | null;
+      appearance?: Prisma.JsonValue;
+      gameUi?: Prisma.JsonValue;
     },
     projectId: string,
     chapterId: string | undefined,
@@ -384,6 +390,14 @@ export class StoryWorkingPreviewService {
       metadata,
       draft: playableDraft.data,
       timelines: prepared.map((item) => item.timeline),
+      appearance:
+        project.appearance == null
+          ? undefined
+          : migrateStoredExperienceAppearance(project.appearance),
+      gameUi:
+        project.gameUi == null
+          ? undefined
+          : GameUIProjectSchema.parse(project.gameUi).artifact,
     });
 
     return {

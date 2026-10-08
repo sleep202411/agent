@@ -3,6 +3,7 @@ import { createHash, createHmac } from 'crypto';
 import type { Redis } from 'ioredis';
 import { REDIS } from '../../infra/redis/redis.module';
 import type { AlertEvent, AlertSeverity } from './alerting.types';
+import { backgroundTasksEnabled } from '../background-tasks';
 
 interface AlertingConfig {
   enabled: boolean;
@@ -30,6 +31,7 @@ export class AlertingService {
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
   notify(event: AlertEvent): void {
+    if (!backgroundTasksEnabled()) return;
     void this.dispatch(event).catch((err) => {
       this.logger.warn(
         `Alert dispatch failed: ${
@@ -40,6 +42,7 @@ export class AlertingService {
   }
 
   async dispatch(event: AlertEvent): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const config = this.readConfig();
     if (!config.enabled || !config.webhookUrl) return;
 

@@ -4427,7 +4427,7 @@
     "manifestRoot": "清單根節點",
     "interactiveFilm": "互動故事",
     "starting": "正在啟動…",
-    "start": "開始試玩",
+    "start": "開始",
     "restart": "重新開始",
     "regionLabel": "互動故事試玩",
     "playback": {
@@ -4469,19 +4469,14 @@
       "left": "向左移動",
       "right": "向右移動",
       "finish": "結束世界體驗"
-    }
-  },
-  "agentOs": {
-    "readOnlyProject": "此專案為唯讀，需要編輯權限才能使用 FizzAgent。",
-    "title": "FizzAgent",
-    "subtitle": "對話式執行智能體 — 工具會真正寫入項目",
-    "close": "關閉 FizzAgent",
-    "collapse": "收起 FizzAgent",
-    "open": "打開 FizzAgent",
-    "launcherPrompts": {
-      "create": "你想創作甚麼？",
-      "ask": "我是 FizzAgent，隨時向我提問。",
-      "help": "我可以幫你完善故事和畫布。"
+    },
+    "mainMenu": "主選單",
+    "returnToMenu": "返回主選單",
+    "continueGame": "繼續遊戲",
+    "codeMenu": {
+      "failed": "自訂遊戲選單未能載入。",
+      "retry": "重試",
+      "restore": "使用預設選單"
     },
     "emptyHint": "上傳劇本檔案，告訴 FizzAgent 要完成的任務，批准寫入後繼續追問。",
     "emptyHintStory": "加入參考資料，或告訴 FizzAgent 如何推進目前章節，然後繼續打磨故事。",
@@ -4710,5 +4705,43 @@
     "columnOption": "選項",
     "columnChapter": "章節",
     "columnNode": "節點"
+  },
+  "appearancePreview": {
+    "resizePanels": "調整預覽與對話面板大小",
+    "resizePanelsHint": "拖動調整大小 · 雙擊恢復預設 · 方向鍵微調",
+    "panelSize": "預覽佔 {percent}%",
+    "back": "返回工作室",
+    "project": "入夢金陵",
+    "saveFailed": "尚未儲存",
+    "preview": "介面預覽",
+    "question": "接下來，你想去哪裏？",
+    "options": {
+      "0": "隨她走進院子",
+      "1": "留在門外觀察"
+    },
+    "projectFallback": "當前作品",
+    "backProject": "返回項目",
+    "previewTitle": "作品預覽",
+    "chat": {
+      "label": "FizzAgent 介面設計對話",
+      "undo": "復原",
+      "generating": "正在調整樣式…",
+      "generatingFor": "正在調整樣式 · {duration}",
+      "connecting": "正在連接…",
+      "reconnect": "重新連接"
+    },
+    "saveProject": "儲存",
+    "savingProject": "儲存中…",
+    "savedProject": "已儲存",
+    "hideChat": "收起設計對話",
+    "showChat": "展開設計對話",
+    "reloadProject": "重新整理專案，保留我的修改",
+    "restoreDraftFailed": "無法恢復已儲存的草稿，原始資料已保留。",
+    "retryDraftSave": "重新儲存草稿",
+    "draftSaveFailed": "修改已保留在目前視窗，但未能儲存到瀏覽器。",
+    "playerWindow": "播放器預覽視窗",
+    "playerConnecting": "正在開啟播放器…",
+    "playerFailed": "播放器未能開啟，請重試連線。",
+    "playerRetry": "重新載入播放器"
   }
 }

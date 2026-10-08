@@ -13,6 +13,7 @@ import {
   type MediaModerationAction,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { ImmTranscodeService } from '../infra/storage/imm-transcode.service';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
@@ -100,6 +101,7 @@ export class MediaTakedownWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (process.env.MEDIA_TAKEDOWN_WORKER_ENABLED === 'false') return;
     const intervalMs = positiveInt(
@@ -121,6 +123,7 @@ export class MediaTakedownWorkerService
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (this.draining) return this.draining;
     this.draining = this.drain(batch).finally(() => {

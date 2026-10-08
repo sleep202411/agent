@@ -5,6 +5,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { AgentOsRunJournalService } from '../agent-os-journal/agent-os-run-journal.service';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { journalErrorText } from '../agent-os-journal/agent-os-journal.mapper';
 import {
   AgentOsWorkerClient,
@@ -41,7 +42,7 @@ export class AgentOsRunStartDispatcherService
   ) {}
 
   onModuleInit(): void {
-    if (this.stopping || this.timer) return;
+    if (!backgroundTasksEnabled() || this.stopping || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), SWEEP_INTERVAL_MS);
     this.timer.unref();
     void this.drainOnce();
@@ -58,13 +59,13 @@ export class AgentOsRunStartDispatcherService
    * acknowledgement when this throws; the background sweep keeps retrying.
    */
   async dispatch(runId: string): Promise<AgentOsWorkerRunResponse | null> {
-    if (this.stopping) return null;
+    if (!backgroundTasksEnabled() || this.stopping) return null;
     const claim = await this.journal.claimRunStartDispatch(
       runId,
       START_LEASE_MS,
     );
     // A claim obtained during shutdown remains recoverable after lease expiry.
-    if (this.stopping) return null;
+    if (!backgroundTasksEnabled() || this.stopping) return null;
     if (claim.kind === 'missing') return null;
     if (claim.kind === 'in_flight') return this.durableResponse(runId);
     if (claim.kind === 'already_started') {
@@ -101,12 +102,12 @@ export class AgentOsRunStartDispatcherService
   }
 
   private async drainOnce(): Promise<void> {
-    if (this.stopping || this.sweepActive) return;
+    if (!backgroundTasksEnabled() || this.stopping || this.sweepActive) return;
     this.sweepActive = true;
     try {
       const runIds = await this.journal.listPendingRunStarts();
       for (const runId of runIds) {
-        if (this.stopping) return;
+        if (!backgroundTasksEnabled() || this.stopping) return;
         try {
           await this.dispatch(runId);
         } catch (error) {

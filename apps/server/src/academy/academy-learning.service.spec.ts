@@ -19,6 +19,7 @@ function fixture() {
     certificateId: 13,
     priceCredits: 100n,
     teacherCredits: 50n,
+    instructorShares: [] as Array<{ teacherId: string; credits: string }>,
     offeringVersion: 1,
     status: 'submitted',
     version: 2,

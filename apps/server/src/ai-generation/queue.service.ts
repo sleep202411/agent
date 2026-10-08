@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { PrismaService } from '../infra/db/db.module';
 /**
  * AiGenerationQueueService — durable job reconciliation and BullMQ Queue
@@ -8,6 +9,7 @@ import { PrismaService } from '../infra/db/db.module';
  * onApplicationShutdown so SIGTERM doesn't leak Redis connections.
  */
 import {
+  ConflictException,
   Injectable,
   Logger,
   type OnApplicationBootstrap,
@@ -37,6 +39,7 @@ export class AiGenerationQueueService
   constructor(private readonly prisma: PrismaService) {}
 
   onApplicationBootstrap() {
+    if (!backgroundTasksEnabled()) return;
     const recover = () => {
       if (this.recoveryRun) return;
       this.recoveryRun = this.recoverQueuedJobs()
@@ -55,6 +58,7 @@ export class AiGenerationQueueService
   }
 
   private async recoverQueuedJobs(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     // Durable rows recover missing starts and polling, including exhausted queue
     // retries. Unknown acceptance and terminal work are never resubmitted.
     const jobs = await this.prisma.aiJob.findMany({
@@ -153,6 +157,9 @@ export class AiGenerationQueueService
     priority = 5,
     op: AiQueueJobData['op'] = 'start',
   ): Promise<void> {
+    // The job row is durable in Postgres; paused cells leave it for recovery
+    // without connecting to a possibly shared production Redis queue.
+    if (!backgroundTasksEnabled()) return;
     const queue = this.queueFor(queueName);
     // BullMQ jobIds must be globally unique within the queue and
     // cannot contain `:` (it reserves that as a Redis key separator).
@@ -202,6 +209,10 @@ export class AiGenerationQueueService
 
   /** Used by the worker to subscribe to the same connection. */
   getConnection(): Redis {
+    if (!backgroundTasksEnabled())
+      throw new ConflictException(
+        'Background tasks are disabled in this environment.',
+      );
     if (!this.connection) {
       this.connection = createAiRedisConnection();
     }
@@ -209,6 +220,10 @@ export class AiGenerationQueueService
   }
 
   private queueFor(name: AiQueueName): Queue<AiQueueJobData> {
+    if (!backgroundTasksEnabled())
+      throw new ConflictException(
+        'Background tasks are disabled in this environment.',
+      );
     let q = this.queues.get(name);
     if (!q) {
       // Producers must reject unavailable Redis operations. Workers retain

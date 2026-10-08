@@ -121,6 +121,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { newShortId } from '../common/id';
 import { conversationUnreadCounts } from './unread-counts';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { NotificationService } from '../notification';
 import { lockCrewAssetUploads } from '../crews/assets/upload-lock';
 import { availableCrewAssetName } from '../crews/assets/asset-name';
@@ -1066,6 +1067,7 @@ export class ConversationsService {
    * outbox row, and on failure it leaves that row pending for the dispatcher.
    */
   async broadcastMessage(message: PrismaMessage): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     try {
       await this.deliverMessageRealtime(message);
       await this.prisma.conversationRealtimeOutbox.updateMany({
@@ -1098,6 +1100,7 @@ export class ConversationsService {
    * durable dispatcher can retry the whole idempotent fan-out.
    */
   async deliverMessageRealtime(message: PrismaMessage): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const conv = await this.prisma.conversation.findUnique({
       where: { id: message.conversationId },
       include: { participants: { where: { leftAt: null } } },

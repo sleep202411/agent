@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import {
   HttpException,
   Injectable,
@@ -54,6 +55,7 @@ export class StoryAgentRunWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || this.timer) return;
     if (!this.enabled) {
       this.logger.log('Story Agent run worker is disabled by configuration');
@@ -84,11 +86,13 @@ export class StoryAgentRunWorkerService
 
   /** Low-latency local wake; DB polling remains the cross-pod source of truth. */
   wake(): void {
+    if (!backgroundTasksEnabled()) return;
     if (!this.enabled || this.stopping) return;
     queueMicrotask(() => void this.drainOnce());
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (!this.enabled || this.stopping || this.draining) return;
     this.draining = true;
     try {
@@ -178,6 +182,7 @@ export class StoryAgentRunWorkerService
    * is one stale-base re-draft when a human edits the story mid-pipeline.
    */
   private async executeAuthoringRun(runId: string): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     let staleRetried = false;
     for (;;) {
       if (this.stopping) return;

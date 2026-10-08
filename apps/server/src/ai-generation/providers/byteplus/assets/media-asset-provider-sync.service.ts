@@ -1,5 +1,7 @@
+import { backgroundTasksEnabled } from '../../../../common/background-tasks';
 import { requireNonReceiptAsset } from '../../../../media/media-receipt-policy';
 import {
+  ConflictException,
   Injectable,
   Logger,
   type OnApplicationBootstrap,
@@ -102,6 +104,7 @@ export class MediaAssetProviderSyncService
   }
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (!this.configService.config.mediaAssetRegistrationEnabled) return;
     const connection = this.redis();
     this.workers = [
@@ -143,6 +146,9 @@ export class MediaAssetProviderSyncService
     mediaAssetId: string,
     priority = REGISTER_PRIORITY_FOREGROUND,
   ): Promise<string | null> {
+    // Uploads retain their durable asset without starting automatic provider
+    // registration; null expressly means no registration was created.
+    if (!backgroundTasksEnabled()) return null;
     if (!this.configService.config.mediaAssetRegistrationEnabled) return null;
 
     const asset = await this.prisma.mediaAsset.findFirst({
@@ -215,6 +221,10 @@ export class MediaAssetProviderSyncService
   async requestAssetRegistration(
     mediaAssetId: string,
   ): Promise<MediaProviderAssetStatusDto | null> {
+    if (!backgroundTasksEnabled())
+      throw new ConflictException(
+        'Background tasks are disabled in this environment.',
+      );
     if (!this.configService.config.mediaAssetRegistrationEnabled) return null;
 
     const asset = await this.prisma.mediaAsset.findFirst({
@@ -369,6 +379,7 @@ export class MediaAssetProviderSyncService
   }
 
   private async ensureAigcMediaAssetGroup(): Promise<string | null> {
+    if (!backgroundTasksEnabled()) return null;
     if (!this.configService.config.mediaAssetRegistrationEnabled) return null;
     const projectName = this.configService.config.projectName;
     const existing = await this.prisma.aiProviderMediaAssetGroup.findUnique({
@@ -464,6 +475,7 @@ export class MediaAssetProviderSyncService
     priority = REGISTER_PRIORITY_FOREGROUND,
     jobId = `register-${mirrorId}-${Date.now()}`,
   ): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     await this.queue().add(
       'register',
       { op: 'register', mirrorId },
@@ -475,6 +487,7 @@ export class MediaAssetProviderSyncService
     mirrorId: string,
     jobId = `poll-${mirrorId}-${Date.now()}`,
   ): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     await this.queue().add(
       'poll',
       { op: 'poll', mirrorId },
@@ -486,6 +499,7 @@ export class MediaAssetProviderSyncService
     externalAssetIds: string[];
     externalGroupIds: string[];
   }): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const queue = this.critical();
     await queue.addBulk([
       ...args.externalAssetIds.map((externalAssetId) => ({
@@ -506,6 +520,7 @@ export class MediaAssetProviderSyncService
   }
 
   private processAssetsJob: Processor<MediaAssetsJobData> = async (job) => {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping) return;
     const row = await this.prisma.aiProviderMediaAssetMirror.findUnique({
       where: { id: job.data.mirrorId },
@@ -652,6 +667,7 @@ export class MediaAssetProviderSyncService
   }
 
   private processCriticalJob: Processor<CriticalJobData> = async (job) => {
+    if (!backgroundTasksEnabled()) return;
     try {
       if (job.data.op === 'delete_asset') {
         await this.client.deleteAsset(job.data.externalAssetId);
@@ -688,6 +704,7 @@ export class MediaAssetProviderSyncService
   };
 
   private async reconcileTeardowns(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (
       this.stopping ||
       !this.configService.config.mediaAssetRegistrationEnabled
@@ -730,6 +747,7 @@ export class MediaAssetProviderSyncService
   }
 
   private async reportBackpressure(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping) return;
     try {
       const waiting = await this.queue().getWaitingCount();
@@ -745,6 +763,7 @@ export class MediaAssetProviderSyncService
   }
 
   private async sweepStaleMirrors(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (
       this.stopping ||
       this.sweeping ||

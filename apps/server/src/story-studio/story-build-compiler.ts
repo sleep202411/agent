@@ -9,7 +9,11 @@ import {
   storyRouteEndingId,
   storyRouteNodeId,
 } from '@repo/shared/story-stats';
-import type { ExperienceRuntimeManifest } from '@repo/shared/experience-runtime';
+import type {
+  ExperienceRuntimeManifest,
+  ExperienceAppearance,
+  GameUIArtifact,
+} from '@repo/shared/experience-runtime';
 import type {
   StoryBuildDiagnosticDto,
   StoryBuildPathReportDto,
@@ -72,6 +76,8 @@ interface FrozenNodeTimeline {
 }
 
 export interface StoryBuildCompilerInput {
+  appearance?: ExperienceAppearance;
+  gameUi?: GameUIArtifact;
   projectId: string;
   buildId: string;
   sourceDraftRevision: number;
@@ -296,6 +302,8 @@ export function compileStoryBuild(
         );
       const compiled = compileStoryExperienceManifest({
         release: release.data,
+        appearance: input.appearance,
+        gameUi: input.gameUi,
         experienceProfile: 'cinematic',
         metadata: {
           ...input.metadata,

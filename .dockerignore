@@ -4,6 +4,7 @@
 # bloats the build context to 30+GB (apps/web/.next alone).
 **/node_modules
 **/.next
+**/.next-*
 **/.turbo
 **/.cache
 **/dist

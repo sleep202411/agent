@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 import {
   getStoryBuild,
+  getStoryProject,
+  type StoryProjectSummary,
   getStoryWorkingPreview,
   storyApiErrorMessage,
   type StoryBuild,
@@ -20,9 +22,10 @@ import {
 } from "@/lib/story-projects-api";
 import { playtestDiagnosticText } from "../_lib/playtest-diagnostic-text";
 import type { StoryProjectPlaytestSource } from "../_lib/story-playtest-source";
+import { AppearancePlayerPreview } from "@/app/[locale]/story-studio/_components/appearance-design/appearance-player-preview";
 
 type LoadedPlaytestRuntime =
-  | { kind: "draft"; preview: StoryWorkingPreview }
+  | { kind: "draft"; preview: StoryWorkingPreview; project: StoryProjectSummary }
   | { kind: "build"; build: StoryBuild };
 
 export function StoryProjectPlaytest({
@@ -50,7 +53,10 @@ export function StoryProjectPlaytest({
       return source.kind === "draft"
         ? {
             kind: "draft" as const,
-            preview: await getStoryWorkingPreview(projectId, source.chapterId, source.sceneId),
+            ...(await Promise.all([
+              getStoryWorkingPreview(projectId, source.chapterId, source.sceneId),
+              getStoryProject(projectId),
+            ]).then(([preview, project]) => ({ preview, project }))),
           }
         : {
             kind: "build" as const,
@@ -152,6 +158,49 @@ export function StoryProjectPlaytest({
         parsedRuntime.data.localization.defaultLocale
       )
     : t("pageTitle");
+
+  if (source.kind === "draft" && loadedRuntime.kind === "draft") {
+    const chapterQuery = source.chapterId
+      ? `?${new URLSearchParams({ chapter: source.chapterId })}`
+      : "";
+    return (
+      <AppearancePlayerPreview
+        projectId={projectId}
+        project={loadedRuntime.project}
+        projectTitle={runtimeTitle}
+        backHref={`/story-studio/projects/${encodeURIComponent(projectId)}/canvas${chapterQuery}`}
+        previewTools={
+          <div className="flex items-center gap-3">
+            {stateRows.length > 0 && (
+              <StoryPlaytestStateHud
+                values={sessionValues}
+                rows={stateRows}
+                completedEndingIds={completedEndingIds}
+              />
+            )}
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label={t("refresh")}
+              onClick={() => void runtimeQuery.refetch()}
+            >
+              <IconRefresh className="size-4" />
+            </Button>
+          </div>
+        }
+        key={`${parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}:${source.sceneId ?? "entry"}`}
+        runtime={runtime}
+        locale={locale}
+        startSceneId={source.sceneId ?? null}
+        coverUrl={loadedRuntime.kind === "draft" ? loadedRuntime.preview.coverUrl : undefined}
+        onPreviewStateChange={(state) => {
+          setSessionValues(state.values);
+          setCompletedEndingIds(state.completedEndingIds);
+        }}
+      />
+    );
+  }
 
   return (
     <main

@@ -146,6 +146,50 @@ function input(
 
 describe('compileStoryBuild', () => {
   it.each(['preview', 'production'] as const)(
+    'freezes the identical code artifact in the %s player manifest',
+    (channel) => {
+      const gameUi = {
+        apiVersion: 1 as const,
+        surface: 'main-menu' as const,
+        sourceHash: 'a'.repeat(64),
+        artifactHash: 'b'.repeat(64),
+        toolchain: 'test',
+        javascript: 'var FizzGameUI={mount(){}}',
+        css: 'button{min-height:44px}',
+      };
+      const compiled = compileStoryBuild(input({ channel, gameUi }));
+      expect(compiled.runtime?.gameUi).toEqual(gameUi);
+      gameUi.javascript = 'Changed later';
+      expect(compiled.runtime?.gameUi?.javascript).toBe(
+        'var FizzGameUI={mount(){}}',
+      );
+    },
+  );
+  it.each(['preview', 'production'] as const)(
+    'freezes identical validated appearance in %s manifests',
+    (channel) => {
+      const appearance = {
+        version: 1 as const,
+        presentation: {
+          copy: { start: { 'zh-CN': 'Enter' } },
+          theme: {
+            version: 1 as const,
+            name: 'Gold',
+            css: '[data-experience-ui-region="start"] [data-ui-part="primary"] { color: #d6b77a; }',
+            assets: [],
+          },
+        },
+      };
+      const compiled = compileStoryBuild(input({ channel, appearance }));
+      expect(compiled.runtime?.appearance).toEqual(appearance);
+      appearance.presentation.copy.start['zh-CN'] = 'Changed later';
+      expect(
+        compiled.runtime?.appearance?.presentation?.copy?.start['zh-CN'],
+      ).toBe('Enter');
+    },
+  );
+
+  it.each(['preview', 'production'] as const)(
     'allows repeated scene-local clip keys without mixing media in %s builds',
     (channel) => {
       const timelines = ['opening', 'left', 'right'].map((nodeId) =>

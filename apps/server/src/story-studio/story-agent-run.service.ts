@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import {
   ConflictException,
   ForbiddenException,
@@ -1990,6 +1991,7 @@ export class StoryAgentRunService {
     workerId: string,
     batch: number,
   ): Promise<ClaimedRunRow[]> {
+    if (!backgroundTasksEnabled()) return [];
     const safeBatch = Math.min(Math.max(Math.trunc(batch), 1), 25);
     return this.prisma.$transaction(async (tx) => {
       const claimed = await tx.$queryRaw<ClaimedRunRow[]>`
@@ -2078,6 +2080,7 @@ export class StoryAgentRunService {
   }
 
   async executeClaimedRun(runId: string, workerId: string): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const transition = await this.prisma.$transaction(async (tx) => {
       const writeRows = await tx.$queryRaw<LockedWriteStateRow[]>`
         SELECT
@@ -2693,6 +2696,7 @@ export class StoryAgentRunService {
     workerId: string,
     batch: number,
   ): Promise<ClaimedRunRow[]> {
+    if (!backgroundTasksEnabled()) return [];
     const safeBatch = Math.min(Math.max(Math.trunc(batch), 1), 25);
     return this.prisma.$transaction(async (tx) => {
       return tx.$queryRaw<ClaimedRunRow[]>`
@@ -4050,6 +4054,7 @@ export class StoryAgentRunService {
   }
 
   async recoverOrphanedApplyingRuns(limit = 10): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const now = await databaseNow(this.prisma);
     const rows = await this.prisma.storyAgentRun.findMany({
       where: {
@@ -4102,6 +4107,7 @@ export class StoryAgentRunService {
   async expireProposals(
     limit = STORY_AGENT_PROPOSAL_EXPIRY_BATCH,
   ): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 50);
     const now = await databaseNow(this.prisma);
     const candidates = await this.prisma.storyAgentRun.findMany({

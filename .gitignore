@@ -29,6 +29,7 @@ node_modules
 
 # Testing
 coverage
+__pycache__/
 
 # Turbo
 .turbo

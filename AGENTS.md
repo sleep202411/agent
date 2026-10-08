@@ -6,51 +6,32 @@ each `apps/*` and `packages/*` ships its own deep guide.
 
 ## Architecture
 
-Three-app monorepo behind one product (FizzDragon — AI animation /
+Multi-app monorepo behind one product (FizzDragon — AI animation /
 storyboard / IP co-creation platform). The user-facing brand is
 **FizzDragon** in every language, including zh-CN / zh-HK. Do not translate
 or transliterate the brand name.
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                       Web (Next.js 16)                    │
-│  Renders all user-facing pages + the in-product studio.   │
-│  Talks HTTP to:                                           │
-│    /aurora/*       → NestJS server                         │
-│    /api/* /studio/*→ Java Studio (external)               │
-│    /user/* /project/* /vedio/* → Java Content (external)  │
-└─────────┬───────────────────┬────────────────────────────┘
-          │                   │
-          ▼                   ▼
-┌────────────────────┐  ┌────────────────────────────────┐
-│ Server (NestJS)    │  │ Java Studio / Content services │
-│ Session / chat WS  │  │ (out of monorepo)              │
-│ Agent OS Gateway   │  │ Image / video gen, billing,    │
-│ /aurora/* routes   │  │ user / project / video CRUD    │
-└────────┬───────────┘  └────────────────────────────────┘
-         │
-         ▼
-┌────────────────────┐
-│ Agent OS (NEW)     │
-│ LangGraph.js       │
-│ Temporal (long)    │
-│ Ably + LiteLLM     │
-│ fizz.agent.v1      │
-└────────────────────┘
-```
+Web and Studio render the product and talk to Nest through `/aurora/*`.
+Nest owns sessions, authorization, realtime, billing integration and the Agent OS
+Gateway. Agent OS runs its own agent platform; the independent Game Agent runs
+official Harness. External Java services provide their existing user, project,
+content and generation APIs. Keep these service boundaries explicit.
 
-| Path                         | Stack                                          | Purpose                                                 |
-| ---------------------------- | ---------------------------------------------- | ------------------------------------------------------- |
-| `apps/web`                   | Next.js 16 App Router, React 19.2, Tailwind v4 | User-facing site + studio UI                            |
-| `apps/server`                | NestJS                                         | Session, chat WS, Agent OS Gateway, billing glue        |
-| `apps/agent-os`              | LangGraph.js + LiteLLM                         | **FizzDragon Agent Platform** (codename Agent OS) — NEW |
-| `apps/agent`                 | Mastra + AI SDK                                | Legacy StoryOS — do not extend                          |
-| `packages/agent-protocol`    | TypeScript + Zod                               | Agent OS wire protocol (`fizz.agent.v1`)                |
-| `packages/agent-policy`      | TypeScript                                     | Agent OS approval / risk policy                         |
-| `packages/shared`            | TypeScript                                     | Cross-app types and constants (`ForcedPersonaKey` etc.) |
-| `packages/ui`                | React                                          | Shared low-level component primitives                   |
-| `packages/eslint-config`     | —                                              | Shared lint rules                                       |
-| `packages/typescript-config` | —                                              | Shared `tsconfig` bases                                 |
+| Path                         | Stack                                          | Purpose                                                          |
+| ---------------------------- | ---------------------------------------------- | ---------------------------------------------------------------- |
+| `apps/web`                   | Next.js 16 App Router, React 19.2, Tailwind v4 | User-facing site + studio entry                                  |
+| `apps/studio`                | Next.js / React                                | Creator canvas and story-authoring UI                            |
+| `apps/admin-ui`              | Next.js / React                                | Internal operations console                                      |
+| `apps/server`                | NestJS                                         | Session, chat WS, Agent OS Gateway, billing glue                 |
+| `apps/agent-os`              | LangGraph.js + LiteLLM                         | **FizzDragon Agent Platform** (codename Agent OS) — NEW          |
+| `apps/game-agent`            | Official DeepSeek Harness                      | Independent game-authoring Agent; no Agent OS runtime dependency |
+| `apps/agent`                 | Mastra + AI SDK                                | Legacy StoryOS — do not extend                                   |
+| `packages/agent-protocol`    | TypeScript + Zod                               | Agent OS wire protocol (`fizz.agent.v1`)                         |
+| `packages/agent-policy`      | TypeScript                                     | Agent OS approval / risk policy                                  |
+| `packages/shared`            | TypeScript                                     | Cross-app types and constants (`ForcedPersonaKey` etc.)          |
+| `packages/ui`                | React                                          | Shared low-level component primitives                            |
+| `packages/eslint-config`     | —                                              | Shared lint rules                                                |
+| `packages/typescript-config` | —                                              | Shared `tsconfig` bases                                          |
 
 ## Deep dives (start here for any real work)
 
@@ -64,8 +45,10 @@ or transliterate the brand name.
   `@docs/FizzDragon_AI_Agent_Platform_Production_Guide.md`.
 - **Legacy Agent (Mastra)** → `@apps/agent/AGENTS.md` — freeze; no new features
 
-**New Agent work targets `apps/agent-os` only.** Do not import from or add
-coupling to `apps/agent`.
+**Platform Agent work targets `apps/agent-os` only.** Do not import from or add
+coupling to `apps/agent`. The user's explicit game-authoring exception is
+`apps/game-agent`: Harness owns that independent agent loop. See its
+`AGENTS.md` and `README.md`; do not fold it back into Agent OS.
 
 - **NestJS server** → no AGENTS yet; conventions live in code comments
   and `apps/server/README.md` (TODO: write one).
@@ -79,15 +62,27 @@ public creator surfaces.
 
 ## Production deployment
 
-Two production deployments running off the same monorepo:
+Two production deployments use this monorepo:
 
-- **`fizzdragon.com`** — international (Singapore / OSS-AP-Southeast-1)
-- **`fizzdragon.fizzspace.cn`** — China (Alibaba Cloud CN, separate OSS)
+- **`.com`** — Alibaba Cloud Singapore ACK, account `5332868355276356`,
+  profile `acct6`, region `ap-southeast-1`, cluster `fizzdragon-com-sg`,
+  namespace `fizzdragon`. Six active services: Web, Server, Studio, Admin UI,
+  Agent OS and Harness/Game Agent. Publish through `deploy/deploy-com.sh`;
+  see `deploy/aliyun-sg/README.md` for operator setup and release behavior.
+  Normal releases require clean `main` and build its fixed committed HEAD;
+  `--check` is read-only and does not require that branch state.
+- **`.cn`** — Alibaba Cloud Hangzhou ACK, cluster `fizzdragon-cn`, with its own
+  account, VPC, PostgreSQL, Redis, OSS and `deploy/deploy-cn.sh` workflow.
 
-Both are Alibaba Cloud ECS hosted. The CN deployment is **not** a
-mirror — env vars differ (different Java backends, different OSS
-buckets, different AI keys). Region-aware behaviour gates off
-`NEXT_PUBLIC_SITE_REGION` (`global` vs `cn`).
+The sites use different runtime configuration, Java endpoints, storage and AI
+credentials. Region-aware behavior uses `NEXT_PUBLIC_SITE_REGION` (`global`
+versus `cn`). Do not mix accounts or deployment inputs.
+
+The `.com` root domain and `www` retain Azure Front Door; legacy Azure Blob media
+remains readable and new global outputs use R2. Java/MySQL stays in its separate
+account `5941647929258385`. Azure application writers and automatic reconciliation
+remain stopped; do not use the retired AKS entrypoint or preparation overlays for
+production releases.
 
 Branches:
 
@@ -183,15 +178,6 @@ Some tasks benefit from loaded skills:
   APIs change between versions; the skill reads docs from `node_modules`.
 - `claude-api` — for prompt caching, model migration, Anthropic SDK use.
 - `find-skills` — discover new skills if a task isn't covered above.
-
-## Memory
-
-If you're operating with persistent memory (e.g. Claude Code's
-auto-memory), the project memory lives at
-`~/.claude/projects/-Users-isaac-workspace-fizzdragon-fizzdragon-platform/memory/`.
-Recurring conventions, known bugs, parked refactors, and per-user
-preferences are tracked there. Always check `MEMORY.md` index before
-starting a non-trivial task.
 
 ## Iteration
 

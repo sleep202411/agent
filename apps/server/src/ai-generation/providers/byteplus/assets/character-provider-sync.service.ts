@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../../../../common/background-tasks';
 import {
   Injectable,
   Logger,
@@ -137,6 +138,7 @@ export class CharacterProviderSyncService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (!this.configService.config.assetsPlaneEnabled) return;
     const connection = this.redis();
     this.workers = [
@@ -183,6 +185,9 @@ export class CharacterProviderSyncService
    * caller then skips registration and the character stays URL-only).
    */
   async ensureAigcGroup(characterId: string): Promise<string | null> {
+    // Attaching user media remains available; null means no provider group
+    // was provisioned, using the existing best-effort registration contract.
+    if (!backgroundTasksEnabled()) return null;
     if (!this.configService.config.aigcRegistrationEnabled) return null;
     const eligible = await this.prisma.studioCharacter.findFirst({
       where: {
@@ -318,6 +323,7 @@ export class CharacterProviderSyncService
     externalAssetRowId: string,
     priority = REGISTER_PRIORITY_FOREGROUND,
   ): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     await this.queue().add(
       'register',
       { op: 'register', externalAssetRowId },
@@ -337,6 +343,7 @@ export class CharacterProviderSyncService
     externalAssetIds: string[];
     externalGroupIds: string[];
   }): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const queue = this.critical();
     await queue.addBulk([
       ...args.externalAssetIds.map((externalAssetId) => ({
@@ -376,6 +383,7 @@ export class CharacterProviderSyncService
   // ── Consumers ───────────────────────────────────────────────────────────
 
   private processAssetsJob: Processor<AssetsJobData> = async (job) => {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping) return;
     const row = await this.prisma.aiProviderExternalAsset.findUnique({
       where: { id: job.data.externalAssetRowId },
@@ -497,6 +505,7 @@ export class CharacterProviderSyncService
   }
 
   private async enqueuePoll(externalAssetRowId: string): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     await this.queue().add(
       'poll',
       { op: 'poll', externalAssetRowId },
@@ -554,6 +563,7 @@ export class CharacterProviderSyncService
   }
 
   private processCriticalJob: Processor<CriticalJobData> = async (job) => {
+    if (!backgroundTasksEnabled()) return;
     try {
       if (job.data.op === 'delete_asset') {
         await this.client.deleteAsset(job.data.externalAssetId);
@@ -611,6 +621,7 @@ export class CharacterProviderSyncService
    * the asset lane independent of the group.
    */
   private async reconcileTeardowns(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || !this.configService.config.assetsPlaneEnabled) return;
     const graceCutoff = new Date(Date.now() - TEARDOWN_REENQUEUE_GRACE_MS);
     try {
@@ -653,6 +664,7 @@ export class CharacterProviderSyncService
    * observable rather than silently draining over many minutes.
    */
   private async reportBackpressure(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping) return;
     try {
       const waiting = await this.queue().getWaitingCount();
@@ -669,6 +681,7 @@ export class CharacterProviderSyncService
 
   /** Safety net for lost poll jobs (§2.2 staleness rule). */
   private async sweepStaleMirrors(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (
       this.stopping ||
       this.sweeping ||

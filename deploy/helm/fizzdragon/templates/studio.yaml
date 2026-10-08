@@ -19,12 +19,13 @@ spec:
       labels:
         {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
     spec:
+      {{- include "fizzdragon.podAccess" (dict "component" "studio" "settings" .Values.studio "forceNoToken" false) | nindent 6 }}
       # No Key Vault volume / workload identity: the studio holds no secrets —
       # auth is the satoken cookie and all backend access goes through the
       # per-host /aurora ingress straight to the server.
       containers:
         - name: {{ $component }}
-          image: "{{ .Values.image.registry }}/{{ .Values.studio.image.repository }}:{{ .Values.studio.image.tag }}"
+          image: {{ include "fizzdragon.componentImage" (dict "component" "studio" "registry" .Values.image.registry "image" .Values.studio.image) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http

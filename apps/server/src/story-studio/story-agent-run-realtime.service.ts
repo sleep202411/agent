@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { AiOutboxEventType, Prisma } from '@prisma/client';
 import {
   StoryAgentRunRealtimeEventSchema,
@@ -72,6 +73,7 @@ export class StoryAgentRunRealtimeService {
   async publishCommitted(
     dispatch: StoryAgentRealtimeDispatch | null,
   ): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (!dispatch) return;
     try {
       await this.realtime.publishAssetEvent(dispatch.userId, dispatch.event);

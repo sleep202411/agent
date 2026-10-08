@@ -55,6 +55,10 @@ export interface ExperiencePlayerCopy {
   interactiveFilm: string;
   starting: string;
   start: string;
+  mainMenu: string;
+  returnToMenu: string;
+  continueGame: string;
+  codeMenu: { failed: string; retry: string; restore: string };
   endingEyebrow: string;
   unknownEnding: (endingId: string) => string;
   playAgain: string;

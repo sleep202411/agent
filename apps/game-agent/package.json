@@ -1,0 +1,64 @@
+{
+  "name": "game-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent Harness runtime for game authoring.",
+  "type": "module",
+  "exports": {
+    "./appearance-harness-plugin": {
+      "types": "./dist/tools/appearance-harness-plugin.d.ts",
+      "default": "./dist/tools/appearance-harness-plugin.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check-types": "tsc --noEmit -p tsconfig.spec.json",
+    "predev": "npm run build -w @repo/shared && npm run build -w @repo/game-ui-build && npm run build -w @repo/game-agent-protocol && npm run build -w game-agent",
+    "dev": "tsx watch --env-file-if-exists=.env src/main.ts",
+    "start": "node --env-file-if-exists=.env dist/main.js",
+    "smoke:appearance": "tsx --env-file-if-exists=.env scripts/appearance-smoke.mts",
+    "presmoke:appearance": "npm run predev",
+    "test": "vitest run",
+    "lint": "eslint . --max-warnings 0"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/cordis-plugin-group": "1.0.4",
+    "@deepseek-ai/dsh": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-anonymous-user-id": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-attachment": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-compaction": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-fs": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-jobs": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm-deepseek": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-output-retention": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-ptc-runtime": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sandbox": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sdk-client": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-sdk-protocol": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-persistence": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-session-query": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-shell": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-spill": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-util-time": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-util-workspace-path": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-workflow": "0.2.0-rc.2",
+    "@repo/appearance-harness-ui": "*",
+    "@repo/game-agent-protocol": "*",
+    "@repo/game-ui-build": "*",
+    "@repo/shared": "*",
+    "zod": "4.3.6",
+    "ws": "8.20.0"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "*",
+    "@types/node": "^22.10.7",
+    "eslint": "^9.18.0",
+    "tsx": "^4.21.0",
+    "typescript": "5.9.2",
+    "vitest": "^4.1.4",
+    "@types/ws": "8.18.1"
+  }
+}

@@ -21,6 +21,8 @@ export interface ExperiencePlaybackGates {
   chargeGate: boolean;
   /** The plot map holds the story without offering the frame's pause controls. */
   journeyMap?: boolean;
+  /** The independent main menu keeps the active run mounted and suspended. */
+  mainMenu?: boolean;
 }
 
 export interface ExperiencePlaybackHolds {
@@ -52,14 +54,20 @@ export function resolveExperiencePlaybackHolds(
   const accessHeld = gates.accessPending || gates.retryAccess;
   const running = gates.started && !gates.ended && !gates.failed;
   const storyHeld =
-    !running || gates.viewerPause !== null || accessHeld || Boolean(gates.journeyMap);
+    !running ||
+    gates.viewerPause !== null ||
+    accessHeld ||
+    Boolean(gates.journeyMap || gates.mainMenu);
   return {
     running,
     storyHeld,
     audioHeld:
-      gates.viewerPause !== null || accessHeld || gates.failed || Boolean(gates.journeyMap),
+      gates.viewerPause !== null ||
+      accessHeld ||
+      gates.failed ||
+      Boolean(gates.journeyMap || gates.mainMenu),
     mediaHeld: storyHeld || gates.chargeGate,
-    pauseUi: running && !gates.nodeGate && !accessHeld && !gates.journeyMap,
+    pauseUi: running && !gates.nodeGate && !accessHeld && !gates.journeyMap && !gates.mainMenu,
   };
 }
 

@@ -29,6 +29,15 @@ const holds = (gates: Partial<ExperiencePlaybackGates>) =>
   resolveExperiencePlaybackHolds({ ...playing, ...gates });
 
 describe("resolveExperiencePlaybackHolds", () => {
+  it("suspends a mounted run completely while its independent main menu is open", () => {
+    expect(holds({ mainMenu: true })).toEqual({
+      running: true,
+      storyHeld: true,
+      audioHeld: true,
+      mediaHeld: true,
+      pauseUi: false,
+    });
+  });
   it("holds nothing while the story plays", () => {
     expect(holds({})).toEqual({
       running: true,

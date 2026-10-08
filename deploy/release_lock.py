@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regional cross-operator release mutex. Never expires an active remote build."""
+"""CN cross-operator release mutex. Never expires an active remote build."""
 import argparse
 import datetime
 import json
@@ -13,13 +13,14 @@ import uuid
 
 NAME = 'fizzdragon-release-lock'
 TARGETS = {
-    'com': ('config', 'aks-fizzdragon-com-admin', 'fizzdragon-com'),
     'cn': ('config-fizzdragon-cn', '218059191361846222-c72d2039c68624a3e8d0dee257a13d451', 'fizzdragon'),
 }
 
 
 class Lock:
     def __init__(self, region):
+        if region == 'com':
+            raise RuntimeError('The Azure .com release has retired; use deploy/deploy-com.sh instead')
         config, context, namespace = TARGETS[region]
         # Explicit regional targets: never coordinate against an unrelated current context.
         self.command = ['kubectl', '--kubeconfig', str(Path.home() / '.kube' / config),
@@ -84,7 +85,7 @@ class Lock:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('region', choices=TARGETS)
+    parser.add_argument('region', choices=('cn', 'com'))
     parser.add_argument('--recover-owner', help='Release an orphan only after verifying all remote work has stopped')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()

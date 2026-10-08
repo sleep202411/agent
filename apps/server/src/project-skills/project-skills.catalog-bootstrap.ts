@@ -2,6 +2,7 @@ import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { materializeBundledCatalogSkills } from '@repo/agent-skills';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 
 /**
  * Mirrors the Git-governed bundled catalog into PostgreSQL.
@@ -12,6 +13,7 @@ export class ProjectSkillsCatalogBootstrap implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const previewBaseUrl = process.env.PROJECT_SKILL_PREVIEW_BASE_URL?.trim();
     if (!previewBaseUrl) {
       throw new Error(

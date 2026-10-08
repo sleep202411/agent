@@ -1,4 +1,10 @@
+# syntax=docker/dockerfile:1
 FROM node:24.18.1-alpine AS base
+
+# Prisma's build and runtime stages must resolve the same OpenSSL ABI.
+ARG APK_MIRROR=dl-cdn.alpinelinux.org
+RUN sed -i "s/dl-cdn.alpinelinux.org/${APK_MIRROR}/g" /etc/apk/repositories && \
+    apk add --no-cache openssl
 
 # ─── Stage 1: Prune monorepo ──────────────────────────────
 FROM base AS pruner
@@ -25,6 +31,8 @@ COPY --from=pruner /app/out/full/ .
 # build cgroup limit is lower than what Node detects, so tsc can grow past it
 # and get SIGKILLed (exit 137). A fixed ceiling makes the build predictable.
 ENV NODE_OPTIONS=--max-old-space-size=4096
+RUN node apps/server/scripts/prisma-engine.cjs prepare
+ENV PRISMA_SCHEMA_ENGINE_BINARY=/opt/prisma/schema-engine
 RUN npx turbo run build --filter=server
 
 # ─── Stage 4: Runner ────────────────────────────────────
@@ -34,10 +42,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3001
+ENV PRISMA_SCHEMA_ENGINE_BINARY=/opt/prisma/schema-engine
 
-ARG APK_MIRROR=dl-cdn.alpinelinux.org
-RUN sed -i "s/dl-cdn.alpinelinux.org/${APK_MIRROR}/g" /etc/apk/repositories && \
-    apk add --no-cache ffmpeg && \
+RUN apk add --no-cache ffmpeg && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
@@ -52,6 +59,8 @@ RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 # static and evaluated at module load, so a missing one crashes the whole API
 # tier even when the feature it belongs to is disabled by flag.
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/game-ui-build/dist ./packages/game-ui-build/dist
+COPY --from=builder /app/packages/game-agent-protocol/dist ./packages/game-agent-protocol/dist
 COPY --from=builder /app/packages/agent-skills/dist ./packages/agent-skills/dist
 COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capabilities/dist
 COPY --from=builder /app/packages/agent-tools/dist ./packages/agent-tools/dist
@@ -64,6 +73,11 @@ COPY --from=builder /app/packages/agent-protocol/dist ./packages/agent-protocol/
 # this, the server crashes at startup with
 # `Cannot find module '.prisma/client/default'`.
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+# Keep the locked native migration engine in the image. Runtime CLI commands
+# use this fixed path instead of attempting a download during deployment.
+COPY --from=builder /opt/prisma /opt/prisma
+COPY --from=builder /app/apps/server/scripts/prisma-engine.cjs ./apps/server/scripts/prisma-engine.cjs
 
 # Copy compiled output
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
@@ -90,9 +104,8 @@ if(broken.length){\
   process.exit(1);\
 }console.log('migration integrity check: ok');"
 
-# Prisma CLI may refresh engine files during `migrate deploy`. The
-# container runs as the unprivileged `nestjs` user, so keep Prisma-owned
-# runtime assets writable by that user instead of failing at startup.
+# Keep generated/client assets writable by the unprivileged runtime user.
+# The fixed migration engine remains root-owned and read-only.
 RUN chown -R nestjs:nodejs \
     /app/node_modules/@prisma \
     /app/node_modules/.prisma \
@@ -113,9 +126,19 @@ import {readFileSync} from 'node:fs';\
 const pkg=JSON.parse(readFileSync('apps/server/package.json','utf8'));\
 const names=Object.keys(pkg.dependencies||{}).filter(name=>name.startsWith('@repo/'));\
 await Promise.all(names.map(name=>import(name)));\
+const {buildGameUI}=await import('@repo/game-ui-build');\
+await buildGameUI({apiVersion:1,surface:'main-menu',entry:'menu.js',files:[{path:'menu.js',content:'export function mount() {}'}]});\
 console.log('workspace runtime imports: ok');"
 
 WORKDIR /app/apps/server
+
+# These commands inspect local tooling only; neither opens a database. Running
+# them offline as nestjs catches missing engines, wrong ABI and permissions.
+RUN --network=none node scripts/prisma-engine.cjs verify && \
+    CHECKPOINT_DISABLE=1 DOTENV_CONFIG_PATH=/dev/null DATABASE_URL= \
+      node /app/node_modules/prisma/build/index.js --version && \
+    CHECKPOINT_DISABLE=1 DOTENV_CONFIG_PATH=/dev/null DATABASE_URL= \
+      node /app/node_modules/prisma/build/index.js migrate status --help
 
 EXPOSE 3001
 

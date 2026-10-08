@@ -52,6 +52,40 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- end -}}
 
+{{/* A digest pins deployed bytes; the tag may retain the common source revision. */}}
+{{- define "fizzdragon.componentImage" -}}
+{{- if and (hasKey .image "digest") (not (kindIs "string" .image.digest)) -}}
+{{- fail (printf "%s.image.digest must be a sha256 digest string" .component) -}}
+{{- end -}}
+{{- $repository := printf "%s/%s" .registry .image.repository -}}
+{{- if .image.digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .image.digest) -}}
+{{- fail (printf "%s.image.digest must be sha256 followed by 64 lowercase hexadecimal characters" .component) -}}
+{{- end -}}
+{{- printf "%s@%s" $repository .image.digest -}}
+{{- else -}}
+{{- printf "%s:%s" $repository .image.tag -}}
+{{- end -}}
+{{- end -}}
+
+{{/* Nil preserves Kubernetes defaults; isolation can always force token removal. */}}
+{{- define "fizzdragon.podAccess" -}}
+{{- range $key := list "automountServiceAccountToken" "enableServiceLinks" -}}
+{{- $value := index $.settings $key -}}
+{{- if and (ne $value nil) (not (kindIs "bool" $value)) -}}
+{{- fail (printf "%s.%s must be a boolean or null" $.component $key) -}}
+{{- end -}}
+{{- end -}}
+{{- if .forceNoToken }}
+automountServiceAccountToken: false
+{{- else if ne .settings.automountServiceAccountToken nil }}
+automountServiceAccountToken: {{ .settings.automountServiceAccountToken }}
+{{- end }}
+{{- if ne .settings.enableServiceLinks nil }}
+enableServiceLinks: {{ .settings.enableServiceLinks }}
+{{- end }}
+{{- end -}}
+
 {{/* Workload Identity pod labels — empty when the Azure layer is off (CN/ACK). */}}
 {{- define "fizzdragon.workloadIdentityLabels" -}}
 {{- if .Values.azure.enabled }}

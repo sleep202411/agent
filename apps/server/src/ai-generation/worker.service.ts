@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { PollDispatchError } from './poll-dispatch-error';
 /**
  * AiGenerationWorkerService — provider-agnostic worker.
@@ -272,6 +273,7 @@ export class AiGenerationWorkerService
   }
 
   onApplicationBootstrap() {
+    if (!backgroundTasksEnabled()) return;
     if (this.providers.list().length === 0) {
       this.logger.warn(
         'No ProviderAdapter registered — AiGenerationWorker is a no-op',
@@ -379,6 +381,7 @@ export class AiGenerationWorkerService
   private async processQueueJob(
     queueJob: BullJob<AiQueueJobData>,
   ): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const jobId = queueJob.data.jobId;
     const op = queueJob.data.op ?? 'start';
     const dbJob = await this.store.findById(jobId);
@@ -602,6 +605,7 @@ export class AiGenerationWorkerService
   }
 
   private async scheduleAcceptedPoll(jobId: string): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const job = await this.store.findById(jobId);
     if (!job || job.status !== 'in_progress' || !job.providerJobId) return;
     await this.queueService.enqueue(
@@ -615,6 +619,7 @@ export class AiGenerationWorkerService
   }
 
   private async dispatchPoll(enqueue: () => Promise<void>): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     try {
       await enqueue();
     } catch (error) {
@@ -623,6 +628,7 @@ export class AiGenerationWorkerService
   }
 
   private async pollJob(job: AiJob): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (job.status !== 'in_progress') {
       this.logger.warn(
         `Skipping poll for job ${job.id}: DB status is ${job.status}, expected IN_PROGRESS.`,
@@ -1107,6 +1113,7 @@ export class AiGenerationWorkerService
   }
 
   private async runJob(job: AiJob) {
+    if (!backgroundTasksEnabled()) return;
     let adapter: ProviderAdapter;
     const provider = job.routingSnapshot?.selectedProvider ?? job.provider;
     const modelId = job.routingSnapshot?.selectedModelId ?? job.modelId;

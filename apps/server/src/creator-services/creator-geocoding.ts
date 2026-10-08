@@ -22,6 +22,7 @@ import { ContentGpsPointSchema } from '@repo/shared/content-gps';
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { createContentGpsGeocoder } from '../ip-commerce/content-gps-geocoder';
 
 const Input = z.strictObject({
@@ -52,6 +53,7 @@ export class CreatorGeocodingService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CreatorGeocodingService.name);
   constructor(private readonly prisma: PrismaService) {}
   onModuleInit() {
+    if (!backgroundTasksEnabled()) return;
     const clean = () => {
       if (this.cleaning) return;
       this.cleaning = true;

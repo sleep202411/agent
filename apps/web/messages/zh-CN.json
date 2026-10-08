@@ -9583,7 +9583,7 @@
     "manifestRoot": "内容清单",
     "interactiveFilm": "影游",
     "starting": "正在启动…",
-    "start": "开始体验",
+    "start": "开始",
     "endingEyebrow": "播放完成",
     "unknownEnding": "路线播放完成",
     "playAgain": "再玩一次",
@@ -9651,7 +9651,15 @@
       "unlocking": "解锁中…",
       "failed": "解锁失败，请重试。"
     },
-    "retryReport": "重试保存游玩报告"
+    "retryReport": "重试保存游玩报告",
+    "mainMenu": "主菜单",
+    "returnToMenu": "返回主菜单",
+    "continueGame": "继续游戏",
+    "codeMenu": {
+      "failed": "自定义游戏菜单未能加载。",
+      "retry": "重试",
+      "restore": "使用默认菜单"
+    }
   },
   "games": {
     "back": "返回 IP 广场",

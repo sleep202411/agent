@@ -31,6 +31,10 @@ const copy: ExperiencePlayerCopy = {
   interactiveFilm: "Film",
   starting: "Loading",
   start: "Start",
+  mainMenu: "Main menu",
+  returnToMenu: "Return to main menu",
+  continueGame: "Continue game",
+  codeMenu: { failed: "Custom menu failed", retry: "Retry", restore: "Use default menu" },
   endingEyebrow: "Ending",
   unknownEnding: () => "Finished",
   playAgain: "Play again",
@@ -364,6 +368,10 @@ describe("plot map and historical branch replay", () => {
     act(() => root.unmount());
     root = createRoot(container);
     await render(runtime, saved);
+    await click(copy.journeyMap.open);
+    expect(node("scene.entry").querySelector("button")).toBeNull();
+    expect(node("scene.a").querySelector("button")).toBeNull();
+    await click(copy.journeyMap.close);
     await click("Start");
     await click(copy.journeyMap.open);
     expect(node("scene.a").textContent).toContain(copy.journeyMap.current);

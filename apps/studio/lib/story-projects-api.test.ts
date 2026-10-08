@@ -330,6 +330,7 @@ function storyProject(): StoryProjectSummary {
     cover: null,
     tags: [],
     storeListing: null,
+    appearance: null,
     sourceIpId: null,
     projectVersion: 0,
     draftRevision: 0,

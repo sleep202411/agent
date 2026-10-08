@@ -614,7 +614,13 @@ function JourneyMapDialog({
               </span>
             </div>
             <p className="mt-1 text-[11px] leading-4 text-white/60">
-              {replayPending ? <span role="status">{copy.replaying}</span> : copy.replayHint}
+              {replayPending ? (
+                <span role="status">{copy.replaying}</span>
+              ) : graph.nodes.some((node) => node.replayable) ? (
+                copy.replayHint
+              ) : (
+                copy.unexploredHint
+              )}
             </p>
             {graph.truncated ? (
               <p role="status" className="mt-1 text-[11px] leading-4 text-white/75">

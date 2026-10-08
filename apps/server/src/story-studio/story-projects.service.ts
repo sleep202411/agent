@@ -1,4 +1,10 @@
 import {
+  migrateStoredExperienceAppearance,
+  GameUIProjectSchema,
+  type GameUIProject,
+} from '@repo/shared/experience-runtime';
+import { buildGameUI } from '@repo/game-ui-build';
+import {
   CREW_STUDIO_MEMBER_SELECT,
   crewStudioRoleForMember,
 } from '../workspaces/crew-studio-access';
@@ -592,6 +598,24 @@ export class StoryProjectsService {
   ): Promise<StoryProjectSummaryDto> {
     await this.requireProject(user, projectId, 'story.edit');
 
+    // Compile before entering the transaction. Failed builds cannot replace the
+    // last usable project artifact; the existing version CAS owns the commit.
+    let gameUi: GameUIProject | null | undefined;
+    if (input.gameUiSource === null) gameUi = null;
+    else if (input.gameUiSource !== undefined) {
+      try {
+        gameUi = {
+          source: input.gameUiSource,
+          artifact: await buildGameUI(input.gameUiSource),
+        };
+      } catch (error) {
+        throw new UnprocessableEntityException({
+          code: 'STORY_GAME_UI_BUILD_FAILED',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const visualStyleSkill = input.confirmCreativeProfile
@@ -707,6 +731,15 @@ export class StoryProjectsService {
             : {}),
           ...(input.tags !== undefined
             ? { tags: input.tags as Prisma.InputJsonArray }
+            : {}),
+          ...(input.appearance !== undefined
+            ? {
+                appearance:
+                  input.appearance === null ? Prisma.DbNull : input.appearance,
+              }
+            : {}),
+          ...(gameUi !== undefined
+            ? { gameUi: gameUi === null ? Prisma.DbNull : gameUi }
             : {}),
           ...(input.storeListing !== undefined
             ? {
@@ -2252,7 +2285,12 @@ export class StoryProjectsService {
       cover: row.cover ? toMediaAsset(row.cover) : null,
       tags: stringArray(row.tags),
       storeListing: parseStoreListing(row.storeListing),
+      appearance:
+        row.appearance == null
+          ? null
+          : migrateStoredExperienceAppearance(row.appearance),
       sourceIpId: row.sourceIpId,
+      gameUi: row.gameUi == null ? null : GameUIProjectSchema.parse(row.gameUi),
       projectVersion: row.version,
       draftRevision: row.draft?.revision ?? 0,
       activeRevision: row.revisions[0]

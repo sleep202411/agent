@@ -18,6 +18,7 @@ import {
 } from '@prisma/client';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import {
   assignAdminSuperRole,
   ensureAdminAuthCatalog,
@@ -98,6 +99,7 @@ export class AdminAuthService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     await ensureAdminAuthCatalog(this.prisma);
     await this.ensureBootstrapAdmin();
   }

@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { hostname } from 'node:os';
 import {
   Injectable,
@@ -55,6 +56,7 @@ export class StoryGenerationBatchDispatcherService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || this.timer) return;
     if (process.env.STORY_GENERATION_BATCH_DISPATCHER_ENABLED === 'false') {
       this.logger.log('Story generation batch dispatcher is disabled');
@@ -80,6 +82,7 @@ export class StoryGenerationBatchDispatcherService
   }
 
   async drainOnce(limit = DEFAULT_ACTORS_PER_SWEEP): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping) return;
     if (this.draining) return this.draining;
     this.draining = this.drain(limit).finally(() => {
@@ -207,6 +210,7 @@ export class StoryGenerationBatchDispatcherService
   }
 
   private async dispatch(item: ClaimedBatchItem): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     const isAsset =
       item.targetKind === StoryProductionGenerationTargetKind.asset_spec &&
       item.sequenceId === null;

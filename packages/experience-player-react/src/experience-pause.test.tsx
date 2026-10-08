@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, useEffect, useRef } from "react";
+import { act, StrictMode, useEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import {
@@ -14,7 +14,16 @@ import {
   type ExperienceWorldModelRendererProps,
 } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
+import type {
+  ExperiencePlayerUI,
+  ExperienceStartUIProps,
+  ExperienceChoicesUIProps,
+  ExperiencePauseUIProps,
+  ExperiencePlaybackUIProps,
+} from "./experience-ui";
 import { journeyMapTestCopy } from "./experience-journey-test-copy";
+import { ExperienceDefaultMainMenuUI } from "./experience-main-menu";
+import type { GameSession } from "@repo/game-sdk";
 
 /**
  * The paused state, driven through the real player. Only Vidstack is stubbed —
@@ -101,6 +110,10 @@ const copy = {
   interactiveFilm: "Interactive film",
   starting: "Starting",
   start: "Start",
+  mainMenu: "Main menu",
+  returnToMenu: "Return to main menu",
+  continueGame: "Continue game",
+  codeMenu: { failed: "Custom menu failed", retry: "Retry", restore: "Use default menu" },
   endingEyebrow: "Ending",
   unknownEnding: (endingId: string) => endingId,
   playAgain: "Play again",
@@ -664,6 +677,304 @@ describe("ExperiencePlayer paused state", () => {
     for (const uri of entryClips) await fire(uri, "onCanPlay");
     await start();
   };
+
+  it("opens the map from home without starting the game or spending story time, then restores focus", async () => {
+    const onStateChange = vi.fn();
+    await render(choiceFilm(), { onStateChange });
+    await fire("/a.mp4", "onCanPlay");
+    const initial = structuredClone(onStateChange.mock.lastCall?.[0]);
+    const primary = button(copy.start)!;
+    expect(container.querySelector('[data-experience-screen="menu"]')).not.toBeNull();
+    expect(
+      container.querySelector("[data-experience-landscape-viewport]")?.hasAttribute("inert")
+    ).toBe(true);
+    const map = button(copy.journeyMap.open)!;
+    await act(async () => {
+      map.focus();
+      map.click();
+    });
+    await settle();
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(onStateChange.mock.lastCall?.[0]).toEqual(initial);
+    expect(play).not.toHaveBeenCalled();
+    await act(async () => {
+      document.body
+        .querySelector<HTMLButtonElement>(`button[aria-label="${copy.journeyMap.close}"]`)!
+        .click();
+    });
+    await settle();
+    expect(document.activeElement).toBe(map);
+    expect(primary.disabled).toBe(false);
+    expect(container.querySelector('[data-experience-screen="menu"]')).not.toBeNull();
+  });
+
+  it("returns to a fixed home screen and continues the same run, media element, and position", async () => {
+    const onStateChange = vi.fn();
+    const onCheckpoint = vi.fn();
+    await startFilm(twoClipFilm(), ["/a.mp4"], { onStateChange, onCheckpoint });
+    await fire("/a.mp4", "onPlaying");
+    await playedTo("/a.mp4", 0.5);
+    const media = element("/a.mp4");
+    const state = structuredClone(onStateChange.mock.lastCall?.[0]);
+    await act(async () => {
+      button(copy.mainMenu)!.click();
+    });
+    await settle();
+    expect(container.querySelector("[data-experience-main-menu]")).not.toBeNull();
+    expect(container.querySelector("[data-experience-paused-frame]")).toBeNull();
+    expect(element("/a.mp4")).toBe(media);
+    expect(media.paused).toBe(true);
+    expect(onStateChange.mock.lastCall?.[0]).toEqual(state);
+    expect(onCheckpoint.mock.lastCall?.[0].playback.sceneTimeMs).toBe(500);
+    const continueButton = button(copy.continueGame)!;
+    expect(document.activeElement).toBe(continueButton);
+    play.mockClear();
+    await act(async () => {
+      continueButton.click();
+    });
+    await settle();
+    expect(container.querySelector('[data-experience-screen="game"]')).not.toBeNull();
+    expect(container.querySelector("[data-experience-main-menu]")).toBeNull();
+    expect(element("/a.mp4")).toBe(media);
+    expect(onStateChange.mock.lastCall?.[0]).toEqual(state);
+    expect(play).toHaveBeenCalled();
+  });
+
+  it("gives custom home screens bounded actions and revokes sessions after unmounting", async () => {
+    let session!: GameSession;
+    const ui: ExperiencePlayerUI = {
+      apiVersion: 1,
+      mainMenu: (props) => {
+        session = props.session;
+        return <ExperienceDefaultMainMenuUI {...props} />;
+      },
+    };
+    await render(choiceFilm(), { ui });
+    expect(await session.invoke("continue")).toEqual({ ok: false, reason: "unavailable" });
+    await fire("/a.mp4", "onCanPlay");
+    const oldSession = session;
+    await act(async () => {
+      await session.invoke("start");
+    });
+    await settle();
+    await act(async () => {
+      await oldSession.invoke("return-menu");
+    });
+    await settle();
+    expect(session).toBe(oldSession);
+    await act(async () => {
+      root.unmount();
+    });
+    expect(await oldSession.invoke("open-map")).toEqual({ ok: false, reason: "disposed" });
+    // Restore a root so the shared afterEach still owns a mounted React root.
+    root = createRoot(container);
+  });
+
+  it("keeps a live SDK through StrictMode replay and gives an explicit new game a fresh session", async () => {
+    let session!: GameSession;
+    const ui: ExperiencePlayerUI = {
+      apiVersion: 1,
+      mainMenu: (props) => {
+        session = props.session;
+        return <ExperienceDefaultMainMenuUI {...props} />;
+      },
+    };
+    const runtime = choiceFilm();
+    const loadTheme = () => Promise.resolve(theme);
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <ExperiencePlayer
+            runtime={runtime}
+            locale="en-US"
+            copy={copy}
+            ui={ui}
+            loadTheme={loadTheme}
+          />
+        </StrictMode>
+      );
+    });
+    await fire("/a.mp4", "onCanPlay");
+    const first = session;
+    await act(async () => {
+      expect(await first.invoke("start")).toEqual({ ok: true });
+    });
+    await settle();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("[data-experience-choice]")!.click();
+    });
+    await settle();
+    expect(first.getSnapshot().status).toBe("completed");
+    await act(async () => {
+      expect(await first.invoke("return-menu")).toEqual({ ok: true });
+    });
+    await settle();
+    expect(button(copy.continueGame)).toBeUndefined();
+    expect(button(copy.playAgain)).toBeDefined();
+    await act(async () => {
+      expect(await first.invoke("restart")).toEqual({ ok: true });
+    });
+    await settle();
+    expect(session).not.toBe(first);
+    expect(await first.invoke("open-map")).toEqual({ ok: false, reason: "disposed" });
+    expect(session.getSnapshot().started).toBe(false);
+  });
+
+  it("renders frozen themes and live authoring overrides through the same player without resetting playback", async () => {
+    const runtime = choiceFilm();
+    runtime.appearance = {
+      version: 1,
+      presentation: {
+        copy: { start: { "en-US": "Enter" } },
+        theme: {
+          version: 1,
+          name: "Gold",
+          css: '[data-experience-ui-region="start"] [data-ui-part="primary"] { color: #d6b77a; }',
+          assets: [],
+        },
+      },
+    };
+    await render(runtime);
+    await fire("/a.mp4", "onCanPlay");
+    expect(button("Enter")).toBeDefined();
+    expect(container.querySelector('[data-theme-package="true"] style')?.textContent).toContain(
+      "#d6b77a"
+    );
+    await act(async () => button("Enter")!.click());
+    await settle();
+    await playedTo("/a.mp4", 1);
+    const media = element("/a.mp4");
+    const pause = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${copy.playback.pause}"]`
+    )!;
+    await act(async () => pause.click());
+    await settle();
+    const checkpointBefore = container.querySelector('input[type="range"]')?.getAttribute("value");
+    const appearance = {
+      ...runtime.appearance,
+      presentation: {
+        ...runtime.appearance.presentation,
+        theme: {
+          version: 1 as const,
+          name: "Silver",
+          css: '[data-experience-ui-region="start"] [data-ui-part="primary"] { color: #dddddd; }[data-experience-ui-region="choices"] [data-ui-part="list"]{flex-direction:row}',
+          assets: [],
+        },
+      },
+    };
+    await render(runtime, { ui: { apiVersion: 1, appearance } });
+    expect(element("/a.mp4")).toBe(media);
+    expect(container.querySelector('[data-theme-package="true"] style')?.textContent).toContain(
+      "#ddd"
+    );
+    expect(container.querySelector("style")?.textContent).toContain("flex-direction:row");
+    expect(container.querySelector('input[type="range"]')?.getAttribute("value")).toBe(
+      checkpointBefore
+    );
+    expect(pausedFor()).not.toBeNull();
+    expect(button(copy.restart)).toBeDefined();
+  });
+
+  it("exposes the native controls body and inputs beneath the shared playback region", async () => {
+    await startFilm(choiceFilm(), ["/a.mp4"]);
+    await playedTo("/a.mp4", 1);
+    for (const part of ["controls", "progress", "pause", "rate"]) {
+      expect(
+        container.querySelector(`[data-experience-ui-region="playback"] [data-ui-part="${part}"]`)
+      ).not.toBeNull();
+    }
+  });
+
+  it("routes all four UI slots through live runtime guards and preserves media when renderers update", async () => {
+    let startView!: ExperienceStartUIProps;
+    let choicesView!: ExperienceChoicesUIProps;
+    let playbackView!: ExperiencePlaybackUIProps;
+    let pauseView!: ExperiencePauseUIProps;
+    const ui: ExperiencePlayerUI = {
+      apiVersion: 1,
+      copy: { start: { "en-US": "Enter story" } },
+      start: (props) => {
+        startView = props;
+        return <button onClick={props.onStart}>{props.actionLabel}</button>;
+      },
+      choices: (props) => {
+        choicesView = props;
+        return <button onClick={() => props.onChoose(props.choices[0]!.id)}>Custom choice</button>;
+      },
+      playback: (props) => {
+        playbackView = props;
+        return <button onClick={props.onTogglePause}>Custom pause</button>;
+      },
+      pause: (props) => {
+        pauseView = props;
+        return (
+          <button ref={props.resumeRef} onClick={props.onResume}>
+            Custom resume
+          </button>
+        );
+      },
+    };
+    const reporter = {
+      onStart: vi.fn(async () => ({ sessionId: "custom-ui" })),
+      onProgress: vi.fn(async () => {}),
+      onComplete: vi.fn(async () => {}),
+    };
+    const runtime = choiceFilm();
+    let resolveTheme!: (value: ExperienceThemeConfig) => void;
+    const pendingTheme = new Promise<ExperienceThemeConfig>((resolve) => {
+      resolveTheme = resolve;
+    });
+    const extra = { ui, playSessionReporter: reporter, loadTheme: () => pendingTheme };
+    await render(runtime, extra);
+    expect(startView.state).toBe("loading");
+    expect(startView.actionLabel).toBe(copy.loadingMedia);
+    await act(async () => startView.onStart());
+    expect(reporter.onStart).not.toHaveBeenCalled();
+    await act(async () => resolveTheme(theme));
+    await fire("/a.mp4", "onCanPlay");
+    expect(startView.actionLabel).toBe("Enter story");
+    await act(async () => {
+      startView.onStart();
+      startView.onStart();
+    });
+    await settle();
+    expect(reporter.onStart).toHaveBeenCalledTimes(1);
+    await playedTo("/a.mp4", 1);
+    const video = element("/a.mp4");
+    const oldChoose = choicesView.onChoose;
+    const oldPlayback = playbackView;
+    await act(async () => {
+      playbackView.onRate(3);
+      playbackView.onSeek(Number.NaN);
+    });
+    expect(video.currentTime).toBe(0);
+    expect(playbackView.rate).toBe(1);
+    await act(async () => oldChoose("unknown"));
+    expect(reporter.onComplete).not.toHaveBeenCalled();
+    await act(async () => playbackView.onTogglePause());
+    const oldRestart = pauseView.onRestart;
+    await act(async () => oldChoose("next"));
+    expect(reporter.onComplete).not.toHaveBeenCalled();
+    expect(choicesView.disabled).toBe(true);
+    await act(async () => pauseView.onResume());
+    await render(runtime, { ...extra, ui: { ...ui, copy: { start: { "en-US": "Begin" } } } });
+    await act(async () => oldRestart());
+    expect(element("/a.mp4")).toBe(video);
+    expect(choicesView.disabled).toBe(false);
+    await act(async () => choicesView.onChoose("next"));
+    await settle();
+    expect(reporter.onComplete).toHaveBeenCalledTimes(1);
+    const completedTime = video.currentTime;
+    const completedRate = video.playbackRate;
+    await act(async () => {
+      oldPlayback.onSeek(0);
+      oldPlayback.onRate(2);
+      oldPlayback.onTogglePause();
+    });
+    expect(video.currentTime).toBe(completedTime);
+    expect(video.playbackRate).toBe(completedRate);
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+  });
 
   it("shows a late report only after the ending completion is saved", async () => {
     let resolveStart!: (value: { sessionId: string }) => void;

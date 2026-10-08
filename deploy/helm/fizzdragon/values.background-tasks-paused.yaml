@@ -1,0 +1,18 @@
+# Supplement the target environment's complete values; never deploy this file
+# alone. This pauses autonomous work, not HTTP-initiated external side effects.
+server:
+  migrateOnStart: false
+  migrationJob:
+    enabled: false
+  env:
+    BACKGROUND_TASKS_ENABLED: "false"
+
+# Separate runtimes do not consume the Nest background-task switch.
+agentOs:
+  enabled: false
+agent:
+  enabled: false
+agentWorker:
+  enabled: false
+  keda:
+    enabled: false

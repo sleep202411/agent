@@ -1,3 +1,4 @@
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import {
   ConflictException,
   Injectable,
@@ -87,6 +88,7 @@ export class StoryGenerationBatchContinuationWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || this.timer) return;
     const intervalMs = positiveInt(
       process.env.STORY_GENERATION_CONTINUATION_WORKER_INTERVAL_MS,
@@ -107,6 +109,7 @@ export class StoryGenerationBatchContinuationWorkerService
   }
 
   async drainOnce(limit = DEFAULT_BATCH_SIZE): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || this.draining) return;
     this.draining = true;
     try {

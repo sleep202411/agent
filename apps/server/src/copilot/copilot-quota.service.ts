@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { QuotaService } from '../quota/quota.service';
 import type {
   QuotaDebitReceipt,
@@ -72,6 +73,7 @@ export class CopilotQuotaService
   ) {}
 
   onModuleInit(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping || this.reconcileTimer) return;
     this.reconcileTimer = setInterval(() => {
       this.runDrainSafely();
@@ -288,6 +290,7 @@ export class CopilotQuotaService
   }
 
   async drainPendingAttempts(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopping) return;
     if (this.draining) return this.draining;
     this.draining = this.reconcilePendingAttempts().finally(() => {

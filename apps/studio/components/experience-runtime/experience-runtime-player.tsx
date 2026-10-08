@@ -21,6 +21,7 @@ export function ExperienceRuntimePlayer({
   startSceneId,
   onStateChange,
   playSessionReporter,
+  ui,
 }: {
   runtime: Record<string, unknown>;
   locale: string;
@@ -34,6 +35,7 @@ export function ExperienceRuntimePlayer({
   startSceneId?: string | null;
   onStateChange?: ExperiencePlayerProps["onStateChange"];
   playSessionReporter?: PlaySessionReporter;
+  ui?: ExperiencePlayerProps["ui"];
 }) {
   const t = useTranslations("experiencePlayer");
   const { access, dialog } = useStoryPreviewAccess(locale);
@@ -54,6 +56,14 @@ export function ExperienceRuntimePlayer({
       interactiveFilm: t("interactiveFilm"),
       starting: t("starting"),
       start: t("start"),
+      mainMenu: t("mainMenu"),
+      returnToMenu: t("returnToMenu"),
+      continueGame: t("continueGame"),
+      codeMenu: {
+        failed: t("codeMenu.failed"),
+        retry: t("codeMenu.retry"),
+        restore: t("codeMenu.restore"),
+      },
       endingEyebrow: t("completionEyebrow"),
       unknownEnding: () => t("completionTitle"),
       playAgain: t("playAgain"),
@@ -111,6 +121,7 @@ export function ExperienceRuntimePlayer({
   return (
     <>
       <ExperiencePlayer
+        ui={ui}
         access={access}
         runtime={runtime}
         locale={locale}

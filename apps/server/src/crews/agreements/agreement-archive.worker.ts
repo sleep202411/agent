@@ -22,6 +22,7 @@ import {
 } from '@prisma/client';
 import { CURRENT_CELL } from '../../common/region/current-cell';
 import { PrismaService } from '../../infra/db/db.module';
+import { backgroundTasksEnabled } from '../../common/background-tasks';
 import { ensureOriginalMediaPlacement } from '../../infra/storage/media-asset-placement';
 import { crewAssetStorageProviderForCell } from '../../infra/storage/crew-asset-storage-policy';
 import { StorageProviderRegistry } from '../../infra/storage/storage-provider-registry.service';
@@ -81,6 +82,7 @@ export class CrewAgreementArchiveWorker
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (!this.provider.isEnabled()) {
       this.logger.log('Crew agreement archive worker disabled');
@@ -103,6 +105,7 @@ export class CrewAgreementArchiveWorker
 
   /** Public for deterministic operational checks and focused tests. */
   async drainOnce(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (this.draining) return this.draining;
     this.draining = this.drain().finally(() => {

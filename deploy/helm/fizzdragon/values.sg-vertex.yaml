@@ -1,0 +1,19 @@
+# Identity configuration reference; it is not a complete release.
+# Fixed target: 5332868355276356 / ap-southeast-1 /
+# cb3e336c4059a4112b65c783e7bf67f1e / namespace fizzdragon.
+azure:
+  enabled: false
+
+server:
+  automountServiceAccountToken: false
+  googleVertex:
+    enabled: true
+    project: glass-proxy-501907-d2
+    imageLocation: global
+    videoLocation: us-central1
+    workloadIdentityFederation:
+      projectNumber: "553701186007"
+      pool: fizzdragon-ack
+      provider: ack-com-sg
+      serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
+      kubernetesServiceAccountName: fizzdragon-com-sg-server

@@ -14,6 +14,7 @@ import {
   EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
   EXPERIENCE_GESTURE_CAPABILITY,
   ExperienceRuntimeManifestSchema,
+  type GameUIArtifact,
   type ExperienceCoreChoiceRendererConfig,
   type ExperienceCoreTextRendererConfig,
   type ExperienceCoreRendererId,
@@ -27,6 +28,7 @@ import {
   type ExperienceRuntimeAction,
   type ExperienceRuntimeAsset,
   type ExperienceRuntimeManifest,
+  type ExperienceAppearance,
   type ExperienceScene,
 } from '@repo/shared/experience-runtime';
 import {
@@ -56,6 +58,8 @@ export interface StoryExperienceMediaIdentity {
 
 export interface StoryExperienceManifestCompilerInput {
   release: InteractiveFilmRelease;
+  appearance?: ExperienceAppearance;
+  gameUi?: GameUIArtifact;
   experienceProfile: 'cinematic';
   metadata: {
     title: string;
@@ -286,6 +290,8 @@ export function compileStoryExperienceManifest(
       apiVersion: '1.0.0',
       configAssetId: STORY_CORE_THEME_CONFIG_ASSET_ID,
     },
+    ...(input.appearance ? { appearance: input.appearance } : {}),
+    ...(input.gameUi ? { gameUi: input.gameUi } : {}),
     telemetryDefinitions: [],
     // Closed films use one technical completion marker. Retry loops and other
     // deliberately open-ended films declare no synthetic ending; their exit is

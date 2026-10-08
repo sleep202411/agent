@@ -13,6 +13,7 @@ import {
   type CrewAgreement,
 } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
+import { backgroundTasksEnabled } from '../../common/background-tasks';
 import { NotificationService } from '../../notification';
 import {
   BoldSignAgreementProvider,
@@ -70,6 +71,7 @@ export class CrewAgreementSendWorker
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped || this.timer) return;
     if (!this.provider.isEnabled()) {
       this.logger.log('Crew agreement send worker disabled');
@@ -109,6 +111,7 @@ export class CrewAgreementSendWorker
 
   /** Public for deterministic readiness checks and focused tests. */
   async drainOnce(): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (this.draining) return this.draining;
     this.draining = this.drain().finally(() => {

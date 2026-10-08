@@ -8,6 +8,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { AdminAuthModule } from './admin-auth';
 import { AgentUsersModule } from './agent-users';
 import { AgentOsGatewayModule } from './agent-os-gateway';
+import { GameAgentModule } from './game-agent/game-agent.module';
+import { gameAgentEnabled } from './game-agent/game-agent.config';
 import { AppReleaseModule } from './app-release';
 import { AiGenerationModule } from './ai-generation/ai-generation.module';
 import { AssistantModule } from './assistant/assistant.module';
@@ -75,6 +77,7 @@ const agentOsGatewayEnabled = (() => {
     AdminAuthModule,
     AgentUsersModule,
     ...(agentOsGatewayEnabled ? [AgentOsGatewayModule] : []),
+    ...(gameAgentEnabled() ? [GameAgentModule] : []),
     AppReleaseModule,
     // Region wires CountryMiddleware globally before any controller runs.
     RegionModule,

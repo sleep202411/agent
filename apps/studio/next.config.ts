@@ -17,7 +17,7 @@ function requiredEnv(name: string): string {
     throw new Error(
       `Missing required studio build env: ${name}. It is baked into the bundle ` +
         `at build time and must be passed per cell (see apps/studio/Dockerfile ` +
-        `+ deploy/cn-remote-build.sh / deploy-com-aks.sh). No silent .com fallback.`
+        `+ deploy/cn-remote-build.sh / deploy/deploy-com.sh). No silent .com fallback.`
     );
   }
   return value;

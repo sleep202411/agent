@@ -1,4 +1,4 @@
-{{- if .Values.agentWorker.keda.enabled -}}
+{{- if and .Values.agentWorker.enabled .Values.agentWorker.keda.enabled -}}
 {{/*
 KEDA TriggerAuthentication — gives the KEDA operator the Redis address +
 password to poll BullMQ queue depth. Both values come from the projected

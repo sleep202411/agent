@@ -7,6 +7,7 @@ import { ApiRequestError } from "@/lib/api";
 import { StoryProjectChapterScope } from "./story-project-chapter-scope";
 
 const query = vi.hoisted(() => ({
+  pathname: "/story-studio/projects/project-1/canvas",
   options: null as null | { retry?: (failureCount: number, error: unknown) => boolean },
   refetch: vi.fn(),
 }));
@@ -37,7 +38,7 @@ vi.mock("@/app/_components/auth-provider", () => ({
 
 vi.mock("@/i18n/navigation", () => ({
   Link: ({ href, children }: React.ComponentProps<"a">) => <a href={String(href)}>{children}</a>,
-  usePathname: () => "/story-studio/projects/project-1/canvas",
+  usePathname: () => query.pathname,
   useRouter: () => ({ replace: vi.fn() }),
 }));
 
@@ -52,6 +53,7 @@ describe("StoryProjectChapterScope access failure", () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     query.options = null;
+    query.pathname = "/story-studio/projects/project-1/canvas";
     query.refetch.mockReset();
     container = document.createElement("div");
     document.body.append(container);
@@ -88,5 +90,23 @@ describe("StoryProjectChapterScope access failure", () => {
     expect(retry).toBeTypeOf("function");
     expect(retry?.(0, new ApiRequestError("HTTP_404", "missing", 404))).toBe(false);
     expect(retry?.(0, new ApiRequestError("HTTP_503", "offline", 503))).toBe(true);
+  });
+
+  it("keeps playtest inside the project chapter access gate", async () => {
+    query.pathname = "/story-studio/projects/project-1/playtest";
+    const render = () =>
+      root.render(
+        <StoryProjectChapterScope projectId="project-1">
+          <div data-testid="playtest">Project playtest</div>
+        </StoryProjectChapterScope>
+      );
+    await act(async () => render());
+    expect(container.querySelector('[data-testid="playtest"]')).toBeNull();
+    expect(query.options).not.toBeNull();
+    expect(container.textContent).toContain("unavailable.title");
+    query.pathname = "/story-studio/projects/project-1/canvas";
+    await act(async () => render());
+    expect(container.querySelector('[data-testid="playtest"]')).toBeNull();
+    expect(container.textContent).toContain("unavailable.title");
   });
 });

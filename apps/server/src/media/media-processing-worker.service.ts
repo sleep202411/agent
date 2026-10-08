@@ -1,4 +1,5 @@
 import { MEDIA_PROCESSING_LOCK_TTL_MS } from './media-worker-leases';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { hostname } from 'os';
 import {
   Injectable,
@@ -80,6 +81,7 @@ export class MediaProcessingWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (process.env.MEDIA_PROCESSING_WORKER_ENABLED === 'false') return;
     const intervalMs = positiveInt(
@@ -101,6 +103,7 @@ export class MediaProcessingWorkerService
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
+    if (!backgroundTasksEnabled()) return;
     if (this.stopped) return;
     if (this.draining) return this.draining;
     this.draining = this.drain(batch).finally(() => {

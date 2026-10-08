@@ -9583,7 +9583,7 @@
     "manifestRoot": "內容清單",
     "interactiveFilm": "影遊",
     "starting": "正在啟動…",
-    "start": "開始體驗",
+    "start": "開始",
     "endingEyebrow": "播放完成",
     "unknownEnding": "路線播放完成",
     "playAgain": "再玩一次",
@@ -9651,7 +9651,15 @@
       "unlocking": "解鎖中…",
       "failed": "解鎖失敗，請重試。"
     },
-    "retryReport": "重試儲存遊玩報告"
+    "retryReport": "重試儲存遊玩報告",
+    "mainMenu": "主選單",
+    "returnToMenu": "返回主選單",
+    "continueGame": "繼續遊戲",
+    "codeMenu": {
+      "failed": "自訂遊戲選單未能載入。",
+      "retry": "重試",
+      "restore": "使用預設選單"
+    }
   },
   "games": {
     "back": "返回 IP 廣場",

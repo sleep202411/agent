@@ -11,7 +11,8 @@ apps/
   admin-ui/       内部运营后台（Next.js，中文）
   server/         NestJS 后端（AI 生成 / Agent / Java 代理 / billing）
   agent-os/       当前 Agent OS（LangGraph / Temporal）
-  agent/          旧 StoryOS（Mastra，现有部署仍引用，不新增功能）
+  game-agent/     独立 Harness 游戏创作服务
+  agent/          旧 StoryOS（Mastra，国际站已退休，不新增功能）
   mobile/         移动端（Expo / React Native）
 packages/
   shared/             跨应用共享代码
@@ -19,9 +20,11 @@ packages/
   eslint-config/      ESLint 配置
   typescript-config/  TypeScript 配置
 deploy/
-  helm/              Helm chart（ArgoCD 渲染部署 .com → AKS）
-  argocd/            ArgoCD Application 声明
-  deploy-com-aks.sh  .com 部署（az acr build → bump values → ArgoCD）
+  helm/              Helm chart（CN 部署；SG 历史准备层不可直接用于生产）
+  argocd/            历史 Azure ArgoCD 声明（已暂停）
+  aliyun-sg/         .com 新加坡生产发布
+  deploy-com.sh      .com 部署（本地 buildx → SG ACR → ACK 镜像更新）
+  deploy-com-aks.sh  已禁用的旧 Azure 入口
   deploy-cn.sh · cn-remote-build.sh   .cn 部署（build ECS → CN ACR → helm；cn-remote-build 是 ECS 侧帮手，不直接跑）
 ```
 
@@ -110,73 +113,39 @@ npx turbo build --filter=server
 
 ## Deployment
 
-**规范：两个 cell 都只从 `main` 部署**（`develop` 是工作分支，上线前 merge 到 main；所有部署脚本内置 `main` 分支 guard，非 main 直接拒绝，`FORCE=1` 覆盖）。两边机制不同——`.com` 走 ArgoCD/GitOps（改 git 里的镜像 tag，ArgoCD 收敛），`.cn` 直接 `helm upgrade`——但都以 `main` 为准。
+`.com` 和 `.cn` 发布均要求经过审核的 `main` 与干净工作区。`.com` 构建启动时固定的
+已提交 HEAD，不包含本地修改或未跟踪源码。脚本不会提交、推送、合并或切换分支；
+只读 `--check` 不要求当前分支为 `main` 或工作区干净。
 
-### 部署前置（一次性）
+### `.com`（国际）— Alibaba Cloud Singapore ACK + `deploy-com.sh`
 
-`.com` 部署脚本本身只需要 **Azure CLI**（`az acr build` + 登录检查）；`kubectl` 仅用于部署后**验证** rollout / 查 pod / 跑 prod DB 脚本。装一次即可：
-
-```bash
-# Azure CLI —— 部署必需
-brew install azure-cli                 # macOS（其它平台见 docs.microsoft.com/cli/azure/install）
-az login
-az account set --subscription 5d94f40f-701f-45e1-ab4b-0e1506104ebd   # fizzdragon-ai-prod
-
-# kubectl + AKS 凭据 —— 验证 / 运维用（部署脚本不需要）
-brew install kubectl
-az aks get-credentials \
-  --subscription 5d94f40f-701f-45e1-ab4b-0e1506104ebd \
-  --resource-group rg-fizzdragon-com-prod \
-  --name aks-fizzdragon-com            # → 得到 `aks-fizzdragon-com` context
-```
-
-> `.cn` 走 Aliyun ACK（阿里云），凭据 / 工具见 `.cn` 小节；与上面的 Azure 凭据无关。
-
-### `.com`（国际）— AKS + ArgoCD + `deploy-com-aks.sh`
-
-生产 `.com` 跑在 **Azure AKS**，用 **ArgoCD**（GitOps）部署：**git 是唯一真相**，
-ArgoCD 持续把集群对齐成 `main` 分支 `deploy/helm/fizzdragon/values.yaml` 里声明的镜像 tag。
+六个活跃服务（Web、Server、Studio、Admin UI、Agent OS、Harness/Game Agent）
+运行在阿里云新加坡 ACK。目标固定为账号
+`5332868355276356`（CLI profile `acct6`）、`ap-southeast-1`、集群
+`fizzdragon-com-sg`（`cb3e336c4059a4112b65c783e7bf67f1e`）、namespace `fizzdragon`。
+部署者使用自己的 RAM 身份和该集群的 kubeconfig；构建需要本地已运行的 Docker/buildx，
+发布需要 Python 3.9+、Git、阿里云 CLI 和 kubectl。
 
 ```bash
-# 1) 把要上线的代码合到 main（ArgoCD 盯 main）
-git checkout main && git merge develop && git push
-
-# 2) 在 main 上构建 + 上线
-deploy/deploy-com-aks.sh web server     # 只部指定服务（外科手术式）
-deploy/deploy-com-aks.sh all            # 全部：web studio admin-ui server agent
+export KUBECONFIG=/absolute/path/to/singapore-kubeconfig
+./deploy/deploy-com.sh --check         # 只读检查账号、集群及当前服务
+./deploy/deploy-com.sh web             # 构建并发布选定服务
+./deploy/deploy-com.sh server studio game-agent
+./deploy/deploy-com.sh all             # 六个活跃服务，包括 Agent OS / Harness
 ```
 
-`deploy-com-aks.sh` 做的事：`az acr build` 用**不可变 git-sha** 打镜像 → push ACR →
-改 `values.yaml` 的 tag → commit/push → **ArgoCD 自动同步部署**。
+脚本归档固定 HEAD 源码，推送新加坡 ACR，以不可变 digest 更新选定容器并等待就绪；
+保留线上环境变量、Secret、PVC、网络和域名配置。Server 镜像变化时先使用现有集群
+数据库凭据运行原生 Prisma migration，失败则停止应用更新。仅改镜像的发布不会重新
+应用不完整的历史 Helm 准备配置。没有自动提交或自动回滚；迁移与旧版本的兼容性必须
+在发布前审核。旧 Azure 脚本已禁用，Azure ArgoCD 保持暂停。
 
-> ⚠️ **只 merge 到 main 不会部署**——ArgoCD 看的是 values.yaml 的镜像 tag，不是代码提交。
-> 必须跑 `deploy-com-aks.sh`（它改 tag），ArgoCD 才会动。
->
-> ⚠️ **不要 `kubectl set image` / `helm upgrade` 直推**——ArgoCD `selfHeal` 会在几分钟内
-> 还原。部署只走 `deploy-com-aks.sh`（git 路径）。Helm 是底座（ArgoCD 渲染它），不手动 upgrade。
-
-发布镜像和推送 tag 不等于 rollout 成功。具备集群读取权限的发布负责人可运行：
-
-```bash
-node deploy/diagnose-com-server.mjs <完整镜像SHA> [kubectl-context]
-```
-
-默认 context 为 `aks-fizzdragon-com`。该只读命令输出 ArgoCD 同步状态、Server
-期望/实际镜像、Pod/init 状态和 Service/Ingress 目标；不读取 Secret 或执行容器命令。
-读取失败、旧 Pod 仍在服务或 rollout 未完成时返回非零。若卡在 init，检查 `db-migrate`；
-若挂载失败，检查 CSI/Key Vault 配置；若进程重启，检查启动日志。尤其确认
-`creator-payout-details-key` 已按 Server README 配置，不能通过移除密钥校验绕过。
-健康探针成功后仍需验证已登录的 withdrawals、task-contracts、reviews 和 disputes 接口。
-
-- 镜像仓库：ACR `acrfizzdragoncom.azurecr.io`
-- 集群：`aks-fizzdragon-com`（southeastasia），namespace `fizzdragon-com`
-- ArgoCD app：`fizzdragon-com`（auto-sync + prune + selfHeal）
-- 回滚：把 `values.yaml` 的 tag 改回上一个 good sha 并 push（ArgoCD 收敛），或 `git revert` 那次 bump
+详细用法、部署者接入、已有镜像发布及故障处理见 [新加坡发布说明](deploy/aliyun-sg/README.md)。
 
 ### `.cn`（中国）— Aliyun ACK + `deploy-cn.sh`
 
 生产 `.cn` 跑在 **Aliyun ACK**（集群 `fizzdragon-cn`，cn-hangzhou，namespace `fizzdragon`，
-kubeconfig `~/.kube/config-fizzdragon-cn`），与 .com 的 AKS 完全独立（独立 VPC / RDS PG / Redis）；
+kubeconfig `~/.kube/config-fizzdragon-cn`），与 .com 的新加坡 ACK 完全独立（独立 VPC / RDS PG / Redis）；
 Java 仅作外部 HTTPS API 调用。无托管构建、无 GitOps：在**境内 build ECS** 构建（跨境推镜像不可行）
 → push CN ACR → 直接 `helm upgrade`。
 
@@ -227,16 +196,17 @@ deploy/deploy-cn.sh --deploy-only --allow-chart-update
 
 ## Architecture
 
-两个 cell，各自独立的边缘 + 集群（不再是单机 nginx/docker——那套已停用）：
+两个 cell 使用独立的集群、数据库、Redis 和区域配置：
 
 ```
 .com（国际）
-  境外用户 → Azure Front Door（WAF + TLS + 缓存，按路径分流）
-    ├─ /aurora/*         → AKS server（NestJS）        [不缓存·直透]
-    ├─ /content /studio  → Java 后端 java.fizzdragon.com（外部）
-    ├─ /*                → AKS web（Next.js）
-    └─ media.fizzdragon.com → Azure Blob（长缓存）
-  实时：客户端直连自建 WebSocket 网关（不经 Front Door）
+  fizzstudio / studio / admin → Cloudflare → 新加坡 ALB → ACK
+    ├─ /aurora/* → server（NestJS）
+    ├─ 页面 → web / studio / admin-ui
+    └─ 内部服务 → Agent OS / Harness Game Agent
+  fizzdragon.com / www → Azure Front Door（保留现有边缘路由）
+  Java API / MySQL → 原独立账号与服务
+  新媒体 → Cloudflare R2；旧 Azure Blob 媒体保留读取
 
 .cn（中国）
   大陆用户 → Aliyun ACK ingress
@@ -257,59 +227,20 @@ develop    ← 默认工作分支，日常直接在此提交（单人开发）
 
 ### 开发 / 上线流程
 
-1. 日常在 `develop` 直接提交。
-2. 上线：`develop` → `main`，用**普通 merge**（非 squash——squash 会把 `values.yaml` 里 .com 的镜像 tag 冲成 develop 的旧值）。
-3. **从 `main` 部署两个 cell**（脚本都有分支 guard，非 main 拒绝）：
-   - `.com`：`deploy/deploy-com-aks.sh <service…>`
-   - `.cn`：`deploy/deploy-cn.sh`（日常增量）或 `deploy/deploy-cn.sh --full`（全量冷启动）
+1. 日常在 `develop` 开发；提交、推送和合并均需明确指示。
+2. 常规上线审核后合入 `main`；Mobile 遵循其专用分支规则。
+3. `.com` 使用 `deploy/deploy-com.sh <service…>`；发布前确认当前源码与迁移兼容性。
+4. `.cn` 继续使用现有 `deploy/deploy-cn.sh` 流程，要求 `main` 和干净工作区。
 
-> `main` = 唯一生产真相。两边机制不同（.com 走 ArgoCD/GitOps，.cn 直接 helm），但都以 main 为准——详见 [Deployment](#deployment)。
+两边账号、集群和发布配置独立，详见 [Deployment](#deployment)。
 
----
+## Edge routing and media
 
-## fizzdragon.com — Azure Front Door（LIVE 2026-06-20）
+`fizzdragon.com` 与 `www` 保留 Azure Front Door；`fizzstudio.fizzdragon.com`、
+`studio.fizzdragon.com`、`admin.fizzdragon.com` 经 Cloudflare 访问新加坡 ALB/ACK。
+旧 Azure Blob 媒体继续提供读取，新生成的国际站媒体使用 Cloudflare R2。
+Java/MySQL 在原独立账号 `5941647929258385`，不随 `.com` 应用发布迁移。
 
-境外 `.com` 的 apex + www + media + studio 已全部走 Azure Front Door。下面是**已上线的边缘架构 + 缓存/路由策略**；原迁移的执行 runbook（变量、P0–P4 步骤、验证清单、回滚）已完成删去，执行细节查 git 历史。
-
-### 架构
-
-```
-境外用户
-  └─ Azure Front Door (Std/Premium)  [边缘: WAF + TLS 终止 + 缓存]
-       ├─ 域: fizzdragon.com / www.fizzdragon.com
-       │    ├─ /content/*  /studio/*  → 源: Java 后端 (java.fizzdragon.com)  [直透·不缓存]
-       │    ├─ /aurora/*              → 源: AKS server                       [直透·不缓存]
-       │    └─ /* (默认)              → 源: AKS web 应用                     [可缓存静态、HTML 不缓存]
-       └─ 域: media.fizzdragon.com    → 源: Azure Blob (fizzdragonblob)      [长 TTL·immutable]
-
-实时(.com): 客户端直连自建 WebSocket 网关 —— 不经过 Front Door（Web PubSub 已下线）。
-```
-
-关键点：FD 用**路径路由 + 多源**自己做分流，所以 AKS ingress **不需要**再把 `/content`
-`/studio` 反代回 Java（避免"Java 回环"问题）。AKS 只当 `/aurora` 和 `/` 的源。
-
-### 缓存 / 路由策略（登录态 / 媒体最容易出事）
-
-| 路径 / 域                              | 源         | 缓存                   | 备注                                     |
-| -------------------------------------- | ---------- | ---------------------- | ---------------------------------------- |
-| `media.*` 公共图片/免费视频            | Blob       | **长 TTL + immutable** | key 内容寻址、不可变，可永久缓存         |
-| `media.*` 付费/签名视频(SAS)           | Blob       | **禁缓存(no-store)**   | SAS ~5min,缓存命中会变 403;或直接绕过 FD |
-| `/aurora/*`                            | AKS server | **禁缓存·直透**        | API + SSE + negotiate                    |
-| `/aurora/copilot/stream`、Produce 流   | AKS server | **禁缓存·禁缓冲**      | 长 SSE,见 §7 超时坑                      |
-| `/content/*` `/studio/*`               | Java       | **禁缓存·直透**        | 保留 cookie/header,手机硬编码靠这两条    |
-| `/` HTML / 应用入口                    | AKS web    | 不缓存或短 TTL         | 避免 ChunkLoad 类问题                    |
-| `/_next/static/*` 等带 hash 的前端资源 | AKS web    | 长 TTL                 | 文件名带 hash,可长缓存                   |
-
-**铁律**：任何带 `Set-Cookie` / `Authorization` / `satoken` 的响应,FD 不得缓存、不得改写
-cookie（否则 WS negotiate / 登录态出问题）。
-
-### 已知坑
-
-1. **FD 源响应超时 240s（4 分钟）**，而 `/aurora/copilot/stream` + Produce 可跑 30+ 分钟。FD 按"字节间空闲"计时，所以长 SSE 必须 <240s 有心跳/注释帧，否则该路径单独路由绕过 FD 直连 AKS。
-2. **origin 回源 TLS**：FD→AKS 用 AKS 具名证书 + origin host header `fizzdragon.com`（AKS ingress 有 apex host 规则）。
-3. **Blob 公共访问**：公共媒体容器公共读（公共对象走直连 URL），签名对象走 SAS。
-
-### 遗留待清理（.com 边缘）
-
-- 遗留媒体子域 `cdn` / `images` / `*-sg`、散落后端（`vpn`/`aigc`/`api`/`business`…）、WordPress/Mailchimp 记录 —— 确认无流量后单独退役。
-- `static/avatar/banner.fizzspace.cn` 在 `apps/web` 的 43 处硬编码 —— 单独排期。
+API、登录、支付和带认证的响应必须保持动态，不缓存带 `Set-Cookie`、
+`Authorization` 或 `satoken` 的内容。带内容 hash 的静态文件可长缓存。
+常规应用发布不修改 DNS、TLS 或边缘路由，也不删除保留的 Front Door/Blob 资源。

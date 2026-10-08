@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve committed main updates without reading or modifying working files."""
+"""Resolve CN main updates without reading or modifying working files."""
 import re
 import subprocess
 import sys
@@ -51,6 +51,8 @@ def cn_chart_changed(root, source, candidate):
 
 
 def latest_source(root, source, branch='main', cn=False):
+    if not cn:
+        raise RuntimeError('The legacy .com release has retired; use deploy/deploy-com.sh instead')
     remote = f'refs/remotes/origin/{branch}'
     git(root, 'fetch', '--no-tags', '--no-write-fetch-head', 'origin',
         f'refs/heads/{branch}:{remote}')
