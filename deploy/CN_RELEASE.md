@@ -145,9 +145,9 @@ release cycles. Use `release-cn.sh` for the automatic workflow.
 
 The scripts stop on divergent Git history, inaccessible remotes, failed builds
 or migrations, or ten successive source restarts. Resume after correcting the
-cause. A local CN lock prevents simultaneous releases in the same Git common
-directory; coordinate operators using separate clones. .com and CN can run
-concurrently because their registries and clusters are separate.
+cause. A regional shared lock serializes separate clones and operators before
+image lookup. A local CN lock additionally protects the receipt. .com and CN
+can run concurrently because their registries and clusters are separate.
 
 ## Image reuse and transient RDS failures
 
@@ -172,8 +172,48 @@ times with 2/5/10-second backoff and 45-second request timeouts. Authorization
 errors stop immediately. `CreateBackup` is never automatically retried after an
 uncertain response; the saved job/backup identity remains the recovery authority.
 
-These checks avoid repeated builds after a completed build by another operator.
-They are not a distributed build lock: two operators starting simultaneously
-before either image exists can still build concurrently. Coordinate active
-operators. Direct CN build-only/deploy-only commands also discover reusable
-images, but only the coordinator manages backup, migration and source cycles.
+Direct CN build-only/deploy-only commands also discover reusable images, but
+only the coordinator manages backup, migration and source cycles.
+
+## Shared release lock across operators
+
+All operators must use these updated entry points. `.com` and CN each use an
+atomic Kubernetes ConfigMap lock named `fizzdragon-release-lock` in their own
+production namespace. Lock acquisition happens before source snapshots and image
+lookup, and lasts through publication/deployment. A second operator waits (up to
+four hours), then checks regional registry images again; equivalent inputs reuse
+the existing image. CN's shared ECS and Helm release are serialized too. The
+regions do not block each other. Older scripts or manual cloud commands do not
+participate in this protocol and must not run concurrently.
+
+The current entry points use `~/.kube/config`, context
+`aks-fizzdragon-com-admin`, namespace `fizzdragon-com` for .com, and
+`~/.kube/config-fizzdragon-cn`, context
+`218059191361846222-c72d2039c68624a3e8d0dee257a13d451`, namespace `fizzdragon`
+for CN. These explicit targets avoid acquiring a lock in the wrong current
+cluster. Operators need `get`, `create`, and `update` ConfigMap permissions;
+missing permission/connectivity fails before any build. The lock contains only
+an owner UUID, region and timestamp. Do not delete it or place it in Helm/GitOps
+pruning ownership. Nested commands validate inherited ownership rather than
+acquiring the same lock twice.
+
+A successful command releases the lock automatically using a resource-version
+compare-and-swap. Failed, interrupted or killed commands leave the lock held:
+remote ACR/ECS builds or migrations can outlive a local process. There is no TTL
+or automatic takeover that could permit overlapping work. On failure, the CLI
+prints the owner UUID. Before recovering, stop the old local invocation and
+verify its remote ACR/ECS builds, migration Jobs and Helm operations have stopped
+or completed. Then use the printed UUID (not an image SHA):
+
+```bash
+CONFIRM_REMOTE_RELEASE_STOPPED=YES python3 deploy/release_lock.py \
+  --recover-owner "$FD_FAILED_LOCK_OWNER" cn
+# For .com, replace the final cn with com.
+```
+
+Recovery checks both the exact owner UUID and resource version; it will not
+clear a different operator's lock. After recovery, CN can use the normal
+`--resume` command with its saved image/backup/migration state. A process failure
+before the first acquisition cannot leave an active remote build, but an
+uncertain acquisition response still requires inspection. In-flight invocations
+keep their frozen tooling; pull and start a new invocation to use this protocol.

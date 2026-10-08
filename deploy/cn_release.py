@@ -441,6 +441,14 @@ def main():
     p.add_argument("--tag", default="HEAD")
     p.add_argument("--render-only", action="store_true")
     args = parser.parse_args()
+    # Protect direct Python/migration entry points as well as release-cn.sh.
+    if not (args.action == "migrate" and args.render_only):
+        from release_lock import Lock
+        owner = os.environ.get("FD_REGIONAL_LOCK_CN")
+        if not owner:
+            os.execv(sys.executable, [sys.executable, str(ROOT / "deploy/release_lock.py"),
+                                     "cn", "--", sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
+        Lock("cn").check(owner)
     with stable_checkout():
         if args.action == "release":
             release(args)

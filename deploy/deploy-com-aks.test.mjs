@@ -49,6 +49,7 @@ function fixture(t, scenario) {
   for (const helper of ["release_images.py", "cn_registry.py"]) {
     copyFileSync(new URL("./" + helper, import.meta.url), join(repo, "deploy", helper));
   }
+  writeFileSync(join(repo, "deploy/release_lock.py"), "import os,sys\nos.environ['FD_REGIONAL_LOCK_COM']='fixture'\nos.execvp(sys.argv[3],sys.argv[3:])\n");
   const values = join(repo, "deploy/helm/fizzdragon/values.yaml");
   const original =
     "server:\n  image:\n    repository: fizzdragon-server\n    tag: old\nweb:\n  image:\n    repository: fizzdragon-web\n    tag: unchanged\n";

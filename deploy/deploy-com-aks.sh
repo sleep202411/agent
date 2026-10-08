@@ -24,6 +24,7 @@
 # changes this file during ACR execution. Keep exit in the same parsed command.
 main() {
 set -euo pipefail
+RELEASE_ARGS=("$@")
 
 # --- config ---------------------------------------------------------------
 SUBSCRIPTION="5d94f40f-701f-45e1-ab4b-0e1506104ebd"   # fizzdragon-ai-prod
@@ -82,6 +83,12 @@ fi
 for s in "${SERVICES[@]}"; do
   svc_spec "$s" >/dev/null || { echo "未知服务: $s" >&2; exit 2; }
 done
+
+# Serialize operators before source snapshots, image lookup or remote mutations.
+if [ -z "${FD_REGIONAL_LOCK_COM:-}" ]; then
+  exec python3 "$ROOT/deploy/release_lock.py" com -- bash "$ROOT/deploy/deploy-com-aks.sh" "${RELEASE_ARGS[@]}"
+fi
+python3 "$ROOT/deploy/release_lock.py" com -- true
 
 # --- guards ---------------------------------------------------------------
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"

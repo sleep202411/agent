@@ -8,6 +8,7 @@
 # resume at a stale byte offset after a build finishes.
 main() {
 set -euo pipefail
+RELEASE_ARGS=("$@")
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -58,6 +59,12 @@ if [ "$PHASE" != deploy ] && [ "$FULL" -ne 1 ]; then
   echo "FATAL: CN source transfer is full-only. Pass --full." >&2
   exit 2
 fi
+
+# Serialize operators before source snapshots, image lookup or remote mutations.
+if [ -z "${FD_REGIONAL_LOCK_CN:-}" ]; then
+  exec python3 "$ROOT/deploy/release_lock.py" cn -- bash "$ROOT/deploy/deploy-cn-services.sh" "${RELEASE_ARGS[@]}"
+fi
+python3 "$ROOT/deploy/release_lock.py" cn -- true
 
 TAG="$(git rev-parse --verify "${PINNED_TAG:-HEAD}^{commit}")"
 [[ "$TAG" =~ ^[0-9a-f]{40}$ ]] || exit 2

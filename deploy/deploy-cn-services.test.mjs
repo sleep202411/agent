@@ -39,6 +39,7 @@ function run(t, scenario, phase = "all", pinned = false) {
   put("deploy/release_images.py", "import os,sys\nprint((sys.argv[3]+' sha256:'+'a'*64) if os.environ.get('QA_SCENARIO') == 'reuse-existing' else 'BUILD')\n");
   put("deploy/verify_release_image.py", "import os,sys\nsys.exit(1 if os.environ.get('QA_SCENARIO') == 'missing-image' else 0)\n");
   put("deploy/release_revision.py", "import os,sys\nprint(os.environ['QA_FUTURE'])\n");
+  put("deploy/release_lock.py", "import os,sys\nos.environ['FD_REGIONAL_LOCK_CN']='fixture'\nos.execvp(sys.argv[3],sys.argv[3:])\n");
   put("deploy/cn-preflight.sh", "#!/bin/bash\nexit 0\n");
   put("deploy/cn-remote-build-services.sh", "# snapshot A\n");
   put("deploy/cn-source-relay.cjs", "// mocked relay\n");
