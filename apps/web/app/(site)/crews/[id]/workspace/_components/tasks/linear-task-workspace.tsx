@@ -166,8 +166,11 @@ function LinearTaskSession({
   const [previousDeeplinkTaskId, setPreviousDeeplinkTaskId] = useState(deeplinkTaskId);
   if (previousDeeplinkTaskId !== deeplinkTaskId) {
     setPreviousDeeplinkTaskId(deeplinkTaskId);
-    setSubmissionOpen(true);
-    setSelectedTaskId(deeplinkTaskId ?? null);
+    // Router echoes of our own selection must preserve the chosen edit/submit mode.
+    if ((deeplinkTaskId ?? null) !== selectedTaskId) {
+      setSubmissionOpen(true);
+      setSelectedTaskId(deeplinkTaskId ?? null);
+    }
   }
 
   const selectTask = useCallback(
@@ -848,7 +851,7 @@ function LinearTaskSession({
             </div>
           ) : taskQuery.data ? (
             <TaskIssueDetail
-              key={taskQuery.data.id}
+              key={`${taskQuery.data.id}:${submissionOpen ? "view" : "edit"}`}
               initiallyEditing={!submissionOpen && isOwner}
               task={taskQuery.data}
               members={members}

@@ -5333,7 +5333,6 @@
       "completeDraftFields": "创建任务前，请补全“{title}”的必填项。",
       "taskActions": "任务操作",
       "editTask": "编辑任务",
-      "unassignBeforeRecruitment": "请先在“编辑任务”中移除当前指派，再邀请或招募新的创作者。",
       "inviteLink": "生成邀请链接",
       "openRecruitment": "开放招募"
     },

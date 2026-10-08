@@ -2,13 +2,16 @@ vi.mock("./task-creation-workbench", () => ({
   TaskCreationWorkbench: ({
     active,
     onSubmitTask,
+    onEditTask,
   }: {
     active: boolean;
     onSubmitTask: (id: string) => void;
+    onEditTask?: (id: string) => void;
   }) =>
     active ? (
       <div data-workbench>
         <button onClick={() => onSubmitTask("delivery")}>Submit from workbench</button>
+        <button onClick={() => onEditTask?.("delivery")}>Edit from workbench</button>
       </div>
     ) : null,
 }));
@@ -169,10 +172,18 @@ vi.mock("./production-project-update", () => ({
   ProductionActivityEntry: () => null,
 }));
 vi.mock("./task-issue-detail", () => ({
-  TaskIssueDetail: function Detail({ onClose }: { onClose: () => void }) {
+  TaskIssueDetail: function Detail({
+    onClose,
+    initiallyEditing,
+  }: {
+    onClose: () => void;
+    initiallyEditing?: boolean;
+  }) {
+    const [editing] = useState(Boolean(initiallyEditing));
     const [draft, setDraft] = useState("");
     return (
       <>
+        <span data-editing={editing}>Task detail</span>
         <button onClick={onClose}>Close task</button>
         <button onClick={() => setDraft("Private task draft")}>{draft || "Edit draft"}</button>
       </>
@@ -610,3 +621,36 @@ it.each([
     if (allowed) expect(document.body.textContent).not.toContain("Edit draft");
   }
 );
+
+it.each([true, false])(
+  "preserves edit mode through URL synchronization (assigned=%s)",
+  async (assigned) => {
+    state.owner = true;
+    state.canSubmit = true;
+    state.assignee = assigned ? state.account : "someone-else";
+    await render(undefined, false, true);
+    const edit = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent === "Edit from workbench"
+    )!;
+    await act(async () => edit.click());
+    expect(document.querySelector('[data-editing="true"]')).not.toBeNull();
+    // The parent router echoes the selected task back after updating ?task=delivery.
+    await render("delivery", true, true);
+    expect(document.querySelector('[data-editing="true"]')).not.toBeNull();
+    // A genuinely different URL destination must still open normally.
+    await render("other-task", true, true);
+    expect(document.querySelector('[data-editing="true"]')).toBeNull();
+  }
+);
+
+it("opens editing when the same task detail is already mounted", async () => {
+  state.owner = true;
+  state.assignee = "someone-else";
+  await render("delivery", false, true);
+  expect(document.querySelector('[data-editing="false"]')).not.toBeNull();
+  const edit = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent === "Edit from workbench"
+  )!;
+  await act(async () => edit.click());
+  expect(document.querySelector('[data-editing="true"]')).not.toBeNull();
+});
