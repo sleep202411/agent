@@ -419,7 +419,7 @@ export function AppearancePreview({
                 <IconArrowLeft size={18} />
               </Link>
               <h1>{projectTitle || t(projectId ? "projectFallback" : "project")}</h1>
-              <span>{t("previewTitle")}</span>
+              <span className={styles.previewBadge}>{t("previewTitle")}</span>
             </div>
             <div className={styles.previewActions}>
               {project && canEdit && (
@@ -490,10 +490,9 @@ export function AppearancePreview({
             </div>
           )}
           <div className={styles.stage}>
-            {renderStage({
-              appearance,
-              gameUi: workspace.gameUi ?? null,
-            })}
+            <div className={styles.stageFrame}>
+              {renderStage({ appearance, gameUi: workspace.gameUi ?? null })}
+            </div>
           </div>
         </section>
       }
@@ -526,7 +525,7 @@ export function AppearancePreview({
           ) : (
             !error && (
               <p className={styles.connecting} role="status">
-                {t("chat.connecting")}
+                {t(canDesign ? "chat.connecting" : "chat.readOnly")}
               </p>
             )
           )}

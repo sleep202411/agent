@@ -106,7 +106,19 @@ window.__ModuleLoader__.load({
                 },
                 React.createElement(
                   "header",
-                  { style: { padding: "18px 20px", fontSize: 13, fontWeight: 600 } },
+                  {
+                    style: {
+                      height: 48,
+                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "0 18px",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "#f5f5f5",
+                      letterSpacing: "-0.02em",
+                    },
+                  },
                   "FizzAgent"
                 ),
                 renderFactorySlot("conversation.content", {

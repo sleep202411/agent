@@ -3590,10 +3590,16 @@
         "unavailableTitle": "目前故事還不能試玩",
         "unavailableDescription": "{errors} 個問題擋住了試玩 · {warnings} 條提醒。點下面能跳轉的項目，可以直接打開那一場。",
         "stateHud": {
-          "title": "本局數值",
+          "title": "劇情變數",
           "yes": "是",
           "no": "否",
-          "endings": "結局：{ids}"
+          "endings": "結局：{ids}",
+          "description": "即時查看劇情狀態，變化量以本次試玩的初始值為基準。",
+          "search": "搜尋變數…",
+          "changedCount": "{count} 個變數已變更",
+          "sinceStart": "相對初始值的變化",
+          "noResults": "沒有符合的變數。",
+          "endingCount": "已達成 {count} 個結局"
         }
       },
       "previewFromScene": "從此場景開始試玩",
@@ -4746,6 +4752,7 @@
     "backProject": "返回項目",
     "previewTitle": "作品預覽",
     "chat": {
+      "readOnly": "目前為唯讀預覽。在可編輯的專案中可使用 FizzAgent。",
       "label": "FizzAgent 介面設計對話",
       "undo": "復原",
       "generating": "正在調整樣式…",

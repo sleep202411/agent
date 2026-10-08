@@ -90,6 +90,14 @@ export function StoryProjectPlaytest({
     return () => observer.disconnect();
   }, []);
 
+  const currentRuntime =
+    runtimeQuery.data?.kind === "draft"
+      ? runtimeQuery.data.preview.runtime
+      : runtimeQuery.data?.build.runtimeJson;
+  const parsedRuntime = useMemo(
+    () => ExperienceRuntimeManifestSchema.safeParse(currentRuntime),
+    [currentRuntime]
+  );
   const loading = runtimeQuery.isLoading;
   const loadError = runtimeQuery.error;
   if (loading) return <PlaytestLoading />;
@@ -139,7 +147,6 @@ export function StoryProjectPlaytest({
     );
   }
 
-  const parsedRuntime = ExperienceRuntimeManifestSchema.safeParse(runtime);
   const stateRows = parsedRuntime.success
     ? parsedRuntime.data.stateDefinitions.map((definition) => {
         const label = definition.name
@@ -148,6 +155,7 @@ export function StoryProjectPlaytest({
         return {
           key: definition.key,
           label: label || definition.key,
+          initialValue: definition.initialValue,
         };
       })
     : [];

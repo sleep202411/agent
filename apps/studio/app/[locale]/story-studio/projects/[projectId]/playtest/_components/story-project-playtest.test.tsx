@@ -203,7 +203,8 @@ it("puts authoring chrome above the player instead of over its frame", async () 
   });
   const header = host.querySelector("header")!;
   expect(header.contains(host.querySelector('[data-testid="player"]'))).toBe(false);
-  expect(header.querySelector("aside")).not.toBeNull();
+  expect(header.querySelector('[aria-label="title"]')).not.toBeNull();
+  expect(header.querySelector("aside")).toBeNull();
   expect(header.querySelector('[aria-label="refresh"]')).not.toBeNull();
   expect(host.querySelector("main")?.style.getPropertyValue("--experience-chrome-inset-top")).toBe(
     ""

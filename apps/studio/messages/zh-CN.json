@@ -3590,10 +3590,16 @@
         "unavailableTitle": "当前故事还不能试玩",
         "unavailableDescription": "{errors} 个问题挡住了试玩 · {warnings} 条提醒。点下面能跳转的条目，可以直接打开那一场。",
         "stateHud": {
-          "title": "本局数值",
+          "title": "剧情变量",
           "yes": "是",
           "no": "否",
-          "endings": "结局：{ids}"
+          "endings": "结局：{ids}",
+          "description": "实时查看剧情状态，变化量以本次试玩的初始值为基准。",
+          "search": "搜索变量…",
+          "changedCount": "{count} 个变量已变化",
+          "sinceStart": "相对初始值的变化",
+          "noResults": "没有匹配的变量。",
+          "endingCount": "已达成 {count} 个结局"
         }
       },
       "previewFromScene": "从此场景开始试玩",
@@ -4746,6 +4752,7 @@
     "backProject": "返回项目",
     "previewTitle": "作品预览",
     "chat": {
+      "readOnly": "当前为只读预览。在可编辑的项目中可使用 FizzAgent。",
       "label": "FizzAgent 界面设计对话",
       "undo": "撤销",
       "generating": "正在调整样式…",

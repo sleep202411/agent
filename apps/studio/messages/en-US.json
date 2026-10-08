@@ -3590,10 +3590,16 @@
         "unavailableTitle": "The story is not playable yet",
         "unavailableDescription": "{errors} blocking problems · {warnings} notes. Open a linked row to jump to that scene.",
         "stateHud": {
-          "title": "Session stats",
+          "title": "Variables",
           "yes": "Yes",
           "no": "No",
-          "endings": "Endings: {ids}"
+          "endings": "Endings: {ids}",
+          "description": "Live story state. Changes are measured from the start of this playthrough.",
+          "search": "Find a variable…",
+          "changedCount": "{count} variables changed",
+          "sinceStart": "Change since the start",
+          "noResults": "No matching variables.",
+          "endingCount": "{count} endings reached"
         }
       },
       "previewFromScene": "Playtest from this scene",
@@ -4746,6 +4752,7 @@
     "backProject": "Return to project",
     "previewTitle": "Story preview",
     "chat": {
+      "readOnly": "This preview is read-only. Open an editable project to use FizzAgent.",
       "label": "FizzAgent appearance conversation",
       "undo": "Undo",
       "generating": "Updating the appearance…",

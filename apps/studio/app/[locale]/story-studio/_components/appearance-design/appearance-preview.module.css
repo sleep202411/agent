@@ -7,7 +7,7 @@
   height: 100dvh;
   overflow: hidden;
   color: var(--foreground);
-  background: var(--canvas-background);
+  background: var(--background);
 }
 .preview {
   min-width: 0;
@@ -23,8 +23,7 @@
   height: 60px;
   flex-shrink: 0;
   padding: 0 20px;
-  background: var(--background);
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  background: transparent;
 }
 .identity {
   display: flex;
@@ -33,16 +32,19 @@
   min-width: 0;
 }
 .identity h1 {
-  max-width: 240px;
+  max-width: clamp(100px, 18vw, 320px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
 }
-.identity > span {
-  color: rgb(255 255 255 / 0.4);
-  font-size: 11px;
+.previewBadge {
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.055);
+  color: var(--muted-foreground);
+  font-size: 10px;
   white-space: nowrap;
 }
 .back {
@@ -62,6 +64,17 @@
   position: relative;
   flex: 1;
   min-height: 0;
+  display: flex;
+  padding: 0 20px 20px;
+  background: transparent;
+}
+.stageFrame {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 16px;
   background: black;
 }
 .chat {
@@ -70,6 +83,9 @@
   display: flex;
   flex-direction: column;
   background: #0f0f0f;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 16px;
 }
 .resizeHandle {
   position: relative;
@@ -78,7 +94,7 @@
   z-index: 2;
   min-width: 0;
   min-height: 0;
-  background: #0f0f0f;
+  background: transparent;
   cursor: col-resize;
   touch-action: none;
   user-select: none;
@@ -87,15 +103,15 @@
 .resizeHandle::before {
   content: "";
   position: absolute;
-  inset: 0 3px;
-  background: rgb(255 255 255 / 0.08);
+  inset: 24px 3.5px;
+  background: transparent;
 }
 .resizeHandle > span {
   z-index: 1;
   width: 2px;
-  height: 36px;
+  height: 28px;
   border-radius: 2px;
-  background: rgb(255 255 255 / 0.3);
+  background: rgb(255 255 255 / 0.15);
 }
 .resizeHandle:hover::before,
 .resizeHandle:focus-visible::before,
@@ -126,7 +142,7 @@
 .previewActions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 .undo {
   display: inline-flex;
@@ -136,6 +152,12 @@
   white-space: nowrap;
   font-size: 12px;
   color: rgb(255 255 255 / 0.65);
+  padding: 0 8px;
+  border-radius: 8px;
+}
+.undo:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.06);
+  color: white;
 }
 .undo:disabled {
   opacity: 0.35;
@@ -170,7 +192,7 @@
     cursor: row-resize;
   }
   .resizeHandle::before {
-    inset: 3px 0;
+    inset: 3.5px 24px;
   }
   .resizeHandle > span {
     width: 36px;
@@ -183,11 +205,27 @@
   .identity h1 {
     max-width: 100px;
   }
-  .identity > span {
+  .previewBadge {
     display: none;
   }
   .previewActions {
-    gap: 8px;
+    gap: 2px;
+  }
+  .undo {
+    padding: 0 4px;
+    font-size: 11px;
+  }
+  .stage {
+    padding: 0 10px 4px;
+  }
+  .stageFrame {
+    border-radius: 12px;
+  }
+  .chatContainer {
+    padding: 4px 10px 10px;
+  }
+  .chat {
+    border-radius: 12px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -204,6 +242,7 @@
   min-width: 0;
   min-height: 0;
   display: grid;
+  padding: 12px 12px 12px 0;
   overflow: hidden;
 }
 .chatContainer[hidden],
