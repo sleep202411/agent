@@ -5,6 +5,7 @@ import {
   saveAdminUserLevelRelation,
   type AdminUserLevelSaveInput,
 } from "@/lib/admin-user-levels";
+import { grantsAdminAccess } from "@/lib/admin-capability";
 import { getAdminSession } from "@/lib/admin-session";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,9 @@ function parseOptionalPositiveInt(value: string | null): number | undefined {
 export async function GET(request: NextRequest) {
   const session = await getAdminSession();
   if (!session) return Response.json({ code: 401, msg: "未登录" }, { status: 401 });
+  if (!grantsAdminAccess(session.user, "user.read")) {
+    return Response.json({ code: 403, msg: "无权限" }, { status: 403 });
+  }
 
   const { searchParams } = request.nextUrl;
   try {
@@ -45,6 +49,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const session = await getAdminSession();
   if (!session) return Response.json({ code: 401, msg: "未登录" }, { status: 401 });
+  if (!grantsAdminAccess(session.user, "user.write")) {
+    return Response.json({ code: 403, msg: "无权限" }, { status: 403 });
+  }
 
   try {
     const input = (await request.json()) as AdminUserLevelSaveInput;
@@ -71,6 +78,9 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const session = await getAdminSession();
   if (!session) return Response.json({ code: 401, msg: "未登录" }, { status: 401 });
+  if (!grantsAdminAccess(session.user, "user.write")) {
+    return Response.json({ code: 403, msg: "无权限" }, { status: 403 });
+  }
 
   const id = parseOptionalPositiveInt(request.nextUrl.searchParams.get("id"));
   if (!id) {

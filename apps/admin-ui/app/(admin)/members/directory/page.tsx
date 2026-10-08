@@ -1,12 +1,12 @@
 import { MemberDirectoryPanel } from "@/components/admin/billing/member-directory-panel";
-import { getAdminSession } from "@/lib/admin-session";
+import { requireAdminPagePermission } from "@/lib/admin-content-permission";
 
 export default async function MemberDirectoryPage() {
-  const session = await getAdminSession();
+  const session = await requireAdminPagePermission("user.read");
   return (
     <MemberDirectoryPanel
-      canReadWorkspaces={session?.user.permissions.includes("billing.read") ?? false}
-      canWriteBilling={session?.user.permissions.includes("billing.write") ?? false}
+      canReadWorkspaces={session.user.permissions.includes("billing.read")}
+      canWriteBilling={session.user.permissions.includes("billing.write")}
     />
   );
 }

@@ -461,17 +461,16 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           permission: "user.read",
         },
         {
-          // Java `/api/admin/user-levels` — ungated like news/courses until a
-          // dedicated permission is registered.
           href: "/members/user-levels",
           label: "认证等级",
           icon: IconBadge,
+          permission: "user.read",
         },
         {
-          // Java `/api/admin/user-level-applications` — same ungated stance.
           href: "/members/user-level-applications",
           label: "等级申请",
           icon: IconChecklist,
+          permission: "user.read",
         },
       ],
     },

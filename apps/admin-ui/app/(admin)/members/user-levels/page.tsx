@@ -3,21 +3,21 @@ import {
   loadAdminUserLevelDefinitions,
   loadAdminUserLevelRelations,
 } from "@/lib/admin-user-levels";
-import { getAdminSession } from "@/lib/admin-session";
+import { requireAdminPagePermission } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
 export default async function MembersUserLevelsPage() {
-  const [session, relations, levels] = await Promise.all([
-    getAdminSession(),
+  const session = await requireAdminPagePermission("user.read");
+  const [relations, levels] = await Promise.all([
     loadAdminUserLevelRelations(),
     loadAdminUserLevelDefinitions(),
   ]);
 
   return (
     <UserLevelsPanel
-      siteLabel={session?.site.label ?? "当前站点"}
-      databaseLabel={session?.site.databaseLabel ?? "当前站点数据库"}
+      siteLabel={session.site.label}
+      databaseLabel={session.site.databaseLabel}
       initialList={relations.data}
       initialLevels={levels.data ?? []}
       initialError={relations.error ?? levels.error}

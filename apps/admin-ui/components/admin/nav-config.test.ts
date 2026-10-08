@@ -46,3 +46,19 @@ it("shows 剧组管理 when the operator only has revenue permission", () => {
     "/revenue"
   );
 });
+
+it("hides 用户管理 when the operator only has billing permission", () => {
+  const members = GLOBAL_NAV.find((entry) => entry.key === "/members")!;
+  expect(moduleNavVisible(members, (permission) => permission === "billing.read")).toBe(false);
+  expect(
+    MODULE_NAV["/members"].flatMap((group) => group.items).map((item) => item.permission)
+  ).toEqual(["user.read", "user.read", "user.read"]);
+});
+
+it("shows 用户管理 when the operator has user.read", () => {
+  const members = GLOBAL_NAV.find((entry) => entry.key === "/members")!;
+  expect(moduleNavVisible(members, (permission) => permission === "user.read")).toBe(true);
+  expect(moduleLandingHref(members, (permission) => permission === "user.read")).toBe(
+    "/members/directory"
+  );
+});

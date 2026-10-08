@@ -3,6 +3,7 @@ import {
   listAdminUserLevelApplications,
   type AdminUserLevelApplicationStatus,
 } from "@/lib/admin-user-level-applications";
+import { grantsAdminAccess } from "@/lib/admin-capability";
 import { getAdminSession } from "@/lib/admin-session";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,9 @@ function parseOptionalStatus(value: string | null): AdminUserLevelApplicationSta
 export async function GET(request: NextRequest) {
   const session = await getAdminSession();
   if (!session) return Response.json({ code: 401, msg: "未登录" }, { status: 401 });
+  if (!grantsAdminAccess(session.user, "user.read")) {
+    return Response.json({ code: 403, msg: "无权限" }, { status: 403 });
+  }
 
   const { searchParams } = request.nextUrl;
   const statusRaw = searchParams.get("status");

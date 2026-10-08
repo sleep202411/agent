@@ -1,4 +1,5 @@
 import { approveAdminUserLevelApplication } from "@/lib/admin-user-level-applications";
+import { grantsAdminAccess } from "@/lib/admin-capability";
 import { getAdminSession } from "@/lib/admin-session";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,9 @@ function parseId(raw: string): number | null {
 export async function POST(request: Request, context: RouteContext) {
   const session = await getAdminSession();
   if (!session) return Response.json({ code: 401, msg: "未登录" }, { status: 401 });
+  if (!grantsAdminAccess(session.user, "user.write")) {
+    return Response.json({ code: 403, msg: "无权限" }, { status: 403 });
+  }
 
   const { id: rawId } = await context.params;
   const id = parseId(rawId);
