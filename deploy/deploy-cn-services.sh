@@ -273,7 +273,7 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
     kubectl rollout status "deploy/$deployment" -n "$NAMESPACE" --timeout=5m
   done
   curl --fail --silent --show-error --max-time 20 https://fizzstudio.fizzspace.cn/aurora/ready >/dev/null
-  echo "DONE: CN release is healthy at $TAG"
+  echo "DONE: selected CN services [${SERVICES[*]}] are healthy at $TAG"
 fi
 
 }

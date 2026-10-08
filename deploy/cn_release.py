@@ -350,7 +350,7 @@ def run_cycles(state, args, persist):
             continue
         state["complete"] = True
         persist()
-        print(f"DONE: CN release {tag} verified", flush=True)
+        print(f"DONE: CN release {tag} verified for selected services: {', '.join(services)}", flush=True)
         return
     raise RuntimeError("Ten source updates interrupted this release; resume when commits settle")
 

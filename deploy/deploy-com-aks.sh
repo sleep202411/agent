@@ -367,8 +367,22 @@ break
 done
 echo "Local checkout preserved. Pull the remote GitOps commit when your worktree is ready."
 echo "✅ 镜像和 Git tag 已推送；运行中的版本尚未验证。ArgoCD 将自动同步。"
-echo "只读检查 Server rollout（需要 AKS / ArgoCD 读取权限）："
-echo "  node deploy/diagnose-com-server.mjs $SHA"
+echo "Published services: ${SERVICES[*]}"
+echo "Expected application image tag: $SHA"
+echo "Only the selected services were published; other services retain their existing image tags."
+echo "Read-only rollout checks (requires AKS read access; use your authorized context):"
+for service in "${SERVICES[@]}"; do
+  deployments="fizzdragon-$service"
+  [ "$service" != agent ] || deployments="fizzdragon-agent fizzdragon-agent-worker"
+  for deployment in $deployments; do
+    echo "  kubectl --context aks-fizzdragon-com-admin -n fizzdragon-com get deployment $deployment -o 'jsonpath={.spec.template.spec.containers[*].image}'"
+    echo "  kubectl --context aks-fizzdragon-com-admin -n fizzdragon-com rollout status deployment/$deployment --timeout=300s"
+  done
+  if [ "$service" = server ]; then
+    echo "  node deploy/diagnose-com-server.mjs $SHA"
+  fi
+done
+echo "Compare each selected image tag with $SHA; a ready older deployment is not acceptance of this release."
 echo "随后验证已登录的业务接口；/healthz 或 /ready 成功不代表新路由已上线。"
 echo "CN release of the same source revision (builds CN images separately):"
 echo "  CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --tag $SHA --allow-chart-update ${SERVICES[*]}"
