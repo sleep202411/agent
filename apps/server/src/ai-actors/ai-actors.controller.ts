@@ -89,7 +89,7 @@ export class AdminAiActorsController {
   constructor(private readonly service: AiActorsService) {}
   @Get()
   @Header('Cache-Control', 'private, no-store')
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiActorsRead)
   async list(
     @Query(
       new ZodValidationPipe(
@@ -110,7 +110,7 @@ export class AdminAiActorsController {
     };
   }
   @Post()
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaWrite)
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiActorsWrite)
   async save(
     @CurrentAdmin() admin: AdminActor,
     @Body(new ZodValidationPipe(saveSchema)) body: z.infer<typeof saveSchema>,
@@ -119,7 +119,7 @@ export class AdminAiActorsController {
   }
   @Get(':id/usage')
   @Header('Cache-Control', 'private, no-store')
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiActorsRead)
   async usage(
     @Param(new ZodValidationPipe(idSchema)) params: { id: string },
     @Query(new ZodValidationPipe(z.object({ page }))) query: { page: number },
@@ -128,7 +128,7 @@ export class AdminAiActorsController {
   }
 
   @Delete(':id')
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaWrite)
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.AiActorsWrite)
   async archive(
     @Param(new ZodValidationPipe(idSchema)) params: { id: string },
   ) {

@@ -8,13 +8,14 @@ export const AdminUserStatusSchema = z.enum([
 ]);
 
 export const AdminSiteScopeSchema = z.enum(['global', 'cn', 'all']);
-export const AdminRoleKeySchema = z.enum([
-  'master_financial_controller',
-  'super_admin',
-  'admin',
-  'operations',
-]);
-export const AssignableAdminRoleKeySchema = z.enum(['admin', 'operations']);
+export const AdminRoleKeySchema = z
+  .string()
+  .trim()
+  .regex(/^[a-z][a-z0-9_]{1,62}$/, '角色标识须为小写字母。');
+export const AssignableAdminRoleKeySchema = AdminRoleKeySchema.refine(
+  (key) => key !== 'super_admin',
+  { message: '该角色不能通过后台页面分配。' },
+);
 
 export const ListAdminUsersQuerySchema = z
   .object({
@@ -92,3 +93,36 @@ export const ResetAdminPasswordSchema = z
   })
   .strict();
 export type ResetAdminPasswordInput = z.infer<typeof ResetAdminPasswordSchema>;
+
+export const AdminRoleParamsSchema = z
+  .object({
+    roleKey: AdminRoleKeySchema,
+  })
+  .strict();
+export type AdminRoleParams = z.infer<typeof AdminRoleParamsSchema>;
+
+export const CreateAdminRoleSchema = z
+  .object({
+    key: AdminRoleKeySchema,
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().max(500).optional(),
+    permissions: z.array(z.string().trim().min(1).max(120)).min(1).max(80),
+  })
+  .strict();
+export type CreateAdminRoleInput = z.infer<typeof CreateAdminRoleSchema>;
+
+export const UpdateAdminRoleSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    description: z.string().trim().max(500).nullable().optional(),
+    permissions: z
+      .array(z.string().trim().min(1).max(120))
+      .min(1)
+      .max(80)
+      .optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: '至少需要更新一个字段。',
+  });
+export type UpdateAdminRoleInput = z.infer<typeof UpdateAdminRoleSchema>;

@@ -35,6 +35,15 @@ beforeAll(async () => {
     ),
   );
   await db.exec(
+    readFileSync(
+      join(
+        __dirname,
+        '../../prisma/migrations/20261008120400_academy_instructor_shares/migration.sql',
+      ),
+      'utf8',
+    ),
+  );
+  await db.exec(
     `CREATE CONSTRAINT TRIGGER creator_withdrawal_test_consistency AFTER INSERT OR UPDATE ON creator_withdrawals DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_creator_withdrawal_payouts();`,
   );
 });

@@ -16,9 +16,12 @@ import {
 } from './admin-auth.bootstrap';
 import {
   ADMIN_PERMISSION_CATALOG,
-  ADMIN_ROLE_CATALOG,
+  ADMIN_PERMISSION_KEYS,
   ADMIN_ROLE_KEYS,
-  type AdminRoleKey,
+  CUSTOM_ROLE_FORBIDDEN_PERMISSIONS,
+  RETIRED_ADMIN_ROLE_KEYS,
+  isProtectedAdminRoleKey,
+  isSystemAdminRoleKey,
 } from './admin-auth.constants';
 import {
   hashAdminPassword,
@@ -26,9 +29,11 @@ import {
 } from './admin-password';
 import { PrismaService } from '../infra/db/db.module';
 import type {
+  CreateAdminRoleInput,
   CreateAdminUserInput,
   ListAdminSessionsQuery,
   ListAdminUsersQuery,
+  UpdateAdminRoleInput,
   UpdateAdminUserInput,
 } from './admin-users.dto';
 import type { AdminActor } from './admin-auth.types';
@@ -116,7 +121,7 @@ export class AdminUsersService {
     });
 
     const passwordHash = hashAdminPassword(input.password);
-    const { roleIds } = await ensureAdminAuthCatalog(this.prisma);
+    const roleId = await this.resolveAssignableRoleId(input.roleKey);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const user = await tx.adminUser.create({
@@ -134,11 +139,7 @@ export class AdminUsersService {
           include: adminUserListInclude,
         });
         await this.recordPasswordHistory(user.id, passwordHash, tx);
-        await replaceAdminRoleInTransaction(
-          tx,
-          user.id,
-          roleIds[input.roleKey as AdminRoleKey],
-        );
+        await replaceAdminRoleInTransaction(tx, user.id, roleId);
         return this.getById(user.id, tx);
       });
     } catch (error) {
@@ -167,14 +168,13 @@ export class AdminUsersService {
         msg: '不能降低当前登录账号的状态、角色或 MFA 要求。',
       });
     }
-    const catalog = input.roleKey
-      ? await ensureAdminAuthCatalog(this.prisma)
+    const nextRoleId = input.roleKey
+      ? await this.resolveAssignableRoleId(input.roleKey)
       : null;
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${userId}::uuid FOR UPDATE`;
       const existing = await this.findExisting(userId, tx);
       if (input.roleKey) {
-        this.assertAssignableRoleKey(input.roleKey);
         const existingWithRoles = await this.findExistingWithRoles(userId, tx);
         if (primaryRoleKey(existingWithRoles) === ADMIN_ROLE_KEYS.SuperAdmin) {
           throw new BadRequestException({
@@ -201,13 +201,8 @@ export class AdminUsersService {
               : null,
         },
       });
-      if (input.roleKey) {
-        await replaceAdminRoleInTransaction(
-          tx,
-          userId,
-          catalog!.roleIds[input.roleKey as AdminRoleKey],
-          actor.id,
-        );
+      if (nextRoleId) {
+        await replaceAdminRoleInTransaction(tx, userId, nextRoleId, actor.id);
       }
       if (input.status && input.status !== AdminUserStatus.active) {
         await this.revokeSessionsInTransaction(userId, actor.sessionId, tx);
@@ -343,37 +338,159 @@ export class AdminUsersService {
     };
   }
 
-  // Role → permission matrix for the 角色权限 page. Roles/permissions are
-  // defined in code (ADMIN_ROLE_CATALOG / ADMIN_PERMISSION_CATALOG, synced to
-  // the DB on boot); we enrich each role with its live assigned-account count.
+  // Role → permission matrix for the 角色权限 page. System roles stay catalog-
+  // synced; custom staff roles live in the DB and can be created/edited here.
   async listRoles() {
+    await ensureAdminAuthCatalog(this.prisma);
     const [roleCounts, roles] = await Promise.all([
       this.prisma.adminUserRole.groupBy({
         by: ['roleId'],
         _count: { _all: true },
       }),
-      this.prisma.adminRole.findMany({ select: { id: true, key: true } }),
+      this.prisma.adminRole.findMany({
+        include: { permissions: { include: { permission: true } } },
+        orderBy: [{ createdAt: 'asc' }, { key: 'asc' }],
+      }),
     ]);
-    const keyById = new Map(roles.map((role) => [role.id, role.key]));
-    const countByKey = new Map<string, number>();
-    for (const entry of roleCounts) {
-      const key = keyById.get(entry.roleId);
-      if (key) countByKey.set(key, entry._count._all);
-    }
+    const countById = new Map(
+      roleCounts.map((entry) => [entry.roleId, entry._count._all]),
+    );
+    const catalogKeys = new Set<string>(
+      ADMIN_PERMISSION_CATALOG.map((permission) => permission.key),
+    );
 
     return {
       permissions: ADMIN_PERMISSION_CATALOG.map((permission) => ({
         key: permission.key,
         description: permission.description,
+        assignable: !CUSTOM_ROLE_FORBIDDEN_PERMISSIONS.has(permission.key),
       })),
-      roles: ADMIN_ROLE_CATALOG.map((role) => ({
-        key: role.key,
-        name: role.name,
-        description: role.description,
-        permissions: role.permissions,
-        accountCount: countByKey.get(role.key) ?? 0,
-      })),
+      roles: roles
+        .filter(
+          (role) =>
+            !(RETIRED_ADMIN_ROLE_KEYS as readonly string[]).includes(role.key),
+        )
+        .map((role) => ({
+          key: role.key,
+          name: role.name,
+          description: role.description ?? '',
+          permissions: role.permissions
+            .map((entry) => entry.permission.key)
+            .filter((key) => catalogKeys.has(key))
+            .sort(),
+          accountCount: countById.get(role.id) ?? 0,
+          system: isSystemAdminRoleKey(role.key),
+          assignable: !isProtectedAdminRoleKey(role.key),
+        })),
     };
+  }
+
+  async createRole(input: CreateAdminRoleInput) {
+    if (isSystemAdminRoleKey(input.key) || isProtectedAdminRoleKey(input.key)) {
+      throw new BadRequestException({
+        code: 'ADMIN_SYSTEM_ROLE_LOCKED',
+        msg: '系统预定义角色不能通过后台新建。',
+      });
+    }
+    const permissionIds = await this.resolvePermissionIds(
+      input.key,
+      input.permissions,
+    );
+    await ensureAdminAuthCatalog(this.prisma);
+    try {
+      await this.prisma.adminRole.create({
+        data: {
+          key: input.key,
+          name: input.name,
+          description: input.description ?? '',
+          siteScope: AdminSiteScope.all,
+          permissions: {
+            createMany: {
+              data: permissionIds.map((permissionId) => ({ permissionId })),
+              skipDuplicates: true,
+            },
+          },
+        },
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          code: 'ADMIN_ROLE_KEY_EXISTS',
+          msg: '该角色标识已存在。',
+        });
+      }
+      throw error;
+    }
+    return this.listRoles();
+  }
+
+  async updateRole(roleKey: string, input: UpdateAdminRoleInput) {
+    const role = await this.prisma.adminRole.findUnique({
+      where: { key: roleKey },
+      select: { id: true },
+    });
+    if (!role) {
+      throw new NotFoundException({
+        code: 'ADMIN_ROLE_NOT_FOUND',
+        msg: '角色不存在。',
+      });
+    }
+    const permissionIds = input.permissions
+      ? await this.resolvePermissionIds(roleKey, input.permissions)
+      : null;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.adminRole.update({
+        where: { id: role.id },
+        data: {
+          name: input.name,
+          description:
+            input.description === undefined
+              ? undefined
+              : (input.description ?? ''),
+        },
+      });
+      if (permissionIds) {
+        await tx.adminRolePermission.deleteMany({ where: { roleId: role.id } });
+        await tx.adminRolePermission.createMany({
+          data: permissionIds.map((permissionId) => ({
+            roleId: role.id,
+            permissionId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    });
+    return this.listRoles();
+  }
+
+  async deleteRole(roleKey: string) {
+    if (isSystemAdminRoleKey(roleKey) || isProtectedAdminRoleKey(roleKey)) {
+      throw new BadRequestException({
+        code: 'ADMIN_SYSTEM_ROLE_LOCKED',
+        msg: '系统预定义角色不能删除。',
+      });
+    }
+    const role = await this.prisma.adminRole.findUnique({
+      where: { key: roleKey },
+      select: { id: true, _count: { select: { users: true } } },
+    });
+    if (!role) {
+      throw new NotFoundException({
+        code: 'ADMIN_ROLE_NOT_FOUND',
+        msg: '角色不存在。',
+      });
+    }
+    if (role._count.users > 0) {
+      throw new BadRequestException({
+        code: 'ADMIN_ROLE_IN_USE',
+        msg: '仍有账号使用该角色，请先把账号改到其他角色再删除。',
+      });
+    }
+    await this.prisma.adminRole.delete({ where: { id: role.id } });
+    return this.listRoles();
   }
 
   // Global active-session view for the 会话 page (the per-user list is keyed by
@@ -526,17 +643,84 @@ export class AdminUsersService {
   }
 
   private assertAssignableRoleKey(roleKey: string) {
-    if (roleKey === ADMIN_ROLE_KEYS.MasterFinancialController) {
-      throw new BadRequestException(
-        'Master Financial Controller is assigned only through controlled deployment tooling',
-      );
-    }
     if (roleKey === ADMIN_ROLE_KEYS.SuperAdmin) {
       throw new BadRequestException({
         code: 'ADMIN_SUPER_ADMIN_ROLE_MANAGED_OUT_OF_BAND',
         msg: '超级管理员只能通过受控部署脚本开通，不能在后台页面创建或授权。',
       });
     }
+  }
+
+  private async resolveAssignableRoleId(roleKey: string): Promise<string> {
+    this.assertAssignableRoleKey(roleKey);
+    await ensureAdminAuthCatalog(this.prisma);
+    const role = await this.prisma.adminRole.findUnique({
+      where: { key: roleKey },
+      select: { id: true },
+    });
+    if (!role) {
+      throw new BadRequestException({
+        code: 'ADMIN_ROLE_NOT_FOUND',
+        msg: '角色不存在。',
+      });
+    }
+    return role.id;
+  }
+
+  private async resolvePermissionIds(
+    roleKey: string,
+    keys: string[],
+  ): Promise<string[]> {
+    const unique = [...new Set(keys)];
+    if (!isSystemAdminRoleKey(roleKey)) {
+      const forbidden = unique.filter((key) =>
+        CUSTOM_ROLE_FORBIDDEN_PERMISSIONS.has(key),
+      );
+      if (forbidden.length) {
+        throw new BadRequestException({
+          code: 'ADMIN_ROLE_PERMISSION_RESERVED',
+          msg: '员工角色不能包含账号管理或算力审批权限。',
+          missing: forbidden,
+        });
+      }
+    }
+    if (roleKey === ADMIN_ROLE_KEYS.SuperAdmin) {
+      if (!unique.includes(ADMIN_PERMISSION_KEYS.AdminManage)) {
+        throw new BadRequestException({
+          code: 'ADMIN_ROLE_PERMISSION_REQUIRED',
+          msg: '超级管理员必须保留后台账号管理权限。',
+        });
+      }
+      if (!unique.includes(ADMIN_PERMISSION_KEYS.CrewComputeReview)) {
+        throw new BadRequestException({
+          code: 'ADMIN_ROLE_PERMISSION_REQUIRED',
+          msg: '超级管理员必须保留剧组算力审批权限。',
+        });
+      }
+    }
+    const catalog = new Set<string>(
+      ADMIN_PERMISSION_CATALOG.map((permission) => permission.key),
+    );
+    const unknown = unique.filter((key) => !catalog.has(key));
+    if (unknown.length) {
+      throw new BadRequestException({
+        code: 'ADMIN_ROLE_PERMISSION_UNKNOWN',
+        msg: '包含未登记的权限。',
+        missing: unknown,
+      });
+    }
+    await ensureAdminAuthCatalog(this.prisma);
+    const permissions = await this.prisma.adminPermission.findMany({
+      where: { key: { in: unique } },
+      select: { id: true, key: true },
+    });
+    if (permissions.length !== unique.length) {
+      throw new BadRequestException({
+        code: 'ADMIN_ROLE_PERMISSION_UNKNOWN',
+        msg: '包含未登记的权限。',
+      });
+    }
+    return permissions.map((permission) => permission.id);
   }
 
   private async recentPasswordHashes(
@@ -563,12 +747,10 @@ export class AdminUsersService {
   }
 }
 
-function primaryRoleKey(user: AdminUserForList): AdminRoleKey {
+function primaryRoleKey(user: AdminUserForList): string {
   const roleKeys = user.roles.map((userRole) => userRole.role.key);
   if (roleKeys.includes(ADMIN_ROLE_KEYS.SuperAdmin))
     return ADMIN_ROLE_KEYS.SuperAdmin;
-  if (roleKeys.includes(ADMIN_ROLE_KEYS.MasterFinancialController))
-    return ADMIN_ROLE_KEYS.MasterFinancialController;
   if (roleKeys.includes(ADMIN_ROLE_KEYS.Admin)) return ADMIN_ROLE_KEYS.Admin;
-  return ADMIN_ROLE_KEYS.Operations;
+  return roleKeys[0] ?? ADMIN_ROLE_KEYS.Operations;
 }

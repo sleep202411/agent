@@ -408,15 +408,9 @@ export class WithdrawalAdminService {
       for (const crewId of [...new Set(row.payouts.map((p) => p.crewId))])
         await lockMemberPayouts(tx, crewId, row.userId);
       if (input.action === 'takeover') {
-        if (
-          !admin.roleKeys.some(
-            (role) =>
-              role === ADMIN_ROLE_KEYS.SuperAdmin ||
-              role === ADMIN_ROLE_KEYS.MasterFinancialController,
-          )
-        )
+        if (!admin.roleKeys.some((role) => role === ADMIN_ROLE_KEYS.SuperAdmin))
           throw new ForbiddenException(
-            'Withdrawal handover requires a financial controller or super administrator.',
+            'Withdrawal handover requires a super administrator.',
           );
         if (row.status !== 'processing' || row.processingAdminId === admin.id)
           throw new ConflictException(

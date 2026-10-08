@@ -1,6 +1,7 @@
 export interface AdminPermissionInfo {
   key: string;
   description: string;
+  assignable?: boolean;
 }
 
 export interface AdminRoleInfo {
@@ -9,6 +10,8 @@ export interface AdminRoleInfo {
   description: string;
   permissions: string[];
   accountCount: number;
+  system?: boolean;
+  assignable?: boolean;
 }
 
 export interface AdminRolesData {

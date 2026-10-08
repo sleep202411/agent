@@ -5,6 +5,7 @@ import {
   adminAuthHeaders,
   parseAdminEnvelope,
 } from "@/lib/admin-api";
+import { isRetiredRoleKey } from "@/components/admin/users/permission-tree";
 import type { AdminRolesData, AdminSessionsData } from "@/components/admin/users/types";
 
 export type AdminUsersLoadResult<T> = {
@@ -32,8 +33,16 @@ async function fetchResource<T>(
   }
 }
 
-export function fetchAdminRoles(): Promise<AdminUsersLoadResult<AdminRolesData>> {
-  return fetchResource<AdminRolesData>("/users/roles", "角色权限数据加载失败。");
+export async function fetchAdminRoles(): Promise<AdminUsersLoadResult<AdminRolesData>> {
+  const result = await fetchResource<AdminRolesData>("/users/roles", "角色权限数据加载失败。");
+  if (!result.data) return result;
+  return {
+    ...result,
+    data: {
+      ...result.data,
+      roles: result.data.roles.filter((role) => !isRetiredRoleKey(role.key)),
+    },
+  };
 }
 
 export function fetchAdminSessions(): Promise<AdminUsersLoadResult<AdminSessionsData>> {

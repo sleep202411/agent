@@ -5,7 +5,7 @@ const admin = {
   sessionId: 'session',
   siteScope: 'all',
   permissions: ['crew.compute.review'],
-  roleKeys: ['master_financial_controller'],
+  roleKeys: ['super_admin'],
 } as AdminActor;
 const contains = (value: unknown): unknown => expect.objectContaining(value);
 import { CrewComputeRequestsService } from './compute-requests.service';
@@ -142,26 +142,14 @@ describe('Crew compute requests', () => {
           note: '',
         },
       ),
-    ).rejects.toThrow('Master Financial Controller');
+    ).rejects.toThrow('算力审批');
     expect(f.tx.crewComputeRequest.update).not.toHaveBeenCalled();
   });
-  it.each(['super_admin', 'admin', 'operations'])(
-    'rejects %s even with an accidentally granted review permission',
-    async (role) => {
-      const f = fixture();
-      const actor = { ...admin, roleKeys: [role] };
-      await expect(f.service.listAdmin(actor, {})).rejects.toThrow(
-        'Master Financial Controller',
-      );
-      for (const status of ['approved', 'rejected'] as const) {
-        await expect(
-          f.service.decideAdmin('crew', 'request', actor, { status, note: '' }),
-        ).rejects.toThrow('Master Financial Controller');
-      }
-      expect(f.tx.crewComputeRequest.update).not.toHaveBeenCalled();
-      expect(f.tx.adminAuditLog.create).not.toHaveBeenCalled();
-    },
-  );
+  it('lets super_admin review with crew.compute.review', async () => {
+    const f = fixture();
+    await f.service.listAdmin({ ...admin, roleKeys: ['super_admin'] }, {});
+    expect(f.tx.crewComputeRequest.findMany).toHaveBeenCalled();
+  });
 
   it('rejects inactive Admins before reading or changing requests', async () => {
     const f = fixture();
@@ -172,7 +160,7 @@ describe('Crew compute requests', () => {
         { ...admin, status: 'disabled' },
         { status: 'approved', note: '' },
       ),
-    ).rejects.toThrow('Master Financial Controller');
+    ).rejects.toThrow('算力审批');
     expect(f.tx.crewComputeRequest.findFirst).not.toHaveBeenCalled();
     expect(f.tx.adminAuditLog.create).not.toHaveBeenCalled();
   });

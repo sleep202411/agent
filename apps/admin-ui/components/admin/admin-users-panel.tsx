@@ -41,6 +41,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { displayRoleName, isRetiredRoleKey } from "@/components/admin/users/permission-tree";
 import { adminUiApiPath } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
 
@@ -49,8 +50,8 @@ import { cn } from "@/lib/utils";
 const ALL_VALUE = "__all__";
 
 type AdminUserStatus = "invited" | "active" | "suspended" | "disabled";
-type AdminRoleKey = "super_admin" | "admin" | "operations" | "master_financial_controller";
-type AssignableAdminRoleKey = Exclude<AdminRoleKey, "super_admin" | "master_financial_controller">;
+type AdminRoleKey = string;
+type AssignableAdminRoleKey = string;
 
 export type AdminUserRow = {
   id: string;
@@ -89,6 +90,8 @@ export type AdminUsersListData = {
   total: number;
 };
 
+export type AdminRoleOption = { value: string; label: string };
+
 type AdminUsersPanelProps = {
   currentUserId: string;
   siteLabel: string;
@@ -96,6 +99,7 @@ type AdminUsersPanelProps = {
   databaseLabel: string;
   initialData: AdminUsersListData | null;
   initialError?: string | null;
+  assignableRoles?: AdminRoleOption[];
 };
 
 const statusOptions: Array<{ value: AdminUserStatus; label: string }> = [
@@ -105,17 +109,13 @@ const statusOptions: Array<{ value: AdminUserStatus; label: string }> = [
   { value: "invited", label: "待启用" },
 ];
 
-const roleOptions: Array<{ value: AdminRoleKey; label: string }> = [
-  { value: "master_financial_controller", label: "Master Financial Controller" },
-  { value: "super_admin", label: "超级管理员" },
+const fallbackAssignableRoles: AdminRoleOption[] = [
   { value: "admin", label: "普通管理员" },
   { value: "operations", label: "运营" },
 ];
-const assignableRoleOptions: Array<{ value: AssignableAdminRoleKey; label: string }> =
-  roleOptions.filter(
-    (option): option is { value: AssignableAdminRoleKey; label: string } =>
-      option.value !== "super_admin" && option.value !== "master_financial_controller"
-  );
+const protectedRoleLabels: Record<string, string> = {
+  super_admin: "超级管理员",
+};
 
 const emptyData: AdminUsersListData = {
   items: [],
@@ -131,6 +131,7 @@ export function AdminUsersPanel({
   databaseLabel,
   initialData,
   initialError,
+  assignableRoles,
 }: AdminUsersPanelProps) {
   const [data, setData] = useState<AdminUsersListData>(initialData ?? emptyData);
   const [query, setQuery] = useState("");
@@ -165,6 +166,14 @@ export function AdminUsersPanel({
     () => data.items.find((item) => item.id === currentUserId) ?? null,
     [currentUserId, data.items]
   );
+  const assignableRoleOptions = (
+    assignableRoles?.length ? assignableRoles : fallbackAssignableRoles
+  )
+    .filter((option) => !isRetiredRoleKey(option.value))
+    .map((option) => ({
+      value: option.value,
+      label: displayRoleName({ key: option.value, name: option.label }),
+    }));
 
   const loadUsers = useCallback(
     (signal: AbortSignal) => {
@@ -474,18 +483,22 @@ export function AdminUsersPanel({
         const user = row.original;
         const isSelf = user.id === currentUserId;
         const roleSelectOptions =
-          user.roleKey === "super_admin" || user.roleKey === "master_financial_controller"
-            ? roleOptions
-            : assignableRoleOptions;
+          user.roleKey === "super_admin"
+            ? [{ value: user.roleKey, label: protectedRoleLabels[user.roleKey] ?? user.roleKey }]
+            : assignableRoleOptions.some((option) => option.value === user.roleKey)
+              ? assignableRoleOptions
+              : [
+                  ...assignableRoleOptions,
+                  { value: user.roleKey, label: protectedRoleLabels[user.roleKey] ?? user.roleKey },
+                ];
         return (
           <Select
             value={user.roleKey}
-            onChange={(value) => void updateUser(user, { roleKey: value as AdminRoleKey })}
+            onChange={(value) => void updateUser(user, { roleKey: value })}
             disabled={
               loading ||
               isSelf ||
               user.roleKey === "super_admin" ||
-              user.roleKey === "master_financial_controller" ||
               pendingKey === `${user.id}:roleKey`
             }
             options={roleSelectOptions}

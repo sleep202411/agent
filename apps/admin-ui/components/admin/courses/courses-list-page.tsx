@@ -29,6 +29,7 @@ import { ErrorBanner, Metric, StatusPill, formatDateTime } from "@/components/ad
 import {
   courseDisplayCover,
   courseDisplayTitle,
+  resolveCertificateImageUrl,
   resolveCourseCoverUrl,
   type Course,
 } from "@/components/admin/courses/types";
@@ -114,6 +115,9 @@ export function CoursesListPage({
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Course | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [catalogue, setCatalogue] = useState<
+    Record<number, { name: string; imagePath: string | null }>
+  >({});
 
   const applyData = useCallback(
     (data: AdminCoursesListData, next: { q: string; published: PublishedFilter; page: number }) => {
@@ -143,6 +147,32 @@ export function CoursesListPage({
     },
     [pageSize, begin, applyData]
   );
+
+  useEffect(() => {
+    const abort = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/admin/user-levels/levels", {
+          signal: abort.signal,
+          cache: "no-store",
+        });
+        const payload = (await response.json().catch(() => null)) as {
+          code?: number;
+          data?: Array<{ id?: number; name?: string; imagePath?: string | null }>;
+        } | null;
+        if (!response.ok || payload?.code !== 200) return;
+        const next: Record<number, { name: string; imagePath: string | null }> = {};
+        for (const row of payload.data ?? []) {
+          if (row.id == null || !row.name) continue;
+          next[row.id] = { name: row.name, imagePath: row.imagePath ?? null };
+        }
+        if (!abort.signal.aborted) setCatalogue(next);
+      } catch {
+        if (!abort.signal.aborted) setCatalogue({});
+      }
+    })();
+    return () => abort.abort();
+  }, []);
 
   useEffect(() => {
     if (busyId !== null || searchInput === q) return;
@@ -238,6 +268,32 @@ export function CoursesListPage({
                 <p className="mt-0.5 font-mono text-[11px] text-slate-400">#{course.id}</p>
               </div>
             </div>
+          );
+        },
+      },
+      {
+        id: "certificate",
+        header: "认证",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const certificateId = row.original.certificateId;
+          if (certificateId == null) return <span className="text-sm text-slate-400">—</span>;
+          const certificate = catalogue[certificateId] ?? {
+            name: `#${certificateId}`,
+            imagePath: null,
+          };
+          const src = resolveCertificateImageUrl(certificate.imagePath);
+          return (
+            <span className="inline-flex items-center gap-1.5" title={certificate.name}>
+              {src ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={src} alt="" className="size-7 rounded-md object-contain" />
+              ) : (
+                <span className="grid size-7 place-items-center rounded-md border border-slate-200 bg-slate-50 text-[10px] font-medium text-slate-500">
+                  证
+                </span>
+              )}
+            </span>
           );
         },
       },
@@ -356,7 +412,7 @@ export function CoursesListPage({
         },
       },
     ],
-    [busyId, togglePublish]
+    [busyId, catalogue, togglePublish]
   );
 
   return (

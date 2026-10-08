@@ -4,7 +4,11 @@ export { AdminUsersService } from './admin-users.service';
 export { AdminAuditService } from './admin-audit.service';
 export { AdminAuthGuard } from './admin-auth.guard';
 export { AdminPermissionGuard } from './admin-permission.guard';
-export { CurrentAdmin, RequireAdminPermissions } from './admin-auth.decorator';
+export {
+  CurrentAdmin,
+  RequireAdminPermissions,
+  RequireAnyAdminPermissions,
+} from './admin-auth.decorator';
 export {
   ADMIN_PERMISSION_KEYS,
   ADMIN_SESSION_COOKIE,

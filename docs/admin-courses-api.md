@@ -123,20 +123,30 @@
       "userId": 15,
       "nickName": "...",
       "avatar": "...",
-      "description": "..."
+      "description": "...",
+      "shareBps": 5000
     }
-  ]
+  ],
+  "certificateId": 13,
+  "priceCredits": 100,
+  "enrollmentEnabled": true,
+  "instructorShares": [{ "userId": 15, "shareBps": 5000 }]
 }
 ```
 
-| 字段                         | 说明                                          |
-| ---------------------------- | --------------------------------------------- |
-| `localized`                  | 课程文案，key 如 `zh-CN` / `en-US` / `zh-HK`  |
-| `videos[].videoKey`          | 各语言共用同一片源 key（OSS object key）      |
-| `videos[].coverUrl`          | 视频封面，**各语言共用**（不在 localized 里） |
-| `videos[].localized.*.title` | 视频标题，按语言                              |
-| `videos[].sectionId`         | 预留章节，一期恒为 `null`                     |
-| `instructors`                | 由保存时的 `instructorUserIds` 展开           |
+| 字段                         | 说明                                            |
+| ---------------------------- | ----------------------------------------------- |
+| `localized`                  | 课程文案，key 如 `zh-CN` / `en-US` / `zh-HK`    |
+| `videos[].videoKey`          | 各语言共用同一片源 key（OSS object key）        |
+| `videos[].coverUrl`          | 视频封面，**各语言共用**（不在 localized 里）   |
+| `videos[].localized.*.title` | 视频标题，按语言                                |
+| `videos[].sectionId`         | 预留章节，一期恒为 `null`                       |
+| `instructors`                | 由保存时的 `instructorUserIds` 展开             |
+| `instructors[].shareBps`     | 该讲师分润，万分比（50% = 5000）；未设为 `null` |
+| `certificateId`              | 认证等级 id，未指定为 `null`                    |
+| `priceCredits`               | 报名总费用（社区积分），未售为 `0`              |
+| `enrollmentEnabled`          | 是否开启报名                                    |
+| `instructorShares`           | 与讲师分润相同，便于按 userId 对齐              |
 
 ---
 
@@ -189,7 +199,11 @@ Body 可空。
       }
     }
   ],
-  "instructorUserIds": [15]
+  "instructorUserIds": [15],
+  "certificateId": 13,
+  "priceCredits": 100,
+  "enrollmentEnabled": true,
+  "instructorShares": [{ "userId": 15, "shareBps": 5000 }]
 }
 ```
 
@@ -199,6 +213,8 @@ Body 可空。
 - `videos[].videoKey` 必填；`videos[].coverUrl` 可选（视频封面共用）
 - `videos[].id` 可不传（每次保存会重建视频行，id 可能变化）
 - `instructorUserIds`：全量替换；传 `[]` 或 `null` 会清空讲师
+- `certificateId` / `priceCredits` / `enrollmentEnabled` / `instructorShares` 与课程内容一起落 Java 库；`instructorShares[].shareBps` 合计不得超过 10000（100%）
+- `instructorShares` 只含填写了分润的讲师；`userId` 必须出现在 `instructorUserIds` 中
 
 ---
 
@@ -296,6 +312,7 @@ Body 可空。
 | 文件                                                                 | 用途                                          |
 | -------------------------------------------------------------------- | --------------------------------------------- |
 | `src/main/resources/db/course_module.sql`                            | 新环境建表                                    |
+| `src/main/resources/db/course_commerce.sql`                          | 已有库加认证 / 费用 / 报名 / 讲师分润列       |
 | `src/main/resources/db/course_i18n.sql`                              | 已有无 locale 表时升级                        |
 | `src/main/resources/db/course_video_cover_shared.sql`                | 视频封面从 locale 迁到 `course_video`（共用） |
 | `src/main/resources/db/course_migrate_from_legacy.sql`               | 从旧 `course` 表迁移                          |

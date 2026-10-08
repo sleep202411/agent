@@ -1,6 +1,8 @@
 import { LegacyCreatorsService } from '../legacy-creators/legacy-creators.service';
 import {
   AcademyLearningService,
+  commerceFromJava,
+  javaCommerceLive,
   teacherShare,
 } from './academy-learning.service';
 import { PrismaService } from '../infra/db/db.module';
@@ -115,6 +117,65 @@ const review = {
 };
 it('uses integer earned-credit shares, never a fiat conversion', () =>
   expect(teacherShare(101n, 5000)).toBe(50n));
+it('ignores omitted Java commerce so Nest offerings still gate existing paid courses', () => {
+  expect(
+    commerceFromJava({
+      id: 14,
+      published: true,
+      certificateId: null,
+      instructors: [{ userId: 200 }],
+    }),
+  ).toBeNull();
+});
+it('reads Java sale terms when the course payload includes them', () => {
+  const commerce = commerceFromJava({
+    id: 14,
+    published: true,
+    certificateId: 13,
+    enrollmentEnabled: true,
+    priceCredits: 100,
+    instructors: [{ userId: 200, shareBps: 5000 }],
+  });
+  expect(commerce).toMatchObject({
+    enabled: true,
+    teacherId: '200',
+    teacherShareBps: 5000,
+  });
+  expect(commerce?.priceCredits).toBe(100n);
+  expect(javaCommerceLive(commerce!)).toBe(true);
+});
+it('treats Java 0/false as an explicit free course once those columns exist', () => {
+  const commerce = commerceFromJava({
+    id: 14,
+    published: true,
+    certificateId: null,
+    enrollmentEnabled: false,
+    priceCredits: 0,
+    instructorShares: [],
+  });
+  expect(commerce).not.toBeNull();
+  expect(javaCommerceLive(commerce!)).toBe(false);
+});
+it('prefers Java sale terms over a leftover Nest offering', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    enrollmentEnabled: true,
+    priceCredits: 40,
+    instructors: [{ userId: 200, shareBps: 5000 }],
+  });
+  await f.service.enroll('14', '100', 99);
+  expect(f.wallet.postEntryTx).toHaveBeenCalledWith(
+    f.db,
+    expect.objectContaining({
+      amount: 40n,
+      availableDelta: -40n,
+      sourceType: 'academy_enrollment',
+    }),
+  );
+});
 it('retries a purchased enrollment without another debit', async () => {
   const f = fixture();
   await f.service.enroll('14', '100', 1);
@@ -181,6 +242,36 @@ it('uses the stable homework-income receipt key', async () => {
       sourceType: 'HOMEWORK_REVIEW_INCOME',
       idempotencyKey: 'academy:teacher-income:enrollment',
       availableDelta: 50n,
+    }),
+  );
+});
+it('pays every instructor share from the enrollment snapshot', async () => {
+  const f = fixture();
+  f.row.instructorShares = [
+    { teacherId: '200', credits: '40' },
+    { teacherId: '201', credits: '10' },
+  ];
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    instructors: [{ userId: 200 }, { userId: 201 }],
+  });
+  await f.service.review('enrollment', '200', review);
+  expect(f.wallet.postEntryTx).toHaveBeenCalledTimes(2);
+  expect(f.wallet.postEntryTx).toHaveBeenNthCalledWith(
+    1,
+    f.db,
+    expect.objectContaining({
+      amount: 40n,
+      idempotencyKey: 'academy:teacher-income:enrollment:200',
+    }),
+  );
+  expect(f.wallet.postEntryTx).toHaveBeenNthCalledWith(
+    2,
+    f.db,
+    expect.objectContaining({
+      amount: 10n,
+      idempotencyKey: 'academy:teacher-income:enrollment:201',
     }),
   );
 });

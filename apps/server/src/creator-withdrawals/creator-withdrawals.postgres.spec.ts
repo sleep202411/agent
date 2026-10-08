@@ -1022,7 +1022,7 @@ const url = process.env.WITHDRAWAL_TEST_DATABASE_URL;
       const controller = {
         ...admin(account.id),
         sessionId: session.id,
-        roleKeys: ['master_financial_controller'],
+        roleKeys: ['super_admin'],
       };
       const takeover = {
         action: 'takeover' as const,

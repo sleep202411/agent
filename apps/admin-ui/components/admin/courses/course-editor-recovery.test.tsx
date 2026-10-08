@@ -34,6 +34,9 @@ const course: Course = {
   localized,
   videos: [],
   instructors: [],
+  certificateId: null,
+  priceCredits: "",
+  enrollmentEnabled: false,
   createTime: "2026-01-01T00:00:00Z",
   updateTime: "2026-01-01T00:00:00Z",
 };
@@ -58,7 +61,13 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 async function render(view: ReactNode, session = "alice") {
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", (input: RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("user-levels/levels")) {
+      return Promise.resolve(response([]));
+    }
+    return fetchMock(input, init);
+  });
   if (!root) {
     container = document.createElement("div");
     root = createRoot(container);
@@ -149,4 +158,38 @@ it("blocks duplicate same-slot uploads and saves while an upload is pending", as
   expect(JSON.parse(fetchMock.mock.calls[1][1].body).localized["zh-CN"].coverUrl).toBe(
     "cover-path"
   );
+});
+it("saves certificate, fee, and shares on the Java course PUT", async () => {
+  fetchMock.mockResolvedValue(response());
+  const shareCourse: Course = {
+    ...course,
+    certificateId: 13,
+    priceCredits: "100",
+    enrollmentEnabled: true,
+    instructors: [
+      {
+        userId: "15",
+        nickName: "Ada",
+        avatar: "",
+        description: "",
+        sharePercent: "50",
+      },
+    ],
+  };
+  await render(
+    <CourseEditor
+      course={shareCourse}
+      loadError={null}
+      siteLabel="Global"
+      databaseLabel="Fixture"
+    />
+  );
+  await act(async () => click("保存"));
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+    certificateId: 13,
+    priceCredits: "100",
+    enrollmentEnabled: true,
+    instructorUserIds: ["15"],
+    instructorShares: [{ userId: "15", shareBps: 5000 }],
+  });
 });

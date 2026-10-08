@@ -28,7 +28,6 @@ import { PageHeader } from "@/components/admin/page-header";
 import { ErrorBanner, Field, StatusPill } from "@/components/admin/news/shared";
 import { FormLabel, TextInput } from "@/components/admin/billing/shared";
 import { InstructorPicker } from "@/components/admin/courses/instructor-picker";
-import { CourseOfferingEditor } from "@/components/admin/courses/course-offering-editor";
 import { CourseCertificateEditor } from "@/components/admin/courses/course-certificate-editor";
 import {
   COURSE_LOCALES,
@@ -463,6 +462,25 @@ function CourseEditorContent({
         return;
       }
     }
+    const shares: Array<{ userId: string; shareBps: number }> = [];
+    for (const item of course.instructors) {
+      const raw = item.sharePercent?.trim() ?? "";
+      if (!raw) continue;
+      const bps = Math.round(Number(raw) * 100);
+      if (!Number.isInteger(bps) || bps < 0 || bps > 10000) {
+        setError(`讲师 ${item.nickName || item.userId} 的分润无效。`);
+        return;
+      }
+      shares.push({ userId: item.userId, shareBps: bps });
+    }
+    if (shares.reduce((sum, item) => sum + item.shareBps, 0) > 10000) {
+      setError("讲师分润合计不能超过 100%。");
+      return;
+    }
+    if (course.priceCredits.trim() && !/^(0|[1-9]\d{0,11})$/.test(course.priceCredits.trim())) {
+      setError("总费用须为非负整数。");
+      return;
+    }
     const operation = begin();
     if (!operation) return;
     activeWrite.current = operation;
@@ -486,6 +504,12 @@ function CourseEditorContent({
               localized: video.localized,
             })),
             instructorUserIds: course.instructors.map((item) => item.userId),
+            certificateId: course.certificateId,
+            priceCredits: course.priceCredits.trim() || "0",
+            enrollmentEnabled: /^(0|[1-9]\d{0,11})$/.test(course.priceCredits.trim())
+              ? Number(course.priceCredits.trim()) > 0
+              : false,
+            instructorShares: shares,
           }),
         }
       );
@@ -603,65 +627,61 @@ function CourseEditorContent({
       <PageHeader
         title={titlePreview}
         description={`${siteLabel} · ${databaseLabel} · #${course.id}`}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {course.published ? (
-              <StatusPill tone="success">已上架</StatusPill>
-            ) : (
-              <StatusPill tone="muted">未上架</StatusPill>
-            )}
-            <Button variant="outline" asChild>
-              <Link
-                href="/courses"
-                onClick={() => {
-                  writing.current = true;
-                  activeWrite.current?.cancel();
-                  activeWrite.current?.finish();
-                  for (const lease of uploadKeys.current.values()) {
-                    lease.cancel();
-                    lease.release();
-                  }
-                  uploadKeys.current.clear();
-                }}
-              >
-                <IconArrowLeft className="size-4" />
-                返回
-              </Link>
-            </Button>
-            <Button
-              variant="outline"
-              disabled={publishing || saving || Object.keys(uploads).length > 0}
-              onClick={() => void togglePublish()}
-            >
-              {course.published ? (
-                <>
-                  <IconCloudOff className="size-4" />
-                  下架
-                </>
-              ) : (
-                <>
-                  <IconCloudUpload className="size-4" />
-                  发布
-                </>
-              )}
-            </Button>
-            <Button
-              disabled={saving || publishing || Object.keys(uploads).length > 0}
-              onClick={() => void save()}
-            >
-              {saving ? (
-                <IconLoader2 className="size-4 animate-spin" />
-              ) : (
-                <IconDeviceFloppy className="size-4" />
-              )}
-              保存
-            </Button>
-          </div>
-        }
       />
+      <div className="sticky top-12 z-10 flex flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-white/95 py-2 backdrop-blur">
+        {course.published ? (
+          <StatusPill tone="success">已上架</StatusPill>
+        ) : (
+          <StatusPill tone="muted">未上架</StatusPill>
+        )}
+        <Button variant="outline" asChild>
+          <Link
+            href="/courses"
+            onClick={() => {
+              writing.current = true;
+              activeWrite.current?.cancel();
+              activeWrite.current?.finish();
+              for (const lease of uploadKeys.current.values()) {
+                lease.cancel();
+                lease.release();
+              }
+              uploadKeys.current.clear();
+            }}
+          >
+            <IconArrowLeft className="size-4" />
+            返回
+          </Link>
+        </Button>
+        <Button
+          variant="outline"
+          disabled={publishing || saving || Object.keys(uploads).length > 0}
+          onClick={() => void togglePublish()}
+        >
+          {course.published ? (
+            <>
+              <IconCloudOff className="size-4" />
+              下架
+            </>
+          ) : (
+            <>
+              <IconCloudUpload className="size-4" />
+              发布
+            </>
+          )}
+        </Button>
+        <Button
+          disabled={saving || publishing || Object.keys(uploads).length > 0}
+          onClick={() => void save()}
+        >
+          {saving ? (
+            <IconLoader2 className="size-4 animate-spin" />
+          ) : (
+            <IconDeviceFloppy className="size-4" />
+          )}
+          保存
+        </Button>
+      </div>
 
-      <CourseCertificateEditor key={course.id} courseId={course.id} />
-      <CourseOfferingEditor key={`offering:${course.id}`} courseId={course.id} />
       {error ? <ErrorBanner message={error} /> : null}
       {notice ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
@@ -763,6 +783,35 @@ function CourseEditorContent({
             </Field>
           </div>
           <CoverThumb url={currentLocale.coverUrl} className="sm:sticky sm:top-4" />
+        </div>
+
+        <div className="grid items-start gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
+          <div className="min-w-0">
+            <CourseCertificateEditor
+              value={course.certificateId == null ? "" : String(course.certificateId)}
+              onChange={(value) =>
+                setCourse((current) =>
+                  current ? { ...current, certificateId: value ? Number(value) : null } : current
+                )
+              }
+            />
+          </div>
+          <div className="min-w-0">
+            <FormLabel label="总费用（社区积分）">
+              <TextInput
+                type="number"
+                min={0}
+                max={999999999999}
+                step={1}
+                value={course.priceCredits ?? ""}
+                onChange={(event) =>
+                  setCourse((current) =>
+                    current ? { ...current, priceCredits: event.target.value } : current
+                  )
+                }
+              />
+            </FormLabel>
+          </div>
         </div>
       </section>
 
@@ -1026,6 +1075,20 @@ function CourseEditorContent({
             if (writing.current) return;
             setCourse((current) => (current ? { ...current, instructors } : current));
           }}
+          headerActions={
+            <Button
+              size="sm"
+              disabled={saving || publishing || Object.keys(uploads).length > 0}
+              onClick={() => void save()}
+            >
+              {saving ? (
+                <IconLoader2 className="size-4 animate-spin" />
+              ) : (
+                <IconDeviceFloppy className="size-4" />
+              )}
+              保存
+            </Button>
+          }
         />
       </section>
     </div>

@@ -121,10 +121,9 @@ export function RevenuePanel({ currency }: { currency: "USD" | "CNY" }) {
   return (
     <div className="space-y-5">
       <header>
-        <h1 className="text-xl font-semibold">Crew revenue</h1>
+        <h1 className="text-xl font-semibold">剧组收益</h1>
         <p className="text-sm text-muted-foreground">
-          Allocate confirmed revenue for the current site. Participants can request withdrawal after
-          posting.
+          为当前站点分配已确认收益。发布后参与方可申请提现。
         </p>
       </header>
       {crew ? (

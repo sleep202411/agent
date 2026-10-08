@@ -1,8 +1,8 @@
-import { getAdminSession } from "@/lib/admin-session";
+import { grantsAdminAccess } from "@/lib/admin-capability";
+import { requireAdminPagePermission } from "@/lib/admin-content-permission";
 import { AiActorsPage } from "@/components/admin/ai-actors/ai-actors-page";
+
 export default async function Page() {
-  const session = await getAdminSession();
-  if (!session?.user.permissions.includes("media.read"))
-    return <p className="p-6">Media read permission is required.</p>;
-  return <AiActorsPage canWrite={session.user.permissions.includes("media.write")} />;
+  const session = await requireAdminPagePermission("ai_actors.read");
+  return <AiActorsPage canWrite={grantsAdminAccess(session.user, "ai_actors.write")} />;
 }

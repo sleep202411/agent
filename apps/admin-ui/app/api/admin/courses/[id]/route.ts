@@ -25,18 +25,44 @@ type SaveBody = {
   }>;
   /** Encoded public ids or raw numeric strings from the editor. */
   instructorUserIds?: Array<string | number>;
+  certificateId?: number | null;
+  priceCredits?: string | number | null;
+  enrollmentEnabled?: boolean;
+  instructorShares?: Array<{ userId?: string | number; shareBps?: number }>;
 };
+
+function toUserId(id: string | number): number {
+  const decoded = decodeUserId(String(id));
+  const n = Number(decoded);
+  if (!Number.isFinite(n)) throw new Error(`无效讲师 ID：${id}`);
+  return n;
+}
 
 function toSaveInput(body: SaveBody): AdminCourseSaveInput {
   if (!body.localized) throw new Error("localized 必填。");
   const instructorUserIds = (body.instructorUserIds ?? [])
-    .map((id) => {
-      const decoded = decodeUserId(String(id));
-      const n = Number(decoded);
-      if (!Number.isFinite(n)) throw new Error(`无效讲师 ID：${id}`);
-      return n;
-    })
+    .map(toUserId)
     .filter((n, index, all) => all.indexOf(n) === index);
+  const instructorShares = (body.instructorShares ?? [])
+    .map((item) => {
+      if (item.userId == null || item.shareBps == null) return null;
+      if (!Number.isInteger(item.shareBps) || item.shareBps < 0 || item.shareBps > 10000) {
+        throw new Error("分润比例须在 0% 到 100% 之间。");
+      }
+      return { userId: toUserId(item.userId), shareBps: item.shareBps };
+    })
+    .filter((item): item is { userId: number; shareBps: number } => item !== null);
+  if (instructorShares.some((item) => !instructorUserIds.includes(item.userId))) {
+    throw new Error("分润只能分配给课程讲师。");
+  }
+  if (instructorShares.reduce((sum, item) => sum + item.shareBps, 0) > 10000) {
+    throw new Error("讲师分润合计不能超过 100%。");
+  }
+  const price =
+    body.priceCredits == null || body.priceCredits === "" ? 0 : Number(body.priceCredits);
+  if (!Number.isFinite(price) || price < 0 || !Number.isInteger(price)) {
+    throw new Error("总费用须为非负整数。");
+  }
 
   return {
     localized: body.localized,
@@ -52,6 +78,10 @@ function toSaveInput(body: SaveBody): AdminCourseSaveInput {
       },
     })),
     instructorUserIds,
+    certificateId: body.certificateId ?? null,
+    priceCredits: price,
+    enrollmentEnabled: body.enrollmentEnabled === true,
+    instructorShares,
   };
 }
 

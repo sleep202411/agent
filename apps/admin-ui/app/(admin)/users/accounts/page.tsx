@@ -1,5 +1,9 @@
 import { cookies } from "next/headers";
-import { AdminUsersPanel, type AdminUsersListData } from "@/components/admin/admin-users-panel";
+import {
+  AdminUsersPanel,
+  type AdminRoleOption,
+  type AdminUsersListData,
+} from "@/components/admin/admin-users-panel";
 import {
   ADMIN_SESSION_COOKIE,
   adminApiUrl,
@@ -8,12 +12,17 @@ import {
 } from "@/lib/admin-api";
 import { getAdminSession } from "@/lib/admin-session";
 import { currentAdminSite } from "@/lib/admin-sites";
+import { displayRoleName } from "@/components/admin/users/permission-tree";
+import { fetchAdminRoles } from "@/lib/admin-users";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsersAccountsPage() {
   const session = await getAdminSession();
-  const { data, error } = await getInitialUsers();
+  const [{ data, error }, roles] = await Promise.all([getInitialUsers(), fetchAdminRoles()]);
+  const assignableRoles: AdminRoleOption[] = (roles.data?.roles ?? [])
+    .filter((role) => role.assignable !== false)
+    .map((role) => ({ value: role.key, label: displayRoleName(role) }));
 
   return (
     <AdminUsersPanel
@@ -23,6 +32,7 @@ export default async function UsersAccountsPage() {
       databaseLabel={session?.site.databaseLabel ?? "当前站点数据库"}
       initialData={data}
       initialError={error}
+      assignableRoles={assignableRoles}
     />
   );
 }

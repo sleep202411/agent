@@ -24,6 +24,7 @@ import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/lo
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { getStudioHref } from "@/src/lib/region/cell";
 import { AppDownloadMenu, APP_DOWNLOADS } from "./app-download-menu";
+import { SiteRegionMenu } from "./site-region-menu";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconBook2,
@@ -292,6 +293,10 @@ export function GlobalNav() {
           >
             <ShinyText text={ctaItem.label} color="#ffffff" shineColor="#ff3d42" speed={2.5} yoyo />
           </Link>
+        </span>
+        <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
+          <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+          <SiteRegionMenu className={navCx("fd-secret-glass-content fd-secret-cta")} />
         </span>
 
         {user ? (

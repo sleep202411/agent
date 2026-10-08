@@ -80,6 +80,32 @@ describe('Academy course mappings', () => {
       'Java unavailable',
     );
   });
+  it('indexes assigned certificates for the current course list', async () => {
+    const { service, tx, authority } = fixture();
+    authority.certificates.mockResolvedValue([
+      { id: 13, name: 'AI Producer', type: 4, imagePath: 'static/ai.png' },
+    ]);
+    tx.academyCourseCertificate.findMany.mockResolvedValue([
+      { courseId: '42', certificateId: 13 },
+      { courseId: '7', certificateId: 99 },
+    ]);
+    await expect(service.index(admin, ['42', '7'])).resolves.toEqual({
+      items: [
+        {
+          courseId: '42',
+          certificate: {
+            id: 13,
+            name: 'AI Producer',
+            imagePath: 'static/ai.png',
+          },
+        },
+        {
+          courseId: '7',
+          certificate: { id: 99, name: '#99', imagePath: null },
+        },
+      ],
+    });
+  });
   it('represents an unconfigured course explicitly', async () => {
     const { service } = fixture();
     await expect(service.editor(admin, '42')).resolves.toEqual({

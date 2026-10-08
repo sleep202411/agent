@@ -16,6 +16,8 @@ import {
   activeModule,
   GLOBAL_NAV,
   MODULE_NAV,
+  moduleLandingHref,
+  moduleNavVisible,
   type GlobalNavEntry,
   type ModuleNavGroup,
 } from "@/components/admin/nav-config";
@@ -23,13 +25,14 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { adminUiApiPath } from "@/lib/admin-api";
+import { grantsAdminAccess } from "@/lib/admin-capability";
 import { cn } from "@/lib/utils";
 import type { AdminSession } from "@/lib/admin-session";
 
 const GLOBAL_RAIL_WIDTH = "w-[60px]";
 
 function hasPermission(session: AdminSession, permission?: string) {
-  return permission ? session.user.permissions.includes(permission) : true;
+  return grantsAdminAccess(session.user, permission);
 }
 
 export function AdminShell({
@@ -57,7 +60,8 @@ export function AdminShell({
     return () => mql.removeEventListener("change", closeOnDesktop);
   }, []);
 
-  const visibleGlobalNav = GLOBAL_NAV.filter((entry) => hasPermission(session, entry.permission));
+  const granted = (permission?: string) => hasPermission(session, permission);
+  const visibleGlobalNav = GLOBAL_NAV.filter((entry) => moduleNavVisible(entry, granted));
 
   const currentModule = activeModule(pathname);
   const activeGlobalEntry =
@@ -123,7 +127,7 @@ export function AdminShell({
                 <Tooltip key={entry.key}>
                   <TooltipTrigger asChild>
                     <Link
-                      href={entry.href}
+                      href={moduleLandingHref(entry, granted)}
                       aria-label={entry.label}
                       className={cn(
                         "flex size-10 items-center justify-center rounded-lg transition",
@@ -309,7 +313,7 @@ export function AdminShell({
               return (
                 <Link
                   key={entry.key}
-                  href={entry.href}
+                  href={moduleLandingHref(entry, granted)}
                   onClick={() => setMobileNavOpen(false)}
                   className={cn(
                     "flex h-9 items-center gap-2 rounded-md px-2 text-[13px] font-medium transition",

@@ -77,11 +77,30 @@ export class AcademyAuthorityService {
         published: z
           .union([z.boolean(), z.literal(0), z.literal(1)])
           .transform((value) => value === true || value === 1),
+        certificateId: z
+          .union([z.coerce.number().int().safe(), z.null()])
+          .nullish()
+          .transform((value) =>
+            typeof value === 'number' && value > 0 ? value : null,
+          ),
+        priceCredits: z.union([z.string(), z.number()]).nullish(),
+        enrollmentEnabled: z
+          .union([z.boolean(), z.literal(0), z.literal(1)])
+          .nullish(),
+        instructorShares: z
+          .array(
+            z.object({
+              userId: z.union([z.string(), z.number()]),
+              shareBps: z.coerce.number().int().min(0).max(10000),
+            }),
+          )
+          .optional(),
         instructors: z
           .array(
             z.object({
               userId: z.union([z.string(), z.number()]),
               nickName: z.string().nullish(),
+              shareBps: z.coerce.number().int().min(0).max(10000).nullish(),
             }),
           )
           .optional(),
@@ -136,8 +155,6 @@ export class AcademyAuthorityService {
       throw new BadGatewayException(
         'The regional certificate catalogue is invalid.',
       );
-    return result.data
-      .filter((item) => item.type === 4)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return result.data.sort((a, b) => a.name.localeCompare(b.name));
   }
 }

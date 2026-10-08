@@ -100,11 +100,10 @@ export function TaskPaymentsPanel() {
   }
   return (
     <section className="space-y-6">
-      <h1 className="text-xl font-semibold">Task Payments</h1>
+      <h1 className="text-xl font-semibold">任务付款</h1>
       <p className="text-sm text-muted-foreground">
-        Confirm funds received by FD and the production milestone before releasing the agreed reward
-        into the creator’s withdrawable earnings. Bank payment is recorded separately in
-        Withdrawals.
+        确认 FizzDragon
+        已收款且制作节点完成后，再把约定报酬打入创作者可提现余额。银行打款在「提现审核」单独记录。
       </p>
       <form
         onSubmit={(e) => {

@@ -6,6 +6,8 @@ import {
   adminUnavailableResponse,
   relayAdminResponse,
 } from "@/lib/admin-route";
+import { overlayCertificateCatalogue } from "@/lib/course-certificate-catalogue";
+import { listAdminUserLevelDefinitions } from "@/lib/admin-user-levels";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ courseId: string }> };
@@ -48,5 +50,23 @@ async function forward(request: NextRequest, context: Context) {
   }
 }
 
-export const GET = forward;
+export async function GET(request: NextRequest, context: Context) {
+  const forwarded = await forward(request, context);
+  if (!forwarded.ok) return forwarded;
+  const payload = (await forwarded.json().catch(() => null)) as {
+    code?: number;
+    data?: { certificates?: { id: number; name: string }[] };
+  } | null;
+  if (!payload || payload.code !== 200 || !payload.data || typeof payload.data !== "object") {
+    return Response.json(payload ?? { msg: "Invalid certificate mapping." }, {
+      status: forwarded.status,
+    });
+  }
+  const levels = await listAdminUserLevelDefinitions().catch(() => []);
+  return Response.json({
+    ...payload,
+    data: overlayCertificateCatalogue(payload.data, levels),
+  });
+}
+
 export const PUT = forward;

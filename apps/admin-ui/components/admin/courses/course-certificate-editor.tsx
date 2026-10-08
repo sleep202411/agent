@@ -2,43 +2,49 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { FormLabel } from "@/components/admin/billing/shared";
 import { adminUiApiPath, parseAdminEnvelope } from "@/lib/admin-api";
 import { useAdminOperation } from "../use-admin-operation";
 
-type Mapping = {
-  courseId: string;
-  certificateId: number | null;
-  version: number;
-  certificates: { id: number; name: string }[];
-};
+type Level = { id: number; name: string };
 
-export function CourseCertificateEditor({ courseId }: { courseId: string }) {
+export function CourseCertificateEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
   const { begin, busy } = useAdminOperation();
-  const [mapping, setMapping] = useState<Mapping | null>(null);
-  const [selected, setSelected] = useState("");
+  const [levels, setLevels] = useState<Level[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const load = useCallback(async () => {
     const operation = begin("read");
     if (!operation) return;
     setError(null);
     try {
-      const response = await fetch(
-        adminUiApiPath(`/api/admin/academy/course-certificates/${encodeURIComponent(courseId)}`),
-        { signal: operation.signal, cache: "no-store" }
+      const result = await parseAdminEnvelope<Level[]>(
+        await fetch(adminUiApiPath("/api/admin/user-levels/levels"), {
+          signal: operation.signal,
+          cache: "no-store",
+        })
       );
-      const result = await parseAdminEnvelope<Mapping>(response);
       if (!operation.current()) return;
-      setMapping(result);
-      setSelected(result.certificateId === null ? "" : String(result.certificateId));
-      setSaved(false);
+      setLevels(
+        [...result]
+          .sort((left, right) => left.id - right.id)
+          .map((item) => ({
+            id: item.id,
+            name: item.name,
+          }))
+      );
     } catch (cause) {
       if (operation.current())
-        setError(cause instanceof Error ? cause.message : "Could not load the course certificate.");
+        setError(cause instanceof Error ? cause.message : "无法加载认证等级。");
     } finally {
       operation.finish();
     }
-  }, [begin, courseId]);
+  }, [begin]);
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
@@ -49,111 +55,46 @@ export function CourseCertificateEditor({ courseId }: { courseId: string }) {
     };
   }, [load]);
 
-  async function save() {
-    if (!mapping) return;
-    const operation = begin();
-    if (!operation) return;
-    setError(null);
-    setSaved(false);
-    try {
-      const response = await fetch(
-        adminUiApiPath(`/api/admin/academy/course-certificates/${encodeURIComponent(courseId)}`),
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          signal: operation.signal,
-          body: JSON.stringify({
-            certificateId: selected ? Number(selected) : null,
-            expectedVersion: mapping.version,
-          }),
-        }
-      );
-      const result = await parseAdminEnvelope<Mapping>(response);
-      if (!operation.current()) return;
-      setMapping(result);
-      setSaved(true);
-    } catch (cause) {
-      if (operation.current())
-        setError(cause instanceof Error ? cause.message : "Could not save the course certificate.");
-    } finally {
-      operation.finish();
-    }
-  }
+  const missing = Boolean(value) && !(levels ?? []).some((item) => String(item.id) === value);
 
-  const missing =
-    mapping?.certificateId !== null &&
-    mapping?.certificateId !== undefined &&
-    !mapping.certificates.some((item) => item.id === mapping.certificateId);
   return (
-    <section
-      className="space-y-3 rounded-xl border border-slate-200 bg-white p-4"
-      aria-labelledby="course-certificate-heading"
-    >
-      <h2 id="course-certificate-heading" className="text-sm font-semibold text-slate-900">
-        Academy Skill Certificate
-      </h2>
-      <p className="text-sm text-slate-600">
-        The badge associated with this course. This mapping does not award certificates to students.
-      </p>
+    <div className="space-y-2">
       {error && (
         <p role="alert" className="text-sm text-red-700">
           {error}
         </p>
       )}
-      {mapping ? (
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="grid gap-1 text-sm text-slate-700">
-            Certificate
-            <select
-              aria-label="Course certificate"
-              className="min-w-64 rounded-md border border-slate-300 p-2"
-              value={selected}
-              disabled={busy}
-              onChange={(event) => {
-                setSelected(event.target.value);
-                setSaved(false);
-              }}
-            >
-              <option value="">No certificate assigned</option>
-              {missing && (
-                <option value={String(mapping.certificateId)} disabled>
-                  Unavailable certificate #{mapping.certificateId}
-                </option>
-              )}
-              {mapping.certificates.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} (#{item.id})
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button
-            onClick={() => void save()}
-            disabled={
-              busy ||
-              selected === (mapping.certificateId === null ? "" : String(mapping.certificateId))
-            }
+      {levels ? (
+        <FormLabel label="认证" help="完成课程后可以获得相应认证">
+          <select
+            aria-label="课程证书"
+            title="完成课程后可以获得相应认证"
+            value={value}
+            disabled={busy}
+            onChange={(event) => onChange(event.target.value)}
+            className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
           >
-            {busy ? "Saving…" : "Save Certificate"}
-          </Button>
-          {saved && (
-            <span role="status" className="text-sm text-emerald-700">
-              Certificate mapping saved.
-            </span>
-          )}
-        </div>
+            <option value="">未指定证书</option>
+            {missing && <option value={value}>证书不可用 #{value}</option>}
+            {levels.map((item) => (
+              <option key={item.id} value={String(item.id)}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </FormLabel>
       ) : (
         !error && (
           <p role="status" className="text-sm text-slate-500">
-            Loading certificate mapping…
+            正在加载认证…
           </p>
         )
       )}
       {error && (
         <Button variant="outline" disabled={busy} onClick={() => void load()}>
-          Reload Mapping
+          重新加载
         </Button>
       )}
-    </section>
+    </div>
   );
 }

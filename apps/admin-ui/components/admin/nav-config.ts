@@ -77,27 +77,6 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
   { key: "/", href: "/", label: "运营总览", icon: IconDashboard },
   { key: "/ip", href: "/ip", label: "IP管理", icon: IconVersions, permission: "ip.read" },
   {
-    key: "/withdrawals",
-    href: "/withdrawals",
-    label: "Withdrawals",
-    icon: IconWallet,
-    permission: "creator.withdrawals.manage",
-  },
-  {
-    key: "/task-payments",
-    href: "/task-payments",
-    label: "Task Payments",
-    icon: IconWallet,
-    permission: "creator.revenue.manage",
-  },
-  {
-    key: "/revenue",
-    href: "/revenue",
-    label: "Crew revenue",
-    icon: IconReportMoney,
-    permission: "creator.revenue.manage",
-  },
-  {
     key: "/billing",
     href: "/billing",
     label: "计费财务",
@@ -123,7 +102,7 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     href: "/ai-actors",
     label: "AI演员",
     icon: IconMasksTheater,
-    permission: "media.read",
+    permission: "ai_actors.read",
   },
   {
     key: "/media",
@@ -515,7 +494,7 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
         },
         {
           href: "/crews/disputes",
-          label: "Cases / 争议 / 爭議",
+          label: "争议处理",
           icon: IconChecklist,
           permission: "crew.manage",
         },
@@ -533,7 +512,7 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
         },
         {
           href: "/crews/compute-requests",
-          label: "Compute requests / 算力申请",
+          label: "算力申请",
           icon: IconChecklist,
           permission: "crew.compute.review",
         },
@@ -542,6 +521,29 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           label: "任务模板",
           icon: IconFileSettings,
           permission: "crew.manage",
+        },
+      ],
+    },
+    {
+      label: "收益结算",
+      items: [
+        {
+          href: "/revenue",
+          label: "剧组收益",
+          icon: IconReportMoney,
+          permission: "creator.revenue.manage",
+        },
+        {
+          href: "/task-payments",
+          label: "任务付款",
+          icon: IconWallet,
+          permission: "creator.revenue.manage",
+        },
+        {
+          href: "/withdrawals",
+          label: "提现审核",
+          icon: IconWallet,
+          permission: "creator.withdrawals.manage",
         },
       ],
     },
@@ -573,7 +575,74 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
   ],
 };
 
+export type AdminDirectoryPage = {
+  id: string;
+  label: string;
+  permission?: string;
+};
+
+export type AdminDirectoryGroup = {
+  id: string;
+  label: string;
+  pages: AdminDirectoryPage[];
+};
+
+export type AdminDirectoryModule = {
+  id: string;
+  label: string;
+  permission?: string;
+  groups: AdminDirectoryGroup[];
+};
+
+/** Live admin directories: left rail + second rail, used by the role permission tree. */
+export function listAdminDirectoryModules(): AdminDirectoryModule[] {
+  return GLOBAL_NAV.filter((entry) => entry.key !== "/" && entry.key !== "/account").map(
+    (entry) => ({
+      id: entry.key,
+      label: entry.label,
+      permission: entry.permission,
+      groups: (MODULE_NAV[entry.key] ?? []).map((group) => ({
+        id: `${entry.key}:${group.label}`,
+        label: group.label,
+        pages: group.items.map((item) => ({
+          id: item.href,
+          label: item.label,
+          permission: item.permission,
+        })),
+      })),
+    })
+  );
+}
+
 const MODULE_PREFIXES = GLOBAL_NAV.map((entry) => entry.key).filter((key) => key !== "/");
+
+/** Nested pages that keep their own URL but belong to another left-rail module. */
+const MODULE_PATH_ALIASES: Record<string, string> = {
+  "/withdrawals": "/crews",
+  "/task-payments": "/crews",
+  "/revenue": "/crews",
+};
+
+function hasNavPermission(granted: (permission?: string) => boolean, permission?: string) {
+  return permission ? granted(permission) : true;
+}
+
+export function moduleNavVisible(entry: GlobalNavEntry, granted: (permission?: string) => boolean) {
+  if (hasNavPermission(granted, entry.permission)) return true;
+  return (MODULE_NAV[entry.key] ?? [])
+    .flatMap((group) => group.items)
+    .some((item) => hasNavPermission(granted, item.permission));
+}
+
+export function moduleLandingHref(
+  entry: GlobalNavEntry,
+  granted: (permission?: string) => boolean
+) {
+  const first = (MODULE_NAV[entry.key] ?? [])
+    .flatMap((group) => group.items)
+    .find((item) => hasNavPermission(granted, item.permission));
+  return first?.href ?? entry.href;
+}
 
 /**
  * Shared longest-prefix module resolver used by every rail + the header so they
@@ -588,6 +657,10 @@ export function activeModule(pathname: string): string {
   if (pathname === "/") {
     return "/";
   }
+  const aliased =
+    MODULE_PATH_ALIASES[pathname] ??
+    Object.entries(MODULE_PATH_ALIASES).find(([prefix]) => pathname.startsWith(`${prefix}/`))?.[1];
+  if (aliased) return aliased;
   const match = MODULE_PREFIXES.filter(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   ).sort((left, right) => right.length - left.length)[0];

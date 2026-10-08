@@ -47,6 +47,8 @@ export interface CourseInstructor {
   nickName: string;
   avatar: string;
   description: string;
+  /** Percent string for the instructor row; empty means unset. */
+  sharePercent: string;
 }
 
 export interface Course {
@@ -57,6 +59,9 @@ export interface Course {
   /** List API summary field when full videos[] is omitted. */
   videoCount?: number;
   instructors: CourseInstructor[];
+  certificateId: number | null;
+  priceCredits: string;
+  enrollmentEnabled: boolean;
   createTime: string;
   updateTime: string;
 }
@@ -134,6 +139,19 @@ function courseCoverBaseUrl(): string {
   const fromEnv = process.env.NEXT_PUBLIC_BANNER_BASE_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/+$/, "");
   return "https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com";
+}
+
+export function resolveCertificateImageUrl(raw?: string | null): string {
+  const url = raw?.trim() ?? "";
+  if (!url) return "";
+  if (/^(https?:)?\/\//.test(url) || url.startsWith("data:") || url.startsWith("blob:")) {
+    return url;
+  }
+  const base = (process.env.NEXT_PUBLIC_STATIC_BASE_URL ?? "https://static.fizzspace.cn").replace(
+    /\/+$/,
+    ""
+  );
+  return `${base}/${url.replace(/^\/+/, "")}`;
 }
 
 export function resolveCourseCoverUrl(raw: string): string {

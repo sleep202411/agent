@@ -43,6 +43,9 @@ const course: Course = {
     },
   ],
   instructors: [],
+  certificateId: null,
+  priceCredits: "",
+  enrollmentEnabled: false,
   createTime: "2026-01-01T00:00:00Z",
   updateTime: "2026-01-01T00:00:00Z",
 };
@@ -67,7 +70,12 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 async function render(view: ReactNode, session = "alice") {
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", (input: RequestInfo, init?: RequestInit) => {
+    if (String(input).includes("user-levels/levels")) {
+      return Promise.resolve(response([]));
+    }
+    return fetchMock(input, init);
+  });
   if (!root) {
     container = document.createElement("div");
     root = createRoot(container);

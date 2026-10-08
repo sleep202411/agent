@@ -142,6 +142,12 @@ interface JavaInstructor {
   nickName?: string | null;
   avatar?: string | null;
   description?: string | null;
+  shareBps?: number | string | null;
+}
+
+interface JavaInstructorShare {
+  userId?: number | string | null;
+  shareBps?: number | string | null;
 }
 
 interface JavaCourse {
@@ -154,6 +160,10 @@ interface JavaCourse {
   /** Present on list summary when videos[] is omitted. */
   videoCount?: number | null;
   instructors?: JavaInstructor[] | null;
+  certificateId?: number | string | null;
+  priceCredits?: number | string | null;
+  enrollmentEnabled?: boolean | number | null;
+  instructorShares?: JavaInstructorShare[] | null;
 }
 
 interface JavaCourseListStats {
@@ -199,6 +209,10 @@ export interface AdminCourseSaveInput {
   }>;
   /** Real Java numeric user ids (already decoded). */
   instructorUserIds: number[];
+  certificateId: number | null;
+  priceCredits: number;
+  enrollmentEnabled: boolean;
+  instructorShares: Array<{ userId: number; shareBps: number }>;
 }
 
 function toLocaleContent(java?: JavaCourseLocale | null): CourseLocaleContent {
@@ -231,18 +245,42 @@ function toVideo(java: JavaCourseVideo): CourseVideo {
   };
 }
 
-function toInstructor(java: JavaInstructor): CourseInstructor {
+function asFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return null;
+}
+
+function sharePercentFromBps(bps: number | null): string {
+  if (bps == null) return "";
+  return String(bps / 100);
+}
+
+function toInstructor(java: JavaInstructor, shares: Map<string, number>): CourseInstructor {
+  const rawId = String(java.userId);
+  const shareBps = asFiniteNumber(java.shareBps) ?? shares.get(rawId) ?? null;
   return {
     userId: encodeUserId(java.userId),
     nickName: java.nickName ?? "",
     avatar: java.avatar ?? "",
     description: java.description ?? "",
+    sharePercent: sharePercentFromBps(shareBps),
   };
 }
 
 function toCourse(java: JavaCourse): Course {
   const localized = java.localized ?? {};
   const videos = (java.videos ?? []).map(toVideo).sort((a, b) => a.sortOrder - b.sortOrder);
+  const shares = new Map<string, number>();
+  for (const item of java.instructorShares ?? []) {
+    const userId = item.userId == null ? "" : String(item.userId);
+    const shareBps = asFiniteNumber(item.shareBps);
+    if (userId && shareBps != null) shares.set(userId, shareBps);
+  }
+  const price = asFiniteNumber(java.priceCredits);
+  const certificateId = asFiniteNumber(java.certificateId);
   return {
     id: String(java.id),
     published: java.published === true || java.published === 1,
@@ -253,7 +291,10 @@ function toCourse(java: JavaCourse): Course {
     },
     videos,
     videoCount: java.videoCount ?? videos.length,
-    instructors: (java.instructors ?? []).map(toInstructor),
+    instructors: (java.instructors ?? []).map((instructor) => toInstructor(instructor, shares)),
+    certificateId: certificateId != null && certificateId > 0 ? certificateId : null,
+    priceCredits: price == null ? "" : String(price),
+    enrollmentEnabled: java.enrollmentEnabled === true || java.enrollmentEnabled === 1,
     createTime: java.createTime ?? "",
     updateTime: java.updateTime ?? "",
   };
@@ -406,6 +447,9 @@ export function emptyDraftCourse(id = ""): Course {
     localized: emptyLocalizedCourse(),
     videos: [],
     instructors: [],
+    certificateId: null,
+    priceCredits: "",
+    enrollmentEnabled: false,
     createTime: "",
     updateTime: "",
   };

@@ -45,16 +45,45 @@ export class AcademyMappingsService {
 
   async editor(admin: AdminActor, courseId: string) {
     this.access(admin, ADMIN_PERMISSION_KEYS.CoursesRead);
-    const [, certificates, mapping] = await Promise.all([
+    const [course, certificates, mapping] = await Promise.all([
       this.authority.course(courseId),
       this.authority.certificates(),
       this.prisma.academyCourseCertificate.findUnique({ where: { courseId } }),
     ]);
     return {
       courseId,
-      certificateId: mapping?.certificateId ?? null,
+      certificateId: course.certificateId ?? mapping?.certificateId ?? null,
       version: mapping?.version ?? 0,
       certificates,
+    };
+  }
+
+  async index(admin: AdminActor, courseIds: string[]) {
+    this.access(admin, ADMIN_PERMISSION_KEYS.CoursesRead);
+    const ids = [...new Set(courseIds)].slice(0, 100);
+    if (ids.length === 0) return { items: [] };
+    const [certificates, mappings] = await Promise.all([
+      this.authority.certificates(),
+      this.prisma.academyCourseCertificate.findMany({
+        where: { courseId: { in: ids }, certificateId: { not: null } },
+      }),
+    ]);
+    const byId = new Map(certificates.map((item) => [item.id, item]));
+    return {
+      items: mappings.flatMap((mapping) => {
+        if (mapping.certificateId == null) return [];
+        const certificate = byId.get(mapping.certificateId);
+        return [
+          {
+            courseId: mapping.courseId,
+            certificate: {
+              id: mapping.certificateId,
+              name: certificate?.name ?? `#${mapping.certificateId}`,
+              imagePath: certificate?.imagePath ?? null,
+            },
+          },
+        ];
+      }),
     };
   }
 
@@ -126,9 +155,11 @@ export class AcademyMappingsService {
     const mapping = await this.prisma.academyCourseCertificate.findUnique({
       where: { courseId },
     });
-    if (!mapping?.certificateId) return { courseId, certificate: null };
+    const certificateId =
+      course.certificateId ?? mapping?.certificateId ?? null;
+    if (!certificateId) return { courseId, certificate: null };
     const certificate = (await this.authority.certificates()).find(
-      (item) => item.id === mapping.certificateId,
+      (item) => item.id === certificateId,
     );
     if (!certificate)
       throw new ConflictException(

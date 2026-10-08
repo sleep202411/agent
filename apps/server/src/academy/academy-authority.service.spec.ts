@@ -15,7 +15,7 @@ describe('Academy regional authority', () => {
   const reply = (data: unknown) =>
     new Response(JSON.stringify({ code: 200, data }));
 
-  it('only offers live type-4 skill certificates', async () => {
+  it('offers the full regional certificate catalogue', async () => {
     fetchMock.mockResolvedValue(
       reply([
         { id: 1, name: 'FD-I', type: 1 },
@@ -25,6 +25,8 @@ describe('Academy regional authority', () => {
     );
     await expect(service.certificates()).resolves.toEqual([
       { id: 13, name: 'AI Producer', type: 4 },
+      { id: 1, name: 'FD-I', type: 1 },
+      { id: 20, name: 'Honorary', type: null },
     ]);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/api/admin/user-levels/levels'),
@@ -38,7 +40,7 @@ describe('Academy regional authority', () => {
     'accepts the documented publication value %s',
     async (published) => {
       fetchMock.mockResolvedValue(reply({ id: 42, published }));
-      await expect(service.course('42')).resolves.toEqual({
+      await expect(service.course('42')).resolves.toMatchObject({
         id: 42,
         published: published === true || published === 1,
       });

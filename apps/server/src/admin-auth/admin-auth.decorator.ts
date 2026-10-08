@@ -7,9 +7,13 @@ import {
 import type { AdminActor, AdminAuthenticatedRequest } from './admin-auth.types';
 
 export const ADMIN_PERMISSIONS_KEY = 'admin:permissions';
+export const ADMIN_ANY_PERMISSIONS_KEY = 'admin:any-permissions';
 
 export const RequireAdminPermissions = (...permissions: string[]) =>
   SetMetadata(ADMIN_PERMISSIONS_KEY, permissions);
+
+export const RequireAnyAdminPermissions = (...permissions: string[]) =>
+  SetMetadata(ADMIN_ANY_PERMISSIONS_KEY, permissions);
 
 export const CurrentAdmin = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AdminActor => {

@@ -24,10 +24,107 @@ import {
   SaveOffering,
   SubmitHomework,
   ReviewHomework,
+  OfferingShare,
 } from './academy-learning.dto';
 
 export function teacherShare(price: bigint, bps: number) {
   return (price * BigInt(bps)) / 10000n;
+}
+
+type JavaCourse = Awaited<ReturnType<AcademyAuthorityService['course']>>;
+
+export function commerceFromJava(course: JavaCourse) {
+  const instructorShares =
+    course.instructorShares?.map((item) => ({
+      teacherId: String(item.userId),
+      shareBps: item.shareBps,
+    })) ??
+    course.instructors
+      ?.filter((item) => item.shareBps != null)
+      .map((item) => ({
+        teacherId: String(item.userId),
+        shareBps: item.shareBps as number,
+      })) ??
+    [];
+  // Omitted keys: Java has not shipped the columns yet → Nest offering fallback.
+  // Present keys (including 0 / false / []): Java is the source of truth.
+  if (
+    course.enrollmentEnabled == null &&
+    course.priceCredits == null &&
+    course.instructorShares == null
+  )
+    return null;
+  const price = BigInt(
+    String(course.priceCredits ?? 0).replace(/[^\d]/g, '') || '0',
+  );
+  const teacherId =
+    instructorShares[0]?.teacherId ||
+    (course.instructors?.[0] ? String(course.instructors[0].userId) : '');
+  return {
+    teacherId,
+    priceCredits: price,
+    teacherShareBps: instructorShares[0]?.shareBps ?? 0,
+    instructorShares,
+    enabled:
+      course.enrollmentEnabled === true || course.enrollmentEnabled === 1,
+    version: 1,
+  };
+}
+
+export function javaCommerceLive(
+  commerce: NonNullable<ReturnType<typeof commerceFromJava>>,
+) {
+  return (
+    commerce.enabled ||
+    commerce.priceCredits > 0n ||
+    commerce.instructorShares.some((item) => item.shareBps > 0)
+  );
+}
+
+type Share = z.infer<typeof OfferingShare>;
+
+export function offeringShares(input: {
+  teacherId: string;
+  teacherShareBps: number;
+  shares?: Share[];
+}): Share[] {
+  return input.shares?.length
+    ? input.shares
+    : [{ teacherId: input.teacherId, shareBps: input.teacherShareBps }];
+}
+
+export function parsedOfferingShares(
+  value: Prisma.JsonValue | null | undefined,
+  fallback: Share,
+): Share[] {
+  const parsed = z.array(OfferingShare).safeParse(value);
+  return parsed.success && parsed.data.length ? parsed.data : [fallback];
+}
+
+function enrollmentPayouts(row: AcademyEnrollment): {
+  teacherId: string;
+  credits: bigint;
+}[] {
+  const parsed = z
+    .array(
+      z.object({
+        teacherId: z.string().regex(/^[1-9]\d{0,15}$/),
+        credits: z.string().regex(/^\d+$/),
+      }),
+    )
+    .safeParse(row.instructorShares);
+  if (parsed.success && parsed.data.length)
+    return parsed.data.map((item) => ({
+      teacherId: item.teacherId,
+      credits: BigInt(item.credits),
+    }));
+  return [{ teacherId: row.teacherId, credits: row.teacherCredits }];
+}
+
+function incomeKey(enrollmentId: string, payeeId: string, count: number) {
+  return count <= 1
+    ? `academy:teacher-income:${enrollmentId}`
+    : `academy:teacher-income:${enrollmentId}:${payeeId}`;
 }
 function dto(row: AcademyEnrollment) {
   return {
@@ -48,11 +145,14 @@ export class AcademyLearningService {
   ) {}
 
   async playbackAccess(courseId: string, userId: string | null) {
-    const offer = await this.db.academyOffering.findUnique({
-      where: { courseId },
-    });
+    const [course, offer] = await Promise.all([
+      this.authority.course(courseId).catch(() => null),
+      this.db.academyOffering.findUnique({ where: { courseId } }),
+    ]);
+    const java = course && commerceFromJava(course);
+    const configured = java ? javaCommerceLive(java) : Boolean(offer);
     // Unconfigured catalogue entries retain existing free playback behavior.
-    if (!offer) return { allowed: true };
+    if (!configured) return { allowed: true };
     if (!userId) return { allowed: false };
     const enrollment = await this.db.academyEnrollment.findUnique({
       where: { courseId_studentId: { courseId, studentId: userId } },
@@ -63,7 +163,7 @@ export class AcademyLearningService {
   async offering(courseId: string, studentId?: string) {
     const course = await this.authority.course(courseId);
     if (!course.published) throw new NotFoundException('Course not found.');
-    const [offering, enrollment] = await Promise.all([
+    const [stored, enrollment] = await Promise.all([
       this.db.academyOffering.findUnique({ where: { courseId } }),
       studentId
         ? this.db.academyEnrollment.findUnique({
@@ -71,10 +171,29 @@ export class AcademyLearningService {
           })
         : null,
     ]);
+    const java = commerceFromJava(course);
     return {
-      offering: offering
-        ? { ...offering, priceCredits: offering.priceCredits.toString() }
-        : null,
+      offering: java
+        ? javaCommerceLive(java)
+          ? {
+              teacherId: java.teacherId,
+              priceCredits: java.priceCredits.toString(),
+              teacherShareBps: java.teacherShareBps,
+              instructorShares: java.instructorShares,
+              enabled: java.enabled,
+              version: stored?.version ?? java.version,
+            }
+          : null
+        : stored
+          ? {
+              ...stored,
+              priceCredits: stored.priceCredits.toString(),
+              instructorShares: parsedOfferingShares(stored.instructorShares, {
+                teacherId: stored.teacherId,
+                shareBps: stored.teacherShareBps,
+              }),
+            }
+          : null,
       enrollment: enrollment ? dto(enrollment) : null,
     };
   }
@@ -88,7 +207,14 @@ export class AcademyLearningService {
     return {
       instructors: course.instructors ?? [],
       offering: offering
-        ? { ...offering, priceCredits: offering.priceCredits.toString() }
+        ? {
+            ...offering,
+            priceCredits: offering.priceCredits.toString(),
+            instructorShares: parsedOfferingShares(offering.instructorShares, {
+              teacherId: offering.teacherId,
+              shareBps: offering.teacherShareBps,
+            }),
+          }
         : null,
     };
   }
@@ -108,10 +234,28 @@ export class AcademyLearningService {
         'Course management access for this region is required.',
       );
     const course = await this.authority.course(courseId);
-    if (!course.instructors?.some((i) => String(i.userId) === input.teacherId))
-      throw new BadRequestException(
-        'Select a teacher assigned to this course.',
-      );
+    const instructorIds = (course.instructors ?? []).map((item) =>
+      String(item.userId),
+    );
+    const shares = offeringShares(input);
+    const seen = new Set<string>();
+    let totalBps = 0;
+    for (const share of shares) {
+      if (seen.has(share.teacherId))
+        throw new BadRequestException(
+          'Each instructor can only have one share.',
+        );
+      seen.add(share.teacherId);
+      if (!instructorIds.includes(share.teacherId))
+        throw new BadRequestException(
+          'Select a teacher assigned to this course.',
+        );
+      totalBps += share.shareBps;
+    }
+    if (totalBps > 10000)
+      throw new BadRequestException('Instructor shares cannot exceed 100%.');
+    const teacherId = shares[0]?.teacherId ?? input.teacherId;
+    const teacherShareBps = shares[0]?.shareBps ?? input.teacherShareBps;
     if (input.enabled && !(await this.mappings.published(courseId)).certificate)
       throw new BadRequestException(
         'Assign an Academy skill certificate before enabling enrollment.',
@@ -126,9 +270,10 @@ export class AcademyLearningService {
           'Course terms changed. Reload before saving.',
         );
       const data = {
-        teacherId: input.teacherId,
+        teacherId,
         priceCredits: BigInt(input.priceCredits),
-        teacherShareBps: input.teacherShareBps,
+        teacherShareBps,
+        instructorShares: shares as Prisma.InputJsonValue,
         enabled: input.enabled,
       };
       const saved = await tx.academyOffering.upsert({
@@ -154,7 +299,11 @@ export class AcademyLearningService {
           after: { ...input, version: saved.version },
         },
       });
-      return { ...saved, priceCredits: saved.priceCredits.toString() };
+      return {
+        ...saved,
+        priceCredits: saved.priceCredits.toString(),
+        instructorShares: shares,
+      };
     });
   }
 
@@ -172,23 +321,58 @@ export class AcademyLearningService {
         where: { courseId_studentId: { courseId, studentId } },
       });
       if (existing) return dto(existing); // one paid enrollment, including response-loss retries
-      const offer = await tx.academyOffering.findUnique({
+      const stored = await tx.academyOffering.findUnique({
         where: { courseId },
       });
-      if (!offer?.enabled || offer.version !== expectedVersion)
+      const java = commerceFromJava(course);
+      const offer = java
+        ? java
+        : stored
+          ? {
+              teacherId: stored.teacherId,
+              priceCredits: stored.priceCredits,
+              teacherShareBps: stored.teacherShareBps,
+              instructorShares: parsedOfferingShares(stored.instructorShares, {
+                teacherId: stored.teacherId,
+                shareBps: stored.teacherShareBps,
+              }),
+              enabled: stored.enabled,
+              version: stored.version,
+            }
+          : null;
+      if (!offer?.enabled || (!java && offer.version !== expectedVersion))
         throw new ConflictException(
           'Course enrollment terms changed. Reload before purchasing.',
         );
+      const shares = offer.instructorShares.length
+        ? offer.instructorShares
+        : parsedOfferingShares(null, {
+            teacherId: offer.teacherId,
+            shareBps: offer.teacherShareBps,
+          });
       if (
-        !course.instructors?.some((i) => String(i.userId) === offer.teacherId)
+        shares.some(
+          (share) =>
+            !course.instructors?.some(
+              (i) => String(i.userId) === share.teacherId,
+            ),
+        )
       )
         throw new ConflictException(
           'The assigned teacher is no longer available.',
         );
-      if (course.instructors.some((i) => String(i.userId) === studentId))
+      if (course.instructors?.some((i) => String(i.userId) === studentId))
         throw new ForbiddenException(
           'Course teachers cannot purchase their own course.',
         );
+      const payouts = shares.map((share) => ({
+        teacherId: share.teacherId,
+        credits: teacherShare(offer.priceCredits, share.shareBps),
+      }));
+      const teacherCredits = payouts.reduce(
+        (sum, item) => sum + item.credits,
+        0n,
+      );
       const row = await tx.academyEnrollment.create({
         data: {
           courseId,
@@ -197,10 +381,11 @@ export class AcademyLearningService {
           certificateId: certificate.id,
           offeringVersion: offer.version,
           priceCredits: offer.priceCredits,
-          teacherCredits: teacherShare(
-            offer.priceCredits,
-            offer.teacherShareBps,
-          ),
+          teacherCredits,
+          instructorShares: payouts.map((item) => ({
+            teacherId: item.teacherId,
+            credits: item.credits.toString(),
+          })),
         },
       });
       if (offer.priceCredits > 0n) {
@@ -324,25 +509,30 @@ export class AcademyLearningService {
           version: { increment: 1 },
         },
       });
-      if (input.decision === 'approved' && row.teacherCredits > 0n) {
-        const account = await ensureWalletAccount(tx, {
-          ownerType: 'user',
-          ownerId: teacherId,
-          currency: 'community_point',
-          balanceKind: 'withdrawable',
-        });
-        await this.wallet.postEntryTx(tx, {
-          accountId: account.id,
-          entryType: 'credit',
-          amount: row.teacherCredits,
-          availableDelta: row.teacherCredits,
-          heldDelta: 0n,
-          reason: 'Academy homework approved',
-          sourceType: 'HOMEWORK_REVIEW_INCOME',
-          sourceId: id,
-          idempotencyKey: `academy:teacher-income:${id}`,
-          actorUserId: teacherId,
-        });
+      if (input.decision === 'approved') {
+        const payouts = enrollmentPayouts(row).filter(
+          (item) => item.credits > 0n,
+        );
+        for (const payout of payouts) {
+          const account = await ensureWalletAccount(tx, {
+            ownerType: 'user',
+            ownerId: payout.teacherId,
+            currency: 'community_point',
+            balanceKind: 'withdrawable',
+          });
+          await this.wallet.postEntryTx(tx, {
+            accountId: account.id,
+            entryType: 'credit',
+            amount: payout.credits,
+            availableDelta: payout.credits,
+            heldDelta: 0n,
+            reason: 'Academy homework approved',
+            sourceType: 'HOMEWORK_REVIEW_INCOME',
+            sourceId: id,
+            idempotencyKey: incomeKey(id, payout.teacherId, payouts.length),
+            actorUserId: teacherId,
+          });
+        }
       }
       await this.event(tx, updated, teacherId, input.decision, {
         score: input.score,

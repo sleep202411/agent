@@ -19,6 +19,8 @@ export const ADMIN_PERMISSION_KEYS = {
   WorkspaceRead: 'workspace.read',
   MediaRead: 'media.read',
   MediaWrite: 'media.write',
+  AiActorsRead: 'ai_actors.read',
+  AiActorsWrite: 'ai_actors.write',
   CertificateRead: 'certificate.read',
   CertificateManage: 'certificate.manage',
   UserRead: 'user.read',
@@ -28,7 +30,6 @@ export const ADMIN_PERMISSION_KEYS = {
 } as const;
 
 export const ADMIN_ROLE_KEYS = {
-  MasterFinancialController: 'master_financial_controller',
   SuperAdmin: 'super_admin',
   Admin: 'admin',
   Operations: 'operations',
@@ -37,30 +38,45 @@ export const ADMIN_ROLE_KEYS = {
 export type AdminRoleKey =
   (typeof ADMIN_ROLE_KEYS)[keyof typeof ADMIN_ROLE_KEYS];
 
+export const PROTECTED_ADMIN_ROLE_KEYS = [ADMIN_ROLE_KEYS.SuperAdmin] as const;
+
+export const RETIRED_ADMIN_ROLE_KEYS = ['master_financial_controller'] as const;
+
+export function isSystemAdminRoleKey(key: string): boolean {
+  return (Object.values(ADMIN_ROLE_KEYS) as string[]).includes(key);
+}
+
+export function isProtectedAdminRoleKey(key: string): boolean {
+  return (PROTECTED_ADMIN_ROLE_KEYS as readonly string[]).includes(key);
+}
+
+export const CUSTOM_ROLE_FORBIDDEN_PERMISSIONS = new Set<string>([
+  ADMIN_PERMISSION_KEYS.AdminManage,
+  ADMIN_PERMISSION_KEYS.CrewComputeReview,
+]);
+
 export const ADMIN_PERMISSION_CATALOG = [
   {
     key: ADMIN_PERMISSION_KEYS.CreatorRevenueManage,
-    description: 'Upload Crew contracts and allocate confirmed creator revenue',
+    description: '上传剧组合同并分配已确认的创作者收益',
   },
   {
     key: ADMIN_PERMISSION_KEYS.CreatorWithdrawalsManage,
-    description:
-      'Review creator bank details and record manual withdrawal payments',
+    description: '审核创作者银行卡并记录人工提现打款',
   },
-  { key: ADMIN_PERMISSION_KEYS.NewsRead, description: 'Read news and tags' },
+  { key: ADMIN_PERMISSION_KEYS.NewsRead, description: '查看新闻和标签' },
   {
     key: ADMIN_PERMISSION_KEYS.NewsWrite,
-    description: 'Create, edit, publish and delete news and tags',
+    description: '创建、编辑、发布和删除新闻与标签',
   },
-  { key: ADMIN_PERMISSION_KEYS.CoursesRead, description: 'Read courses' },
+  { key: ADMIN_PERMISSION_KEYS.CoursesRead, description: '查看课程' },
   {
     key: ADMIN_PERMISSION_KEYS.CoursesWrite,
-    description: 'Create, edit, publish, upload and delete courses',
+    description: '创建、编辑、发布、上传和删除课程',
   },
   {
     key: ADMIN_PERMISSION_KEYS.CrewComputeReview,
-    description:
-      'Review Crew compute allowances as Master Financial Controller',
+    description: '审批剧组算力额度',
   },
   {
     key: ADMIN_PERMISSION_KEYS.AdminManage,
@@ -111,6 +127,14 @@ export const ADMIN_PERMISSION_CATALOG = [
     description: '处理媒体资产审核、下架、恢复和 CDN 清理任务',
   },
   {
+    key: ADMIN_PERMISSION_KEYS.AiActorsRead,
+    description: '查看 AI 演员资料与使用记录',
+  },
+  {
+    key: ADMIN_PERMISSION_KEYS.AiActorsWrite,
+    description: '创建、编辑和归档 AI 演员',
+  },
+  {
     key: ADMIN_PERMISSION_KEYS.CertificateRead,
     description: '查看用户证书记录',
   },
@@ -139,23 +163,10 @@ export const ADMIN_ROLE_CATALOG: Array<{
   permissions: string[];
 }> = [
   {
-    key: ADMIN_ROLE_KEYS.MasterFinancialController,
-    name: 'Master Financial Controller',
-    description: 'Designated headquarters approver for Crew compute allowances',
-    permissions: [
-      ADMIN_PERMISSION_KEYS.CrewManage,
-      ADMIN_PERMISSION_KEYS.CrewComputeReview,
-      ADMIN_PERMISSION_KEYS.CreatorWithdrawalsManage,
-      ADMIN_PERMISSION_KEYS.CreatorRevenueManage,
-    ],
-  },
-  {
     key: ADMIN_ROLE_KEYS.SuperAdmin,
     name: '超级管理员',
     description: '拥有后台账号、安全策略、审计和所有运营权限',
-    permissions: Object.values(ADMIN_PERMISSION_KEYS).filter(
-      (key) => key !== ADMIN_PERMISSION_KEYS.CrewComputeReview,
-    ),
+    permissions: Object.values(ADMIN_PERMISSION_KEYS),
   },
   {
     key: ADMIN_ROLE_KEYS.Admin,
@@ -177,6 +188,8 @@ export const ADMIN_ROLE_CATALOG: Array<{
       ADMIN_PERMISSION_KEYS.WorkspaceRead,
       ADMIN_PERMISSION_KEYS.MediaRead,
       ADMIN_PERMISSION_KEYS.MediaWrite,
+      ADMIN_PERMISSION_KEYS.AiActorsRead,
+      ADMIN_PERMISSION_KEYS.AiActorsWrite,
       ADMIN_PERMISSION_KEYS.CertificateRead,
       ADMIN_PERMISSION_KEYS.CertificateManage,
       ADMIN_PERMISSION_KEYS.UserRead,
@@ -200,9 +213,38 @@ export const ADMIN_ROLE_CATALOG: Array<{
       ADMIN_PERMISSION_KEYS.WorkspaceRead,
       ADMIN_PERMISSION_KEYS.MediaRead,
       ADMIN_PERMISSION_KEYS.MediaWrite,
+      ADMIN_PERMISSION_KEYS.AiActorsRead,
+      ADMIN_PERMISSION_KEYS.AiActorsWrite,
       ADMIN_PERMISSION_KEYS.CertificateRead,
       ADMIN_PERMISSION_KEYS.UserRead,
       ADMIN_PERMISSION_KEYS.CrewManage,
+    ],
+  },
+];
+
+/** Seeded once; admins may later rename or retune permissions. Not wiped on boot. */
+export const ADMIN_STAFF_ROLE_SEEDS: Array<{
+  key: string;
+  name: string;
+  description: string;
+  permissions: string[];
+}> = [
+  {
+    key: 'wardrobe',
+    name: '服化道',
+    description: '仅可访问 AI 演员，维护演员、网红与真实演员资料。',
+    permissions: [
+      ADMIN_PERMISSION_KEYS.AiActorsRead,
+      ADMIN_PERMISSION_KEYS.AiActorsWrite,
+    ],
+  },
+  {
+    key: 'instructor',
+    name: '讲师',
+    description: '仅可访问课程管理，维护课程内容、报名与讲师分成。',
+    permissions: [
+      ADMIN_PERMISSION_KEYS.CoursesRead,
+      ADMIN_PERMISSION_KEYS.CoursesWrite,
     ],
   },
 ];

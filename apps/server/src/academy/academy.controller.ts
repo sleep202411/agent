@@ -32,6 +32,20 @@ import {
 export class AcademyAdminController {
   constructor(private readonly mappings: AcademyMappingsService) {}
 
+  @Get()
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CoursesRead)
+  @Header('Cache-Control', 'private, no-store')
+  async index(
+    @CurrentAdmin() admin: AdminActor,
+    @Query('courseIds') courseIds?: string,
+  ) {
+    const ids = (courseIds ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => CourseId.safeParse(id).success);
+    return { code: 200, data: await this.mappings.index(admin, ids) };
+  }
+
   @Get(':courseId')
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CoursesRead)
   @Header('Cache-Control', 'private, no-store')

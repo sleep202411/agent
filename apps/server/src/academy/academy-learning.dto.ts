@@ -1,8 +1,13 @@
 import { z } from 'zod';
+export const OfferingShare = z.object({
+  teacherId: z.string().regex(/^[1-9]\d{0,15}$/),
+  shareBps: z.number().int().min(0).max(10000),
+});
 export const SaveOffering = z.strictObject({
   teacherId: z.string().regex(/^[1-9]\d{0,15}$/),
   priceCredits: z.string().regex(/^(0|[1-9]\d{0,11})$/),
   teacherShareBps: z.number().int().min(0).max(10000),
+  shares: z.array(OfferingShare).max(20).optional(),
   enabled: z.boolean(),
   expectedVersion: z.number().int().nonnegative(),
 });

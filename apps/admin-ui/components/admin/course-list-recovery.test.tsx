@@ -100,7 +100,12 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 async function render(view: ReactNode, session = "alice") {
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", (input: RequestInfo, init?: RequestInit) => {
+    if (String(input).includes("user-levels/levels")) {
+      return Promise.resolve(response({ code: 200, data: [] }));
+    }
+    return fetchMock(input, init);
+  });
   if (!root) {
     container = document.createElement("div");
     root = createRoot(container);
@@ -115,6 +120,9 @@ const course = (id: string): Course => ({
   localized: emptyLocalizedCourse(),
   videos: [],
   instructors: [],
+  certificateId: null,
+  priceCredits: "",
+  enrollmentEnabled: false,
   createTime: "",
   updateTime: "",
 });

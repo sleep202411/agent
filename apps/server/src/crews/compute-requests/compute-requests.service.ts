@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { type Prisma } from '@prisma/client';
 import { ADMIN_PERMISSION_KEYS, type AdminActor } from '../../admin-auth';
-import { ADMIN_ROLE_KEYS } from '../../admin-auth/admin-auth.constants';
 import { PrismaService } from '../../infra/db/db.module';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 
@@ -178,12 +177,9 @@ export class CrewComputeRequestsService {
     if (
       !admin?.id ||
       admin.status !== 'active' ||
-      !admin.roleKeys?.includes(ADMIN_ROLE_KEYS.MasterFinancialController) ||
       !admin.permissions?.includes(ADMIN_PERMISSION_KEYS.CrewComputeReview)
     ) {
-      throw new ForbiddenException(
-        'Master Financial Controller approval permission is required',
-      );
+      throw new ForbiddenException('需要算力审批权限');
     }
   }
 

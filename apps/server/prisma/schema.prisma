@@ -11212,6 +11212,7 @@ model AcademyOffering {
   teacherId String @map("teacher_id") @db.VarChar(64)
   priceCredits BigInt @map("price_credits")
   teacherShareBps Int @map("teacher_share_bps")
+  instructorShares Json @default("[]") @map("instructor_shares") @db.JsonB
   enabled Boolean @default(false)
   version Int @default(1)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -11226,6 +11227,7 @@ model AcademyEnrollment {
   certificateId Int @map("certificate_id")
   priceCredits BigInt @map("price_credits")
   teacherCredits BigInt @map("teacher_credits")
+  instructorShares Json @default("[]") @map("instructor_shares") @db.JsonB
   offeringVersion Int @map("offering_version")
   status String @default("enrolled") @db.VarChar(24)
   version Int @default(1)

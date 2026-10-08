@@ -222,7 +222,7 @@ export function Select({
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent position="popper" className="max-h-72">
         {options.map((option) => (
           <SelectItem
             key={option.value || SELECT_ALL_SENTINEL}

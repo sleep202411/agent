@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -20,19 +21,25 @@ import { AdminAuthService } from './admin-auth.service';
 import type { AdminActor } from './admin-auth.types';
 import { AdminPermissionGuard } from './admin-permission.guard';
 import {
+  AdminRoleParamsSchema,
   AdminUserParamsSchema,
   AdminUserSessionParamsSchema,
+  CreateAdminRoleSchema,
   CreateAdminUserSchema,
   ListAdminSessionsQuerySchema,
   ListAdminUsersQuerySchema,
   ResetAdminPasswordSchema,
+  UpdateAdminRoleSchema,
   UpdateAdminUserSchema,
+  type AdminRoleParams,
   type AdminUserParams,
   type AdminUserSessionParams,
+  type CreateAdminRoleInput,
   type CreateAdminUserInput,
   type ListAdminSessionsQuery,
   type ListAdminUsersQuery,
   type ResetAdminPasswordInput,
+  type UpdateAdminRoleInput,
   type UpdateAdminUserInput,
 } from './admin-users.dto';
 import { AdminUsersService } from './admin-users.service';
@@ -84,6 +91,66 @@ export class AdminUsersController {
   @Get('roles')
   async listRoles() {
     return { code: 200, data: await this.adminUsers.listRoles() };
+  }
+
+  @Post('roles')
+  @HttpCode(200)
+  async createRole(
+    @CurrentAdmin() actor: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminRoleSchema))
+    body: CreateAdminRoleInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.adminUsers.createRole(body);
+    await this.adminAuth.writeAudit({
+      actor,
+      action: 'admin.role.create',
+      resourceType: 'admin_role',
+      resourceId: body.key,
+      metadata: { name: body.name, permissions: body.permissions },
+      context: requestContext(request),
+    });
+    return { code: 200, data };
+  }
+
+  @Patch('roles/:roleKey')
+  async updateRole(
+    @CurrentAdmin() actor: AdminActor,
+    @Param(new ZodValidationPipe(AdminRoleParamsSchema))
+    params: AdminRoleParams,
+    @Body(new ZodValidationPipe(UpdateAdminRoleSchema))
+    body: UpdateAdminRoleInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.adminUsers.updateRole(params.roleKey, body);
+    await this.adminAuth.writeAudit({
+      actor,
+      action: 'admin.role.update',
+      resourceType: 'admin_role',
+      resourceId: params.roleKey,
+      metadata: { fields: Object.keys(body) },
+      context: requestContext(request),
+    });
+    return { code: 200, data };
+  }
+
+  @Delete('roles/:roleKey')
+  @HttpCode(200)
+  async deleteRole(
+    @CurrentAdmin() actor: AdminActor,
+    @Param(new ZodValidationPipe(AdminRoleParamsSchema))
+    params: AdminRoleParams,
+    @Req() request: Request,
+  ) {
+    const data = await this.adminUsers.deleteRole(params.roleKey);
+    await this.adminAuth.writeAudit({
+      actor,
+      action: 'admin.role.delete',
+      resourceType: 'admin_role',
+      resourceId: params.roleKey,
+      context: requestContext(request),
+    });
+    return { code: 200, data };
   }
 
   @Get('sessions')
