@@ -35,7 +35,6 @@ import { AccountSecurityDialog } from "./dialogs/account-security-dialog";
 import { WorksTab } from "./tabs/works-tab";
 import { CertificatesTab } from "./tabs/certificates-tab";
 import { IpsTab } from "./tabs/ips-tab";
-import { CrewsTab } from "./tabs/crews-tab";
 import { CreatorReviews } from "./creator-reviews";
 import { ServicesTab } from "./tabs/services-tab";
 import { PublicStudioServices } from "./public-studio-services";
@@ -373,13 +372,5 @@ function SectionContent({
       return <CertificatesTab creator={creator} isOwner={isOwner} />;
     case "ips":
       return <IpsTab creator={creator} isOwner={isOwner} />;
-    case "crews":
-      return (
-        <CrewsTab
-          creator={creator}
-          isOwner={isOwner}
-          variant={contentMode === "tabs" ? "profile" : "public"}
-        />
-      );
   }
 }

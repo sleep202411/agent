@@ -21,22 +21,16 @@
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 
-export type CreatorTabId = "works" | "certificates" | "ips" | "crews" | "services";
+export type CreatorTabId = "works" | "certificates" | "ips" | "services";
 
-export const CREATOR_TAB_ORDER: CreatorTabId[] = [
-  "services",
-  "ips",
-  "works",
-  "certificates",
-  "crews",
-];
+// Pax: hide profile crew listings until this surface is reopened.
+export const CREATOR_TAB_ORDER: CreatorTabId[] = ["services", "ips", "works", "certificates"];
 
 const TAB_I18N_KEY: Record<CreatorTabId, string> = {
   services: "tabs.services",
   works: "tabs.works",
   certificates: "tabs.certificates",
   ips: "tabs.ips",
-  crews: "tabs.crews",
 };
 
 /** DOM id prefix for each section anchor (matches creator-center.tsx). */
