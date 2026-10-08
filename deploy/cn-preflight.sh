@@ -64,6 +64,8 @@ done
 branch="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 if [ "$branch" = main ]; then
   ok "production branch is main"
+elif [ "$branch" = HEAD ] && git -C "$ROOT" merge-base --is-ancestor HEAD main; then
+  ok "isolated production checkout belongs to main"
 elif [ "${FORCE:-0}" = 1 ]; then
   warn "branch is $branch (FORCE=1 override)"
 else
@@ -79,7 +81,7 @@ else
 fi
 
 TARGET="$(git -C "$ROOT" rev-parse --verify "$TARGET^{commit}")" || exit 2
-git -C "$ROOT" merge-base --is-ancestor "$TARGET" main || { fail "release revision must belong to main"; exit 2; }
+{ git -C "$ROOT" merge-base --is-ancestor "$TARGET" main || git -C "$ROOT" merge-base --is-ancestor "$TARGET" origin/main; } || { fail "release revision must belong to main"; exit 2; }
 SNAPSHOT="$(mktemp -d)" || exit 1
 git -C "$ROOT" archive "$TARGET" deploy/helm/fizzdragon | tar -x -C "$SNAPSHOT" || exit 1
 CHART="$SNAPSHOT/deploy/helm/fizzdragon"

@@ -61,9 +61,11 @@ fi
 
 TAG="$(git rev-parse --verify "${PINNED_TAG:-HEAD}^{commit}")"
 [[ "$TAG" =~ ^[0-9a-f]{40}$ ]] || exit 2
-git merge-base --is-ancestor "$TAG" main || { echo "FATAL: release revision must belong to main" >&2; exit 2; }
+{ git merge-base --is-ancestor "$TAG" main || git merge-base --is-ancestor "$TAG" origin/main; } || { echo "FATAL: release revision must belong to main" >&2; exit 2; }
 BRANCH="$(git symbolic-ref --quiet --short HEAD || true)"
+SNAPSHOT_READY=0
 assert_checkout_unchanged() {
+  [ "$SNAPSHOT_READY" = 1 ] && return 0
   if { [ -z "$PINNED_TAG" ] && [ "$(git rev-parse HEAD)" != "$TAG" ]; } || \
      [ "$(git symbolic-ref --quiet --short HEAD || true)" != "$BRANCH" ] || \
      ! git diff --quiet || ! git diff --cached --quiet; then
@@ -109,7 +111,7 @@ ECS_IP=""
 MANIFEST_FILE=""
 RELAY_KEY=""
 cleanup() {
-  [ -z "$RELAY_KEY" ] || node "$ROOT/deploy/cn-source-relay.cjs" delete "$RELAY_KEY" >/dev/null 2>&1 || true
+  [ -z "$RELAY_KEY" ] || node "${TOOLS_ROOT:-$ROOT}/deploy/cn-source-relay.cjs" delete "$RELAY_KEY" >/dev/null 2>&1 || true
   [ -z "$RELEASE_DIR" ] || rm -rf "$RELEASE_DIR"
   [ -z "$MANIFEST_FILE" ] || rm -f "$MANIFEST_FILE"
   if [ -n "$ECS_IP" ] && [ "${KEEP_CN_BUILD_ECS:-0}" != 1 ]; then
@@ -131,6 +133,12 @@ tar -xf "$GIT_ARCHIVE" -C "$TMP_DIR"
 CHART="$TMP_DIR/deploy/helm/fizzdragon"
 CN_VALUES="$CHART/values.cn-prod.yaml"
 printf '%s\n' "$TAG" > "$TMP_DIR/.fizzdragon-source-revision"
+# Freeze release helpers as well as application/chart inputs before remote work.
+TOOLS_ROOT="$RELEASE_DIR/tooling"
+mkdir "$TOOLS_ROOT"
+git archive HEAD deploy | tar -x -C "$TOOLS_ROOT"
+[ ! -d "$ROOT/node_modules" ] || ln -s "$ROOT/node_modules" "$TOOLS_ROOT/node_modules"
+SNAPSHOT_READY=1
 
 if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   echo "==> start CN build ECS (tag=$TAG services=${SERVICES[*]})"
@@ -161,11 +169,11 @@ if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   # Direct scp from outside China crawls (single-digit KB/s on bad days); the
   # private relay bucket is reached over OSS acceleration and read in-region.
   RELAY_KEY="src/${TAG}-$(openssl rand -hex 8).tar.gz"
-  relay_url="$(node "$ROOT/deploy/cn-source-relay.cjs" put "$SOURCE_ARCHIVE" "$RELAY_KEY")"
+  relay_url="$(node "${TOOLS_ROOT:-$ROOT}/deploy/cn-source-relay.cjs" put "$SOURCE_ARCHIVE" "$RELAY_KEY")"
   printf '%s\n' "$relay_url" | "${SSH[@]}" "root@$ECS_IP" \
     'set -e; read -r url; rm -f /root/src.tar.gz; curl -fsS --retry 3 --max-time 900 -o /root/src.tar.gz "$url"'
   unset relay_url
-  node "$ROOT/deploy/cn-source-relay.cjs" delete "$RELAY_KEY"
+  node "${TOOLS_ROOT:-$ROOT}/deploy/cn-source-relay.cjs" delete "$RELAY_KEY"
   RELAY_KEY=""
   remote_sha="$("${SSH[@]}" "root@$ECS_IP" 'sha256sum /root/src.tar.gz | awk '\''{print $1}'\''' 2>/dev/null)"
   [ "$remote_sha" = "$archive_sha" ] || { echo "FATAL: source archive checksum mismatch" >&2; exit 1; }
@@ -181,7 +189,7 @@ fi
 
 if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
   assert_checkout_unchanged
-  python3 "$ROOT/deploy/cn_registry.py" "$TAG" "${SERVICES[@]}"
+  python3 "$TOOLS_ROOT/deploy/cn_registry.py" "$TAG" "${SERVICES[@]}"
   export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config-fizzdragon-cn}"
   fingerprint="$(chart_fingerprint)"
   live_fingerprint="$(helm get values "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null \
@@ -232,6 +240,10 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
   fi
 
   assert_checkout_unchanged
+  if [ "${CN_RELEASE_COORDINATED:-0}" = 1 ]; then
+    candidate="$(python3 "$TOOLS_ROOT/deploy/release_revision.py" "$ROOT" "$TAG" main --cn)"
+    [ "$candidate" = "$TAG" ] || exit 75
+  fi
   echo "==> atomic ACK Helm upgrade (services=${SERVICES[*]} tag=$TAG)"
   helm upgrade "$RELEASE" "$CHART" \
     -f "$CHART/values.yaml" \

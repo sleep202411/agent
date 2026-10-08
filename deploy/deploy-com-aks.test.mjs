@@ -36,7 +36,16 @@ function fixture(t, scenario) {
   git("remote", "add", "origin", join(root, "origin.git"));
   mkdirSync(join(repo, "deploy/helm/fizzdragon"), { recursive: true });
   mkdirSync(join(repo, "apps/server"), { recursive: true });
+  mkdirSync(join(repo, "apps/web"), { recursive: true });
+  writeFileSync(
+    join(repo, "apps/web/.env.production.com"),
+    "NEXT_PUBLIC_SITE_REGION=global\nJAVA_STUDIO_URL=https://studio.invalid\nJAVA_CONTENT_URL=https://content.invalid\n"
+  );
   copyFileSync(script, join(repo, "deploy/deploy-com-aks.sh"));
+  copyFileSync(
+    new URL("./release_revision.py", import.meta.url),
+    join(repo, "deploy/release_revision.py")
+  );
   const values = join(repo, "deploy/helm/fizzdragon/values.yaml");
   const original =
     "server:\n  image:\n    repository: fizzdragon-server\n    tag: old\nweb:\n  image:\n    repository: fizzdragon-web\n    tag: unchanged\n";
@@ -46,7 +55,14 @@ function fixture(t, scenario) {
   git("commit", "-m", "source");
   git("push", "origin", "main");
   const sha = git("rev-parse", "HEAD");
-  const future = git("commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "Remote update");
+  let future = git("commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "Remote update");
+  if (scenario.startsWith("remote-app")) {
+    writeFileSync(join(repo, "apps/server/new.txt"), "new committed application input");
+    git("add", "apps/server/new.txt");
+    git("commit", "-m", "new application");
+    future = git("rev-parse", "HEAD");
+    git("reset", "--hard", sha);
+  }
   if (scenario === "stale") git("push", "origin", `${future}:main`);
   if (scenario === "fetch-failed") {
     git("fetch", "origin", "main"); // Leave a stale FETCH_HEAD behind.
@@ -54,7 +70,8 @@ function fixture(t, scenario) {
   }
   writeFileSync(join(repo, "apps/server/untracked.txt"), "must not build");
   if (scenario.startsWith("resume")) {
-    const changed = scenario === "resume-app-change" ? "apps/server/source.txt" : "deploy/recovery.txt";
+    const changed =
+      scenario === "resume-app-change" ? "apps/server/source.txt" : "deploy/recovery.txt";
     writeFileSync(join(repo, changed), "new change");
     git("add", changed);
     git("commit", "-m", "Subsequent change");
@@ -62,6 +79,24 @@ function fixture(t, scenario) {
   }
   const bin = join(root, "bin");
   mkdirSync(bin);
+  if (scenario === "push-race") {
+    const realGit = spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(
+      join(bin, "git"),
+      `#!${process.execPath}
+const fs = require("node:fs");
+const cp = require("node:child_process");
+const args = process.argv.slice(2);
+if (args[0] === "push" && args.includes("HEAD:refs/heads/main") && !fs.existsSync(${JSON.stringify(join(root, "raced"))})) {
+  fs.writeFileSync(${JSON.stringify(join(root, "raced"))}, "done");
+  cp.execFileSync(${JSON.stringify(realGit)}, ["--git-dir", ${JSON.stringify(join(root, "origin.git"))}, "fetch", ${JSON.stringify(repo)}, process.env.AZ_TEST_FUTURE+":refs/heads/main"]);
+}
+const result = cp.spawnSync(${JSON.stringify(realGit)}, args, {stdio: "inherit"});
+process.exit(result.status ?? 1);
+`,
+      { mode: 0o755 }
+    );
+  }
   const log = join(root, "az.jsonl");
   writeFileSync(
     join(bin, "az"),
@@ -73,10 +108,11 @@ fs.appendFileSync(process.env.AZ_TEST_LOG, JSON.stringify({args, cwd: process.cw
 if (args[0] === 'account') process.exit(0);
 const scenario = process.env.AZ_TEST_SCENARIO;
 if (args[1] === 'build') {
-  if (fs.readFileSync('apps/server/source.txt', 'utf8') !== 'committed' || fs.existsSync('apps/server/untracked.txt')) process.exit(41);
+  if (fs.readFileSync('apps/server/source.txt', 'utf8') !== (scenario === 'resume-app-change' ? 'new change' : 'committed') || fs.existsSync('apps/server/untracked.txt')) process.exit(41);
   if (scenario === 'script-edit') fs.writeFileSync(process.env.AZ_TEST_REPO+'/deploy/deploy-com-aks.sh', 'echo MUST_NOT_EXECUTE\\n'.repeat(1000));
   if (scenario === 'edit') fs.writeFileSync(process.env.AZ_TEST_REPO+'/apps/server/source.txt', 'concurrent edit');
-  if (scenario === 'remote') {
+  if (scenario === 'remote' || (scenario.startsWith('remote-app') && !fs.existsSync(process.env.AZ_TEST_REPO+'/once'))) {
+    fs.writeFileSync(process.env.AZ_TEST_REPO+'/once', 'done');
     const r = spawnSync('git', ['push', 'origin', process.env.AZ_TEST_FUTURE+':main'], {cwd:process.env.AZ_TEST_REPO});
     if (r.status !== 0) process.exit(42);
   }
@@ -101,21 +137,32 @@ if (args[1] === 'build') {
 `,
     { mode: 0o755 }
   );
-  const result = spawnSync("/bin/bash", ["deploy/deploy-com-aks.sh", ...(scenario.startsWith("resume") ? ["--resume-build", sha, "server=own-run-123"] : ["server"])], {
-    cwd: repo,
-    encoding: "utf8",
-    timeout: 15000,
-    env: {
-      ...process.env,
-      PATH: `${bin}:${process.env.PATH}`,
-      AZ_TEST_LOG: log,
-      AZ_TEST_SCENARIO: scenario,
-      AZ_TEST_REPO: repo,
-      AZ_TEST_FUTURE: future,
-      AZ_ACR_BUILD_NO_LOGS: "1",
-      FORCE: "0",
-    },
-  });
+  const result = spawnSync(
+    "/bin/bash",
+    [
+      "deploy/deploy-com-aks.sh",
+      ...(scenario.startsWith("resume")
+        ? ["--resume-build", sha, "server=own-run-123"]
+        : scenario === "remote-app-multiple"
+          ? ["server", "web"]
+          : ["server"]),
+    ],
+    {
+      cwd: repo,
+      encoding: "utf8",
+      timeout: 60000,
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        AZ_TEST_LOG: log,
+        AZ_TEST_SCENARIO: scenario,
+        AZ_TEST_REPO: repo,
+        AZ_TEST_FUTURE: future,
+        AZ_ACR_BUILD_NO_LOGS: "1",
+        FORCE: "0",
+      },
+    }
+  );
   const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map(JSON.parse) : [];
   assert.equal(
     calls.some((c) => c.args.includes("list-runs") || c.args.includes("show-tags")),
@@ -129,33 +176,22 @@ if (args[1] === 'build') {
     assert.ok(call.args.includes("--no-logs"));
     assert.ok(!call.args.includes("--no-wait"));
     assert.equal(call.args[call.args.indexOf("--query") + 1], "runId");
-    assert.ok(call.args.includes(`fizzdragon-server:${sha}`));
+    assert.ok(call.args.some((a) => /^fizzdragon-(server|web):[a-f0-9]{40}$/.test(a)));
   }
-  return { result, calls, git, sha, values, original, repo };
+  const remote = git("ls-remote", join(root, "origin.git"), "refs/heads/main").split(/\s/)[0];
+  const published = git("show", remote + ":deploy/helm/fizzdragon/values.yaml");
+  return { result, calls, git, sha, values, original, repo, published, future };
 }
 
 test("builds only committed source and publishes only the requested image after its own run succeeds", (t) => {
-  const { result, calls, git, sha, values } = fixture(t, "success");
+  const { result, calls, git, sha, values, published } = fixture(t, "success");
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(calls.filter((c) => c.args[1] === "build").length, 1);
-  assert.match(readFileSync(values, "utf8"), new RegExp(`tag: ${sha}`));
-  assert.match(readFileSync(values, "utf8"), /tag: unchanged/);
-  assert.equal(
-    git("rev-parse", "HEAD"),
-    git("ls-remote", "origin", "refs/heads/main").split(/\s/)[0]
-  );
+  assert.match(published, new RegExp(`tag: ${sha}`));
+  assert.match(published, /tag: unchanged/);
+  assert.equal(git("rev-parse", "HEAD"), sha, "operator checkout stays untouched");
 });
-for (const scenario of [
-  "stale",
-  "remote",
-  "edit",
-  "script-edit",
-  "failed",
-  "missing-image",
-  "bad-id",
-  "request-failed",
-  "fetch-failed",
-]) {
+for (const scenario of ["failed", "missing-image", "bad-id", "request-failed", "fetch-failed"]) {
   test(`refuses publication for ${scenario} without altering existing work`, (t) => {
     const { result, calls, git, sha, values, original, repo } = fixture(t, scenario);
     assert.notEqual(result.status, 0, result.stdout + result.stderr);
@@ -176,16 +212,64 @@ for (const scenario of [
   });
 }
 
-for (const scenario of ["resume-success", "resume-app-change", "resume-digest-change", "resume-missing-image"]) {
+for (const scenario of [
+  "resume-success",
+  "resume-app-change",
+  "resume-digest-change",
+  "resume-missing-image",
+]) {
   test(`verified build recovery: ${scenario}`, (t) => {
-    const { result, calls, sha, values, original } = fixture(t, scenario);
-    assert.equal(calls.filter((c) => c.args[1] === "build").length, 0);
-    if (scenario === "resume-success") {
+    const { result, calls, sha, values, original, published, git } = fixture(t, scenario);
+    assert.equal(
+      calls.filter((c) => c.args[1] === "build").length,
+      scenario === "resume-app-change" ? 1 : 0
+    );
+    if (scenario === "resume-success" || scenario === "resume-app-change") {
       assert.equal(result.status, 0, result.stdout + result.stderr);
-      assert.match(readFileSync(values, "utf8"), new RegExp(`tag: ${sha}`));
+      assert.match(
+        published,
+        new RegExp(`tag: ${scenario === "resume-app-change" ? git("rev-parse", "HEAD") : sha}`)
+      );
     } else {
       assert.notEqual(result.status, 0, result.stdout + result.stderr);
       assert.equal(readFileSync(values, "utf8"), original);
     }
   });
 }
+
+for (const scenario of ["stale", "remote", "edit", "script-edit", "push-race"]) {
+  test(`continues safely through ${scenario}`, (t) => {
+    const { result, git, sha, published, repo } = fixture(t, scenario);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(git("rev-parse", "HEAD"), sha);
+    assert.match(published, new RegExp(`tag: ${sha}`));
+    assert.doesNotMatch(result.stdout + result.stderr, /MUST_NOT_EXECUTE/);
+    if (scenario === "edit")
+      assert.equal(readFileSync(join(repo, "apps/server/source.txt"), "utf8"), "concurrent edit");
+  });
+}
+
+test("restarts the build cycle when application source advances mid-build", (t) => {
+  const { result, calls, published, future, git, sha } = fixture(t, "remote-app");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const builds = calls.filter((c) => c.args[1] === "build");
+  assert.equal(builds.length, 2);
+  assert.ok(builds[0].args.includes(`fizzdragon-server:${sha}`));
+  assert.ok(builds[1].args.includes(`fizzdragon-server:${future}`));
+  assert.match(published, new RegExp(`tag: ${future}`));
+  assert.equal(git("rev-parse", "HEAD"), sha);
+});
+
+test("a source restart rebuilds the complete selected service set", (t) => {
+  const { result, calls, published, future, sha } = fixture(t, "remote-app-multiple");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const builds = calls
+    .filter((c) => c.args[1] === "build")
+    .map((c) => c.args[c.args.indexOf("--image") + 1]);
+  assert.deepEqual(builds, [
+    `fizzdragon-server:${sha}`,
+    `fizzdragon-server:${future}`,
+    `fizzdragon-web:${future}`,
+  ]);
+  assert.equal(published.match(new RegExp(`tag: ${future}`, "g")).length, 2);
+});

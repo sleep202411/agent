@@ -51,8 +51,8 @@ svc_spec() {
 }
 
 # Recovery: --resume-build <full-source-sha> <service=acr-run-id>...
-# Reuses explicitly identified successful runs; only deploy/ changes may separate
-# their source from the current checkout. Application changes require a new build.
+# Reuses explicitly identified successful runs. New application inputs discard
+# these recovery runs and automatically build a fresh, coherent release cycle.
 # --- args -----------------------------------------------------------------
 RESUME_SHA=""
 RUN_IDS=()
@@ -98,27 +98,29 @@ START_SHA="$(git rev-parse HEAD)"
 SHA="$START_SHA"
 if [ -n "$RESUME_SHA" ]; then
   git merge-base --is-ancestor "$RESUME_SHA" "$START_SHA" || { echo "Build source must be an ancestor of HEAD" >&2; exit 1; }
-  if ! git diff --quiet "$RESUME_SHA" "$START_SHA" -- . ":(exclude)deploy/**"; then
-    echo "Application/build inputs changed since this build; build the current source instead." >&2
-    exit 1
-  fi
   SHA="$RESUME_SHA"
 fi
 # Refuse stale/diverged releases before spending time building images.
 fetch_branch() {
-  git fetch --no-tags origin "refs/heads/$BRANCH" || return 1
-  git rev-parse FETCH_HEAD
+  git fetch --no-tags --no-write-fetch-head origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || return 1
+  git rev-parse "refs/remotes/origin/$BRANCH"
 }
 REMOTE_SHA="$(fetch_branch)"
-if ! git merge-base --is-ancestor "$REMOTE_SHA" "$START_SHA"; then
-  echo "✋ origin/$BRANCH has changes missing locally. Integrate them and rerun deployment." >&2
+if ! git merge-base --is-ancestor "$REMOTE_SHA" "$START_SHA" && ! git merge-base --is-ancestor "$START_SHA" "$REMOTE_SHA"; then
+  echo "✋ Push the source commit and integrate origin/$BRANCH before deployment." >&2
   exit 1
 fi
 
 # A SHA-tagged image must contain only that commit, including its build args.
 # Untracked files and edits made while ACR builds never enter this snapshot.
 BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fizz-com-build.XXXXXX")"
-trap 'rm -rf "$BUILD_ROOT"' EXIT
+PUBLISH_ROOT="$BUILD_ROOT/publish"
+cleanup() {
+  git -C "$ROOT" worktree remove --force "$PUBLISH_ROOT" >/dev/null 2>&1 || true
+  rm -rf "$BUILD_ROOT"
+}
+trap cleanup EXIT
+cp "$ROOT/deploy/release_revision.py" "$BUILD_ROOT/release_revision.py"
 mkdir "$BUILD_ROOT/context"
 git archive "$SHA" | tar -x -C "$BUILD_ROOT/context"
 WEB_ENV="$BUILD_ROOT/context/$WEB_ENV"
@@ -246,6 +248,25 @@ bump_tag() {  # $1=镜像名(repository)  $2=新tag
   ' "$VALUES" > "$VALUES.tmp" && mv "$VALUES.tmp" "$VALUES"
 }
 
+# Every cycle builds one coherent source revision. A changed application tree
+# restarts the service set; deployment-only commits do not invalidate images.
+next_source() {
+  python3 "$BUILD_ROOT/release_revision.py" "$ROOT" "$SHA" "$BRANCH"
+}
+cycle=0
+while true; do
+  cycle=$((cycle + 1))
+  [ "$cycle" -le 10 ] || { echo "Too many source updates; images retained. Rerun when commits settle." >&2; exit 1; }
+  candidate="$(next_source)"
+  if [ "$candidate" != "$SHA" ]; then
+    SHA="$candidate"
+    RESUME_SHA=""
+  fi
+  SHORT="${SHA:0:7}"
+  rm -rf "$BUILD_ROOT/context"
+  mkdir "$BUILD_ROOT/context"
+  git archive "$SHA" | tar -x -C "$BUILD_ROOT/context"
+  restart=0
 index=0
 for s in "${SERVICES[@]}"; do
   IFS=":" read -r image dockerfile _paths <<< "$(svc_spec "$s")"
@@ -262,34 +283,89 @@ for s in "${SERVICES[@]}"; do
     build_one "$s" "$image" "$dockerfile"
   fi
   index=$((index + 1))
+  candidate="$(next_source)"
+  if [ "$candidate" != "$SHA" ]; then
+    SHA="$candidate"
+    RESUME_SHA=""
+    restart=1
+    break
+  fi
 done
+[ "$restart" = 0 ] || continue
 
-# Do not overwrite concurrent edits or publish an old build over newer code.
-CURRENT_REMOTE_SHA="$(fetch_branch)"
-if [ "$CURRENT_REMOTE_SHA" != "$REMOTE_SHA" ] || \
-   [ "$(git rev-parse HEAD)" != "$START_SHA" ] || \
-   [ "$(git rev-parse --abbrev-ref HEAD)" != "$BRANCH" ] || \
-   ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "✋ Branch or tracked files changed during the build. Changes are preserved; reconcile and rerun deployment." >&2
-  exit 1
-fi
-
-# --- bump values.yaml (只动本次构建的服务) --------------------------------
-echo "▶ 更新 $VALUES 的 tag → $SHA"
-for s in "${SERVICES[@]}"; do
-  IFS=":" read -r image _dockerfile _paths <<< "$(svc_spec "$s")"
-  bump_tag "$image" "$SHA"
+# Publish from an isolated checkout of the latest remote branch. The source SHA
+# stays pinned even when the operator edits, switches branches or commits.
+image_tags() {
+  git show "$1:$VALUES" | awk -v repo="$2" '
+    $0 ~ ("^[[:space:]]*repository:[[:space:]]*" repo "[[:space:]]*$") { armed=1; next }
+    armed && $0 ~ "^[[:space:]]*tag:" { print $2; armed=0 }
+  ' | tr -d '\"' | sort -u
+}
+published=0
+for attempt in 1 2 3 4 5; do
+  cd "$ROOT"
+  CURRENT_REMOTE_SHA="$(fetch_branch)"
+  candidate="$(next_source)"
+  if [ "$candidate" != "$SHA" ]; then
+    SHA="$candidate"; RESUME_SHA=""; restart=1; break
+  fi
+  PUBLISH_BASE="$CURRENT_REMOTE_SHA"
+  if ! git merge-base --is-ancestor "$SHA" "$PUBLISH_BASE"; then
+    git merge-base --is-ancestor "$PUBLISH_BASE" "$SHA" || { echo "Publication history diverged" >&2; exit 1; }
+    PUBLISH_BASE="$SHA"
+  fi
+  for s in "${SERVICES[@]}"; do
+    IFS=":" read -r image _dockerfile _paths <<< "$(svc_spec "$s")"
+    before="$(image_tags "$REMOTE_SHA" "$image")"
+    current="$(image_tags "$CURRENT_REMOTE_SHA" "$image")"
+    [ -n "$current" ] || { echo "Missing image configuration for $image" >&2; exit 1; }
+    for tag in $current; do
+      if git cat-file -e "$tag^{commit}" 2>/dev/null; then
+        git merge-base --is-ancestor "$tag" "$SHA" || {
+          echo "A newer or divergent $image release ($tag) is already published; refusing rollback." >&2; exit 1;
+        }
+      elif [ "$current" != "$before" ]; then
+        echo "Concurrent $image publication cannot be ordered safely; refusing overwrite." >&2; exit 1
+      fi
+    done
+  done
+  if [ ! -d "$PUBLISH_ROOT" ]; then
+    git worktree add --detach "$PUBLISH_ROOT" "$PUBLISH_BASE"
+  else
+    # Only our disposable publishing worktree is reset, never the user's checkout.
+    git -C "$PUBLISH_ROOT" reset --hard "$PUBLISH_BASE"
+  fi
+  cd "$PUBLISH_ROOT"
+  for s in "${SERVICES[@]}"; do
+    IFS=":" read -r image _dockerfile _paths <<< "$(svc_spec "$s")"
+    bump_tag "$image" "$SHA"
+  done
+  if git diff --quiet -- "$VALUES"; then
+    published=1
+    break
+  fi
+  git add "$VALUES"
+  git -c core.hooksPath=/dev/null commit -m "deploy(com): ${SERVICES[*]} -> ${SHORT}"
+  candidate="$(next_source)"
+  if [ "$candidate" != "$SHA" ]; then
+    SHA="$candidate"; RESUME_SHA=""; restart=1; break
+  fi
+  if git push origin "HEAD:refs/heads/$BRANCH"; then
+    published=1
+    break
+  fi
+  echo "Publication raced with another push or failed; refetching before retry ($attempt/5)."
 done
-git --no-pager diff -- "$VALUES" || true
-
-# --- commit + push (ArgoCD 自动收敛) --------------------------------------
-if git diff --quiet -- "$VALUES"; then
-  echo "ℹ tag 未变化（已是 ${SHORT}），无需提交。"
-  exit 0
+cd "$ROOT"
+[ "$restart" = 0 ] || continue
+[ "$published" = 1 ] || { echo "Publication did not finish; built images are retained for recovery." >&2; exit 1; }
+candidate="$(next_source)"
+if [ "$candidate" != "$SHA" ]; then
+  SHA="$candidate"; RESUME_SHA=""; continue
 fi
-git add "$VALUES"
-git commit -m "deploy(com): ${SERVICES[*]} -> ${SHORT}"
-git push origin "$BRANCH"
+break
+done
+echo "Local checkout preserved. Pull the remote GitOps commit when your worktree is ready."
 echo "✅ 镜像和 Git tag 已推送；运行中的版本尚未验证。ArgoCD 将自动同步。"
 echo "只读检查 Server rollout（需要 AKS / ArgoCD 读取权限）："
 echo "  node deploy/diagnose-com-server.mjs $SHA"

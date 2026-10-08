@@ -32,7 +32,11 @@ function run(t, scenario, phase = "all", pinned = false) {
     mkdirSync(join(repo, file, ".."), { recursive: true });
     writeFileSync(join(repo, file), contents, { mode: 0o755 });
   };
-  put("deploy/cn_registry.py", "import os, sys\nsys.exit(1 if os.environ.get('QA_SCENARIO') == 'missing-image' else 0)\n");
+  put(
+    "deploy/cn_registry.py",
+    "import os, sys\nsys.exit(1 if os.environ.get('QA_SCENARIO') == 'missing-image' else 0)\n"
+  );
+  put("deploy/release_revision.py", "import os,sys\nprint(os.environ['QA_FUTURE'])\n");
   put("deploy/cn-preflight.sh", "#!/bin/bash\nexit 0\n");
   put("deploy/cn-remote-build-services.sh", "# snapshot A\n");
   put("deploy/cn-source-relay.cjs", "// mocked relay\n");
@@ -121,6 +125,7 @@ if(cmd==='aliyun') {
         QA_REPO: repo,
         QA_FUTURE: future,
         QA_SCENARIO: scenario,
+        CN_RELEASE_COORDINATED: scenario === "checkpoint" ? "1" : "0",
       },
     }
   );
@@ -160,7 +165,7 @@ test("HEAD advance during startup cannot change build-only source", (t) => {
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(upgrades.length, 0);
 });
-for (const scenario of ["advance", "edit", "script-edit", "checksum"])
+for (const scenario of ["checksum"])
   test("rejects release after " + scenario, (t) => {
     const { result, upgrades } = run(t, scenario);
     assert.notEqual(result.status, 0, result.stdout + result.stderr);
@@ -184,5 +189,20 @@ test("explicit revision survives a later checkout commit", (t) => {
 test("missing image prevents Helm mutation", (t) => {
   const { result, upgrades } = run(t, "missing-image");
   assert.notEqual(result.status, 0);
+  assert.equal(upgrades.length, 0);
+});
+
+for (const scenario of ["advance", "edit", "script-edit"]) {
+  test("isolated CN snapshot survives " + scenario, (t) => {
+    const { result, upgrades } = run(t, scenario);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(upgrades.length, 1);
+    assert.doesNotMatch(result.stdout + result.stderr, /MUST_NOT_EXECUTE/);
+  });
+}
+
+test("coordinated deployment checks new source immediately before Helm", (t) => {
+  const { result, upgrades } = run(t, "checkpoint", "deploy");
+  assert.equal(result.status, 75, result.stdout + result.stderr);
   assert.equal(upgrades.length, 0);
 });

@@ -152,6 +152,8 @@ class ReleaseTests(unittest.TestCase):
                     patch.object(r, 'kubectl', return_value='cn'), \
                     patch.object(r, 'cluster_server', return_value='https://cn'), \
                     patch.object(r, 'revision', side_effect=lambda tag: tag) as revision, \
+                    patch.object(r, 'latest_source', side_effect=lambda root, tag, **kw: tag), \
+                    patch.object(r, 'get_job', return_value=None), \
                     patch.object(r, 'verify', return_value={'server': 'digest'}), \
                     patch.object(r, 'migration') as migrate, \
                     patch.dict(r.os.environ, {'CONFIRM_CN_PROD_MIGRATION': 'YES', 'CN_NAMESPACE': 'fizzdragon', 'CN_RELEASE': 'fizzdragon'}):
@@ -187,6 +189,96 @@ class RegistryTests(unittest.TestCase):
     def test_rejects_floating_revision(self):
         with self.assertRaises(ValueError):
             registry.verify('main', ['server'])
+
+
+
+class CycleTests(unittest.TestCase):
+    def context(self, checkpoints, existing=None):
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        events = []
+        stack.enter_context(patch.object(r, 'revision', side_effect=lambda tag: tag))
+        stack.enter_context(patch.object(r, 'latest_source', side_effect=checkpoints))
+        stack.enter_context(patch.object(r, 'get_job', return_value=existing))
+        stack.enter_context(patch.object(r, 'verify', side_effect=lambda tag, services: {'server': tag}))
+        stack.enter_context(patch.object(r, 'run', side_effect=lambda *a, **kw: events.append(('build' if '--build-only' in a else 'deploy', a[2]))))
+        migrate = stack.enter_context(patch.object(r, 'migration', side_effect=lambda tag, *a, **kw: events.append(('migration', tag))))
+        state = dict(version=1, tag=TAG, services=['server'], namespace='fizzdragon',
+                     release='fizzdragon', context='cn', clusterServer='https://cn')
+        args = argparse.Namespace(backup_id=None, allow_chart_update=True)
+        return state, args, events, migrate
+
+    def test_commit_during_build_rebuilds_before_migrating(self):
+        new = 'b' * 40
+        state, args, events, _ = self.context([TAG, new, new, new, new, new])
+        r.run_cycles(state, args, Mock())
+        self.assertEqual(events, [('build', TAG), ('build', new), ('migration', new), ('deploy', new)])
+        self.assertTrue(state['complete'])
+        self.assertEqual(state['previousCycles'][0]['tag'], TAG)
+
+    def test_commit_during_migration_finishes_before_rebuild(self):
+        new = 'b' * 40
+        state, args, events, _ = self.context([TAG, TAG, new, new, new, new, new])
+        r.run_cycles(state, args, Mock())
+        self.assertEqual(events, [('build', TAG), ('migration', TAG), ('build', new), ('migration', new), ('deploy', new)])
+
+    def test_resume_finishes_active_migration_before_source_checkpoint(self):
+        new = 'b' * 40
+        state, args, events, _ = self.context([new, new, new, new, new], existing=job())
+        # Simulate only the old revision having an existing job.
+        with patch.object(r, 'get_job', side_effect=[job(), None]):
+            r.run_cycles(state, args, Mock())
+        self.assertEqual(events[0], ('migration', TAG))
+        self.assertNotIn(('deploy', TAG), events)
+
+    def test_new_commit_during_rollout_gets_another_cycle(self):
+        new = 'b' * 40
+        state, args, events, _ = self.context([TAG, TAG, TAG, new, new, new, new, new])
+        r.run_cycles(state, args, Mock())
+        self.assertEqual([e for e in events if e[0] == 'deploy'], [('deploy', TAG), ('deploy', new)])
+
+    def test_checkpoint_after_backup_prevents_old_migration_creation(self):
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        stack.enter_context(patch.dict(r.os.environ, {'CONFIRM_CN_PROD_MIGRATION': 'YES'}))
+        stack.enter_context(patch.object(r, 'chart_snapshot', return_value=contextlib.nullcontext(Path('/fixture'))))
+        calls = stack.enter_context(patch.object(r, 'run', return_value='  image: "' + IMAGE + '"'))
+        stack.enter_context(patch.object(r, 'ensure_backup', return_value='123'))
+        stack.enter_context(patch.object(r, 'verify'))
+        stack.enter_context(patch.object(r, 'get_job', return_value=None))
+        with self.assertRaises(r.SourceUpdated):
+            r.migration(TAG, state={}, persist=Mock(), before_create=lambda: True)
+        self.assertFalse(any(c.args[:2] == ('kubectl', 'create') for c in calls.call_args_list))
+
+    def test_failed_existing_migration_stops_before_following_new_source(self):
+        state, args, events, migrate = self.context([], existing=job())
+        migrate.side_effect = RuntimeError('Migration job failed')
+        with self.assertRaisesRegex(RuntimeError, 'Migration job failed'):
+            r.run_cycles(state, args, Mock())
+        self.assertEqual(events, [])
+        self.assertEqual(state['tag'], TAG)
+
+    def test_late_pre_helm_source_change_restarts_automatically(self):
+        new = 'b' * 40
+        state, args, events, _ = self.context([TAG, TAG, TAG, new, new, new, new, new])
+        attempted = []
+        def run(*a, **kw):
+            if '--deploy-only' in a:
+                attempted.append(a[2])
+                if a[2] == TAG:
+                    raise r.subprocess.CalledProcessError(75, 'deploy')
+        with patch.object(r, 'run', side_effect=run):
+            r.run_cycles(state, args, Mock())
+        self.assertEqual(attempted, [TAG, new])
+        self.assertTrue(state['complete'])
+
+    def test_source_restart_does_not_duplicate_uncertain_backup_request(self):
+        state, args, events, _ = self.context(['b' * 40])
+        state['backupRequested'] = True
+        with self.assertRaisesRegex(RuntimeError, 'outcome is unknown'):
+            r.run_cycles(state, args, Mock())
+        self.assertEqual(events, [])
+        self.assertEqual(state['tag'], TAG)
 
 
 if __name__ == '__main__':

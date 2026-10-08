@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 from cn_registry import verify
+from release_revision import latest_source
 
 ROOT = Path(__file__).resolve().parent.parent
 RDS = "pgm-1ud5k5e8ed864ld6"
@@ -42,7 +43,10 @@ def revision(value):
     tag = run("git", "rev-parse", "--verify", f"{value}^{{commit}}", capture=True)
     if not re.fullmatch(r"[0-9a-f]{40}", tag):
         raise RuntimeError("Invalid immutable revision")
-    run("git", "merge-base", "--is-ancestor", tag, "main")
+    if not any(subprocess.run(["git", "merge-base", "--is-ancestor", tag, ref], cwd=ROOT,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+               for ref in ("main", "origin/main")):
+        raise RuntimeError("Release revision must belong to main or origin/main")
     return tag
 
 
@@ -59,6 +63,10 @@ def save(path, state):
     finally:
         if os.path.exists(name):
             os.unlink(name)
+
+
+class SourceUpdated(RuntimeError):
+    pass
 
 
 class ExpiredBackup(RuntimeError):
@@ -174,7 +182,7 @@ def chart_snapshot(tag):
         yield Path(directory) / "deploy/helm/fizzdragon"
 
 
-def migration(tag, backup_id=None, state=None, persist=None, render_only=False):
+def migration(tag, backup_id=None, state=None, persist=None, render_only=False, before_create=None):
     namespace = os.environ.get("CN_NAMESPACE", "fizzdragon")
     release = os.environ.get("CN_RELEASE", "fizzdragon")
     name = f"{release}-db-migrate-{tag}"[:63].rstrip("-")
@@ -211,6 +219,8 @@ def migration(tag, backup_id=None, state=None, persist=None, render_only=False):
                 validate_backup(backup_id)
             else:
                 raise RuntimeError("CN_RDS_BACKUP_ID is required for standalone migration")
+            if before_create and before_create():
+                raise SourceUpdated("Source advanced before migration creation")
             # Creation is atomic. If another operator wins, stop and resume against its job.
             kubectl_input = render(backup_id)
             run("kubectl", "create", "-f", "-", input=kubectl_input)
@@ -231,8 +241,6 @@ def migration(tag, backup_id=None, state=None, persist=None, render_only=False):
 def release(args):
     run("git", "diff", "--exit-code", "--quiet")
     run("git", "diff", "--cached", "--exit-code", "--quiet")
-    if run("git", "branch", "--show-current", capture=True) != "main":
-        raise RuntimeError("Start or resume CN releases from main")
     git_dir = Path(run("git", "rev-parse", "--path-format=absolute", "--git-common-dir", capture=True))
     directory = git_dir / "fizzdragon-releases"
     directory.mkdir(exist_ok=True)
@@ -273,33 +281,101 @@ def release(args):
         # Refuse accidental resume against another cluster, namespace or Helm release.
         if state.get("clusterServer") != cluster_server() or state.get("version") != 1 or state["namespace"] != os.environ.get("CN_NAMESPACE", "fizzdragon") or state["release"] != os.environ.get("CN_RELEASE", "fizzdragon") or state["context"] != kubectl("config", "current-context", capture=True):
             raise RuntimeError("Release target differs from the saved receipt")
+        persist = lambda: save(path, state)
+        run_cycles(state, args, persist)
+
+
+def run_cycles(state, args, persist):
+    """Finish an existing migration before changing the receipt's source."""
+    for cycle in range(10):
         tag = revision(state["tag"])
         services = state["services"]
-        persist = lambda: save(path, state)
-        print(f"==> CN pinned release {tag}; receipt {path}", flush=True)
-        print("Resume with: CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --resume --allow-chart-update", flush=True)
+        def checkpoint():
+            candidate = latest_source(ROOT, tag, cn=True)
+            if candidate == tag:
+                return False
+            if state.get("backupRequested") and not state.get("backupJobId") and not state.get("backupId"):
+                raise RuntimeError("Backup request outcome is unknown; resolve its BackupId before changing release source")
+            history = state.get("previousCycles", [])
+            history.append({k: v for k, v in state.items() if k != "previousCycles"})
+            keep = {k: state[k] for k in ("version", "services", "namespace", "release", "context", "clusterServer")}
+            state.clear()
+            state.update(keep, tag=candidate, previousCycles=history, useExistingImages=False)
+            persist()
+            return True
+
+        # A crash can happen immediately after job creation, before any receipt
+        # update. Inspect its deterministic name before discarding the old source.
+        if "server" in services:
+            name = f"{state['release']}-db-migrate-{tag}"[:63].rstrip("-")
+            if get_job(name, state["namespace"]):
+                migration(tag, args.backup_id, state, persist)
+        if checkpoint():
+            continue
+        print(f"==> CN release cycle {cycle + 1}: {tag}", flush=True)
         if not state.get("built"):
             if not state.get("useExistingImages", False):
                 run(ROOT / "deploy/deploy-cn-services.sh", "--tag", tag, "--full", "--build-only", *services)
-            else:
-                print("==> verifying existing CN images; no rebuild requested", flush=True)
             state["digests"] = verify(tag, services)
             state["built"] = True
             persist()
-        else:
-            if verify(tag, services) != state["digests"]:
-                raise RuntimeError("Pinned image digests changed; refusing to deploy overwritten tags")
+        elif verify(tag, services) != state["digests"]:
+            raise RuntimeError("Pinned image digests changed; refusing to deploy overwritten tags")
+        if checkpoint():
+            continue
         if "server" in services:
-            migration(tag, args.backup_id, state, persist)
+            try:
+                migration(tag, args.backup_id, state, persist, before_create=checkpoint)
+            except SourceUpdated:
+                continue
+        # Never interrupt migration for a new commit. Rebuild only after it ends.
+        if checkpoint():
+            continue
         if verify(tag, services) != state["digests"]:
             raise RuntimeError("Pinned image digests changed during migration; refusing deployment")
         deploy_args = [ROOT / "deploy/deploy-cn-services.sh", "--tag", tag, "--deploy-only"]
         if args.allow_chart_update:
             deploy_args.append("--allow-chart-update")
-        run(*deploy_args, *services)
+        try:
+            run(*deploy_args, *services, env={**os.environ, "CN_RELEASE_COORDINATED": "1"})
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 75:
+                raise
+            if not checkpoint():
+                raise RuntimeError("Release inputs changed at rollout; retry the release") from error
+            continue
+        # An atomic Helm upgrade already underway is allowed to finish too.
+        # A commit arriving during it gets a subsequent complete cycle.
+        if checkpoint():
+            continue
         state["complete"] = True
         persist()
         print(f"DONE: CN release {tag} verified", flush=True)
+        return
+    raise RuntimeError("Ten source updates interrupted this release; resume when commits settle")
+
+
+@contextlib.contextmanager
+def stable_checkout():
+    """Freeze runtime tooling too; the operator's checkout may advance freely."""
+    global ROOT
+    original = ROOT
+    if run("git", "branch", "--show-current", capture=True) != "main":
+        raise RuntimeError("Start the CN release from main")
+    run("git", "diff", "--quiet")
+    run("git", "diff", "--cached", "--quiet")
+    tooling_sha = run("git", "rev-parse", "HEAD", capture=True)
+    with tempfile.TemporaryDirectory(prefix="fizz-cn-tooling-") as directory:
+        checkout = Path(directory) / "checkout"
+        run("git", "worktree", "add", "--detach", checkout, tooling_sha)
+        try:
+            if (original / "node_modules").exists():
+                (checkout / "node_modules").symlink_to(original / "node_modules", target_is_directory=True)
+            ROOT = checkout
+            yield
+        finally:
+            ROOT = original
+            run("git", "worktree", "remove", "--force", checkout)
 
 
 def main():
@@ -318,10 +394,11 @@ def main():
     p.add_argument("--tag", default="HEAD")
     p.add_argument("--render-only", action="store_true")
     args = parser.parse_args()
-    if args.action == "release":
-        release(args)
-    else:
-        migration(revision(args.tag), os.environ.get("CN_RDS_BACKUP_ID"), render_only=args.render_only)
+    with stable_checkout():
+        if args.action == "release":
+            release(args)
+        else:
+            migration(revision(args.tag), os.environ.get("CN_RDS_BACKUP_ID"), render_only=args.render_only)
 
 if __name__ == "__main__":
     try:

@@ -1,97 +1,43 @@
-# CN releases
+# Production releases: .com and CN
 
-Choose one source commit for a release. The `.com` script builds that commit,
-then creates a separate GitOps commit containing image tags. That later commit
-is not a CN image tag. Do not derive the source revision using `HEAD~1`.
+Start from clean, committed `main`. Both release coordinators automatically
+check local and remote `main` at stage boundaries. If application inputs change,
+they rebuild the entire selected service set at the newer commit before rollout.
+A CN migration already running finishes first. If a commit arrives during an
+atomic rollout, that rollout finishes and another release cycle follows.
 
-After the deployment scripts are committed, run from a clean `main` checkout:
+Each cycle has one immutable source SHA. Images are regional: a successful
+.com build does not create CN images. The scripts preserve the operator's
+checkout, including edits or branch changes made after startup.
 
-```bash
-export DEPLOY_KEY="$HOME/.ssh/id_ed25519_fizzdragon_cn"
-export KUBECONFIG="$HOME/.kube/config-fizzdragon-cn"
-CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --allow-chart-update web server studio admin-ui
-```
-
-The coordinator records the source SHA once, builds regional images, checks ACR
-image digests, creates and waits for a manual RDS backup, runs the migration,
-and deploys the pinned chart and images. Use `--tag FULL_SOURCE_SHA` to select an
-existing source revision explicitly. It must belong to local `main` history.
-By default this builds the selected images. To reuse an already successful CN
-build, add `--use-existing-images --tag FULL_SOURCE_SHA`. Every selected image
-must exist and pass verification before backup or migration; missing images
-stop the release without silently rebuilding or selecting another tag.
-
-If interrupted or a step fails:
-
-```bash
-CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --resume --allow-chart-update
-```
-
-The receipt is stored under Git's common directory in
-`fizzdragon-releases/cn.json`, outside tracked source. Resume preserves its
-revision and services, verifies the cluster target and image digests, and
-reattaches to an active migration job. A completed receipt is not redeployed.
-A partial image-build failure rebuilds the selected service set on resume.
-The local lock prevents concurrent runs sharing the same Git common directory;
-coordinate operators using separate clones.
-
-RDS returns a **BackupJobId** when a backup starts. The coordinator resolves
-that job to a completed **BackupId**. A new migration requires an available
-manual backup completed within six hours. An expired saved backup is renewed.
-If a backup request's outcome is unknown, no duplicate is created automatically:
-find its completed BackupId in RDS and resume with `--backup-id BACKUP_ID`.
-
-A failed migration stops for investigation; the coordinator never deletes and
-reruns it automatically. Registry verification establishes image availability,
-not cluster pull authorization or connectivity. An image-pull failure still
-requires inspecting the pod events and correcting the cluster's access.
-
-For separate steps, pass the **same explicit `--tag FULL_SOURCE_SHA`** to
-`deploy-cn-services.sh --full --build-only`, `run-cn-migrations.sh`, and
-`deploy-cn-services.sh --deploy-only`. Standalone migration also requires
-`CN_RDS_BACKUP_ID` and `CONFIRM_CN_PROD_MIGRATION=YES`.
-
-The flow uses the configured Aliyun `default` profile for CN ECS, ACR and RDS.
-The ACR checks use its control-plane API and need read permissions for
-`ListRepository` and `GetRepoTag`; no public registry ingress is required.
-
-## Routine release: first step through final verification
-
-Use a clean checkout with these deployment scripts committed. Do not stash or
-reset unrelated work to satisfy preflight. Select the services from the actual
-changes, including shared-package dependencies. Frontend-first deployment is
-appropriate only when it remains compatible with the currently running backend;
-otherwise migrate and deploy the backend first.
-
-### 1. Update main and record the source revision
+## 1. Update the checkout
 
 ```bash
 git checkout main &&
-git pull --ff-only origin main &&
-export FD_SOURCE_SHA="$(git rev-parse HEAD)"
+git pull --ff-only origin main
 ```
 
-Keep this full SHA in the release record. A source SHA identifies the code;
-an image is identified by region, service, tag and digest. Building Web/Studio
-does not create Server/Admin UI images. Different services may legitimately use
-different source SHAs when their code and dependencies have not changed.
+Select every service affected by application or shared dependency changes.
+For the regional currency changes, select all four services below.
 
-### 2. Publish .com images, if .com is part of this release
-
-For a four-service change:
+## 2. Build and publish .com
 
 ```bash
-test "$(git rev-parse HEAD)" = "$FD_SOURCE_SHA" &&
 deploy/deploy-com-aks.sh web server studio admin-ui
 ```
 
-For a Web/Studio-only change, select `web studio` instead. The script builds
-Azure images and commits their tags for ArgoCD. Its resulting GitOps commit is
-not a newly built image. Do not overwrite `FD_SOURCE_SHA` with that newer HEAD.
-CN images are built separately with regional configuration.
+The script builds from a committed snapshot and verifies each ACR run.
+It publishes image tags from a disposable checkout of the latest remote branch.
+Concurrent GitOps commits are preserved; a rejected push is refetched and
+retried. It refuses to overwrite a newer or divergent published image.
 
-Check the actual .com rollout using an authorized AKS context. For example,
-if Isaac has provisioned the `aks-fizzdragon-com-admin` context:
+Deployment-only commits do not rebuild .com application images. Their changes
+are retained in the publication base. The running tooling stays frozen for the
+invocation. The script reports the final source SHA; do not infer it from
+`HEAD~1` or assume your starting SHA is still the final one.
+
+ArgoCD applies the published GitOps commit asynchronously. Verify using an
+authorized context (the provisioned admin context here):
 
 ```bash
 export KUBECONFIG="$HOME/.kube/config"
@@ -103,76 +49,67 @@ for service in web server studio admin-ui; do
 done
 ```
 
-Restrict the verification loop to the services deployed. Missing contexts or
-Azure authorization failures require correcting access; image-build success
-alone does not establish that ArgoCD rolled out the new version.
+Compare the selected services' image tags with the final source SHA printed by
+the release. Ready old pods do not prove that ArgoCD has applied the new tags.
+Then verify the affected signed-in UI/API workflows.
 
-### 3. Configure CN access
+## 3. Build, back up, migrate and deploy CN
 
 ```bash
 export DEPLOY_KEY="$HOME/.ssh/id_ed25519_fizzdragon_cn"
 export KUBECONFIG="$HOME/.kube/config-fizzdragon-cn"
-```
 
-Use the private SSH key, not its `.pub` file. The Aliyun profile, ACR credentials,
-ACK access and build-ECS SSH allowlist must be provisioned. A failed connection
-must be resolved before retrying; it does not justify changing the source SHA.
-
-### 4. Build, back up, migrate and deploy CN
-
-For a new four-service build, the coordinator performs the steps in order:
-
-```bash
 CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh \
-  --tag "$FD_SOURCE_SHA" --allow-chart-update web server studio admin-ui
-```
-
-It verifies selected images **before** requesting a backup or creating a
-migration job. When Server is selected, it creates a manual RDS backup, waits
-for its completed BackupId, migrates using the Server image at the pinned SHA,
-and then deploys. A frontend-only selection skips backup and migration.
-
-To reuse images already built for the selected services:
-
-```bash
-CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh \
-  --tag "$FD_SOURCE_SHA" --use-existing-images \
   --allow-chart-update web server studio admin-ui
 ```
 
-Do not use this four-service command when only Web/Studio were built. For the
-split release pattern used on 8 October 2026, the two verified revisions were:
+This automatically:
 
-```bash
-export FD_FRONTEND_SHA=19ea4856746c45c7aed0e88af43cac58ab7e8b52
-export FD_BACKEND_SHA=efb4790081c8fc239f9ecc3e896416cfa0ae4b21
+1. Builds and verifies every selected CN image and its digest.
+2. When Server is selected, creates a manual RDS backup and waits for completion.
+3. Resolves the returned **BackupJobId** to the completed **BackupId**, then
+   verifies that the backup is available and less than six hours old.
+4. Runs the migration using the verified Server image.
+5. Checks for newer source again, then applies the pinned Helm chart and images.
+6. Waits for rollout and checks readiness.
 
-deploy/release-cn.sh --tag "$FD_FRONTEND_SHA" --use-existing-images \
-  --allow-chart-update web studio &&
-CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh \
-  --tag "$FD_BACKEND_SHA" --use-existing-images \
-  --allow-chart-update server admin-ui
-```
+There is no need to create a backup or copy its ID manually in this normal flow.
+A frontend-only selection skips backup and migration. CN chart changes also
+start a new cycle because CN applies the whole pinned chart. Other deployment
+tooling edits are recorded by the source checks but take effect on the next
+invocation; running scripts are never swapped midway.
 
-These are historical example SHAs, not defaults for future updates. Choose
-future tags from actual build output and registry verification. Reusing an older
-backend requires checking its source, migrations and shared/build dependencies
-against the intended release. Each invocation preserves the other services'
-live image tags. Helm still applies the pinned chart to the entire release;
-review the displayed configuration diff when allowing chart updates.
+The Aliyun `default` profile needs ECS, ACR and RDS access; ACK credentials,
+registry credentials and the build-ECS SSH allowlist must already be configured.
+Use the private SSH key, not its `.pub` file.
 
-### 5. Resume a failure using its saved receipt
+## 4. Recover an interrupted CN release
 
 ```bash
 CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --resume --allow-chart-update
 ```
 
-Run this from the same repository as the failed invocation. Do not start the
-next service group until the previous group has completed. The receipt retains
-whether existing images were selected, even when the retry omits that option.
-Image digests are checked again after migration and before rollout.
+Resume retains the original selected services and cluster target. It verifies
+saved digests and reattaches to any existing migration before following newer
+source. It never deletes or repeats a failed migration automatically. Previous
+cycles and backup identifiers remain in the receipt under Git's common directory:
+`fizzdragon-releases/cn.json`.
 
-### 6. Verify the deployed version and user flows
+If an unfinished receipt exists, finish it with `--resume` before starting a new
+service selection. A completed receipt is not redeployed by `--resume`.
+If the original receipt omitted a newly affected service, release that service
+afterward. For example:
+
+```bash
+deploy/release-cn.sh --allow-chart-update admin-ui
+```
+
+An uncertain backup request is not duplicated automatically. Find its completed
+BackupId in RDS and resume with `--backup-id BACKUP_ID`. Image-pull errors still
+require checking pod events and cluster registry access; existing registry
+images alone do not establish that ACK can pull them.
+
+## 5. Verify CN
 
 ```bash
 kubectl -n fizzdragon get deployments \
@@ -183,8 +120,23 @@ for service in web server studio admin-ui; do
 done
 ```
 
-Compare each selected service's image tag to its recorded source SHA. Inspect
-migration completion when Server was included, then exercise the affected
-signed-in workflows in the relevant region. Helm/Pod readiness is infrastructure
-verification; it does not replace UI and API acceptance. Record the source SHAs,
-image digests, backup ID, migration result and acceptance results together.
+Compare the selected services to the final receipt's source SHA and digests.
+Check migration completion and the affected signed-in workflows. Infrastructure
+readiness does not replace product acceptance.
+
+## Explicit image reuse and limits
+
+`--tag FULL_SOURCE_SHA` sets the starting source, not an instruction to ignore
+newer application commits. `--use-existing-images` verifies and reuses the
+selected images at that source; if source advances, the coordinator automatically
+builds the newer source instead.
+
+The lower-level `deploy-cn-services.sh` and `run-cn-migrations.sh` commands remain
+pinned primitives for deliberate separate steps; they do not coordinate automatic
+release cycles. Use `release-cn.sh` for the automatic workflow.
+
+The scripts stop on divergent Git history, inaccessible remotes, failed builds
+or migrations, or ten successive source restarts. Resume after correcting the
+cause. A local CN lock prevents simultaneous releases in the same Git common
+directory; coordinate operators using separate clones. .com and CN can run
+concurrently because their registries and clusters are separate.
