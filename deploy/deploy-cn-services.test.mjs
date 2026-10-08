@@ -74,7 +74,17 @@ fs.appendFileSync(root+'/calls.jsonl', JSON.stringify({cmd,args})+'\\n');
 if(cmd==='aliyun') {
  if(args[1]==='StartInstance' && scenario==='script-edit') fs.writeFileSync(repo+'/deploy/deploy-cn-services.sh', 'echo MUST_NOT_EXECUTE\\n'.repeat(1000));
  if(args[1]==='StartInstance' && scenario==='advance') cp.execFileSync('git',['reset','--hard',process.env.QA_FUTURE],{cwd:repo});
- if(args[1]==='DescribeInstanceStatus') console.log(JSON.stringify({InstanceStatuses:{InstanceStatus:[{Status:'Running'}]}}));
+ if(args[1]==='StartInstance') {
+  if(scenario==='start-rejected') { console.error('IncorrectInstanceStatus: fixture'); process.exit(1); }
+  fs.writeFileSync(root+'/started', '1');
+}
+ if(args[1]==='DescribeInstanceStatus') {
+  let status=fs.existsSync(root+'/started') ? 'Running' : 'Stopped';
+  if(scenario==='stopping' && !fs.existsSync(root+'/stopping-seen')) {
+    fs.writeFileSync(root+'/stopping-seen', '1'); status='Stopping';
+  }
+  console.log(JSON.stringify({InstanceStatuses:{InstanceStatus:[{Status:status}]}}));
+ }
  if(args[1]==='DescribeInstances') console.log(JSON.stringify({Instances:{Instance:[{EipAddress:{IpAddress:'127.0.0.1'}}]}}));
 } else if(cmd==='node') {
  if(args[1]==='put') {
@@ -98,11 +108,12 @@ if(cmd==='aliyun') {
 } else if(cmd==='kubectl') {
  if(args[0]==='get') console.log('registry/image:existing');
  if(args[0]==='diff' && scenario==='edit') fs.appendFileSync(repo+'/source.txt','local edit');
+} else if(cmd==='sleep') {
 } else if(cmd!=='curl') process.exit(53);
 `,
     { mode: 0o755 }
   );
-  for (const cmd of ["aliyun", "node", "ssh", "scp", "helm", "kubectl", "curl"])
+  for (const cmd of ["aliyun", "node", "ssh", "scp", "helm", "kubectl", "curl", "sleep"])
     symlinkSync(mock, join(bin, cmd));
   const result = spawnSync(
     "/bin/bash",
@@ -139,8 +150,9 @@ if(cmd==='aliyun') {
     );
     const chart = calls.find((c) => c.cmd === "helm" && c.args[0] === "template").args[2];
     assert.equal(existsSync(chart), false, "chart snapshot cleaned up");
-    return { result, upgrades, repo, revision };
+    return { result, upgrades, repo, revision, calls };
   }
+  if (scenario === "start-rejected") return { result, upgrades, calls };
   const captured = join(root, "captured");
   assert.equal(readFileSync(join(captured, "source.txt"), "utf8"), "A");
   assert.equal(
@@ -151,7 +163,7 @@ if(cmd==='aliyun') {
   assert.equal(existsSync(join(captured, ".env.private")), false);
   const archive = calls.find((c) => c.cmd === "node" && c.args[1] === "put").args[2];
   assert.equal(existsSync(archive), false, "private archive cleaned up");
-  return { result, upgrades, repo, revision };
+  return { result, upgrades, repo, revision, calls };
 }
 test("normal selective release uses committed source, build script and chart", (t) => {
   const { result, upgrades, revision } = run(t, "normal");
@@ -205,4 +217,27 @@ test("coordinated deployment checks new source immediately before Helm", (t) => 
   const { result, upgrades } = run(t, "checkpoint", "deploy");
   assert.equal(result.status, 75, result.stdout + result.stderr);
   assert.equal(upgrades.length, 0);
+});
+
+test("waits for a previous asynchronous stop before starting ECS", (t) => {
+  const { result, calls } = run(t, "stopping", "build");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const ecs = calls.filter((c) => c.cmd === "aliyun").map((c) => c.args[1]);
+  assert.deepEqual(ecs.slice(0, 4), [
+    "DescribeInstanceStatus",
+    "DescribeInstanceStatus",
+    "StartInstance",
+    "DescribeInstanceStatus",
+  ]);
+  assert.equal(ecs.filter((x) => x === "StartInstance").length, 1);
+});
+test("reports a rejected ECS start immediately without attempting upload", (t) => {
+  const { result, calls, upgrades } = run(t, "start-rejected", "build");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /IncorrectInstanceStatus/);
+  assert.equal(upgrades.length, 0);
+  assert.equal(
+    calls.some((c) => c.cmd === "ssh"),
+    false
+  );
 });

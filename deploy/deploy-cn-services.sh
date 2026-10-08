@@ -116,7 +116,7 @@ cleanup() {
   [ -z "$MANIFEST_FILE" ] || rm -f "$MANIFEST_FILE"
   if [ -n "$ECS_IP" ] && [ "${KEEP_CN_BUILD_ECS:-0}" != 1 ]; then
     echo "==> stopping CN build ECS"
-    aliyun ecs StopInstance --InstanceId "$ECS_ID" --StoppedMode StopCharging --profile default >/dev/null 2>&1 || true
+    aliyun ecs StopInstance --InstanceId "$ECS_ID" --StoppedMode StopCharging --RegionId cn-hangzhou --profile default >/dev/null || echo "WARNING: could not stop CN build ECS $ECS_ID" >&2
   fi
 }
 trap cleanup EXIT
@@ -142,14 +142,27 @@ SNAPSHOT_READY=1
 
 if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   echo "==> start CN build ECS (tag=$TAG services=${SERVICES[*]})"
-  aliyun ecs StartInstance --InstanceId "$ECS_ID" --profile default >/dev/null 2>&1 || true
+  start_requested=0
   for _ in $(seq 1 40); do
-    state="$(aliyun ecs DescribeInstanceStatus --InstanceId.1 "$ECS_ID" --RegionId cn-hangzhou --profile default 2>/dev/null \
+    state="$(aliyun ecs DescribeInstanceStatus --InstanceId.1 "$ECS_ID" --RegionId cn-hangzhou --profile default \
       | python3 -c 'import json,sys; a=json.load(sys.stdin).get("InstanceStatuses",{}).get("InstanceStatus",[]); print(a[0]["Status"] if a else "")')"
-    [ "$state" = Running ] && break
+    case "$state" in
+      Running) break ;;
+      Stopped)
+        if [ "$start_requested" = 0 ]; then
+          # StopInstance is asynchronous: a previous cycle may still be stopping.
+          # Start only after Stopped, and never hide a rejected start request.
+          aliyun ecs StartInstance --InstanceId "$ECS_ID" --RegionId cn-hangzhou --profile default >/dev/null
+          start_requested=1
+        fi
+        ;;
+      Starting|Stopping) ;;
+      *) echo "FATAL: unexpected build ECS state: $state" >&2; exit 1 ;;
+    esac
+    echo "==> waiting for CN build ECS (state=$state)"
     sleep 5
   done
-  [ "${state:-}" = Running ] || { echo "FATAL: build ECS did not become Running" >&2; exit 1; }
+  [ "${state:-}" = Running ] || { echo "FATAL: build ECS did not become Running (last state=$state, start requested=$start_requested)" >&2; exit 1; }
   ECS_IP="$(aliyun ecs DescribeInstances --InstanceIds "['$ECS_ID']" --RegionId cn-hangzhou --profile default 2>/dev/null \
     | python3 -c 'import json,sys; i=json.load(sys.stdin)["Instances"]["Instance"][0]; e=i.get("EipAddress",{}).get("IpAddress",""); p=i.get("PublicIpAddress",{}).get("IpAddress",[]); print(e or (p[0] if p else ""))')"
   [ -n "$ECS_IP" ] || { echo "FATAL: no build ECS public IP" >&2; exit 1; }
