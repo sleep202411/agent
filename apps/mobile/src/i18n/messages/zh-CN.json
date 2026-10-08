@@ -5873,5 +5873,12 @@
   "storyboard.cancelled": "已取消",
   "storyboard.expired": "已过期",
   "storyboard.image": "图片",
-  "storyboard.video": "视频"
+  "storyboard.video": "视频",
+  "storyboard.newShot": "新建镜头",
+  "storyboard.removeShot": "删除镜头",
+  "storyboard.shotNumber": "镜头 {number}",
+  "taskMenu.title": "任务操作",
+  "taskMenu.edit": "编辑任务",
+  "taskMenu.invite": "生成邀请链接",
+  "taskMenu.recruit": "开放招募"
 }

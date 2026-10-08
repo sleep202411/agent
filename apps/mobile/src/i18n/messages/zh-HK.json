@@ -5873,5 +5873,12 @@
   "storyboard.cancelled": "已取消",
   "storyboard.expired": "已過期",
   "storyboard.image": "圖片",
-  "storyboard.video": "影片"
+  "storyboard.video": "影片",
+  "storyboard.newShot": "新增鏡頭",
+  "storyboard.removeShot": "刪除鏡頭",
+  "storyboard.shotNumber": "鏡頭 {number}",
+  "taskMenu.title": "任務操作",
+  "taskMenu.edit": "編輯任務",
+  "taskMenu.invite": "產生邀請連結",
+  "taskMenu.recruit": "開放招募"
 }

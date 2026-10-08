@@ -5,6 +5,10 @@ import { TaskDetail } from "./task-detail";
 import { api } from "@/lib/api-client";
 import { TaskCenter } from "./task-center";
 import type { TaskSubmitSession } from "./use-task-submit-session";
+vi.mock("./position-create", () => ({ PositionCreate: () => null }));
+vi.mock("./task-management-menu", () => ({
+  TaskManagementMenu: ({ edit }: { edit(): void }) => <button onClick={edit}>taskMenu.edit</button>,
+}));
 vi.mock("@/config", () => ({ appEnv: { siteRegion: "global" } }));
 vi.mock("./task-delivery-management", () => ({
   TaskDeliveryManagement: () => <div>delivery management</div>,
@@ -189,10 +193,11 @@ const detail = {
   labels: [{ id: "label", name: "Animation" }],
   assignees: [{ userId: "1" }],
 };
-const render = (taskId = "task") =>
+const render = (taskId = "task", action: "edit" | undefined = "edit") =>
   act(async () =>
     root.render(
       <TaskDetail
+        initialAction={action}
         crewId="crew"
         taskId={taskId}
         generation={1}
@@ -573,4 +578,24 @@ it("discovers retained contract files even when the original link is absent", as
   expect(host.textContent).toContain(`contracts:${detail.id}`);
   await act(async () => click("thread.refresh"));
   expect(host.textContent).toContain(`contracts:${detail.id}`);
+});
+
+it("opens the simple task view by default and exposes management through Edit", async () => {
+  await act(async () =>
+    root.render(
+      <TaskDetail
+        crewId="crew"
+        taskId="task"
+        generation={1}
+        userId="1"
+        onClose={h.close}
+        onOpenWeb={h.web}
+      />
+    )
+  );
+  expect(host.textContent).toContain("Private brief");
+  expect(host.textContent).not.toContain("custom fields");
+  expect(host.textContent).not.toContain("workflow editor");
+  await act(async () => click("taskMenu.edit"));
+  expect(host.textContent).toContain("custom fields");
 });

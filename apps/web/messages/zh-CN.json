@@ -5327,7 +5327,11 @@
       "openDelivery": "查看任务并提交交付",
       "assigned": "已分配",
       "saveThenRecruit": "保存任务并继续填写招聘信息。",
-      "completeDraftFields": "创建任务前，请补全“{title}”的必填项。"
+      "completeDraftFields": "创建任务前，请补全“{title}”的必填项。",
+      "taskActions": "任务操作",
+      "editTask": "编辑任务",
+      "inviteLink": "生成邀请链接",
+      "openRecruitment": "开放招募"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",
@@ -11929,5 +11933,13 @@
     "students": "报名人数",
     "pending": "待审批",
     "earnedCredits": "授课收益（社区积分）"
+  },
+  "savedJobsMenu": {
+    "title": "收藏的岗位",
+    "empty": "暂无收藏的岗位。",
+    "loading": "加载中…",
+    "retry": "重试",
+    "more": "加载更多",
+    "all": "查看全部收藏岗位"
   }
 }

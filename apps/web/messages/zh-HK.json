@@ -5327,7 +5327,11 @@
       "openDelivery": "查看任務並提交交付",
       "assigned": "已分配",
       "saveThenRecruit": "儲存任務並繼續填寫招聘資訊。",
-      "completeDraftFields": "建立任務前，請補全「{title}」的必填項。"
+      "completeDraftFields": "建立任務前，請補全「{title}」的必填項。",
+      "taskActions": "任務操作",
+      "editTask": "編輯任務",
+      "inviteLink": "產生邀請連結",
+      "openRecruitment": "開放招募"
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",
@@ -11929,5 +11933,13 @@
     "students": "報名人數",
     "pending": "待審批",
     "earnedCredits": "授課收益（社區積分）"
+  },
+  "savedJobsMenu": {
+    "title": "收藏的職位",
+    "empty": "暫無收藏的職位。",
+    "loading": "載入中…",
+    "retry": "重試",
+    "more": "載入更多",
+    "all": "查看全部收藏職位"
   }
 }

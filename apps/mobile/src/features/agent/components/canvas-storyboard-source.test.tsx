@@ -43,8 +43,8 @@ it("keeps a drag alive through hover renders and drops on the current handler", 
   try {
     await render();
     expect(h.handlers.onStartShouldSetPanResponder()).toBe(false);
-    expect(h.handlers.onMoveShouldSetPanResponder(null, { dy: 2 })).toBe(false);
-    expect(h.handlers.onMoveShouldSetPanResponder(null, { dy: 30 })).toBe(true);
+    expect(h.handlers.onMoveShouldSetPanResponder(null, { dx: 0, dy: 2 })).toBe(false);
+    expect(h.handlers.onMoveShouldSetPanResponder(null, { dx: 0, dy: 30 })).toBe(true);
     h.handlers.onPanResponderGrant();
     expect(start).toHaveBeenCalled();
     const latest = vi.fn();

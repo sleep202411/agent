@@ -65,6 +65,7 @@ export function CrewTaskBrowser({
   const [managingFields, setManagingFields] = useState(false);
   const [creating, setCreating] = useState(false);
   const [viewId, setViewId] = useState<string>();
+  const [taskAction, setTaskAction] = useState<"edit" | "invite" | "recruit">();
   const [taskId, setTaskId] = useState<string | undefined>(initialTaskId);
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
@@ -265,6 +266,7 @@ export function CrewTaskBrowser({
   if (taskId)
     return (
       <TaskDetail
+        initialAction={taskAction}
         crewId={crewId}
         taskId={taskId}
         userId={userId}
@@ -476,8 +478,11 @@ export function CrewTaskBrowser({
         viewId={viewId}
         onViewChange={setViewId}
         onClose={onClose}
-        onSelect={(task) => {
-          if (generation === getAuthGeneration()) setTaskId(task.id);
+        onSelect={(task, action) => {
+          if (generation === getAuthGeneration()) {
+            setTaskAction(action);
+            setTaskId(task.id);
+          }
         }}
       />
     </View>

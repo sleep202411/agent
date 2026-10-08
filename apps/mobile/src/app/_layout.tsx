@@ -99,6 +99,10 @@ export default function RootLayout() {
                   }}
                 />
                 <Stack.Screen name="ip/[id]" options={detailHeader} />
+                <Stack.Screen
+                  name="saved-openings"
+                  options={{ ...detailHeader, presentation: "modal" }}
+                />
                 <Stack.Screen name="crew/[id]" options={detailHeader} />
                 <Stack.Screen name="creator/[id]" options={detailHeader} />
                 <Stack.Screen name="service/[id]" options={detailHeader} />

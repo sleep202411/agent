@@ -2612,7 +2612,9 @@
       "earlier": "将分镜 {number} 前移",
       "later": "将分镜 {number} 后移",
       "removeVideo": "移除镜头 {number} 的媒体",
-      "activeMode": "拖拽模式已开启 — 将画布图片或视频拖到下方分镜"
+      "activeMode": "拖拽模式已开启 — 将画布图片或视频拖到下方分镜",
+      "newShot": "新建镜头",
+      "removeShot": "删除镜头 {number}"
     },
     "export": {
       "open": "导出 MP4",

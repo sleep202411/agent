@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useCrewPermissions } from "../_hooks/use-crew-permissions";
-import type { CrewTaskDTO } from "../_hooks/types";
+import type { CrewTaskListItemDTO } from "../_hooks/types";
 import { InviteLinkPanel } from "./invite-link-panel";
 
 export function TaskInviteDialog({
@@ -21,7 +21,7 @@ export function TaskInviteDialog({
   onOpenChange,
   hideTrigger = false,
 }: {
-  task: CrewTaskDTO;
+  task: CrewTaskListItemDTO;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;

@@ -113,6 +113,7 @@ import { TaskSelect } from "./task-select";
 const ACTIVE_STATUSES: CrewTaskStatus[] = ["open", "in_progress", "revision_requested"];
 
 interface TaskIssueDetailProps {
+  initiallyEditing?: boolean;
   task: CrewTaskDTO;
   members: CrewMemberDTO[];
   isOwner: boolean;
@@ -131,6 +132,7 @@ interface TaskIssueDetailProps {
 }
 
 export function TaskIssueDetail({
+  initiallyEditing = false,
   task,
   members,
   isOwner,
@@ -156,7 +158,7 @@ export function TaskIssueDetail({
   const timeline = useCrewTaskTimeline(task.id);
   const project = useCrewTaskProject(task.crewId).data;
   const episodes = useCrewEpisodes(task.crewId).data ?? [];
-  const [editingBrief, setEditingBrief] = useState(false);
+  const [editingBrief, setEditingBrief] = useState(initiallyEditing && isOwner);
   const [draftTitle, setDraftTitle] = useState(task.title);
   const [draftDescription, setDraftDescription] = useState(task.description);
   const [briefVersion, setBriefVersion] = useState(task.version);

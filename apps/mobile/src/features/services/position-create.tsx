@@ -44,6 +44,7 @@ export function PositionCreate(props: {
   onClose: () => void;
   closeLabel?: string;
   editing?: EditablePosition;
+  initialTask?: TaskOption;
   initialPosition?: (typeof PRESET_POSITIONS)[number]["value"];
 }) {
   const initial = props.editing ? positionDraft(props.editing) : undefined;
@@ -87,7 +88,7 @@ export function PositionCreate(props: {
   const [source, setSource] = useState<{ id: string; data?: TaskDetail; error?: string }>();
   const [sourceRevision, setSourceRevision] = useState(0);
   const [importedTask, setImportedTask] = useState<string>();
-  const [task, setTask] = useState<TaskOption>(),
+  const [task, setTask] = useState<TaskOption | undefined>(props.initialTask),
     [picking, setPicking] = useState(false),
     [expanded, setExpanded] = useState<string>(),
     [attempted, setAttempted] = useState(false),

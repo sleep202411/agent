@@ -180,11 +180,14 @@ afterEach(() => {
   host.remove();
 });
 const submitTask = vi.fn();
+const editTask = vi.fn(),
+  inviteTask = vi.fn();
 async function render(
   canManage = true,
   active = true,
   crewId = "crew",
-  onPublishTask?: (id: string) => void
+  onPublishTask?: (id: string) => void,
+  actions = false
 ) {
   if (onPublishTask) publishCallback = onPublishTask;
   await act(async () =>
@@ -201,6 +204,8 @@ async function render(
         onPublishTask={publishCallback}
         onSelectTask={() => undefined}
         onSubmitTask={submitTask}
+        onEditTask={actions ? editTask : undefined}
+        onInviteTask={actions ? inviteTask : undefined}
       />
     )
   );
@@ -857,4 +862,42 @@ it("distinguishes recruiting, unassigned and assigned task cards", async () => {
   expect(recruiting[0]!.className).toContain("rounded-full");
   expect(recruiting[0]!.className).not.toContain("underline");
   expect(host.textContent).toContain("assigned-user");
+});
+
+it("exposes Edit and invitation actions for a saved eligible task without opening submission", async () => {
+  const task = {
+    id: "managed",
+    crewId: "crew",
+    version: 3,
+    parentId: null,
+    title: "Managed task",
+    description: "",
+    priority: "normal",
+    taskKind: "script",
+    status: "open" as const,
+    assetCategory: "scripts",
+    assignees: [],
+    isRecruiting: false,
+  };
+  state.tasks = [task];
+  await render(true, true, "crew", undefined, true);
+  const openMenu = async () => {
+    await act(async () => {
+      const trigger = host.querySelector('button[aria-label="Task Actions"]') as HTMLButtonElement;
+      expect(trigger).not.toBeNull();
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+  };
+  await openMenu();
+  const item = (label: string) =>
+    [...document.querySelectorAll('[role="menuitem"]')].find(
+      (e) => e.textContent === label
+    ) as HTMLElement;
+  await act(async () => item("Edit Task").click());
+  expect(editTask).toHaveBeenCalledWith("managed");
+  await openMenu();
+  await act(async () => item("Generate Invitation Link").click());
+  expect(inviteTask).toHaveBeenCalledWith(task);
+  await render(false);
+  expect(host.querySelector('button[aria-label="Task Actions"]')).toBeNull();
 });

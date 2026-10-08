@@ -46,7 +46,7 @@ function PlaybackHeading() {
 export function StoryboardSequence({ rows }: { rows: ShotRow[] }) {
   const t = useTranslations("storyboard.playback");
   const [selectedId, setSelectedId] = useState(rows[0]?.id ?? null);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(true);
   const index = Math.max(
     0,
     rows.findIndex((row) => row.id === selectedId)
@@ -54,7 +54,7 @@ export function StoryboardSequence({ rows }: { rows: ShotRow[] }) {
   const shot = rows[index];
   // Match the export selection: first ready video, otherwise preferred still.
   const video = playbackMedia(shot);
-  const select = (next: number, resume = false) => {
+  const select = (next: number, resume = playing) => {
     if (!rows[next]) return;
     setSelectedId(rows[next].id);
     setPlaying(resume);
@@ -236,7 +236,9 @@ function SequenceMedia({
       className="aspect-video max-h-[65dvh] w-full object-contain"
       aria-label={t("video")}
       onPlay={onPlay}
-      onPause={onPause}
+      onPause={(event) => {
+        if (!event.currentTarget.ended) onPause();
+      }}
       onEnded={onEnded}
       onError={() => {
         setFailed(true);

@@ -14,10 +14,14 @@ export function TaskInviteLinks({
   task,
   userId,
   generation,
+  initiallyOpen = false,
+  onClose,
 }: {
   task: TaskDetail;
   userId: string;
   generation: number;
+  initiallyOpen?: boolean;
+  onClose?(): void;
 }) {
   const active = useScreenActive();
   if (
@@ -34,6 +38,8 @@ export function TaskInviteLinks({
       task={task}
       userId={userId}
       generation={generation}
+      initiallyOpen={initiallyOpen}
+      onClose={onClose}
     />
   );
 }
@@ -41,17 +47,25 @@ function Session({
   task,
   userId,
   generation,
+  initiallyOpen = false,
+  onClose,
 }: {
   task: TaskDetail;
   userId: string;
   generation: number;
+  initiallyOpen?: boolean;
+  onClose?(): void;
 }) {
   const t = useTranslations(),
     theme = useTheme();
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [allowed, setAllowed] = useState(false),
-    [open, setOpen] = useState(false);
+    [open, setOpen] = useState(initiallyOpen);
+  const close = () => {
+    setOpen(false);
+    onClose?.();
+  };
   useEffect(() => {
     const c = new AbortController();
     void Promise.all([
@@ -87,14 +101,16 @@ function Session({
   if (!allowed) return null;
   return (
     <View>
-      <Pressable
-        accessibilityRole="button"
-        style={{ paddingVertical: 12 }}
-        onPress={() => setOpen(true)}
-      >
-        <ThemedText>{t("workspace.taskInviteTitle")}</ThemedText>
-      </Pressable>
-      <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
+      {!initiallyOpen && (
+        <Pressable
+          accessibilityRole="button"
+          style={{ paddingVertical: 12 }}
+          onPress={() => setOpen(true)}
+        >
+          <ThemedText>{t("workspace.taskInviteTitle")}</ThemedText>
+        </Pressable>
+      )}
+      <Modal visible={open} animationType="slide" onRequestClose={close}>
         {open && (
           <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
             <CrewInviteLinks
@@ -102,7 +118,7 @@ function Session({
               userId={userId}
               generation={generation}
               task={task}
-              onClose={() => setOpen(false)}
+              onClose={close}
             />
           </SafeAreaView>
         )}

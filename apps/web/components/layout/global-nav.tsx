@@ -1,4 +1,5 @@
 "use client";
+import { SavedJobsMenu } from "./saved-jobs-menu";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Image from "next/image";
@@ -309,14 +310,7 @@ export function GlobalNav() {
             >
               <IconMail aria-hidden="true" className="size-5" />
             </Link>
-            <Link
-              href={localizePath("/crews?view=positions&saved=true", locale)}
-              aria-label={t("savedJobsShortcut")}
-              title={t("savedJobsShortcut")}
-              className="flex size-11 items-center justify-center rounded-full border border-white/15 text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              <IconHeart aria-hidden="true" className="size-5" />
-            </Link>
+            <SavedJobsMenu />
             <SecretAccountMenu
               user={user}
               locale={locale}

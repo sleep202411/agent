@@ -8,8 +8,16 @@ export function StoryboardSource({
   start,
   move,
   drop,
+  compact = false,
+  label,
+  earlier,
+  later,
 }: {
   source: StoryboardMedia;
+  compact?: boolean;
+  label?: string;
+  earlier?: () => void;
+  later?: () => void;
   select(): void;
   start(): void;
   move(x: number, y: number): void;
@@ -25,7 +33,7 @@ export function StoryboardSource({
       // eslint-disable-next-line react-hooks/refs
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
-        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 6,
+        onMoveShouldSetPanResponder: (_, g) => Math.hypot(g.dx, g.dy) > 6,
         onPanResponderGrant: () => callbacks.current.start(),
         onPanResponderMove: (_, g) => callbacks.current.move(g.moveX, g.moveY),
         onPanResponderRelease: (_, g) => {
@@ -42,10 +50,23 @@ export function StoryboardSource({
       onPress={select}
       {...responder.panHandlers}
       accessibilityRole="button"
-      accessibilityLabel={source.name}
-      accessibilityActions={[{ name: "activate" }]}
-      onAccessibilityAction={select}
-      style={{ width: 130, padding: 14, backgroundColor: "#222", borderRadius: 8 }}
+      accessibilityLabel={label ?? source.name}
+      accessibilityActions={[
+        { name: "activate" },
+        ...(earlier ? [{ name: "decrement" as const }] : []),
+        ...(later ? [{ name: "increment" as const }] : []),
+      ]}
+      onAccessibilityAction={(e) => {
+        if (e.nativeEvent.actionName === "decrement") earlier?.();
+        else if (e.nativeEvent.actionName === "increment") later?.();
+        else select();
+      }}
+      style={{
+        width: compact ? undefined : 130,
+        padding: 14,
+        backgroundColor: "#222",
+        borderRadius: 8,
+      }}
     >
       <ThemedText numberOfLines={2}>{source.name}</ThemedText>
     </Pressable>

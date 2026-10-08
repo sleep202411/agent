@@ -5327,7 +5327,11 @@
       "openDelivery": "Open task & submit delivery",
       "assigned": "Assigned",
       "saveThenRecruit": "Save this task and continue to the job form.",
-      "completeDraftFields": "Complete the required fields in “{title}” before creating tasks."
+      "completeDraftFields": "Complete the required fields in “{title}” before creating tasks.",
+      "taskActions": "Task Actions",
+      "editTask": "Edit Task",
+      "inviteLink": "Generate Invitation Link",
+      "openRecruitment": "Open Recruitment"
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
@@ -11929,5 +11933,13 @@
     "students": "Enrollments",
     "pending": "Pending Reviews",
     "earnedCredits": "Earned Community Credits"
+  },
+  "savedJobsMenu": {
+    "title": "Saved Jobs",
+    "empty": "No saved jobs available.",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "more": "Load more",
+    "all": "See all saved jobs"
   }
 }

@@ -2612,7 +2612,9 @@
       "earlier": "Move shot {number} earlier",
       "later": "Move shot {number} later",
       "removeVideo": "Remove media from shot {number}",
-      "activeMode": "Drag Mode active — drag canvas images or videos into the storyboard below"
+      "activeMode": "Drag Mode active — drag canvas images or videos into the storyboard below",
+      "newShot": "New Shot",
+      "removeShot": "Delete shot {number}"
     },
     "export": {
       "open": "Export MP4",

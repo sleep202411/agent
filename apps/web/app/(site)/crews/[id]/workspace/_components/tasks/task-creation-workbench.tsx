@@ -5,8 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
-import { IconX, IconUsers, IconChevronDown } from "@tabler/icons-react";
+import { IconX, IconUsers, IconChevronDown, IconDots } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,7 +30,7 @@ import {
   useCreateCrewEpisode,
   type CreateCrewTaskInput,
   type CrewMemberDTO,
-  type CrewTaskDTO,
+  type CrewTaskListItemDTO,
   type CrewTaskProjectDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { EpisodeTemplatePreview } from "./episode-template-preview";
@@ -73,10 +79,12 @@ function TaskCreationSession({
   project,
   members,
   canManage,
+  canManageTasks = canManage,
   canSubmitAssigned = false,
   canManageEpisodes,
   active,
   onSelectTask,
+  onEditTask,
   onSubmitTask,
   onViewTasks,
   onPublishTask,
@@ -87,14 +95,16 @@ function TaskCreationSession({
   project: CrewTaskProjectDTO;
   members: CrewMemberDTO[];
   canManage: boolean;
+  canManageTasks?: boolean;
   canSubmitAssigned?: boolean;
   canManageEpisodes: boolean;
   active: boolean;
   onSelectTask: (id: string) => void;
+  onEditTask?: (id: string) => void;
   onSubmitTask?: (id: string) => void;
   onViewTasks?: () => void;
   onPublishTask?: (taskId: string) => void;
-  onInviteTask?: (task: CrewTaskDTO) => void;
+  onInviteTask?: (task: CrewTaskListItemDTO) => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
   const [presetTaskKind, setPresetTaskKind] = useState<CreateCrewTaskInput["taskKind"]>();
@@ -551,6 +561,63 @@ function TaskCreationSession({
                                       </button>
                                     ) : null}
                                   </div>
+                                  {draft.taskId && canManageTasks && (
+                                    <div className="absolute right-2 top-2 z-20">
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className="rounded p-2 hover:bg-white/10"
+                                            aria-label={t("taskActions")}
+                                          >
+                                            <IconDots className="size-4" />
+                                          </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-56">
+                                          {onEditTask && (
+                                            <DropdownMenuItem
+                                              onSelect={() => onEditTask(draft.taskId!)}
+                                            >
+                                              {t("editTask")}
+                                            </DropdownMenuItem>
+                                          )}
+                                          {onInviteTask &&
+                                            savedTasks.some(
+                                              (task) =>
+                                                task.id === draft.taskId &&
+                                                !task.assignees.length &&
+                                                !task.isRecruiting &&
+                                                !["approved", "cancelled", "submitted"].includes(
+                                                  task.status
+                                                )
+                                            ) && (
+                                              <DropdownMenuItem
+                                                onSelect={() => {
+                                                  const task = savedTasks.find(
+                                                    (item) => item.id === draft.taskId
+                                                  );
+                                                  if (task) onInviteTask(task);
+                                                }}
+                                              >
+                                                {t("inviteLink")}
+                                              </DropdownMenuItem>
+                                            )}
+                                          {onPublishTask &&
+                                            !draft.input.assignees.length &&
+                                            !["approved", "cancelled", "submitted"].includes(
+                                              savedTasks.find((task) => task.id === draft.taskId)
+                                                ?.status ?? ""
+                                            ) && (
+                                              <DropdownMenuItem
+                                                onSelect={() => onPublishTask(draft.taskId!)}
+                                              >
+                                                {t("openRecruitment")}
+                                              </DropdownMenuItem>
+                                            )}
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    </div>
+                                  )}
                                   <button
                                     type="button"
                                     className="mt-3 flex cursor-pointer items-start gap-2 break-words text-left text-sm font-medium after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-white/40 disabled:cursor-default disabled:after:hidden"

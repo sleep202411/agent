@@ -1,3 +1,6 @@
+vi.mock("./saved-jobs-menu", () => ({
+  SavedJobsMenu: () => <button aria-label="savedJobsShortcut" />,
+}));
 import React, { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -122,13 +125,11 @@ it("links the message and saved-job shortcuts to localized destinations", () => 
   expect(container.querySelector('a[aria-label="messagesShortcut"]')?.getAttribute("href")).toBe(
     "/zh-HK/messages"
   );
-  expect(container.querySelector('a[aria-label="savedJobsShortcut"]')?.getAttribute("href")).toBe(
-    "/zh-HK/crews?view=positions&saved=true"
-  );
+  expect(container.querySelector('button[aria-label="savedJobsShortcut"]')).not.toBeNull();
   click("menu");
   expect(
     Array.from(container.querySelectorAll("a")).filter(
       (link) => link.getAttribute("href") === "/zh-HK/crews?view=positions&saved=true"
     ).length
-  ).toBeGreaterThan(1);
+  ).toBeGreaterThan(0);
 });

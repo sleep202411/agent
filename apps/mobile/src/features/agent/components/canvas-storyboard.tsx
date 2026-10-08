@@ -1,7 +1,8 @@
-import { IconLayoutBottombar } from "@tabler/icons-react-native";
+import { storyboardPending } from "../lib/storyboard-pending";
+import { IconLayoutGrid } from "@tabler/icons-react-native";
 import { StoryboardSource } from "./canvas-storyboard-source";
 import { useMemo, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, View } from "react-native";
+import { Modal, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { uuid } from "expo-modules-core";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
@@ -12,10 +13,9 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import type { CanvasLoaded } from "../../../../canvas-editor/protocol";
 import type { CanvasEditScope } from "../lib/story-canvas-draft";
 import { canvasStoryboard } from "../lib/canvas-storyboard";
-import { canvasMediaBaseline, canvasMediaDraftStore } from "../lib/story-canvas-media-draft";
-import { StoryCanvasMediaForm } from "./story-canvas-media-form";
-import { StoryCanvasEditForm } from "./story-canvas-edit-form";
-import { StoryCanvasCreateForm } from "./story-canvas-create-form";
+import { canvasAppendPosition } from "../lib/story-canvas-create-draft";
+import { StoryboardMutation, type StoryboardEdit } from "./storyboard-mutation";
+import { StoryboardThumbnail } from "./storyboard-thumbnail";
 import { CanvasStoryboardPlayer } from "./canvas-storyboard-player";
 import { CanvasStoryboardExport } from "./canvas-storyboard-export";
 type Props = {
@@ -39,6 +39,7 @@ export function CanvasStoryboard(props: Props) {
         onPress={() => setOpen(true)}
         style={({ pressed }) => ({
           minHeight: 44,
+          alignSelf: "flex-start",
           padding: 12,
           borderRadius: 12,
           flexDirection: "row",
@@ -47,10 +48,7 @@ export function CanvasStoryboard(props: Props) {
           backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement,
         })}
       >
-        <IconLayoutBottombar size={20} color={theme.text} accessible={false} />
-        <ThemedText type="smallBold" style={{ flexShrink: 1 }}>
-          {t("storyboard.title")}
-        </ThemedText>
+        <IconLayoutGrid size={20} color={theme.text} accessible={false} />
       </Pressable>
       {open && active && props.scope.generation === getAuthGeneration() && (
         <Timeline {...props} close={() => setOpen(false)} />
@@ -58,10 +56,51 @@ export function CanvasStoryboard(props: Props) {
     </>
   );
 }
-function Timeline({ loaded, scope, userId, canEdit, saved, close }: Props & { close(): void }) {
+function Timeline({
+  loaded: initialLoaded,
+  scope,
+  userId,
+  canEdit,
+  saved,
+  close,
+}: Props & { close(): void }) {
   const t = useTranslations(),
     theme = useTheme(),
     insets = useSafeAreaInsets();
+  const [loaded, setLoaded] = useState(initialLoaded);
+  const { width } = useWindowDimensions();
+  const columns = width >= 1024 ? 6 : width >= 600 ? 3 : 2;
+  const cellWidth = (width - insets.left - insets.right - 24 - (columns - 1) * 8) / columns;
+  const [initializing, setInitializing] = useState(true);
+  const [initial] = useState(() => {
+    try {
+      const create =
+        canEdit &&
+        (storyboardPending(scope, userId).read() ||
+          canvasStoryboard(initialLoaded.snapshot).rows.length === 0);
+      return {
+        mutation: create
+          ? {
+              nodeId: uuid.v4(),
+              type: "shot" as const,
+              position: canvasAppendPosition(initialLoaded.snapshot),
+            }
+          : undefined,
+        error: undefined,
+      };
+    } catch (e) {
+      return { mutation: undefined, error: String(e) };
+    }
+  });
+  const [mutation, setMutation] = useState<StoryboardEdit | undefined>(initial.mutation);
+  const addShot = () => {
+    setInitializing(false);
+    setMutation({
+      nodeId: uuid.v4(),
+      type: "shot",
+      position: canvasAppendPosition(loaded.snapshot),
+    });
+  };
   const projection = useMemo(() => {
     try {
       return { value: canvasStoryboard(loaded.snapshot) };
@@ -74,13 +113,10 @@ function Timeline({ loaded, scope, userId, canEdit, saved, close }: Props & { cl
   const [selected, setSelected] = useState(rows[0]?.id),
     [autoPlay, setAutoPlay] = useState(false),
     [playing, setPlaying] = useState(false);
-  const [dragMode, setDragMode] = useState(false),
+  const [dragging, setDragging] = useState(false);
+  const [dragMode, setDragMode] = useState(true),
     [chosen, setChosen] = useState<string>(),
     [hovered, setHovered] = useState<string>();
-  const [editing, setEditing] = useState<string>(),
-    [reorder, setReorder] = useState<string>(),
-    [creating, setCreating] = useState(false),
-    [error, setError] = useState<string>();
   const views = useRef(new Map<string, View>()),
     boxes = useRef(new Map<string, { x: number; y: number; width: number; height: number }>());
   const index = Math.max(
@@ -88,38 +124,36 @@ function Timeline({ loaded, scope, userId, canEdit, saved, close }: Props & { cl
       rows.findIndex((r) => r.id === selected)
     ),
     shot = rows[index];
-  const finished = () => {
-    close();
-    saved();
-  };
   function attach(nodeId: string, sourceId: string) {
-    if (!canEdit || scope.generation !== getAuthGeneration()) return;
-    try {
-      const store = canvasMediaDraftStore(scope, userId);
-      if (store.read()) throw Error(t("storyboard.pending"));
-      const edit = { action: "attach" as const, nodeId, sourceId, edgeId: uuid.v4() };
-      store.write({
-        edit,
-        title: sources.find((s) => s.id === sourceId)?.name ?? sourceId,
-        baseline: canvasMediaBaseline(loaded.snapshot, edit),
-      });
-      setPlaying(false);
-      setEditing(nodeId);
-      setHovered(undefined);
-    } catch (e) {
-      setError(String(e));
-    }
+    if (!canEdit || mutation || scope.generation !== getAuthGeneration()) return;
+    setPlaying(false);
+    setMutation({ action: "attach", nodeId, sourceId, edgeId: uuid.v4() });
+    setHovered(undefined);
   }
+  const measure = () => {
+    setDragging(true);
+    boxes.current.clear();
+    views.current.forEach((view, id) =>
+      view.measureInWindow((x, y, width, height) => boxes.current.set(id, { x, y, width, height }))
+    );
+  };
   const target = (x: number, y: number) =>
     [...boxes.current].find(
       ([, b]) => x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height
     )?.[0];
   const select = (id: string) => {
     setSelected(id);
-    setAutoPlay(false);
+    setAutoPlay(playing);
   };
   return (
-    <Modal visible animationType="slide" onRequestClose={close}>
+    <Modal
+      visible
+      animationType="slide"
+      onRequestClose={() => {
+        close();
+        saved();
+      }}
+    >
       <View
         style={{
           flex: 1,
@@ -132,179 +166,229 @@ function Timeline({ loaded, scope, userId, canEdit, saved, close }: Props & { cl
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 12 }}>
           <ThemedText type="smallBold">{t("storyboard.title")}</ThemedText>
-          <Pressable onPress={close}>
+          <Pressable
+            onPress={() => {
+              close();
+              saved();
+            }}
+          >
             <ThemedText>{t("agent.close")}</ThemedText>
           </Pressable>
         </View>
-        <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }} scrollEnabled={!dragMode}>
-          {(error || projection.error) && (
-            <ThemedText accessibilityRole="alert">{error || projection.error}</ThemedText>
+        <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }} scrollEnabled={!dragging}>
+          {initial.error && <ThemedText accessibilityRole="alert">{initial.error}</ThemedText>}
+          {projection.error && (
+            <ThemedText accessibilityRole="alert">{projection.error}</ThemedText>
           )}
-          {canEdit && (
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <Pressable
-                onPress={() => setDragMode((v) => !v)}
-                accessibilityState={{ selected: dragMode }}
-              >
-                <ThemedText>{t("storyboard.drag")}</ThemedText>
-              </Pressable>
-              <Pressable onPress={() => setCreating(true)}>
-                <ThemedText>{t("storyboard.add")}</ThemedText>
-              </Pressable>
-            </View>
-          )}
-          {dragMode && canEdit && (
-            <>
-              <ThemedText type="small">{t("storyboard.dragHelp")}</ThemedText>
-              <ScrollView horizontal contentContainerStyle={{ gap: 8 }}>
-                {sources.map((source) => (
-                  <StoryboardSource
-                    key={source.id}
-                    source={source}
-                    select={() => setChosen(source.id)}
-                    start={() => {
-                      setChosen(source.id);
-                      boxes.current.clear();
-                      views.current.forEach((view, id) =>
-                        view.measureInWindow((x, y, width, height) =>
-                          boxes.current.set(id, { x, y, width, height })
-                        )
-                      );
-                    }}
-                    move={(x, y) => setHovered(target(x, y))}
-                    drop={(x, y) => {
-                      const id = target(x, y);
-                      if (id) attach(id, source.id);
-                      setHovered(undefined);
-                    }}
-                  />
-                ))}
-              </ScrollView>
-            </>
-          )}
-          {!rows.length && <ThemedText>{t("storyboard.empty")}</ThemedText>}
-          <ScrollView horizontal contentContainerStyle={{ gap: 8 }}>
-            {rows.map((row, i) => (
-              <View
-                key={row.id}
-                ref={(view) => {
-                  if (view) views.current.set(row.id, view);
-                  else views.current.delete(row.id);
-                }}
-                style={{
-                  width: 145,
-                  padding: 12,
-                  gap: 8,
-                  borderWidth: 1,
-                  borderColor: hovered === row.id || shot?.id === row.id ? "#E52227" : "#444",
-                  borderRadius: 8,
-                }}
-              >
-                <Pressable onPress={() => select(row.id)}>
-                  <ThemedText type="smallBold">
-                    {i + 1}. {row.title}
-                  </ThemedText>
-                  <ThemedText type="small">
-                    {row.media ? t(`storyboard.${row.media.kind}`) : t("storyboard.missing")}
-                  </ThemedText>
-                </Pressable>
-                {canEdit && (
-                  <>
-                    <Pressable
-                      onPress={() => {
-                        setPlaying(false);
-                        setEditing(row.id);
-                      }}
-                    >
-                      <ThemedText type="small">{t("storyCanvas.media.title")}</ThemedText>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => {
-                        setPlaying(false);
-                        setReorder(row.id);
-                      }}
-                    >
-                      <ThemedText type="small">{t("storyCanvas.shot.reorder")}</ThemedText>
-                    </Pressable>
-                    {dragMode && chosen && (
-                      <Pressable onPress={() => attach(row.id, chosen)}>
-                        <ThemedText type="small">{t("storyboard.place")}</ThemedText>
-                      </Pressable>
-                    )}
-                  </>
-                )}
-              </View>
-            ))}
-          </ScrollView>
-          {shot && (
-            <Pressable
-              onPress={() => {
-                setPlaying((v) => !v);
-                setAutoPlay(false);
-              }}
-            >
-              <ThemedText>{t(playing ? "storyboard.stop" : "storyboard.play")}</ThemedText>
-            </Pressable>
-          )}
-          {playing &&
-            !editing &&
-            !reorder &&
-            !creating &&
-            (shot?.media ? (
-              <CanvasStoryboardPlayer
-                key={`${shot.id}:${shot.media.url}`}
-                media={shot.media}
-                scope={scope}
-                autoPlay={autoPlay}
-                ended={() => {
-                  if (rows[index + 1]) {
-                    setSelected(rows[index + 1].id);
-                    setAutoPlay(true);
-                  } else setPlaying(false);
-                }}
-              />
-            ) : (
-              <ThemedText>{t("storyboard.missing")}</ThemedText>
-            ))}
-          {"kind" in scope && scope.kind === "platform" && (
-            <CanvasStoryboardExport
+          {mutation && (
+            <StoryboardMutation
+              key={JSON.stringify(mutation)}
               scope={scope}
               userId={userId}
-              sequence={loaded.sequence}
-              disabled={!rows.length}
+              edit={mutation}
+              onlyIfEmpty={initializing && "type" in mutation}
+              saved={(value) => {
+                setInitializing(false);
+                setLoaded(value);
+                setMutation(undefined);
+              }}
             />
           )}
+          <View
+            pointerEvents={mutation ? "none" : "auto"}
+            style={{ gap: 12, opacity: mutation ? 0.5 : 1 }}
+          >
+            {canEdit && (
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <Pressable
+                  onPress={() => setDragMode((v) => !v)}
+                  accessibilityState={{ selected: dragMode }}
+                >
+                  <ThemedText>{t("storyboard.drag")}</ThemedText>
+                </Pressable>
+                <Pressable onPress={addShot}>
+                  <ThemedText>{t("storyboard.add")}</ThemedText>
+                </Pressable>
+              </View>
+            )}
+            {dragMode && canEdit && (
+              <>
+                <ScrollView horizontal contentContainerStyle={{ gap: 8 }}>
+                  {sources.map((source) => (
+                    <StoryboardSource
+                      key={source.id}
+                      source={source}
+                      select={() => setChosen(source.id)}
+                      start={() => {
+                        setChosen(source.id);
+                        measure();
+                      }}
+                      move={(x, y) => {
+                        setHovered(target(x, y));
+                        if (x < 0) setDragging(false);
+                      }}
+                      drop={(x, y) => {
+                        setDragging(false);
+                        const id = target(x, y);
+                        if (id) attach(id, source.id);
+                        setHovered(undefined);
+                      }}
+                    />
+                  ))}
+                </ScrollView>
+              </>
+            )}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {rows.map((row, i) => (
+                <View
+                  key={row.id}
+                  ref={(view) => {
+                    if (view) views.current.set(row.id, view);
+                    else views.current.delete(row.id);
+                  }}
+                  style={{
+                    width: cellWidth,
+                    gap: 6,
+                    borderRadius: 8,
+                    backgroundColor:
+                      hovered === row.id ? theme.backgroundSelected : theme.backgroundElement,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <ThemedText type="small">
+                      {t("storyboard.shotNumber").replace("{number}", String(i + 1))}
+                    </ThemedText>
+                    {canEdit && (
+                      <Pressable
+                        accessibilityLabel={t("storyboard.removeShot")}
+                        style={{ padding: 12 }}
+                        onPress={() => setMutation({ nodeId: row.id, kind: "remove", value: "" })}
+                      >
+                        <ThemedText>×</ThemedText>
+                      </Pressable>
+                    )}
+                    {canEdit && (
+                      <StoryboardSource
+                        source={{ id: row.id, name: "⋮⋮", kind: "image", url: "" }}
+                        compact
+                        label={t("storyCanvas.shot.reorder")}
+                        earlier={
+                          i > 0
+                            ? () =>
+                                setMutation({
+                                  nodeId: row.id,
+                                  kind: "reorderShot",
+                                  value: String(i),
+                                })
+                            : undefined
+                        }
+                        later={
+                          i < rows.length - 1
+                            ? () =>
+                                setMutation({
+                                  nodeId: row.id,
+                                  kind: "reorderShot",
+                                  value: String(i + 2),
+                                })
+                            : undefined
+                        }
+                        select={() => select(row.id)}
+                        start={measure}
+                        move={(x, y) => {
+                          setHovered(target(x, y));
+                          if (x < 0) setDragging(false);
+                        }}
+                        drop={(x, y) => {
+                          setDragging(false);
+                          const id = target(x, y);
+                          if (id && id !== row.id)
+                            setMutation({
+                              nodeId: row.id,
+                              kind: "reorderShot",
+                              value: String(rows.findIndex((r) => r.id === id) + 1),
+                            });
+                          setHovered(undefined);
+                        }}
+                      />
+                    )}
+                  </View>
+                  <Pressable
+                    onPress={() => {
+                      if (dragMode && chosen && canEdit) attach(row.id, chosen);
+                      else select(row.id);
+                    }}
+                    accessibilityLabel={t("storyboard.shotNumber").replace(
+                      "{number}",
+                      String(i + 1)
+                    )}
+                  >
+                    <StoryboardThumbnail media={row.media} scope={scope} />
+                  </Pressable>
+                </View>
+              ))}
+              {canEdit && (
+                <Pressable
+                  onPress={addShot}
+                  style={{
+                    width: cellWidth,
+                    aspectRatio: 16 / 9,
+                    marginTop: 44,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderWidth: 1,
+                    borderStyle: "dashed",
+                    borderRadius: 8,
+                    borderColor: theme.border,
+                  }}
+                >
+                  <ThemedText>+ {t("storyboard.newShot")}</ThemedText>
+                </Pressable>
+              )}
+            </View>
+            {shot && (
+              <Pressable
+                onPress={() => {
+                  setPlaying((v) => !v);
+                  setAutoPlay(true);
+                }}
+              >
+                <ThemedText>{t(playing ? "storyboard.stop" : "storyboard.play")}</ThemedText>
+              </Pressable>
+            )}
+            {playing &&
+              !mutation &&
+              (shot?.media ? (
+                <CanvasStoryboardPlayer
+                  key={`${shot.id}:${shot.media.url}`}
+                  media={shot.media}
+                  scope={scope}
+                  autoPlay={autoPlay}
+                  ended={() => {
+                    if (rows[index + 1]) {
+                      setSelected(rows[index + 1].id);
+                      setAutoPlay(true);
+                    } else setPlaying(false);
+                  }}
+                />
+              ) : (
+                <ThemedText>{t("storyboard.missing")}</ThemedText>
+              ))}
+            {"kind" in scope && scope.kind === "platform" && (
+              <CanvasStoryboardExport
+                scope={scope}
+                userId={userId}
+                sequence={loaded.sequence}
+                disabled={!rows.length}
+              />
+            )}
+          </View>
         </ScrollView>
-        {editing && (
-          <StoryCanvasMediaForm
-            scope={scope}
-            userId={userId}
-            loaded={loaded}
-            nodeId={editing}
-            canEdit={canEdit}
-            close={() => setEditing(undefined)}
-            saved={finished}
-          />
-        )}
-        {reorder && canEdit && (
-          <StoryCanvasEditForm
-            scope={scope}
-            userId={userId}
-            loaded={loaded}
-            edit={{ nodeId: reorder, kind: "reorderShot" }}
-            close={() => setReorder(undefined)}
-            saved={finished}
-          />
-        )}
-        {creating && canEdit && (
-          <StoryCanvasCreateForm
-            scope={scope}
-            userId={userId}
-            initialType="shot"
-            close={() => setCreating(false)}
-            saved={finished}
-          />
-        )}
       </View>
     </Modal>
   );

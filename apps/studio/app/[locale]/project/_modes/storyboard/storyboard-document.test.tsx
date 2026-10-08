@@ -161,15 +161,9 @@ it.each(["video", "image"])(
       await act(async () => root.render(<Harness document={doc} />));
       await act(async () =>
         [...host.querySelectorAll("button")]
-          .find((button) => button.textContent === "title")!
+          .find((button) => button.getAttribute("aria-label") === "title")!
           .click()
       );
-      await act(async () =>
-        [...host.querySelectorAll("button")]
-          .find((button) => button.textContent === "mode")!
-          .click()
-      );
-      expect(host.textContent).toContain("activeMode");
       hit.mockReturnValue(host.querySelector('[data-storyboard-shot="shot"]'));
       await pointer("pointerdown", 10, 10);
       await pointer("pointermove", 100, 100);
@@ -193,7 +187,7 @@ it.each(["video", "image"])(
       await act(async () => root.render(<Harness key="reload" document={restored} />));
       await act(async () =>
         [...host.querySelectorAll("button")]
-          .find((button) => button.textContent === "title")!
+          .find((button) => button.getAttribute("aria-label") === "title")!
           .click()
       );
       expect(host.querySelector('[data-storyboard-shot="shot"]')).not.toBeNull();

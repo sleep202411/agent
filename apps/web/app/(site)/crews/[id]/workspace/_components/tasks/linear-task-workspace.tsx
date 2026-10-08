@@ -40,7 +40,6 @@ import {
   type CrewMemberDTO,
   type CrewProductionActivityDTO,
   type CrewProductionUpdateDTO,
-  type CrewTaskDTO,
   type CrewTaskListItemDTO,
   type CrewTaskPriority,
   type CrewTaskViewDTO,
@@ -118,7 +117,7 @@ function LinearTaskSession({
   deeplinkTaskId,
   onSelectedTaskChange,
 }: LinearTaskWorkspaceProps) {
-  const [inviteTask, setInviteTask] = useState<CrewTaskDTO | null>(null);
+  const [inviteTask, setInviteTask] = useState<CrewTaskListItemDTO | null>(null);
   const t = useTranslations("crewTaskProject");
   const projectQuery = useCrewTaskProject(crewId);
   const summaryQuery = useCrewTaskSummary(crewId);
@@ -159,7 +158,7 @@ function LinearTaskSession({
     state: CrewTaskWorkflowStateDTO | null;
     afterStateId: string | null;
   } | null>(null);
-  const [submissionOpen, setSubmissionOpen] = useState(false);
+  const [submissionOpen, setSubmissionOpen] = useState(true);
   const [favorite, setFavorite] = useState(false);
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
@@ -167,13 +166,13 @@ function LinearTaskSession({
   const [previousDeeplinkTaskId, setPreviousDeeplinkTaskId] = useState(deeplinkTaskId);
   if (previousDeeplinkTaskId !== deeplinkTaskId) {
     setPreviousDeeplinkTaskId(deeplinkTaskId);
-    setSubmissionOpen(false);
+    setSubmissionOpen(true);
     setSelectedTaskId(deeplinkTaskId ?? null);
   }
 
   const selectTask = useCallback(
     (taskId: string | null) => {
-      setSubmissionOpen(false);
+      setSubmissionOpen(true);
       setSelectedTaskId(taskId);
       onSelectedTaskChange?.(taskId);
     },
@@ -573,11 +572,20 @@ function LinearTaskSession({
         project={project}
         members={members}
         canManage={canCreate}
+        canManageTasks={isOwner}
         canSubmitAssigned={canSubmitAssigned}
         onPublishTask={onPublishTask}
         onInviteTask={canInvite ? setInviteTask : undefined}
         canManageEpisodes={productionOverviewQuery.data?.capabilities.manage === true}
         active={section === "production"}
+        onEditTask={
+          isOwner
+            ? (id) => {
+                selectTask(id);
+                setSubmissionOpen(false);
+              }
+            : undefined
+        }
         onSelectTask={selectTask}
         onSubmitTask={(taskId) => {
           selectTask(taskId);
@@ -841,6 +849,7 @@ function LinearTaskSession({
           ) : taskQuery.data ? (
             <TaskIssueDetail
               key={taskQuery.data.id}
+              initiallyEditing={!submissionOpen && isOwner}
               task={taskQuery.data}
               members={members}
               isOwner={isOwner}

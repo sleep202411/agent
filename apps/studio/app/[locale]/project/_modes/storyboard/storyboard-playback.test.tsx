@@ -73,11 +73,11 @@ describe("Storyboard sequence playback", () => {
     expect(container.querySelector("video")!.src).toContain("/b.mp4");
     expect(container.querySelector("video")!.autoplay).toBe(true);
   });
-  it("supports filmstrip selection and previous navigation without autoplay", async () => {
+  it("keeps playback running through filmstrip selection and previous navigation", async () => {
     await render();
     await click("shot:3");
     expect(container.querySelector("video")!.src).toContain("/c.mp4");
-    expect(container.querySelector("video")!.autoplay).toBe(false);
+    expect(container.querySelector("video")!.autoplay).toBe(true);
     await click("previous");
     expect(container.querySelector("video")!.src).toContain("/b.mp4");
   });
@@ -152,7 +152,7 @@ it("plays the preferred still for five seconds, pauses, then advances to video",
     [...container.querySelectorAll("button")].find((b) =>
       ["play", "pause"].includes(b.textContent ?? "")
     )!;
-  await act(async () => control().click());
+  expect(control().textContent).toBe("pause");
   await act(async () => vi.advanceTimersByTime(2000));
   await act(async () => control().click());
   await act(async () => vi.advanceTimersByTime(6000));

@@ -12,7 +12,11 @@ const id = "00000000-0000-4000-8000-000000000001",
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
-  vi.mocked(fetchTaskCommentAccess).mockResolvedValue({ allowed: true, canManage: true });
+  vi.mocked(fetchTaskCommentAccess).mockResolvedValue({
+    allowed: true,
+    canInvite: false,
+    canManage: true,
+  });
   vi.mocked(api.get).mockResolvedValue({ items: [], nextCursor: null });
   vi.mocked(api.post).mockResolvedValue({ id, status: "corrected", correctionId: correction });
 });
@@ -24,7 +28,11 @@ it("uses history/cursor and fresh task-management authorization", async () => {
   );
 });
 it("denies reads and writes without tasks.manage", async () => {
-  vi.mocked(fetchTaskCommentAccess).mockResolvedValue({ allowed: true, canManage: false });
+  vi.mocked(fetchTaskCommentAccess).mockResolvedValue({
+    allowed: true,
+    canInvite: false,
+    canManage: false,
+  });
   await expect(fetchTrustAppeals("crew", "user", 1, false, null, signal)).rejects.toThrow(
     "permission"
   );
@@ -99,7 +107,7 @@ it("rejects a mismatched mutation receipt", async () => {
 it("blocks account changes during authorization before writing", async () => {
   vi.mocked(fetchTaskCommentAccess).mockImplementation(async () => {
     h.generation = 2;
-    return { allowed: true, canManage: true };
+    return { allowed: true, canInvite: false, canManage: true };
   });
   await expect(
     reviewTrustAppeal(

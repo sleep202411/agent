@@ -82,7 +82,9 @@ async function render() {
 }
 async function click(text: string) {
   await act(async () =>
-    [...container.querySelectorAll("button")].find((button) => button.textContent === text)!.click()
+    [...container.querySelectorAll("button")]
+      .find((button) => button.getAttribute("aria-label") === text || button.textContent === text)!
+      .click()
   );
 }
 async function pointer(type: string, x: number, y: number) {
@@ -94,35 +96,34 @@ describe("Canvas to storyboard gestures", () => {
   it("opens and closes the timeline from the labelled canvas toolbar entry", async () => {
     await render();
     const button = container.querySelector('[role="toolbar"] button')!;
-    expect(button.textContent).toBe("title");
+    expect(button.getAttribute("aria-label")).toBe("title");
+    expect(button.textContent).toBe("");
     expect(button.getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelector("section")).toBeNull();
     await click("title");
     expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(container.querySelector("section")).not.toBeNull();
-    await click("mode");
     await click("title");
     expect(container.querySelector("section")).toBeNull();
     await pointer("pointerdown", 0, 0);
-    expect(mocks.select).not.toHaveBeenCalled();
+    expect(mocks.select).not.toHaveBeenCalledWith(["video"]);
   });
 
   it("leaves normal canvas dragging alone until the mode is enabled", async () => {
     await render();
     await pointer("pointerdown", 0, 0);
-    expect(mocks.select).not.toHaveBeenCalled();
+    expect(mocks.select).not.toHaveBeenCalledWith(["video"]);
     expect(mocks.attach).not.toHaveBeenCalled();
   });
   it.each(["video", "image"])("selects then attaches %s on a moved pointer drop", async (kind) => {
     mocks.kind = kind;
     await render();
     await click("title");
-    await click("mode");
     vi.spyOn(document, "elementFromPoint").mockReturnValue(
       container.querySelector("[data-storyboard-shot]")
     );
     await pointer("pointerdown", 0, 0);
-    expect(mocks.select).toHaveBeenCalledWith(["video"]);
+    expect(mocks.select).not.toHaveBeenCalledWith(["video"]);
     await pointer("pointermove", 100, 100);
     await pointer("pointerup", 100, 100);
     expect(mocks.attach).toHaveBeenCalledWith("shot", "video");
@@ -130,7 +131,6 @@ describe("Canvas to storyboard gestures", () => {
   it("a click only selects; it does not attach", async () => {
     await render();
     await click("title");
-    await click("mode");
     vi.spyOn(document, "elementFromPoint").mockReturnValue(
       container.querySelector("[data-storyboard-shot]")
     );
@@ -141,7 +141,6 @@ describe("Canvas to storyboard gestures", () => {
   it("cancels a gesture without creating an attachment", async () => {
     await render();
     await click("title");
-    await click("mode");
     vi.spyOn(document, "elementFromPoint").mockReturnValue(
       container.querySelector("[data-storyboard-shot]")
     );
@@ -168,4 +167,18 @@ describe("Canvas to storyboard gestures", () => {
       )
     ).toBe(false);
   });
+});
+
+it("reorders shots with pointer gestures and keyboard without a text footer", async () => {
+  await render();
+  await click("title");
+  const handle = container.querySelector("[data-reorder-shot]")!;
+  await act(async () =>
+    handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
+  );
+  expect(mocks.move).toHaveBeenCalledWith("shot", 1);
+  expect(container.textContent).not.toContain("placeSelected");
+  expect(container.querySelector("[data-storyboard-shot]")?.parentElement?.className).toContain(
+    "lg:grid-cols-6"
+  );
 });

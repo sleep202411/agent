@@ -5873,5 +5873,12 @@
   "storyboard.cancelled": "Cancelled",
   "storyboard.expired": "Expired",
   "storyboard.image": "Image",
-  "storyboard.video": "Video"
+  "storyboard.video": "Video",
+  "storyboard.newShot": "New Shot",
+  "storyboard.removeShot": "Delete Shot",
+  "storyboard.shotNumber": "Shot {number}",
+  "taskMenu.title": "Task Actions",
+  "taskMenu.edit": "Edit Task",
+  "taskMenu.invite": "Generate Invitation Link",
+  "taskMenu.recruit": "Open Recruitment"
 }
