@@ -53,6 +53,13 @@ function fixture(t, scenario) {
     git("remote", "set-url", "origin", join(root, "missing.git"));
   }
   writeFileSync(join(repo, "apps/server/untracked.txt"), "must not build");
+  if (scenario.startsWith("resume")) {
+    const changed = scenario === "resume-app-change" ? "apps/server/source.txt" : "deploy/recovery.txt";
+    writeFileSync(join(repo, changed), "new change");
+    git("add", changed);
+    git("commit", "-m", "Subsequent change");
+    git("push", "origin", "main");
+  }
   const bin = join(root, "bin");
   mkdirSync(bin);
   const log = join(root, "az.jsonl");
@@ -82,7 +89,10 @@ if (args[1] === 'build') {
   if (args[args.indexOf('--run-id')+1] !== 'own-run-123') process.exit(44);
   const query = args[args.indexOf('--query')+1];
   if (query === 'status') console.log(scenario === 'failed' ? 'Failed' : 'Succeeded');
-  else console.log(scenario === 'missing-image' ? '0' : '1');
+  else if (query.includes('.digest')) console.log('sha256:'+'a'.repeat(64));
+  else console.log(scenario === 'missing-image' || scenario === 'resume-missing-image' ? '0' : '1');
+} else if (args[1] === 'repository' && args[2] === 'show') {
+  console.log('sha256:'+(scenario === 'resume-digest-change' ? 'b' : 'a').repeat(64));
 } else if (args[1] === 'repository' && args[2] === 'show-tags') {
   console.log('true'); // An older build already published this tag.
 } else if (args[1] === 'task' && args[2] === 'list-runs') {
@@ -91,7 +101,7 @@ if (args[1] === 'build') {
 `,
     { mode: 0o755 }
   );
-  const result = spawnSync("/bin/bash", ["deploy/deploy-com-aks.sh", "server"], {
+  const result = spawnSync("/bin/bash", ["deploy/deploy-com-aks.sh", ...(scenario.startsWith("resume") ? ["--resume-build", sha, "server=own-run-123"] : ["server"])], {
     cwd: repo,
     encoding: "utf8",
     timeout: 15000,
@@ -163,5 +173,19 @@ for (const scenario of [
     }
     if (scenario === "edit")
       assert.equal(readFileSync(join(repo, "apps/server/source.txt"), "utf8"), "concurrent edit");
+  });
+}
+
+for (const scenario of ["resume-success", "resume-app-change", "resume-digest-change", "resume-missing-image"]) {
+  test(`verified build recovery: ${scenario}`, (t) => {
+    const { result, calls, sha, values, original } = fixture(t, scenario);
+    assert.equal(calls.filter((c) => c.args[1] === "build").length, 0);
+    if (scenario === "resume-success") {
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.match(readFileSync(values, "utf8"), new RegExp(`tag: ${sha}`));
+    } else {
+      assert.notEqual(result.status, 0, result.stdout + result.stderr);
+      assert.equal(readFileSync(values, "utf8"), original);
+    }
   });
 }

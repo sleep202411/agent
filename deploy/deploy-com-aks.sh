@@ -50,12 +50,31 @@ svc_spec() {
   esac
 }
 
+# Recovery: --resume-build <full-source-sha> <service=acr-run-id>...
+# Reuses explicitly identified successful runs; only deploy/ changes may separate
+# their source from the current checkout. Application changes require a new build.
 # --- args -----------------------------------------------------------------
+RESUME_SHA=""
+RUN_IDS=()
+if [ "${1:-}" = "--resume-build" ]; then
+  [ "$#" -ge 3 ] || { echo "Usage: $0 --resume-build <full-sha> <service=run-id>..." >&2; exit 2; }
+  RESUME_SHA="$2"
+  [[ "$RESUME_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Full source SHA required" >&2; exit 2; }
+  shift 2
+  SERVICES=()
+  for entry in "$@"; do
+    [[ "$entry" =~ ^[a-z-]+=[a-zA-Z0-9_-]+$ ]] || { echo "Expected service=run-id" >&2; exit 2; }
+    SERVICES+=("${entry%%=*}")
+    RUN_IDS+=("${entry#*=}")
+  done
+fi
 if [ "$#" -eq 0 ]; then
   echo "用法: $0 <service...> | all   (服务: web studio admin-ui server agent agent-os)" >&2
   exit 2
 fi
-if [ "$1" = "all" ]; then
+if [ -n "$RESUME_SHA" ]; then
+  : # Services and run IDs were parsed together above.
+elif [ "$1" = "all" ]; then
   SERVICES=(web studio admin-ui server agent)
 else
   SERVICES=("$@")
@@ -75,14 +94,23 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "✋ 工作区有未提交改动——sha tag 必须如实对应已提交代码。先 commit/stash。" >&2
   exit 1
 fi
-SHA="$(git rev-parse HEAD)"
+START_SHA="$(git rev-parse HEAD)"
+SHA="$START_SHA"
+if [ -n "$RESUME_SHA" ]; then
+  git merge-base --is-ancestor "$RESUME_SHA" "$START_SHA" || { echo "Build source must be an ancestor of HEAD" >&2; exit 1; }
+  if ! git diff --quiet "$RESUME_SHA" "$START_SHA" -- . ":(exclude)deploy/**"; then
+    echo "Application/build inputs changed since this build; build the current source instead." >&2
+    exit 1
+  fi
+  SHA="$RESUME_SHA"
+fi
 # Refuse stale/diverged releases before spending time building images.
 fetch_branch() {
   git fetch --no-tags origin "refs/heads/$BRANCH" || return 1
   git rev-parse FETCH_HEAD
 }
 REMOTE_SHA="$(fetch_branch)"
-if ! git merge-base --is-ancestor "$REMOTE_SHA" "$SHA"; then
+if ! git merge-base --is-ancestor "$REMOTE_SHA" "$START_SHA"; then
   echo "✋ origin/$BRANCH has changes missing locally. Integrate them and rerun deployment." >&2
   exit 1
 fi
@@ -218,15 +246,28 @@ bump_tag() {  # $1=镜像名(repository)  $2=新tag
   ' "$VALUES" > "$VALUES.tmp" && mv "$VALUES.tmp" "$VALUES"
 }
 
+index=0
 for s in "${SERVICES[@]}"; do
   IFS=":" read -r image dockerfile _paths <<< "$(svc_spec "$s")"
-  build_one "$s" "$image" "$dockerfile"
+  if [ -n "$RESUME_SHA" ]; then
+    run_id="${RUN_IDS[$index]}"
+    wait_for_acr_image "$run_id" "$image" "$SHA"
+    run_digest="$(az acr task show-run --registry "$ACR" --run-id "$run_id" --query "outputImages[?repository == '$image' && tag == '$SHA'].digest | [0]" -o tsv | tr -d '\r')"
+    current_digest="$(az acr repository show --name "$ACR" --image "$image:$SHA" --query digest -o tsv | tr -d '\r')"
+    if [[ ! "$run_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || [ "$run_digest" != "$current_digest" ]; then
+      echo "ACR image digest no longer matches successful run $run_id; refusing publication." >&2
+      exit 1
+    fi
+  else
+    build_one "$s" "$image" "$dockerfile"
+  fi
+  index=$((index + 1))
 done
 
 # Do not overwrite concurrent edits or publish an old build over newer code.
 CURRENT_REMOTE_SHA="$(fetch_branch)"
 if [ "$CURRENT_REMOTE_SHA" != "$REMOTE_SHA" ] || \
-   [ "$(git rev-parse HEAD)" != "$SHA" ] || \
+   [ "$(git rev-parse HEAD)" != "$START_SHA" ] || \
    [ "$(git rev-parse --abbrev-ref HEAD)" != "$BRANCH" ] || \
    ! git diff --quiet || ! git diff --cached --quiet; then
   echo "✋ Branch or tracked files changed during the build. Changes are preserved; reconcile and rerun deployment." >&2
