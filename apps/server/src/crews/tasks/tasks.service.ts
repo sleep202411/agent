@@ -1,3 +1,4 @@
+import { grantInitialTaskAllowance } from '../compute-requests/initial-allowance';
 import { readProjectBudget } from '../compute-requests/project-budget';
 import { prepareCardApproval, isCardDelivery } from './card-approval';
 import { assignedPaymentTerm } from './task-payment-policy';
@@ -2288,6 +2289,7 @@ export class CrewTasksService {
         },
         include: taskInclude,
       });
+      await grantInitialTaskAllowance(tx, created, uniqueAssigneeIds, userId);
       await provisionTaskDeliveryFolderTx(tx, created, userId);
       await recordTaskContractFile(
         tx,
@@ -2974,6 +2976,14 @@ export class CrewTasksService {
             : {}),
         });
 
+        await grantInitialTaskAllowance(
+          tx,
+          updated,
+          input.computeBudgetPoints !== undefined
+            ? updated.assignees.map((a) => a.userId)
+            : addedAssigneeIds,
+          userId,
+        );
         for (const assigneeId of addedAssigneeIds) {
           await this.notifications.send(
             {

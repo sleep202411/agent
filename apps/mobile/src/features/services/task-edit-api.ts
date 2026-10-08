@@ -7,6 +7,7 @@ import type { TaskDraft, TaskDraftInput } from "./task-draft-session";
 
 const named = z.object({ id: z.string().uuid(), name: z.string() });
 const editTask = taskDetailSchema.extend({
+  computeBudgetPoints: z.number().int().nonnegative().nullable().optional(),
   workflowStateId: z.string().uuid(),
   workflowState: taskWorkflowSchema,
   cycleId: z.string().uuid().nullable(),
@@ -36,6 +37,7 @@ export function taskEditDraft(task: TaskEditSnapshot): Extract<TaskDraft, { kind
     title: task.title,
     description: task.description,
     priority: task.priority,
+    computeBudgetPoints: task.computeBudgetPoints,
     workflowStateId: task.workflowStateId,
     taskKind: task.taskKind,
     startAt: task.startAt,

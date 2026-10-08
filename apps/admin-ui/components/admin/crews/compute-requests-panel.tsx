@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 
 type ComputeRequest = {
+  usage?: { approvedPoints: string; consumedPoints: string; committedPoints: string } | null;
   id: string;
   crewId: string;
   crewName: string;
@@ -142,6 +143,12 @@ export function ComputeRequestsPanel() {
         <p role="status">Loading requests…</p>
       ) : (
         <>
+          {selected?.usage && (
+            <p>
+              Creator task usage — Approved: {selected.usage.approvedPoints} · Spent:{" "}
+              {selected.usage.consumedPoints} · Spent + reserved: {selected.usage.committedPoints}
+            </p>
+          )}
           {selected && (
             <section className="space-y-3 rounded-md border p-4" aria-label="Review request">
               <h2 className="font-semibold">

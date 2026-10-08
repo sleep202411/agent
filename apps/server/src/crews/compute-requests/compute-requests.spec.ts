@@ -319,6 +319,13 @@ describe('task allowance admission', () => {
     };
     return { tx, task, input };
   }
+  it('does not let a task with no allowance spend the whole project budget', async () => {
+    const f = allowance();
+    f.task.computeRequests = [];
+    await expect(
+      requireCrewComputeAllowance(f.tx as never, f.input),
+    ).rejects.toThrow('No task compute allowance');
+  });
   it('counts active holds and rejects spending above the approved cap', async () => {
     const f = allowance();
     await expect(

@@ -12,6 +12,7 @@ export function TaskManagementMenu({
   edit,
   invite,
   recruit,
+  credit,
 }: {
   task: TaskDetail;
   userId: string;
@@ -19,6 +20,7 @@ export function TaskManagementMenu({
   edit(): void;
   invite(): void;
   recruit(): void;
+  credit?: () => void;
 }) {
   const t = useTranslations();
   const [canInvite, setCanInvite] = useState(false);
@@ -40,11 +42,15 @@ export function TaskManagementMenu({
     return () => c.abort();
   }, [task.crewId, userId, generation]);
   if (error) return <ThemedText accessibilityRole="alert">{error}</ThemedText>;
-  if (!allowed || generation !== getAuthGeneration()) return null;
+  if (
+    (!allowed && !(credit && task.assignees.some((a) => a.userId === userId))) ||
+    generation !== getAuthGeneration()
+  )
+    return null;
   const available =
     !task.assignees.length && !["approved", "cancelled", "submitted"].includes(task.status);
   const item = (
-    label: "taskMenu.edit" | "taskMenu.invite" | "taskMenu.recruit",
+    label: "taskMenu.edit" | "taskMenu.invite" | "taskMenu.recruit" | "taskMenu.addCredit",
     action: () => void
   ) => (
     <Pressable
@@ -71,9 +77,10 @@ export function TaskManagementMenu({
       </Pressable>
       {open && (
         <View>
-          {item("taskMenu.edit", edit)}
+          {allowed && item("taskMenu.edit", edit)}
           {canInvite && available && task.isRecruiting === false && item("taskMenu.invite", invite)}
-          {available && item("taskMenu.recruit", recruit)}
+          {allowed && available && item("taskMenu.recruit", recruit)}
+          {credit && item("taskMenu.addCredit", credit)}
         </View>
       )}
     </View>

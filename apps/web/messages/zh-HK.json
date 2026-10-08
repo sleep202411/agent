@@ -5334,7 +5334,10 @@
       "taskActions": "任務操作",
       "editTask": "編輯任務",
       "inviteLink": "產生邀請連結",
-      "openRecruitment": "開放招募"
+      "openRecruitment": "開放招募",
+      "addCredit": "新增算力積分",
+      "initialComputePoints": "每位執行者的初始算力積分",
+      "initialComputeHint": "分配任務時從項目已釋放預算中劃撥。留空表示不預分配；追加積分須經管理員審批。"
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",
@@ -11173,7 +11176,10 @@
     "loadFailed": "財務資料暫時無法載入，請重試。",
     "projectBudgetSummary": "項目預算：{total} 積分 · 已分期發放：{released} 積分（每分鐘 4,462 積分）。",
     "projectBudgetClosed": "項目算力已關閉，等待製片人結算。",
-    "producerDeduction": "FD 管理員批准的製片人扣款：{amount} 分（{currency}）"
+    "producerDeduction": "FD 管理員批准的製片人扣款：{amount} 分（{currency}）",
+    "usageByTask": "每人每任務用量",
+    "committed": "已使用及預留",
+    "creator": "創作者"
   },
   "crewTaskDeliveryLayout": {
     "progress": "任務交付進度",

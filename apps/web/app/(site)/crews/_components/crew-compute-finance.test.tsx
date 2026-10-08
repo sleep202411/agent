@@ -203,3 +203,41 @@ it("shows the project allowance and the disclosed producer adjustment", async ()
   expect(host.textContent).toContain("projectBudgetClosed");
   expect(host.textContent).toContain("Approved CASE-12");
 });
+
+it("shows exact per-person task spending and keeps other task rows out of task view", async () => {
+  h.badData = {
+    isOwner: true,
+    tasks: [],
+    totals: {},
+    consumedPoints: "7",
+    nextCursor: null,
+    items: [],
+    taskUsage: [
+      {
+        taskId: "task",
+        taskTitle: "Selected shot",
+        userId: "alice",
+        approvedPoints: "100",
+        pendingPoints: "20",
+        consumedPoints: "7",
+        committedPoints: "10",
+      },
+      {
+        taskId: "other",
+        taskTitle: "Other shot",
+        userId: "bob",
+        approvedPoints: "50",
+        pendingPoints: "0",
+        consumedPoints: "0",
+        committedPoints: "0",
+      },
+    ],
+  };
+  await act(async () =>
+    root.render(<CrewComputeFinance crewId="crew" crewName="Film" initialTaskId="task" />)
+  );
+  expect(host.textContent).toContain("Selected shot");
+  expect(host.textContent).toContain("alice");
+  expect(host.textContent).not.toContain("Other shot");
+  expect(host.textContent).toContain("committed");
+});

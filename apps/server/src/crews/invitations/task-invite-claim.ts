@@ -1,3 +1,4 @@
+import { grantInitialTaskAllowance } from '../compute-requests/initial-allowance';
 import { TASK_PAYMENT_TERMS } from '@repo/shared/crew';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -110,6 +111,7 @@ export async function claimTaskInviteTarget(
         rewardAmountMinor == null ? null : BigInt(rewardAmountMinor),
     },
   });
+  await grantInitialTaskAllowance(tx, task, [userId], inviterId);
   if (task.canvasProjectId) {
     const existing = await tx.projectMember.findFirst({
       where: { projectId: task.canvasProjectId, userId, removedAt: null },

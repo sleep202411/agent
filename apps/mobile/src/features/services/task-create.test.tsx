@@ -95,7 +95,7 @@ const render = (initialParent?: { id: string; number: number; title: string }) =
 const button = (text: string) =>
   Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text);
 const type = (n: number, text: string) => {
-  const input = host.querySelectorAll("input")[n]!;
+  const input = host.querySelectorAll("input")[n >= 4 ? n + 1 : n]!;
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
   input.dispatchEvent(new Event("input", { bubbles: true }));
 };
@@ -1024,4 +1024,23 @@ it("edits a populated saved task with an unchanged past deadline without creatin
   );
   expect(h.update).not.toHaveBeenCalled();
   expect(done).toHaveBeenCalledWith("saved");
+});
+
+it("sends configured initial compute points and rejects fractional points", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "Task"));
+  const editPoints = (text: string) => {
+    const input = host.querySelectorAll("input")[4]!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  await act(async () => editPoints("1.5"));
+  expect(button("taskCreate.submit")!.disabled).toBe(true);
+  await act(async () => editPoints("500"));
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ computeBudgetPoints: 500 })
+  );
 });

@@ -34,6 +34,7 @@ export const taskCreateInput = z
     requiredSkills: requiredSkillsSchema.optional(),
     positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     taskKind: taskKindSchema.nullable().optional(),
+    computeBudgetPoints: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
     estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
     revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
     cycleId: z.string().uuid().nullable().optional(),

@@ -5884,5 +5884,9 @@
   "taskReview.cardApproval": "抽卡任务付款须经FD3或以上成员验收。项目没有FD3或以上成员且只有一名已分配的抽卡师时，须由指定的项目制作负责人验收。",
   "crewComputeFinance.projectBudgetSummary": "项目预算：{total} 积分 · 已分期发放：{released} 积分（每分钟 4,462 积分）。",
   "crewComputeFinance.projectBudgetClosed": "项目算力已关闭，等待制片人结算。",
-  "crewComputeFinance.producerDeduction": "FD 管理员批准的制片人扣款：{amount} 分（{currency}）"
+  "crewComputeFinance.producerDeduction": "FD 管理员批准的制片人扣款：{amount} 分（{currency}）",
+  "taskMenu.addCredit": "添加算力积分",
+  "taskMenu.initialComputePoints": "每位执行者的初始算力积分",
+  "taskMenu.initialComputeHint": "分配任务时从项目已释放预算中划拨。留空表示不预分配；追加积分须经管理员审批。",
+  "crewComputeFinance.committed": "已使用及预留"
 }

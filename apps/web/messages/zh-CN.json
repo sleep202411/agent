@@ -5334,7 +5334,10 @@
       "taskActions": "任务操作",
       "editTask": "编辑任务",
       "inviteLink": "生成邀请链接",
-      "openRecruitment": "开放招募"
+      "openRecruitment": "开放招募",
+      "addCredit": "添加算力积分",
+      "initialComputePoints": "每位执行者的初始算力积分",
+      "initialComputeHint": "分配任务时从项目已释放预算中划拨。留空表示不预分配；追加积分须经管理员审批。"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",
@@ -11173,7 +11176,10 @@
     "loadFailed": "财务数据暂时无法加载，请重试。",
     "projectBudgetSummary": "项目预算：{total} 积分 · 已分期发放：{released} 积分（每分钟 4,462 积分）。",
     "projectBudgetClosed": "项目算力已关闭，等待制片人结算。",
-    "producerDeduction": "FD 管理员批准的制片人扣款：{amount} 分（{currency}）"
+    "producerDeduction": "FD 管理员批准的制片人扣款：{amount} 分（{currency}）",
+    "usageByTask": "每人每任务用量",
+    "committed": "已使用及预留",
+    "creator": "创作者"
   },
   "crewTaskDeliveryLayout": {
     "progress": "任务交付进度",

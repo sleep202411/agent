@@ -15,7 +15,13 @@ import {
   type ComputeInput,
 } from "./crew-compute-api";
 import { formatFinanceMoney } from "./crew-finance-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  initialTaskId?: string;
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+};
 export function CrewCompute(props: Props) {
   const t = useTranslations();
   const [revision, setRevision] = useState(0);
@@ -118,6 +124,23 @@ function Panel(props: Props & { onSaved: () => void }) {
             )
           </ThemedText>
           <ThemedText>{t("crewComputeFinance.equivalent")}</ThemedText>
+          {page.taskUsage
+            ?.filter((row) => !props.initialTaskId || row.taskId === props.initialTaskId)
+            .map((row) => (
+              <View key={`${row.taskId}:${row.userId}`}>
+                <ThemedText>
+                  {row.taskTitle} · {row.userId}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.approvedTotal")}: {row.approvedPoints} ·{" "}
+                  {t("crewComputeFinance.pending")}: {row.pendingPoints}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.consumed")}: {row.consumedPoints} ·{" "}
+                  {t("crewComputeFinance.committed")}: {row.committedPoints}
+                </ThemedText>
+              </View>
+            ))}
           <RequestForm {...props} tasks={page.tasks} />
           {!page.items.length && <ThemedText>{t("crewComputeFinance.empty")}</ThemedText>}
           {page.items.map((row) => (
@@ -166,7 +189,7 @@ function RequestForm(props: Props & { tasks: ComputePage["tasks"]; onSaved: () =
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.crewId, true);
-  const [taskId, setTaskId] = useState(""),
+  const [taskId, setTaskId] = useState(props.initialTaskId ?? ""),
     [points, setPoints] = useState(""),
     [reason, setReason] = useState(""),
     [error, setError] = useState<string>(),

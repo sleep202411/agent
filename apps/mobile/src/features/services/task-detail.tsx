@@ -1,3 +1,4 @@
+import { CrewCompute } from "./crew-compute";
 import { TaskEdit } from "./task-edit";
 import { TaskManagementMenu } from "./task-management-menu";
 import { PositionCreate } from "./position-create";
@@ -113,6 +114,7 @@ function TaskContent({
 }) {
   const t = useTranslations(),
     locale = useLocale();
+  const [creditOpen, setCreditOpen] = useState(false);
   const [editing, setEditing] = useState(initialAction === "edit");
   const [managing, setManaging] = useState(initialAction === "edit");
   const [inviting, setInviting] = useState(initialAction === "invite");
@@ -173,6 +175,16 @@ function TaskContent({
   const displays = useUserDisplays(String(generation), data?.assignees.map((a) => a.userId) ?? []);
   const date = (value: string | null) =>
     value ? new Date(value).toLocaleString(locale) : t("thread.taskUnset");
+  if (creditOpen && data)
+    return (
+      <CrewCompute
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        initialTaskId={taskId}
+        onClose={() => setCreditOpen(false)}
+      />
+    );
   if (recruiting && data)
     return (
       <PositionCreate
@@ -249,6 +261,7 @@ function TaskContent({
               }}
               invite={() => setInviting((v) => !v)}
               recruit={() => setRecruiting(true)}
+              credit={() => setCreditOpen(true)}
             />
             {inviting && (
               <TaskInviteLinks

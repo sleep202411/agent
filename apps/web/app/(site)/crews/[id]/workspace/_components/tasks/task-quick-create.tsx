@@ -1,4 +1,5 @@
 "use client";
+import { Input } from "@/components/ui/input";
 import { TaskPaymentHelp } from "../../../../_components/task-payment-help";
 import {
   CURRENT_TASK_PAYMENT_TERMS,
@@ -148,6 +149,9 @@ export function TaskQuickCreate({
   const [episodeId, setEpisodeId] = useState<string | null>(
     initialInput?.episodeId ?? presetEpisodeId ?? null
   );
+  const [computePoints, setComputePoints] = useState(
+    initialInput?.computeBudgetPoints?.toString() ?? ""
+  );
   const [estimatePoints, setEstimatePoints] = useState(
     initialInput?.estimatePoints?.toString() ?? ""
   );
@@ -189,6 +193,7 @@ export function TaskQuickCreate({
     setLabelIds(initialInput?.labelIds ?? []);
     setCycleId(initialInput ? (initialInput.cycleId ?? "") : null);
     setEpisodeId(initialInput?.episodeId ?? presetEpisodeId ?? null);
+    setComputePoints(initialInput?.computeBudgetPoints?.toString() ?? "");
     setEstimatePoints(initialInput?.estimatePoints?.toString() ?? "");
     setRewardUsd(
       initialInput?.rewardUsdMinor == null ? "" : String(initialInput.rewardUsdMinor / 100)
@@ -308,6 +313,7 @@ export function TaskQuickCreate({
     setLabelIds([]);
     setCycleId(null);
     setEpisodeId(presetEpisodeId ?? null);
+    setComputePoints("");
     setEstimatePoints("");
     setDueDate("");
     setDraft(null);
@@ -405,6 +411,13 @@ export function TaskQuickCreate({
       return;
     }
     if (
+      computePoints !== "" &&
+      (!/^\d+$/.test(computePoints) || Number(computePoints) > 2_000_000_000)
+    ) {
+      toast.error(projectT("workbench.invalidPoints"));
+      return;
+    }
+    if (
       estimatePoints !== "" &&
       (!Number.isInteger(Number(estimatePoints)) ||
         Number(estimatePoints) < 0 ||
@@ -454,6 +467,11 @@ export function TaskQuickCreate({
         rewardCurrency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
         rewardUsdMinor: rewardUsd === "" ? null : Math.round(Number(rewardUsd) * 100),
         profitShareBps: profitShare === "" ? null : Math.round(Number(profitShare) * 100),
+        ...(computePoints !== ""
+          ? { computeBudgetPoints: Number(computePoints) }
+          : initialInput?.computeBudgetPoints != null
+            ? { computeBudgetPoints: null }
+            : {}),
         estimatePoints: estimatePoints === "" ? null : Number(estimatePoints),
         revisionLimit: draft?.revisionLimit ?? initialInput?.revisionLimit ?? null,
         cycleId: resolvedCycleId || null,
@@ -729,6 +747,20 @@ export function TaskQuickCreate({
             </div>
           </div>
 
+          <label className="block text-sm">
+            {projectT("workbench.initialComputePoints")}
+            <Input
+              type="number"
+              min={0}
+              max={2_000_000_000}
+              step={1}
+              value={computePoints}
+              onChange={(e) => setComputePoints(e.target.value)}
+            />
+            <span className="text-xs text-muted-foreground">
+              {projectT("workbench.initialComputeHint")}
+            </span>
+          </label>
           <section className="text-xs text-muted-foreground">
             <div className="mt-2 max-w-sm">
               <SelectChip

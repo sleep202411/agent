@@ -1,4 +1,5 @@
 "use client";
+import { CrewComputeFinance } from "@/app/(site)/crews/_components/crew-compute-finance";
 import { CREW_CURRENCY } from "@/src/lib/crew-money";
 import { missingTaskFields } from "./task-required-fields";
 
@@ -119,6 +120,7 @@ function TaskCreationSession({
     user!.id,
     crewId
   );
+  const [creditTaskId, setCreditTaskId] = useState<string | null>(null);
   const [productionOpen, setProductionOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
@@ -562,74 +564,85 @@ function TaskCreationSession({
                                       </button>
                                     ) : null}
                                   </div>
-                                  {draft.taskId && canManageTasks && (
-                                    <div className="absolute right-2 top-2 z-20">
-                                      <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                          <button
-                                            type="button"
-                                            className="rounded p-2 hover:bg-white/10"
-                                            aria-label={t("taskActions")}
-                                          >
-                                            <IconDots className="size-4" />
-                                          </button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-56">
-                                          {onEditTask && (
-                                            <DropdownMenuItem
-                                              onSelect={() => onEditTask(draft.taskId!)}
+                                  {draft.taskId &&
+                                    (canManageTasks ||
+                                      savedTasks.some(
+                                        (task) =>
+                                          task.id === draft.taskId &&
+                                          task.assignees.some((a) => a.userId === user!.id)
+                                      )) && (
+                                      <div className="absolute right-2 top-2 z-20">
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <button
+                                              type="button"
+                                              className="rounded p-2 hover:bg-white/10"
+                                              aria-label={t("taskActions")}
                                             >
-                                              {t("editTask")}
-                                            </DropdownMenuItem>
-                                          )}
-                                          {onInviteTask && (
+                                              <IconDots className="size-4" />
+                                            </button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end" className="w-56">
+                                            {canManageTasks && onEditTask && (
+                                              <DropdownMenuItem
+                                                onSelect={() => onEditTask(draft.taskId!)}
+                                              >
+                                                {t("editTask")}
+                                              </DropdownMenuItem>
+                                            )}
+                                            {canManageTasks && onInviteTask && (
+                                              <DropdownMenuItem
+                                                disabled={
+                                                  !savedTasks.some(
+                                                    (task) =>
+                                                      task.id === draft.taskId &&
+                                                      !task.assignees.length &&
+                                                      !task.isRecruiting &&
+                                                      ![
+                                                        "approved",
+                                                        "cancelled",
+                                                        "submitted",
+                                                      ].includes(task.status)
+                                                  )
+                                                }
+                                                onSelect={() => {
+                                                  const task = savedTasks.find(
+                                                    (item) => item.id === draft.taskId
+                                                  );
+                                                  if (task) onInviteTask(task);
+                                                }}
+                                              >
+                                                {t("inviteLink")}
+                                              </DropdownMenuItem>
+                                            )}
+                                            {canManageTasks && onPublishTask && (
+                                              <DropdownMenuItem
+                                                disabled={
+                                                  !savedTasks.some(
+                                                    (task) =>
+                                                      task.id === draft.taskId &&
+                                                      !task.assignees.length &&
+                                                      ![
+                                                        "approved",
+                                                        "cancelled",
+                                                        "submitted",
+                                                      ].includes(task.status)
+                                                  )
+                                                }
+                                                onSelect={() => onPublishTask(draft.taskId!)}
+                                              >
+                                                {t("openRecruitment")}
+                                              </DropdownMenuItem>
+                                            )}
                                             <DropdownMenuItem
-                                              disabled={
-                                                !savedTasks.some(
-                                                  (task) =>
-                                                    task.id === draft.taskId &&
-                                                    !task.assignees.length &&
-                                                    !task.isRecruiting &&
-                                                    ![
-                                                      "approved",
-                                                      "cancelled",
-                                                      "submitted",
-                                                    ].includes(task.status)
-                                                )
-                                              }
-                                              onSelect={() => {
-                                                const task = savedTasks.find(
-                                                  (item) => item.id === draft.taskId
-                                                );
-                                                if (task) onInviteTask(task);
-                                              }}
+                                              onSelect={() => setCreditTaskId(draft.taskId!)}
                                             >
-                                              {t("inviteLink")}
+                                              {t("addCredit")}
                                             </DropdownMenuItem>
-                                          )}
-                                          {onPublishTask && (
-                                            <DropdownMenuItem
-                                              disabled={
-                                                !savedTasks.some(
-                                                  (task) =>
-                                                    task.id === draft.taskId &&
-                                                    !task.assignees.length &&
-                                                    ![
-                                                      "approved",
-                                                      "cancelled",
-                                                      "submitted",
-                                                    ].includes(task.status)
-                                                )
-                                              }
-                                              onSelect={() => onPublishTask(draft.taskId!)}
-                                            >
-                                              {t("openRecruitment")}
-                                            </DropdownMenuItem>
-                                          )}
-                                        </DropdownMenuContent>
-                                      </DropdownMenu>
-                                    </div>
-                                  )}
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      </div>
+                                    )}
                                   <button
                                     type="button"
                                     className="mt-3 flex cursor-pointer items-start gap-2 break-words text-left text-sm font-medium after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-white/40 disabled:cursor-default disabled:after:hidden"
@@ -763,6 +776,28 @@ function TaskCreationSession({
                 </div>
               </section>
             }
+            <Dialog
+              open={creditTaskId !== null && active}
+              onOpenChange={(value) => {
+                if (!value) setCreditTaskId(null);
+              }}
+            >
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{t("addCredit")}</DialogTitle>
+                </DialogHeader>
+                <DialogBody>
+                  {creditTaskId && (
+                    <CrewComputeFinance
+                      key={creditTaskId}
+                      crewId={crewId}
+                      crewName={crewName}
+                      initialTaskId={creditTaskId}
+                    />
+                  )}
+                </DialogBody>
+              </DialogContent>
+            </Dialog>
             <Dialog open={productionOpen && active} onOpenChange={setProductionOpen}>
               <DialogContent className="bg-[#090a0c] sm:max-w-lg" aria-describedby={undefined}>
                 <DialogHeader>

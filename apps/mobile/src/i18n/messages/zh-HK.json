@@ -5884,5 +5884,9 @@
   "taskReview.cardApproval": "抽卡任務付款須經FD3或以上成員驗收。項目沒有FD3或以上成員且只有一名已分配的抽卡師時，須由指定的項目製作負責人驗收。",
   "crewComputeFinance.projectBudgetSummary": "項目預算：{total} 積分 · 已分期發放：{released} 積分（每分鐘 4,462 積分）。",
   "crewComputeFinance.projectBudgetClosed": "項目算力已關閉，等待製片人結算。",
-  "crewComputeFinance.producerDeduction": "FD 管理員批准的製片人扣款：{amount} 分（{currency}）"
+  "crewComputeFinance.producerDeduction": "FD 管理員批准的製片人扣款：{amount} 分（{currency}）",
+  "taskMenu.addCredit": "新增算力積分",
+  "taskMenu.initialComputePoints": "每位執行者的初始算力積分",
+  "taskMenu.initialComputeHint": "分配任務時從項目已釋放預算中劃撥。留空表示不預分配；追加積分須經管理員審批。",
+  "crewComputeFinance.committed": "已使用及預留"
 }

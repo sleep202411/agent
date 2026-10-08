@@ -5,6 +5,11 @@ import { TaskDetail } from "./task-detail";
 import { api } from "@/lib/api-client";
 import { TaskCenter } from "./task-center";
 import type { TaskSubmitSession } from "./use-task-submit-session";
+vi.mock("./crew-compute", () => ({
+  CrewCompute: ({ initialTaskId }: { initialTaskId: string }) => (
+    <div>compute for {initialTaskId}</div>
+  ),
+}));
 vi.mock("./task-edit", () => ({
   TaskEdit: ({ onClose }: { onClose(): void }) => (
     <div>
@@ -14,7 +19,12 @@ vi.mock("./task-edit", () => ({
 }));
 vi.mock("./position-create", () => ({ PositionCreate: () => null }));
 vi.mock("./task-management-menu", () => ({
-  TaskManagementMenu: ({ edit }: { edit(): void }) => <button onClick={edit}>taskMenu.edit</button>,
+  TaskManagementMenu: ({ edit, credit }: { edit(): void; credit(): void }) => (
+    <>
+      <button onClick={edit}>taskMenu.edit</button>
+      <button onClick={credit}>taskMenu.addCredit</button>
+    </>
+  ),
 }));
 vi.mock("@/config", () => ({ appEnv: { siteRegion: "global" } }));
 vi.mock("./task-delivery-management", () => ({
@@ -611,4 +621,7 @@ it("opens the simple task view by default and exposes management through Edit", 
   expect(host.textContent).not.toContain("workflow editor");
   await act(async () => click("taskMenu.edit"));
   expect(host.textContent).toContain("populated task form");
+  await act(async () => click("close form"));
+  await act(async () => click("taskMenu.addCredit"));
+  expect(host.textContent).toContain("compute for");
 });

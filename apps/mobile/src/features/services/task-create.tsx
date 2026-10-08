@@ -188,6 +188,9 @@ function Editor({
   );
   const [reward, setReward] = useState(compensationText(initial?.rewardUsdMinor));
   const [share, setShare] = useState(compensationText(initial?.profitShareBps));
+  const [computePoints, setComputePoints] = useState(
+    initial?.computeBudgetPoints?.toString() ?? ""
+  );
   const [estimate, setEstimate] = useState(
     initial?.estimatePoints == null ? "" : String(initial.estimatePoints)
   );
@@ -223,6 +226,7 @@ function Editor({
       positionRole: positionRole.trim() || null,
       priority,
       taskKind,
+      computeBudgetPoints: parsePlanningNumber(computePoints, 2_000_000_000),
       estimatePoints: parsePlanningNumber(estimate, 1_000_000),
       paymentTerms,
       rewardCurrency: appEnv.siteRegion === "cn" ? "CNY" : "USD",
@@ -328,6 +332,16 @@ function Editor({
         style={{ color: theme.text, padding: 12 }}
       />
 
+      <ThemedText>{t("taskMenu.initialComputePoints")}</ThemedText>
+      <TextInput
+        accessibilityLabel={t("taskMenu.initialComputePoints")}
+        value={computePoints}
+        editable={!locked}
+        style={{ color: theme.text, padding: 12 }}
+        onChangeText={setComputePoints}
+        keyboardType="number-pad"
+      />
+      <ThemedText>{t("taskMenu.initialComputeHint")}</ThemedText>
       <ThemedText>{t("taskPlanning.estimate")}</ThemedText>
       <TextInput
         accessibilityLabel={t("taskPlanning.estimate")}

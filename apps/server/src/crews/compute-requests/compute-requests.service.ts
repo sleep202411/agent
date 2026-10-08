@@ -1,3 +1,4 @@
+import { taskComputeUsage } from './task-compute-usage';
 import { readProjectBudget, releasedPoints } from './project-budget';
 import {
   BadRequestException,
@@ -34,7 +35,10 @@ export class CrewComputeRequestsService {
     const where = { crewId, ...(access.isOwner ? {} : { userId }) };
     const projects = await this.prisma.crewTask.findMany({
       where: { crewId, canvasProjectId: { not: null } },
-      select: { canvasProjectId: true },
+      select: {
+        canvasProjectId: true,
+        crew: { select: { workspaceId: true } },
+      },
     });
     const [requests, totals, tasks, usage] = await Promise.all([
       this.prisma.crewComputeRequest.findMany({
@@ -57,6 +61,14 @@ export class CrewComputeRequestsService {
         where: {
           currency: 'compute_point',
           entryType: 'settle',
+          account: {
+            ownerType: 'workspace',
+            ownerId: {
+              in: projects.flatMap((task) =>
+                task.crew.workspaceId ? [task.crew.workspaceId] : [],
+              ),
+            },
+          },
           transaction: {
             sourceType: 'ai_job',
             ...(access.isOwner ? {} : { actorUserId: userId }),
@@ -85,6 +97,12 @@ export class CrewComputeRequestsService {
                 : null,
           }
         : null,
+      taskUsage: await taskComputeUsage(
+        this.prisma,
+        crewId,
+        userId,
+        access.isOwner,
+      ),
       isOwner: access.isOwner,
       tasks,
       items: requests.slice(0, 50),
@@ -135,6 +153,10 @@ export class CrewComputeRequestsService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
+      if (input.requestKey === input.taskId)
+        throw new BadRequestException(
+          'This request key is reserved for the initial allowance.',
+        );
       const task = await this.eligible(tx, crewId, input.taskId, userId);
       const existing = await tx.crewComputeRequest.findUnique({
         where: {
@@ -212,10 +234,22 @@ export class CrewComputeRequestsService {
       take: 51,
       include: { task: { select: { crew: { select: { name: true } } } } },
     });
+    const usage = (
+      await Promise.all(
+        [...new Set(rows.map((row) => row.crewId))].map((crewId) =>
+          taskComputeUsage(this.prisma, crewId, admin.id, true),
+        ),
+      )
+    ).flat();
     return {
-      items: rows
-        .slice(0, 50)
-        .map(({ task, ...row }) => ({ ...row, crewName: task.crew.name })),
+      items: rows.slice(0, 50).map(({ task, ...row }) => ({
+        ...row,
+        crewName: task.crew.name,
+        usage:
+          usage.find(
+            (item) => item.taskId === row.taskId && item.userId === row.userId,
+          ) ?? null,
+      })),
       nextCursor: rows.length > 50 ? rows[49].id : null,
     };
   }

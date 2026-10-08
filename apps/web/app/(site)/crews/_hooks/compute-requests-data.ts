@@ -20,6 +20,19 @@ export const computeRequestsPageSchema = z.object({
     })
     .nullable()
     .optional(),
+  taskUsage: z
+    .array(
+      z.object({
+        taskId: z.string(),
+        taskTitle: z.string(),
+        userId: z.string(),
+        approvedPoints: z.string().regex(/^\d+$/),
+        pendingPoints: z.string().regex(/^\d+$/),
+        consumedPoints: z.string().regex(/^\d+$/),
+        committedPoints: z.string().regex(/^-?\d+$/),
+      })
+    )
+    .optional(),
   isOwner: z.boolean(),
   consumedPoints: z.string().regex(/^\d+$/),
   totals: z.object({

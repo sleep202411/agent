@@ -3,7 +3,7 @@ import { ConflictException, ForbiddenException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 /** Called while holding the payer wallet lock, before writing a new job hold.
- * Existing tasks retain their billing policy until this request flow is used.
+ * Task generation requires an initial or Admin-approved allowance.
  * Holds consume allowance immediately; releases restore it, settlement retains it.
  */
 export async function requireCrewComputeAllowance(
@@ -42,7 +42,7 @@ export async function requireCrewComputeAllowance(
   const requests = task.computeRequests.filter(
     (request) => request.userId === input.userId,
   );
-  if (!requests.length) return false;
+
   if (task.deletedAt || task.crew.deletedAt || !task.assignees.length)
     throw new ForbiddenException(
       'An active assignment is required to spend this task’s compute allowance',
@@ -50,6 +50,10 @@ export async function requireCrewComputeAllowance(
   if (task.crew.workspaceId !== input.workspaceId)
     throw new ConflictException(
       'Task compute points must use the linked Crew workspace',
+    );
+  if (!requests.length)
+    throw new ConflictException(
+      'No task compute allowance is allocated. Use Add Credit to request Admin approval.',
     );
   const allowance = requests.reduce(
     (sum, request) =>
@@ -74,6 +78,7 @@ export async function requireCrewComputeAllowance(
   const usage = await tx.walletLedgerEntry.aggregate({
     where: {
       currency: 'compute_point',
+      account: { ownerType: 'workspace', ownerId: input.workspaceId! },
       transaction: {
         sourceType: 'ai_job',
         sourceId: {

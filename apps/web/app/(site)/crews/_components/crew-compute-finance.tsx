@@ -12,7 +12,15 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { useComputeRequests, useComputeRequestAction } from "../_hooks/use-compute-requests";
 import { displayNameOf, useUserDisplays } from "../_hooks/use-users";
 
-export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewName: string }) {
+export function CrewComputeFinance({
+  crewId,
+  crewName,
+  initialTaskId,
+}: {
+  initialTaskId?: string;
+  crewId: string;
+  crewName: string;
+}) {
   const t = useTranslations("crewComputeFinance");
   const locale = useLocale();
   const [cursor, setCursor] = useState<string>();
@@ -20,16 +28,17 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
   const action = useComputeRequestAction(crewId);
   const parsed = useMemo(() => computeRequestsPageSchema.safeParse(query.data), [query.data]);
   const data = parsed.success ? parsed.data : undefined;
-  const [taskId, setTaskId] = useState("");
+  const [taskId, setTaskId] = useState(initialTaskId ?? "");
   const [points, setPoints] = useState("");
   const [reason, setReason] = useState("");
   const requestKey = useRef<string | undefined>(undefined);
-  const displays = useUserDisplays(
-    data?.items.flatMap((row) => [
+  const displays = useUserDisplays([
+    ...(data?.taskUsage?.map((row) => row.userId) ?? []),
+    ...(data?.items.flatMap((row) => [
       row.userId,
       ...(row.decidedByUserId ? [row.decidedByUserId] : []),
-    ]) ?? []
-  );
+    ]) ?? []),
+  ]);
   const number = Number(points);
   const canRequest =
     taskId &&
@@ -104,6 +113,44 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
               <p className="text-xs text-muted-foreground">{t("equivalent")}</p>
             </div>
           </div>
+          {data.taskUsage && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <caption className="text-left">{t("usageByTask")}</caption>
+                <thead>
+                  <tr>
+                    {["task", "creator", "approvedTotal", "pending", "consumed", "committed"].map(
+                      (k) => (
+                        <th key={k} className="p-2">
+                          {t(k)}
+                        </th>
+                      )
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.taskUsage
+                    .filter((row) => !initialTaskId || row.taskId === initialTaskId)
+                    .map((row) => (
+                      <tr key={`${row.taskId}:${row.userId}`}>
+                        <td className="p-2">{row.taskTitle}</td>
+                        <td className="p-2">{displayNameOf(row.userId, displays)}</td>
+                        {[
+                          row.approvedPoints,
+                          row.pendingPoints,
+                          row.consumedPoints,
+                          row.committedPoints,
+                        ].map((v, i) => (
+                          <td key={i} className="p-2">
+                            {BigInt(v).toLocaleString(locale)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {data.tasks.length ? (
             <form
               className="grid gap-3 sm:grid-cols-2"

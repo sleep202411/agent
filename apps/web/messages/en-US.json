@@ -5334,7 +5334,10 @@
       "taskActions": "Task Actions",
       "editTask": "Edit Task",
       "inviteLink": "Generate Invitation Link",
-      "openRecruitment": "Open Recruitment"
+      "openRecruitment": "Open Recruitment",
+      "addCredit": "Add Credit",
+      "initialComputePoints": "Initial compute points per assignee",
+      "initialComputeHint": "Allocated from the released project budget on assignment. Leave blank for no initial allowance. Further points require Admin approval."
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
@@ -11173,7 +11176,10 @@
     "loadFailed": "Finance data could not be loaded. Please retry.",
     "projectBudgetSummary": "Project budget: {total} points · Released: {released} points (4,462 points/minute).",
     "projectBudgetClosed": "Project compute is closed for producer settlement.",
-    "producerDeduction": "FD Admin-approved producer deduction: {amount} minor units ({currency})"
+    "producerDeduction": "FD Admin-approved producer deduction: {amount} minor units ({currency})",
+    "usageByTask": "Usage by task and person",
+    "committed": "Spent + reserved",
+    "creator": "Creator"
   },
   "crewTaskDeliveryLayout": {
     "progress": "Task Delivery Progress",
