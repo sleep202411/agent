@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import {
   StudioDocumentStatus,
   StudioDocumentType,
@@ -37,11 +37,23 @@ export class CrewCollaborationService {
    * project is the shared production trunk; each CrewTask gets its own project
    * and canvas copied from the trunk's current materialized state.
    */
-  async ensureCrewSpace(crewId: string) {
+  async ensureCrewSpace(crewId: string, requestingOwnerId?: string) {
     const space = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:collaboration:${crewId}`})::bigint)
       `;
+      if (requestingOwnerId) {
+        await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR UPDATE`;
+        const access = await this.authorization.resolve(
+          crewId,
+          requestingOwnerId,
+          tx,
+        );
+        if (!access?.isOwner)
+          throw new ForbiddenException(
+            'Only the project owner can set up compute',
+          );
+      }
       return this.ensureCrewSpaceTx(crewId, tx);
     });
     await this.wallets.ensureDefaultAccounts(

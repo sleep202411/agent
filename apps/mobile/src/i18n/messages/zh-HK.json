@@ -1879,12 +1879,12 @@
   "crewComputeFinance.points": "積分",
   "crewComputeFinance.equivalent": "按標準積分價格折算的美元價值，並非實際支付金額。",
   "crewComputeFinance.task": "任務",
-  "crewComputeFinance.selectTask": "選擇您領取的任務",
+  "crewComputeFinance.selectTask": "選擇任務",
   "crewComputeFinance.reason": "申請理由",
   "crewComputeFinance.request": "申請積分",
-  "crewComputeFinance.noTasks": "您需要先領取任務，才能申請積分。",
+  "crewComputeFinance.noTasks": "請先為任務分配創作者，再申請積分。",
   "crewComputeFinance.decisionNote": "審批說明（選填）",
-  "crewComputeFinance.applicant": "申請人",
+  "crewComputeFinance.applicant": "接收者",
   "crewComputeFinance.status": "狀態",
   "crewComputeFinance.decision": "審批",
   "crewComputeFinance.approved": "已批准",
@@ -5888,5 +5888,11 @@
   "taskMenu.addCredit": "新增算力積分",
   "taskMenu.initialComputePoints": "每位執行者的初始算力積分",
   "taskMenu.initialComputeHint": "分配任務時從項目已釋放預算中劃撥。留空表示不預分配；追加積分須經管理員審批。",
-  "crewComputeFinance.committed": "已使用及預留"
+  "crewComputeFinance.committed": "已使用及預留",
+  "crewComputeFinance.ownerOnly": "只有項目擁有者可以申請算力積分。請聯絡項目擁有者關聯工作空間，並為你的任務申請積分。",
+  "crewComputeFinance.workspaceRequired": "請先設定項目算力工作空間，再申請積分。此操作建立或重用記帳工作空間，不會充值積分或移動 Studio 項目。",
+  "crewComputeFinance.selectCreator": "選擇已分配的創作者",
+  "crewComputeFinance.setupWorkspace": "設定算力工作空間",
+  "crewInvite.goVerification": "前往認證",
+  "levelApplication.academy": "請前往 Academy 學院取得認證"
 }

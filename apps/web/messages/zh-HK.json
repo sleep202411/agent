@@ -2342,7 +2342,8 @@
         "submit": "提交申請",
         "submitting": "提交中…",
         "submitSuccess": "申請已提交",
-        "submitFailed": "提交失敗"
+        "submitFailed": "提交失敗",
+        "academy": "請前往 Academy 學院取得認證"
       }
     },
     "certificates": {
@@ -10018,7 +10019,8 @@
     "taskSkills": "所需技能",
     "taskUnspecified": "未設定",
     "taskAcceptExplanation": "接受後，你將加入此劇組並領取該任務。",
-    "acceptTask": "接受任務"
+    "acceptTask": "接受任務",
+    "goVerification": "前往認證"
   },
   "tv": {
     "checkingAccess": "正在查詢劇集權限…",
@@ -11166,12 +11168,12 @@
     "points": "積分",
     "equivalent": "按標準積分價格折算的美元價值，並非實際支付金額。",
     "task": "任務",
-    "selectTask": "選擇您領取的任務",
+    "selectTask": "選擇任務",
     "reason": "申請理由",
     "request": "申請積分",
-    "noTasks": "您需要先領取任務，才能申請積分。",
+    "noTasks": "請先為任務分配創作者，再申請積分。",
     "decisionNote": "審批說明（選填）",
-    "applicant": "申請人",
+    "applicant": "接收者",
     "status": "狀態",
     "decision": "審批",
     "approved": "已批准",
@@ -11187,7 +11189,11 @@
     "producerDeduction": "FD 管理員批准的製片人扣款：{amount} 分（{currency}）",
     "usageByTask": "每人每任務用量",
     "committed": "已使用及預留",
-    "creator": "創作者"
+    "creator": "創作者",
+    "ownerOnly": "只有項目擁有者可以申請算力積分。請聯絡項目擁有者關聯工作空間，並為你的任務申請積分。",
+    "workspaceRequired": "請先設定項目算力工作空間，再申請積分。此操作建立或重用記帳工作空間，不會充值積分或移動 Studio 項目。",
+    "selectCreator": "選擇已分配的創作者",
+    "setupWorkspace": "設定算力工作空間"
   },
   "crewTaskDeliveryLayout": {
     "progress": "任務交付進度",

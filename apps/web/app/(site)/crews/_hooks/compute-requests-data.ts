@@ -33,6 +33,7 @@ export const computeRequestsPageSchema = z.object({
       })
     )
     .optional(),
+  workspaceLinked: z.boolean().optional(),
   isOwner: z.boolean(),
   consumedPoints: z.string().regex(/^\d+$/),
   totals: z.object({
@@ -40,7 +41,14 @@ export const computeRequestsPageSchema = z.object({
     approved: z.number().int().nonnegative().optional(),
     rejected: z.number().int().nonnegative().optional(),
   }),
-  tasks: z.array(z.object({ id: z.string().min(1), title: z.string(), number: z.number().int() })),
+  tasks: z.array(
+    z.object({
+      id: z.string().min(1),
+      title: z.string(),
+      number: z.number().int(),
+      assignees: z.array(z.object({ userId: z.string() })).optional(),
+    })
+  ),
   nextCursor: z.string().nullable(),
   items: z.array(
     z.object({

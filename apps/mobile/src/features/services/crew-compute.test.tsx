@@ -89,10 +89,10 @@ const row = {
   requestKey: id,
 };
 const page = {
-  isOwner: false,
+  isOwner: true,
   consumedPoints: "9007199254740993",
   totals: { pending: 20 },
-  tasks: [{ id, title: "Scene", number: 1 }],
+  tasks: [{ id, title: "Scene", number: 1, assignees: [{ userId: "user" }] }],
   items: [row],
   nextCursor: null,
 };
@@ -201,4 +201,11 @@ it("shows the same project allowance and producer adjustment on mobile", async (
   expect(host.textContent).toContain("crewComputeFinance.projectBudgetSummary");
   expect(host.textContent).toContain("crewComputeFinance.projectBudgetClosed");
   expect(host.textContent).toContain("Approved CASE-12");
+});
+
+it("keeps creator usage visible but restricts requests to the owner", async () => {
+  h.detail.mockResolvedValue({ ...page, isOwner: false });
+  await render();
+  expect(host.textContent).toContain("crewComputeFinance.ownerOnly");
+  expect(button("crewComputeFinance.request")).toBeUndefined();
 });

@@ -9,7 +9,7 @@ const h = vi.hoisted(() => ({
   failed: false,
   pending: false,
   refetch: vi.fn(),
-  tasks: [] as { id: string; title: string; number: number }[],
+  tasks: [] as { id: string; title: string; number: number; assignees?: { userId: string }[] }[],
   mutate: vi.fn(),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
@@ -21,6 +21,7 @@ vi.mock("../_hooks/use-users", () => ({
   displayNameOf: (id: string) => id,
 }));
 vi.mock("../_hooks/use-compute-requests", () => ({
+  useComputeWorkspaceSetup: () => ({ mutate: vi.fn(), isPending: false }),
   useComputeRequestAction: () => ({ mutate: h.mutate, isPending: false }),
   useComputeRequests: () => ({
     isPending: h.pending,
@@ -81,7 +82,7 @@ async function render() {
 it("shows recorded consumption and requires an assigned task", async () => {
   await render();
   expect(host.textContent).toContain("USD 1.23");
-  expect(host.textContent).toContain("noTasks");
+  expect(host.textContent).toContain("ownerOnly");
   expect(host.querySelector("form")).toBeNull();
   expect(
     [...host.querySelectorAll("button")].some((button) => button.textContent === "approve")
@@ -97,7 +98,8 @@ it("does not expose approval or rejection even to the Crew owner", async () => {
   expect(h.mutate).not.toHaveBeenCalled();
 });
 it("keeps the submit key stable across retries until details change", async () => {
-  h.tasks = [{ id: "task", title: "Shot one", number: 1 }];
+  h.owner = true;
+  h.tasks = [{ id: "task", title: "Shot one", number: 1, assignees: [{ userId: "creator" }] }];
   await render();
   await act(async () => {
     [...host.querySelectorAll("button")]
@@ -139,7 +141,7 @@ it("can open Finance when randomUUID is unavailable in the browser", async () =>
   Object.defineProperty(crypto, "randomUUID", { configurable: true, value: undefined });
   try {
     await render();
-    expect(host.textContent).toContain("noTasks");
+    expect(host.textContent).toContain("ownerOnly");
   } finally {
     if (original) Object.defineProperty(crypto, "randomUUID", original);
     else delete (crypto as Partial<Crypto>).randomUUID;
@@ -240,4 +242,11 @@ it("shows exact per-person task spending and keeps other task rows out of task v
   expect(host.textContent).toContain("alice");
   expect(host.textContent).not.toContain("Other shot");
   expect(host.textContent).toContain("committed");
+});
+
+it("shows owner guidance instead of a request form to creators", async () => {
+  h.tasks = [{ id: "task", title: "Shot", number: 1, assignees: [{ userId: "creator" }] }];
+  await render();
+  expect(host.textContent).toContain("ownerOnly");
+  expect(host.querySelector("form")).toBeNull();
 });

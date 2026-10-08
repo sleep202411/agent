@@ -2342,7 +2342,8 @@
         "submit": "提交申请",
         "submitting": "提交中…",
         "submitSuccess": "申请已提交",
-        "submitFailed": "提交失败"
+        "submitFailed": "提交失败",
+        "academy": "请前往 Academy 学院获取认证"
       }
     },
     "certificates": {
@@ -10018,7 +10019,8 @@
     "taskSkills": "所需技能",
     "taskUnspecified": "未设置",
     "taskAcceptExplanation": "接受后，你将加入此剧组并领取该任务。",
-    "acceptTask": "接受任务"
+    "acceptTask": "接受任务",
+    "goVerification": "前往认证"
   },
   "tv": {
     "checkingAccess": "正在查询剧集权限…",
@@ -11166,12 +11168,12 @@
     "points": "积分",
     "equivalent": "按标准积分价格折算的美元价值，并非实际支付金额。",
     "task": "任务",
-    "selectTask": "选择您领取的任务",
+    "selectTask": "选择任务",
     "reason": "申请理由",
     "request": "申请积分",
-    "noTasks": "您需要先领取任务，才能申请积分。",
+    "noTasks": "请先为任务分配创作者，再申请积分。",
     "decisionNote": "审批说明（选填）",
-    "applicant": "申请人",
+    "applicant": "接收者",
     "status": "状态",
     "decision": "审批",
     "approved": "已批准",
@@ -11187,7 +11189,11 @@
     "producerDeduction": "FD 管理员批准的制片人扣款：{amount} 分（{currency}）",
     "usageByTask": "每人每任务用量",
     "committed": "已使用及预留",
-    "creator": "创作者"
+    "creator": "创作者",
+    "ownerOnly": "只有项目所有者可以申请算力积分。请联系项目所有者关联工作空间，并为你的任务申请积分。",
+    "workspaceRequired": "请先设置项目算力工作空间，再申请积分。此操作创建或复用记账工作空间，不会充值积分或移动 Studio 项目。",
+    "selectCreator": "选择已分配的创作者",
+    "setupWorkspace": "设置算力工作空间"
   },
   "crewTaskDeliveryLayout": {
     "progress": "任务交付进度",

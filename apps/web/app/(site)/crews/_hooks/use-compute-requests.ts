@@ -38,8 +38,22 @@ export function useComputeRequests(crewId: string, cursor?: string) {
 export function useComputeRequestAction(crewId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (action: { taskId: string; points: number; reason: string; requestKey: string }) =>
-      crewApi.post(`/crews/${encodeURIComponent(crewId)}/compute-requests`, { body: action }),
+    mutationFn: (action: {
+      beneficiaryUserId?: string;
+      taskId: string;
+      points: number;
+      reason: string;
+      requestKey: string;
+    }) => crewApi.post(`/crews/${encodeURIComponent(crewId)}/compute-requests`, { body: action }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["crew-compute-requests", crewId] }),
+  });
+}
+
+export function useComputeWorkspaceSetup(crewId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      crewApi.post(`/crews/${encodeURIComponent(crewId)}/compute-requests/workspace`, { body: {} }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["crew-compute-requests", crewId] }),
   });
 }

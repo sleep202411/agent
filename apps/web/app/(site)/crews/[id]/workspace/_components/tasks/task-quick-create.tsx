@@ -841,6 +841,7 @@ export function TaskQuickCreate({
             {(
               [
                 { key: "rewardUsd", value: rewardUsd, set: setRewardUsd, max: 1_000_000_000 },
+                { key: "profitShare", value: profitShare, set: setProfitShare, max: 100 },
               ] as const
             ).map((field) => (
               <label key={field.key} className="block min-w-0 space-y-2">
@@ -849,38 +850,38 @@ export function TaskQuickCreate({
                   {projectT(`workbench.${field.key}`, {
                     currency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
                   })}{" "}
-                  <span aria-hidden="true" className="text-primary">
-                    *
-                  </span>
+                  {field.key === "rewardUsd" && (
+                    <span aria-hidden="true" className="text-primary">
+                      *
+                    </span>
+                  )}
                 </span>
                 <input
-                  type="number"
-                  min={0}
-                  max={field.max}
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[0-9]+([.][0-9]{1,2})?"
                   value={field.value}
                   aria-label={projectT(`workbench.${field.key}`, {
                     currency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
                   })}
-                  aria-required="true"
+                  aria-required={field.key === "rewardUsd"}
                   className="h-10 data-[size=default]:h-10 w-full min-w-0 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-white outline-none focus:border-primary"
                   onChange={(event) => {
                     draftRevision.current += 1;
-                    field.set(event.target.value);
+                    const value = event.target.value;
+                    if (/^\d*(?:\.\d{0,2})?$/.test(value) && Number(value || 0) <= field.max)
+                      field.set(value);
                   }}
                 />
               </label>
             ))}
             <div className="min-w-0 space-y-2">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {paymentT("label")}
-                <TaskPaymentHelp />
-              </div>
               <SelectChip
                 icon={<IconCoin className="size-3.5" />}
                 value={paymentTerms}
                 label={paymentT(paymentTerms)}
                 ariaLabel={paymentT("label")}
+                help={<TaskPaymentHelp />}
                 onChange={(value) => {
                   const term = TASK_PAYMENT_TERMS.find((item) => item === value);
                   if (term) {
@@ -976,7 +977,9 @@ function SelectChip({
   onChange,
   options,
   required,
+  help,
 }: {
+  help?: React.ReactNode;
   required?: boolean;
   icon: React.ReactNode;
   value: string;
@@ -990,6 +993,7 @@ function SelectChip({
       <p className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
         {icon}
         {ariaLabel}
+        {help}
         {required ? (
           <span aria-hidden="true" className="text-primary">
             *

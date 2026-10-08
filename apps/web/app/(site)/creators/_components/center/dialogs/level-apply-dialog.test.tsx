@@ -74,6 +74,9 @@ it.each(["resolve", "reject", "current"] as const)(
     };
     try {
       await render(true);
+      expect(document.querySelector('a[href="/en-US/courses"]')?.textContent).toBe(
+        "levels.apply.academy"
+      );
       const input = document.querySelector('input[type="file"]')!;
       Object.defineProperty(input, "files", {
         value: [new File(["evidence"], "old.pdf", { type: "application/pdf" })],

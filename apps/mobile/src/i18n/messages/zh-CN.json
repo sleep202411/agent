@@ -1879,12 +1879,12 @@
   "crewComputeFinance.points": "积分",
   "crewComputeFinance.equivalent": "按标准积分价格折算的美元价值，并非实际支付金额。",
   "crewComputeFinance.task": "任务",
-  "crewComputeFinance.selectTask": "选择您领取的任务",
+  "crewComputeFinance.selectTask": "选择任务",
   "crewComputeFinance.reason": "申请理由",
   "crewComputeFinance.request": "申请积分",
-  "crewComputeFinance.noTasks": "您需要先领取任务，才能申请积分。",
+  "crewComputeFinance.noTasks": "请先为任务分配创作者，再申请积分。",
   "crewComputeFinance.decisionNote": "审批说明（选填）",
-  "crewComputeFinance.applicant": "申请人",
+  "crewComputeFinance.applicant": "接收者",
   "crewComputeFinance.status": "状态",
   "crewComputeFinance.decision": "审批",
   "crewComputeFinance.approved": "已批准",
@@ -5888,5 +5888,11 @@
   "taskMenu.addCredit": "添加算力积分",
   "taskMenu.initialComputePoints": "每位执行者的初始算力积分",
   "taskMenu.initialComputeHint": "分配任务时从项目已释放预算中划拨。留空表示不预分配；追加积分须经管理员审批。",
-  "crewComputeFinance.committed": "已使用及预留"
+  "crewComputeFinance.committed": "已使用及预留",
+  "crewComputeFinance.ownerOnly": "只有项目所有者可以申请算力积分。请联系项目所有者关联工作空间，并为你的任务申请积分。",
+  "crewComputeFinance.workspaceRequired": "请先设置项目算力工作空间，再申请积分。此操作创建或复用记账工作空间，不会充值积分或移动 Studio 项目。",
+  "crewComputeFinance.selectCreator": "选择已分配的创作者",
+  "crewComputeFinance.setupWorkspace": "设置算力工作空间",
+  "crewInvite.goVerification": "前往认证",
+  "levelApplication.academy": "请前往 Academy 学院获取认证"
 }

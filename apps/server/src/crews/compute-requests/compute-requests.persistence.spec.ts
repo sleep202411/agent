@@ -30,6 +30,15 @@ describe('Crew compute request migration', () => {
         'utf8',
       ),
     );
+    await db.exec(
+      readFileSync(
+        resolve(
+          __dirname,
+          '../../../prisma/migrations/20261009001000_compute_request_owner/migration.sql',
+        ),
+        'utf8',
+      ),
+    );
   }, 30000);
   afterAll(async () => {
     await db.close();
@@ -42,6 +51,19 @@ describe('Crew compute request migration', () => {
       `INSERT INTO crew_compute_requests (id, crew_id, task_id, workspace_id, user_id, task_title, points, reason, request_key) VALUES ('01994bd8-0000-7000-8000-000000000002', $1, $2, '01994bd8-0000-7000-8000-000000000003', 'creator', 'Shot', $3, 'Render', '01994bd8-0000-7000-8000-000000000004')`,
       [crew, task, points],
     );
+  it('stores the requesting owner separately from the allowance recipient', async () => {
+    await insert();
+    await db.exec(
+      "UPDATE crew_compute_requests SET requested_by_user_id = 'owner'",
+    );
+    expect(
+      (
+        await db.query(
+          'SELECT user_id, requested_by_user_id FROM crew_compute_requests',
+        )
+      ).rows,
+    ).toEqual([{ user_id: 'creator', requested_by_user_id: 'owner' }]);
+  });
   it('rejects cross-Crew task references and invalid amounts', async () => {
     await expect(insert('other')).rejects.toThrow();
     await expect(insert('crew', 0)).rejects.toThrow();

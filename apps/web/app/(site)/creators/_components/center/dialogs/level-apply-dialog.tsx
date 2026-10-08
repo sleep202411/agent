@@ -265,6 +265,12 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
           <DialogDescription className="text-xs leading-relaxed">
             {levelLocked ? t("levels.apply.descriptionAiProducer") : t("levels.apply.description")}
           </DialogDescription>
+          <a
+            className="text-sm text-primary underline underline-offset-4"
+            href={`/${locale}/courses`}
+          >
+            {t("levels.apply.academy")}
+          </a>
         </DialogHeader>
 
         <DialogBody className="space-y-5 px-5 py-4">

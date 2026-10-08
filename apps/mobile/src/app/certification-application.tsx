@@ -26,6 +26,13 @@ export default function CertificationApplicationScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <Stack.Screen options={{ headerShown: true, title: t("levelApplication.title") }} />
+      <Pressable
+        accessibilityRole="link"
+        style={{ padding: 16 }}
+        onPress={() => router.push(toHref("/courses"))}
+      >
+        <ThemedText>{t("levelApplication.academy")}</ThemedText>
+      </Pressable>
       {!valid ? (
         <ThemedText accessibilityRole="alert">{t("levelApplication.unavailable")}</ThemedText>
       ) : auth.status === "hydrating" ? (

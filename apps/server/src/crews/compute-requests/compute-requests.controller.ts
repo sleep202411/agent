@@ -14,6 +14,7 @@ import { parseIdParam } from '../../common/params';
 import { CrewComputeRequestsService } from './compute-requests.service';
 export const CreateComputeRequestSchema = z.object({
   taskId: z.string().uuid(),
+  beneficiaryUserId: z.string().trim().min(1).max(64).optional(),
   points: z.number().int().positive().max(2_000_000_000),
   reason: z.string().trim().min(1).max(2000),
   requestKey: z.string().uuid(),
@@ -38,6 +39,16 @@ export class CrewComputeRequestsController {
       parseIdParam(crewId, 'crewId'),
       user.userId,
       query.cursor,
+    );
+  }
+  @Post('workspace')
+  setupWorkspace(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.requests.setupWorkspace(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
     );
   }
   @Post()

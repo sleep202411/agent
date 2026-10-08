@@ -714,7 +714,7 @@ it("creates exact CNY and percentage terms and rejects excessive precision", asy
     type(6, "123.45");
     type(7, "1.255");
   });
-  expect(button("taskCreate.submit")!.disabled).toBe(true);
+  expect(host.querySelectorAll("input")[7]!.value).not.toBe("1.255");
   await act(async () => type(7, "1.25"));
   await act(async () => button("taskCreate.submit")!.click());
   expect(h.update).toHaveBeenCalledWith(

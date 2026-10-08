@@ -216,3 +216,25 @@ describe('CrewCollaborationService.removeCrewMemberAccess', () => {
     expect(t.db.workspaceMember.updateMany).not.toHaveBeenCalled();
   });
 });
+
+describe('explicit compute workspace setup', () => {
+  it('rechecks ownership inside the transaction before provisioning', async () => {
+    const tx = { $executeRaw: jest.fn(), $queryRaw: jest.fn() };
+    const prisma = { $transaction: (fn: (tx: unknown) => unknown) => fn(tx) };
+    const wallets = { ensureDefaultAccounts: jest.fn() };
+    const authorization = {
+      resolve: jest.fn().mockResolvedValue({ isOwner: false }),
+    };
+    const service = new CrewCollaborationService(
+      prisma as never,
+      wallets as never,
+      authorization as never,
+    );
+    const provision = jest.spyOn(service, 'ensureCrewSpaceTx');
+    await expect(
+      service.ensureCrewSpace('crew', 'former-owner'),
+    ).rejects.toThrow('Only the project owner');
+    expect(provision).not.toHaveBeenCalled();
+    expect(wallets.ensureDefaultAccounts).not.toHaveBeenCalled();
+  });
+});
