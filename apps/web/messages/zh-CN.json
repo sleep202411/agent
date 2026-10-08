@@ -5626,6 +5626,8 @@
     }
   },
   "crewTasks": {
+    "saving": "正在保存…",
+    "saved": "任务已更新",
     "crewLabel": "剧组",
     "briefTooLong": "任务说明不能超过 10,000 个字符。",
     "deletion": {

@@ -5626,6 +5626,8 @@
     }
   },
   "crewTasks": {
+    "saving": "正在儲存…",
+    "saved": "任務已更新",
     "crewLabel": "劇組",
     "briefTooLong": "任務說明不能超過 10,000 個字元。",
     "deletion": {

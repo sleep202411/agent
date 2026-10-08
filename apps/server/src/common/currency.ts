@@ -8,7 +8,7 @@
  * service layer:
  *
  *   cn cell  → CNY only (PIPL + business policy)
- *   com cell → 9-currency whitelist (USD default, +EUR/GBP/JPY/...)
+ *   com cell → USD only
  *
  * Add a currency: extend the whitelist below AND every DB CHECK that
  * references currency codes. The DB is the last line of defense;
@@ -34,19 +34,7 @@ export const ALL_CURRENCIES = [
 export type CurrencyCode = (typeof ALL_CURRENCIES)[number];
 
 const CN_CURRENCIES: readonly CurrencyCode[] = ['CNY'];
-const COM_CURRENCIES: readonly CurrencyCode[] = [
-  'USD',
-  'EUR',
-  'GBP',
-  'JPY',
-  'HKD',
-  'AUD',
-  'CAD',
-  'SGD',
-  // CNY also allowed on com — a Hong Kong / Singapore studio might
-  // hire mainland creators and pay in CNY through escrow.
-  'CNY',
-];
+const COM_CURRENCIES: readonly CurrencyCode[] = ['USD'];
 
 /** Allowed currencies for the cell this server is running in. */
 export function allowedCurrencies(): readonly CurrencyCode[] {

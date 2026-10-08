@@ -171,6 +171,13 @@ vi.mock("./production-project-update", () => ({
   ProductionActivityComposer: () => null,
   ProductionActivityEntry: () => null,
 }));
+vi.mock("./task-edit-form", () => ({
+  TaskEditForm: ({ onOpenChange }: { onOpenChange: (open: boolean) => void }) => (
+    <div data-editing="true">
+      Full task form<button onClick={() => onOpenChange(false)}>Close task</button>
+    </div>
+  ),
+}));
 vi.mock("./task-issue-detail", () => ({
   TaskIssueDetail: function Detail({
     onClose,

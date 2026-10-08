@@ -57,6 +57,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { TaskIssueDetail } from "./task-issue-detail";
 import { TaskProjectView } from "./task-project-views";
 import { ProjectSettingsDialog } from "./task-project-settings";
+import { TaskEditForm } from "./task-edit-form";
 import { TaskQuickCreate } from "./task-quick-create";
 import { TaskDeliveryProgress } from "./task-delivery-progress";
 import { SubmitTaskDialog } from "./task-dialogs";
@@ -776,8 +777,24 @@ function LinearTaskSession({
         />
       ) : null}
 
+      {selectedTaskId && !submissionOpen && isOwner && taskQuery.data && !taskQuery.isError ? (
+        <TaskEditForm
+          key={`${viewerUserId}:${selectedTaskId}`}
+          task={taskQuery.data}
+          crewName={crewName}
+          members={members}
+          project={project}
+          activeView={effectiveView}
+          onOpenChange={(open) => {
+            if (!open) selectTask(null);
+          }}
+        />
+      ) : null}
       <Sheet
-        open={Boolean(selectedTaskId)}
+        open={
+          Boolean(selectedTaskId) &&
+          !(!submissionOpen && isOwner && taskQuery.data && !taskQuery.isError)
+        }
         onOpenChange={(open) => {
           if (!open) selectTask(null);
         }}

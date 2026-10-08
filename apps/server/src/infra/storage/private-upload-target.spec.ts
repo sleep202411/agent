@@ -8,6 +8,9 @@ const settings = {
   AZURE_BLOB_CONTAINER: 'public-media',
   AZURE_BLOB_PRIVATE_CONTAINER: 'private-receipts',
   OSS_BUCKET: 'public-media',
+  OSS_INTERNAL: 'false',
+  OSS_PUBLIC_BASE_URL: '',
+  OSS_PRIVATE_PUBLIC_BASE_URL: '',
   OSS_PRIVATE_BUCKET: 'private-receipts',
   OSS_REGION: 'oss-cn-hangzhou',
   OSS_ACCESS_KEY_ID: 'fixture-key',
@@ -76,4 +79,31 @@ describe('private upload destinations', () => {
       );
     },
   );
+  it('CN internal storage signs private uploads and downloads against a separate public CNAME', async () => {
+    process.env.OSS_INTERNAL = 'true';
+    process.env.OSS_PUBLIC_BASE_URL = 'https://media.example.invalid';
+    process.env.OSS_PRIVATE_PUBLIC_BASE_URL = 'https://private.example.invalid';
+    const service = new AliyunOssStorageService();
+    const upload = await service.createPrivateUploadUrl(input);
+    expect(new URL(upload.url).hostname).toBe('private.example.invalid');
+    expect(upload.bucket).toBe('private-receipts');
+    const read = await service.createReadUrl({
+      bucket: upload.bucket,
+      storageKey: input.storageKey,
+      region: 'cn-hangzhou',
+    });
+    expect(new URL(read.url).hostname).toBe('private.example.invalid');
+    expect(new URL((await service.createUploadUrl(input)).url).hostname).toBe(
+      'media.example.invalid',
+    );
+  });
+  it('never signs private CN uploads through the public media CNAME or internal endpoint', async () => {
+    process.env.OSS_INTERNAL = 'true';
+    process.env.OSS_PUBLIC_BASE_URL = 'https://media.example.invalid';
+    await expect(
+      new AliyunOssStorageService().createPrivateUploadUrl(input),
+    ).rejects.toThrow('OSS_PRIVATE_PUBLIC_BASE_URL');
+    process.env.OSS_PRIVATE_PUBLIC_BASE_URL = process.env.OSS_PUBLIC_BASE_URL;
+    expect(() => new AliyunOssStorageService()).toThrow('separate HTTPS');
+  });
 });

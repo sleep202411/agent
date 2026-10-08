@@ -97,6 +97,7 @@ export class AliyunOssStorageService extends OutputStorageService {
    *  reachable from the browser. Null when unset (.com/local, where the default
    *  endpoint is already public). See browserSigner(). */
   private readonly publicSigner: OSS | null;
+  private readonly privateSigner: OSS | null;
 
   constructor() {
     super();
@@ -133,6 +134,7 @@ export class AliyunOssStorageService extends OutputStorageService {
       );
       this.client = null;
       this.publicSigner = null;
+      this.privateSigner = null;
       return;
     }
     this.client = new OSS({
@@ -164,6 +166,44 @@ export class AliyunOssStorageService extends OutputStorageService {
           authorizationV4: true,
         })
       : null;
+    const privateEndpoint = (
+      process.env.OSS_PRIVATE_PUBLIC_BASE_URL ?? ''
+    ).trim();
+    if (privateEndpoint) {
+      requirePrivateUploadTarget(
+        'OSS_PRIVATE_BUCKET',
+        this.privateUploadTarget,
+        [bucket, ''],
+      );
+      const url = new URL(privateEndpoint);
+      if (
+        url.protocol !== 'https:' ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        url.pathname !== '/' ||
+        (publicEndpoint && url.host === new URL(publicEndpoint).host)
+      ) {
+        throw new ServiceUnavailableException(
+          'OSS_PRIVATE_PUBLIC_BASE_URL must be a separate HTTPS OSS bucket CNAME origin',
+        );
+      }
+    }
+    this.privateSigner =
+      privateEndpoint && this.privateUploadTarget
+        ? new OSS({
+            region: rawRegion,
+            bucket: this.privateUploadTarget,
+            accessKeyId,
+            accessKeySecret,
+            endpoint: privateEndpoint,
+            cname: true,
+            secure: true,
+            internal: false,
+            authorizationV4: true,
+          })
+        : null;
   }
 
   objectLocation(key: string) {
@@ -579,6 +619,17 @@ export class AliyunOssStorageService extends OutputStorageService {
    *  one. Off-internal (local/.com) the default client's host is already
    *  public, so fall through to the per-bucket internal client. */
   private browserSigner(bucket: string, region?: string | null): OSS {
+    if (
+      bucket === this.privateUploadTarget &&
+      (!region || region.replace(/^oss-/, '') === this.region)
+    ) {
+      if (this.privateSigner) return this.privateSigner;
+      if (ossUseInternalEndpoint()) {
+        throw new ServiceUnavailableException(
+          'OSS_PRIVATE_PUBLIC_BASE_URL is required for the private bucket when OSS_INTERNAL=true',
+        );
+      }
+    }
     if (this.publicSigner && bucket === this.bucket) {
       return this.publicSigner;
     }

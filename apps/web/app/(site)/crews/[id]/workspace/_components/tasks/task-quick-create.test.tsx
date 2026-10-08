@@ -183,6 +183,7 @@ function renderQuickCreate(
   context: {
     open?: boolean;
     initialInput?: CreateCrewTaskInput;
+    onSave?: (input: CreateCrewTaskInput) => Promise<CrewTaskDTO>;
     crewId?: string;
     crewName?: string;
     parentId?: string;
@@ -1172,4 +1173,43 @@ it("does not inherit an approved workflow filter when creating a new task", () =
     "Already approved"
   );
   expect(document.querySelector('[aria-label="Planning State"]')).not.toBeNull();
+});
+
+it("edits an existing task in the populated creation form without creating another task", async () => {
+  const save = vi.fn().mockResolvedValue({ id: "existing" });
+  const close = vi.fn();
+  renderQuickCreate(vi.fn(), close, project, {
+    onSave: save,
+    initialInput: {
+      title: "Existing script",
+      description: "Original requirements",
+      priority: "high",
+      taskKind: "script",
+      workflowStateId: "workflow-open",
+      dueAt: "2020-01-01T15:59:59.000Z",
+      rewardUsdMinor: 3025,
+      paymentTerms: "monthly",
+      assignees: [{ userId: "member-1", currency: "USD", rewardAmountMinor: 500 }],
+    },
+  });
+  const areas = document.querySelectorAll("textarea");
+  expect(areas[0]?.value).toBe("Existing script");
+  expect(areas[1]?.value).toBe("Original requirements");
+  await act(async () => {
+    fill(areas[1]!, "Updated requirements");
+    const button = Array.from(document.querySelectorAll("button")).find((b) =>
+      /save changes/i.test(b.textContent ?? "")
+    )!;
+    button.click();
+  });
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      description: "Updated requirements",
+      rewardUsdMinor: 3025,
+      paymentTerms: "monthly",
+      dueAt: "2020-01-01T15:59:59.000Z",
+    })
+  );
+  expect(state.create).not.toHaveBeenCalled();
+  expect(close).toHaveBeenCalledWith(false);
 });

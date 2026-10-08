@@ -217,3 +217,24 @@ clear a different operator's lock. After recovery, CN can use the normal
 before the first acquisition cannot leave an active remote build, but an
 uncertain acquisition response still requires inspection. In-flight invocations
 keep their frozen tooling; pull and start a new invocation to use this protocol.
+
+## Private storyboard export storage
+
+Merged MP4 exports are rendered by the Server FFmpeg worker and stored privately.
+A successful Server rollout does not establish export acceptance. Configure a
+separate private destination before testing export:
+
+- CN: `OSS_PRIVATE_BUCKET`, with the Server identity granted read/write/delete
+  access. With `OSS_INTERNAL=true`, also set `OSS_PRIVATE_PUBLIC_BASE_URL` to a
+  separate HTTPS OSS CNAME bound directly to that private bucket, with a valid
+  certificate. It must not be the public media bucket's CNAME or a read CDN.
+  Signed uploads and downloads use this endpoint; bucket contents stay private.
+- .com: `S3_PRIVATE_BUCKET`, distinct from the public media and quarantine buckets,
+  with the Server R2 identity granted read/write/delete access.
+
+Persist these settings through the region's existing Helm/secret configuration.
+Do not substitute public media/auth/build buckets, publish private outputs, or
+assume that bucket discovery proves a destination is suitable. After provisioning,
+verify signed upload, authorized download and cleanup, then export a storyboard
+with both images and videos and play the resulting MP4. No bucket or production
+configuration is provisioned by these code changes.

@@ -37,12 +37,12 @@ export const CURRENT_CELL: Cell = (() => {
 // disabled options pre-emptively (e.g. CN cell shows CNY only, no
 // "currency picker" rendered at all).
 
-import { ALL_CURRENCIES, type CurrencyCode } from "@repo/shared/crew";
+import { type CurrencyCode } from "@repo/shared/crew";
 
 /** Whitelist of currencies allowed in the current cell. */
 export function allowedCurrenciesForCell(): readonly CurrencyCode[] {
   if (CURRENT_CELL === "cn") return ["CNY"];
-  return ALL_CURRENCIES;
+  return ["USD"];
 }
 
 /** Default currency to pre-fill new forms with. */

@@ -4,7 +4,6 @@ import { useServiceEditorState, useClearServiceEditorDraft } from "./service-edi
 import { useState } from "react";
 import { Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { SERVICE_TIERS } from "@repo/shared/creator-service";
-import { ALL_CURRENCIES } from "@repo/shared/crew";
 import { useAuth } from "@/auth";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { appEnv } from "@/config";
@@ -152,7 +151,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
               ))}
               <ThemedText>{t("servicePackages.currency")}</ThemedText>
               <ScrollView horizontal>
-                {(appEnv.siteRegion === "cn" ? ["CNY"] : ALL_CURRENCIES).map((currency) => (
+                {(appEnv.siteRegion === "cn" ? ["CNY"] : ["USD"]).map((currency) => (
                   <Pressable
                     key={currency}
                     accessibilityRole="radio"

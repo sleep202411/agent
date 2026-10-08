@@ -77,6 +77,8 @@ interface TaskQuickCreateProps {
   onCreateStaged?: (input: CreateCrewTaskInput) => Promise<CrewTaskDTO>;
   keyboardShortcut?: boolean;
   initialInput?: CreateCrewTaskInput;
+  onSave?: (input: CreateCrewTaskInput) => Promise<CrewTaskDTO>;
+  saving?: boolean;
 }
 
 export function TaskQuickCreate({
@@ -98,6 +100,8 @@ export function TaskQuickCreate({
   onCreateStaged,
   keyboardShortcut = true,
   initialInput,
+  onSave,
+  saving = false,
 }: TaskQuickCreateProps) {
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
@@ -223,9 +227,11 @@ export function TaskQuickCreate({
     () =>
       project.workflowStates.filter(
         (state) =>
-          !state.archived && ["open", "in_progress", "revision_requested"].includes(state.semantic)
+          (onSave && state.id === initialInput?.workflowStateId) ||
+          (!state.archived &&
+            ["open", "in_progress", "revision_requested"].includes(state.semantic))
       ),
-    [project.workflowStates]
+    [project.workflowStates, onSave, initialInput?.workflowStateId]
   );
   const defaultWorkflowStateId = useMemo(() => {
     if (
@@ -247,9 +253,11 @@ export function TaskQuickCreate({
       ""
     );
   }, [activeView.filters.workflowStateIds, presetWorkflowStateId, creationStates]);
-  const resolvedWorkflowStateId = creationStates.some((state) => state.id === workflowStateId)
-    ? workflowStateId!
-    : defaultWorkflowStateId;
+  const resolvedWorkflowStateId =
+    (onSave && workflowStateId === initialInput?.workflowStateId) ||
+    creationStates.some((state) => state.id === workflowStateId)
+      ? workflowStateId!
+      : defaultWorkflowStateId;
   const resolvedCycleId = cycleId ?? defaultCycleId;
 
   useEffect(() => {
@@ -315,6 +323,7 @@ export function TaskQuickCreate({
   const generateDraft = async () => {
     if (
       !open ||
+      saving ||
       contractBusy.current ||
       operationInFlight.current ||
       create.isPending ||
@@ -387,7 +396,11 @@ export function TaskQuickCreate({
       toast.error(t("briefTooLong"));
       return;
     }
-    if (dueDate && new Date(`${dueDate}T23:59:59.999`).getTime() < Date.now()) {
+    if (
+      dueDate &&
+      (!onSave || dueDate !== initialInput?.dueAt?.slice(0, 10)) &&
+      new Date(`${dueDate}T23:59:59.999`).getTime() < Date.now()
+    ) {
       toast.error(projectT("workbench.pastDeadline"));
       return;
     }
@@ -464,10 +477,13 @@ export function TaskQuickCreate({
         setOpen(false);
         return;
       }
-      const task =
-        onStage && onCreateStaged ? await onCreateStaged(input) : await create.mutateAsync(input);
+      const task = onSave
+        ? await onSave(input)
+        : onStage && onCreateStaged
+          ? await onCreateStaged(input)
+          : await create.mutateAsync(input);
       if (session.current !== requestedSession) return;
-      toast.success(t("created"));
+      toast.success(t(onSave ? "saved" : "created"));
       onCreated?.(task);
       if (invite) {
         setOpen(false);
@@ -479,7 +495,7 @@ export function TaskQuickCreate({
         onPublishTask?.(task.id);
         return;
       }
-      if (createMore) {
+      if (createMore && !onSave) {
         reset();
         requestAnimationFrame(() => titleRef.current?.focus());
       } else {
@@ -512,7 +528,7 @@ export function TaskQuickCreate({
         }}
       >
         <DialogTitle className="sr-only">
-          {t(initialInput ? "editStagedTask" : "newIssue")}
+          {t(onSave ? "editTask" : initialInput ? "editStagedTask" : "newIssue")}
         </DialogTitle>
         <DialogDescription className="sr-only">{t("newIssueDescription")}</DialogDescription>
 
@@ -522,7 +538,7 @@ export function TaskQuickCreate({
             <span className="truncate">{projectLabel}</span>
           </span>
           <IconChevronRight className="mx-1 size-3.5 text-[#66666e]" stroke={1.7} />
-          <span>{t(initialInput ? "editStagedTask" : "newIssue")}</span>
+          <span>{t(onSave ? "editTask" : initialInput ? "editStagedTask" : "newIssue")}</span>
           <div className="ml-auto flex items-center gap-1.5">
             <button
               type="button"
@@ -543,7 +559,7 @@ export function TaskQuickCreate({
           </div>
         </div>
 
-        {(onPublishTask || onInviteTask) && (!onStage || onCreateStaged) ? (
+        {!onSave && (onPublishTask || onInviteTask) && (!onStage || onCreateStaged) ? (
           <div className="mx-5 mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2">
             {onInviteTask && (
               <Button
@@ -866,7 +882,7 @@ export function TaskQuickCreate({
         </div>
 
         <footer className="flex min-h-16 shrink-0 items-center justify-end border-t border-white/10 px-5 py-4 sm:px-8">
-          {!onStage ? (
+          {!onStage && !onSave ? (
             <button
               type="button"
               role="switch"
@@ -893,6 +909,7 @@ export function TaskQuickCreate({
           <button
             type="button"
             disabled={
+              saving ||
               contractUploading ||
               !resolvedWorkflowStateId ||
               draftTask.isPending ||
@@ -901,13 +918,17 @@ export function TaskQuickCreate({
             onClick={() => void submit()}
             className="ml-5 inline-flex h-11 min-w-32 items-center justify-center rounded-lg bg-[#E52227] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#c91c21] disabled:cursor-not-allowed disabled:bg-[#34343a] disabled:text-[#777780]"
           >
-            {create.isPending
-              ? t("creating")
-              : onStage
-                ? initialInput
-                  ? t("saveStagedTask")
-                  : projectT("workbench.stage")
-                : t("createTask")}
+            {saving
+              ? t("saving")
+              : onSave
+                ? t("saveChanges")
+                : create.isPending
+                  ? t("creating")
+                  : onStage
+                    ? initialInput
+                      ? t("saveStagedTask")
+                      : projectT("workbench.stage")
+                    : t("createTask")}
           </button>
         </footer>
       </DialogContent>
