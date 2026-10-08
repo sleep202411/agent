@@ -1,3 +1,4 @@
+import { STORY_CHAPTER_NODES_MAX } from '@repo/shared/story-production';
 import {
   ExperienceAppearanceSchema,
   GameUISourceSchema,
@@ -34,11 +35,11 @@ export const STORY_SUMMARY_MAX = 2_000;
 export const STORY_TAG_MAX = 40;
 export const STORY_TAG_COUNT_MAX = 12;
 export const STORY_CHAPTER_COUNT_MAX = 200;
-export const STORY_CHAPTER_NODE_COUNT_MAX = 500;
+export const STORY_CHAPTER_NODE_COUNT_MAX = STORY_CHAPTER_NODES_MAX;
 export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION =
   'story-canvas-layout-v3' as const;
-export const STORY_CANVAS_LAYOUT_NODE_COUNT_MAX = 1_000;
-export const STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX = 1_000_000;
+export const STORY_CANVAS_LAYOUT_NODE_COUNT_MAX = 20_000;
+export const STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX = 10_000_000;
 
 export const StoryProjectStatusSchema = z.enum(['active', 'archived']);
 export type StoryProjectStatus = z.infer<typeof StoryProjectStatusSchema>;
@@ -499,6 +500,18 @@ export const ImportStoryPlotSchema = z
     locale: StoryLocaleSchema,
     mode: z.enum(['append', 'replace']),
     plot: z.unknown(),
+    media: z
+      .array(
+        z
+          .object({
+            nodeId: z.string().min(1).max(64),
+            clipId: z.string().min(1).max(64),
+            mediaAssetId: z.uuid(),
+          })
+          .strict(),
+      )
+      .max(100_000)
+      .optional(),
   })
   .strict()
   .superRefine((value, context) => {

@@ -1,3 +1,7 @@
+import {
+  STORY_AUTHORING_TEXT_MAX,
+  STORY_AUTHORING_DESCRIPTION_MAX,
+} from '@repo/shared/story-production';
 import { z } from 'zod';
 import {
   MAX_STORY_CONDITION_DEPTH,
@@ -72,7 +76,7 @@ export const StoryLocaleSchema = z.string().min(2).max(16);
 /** Mutable-draft text may be empty while the creator is still authoring. */
 export const DraftLocalizedTextSchema = z.record(
   StoryLocaleSchema,
-  z.string().max(4_000),
+  z.string().max(STORY_AUTHORING_TEXT_MAX),
 );
 
 export const MAX_CHARACTER_IMAGES = 6;
@@ -348,7 +352,7 @@ const StoryClipGraphNodeSchema = z
     // these are the human-facing name and description edited in the inspector.
     // Optional so drafts authored before the field parse unchanged.
     name: z.string().trim().max(120).optional(),
-    description: z.string().max(4_000).optional(),
+    description: z.string().max(STORY_AUTHORING_DESCRIPTION_MAX).optional(),
     interactions: z.array(StoryHotspotInteractionSchema).max(100).default([]),
     onEnterEffects: StoryStateEffectsSchema.optional(),
     exit: z.discriminatedUnion('kind', [

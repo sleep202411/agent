@@ -1,5 +1,7 @@
 "use client";
 
+import { STORY_AUTHORING_DESCRIPTION_MAX } from "@repo/shared/story-production";
+
 import { IconArrowRight, IconFlag, IconFocusCentered, IconTrash, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
@@ -272,7 +274,7 @@ function GraphNodeEditor({
           multiline
           value={node.description ?? ""}
           disabled={!canEdit}
-          maxLength={4_000}
+          maxLength={STORY_AUTHORING_DESCRIPTION_MAX}
           aria-label={t("inspector.nodeDescription")}
           placeholder={t("inspector.nodeDescriptionPlaceholder")}
           onValueChange={(description) => onUpdateClipMeta(node.nodeId, { description })}

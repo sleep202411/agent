@@ -1,5 +1,7 @@
 "use client";
 
+import { STORY_AUTHORING_PROMPT_MAX } from "@repo/shared/story-production";
+
 import { useStoryOperationScope } from "../_lib/use-story-operation-scope";
 import { useAuth } from "@/app/_components/auth-provider";
 
@@ -304,7 +306,7 @@ export function StoryAssetSpecCard({
             value={prompt}
             disabled={busy || !allowEditing}
             required
-            maxLength={12_000}
+            maxLength={STORY_AUTHORING_PROMPT_MAX}
             placeholder={detailT(`imagePromptPlaceholder.${asset.kind}`)}
             onChange={(imagePrompt) => changeValues({ ...values, imagePrompt })}
             mentions={mentions}

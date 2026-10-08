@@ -9,7 +9,7 @@ describe('reconcileStoryTimelinesWithDraft', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: jest.fn().mockResolvedValue(existing),
         update: jest.fn().mockResolvedValue({}),
-        create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn().mockResolvedValue({}),
       },
     } as unknown as Prisma.TransactionClient;
   }
@@ -31,19 +31,21 @@ describe('reconcileStoryTimelinesWithDraft', () => {
       actorUserId: 'user-1',
     });
 
-    expect(tx.storyStoryboardSequence.create).toHaveBeenCalledTimes(2);
-    expect(tx.storyStoryboardSequence.create).toHaveBeenCalledWith({
+    expect(tx.storyStoryboardSequence.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.storyStoryboardSequence.createMany).toHaveBeenCalledWith({
       // Jest's asymmetric matcher is intentionally typed as any.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      data: expect.objectContaining({
-        storyProjectId: 'project-1',
-        storyChapterId: 'chapter-1',
-        plotNodeId: 'clip:one',
-        stableKey: 'clip:one',
-        suggestedDurationMs: 0,
-        durationMs: 0,
-        createdByUserId: 'user-1',
-      }),
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          storyProjectId: 'project-1',
+          storyChapterId: 'chapter-1',
+          plotNodeId: 'clip:one',
+          stableKey: 'clip:one',
+          suggestedDurationMs: 0,
+          durationMs: 0,
+          createdByUserId: 'user-1',
+        }),
+      ]),
     });
   });
 
@@ -74,7 +76,7 @@ describe('reconcileStoryTimelinesWithDraft', () => {
         status: StoryProductionSpecStatus.current,
       },
     });
-    expect(tx.storyStoryboardSequence.create).not.toHaveBeenCalled();
+    expect(tx.storyStoryboardSequence.createMany).not.toHaveBeenCalled();
   });
 
   it('moves the same active timeline when chapter ownership changes', async () => {
@@ -100,7 +102,7 @@ describe('reconcileStoryTimelinesWithDraft', () => {
         status: StoryProductionSpecStatus.current,
       },
     });
-    expect(tx.storyStoryboardSequence.create).not.toHaveBeenCalled();
+    expect(tx.storyStoryboardSequence.createMany).not.toHaveBeenCalled();
   });
 
   it('fails loud when legacy data contains duplicate active timelines', async () => {

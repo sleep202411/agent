@@ -345,6 +345,7 @@ describe("plot JSON import", () => {
     ]);
     expect(clips).toEqual([
       {
+        sourceNodeId: "opening",
         plotNodeId: `import:abc123:opening`,
         durationMs: 6000,
         clips: [
@@ -421,7 +422,7 @@ describe("plot JSON import", () => {
 
   it.each([
     ["null", "$: object"],
-    ["```json\n{}\n```", "$: json"],
+    ["```json\n{}\n```", "$.entryNodeId: id"],
     [JSON.stringify({ ...example(), version: 1 }), "$.version: field"],
     [JSON.stringify({ ...example(), metadata: "must not vanish" }), "$.metadata: field"],
     [JSON.stringify({ ...example(), entryNodeId: "missing" }), "$.entryNodeId: target"],
@@ -555,5 +556,41 @@ describe("plot JSON import", () => {
     expect(InteractiveStoryDraftContentSchema.safeParse(imported.content).success).toBe(true);
     expect(buildStoryCanvasModel(imported.content, "en-US").nodes).toHaveLength(500);
     expect(() => parseStoryPlotImport(" ".repeat(MAX_PLOT_IMPORT_BYTES + 1))).toThrow("size");
+  });
+  it("imports 5,000 connected nodes and long narrative text through the draft and canvas contracts", () => {
+    const plot = parse({
+      entryNodeId: "s0",
+      assets: [],
+      nodes: Array.from({ length: 5_000 }, (_, i) => ({
+        id: `s${i}`,
+        type: "scene",
+        title: `Scene ${i}`,
+        description: i === 0 ? "Long dialogue. ".repeat(6_000) : "",
+        next: i === 4_999 ? null : `s${i + 1}`,
+      })),
+    });
+    const imported = applyStoryPlotImport(empty(), plot, "en-US");
+    expect(
+      createLockableInteractiveStoryDraftContentSchema("en-US").safeParse(imported.content).success
+    ).toBe(true);
+    expect(buildStoryCanvasModel(imported.content, "en-US").nodes).toHaveLength(5_000);
+    expect(() =>
+      parse({
+        ...plot,
+        nodes: [...plot.nodes, { id: "overflow", type: "scene", title: "Overflow", next: null }],
+      })
+    ).toThrow("nodes");
+  });
+  it("accepts a single fenced JSON export and video filenames while rejecting media on image clips", () => {
+    expect(
+      parseStoryPlotImport("```json\n" + JSON.stringify(example()) + "\n```").nodes
+    ).toHaveLength(3);
+    const value = example();
+    Object.assign(value.nodes[0]!.storyboard!.clips[1]!, { videoFile: "开场.mp4" });
+    expect(parse(value).nodes[0]).toMatchObject({
+      storyboard: { clips: [{}, { videoFile: "开场.mp4" }] },
+    });
+    Object.assign(value.nodes[0]!.storyboard!.clips[0]!, { videoFile: "still.mp4" });
+    expect(() => parse(value)).toThrow("videoFile");
   });
 });

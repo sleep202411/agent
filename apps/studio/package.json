@@ -64,7 +64,8 @@
     "yjs": "^13.6.27",
     "zustand": "^5.0.15",
     "@repo/timeline-export": "*",
-    "@repo/game-agent-protocol": "*"
+    "@repo/game-agent-protocol": "*",
+    "fflate": "^0.8.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

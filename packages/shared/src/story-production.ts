@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+/** Authoring limits shared by imports, editable drafts and production forms. */
+export const STORY_CHAPTER_NODES_MAX = 5_000;
+export const STORY_CHAPTER_ASSETS_MAX = 2_000;
+export const STORY_AUTHORING_TEXT_MAX = 32_000;
+export const STORY_AUTHORING_DESCRIPTION_MAX = 100_000;
+export const STORY_AUTHORING_PROMPT_MAX = 50_000;
+export const STORY_AUTHORING_NEGATIVE_PROMPT_MAX = 16_000;
+
 /**
  * Chapter production specifications derived from an approved screenplay.
  *
@@ -36,12 +44,12 @@ export const StoryAssetSpecPlanItemSchema = z
     stableKey: StoryProductionStableKeySchema,
     kind: StoryAssetSpecKindSchema,
     name: z.string().trim().min(1).max(160),
-    description: z.string().trim().min(1).max(4_000),
+    description: z.string().trim().min(1).max(STORY_AUTHORING_DESCRIPTION_MAX),
     /** Default still/reference-image generation prompt. */
-    imagePrompt: z.string().trim().min(1).max(12_000),
+    imagePrompt: z.string().trim().min(1).max(STORY_AUTHORING_PROMPT_MAX),
     /** Optional motion treatment when this logical asset is rendered as video. */
-    videoPrompt: z.string().trim().min(1).max(12_000).optional(),
-    negativePrompt: z.string().trim().min(1).max(4_000).optional(),
+    videoPrompt: z.string().trim().min(1).max(STORY_AUTHORING_PROMPT_MAX).optional(),
+    negativePrompt: z.string().trim().min(1).max(STORY_AUTHORING_NEGATIVE_PROMPT_MAX).optional(),
     /** Optional link to a Story Bible character; standalone character assets are valid. */
     sourceCharacterId: StoryProductionStableKeySchema.optional(),
     /** Plot node relevance hints. Manual chapter assets may begin unattached. */
@@ -59,7 +67,7 @@ export const StoryAssetSpecPlanItemSchema = z
   });
 export type StoryAssetSpecPlanItem = z.infer<typeof StoryAssetSpecPlanItemSchema>;
 
-const StoryAssetSpecsSchema = z.array(StoryAssetSpecPlanItemSchema).max(500);
+const StoryAssetSpecsSchema = z.array(StoryAssetSpecPlanItemSchema).max(STORY_CHAPTER_ASSETS_MAX);
 
 /** Model-stage envelope used before storyboard sequences bind the specs. */
 export const StoryAssetPlanSchema = z
@@ -105,16 +113,16 @@ export function storyClipAssetMentions(clip: {
 const StoryStoryboardClipBaseSchema = z.object({
   stableKey: StoryProductionStableKeySchema,
   title: z.string().trim().min(1).max(160),
-  description: z.string().trim().min(1).max(4_000),
+  description: z.string().trim().min(1).max(STORY_AUTHORING_DESCRIPTION_MAX),
   /** Millisecond timeline coordinates; no fixed frame length is implied. */
   startMs: z.number().int().min(0).max(3_600_000),
   durationMs: z.number().int().min(250).max(3_600_000),
-  negativePrompt: z.string().trim().min(1).max(4_000).optional(),
+  negativePrompt: z.string().trim().min(1).max(STORY_AUTHORING_NEGATIVE_PROMPT_MAX).optional(),
 });
 
 export const StoryStoryboardImageClipSchema = StoryStoryboardClipBaseSchema.extend({
   kind: z.literal("image"),
-  imagePrompt: z.string().trim().min(1).max(12_000),
+  imagePrompt: z.string().trim().min(1).max(STORY_AUTHORING_PROMPT_MAX),
 }).strict();
 
 /**
@@ -124,7 +132,7 @@ export const StoryStoryboardImageClipSchema = StoryStoryboardClipBaseSchema.exte
  */
 export const StoryStoryboardVideoClipSchema = StoryStoryboardClipBaseSchema.extend({
   kind: z.literal("video"),
-  videoPrompt: z.string().trim().min(1).max(12_000),
+  videoPrompt: z.string().trim().min(1).max(STORY_AUTHORING_PROMPT_MAX),
 }).strict();
 
 export const StoryStoryboardClipPlanItemSchema = z.discriminatedUnion("kind", [
@@ -150,7 +158,7 @@ export const StoryStoryboardSequencePlanItemSchema = z
     plotNodeId: StoryProductionStableKeySchema,
     title: z.string().trim().min(1).max(160),
     /** One-or-two-sentence summary of what this node's footage shows. */
-    description: z.string().trim().min(1).max(4_000),
+    description: z.string().trim().min(1).max(STORY_AUTHORING_DESCRIPTION_MAX),
     durationMs: z.number().int().min(250).max(3_600_000),
     clips: z.array(StoryStoryboardClipPlanItemSchema).min(1).max(200),
     cues: z.array(StoryStoryboardCuePlanItemSchema).max(16),
@@ -220,8 +228,8 @@ const StoryStoryboardTimelineClipInputBaseSchema = z
     title: z.string().trim().min(1).max(160),
     startMs: z.number().int().min(0).max(3_600_000),
     durationMs: z.number().int().min(250).max(3_600_000),
-    description: z.string().trim().max(4_000).nullable(),
-    negativePrompt: z.string().trim().min(1).max(4_000).nullable(),
+    description: z.string().trim().max(STORY_AUTHORING_DESCRIPTION_MAX).nullable(),
+    negativePrompt: z.string().trim().min(1).max(STORY_AUTHORING_NEGATIVE_PROMPT_MAX).nullable(),
   })
   .strict();
 
@@ -235,13 +243,13 @@ const StoryStoryboardTimelineClipInputBaseSchema = z
 export const StoryStoryboardTimelineClipInputSchema = z.discriminatedUnion("kind", [
   StoryStoryboardTimelineClipInputBaseSchema.extend({
     kind: z.literal("image"),
-    imagePrompt: z.string().trim().min(1).max(12_000),
+    imagePrompt: z.string().trim().min(1).max(STORY_AUTHORING_PROMPT_MAX),
     videoPrompt: z.null(),
   }).strict(),
   StoryStoryboardTimelineClipInputBaseSchema.extend({
     kind: z.literal("video"),
     imagePrompt: z.null(),
-    videoPrompt: z.string().trim().min(1).max(12_000),
+    videoPrompt: z.string().trim().min(1).max(STORY_AUTHORING_PROMPT_MAX),
   }).strict(),
 ]);
 export type StoryStoryboardTimelineClipInput = z.infer<

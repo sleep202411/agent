@@ -1,3 +1,8 @@
+import {
+  STORY_AUTHORING_DESCRIPTION_MAX,
+  STORY_AUTHORING_PROMPT_MAX,
+  STORY_AUTHORING_NEGATIVE_PROMPT_MAX,
+} from '@repo/shared/story-production';
 import { z } from 'zod';
 
 export { PutStoryStoryboardTimelineSchema } from '@repo/shared';
@@ -61,10 +66,21 @@ export const CreateStoryAssetSpecSchema = z
   .object({
     kind: z.enum(['character', 'location', 'prop']),
     name: StoryProductionTextSchema(240),
-    description: z.string().trim().max(4_000).nullable().optional(),
-    imagePrompt: StoryProductionTextSchema(12_000),
-    videoPrompt: StoryProductionTextSchema(12_000).nullable().optional(),
-    negativePrompt: StoryProductionTextSchema(4_000).nullable().optional(),
+    description: z
+      .string()
+      .trim()
+      .max(STORY_AUTHORING_DESCRIPTION_MAX)
+      .nullable()
+      .optional(),
+    imagePrompt: StoryProductionTextSchema(STORY_AUTHORING_PROMPT_MAX),
+    videoPrompt: StoryProductionTextSchema(STORY_AUTHORING_PROMPT_MAX)
+      .nullable()
+      .optional(),
+    negativePrompt: StoryProductionTextSchema(
+      STORY_AUTHORING_NEGATIVE_PROMPT_MAX,
+    )
+      .nullable()
+      .optional(),
   })
   .strict();
 export type CreateStoryAssetSpecInput = z.infer<
@@ -84,10 +100,23 @@ export const PatchStoryAssetSpecSchema = z
   .object({
     expectedVersion: StoryProductionVersionSchema,
     name: StoryProductionTextSchema(240).optional(),
-    description: z.string().trim().max(4_000).nullable().optional(),
-    imagePrompt: StoryProductionTextSchema(12_000).optional(),
-    videoPrompt: StoryProductionTextSchema(12_000).nullable().optional(),
-    negativePrompt: StoryProductionTextSchema(4_000).nullable().optional(),
+    description: z
+      .string()
+      .trim()
+      .max(STORY_AUTHORING_DESCRIPTION_MAX)
+      .nullable()
+      .optional(),
+    imagePrompt: StoryProductionTextSchema(
+      STORY_AUTHORING_PROMPT_MAX,
+    ).optional(),
+    videoPrompt: StoryProductionTextSchema(STORY_AUTHORING_PROMPT_MAX)
+      .nullable()
+      .optional(),
+    negativePrompt: StoryProductionTextSchema(
+      STORY_AUTHORING_NEGATIVE_PROMPT_MAX,
+    )
+      .nullable()
+      .optional(),
     selectedMediaVersionId: StoryProductionUuidSchema.nullable().optional(),
     /** Import a project-candidate image as a new creative version and select it. */
     sourceMediaAssetId: StoryProductionUuidSchema.optional(),
@@ -127,7 +156,12 @@ export const PatchStoryStoryboardSequenceSchema = z
     expectedVersion: StoryProductionVersionSchema,
     // Scene title is canonical in StoryDraft and is edited on either the Plot
     // Tree or Storyboard node card, never on the timeline child record.
-    description: z.string().trim().max(4_000).nullable().optional(),
+    description: z
+      .string()
+      .trim()
+      .max(STORY_AUTHORING_DESCRIPTION_MAX)
+      .nullable()
+      .optional(),
   })
   .strict()
   .refine(
@@ -145,10 +179,23 @@ export const PatchStoryStoryboardClipSchema = z
     expectedVersion: StoryProductionVersionSchema,
     kind: z.enum(['image', 'video']).optional(),
     title: StoryProductionTextSchema(160).optional(),
-    description: z.string().trim().max(4_000).nullable().optional(),
-    imagePrompt: StoryProductionTextSchema(12_000).nullable().optional(),
-    videoPrompt: StoryProductionTextSchema(12_000).nullable().optional(),
-    negativePrompt: StoryProductionTextSchema(4_000).nullable().optional(),
+    description: z
+      .string()
+      .trim()
+      .max(STORY_AUTHORING_DESCRIPTION_MAX)
+      .nullable()
+      .optional(),
+    imagePrompt: StoryProductionTextSchema(STORY_AUTHORING_PROMPT_MAX)
+      .nullable()
+      .optional(),
+    videoPrompt: StoryProductionTextSchema(STORY_AUTHORING_PROMPT_MAX)
+      .nullable()
+      .optional(),
+    negativePrompt: StoryProductionTextSchema(
+      STORY_AUTHORING_NEGATIVE_PROMPT_MAX,
+    )
+      .nullable()
+      .optional(),
     selectedMediaVersionId: StoryProductionUuidSchema.nullable().optional(),
     /** Import project-candidate media as a new creative version and select it. */
     sourceMediaAssetId: StoryProductionUuidSchema.optional(),

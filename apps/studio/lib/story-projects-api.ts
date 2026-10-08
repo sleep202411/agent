@@ -1,3 +1,4 @@
+import type { StoryPlotMediaBinding } from "./story-plot-media";
 import type {
   ExperienceAppearance,
   GameUIProject,
@@ -794,6 +795,7 @@ export async function importStoryPlot(
     locale: string;
     mode: StoryPlotImportMode;
     plot: StoryPlotImport;
+    media?: StoryPlotMediaBinding[];
   }
 ): Promise<{ draft: StoryDraft; importedNodeIds: string[] }> {
   const value = await api.post<unknown>(

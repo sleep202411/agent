@@ -1,3 +1,6 @@
+const { PGlite } = process.getBuiltinModule('module').createRequire(__filename)(
+  '@electric-sql/pglite',
+) as typeof import('@electric-sql/pglite');
 import {
   ConflictException,
   ForbiddenException,
@@ -1495,7 +1498,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
             status: 'current',
           },
         ]),
-        create: jest.fn().mockImplementation(() => {
+        createMany: jest.fn().mockImplementation(() => {
           writeOrder.push('sequence');
           return Promise.resolve({});
         }),
@@ -1527,13 +1530,15 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     ).resolves.toMatchObject({ revision: 4 });
 
     expect(writeOrder).toEqual(['chapter', 'sequence']);
-    expect(tx.storyStoryboardSequence.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        storyProjectId: PROJECT_ID,
-        storyChapterId: CHAPTER_ID,
-        plotNodeId: 'node.second',
-        durationMs: 0,
-      }) as unknown,
+    expect(tx.storyStoryboardSequence.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          storyProjectId: PROJECT_ID,
+          storyChapterId: CHAPTER_ID,
+          plotNodeId: 'node.second',
+          durationMs: 0,
+        }),
+      ] as unknown,
     });
   });
 
@@ -1583,168 +1588,342 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.storyDraft.updateMany).not.toHaveBeenCalled();
   });
 
-  it('imports assets and storyboard clips in the same draft transaction', async () => {
-    const current = draftRow();
-    const createdSequences: Array<{ id: string; plotNodeId: string }> = [];
-    let persistedContent = current.content;
-    const savedChapter = chapterRow({
-      nodeIds: ['node.opening'],
-    });
-    const tx = {
-      $executeRaw: jest.fn().mockResolvedValue(undefined),
-      storyDraft: {
-        findUnique: jest.fn().mockImplementation(() =>
-          Promise.resolve(
-            draftRow({
-              content: persistedContent,
-              revision: persistedContent === current.content ? 3 : 4,
+  it.each([false, true])(
+    'imports assets, clips and optional ZIP media atomically (media=%s)',
+    async (withMedia) => {
+      const current = draftRow();
+      const createdSequences: Array<{ id: string; plotNodeId: string }> = [];
+      let persistedContent = current.content;
+      const savedChapter = chapterRow({
+        nodeIds: ['node.opening'],
+      });
+      const tx = {
+        $executeRaw: jest.fn().mockResolvedValue(undefined),
+        storyDraft: {
+          findUnique: jest.fn().mockImplementation(() =>
+            Promise.resolve(
+              draftRow({
+                content: persistedContent,
+                revision: persistedContent === current.content ? 3 : 4,
+              }),
+            ),
+          ),
+          updateMany: jest
+            .fn()
+            .mockImplementation(({ data }: { data: { content: unknown } }) => {
+              persistedContent = data.content as InteractiveStoryDraftContent;
+              return Promise.resolve({ count: 1 });
             }),
-          ),
-        ),
-        updateMany: jest
-          .fn()
-          .mockImplementation(({ data }: { data: { content: unknown } }) => {
-            persistedContent = data.content as InteractiveStoryDraftContent;
-            return Promise.resolve({ count: 1 });
-          }),
-      },
-      storyStoryboardSequence: {
-        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
-        findMany: jest
-          .fn()
-          .mockImplementation(
-            ({ where }: { where: { plotNodeId?: { in?: string[] } } }) => {
-              const ids = where.plotNodeId?.in;
-              if (!ids) {
+        },
+        storyStoryboardSequence: {
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+          findMany: jest
+            .fn()
+            .mockImplementation(
+              ({ where }: { where: { plotNodeId?: { in?: string[] } } }) => {
+                const ids = where.plotNodeId?.in;
+                if (!ids) {
+                  return Promise.resolve([
+                    {
+                      id: 'sequence-opening',
+                      storyChapterId: CHAPTER_ID,
+                      plotNodeId: 'node.opening',
+                      status: 'current',
+                    },
+                  ]);
+                }
                 return Promise.resolve([
-                  {
-                    id: 'sequence-opening',
-                    storyChapterId: CHAPTER_ID,
-                    plotNodeId: 'node.opening',
-                    status: 'current',
-                  },
+                  ...(ids.includes('node.opening')
+                    ? [
+                        {
+                          id: '019a0331-5000-7000-8000-000000000099',
+                          plotNodeId: 'node.opening',
+                          storyChapterId: CHAPTER_ID,
+                          status: 'current',
+                        },
+                      ]
+                    : []),
+                  ...createdSequences.filter((row) =>
+                    ids.includes(row.plotNodeId),
+                  ),
                 ]);
-              }
-              return Promise.resolve(
-                createdSequences.filter((row) => ids.includes(row.plotNodeId)),
-              );
-            },
-          ),
-        create: jest
-          .fn()
-          .mockImplementation(({ data }: { data: { plotNodeId: string } }) => {
-            const row = {
-              id: `sequence-${createdSequences.length}`,
-              plotNodeId: data.plotNodeId,
-            };
-            createdSequences.push(row);
-            return Promise.resolve(row);
-          }),
-        update: jest.fn().mockResolvedValue({}),
-      },
-      storyStoryboardClip: {
-        create: jest.fn().mockResolvedValue({ id: 'clip-1' }),
-      },
-      storyAssetSpec: {
-        count: jest.fn().mockResolvedValue(0),
-        create: jest.fn().mockResolvedValue({ id: 'asset-1' }),
-      },
-      storyChapter: {
-        findMany: jest.fn().mockResolvedValue([chapterRow()]),
-        update: jest.fn().mockResolvedValue(savedChapter),
-        findUnique: jest.fn().mockResolvedValue(savedChapter),
-      },
-      storyProject: { update: jest.fn().mockResolvedValue({}) },
-    };
-    const { service } = serviceWith({ $transaction: transactionMock(tx) });
-    const plot = {
-      entryNodeId: 'opening',
-      assets: [
-        {
-          id: 'hero',
-          kind: 'character',
-          name: 'Mira',
-          imagePrompt: 'Cinematic portrait of Mira at dawn.',
-        },
-      ],
-      stateVariables: [
-        {
-          key: 'courage',
-          name: 'Courage',
-          valueType: 'number',
-          initialValue: 0,
-        },
-      ],
-      nodes: [
-        {
-          id: 'opening',
-          type: 'scene',
-          title: 'Opening',
-          onEnterEffects: [{ kind: 'add', key: 'courage', amount: 1 }],
-          next: null,
-          storyboard: {
-            clips: [
-              {
-                id: 'letter',
-                kind: 'image',
-                title: 'Letter',
-                durationMs: 2000,
-                prompt: 'A sealed letter on worn floorboards.',
               },
+            ),
+          createMany: jest
+            .fn()
+            .mockImplementation(
+              ({ data }: { data: { plotNodeId: string }[] }) => {
+                for (const item of data)
+                  createdSequences.push({
+                    id: `019a0331-5000-7000-8000-${String(createdSequences.length + 1).padStart(12, '0')}`,
+                    plotNodeId: item.plotNodeId,
+                  });
+                return Promise.resolve({ count: data.length });
+              },
+            ),
+          update: jest.fn().mockResolvedValue({}),
+        },
+        storyStoryboardClip: {
+          createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        storyAssetSpec: {
+          count: jest.fn().mockResolvedValue(0),
+          createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        storyStoryboardClipMediaVersion: {
+          createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        storyCandidateAsset: {
+          findUnique: jest.fn().mockResolvedValue({
+            asset: {
+              id: PROJECT_ID,
+              kind: 'video',
+              status: 'ready',
+              moderationStatus: 'approved',
+              deletedAt: null,
+              durationSeconds: null,
+              variants: [{ durationMs: 8750 }],
+            },
+          }),
+        },
+        storyChapter: {
+          findMany: jest.fn().mockResolvedValue([chapterRow()]),
+          update: jest.fn().mockResolvedValue(savedChapter),
+          findUnique: jest.fn().mockResolvedValue(savedChapter),
+        },
+        storyProject: { update: jest.fn().mockResolvedValue({}) },
+      };
+      const { service } = serviceWith({ $transaction: transactionMock(tx) });
+      const plot = {
+        entryNodeId: 'opening',
+        assets: [
+          {
+            id: 'hero',
+            kind: 'character',
+            name: 'Mira',
+            imagePrompt: 'Cinematic portrait of Mira at dawn.',
+          },
+        ],
+        stateVariables: [
+          {
+            key: 'courage',
+            name: 'Courage',
+            valueType: 'number',
+            initialValue: 0,
+          },
+        ],
+        nodes: [
+          {
+            id: 'opening',
+            type: 'scene',
+            title: 'Opening',
+            onEnterEffects: [{ kind: 'add', key: 'courage', amount: 1 }],
+            next: null,
+            storyboard: {
+              clips: [
+                {
+                  id: 'letter',
+                  kind: withMedia ? 'video' : 'image',
+                  ...(withMedia ? { videoFile: 'letter.mp4' } : {}),
+                  title: 'Letter',
+                  durationMs: 2000,
+                  prompt: 'A sealed letter on worn floorboards.',
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      const result = await service.importPlot(
+        USER as never,
+        PROJECT_ID,
+        {
+          expectedRevision: 3,
+          schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+          content: lockableDraft(),
+          sessionId: 'import-save',
+          locale: 'en-US',
+          mode: 'append',
+          plot,
+          ...(withMedia
+            ? {
+                media: [
+                  {
+                    nodeId: 'opening',
+                    clipId: 'letter',
+                    mediaAssetId: PROJECT_ID,
+                  },
+                ],
+              }
+            : {}),
+        },
+        CHAPTER_ID,
+      );
+
+      expect(result.importedNodeIds).toHaveLength(1);
+      expect(result.draft.content.storyBible.stateVariables).toEqual([
+        expect.objectContaining({ key: 'courage', valueType: 'number' }),
+      ]);
+      expect(
+        persistedContent.graph.nodes.find(
+          (node) => node.nodeId === result.importedNodeIds[0],
+        ),
+      ).toMatchObject({
+        onEnterEffects: [{ kind: 'add', key: 'courage', amount: 1 }],
+      });
+      expect(tx.storyAssetSpec.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            name: 'Mira',
+            imagePrompt: 'Cinematic portrait of Mira at dawn.',
+            userModifiedByUserId: USER.userId,
+          }),
+        ] as unknown,
+      });
+      expect(tx.storyStoryboardClip.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            stableKey: 'letter',
+            title: 'Letter',
+            startMs: 0,
+            durationMs: withMedia ? 8750 : 2000,
+            imagePrompt: withMedia
+              ? null
+              : 'A sealed letter on worn floorboards.',
+            videoPrompt: withMedia
+              ? 'A sealed letter on worn floorboards.'
+              : null,
+            userModifiedByUserId: USER.userId,
+          }),
+        ] as unknown,
+      });
+      expect(tx.$executeRaw).toHaveBeenCalledWith(
+        expect.objectContaining({
+          values: expect.arrayContaining([
+            withMedia ? 8750 : 2000,
+            USER.userId,
+          ]) as unknown,
+        }) as unknown,
+      );
+      if (withMedia) {
+        expect(
+          tx.storyStoryboardClipMediaVersion.createMany,
+        ).toHaveBeenCalledWith({
+          data: [
+            expect.objectContaining({
+              mediaAssetId: PROJECT_ID,
+              versionNumber: 1,
+            }),
+          ] as unknown,
+        });
+        // Execute the exact set-based writes with real PostgreSQL types and FKs.
+        const db = new PGlite();
+        try {
+          await db.exec(`
+          CREATE TABLE story_storyboard_sequences (id uuid PRIMARY KEY, duration_ms integer NOT NULL DEFAULT 0, user_modified_at timestamptz, user_modified_by_user_id text, version integer NOT NULL DEFAULT 0, updated_at timestamptz);
+          CREATE TABLE story_storyboard_clips (id uuid PRIMARY KEY, selected_media_version_id uuid);
+          CREATE TABLE media_versions (id uuid PRIMARY KEY, storyboard_clip_id uuid NOT NULL REFERENCES story_storyboard_clips(id));
+          ALTER TABLE story_storyboard_clips ADD FOREIGN KEY (selected_media_version_id) REFERENCES media_versions(id);
+        `);
+          await db.query(
+            'INSERT INTO story_storyboard_sequences(id) VALUES ($1)',
+            [createdSequences[0].id],
+          );
+          const clipRows = (
+            tx.storyStoryboardClip.createMany.mock.calls as unknown as [
+              { data: { id: string }[] },
+            ][]
+          )[0][0].data;
+          const versions = (
+            tx.storyStoryboardClipMediaVersion.createMany.mock
+              .calls as unknown as [
+              { data: { id: string; storyboardClipId: string }[] },
+            ][]
+          )[0][0].data;
+          for (const clip of clipRows)
+            await db.query(
+              'INSERT INTO story_storyboard_clips(id) VALUES ($1)',
+              [clip.id],
+            );
+          for (const version of versions)
+            await db.query(
+              'INSERT INTO media_versions(id, storyboard_clip_id) VALUES ($1, $2)',
+              [version.id, version.storyboardClipId],
+            );
+          for (const [query] of tx.$executeRaw.mock.calls as unknown as [
+            Prisma.Sql,
+          ][]) {
+            if (query.text?.trim().startsWith('UPDATE'))
+              await db.query(
+                query.text,
+                query.values.map((value: unknown) =>
+                  value instanceof Date ? value.toISOString() : value,
+                ),
+              );
+          }
+          expect(
+            (
+              await db.query<{ duration_ms: number; version: number }>(
+                'SELECT duration_ms, version FROM story_storyboard_sequences',
+              )
+            ).rows,
+          ).toEqual([{ duration_ms: 8750, version: 1 }]);
+          expect(
+            (
+              await db.query<{ selected_media_version_id: string }>(
+                'SELECT selected_media_version_id FROM story_storyboard_clips',
+              )
+            ).rows[0].selected_media_version_id,
+          ).toBe(versions[0].id);
+        } finally {
+          await db.close();
+        }
+      } else {
+        expect(
+          tx.storyStoryboardClipMediaVersion.createMany,
+        ).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it('returns a validation error before writing a plot with unknown media bindings', async () => {
+    const tx = { storyDraft: { updateMany: jest.fn() } };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.importPlot(
+        USER as never,
+        PROJECT_ID,
+        {
+          expectedRevision: 3,
+          schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+          content: lockableDraft(),
+          sessionId: 'import-save',
+          locale: 'en-US',
+          mode: 'append',
+          plot: {
+            entryNodeId: 'opening',
+            assets: [],
+            nodes: [
+              { id: 'opening', type: 'scene', title: 'Opening', next: null },
             ],
           },
+          media: [
+            { nodeId: 'opening', clipId: 'unknown', mediaAssetId: PROJECT_ID },
+          ],
         },
-      ],
-    };
-
-    const result = await service.importPlot(
-      USER as never,
-      PROJECT_ID,
-      {
-        expectedRevision: 3,
-        schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-        content: lockableDraft(),
-        sessionId: 'import-save',
-        locale: 'en-US',
-        mode: 'append',
-        plot,
-      },
-      CHAPTER_ID,
-    );
-
-    expect(result.importedNodeIds).toHaveLength(1);
-    expect(result.draft.content.storyBible.stateVariables).toEqual([
-      expect.objectContaining({ key: 'courage', valueType: 'number' }),
-    ]);
-    expect(
-      persistedContent.graph.nodes.find(
-        (node) => node.nodeId === result.importedNodeIds[0],
+        CHAPTER_ID,
       ),
-    ).toMatchObject({
-      onEnterEffects: [{ kind: 'add', key: 'courage', amount: 1 }],
+    ).rejects.toMatchObject({
+      status: 400,
+      response: {
+        code: 'STORY_PLOT_IMPORT_INVALID',
+        path: '$.media[0]',
+        importCode: 'media',
+      },
     });
-    expect(tx.storyAssetSpec.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        name: 'Mira',
-        imagePrompt: 'Cinematic portrait of Mira at dawn.',
-        userModifiedByUserId: USER.userId,
-      }) as unknown,
-    });
-    expect(tx.storyStoryboardClip.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        stableKey: 'letter',
-        title: 'Letter',
-        startMs: 0,
-        durationMs: 2000,
-        imagePrompt: 'A sealed letter on worn floorboards.',
-        videoPrompt: null,
-        userModifiedByUserId: USER.userId,
-      }) as unknown,
-    });
-    expect(tx.storyStoryboardSequence.update).toHaveBeenCalledWith({
-      where: { id: expect.stringMatching(/^sequence-\d+$/) as unknown },
-      data: expect.objectContaining({ durationMs: 2000 }) as unknown,
-    });
+    expect(tx.storyDraft.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid plot before opening a draft transaction', async () => {

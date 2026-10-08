@@ -29,7 +29,7 @@
 
 节点不能添加 `name`；选择节点不能添加 `description`；选项不能添加 `id`/`text`；节点不能添加 `assets`/`assetRefs`。资产定义只放在根对象 `assets` 数组。选项必须指向节点；终止场景使用 `next: null`。
 
-所有效果或条件用到的状态 key 必须先声明。`set` 值必须符合声明类型，`add` 只能用于数字。布尔比较用 `equals` 或 `not-equals`；数字还可用 `greater-than`、`at-least`、`less-than`、`at-most`。组合条件用 `{ "kind": "all", "conditions": [条件, 条件] }`（全部满足）、`any`（至少一个满足），或 `{ "kind": "not", "condition": 条件 }`。限制：每组最多 6 个效果，每场景最多 8 条路线，条件深度最多 3、比较叶子最多 12。状态名称、选择提示和选项标签最多 4,000 字符；状态备注最多 2,000 字符。状态 key 使用 `story.clue_found` 等简单 ASCII 标识，最多 240 字符，不能使用 `__proto__`、`prototype`、`constructor` 作为路径段。
+所有效果或条件用到的状态 key 必须先声明。`set` 值必须符合声明类型，`add` 只能用于数字。布尔比较用 `equals` 或 `not-equals`；数字还可用 `greater-than`、`at-least`、`less-than`、`at-most`。组合条件用 `{ "kind": "all", "conditions": [条件, 条件] }`（全部满足）、`any`（至少一个满足），或 `{ "kind": "not", "condition": 条件 }`。限制：每组最多 6 个效果，每场景最多 8 条路线，条件深度最多 3、比较叶子最多 12。状态名称、选择提示和选项标签最多 32,000 字符；状态备注最多 2,000 字符。状态 key 使用 `story.clue_found` 等简单 ASCII 标识，最多 240 字符，不能使用 `__proto__`、`prototype`、`constructor` 作为路径段。
 
 计时器、超时默认选项、手势和触觉不是可执行导入字段。把意图保留在场景描述或选择提示中，不要声称已实现，也不要建立孤立的“备注节点”来存放不支持的元数据。
 
@@ -39,14 +39,20 @@
 - 状态变量：`key`（稳定的点分隔标识）、`name`、`valueType`（`number` 或 `boolean`）、同类型的 `initialValue`，以及可选 `note`。最多 64 个。同一概念始终复用一个 key，不要创建 `courage_1` 一类编号副本。导入会按 key 合并：类型和初始值一致时复用已有定义；发生冲突时会指出对应 JSON 路径并拒绝导入。
 - 状态效果：`{ "kind": "set", "key": "met", "value": true }` 或 `{ "kind": "add", "key": "courage", "amount": 1 }`。可放在任意节点的 `onEnterEffects`，或选项的 `effects`。
 - 状态条件：`{ "kind": "compare", "variableKey": "courage", "operator": "at-least", "value": 3 }`。可放在选项的 `visibleWhen`，或场景的可选 `routes` 中。场景路由格式为 `{ "when": 条件, "next": 节点ID或null }`，按顺序判断，最后走场景必填的 `next` 兜底。
-- 资产：`id`、`kind`（`character`、`location` 或 `prop`）、`name`（必填，最多 240 字符）、`description`（可选，最多 4,000 字符）、`imagePrompt`（必填，最多 12,000 字符）、`videoPrompt`（可选，最多 12,000 字符）、`negativePrompt`（可选，最多 4,000 字符）。最多 500 个资产。提示词中不得出现 `@`。
-- 场景：`id`、`type: "scene"`、`title`（必填，最多 120 字符）、`description`（可选，最多 4,000 字符）、`next`（目标节点 ID，结局为 `null`）、可选 `routes`、可选 `onEnterEffects`、可选 `storyboard`。`storyboard` 只有 `clips`。
-- 分镜：`id`、`kind`（`image` 或 `video`）、`title`（必填，最多 160 字符）、`durationMs`（整数，250–3,600,000）、`prompt`（必填，最多 12,000 字符）、`negativePrompt`（可选，最多 4,000 字符）。每个场景最多 100 条 clip。clip 按数组顺序播放，由 FizzDragon 累计 startMs。一个场景的 clip 总时长不能超过 3,600,000 毫秒。clip 提示词中不得出现 `@`。不要写资产引用或绑定。
+- 资产：`id`、`kind`（`character`、`location` 或 `prop`）、`name`（必填，最多 240 字符）、`description`（可选，最多 100,000 字符）、`imagePrompt`（必填，最多 50,000 字符）、`videoPrompt`（可选，最多 50,000 字符）、`negativePrompt`（可选，最多 16,000 字符）。最多 2,000 个资产。提示词中不得出现 `@`。
+- 场景：`id`、`type: "scene"`、`title`（必填，最多 120 字符）、`description`（可选，最多 100,000 字符）、`next`（目标节点 ID，结局为 `null`）、可选 `routes`、可选 `onEnterEffects`、可选 `storyboard`。`storyboard` 只有 `clips`。
+- 分镜：`id`、`kind`（`image` 或 `video`）、`title`（必填，最多 160 字符）、`durationMs`（整数，250–3,600,000）、`prompt`（必填，最多 50,000 字符）、`negativePrompt`（可选，最多 16,000 字符）、可选 `videoFile`（仅视频，填写 ZIP 中的文件名）。每个场景最多 500 条 clip。clip 按数组顺序播放，由 FizzDragon 累计 startMs。一个场景的 clip 总时长不能超过 3,600,000 毫秒。clip 提示词中不得出现 `@`。不要写资产引用或绑定。
 - 选择：`id`、`type: "decision"`、`prompt`、可选 `onEnterEffects`、`choices`（2–6 个）。每个选项包含 `label`、`next`，以及可选 `effects` / `visibleWhen`。结局用 `next: null` 的场景表达，选项目标不能为 null。
 - ID 在各自范围内必须唯一：1–64 个 ASCII 字符，英文字母开头，后接字母、数字或 `_`，分组之间可用 `.`、`:`、`-`。节点 ID 在文件内唯一，资产 ID 在文件内唯一，clip ID 在所属场景内唯一。所有引用的节点必须在本文件中存在，所有节点都必须能从 `entryNodeId` 到达。分支可汇合到同一节点，无需复制节点。
 - 保留有意义的节点顺序和选项顺序。文本中的换行用 `\n`，引号用 `\"` 转义。不要截断原文；超过字段上限时拆成顺序连接的多个场景。
-- 每个文件最多 500 个节点、2 MB。更长的故事拆为多个独立完整的章节文件，`next` 不得跨文件引用。
+- 每个文件最多 5,000 个节点、10 MB。更长的故事拆为多个独立完整的章节文件，`next` 不得跨文件引用。
 - 不添加媒体链接、坐标、`@` 提及、assetRefs 或其他字段。FizzDragon 会导入情节树、状态定义、资产规格和分镜提示词，不生成媒体。节点 ID 会在导入时加上独立命名空间，状态 key 则保持稳定并复用。
+
+## 可选的视频 ZIP
+
+可以同时选择 JSON 和视频 ZIP，也可以在检查 JSON 后再添加 ZIP。每个视频镜头可添加 `"videoFile": "opening.mp4"`（支持 MP4、MOV、WebM）。系统按文件名匹配，忽略文件夹和大小写，支持中文文件名。请确保压缩包中的视频文件名唯一；缺失或重名文件会在导入前列出。未被引用的文件会被忽略。也支持粘贴 JSON 或单个 Markdown JSON 代码块。
+
+ZIP 最大 512 MB，解压后视频总计最多 1 GB，单个视频最多 250 MB，压缩包最多 10,000 个条目。请使用未加密 ZIP 和相对路径。每个文件只上传一次，经后端校验后，在同一章节导入中绑定到对应镜头。视频实际时长会替换 `durationMs`，后续镜头按实际时长排列。不附加 ZIP 时仅导入剧情和提示词，不生成媒体。
 
 ## 返回文件前检查
 
@@ -54,7 +60,7 @@
 - 只有一个动作的互动用带 `next` 的场景表示，动作保留在 `description` 中。不要编造第二个选项；选择节点必须有 2–6 个真实选项。
 - 导入不支持 `timeLimit` 和 `defaultChoice` 字段。必要时将限时、默认选择意图保留在叙述文本中；这不会实现计时器或自动选择。
 - 必须完整结束每个字符串、对象和数组。返回前检查整个文件能被 JSON 解析器读取，且所有节点引用均存在。如果工具支持代码执行，请实际解析文件，不要只目测格式。
-- 2 MB 是导入大小上限，不是 AI 的输出额度。如果故事超过输出能力，先商定更小且独立完整的章节文件再生成。不要返回截断文件，也不要编造结局使残缺故事可以导入。
+- 10 MB 是导入大小上限，不是 AI 的输出额度。如果故事超过输出能力，先商定更小且独立完整的章节文件再生成。不要返回截断文件，也不要编造结局使残缺故事可以导入。
 
 ## 示例
 
@@ -108,6 +114,7 @@
           {
             "id": "mira_turns",
             "kind": "video",
+            "videoFile": "mira_turns.mp4",
             "title": "Mira looks down",
             "durationMs": 4000,
             "prompt": "Mira looks down at the letter, then toward the empty hallway."

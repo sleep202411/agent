@@ -1,4 +1,12 @@
 import {
+  STORY_CHAPTER_NODES_MAX,
+  STORY_CHAPTER_ASSETS_MAX,
+  STORY_AUTHORING_TEXT_MAX,
+  STORY_AUTHORING_DESCRIPTION_MAX,
+  STORY_AUTHORING_PROMPT_MAX,
+  STORY_AUTHORING_NEGATIVE_PROMPT_MAX,
+} from '@repo/shared/story-production';
+import {
   MAX_STORY_STATE_VARIABLES,
   MAX_STORY_CONDITION_DEPTH,
   MAX_STORY_CONDITION_LEAVES,
@@ -16,11 +24,11 @@ import {
   type StoryStateValueType,
 } from '@repo/shared/story-stats';
 
-export const MAX_PLOT_IMPORT_BYTES = 2 * 1024 * 1024;
-export const MAX_PLOT_IMPORT_NODES = 500;
-export const MAX_PLOT_IMPORT_CHAPTER_NODES = 500;
-export const MAX_PLOT_IMPORT_ASSETS = 500;
-export const MAX_PLOT_IMPORT_CLIPS_PER_SCENE = 100;
+export const MAX_PLOT_IMPORT_BYTES = 10 * 1024 * 1024;
+export const MAX_PLOT_IMPORT_NODES = STORY_CHAPTER_NODES_MAX;
+export const MAX_PLOT_IMPORT_CHAPTER_NODES = STORY_CHAPTER_NODES_MAX;
+export const MAX_PLOT_IMPORT_ASSETS = STORY_CHAPTER_ASSETS_MAX;
+export const MAX_PLOT_IMPORT_CLIPS_PER_SCENE = 500;
 export const MIN_PLOT_IMPORT_CLIP_DURATION_MS = 250;
 export const MAX_PLOT_IMPORT_SEQUENCE_DURATION_MS = 3_600_000;
 
@@ -33,6 +41,7 @@ type SceneClip = {
   durationMs: number;
   prompt: string;
   negativePrompt: string | null;
+  videoFile?: string;
 };
 
 type Scene = {
@@ -87,6 +96,7 @@ export type StoryPlotImport = {
 export type StoryPlotImportMode = 'append' | 'replace';
 
 export type StoryPlotImportClipWrite = {
+  sourceNodeId: string;
   plotNodeId: string;
   durationMs: number;
   clips: Array<{
@@ -169,7 +179,9 @@ export class StoryPlotImportError extends Error {
       | 'state'
       | 'clips'
       | 'duration'
-      | 'mention',
+      | 'mention'
+      | 'videoFile'
+      | 'media',
     readonly path = '$',
   ) {
     super(`${path}: ${code}`);
@@ -316,7 +328,7 @@ function parseStateVariable(
   }
   return {
     key: parsedKey.data,
-    name: text(variable.name, `${path}.name`, 4_000),
+    name: text(variable.name, `${path}.name`, STORY_AUTHORING_TEXT_MAX),
     valueType: variable.valueType,
     initialValue: variable.initialValue as number | boolean,
     note: optionalText(
@@ -359,22 +371,35 @@ function parseClip(
     'durationMs',
     'prompt',
     'negativePrompt',
+    'videoFile',
   ]);
   const clipId = id(clip.id, `${path}.id`);
   if (clipIds.has(clipId)) fail('duplicate', `${path}.id`);
   clipIds.add(clipId);
   if (clip.kind !== 'image' && clip.kind !== 'video')
     fail('kind', `${path}.kind`);
+  const videoFile = optionalText(clip.videoFile, `${path}.videoFile`, 1_024);
+  if (
+    videoFile &&
+    (clip.kind !== 'video' ||
+      !/\.(mp4|mov|webm)$/i.test(videoFile) ||
+      [...videoFile].some(
+        (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+      ))
+  ) {
+    fail('videoFile', `${path}.videoFile`);
+  }
   return {
     id: clipId,
     kind: clip.kind,
     title: text(clip.title, `${path}.title`, 160),
     durationMs: durationMs(clip.durationMs, `${path}.durationMs`),
-    prompt: prompt(clip.prompt, `${path}.prompt`, 12_000),
+    prompt: prompt(clip.prompt, `${path}.prompt`, STORY_AUTHORING_PROMPT_MAX),
+    ...(videoFile ? { videoFile } : {}),
     negativePrompt: optionalPrompt(
       clip.negativePrompt,
       `${path}.negativePrompt`,
-      4_000,
+      STORY_AUTHORING_NEGATIVE_PROMPT_MAX,
     ),
   };
 }
@@ -427,27 +452,41 @@ function parseAsset(
   const description =
     asset.description === undefined || asset.description === null
       ? null
-      : text(asset.description, `${path}.description`, 4_000, true);
+      : text(
+          asset.description,
+          `${path}.description`,
+          STORY_AUTHORING_DESCRIPTION_MAX,
+          true,
+        );
   return {
     id: assetId,
     kind: asset.kind,
     name: text(asset.name, `${path}.name`, 240),
     description: description?.trim() ? description : null,
-    imagePrompt: prompt(asset.imagePrompt, `${path}.imagePrompt`, 12_000),
+    imagePrompt: prompt(
+      asset.imagePrompt,
+      `${path}.imagePrompt`,
+      STORY_AUTHORING_PROMPT_MAX,
+    ),
     videoPrompt: optionalPrompt(
       asset.videoPrompt,
       `${path}.videoPrompt`,
-      12_000,
+      STORY_AUTHORING_PROMPT_MAX,
     ),
     negativePrompt: optionalPrompt(
       asset.negativePrompt,
       `${path}.negativePrompt`,
-      4_000,
+      STORY_AUTHORING_NEGATIVE_PROMPT_MAX,
     ),
   };
 }
 
 export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
+  if (
+    new TextEncoder().encode(JSON.stringify(value)).length >
+    MAX_PLOT_IMPORT_BYTES
+  )
+    fail('size', '$');
   const root = object(value, '$', [
     'entryNodeId',
     'assets',
@@ -534,7 +573,12 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
         description:
           node.description === undefined
             ? ''
-            : text(node.description, `${path}.description`, 4_000, true),
+            : text(
+                node.description,
+                `${path}.description`,
+                STORY_AUTHORING_DESCRIPTION_MAX,
+                true,
+              ),
         next: node.next === null ? null : id(node.next, `${path}.next`),
         routes: Array.isArray(node.routes)
           ? node.routes.map((routeValue, routeIndex) => {
@@ -571,7 +615,7 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
     return {
       id: nodeId,
       type: 'decision',
-      prompt: text(node.prompt, `${path}.prompt`, 4_000),
+      prompt: text(node.prompt, `${path}.prompt`, STORY_AUTHORING_TEXT_MAX),
       ...(onEnterEffects ? { onEnterEffects } : {}),
       choices: node.choices.map((choiceValue, choiceIndex) => {
         const choicePath = `${path}.choices[${choiceIndex}]`;
@@ -590,7 +634,11 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
           `${choicePath}.visibleWhen`,
         );
         return {
-          label: text(choice.label, `${choicePath}.label`, 4_000),
+          label: text(
+            choice.label,
+            `${choicePath}.label`,
+            STORY_AUTHORING_TEXT_MAX,
+          ),
           next: id(choice.next, `${choicePath}.next`),
           ...(effects ? { effects } : {}),
           ...(visibleWhen ? { visibleWhen } : {}),
@@ -640,11 +688,17 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
 }
 
 export function parseStoryPlotImport(source: string): StoryPlotImport {
-  if (new TextEncoder().encode(source).length > MAX_PLOT_IMPORT_BYTES)
+  if (
+    source.length > MAX_PLOT_IMPORT_BYTES ||
+    new TextEncoder().encode(source).length > MAX_PLOT_IMPORT_BYTES
+  )
     fail('size', '$');
   let value: unknown;
   try {
-    value = JSON.parse(source.replace(/^\uFEFF/, ''));
+    // AI exports often wrap otherwise valid JSON in a single Markdown fence.
+    const cleaned = source.replace(/^\uFEFF/, '').trim();
+    const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(cleaned);
+    value = JSON.parse(fenced?.[1] ?? cleaned);
   } catch {
     fail('json', '$');
   }
@@ -872,6 +926,7 @@ export function storyPlotImportClipWrites(
     });
     return [
       {
+        sourceNodeId: node.id,
         plotNodeId: importedPlotNodeId(namespace, node.id),
         durationMs: startMs,
         clips,

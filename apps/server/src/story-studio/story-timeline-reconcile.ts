@@ -63,6 +63,7 @@ export async function reconcileStoryTimelinesWithDraft(
     byNode.set(row.plotNodeId, rows);
   }
 
+  const created: Prisma.StoryStoryboardSequenceCreateManyInput[] = [];
   for (const plotNodeId of chapterPlotNodeIds) {
     const rows = byNode.get(plotNodeId) ?? [];
     const activeRows = rows.filter(
@@ -119,23 +120,26 @@ export async function reconcileStoryTimelinesWithDraft(
       continue;
     }
 
-    await tx.storyStoryboardSequence.create({
-      data: {
+    created.push({
+      storyProjectId,
+      storyChapterId: scope.storyChapterId,
+      plotNodeId,
+      stableKey: plotNodeId,
+      title: null,
+      description: null,
+      suggestedDurationMs: 0,
+      durationMs: 0,
+      sourceFingerprint: canonicalJsonHash({
+        kind: 'empty-storyboard-timeline',
         storyProjectId,
-        storyChapterId: scope.storyChapterId,
         plotNodeId,
-        stableKey: plotNodeId,
-        title: null,
-        description: null,
-        suggestedDurationMs: 0,
-        durationMs: 0,
-        sourceFingerprint: canonicalJsonHash({
-          kind: 'empty-storyboard-timeline',
-          storyProjectId,
-          plotNodeId,
-        }),
-        createdByUserId: scope.actorUserId,
-      },
+      }),
+      createdByUserId: scope.actorUserId,
+    });
+  }
+  for (let offset = 0; offset < created.length; offset += 500) {
+    await tx.storyStoryboardSequence.createMany({
+      data: created.slice(offset, offset + 500),
     });
   }
 }

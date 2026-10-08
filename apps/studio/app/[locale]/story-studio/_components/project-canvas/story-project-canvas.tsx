@@ -1,5 +1,9 @@
 "use client";
 
+import { STORY_AUTHORING_TEXT_MAX } from "@repo/shared/story-production";
+
+import type { StoryPlotMediaBinding } from "@/lib/story-plot-media";
+
 import { useAuth } from "@/app/_components/auth-provider";
 
 import {
@@ -2268,9 +2272,20 @@ function StoryProjectCanvasInner({
     );
   };
 
-  const importPlot = async (plot: StoryPlotImport, mode: StoryPlotImportMode) => {
+  const importPlot = async (
+    plot: StoryPlotImport,
+    mode: StoryPlotImportMode,
+    media?: StoryPlotMediaBinding[]
+  ) => {
+    const isCurrentImport = () =>
+      !disposedRef.current && activeCanvasViewKeyRef.current === canvasViewKey;
     const current = latestContentRef.current;
-    if (!current || !resolvedChapterId || !mutationBarrier.permits("content")) {
+    if (
+      !current ||
+      !resolvedChapterId ||
+      !isCurrentImport() ||
+      !mutationBarrier.permits("content")
+    ) {
       throw new Error(t("plotImport.errors.locked"));
     }
     if (saveDebounceTimerRef.current !== null) {
@@ -2280,9 +2295,15 @@ function StoryProjectCanvasInner({
     queuedContentRef.current = null;
     while (saveInFlightRef.current) await waitForSaveToSettle();
     const latest = latestContentRef.current;
-    if (!latest || conflictRef.current || !mutationBarrier.permits("content")) {
+    if (
+      !latest ||
+      conflictRef.current ||
+      !isCurrentImport() ||
+      !mutationBarrier.permits("content")
+    ) {
       throw new Error(t("plotImport.errors.locked"));
     }
+    clearSaveRetry(true);
     const retained = mode === "replace" ? 0 : latest.graph.nodes.length;
     if (retained + plot.nodes.length > MAX_PLOT_IMPORT_CHAPTER_NODES) {
       throw new StoryPlotImportError("capacity", "$.nodes");
@@ -2297,7 +2318,12 @@ function StoryProjectCanvasInner({
         locale: authoringLocale,
         mode,
         plot,
+        ...(media?.length ? { media } : {}),
       });
+      if (!isCurrentImport()) {
+        cacheSavedDraft(saved.draft);
+        return;
+      }
       const snapshot = readHistorySnapshot(latest);
       if (snapshot) {
         history.capture(snapshot);
@@ -2354,6 +2380,7 @@ function StoryProjectCanvasInner({
       setGraphError(null);
       toast.success(t(mode === "replace" ? "plotImport.replaced" : "plotImport.added"));
     } catch (error) {
+      if (!isCurrentImport()) throw error;
       const importError = storyPlotImportError(error);
       const nextConflict = draftRevisionConflict(error);
       if (nextConflict) {
@@ -3008,6 +3035,7 @@ function StoryProjectCanvasInner({
                     key={contentChapterId}
                     disabled={!canEdit}
                     hasNodes={content.graph.nodes.length > 0}
+                    projectId={projectId}
                     onImport={importPlot}
                   />
                 </StoryNodeDock>
@@ -3289,7 +3317,7 @@ function ChoiceOptionRow({
         <StoryCanvasTextInput
           value={choice.label}
           disabled={!choiceContext?.canEditContent}
-          maxLength={4_000}
+          maxLength={STORY_AUTHORING_TEXT_MAX}
           placeholder={t("interactionCard.untitledOption")}
           aria-label={t("interactionCard.optionPlaceholder")}
           onValueChange={(value) =>
@@ -3722,7 +3750,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                 multiline
                 value={data.summary ?? ""}
                 disabled={!choiceContext?.canEditContent}
-                maxLength={4_000}
+                maxLength={STORY_AUTHORING_TEXT_MAX}
                 placeholder={t("interactionCard.promptPlaceholder")}
                 aria-label={t("interactionCard.promptPlaceholder")}
                 onValueChange={(value) =>

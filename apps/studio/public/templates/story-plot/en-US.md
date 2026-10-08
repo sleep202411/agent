@@ -29,7 +29,7 @@ These are exhaustive field lists, not aliases:
 
 Never add `name` to a node, `description` to a decision, `id`/`text` to a choice, or `assets`/`assetRefs` to a node. Asset definitions belong only in the root `assets` array. A choice must target a node; a terminal scene uses `next: null`.
 
-Declare every state key used by an effect or condition. `set` must match its declared type; `add` is numeric only. Boolean comparisons use `equals` or `not-equals`; numeric comparisons also support `greater-than`, `at-least`, `less-than`, `at-most`. Combine conditions as `{ "kind": "all", "conditions": [condition, condition] }` (every condition), `any` (at least one), or `{ "kind": "not", "condition": condition }`. Maximums: 6 effects per list, 8 routes per scene, condition depth 3 and 12 comparison leaves. State names, decision prompts and choice labels are at most 4,000 characters; state notes at most 2,000. Use simple ASCII state keys such as `story.clue_found` (at most 240 characters); do not use reserved path segments `__proto__`, `prototype`, `constructor`.
+Declare every state key used by an effect or condition. `set` must match its declared type; `add` is numeric only. Boolean comparisons use `equals` or `not-equals`; numeric comparisons also support `greater-than`, `at-least`, `less-than`, `at-most`. Combine conditions as `{ "kind": "all", "conditions": [condition, condition] }` (every condition), `any` (at least one), or `{ "kind": "not", "condition": condition }`. Maximums: 6 effects per list, 8 routes per scene, condition depth 3 and 12 comparison leaves. State names, decision prompts and choice labels are at most 32,000 characters; state notes at most 2,000. Use simple ASCII state keys such as `story.clue_found` (at most 240 characters); do not use reserved path segments `__proto__`, `prototype`, `constructor`.
 
 Timers, default-on-timeout choices, gestures and haptics are not executable import fields. Preserve their intent in scene descriptions or decision prompts; do not claim they were implemented. Do not add a disconnected “notes node” to store unsupported metadata.
 
@@ -39,14 +39,20 @@ Timers, default-on-timeout choices, gestures and haptics are not executable impo
 - State variable: `key` (a stable dot-separated identifier), `name`, `valueType` (`number` or `boolean`), `initialValue` of the same type, and optional `note`. At most 64. Reuse one key for one concept; never create numbered copies such as `courage_1`. Import merges definitions by key: a matching type and initial value reuses the existing definition; a conflict is rejected with its JSON path.
 - State effect: `{ "kind": "set", "key": "met", "value": true }` or `{ "kind": "add", "key": "courage", "amount": 1 }`. Effects may appear in `onEnterEffects` on any node or in `effects` on a choice.
 - State condition: `{ "kind": "compare", "variableKey": "courage", "operator": "at-least", "value": 3 }`. Conditions may appear in `visibleWhen` on a choice or in a scene's optional `routes`. A scene route is `{ "when": condition, "next": nodeIdOrNull }`; routes are tested in order before the scene's required `next` fallback.
-- Asset: `id`, `kind` (`character`, `location` or `prop`), `name` (required, at most 240 characters), `description` (optional, at most 4,000 characters), `imagePrompt` (required, at most 12,000 characters), `videoPrompt` (optional, at most 12,000 characters), `negativePrompt` (optional, at most 4,000 characters). At most 500 assets. Prompts must not contain `@` tokens.
-- Scene: `id`, `type: "scene"`, `title` (required, at most 120 characters), `description` (optional, at most 4,000 characters), `next` (another node ID, or `null` for an ending), optional `routes`, optional `onEnterEffects`, and optional `storyboard`. `storyboard` has only `clips`.
-- Clip: `id`, `kind` (`image` or `video`), `title` (required, at most 160 characters), `durationMs` (integer, 250–3,600,000), `prompt` (required, at most 12,000 characters), `negativePrompt` (optional, at most 4,000 characters). At most 100 clips per scene. Clips play in array order; FizzDragon accumulates start times. A scene’s clips cannot exceed 3,600,000 ms. Clip prompts must not contain `@` tokens. Do not add asset references or bindings.
-- Decision: `id`, `type: "decision"`, `prompt` (required, at most 4,000 characters), optional `onEnterEffects`, and `choices` (2–6 ordered options). Each option has `label`, `next`, and optional `effects` / `visibleWhen`. Endings are scenes with `next: null`, not choices with null targets.
+- Asset: `id`, `kind` (`character`, `location` or `prop`), `name` (required, at most 240 characters), `description` (optional, at most 100,000 characters), `imagePrompt` (required, at most 50,000 characters), `videoPrompt` (optional, at most 50,000 characters), `negativePrompt` (optional, at most 16,000 characters). At most 2,000 assets. Prompts must not contain `@` tokens.
+- Scene: `id`, `type: "scene"`, `title` (required, at most 120 characters), `description` (optional, at most 100,000 characters), `next` (another node ID, or `null` for an ending), optional `routes`, optional `onEnterEffects`, and optional `storyboard`. `storyboard` has only `clips`.
+- Clip: `id`, `kind` (`image` or `video`), `title` (required, at most 160 characters), `durationMs` (integer, 250–3,600,000), `prompt` (required, at most 50,000 characters), `negativePrompt` (optional, at most 16,000 characters), optional `videoFile` (video clips only, filename in the ZIP). At most 500 clips per scene. Clips play in array order; FizzDragon accumulates start times. A scene’s clips cannot exceed 3,600,000 ms. Clip prompts must not contain `@` tokens. Do not add asset references or bindings.
+- Decision: `id`, `type: "decision"`, `prompt` (required, at most 32,000 characters), optional `onEnterEffects`, and `choices` (2–6 ordered options). Each option has `label`, `next`, and optional `effects` / `visibleWhen`. Endings are scenes with `next: null`, not choices with null targets.
 - Every ID is unique in its scope: 1–64 ASCII characters, beginning with a letter, followed by letters, digits or `_`, with optional `.` `:` `-` separators between groups. Node IDs are unique in the file. Asset IDs are unique in the file. Clip IDs are unique inside their scene. Every referenced node must exist. Every node must be reachable from `entryNodeId`. Branches may rejoin the same node; do not duplicate that node.
 - Keep node array order and choice array order intentional. JSON must escape line breaks inside text as `\n` and quotes as `\"`. Preserve the full text within the field limits; split long scenes into connected scene nodes rather than truncate them.
-- At most 500 nodes and 2 MB per file. Split longer stories into chapter files, each self-contained. Do not put cross-file links in `next`.
-- No media URLs, coordinates, `@` mentions, assetRefs or additional metadata. FizzDragon imports the plot tree, state definitions, asset specs and clip prompts; it does not generate media. Internal node IDs are namespaced on import to avoid collisions, while state keys stay stable and are reused.
+- At most 5,000 nodes and 10 MB per file. Split longer stories into chapter files, each self-contained. Do not put cross-file links in `next`.
+- No media URLs (use optional clip `videoFile` for a ZIP filename), coordinates, `@` mentions, assetRefs or additional metadata. FizzDragon imports the plot tree, state definitions, asset specs and clip prompts; it does not generate media. Internal node IDs are namespaced on import to avoid collisions, while state keys stay stable and are reused.
+
+## Optional video ZIP
+
+Select the JSON and its video ZIP together, or add the ZIP after checking the JSON. On each video clip, add `"videoFile": "opening.mp4"` (MP4, MOV or WebM). Matching uses the filename, ignores folders and letter case, and preserves Unicode filenames. Give every video a unique filename across the archive. Missing or duplicate names are listed before importing. Unreferenced files are ignored.
+
+ZIP: up to 512 MB compressed, 1 GB of expanded videos, 250 MB per video and 10,000 archive entries. Use an unencrypted ZIP with relative paths. Videos are uploaded once per filename, verified by the server, and attached to every matching clip in the same chapter import. Uploaded video duration replaces `durationMs`; following clips are positioned using the actual durations. Without a ZIP, only the plot and prompts are imported. No media is generated.
 
 ## Before returning the file
 
@@ -54,7 +60,7 @@ Timers, default-on-timeout choices, gestures and haptics are not executable impo
 - A single-action interaction is a scene with `next`; preserve its action in `description`. Do not invent a second choice. Decisions require 2–6 genuine options.
 - `timeLimit` and `defaultChoice` are not supported import fields. Preserve timing/default intentions in narrative text if needed; this does not implement timers or automatic choices.
 - Finish every string, object and array. Verify the entire file parses as JSON and every node reference resolves before returning it. If your tool supports code execution, use a JSON parser to check the actual file, not just its appearance.
-- The 2 MB import limit is not an AI output allowance. If the story exceeds your output capacity, agree smaller, self-contained chapter files before generation. Never return a truncated file or invent an ending to make an incomplete story importable.
+- The 10 MB import limit is not an AI output allowance. If the story exceeds your output capacity, agree smaller, self-contained chapter files before generation. Never return a truncated file or invent an ending to make an incomplete story importable.
 
 ## Example
 
@@ -108,6 +114,7 @@ Replace this example with my story. The example text is not a required output la
           {
             "id": "mira_turns",
             "kind": "video",
+            "videoFile": "mira_turns.mp4",
             "title": "Mira looks down",
             "durationMs": 4000,
             "prompt": "Mira looks down at the letter, then toward the empty hallway."

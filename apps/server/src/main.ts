@@ -89,6 +89,15 @@ async function bootstrap() {
   // Increase body size limit for large AI conversations
   const { json, urlencoded } = await import('express');
   app.use(
+    /\/story-projects\/[^/]+\/chapters\/[^/]+\/(?:plot-import|draft)$/,
+    json({
+      limit: '32mb',
+      verify: (req, _res, buf) => {
+        (req as { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+      },
+    }),
+  );
+  app.use(
     json({
       limit: '10mb',
       verify: (req, _res, buf) => {

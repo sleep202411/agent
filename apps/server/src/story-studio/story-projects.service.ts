@@ -1,3 +1,8 @@
+import { randomUUID } from 'node:crypto';
+import {
+  clipKey,
+  resolveStoryPlotImportMedia,
+} from './story-plot-import-media';
 import {
   migrateStoredExperienceAppearance,
   GameUIProjectSchema,
@@ -1189,43 +1194,53 @@ export class StoryProjectsService {
     } catch (error) {
       throwPlotImportError(error);
     }
-    const saved = await this.prisma.$transaction(async (tx) => {
-      const committed = await this.commitChapterDraftTx(
-        tx,
-        user,
-        projectId,
-        chapterId,
-        {
-          expectedRevision: input.expectedRevision,
-          schemaVersion: input.schemaVersion,
-          content: imported.content,
-          sessionId: input.sessionId,
-        },
-      );
-      if (!committed) return null;
-      if (committed.status !== 'committed') {
-        throw new InternalServerErrorException({
-          code: 'STORY_PLOT_IMPORT_NOOP',
-          message: 'Plot import did not persist a new draft.',
+    const saved = await this.prisma.$transaction(
+      async (tx) => {
+        const resolved = await resolveStoryPlotImportMedia(
+          tx,
+          projectId,
+          plot,
+          input.media ?? [],
+        ).catch(throwPlotImportError);
+        const committed = await this.commitChapterDraftTx(
+          tx,
+          user,
+          projectId,
+          chapterId,
+          {
+            expectedRevision: input.expectedRevision,
+            schemaVersion: input.schemaVersion,
+            content: imported.content,
+            sessionId: input.sessionId,
+          },
+        );
+        if (!committed) return null;
+        if (committed.status !== 'committed') {
+          throw new InternalServerErrorException({
+            code: 'STORY_PLOT_IMPORT_NOOP',
+            message: 'Plot import did not persist a new draft.',
+          });
+        }
+        await this.writeImportedProduction(tx, {
+          user,
+          projectId,
+          chapterId: committed.chapterId,
+          namespace: imported.namespace,
+          plot: resolved.plot,
+          mediaByClip: resolved.mediaByClip,
         });
-      }
-      await this.writeImportedProduction(tx, {
-        user,
-        projectId,
-        chapterId: committed.chapterId,
-        namespace: imported.namespace,
-        plot,
-      });
-      await tx.storyProject.update({
-        where: { id: projectId },
-        data: { updatedAt: new Date() },
-      });
-      const [draft, savedChapter] = await Promise.all([
-        tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
-        tx.storyChapter.findUnique({ where: { id: committed.chapterId } }),
-      ]);
-      return draft && savedChapter ? { draft, chapter: savedChapter } : null;
-    });
+        await tx.storyProject.update({
+          where: { id: projectId },
+          data: { updatedAt: new Date() },
+        });
+        const [draft, savedChapter] = await Promise.all([
+          tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
+          tx.storyChapter.findUnique({ where: { id: committed.chapterId } }),
+        ]);
+        return draft && savedChapter ? { draft, chapter: savedChapter } : null;
+      },
+      { timeout: 60_000 },
+    );
 
     if (!saved) {
       return this.throwDraftConflict(
@@ -1376,6 +1391,7 @@ export class StoryProjectsService {
       chapterId: string;
       namespace: string;
       plot: ReturnType<typeof parseStoryPlotImportValue>;
+      mediaByClip: Map<string, string>;
     },
   ): Promise<void> {
     const now = new Date();
@@ -1397,12 +1413,12 @@ export class StoryProjectsService {
       if (activeCount + assets.length > MAX_PLOT_IMPORT_ASSETS) {
         throw new BadRequestException({
           code: 'STORY_PRODUCTION_ASSET_LIMIT_REACHED',
-          message: 'A chapter can contain at most 500 Asset Specs.',
+          message: `A chapter can contain at most ${MAX_PLOT_IMPORT_ASSETS} Asset Specs.`,
         });
       }
-      for (const asset of assets) {
-        await tx.storyAssetSpec.create({
-          data: {
+      for (let offset = 0; offset < assets.length; offset += 500) {
+        await tx.storyAssetSpec.createMany({
+          data: assets.slice(offset, offset + 500).map((asset) => ({
             storyProjectId: input.projectId,
             storyChapterId: input.chapterId,
             stableKey: asset.stableKey,
@@ -1425,7 +1441,7 @@ export class StoryProjectsService {
             userModifiedAt: now,
             userModifiedByUserId: input.user.userId,
             lastPlannedAt: now,
-          },
+          })),
         });
       }
     }
@@ -1442,6 +1458,11 @@ export class StoryProjectsService {
     const sequenceByNode = new Map(
       sequences.map((sequence) => [sequence.plotNodeId, sequence.id]),
     );
+    const clipRows: Prisma.StoryStoryboardClipCreateManyInput[] = [];
+    const versions: Prisma.StoryStoryboardClipMediaVersionCreateManyInput[] =
+      [];
+    const selections: { clipId: string; versionId: string }[] = [];
+    const sequenceDurations: { id: string; durationMs: number }[] = [];
     for (const write of clipWrites) {
       const sequenceId = sequenceByNode.get(write.plotNodeId);
       if (!sequenceId) {
@@ -1451,44 +1472,88 @@ export class StoryProjectsService {
         });
       }
       for (const [rank, clip] of write.clips.entries()) {
-        await tx.storyStoryboardClip.create({
-          data: {
-            storyProjectId: input.projectId,
-            storyChapterId: input.chapterId,
-            sequenceId,
-            stableKey: clip.stableKey,
-            title: clip.title,
-            rank,
-            kind: clip.kind as StoryStoryboardClipKind,
-            track: 'visual',
-            startMs: clip.startMs,
-            durationMs: clip.durationMs,
-            description: null,
-            imagePrompt: clip.imagePrompt,
-            videoPrompt: clip.videoPrompt,
-            negativePrompt: clip.negativePrompt,
-            sourceFingerprint: canonicalJsonHash({
-              kind: 'imported-storyboard-clip',
-              projectId: input.projectId,
-              chapterId: input.chapterId,
-              sequenceId,
-              stableKey: clip.stableKey,
-            }),
-            createdByUserId: input.user.userId,
-            userModifiedAt: now,
-            userModifiedByUserId: input.user.userId,
-          },
+        const clipId = randomUUID();
+        const fingerprint = canonicalJsonHash({
+          kind: 'imported-storyboard-clip',
+          projectId: input.projectId,
+          chapterId: input.chapterId,
+          sequenceId,
+          stableKey: clip.stableKey,
         });
-      }
-      await tx.storyStoryboardSequence.update({
-        where: { id: sequenceId },
-        data: {
-          durationMs: write.durationMs,
+        clipRows.push({
+          id: clipId,
+          storyProjectId: input.projectId,
+          storyChapterId: input.chapterId,
+          sequenceId,
+          stableKey: clip.stableKey,
+          title: clip.title,
+          rank,
+          kind: clip.kind as StoryStoryboardClipKind,
+          track: 'visual',
+          startMs: clip.startMs,
+          durationMs: clip.durationMs,
+          description: null,
+          imagePrompt: clip.imagePrompt,
+          videoPrompt: clip.videoPrompt,
+          negativePrompt: clip.negativePrompt,
+          sourceFingerprint: fingerprint,
+          createdByUserId: input.user.userId,
           userModifiedAt: now,
           userModifiedByUserId: input.user.userId,
-          version: { increment: 1 },
-        },
+        });
+        const mediaAssetId = input.mediaByClip.get(
+          clipKey(write.sourceNodeId, clip.stableKey),
+        );
+        if (mediaAssetId) {
+          const versionId = randomUUID();
+          versions.push({
+            id: versionId,
+            storyProjectId: input.projectId,
+            storyChapterId: input.chapterId,
+            storyboardClipId: clipId,
+            versionNumber: 1,
+            mediaAssetId,
+            sourceFingerprint: fingerprint,
+            generationSnapshot: {
+              version: 1,
+              source: 'user_media',
+              mediaAssetId,
+            },
+            createdByUserId: input.user.userId,
+          });
+          selections.push({ clipId, versionId });
+        }
+      }
+      sequenceDurations.push({ id: sequenceId, durationMs: write.durationMs });
+    }
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE story_storyboard_sequences AS sequence
+      SET duration_ms = imported.duration_ms::integer,
+          user_modified_at = ${now}, user_modified_by_user_id = ${input.user.userId},
+          version = sequence.version + 1, updated_at = ${now}
+      FROM (VALUES ${Prisma.join(sequenceDurations.map((sequence) => Prisma.sql`(${sequence.id}::uuid, ${sequence.durationMs}::integer)`))}) AS imported(sequence_id, duration_ms)
+      WHERE sequence.id = imported.sequence_id::uuid
+    `);
+    for (let offset = 0; offset < clipRows.length; offset += 500) {
+      await tx.storyStoryboardClip.createMany({
+        data: clipRows.slice(offset, offset + 500),
       });
+    }
+    if (versions.length) {
+      for (let offset = 0; offset < versions.length; offset += 500) {
+        await tx.storyStoryboardClipMediaVersion.createMany({
+          data: versions.slice(offset, offset + 500),
+        });
+      }
+      // The FK requires media-version rows to exist before selecting them.
+      for (let offset = 0; offset < selections.length; offset += 500) {
+        await tx.$executeRaw(Prisma.sql`
+        UPDATE story_storyboard_clips AS clip
+        SET selected_media_version_id = selected.version_id::uuid
+        FROM (VALUES ${Prisma.join(selections.slice(offset, offset + 500).map((selection) => Prisma.sql`(${selection.clipId}::uuid, ${selection.versionId}::uuid)`))}) AS selected(clip_id, version_id)
+        WHERE clip.id = selected.clip_id::uuid
+      `);
+      }
     }
   }
 
