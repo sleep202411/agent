@@ -5880,5 +5880,6 @@
   "taskMenu.title": "任务操作",
   "taskMenu.edit": "编辑任务",
   "taskMenu.invite": "生成邀请链接",
-  "taskMenu.recruit": "开放招募"
+  "taskMenu.recruit": "开放招募",
+  "taskReview.cardApproval": "抽卡任务付款须经FD3或以上成员验收。项目没有FD3或以上成员且只有一名已分配的抽卡师时，须由指定的项目制作负责人验收。"
 }

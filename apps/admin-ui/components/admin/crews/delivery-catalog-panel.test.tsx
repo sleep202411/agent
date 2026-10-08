@@ -45,6 +45,13 @@ it.each(["", "/ops"])("retains edits and routes list/save under %s", async (base
   await act(async () => root.render(<DeliveryCatalogPanel />));
   await click("Edit Animation");
   act(() => {
+    const policy = Array.from(container.querySelectorAll("select")).find((select) =>
+      select.querySelector('option[value="fd3_or_production_lead"]')
+    )!;
+    policy.value = "fd3_or_production_lead";
+    policy.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  act(() => {
     const area = Array.from(container.querySelectorAll("textarea")).at(-1)!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
       area,
@@ -73,6 +80,10 @@ it.each(["", "/ops"])("retains edits and routes list/save under %s", async (base
     `${base}/api/admin/crew-delivery-catalog/${row.id}`
   );
   const options = vi.mocked(fetch).mock.calls[1][1]!;
+  expect(JSON.parse(String(options.body))).toMatchObject({
+    expectedVersion: 1,
+    definition: { approvalPolicy: "fd3_or_production_lead" },
+  });
   await act(async () =>
     finish(new Response(JSON.stringify({ message: "Save unavailable" }), { status: 503 }))
   );

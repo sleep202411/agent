@@ -1,3 +1,4 @@
+import { TaskEdit } from "./task-edit";
 import { TaskManagementMenu } from "./task-management-menu";
 import { PositionCreate } from "./position-create";
 import { TaskInviteLinks } from "./task-invite-links";
@@ -13,7 +14,7 @@ import { TaskClosure } from "./task-closure";
 import { TaskDeadline } from "./task-deadline";
 import { useTaskCustomFieldSession } from "./use-task-custom-field-session";
 import { TaskCustomFields } from "./task-custom-fields";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useIsFocused } from "expo-router";
@@ -76,6 +77,7 @@ function TaskNavigator(props: Props) {
         key={taskId}
         refreshKey={activity.revision}
         taskId={taskId}
+        initialAction={history.length === 1 ? props.initialAction : undefined}
         backToTask={history.length > 1}
         onOpenTask={(id) =>
           setHistory((current) => {
@@ -111,6 +113,7 @@ function TaskContent({
 }) {
   const t = useTranslations(),
     locale = useLocale();
+  const [editing, setEditing] = useState(initialAction === "edit");
   const [managing, setManaging] = useState(initialAction === "edit");
   const [inviting, setInviting] = useState(initialAction === "invite");
   const [recruiting, setRecruiting] = useState(initialAction === "recruit");
@@ -167,13 +170,6 @@ function TaskContent({
   const current =
     result?.revision === revision && result.refreshKey === refreshKey ? result : undefined;
   const data = current?.data;
-  const openedEdit = useRef(false);
-  useEffect(() => {
-    if (initialAction === "edit" && data && !openedEdit.current) {
-      openedEdit.current = true;
-      briefSession.open(data);
-    }
-  }, [initialAction, data, briefSession]);
   const displays = useUserDisplays(String(generation), data?.assignees.map((a) => a.userId) ?? []);
   const date = (value: string | null) =>
     value ? new Date(value).toLocaleString(locale) : t("thread.taskUnset");
@@ -189,6 +185,20 @@ function TaskContent({
     );
   return (
     <>
+      {editing && (
+        <TaskEdit
+          key={`${taskId}:${generation}`}
+          crewId={crewId}
+          taskId={taskId}
+          userId={userId}
+          generation={generation}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            setRevision((v) => v + 1);
+          }}
+        />
+      )}
       <TaskSubmissionUpload
         session={submitSession}
         crewId={crewId}
@@ -213,7 +223,7 @@ function TaskContent({
         />
       )}
       <ScrollView
-        style={creatingChild ? { display: "none" } : undefined}
+        style={creatingChild || editing ? { display: "none" } : undefined}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 16, gap: 12 }}
       >
@@ -235,7 +245,7 @@ function TaskContent({
               generation={generation}
               edit={() => {
                 setManaging(true);
-                briefSession.open(data);
+                setEditing(true);
               }}
               invite={() => setInviting((v) => !v)}
               recruit={() => setRecruiting(true)}
@@ -444,7 +454,7 @@ function TaskContent({
           </>
         )}
         <TaskTimeline
-          suspended={!data || !!creatingChild || !managing}
+          suspended={!data || !!creatingChild || !managing || editing}
           crewId={crewId}
           taskId={taskId}
           userId={userId}

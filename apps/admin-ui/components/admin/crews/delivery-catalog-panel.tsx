@@ -11,6 +11,7 @@ type Field = {
 };
 type Definition = {
   categoryKey?: string;
+  approvalPolicy?: "standard" | "fd3_or_production_lead";
   name: string;
   description: string;
   status: "active" | "archived";
@@ -236,6 +237,26 @@ export function DeliveryCatalogPanel() {
                 </p>
               )}
             </div>
+            <label className="block">
+              Acceptance approval
+              <select
+                className={inputClass}
+                value={draft.definition.approvalPolicy ?? "standard"}
+                onChange={(e) =>
+                  change({ approvalPolicy: e.target.value as Definition["approvalPolicy"] })
+                }
+              >
+                <option value="standard">Standard task review</option>
+                <option value="fd3_or_production_lead">
+                  Card generation: FD3 or qualified production-lead fallback
+                </option>
+              </select>
+            </label>
+            <p className="text-xs text-muted-foreground">
+              For card generation, the production lead can approve only if the project has no
+              FD3-or-higher member and exactly one assigned card artist. Existing tasks retain their
+              agreed template revision.
+            </p>
             <label className="block">
               Category name
               <input

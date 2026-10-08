@@ -1129,6 +1129,7 @@ export type CrewDeliveryTemplateDTO = {
   categoryId: string;
   version: number;
   definition: {
+    approvalPolicy?: "standard" | "fd3_or_production_lead";
     name: string;
     prices?: { currency: "USD" | "CNY"; amountMinor: string; unit: string }[];
     fields: {

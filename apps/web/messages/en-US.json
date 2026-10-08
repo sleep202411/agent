@@ -5905,7 +5905,8 @@
     "viewContract": "View contract",
     "removeContract": "Remove attachment",
     "requiredReward": "Reward",
-    "requiredTaskFields": "Complete the required fields: {fields}."
+    "requiredTaskFields": "Complete the required fields: {fields}.",
+    "cardApproval": "Card-generation payment requires FD3-or-higher approval. If this project has no FD3-or-higher member and exactly one assigned card artist, the designated production lead must approve instead."
   },
   "crewInvitations": {
     "signIn": "Sign in",

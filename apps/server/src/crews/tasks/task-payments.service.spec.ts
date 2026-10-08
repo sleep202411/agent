@@ -32,6 +32,8 @@ function fixture(term = 'half_upfront', status = 'in_progress') {
     version: 3,
     workflowState: { semantic: status },
     metadata: { compensation: { paymentTerms: term } },
+    approvedByUserId: 'reviewer',
+    submissions: [{ id: 'latest-submission' }],
     assignees: [
       {
         userId: 'creator',
@@ -53,7 +55,7 @@ function fixture(term = 'half_upfront', status = 'in_progress') {
     },
     crewEarningEntry: { findUnique: jest.fn().mockResolvedValue(null) },
     $executeRaw: jest.fn(),
-    $queryRaw: jest.fn(),
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
   const db = { $transaction: (fn: (t: typeof tx) => unknown) => fn(tx) };
   const earnings = { postTaskRewardTx: jest.fn() };
@@ -168,3 +170,45 @@ it('refuses to duplicate a historical task reward', async () => {
   );
   expect(f.tx.taskPaymentRelease.create).not.toHaveBeenCalled();
 });
+
+it('blocks card-generation payment until the latest submission has policy-specific approval', async () => {
+  const f = fixture();
+  f.tx.$queryRaw.mockResolvedValue([
+    { definition: { approvalPolicy: 'fd3_or_production_lead' } },
+  ]);
+  await expect(f.service.release(admin, id, input)).rejects.toThrow(
+    'verified FD3',
+  );
+  expect(f.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+});
+
+it.each(['latest-submission', 'older-submission'])(
+  'checks the approved submission identity before releasing card payment (%s)',
+  async (submissionId) => {
+    const f = fixture('on_completion', 'approved');
+    f.tx.$queryRaw.mockResolvedValue([
+      { definition: { approvalPolicy: 'fd3_or_production_lead' } },
+    ]);
+    Object.assign(f.task.metadata, {
+      cardApproval: {
+        policy: 'fd3_or_production_lead',
+        reviewerUserId: 'reviewer',
+        submissionId,
+      },
+    });
+    const release = f.service.release(admin, id, {
+      ...input,
+      paymentTerms: 'on_completion',
+    });
+    if (submissionId === 'latest-submission') {
+      await expect(release).resolves.toEqual({ id: 'release' });
+      expect(f.earnings.postTaskRewardTx).toHaveBeenCalledWith(
+        f.tx,
+        expect.objectContaining({ amountMinor: 10000n }),
+      );
+    } else {
+      await expect(release).rejects.toThrow('latest submission');
+      expect(f.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+    }
+  },
+);

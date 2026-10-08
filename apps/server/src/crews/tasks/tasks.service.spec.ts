@@ -11,6 +11,7 @@ import {
   ListCrewTasksQuerySchema,
 } from './project-dto';
 import { CrewTasksService } from './tasks.service';
+import * as cardApproval from './card-approval';
 
 const CREW_ID = 'crew-1';
 const TASK_ID = '01910d50-4c88-7c78-92d4-16892c06a010';
@@ -1804,6 +1805,75 @@ describe('CrewTasksService', () => {
         note: 'Approved.',
       });
       expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])(
+    'validates card approval before writing review or payment (valid=%s)',
+    async (valid) => {
+      const t = build();
+      const marked = task();
+      Object.assign(marked.submissions[0], {
+        professionalDelivery: {
+          definition: { approvalPolicy: 'fd3_or_production_lead' },
+        },
+      });
+      t.prisma.crewTask.findUnique.mockResolvedValue(marked);
+      t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(marked);
+      const validate = jest.fn(() =>
+        valid
+          ? Promise.resolve()
+          : Promise.reject(new ConflictException('Director changed')),
+      );
+      const spy = jest
+        .spyOn(cardApproval, 'prepareCardApproval')
+        .mockResolvedValue({
+          evidence: {
+            policy: 'fd3_or_production_lead',
+            method: 'production_lead',
+            reviewerUserId: OWNER_ID,
+            verifiedAt: new Date().toISOString(),
+          },
+          validate,
+        });
+      try {
+        const result = t.service.review(
+          TASK_ID,
+          OWNER_ID,
+          {
+            expectedSubmissionId: 'submission-1',
+            decision: 'approve',
+            note: 'Accepted',
+          },
+          'session',
+        );
+        if (valid) {
+          await result;
+          expect(t.tx.crewTask.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+              data: expect.objectContaining({
+                metadata: expect.objectContaining({
+                  cardApproval: expect.objectContaining({
+                    submissionId: 'submission-1',
+                    reviewerUserId: OWNER_ID,
+                  }) as unknown,
+                }) as unknown,
+              }) as unknown,
+            }),
+          );
+        } else {
+          await expect(result).rejects.toThrow('Director changed');
+          expect(t.tx.crewTaskSubmission.update).not.toHaveBeenCalled();
+          expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+        }
+        expect(validate).toHaveBeenCalledWith(t.tx);
+        expect(t.prisma.$transaction).toHaveBeenCalledWith(
+          expect.any(Function),
+          { isolationLevel: 'Serializable' },
+        );
+      } finally {
+        spy.mockRestore();
+      }
     },
   );
 

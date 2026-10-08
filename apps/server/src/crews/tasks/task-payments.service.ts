@@ -1,3 +1,5 @@
+import { readTaskDeliveryTemplate } from './task-delivery-template';
+import { CARD_APPROVAL_POLICY } from './card-approval';
 import {
   BadRequestException,
   ConflictException,
@@ -33,7 +35,15 @@ export class TaskPaymentsService {
     z.uuid().parse(id);
     const task = await this.prisma.crewTask.findFirst({
       where: { id, deletedAt: null },
-      include: { assignees: true, workflowState: true },
+      include: {
+        assignees: true,
+        workflowState: true,
+        submissions: {
+          orderBy: { versionNumber: 'desc' },
+          take: 1,
+          select: { id: true },
+        },
+      },
     });
     if (!task) throw new NotFoundException('Task not found.');
     const releases = await this.prisma.taskPaymentRelease.findMany({
@@ -96,8 +106,38 @@ export class TaskPaymentsService {
       }
       const task = await tx.crewTask.findFirstOrThrow({
         where: { id, deletedAt: null },
-        include: { assignees: true, workflowState: true },
+        include: {
+          assignees: true,
+          workflowState: true,
+          submissions: {
+            orderBy: { versionNumber: 'desc' },
+            take: 1,
+            select: { id: true },
+          },
+        },
       });
+      const template = await readTaskDeliveryTemplate(tx, id);
+      if (template?.definition.approvalPolicy === CARD_APPROVAL_POLICY) {
+        const proof = (
+          task.metadata as {
+            cardApproval?: {
+              policy?: string;
+              reviewerUserId?: string;
+              submissionId?: string;
+            };
+          } | null
+        )?.cardApproval;
+        if (
+          task.workflowState.semantic !== 'approved' ||
+          proof?.policy !== CARD_APPROVAL_POLICY ||
+          proof.reviewerUserId !== task.approvedByUserId ||
+          !proof.submissionId ||
+          proof.submissionId !== task.submissions[0]?.id
+        )
+          throw new ConflictException(
+            'Card-generation payment requires verified FD3 or production-lead approval of the latest submission.',
+          );
+      }
       const term = await assignedPaymentTerm(
         tx,
         id,

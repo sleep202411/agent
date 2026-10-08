@@ -5880,5 +5880,6 @@
   "taskMenu.title": "任務操作",
   "taskMenu.edit": "編輯任務",
   "taskMenu.invite": "產生邀請連結",
-  "taskMenu.recruit": "開放招募"
+  "taskMenu.recruit": "開放招募",
+  "taskReview.cardApproval": "抽卡任務付款須經FD3或以上成員驗收。項目沒有FD3或以上成員且只有一名已分配的抽卡師時，須由指定的項目製作負責人驗收。"
 }

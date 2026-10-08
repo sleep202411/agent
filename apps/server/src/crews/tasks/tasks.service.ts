@@ -1,3 +1,4 @@
+import { prepareCardApproval, isCardDelivery } from './card-approval';
 import { assignedPaymentTerm } from './task-payment-policy';
 import { recordTaskContractFile } from '../assets/task-contract-retention';
 import { TASK_PAYMENT_TERMS } from '@repo/shared/crew';
@@ -347,14 +348,18 @@ export class CrewTasksService {
     crewId: string,
     authorize: (tx: Prisma.TransactionClient) => Promise<void>,
     write: (tx: Prisma.TransactionClient) => Promise<T>,
+    isolationLevel?: Prisma.TransactionIsolationLevel,
   ): Promise<T> {
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockTaskWrites(tx, crewId);
-      await authorize(tx);
-      const result = await write(tx);
-      await authorize(tx);
-      return result;
-    });
+    return this.prisma.$transaction(
+      async (tx) => {
+        await this.lockTaskWrites(tx, crewId);
+        await authorize(tx);
+        const result = await write(tx);
+        await authorize(tx);
+        return result;
+      },
+      isolationLevel ? { isolationLevel } : undefined,
+    );
   }
 
   private async manageTaskWrite<T>(
@@ -3915,9 +3920,26 @@ export class CrewTasksService {
     return this.toDtoWithUsage(updated);
   }
 
-  async review(taskId: string, userId: string, input: ReviewCrewTaskInput) {
+  async review(
+    taskId: string,
+    userId: string,
+    input: ReviewCrewTaskInput,
+    cookie?: string,
+  ) {
     const current = await this.requireTask(taskId);
     await this.authorization.require(current.crewId, userId, 'tasks.review');
+
+    const cardApproval =
+      input.decision === 'approve' &&
+      isCardDelivery(current.submissions[0]?.professionalDelivery)
+        ? await prepareCardApproval(
+            this.prisma,
+            current.crewId,
+            taskId,
+            userId,
+            cookie,
+          )
+        : null;
 
     const task = await this.authorizedTaskWrite(
       current.crewId,
@@ -3958,6 +3980,14 @@ export class CrewTasksService {
           });
         }
         const now = new Date();
+        if (
+          input.decision === 'approve' &&
+          isCardDelivery(latest.professionalDelivery) !== !!cardApproval
+        )
+          throw new ConflictException(
+            'Delivery approval requirements changed. Refresh the task.',
+          );
+        if (cardApproval) await cardApproval.validate(tx);
         const approved = input.decision === 'approve';
         if (approved && input.revisionDueAt !== undefined)
           throw new BadRequestException(
@@ -4071,6 +4101,17 @@ export class CrewTasksService {
                 workflowStateId: targetWorkflowState.id,
                 approvedAt: now,
                 approvedByUserId: userId,
+                ...(cardApproval
+                  ? {
+                      metadata: {
+                        ...((locked.metadata as Prisma.JsonObject) ?? {}),
+                        cardApproval: {
+                          ...cardApproval.evidence,
+                          submissionId: latest.id,
+                        },
+                      },
+                    }
+                  : {}),
                 version: { increment: 1 },
               }
             : {
@@ -4135,6 +4176,7 @@ export class CrewTasksService {
         }
         return updated;
       },
+      cardApproval ? Prisma.TransactionIsolationLevel.Serializable : undefined,
     );
     await this.conversations.broadcastCrewTaskChange(
       task.crewId,

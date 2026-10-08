@@ -14,6 +14,15 @@ const ItemSchema = z
     qualification: z
       .object({
         pdLevel: z.enum(['PD', 'FD']).optional(),
+        fdRank: z
+          .union([
+            z.literal(1),
+            z.literal(2),
+            z.literal(3),
+            z.literal(4),
+            z.literal(5),
+          ])
+          .optional(),
         certification: z.string().optional(),
       })
       .passthrough()

@@ -36,6 +36,7 @@ const Field = z
   .strict();
 export const DeliveryDefinition = z
   .object({
+    approvalPolicy: z.enum(['standard', 'fd3_or_production_lead']).optional(),
     categoryKey: z
       .string()
       .regex(/^[a-z][a-z0-9_]{0,47}$/)

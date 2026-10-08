@@ -45,6 +45,7 @@ type Props = {
   initialWorkflow?: TaskWorkflow;
   closeLabel?: string;
   suspended?: boolean;
+  onSave?: (input: TaskDraftInput) => Promise<{ id: string }>;
   onStage?: (input: TaskDraftInput, review: TaskDraftReview) => void;
   onCreated: (id: string) => void;
   onClose: () => void;
@@ -147,6 +148,7 @@ function Editor({
   suspended,
   onCreated,
   onStage,
+  onSave,
   onClose,
 }: Props & { defaults: TaskCreationDefaults }) {
   const active = useScreenActive();
@@ -242,7 +244,7 @@ function Editor({
           (appEnv.siteRegion === "cn" ? "CNY" : "USD"),
       })),
     });
-    assertTaskCreationDeadline(input.dueAt);
+    if (!onSave || input.dueAt !== initial?.dueAt) assertTaskCreationDeadline(input.dueAt);
   } catch (cause) {
     deadlineInvalid = cause instanceof TaskCreationDeadlineError;
     input = undefined;
@@ -253,7 +255,7 @@ function Editor({
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
-      <ThemedText type="smallBold">{t("taskCreate.title")}</ThemedText>
+      <ThemedText type="smallBold">{t(onSave ? "taskMenu.edit" : "taskCreate.title")}</ThemedText>
       <ThemedText>{t("taskBrief.title")}</ThemedText>
       <TextInput
         accessibilityLabel={t("taskBrief.title")}
@@ -487,7 +489,7 @@ function Editor({
           )
             return;
           try {
-            assertTaskCreationDeadline(input.dueAt);
+            if (!onSave || input.dueAt !== initial?.dueAt) assertTaskCreationDeadline(input.dueAt);
           } catch {
             setValidationError(t("taskCreate.deadlinePast"));
             return;
@@ -523,7 +525,7 @@ function Editor({
             () => {
               attemptedRef.current = true;
               setAttempted(true);
-              return createTask(crewId, data);
+              return onSave ? onSave(data) : createTask(crewId, data);
             },
             (task) => onCreated(task.id),
             (cause) => {
@@ -538,11 +540,13 @@ function Editor({
       >
         <ThemedText>
           {t(
-            onStage
-              ? initialDraft
-                ? "taskWorkbench.saveDraft"
-                : "taskWorkbench.stage"
-              : "taskCreate.submit"
+            onSave
+              ? "taskBrief.save"
+              : onStage
+                ? initialDraft
+                  ? "taskWorkbench.saveDraft"
+                  : "taskWorkbench.stage"
+                : "taskCreate.submit"
           )}
         </ThemedText>
       </Pressable>

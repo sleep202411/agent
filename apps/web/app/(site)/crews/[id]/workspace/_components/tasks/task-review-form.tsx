@@ -134,6 +134,10 @@ function ReviewSession({ task, onReviewed }: Props) {
         <IconClipboardCheck className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold text-foreground">{t("reviewSubmission")}</h3>
       </div>
+      {latestSubmission?.professionalDelivery?.definition.approvalPolicy ===
+        "fd3_or_production_lead" && (
+        <p className="mb-3 text-sm text-muted-foreground">{t("cardApproval")}</p>
+      )}
       <Textarea
         aria-label={t("reviewNotePlaceholder")}
         aria-describedby={instructionsId}

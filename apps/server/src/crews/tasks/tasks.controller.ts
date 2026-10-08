@@ -5,6 +5,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -619,7 +620,13 @@ export class CrewTasksController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(ReviewCrewTaskSchema))
     body: ReviewCrewTaskInput,
+    @Headers('cookie') cookie?: string,
   ) {
-    return this.tasks.review(parseIdParam(taskId, 'taskId'), user.userId, body);
+    return this.tasks.review(
+      parseIdParam(taskId, 'taskId'),
+      user.userId,
+      body,
+      cookie,
+    );
   }
 }

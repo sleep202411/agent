@@ -1,0 +1,100 @@
+Pax checklist verification — 2026-10-08
+
+Sources
+- FizzDragon平台checklist.xlsx, Sheet1, rows 3–26.
+- 副本副本副本FizzDragon AIGC创作价格参考 2026(2) 有表格附件3.xlsx,
+  sheet 统一价目. This workbook contains the price, qualification and delivery requirements.
+- Pax's additional approval/evaluation feedback; user approved production lead + explicit task marking.
+
+Scope and acceptance boundary
+This is a source and focused local-test audit, not a production acceptance certificate.
+No remote database/configuration was modified. Existing saved templates retain their
+versions and agreed compensation. Native changes need a new app build/device acceptance;
+Web/Server deployment alone does not update an installed native app.
+
+Checklist coverage
+Rows 3–6: The affected task editor uses a populated form without a user-visible draft
+step. English/Chinese review hints are supplied. A repository-wide assertion that every
+button, capitalization and supplied design is correct requires a separate full visual
+acceptance pass; it is not established by these tests.
+Rows 7–8: Task project context, creation and invitation acceptance have existing flows.
+Invitation acceptance tests cover joining the crew. Live authenticated create-project,
+create-task, invite, accept and edit acceptance is still required in each region.
+Row 9: Submission/review APIs, mutual feedback and public profile aggregates exist.
+Only the actual reviewer and approved submitter can evaluate each other; self-review
+is rejected. Public aggregates use public reviews, preserving historical private feedback.
+Web/Mobile review tests and Server feedback/scoring/appeal tests pass locally.
+Rows 10–11: Task delivery folders are automatic. Versioned Admin delivery categories and
+required attachments are enforced on submission. Folder and delivery-template tests pass.
+The new card-generation policy must be explicitly selected in Admin and bound before
+work starts; old task agreements are not silently reclassified.
+Rows 12–13: Production, royalty, referral and Academy income paths exist. Focused tests
+cover agreed task releases, referral logic, Academy and withdrawal proofs. They do not
+reconcile production balances or establish real bank payout correctness.
+Row 14: Task contract retention/download and native contract screens exist. Contract
+retention tests pass. Live private-object access still needs regional acceptance.
+Rows 15–19: FD/skill eligibility, course mappings, credit enrollment, homework, teacher
+review and configured teacher income paths exist. Academy and qualification tests pass.
+Regional Java FD/skill mappings must be configured; course participation alone is not
+proof of qualification. No arbitrary community-credit-to-cash rate was introduced.
+Rows 20–22: Resolution creation, Admin progress and user progress exist; the focused
+HTTP dispute suite passes with a local test server. Feedback appeal tests also pass.
+Rows 23–26: Storyboard opening, media selection, sequential playback and reorder paths
+exist; native player and Server saved-storyboard/worker tests pass. Export uses the
+Server worker, not browser-only concatenation. Live export is not marked accepted:
+previously reported private output-storage provisioning must be verified separately.
+
+Changes in this round
+- Native Edit Task opens the full populated form, sends only changed fields, preserves
+  existing per-assignee amounts and requires an exact version acknowledgement.
+- Explicit card-generation delivery policy: authorized FD3-or-higher reviewer, or the
+  active production lead only when no active crew member has FD3 and there is exactly
+  one assigned card artist. Qualification outages fail closed. Approval context is
+  rechecked transactionally; payment requires proof for the latest submission.
+- Admin policy selection and Web/Mobile review explanations.
+- Matching default price-reference corrections: script 150–300 per 1,000 characters,
+  internal assembly 8 per item (FD1), provided-art work 120/minute (FD2) or 150/minute
+  (FD3), director reference 10 percent, numeric FD ranks and music delivery fields.
+  FD2/FD3 provided-art choices depend on art inputs, not on completing each other.
+
+Pricing workbook limits
+Reference prices are not automatically settled amounts, and the workbook does not
+explicitly label currency. The existing regional rule remains .com USD / CN CNY.
+Existing Admin-published templates override code defaults and were not updated remotely.
+The workbook's external categories, advertisement tiers, director bonus/profit-share
+and compute-overrun appeal terms need explicit catalog/contract configuration; this
+change does not claim to have seeded all workbook rows into either live database.
+Row 13 describes video card generation but has image wording in its delivery columns.
+That inconsistency remains a source clarification; no unsupported format was assumed.
+
+Pax evaluation / padded scripts
+Payments use agreed task/per-assignee minor-unit amounts; uploaded word count does not
+increase them automatically. Revision requests, mutual ratings and disputes provide
+existing quality-control paths. This does not detect AI authorship or automatically
+punish creators. For per-word contracts, accepted billable quantity/scope must be agreed
+and reviewed; an automatic accepted-word-count settlement workflow is not implemented.
+
+Other outstanding acceptance
+- Reproduce the specific 红楼 upload failure with the affected authenticated flow.
+- Verify private export storage and a real combined downloadable MP4 in both regions.
+- Verify configured FD catalog, production lead, marked delivery template and latest
+  submission approval on a real regional task before calling the FD3 rule live-ready.
+- Confirm global app store routing/device login. Isaac's supplied guidance identifies
+  overseas App Store / Google Play distribution, not a standalone global download.
+
+Validation evidence
+Focused Server suites cover approval policy, task review/payments, templates, mutual
+feedback/appeals/scoring, invitations, Academy, referrals, withdrawal proofs, disputes,
+folders/contracts, qualifications and storyboard worker/saved media.
+Focused Web tests cover task review and mutual feedback. Native tests cover task
+editing, review/submission, feedback, Academy, withdrawals and storyboard playback.
+Admin catalog tests cover the existing catalog workflow. Scoped lint/type checks are
+run before committing. These local results do not replace the live checks above.
+
+Read-only live configuration check (2026-10-08, this audit)
+Both Server deployments reference image 969efb926b4ec56cbdbeffffa7dc539e6497bfd8.
+.com: CREW_QUALIFICATION_CATALOG_JSON present with all five FD ranks.
+CN: CREW_QUALIFICATION_CATALOG_JSON absent from deployment environment sources.
+Both: no S3_PRIVATE_BUCKET / OSS_PRIVATE_BUCKET / OSS_PRIVATE_ENDPOINT configured
+in the inspected Server environment sources. Secret values were not printed.
+These are concrete configuration blockers, not evidence that the new commit is deployed.

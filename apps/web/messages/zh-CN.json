@@ -5905,7 +5905,8 @@
     "viewContract": "查看合同",
     "removeContract": "移除附件",
     "requiredReward": "报酬",
-    "requiredTaskFields": "请填写必填项：{fields}。"
+    "requiredTaskFields": "请填写必填项：{fields}。",
+    "cardApproval": "抽卡任务付款须经FD3或以上成员验收。项目没有FD3或以上成员且只有一名已分配的抽卡师时，须由指定的项目制作负责人验收。"
   },
   "crewInvitations": {
     "signIn": "登录",

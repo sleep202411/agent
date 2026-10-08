@@ -965,3 +965,63 @@ it("includes the selected payment terms in the task creation command", async () 
   await act(async () => button("taskCreate.submit")!.click());
   expect(h.update.mock.calls[0][1]).toMatchObject({ paymentTerms: "half_upfront" });
 });
+
+it("edits a populated saved task with an unchanged past deadline without creating a new task", async () => {
+  const save = vi.fn().mockResolvedValue({ id: "saved" });
+  const done = vi.fn();
+  await act(async () =>
+    root.render(
+      <TaskCreate
+        crewId="crew"
+        userId="1"
+        generation={1}
+        onSave={save}
+        onCreated={done}
+        onClose={() => {}}
+        initialDraft={{
+          id: 0,
+          kind: "task",
+          state: "staged",
+          input: {
+            title: "Saved title",
+            description: "Saved brief",
+            priority: "normal",
+            startAt: null,
+            dueAt: "2026-01-01T00:00:00Z",
+            parentId: null,
+            blockedByTaskIds: [],
+            assignees: [],
+            paymentTerms: "on_completion",
+            rewardCurrency: "USD",
+            rewardUsdMinor: 15000,
+          },
+          review: {
+            context: [],
+            assignees: [],
+            customFields: [],
+            editor: {
+              planning: { labels: [], cycle: null, episode: null },
+              workflow: null,
+              parent: null,
+              blockers: [],
+              assignees: [],
+            },
+          },
+        }}
+      />
+    )
+  );
+  expect(host.querySelectorAll("input")[0]!.value).toBe("Saved title");
+  await act(async () => type(1, "Updated brief"));
+  expect(button("taskBrief.save")!.disabled).toBe(false);
+  await act(async () => button("taskBrief.save")!.click());
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      description: "Updated brief",
+      rewardUsdMinor: 15000,
+      dueAt: "2026-01-01T00:00:00Z",
+    })
+  );
+  expect(h.update).not.toHaveBeenCalled();
+  expect(done).toHaveBeenCalledWith("saved");
+});

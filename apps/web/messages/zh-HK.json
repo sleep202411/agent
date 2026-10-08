@@ -5905,7 +5905,8 @@
     "viewContract": "查看合約",
     "removeContract": "移除附件",
     "requiredReward": "報酬",
-    "requiredTaskFields": "請填寫必填項：{fields}。"
+    "requiredTaskFields": "請填寫必填項：{fields}。",
+    "cardApproval": "抽卡任務付款須經FD3或以上成員驗收。項目沒有FD3或以上成員且只有一名已分配的抽卡師時，須由指定的項目製作負責人驗收。"
   },
   "crewInvitations": {
     "signIn": "登入",

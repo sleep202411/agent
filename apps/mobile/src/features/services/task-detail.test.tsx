@@ -5,6 +5,13 @@ import { TaskDetail } from "./task-detail";
 import { api } from "@/lib/api-client";
 import { TaskCenter } from "./task-center";
 import type { TaskSubmitSession } from "./use-task-submit-session";
+vi.mock("./task-edit", () => ({
+  TaskEdit: ({ onClose }: { onClose(): void }) => (
+    <div>
+      populated task form<button onClick={onClose}>close form</button>
+    </div>
+  ),
+}));
 vi.mock("./position-create", () => ({ PositionCreate: () => null }));
 vi.mock("./task-management-menu", () => ({
   TaskManagementMenu: ({ edit }: { edit(): void }) => <button onClick={edit}>taskMenu.edit</button>,
@@ -193,8 +200,8 @@ const detail = {
   labels: [{ id: "label", name: "Animation" }],
   assignees: [{ userId: "1" }],
 };
-const render = (taskId = "task", action: "edit" | undefined = "edit") =>
-  act(async () =>
+const render = async (taskId = "task", action: "edit" | undefined = "edit") => {
+  await act(async () =>
     root.render(
       <TaskDetail
         initialAction={action}
@@ -207,6 +214,12 @@ const render = (taskId = "task", action: "edit" | undefined = "edit") =>
       />
     )
   );
+  // Detail controls remain available after closing the dedicated full-form editor.
+  const close = Array.from(host.querySelectorAll("button")).find(
+    (b) => b.textContent === "close form"
+  );
+  if (close) await act(async () => close.click());
+};
 const click = (s: string) =>
   Array.from(host.querySelectorAll("button"))
     .find((b) => b.textContent === s)!
@@ -597,5 +610,5 @@ it("opens the simple task view by default and exposes management through Edit", 
   expect(host.textContent).not.toContain("custom fields");
   expect(host.textContent).not.toContain("workflow editor");
   await act(async () => click("taskMenu.edit"));
-  expect(host.textContent).toContain("custom fields");
+  expect(host.textContent).toContain("populated task form");
 });

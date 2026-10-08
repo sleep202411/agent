@@ -5880,5 +5880,6 @@
   "taskMenu.title": "Task Actions",
   "taskMenu.edit": "Edit Task",
   "taskMenu.invite": "Generate Invitation Link",
-  "taskMenu.recruit": "Open Recruitment"
+  "taskMenu.recruit": "Open Recruitment",
+  "taskReview.cardApproval": "Card-generation payment requires FD3-or-higher approval. If this project has no FD3-or-higher member and exactly one assigned card artist, the designated production lead must approve instead."
 }

@@ -82,6 +82,8 @@ function Review({
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("taskReview.reviewSubmission")}</ThemedText>
+      {task.submissions[0]?.professionalDelivery?.definition.approvalPolicy ===
+        "fd3_or_production_lead" && <ThemedText>{t("taskReview.cardApproval")}</ThemedText>}
       {allowed === undefined && !error && <ActivityIndicator />}
       {error && (
         <>
