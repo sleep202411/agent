@@ -56,6 +56,20 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(latest_source(self.repo, self.source), self.source)
         self.assertEqual(latest_source(self.repo, self.source, cn=True), new)
 
+    def test_com_image_tag_update_does_not_restart_cn(self):
+        before = self.commit('deploy/helm/fizzdragon/values.yaml',
+                             'web:\n  image:\n    repository: fizzdragon-web\n    tag: old\n')
+        self.commit('deploy/helm/fizzdragon/values.yaml',
+                    'web:\n  image:\n    repository: fizzdragon-web\n    tag: newer\n')
+        self.assertEqual(latest_source(self.repo, before, cn=True), before)
+
+    def test_repository_or_other_config_still_restarts_cn(self):
+        before = self.commit('deploy/helm/fizzdragon/values.yaml',
+                             'web:\n  image:\n    repository: old\n    tag: old\n')
+        newer = self.commit('deploy/helm/fizzdragon/values.yaml',
+                            'web:\n  image:\n    repository: changed\n    tag: newer\n')
+        self.assertEqual(latest_source(self.repo, before, cn=True), newer)
+
     def test_divergence_is_not_automatically_overwritten(self):
         self.commit('app.txt', 'remote')
         self.git('push', 'origin', 'main')

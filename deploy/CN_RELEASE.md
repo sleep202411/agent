@@ -75,7 +75,8 @@ This automatically:
 
 There is no need to create a backup or copy its ID manually in this normal flow.
 A frontend-only selection skips backup and migration. CN chart changes also
-start a new cycle because CN applies the whole pinned chart. Other deployment
+start a new cycle because CN applies the whole pinned chart. Changes only to
+.com image tags overridden by CN do not trigger a CN rebuild. Other deployment
 tooling edits are recorded by the source checks but take effect on the next
 invocation; running scripts are never swapped midway.
 
