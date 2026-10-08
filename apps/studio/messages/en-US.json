@@ -2619,7 +2619,7 @@
     "export": {
       "open": "Export MP4",
       "title": "Export storyboard",
-      "description": "Export the saved shot order using each shot’s first ready video, or its selected image for 5 seconds. Supports MP4/WebM videos and PNG/JPEG/WebP images. Downloads are available for 24 hours.",
+      "description": "Combine shots into one MP4 in saved order, skipping empty shots, using each shot’s first ready video, or its selected image for 5 seconds. Supports MP4/WebM videos and PNG/JPEG/WebP images. Downloads are available for 24 hours.",
       "format": "Output size",
       "waitForSave": "Wait for all canvas changes to finish saving, then try again.",
       "failed": "Export could not finish.",

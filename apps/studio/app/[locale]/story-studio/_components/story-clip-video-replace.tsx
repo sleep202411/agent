@@ -115,6 +115,7 @@ export function StoryClipVideoReplace({
         kind: "ai_reference_video",
         scope: { storyProjectId: projectId },
         onProgress: (progress) => onState({ stage: "uploading", progress }),
+        onConfirming: () => onState({ stage: "processing" }),
         signal,
       });
       if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");

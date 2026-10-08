@@ -5330,6 +5330,7 @@
       "completeDraftFields": "建立任務前，請補全「{title}」的必填項。",
       "taskActions": "任務操作",
       "editTask": "編輯任務",
+      "unassignBeforeRecruitment": "請先在「編輯任務」中移除目前指派，再邀請或招募新的創作者。",
       "inviteLink": "產生邀請連結",
       "openRecruitment": "開放招募"
     },

@@ -1,38 +1,56 @@
-/**
- * Same-origin image proxy for the WebGL panorama viewer.
- *
- * three.js textures need CORS, but the AI-output blob containers don't send
- * `Access-Control-Allow-Origin` for the studio's origin — so a cross-origin
- * texture load is blocked (the flat <img> is fine; only WebGL needs CORS).
- * Fetching the image server-side and returning it same-origin sidesteps CORS
- * (and the cache-without-CORS 304 trap). Restricted to our storage hosts to
- * avoid an open proxy / SSRF.
- */
-const ALLOWED_HOST =
-  /^([a-z0-9-]+\.blob\.core\.windows\.net|v3\.fal\.media|media\.fizzdragon\.com|media\.fizzspace\.cn)$/i;
+import { imageProxyTarget } from "@/lib/image-proxy-target";
 
+/** Same-origin image reads for WebGL and downloads from storage without CORS.
+ * Signed URLs are bearer capabilities: do not cache, log, or forward cookies. */
 export async function GET(request: Request): Promise<Response> {
   const target = new URL(request.url).searchParams.get("url");
   if (!target) return new Response("Missing url", { status: 400 });
-
-  let parsed: URL;
+  const parsed = imageProxyTarget(target);
+  if (!parsed) return new Response("Host not allowed", { status: 403 });
   try {
-    parsed = new URL(target);
+    const upstream = await fetch(parsed.toString(), {
+      redirect: "error",
+      cache: "no-store",
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]),
+    });
+    const type = upstream.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+    if (
+      !upstream.ok ||
+      !upstream.body ||
+      !type ||
+      !["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"].includes(type)
+    ) {
+      await upstream.body?.cancel();
+      return new Response("Image unavailable", { status: upstream.ok ? 502 : upstream.status });
+    }
+    const limit = 32 * 1024 * 1024;
+    if (Number(upstream.headers.get("content-length")) > limit) {
+      await upstream.body.cancel();
+      return new Response("Image too large", { status: 413 });
+    }
+    // Bound even chunked responses whose Content-Length is absent or inaccurate.
+    const reader = upstream.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        bytes += chunk.value.byteLength;
+        if (bytes > limit) return new Response("Image too large", { status: 413 });
+        chunks.push(chunk.value);
+      }
+    } finally {
+      await reader.cancel();
+    }
+    return new Response(new Blob(chunks as BlobPart[], { type }), {
+      headers: {
+        "Content-Type": type,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   } catch {
-    return new Response("Bad url", { status: 400 });
+    return new Response("Image fetch failed", { status: 502 });
   }
-  if (parsed.protocol !== "https:" || !ALLOWED_HOST.test(parsed.hostname)) {
-    return new Response("Host not allowed", { status: 403 });
-  }
-
-  const upstream = await fetch(parsed.toString());
-  if (!upstream.ok || !upstream.body) {
-    return new Response("Upstream error", { status: upstream.status || 502 });
-  }
-  return new Response(upstream.body, {
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "image/png",
-      "Cache-Control": "public, max-age=86400, immutable",
-    },
-  });
 }

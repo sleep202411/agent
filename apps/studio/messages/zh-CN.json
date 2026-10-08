@@ -2619,7 +2619,7 @@
     "export": {
       "open": "导出 MP4",
       "title": "导出分镜",
-      "description": "按已保存的镜头顺序导出，使用每个镜头的首个就绪视频，或播放所选图片 5 秒。支持 MP4/WebM 视频及 PNG/JPEG/WebP 图片。下载有效期为 24 小时。",
+      "description": "按已保存的镜头顺序合成一个 MP4，跳过空镜头，使用每个镜头的首个就绪视频，或播放所选图片 5 秒。支持 MP4/WebM 视频及 PNG/JPEG/WebP 图片。下载有效期为 24 小时。",
       "format": "输出尺寸",
       "waitForSave": "请等待画布更改全部保存后重试。",
       "failed": "导出未能完成。",

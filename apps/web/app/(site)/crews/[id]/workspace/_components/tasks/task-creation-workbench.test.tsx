@@ -898,6 +898,11 @@ it("exposes Edit and invitation actions for a saved eligible task without openin
   await openMenu();
   await act(async () => item("Generate Invitation Link").click());
   expect(inviteTask).toHaveBeenCalledWith(task);
+  state.tasks = [{ ...task, assignees: [{ userId: "assigned-user" }] }];
+  await render(true, true, "crew", vi.fn(), true);
+  await openMenu();
+  expect(item("Generate Invitation Link").getAttribute("aria-disabled")).toBe("true");
+  expect(item("Open Recruitment").getAttribute("aria-disabled")).toBe("true");
   await render(false);
   expect(host.querySelector('button[aria-label="Task Actions"]')).toBeNull();
 });

@@ -119,11 +119,12 @@ function Timeline({
     [hovered, setHovered] = useState<string>();
   const views = useRef(new Map<string, View>()),
     boxes = useRef(new Map<string, { x: number; y: number; width: number; height: number }>());
+  const playbackRows = projection.value?.playbackRows ?? [];
   const index = Math.max(
       0,
-      rows.findIndex((r) => r.id === selected)
+      playbackRows.findIndex((r) => r.id === selected)
     ),
-    shot = rows[index];
+    shot = playbackRows[index];
   function attach(nodeId: string, sourceId: string) {
     if (!canEdit || mutation || scope.generation !== getAuthGeneration()) return;
     setPlaying(false);
@@ -370,8 +371,8 @@ function Timeline({
                   scope={scope}
                   autoPlay={autoPlay}
                   ended={() => {
-                    if (rows[index + 1]) {
-                      setSelected(rows[index + 1].id);
+                    if (playbackRows[index + 1]) {
+                      setSelected(playbackRows[index + 1].id);
                       setAutoPlay(true);
                     } else setPlaying(false);
                   }}
@@ -384,7 +385,7 @@ function Timeline({
                 scope={scope}
                 userId={userId}
                 sequence={loaded.sequence}
-                disabled={!rows.length}
+                disabled={!playbackRows.length}
               />
             )}
           </View>

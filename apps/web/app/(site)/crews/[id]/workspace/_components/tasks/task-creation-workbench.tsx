@@ -581,38 +581,59 @@ function TaskCreationSession({
                                               {t("editTask")}
                                             </DropdownMenuItem>
                                           )}
-                                          {onInviteTask &&
+                                          {onInviteTask && (
+                                            <DropdownMenuItem
+                                              disabled={
+                                                !savedTasks.some(
+                                                  (task) =>
+                                                    task.id === draft.taskId &&
+                                                    !task.assignees.length &&
+                                                    !task.isRecruiting &&
+                                                    ![
+                                                      "approved",
+                                                      "cancelled",
+                                                      "submitted",
+                                                    ].includes(task.status)
+                                                )
+                                              }
+                                              onSelect={() => {
+                                                const task = savedTasks.find(
+                                                  (item) => item.id === draft.taskId
+                                                );
+                                                if (task) onInviteTask(task);
+                                              }}
+                                            >
+                                              {t("inviteLink")}
+                                            </DropdownMenuItem>
+                                          )}
+                                          {onPublishTask && (
+                                            <DropdownMenuItem
+                                              disabled={
+                                                !savedTasks.some(
+                                                  (task) =>
+                                                    task.id === draft.taskId &&
+                                                    !task.assignees.length &&
+                                                    ![
+                                                      "approved",
+                                                      "cancelled",
+                                                      "submitted",
+                                                    ].includes(task.status)
+                                                )
+                                              }
+                                              onSelect={() => onPublishTask(draft.taskId!)}
+                                            >
+                                              {t("openRecruitment")}
+                                            </DropdownMenuItem>
+                                          )}
+                                          {(onInviteTask || onPublishTask) &&
                                             savedTasks.some(
                                               (task) =>
                                                 task.id === draft.taskId &&
-                                                !task.assignees.length &&
-                                                !task.isRecruiting &&
-                                                !["approved", "cancelled", "submitted"].includes(
-                                                  task.status
-                                                )
+                                                task.assignees.length > 0
                                             ) && (
-                                              <DropdownMenuItem
-                                                onSelect={() => {
-                                                  const task = savedTasks.find(
-                                                    (item) => item.id === draft.taskId
-                                                  );
-                                                  if (task) onInviteTask(task);
-                                                }}
-                                              >
-                                                {t("inviteLink")}
-                                              </DropdownMenuItem>
-                                            )}
-                                          {onPublishTask &&
-                                            !draft.input.assignees.length &&
-                                            !["approved", "cancelled", "submitted"].includes(
-                                              savedTasks.find((task) => task.id === draft.taskId)
-                                                ?.status ?? ""
-                                            ) && (
-                                              <DropdownMenuItem
-                                                onSelect={() => onPublishTask(draft.taskId!)}
-                                              >
-                                                {t("openRecruitment")}
-                                              </DropdownMenuItem>
+                                              <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                                                {t("unassignBeforeRecruitment")}
+                                              </p>
                                             )}
                                         </DropdownMenuContent>
                                       </DropdownMenu>

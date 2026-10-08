@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -16,7 +17,7 @@ describe('storyboard export HTTP boundary', () => {
     get: jest.fn(),
     cancel: jest.fn(),
   };
-  const outputs = { download: jest.fn() };
+  const outputs = { download: jest.fn(), assertConfigured: jest.fn() };
   const id = '11111111-1111-4111-8111-111111111111';
   const input = {
     requestId: id,
@@ -51,7 +52,7 @@ describe('storyboard export HTTP boundary', () => {
   afterAll(async () => app.close());
   beforeEach(() => {
     jest.clearAllMocks();
-    for (const fn of [...Object.values(jobs), outputs.download])
+    for (const fn of [...Object.values(jobs), ...Object.values(outputs)])
       fn.mockResolvedValue({ id });
   });
   it('requires a valid session on every route', async () => {
@@ -104,6 +105,19 @@ describe('storyboard export HTTP boundary', () => {
       .expect(200)
       .expect('Cache-Control', 'private, no-store');
     expect(outputs.download).toHaveBeenCalledWith('verified-owner', id);
+  });
+  it('does not enqueue a render when private storage is not configured', async () => {
+    outputs.assertConfigured.mockRejectedValueOnce(
+      new ServiceUnavailableException(
+        'S3_PRIVATE_BUCKET must name a separate private upload destination',
+      ),
+    );
+    await request(app.getHttpServer() as Server)
+      .post('/storyboard-exports')
+      .set('Cookie', 'satoken=fixture')
+      .send(input)
+      .expect(503);
+    expect(jobs.create).not.toHaveBeenCalled();
   });
   it('rejects spoofed identities, invalid dimensions and malformed IDs', async () => {
     for (const value of [

@@ -64,3 +64,25 @@ it("downloads a successful response with its media extension and releases the UR
   await vi.runAllTimersAsync();
   expect(revoke).toHaveBeenCalledWith("blob:result");
 });
+it("recovers an allowed image download when storage CORS blocks fetch", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:result");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const fetcher = vi
+    .fn()
+    .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    .mockResolvedValueOnce({
+      ok: true,
+      blob: async () => new Blob(["image"], { type: "image/png" }),
+    });
+  vi.stubGlobal("fetch", fetcher);
+  const source = "https://r2.fizzdragon.com/result.png";
+  await downloadOutput(source, "result.png", labels);
+  expect(fetcher).toHaveBeenLastCalledWith(`/api/img?url=${encodeURIComponent(source)}`, {
+    cache: "no-store",
+  });
+  expect(click).toHaveBeenCalledOnce();
+  expect(toast.error).not.toHaveBeenCalled();
+  await vi.runAllTimersAsync();
+});

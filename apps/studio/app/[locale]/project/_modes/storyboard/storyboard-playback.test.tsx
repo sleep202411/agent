@@ -99,13 +99,21 @@ describe("Storyboard sequence playback", () => {
       "shot:1"
     );
   });
-  it("stops visibly at missing media instead of skipping the shot", async () => {
+  it("automatically skips empty shots without interrupting the rough cut", async () => {
     await render([rows[0], { ...rows[1], pictures: [] }, rows[2]]);
     await mediaEvent("ended");
+    expect(container.querySelector("video")!.src).toContain("/c.mp4");
+  });
+  it("skips leading and trailing placeholders and handles an entirely empty cut", async () => {
+    await render([{ ...rows[0], pictures: [] }, rows[1], { ...rows[2], pictures: [] }]);
+    expect(container.querySelector("video")!.src).toContain("/b.mp4");
+    await mediaEvent("ended");
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="next"]')!.disabled).toBe(
+      true
+    );
+    await render(rows.map((row) => ({ ...row, pictures: [] })));
     expect(container.querySelector("video")).toBeNull();
     expect(container.querySelector('[role="status"]')!.textContent).toBe("missing");
-    await click("next");
-    expect(container.querySelector("video")!.src).toContain("/c.mp4");
   });
   it("retries a failed clip", async () => {
     await render();

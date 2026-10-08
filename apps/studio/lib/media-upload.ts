@@ -62,6 +62,8 @@ export interface UploadFileOptions {
   contentType?: string;
   /** Called with 0–100 as the PUT streams bytes. */
   onProgress?: (percent: number) => void;
+  /** Bytes have arrived; server is verifying and registering the media. */
+  onConfirming?: () => void;
   signal?: AbortSignal;
   /** Direct workspace uploads; Story uploads derive ownership from their project. */
   workspaceId?: string;
@@ -301,6 +303,8 @@ export async function uploadFileViaSignedUrl(
     onProgress: opts.onProgress,
     signal: opts.signal,
   });
+  assertUploadActive(opts.signal);
+  opts.onConfirming?.();
   const confirmed = await postJson<ConfirmResponse>(
     CONFIRM_ENDPOINT,
     {

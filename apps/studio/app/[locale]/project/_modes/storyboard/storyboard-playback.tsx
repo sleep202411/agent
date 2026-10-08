@@ -15,7 +15,7 @@ import type { ShotRow } from "./use-storyboard";
 export function StoryboardPlayback({ rows }: { rows: ShotRow[] }) {
   return (
     <Dialog>
-      <PlaybackTrigger disabled={!rows.length} />
+      <PlaybackTrigger disabled={!rows.some((row) => playbackMedia(row)?.url)} />
       <DialogContent
         className="flex max-h-[calc(100dvh-2rem)] flex-col sm:max-w-5xl"
         aria-describedby={undefined}
@@ -43,7 +43,9 @@ function PlaybackHeading() {
   return <DialogTitle className="pr-8">{t("title")}</DialogTitle>;
 }
 
-export function StoryboardSequence({ rows }: { rows: ShotRow[] }) {
+export function StoryboardSequence({ rows: savedRows }: { rows: ShotRow[] }) {
+  // Empty placeholders stay in the editor, but never interrupt the rough cut.
+  const rows = savedRows.filter((row) => playbackMedia(row)?.url);
   const t = useTranslations("storyboard.playback");
   const [selectedId, setSelectedId] = useState(rows[0]?.id ?? null);
   const [playing, setPlaying] = useState(true);

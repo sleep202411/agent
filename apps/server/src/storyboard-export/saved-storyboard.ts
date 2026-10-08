@@ -67,74 +67,79 @@ export function projectSavedStoryboard(raw: unknown): StoryboardExportSource[] {
     );
   if (!shots.length || shots.length > 100)
     throw new BadRequestException('Export requires between 1 and 100 shots.');
-  return shots.map((shot) => {
-    const references = z
-      .record(z.string(), z.array(Reference))
-      .parse(shot.data.references ?? {});
-    const bound = new Map(
-      Object.values(references)
-        .flat()
-        .filter((r) => r.edgeId)
-        .map((r) => [r.edgeId!, r]),
-    );
-    const incoming = Object.values(snapshot.edges).filter(
-      (e) => e.target === shot.id,
-    );
-    // Stable sorting preserves saved edge order within each media priority.
-    const priority = (edge: z.infer<typeof Edge>) => {
-      const type = snapshot.nodes[edge.source]?.type;
-      if (type === 'video' || type === 'videoAsset') return 0;
-      return edge.id === shot.data.preferredFrameEdgeId ? 1 : 2;
-    };
-    for (const edge of incoming.sort((a, b) => priority(a) - priority(b))) {
-      const source = snapshot.nodes[edge.source];
-      if (
-        !source ||
-        !['video', 'videoAsset', 'image', 'panorama', 'prompt'].includes(
-          source.type,
-        )
-      )
-        continue;
-      const generation = source.data.generation
-        ? Generation.parse(source.data.generation)
-        : null;
-      if (generation && !['done', 'cancelled'].includes(generation.status))
-        continue;
-      const output = ['video', 'prompt'].includes(source.type)
-        ? generation?.outputs?.[0]
-        : undefined;
-      const sourceUrl =
-        output?.url ??
-        (['videoAsset', 'image', 'panorama'].includes(source.type)
-          ? z.string().optional().parse(source.data.src)
-          : undefined);
-      const reference = bound.get(edge.id);
-      const url = reference?.url ?? sourceUrl;
-      if (!url) continue;
-      if (url.length > 4096 || /^(blob|data|file):/i.test(url))
-        throw new BadRequestException(
-          'Storyboard media is not saved as platform media.',
-        );
-      const sourceId =
-        output?.assetId ??
-        (['videoAsset', 'image', 'panorama'].includes(source.type)
-          ? z.string().uuid().optional().parse(source.data.mediaAssetId)
-          : undefined);
-      // A bound reference can point to an older, deliberately selected output.
-      // Never attach the new source asset ID to that older URL.
-      const id =
-        reference?.assetId ?? (url === sourceUrl ? sourceId : undefined);
-      return {
-        shotId: shot.id,
-        sourceNodeId: source.id,
-        mediaAssetId: id?.toLowerCase() ?? null,
-        sourceUrl: url,
+  const clips = shots
+    .map((shot): StoryboardExportSource | null => {
+      const references = z
+        .record(z.string(), z.array(Reference))
+        .parse(shot.data.references ?? {});
+      const bound = new Map(
+        Object.values(references)
+          .flat()
+          .filter((r) => r.edgeId)
+          .map((r) => [r.edgeId!, r]),
+      );
+      const incoming = Object.values(snapshot.edges).filter(
+        (e) => e.target === shot.id,
+      );
+      // Stable sorting preserves saved edge order within each media priority.
+      const priority = (edge: z.infer<typeof Edge>) => {
+        const type = snapshot.nodes[edge.source]?.type;
+        if (type === 'video' || type === 'videoAsset') return 0;
+        return edge.id === shot.data.preferredFrameEdgeId ? 1 : 2;
       };
-    }
+      for (const edge of incoming.sort((a, b) => priority(a) - priority(b))) {
+        const source = snapshot.nodes[edge.source];
+        if (
+          !source ||
+          !['video', 'videoAsset', 'image', 'panorama', 'prompt'].includes(
+            source.type,
+          )
+        )
+          continue;
+        const generation = source.data.generation
+          ? Generation.parse(source.data.generation)
+          : null;
+        if (generation && !['done', 'cancelled'].includes(generation.status))
+          continue;
+        const output = ['video', 'prompt'].includes(source.type)
+          ? generation?.outputs?.[0]
+          : undefined;
+        const sourceUrl =
+          output?.url ??
+          (['videoAsset', 'image', 'panorama'].includes(source.type)
+            ? z.string().optional().parse(source.data.src)
+            : undefined);
+        const reference = bound.get(edge.id);
+        const url = reference?.url ?? sourceUrl;
+        if (!url) continue;
+        if (url.length > 4096 || /^(blob|data|file):/i.test(url))
+          throw new BadRequestException(
+            'Storyboard media is not saved as platform media.',
+          );
+        const sourceId =
+          output?.assetId ??
+          (['videoAsset', 'image', 'panorama'].includes(source.type)
+            ? z.string().uuid().optional().parse(source.data.mediaAssetId)
+            : undefined);
+        // A bound reference can point to an older, deliberately selected output.
+        // Never attach the new source asset ID to that older URL.
+        const id =
+          reference?.assetId ?? (url === sourceUrl ? sourceId : undefined);
+        return {
+          shotId: shot.id,
+          sourceNodeId: source.id,
+          mediaAssetId: id?.toLowerCase() ?? null,
+          sourceUrl: url,
+        };
+      }
+      return null;
+    })
+    .filter((clip): clip is StoryboardExportSource => clip !== null);
+  if (!clips.length)
     throw new BadRequestException(
-      `Shot ${shot.id} has no ready media. Attach an image or video before exporting.`,
+      'No ready media to export. Attach an image or video to at least one shot.',
     );
-  });
+  return clips;
 }
 /** Admission-only primitive: the caller must authorize before entering this
  * transaction and resolve/pin all source media before committing its job.

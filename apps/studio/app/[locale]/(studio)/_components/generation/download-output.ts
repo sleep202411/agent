@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { imageProxyTarget } from "@/lib/image-proxy-target";
 
 /** Save only successful media responses. A user-initiated link remains available
  * when storage CORS rules prevent fetching an otherwise accessible original. */
@@ -8,7 +9,14 @@ export async function downloadOutput(
   labels: { failed: string; openOriginal: string }
 ): Promise<void> {
   try {
-    const response = await fetch(source);
+    let response: Response;
+    try {
+      response = await fetch(source);
+    } catch (error) {
+      // Images can display successfully while storage CORS blocks blob reads.
+      if (!/\.(png|jpe?g|webp|gif|avif)$/i.test(name) || !imageProxyTarget(source)) throw error;
+      response = await fetch(`/api/img?url=${encodeURIComponent(source)}`, { cache: "no-store" });
+    }
     if (!response.ok) throw new Error(`${labels.failed} (HTTP ${response.status})`);
     const blob = await response.blob();
     if (!blob.size || /^(text\/|application\/(json|problem\+json|xml))/i.test(blob.type)) {

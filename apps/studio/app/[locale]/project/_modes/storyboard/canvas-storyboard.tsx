@@ -168,7 +168,6 @@ export function CanvasStoryboard({ children }: { children: (control: ReactNode) 
           aria-label={t("title")}
           style={{
             paddingLeft: "var(--project-canvas-left-overlay-inset, 0px)",
-            paddingRight: "var(--project-canvas-right-overlay-inset, 0px)",
           }}
         >
           <header className="flex flex-wrap items-center gap-2 px-4 py-2">
@@ -207,7 +206,7 @@ export function CanvasStoryboard({ children }: { children: (control: ReactNode) 
           </header>
           <div
             className={cn(
-              "grid grid-cols-2 items-start gap-3 overflow-y-auto px-4 pb-3 sm:grid-cols-3 lg:grid-cols-6",
+              "grid grid-cols-2 items-start gap-3 overflow-y-auto px-4 pb-20 sm:grid-cols-3 lg:grid-cols-6",
               expanded ? "max-h-[45dvh]" : "max-h-64"
             )}
           >

@@ -12,6 +12,21 @@ afterEach(() => {
 });
 
 describe("uploadFileViaSignedUrl", () => {
+  it("reports confirmation before waiting for server media verification", async () => {
+    const pipeline = mockUploadPipeline({});
+    const confirming = vi.fn();
+    const fetcher = vi.fn(async (...args: Parameters<typeof fetch>) => {
+      if (String(args[0]).endsWith("/confirm")) expect(confirming).toHaveBeenCalledOnce();
+      return pipeline(...args);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    await uploadFileViaSignedUrl(new File(["video"], "clip.mp4", { type: "video/mp4" }), {
+      kind: "ai_reference_video",
+      onConfirming: confirming,
+    });
+    expect(confirming).toHaveBeenCalledOnce();
+  });
+
   it.each([
     [
       "screenshot.jpg",

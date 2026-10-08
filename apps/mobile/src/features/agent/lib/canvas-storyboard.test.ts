@@ -92,3 +92,13 @@ it("keeps a saved bound output when a completed source no longer lists that outp
     mediaAssetId: assetId,
   });
 });
+
+it("keeps empty editing placeholders while excluding them from the rough cut", () => {
+  const snapshot = fixture();
+  snapshot.nodes.empty = { id: "empty", type: "shot", data: { order: "a00" } };
+  const result = canvasStoryboard(snapshot);
+  expect(result.rows.map((row) => row.id)).toContain("empty");
+  expect(result.playbackRows.map((row) => row.id)).toEqual(["b", "a"]);
+  snapshot.edges = {};
+  expect(canvasStoryboard(snapshot).playbackRows).toEqual([]);
+});

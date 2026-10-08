@@ -82,5 +82,9 @@ export function canvasStoryboard(snapshot: CanvasSnapshot) {
         media.find((m) => m.kind === "image"),
     };
   });
-  return { rows, sources: sources.filter((source) => !!source.url) };
+  return {
+    rows,
+    playbackRows: rows.filter((row) => !!row.media),
+    sources: sources.filter((source) => !!source.url),
+  };
 }

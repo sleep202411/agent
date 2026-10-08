@@ -42,6 +42,7 @@ export class StoryboardExportController {
     @Body(new ZodValidationPipe(CreateStoryboardExport))
     body: z.infer<typeof CreateStoryboardExport>,
   ) {
+    await this.outputs.assertConfigured();
     return { code: 200, data: await this.jobs.create(user.userId, body) };
   }
   @Get(':id')

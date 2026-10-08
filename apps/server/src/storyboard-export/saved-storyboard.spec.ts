@@ -43,15 +43,17 @@ it('does not substitute the latest generated media ID for a selected older outpu
     mediaAssetId: null,
   });
 });
-it('requires media for every shot and rejects incomplete generation', () => {
+it('skips empty shots in saved order and rejects an entirely unready storyboard', () => {
   const raw = snapshot();
   delete (raw.edges as Partial<typeof raw.edges>).e1;
-  expect(() => projectSavedStoryboard(raw)).toThrow('first has no ready media');
+  expect(projectSavedStoryboard(raw).map((clip) => clip.shotId)).toEqual([
+    'second',
+  ]);
   const running = snapshot();
   Object.assign(running.nodes.video.data, {
     generation: { status: 'generating' },
   });
-  expect(() => projectSavedStoryboard(running)).toThrow('no ready media');
+  expect(() => projectSavedStoryboard(running)).toThrow('No ready media');
 });
 it('rejects inconsistent identities and browser-only media', () => {
   const raw = snapshot();

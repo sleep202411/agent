@@ -38,6 +38,24 @@ export class StoryboardExportOutputService {
     private readonly queue: StoryboardExportQueueService,
   ) {}
 
+  /** Validate signing configuration before enqueueing expensive render work.
+   * Signing does not create an object or expose this capability to the client. */
+  async assertConfigured() {
+    const storage = this.registry.forProvider(
+      crewAssetStorageProviderForCell(CURRENT_CELL),
+    );
+    if (!storage)
+      throw new ServiceUnavailableException(
+        'Private export storage is unavailable.',
+      );
+    await storage.createPrivateUploadUrl({
+      storageKey: `storyboard-exports/config-check/${randomUUID()}.mp4`,
+      contentType: 'video/mp4',
+      maxBytes: 1,
+      expiresInSeconds: 60,
+    });
+  }
+
   async download(userId: string, id: string) {
     z.uuid().parse(id);
     return this.prisma.$transaction(

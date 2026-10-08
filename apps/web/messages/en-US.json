@@ -5330,6 +5330,7 @@
       "completeDraftFields": "Complete the required fields in “{title}” before creating tasks.",
       "taskActions": "Task Actions",
       "editTask": "Edit Task",
+      "unassignBeforeRecruitment": "Remove the current assignment in Edit Task before inviting or recruiting a new creator.",
       "inviteLink": "Generate Invitation Link",
       "openRecruitment": "Open Recruitment"
     },
