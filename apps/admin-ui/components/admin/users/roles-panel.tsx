@@ -63,17 +63,27 @@ export function RolesPanel({
     }
   }
 
-  async function savePermissions(role: AdminRoleInfo, nextPermissions: string[]) {
+  async function saveRole(
+    role: AdminRoleInfo,
+    next: { name?: string; description?: string; permissions: string[] }
+  ) {
     await apply(async () => {
+      const body: {
+        name?: string;
+        description?: string;
+        permissions: string[];
+      } = { permissions: next.permissions };
+      if (next.name !== undefined) body.name = next.name;
+      if (next.description !== undefined) body.description = next.description;
       const result = await requestEnvelope<AdminRolesData>(
         `/api/admin/users/roles/${encodeURIComponent(role.key)}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ permissions: nextPermissions }),
+          body: JSON.stringify(body),
         }
       );
-      setNotice(`已更新「${displayRoleName(role)}」权限。`);
+      setNotice(`已更新「${next.name?.trim() || displayRoleName(role)}」。`);
       setEditor(null);
       return result;
     });
@@ -173,21 +183,23 @@ export function RolesPanel({
                         >
                           编辑
                         </Button>
-                        {locked ? null : (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600 hover:text-red-700"
-                            aria-label={`删除${name}`}
-                            disabled={busy || role.accountCount > 0}
-                            title={role.accountCount > 0 ? "仍有账号使用该角色" : "删除角色"}
-                            onClick={() => setDeleteKey(role.key)}
-                          >
-                            <IconTrash className="size-3.5" />
-                            删除
-                          </Button>
-                        )}
+                        <div className="inline-flex w-[4.75rem] shrink-0 justify-start">
+                          {locked ? null : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:text-red-700"
+                              aria-label={`删除${name}`}
+                              disabled={busy || role.accountCount > 0}
+                              title={role.accountCount > 0 ? "仍有账号使用该角色" : "删除角色"}
+                              onClick={() => setDeleteKey(role.key)}
+                            >
+                              <IconTrash className="size-3.5" />
+                              删除
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -219,7 +231,7 @@ export function RolesPanel({
             return result;
           });
         }}
-        onSave={savePermissions}
+        onSave={saveRole}
       />
 
       <ConfirmDialog
@@ -258,7 +270,10 @@ function RoleEditorDialog({
     description?: string;
     permissions: string[];
   }) => Promise<void>;
-  onSave: (role: AdminRoleInfo, permissions: string[]) => Promise<void>;
+  onSave: (
+    role: AdminRoleInfo,
+    next: { name?: string; description?: string; permissions: string[] }
+  ) => Promise<void>;
 }) {
   return (
     <Dialog open={Boolean(editor)} onOpenChange={onOpenChange}>
@@ -297,10 +312,15 @@ function RoleEditorForm({
     description?: string;
     permissions: string[];
   }) => Promise<void>;
-  onSave: (role: AdminRoleInfo, permissions: string[]) => Promise<void>;
+  onSave: (
+    role: AdminRoleInfo,
+    next: { name?: string; description?: string; permissions: string[] }
+  ) => Promise<void>;
 }) {
   const mode = editor.mode;
   const role = editor.mode === "create" ? null : editor.role;
+  const locked = role ? isLockedRole(role) : false;
+  const canEditProfile = mode === "create" || (mode === "edit" && !locked);
   const titleName = role ? displayRoleName(role) : "";
   const [key, setKey] = useState(role?.key ?? "");
   const [name, setName] = useState(role ? displayRoleName(role) : "");
@@ -322,7 +342,9 @@ function RoleEditorForm({
             ? "按当前后台目录勾选模块。保存后即可在账号页分配。"
             : mode === "view"
               ? "系统角色权限固定，仅供查看。"
-              : "勾选该角色可以访问的后台目录。"}
+              : locked
+                ? "勾选该角色可以访问的后台目录。系统角色名称与说明由目录维护。"
+                : "可修改名称、说明，并勾选可访问的后台目录。标识创建后不可更改。"}
         </DialogDescription>
       </DialogHeader>
       <form
@@ -342,47 +364,65 @@ function RoleEditorForm({
             });
             return;
           }
-          if (role) void onSave(role, selected);
+          if (role) {
+            void onSave(
+              role,
+              canEditProfile
+                ? {
+                    name: name.trim(),
+                    description: description.trim(),
+                    permissions: selected,
+                  }
+                : { permissions: selected }
+            );
+          }
         }}
       >
-        {mode === "create" ? (
+        {mode === "create" || mode === "edit" ? (
           <>
             <div className="grid grid-cols-2 items-start gap-x-3 gap-y-1 text-sm">
-              <label htmlFor="create-role-name">名称</label>
-              <label htmlFor="create-role-key">标识</label>
+              <label htmlFor="role-name">名称</label>
+              <label htmlFor="role-key">标识</label>
               <Input
-                id="create-role-name"
-                required
+                id="role-name"
+                required={canEditProfile}
                 name="roleName"
                 value={name}
+                disabled={!canEditProfile}
                 onChange={(event) => setName(event.target.value)}
               />
               <Input
-                id="create-role-key"
-                required
+                id="role-key"
+                required={mode === "create"}
                 name="roleKey"
-                value={key}
-                pattern={ROLE_KEY_PATTERN}
+                value={mode === "create" ? key : (role?.key ?? "")}
+                pattern={mode === "create" ? ROLE_KEY_PATTERN : undefined}
                 maxLength={63}
-                title={ROLE_KEY_HINT}
-                aria-describedby="role-key-hint"
+                title={mode === "create" ? ROLE_KEY_HINT : "标识创建后不可更改"}
+                aria-describedby={mode === "create" ? "role-key-hint" : undefined}
+                disabled={mode !== "create"}
                 onInvalid={(event) => {
-                  event.currentTarget.setCustomValidity(ROLE_KEY_HINT);
+                  if (mode === "create") event.currentTarget.setCustomValidity(ROLE_KEY_HINT);
                 }}
                 onChange={(event) => {
                   event.currentTarget.setCustomValidity("");
                   setKey(event.target.value.toLowerCase());
                 }}
               />
-              <p id="role-key-hint" className="col-start-2 text-[11px] leading-4 text-slate-400">
-                {ROLE_KEY_HINT}
-              </p>
+              {mode === "create" ? (
+                <p id="role-key-hint" className="col-start-2 text-[11px] leading-4 text-slate-400">
+                  {ROLE_KEY_HINT}
+                </p>
+              ) : (
+                <p className="col-start-2 text-[11px] leading-4 text-slate-400">创建后不可更改</p>
+              )}
             </div>
             <label className="grid gap-1 text-sm">
               说明
               <Input
                 name="roleDescription"
                 value={description}
+                disabled={!canEditProfile}
                 onChange={(event) => setDescription(event.target.value)}
               />
             </label>

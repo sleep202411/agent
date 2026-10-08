@@ -122,9 +122,11 @@ it('does not allow super_admin to be assigned through account-management forms',
   );
 });
 
-it('accepts employee role keys on account-management forms', () => {
-  expect(AssignableAdminRoleKeySchema.safeParse('wardrobe').success).toBe(true);
-  expect(AssignableAdminRoleKeySchema.safeParse('instructor').success).toBe(
+it('accepts custom employee role keys on account-management forms', () => {
+  expect(AssignableAdminRoleKeySchema.safeParse('custom_staff').success).toBe(
+    true,
+  );
+  expect(AssignableAdminRoleKeySchema.safeParse('course_editor').success).toBe(
     true,
   );
 });

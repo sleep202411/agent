@@ -442,16 +442,17 @@ export class AdminUsersService {
       ? await this.resolvePermissionIds(roleKey, input.permissions)
       : null;
     await this.prisma.$transaction(async (tx) => {
-      await tx.adminRole.update({
-        where: { id: role.id },
-        data: {
-          name: input.name,
-          description:
-            input.description === undefined
-              ? undefined
-              : (input.description ?? ''),
-        },
-      });
+      if (input.name !== undefined || input.description !== undefined) {
+        await tx.adminRole.update({
+          where: { id: role.id },
+          data: {
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.description !== undefined
+              ? { description: input.description ?? '' }
+              : {}),
+          },
+        });
+      }
       if (permissionIds) {
         await tx.adminRolePermission.deleteMany({ where: { roleId: role.id } });
         await tx.adminRolePermission.createMany({

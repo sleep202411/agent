@@ -3,7 +3,6 @@ import {
   ADMIN_PERMISSION_CATALOG,
   ADMIN_ROLE_CATALOG,
   ADMIN_ROLE_KEYS,
-  ADMIN_STAFF_ROLE_SEEDS,
   RETIRED_ADMIN_ROLE_KEYS,
   type AdminRoleKey,
   ADMIN_SUPER_ROLE_KEY,
@@ -91,32 +90,6 @@ export async function ensureAdminAuthCatalog(prisma: PrismaClient): Promise<{
   if (superGrants.length) {
     await prisma.adminRolePermission.createMany({
       data: superGrants,
-      skipDuplicates: true,
-    });
-  }
-
-  for (const seed of ADMIN_STAFF_ROLE_SEEDS) {
-    const existing = await prisma.adminRole.findUnique({
-      where: { key: seed.key },
-      select: { id: true },
-    });
-    if (existing) continue;
-    const created = await prisma.adminRole.create({
-      data: {
-        key: seed.key,
-        name: seed.name,
-        description: seed.description,
-        siteScope: AdminSiteScope.all,
-      },
-    });
-    await prisma.adminRolePermission.createMany({
-      data: seed.permissions
-        .map((permissionKey) => permissionIds.get(permissionKey))
-        .filter((permissionId): permissionId is string => Boolean(permissionId))
-        .map((permissionId) => ({
-          roleId: created.id,
-          permissionId,
-        })),
       skipDuplicates: true,
     });
   }

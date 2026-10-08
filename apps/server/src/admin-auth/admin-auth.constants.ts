@@ -222,31 +222,4 @@ export const ADMIN_ROLE_CATALOG: Array<{
   },
 ];
 
-/** Seeded once; admins may later rename or retune permissions. Not wiped on boot. */
-export const ADMIN_STAFF_ROLE_SEEDS: Array<{
-  key: string;
-  name: string;
-  description: string;
-  permissions: string[];
-}> = [
-  {
-    key: 'wardrobe',
-    name: '服化道',
-    description: '仅可访问 AI 演员，维护演员、网红与真实演员资料。',
-    permissions: [
-      ADMIN_PERMISSION_KEYS.AiActorsRead,
-      ADMIN_PERMISSION_KEYS.AiActorsWrite,
-    ],
-  },
-  {
-    key: 'instructor',
-    name: '讲师',
-    description: '仅可访问课程管理，维护课程内容、报名与讲师分成。',
-    permissions: [
-      ADMIN_PERMISSION_KEYS.CoursesRead,
-      ADMIN_PERMISSION_KEYS.CoursesWrite,
-    ],
-  },
-];
-
 export const ADMIN_SUPER_ROLE_KEY = ADMIN_ROLE_KEYS.SuperAdmin;

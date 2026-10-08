@@ -100,11 +100,19 @@ it("lists roles as rows and lets an admin edit a staff role in the directory", a
     host.querySelector<HTMLButtonElement>('button[aria-label="编辑服化道"]')!.click();
   });
   const dialog = host.querySelector('[role="dialog"]')!;
+  const nameInput = dialog.querySelector<HTMLInputElement>('input[name="roleName"]')!;
+  const descriptionInput = dialog.querySelector<HTMLInputElement>('input[name="roleDescription"]')!;
+  expect(nameInput.disabled).toBe(false);
+  expect(dialog.querySelector<HTMLInputElement>('input[name="roleKey"]')?.disabled).toBe(true);
   await act(async () => {
-    dialog.querySelector<HTMLButtonElement>('button[aria-label="展开课程管理"]')!.click();
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    descriptor.call(nameInput, "造型组");
+    nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    descriptor.call(descriptionInput, "维护服化道相关资料");
+    descriptionInput.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () => {
-    dialog.querySelector<HTMLInputElement>('input[aria-label="courses.read"]')!.click();
+    dialog.querySelector<HTMLInputElement>('input[aria-label="课程管理"]')!.click();
   });
   await act(async () => {
     dialog
@@ -114,6 +122,8 @@ it("lists roles as rows and lets an admin edit a staff role in the directory", a
   const [, options] = fetchMock.mock.calls[0]!;
   expect(String(fetchMock.mock.calls[0]![0])).toContain("/api/admin/users/roles/wardrobe");
   expect(JSON.parse(options.body)).toEqual({
+    name: "造型组",
+    description: "维护服化道相关资料",
     permissions: ["ai_actors.read", "courses.read"],
   });
 });
@@ -140,12 +150,10 @@ it("creates a custom employee role with the selected modules", async () => {
     write(key, "art");
   });
   await act(async () => {
-    dialog.querySelector<HTMLButtonElement>('button[aria-label="展开课程管理"]')!.click();
+    dialog.querySelector<HTMLInputElement>('input[aria-label="课程管理"]')!.click();
   });
-  await act(async () => {
-    dialog.querySelector<HTMLInputElement>('input[aria-label="courses.read"]')!.click();
-  });
-  expect(dialog.textContent).not.toContain("courses.read");
+  expect(dialog.querySelector('button[aria-label="展开课程管理"]')).toBeNull();
+  expect(dialog.querySelector('input[aria-label="courses.read"]')).toBeNull();
   await act(async () => {
     dialog
       .querySelector("form")!
@@ -195,7 +203,7 @@ it("lets system roles be edited but not deleted", async () => {
   expect(host.querySelector('[role="dialog"]')?.textContent).toContain("查看「运营」");
 });
 
-it("lets a folder checkbox grant every leaf in that directory", async () => {
+it("lets a module checkbox grant every permission in that directory", async () => {
   fetchMock.mockResolvedValueOnce(envelope(initial));
   await render();
   await act(async () => {
@@ -207,11 +215,11 @@ it("lets a folder checkbox grant every leaf in that directory", async () => {
   expect(dialog.textContent).toContain("AI演员");
   expect(dialog.textContent).toContain("课程管理");
   expect(dialog.textContent).toContain("媒体资产");
+  expect(dialog.querySelector('button[aria-label="展开课程管理"]')).toBeNull();
   await act(async () => {
     dialog.querySelector<HTMLInputElement>('input[aria-label="课程管理"]')!.click();
-    dialog.querySelector<HTMLButtonElement>('button[aria-label="展开课程管理"]')!.click();
   });
-  expect(dialog.querySelector<HTMLInputElement>('input[aria-label="courses.read"]')!.checked).toBe(
+  expect(dialog.querySelector<HTMLInputElement>('input[aria-label="课程管理"]')!.checked).toBe(
     true
   );
 });
