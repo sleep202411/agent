@@ -29,6 +29,31 @@ class ReleaseTests(unittest.TestCase):
             validate.assert_called_once_with('123')
             self.assertEqual(api.call_args.kwargs, {'BackupJobId': '456'})
 
+    def test_finished_backup_waits_for_catalogue_visibility_without_creating_again(self):
+        state = {'backupRequested': True, 'backupJobId': '456'}
+        task = {'Items': {'BackupJob': [
+            {'BackupJobId': 456, 'BackupStatus': 'Finished', 'BackupId': 123}]}}
+        with patch.object(r, 'rds', return_value=task) as api, \
+                patch.object(r, 'validate_backup', side_effect=[r.BackupNotReady('pending'), {}]), \
+                patch.object(r.time, 'sleep') as sleep:
+            self.assertEqual(r.ensure_backup(state, Mock()), '123')
+            self.assertEqual(state['backupId'], '123')
+            self.assertEqual([call.args[0] for call in api.call_args_list],
+                             ['DescribeBackupTasks', 'DescribeBackupTasks'])
+            sleep.assert_called_once_with(15)
+
+    def test_finished_backup_does_not_retry_invalid_backup(self):
+        state = {'backupRequested': True, 'backupJobId': '456'}
+        task = {'Items': {'BackupJob': [
+            {'BackupJobId': 456, 'BackupStatus': 'Finished', 'BackupId': 123}]}}
+        with patch.object(r, 'rds', return_value=task), \
+                patch.object(r, 'validate_backup', side_effect=RuntimeError('invalid backup')), \
+                patch.object(r.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'invalid backup'):
+                r.ensure_backup(state, Mock())
+            sleep.assert_not_called()
+            self.assertNotIn('backupId', state)
+
     def test_uncertain_backup_request_never_duplicates(self):
         with patch.object(r, 'rds') as api:
             with self.assertRaisesRegex(RuntimeError, 'outcome is unknown'):
@@ -45,7 +70,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_backup_validation_rejects_job_id_and_expiry(self):
         with patch.object(r, 'rds', return_value={'Items': {'Backup': []}}):
-            with self.assertRaisesRegex(RuntimeError, 'not a BackupId'):
+            with self.assertRaisesRegex(r.BackupNotReady, 'not yet visible'):
                 r.validate_backup('456')
         ended = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=7)).isoformat()
         row = {'BackupId': 123, 'BackupMode': 'Manual', 'BackupStatus': 'Success', 'IsAvail': 1, 'BackupEndTime': ended}

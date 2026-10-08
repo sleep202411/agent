@@ -65,10 +65,16 @@ class ExpiredBackup(RuntimeError):
     pass
 
 
+class BackupNotReady(RuntimeError):
+    pass
+
+
 def validate_backup(backup_id):
     rows = rds("DescribeBackups", BackupId=backup_id).get("Items", {}).get("Backup", [])
+    if not rows:
+        raise BackupNotReady(f"BackupId {backup_id} is not yet visible in the RDS backup catalogue")
     if len(rows) != 1 or str(rows[0].get("BackupId")) != str(backup_id):
-        raise RuntimeError(f"BackupId {backup_id} not found (a BackupJobId is not a BackupId)")
+        raise RuntimeError(f"RDS returned an unexpected backup for BackupId {backup_id}")
     backup = rows[0]
     if backup.get("BackupMode") != "Manual" or backup.get("BackupStatus") != "Success" or backup.get("IsAvail") != 1:
         raise RuntimeError(f"Backup {backup_id} is not a successful available manual backup")
@@ -118,7 +124,12 @@ def ensure_backup(state, persist, supplied=None):
                 raise RuntimeError("RDS manual backup failed; inspect the backup task before retrying")
             if task.get("BackupStatus") == "Finished" and task.get("BackupId"):
                 backup_id = str(task["BackupId"])
-                validate_backup(backup_id)
+                try:
+                    validate_backup(backup_id)
+                except BackupNotReady:
+                    print(f"==> backup job finished; waiting for BackupId {backup_id} to appear in the RDS backup catalogue", flush=True)
+                    time.sleep(15)
+                    continue
                 state["backupId"] = backup_id
                 persist()
                 print(f"==> verified completed BackupId {backup_id}", flush=True)
