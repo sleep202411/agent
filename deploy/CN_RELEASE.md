@@ -6,7 +6,9 @@ they rebuild the entire selected service set at the newer commit before rollout.
 A CN migration already running finishes first. If a commit arrives during an
 atomic rollout, that rollout finishes and another release cycle follows.
 
-Each cycle has one immutable source SHA. Images are regional: a successful
+Each cycle has one immutable source SHA for the release. Each selected service
+may reuse an older immutable image tag whose application/build inputs match that
+source. Images are regional: a successful
 .com build does not create CN images. The scripts preserve the operator's
 checkout, including edits or branch changes made after startup.
 
@@ -26,7 +28,10 @@ For the regional currency changes, select all four services below.
 deploy/deploy-com-aks.sh web server studio admin-ui
 ```
 
-The script builds from a committed snapshot and verifies each ACR run.
+The script first searches the regional registry for each selected service. It
+reuses a verified image with matching committed build inputs, including images
+built by another operator. Only services without a matching image are built
+from a committed snapshot; every new ACR run is verified.
 It publishes image tags from a disposable checkout of the latest remote branch.
 Concurrent GitOps commits are preserved; a rejected push is refetched and
 retried. It refuses to overwrite a newer or divergent published image.
@@ -49,8 +54,8 @@ for service in web server studio admin-ui; do
 done
 ```
 
-Compare the selected services' image tags with the final source SHA printed by
-the release. Ready old pods do not prove that ArgoCD has applied the new tags.
+Compare each selected service with the expected image tag and digest printed by
+the release; unchanged services can legitimately retain older image tags. Ready old pods do not prove that ArgoCD has applied the new tags.
 Then verify the affected signed-in UI/API workflows.
 
 ## 3. Build, back up, migrate and deploy CN
@@ -65,7 +70,8 @@ CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh \
 
 This automatically:
 
-1. Builds and verifies every selected CN image and its digest.
+1. Reuses matching verified CN images across operators, builds only missing or
+   changed services, and verifies every selected image digest.
 2. When Server is selected, creates a manual RDS backup and waits for completion.
 3. Resolves the returned **BackupJobId** to the completed **BackupId**, then
    verifies that the backup is available and less than six hours old.
@@ -121,7 +127,8 @@ for service in web server studio admin-ui; do
 done
 ```
 
-Compare the selected services to the final receipt's source SHA and digests.
+Compare selected services with the final receipt's `imageTags` and `digests`.
+Older receipts without `imageTags` use the receipt's source SHA for each service.
 Check migration completion and the affected signed-in workflows. Infrastructure
 readiness does not replace product acceptance.
 
@@ -141,3 +148,32 @@ or migrations, or ten successive source restarts. Resume after correcting the
 cause. A local CN lock prevents simultaneous releases in the same Git common
 directory; coordinate operators using separate clones. .com and CN can run
 concurrently because their registries and clusters are separate.
+
+## Image reuse and transient RDS failures
+
+Both coordinators discover reusable images from the regional registry, not just
+an operator's local receipt. Reuse requires a full Git SHA in the selected
+source's ancestry, matching committed service inputs, and a verified digest.
+Inputs include the selected app, workspace manifests, shared packages, lockfiles,
+root build configuration, regional build environment and image-build recipe.
+Unrelated app source, documentation and publication-only changes do not require
+recompilation. Shared build inputs are conservatively included.
+
+Images keep their original SHA tags; they are never retagged as a newer source.
+A previously built image can be reused even if an earlier rollout failed or was
+replaced. GitOps/Helm still reconciles desired deployment state; reuse is not a
+claim that the image is already running. CN skips Helm upgrade when its rendered
+manifest already matches, and still checks rollout/readiness. Registry access
+errors or a digest changing during verification stop the release, never cause a
+fallback build. COM rollout remains asynchronous under ArgoCD.
+
+RDS `DescribeBackupTasks` and `DescribeBackups` retry transient reads up to four
+times with 2/5/10-second backoff and 45-second request timeouts. Authorization
+errors stop immediately. `CreateBackup` is never automatically retried after an
+uncertain response; the saved job/backup identity remains the recovery authority.
+
+These checks avoid repeated builds after a completed build by another operator.
+They are not a distributed build lock: two operators starting simultaneously
+before either image exists can still build concurrently. Coordinate active
+operators. Direct CN build-only/deploy-only commands also discover reusable
+images, but only the coordinator manages backup, migration and source cycles.

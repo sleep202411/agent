@@ -46,6 +46,9 @@ function fixture(t, scenario) {
     new URL("./release_revision.py", import.meta.url),
     join(repo, "deploy/release_revision.py")
   );
+  for (const helper of ["release_images.py", "cn_registry.py"]) {
+    copyFileSync(new URL("./" + helper, import.meta.url), join(repo, "deploy", helper));
+  }
   const values = join(repo, "deploy/helm/fizzdragon/values.yaml");
   const original =
     "server:\n  image:\n    repository: fizzdragon-server\n    tag: old\nweb:\n  image:\n    repository: fizzdragon-web\n    tag: unchanged\n";
@@ -76,6 +79,10 @@ function fixture(t, scenario) {
     git("add", changed);
     git("commit", "-m", "Subsequent change");
     git("push", "origin", "main");
+  }
+  if (scenario.startsWith("reuse")) {
+    writeFileSync(join(repo, "deploy/report-only.txt"), "no application change");
+    git("add", "deploy/report-only.txt"); git("commit", "-m", "deployment-only change"); git("push", "origin", "main");
   }
   const bin = join(root, "bin");
   mkdirSync(bin);
@@ -128,9 +135,11 @@ if (args[1] === 'build') {
   else if (query.includes('.digest')) console.log('sha256:'+'a'.repeat(64));
   else console.log(scenario === 'missing-image' || scenario === 'resume-missing-image' ? '0' : '1');
 } else if (args[1] === 'repository' && args[2] === 'show') {
-  console.log('sha256:'+(scenario === 'resume-digest-change' ? 'b' : 'a').repeat(64));
+  const digest = 'sha256:'+(scenario === 'resume-digest-change' ? 'b' : 'a').repeat(64);
+  console.log(args.includes('--query') ? digest : JSON.stringify({digest}));
 } else if (args[1] === 'repository' && args[2] === 'show-tags') {
-  console.log('true'); // An older build already published this tag.
+  if (scenario === 'registry-denied') process.exit(60);
+  console.log(JSON.stringify(scenario.startsWith('reuse') ? [{name:process.env.AZ_TEST_SOURCE,digest:'sha256:'+'a'.repeat(64)}] : []));
 } else if (args[1] === 'task' && args[2] === 'list-runs') {
   console.log(args.includes('[0].status') ? 'Failed' : 'unrelated-run');
 } else process.exit(45);
@@ -158,6 +167,7 @@ if (args[1] === 'build') {
         AZ_TEST_SCENARIO: scenario,
         AZ_TEST_REPO: repo,
         AZ_TEST_FUTURE: future,
+        AZ_TEST_SOURCE: sha,
         AZ_ACR_BUILD_NO_LOGS: "1",
         FORCE: "0",
       },
@@ -165,9 +175,9 @@ if (args[1] === 'build') {
   );
   const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map(JSON.parse) : [];
   assert.equal(
-    calls.some((c) => c.args.includes("list-runs") || c.args.includes("show-tags")),
+    calls.some((c) => c.args.includes("list-runs")),
     false,
-    "Never use another run or an older tag as evidence for this build"
+    "Never use an unrelated ACR run as evidence for a new build"
   );
   for (const call of calls.filter((c) => c.args[1] === "build")) {
     assert.notEqual(resolve(call.cwd), resolve(repo));
@@ -272,4 +282,17 @@ test("a source restart rebuilds the complete selected service set", (t) => {
     `fizzdragon-web:${future}`,
   ]);
   assert.equal(published.match(new RegExp(`tag: ${future}`, "g")).length, 2);
+});
+
+test("reuses another operator's equivalent source image without a build", (t) => {
+  const { result, calls, published, sha } = fixture(t, "reuse-existing");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(calls.filter(c => c.args[1] === "build").length, 0);
+  assert.match(published, new RegExp(`tag: ${sha}`));
+  assert.match(result.stdout, /Reusing verified/);
+});
+test("registry read failure cannot trigger a fallback build", (t) => {
+  const { result, calls } = fixture(t, "registry-denied");
+  assert.notEqual(result.status, 0);
+  assert.equal(calls.filter(c => c.args[1] === "build").length, 0);
 });

@@ -36,6 +36,8 @@ function run(t, scenario, phase = "all", pinned = false) {
     "deploy/cn_registry.py",
     "import os, sys\nsys.exit(1 if os.environ.get('QA_SCENARIO') == 'missing-image' else 0)\n"
   );
+  put("deploy/release_images.py", "import os,sys\nprint((sys.argv[3]+' sha256:'+'a'*64) if os.environ.get('QA_SCENARIO') == 'reuse-existing' else 'BUILD')\n");
+  put("deploy/verify_release_image.py", "import os,sys\nsys.exit(1 if os.environ.get('QA_SCENARIO') == 'missing-image' else 0)\n");
   put("deploy/release_revision.py", "import os,sys\nprint(os.environ['QA_FUTURE'])\n");
   put("deploy/cn-preflight.sh", "#!/bin/bash\nexit 0\n");
   put("deploy/cn-remote-build-services.sh", "# snapshot A\n");
@@ -108,6 +110,7 @@ if(cmd==='aliyun') {
 } else if(cmd==='kubectl') {
  if(args[0]==='get') console.log('registry/image:existing');
  if(args[0]==='diff' && scenario==='edit') fs.appendFileSync(repo+'/source.txt','local edit');
+ if(args[0]==='diff') process.exit(scenario==='already-applied' ? 0 : 1);
 } else if(cmd==='sleep') {
 } else if(cmd!=='curl') process.exit(53);
 `,
@@ -141,7 +144,7 @@ if(cmd==='aliyun') {
     }
   );
   assert.equal(result.error, undefined);
-  const calls = readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
+  const calls = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").map(JSON.parse) : [];
   const upgrades = calls.filter((c) => c.cmd === "helm" && c.args[0] === "upgrade");
   if (phase === "deploy") {
     assert.equal(
@@ -152,7 +155,7 @@ if(cmd==='aliyun') {
     assert.equal(existsSync(chart), false, "chart snapshot cleaned up");
     return { result, upgrades, repo, revision, calls };
   }
-  if (scenario === "start-rejected") return { result, upgrades, calls };
+  if (scenario === "start-rejected" || scenario === "reuse-existing") return { result, upgrades, calls };
   const captured = join(root, "captured");
   assert.equal(readFileSync(join(captured, "source.txt"), "utf8"), "A");
   assert.equal(
@@ -240,4 +243,26 @@ test("reports a rejected ECS start immediately without attempting upload", (t) =
     calls.some((c) => c.cmd === "ssh"),
     false
   );
+});
+
+test("an already applied manifest is verified without another Helm upgrade", (t) => {
+  const { result, calls, upgrades } = run(t, "already-applied", "deploy");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(upgrades.length, 0);
+  assert.ok(calls.some(c => c.cmd === "kubectl" && c.args[0] === "rollout"));
+});
+
+test("direct build-only reuses another operator's image without starting ECS", (t) => {
+  const { result, calls } = run(t, "reuse-existing", "build");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(calls.some(c => c.cmd === "aliyun" && c.args[1] === "StartInstance"), false);
+  assert.equal(calls.some(c => c.cmd === "ssh"), false);
+  assert.match(result.stdout, /reusing verified CN/);
+});
+
+test("direct CN deployment restores desired reused images without rebuilding", (t) => {
+  const { result, calls, upgrades } = run(t, "reuse-existing", "all");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(upgrades.length, 1);
+  assert.equal(calls.some(c => c.cmd === "ssh"), false);
 });

@@ -140,8 +140,27 @@ git archive HEAD deploy | tar -x -C "$TOOLS_ROOT"
 [ ! -d "$ROOT/node_modules" ] || ln -s "$ROOT/node_modules" "$TOOLS_ROOT/node_modules"
 SNAPSHOT_READY=1
 
-if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
-  echo "==> start CN build ECS (tag=$TAG services=${SERVICES[*]})"
+# Direct callers get the same cross-operator reuse policy as the coordinator.
+# A coordinated build already contains only services missing from its saved plan.
+BUILD_SERVICES=()
+if [ "${CN_RELEASE_BUILD_PLANNED:-0}" = 1 ]; then
+  BUILD_SERVICES=("${SERVICES[@]}")
+elif [ "${CN_RELEASE_COORDINATED:-0}" != 1 ]; then
+  for service in "${SERVICES[@]}"; do
+    reuse="$(python3 "$TOOLS_ROOT/deploy/release_images.py" cn "$ROOT" "$TAG" "$service")"
+    if [ "$reuse" = BUILD ]; then
+      BUILD_SERVICES+=("$service")
+    else
+      read -r reuse_tag reuse_digest <<< "$reuse"
+      export CN_RELEASE_IMAGE_TAGS="$(python3 -c 'import os,json,sys; d=json.loads(os.environ.get("CN_RELEASE_IMAGE_TAGS", "{}")); d[sys.argv[1]]=sys.argv[2]; print(json.dumps(d))' "$service" "$reuse_tag")"
+      export CN_RELEASE_IMAGE_DIGESTS="$(python3 -c 'import os,json,sys; d=json.loads(os.environ.get("CN_RELEASE_IMAGE_DIGESTS", "{}")); d[sys.argv[1]]=sys.argv[2]; print(json.dumps(d))' "$service" "$reuse_digest")"
+      echo "==> reusing verified CN $service:$reuse_tag ($reuse_digest); no build"
+    fi
+  done
+fi
+
+if { [ "$PHASE" = build ] || [ "$PHASE" = all ]; } && [ "${#BUILD_SERVICES[@]}" -gt 0 ]; then
+  echo "==> start CN build ECS (tag=$TAG services=${BUILD_SERVICES[*]})"
   start_requested=0
   for _ in $(seq 1 40); do
     state="$(aliyun ecs DescribeInstanceStatus --InstanceId.1 "$ECS_ID" --RegionId cn-hangzhou --profile default \
@@ -195,14 +214,21 @@ if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-username.txt" "root@$ECS_IP:/root/.acr_user"
   "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
   "${SCP[@]}" "$TMP_DIR/deploy/cn-remote-build-services.sh" "root@$ECS_IP:/root/cn-remote-build-services.sh"
-  "${SSH[@]}" "root@$ECS_IP" "sed -i 's/\r$//' /root/cn-remote-build-services.sh && TAG='$TAG' EXPECTED_REVISION='$TAG' SERVICES='${SERVICES[*]}' bash /root/cn-remote-build-services.sh" \
+  "${SSH[@]}" "root@$ECS_IP" "sed -i 's/\r$//' /root/cn-remote-build-services.sh && TAG='$TAG' EXPECTED_REVISION='$TAG' SERVICES='${BUILD_SERVICES[*]}' bash /root/cn-remote-build-services.sh" \
     | tee "$RELEASE_DIR/build.log"
   echo "==> images built and pushed; no ACK workload changed"
 fi
 
 if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
   assert_checkout_unchanged
-  python3 "$TOOLS_ROOT/deploy/cn_registry.py" "$TAG" "${SERVICES[@]}"
+  # The coordinator may retain older per-service tags with identical build inputs.
+  image_tag() {
+    python3 -c 'import json,os,sys; print(json.loads(os.environ.get("CN_RELEASE_IMAGE_TAGS", "{}" )).get(sys.argv[1], sys.argv[2]))' "$1" "$TAG"
+  }
+  for service in "${SERVICES[@]}"; do
+    selected_tag="$(image_tag "$service")"
+    python3 "$TOOLS_ROOT/deploy/verify_release_image.py" "$ROOT" "$TAG" "$service" "$selected_tag"
+  done
   export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config-fizzdragon-cn}"
   fingerprint="$(chart_fingerprint)"
   live_fingerprint="$(helm get values "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null \
@@ -213,11 +239,11 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
     image="$(kubectl get deploy "$deployment" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.containers[0].image}')"
     printf '%s\n' "${image##*:}"
   }
-  web_tag="$(contains_service web && printf '%s' "$TAG" || live_tag fizzdragon-web)"
-  studio_tag="$(contains_service studio && printf '%s' "$TAG" || live_tag fizzdragon-studio)"
-  admin_tag="$(contains_service admin-ui && printf '%s' "$TAG" || live_tag fizzdragon-admin-ui)"
-  server_tag="$(contains_service server && printf '%s' "$TAG" || live_tag fizzdragon-server)"
-  agent_os_tag="$(contains_service agent-os && printf '%s' "$TAG" || live_tag fizzdragon-agent-os)"
+  web_tag="$(contains_service web && image_tag web || live_tag fizzdragon-web)"
+  studio_tag="$(contains_service studio && image_tag studio || live_tag fizzdragon-studio)"
+  admin_tag="$(contains_service admin-ui && image_tag admin-ui || live_tag fizzdragon-admin-ui)"
+  server_tag="$(contains_service server && image_tag server || live_tag fizzdragon-server)"
+  agent_os_tag="$(contains_service agent-os && image_tag agent-os || live_tag fizzdragon-agent-os)"
 
   helm_sets=(
     --set-string "cnRelease.chartFingerprint=$fingerprint"
@@ -229,7 +255,7 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
     --set 'server.migrationJob.enabled=false'
   )
   if contains_service agent; then
-    helm_sets+=(--set-string "agent.image.tag=$TAG" --set-string "agentWorker.image.tag=$TAG")
+    helm_sets+=(--set-string "agent.image.tag=$(image_tag agent)" --set-string "agentWorker.image.tag=$(image_tag agent)")
   fi
 
   echo "==> server-side manifest diff (read-only)"
@@ -257,6 +283,9 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
     candidate="$(python3 "$TOOLS_ROOT/deploy/release_revision.py" "$ROOT" "$TAG" main --cn)"
     [ "$candidate" = "$TAG" ] || exit 75
   fi
+  if [ "$diff_status" = 0 ]; then
+    echo "==> selected CN images and chart already applied; no Helm upgrade"
+  else
   echo "==> atomic ACK Helm upgrade (services=${SERVICES[*]} tag=$TAG)"
   helm upgrade "$RELEASE" "$CHART" \
     -f "$CHART/values.yaml" \
@@ -264,6 +293,7 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
     "${helm_sets[@]}" \
     --namespace "$NAMESPACE" \
     --atomic --wait --timeout 15m --history-max 20 --force-conflicts
+  fi
 
   for service in "${SERVICES[@]}"; do
     case "$service" in

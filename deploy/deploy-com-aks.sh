@@ -120,7 +120,7 @@ cleanup() {
   rm -rf "$BUILD_ROOT"
 }
 trap cleanup EXIT
-cp "$ROOT/deploy/release_revision.py" "$BUILD_ROOT/release_revision.py"
+cp "$ROOT/deploy/release_revision.py" "$ROOT/deploy/release_images.py" "$ROOT/deploy/cn_registry.py" "$BUILD_ROOT/"
 mkdir "$BUILD_ROOT/context"
 git archive "$SHA" | tar -x -C "$BUILD_ROOT/context"
 WEB_ENV="$BUILD_ROOT/context/$WEB_ENV"
@@ -268,8 +268,11 @@ while true; do
   git archive "$SHA" | tar -x -C "$BUILD_ROOT/context"
   restart=0
 index=0
+IMAGE_TAGS=()
+IMAGE_DIGESTS=()
 for s in "${SERVICES[@]}"; do
   IFS=":" read -r image dockerfile _paths <<< "$(svc_spec "$s")"
+  selected_tag="$SHA"
   if [ -n "$RESUME_SHA" ]; then
     run_id="${RUN_IDS[$index]}"
     wait_for_acr_image "$run_id" "$image" "$SHA"
@@ -280,8 +283,21 @@ for s in "${SERVICES[@]}"; do
       exit 1
     fi
   else
-    build_one "$s" "$image" "$dockerfile"
+    reuse="$(python3 "$BUILD_ROOT/release_images.py" com "$ROOT" "$SHA" "$s")"
+    if [ "$reuse" = BUILD ]; then
+      build_one "$s" "$image" "$dockerfile"
+    else
+      read -r selected_tag reused_digest <<< "$reuse"
+      echo "  · Reusing verified $image:$selected_tag ($reused_digest); no build"
+    fi
   fi
+  selected_digest="$(az acr repository show --name "$ACR" --image "$image:$selected_tag" --query digest -o tsv | tr -d '\r')"
+  [[ "$selected_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Invalid image digest" >&2; exit 1; }
+  if [ "${reuse:-BUILD}" != BUILD ] && [ -z "$RESUME_SHA" ] && [ "$selected_digest" != "$reused_digest" ]; then
+    echo "Reused image changed; refusing publication" >&2; exit 1
+  fi
+  IMAGE_TAGS+=("$selected_tag")
+  IMAGE_DIGESTS+=("$selected_digest")
   index=$((index + 1))
   candidate="$(next_source)"
   if [ "$candidate" != "$SHA" ]; then
@@ -336,9 +352,14 @@ for attempt in 1 2 3 4 5; do
     git -C "$PUBLISH_ROOT" reset --hard "$PUBLISH_BASE"
   fi
   cd "$PUBLISH_ROOT"
+  index=0
   for s in "${SERVICES[@]}"; do
     IFS=":" read -r image _dockerfile _paths <<< "$(svc_spec "$s")"
-    bump_tag "$image" "$SHA"
+    selected_tag="${IMAGE_TAGS[$index]}"
+    current_digest="$(az acr repository show --name "$ACR" --image "$image:$selected_tag" --query digest -o tsv | tr -d '\r')"
+    [ "$current_digest" = "${IMAGE_DIGESTS[$index]}" ] || { echo "Image digest changed before publication" >&2; exit 1; }
+    bump_tag "$image" "$selected_tag"
+    index=$((index + 1))
   done
   if git diff --quiet -- "$VALUES"; then
     published=1
@@ -368,10 +389,12 @@ done
 echo "Local checkout preserved. Pull the remote GitOps commit when your worktree is ready."
 echo "✅ 镜像和 Git tag 已推送；运行中的版本尚未验证。ArgoCD 将自动同步。"
 echo "Published services: ${SERVICES[*]}"
-echo "Expected application image tag: $SHA"
+echo "Release source: $SHA (unchanged services may retain older verified image tags)"
 echo "Only the selected services were published; other services retain their existing image tags."
 echo "Read-only rollout checks (requires AKS read access; use your authorized context):"
+index=0
 for service in "${SERVICES[@]}"; do
+  echo "Expected $service: ${IMAGE_TAGS[$index]} (${IMAGE_DIGESTS[$index]})"
   deployments="fizzdragon-$service"
   [ "$service" != agent ] || deployments="fizzdragon-agent fizzdragon-agent-worker"
   for deployment in $deployments; do
@@ -379,10 +402,11 @@ for service in "${SERVICES[@]}"; do
     echo "  kubectl --context aks-fizzdragon-com-admin -n fizzdragon-com rollout status deployment/$deployment --timeout=300s"
   done
   if [ "$service" = server ]; then
-    echo "  node deploy/diagnose-com-server.mjs $SHA"
+    echo "  node deploy/diagnose-com-server.mjs ${IMAGE_TAGS[$index]}"
   fi
+  index=$((index + 1))
 done
-echo "Compare each selected image tag with $SHA; a ready older deployment is not acceptance of this release."
+echo "Compare each selected image tag and digest with the expected values above; a ready older deployment is not acceptance of this release."
 echo "随后验证已登录的业务接口；/healthz 或 /ready 成功不代表新路由已上线。"
 echo "CN release of the same source revision (builds CN images separately):"
 echo "  CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --tag $SHA --allow-chart-update ${SERVICES[*]}"

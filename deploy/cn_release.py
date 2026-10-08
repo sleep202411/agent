@@ -12,8 +12,9 @@ import subprocess
 import sys
 import tempfile
 import time
-from cn_registry import verify
+from cn_registry import verify, safe_code, transient_code
 from release_revision import latest_source
+from release_images import find as find_image
 
 ROOT = Path(__file__).resolve().parent.parent
 RDS = "pgm-1ud5k5e8ed864ld6"
@@ -36,7 +37,29 @@ def rds(action, **params):
             "--RegionId", REGION, "--profile", "default"]
     for key, value in params.items():
         args += ["--" + key, str(value)]
-    return read_json(*args)
+    # Reads are idempotent; CreateBackup is not and must never be retried here.
+    attempts = 4 if action in ("DescribeBackupTasks", "DescribeBackups") else 1
+    for attempt in range(attempts):
+        try:
+            result = subprocess.run(args, cwd=ROOT, text=True, capture_output=True,
+                                    check=True, timeout=45)
+            payload = json.loads(result.stdout)
+            if not isinstance(payload, dict):
+                raise ValueError("Expected an object")
+            code = payload.get("Code")
+            if code not in (None, 200, "200", "Success", "success"):
+                if transient_code(str(code)):
+                    raise ValueError("Transient RDS API response")
+                raise RuntimeError(f"CN RDS {action} rejected: {safe_code(code)}; release state is saved")
+            return payload
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, ValueError) as error:
+            detail = str(getattr(error, "stderr", "") or "")
+            denied = re.search(r"forbidden|accessdenied|invalidaccesskey|signaturedoesnotmatch|unauthorized|invalidparameter", detail, re.I)
+            if denied or attempt + 1 == attempts:
+                raise RuntimeError(f"CN RDS {action} failed after {attempt + 1} attempt(s); release state is saved. Check access/connectivity and resume.") from None
+            delay = (2, 5, 10)[attempt]
+            print(f"==> CN RDS {action}: transient read failure; retry {attempt + 2}/{attempts} in {delay}s", flush=True)
+            time.sleep(delay)
 
 
 def revision(value):
@@ -183,6 +206,7 @@ def chart_snapshot(tag):
 
 
 def migration(tag, backup_id=None, state=None, persist=None, render_only=False, before_create=None):
+    image_tag = (state or {}).get("imageTags", {}).get("server", tag)
     namespace = os.environ.get("CN_NAMESPACE", "fizzdragon")
     release = os.environ.get("CN_RELEASE", "fizzdragon")
     name = f"{release}-db-migrate-{tag}"[:63].rstrip("-")
@@ -192,7 +216,7 @@ def migration(tag, backup_id=None, state=None, persist=None, render_only=False, 
             return run("helm", "template", release, chart, "--namespace", namespace,
                        "-f", chart / "values.yaml", "-f", chart / "values.cn-prod.yaml",
                        "--show-only", "templates/server-migration-job.yaml",
-                       "--set-string", f"server.image.tag={tag}",
+                       "--set-string", f"server.image.tag={image_tag}",
                        "--set", "server.migrationJob.enabled=true",
                        "--set-string", f"server.migrationJob.revision={tag}",
                        "--set-string", f"server.migrationJob.backupId={backup}", capture=True)
@@ -204,14 +228,17 @@ def migration(tag, backup_id=None, state=None, persist=None, render_only=False, 
         # Resolve the exact image from this revision's chart, not today's checkout.
         rendered = render(backup_id or "pending")
         image_match = re.search(r'^\s+image:\s*"([^"\n]+)"', rendered, re.M)
-        if not image_match or not image_match[1].endswith(f"/fizzdragon-server:{tag}"):
+        if not image_match or not image_match[1].endswith(f"/fizzdragon-server:{image_tag}"):
             raise RuntimeError("Unexpected migration image in pinned chart")
         image = image_match[1]
         existing = get_job(name, namespace)
         if existing and job_state(existing, image, tag) == "complete":
             print(f"==> migration already completed: {name}", flush=True)
             return
-        verify(tag, ["server"])
+        verified_digest = verify(image_tag, ["server"])["server"]
+        expected_digest = (state or {}).get("digests", {}).get("server")
+        if expected_digest and verified_digest != expected_digest:
+            raise RuntimeError("Server image changed before migration; refusing to execute it")
         if not existing:
             if state is not None:
                 backup_id = ensure_backup(state, persist, backup_id)
@@ -313,13 +340,31 @@ def run_cycles(state, args, persist):
         if checkpoint():
             continue
         print(f"==> CN release cycle {cycle + 1}: {tag}", flush=True)
+        def verify_images():
+            tags = state.get("imageTags", {})
+            return {service: verify(tags.get(service, tag), [service])[service] for service in services}
+
         if not state.get("built"):
-            if not state.get("useExistingImages", False):
-                run(ROOT / "deploy/deploy-cn-services.sh", "--tag", tag, "--full", "--build-only", *services)
-            state["digests"] = verify(tag, services)
+            tags, reused_digests, missing = {}, {}, []
+            for service in services:
+                existing = None if state.get("useExistingImages", False) else find_image(ROOT, tag, 'cn', service)
+                tags[service] = existing['tag'] if existing else tag
+                if existing:
+                    reused_digests[service] = existing['digest']
+                    print(f"==> reusing CN {service}:{existing['tag']} ({existing['digest']}); no build", flush=True)
+                elif not state.get("useExistingImages", False):
+                    missing.append(service)
+            state["imageTags"] = tags
+            persist()
+            if missing:
+                run(ROOT / "deploy/deploy-cn-services.sh", "--tag", tag, "--full", "--build-only", *missing,
+                    env={**os.environ, "CN_RELEASE_BUILD_PLANNED": "1"})
+            state["digests"] = verify_images()
+            if any(state["digests"][service] != value for service, value in reused_digests.items()):
+                raise RuntimeError("Reused image digest changed while preparing release")
             state["built"] = True
             persist()
-        elif verify(tag, services) != state["digests"]:
+        elif verify_images() != state["digests"]:
             raise RuntimeError("Pinned image digests changed; refusing to deploy overwritten tags")
         if checkpoint():
             continue
@@ -331,13 +376,15 @@ def run_cycles(state, args, persist):
         # Never interrupt migration for a new commit. Rebuild only after it ends.
         if checkpoint():
             continue
-        if verify(tag, services) != state["digests"]:
+        if verify_images() != state["digests"]:
             raise RuntimeError("Pinned image digests changed during migration; refusing deployment")
         deploy_args = [ROOT / "deploy/deploy-cn-services.sh", "--tag", tag, "--deploy-only"]
         if args.allow_chart_update:
             deploy_args.append("--allow-chart-update")
         try:
-            run(*deploy_args, *services, env={**os.environ, "CN_RELEASE_COORDINATED": "1"})
+            run(*deploy_args, *services, env={**os.environ, "CN_RELEASE_COORDINATED": "1",
+                "CN_RELEASE_IMAGE_TAGS": json.dumps(state.get("imageTags", {})),
+                "CN_RELEASE_IMAGE_DIGESTS": json.dumps(state["digests"])})
         except subprocess.CalledProcessError as error:
             if error.returncode != 75:
                 raise

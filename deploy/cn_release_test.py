@@ -169,6 +169,30 @@ class ReleaseTests(unittest.TestCase):
                 r.release(args)
                 self.assertFalse(any('--deploy-only' in c.args for c in calls.call_args_list))
 
+    def test_reused_server_image_keeps_new_release_migration_audit(self):
+        old = 'b' * 40
+        image = 'registry/fizzdragon-server:' + old
+        stack, run, backup, verify = self.migration_context()
+        run.return_value = '  image: "' + image + '"'
+        verify.return_value = {'server': 'digest'}
+        complete = job('Complete')
+        complete['spec']['template']['spec']['containers'][0]['image'] = image
+        stack.enter_context(patch.object(r, 'get_job', side_effect=[None, complete]))
+        r.migration(TAG, state={'imageTags': {'server': old}, 'digests': {'server': 'digest'}}, persist=Mock())
+        verify.assert_called_once_with(old, ['server'])
+        rendered = [c for c in run.call_args_list if c.args[:2] == ('helm', 'template')]
+        self.assertTrue(all('server.image.tag=' + old in c.args for c in rendered))
+        self.assertTrue(all('server.migrationJob.revision=' + TAG in c.args for c in rendered))
+
+    def test_digest_change_prevents_backup_and_migration(self):
+        stack, run, backup, verify = self.migration_context()
+        verify.return_value = {'server': 'changed'}
+        stack.enter_context(patch.object(r, 'get_job', return_value=None))
+        with self.assertRaisesRegex(RuntimeError, 'changed before migration'):
+            r.migration(TAG, state={'digests': {'server': 'expected'}}, persist=Mock())
+        backup.assert_not_called()
+        self.assertFalse(any(c.args[:2] == ('kubectl', 'create') for c in run.call_args_list))
+
 
 
 class RegistryTests(unittest.TestCase):
@@ -197,6 +221,7 @@ class CycleTests(unittest.TestCase):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         events = []
+        stack.enter_context(patch.object(r, 'find_image', return_value=None))
         stack.enter_context(patch.object(r, 'revision', side_effect=lambda tag: tag))
         stack.enter_context(patch.object(r, 'latest_source', side_effect=checkpoints))
         stack.enter_context(patch.object(r, 'get_job', return_value=existing))
@@ -283,3 +308,29 @@ class CycleTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class RetryTests(unittest.TestCase):
+    def test_read_reset_retries_same_job(self):
+        error = r.subprocess.CalledProcessError(1, 'aliyun', stderr='connection reset by peer')
+        with patch.object(r.subprocess, 'run', side_effect=[error, Mock(stdout='{"Items":{}}')]) as calls, patch.object(r.time, 'sleep'):
+            self.assertEqual(r.rds('DescribeBackupTasks', BackupJobId='456'), {'Items': {}})
+            self.assertEqual(calls.call_count, 2)
+            self.assertEqual(calls.call_args_list[0], calls.call_args_list[1])
+    def test_create_is_never_retried(self):
+        with patch.object(r.subprocess, 'run', side_effect=r.subprocess.TimeoutExpired('aliyun', 45)) as calls, patch.object(r.time, 'sleep') as sleep:
+            with self.assertRaises(RuntimeError): r.rds('CreateBackup')
+            self.assertEqual(calls.call_count, 1)
+            sleep.assert_not_called()
+    def test_permission_failure_stops_immediately(self):
+        with patch.object(r.subprocess, 'run', side_effect=r.subprocess.CalledProcessError(1, 'aliyun', stderr='Forbidden')) as calls:
+            with self.assertRaises(RuntimeError): r.rds('DescribeBackups')
+            self.assertEqual(calls.call_count, 1)
+    def test_retries_are_bounded(self):
+        with patch.object(r.subprocess, 'run', side_effect=r.subprocess.TimeoutExpired('aliyun', 45)) as calls, patch.object(r.time, 'sleep'):
+            with self.assertRaises(RuntimeError): r.rds('DescribeBackups')
+            self.assertEqual(calls.call_count, 4)
+
+    def test_permission_error_envelope_is_not_treated_as_empty_backup_list(self):
+        with patch.object(r.subprocess, 'run', return_value=Mock(stdout='{"Code":"Forbidden"}')) as calls:
+            with self.assertRaisesRegex(RuntimeError, 'Forbidden'): r.rds('DescribeBackupTasks')
+            self.assertEqual(calls.call_count, 1)
