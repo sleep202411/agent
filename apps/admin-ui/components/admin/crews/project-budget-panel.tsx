@@ -166,7 +166,7 @@ export function ProjectBudgetPanel({ crewId }: { crewId: string }) {
                   {plan.producerOptions.map((x) => (
                     <option key={`${x.taskId}:${x.userId}`} value={`${x.taskId}:${x.userId}`}>
                       {x.title} · {x.userId} · {x.currency}{" "}
-                      {`${BigInt(x.amountMinor) / 100n}.${(BigInt(x.amountMinor) % 100n).toString().padStart(2, "0")}`}
+                      {`${BigInt(x.amountMinor) / BigInt(100)}.${(BigInt(x.amountMinor) % BigInt(100)).toString().padStart(2, "0")}`}
                     </option>
                   ))}
                 </select>
