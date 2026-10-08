@@ -1,3 +1,7 @@
+import {
+  readProjectBudget,
+  producerNetAmount,
+} from '../compute-requests/project-budget';
 import { readTaskDeliveryTemplate } from './task-delivery-template';
 import { CARD_APPROVAL_POLICY } from './card-approval';
 import {
@@ -17,6 +21,10 @@ export const ReleaseTaskPayment = z.strictObject({
   userId: z.string().trim().min(1).max(64),
   expectedVersion: z.number().int().positive(),
   expectedAmountMinor: z.string().regex(/^[1-9]\d{0,18}$/),
+  expectedDeductionMinor: z
+    .string()
+    .regex(/^(0|[1-9]\d{0,18})$/)
+    .default('0'),
   currency: z.enum(['USD', 'CNY']),
   paymentTerms: z.enum(['half_upfront', 'on_completion']),
   receiptReference: z.string().trim().min(1).max(180),
@@ -49,6 +57,7 @@ export class TaskPaymentsService {
     const releases = await this.prisma.taskPaymentRelease.findMany({
       where: { taskId: id },
     });
+    const budget = await readProjectBudget(this.prisma, task.crewId);
     return {
       id: task.id,
       title: task.title,
@@ -59,6 +68,15 @@ export class TaskPaymentsService {
           userId: a.userId,
           currency: a.currency,
           amountMinor: a.rewardAmountMinor?.toString() ?? '0',
+          deductionMinor:
+            budget?.data.producerTaskId === id &&
+            budget.data.producerUserId === a.userId
+              ? (budget.data.settlement?.deductionMinor ?? '0')
+              : '0',
+          budgetSettlementRequired:
+            budget?.data.producerTaskId === id &&
+            budget.data.producerUserId === a.userId &&
+            !budget.data.settlement,
           paymentTerms: await assignedPaymentTerm(
             this.prisma,
             id,
@@ -93,7 +111,11 @@ export class TaskPaymentsService {
       });
       if (existing) {
         if (
-          existing.amountMinor.toString() !== input.expectedAmountMinor ||
+          (
+            existing.amountMinor + (existing.deductionMinor ?? 0n)
+          ).toString() !== input.expectedAmountMinor ||
+          (existing.deductionMinor ?? 0n).toString() !==
+            input.expectedDeductionMinor ||
           existing.currency !== input.currency ||
           existing.paymentTerms !== input.paymentTerms ||
           existing.receiptReference !== input.receiptReference ||
@@ -183,6 +205,26 @@ export class TaskPaymentsService {
         throw new ConflictException(
           'Assignment compensation changed. Reload the task.',
         );
+      const budget = await readProjectBudget(tx, task.crewId);
+      const payment = producerNetAmount(
+        budget,
+        id,
+        assignee.userId,
+        assignee.rewardAmountMinor,
+        assignee.currency,
+      );
+      if (payment.deduction.toString() !== input.expectedDeductionMinor)
+        throw new ConflictException(
+          'Producer deduction changed. Refresh and confirm the net payment.',
+        );
+      if (
+        budget?.data.producerTaskId === id &&
+        budget.data.producerUserId === assignee.userId &&
+        task.workflowState.semantic !== 'approved'
+      )
+        throw new ConflictException(
+          'Producer delivery must be approved before final settlement.',
+        );
       await lockMemberPayouts(tx, task.crewId, assignee.userId);
       if (
         await tx.crewEarningEntry.findUnique({
@@ -196,7 +238,8 @@ export class TaskPaymentsService {
         data: {
           taskId: id,
           userId: assignee.userId,
-          amountMinor: assignee.rewardAmountMinor,
+          amountMinor: payment.net,
+          deductionMinor: payment.deduction,
           currency: assignee.currency,
           paymentTerms: term,
           receiptReference: input.receiptReference,
@@ -204,17 +247,18 @@ export class TaskPaymentsService {
           confirmedByAdminId: admin.id,
         },
       });
-      await this.earnings.postTaskRewardTx(tx, {
-        crewId: task.crewId,
-        taskId: id,
-        taskNumber: task.number,
-        taskTitle: task.title,
-        crewMemberId: assignee.crewMemberId,
-        userId: assignee.userId,
-        amountMinor: assignee.rewardAmountMinor,
-        currency: assignee.currency,
-        approvedByUserId: `admin:${admin.id}`,
-      });
+      if (payment.net > 0n)
+        await this.earnings.postTaskRewardTx(tx, {
+          crewId: task.crewId,
+          taskId: id,
+          taskNumber: task.number,
+          taskTitle: task.title,
+          crewMemberId: assignee.crewMemberId,
+          userId: assignee.userId,
+          amountMinor: payment.net,
+          currency: assignee.currency,
+          approvedByUserId: `admin:${admin.id}`,
+        });
       return { id: release.id };
     });
   }

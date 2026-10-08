@@ -11170,7 +11170,10 @@
     "empty": "暂无积分申请。",
     "latest": "最新申请",
     "older": "更早申请",
-    "loadFailed": "财务数据暂时无法加载，请重试。"
+    "loadFailed": "财务数据暂时无法加载，请重试。",
+    "projectBudgetSummary": "项目预算：{total} 积分 · 已分期发放：{released} 积分（每分钟 4,462 积分）。",
+    "projectBudgetClosed": "项目算力已关闭，等待制片人结算。",
+    "producerDeduction": "FD 管理员批准的制片人扣款：{amount} 分（{currency}）"
   },
   "crewTaskDeliveryLayout": {
     "progress": "任务交付进度",

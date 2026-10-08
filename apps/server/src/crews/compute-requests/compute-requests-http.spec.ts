@@ -1,3 +1,4 @@
+import { ProjectBudgetService } from './project-budget.service';
 import { ForbiddenException, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -22,6 +23,10 @@ describe('Admin-only compute request HTTP boundary', () => {
         CrewComputeRequestsAdminController,
       ],
       providers: [
+        {
+          provide: ProjectBudgetService,
+          useValue: { detail: jest.fn(), change: jest.fn() },
+        },
         { provide: AdminAuthService, useValue: { validateSession } },
         {
           provide: CrewComputeRequestsService,
@@ -56,6 +61,13 @@ describe('Admin-only compute request HTTP boundary', () => {
       .post(`/admin/crew-compute-requests/${crewId}/${requestId}/decision`)
       .send({ status: 'approved' })
       .expect(403);
+    await request(app.getHttpServer() as Server)
+      .get(`/admin/crew-compute-requests/${crewId}/budget`)
+      .expect(403);
+    await request(app.getHttpServer() as Server)
+      .post(`/admin/crew-compute-requests/${crewId}/budget`)
+      .send({ action: 'close' })
+      .expect(403);
     expect(listAdmin).not.toHaveBeenCalled();
     expect(decideAdmin).not.toHaveBeenCalled();
   });
@@ -63,7 +75,7 @@ describe('Admin-only compute request HTTP boundary', () => {
     validateSession.mockResolvedValue({
       id: randomUUID(),
       permissions: ['crew.manage', 'billing.write'],
-      roleKeys: ['super_admin'],
+      roleKeys: ['crew_manager'],
     });
     await request(app.getHttpServer() as Server)
       .post(`/admin/crew-compute-requests/${crewId}/${requestId}/decision`)

@@ -67,6 +67,26 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
           <p className="text-sm text-muted-foreground">
             {data.isOwner ? t("crewScope") : t("myScope")}
           </p>
+          {data.projectBudget && (
+            <div className="space-y-1 text-sm">
+              <p>
+                {t("projectBudgetSummary", {
+                  total: data.projectBudget.totalPoints,
+                  released: data.projectBudget.releasedPoints,
+                })}
+              </p>
+              {data.projectBudget.closed && <p>{t("projectBudgetClosed")}</p>}
+              {data.projectBudget.producerSettlement && (
+                <p>
+                  {t("producerDeduction", {
+                    amount: data.projectBudget.producerSettlement.deductionMinor,
+                    currency: data.projectBudget.producerSettlement.currency,
+                  })}{" "}
+                  · {data.projectBudget.producerSettlement.note}
+                </p>
+              )}
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <p className="text-sm text-muted-foreground">{t("pending")}</p>

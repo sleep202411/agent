@@ -11170,7 +11170,10 @@
     "empty": "No points requests yet.",
     "latest": "Latest requests",
     "older": "Older requests",
-    "loadFailed": "Finance data could not be loaded. Please retry."
+    "loadFailed": "Finance data could not be loaded. Please retry.",
+    "projectBudgetSummary": "Project budget: {total} points · Released: {released} points (4,462 points/minute).",
+    "projectBudgetClosed": "Project compute is closed for producer settlement.",
+    "producerDeduction": "FD Admin-approved producer deduction: {amount} minor units ({currency})"
   },
   "crewTaskDeliveryLayout": {
     "progress": "Task Delivery Progress",

@@ -1,3 +1,4 @@
+import { readProjectBudget, releasedPoints } from './project-budget';
 import {
   BadRequestException,
   ConflictException,
@@ -69,7 +70,21 @@ export class CrewComputeRequestsService {
         _sum: { amount: true },
       }),
     ]);
+    const budget = await readProjectBudget(this.prisma, crewId);
     return {
+      projectBudget: budget
+        ? {
+            version: budget.version,
+            durationSeconds: budget.data.durationSeconds,
+            totalPoints: budget.data.totalPoints,
+            releasedPoints: releasedPoints(budget).toString(),
+            closed: !!budget.data.settlement,
+            producerSettlement:
+              access.isOwner || budget.data.producerUserId === userId
+                ? budget.data.settlement
+                : null,
+          }
+        : null,
       isOwner: access.isOwner,
       tasks,
       items: requests.slice(0, 50),
@@ -223,6 +238,22 @@ export class CrewComputeRequestsService {
         throw new ConflictException('This request has already been decided');
       }
       if (input.status === 'approved') {
+        const budget = await readProjectBudget(tx, crewId);
+        if (!budget || budget.data.settlement)
+          throw new ConflictException(
+            'Configure and release an open project compute budget before approving task allowances.',
+          );
+        const approved = await tx.crewComputeRequest.aggregate({
+          where: { crewId, status: 'approved' },
+          _sum: { points: true },
+        });
+        if (
+          BigInt(approved._sum.points ?? 0) + BigInt(request.points) >
+          releasedPoints(budget)
+        )
+          throw new ConflictException(
+            'Task allowances exceed released project points. Release another stage first.',
+          );
         const task = await this.eligible(
           tx,
           crewId,

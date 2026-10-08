@@ -1,3 +1,4 @@
+import { requireProjectBudgetAllowance } from './project-budget';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
@@ -14,6 +15,7 @@ export async function requireCrewComputeAllowance(
     amount: bigint;
   },
 ) {
+  await requireProjectBudgetAllowance(tx, input.workspaceId, input.amount);
   if (!input.projectId) return false;
   const task = await tx.crewTask.findUnique({
     where: { canvasProjectId: input.projectId },

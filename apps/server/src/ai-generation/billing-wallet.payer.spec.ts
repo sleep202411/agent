@@ -36,6 +36,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       createdAt: new Date(0),
     };
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       workspace: {
         findUnique: jest.fn(),
         findFirst: jest.fn(),

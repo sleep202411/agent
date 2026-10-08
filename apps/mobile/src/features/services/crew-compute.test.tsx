@@ -179,3 +179,26 @@ it("does not refresh stale account on completion", async () => {
   await act(async () => resolve());
   expect(h.detail).toHaveBeenCalledTimes(1);
 });
+
+it("shows the same project allowance and producer adjustment on mobile", async () => {
+  h.detail.mockResolvedValueOnce({
+    ...page,
+    projectBudget: {
+      version: 2,
+      durationSeconds: 60,
+      totalPoints: "4462",
+      releasedPoints: "6000",
+      closed: true,
+      producerSettlement: {
+        grossMinor: "10000",
+        deductionMinor: "1000",
+        currency: "CNY",
+        note: "Approved CASE-12",
+      },
+    },
+  });
+  await render();
+  expect(host.textContent).toContain("crewComputeFinance.projectBudgetSummary");
+  expect(host.textContent).toContain("crewComputeFinance.projectBudgetClosed");
+  expect(host.textContent).toContain("Approved CASE-12");
+});

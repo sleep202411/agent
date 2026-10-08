@@ -1,5 +1,6 @@
 "use client";
 
+import { ProjectBudgetPanel } from "./project-budget-panel";
 import { useEffect, useRef, useState } from "react";
 import { adminUiApiPath } from "@/lib/admin-api";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ export function ComputeRequestsPanel() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<ComputeRequest | null>(null);
+  const [budgetCrew, setBudgetCrew] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const action = useRef<AbortController | null>(null);
 
@@ -119,6 +121,7 @@ export function ComputeRequestsPanel() {
           add points.
         </p>
       </div>
+      {budgetCrew && <ProjectBudgetPanel key={budgetCrew} crewId={budgetCrew} />}
       <div className="flex flex-wrap gap-2">
         {["pending", "approved", "rejected", ""].map((status) => (
           <Button
@@ -207,6 +210,9 @@ export function ComputeRequestsPanel() {
                     {row.decidedAt && <p>{new Date(row.decidedAt).toLocaleString()}</p>}
                   </TableCell>
                   <TableCell>
+                    <Button variant="outline" onClick={() => setBudgetCrew(row.crewId)}>
+                      Project budget
+                    </Button>
                     {row.status === "pending" && (
                       <Button
                         variant="outline"

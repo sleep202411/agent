@@ -17,6 +17,25 @@ export const computeRequest = z.object({
   decisionNote: z.string().nullable(),
 });
 const pageSchema = z.object({
+  projectBudget: z
+    .object({
+      version: z.number().int().positive(),
+      durationSeconds: z.number().int().positive(),
+      totalPoints: z.string().regex(/^\d+$/),
+      releasedPoints: z.string().regex(/^\d+$/),
+      closed: z.boolean(),
+      producerSettlement: z
+        .object({
+          grossMinor: z.string().regex(/^\d+$/),
+          deductionMinor: z.string().regex(/^\d+$/),
+          currency: z.enum(["USD", "CNY"]),
+          note: z.string(),
+        })
+        .nullable()
+        .optional(),
+    })
+    .nullable()
+    .optional(),
   isOwner: z.boolean(),
   consumedPoints: z.string().regex(/^\d+$/),
   totals: z.object({

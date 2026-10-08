@@ -1,3 +1,4 @@
+import { readProjectBudget } from '../compute-requests/project-budget';
 import { prepareCardApproval, isCardDelivery } from './card-approval';
 import { assignedPaymentTerm } from './task-payment-policy';
 import { recordTaskContractFile } from '../assets/task-contract-retention';
@@ -4054,11 +4055,17 @@ export class CrewTasksService {
               preferredAssetNodeId: input.bindAssetNodeId,
             });
           }
+          const projectBudget = await readProjectBudget(tx, locked.crewId);
           for (const assignee of locked.assignees.filter(
             (candidate) =>
               candidate.rewardAmountMinor != null &&
               candidate.rewardAmountMinor > 0n,
           )) {
+            if (
+              projectBudget?.data.producerTaskId === taskId &&
+              projectBudget.data.producerUserId === assignee.userId
+            )
+              continue;
             const paymentTerm = await assignedPaymentTerm(
               tx,
               taskId,

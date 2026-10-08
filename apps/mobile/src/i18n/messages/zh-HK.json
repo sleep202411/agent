@@ -5881,5 +5881,8 @@
   "taskMenu.edit": "編輯任務",
   "taskMenu.invite": "產生邀請連結",
   "taskMenu.recruit": "開放招募",
-  "taskReview.cardApproval": "抽卡任務付款須經FD3或以上成員驗收。項目沒有FD3或以上成員且只有一名已分配的抽卡師時，須由指定的項目製作負責人驗收。"
+  "taskReview.cardApproval": "抽卡任務付款須經FD3或以上成員驗收。項目沒有FD3或以上成員且只有一名已分配的抽卡師時，須由指定的項目製作負責人驗收。",
+  "crewComputeFinance.projectBudgetSummary": "項目預算：{total} 積分 · 已分期發放：{released} 積分（每分鐘 4,462 積分）。",
+  "crewComputeFinance.projectBudgetClosed": "項目算力已關閉，等待製片人結算。",
+  "crewComputeFinance.producerDeduction": "FD 管理員批准的製片人扣款：{amount} 分（{currency}）"
 }

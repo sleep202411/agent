@@ -1,0 +1,50 @@
+Pax project compute / producer settlement rules — 2026-10-08
+
+Approved requirements
+- Whole-project compute budget: 4,462 points per minute of agreed duration.
+- Points are released in stages, not all at once.
+- FD Admin approves a documented producer deduction; no automatic points-to-cash rate.
+
+Implemented workflow
+1. Create a paid producer task assignment with agreed on-completion payment terms.
+2. Link the Crew project to its dedicated workspace and fund its compute wallet.
+3. In Admin > Compute requests, choose Project budget on a request row (including
+   approved/history rows). Configure the agreed duration and producer assignment.
+4. Release a stage with a reason/evidence. A release over the total project budget
+   requires explicit overrun authorization. Release does not mint wallet points.
+5. Approve task allowances within the cumulative released amount. Generation
+   enforces the project cap against settled spending plus active holds. Crew-owned
+   workspace generation without a configured/released budget is blocked; other
+   workspaces retain their existing behavior.
+6. Once generation finishes, FD Admin reviews actual consumption and closes compute.
+   Outstanding holds block closure. The Admin records a deduction (including zero
+   with a documented waiver). A positive deduction requires an actual overrun and
+   cannot exceed the agreed producer fee. No conversion rate is inferred.
+7. Producer delivery must be approved before payment. Task payments shows the
+   agreed fee, approved deduction and net payable. Its acknowledgement includes
+   the deduction, and its immutable receipt records net amount and deduction.
+   Gross fee remains unchanged; zero net produces no earnings credit.
+8. A documented reconsideration can reopen the budget before payment. Paid producer
+   settlement cannot be reopened through this workflow. Existing dispute/appeal
+   routes remain available; their resolution does not silently reverse money.
+
+Scope / accounting
+- One budget per Crew's dedicated workspace; all AI-job spending from that workspace
+  counts, including prior consumption. Personal wallet spending is excluded.
+- Duration is stored as whole seconds. The total is ceil(seconds * 4462 / 60), rounding
+  once for the project, not independently for each stage/task. Admin entry is minutes.
+- Producer means the explicit paid assignment selected by Admin, not every creator or
+  every producer revenue stream. The fee must be unpaid before configuring the plan.
+- Task/workspace locks serialize budget changes and generation admission; version
+  checks reject stale decisions, and release keys make retries idempotent.
+- Budget configuration pins the Crew workspace so switching wallets cannot evade it.
+- Stage history and Admin audit logs retain reasons, actors and decisions.
+- Web/Mobile show budget/release status. Producer adjustment evidence is disclosed
+  only to the producer and Crew owner in the member API; Admin has the full view.
+
+Release
+Requires migration 20261008110000_project_compute_budgets before new Server code.
+Deploy server, web and admin-ui; rebuild Mobile for its updated display. No production
+configuration, budget, wallet or settlement was changed by this implementation.
+Admin must configure existing Crew projects before their next generation admission.
+The earlier FD catalog/private export-storage blockers are separate and unchanged.

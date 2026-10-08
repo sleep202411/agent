@@ -11170,7 +11170,10 @@
     "empty": "暫無積分申請。",
     "latest": "最新申請",
     "older": "更早申請",
-    "loadFailed": "財務資料暫時無法載入，請重試。"
+    "loadFailed": "財務資料暫時無法載入，請重試。",
+    "projectBudgetSummary": "項目預算：{total} 積分 · 已分期發放：{released} 積分（每分鐘 4,462 積分）。",
+    "projectBudgetClosed": "項目算力已關閉，等待製片人結算。",
+    "producerDeduction": "FD 管理員批准的製片人扣款：{amount} 分（{currency}）"
   },
   "crewTaskDeliveryLayout": {
     "progress": "任務交付進度",

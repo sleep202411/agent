@@ -175,3 +175,31 @@ it("can render a loading state before Finance data is available", async () => {
   await render();
   expect(host.querySelector('[role="status"]')?.textContent).toBe("loading");
 });
+
+it("shows the project allowance and the disclosed producer adjustment", async () => {
+  h.badData = {
+    isOwner: true,
+    consumedPoints: "5000",
+    totals: {},
+    tasks: [],
+    items: [],
+    nextCursor: null,
+    projectBudget: {
+      version: 2,
+      durationSeconds: 60,
+      totalPoints: "4462",
+      releasedPoints: "6000",
+      closed: true,
+      producerSettlement: {
+        grossMinor: "10000",
+        deductionMinor: "1000",
+        currency: "CNY",
+        note: "Approved CASE-12",
+      },
+    },
+  };
+  await render();
+  expect(host.textContent).toContain("projectBudgetSummary");
+  expect(host.textContent).toContain("projectBudgetClosed");
+  expect(host.textContent).toContain("Approved CASE-12");
+});

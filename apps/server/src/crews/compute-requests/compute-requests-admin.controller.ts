@@ -1,3 +1,4 @@
+import { ProjectBudgetService, BudgetAction } from './project-budget.service';
 import {
   Body,
   Controller,
@@ -32,7 +33,37 @@ const QueueQuery = z.object({
 @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CrewComputeReview)
 @Controller('admin/crew-compute-requests')
 export class CrewComputeRequestsAdminController {
-  constructor(private readonly requests: CrewComputeRequestsService) {}
+  constructor(
+    private readonly requests: CrewComputeRequestsService,
+    private readonly budgets: ProjectBudgetService,
+  ) {}
+
+  @Get(':crewId/budget')
+  async budget(
+    @CurrentAdmin() admin: AdminActor,
+    @Param('crewId') crewId: string,
+  ) {
+    return {
+      code: 200,
+      data: await this.budgets.detail(admin, parseIdParam(crewId, 'crewId')),
+    };
+  }
+  @Post(':crewId/budget')
+  async changeBudget(
+    @CurrentAdmin() admin: AdminActor,
+    @Param('crewId') crewId: string,
+    @Body(new ZodValidationPipe(BudgetAction))
+    input: z.infer<typeof BudgetAction>,
+  ) {
+    return {
+      code: 200,
+      data: await this.budgets.change(
+        admin,
+        parseIdParam(crewId, 'crewId'),
+        input,
+      ),
+    };
+  }
 
   @Get()
   async list(

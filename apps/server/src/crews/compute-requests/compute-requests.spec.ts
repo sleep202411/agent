@@ -33,12 +33,36 @@ function fixture(owner = true) {
     crew: { workspaceId: 'workspace' },
   };
   const tx = {
+    $queryRaw: jest.fn().mockResolvedValue([
+      {
+        crewId: 'crew',
+        workspaceId: 'workspace',
+        version: 1,
+        data: {
+          durationSeconds: 60,
+          totalPoints: '4462',
+          producerTaskId: '11111111-1111-4111-8111-111111111111',
+          producerUserId: 'producer',
+          stages: [
+            {
+              key: '33333333-3333-4333-8333-333333333333',
+              points: 100,
+              note: 'Stage',
+              adminId: 'admin',
+              at: 'today',
+            },
+          ],
+          settlement: null,
+        },
+      },
+    ]),
     $executeRaw: jest.fn().mockResolvedValue(1),
     crewTask: {
       findFirst: jest.fn().mockResolvedValue(task),
       findMany: jest.fn().mockResolvedValue([]),
     },
     crewComputeRequest: {
+      aggregate: jest.fn().mockResolvedValue({ _sum: { points: 0 } }),
       findFirst: jest
         .fn()
         .mockImplementation(() => Promise.resolve({ ...request })),
@@ -237,6 +261,27 @@ describe('Crew compute requests', () => {
   });
 });
 
+it('requires a configured project and rejects aggregate task allowances beyond released stages', async () => {
+  const f = fixture();
+  f.tx.$queryRaw.mockResolvedValueOnce([]);
+  await expect(
+    f.service.decideAdmin('crew', 'request', admin, {
+      status: 'approved',
+      note: 'Review',
+    }),
+  ).rejects.toThrow('Configure');
+  f.tx.crewComputeRequest.aggregate.mockResolvedValueOnce({
+    _sum: { points: 75 },
+  });
+  await expect(
+    f.service.decideAdmin('crew', 'request', admin, {
+      status: 'approved',
+      note: 'Review',
+    }),
+  ).rejects.toThrow('exceed released');
+  expect(f.tx.crewComputeRequest.update).not.toHaveBeenCalled();
+});
+
 describe('task allowance admission', () => {
   function allowance(status = 'approved', delta = -20n) {
     const task = {
@@ -255,6 +300,7 @@ describe('task allowance admission', () => {
       ],
     };
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       crewTask: { findUnique: jest.fn().mockResolvedValue(task) },
       walletTransaction: {
         findMany: jest.fn().mockResolvedValue([{ sourceId: 'job' }]),

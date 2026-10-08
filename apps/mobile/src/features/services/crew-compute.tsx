@@ -82,6 +82,26 @@ function Panel(props: Props & { onSaved: () => void }) {
           <ThemedText>
             {t(page.isOwner ? "crewComputeFinance.crewScope" : "crewComputeFinance.myScope")}
           </ThemedText>
+          {page.projectBudget && (
+            <View>
+              <ThemedText>
+                {t("crewComputeFinance.projectBudgetSummary")
+                  .replace("{total}", page.projectBudget.totalPoints)
+                  .replace("{released}", page.projectBudget.releasedPoints)}
+              </ThemedText>
+              {page.projectBudget.closed && (
+                <ThemedText>{t("crewComputeFinance.projectBudgetClosed")}</ThemedText>
+              )}
+              {page.projectBudget.producerSettlement && (
+                <ThemedText>
+                  {t("crewComputeFinance.producerDeduction")
+                    .replace("{amount}", page.projectBudget.producerSettlement.deductionMinor)
+                    .replace("{currency}", page.projectBudget.producerSettlement.currency)}{" "}
+                  · {page.projectBudget.producerSettlement.note}
+                </ThemedText>
+              )}
+            </View>
+          )}
           {(["pending", "approved", "rejected"] as const).map((status) => (
             <ThemedText key={status}>
               {t(`crewComputeFinance.${status}`)} · {page.totals[status] ?? 0}{" "}

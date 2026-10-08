@@ -173,9 +173,13 @@ it('refuses to duplicate a historical task reward', async () => {
 
 it('blocks card-generation payment until the latest submission has policy-specific approval', async () => {
   const f = fixture();
-  f.tx.$queryRaw.mockResolvedValue([
-    { definition: { approvalPolicy: 'fd3_or_production_lead' } },
-  ]);
+  f.tx.$queryRaw.mockImplementation((q: TemplateStringsArray) =>
+    Promise.resolve(
+      String(q).includes('crew_project_compute_budgets')
+        ? []
+        : [{ definition: { approvalPolicy: 'fd3_or_production_lead' } }],
+    ),
+  );
   await expect(f.service.release(admin, id, input)).rejects.toThrow(
     'verified FD3',
   );
@@ -186,9 +190,13 @@ it.each(['latest-submission', 'older-submission'])(
   'checks the approved submission identity before releasing card payment (%s)',
   async (submissionId) => {
     const f = fixture('on_completion', 'approved');
-    f.tx.$queryRaw.mockResolvedValue([
-      { definition: { approvalPolicy: 'fd3_or_production_lead' } },
-    ]);
+    f.tx.$queryRaw.mockImplementation((q: TemplateStringsArray) =>
+      Promise.resolve(
+        String(q).includes('crew_project_compute_budgets')
+          ? []
+          : [{ definition: { approvalPolicy: 'fd3_or_production_lead' } }],
+      ),
+    );
     Object.assign(f.task.metadata, {
       cardApproval: {
         policy: 'fd3_or_production_lead',
@@ -210,5 +218,60 @@ it.each(['latest-submission', 'older-submission'])(
       await expect(release).rejects.toThrow('latest submission');
       expect(f.earnings.postTaskRewardTx).not.toHaveBeenCalled();
     }
+  },
+);
+
+it.each(['1000', '10000'])(
+  'records the gross-minus-approved-deduction payout (%s) without rewriting the fee',
+  async (deductionMinor) => {
+    const f = fixture('on_completion', 'approved');
+    const budget = {
+      crewId: 'crew',
+      workspaceId: 'workspace',
+      version: 2,
+      data: {
+        durationSeconds: 60,
+        totalPoints: '4462',
+        producerTaskId: id,
+        producerUserId: 'creator',
+        stages: [],
+        settlement: {
+          consumedPoints: '5000',
+          overrunPoints: '538',
+          grossMinor: '10000',
+          deductionMinor,
+          currency: 'USD',
+          note: 'Approved documented overrun',
+          adminId: admin.id,
+          at: new Date().toISOString(),
+        },
+      },
+    };
+    f.tx.$queryRaw.mockImplementation((q: TemplateStringsArray) =>
+      Promise.resolve(
+        String(q).includes('crew_project_compute_budgets') ? [budget] : [],
+      ),
+    );
+    await f.service.release(admin, id, {
+      ...input,
+      paymentTerms: 'on_completion',
+      expectedDeductionMinor: deductionMinor,
+    });
+    expect(f.tx.taskPaymentRelease.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          amountMinor: 10000n - BigInt(deductionMinor),
+          deductionMinor: BigInt(deductionMinor),
+        }) as unknown,
+      }),
+    );
+    expect(f.task.assignees[0].rewardAmountMinor).toBe(10000n);
+    if (deductionMinor === '10000')
+      expect(f.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+    else
+      expect(f.earnings.postTaskRewardTx).toHaveBeenCalledWith(
+        f.tx,
+        expect.objectContaining({ amountMinor: 9000n }),
+      );
   },
 );

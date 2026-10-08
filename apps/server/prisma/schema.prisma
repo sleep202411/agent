@@ -899,6 +899,7 @@ enum IpUserBlockTargetType {
 }
 
 model Workspace {
+  crewComputeBudget CrewProjectComputeBudget?
   actorUnlocks     AiActorUnlock[]
   actorUses        AiActorUse[]
   id               String          @id @default(uuid(7)) @db.Uuid
@@ -4896,6 +4897,7 @@ enum CrewAgreementArchiveJobStatus {
 }
 
 model Crew {
+  computeBudget CrewProjectComputeBudget?
   revenueDrafts CrewRevenueDraft[]
   revenueContracts CrewRevenueContract[]
   expenseDrafts       CrewExpenseDraftRevision[]
@@ -11295,6 +11297,7 @@ model TaskPaymentRelease {
  taskId String @map("task_id") @db.Uuid
  userId String @map("user_id") @db.VarChar(64)
  amountMinor BigInt @map("amount_minor")
+ deductionMinor BigInt @default(0) @map("deduction_minor")
  currency String @db.VarChar(3)
  paymentTerms String @map("payment_terms") @db.VarChar(32)
  receiptReference String @map("receipt_reference") @db.VarChar(180)
@@ -11303,4 +11306,15 @@ model TaskPaymentRelease {
  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
  @@unique([taskId,userId])
  @@map("task_payment_releases")
+}
+
+/// Versioned project compute plan; changes also create immutable Admin audit records.
+model CrewProjectComputeBudget {
+ crew Crew @relation(fields: [crewId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+ workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+ crewId String @id @map("crew_id")
+ workspaceId String @unique @map("workspace_id") @db.Uuid
+ version Int @default(1)
+ data Json @db.JsonB
+ @@map("crew_project_compute_budgets")
 }

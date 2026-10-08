@@ -5881,5 +5881,8 @@
   "taskMenu.edit": "编辑任务",
   "taskMenu.invite": "生成邀请链接",
   "taskMenu.recruit": "开放招募",
-  "taskReview.cardApproval": "抽卡任务付款须经FD3或以上成员验收。项目没有FD3或以上成员且只有一名已分配的抽卡师时，须由指定的项目制作负责人验收。"
+  "taskReview.cardApproval": "抽卡任务付款须经FD3或以上成员验收。项目没有FD3或以上成员且只有一名已分配的抽卡师时，须由指定的项目制作负责人验收。",
+  "crewComputeFinance.projectBudgetSummary": "项目预算：{total} 积分 · 已分期发放：{released} 积分（每分钟 4,462 积分）。",
+  "crewComputeFinance.projectBudgetClosed": "项目算力已关闭，等待制片人结算。",
+  "crewComputeFinance.producerDeduction": "FD 管理员批准的制片人扣款：{amount} 分（{currency}）"
 }

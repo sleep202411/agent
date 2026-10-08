@@ -14,6 +14,8 @@ type Task = {
     currency: string;
     amountMinor: string;
     releasedAt: string | null;
+    deductionMinor?: string;
+    budgetSettlementRequired?: boolean;
   }[];
 };
 export function TaskPaymentsPanel() {
@@ -78,6 +80,7 @@ export function TaskPaymentsPanel() {
         userId,
         expectedVersion: task.version,
         expectedAmountMinor: assignee.amountMinor,
+        expectedDeductionMinor: assignee.deductionMinor ?? "0",
         currency: assignee.currency,
         paymentTerms: assignee?.paymentTerms,
         receiptReference: receipt,
@@ -164,7 +167,21 @@ export function TaskPaymentsPanel() {
               ))}
             </select>
           </label>
-          {assignee && !assignee.releasedAt && eligible && (
+          {assignee?.budgetSettlementRequired && (
+            <p>
+              Close the project compute budget and approve its documented producer adjustment before
+              payment.
+            </p>
+          )}
+          {assignee && (
+            <p>
+              Agreed fee: {assignee.amountMinor} · Approved deduction:{" "}
+              {assignee.deductionMinor ?? "0"} · Payable:{" "}
+              {(BigInt(assignee.amountMinor) - BigInt(assignee.deductionMinor ?? "0")).toString()} (
+              {assignee.currency} cents/fen)
+            </p>
+          )}
+          {assignee && !assignee.releasedAt && eligible && !assignee.budgetSettlementRequired && (
             <div className="space-y-4">
               <label className="block">
                 Receipt reference

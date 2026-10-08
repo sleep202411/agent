@@ -1,3 +1,4 @@
+import { ProjectBudgetService } from './compute-requests/project-budget.service';
 import { TaskPaymentsService } from './tasks/task-payments.service';
 import { TaskPaymentsController } from './tasks/task-payments.controller';
 import {
@@ -265,6 +266,7 @@ import { CrewProductionService } from './production/production.service';
     BoldSignAgreementProvider,
     CrewEarningsService,
     CrewComputeRequestsService,
+    ProjectBudgetService,
     CrewPayoutsService,
     ProjectTaskTemplateService,
   ],
