@@ -76,7 +76,7 @@ it("requires review before creation and sends selected task indices", async () =
     value: [new File(["%PDF"], "script.pdf", { type: "application/pdf" })],
   });
   await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
-  await click("Analyze PDF");
+  await click("Analyze document");
   expect(host.textContent).toContain("The library doors open");
   expect(state.post).not.toHaveBeenCalled();
   await click("Create 1 tasks");

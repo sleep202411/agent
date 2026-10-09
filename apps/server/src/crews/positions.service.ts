@@ -533,6 +533,7 @@ export class PositionsService {
         let currency: string | undefined;
         let paymentTerms: string | undefined;
         const descriptions: string[] = [];
+        const taskSkills = new Set<string>();
         for (const selected of input.tasks) {
           await assertRecruitableTask(tx, crewId, selected.id);
           const task = await tx.crewTask.findFirstOrThrow({
@@ -560,6 +561,10 @@ export class PositionsService {
             throw new ConflictException(
               'A selected task already belongs to recruitment.',
             );
+          for (const skill of ((task.metadata as Prisma.JsonObject | null)
+            ?.requiredSkills ?? []) as Prisma.JsonArray) {
+            if (typeof skill === 'string') taskSkills.add(skill);
+          }
           const c = (task.metadata as Prisma.JsonObject | null)
             ?.compensation as Prisma.JsonObject | undefined;
           const amount = c?.rewardUsdMinor;
@@ -597,8 +602,15 @@ export class PositionsService {
           throw new BadRequestException(
             'The grouped reward exceeds the supported limit.',
           );
+        if (new Set([...taskSkills, ...(input.requiredSkills ?? [])]).size > 20)
+          throw new BadRequestException(
+            'Grouped recruitment supports at most 20 distinct required skills. Select fewer tasks.',
+          );
         input = {
           ...input,
+          requiredSkills: [
+            ...new Set([...taskSkills, ...(input.requiredSkills ?? [])]),
+          ],
           description: descriptions.join('\n\n'),
           paymentTerms: paymentTerms as CreatePositionInput['paymentTerms'],
           salary: {
@@ -715,6 +727,7 @@ export class PositionsService {
         pos.groupedTaskTerms &&
         (input.salary ||
           input.description !== undefined ||
+          input.requiredSkills !== undefined ||
           input.paymentTerms ||
           input.targetCount !== undefined ||
           input.revenueSharePercent !== undefined)

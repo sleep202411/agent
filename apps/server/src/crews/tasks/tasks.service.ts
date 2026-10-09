@@ -2255,6 +2255,8 @@ export class CrewTasksService {
           dueAt: input.dueAt ? new Date(input.dueAt) : null,
           estimatePoints: input.estimatePoints,
           metadata: {
+            assetCategory:
+              input.taskKind === 'art' ? (input.assetCategory ?? 'art') : null,
             requiredSkills: [...new Set(input.requiredSkills ?? [])],
             positionRole: input.positionRole ?? null,
             contractAssetNodeId: input.contractAssetNodeId ?? null,
@@ -2974,6 +2976,8 @@ export class CrewTasksService {
                 : null,
           estimatePoints: input.estimatePoints,
           metadata:
+            input.assetCategory !== undefined ||
+            input.taskKind !== undefined ||
             input.paymentTerms !== undefined ||
             input.rewardUsdMinor !== undefined ||
             input.profitShareBps !== undefined ||
@@ -2982,6 +2986,19 @@ export class CrewTasksService {
             input.contractAssetNodeId !== undefined
               ? {
                   ...priorMetadata,
+                  ...(input.assetCategory !== undefined ||
+                  input.taskKind !== undefined
+                    ? {
+                        assetCategory:
+                          (input.taskKind === undefined
+                            ? locked.taskKind
+                            : input.taskKind) === 'art'
+                            ? (input.assetCategory ??
+                              priorMetadata.assetCategory ??
+                              'art')
+                            : null,
+                      }
+                    : {}),
                   ...(input.contractAssetNodeId !== undefined
                     ? { contractAssetNodeId: input.contractAssetNodeId }
                     : {}),

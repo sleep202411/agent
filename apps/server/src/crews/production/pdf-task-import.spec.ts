@@ -280,3 +280,29 @@ it('claims queued jobs with SKIP LOCKED and serializes local draining', async ()
   finish();
   await first;
 });
+
+it.each(['doc', 'docx'])(
+  'extracts a real %s document and queues it without calling AI',
+  async (extension) => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const old = process.env.ALIBABA_API_KEY;
+    process.env.ALIBABA_API_KEY = 'fixture';
+    try {
+      const { service, row, db } = fixture();
+      await service.analyze('crew', 'user', 'id', {
+        buffer: fs.readFileSync(
+          path.join(__dirname, 'fixtures', `script.${extension}`),
+        ),
+        originalname: `script.${extension}`,
+      });
+      expect(row.sourceText).toContain('The library doors open');
+      expect(row.status).toBe('queued');
+      expect(db.crewTask.create).not.toHaveBeenCalled();
+      expect(generateObject).not.toHaveBeenCalled();
+    } finally {
+      if (old === undefined) delete process.env.ALIBABA_API_KEY;
+      else process.env.ALIBABA_API_KEY = old;
+    }
+  },
+);

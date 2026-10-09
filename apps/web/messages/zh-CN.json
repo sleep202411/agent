@@ -5365,13 +5365,13 @@
       "dashboard_inProgress": "进行中",
       "dashboard_overdue": "已逾期",
       "dashboard_completed": "已完成",
-      "dashboardInitializeHelp": "上传剧本 PDF，审核 AI 拆解的任务后再创建。",
-      "pdfTitle": "PDF 生成任务",
-      "pdfHelp": "上传文字型 PDF（最多 5 MB、60,000 字符）。AI 将根据原文提出任务建议，请审核后创建；不会推测人员、报酬或截止日期。",
-      "pdfChoose": "选择 PDF",
+      "dashboardInitializeHelp": "上传 PDF 或 Word 剧本并审核建议任务。",
+      "pdfTitle": "文档生成任务",
+      "pdfHelp": "上传 PDF、DOC 或 DOCX（最大 5 MB、60,000 字符）。请先审核建议任务再创建。",
+      "pdfChoose": "选择 PDF 或 Word 文档",
       "pdfTooLarge": "PDF 不得超过 5 MB。",
       "pdfWorking": "分析中…",
-      "pdfAnalyze": "分析 PDF",
+      "pdfAnalyze": "分析文档",
       "pdfCheck": "检查分析状态",
       "pdfNewAnalysis": "重新分析",
       "pdfPending": "分析正在进行，请稍后检查状态；重复同一请求不会再次调用 AI。",
@@ -5380,7 +5380,13 @@
       "pdfReview": "请审核 {count} 个建议任务，并选择需要创建的任务。",
       "pdfRetryHelp": "结果尚未确认。可安全重试相同的选择，不会重复创建任务。",
       "pdfRetry": "重试创建",
-      "pdfCreate": "创建 {count} 个任务"
+      "pdfCreate": "创建 {count} 个任务",
+      "newTask": "新建任务",
+      "documentQueued": "排队中 · 已等待 {seconds} 秒。处理服务空闲后自动开始。",
+      "documentAnalyzing": "分析中 · 已用时 {seconds} 秒。状态自动更新，处理可能需要几分钟。",
+      "statusLegend": "任务状态",
+      "inviteAvailability": "邀请链接仅适用于未分配且未招聘的任务。已分配或招聘中的任务已有创作者或招聘渠道。",
+      "statusOverdue": "已逾期"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",
@@ -5952,7 +5958,12 @@
     "removeContract": "移除附件",
     "requiredReward": "报酬",
     "requiredTaskFields": "请填写必填项：{fields}。",
-    "cardApproval": "抽卡任务付款须经FD3或以上成员验收。项目没有FD3或以上成员且只有一名已分配的抽卡师时，须由指定的项目制作负责人验收。"
+    "cardApproval": "抽卡任务付款须经FD3或以上成员验收。项目没有FD3或以上成员且只有一名已分配的抽卡师时，须由指定的项目制作负责人验收。",
+    "assetCategory": "美术分类",
+    "assetCategory_characters": "角色",
+    "assetCategory_scenes": "场景",
+    "assetCategory_props": "道具",
+    "assetCategory_art": "其他美术"
   },
   "crewInvitations": {
     "signIn": "登录",

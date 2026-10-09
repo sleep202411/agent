@@ -21,6 +21,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Prisma } from '@prisma/client';
 import { createAlibaba } from '@ai-sdk/alibaba';
 import { generateObject } from 'ai';
+import { extractDocxPlainText } from '../../documents/docx-text';
+import WordExtractor from 'word-extractor';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import { z } from 'zod';
 import { CurrentUser, type AuthUser } from '../../auth';
@@ -107,6 +109,8 @@ export class CrewPdfTaskImportService
     if (!row) throw new NotFoundException('PDF analysis not found.');
     return {
       id: row.id,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: (row.updatedAt ?? row.createdAt).toISOString(),
       status:
         row.status === 'analyzing' &&
         (row.updatedAt ?? row.createdAt).getTime() < Date.now() - 300_000
@@ -123,9 +127,17 @@ export class CrewPdfTaskImportService
     if (
       !file ||
       file.buffer.length > MAX_BYTES ||
-      file.buffer.subarray(0, 5).toString() !== '%PDF-'
+      !(
+        file.buffer.subarray(0, 5).toString() === '%PDF-' ||
+        (/\.docx$/i.test(file.originalname) &&
+          file.buffer.subarray(0, 2).toString() === 'PK') ||
+        (/\.doc$/i.test(file.originalname) &&
+          file.buffer.subarray(0, 8).toString('hex') === 'd0cf11e0a1b11ae1')
+      )
     )
-      throw new BadRequestException('Upload a PDF no larger than 5 MB.');
+      throw new BadRequestException(
+        'Upload a PDF, DOC or DOCX document no larger than 5 MB.',
+      );
     const sourceHash = createHash('sha256').update(file.buffer).digest('hex');
     const apiKey = process.env.ALIBABA_API_KEY;
     if (!apiKey)
@@ -176,23 +188,27 @@ export class CrewPdfTaskImportService
         );
       let source: string;
       try {
-        source = (
-          (
-            await (
-              pdfParse as unknown as (
-                buffer: Buffer,
-              ) => Promise<{ text?: string }>
-            )(file.buffer)
-          ).text ?? ''
-        ).trim();
+        source = /\.docx$/i.test(file.originalname)
+          ? (await extractDocxPlainText(file.buffer)).trim()
+          : /\.doc$/i.test(file.originalname)
+            ? (await new WordExtractor().extract(file.buffer)).getBody().trim()
+            : (
+                (
+                  await (
+                    pdfParse as unknown as (
+                      buffer: Buffer,
+                    ) => Promise<{ text?: string }>
+                  )(file.buffer)
+                ).text ?? ''
+              ).trim();
       } catch {
         throw new BadRequestException(
-          'Export an unencrypted text PDF and try again.',
+          'Export an unencrypted PDF, DOC or DOCX document and try again.',
         );
       }
       if (source.length < 40 || source.length > 60_000)
         throw new BadRequestException(
-          'Use a text PDF with 40–60,000 characters. Scanned PDFs require OCR.',
+          'Use a document with 40–60,000 characters. Scanned PDFs require OCR.',
         );
       await tx.crewPdfTaskImport.create({
         data: {

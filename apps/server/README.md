@@ -693,9 +693,9 @@ configuration does not establish a course relationship. Saving an association
 also does not award a badge: student qualification remains governed by the
 existing Java review and certification flow, not playback progress.
 
-### Production dashboard PDF task imports
+### Production dashboard document task imports
 
-The workbench accepts text PDFs up to 5 MB / 60,000 extracted characters and
+The workbench accepts text PDFs and Word DOC/DOCX files up to 5 MB / 60,000 extracted characters and
 proposes at most 100 tasks. Scanned PDFs must first undergo OCR. The existing
 `ALIBABA_API_KEY` and optional `ALIBABA_BASE_URL` configure Qwen analysis in each
 regional Server. Analysis uses the platform provider account; it does not award
@@ -710,7 +710,7 @@ until those required fields can be supplied. Preview creation does not assign
 creators, set payment terms or create tasks. Confirmation atomically creates
 selected tasks and their delivery folders, with a replayable receipt. Previews
 expire after 24 hours; completed receipts remain available for safe retries.
-Raw PDFs are not retained. Proposals and their source excerpts are retained in
+Raw uploaded documents are not retained. Proposals and their source excerpts are retained in
 the crew database, and deleting the crew cascades to these analysis records.
 
 The PDF worker persists extracted text while queued, claims one job per pod with
@@ -724,3 +724,5 @@ per-task allocations. Selected tasks must have fixed rewards, the same currency
 and payment terms, and no revenue share. The accepted project fee must equal
 the published total; assigning each task uses its own allocation. Batch task
 assignment commits or rolls back the whole selection.
+
+Task skill choices are loaded from the regional Java `/user/levels/options` verification catalogue (type 4), using the current session. Eligibility checks re-read that catalogue and current certificates. FD rank requirements still require the explicit regional `CREW_QUALIFICATION_CATALOG_JSON` rank mapping; numeric certificate IDs are never inferred as ranks.

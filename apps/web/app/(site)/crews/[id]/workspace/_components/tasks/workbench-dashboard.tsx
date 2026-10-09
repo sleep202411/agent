@@ -29,7 +29,7 @@ export function WorkbenchDashboard({
   return (
     <section className="grid gap-4 @[900px]:grid-cols-12" aria-label={t("dashboardStatistics")}>
       <dl
-        className={`grid grid-cols-2 gap-4 rounded-sm bg-white/[0.035] p-5 @[500px]:grid-cols-4 ${canInitialize ? "@[900px]:col-span-7" : "@[900px]:col-span-12"}`}
+        className={`grid grid-cols-2 gap-3 rounded-sm bg-white/[0.035] p-3 @[500px]:grid-cols-4 ${canInitialize ? "@[900px]:col-span-7" : "@[900px]:col-span-12"}`}
       >
         {(["total", "inProgress", "overdue", "completed"] as const).map((key) => (
           <div key={key}>
@@ -49,7 +49,7 @@ export function WorkbenchDashboard({
           type="button"
           onClick={onInitialize}
           disabled={disabled}
-          className="group flex min-h-28 items-center gap-4 rounded-sm border border-[#e52227]/40 bg-black/20 p-4 text-left transition hover:border-[#e52227] focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 @[900px]:col-span-5"
+          className="group flex min-h-20 items-center gap-3 rounded-sm border border-[#e52227]/40 bg-black/20 p-4 text-left transition hover:border-[#e52227] focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 @[900px]:col-span-5"
         >
           <span className="flex size-16 shrink-0 items-center justify-center rounded-sm bg-white/5">
             <IconFileText className="size-7 text-muted-foreground group-hover:text-primary" />

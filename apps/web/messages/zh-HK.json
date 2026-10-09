@@ -5365,13 +5365,13 @@
       "dashboard_inProgress": "進行中",
       "dashboard_overdue": "已逾期",
       "dashboard_completed": "已完成",
-      "dashboardInitializeHelp": "上傳劇本 PDF，審核 AI 拆解的任務後再建立。",
-      "pdfTitle": "PDF 產生任務",
-      "pdfHelp": "上傳文字型 PDF（最多 5 MB、60,000 字元）。AI 將根據原文提出任務建議，請審核後建立；不會推測人員、報酬或截止日期。",
-      "pdfChoose": "選擇 PDF",
+      "dashboardInitializeHelp": "上傳 PDF 或 Word 劇本並審核建議任務。",
+      "pdfTitle": "文件生成任務",
+      "pdfHelp": "上傳 PDF、DOC 或 DOCX（最大 5 MB、60,000 字元）。請先審核建議任務再建立。",
+      "pdfChoose": "選擇 PDF 或 Word 文件",
       "pdfTooLarge": "PDF 不得超過 5 MB。",
       "pdfWorking": "分析中…",
-      "pdfAnalyze": "分析 PDF",
+      "pdfAnalyze": "分析文件",
       "pdfCheck": "檢查分析狀態",
       "pdfNewAnalysis": "重新分析",
       "pdfPending": "分析正在進行，請稍後檢查狀態；重複同一請求不會再次呼叫 AI。",
@@ -5380,7 +5380,13 @@
       "pdfReview": "請審核 {count} 個建議任務，並選擇需要建立的任務。",
       "pdfRetryHelp": "結果尚未確認。可安全重試相同的選擇，不會重複建立任務。",
       "pdfRetry": "重試建立",
-      "pdfCreate": "建立 {count} 個任務"
+      "pdfCreate": "建立 {count} 個任務",
+      "newTask": "新增任務",
+      "documentQueued": "排隊中 · 已等待 {seconds} 秒。處理服務空閒後自動開始。",
+      "documentAnalyzing": "分析中 · 已用時 {seconds} 秒。狀態自動更新，處理可能需要幾分鐘。",
+      "statusLegend": "任務狀態",
+      "inviteAvailability": "邀請連結僅適用於未分配且未招聘的任務。已分配或招聘中的任務已有創作者或招聘渠道。",
+      "statusOverdue": "已逾期"
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",
@@ -5952,7 +5958,12 @@
     "removeContract": "移除附件",
     "requiredReward": "報酬",
     "requiredTaskFields": "請填寫必填項：{fields}。",
-    "cardApproval": "抽卡任務付款須經FD3或以上成員驗收。項目沒有FD3或以上成員且只有一名已分配的抽卡師時，須由指定的項目製作負責人驗收。"
+    "cardApproval": "抽卡任務付款須經FD3或以上成員驗收。項目沒有FD3或以上成員且只有一名已分配的抽卡師時，須由指定的項目製作負責人驗收。",
+    "assetCategory": "美術分類",
+    "assetCategory_characters": "角色",
+    "assetCategory_scenes": "場景",
+    "assetCategory_props": "道具",
+    "assetCategory_art": "其他美術"
   },
   "crewInvitations": {
     "signIn": "登入",

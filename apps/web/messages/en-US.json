@@ -5365,13 +5365,13 @@
       "dashboard_inProgress": "In progress",
       "dashboard_overdue": "Overdue",
       "dashboard_completed": "Completed",
-      "dashboardInitializeHelp": "Upload a script PDF and review AI-generated tasks before creating them.",
-      "pdfTitle": "PDF to Tasks",
-      "pdfHelp": "Upload a text PDF (up to 5 MB and 60,000 characters). AI proposes tasks with source excerpts. Review them before creation; no assignments, payments or deadlines are inferred.",
-      "pdfChoose": "Choose a PDF",
+      "dashboardInitializeHelp": "Upload a PDF or Word script and review the proposed tasks.",
+      "pdfTitle": "Document to Tasks",
+      "pdfHelp": "Upload a PDF, DOC or DOCX (up to 5 MB and 60,000 characters). Review the proposed tasks before creating them.",
+      "pdfChoose": "Choose a PDF or Word document",
       "pdfTooLarge": "The PDF must be no larger than 5 MB.",
       "pdfWorking": "Analyzing…",
-      "pdfAnalyze": "Analyze PDF",
+      "pdfAnalyze": "Analyze document",
       "pdfCheck": "Check analysis status",
       "pdfNewAnalysis": "New analysis",
       "pdfPending": "Analysis is running. Check its status shortly; resending the same request does not run AI again.",
@@ -5380,7 +5380,13 @@
       "pdfReview": "Review {count} proposed tasks and select the ones to create.",
       "pdfRetryHelp": "The outcome is unconfirmed. Retry the same selection safely; it will not create duplicates.",
       "pdfRetry": "Retry creation",
-      "pdfCreate": "Create {count} tasks"
+      "pdfCreate": "Create {count} tasks",
+      "newTask": "New Task",
+      "documentQueued": "Queued · {seconds}s elapsed. Analysis starts when a worker is available.",
+      "documentAnalyzing": "Analyzing · {seconds}s elapsed. Status updates automatically; processing may take a few minutes.",
+      "statusLegend": "Task status",
+      "inviteAvailability": "Invitation links require an unassigned task without active recruitment. Assigned or recruiting tasks already have a creator or recruitment route.",
+      "statusOverdue": "Overdue"
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
@@ -5952,7 +5958,12 @@
     "removeContract": "Remove attachment",
     "requiredReward": "Reward",
     "requiredTaskFields": "Complete the required fields: {fields}.",
-    "cardApproval": "Card-generation payment requires FD3-or-higher approval. If this project has no FD3-or-higher member and exactly one assigned card artist, the designated production lead must approve instead."
+    "cardApproval": "Card-generation payment requires FD3-or-higher approval. If this project has no FD3-or-higher member and exactly one assigned card artist, the designated production lead must approve instead.",
+    "assetCategory": "Art subtype",
+    "assetCategory_characters": "Characters",
+    "assetCategory_scenes": "Scenes",
+    "assetCategory_props": "Props",
+    "assetCategory_art": "Other Art"
   },
   "crewInvitations": {
     "signIn": "Sign in",

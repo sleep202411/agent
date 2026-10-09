@@ -11,6 +11,7 @@ function fixture() {
     description: 'Design character',
     assignees: [],
     metadata: {
+      requiredSkills: [id === 'a' ? 'Lighting' : 'Editing'],
       compensation: {
         rewardUsdMinor: 1200,
         rewardCurrency: 'USD',
@@ -69,6 +70,7 @@ it('creates one posting with two task allocations and their combined fee', async
   const data = (
     tx.crewPosition.create.mock.calls[0][0] as { data: Record<string, unknown> }
   ).data;
+  expect(data.requiredSkills).toEqual(['Lighting', 'Editing']);
   expect(data.taskId).toBeNull();
   expect(data.groupedTasks).toEqual({ connect: [{ id: 'a' }, { id: 'b' }] });
   expect(data.salaryMinAmount).toBe(2400n);

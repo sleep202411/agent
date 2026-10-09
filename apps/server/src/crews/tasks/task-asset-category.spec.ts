@@ -17,3 +17,21 @@ describe('asset task categories', () => {
     expect(taskAssetCategory(metadata, kind)).toBe(expected);
   });
 });
+
+it('ignores stale Art metadata when the task changes type', () => {
+  expect(taskAssetCategory({ assetCategory: 'characters' }, 'script')).toBe(
+    'scripts',
+  );
+  expect(taskAssetCategory({ templateKey: 'scene_art' }, 'music')).toBe(
+    'music',
+  );
+});
+
+it('lets an explicit Other Art selection override an imported template category', () => {
+  expect(
+    taskAssetCategory(
+      { assetCategory: 'art', templateKey: 'character_art' },
+      'art',
+    ),
+  ).toBe('art');
+});

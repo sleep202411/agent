@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 type Preview = {
   id: string;
   status: string;
+  createdAt?: string;
   tasks: Array<{ title: string; description: string; category: string; evidence: string }>;
   taskIds: string[];
 };
@@ -20,6 +21,11 @@ export function WorkbenchPdfImport({ crewId }: { crewId: string }) {
 function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
   const t = useTranslations("crewTaskProject.workbench");
   const client = useQueryClient();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [selection, setSelection] = useState<number[]>([]);
@@ -113,6 +119,15 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
         body = text;
       }
       if (!response.ok) {
+        if ([400, 401, 403, 409, 413, 415, 422].includes(response.status)) {
+          request.current = null;
+          setHasRequest(false);
+          try {
+            localStorage.removeItem(recoveryKey);
+          } catch {
+            /* Optional storage. */
+          }
+        }
         if (response.status >= 500) {
           try {
             receive(await crewApi.get<Preview>(`${base}/${request.current}`));
@@ -150,10 +165,14 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
       void crewApi
         .get<Preview>(`${base}/${id}`)
         .then((value) => {
-          if (active && request.current === id) receive(value);
+          if (active && request.current === id) {
+            setError(null);
+            receive(value);
+          }
         })
-        .catch(() => {
-          /* A transient poll failure must not restart a paid analysis. */
+        .catch((cause) => {
+          if (active && request.current === id)
+            setError(cause instanceof Error ? cause.message : String(cause));
         })
         .finally(() => {
           pending = false;
@@ -197,7 +216,7 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
         <span className="mb-3 block font-semibold">{t("pdfChoose")}</span>
         <input
           type="file"
-          accept="application/pdf,.pdf"
+          accept="application/pdf,.pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           disabled={busy || uncertain}
           onChange={(event) => {
             const next = event.target.files?.[0] ?? null;
@@ -231,11 +250,6 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
         >
           {busy ? t("pdfWorking") : t("pdfAnalyze")}
         </Button>
-        {hasRequest && (
-          <Button variant="outline" disabled={busy || uncertain} onClick={() => void analyze(true)}>
-            {t("pdfCheck")}
-          </Button>
-        )}
         {preview?.status === "failed" && (
           <Button
             variant="outline"
@@ -261,7 +275,14 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
         </p>
       )}
       {["queued", "analyzing"].includes(preview?.status ?? "") && (
-        <p role="status">{t("pdfPending")}</p>
+        <p role="status">
+          {t(preview?.status === "queued" ? "documentQueued" : "documentAnalyzing", {
+            seconds: Math.max(
+              0,
+              Math.floor((now - new Date(preview?.createdAt ?? now).getTime()) / 1000)
+            ),
+          })}
+        </p>
       )}
       {preview?.status === "failed" && <p role="status">{t("pdfFailed")}</p>}
       {preview?.status === "applied" && (

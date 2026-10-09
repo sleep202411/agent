@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
-import { IconX, IconUsers, IconChevronDown, IconDots } from "@tabler/icons-react";
+import { IconX, IconUsers, IconDots } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
   DropdownMenu,
@@ -44,8 +44,6 @@ import { WorkbenchCanvasImport } from "./workbench-canvas-import";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 import { TaskQuickCreate } from "./task-quick-create";
 import { CREW_TASK_KIND_MESSAGE_KEYS } from "@/app/(site)/crews/_hooks/types";
-
-import { ASSET_TASK_GROUPS, assetTaskProgress } from "./asset-task-progress";
 
 function stagedCategoryKey(taskKind?: string | null): string {
   if (taskKind === "script") return "scripts";
@@ -129,7 +127,6 @@ function TaskCreationSession({
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [batchMode, setBatchMode] = useState<"assign" | "recruit" | null>(null);
   const [category, setCategory] = useState("all");
-  const [assetsExpanded, setAssetsExpanded] = useState(false);
   const [showEpisodes, setShowEpisodes] = useState(false);
   const { drafts, setDrafts, batches, setBatches, storageError } = useWorkbenchDrafts(
     user!.id,
@@ -153,7 +150,6 @@ function TaskCreationSession({
   const createEpisode = useCreateCrewEpisode(crewId);
   const episodes = useCrewEpisodes(crewId);
   const tasks = useCrewTaskView(crewId, { viewId: "production" }, active);
-  const progress = assetTaskProgress(tasks.data);
   const progressReady =
     !tasks.isLoading && !tasks.isFetching && !tasks.hasNextPage && !tasks.isError;
   const savedTasks = tasks.data;
@@ -193,23 +189,6 @@ function TaskCreationSession({
   const pendingBatches = batches.filter((batch) => !batch.created);
   const pendingCount =
     pending.length + pendingBatches.reduce((total, batch) => total + batch.items.length, 0);
-  const stagedProgress = assetTaskProgress([
-    ...pending.map((draft) => ({
-      id: `draft:${draft.id}`,
-      parentId: null,
-      status: "open" as const,
-      assetCategory:
-        draft.input.taskKind === "edit" ? "production" : stagedCategoryKey(draft.input.taskKind),
-    })),
-    ...pendingBatches.flatMap((batch) =>
-      batch.items.map((item, index) => ({
-        id: `${batch.key}:${index}`,
-        parentId: null,
-        status: "open" as const,
-        assetCategory: item.assetCategory ?? "other",
-      }))
-    ),
-  ]);
   const editing = drafts.find((draft) => draft.id === editingId);
   function openTask(episode: string | null = null) {
     if (lock.current || unresolved) return;
@@ -365,75 +344,11 @@ function TaskCreationSession({
         />
       ) : null}
       <div className="flex min-h-full flex-col bg-[#090a0c] text-[13px]">
-        <aside className="shrink-0 border-b border-white/10 bg-[#090a0c] px-4 py-2">
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
-            aria-expanded={assetsExpanded}
-            onClick={() => setAssetsExpanded((expanded) => !expanded)}
-          >
-            <IconChevronDown
-              className={`size-3.5 transition-transform ${assetsExpanded ? "rotate-180" : ""}`}
-            />
-            {t("assetProgress")}
-          </button>
-          <div hidden={!assetsExpanded}>
-            <section className="my-4" aria-label={t("assetProgress")}>
-              <h3 className="sr-only" title={t("assetProgressHelp")}>
-                {t("assetProgress")}
-              </h3>
-              <div className="mt-3 grid grid-cols-2 gap-4 @[650px]:grid-cols-3 @[1000px]:grid-cols-5">
-                {[
-                  ["scripts"],
-                  ["characters", "scenes", "props", "art"],
-                  ["music"],
-                  ["production"],
-                  ["other"],
-                ].map((keys, index) => (
-                  <section key={index} className="text-xs">
-                    <div className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {index === 1 ? t("artAssets") : t(`assetGroup_${keys[0]}`)}
-                    </div>
-                    <dl className="mt-2 space-y-2 border-l border-white/10 pl-3">
-                      {keys.map((key) => {
-                        const value = progress[key as (typeof ASSET_TASK_GROUPS)[number]];
-                        return (
-                          <div
-                            key={key}
-                            className="flex flex-wrap items-start justify-between gap-2"
-                          >
-                            <dt>{t(`assetGroup_${key}`)}</dt>
-                            <dd
-                              className="rounded bg-black/20 px-1.5 text-xs"
-                              title={t("assetProgress")}
-                            >
-                              {progressReady ? `${value.approved}/${value.total}` : "—"}
-                              {stagedProgress[key as (typeof ASSET_TASK_GROUPS)[number]].total >
-                              0 ? (
-                                <span className="mt-1 block text-muted-foreground">
-                                  {t("pendingCategory", {
-                                    count:
-                                      stagedProgress[key as (typeof ASSET_TASK_GROUPS)[number]]
-                                        .total,
-                                  })}
-                                </span>
-                              ) : null}
-                            </dd>
-                          </div>
-                        );
-                      })}
-                    </dl>
-                  </section>
-                ))}
-              </div>
-            </section>
-          </div>
-        </aside>
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex flex-wrap items-center gap-4 border-b border-white/10 px-4 py-4">
+          <header className="flex flex-wrap items-center gap-3 border-b border-white/10 px-4 py-2">
             <div className="flex flex-wrap items-center gap-3">
               <div>
-                <h2 className="text-xl font-semibold uppercase tracking-wide">{t("title")}</h2>
+                <h2 className="sr-only">{t("title")}</h2>
                 <p className="mt-1 text-xs text-muted-foreground">{crewName}</p>
               </div>
               <button
@@ -522,7 +437,7 @@ function TaskCreationSession({
               </div>
             ) : null}
           </header>
-          <div className="flex-1 space-y-5 p-4">
+          <div className="flex-1 space-y-3 p-3">
             <WorkbenchDashboard
               tasks={savedTasks}
               ready={progressReady}
@@ -540,6 +455,24 @@ function TaskCreationSession({
                 </DialogBody>
               </DialogContent>
             </Dialog>
+            <div
+              className="flex flex-wrap justify-end gap-3 text-xs text-muted-foreground"
+              aria-label={t("statusLegend")}
+            >
+              {(
+                [
+                  ["open", "bg-neutral-400"],
+                  ["in_progress", "bg-blue-400"],
+                  ["approved", "bg-emerald-400"],
+                  ["overdue", "bg-red-400"],
+                ] as const
+              ).map(([status, color]) => (
+                <span key={status} className="inline-flex items-center gap-1.5">
+                  <span aria-hidden="true" className={`size-2 rounded-full ${color}`} />
+                  {status === "overdue" ? t("statusOverdue") : taskT(`status.${status}`)}
+                </span>
+              ))}
+            </div>
             <div
               className="flex gap-1 overflow-x-auto border-b border-white/10 pb-1"
               aria-label={t("batchCategories")}
@@ -691,7 +624,7 @@ function TaskCreationSession({
                           )}
                           <div className="group flex select-none items-center justify-between gap-3 font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
                             <span className="flex items-center gap-2">
-                              <span>{label}</span>
+                              <span className={category === "all" ? "" : "sr-only"}>{label}</span>
                             </span>
                             {canManageTasks ? (
                               <input
@@ -746,34 +679,6 @@ function TaskCreationSession({
                                 }}
                               />
                             ) : null}
-                            {canManage ? (
-                              <button
-                                type="button"
-                                aria-label={`${t("createTask")} · ${label}`}
-                                disabled={busy || unresolved}
-                                className="ml-auto rounded px-2 text-lg text-[#e52227] hover:bg-white/5"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  openTask();
-                                  setPresetTaskKind(
-                                    (
-                                      {
-                                        scripts: "script",
-                                        artAssets: "art",
-                                        music: "music",
-                                        production: "storyboard",
-                                        finalEditing: "edit",
-                                        other: "other",
-                                      } as const
-                                    )[barKey]
-                                  );
-                                  setOpen(true);
-                                }}
-                              >
-                                +
-                              </button>
-                            ) : null}
                             <span
                               className="rounded bg-black/20 px-2 py-0.5 text-xs font-normal normal-case text-muted-foreground"
                               title={t("assetProgress")}
@@ -781,6 +686,34 @@ function TaskCreationSession({
                               {progressReady ? itemCount : "—"}
                             </span>
                           </div>
+                          {canManage ? (
+                            <button
+                              type="button"
+                              aria-label={`${t("createTask")} · ${label}`}
+                              disabled={busy || unresolved}
+                              className="mt-3 inline-flex min-h-16 items-center justify-center rounded-lg border border-dashed border-white/25 px-6 text-sm normal-case text-muted-foreground hover:border-primary hover:text-primary"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                openTask();
+                                setPresetTaskKind(
+                                  (
+                                    {
+                                      scripts: "script",
+                                      artAssets: "art",
+                                      music: "music",
+                                      production: "storyboard",
+                                      finalEditing: "edit",
+                                      other: "other",
+                                    } as const
+                                  )[barKey]
+                                );
+                                setOpen(true);
+                              }}
+                            >
+                              + {t("newTask")}
+                            </button>
+                          ) : null}
                           <div className="mt-3 space-y-3 border-t border-white/[0.06] pt-3">
                             {categoryDrafts.length > 0 ? (
                               <div
@@ -815,7 +748,7 @@ function TaskCreationSession({
                                       {group.items.map((draft) => (
                                         <article
                                           key={draft.id}
-                                          className="relative flex min-w-0 flex-col rounded-sm bg-[#151618] p-3 transition-colors hover:bg-[#1a1b1e]"
+                                          className="relative flex min-w-0 flex-col rounded-lg border border-white/15 bg-[#151618] p-3 transition-colors hover:bg-[#1a1b1e]"
                                         >
                                           {canManageTasks && draft.taskId ? (
                                             <input
@@ -837,7 +770,7 @@ function TaskCreationSession({
                                             />
                                           ) : null}
                                           <div className="flex items-start justify-between gap-2">
-                                            <span className="rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                            <span className="ml-auto rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                                               {taskT(
                                                 CREW_TASK_KIND_MESSAGE_KEYS[
                                                   draft.input.taskKind ?? "other"
@@ -890,6 +823,7 @@ function TaskCreationSession({
                                                     )}
                                                     {canManageTasks && onInviteTask && (
                                                       <DropdownMenuItem
+                                                        title={t("inviteAvailability")}
                                                         disabled={
                                                           !savedTasks.some(
                                                             (task) =>
@@ -973,17 +907,20 @@ function TaskCreationSession({
                                               {draft.input.title}
                                             </span>
                                           </button>
-                                          <p className="mb-4 mt-1 line-clamp-3 text-xs text-muted-foreground">
-                                            {draft.input.description}
-                                          </p>
-                                          <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3 text-xs text-muted-foreground">
+                                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3 text-xs text-muted-foreground">
                                             {draft.state !== "staged" ? (
-                                              <span>
-                                                {draft.taskId
-                                                  ? taskT(
-                                                      `status.${savedTasks.find((task) => task.id === draft.taskId)?.status ?? "open"}`
-                                                    )
-                                                  : t(draft.state)}
+                                              <span className="inline-flex items-center gap-1.5">
+                                                <span
+                                                  aria-hidden="true"
+                                                  className={`size-2 shrink-0 rounded-full ${savedTasks.find((task) => task.id === draft.taskId)?.status === "approved" ? "bg-emerald-400" : draft.input.dueAt && new Date(draft.input.dueAt).getTime() < Date.now() ? "bg-red-400" : savedTasks.find((task) => task.id === draft.taskId)?.status === "open" ? "bg-neutral-400" : "bg-blue-400"}`}
+                                                />
+                                                <span className="sr-only">
+                                                  {draft.taskId
+                                                    ? taskT(
+                                                        `status.${savedTasks.find((task) => task.id === draft.taskId)?.status ?? "open"}`
+                                                      )
+                                                    : t(draft.state)}
+                                                </span>
                                               </span>
                                             ) : null}
                                             <span>
@@ -1024,7 +961,15 @@ function TaskCreationSession({
                                               ))}
                                             </span>
                                             {draft.input.dueAt ? (
-                                              <TaskCountdown dueAt={draft.input.dueAt} />
+                                              <span
+                                                className={
+                                                  new Date(draft.input.dueAt).getTime() < Date.now()
+                                                    ? "text-red-400"
+                                                    : "text-muted-foreground"
+                                                }
+                                              >
+                                                <TaskCountdown dueAt={draft.input.dueAt} />
+                                              </span>
                                             ) : null}
                                           </div>
                                           {draft.state === "uncertain" ? (

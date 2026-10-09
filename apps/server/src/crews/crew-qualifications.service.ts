@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Headers,
   ForbiddenException,
   Injectable,
   ServiceUnavailableException,
@@ -77,9 +78,48 @@ export class CrewQualificationsService {
     // catalog value is provisioned. See thread with Isaac 2026-09-27.
   }
 
-  catalog() {
-    const { catalog } = readCatalog();
-    return { skills: Object.keys(catalog.skills).sort() };
+  private async liveSkills(cookie?: string) {
+    if (!cookie)
+      throw unavailable(
+        'A current session is required to read verified skills.',
+      );
+    try {
+      const response = await fetch(`${JAVA_CONTENT_URL}/user/levels/options`, {
+        headers: { Accept: 'application/json', Cookie: cookie },
+        redirect: 'error',
+        signal: AbortSignal.timeout(JAVA_REQUEST_TIMEOUT_MS),
+      });
+      const result = z
+        .object({
+          code: z.literal(200),
+          data: z.array(
+            z.object({
+              id: z.coerce.number().int().positive().safe(),
+              name: z.string().trim().min(1),
+              type: z.coerce.number().int(),
+            }),
+          ),
+        })
+        .parse(await response.json());
+      if (!response.ok) throw new Error('Unavailable');
+      const skills = new Map<string, { name: string; ids: number[] }>();
+      for (const item of result.data.filter((item) => item.type === 4)) {
+        const key = item.name.toLowerCase();
+        const old = skills.get(key);
+        if (old && !old.ids.includes(item.id))
+          throw new Error('Ambiguous skill name');
+        skills.set(key, { name: item.name, ids: [item.id] });
+      }
+      return skills;
+    } catch {
+      throw unavailable(
+        'The regional verification skill catalogue could not be loaded. Please retry.',
+      );
+    }
+  }
+  async catalog(cookie?: string) {
+    const skills = await this.liveSkills(cookie);
+    return { skills: [...skills.values()].map((item) => item.name).sort() };
   }
 
   async assertEligible(
@@ -89,7 +129,23 @@ export class CrewQualificationsService {
   ) {
     const minimum = ranks[requirements.experienceLevel];
     if (minimum === 0 && requirements.requiredSkills.length === 0) return;
-    const { catalog, skills } = readCatalog();
+    const configured = minimum > 0 ? readCatalog() : null;
+    const live = requirements.requiredSkills.length
+      ? await this.liveSkills(cookie)
+      : new Map<string, { name: string; ids: number[] }>();
+    const skills = new Map([...live].map(([key, item]) => [key, item.ids]));
+    // Preserve explicitly configured historical names only while their IDs still
+    // exist in the current regional verification catalogue.
+    const liveIds = new Set([...live.values()].flatMap((item) => item.ids));
+    if (configured)
+      for (const [key, ids] of configured.skills) {
+        if (!skills.has(key) && ids.every((id) => liveIds.has(id)))
+          skills.set(key, ids);
+      }
+    const catalog: Pick<
+      z.infer<typeof catalogSchema>,
+      'fdLevels'
+    > = configured?.catalog ?? { fdLevels: [] };
     if (
       requirements.requiredSkills.some(
         (skill) => !skills.has(skill.trim().toLowerCase()),
@@ -199,7 +255,7 @@ function readCatalog() {
 export class CrewQualificationCatalogController {
   constructor(private readonly qualifications: CrewQualificationsService) {}
   @Get()
-  catalog() {
-    return this.qualifications.catalog();
+  catalog(@Headers('cookie') cookie?: string) {
+    return this.qualifications.catalog(cookie);
   }
 }
