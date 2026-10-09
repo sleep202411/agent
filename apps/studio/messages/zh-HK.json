@@ -4497,6 +4497,19 @@
       "left": "向左移動",
       "right": "向右移動",
       "finish": "結束世界體驗"
+    }
+  },
+  "agentOs": {
+    "readOnlyProject": "此專案為唯讀，需要編輯權限才能使用 FizzAgent。",
+    "title": "FizzAgent",
+    "subtitle": "對話式執行智能體 — 工具會真正寫入項目",
+    "close": "關閉 FizzAgent",
+    "collapse": "收起 FizzAgent",
+    "open": "打開 FizzAgent",
+    "launcherPrompts": {
+      "create": "你想創作甚麼？",
+      "ask": "我是 FizzAgent，隨時向我提問。",
+      "help": "我可以幫你完善故事和畫布。"
     },
     "emptyHint": "上傳劇本檔案，告訴 FizzAgent 要完成的任務，批准寫入後繼續追問。",
     "emptyHintStory": "加入參考資料，或告訴 FizzAgent 如何推進目前章節，然後繼續打磨故事。",

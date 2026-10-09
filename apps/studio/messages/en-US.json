@@ -4497,6 +4497,19 @@
       "left": "Move left",
       "right": "Move right",
       "finish": "Finish world experience"
+    }
+  },
+  "agentOs": {
+    "readOnlyProject": "This project is read-only. Editing access is required to use FizzAgent.",
+    "title": "FizzAgent",
+    "subtitle": "Chat with an execution agent — tools write to your project",
+    "close": "Close FizzAgent",
+    "collapse": "Collapse FizzAgent",
+    "open": "Open FizzAgent",
+    "launcherPrompts": {
+      "create": "What would you like to create?",
+      "ask": "I'm FizzAgent — ask me anything.",
+      "help": "I can help refine your story and canvas."
     },
     "emptyHint": "Attach a script, tell FizzAgent what to do, approve writes, and keep going.",
     "emptyHintStory": "Attach source material or tell FizzAgent how to evolve this chapter, then keep refining the story.",
