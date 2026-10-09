@@ -69,7 +69,7 @@ def parse_build_env(path: Path) -> dict[str, str]:
 
 
 def committed_source(root: Path) -> str:
-    """Pin clean main once; never fetch, switch branches, commit or follow HEAD."""
+    """Pin clean main once after verifying origin/main; never switch or commit."""
     try:
         branch = subprocess.run(["git", "symbolic-ref", "--short", "HEAD"], cwd=root,
                                 capture_output=True, text=True, check=True).stdout.strip()
@@ -83,6 +83,13 @@ def committed_source(root: Path) -> str:
                                 capture_output=True, text=True, check=True).stdout.strip()
         if not re.fullmatch(r"[0-9a-f]{40}", source):
             raise BuildError("Cannot verify the committed main revision")
+        subprocess.run(["git", "fetch", "--no-tags", "--no-write-fetch-head", "origin",
+                        "refs/heads/main:refs/remotes/origin/main"], cwd=root,
+                       capture_output=True, text=True, check=True, timeout=60)
+        remote = subprocess.run(["git", "rev-parse", "refs/remotes/origin/main"], cwd=root,
+                                capture_output=True, text=True, check=True).stdout.strip()
+        if source != remote:
+            raise BuildError("Local main differs from freshly fetched origin/main; reconcile and publish main before deploying")
         return source
     except (OSError, subprocess.SubprocessError):
         raise BuildError("Cannot verify clean main; check the repository and Git installation") from None

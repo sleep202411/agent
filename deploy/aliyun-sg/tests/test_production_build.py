@@ -78,6 +78,10 @@ class FakeCommands:
             return subprocess.CompletedProcess(command, 0, b"", b"")
         if command == ["git", "rev-parse", "--verify", "HEAD"]:
             return subprocess.CompletedProcess(command, 0, SOURCE + "\n", "")
+        if command[:2] == ["git", "fetch"]:
+            return subprocess.CompletedProcess(command, 0, "", "")
+        if command == ["git", "rev-parse", "refs/remotes/origin/main"]:
+            return subprocess.CompletedProcess(command, 0, SOURCE + "\n", "")
         if command == ["git", "archive", "--format=tar", SOURCE]:
             files = sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*")
                            if path.is_file() or path.is_symlink())
@@ -177,6 +181,17 @@ class ProductionBuildTest(unittest.TestCase):
             images = build.build_images(self.root, services, self.cloud)
         return images, commands, output.getvalue()
 
+    def test_stale_local_main_is_rejected_before_build(self):
+        commands = FakeCommands(self.root)
+        def execute(command, **kwargs):
+            if command == ['git', 'rev-parse', 'refs/remotes/origin/main']:
+                return subprocess.CompletedProcess(command, 0, 'd' * 40 + '\n', '')
+            return commands(command, **kwargs)
+        with patch.object(build.subprocess, 'run', side_effect=execute), \
+                self.assertRaisesRegex(build.BuildError, 'differs from freshly fetched'):
+            build.committed_source(self.root)
+        self.assertFalse(any(c[:2] == ['docker', 'login'] for c, _ in commands.calls))
+
     def test_all_reused_skips_docker_entirely(self):
         with patch.object(build, 'find_reusable_image', return_value='verified@sha256:digest'), \
                 patch.object(build.subprocess, 'run') as run:
@@ -229,9 +244,11 @@ class ProductionBuildTest(unittest.TestCase):
         for context in commands.contexts:
             self.assertFalse(context.exists())
 
-    def test_clean_main_is_pinned_without_fetching_or_modifying_git(self):
+    def test_clean_main_is_pinned_after_fetch_without_modifying_worktree(self):
         results = [subprocess.CompletedProcess([], 0, "main\n", ""),
                    subprocess.CompletedProcess([], 0, b"", b""),
+                   subprocess.CompletedProcess([], 0, SOURCE + "\n", ""),
+                   subprocess.CompletedProcess([], 0, "", ""),
                    subprocess.CompletedProcess([], 0, SOURCE + "\n", "")]
         with patch.object(build.subprocess, "run", side_effect=results) as commands:
             self.assertEqual(build.committed_source(self.root), SOURCE)
@@ -239,6 +256,8 @@ class ProductionBuildTest(unittest.TestCase):
             ["git", "symbolic-ref", "--short", "HEAD"],
             ["git", "status", "--porcelain=v1", "--untracked-files=all", "-z"],
             ["git", "rev-parse", "--verify", "HEAD"],
+            ["git", "fetch", "--no-tags", "--no-write-fetch-head", "origin", "refs/heads/main:refs/remotes/origin/main"],
+            ["git", "rev-parse", "refs/remotes/origin/main"],
         ])
         self.assertTrue(all(call.kwargs["cwd"] == self.root for call in commands.call_args_list))
 
