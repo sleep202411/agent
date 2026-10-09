@@ -15,6 +15,7 @@ from shutil import copy2, copyfileobj
 import subprocess
 import tarfile
 import tempfile
+import time
 from typing import Optional
 
 INSTANCE_ID = "cri-d97629cirhkt3p9e"
@@ -216,7 +217,20 @@ def docker_environment(config: Path, plugins) -> dict[str, str]:
 
 
 def registry_login(cloud, environment):
-    auth = cloud("cr", "GetAuthorizationToken", "--InstanceId", INSTANCE_ID)
+    for attempt in range(3):
+        try:
+            auth = cloud("cr", "GetAuthorizationToken", "--InstanceId", INSTANCE_ID)
+            break
+        except (RuntimeError, OSError, subprocess.SubprocessError):
+            if attempt == 2:
+                raise BuildError(
+                    "Singapore ACR GetAuthorizationToken failed after 3 attempts "
+                    "(profile acct6, region ap-southeast-1); check CLI session, "
+                    "registry permissions and connectivity"
+                ) from None
+            print(f"Singapore ACR credential refresh failed; retry {attempt + 2}/3", flush=True)
+            time.sleep(2 ** attempt)
+
     username, token = auth.get("TempUsername"), auth.get("AuthorizationToken")
     if (auth.get("IsSuccess") is not True or not isinstance(username, str)
             or not username or not isinstance(token, str) or not token):
@@ -379,7 +393,10 @@ def build_images(root: Path, services: list[str], cloud, source=None, npm_regist
             # Refresh credentials after compilation, and retry only the push.
             reference = f"{PUSH_HOST}/fizzdragon/fizzdragon-{service}:{tag}"
             for attempt in range(2):
-                registry_login(cloud, environment)
+                try:
+                    registry_login(cloud, environment)
+                except BuildError as error:
+                    raise BuildError(f"{error}; completed image retained locally as {reference}") from None
                 pushed = subprocess.run(["docker", "push", reference], env=environment, check=False)
                 if pushed.returncode == 0:
                     break

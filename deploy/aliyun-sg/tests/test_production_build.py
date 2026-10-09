@@ -595,3 +595,28 @@ class HistoricalRecipeTests(unittest.TestCase):
             self.assertIsNone(build.find_reusable_image(Path('/fixture'), SOURCE, 'web', cloud))
             identity.assert_called_once()
         self.assertEqual(cloud.call_count, 2)
+
+
+class RegistryCredentialRetryTests(unittest.TestCase):
+    @patch.object(build.time, "sleep")
+    @patch.object(build.subprocess, "run")
+    def test_transient_authorization_failure_retries_without_rebuilding(self, run, sleep):
+        cloud = Mock(side_effect=[RuntimeError("temporary failure"),
+            {"IsSuccess": True, "TempUsername": "user", "AuthorizationToken": "private-token"}])
+        run.return_value = subprocess.CompletedProcess([], 0)
+        build.registry_login(cloud, {})
+        self.assertEqual(cloud.call_count, 2)
+        sleep.assert_called_once_with(1)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][:2], ["docker", "login"])
+
+    @patch.object(build.time, "sleep")
+    @patch.object(build.subprocess, "run")
+    def test_exhausted_authorization_names_operation_without_exposing_exception(self, run, sleep):
+        cloud = Mock(side_effect=RuntimeError("private-token"))
+        with self.assertRaises(build.BuildError) as raised:
+            build.registry_login(cloud, {})
+        self.assertIn("GetAuthorizationToken failed after 3 attempts", str(raised.exception))
+        self.assertNotIn("private-token", str(raised.exception))
+        self.assertEqual(cloud.call_count, 3)
+        run.assert_not_called()
