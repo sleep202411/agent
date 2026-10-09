@@ -104,3 +104,22 @@ it("does not load another account recovery record", async () => {
   await mount();
   expect(state.get).not.toHaveBeenCalled();
 });
+
+it("polls a queued analysis and presents its result without another upload", async () => {
+  vi.useFakeTimers();
+  try {
+    localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+    state.get
+      .mockResolvedValueOnce({ ...preview, status: "queued", tasks: [] })
+      .mockResolvedValue(preview);
+    await mount();
+    expect(host.textContent).not.toContain("The library doors open");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(host.textContent).toContain("The library doors open");
+    expect(state.post).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});

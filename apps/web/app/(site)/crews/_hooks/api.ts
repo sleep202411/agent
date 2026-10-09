@@ -64,7 +64,11 @@ export function isCrewCursorError(error: unknown, code: string): boolean {
 }
 
 function describeError(status: number, body: unknown): string {
-  if (typeof body === "string" && body.trim()) return body;
+  if (typeof body === "string" && body.trim()) {
+    if (/<(?:!doctype|html|head|body)\b/i.test(body))
+      return `Request failed (HTTP ${status}). The gateway returned an error page. Check the operation status before retrying.`;
+    return body;
+  }
   if (!body || typeof body !== "object") return `Crew API error ${status}`;
   const { message, issues } = body as { message?: unknown; issues?: unknown };
   const headline =

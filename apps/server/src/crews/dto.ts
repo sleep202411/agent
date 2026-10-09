@@ -254,6 +254,16 @@ const PositionBaseSchema = z.object({
 });
 
 export const CreatePositionSchema = PositionBaseSchema.extend({
+  tasks: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        expectedVersion: z.number().int().min(0),
+      }),
+    )
+    .min(1)
+    .max(100)
+    .optional(),
   expectedTaskVersion: z.number().int().min(0).optional(),
   taskId: z.string().uuid().optional(),
   recruitmentVisibility: z.enum(['public', 'private']).optional(),

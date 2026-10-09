@@ -1,3 +1,4 @@
+import { assertGroupedFee } from './task-recruitment';
 import { SALARY_PERIODS, TASK_PAYMENT_TERMS } from '@repo/shared/crew';
 import {
   Body,
@@ -140,8 +141,9 @@ export class CrewApplicationTermsService {
         );
       const position = await tx.crewPosition.findUniqueOrThrow({
         where: { id: app.positionId },
-        select: { taskId: true },
+        select: { taskId: true, groupedTaskTerms: true },
       });
+      assertGroupedFee(position.groupedTaskTerms, input);
       if (position.taskId && BigInt(input.feeAmount) > 10_000_000_000n)
         throw new ConflictException(
           'The agreed fee exceeds the task reward limit.',

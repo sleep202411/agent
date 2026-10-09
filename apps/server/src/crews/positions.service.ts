@@ -253,6 +253,22 @@ export class PositionsService {
         ? {
             AND: [
               {
+                groupedTasks: {
+                  none: {
+                    OR: [
+                      { deletedAt: { not: null } },
+                      {
+                        workflowState: {
+                          semantic: {
+                            in: ['approved', 'cancelled', 'submitted'],
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+              {
                 OR: [
                   {
                     description: {
@@ -498,6 +514,102 @@ export class PositionsService {
         'Private recruitment requires a linked task.',
       );
     return this.positionWrite(crewId, ownerId, undefined, async (tx) => {
+      let groupedTaskTerms: Record<string, Prisma.InputJsonValue> | undefined;
+      if (input.tasks) {
+        if (
+          input.taskId ||
+          input.recruitmentVisibility === 'private' ||
+          input.targetCount !== 1
+        )
+          throw new BadRequestException(
+            'Grouped recruitment requires one public position for one creator.',
+          );
+        if (new Set(input.tasks.map((t) => t.id)).size !== input.tasks.length)
+          throw new BadRequestException('Select each task only once.');
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
+        await this.authorization.require(crewId, ownerId, 'tasks.manage', tx);
+        groupedTaskTerms = {};
+        let total = 0;
+        let currency: string | undefined;
+        let paymentTerms: string | undefined;
+        const descriptions: string[] = [];
+        for (const selected of input.tasks) {
+          await assertRecruitableTask(tx, crewId, selected.id);
+          const task = await tx.crewTask.findFirstOrThrow({
+            where: { id: selected.id, crewId, deletedAt: null },
+            include: { assignees: true },
+          });
+          if (
+            task.version !== selected.expectedVersion ||
+            task.assignees.length
+          )
+            throw new ConflictException(
+              'A selected task changed or already has an assignee. Refresh before recruiting.',
+            );
+          if (
+            await tx.crewPosition.count({
+              where: {
+                deletedAt: null,
+                OR: [
+                  { taskId: task.id },
+                  { groupedTasks: { some: { id: task.id } } },
+                ],
+              },
+            })
+          )
+            throw new ConflictException(
+              'A selected task already belongs to recruitment.',
+            );
+          const c = (task.metadata as Prisma.JsonObject | null)
+            ?.compensation as Prisma.JsonObject | undefined;
+          const amount = c?.rewardUsdMinor;
+          if (
+            typeof amount !== 'number' ||
+            !Number.isSafeInteger(amount) ||
+            amount < 0 ||
+            typeof c?.rewardCurrency !== 'string' ||
+            typeof c?.paymentTerms !== 'string'
+          )
+            throw new BadRequestException(
+              'Set a fixed reward, currency and payment terms on every selected task first.',
+            );
+          if (
+            (currency && currency !== c.rewardCurrency) ||
+            (paymentTerms && paymentTerms !== c.paymentTerms)
+          )
+            throw new BadRequestException(
+              'Grouped tasks must share currency and payment terms.',
+            );
+          if (c.profitShareBps)
+            throw new BadRequestException(
+              'Revenue-sharing tasks require individual negotiated recruitment.',
+            );
+          currency = c.rewardCurrency;
+          paymentTerms = c.paymentTerms;
+          assertAllowedCurrency(currency, 'task currency');
+          groupedTaskTerms[task.id] = { amount, currency };
+          total += amount;
+          descriptions.push(
+            `${task.title}: ${currency} ${(amount / 100).toFixed(2)}\n${task.description ?? ''}`,
+          );
+        }
+        if (!Number.isSafeInteger(total) || total > 10_000_000_000)
+          throw new BadRequestException(
+            'The grouped reward exceeds the supported limit.',
+          );
+        input = {
+          ...input,
+          description: descriptions.join('\n\n'),
+          paymentTerms: paymentTerms as CreatePositionInput['paymentTerms'],
+          salary: {
+            currency: currency as 'USD' | 'CNY',
+            min: total / 100,
+            max: total / 100,
+            period: 'project',
+            negotiable: false,
+          },
+        };
+      }
       if (input.taskId) {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
         await this.authorization.require(crewId, ownerId, 'tasks.manage', tx);
@@ -512,7 +624,13 @@ export class PositionsService {
               'Task changed. Refresh before publishing recruitment.',
             );
           const existing = await tx.crewPosition.findFirst({
-            where: { taskId: input.taskId, deletedAt: null },
+            where: {
+              OR: [
+                { taskId: input.taskId },
+                { groupedTasks: { some: { id: input.taskId } } },
+              ],
+              deletedAt: null,
+            },
             select: { id: true },
           });
           if (existing)
@@ -536,6 +654,14 @@ export class PositionsService {
           id: newCrewDomainId(),
           crewId,
           taskId: input.taskId ?? null,
+          ...(input.tasks
+            ? {
+                groupedTasks: {
+                  connect: input.tasks.map((t) => ({ id: t.id })),
+                },
+                groupedTaskTerms,
+              }
+            : {}),
           recruitmentVisibility: input.recruitmentVisibility ?? 'public',
           positionType: input.positionType,
           description: input.description,
@@ -585,6 +711,17 @@ export class PositionsService {
     await this.authorization.require(crewId, ownerId, 'openings.manage');
     return this.positionWrite(crewId, ownerId, positionId, async (tx) => {
       const pos = await this.requirePosition(crewId, positionId, tx);
+      if (
+        pos.groupedTaskTerms &&
+        (input.salary ||
+          input.description !== undefined ||
+          input.paymentTerms ||
+          input.targetCount !== undefined ||
+          input.revenueSharePercent !== undefined)
+      )
+        throw new ConflictException(
+          'Grouped recruitment retains its per-task agreements. Create a new posting to change compensation or headcount.',
+        );
       assertAllowedCurrency(input.salary?.currency, 'salary.currency');
 
       if (

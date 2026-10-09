@@ -712,3 +712,15 @@ selected tasks and their delivery folders, with a replayable receipt. Previews
 expire after 24 hours; completed receipts remain available for safe retries.
 Raw PDFs are not retained. Proposals and their source excerpts are retained in
 the crew database, and deleting the crew cascades to these analysis records.
+
+The PDF worker persists extracted text while queued, claims one job per pod with
+PostgreSQL `SKIP LOCKED`, and clears that text after success/failure. Web polls
+status; no AI call is held open through the upload request. Interrupted analyses
+fail after five minutes and require an explicit new request (no automatic paid
+retry). Apply `20261010010000_grouped_recruitment_pdf_queue` before the new Server.
+
+Grouped recruitment publishes one position for one creator with immutable
+per-task allocations. Selected tasks must have fixed rewards, the same currency
+and payment terms, and no revenue share. The accepted project fee must equal
+the published total; assigning each task uses its own allocation. Batch task
+assignment commits or rolls back the whole selection.

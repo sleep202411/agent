@@ -90,6 +90,7 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
     setBusy(true);
     setError(null);
     try {
+      if (!check && preview?.status === "failed") request.current = null;
       request.current ??= crypto.randomUUID();
       setHasRequest(true);
       persist(request.current);
@@ -111,7 +112,18 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
       } catch {
         body = text;
       }
-      if (!response.ok) throw new CrewApiError(response.status, body);
+      if (!response.ok) {
+        if (response.status >= 500) {
+          try {
+            receive(await crewApi.get<Preview>(`${base}/${request.current}`));
+          } catch {
+            /* Keep original error. */
+          }
+        }
+        throw new CrewApiError(response.status, body);
+      }
+      if (!body || typeof body !== "object" || !Array.isArray((body as Preview).tasks))
+        throw new CrewApiError(502, body);
       receive(body as Preview);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -120,6 +132,38 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
       setBusy(false);
     }
   }
+  useEffect(() => {
+    if (
+      !hasRequest ||
+      uncertain ||
+      preview?.status === "ready" ||
+      preview?.status === "applied" ||
+      preview?.status === "failed"
+    )
+      return;
+    let active = true;
+    const id = request.current;
+    let pending = false;
+    const timer = setInterval(() => {
+      if (!id || pending || request.current !== id) return;
+      pending = true;
+      void crewApi
+        .get<Preview>(`${base}/${id}`)
+        .then((value) => {
+          if (active && request.current === id) receive(value);
+        })
+        .catch(() => {
+          /* A transient poll failure must not restart a paid analysis. */
+        })
+        .finally(() => {
+          pending = false;
+        });
+    }, 2000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [hasRequest, preview?.status, uncertain, base]);
   async function apply() {
     if (guard.current || !preview || !selection.length) return;
     guard.current = true;
@@ -177,7 +221,12 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
       </label>
       <div className="flex flex-wrap gap-2">
         <Button
-          disabled={!file || busy || uncertain || preview?.status === "applied"}
+          disabled={
+            !file ||
+            busy ||
+            uncertain ||
+            ["queued", "analyzing", "ready", "applied"].includes(preview?.status ?? "")
+          }
           onClick={() => void analyze()}
         >
           {busy ? t("pdfWorking") : t("pdfAnalyze")}
@@ -211,7 +260,9 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
           {error}
         </p>
       )}
-      {preview?.status === "analyzing" && <p role="status">{t("pdfPending")}</p>}
+      {["queued", "analyzing"].includes(preview?.status ?? "") && (
+        <p role="status">{t("pdfPending")}</p>
+      )}
       {preview?.status === "failed" && <p role="status">{t("pdfFailed")}</p>}
       {preview?.status === "applied" && (
         <p role="status">{t("pdfCreated", { count: preview.taskIds.length })}</p>

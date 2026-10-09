@@ -13,13 +13,9 @@ import {
 } from "@/components/ui/dialog";
 import { useTranslations } from "@/src/i18n/i18n";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
-import type {
-  CrewMemberDTO,
-  CrewTaskDTO,
-  CrewTaskListItemDTO,
-} from "@/app/(site)/crews/_hooks/types";
+import type { CrewMemberDTO, CrewTaskListItemDTO } from "@/app/(site)/crews/_hooks/types";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
-import { batchAssignment, batchRecruitment, canBatchTask } from "./workbench-batch-input";
+import { canBatchTask } from "./workbench-batch-input";
 
 export function WorkbenchBatchActions({
   crewId,
@@ -37,10 +33,10 @@ export function WorkbenchBatchActions({
   onChanged: () => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
-  const roleT = useTranslations("crew.position");
+  const roleT = useTranslations("crewRoles");
   const displays = useUserDisplays(members.map((member) => member.userId));
   const [assignee, setAssignee] = useState("");
-  const [roles, setRoles] = useState<Record<string, string>>({});
+  const [role, setRole] = useState("");
   const [completed, setCompleted] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,11 +53,7 @@ export function WorkbenchBatchActions({
   const eligible = tasks.length > 0 && tasks.every(canBatchTask);
   const valid =
     eligible &&
-    (mode === "assign"
-      ? Boolean(assignee)
-      : tasks.every((task) =>
-          PRESET_POSITIONS.some((role) => role.value === (roles[task.id] ?? task.positionRole))
-        ));
+    (mode === "assign" ? Boolean(assignee) : PRESET_POSITIONS.some((item) => item.value === role));
 
   async function submit() {
     if (lock.current || attempted || !valid) return;
@@ -69,27 +61,29 @@ export function WorkbenchBatchActions({
     setBusy(true);
     setAttempted(true);
     try {
-      for (const selected of tasks) {
-        if (!alive.current) break;
-        const task = await crewApi.get<CrewTaskDTO>(
-          `/crew-tasks/${encodeURIComponent(selected.id)}`,
-          { cache: "no-store" }
-        );
-        if (!alive.current) break;
-        if (task.crewId !== crewId || task.version !== selected.version || !canBatchTask(task)) {
-          throw new Error(t("batchChanged", { title: selected.title }));
-        }
-        if (mode === "assign") {
-          await crewApi.patch(`/crew-tasks/${encodeURIComponent(task.id)}`, {
-            body: batchAssignment(task, assignee),
-          });
-        } else {
-          await crewApi.post(`/crews/${encodeURIComponent(crewId)}/positions`, {
-            body: batchRecruitment(task, roles[task.id] ?? task.positionRole ?? ""),
-          });
-        }
-        if (alive.current) setCompleted((current) => [...current, task.id]);
+      if (mode === "recruit") {
+        await crewApi.post(`/crews/${encodeURIComponent(crewId)}/positions`, {
+          body: {
+            tasks: tasks.map((task) => ({ id: task.id, expectedVersion: task.version })),
+            recruitmentVisibility: "public",
+            positionType: role,
+            description: tasks.map((task) => task.title).join("; "),
+            targetCount: 1,
+            workMode: "remote",
+            employmentType: "project_based",
+            requiredSkills: [...new Set(tasks.flatMap((task) => task.requiredSkills ?? []))],
+          },
+        });
+        if (alive.current) setCompleted(tasks.map((task) => task.id));
+        return;
       }
+      await crewApi.post(`/crews/${encodeURIComponent(crewId)}/tasks/batch-assign`, {
+        body: {
+          tasks: tasks.map((task) => ({ id: task.id, expectedVersion: task.version })),
+          assigneeId: assignee,
+        },
+      });
+      if (alive.current) setCompleted(tasks.map((task) => task.id));
     } catch (cause) {
       if (alive.current) setError(cause instanceof Error ? cause.message : t("failed"));
     } finally {
@@ -134,6 +128,21 @@ export function WorkbenchBatchActions({
               </NativeSelect>
             </label>
           ) : null}
+          {mode === "recruit" && (
+            <NativeSelect
+              aria-label={t("batchChooseRole")}
+              disabled={busy || attempted}
+              value={role}
+              onChange={setRole}
+            >
+              <NativeSelectOption value="">{t("batchChooseRole")}</NativeSelectOption>
+              {PRESET_POSITIONS.map((item) => (
+                <NativeSelectOption key={item.value} value={item.value}>
+                  {roleT(item.value)}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          )}
           <ul className="max-h-72 space-y-3 overflow-auto">
             {tasks.map((task) => (
               <li key={task.id} className="grid gap-2 border-b border-white/10 pb-3 text-sm">
@@ -146,22 +155,6 @@ export function WorkbenchBatchActions({
                   {task.rewardUsdMinor == null ? "—" : (task.rewardUsdMinor / 100).toFixed(2)} ·{" "}
                   {task.paymentTerms ?? "—"}
                 </span>
-                {mode === "recruit" ? (
-                  <NativeSelect
-                    aria-label={t("batchRole", { title: task.title })}
-                    disabled={busy || attempted}
-                    value={roles[task.id] ?? task.positionRole ?? ""}
-                    onChange={(value) => setRoles((current) => ({ ...current, [task.id]: value }))}
-                    className="rounded-md border border-white/15 bg-background p-2"
-                  >
-                    <NativeSelectOption value="">{t("batchChooseRole")}</NativeSelectOption>
-                    {PRESET_POSITIONS.map((role) => (
-                      <NativeSelectOption key={role.value} value={role.value}>
-                        {roleT(role.value)}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
-                ) : null}
               </li>
             ))}
           </ul>

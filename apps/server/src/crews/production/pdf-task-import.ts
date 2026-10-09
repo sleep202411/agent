@@ -1,6 +1,9 @@
+import { backgroundTasksEnabled } from '../../common/background-tasks';
 import { createHash } from 'node:crypto';
 import {
-  BadGatewayException,
+  Logger,
+  OnApplicationBootstrap,
+  OnModuleDestroy,
   BadRequestException,
   Body,
   ConflictException,
@@ -41,7 +44,56 @@ const requestId = (id: string) => {
 };
 type Upload = { buffer: Buffer; originalname: string };
 @Injectable()
-export class CrewPdfTaskImportService {
+export class CrewPdfTaskImportService
+  implements OnApplicationBootstrap, OnModuleDestroy
+{
+  private timer?: NodeJS.Timeout;
+  private draining = false;
+  private readonly logger = new Logger(CrewPdfTaskImportService.name);
+  onApplicationBootstrap() {
+    if (!backgroundTasksEnabled()) return;
+    this.timer = setInterval(
+      () =>
+        void this.drain().catch(() =>
+          this.logger.error('PDF queue processing failed'),
+        ),
+      2000,
+    );
+    this.timer.unref();
+  }
+  onModuleDestroy() {
+    if (this.timer) clearInterval(this.timer);
+  }
+  async drain() {
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      await this.prisma.crewPdfTaskImport.updateMany({
+        where: {
+          status: 'analyzing',
+          updatedAt: { lt: new Date(Date.now() - 300_000) },
+        },
+        data: { status: 'failed', sourceText: null },
+      });
+      const rows = await this.prisma.$queryRaw<
+        Array<{
+          id: string;
+          crew_id: string;
+          user_id: string;
+          source_text: string;
+        }>
+      >`
+        UPDATE crew_pdf_task_imports SET status='analyzing', updated_at=now()
+        WHERE id=(SELECT id FROM crew_pdf_task_imports WHERE status='queued'
+          ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1)
+        RETURNING id, crew_id, user_id, source_text`;
+      const row = rows[0];
+      if (row)
+        await this.process(row.crew_id, row.user_id, row.id, row.source_text);
+    } finally {
+      this.draining = false;
+    }
+  }
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorization: CrewAuthorizationService,
@@ -57,7 +109,7 @@ export class CrewPdfTaskImportService {
       id: row.id,
       status:
         row.status === 'analyzing' &&
-        row.createdAt.getTime() < Date.now() - 300_000
+        (row.updatedAt ?? row.createdAt).getTime() < Date.now() - 300_000
           ? 'failed'
           : row.status,
       tasks: ['ready', 'applied'].includes(row.status)
@@ -80,7 +132,7 @@ export class CrewPdfTaskImportService {
       throw new ServiceUnavailableException(
         'PDF task analysis requires ALIBABA_API_KEY.',
       );
-    const claimed = await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:pdf:${userId}`}, 0))`;
       const existing = await tx.crewPdfTaskImport.findUnique({ where: { id } });
       if (existing) {
@@ -109,40 +161,58 @@ export class CrewPdfTaskImportService {
         where: {
           crewId,
           userId,
-          status: 'analyzing',
-          createdAt: { gt: new Date(Date.now() - 300_000) },
+          OR: [
+            { status: 'queued' },
+            {
+              status: 'analyzing',
+              updatedAt: { gt: new Date(Date.now() - 300_000) },
+            },
+          ],
         },
       });
       if (active)
         throw new ConflictException(
           'A PDF analysis is already running. Wait for it to finish.',
         );
+      let source: string;
+      try {
+        source = (
+          (
+            await (
+              pdfParse as unknown as (
+                buffer: Buffer,
+              ) => Promise<{ text?: string }>
+            )(file.buffer)
+          ).text ?? ''
+        ).trim();
+      } catch {
+        throw new BadRequestException(
+          'Export an unencrypted text PDF and try again.',
+        );
+      }
+      if (source.length < 40 || source.length > 60_000)
+        throw new BadRequestException(
+          'Use a text PDF with 40–60,000 characters. Scanned PDFs require OCR.',
+        );
       await tx.crewPdfTaskImport.create({
-        data: { id, crewId, userId, sourceHash, status: 'analyzing' },
+        data: {
+          id,
+          crewId,
+          userId,
+          sourceHash,
+          status: 'queued',
+          sourceText: source,
+        },
       });
       return true;
     });
-    if (!claimed) return this.get(crewId, userId, id);
+    return this.get(crewId, userId, id);
+  }
+  async process(crewId: string, userId: string, id: string, source: string) {
     try {
-      let source: string;
-      try {
-        const parsed = await (
-          pdfParse as unknown as (buffer: Buffer) => Promise<{ text?: string }>
-        )(file.buffer);
-        source = parsed.text?.trim() ?? '';
-      } catch {
-        throw new BadRequestException(
-          'This PDF could not be read. Export an unencrypted text PDF and try again.',
-        );
-      }
-      if (source.length < 40)
-        throw new BadRequestException(
-          'No usable script text was found. Scanned PDFs need OCR before uploading.',
-        );
-      if (source.length > 60_000)
-        throw new BadRequestException(
-          'This PDF exceeds 60,000 extracted characters. Split it into smaller documents; nothing has been truncated.',
-        );
+      await this.authorization.require(crewId, userId, 'tasks.manage');
+      const apiKey = process.env.ALIBABA_API_KEY;
+      if (!apiKey) throw new Error('Provider is not configured');
       const provider = createAlibaba({
         apiKey,
         ...(process.env.ALIBABA_BASE_URL
@@ -160,22 +230,19 @@ export class CrewPdfTaskImportService {
       });
       const proposals = groundedPdfTasks(object, source);
       await this.authorization.require(crewId, userId, 'tasks.manage');
-      await this.prisma.crewPdfTaskImport.update({
-        where: { id },
-        data: { status: 'ready', proposals },
+      await this.prisma.crewPdfTaskImport.updateMany({
+        where: { id, status: 'analyzing' },
+        data: { status: 'ready', proposals, sourceText: null },
       });
-    } catch (error) {
-      await this.prisma.crewPdfTaskImport.update({
-        where: { id },
-        data: { status: 'failed' },
+    } catch {
+      await this.prisma.crewPdfTaskImport.updateMany({
+        where: { id, status: 'analyzing' },
+        data: { status: 'failed', sourceText: null },
       });
-      if (error instanceof BadRequestException) throw error;
-      throw new BadGatewayException(
-        'PDF analysis failed. No tasks were created. Check the document and try a new analysis.',
-      );
+      this.logger.warn(`PDF analysis ${id} failed`);
     }
-    return this.get(crewId, userId, id);
   }
+
   async apply(
     crewId: string,
     userId: string,

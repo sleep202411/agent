@@ -30,6 +30,7 @@ function fixture() {
     userId: 'user',
     sourceHash: 'hash',
     status: 'ready',
+    sourceText: null as string | null,
     proposals,
     createdAt: new Date(),
     selection: null as null | number[],
@@ -37,12 +38,28 @@ function fixture() {
   };
   const db = {
     $executeRaw: jest.fn(),
-    $queryRaw: jest.fn(),
+    $queryRaw: jest.fn<Promise<unknown[]>, [TemplateStringsArray]>(),
     crewPdfTaskImport: {
+      updateMany: jest.fn(
+        ({
+          where,
+          data,
+        }: {
+          where: { status?: string };
+          data: Partial<typeof row>;
+        }) => {
+          if (where.status && row.status !== where.status)
+            return Promise.resolve({ count: 0 });
+          Object.assign(row, data);
+          return Promise.resolve({ count: 1 });
+        },
+      ),
       findFirst: jest.fn().mockResolvedValue(row),
       findUnique: jest.fn().mockResolvedValue(null),
       count: jest.fn().mockResolvedValue(0),
-      create: jest.fn(),
+      create: jest.fn(({ data }: { data: Partial<typeof row> }) =>
+        Promise.resolve(Object.assign(row, data)),
+      ),
       update: jest.fn(({ data }: { data: Partial<typeof row> }) =>
         Promise.resolve(Object.assign(row, data)),
       ),
@@ -88,17 +105,14 @@ it('creates selected source-grounded tasks, folders and an idempotent receipt', 
   await expect(
     service.apply('crew', 'user', 'id', { indices: [0] }),
   ).resolves.toEqual({ taskIds: ['task'], replayed: false });
-  expect(db.crewTask.create).toHaveBeenCalledWith(
-    expect.objectContaining({
-      data: expect.objectContaining({
-        taskKind: 'art',
-        metadata: expect.objectContaining({
-          assetCategory: 'scenes',
-          sourceEvidence: proposals.tasks[0].evidence,
-        }),
-      }),
-    }),
-  );
+  const data = (
+    db.crewTask.create.mock.calls[0] as unknown as [
+      { data: { taskKind: string; metadata: Record<string, unknown> } },
+    ]
+  )[0].data;
+  expect(data.taskKind).toBe('art');
+  expect(data.metadata.assetCategory).toBe('scenes');
+  expect(data.metadata.sourceEvidence).toBe(proposals.tasks[0].evidence);
   expect(provisionTaskDeliveryFolderTx).toHaveBeenCalledTimes(1);
   expect(auth.require).toHaveBeenCalledTimes(3);
   expect(row.status).toBe('applied');
@@ -159,9 +173,11 @@ it('parses and grounds a real analysis response without creating tasks', async (
   const old = process.env.ALIBABA_API_KEY;
   process.env.ALIBABA_API_KEY = 'fixture';
   try {
-    const { service, db } = fixture();
+    const { service, db, row } = fixture();
     jest
-      .mocked(pdfParse)
+      .mocked(
+        pdfParse as unknown as (buffer: Buffer) => Promise<{ text: string }>,
+      )
       .mockResolvedValue({ text: proposals.tasks[0].evidence } as never);
     jest
       .mocked(generateObject)
@@ -171,7 +187,14 @@ it('parses and grounds a real analysis response without creating tasks', async (
         buffer: Buffer.from('%PDF-fixture'),
         originalname: 'test.pdf',
       }),
-    ).resolves.toMatchObject({ status: 'ready', tasks: proposals.tasks });
+    ).resolves.toMatchObject({ status: 'queued', tasks: [] });
+    expect(generateObject).not.toHaveBeenCalled();
+    row.status = 'analyzing';
+    await service.process('crew', 'user', 'id', proposals.tasks[0].evidence);
+    await expect(service.get('crew', 'user', 'id')).resolves.toMatchObject({
+      status: 'ready',
+      tasks: proposals.tasks,
+    });
     expect(generateObject).toHaveBeenCalledWith(
       expect.objectContaining({ maxRetries: 0 }),
     );
@@ -218,4 +241,42 @@ it('reports abandoned analyses as failed so the user can start a new request', a
     status: 'failed',
     tasks: [],
   });
+});
+
+it('does not revive a failed job after a late provider response', async () => {
+  const { service, row } = fixture();
+  row.status = 'failed';
+  const old = process.env.ALIBABA_API_KEY;
+  process.env.ALIBABA_API_KEY = 'fixture';
+  jest.mocked(generateObject).mockResolvedValue({ object: proposals } as never);
+  try {
+    await service.process('crew', 'user', 'id', proposals.tasks[0].evidence);
+    expect(row.status).toBe('failed');
+  } finally {
+    if (old === undefined) delete process.env.ALIBABA_API_KEY;
+    else process.env.ALIBABA_API_KEY = old;
+  }
+});
+
+it('claims queued jobs with SKIP LOCKED and serializes local draining', async () => {
+  const { service, db } = fixture();
+  db.$queryRaw.mockResolvedValue([
+    { id: 'id', crew_id: 'crew', user_id: 'user', source_text: 'source' },
+  ]);
+  let finish!: () => void;
+  const process = jest.spyOn(service, 'process').mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const first = service.drain();
+  await new Promise((resolve) => setImmediate(resolve));
+  await service.drain();
+  expect(process).toHaveBeenCalledTimes(1);
+  expect(db.$queryRaw.mock.calls[0][0].join('')).toContain(
+    'FOR UPDATE SKIP LOCKED',
+  );
+  finish();
+  await first;
 });

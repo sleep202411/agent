@@ -5117,6 +5117,8 @@ model CrewAssetFavorite {
 }
 
 model CrewPosition {
+  groupedTaskTerms Json? @map("grouped_task_terms") @db.JsonB
+  groupedTasks CrewTask[] @relation("GroupedRecruitment")
   savedBy CrewSavedPosition[]
   recruitmentVisibility String @default("public") @map("recruitment_visibility") @db.VarChar(16)
   invitations CrewPositionInvitation[]
@@ -5438,6 +5440,7 @@ model CrewInviteLinkRedemption {
 /// GitHub-Issue-like production unit. Its project/document are the editable
 /// task canvas; submissions point to immutable document versions and assets.
 model CrewTask {
+  groupedRecruitmentPositions CrewPosition[] @relation("GroupedRecruitment")
   contractFiles CrewTaskContractFile[]
   draftDisputeAttachments CrewDisputeAttachment[]
   inviteLinks          CrewInviteLink[]
@@ -11339,6 +11342,7 @@ model AcademyExchangeRate {
 
 /// Durable PDF analysis and confirmation receipt. No uploaded PDF is retained.
 model CrewPdfTaskImport {
+  sourceText String? @map("source_text") @db.Text
   crew Crew @relation(fields: [crewId], references: [id], onDelete: Cascade)
   id String @id @db.Uuid
   crewId String @map("crew_id")

@@ -390,10 +390,10 @@ function TaskCreationSession({
                   ["production"],
                   ["other"],
                 ].map((keys, index) => (
-                  <details key={index} open className="text-xs">
-                    <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <section key={index} className="text-xs">
+                    <div className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {index === 1 ? t("artAssets") : t(`assetGroup_${keys[0]}`)}
-                    </summary>
+                    </div>
                     <dl className="mt-2 space-y-2 border-l border-white/10 pl-3">
                       {keys.map((key) => {
                         const value = progress[key as (typeof ASSET_TASK_GROUPS)[number]];
@@ -423,14 +423,14 @@ function TaskCreationSession({
                         );
                       })}
                     </dl>
-                  </details>
+                  </section>
                 ))}
               </div>
             </section>
           </div>
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex flex-col gap-4 border-b border-white/10 px-4 py-4">
+          <header className="flex flex-wrap items-center gap-4 border-b border-white/10 px-4 py-4">
             <div className="flex flex-wrap items-center gap-3">
               <div>
                 <h2 className="text-xl font-semibold uppercase tracking-wide">{t("title")}</h2>
@@ -484,6 +484,43 @@ function TaskCreationSession({
                 </>
               ) : null}
             </div>
+            {canManageTasks ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs text-muted-foreground">
+                  {t("batchSelected", { count: selectedTasks.length })}
+                </span>
+                <Button
+                  size="sm"
+                  variant="solid"
+                  color="primary"
+                  disabled={!batchReady}
+                  onClick={() => setBatchMode("assign")}
+                >
+                  {t("batchAssign")}
+                </Button>
+                {onPublishTask ? (
+                  <Button
+                    size="sm"
+                    variant="solid"
+                    color="primary"
+                    disabled={!batchReady}
+                    onClick={() => setBatchMode("recruit")}
+                  >
+                    {t("batchRecruit")}
+                  </Button>
+                ) : null}
+                {selectedTaskIds.length ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    color="muted"
+                    onClick={() => setSelectedTaskIds([])}
+                  >
+                    {t("batchClear")}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
           </header>
           <div className="flex-1 space-y-5 p-4">
             <WorkbenchDashboard
@@ -512,7 +549,7 @@ function TaskCreationSession({
                   key={key}
                   size="sm"
                   variant="ghost"
-                  className={`shrink-0 rounded-none border-b-2 px-4 uppercase tracking-wide ${category === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
+                  className={`shrink-0 rounded-none border-0 border-b-2 px-4 uppercase tracking-wide ${category === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
                   color="muted"
                   aria-pressed={category === key}
                   onClick={() => setCategory(key)}
@@ -525,43 +562,6 @@ function TaskCreationSession({
                 </Button>
               ))}
             </div>
-            {canManageTasks ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs text-muted-foreground">
-                  {t("batchSelected", { count: selectedTasks.length })}
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  color="muted"
-                  disabled={!batchReady}
-                  onClick={() => setBatchMode("assign")}
-                >
-                  {t("batchAssign")}
-                </Button>
-                {onPublishTask ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    color="muted"
-                    disabled={!batchReady}
-                    onClick={() => setBatchMode("recruit")}
-                  >
-                    {t("batchRecruit")}
-                  </Button>
-                ) : null}
-                {selectedTaskIds.length ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    color="muted"
-                    onClick={() => setSelectedTaskIds([])}
-                  >
-                    {t("batchClear")}
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
             {storageError ? (
               <p role="alert" className="text-xs text-destructive">
                 {t("draftStorageFailed")}
@@ -583,10 +583,10 @@ function TaskCreationSession({
               </p>
             ) : null}
             {canManage && batches.some((batch) => !batch.created) ? (
-              <details open className="rounded-lg bg-white/5 p-3 text-xs">
-                <summary className="cursor-pointer">
+              <section className="rounded-lg bg-white/5 p-3 text-xs">
+                <div className="cursor-pointer">
                   {t("recoverTemplates", { count: pendingBatches.length })}
-                </summary>
+                </div>
                 <p className="my-2 text-muted-foreground">{t("templateDraftHelp")}</p>
                 {pendingBatches.map((batch) => (
                   <div key={batch.key} className="flex items-center justify-between gap-2 py-2">
@@ -602,7 +602,7 @@ function TaskCreationSession({
                     </button>
                   </div>
                 ))}
-              </details>
+              </section>
             ) : null}
             {
               <section>
@@ -623,7 +623,7 @@ function TaskCreationSession({
                       const itemCount = categoryDrafts.filter(
                         (draft) => draft.state === "created"
                       ).length;
-                      const hasItems = categoryDrafts.length > 0;
+
                       const groups =
                         barKey === "artAssets"
                           ? ["characters", "scenes", "props", "art"].map((key) => ({
@@ -657,24 +657,46 @@ function TaskCreationSession({
                             : [{ key: barKey, title: "", items: categoryDrafts }];
 
                       return (
-                        <details
+                        <section
                           key={barKey}
-                          ref={(el) => {
-                            if (el && hasItems && !el.dataset.initialized) {
-                              el.open = true;
-                              el.dataset.initialized = "1";
-                            }
-                          }}
-                          className="rounded-sm bg-white/[0.025] p-4 text-xs transition-colors"
+                          className={`rounded-sm bg-white/[0.025] p-4 text-xs transition-colors ${barKey === "scripts" ? "grid gap-4 @[900px]:grid-cols-[240px_1fr]" : ""}`}
                         >
-                          <summary className="group flex cursor-pointer select-none items-center justify-between gap-3 font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                          {barKey === "scripts" && canManage && (
+                            <aside className="row-span-2 bg-black/20 p-4">
+                              <h3 className="mb-4 text-xs font-semibold uppercase text-primary">
+                                {t("pdfTitle")}
+                              </h3>
+                              <Button
+                                variant="outline"
+                                color="muted"
+                                className="h-28 w-full whitespace-normal"
+                                onClick={() => setPdfOpen(true)}
+                              >
+                                {t("pdfChoose")}
+                              </Button>
+                              <dl className="mt-4 space-y-3">
+                                {["characters", "scenes", "props"].map((asset) => (
+                                  <div key={asset} className="flex justify-between">
+                                    <dt>{t(`assetGroup_${asset}`)}</dt>
+                                    <dd>
+                                      {
+                                        savedTasks.filter((task) => task.assetCategory === asset)
+                                          .length
+                                      }
+                                    </dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </aside>
+                          )}
+                          <div className="group flex select-none items-center justify-between gap-3 font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
                             <span className="flex items-center gap-2">
-                              <IconChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
                               <span>{label}</span>
                             </span>
                             {canManageTasks ? (
                               <input
                                 type="checkbox"
+                                className="size-4 accent-[#e52227]"
                                 aria-label={t("batchSelectCategory", { title: label })}
                                 disabled={
                                   busy ||
@@ -758,7 +780,7 @@ function TaskCreationSession({
                             >
                               {progressReady ? itemCount : "—"}
                             </span>
-                          </summary>
+                          </div>
                           <div className="mt-3 space-y-3 border-t border-white/[0.06] pt-3">
                             {categoryDrafts.length > 0 ? (
                               <div
@@ -769,7 +791,14 @@ function TaskCreationSession({
                                 }
                               >
                                 {groups.map((group) => (
-                                  <section key={group.key} className="min-w-0">
+                                  <section
+                                    key={group.key}
+                                    className={
+                                      barKey === "artAssets"
+                                        ? "min-w-0 min-h-64 bg-white/[0.025] p-3"
+                                        : "min-w-0"
+                                    }
+                                  >
                                     {group.title && (
                                       <h3 className="mb-3 flex justify-between text-xs font-semibold uppercase text-muted-foreground">
                                         <span>{group.title}</span>
@@ -791,7 +820,7 @@ function TaskCreationSession({
                                           {canManageTasks && draft.taskId ? (
                                             <input
                                               type="checkbox"
-                                              className="relative z-30 mb-2 size-4"
+                                              className="relative z-30 mb-2 size-4 accent-[#e52227]"
                                               aria-label={t("batchSelectTask", {
                                                 title: draft.input.title,
                                               })}
@@ -1054,7 +1083,7 @@ function TaskCreationSession({
                               </div>
                             ) : null}
                           </div>
-                        </details>
+                        </section>
                       );
                     }
                   )}

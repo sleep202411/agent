@@ -171,6 +171,7 @@ export class ApplicationsService {
             select: {
               positionType: true,
               taskId: true,
+              groupedTasks: { select: { id: true } },
               task: { select: { title: true, dueAt: true } },
             },
           },
@@ -214,6 +215,7 @@ export class ApplicationsService {
           select: {
             positionType: true,
             taskId: true,
+            groupedTasks: { select: { id: true } },
             task: { select: { title: true, dueAt: true } },
           },
         },
@@ -288,7 +290,7 @@ export class ApplicationsService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
-        if (admitted.position.taskId)
+        if (admitted.position.taskId || admitted.position.groupedTasks?.length)
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
         await tx.$queryRaw`SELECT id FROM crew_positions WHERE id=${positionId} AND crew_id=${crewId} FOR UPDATE`;
         if (invitationId) {
@@ -473,6 +475,7 @@ export class ApplicationsService {
           targetCount: true,
           recruitmentVisibility: true,
           taskId: true,
+          groupedTasks: { select: { id: true } },
           positionType: true,
           moderationStatus: true,
           experienceLevel: true,
@@ -504,8 +507,11 @@ export class ApplicationsService {
     const ownerUserId = crew.ownership.member.userId;
     if (!position || position.moderationStatus === 'taken_down')
       throw new NotFoundException('Position not found');
-    if (position.taskId)
-      await assertRecruitableTask(db, crewId, position.taskId);
+    for (const id of [
+      position.taskId,
+      ...(position.groupedTasks ?? []).map((t) => t.id),
+    ].filter((v): v is string => Boolean(v)))
+      await assertRecruitableTask(db, crewId, id);
     if (position.recruitmentVisibility === 'private' && !invited)
       throw new NotFoundException('Position not found');
     if (
@@ -598,6 +604,7 @@ export class ApplicationsService {
             id: true,
             status: true,
             taskId: true,
+            groupedTasks: { select: { id: true } },
             positionType: true,
             targetCount: true,
             recruitedCount: true,
@@ -651,7 +658,7 @@ export class ApplicationsService {
       updated = await this.prisma.$transaction(async (tx) => {
         // Match member removal/ownership writes before locking a vacancy or chat.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:ownership:${app.crewId}`})::bigint)`;
-        if (app.position.taskId)
+        if (app.position.taskId || app.position.groupedTasks?.length)
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${app.crewId}`}, 0))`;
         const appTransition = await tx.crewApplication.updateMany({
           where: { id: applicationId, status: 'pending' },
@@ -721,8 +728,12 @@ export class ApplicationsService {
             });
           }
           await assertInterviewResolved(tx, applicationId);
-          if (app.position.taskId) {
-            await assertRecruitableTask(tx, app.crewId, app.position.taskId);
+          if (app.position.taskId || app.position.groupedTasks?.length) {
+            for (const id of [
+              app.position.taskId,
+              ...(app.position.groupedTasks ?? []).map((t) => t.id),
+            ].filter((v): v is string => Boolean(v)))
+              await assertRecruitableTask(tx, app.crewId, id);
             if (!updatedApp.termsVersion)
               throw new ConflictException(
                 'Task recruitment requires confirmed final terms before approval.',
