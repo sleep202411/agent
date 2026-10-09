@@ -79,3 +79,10 @@ Local tests/bundles do not constitute 50 real-script runs or physical-device tes
 Both regional mobile versions require device acceptance and coordinated release.
 Local validation results are recorded after completion; never infer acceptance merely
 from code being present on this branch.
+
+ADDITIONAL LINKED RUNTIME FIX FOUND DURING BACKPORT VALIDATION
+A clean rebuild of shared contracts exposed css-tree 3.2.1 through the runtime
+barrel. Metro's existing blanket explicit-extension resolver bypassed css-tree's
+browser redirects and tried to bundle the Node-only module package. The exception
+is now restricted to country-flag-icons, preserving ordinary browser mappings.
+Regression coverage verifies both browser delegation and the original icon case.
