@@ -23,7 +23,7 @@ REGISTRY = 'fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com/fizzdr
 NS_UID = '249a9075-37f2-4c41-aefc-050edd800e63'
 PVC = 'fizzdragon-game-agent-workspaces'
 PVC_UID = '9948697c-65de-4146-b279-2d4bf657d4da'
-MIGRATION_SCRIPT = Path(__file__).with_name('production-migrate.cjs').read_text()
+MIGRATION_SCRIPT = Path(__file__).with_name('production-migrate.cjs').read_text(encoding='utf-8')
 
 
 class DeployError(Exception):

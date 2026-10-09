@@ -11,7 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
-from shutil import copyfileobj
+from shutil import copy2, copyfileobj
 import subprocess
 import tarfile
 import tempfile
@@ -44,7 +44,7 @@ def parse_build_env(path: Path) -> dict[str, str]:
     """Read approved public/.com URLs as data, never as shell instructions."""
     allowed = PUBLIC_ARGS | {"JAVA_STUDIO_URL", "JAVA_CONTENT_URL"}
     result = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -140,7 +140,7 @@ def require_harness_source(context: Path, services: list[str]) -> None:
     }
     for relative, marker in checks.items():
         path = context / relative
-        if not path.is_file() or marker not in path.read_text():
+        if not path.is_file() or marker not in path.read_text(encoding="utf-8"):
             raise ValueError(f"Current Harness integration is missing: {relative}")
     for relative in ("apps/game-agent/Dockerfile", "packages/game-agent-protocol/package.json"):
         if not (context / relative).is_file():
@@ -174,7 +174,21 @@ def docker_environment(config: Path, plugins) -> dict[str, str]:
         raise BuildError("Cannot locate the existing executable Docker buildx plugin") from None
     plugin_directory = config / "cli-plugins"
     plugin_directory.mkdir(mode=0o700)
-    (plugin_directory / "docker-buildx").symlink_to(executable)
+    # Windows discovers *.exe plugin names; Unix uses the extensionless docker-buildx.
+    plugin_names = ("docker-buildx.exe", "docker-buildx") if os.name == "nt" else ("docker-buildx",)
+    for name in plugin_names:
+        destination = plugin_directory / name
+        try:
+            destination.symlink_to(executable)
+        except OSError:
+            # WinError 1314: symlink privilege missing unless Developer Mode / admin.
+            try:
+                copy2(executable, destination)
+            except OSError:
+                raise BuildError(
+                    "Cannot install Docker buildx into the isolated build configuration; "
+                    "on Windows enable Developer Mode or allow symlink creation"
+                ) from None
     for key in ("DOCKER_CONTEXT", "BUILDX_BUILDER", "BUILDX_CONFIG", "BUILDKIT_HOST"):
         environment.pop(key, None)
     environment.update(DOCKER_HOST=host, DOCKER_CONFIG=str(config))
