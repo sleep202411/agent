@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { LegacyCreatorsService } from '../legacy-creators/legacy-creators.service';
 import {
   AcademyLearningService,
@@ -467,4 +468,27 @@ it('keeps the operator total across all instructors', async () => {
   expect(
     await f.service.adminIncomeSummary({ platformUserId: null } as never),
   ).toMatchObject({ earnedCredits: '50', scope: 'operator' });
+});
+
+it('maps a concurrent enrollment uniqueness failure to an actionable conflict', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  f.enrollment.create.mockImplementation(() => {
+    throw new Prisma.PrismaClientKnownRequestError('Duplicate enrollment', {
+      code: 'P2002',
+      clientVersion: Prisma.prismaVersion.client,
+    });
+  });
+  await expect(f.service.enroll('14', '100', 1)).rejects.toThrow(
+    'You are already enrolled in this course.',
+  );
+});
+it('preserves an unexpected enrollment database error', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  const failure = new Error('Database connection interrupted');
+  f.enrollment.create.mockImplementation(() => {
+    throw failure;
+  });
+  await expect(f.service.enroll('14', '100', 1)).rejects.toBe(failure);
 });

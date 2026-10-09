@@ -8,7 +8,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { AcademyEnrollment, Prisma } from '@prisma/client';
+import { Prisma, type AcademyEnrollment } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
