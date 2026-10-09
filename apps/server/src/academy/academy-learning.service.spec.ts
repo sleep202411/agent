@@ -261,6 +261,45 @@ it('blocks self-purchase and self-review', async () => {
     'not found',
   );
 });
+it('rejects misconfigured instructor shares before debiting', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  f.db.academyOffering.findUnique.mockResolvedValue({
+    teacherId: '200',
+    priceCredits: 100n,
+    teacherShareBps: 6000,
+    instructorShares: [
+      { teacherId: '200', shareBps: 6000 },
+      { teacherId: '201', shareBps: 6000 },
+    ],
+    enabled: true,
+    version: 1,
+  });
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    instructors: [{ userId: 200 }, { userId: 201 }],
+  });
+  await expect(f.service.enroll('14', '100', 1)).rejects.toThrow(
+    'instructor shares are misconfigured',
+  );
+  expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
+});
+it('rejects incomplete teacher assignment before debiting', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    enrollmentEnabled: true,
+    priceCredits: 500,
+    instructors: [],
+  });
+  await expect(f.service.enroll('14', '100', 1)).rejects.toThrow(
+    'teacher assignment is incomplete',
+  );
+  expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
+});
 it('refuses a removed teacher before issuing income or badges', async () => {
   const f = fixture();
   f.authority.course.mockResolvedValue({

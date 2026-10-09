@@ -352,6 +352,11 @@ export class AcademyLearningService {
             shareBps: offer.teacherShareBps,
           });
       if (
+        !/^[1-9]\d{0,15}$/.test(offer.teacherId) ||
+        shares.some((share) => !/^[1-9]\d{0,15}$/.test(share.teacherId))
+      )
+        throw new ConflictException('Course teacher assignment is incomplete.');
+      if (
         shares.some(
           (share) =>
             !course.instructors?.some(
@@ -362,9 +367,18 @@ export class AcademyLearningService {
         throw new ConflictException(
           'The assigned teacher is no longer available.',
         );
-      if (course.instructors?.some((i) => String(i.userId) === studentId))
+      if (
+        offer.teacherId === studentId ||
+        shares.some((share) => share.teacherId === studentId) ||
+        course.instructors?.some((i) => String(i.userId) === studentId)
+      )
         throw new ForbiddenException(
           'Course teachers cannot purchase their own course.',
+        );
+      const totalBps = shares.reduce((sum, share) => sum + share.shareBps, 0);
+      if (totalBps > 10000)
+        throw new ConflictException(
+          'Course instructor shares are misconfigured.',
         );
       const payouts = shares.map((share) => ({
         teacherId: share.teacherId,
@@ -374,48 +388,75 @@ export class AcademyLearningService {
         (sum, item) => sum + item.credits,
         0n,
       );
-      const row = await tx.academyEnrollment.create({
-        data: {
-          courseId,
-          studentId,
-          teacherId: offer.teacherId,
+      if (teacherCredits > offer.priceCredits)
+        throw new ConflictException(
+          'Course instructor shares are misconfigured.',
+        );
+      try {
+        const row = await tx.academyEnrollment.create({
+          data: {
+            courseId,
+            studentId,
+            teacherId: offer.teacherId,
+            certificateId: certificate.id,
+            offeringVersion: offer.version,
+            priceCredits: offer.priceCredits,
+            teacherCredits,
+            instructorShares: payouts.map((item) => ({
+              teacherId: item.teacherId,
+              credits: item.credits.toString(),
+            })),
+          },
+        });
+        if (offer.priceCredits > 0n) {
+          const account = await ensureWalletAccount(tx, {
+            ownerType: 'user',
+            ownerId: studentId,
+            currency: 'community_point',
+            balanceKind: 'consumable',
+          });
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)`;
+          await expireLapsedGrantsTx(tx, account.id);
+          await this.wallet.postEntryTx(tx, {
+            accountId: account.id,
+            entryType: 'debit',
+            amount: offer.priceCredits,
+            availableDelta: -offer.priceCredits,
+            heldDelta: 0n,
+            reason: 'Academy course enrollment',
+            sourceType: 'academy_enrollment',
+            sourceId: row.id,
+            idempotencyKey: `academy:purchase:${row.id}`,
+            actorUserId: studentId,
+          });
+        }
+        await this.event(tx, row, studentId, 'enrolled', {
+          priceCredits: offer.priceCredits.toString(),
           certificateId: certificate.id,
-          offeringVersion: offer.version,
-          priceCredits: offer.priceCredits,
-          teacherCredits,
-          instructorShares: payouts.map((item) => ({
-            teacherId: item.teacherId,
-            credits: item.credits.toString(),
-          })),
-        },
-      });
-      if (offer.priceCredits > 0n) {
-        const account = await ensureWalletAccount(tx, {
-          ownerType: 'user',
-          ownerId: studentId,
-          currency: 'community_point',
-          balanceKind: 'consumable',
         });
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)`;
-        await expireLapsedGrantsTx(tx, account.id);
-        await this.wallet.postEntryTx(tx, {
-          accountId: account.id,
-          entryType: 'debit',
-          amount: offer.priceCredits,
-          availableDelta: -offer.priceCredits,
-          heldDelta: 0n,
-          reason: 'Academy course enrollment',
-          sourceType: 'academy_enrollment',
-          sourceId: row.id,
-          idempotencyKey: `academy:purchase:${row.id}`,
-          actorUserId: studentId,
-        });
+        return dto(row);
+      } catch (error) {
+        if (
+          error instanceof BadRequestException ||
+          error instanceof ConflictException ||
+          error instanceof ForbiddenException ||
+          error instanceof NotFoundException
+        )
+          throw error;
+        const detail = error instanceof Error ? error.message : '';
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        )
+          throw new ConflictException(
+            'You are already enrolled in this course.',
+          );
+        if (/check constraint|academy_enrollments/i.test(detail))
+          throw new ConflictException(
+            'Course enrollment terms are invalid. Reload and try again.',
+          );
+        throw error;
       }
-      await this.event(tx, row, studentId, 'enrolled', {
-        priceCredits: offer.priceCredits.toString(),
-        certificateId: certificate.id,
-      });
-      return dto(row);
     });
   }
 
@@ -862,7 +903,8 @@ export class AcademyLearningService {
       );
   }
   private async lock(tx: Prisma.TransactionClient, key: string) {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`academy:${key}`},0))`;
+    // hashtext is available on every supported Postgres; hashtextextended needs PG14+.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`academy:${key}`})::bigint)`;
   }
   private async lockEnrollment(tx: Prisma.TransactionClient, id: string) {
     await tx.$queryRaw`SELECT id FROM academy_enrollments WHERE id=${id}::uuid FOR UPDATE`;
