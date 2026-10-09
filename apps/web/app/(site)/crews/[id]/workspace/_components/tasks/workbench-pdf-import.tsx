@@ -35,6 +35,7 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
   const [hasRequest, setHasRequest] = useState(false);
   const request = useRef<string | null>(null);
   const guard = useRef(false);
+  const recoveredSelection = useRef<number[] | null>(null);
   const recoveryKey = `crew-pdf-import:${crewId}:${userId}`;
   function persist(id: string, indices?: number[]) {
     try {
@@ -44,7 +45,6 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
     }
   }
   useEffect(() => {
-    let active = true;
     try {
       const saved = JSON.parse(localStorage.getItem(recoveryKey) ?? "null") as {
         id?: string;
@@ -52,29 +52,13 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
       } | null;
       if (saved?.id && /^[a-f0-9-]{36}$/i.test(saved.id)) {
         request.current = saved.id;
-        void crewApi
-          .get<Preview>(`/crews/${encodeURIComponent(crewId)}/pdf-task-imports/${saved.id}`)
-          .then((value) => {
-            if (!active || request.current !== saved.id) return;
-            setHasRequest(true);
-            setPreview(value);
-            if (value.status === "ready") setSelection(value.tasks.map((_, index) => index));
-            if (Array.isArray(saved.indices) && value.status === "ready") {
-              setSelection(saved.indices);
-              setUncertain(true);
-            }
-          })
-          .catch((cause) => {
-            if (active && request.current === saved.id)
-              setError(cause instanceof Error ? cause.message : String(cause));
-          });
+        recoveredSelection.current = Array.isArray(saved.indices) ? saved.indices : null;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore browser-only persisted state after hydration.
+        setHasRequest(true);
       }
     } catch {
       /* Ignore unavailable or invalid recovery storage. */
     }
-    return () => {
-      active = false;
-    };
   }, [crewId, recoveryKey]);
   const base = `/crews/${encodeURIComponent(crewId)}/pdf-task-imports`;
   async function refresh() {
@@ -150,6 +134,7 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
   useEffect(() => {
     if (
       !hasRequest ||
+      busy ||
       uncertain ||
       preview?.status === "ready" ||
       preview?.status === "applied" ||
@@ -159,7 +144,7 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
     let active = true;
     const id = request.current;
     let pending = false;
-    const timer = setInterval(() => {
+    const poll = () => {
       if (!id || pending || request.current !== id) return;
       pending = true;
       void crewApi
@@ -168,21 +153,39 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
           if (active && request.current === id) {
             setError(null);
             receive(value);
+            if (value.status === "ready" && recoveredSelection.current) {
+              setSelection(recoveredSelection.current);
+              recoveredSelection.current = null;
+              setUncertain(true);
+            }
           }
         })
         .catch((cause) => {
-          if (active && request.current === id)
+          if (active && request.current === id) {
             setError(cause instanceof Error ? cause.message : String(cause));
+            if (cause instanceof CrewApiError && [400, 401, 403, 404, 410].includes(cause.status)) {
+              request.current = null;
+              recoveredSelection.current = null;
+              setHasRequest(false);
+              try {
+                localStorage.removeItem(recoveryKey);
+              } catch {
+                /* Optional storage. */
+              }
+            }
+          }
         })
         .finally(() => {
           pending = false;
         });
-    }, 2000);
+    };
+    if (!preview?.status) void poll();
+    const timer = setInterval(poll, 2000);
     return () => {
       active = false;
       clearInterval(timer);
     };
-  }, [hasRequest, preview?.status, uncertain, base]);
+  }, [hasRequest, busy, preview?.status, uncertain, base, recoveryKey]);
   async function apply() {
     if (guard.current || !preview || !selection.length) return;
     guard.current = true;
@@ -223,6 +226,7 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
             setError(null);
             setPreview(null);
             request.current = null;
+            recoveredSelection.current = null;
             setHasRequest(false);
             try {
               localStorage.removeItem(recoveryKey);

@@ -129,11 +129,21 @@ export class CrewQualificationsService {
   ) {
     const minimum = ranks[requirements.experienceLevel];
     if (minimum === 0 && requirements.requiredSkills.length === 0) return;
-    const configured = minimum > 0 ? readCatalog() : null;
+    let configured = minimum > 0 ? readCatalog() : null;
     const live = requirements.requiredSkills.length
       ? await this.liveSkills(cookie)
       : new Map<string, { name: string; ids: number[] }>();
     const skills = new Map([...live].map(([key, item]) => [key, item.ids]));
+    // Live-name skill-only roles need no static FD catalogue. Consult optional
+    // historical mappings only when a required name is absent from live data.
+    if (
+      !configured &&
+      process.env.CREW_QUALIFICATION_CATALOG_JSON?.trim() &&
+      requirements.requiredSkills.some(
+        (skill) => !skills.has(skill.trim().toLowerCase()),
+      )
+    )
+      configured = readCatalog();
     // Preserve explicitly configured historical names only while their IDs still
     // exist in the current regional verification catalogue.
     const liveIds = new Set([...live.values()].flatMap((item) => item.ids));

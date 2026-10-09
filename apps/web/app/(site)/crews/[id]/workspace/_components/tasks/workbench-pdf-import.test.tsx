@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import en from "@/messages/en-US.json";
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { WorkbenchPdfImport } from "./workbench-pdf-import";
 const state = vi.hoisted(() => ({
   post: vi.fn(),
@@ -122,4 +123,65 @@ it("polls a queued analysis and presents its result without another upload", asy
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("retries a transient recovery read without another analysis or creation", async () => {
+  vi.useFakeTimers();
+  try {
+    localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id, indices: [0] }));
+    state.get.mockRejectedValueOnce(new Error("Network disconnected")).mockResolvedValue(preview);
+    const upload = vi.fn();
+    vi.stubGlobal("fetch", upload);
+    await mount();
+    expect(host.textContent).toContain("Network disconnected");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(host.textContent).toContain("The library doors open");
+    expect(host.textContent).not.toContain("Network disconnected");
+    expect(host.querySelector<HTMLInputElement>("input[type=checkbox]")!.disabled).toBe(true);
+    expect(host.textContent).toContain("Retry creation");
+    expect(upload).not.toHaveBeenCalled();
+    expect(state.post).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it.each([401, 403, 404, 410])(
+  "stops recovering a permanently unavailable import (%s)",
+  async (status) => {
+    vi.useFakeTimers();
+    try {
+      localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+      state.get.mockRejectedValue(new CrewApiError(status, { message: "Import unavailable" }));
+      await mount();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6100);
+      });
+      expect(state.get).toHaveBeenCalledTimes(1);
+      expect(localStorage.getItem("crew-pdf-import:crew:user")).toBeNull();
+      expect(host.querySelector<HTMLInputElement>("input[type=file]")!.disabled).toBe(false);
+      expect(state.post).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+);
+it("cancels recovery on account change and ignores the old response", async () => {
+  let complete!: (value: typeof preview) => void;
+  localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+  state.get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      })
+  );
+  await mount();
+  state.user = "other";
+  await mount();
+  await act(async () => {
+    complete(preview);
+  });
+  expect(host.textContent).not.toContain("The library doors open");
+  expect(state.get).toHaveBeenCalledTimes(1);
 });

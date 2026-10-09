@@ -715,7 +715,10 @@ the crew database, and deleting the crew cascades to these analysis records.
 
 The PDF worker persists extracted text while queued, claims one job per pod with
 PostgreSQL `SKIP LOCKED`, and clears that text after success/failure. Web polls
-status; no AI call is held open through the upload request. Interrupted analyses
+status, including retries of transient recovery reads after reopening the workbench.
+Permanent missing/forbidden responses stop recovery; saved task-creation selections
+remain explicit retries and never trigger automatic analysis or creation.
+No AI call is held open through the upload request. Interrupted analyses
 fail after five minutes and require an explicit new request (no automatic paid
 retry). Apply `20261010010000_grouped_recruitment_pdf_queue` before the new Server.
 
@@ -726,3 +729,8 @@ the published total; assigning each task uses its own allocation. Batch task
 assignment commits or rolls back the whole selection.
 
 Task skill choices are loaded from the regional Java `/user/levels/options` verification catalogue (type 4), using the current session. Eligibility checks re-read that catalogue and current certificates. FD rank requirements still require the explicit regional `CREW_QUALIFICATION_CATALOG_JSON` rank mapping; numeric certificate IDs are never inferred as ranks.
+
+Historical skill aliases may use the optional regional mapping even when a position
+requires no FD rank, provided every mapped certificate ID remains in the live
+verification catalogue. Current live-name skill-only roles do not require static
+configuration; aliases cannot override current names or grant revoked certificates.

@@ -162,3 +162,69 @@ it('admits a newly added verification skill without editing static deployment ma
     requiredSkills: ['Lighting'],
   });
 });
+
+describe('Historical skill aliases', () => {
+  const aliasRequirement = {
+    experienceLevel: 'any' as const,
+    requiredSkills: ['Legacy editing'],
+  };
+  beforeEach(() => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = JSON.stringify({
+      ...catalog,
+      skills: { 'Legacy editing': [901] },
+    });
+  });
+  it.each(['any', 'mid'] as const)(
+    'admits the same valid alias for %s experience',
+    async (experienceLevel) => {
+      await expect(
+        service.assertEligible('42', 'fixture-session', {
+          ...aliasRequirement,
+          experienceLevel,
+        }),
+      ).resolves.toBeUndefined();
+    },
+  );
+  it('rejects a revoked certificate', async () => {
+    fetcher.mockResolvedValue(response([103]) as Response);
+    await expect(
+      service.assertEligible('42', 'fixture-session', aliasRequirement),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+  it('rejects a historical mapping to an ID removed from live verification', async () => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = JSON.stringify({
+      ...catalog,
+      skills: { 'Legacy editing': [999] },
+    });
+    await expect(
+      service.assertEligible('42', 'fixture-session', aliasRequirement),
+    ).rejects.toMatchObject({ status: 503 });
+  });
+  it('does not let an alias override a current skill with the same name', async () => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = JSON.stringify({
+      ...catalog,
+      skills: { Lighting: [901] },
+    });
+    await expect(
+      service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: ['Lighting'],
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+  it('does not consult malformed static configuration for a current live skill', async () => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = 'invalid';
+    await expect(
+      service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: ['editing'],
+      }),
+    ).resolves.toBeUndefined();
+  });
+  it('fails closed on malformed configuration when an alias is needed', async () => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = 'invalid';
+    await expect(
+      service.assertEligible('42', 'fixture-session', aliasRequirement),
+    ).rejects.toMatchObject({ status: 503 });
+  });
+});
