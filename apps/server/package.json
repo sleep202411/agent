@@ -167,7 +167,8 @@
       "^@repo/agent-tools$": "<rootDir>/../../../packages/agent-tools/src/index.ts",
       "^@repo/agent-policy$": "<rootDir>/../../../packages/agent-policy/src/index.ts",
       "^@repo/agent-protocol$": "<rootDir>/../../../packages/agent-protocol/src/index.ts",
-      "^@repo/game-agent-protocol$": "<rootDir>/../../../packages/game-agent-protocol/src/index.ts"
+      "^@repo/game-agent-protocol$": "<rootDir>/../../../packages/game-agent-protocol/src/index.ts",
+      "^css-tree/dist/csstree.esm$": "css-tree"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"

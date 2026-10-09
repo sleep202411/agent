@@ -145,10 +145,18 @@
     "./story-playback": {
       "types": "./dist/story-playback.d.ts",
       "default": "./dist/story-playback.js"
+    },
+    "./ai-model-protocol": {
+      "types": "./dist/ai-model-protocol.d.ts",
+      "default": "./dist/ai-model-protocol.js"
+    },
+    "./experience-runtime/common": {
+      "types": "./dist/experience-runtime/common.d.ts",
+      "default": "./dist/experience-runtime/common.js"
     }
   },
   "scripts": {
-    "build": "tsc && node scripts/check-story-patch-projection.mjs",
+    "build": "tsc && node scripts/check-story-patch-projection.mjs && node scripts/check-runtime-boundary.mjs",
     "contracts:experience": "npm run build && node scripts/export-experience-contracts.mjs",
     "dev": "tsc --watch",
     "check-types": "tsc --noEmit",

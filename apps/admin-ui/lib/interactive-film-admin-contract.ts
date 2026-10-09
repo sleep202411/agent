@@ -1,4 +1,4 @@
-import { ExperienceStableIdSchema } from "@repo/shared/experience-runtime";
+import { ExperienceStableIdSchema } from "@repo/shared/experience-runtime/common";
 
 export const INTERACTIVE_FILM_STATUSES = ["draft", "reviewing", "published", "offline"] as const;
 

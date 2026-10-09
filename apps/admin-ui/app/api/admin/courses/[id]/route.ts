@@ -1,4 +1,4 @@
-import { decodeUserId } from "@repo/shared";
+import { decodeUserId } from "@repo/shared/user-id-codec";
 import { NextRequest } from "next/server";
 import type {
   CourseLocaleCode,

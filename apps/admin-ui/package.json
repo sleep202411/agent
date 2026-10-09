@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 9530",
-    "build": "next build --webpack",
+    "build": "next build --webpack && npm run check:standalone",
     "start": "next start --port 9530",
     "lint": "eslint",
     "check-types": "next typegen && tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:standalone": "node scripts/check-standalone.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

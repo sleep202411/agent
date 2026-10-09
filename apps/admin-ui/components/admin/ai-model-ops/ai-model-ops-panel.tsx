@@ -27,7 +27,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useAdminOperation } from "../use-admin-operation";
-import { AI_PROVIDER_LABELS } from "@repo/shared";
+import { AI_PROVIDER_LABELS } from "@repo/shared/ai-model-protocol";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
