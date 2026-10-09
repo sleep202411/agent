@@ -334,3 +334,16 @@ class RetryTests(unittest.TestCase):
         with patch.object(r.subprocess, 'run', return_value=Mock(stdout='{"Code":"Forbidden"}')) as calls:
             with self.assertRaisesRegex(RuntimeError, 'Forbidden'): r.rds('DescribeBackupTasks')
             self.assertEqual(calls.call_count, 1)
+
+class ExtendServicesTests(unittest.TestCase):
+    def test_add_game_agent_preserves_backup_history(self):
+        state = {'services': ['server'], 'imageTags': {'server': TAG}, 'previousCycles': [{'tag': TAG}]}
+        r.extend_services(state, ['game-agent'])
+        self.assertEqual(state['services'], ['game-agent', 'server'])
+        self.assertNotIn('imageTags', state)
+        self.assertEqual(state['previousCycles'], [{'tag': TAG}])
+
+    def test_cannot_change_scope_after_build_or_backup(self):
+        for key in ['complete', 'built', 'backupRequested', 'backupId']:
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                r.extend_services({'services': ['server'], key: True}, ['game-agent'])
