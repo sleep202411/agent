@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createTranslator, type AbstractIntlMessages } from "next-intl";
 import { AUTH_TRANSLATION_KEYS } from "@repo/auth-flow";
 import enUS from "@/messages/en-US.json";
 import zhCN from "@/messages/zh-CN.json";
@@ -34,3 +35,61 @@ describe.each(Object.entries(CATALOGS))("auth messages — %s", (_locale, catalo
     }
   });
 });
+
+const STUDIO_CATALOGS = { "en-US": enUS, "zh-CN": zhCN, "zh-HK": zhHK } as const;
+
+function messageLeaves(messages: AbstractIntlMessages, prefix = ""): [string, string][] {
+  return Object.entries(messages).flatMap(([key, value]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    return typeof value === "string" ? [[path, value]] : messageLeaves(value, path);
+  });
+}
+
+it.each(Object.entries(STUDIO_CATALOGS))(
+  "%s resolves FizzAgent copy from its root namespace and keeps player copy separate",
+  (locale, catalog) => {
+    // A missing closing brace previously moved the whole Agent catalog into
+    // experiencePlayer while leaving valid JSON and matching locale key sets.
+    const messages: AbstractIntlMessages = catalog;
+    const onError = (error: Error) => {
+      throw error;
+    };
+    const agent = createTranslator({ locale, messages, namespace: "agentOs", onError });
+    const player = createTranslator({ locale, messages, namespace: "experiencePlayer", onError });
+    const referenceKeys = messageLeaves(enUS.agentOs).map(([key]) => key);
+    const translatedLeaves = messageLeaves(catalog.agentOs);
+
+    expect(translatedLeaves.map(([key]) => key).sort()).toEqual(referenceKeys.sort());
+    for (const [key, message] of translatedLeaves) {
+      expect(agent.raw(key), key).toBe(message);
+    }
+    for (const key of [
+      "readOnlyProject",
+      "title",
+      "subtitle",
+      "close",
+      "collapse",
+      "open",
+      "launcherPrompts.create",
+      "launcherPrompts.ask",
+      "launcherPrompts.help",
+      "runDetails.open",
+      "runDetails.title",
+      "runDetails.description",
+      "runDetails.status",
+      "runDetails.statusValue.idle",
+      "runDetails.conversationId",
+      "runDetails.notAvailable",
+      "runDetails.latestIssue",
+      "runDetails.technicalDetail",
+      "runDetails.close",
+    ]) {
+      expect(agent(key), key).toBe(agent.raw(key));
+    }
+    for (const key of ["start", "journeyMap.title", "world.finish", "playback.pause"]) {
+      expect(player(key), key).toBe(player.raw(key));
+    }
+    expect(player.has("runDetails.title")).toBe(false);
+    expect(player.has("modelSettings.title")).toBe(false);
+  }
+);

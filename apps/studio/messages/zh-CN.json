@@ -4497,6 +4497,19 @@
       "left": "向左移动",
       "right": "向右移动",
       "finish": "结束世界体验"
+    }
+  },
+  "agentOs": {
+    "readOnlyProject": "此项目为只读，需要编辑权限才能使用 FizzAgent。",
+    "title": "FizzAgent",
+    "subtitle": "对话式执行智能体 — 工具会真正写入项目",
+    "close": "关闭 FizzAgent",
+    "collapse": "收起 FizzAgent",
+    "open": "打开 FizzAgent",
+    "launcherPrompts": {
+      "create": "你想创作什么？",
+      "ask": "我是 FizzAgent，随时向我提问。",
+      "help": "我可以帮你完善故事和画布。"
     },
     "emptyHint": "上传剧本文件，告诉 FizzAgent 要完成的任务，批准写入后继续追问。",
     "emptyHintStory": "添加参考资料，或告诉 FizzAgent 如何推进当前章节，然后继续打磨故事。",
