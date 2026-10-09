@@ -179,7 +179,7 @@ def docker_environment(config: Path, plugins) -> dict[str, str]:
 
 
 def registry_login(cloud, environment):
-    auth = cloud("cr", "GetAuthorizationToken", "--InstanceId", INSTANCE_ID, "--ExpiresInHours", "24")
+    auth = cloud("cr", "GetAuthorizationToken", "--InstanceId", INSTANCE_ID)
     username, token = auth.get("TempUsername"), auth.get("AuthorizationToken")
     if (auth.get("IsSuccess") is not True or not isinstance(username, str)
             or not username or not isinstance(token, str) or not token):

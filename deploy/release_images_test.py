@@ -81,7 +81,7 @@ class InputTests(unittest.TestCase):
         path = 'deploy/aliyun-sg/production-build.py'
         self.write(path, recipe.read_text())
         original = self.commit()
-        self.write(path, recipe.read_text().replace('"--ExpiresInHours", "24"', '"--ExpiresInHours", "12"'))
+        self.write(path, recipe.read_text().replace('del auth, token', 'del token, auth'))
         auth_change = self.commit()
         self.assertEqual(inputs(self.root, original, 'admin-ui', 'com'),
                          inputs(self.root, auth_change, 'admin-ui', 'com'))

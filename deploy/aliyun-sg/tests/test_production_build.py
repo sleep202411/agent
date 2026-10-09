@@ -384,7 +384,7 @@ class ProductionBuildTest(unittest.TestCase):
             self.assertNotIn("BUILDX_CONFIG", kw["env"])
             self.assertNotIn("BUILDKIT_HOST", kw["env"])
         self.assertEqual(self.cloud.call_count, 7)
-        self.cloud.assert_called_with("cr", "GetAuthorizationToken", "--InstanceId", build.INSTANCE_ID, "--ExpiresInHours", "24")
+        self.cloud.assert_called_with("cr", "GetAuthorizationToken", "--InstanceId", build.INSTANCE_ID)
         self.assert_cleaned(commands)
 
     def test_password_uses_stdin_and_private_temp_config_is_removed(self):
