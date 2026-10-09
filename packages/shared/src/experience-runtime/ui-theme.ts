@@ -1,5 +1,7 @@
+/// <reference path="./css-tree-bundle.d.ts" />
 import { z } from "zod";
-import * as css from "css-tree";
+// The official distribution embeds lexer data instead of requiring MDN JSON at runtime.
+import * as css from "css-tree/dist/csstree.esm";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 
 const PARTS: Record<string, readonly string[]> = {

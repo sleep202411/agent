@@ -9,7 +9,7 @@
  *
  * Contract: docs/admin-courses-api.md
  */
-import { encodeUserId } from "@repo/shared";
+import { encodeUserId } from "@repo/shared/user-id-codec";
 import type {
   Course,
   CourseInstructor,

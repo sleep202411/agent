@@ -25,7 +25,9 @@ export * from "./user-id-codec.js";
 export * from "./regions.js";
 export * from "./app-downloads.js";
 export * from "./interactive-film-runtime.js";
-export * from "./experience-runtime.js";
+// Runtime validation/compilation is an explicit @repo/shared/experience-runtime opt-in.
+// Ordinary shared imports must not initialize CSS/XML compilers.
+export type * from "./experience-runtime.js";
 export * from "./story-stats.js";
 export * from "./story-directing-skills.js";
 export * from "./story-visual-style-skills.js";

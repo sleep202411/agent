@@ -1,4 +1,4 @@
-import { ExperienceStableIdSchema } from "@repo/shared/experience-runtime";
+import { ExperienceStableIdSchema } from "@repo/shared/experience-runtime/common";
 import type { AdminInteractiveFilmDetail } from "./interactive-film-admin-contract";
 
 export type AdminInteractiveFilmListing = {

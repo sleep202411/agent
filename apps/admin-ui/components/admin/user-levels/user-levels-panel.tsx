@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { readAllPages } from "./read-all-pages";
 import { useAdminOperation } from "../use-admin-operation";
-import { decodeUserId, encodeUserId } from "@repo/shared";
+import { decodeUserId, encodeUserId } from "@repo/shared/user-id-codec";
 import { IconBadge, IconEdit, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";

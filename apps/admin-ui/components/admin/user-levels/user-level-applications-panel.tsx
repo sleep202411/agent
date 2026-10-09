@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useAdminOperation } from "../use-admin-operation";
-import { encodeUserId } from "@repo/shared";
+import { encodeUserId } from "@repo/shared/user-id-codec";
 import {
   IconCheck,
   IconChecklist,
