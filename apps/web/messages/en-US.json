@@ -325,7 +325,7 @@
     "app": "App",
     "siteSwitch": "Site",
     "siteGlobal": "Global",
-    "siteCn": "China",
+    "siteCn": "CN",
     "appDownloadTitle": "FizzDragon App",
     "appScanToDownload": "Scan to download the app",
     "appQrAlt": "FizzDragon download QR code: {platform}",

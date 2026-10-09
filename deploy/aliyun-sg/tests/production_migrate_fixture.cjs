@@ -14,6 +14,7 @@ async function run(name, overrides = {}) {
     PGADMIN_PASSWORD: "fixture-password",
     DOTENV_CONFIG_PATH: "/must-not-load.env",
     KEEP_ENV: "preserved",
+    SSL_CERT_FILE: "/wrong-ca.pem",
     ...overrides.env,
   };
   const calls = { clients: [], queries: [], spawns: [], ended: 0, logs: [] };
@@ -123,6 +124,7 @@ async function run(name, overrides = {}) {
     assert.equal(options.stdio, "inherit");
     assert.equal(options.env.KEEP_ENV, "preserved");
     assert.equal(options.env.DOTENV_CONFIG_PATH, "/dev/null");
+    assert.equal(options.env.SSL_CERT_FILE, "/etc/fizzdragon/certs/ApsaraDB-CA-Chain.pem");
     const native = new URL(options.env.DATABASE_URL);
     assert.equal(native.hostname, host);
     assert.equal(native.pathname, "/fizzdragon");

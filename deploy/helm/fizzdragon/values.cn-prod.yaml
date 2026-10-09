@@ -370,7 +370,7 @@ gameAgent:
   model:
     name: qwen3.8-max-0902
     baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
-  studioOrigin: https://fizzstudio.fizzspace.cn
+  studioOrigin: https://studio.fizzspace.cn
   secrets:
     apiKey:
       name: fizzdragon-game-agent-provider

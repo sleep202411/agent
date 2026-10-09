@@ -9,6 +9,7 @@ export GAME_AGENT_RENDER_CHART="$CHART"
 
 node <<'NODE'
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const { parseAllDocuments } = require('yaml');
 
@@ -90,9 +91,24 @@ function assertDisabled(documents, label) {
 console.log('game-agent render contract');
 const defaults = render();
 assertDisabled(defaults, 'default');
+ok('default render has no Harness resources, configuration or Secret dependencies');
 const cn = render(['-f', `${chart}/values.cn-prod.yaml`]);
-assertDisabled(cn, 'CN');
-ok('default and CN render without Harness resources, configuration or Secret dependencies');
+const cnWorker = container(cn, `${release}-game-agent`);
+const cnServer = container(cn, `${release}-server`);
+const cnStudioHost = readFileSync('apps/web/.env.production.cn', 'utf8')
+  .match(/^NEXT_PUBLIC_STUDIO_HOST=(\S+)$/m)?.[1];
+assert.ok(cnStudioHost, 'CN Studio host is explicitly configured');
+assert.equal(env(cnServer, 'GAME_AGENT_STUDIO_ORIGIN').value, `https://${cnStudioHost}`);
+assert.equal(env(cnWorker, 'GAME_AGENT_MODEL').value, 'qwen3.8-max-0902');
+assert.equal(env(cnWorker, 'GAME_AGENT_OPENAI_BASE_URL').value,
+  'https://dashscope.aliyuncs.com/compatible-mode/v1');
+assert.deepEqual(env(cnWorker, 'GAME_AGENT_OPENAI_API_KEY').valueFrom.secretKeyRef,
+  { name: 'fizzdragon-game-agent-provider', key: 'GAME_AGENT_OPENAI_API_KEY' });
+assert.deepEqual(env(cnWorker, 'GAME_AGENT_INTERNAL_TOKEN').valueFrom.secretKeyRef,
+  { name: 'fizzdragon-game-agent-internal', key: 'GAME_AGENT_INTERNAL_TOKEN' });
+assert.equal(one(cn, 'PersistentVolumeClaim', `${release}-game-agent-workspaces`)
+  .spec.storageClassName, 'alicloud-disk-essd');
+ok('CN enables Harness with regional credentials, storage, model and the actual Studio origin');
 
 const documents = render(fixture);
 const name = `${release}-game-agent`;
