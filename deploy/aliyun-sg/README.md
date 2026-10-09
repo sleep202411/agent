@@ -79,6 +79,10 @@ deploy the changed services:
 
 # Deploy a reviewed image already present in Singapore ACR:
 ./deploy/deploy-com.sh --image web=sha256:<64-hex-digest>
+
+# Opt-in npm registry for this operator's local build only (default remains registry.npmjs.org):
+./deploy/deploy-com.sh --npm-registry https://registry.npmmirror.com admin-ui
+# or: export FIZZ_COM_NPM_REGISTRY=https://registry.npmmirror.com
 ```
 
 `all` builds all six services. Legacy `agent` is retired. Server, Studio and

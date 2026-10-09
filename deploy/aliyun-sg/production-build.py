@@ -21,6 +21,8 @@ PUSH_HOST = "fizzdragon-com-sg-registry.ap-southeast-1.cr.aliyuncs.com"
 RUNTIME_HOST = "fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com"
 SERVICES = {"web", "server", "studio", "admin-ui", "agent-os", "game-agent"}
 BUILD_ENV = "apps/web/.env.production.com"
+# Opt-in only (CLI --npm-registry or FIZZ_COM_NPM_REGISTRY). Unset keeps Dockerfile default.
+NPM_REGISTRY_ENV = "FIZZ_COM_NPM_REGISTRY"
 
 
 class BuildError(RuntimeError):
@@ -38,6 +40,19 @@ PUBLIC_ARGS = {
     "NEXT_PUBLIC_CONTENT_GPS_GOOGLE_MAP_ID", "NEXT_PUBLIC_CONTENT_GPS_GAODE_KEY",
     "NEXT_PUBLIC_CONTENT_GPS_GAODE_PROXY_PATH",
 }
+
+
+def optional_npm_registry(value=None) -> str | None:
+    """Return an opt-in npm registry URL for Docker build-args, or None for Dockerfile default."""
+    candidate = value if value is not None else os.environ.get(NPM_REGISTRY_ENV, "")
+    if candidate is None:
+        return None
+    registry = str(candidate).strip()
+    if not registry:
+        return None
+    if not re.fullmatch(r"https://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", registry):
+        raise BuildError("NPM registry must be an https URL (set --npm-registry or FIZZ_COM_NPM_REGISTRY)")
+    return registry
 
 
 def parse_build_env(path: Path) -> dict[str, str]:
@@ -293,11 +308,12 @@ def find_reusable_image(root, source, service, cloud):
     return None
 
 
-def build_images(root: Path, services: list[str], cloud, source=None) -> dict[str, str]:
+def build_images(root: Path, services: list[str], cloud, source=None, npm_registry=None) -> dict[str, str]:
     """Push all selected amd64 images; return exact VPC runtime digest references."""
     if not services or len(set(services)) != len(services) or not set(services) <= SERVICES:
         raise ValueError("Select unique services: web server studio admin-ui agent-os game-agent")
     source = source or committed_source(root)
+    registry = optional_npm_registry(npm_registry)
     images = {}
     missing = []
     for service in services:
@@ -329,6 +345,8 @@ def build_images(root: Path, services: list[str], cloud, source=None) -> dict[st
         public = parse_build_env(context / BUILD_ENV)
         environment = docker_environment(config, plugins)
         registry_login(cloud, environment)
+        if registry:
+            print(f"Using opt-in npm registry for this build: {registry}", flush=True)
         for service in services:
             arguments = {}
             if service == "web":
@@ -343,6 +361,8 @@ def build_images(root: Path, services: list[str], cloud, source=None) -> dict[st
                                   "AURORA_STRIP_PREFIX": "1"})
             elif service == "admin-ui":
                 arguments = {"NEXT_PUBLIC_ADMIN_UI_BASE_PATH": "/"}
+            if registry:
+                arguments["NPM_REGISTRY"] = registry
             metadata = temporary / f"{service}-metadata.json"
             command = [
                 "docker", "buildx", "build", "--builder", "default", "--platform", "linux/amd64", "--load",

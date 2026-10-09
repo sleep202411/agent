@@ -260,6 +260,9 @@ def main(argv=None):
     parser.add_argument('services', nargs='*', help='web studio admin-ui server agent-os game-agent, or all')
     parser.add_argument('--kubeconfig', default=os.environ.get('KUBECONFIG'), help='One existing Singapore kubeconfig file')
     parser.add_argument('--image', action='append', default=[], metavar='SERVICE=DIGEST', help='Deploy an already reviewed image instead of building')
+    parser.add_argument('--npm-registry', default=os.environ.get(builder.NPM_REGISTRY_ENV),
+                        help='Opt-in npm registry build-arg for local builds only; unset keeps Dockerfile default. '
+                             f'Also accepted via {builder.NPM_REGISTRY_ENV}.')
     parser.add_argument('--check', action='store_true', help='Read-only identity and existing workload checks; no build/deployment')
     args = parser.parse_args(argv)
     services = list(SERVICES) if args.services == ['all'] else args.services
@@ -298,7 +301,8 @@ def main(argv=None):
                   'Harness volume and existing Kubernetes publishing permissions.')
             return 0
         if services:
-            images = builder.build_images(ROOT, services, cloud, source=source)
+            images = builder.build_images(ROOT, services, cloud, source=source,
+                                          npm_registry=args.npm_registry)
         current = verify_live(kube)
         unchanged(before, current)
         changed = deploy(kube, images, current)

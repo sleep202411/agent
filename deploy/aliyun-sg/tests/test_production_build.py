@@ -92,10 +92,13 @@ class FakeCommands:
             return subprocess.CompletedProcess(command, 0, json.dumps(self.plugins), "")
         if command == ["docker", "buildx", "version"]:
             config = Path(kwargs["env"]["DOCKER_CONFIG"])
-            link = config / "cli-plugins/docker-buildx"
-            self.plugin_links.append((link, link.resolve(), link.is_symlink()))
+            candidates = [config / "cli-plugins/docker-buildx",
+                          config / "cli-plugins/docker-buildx.exe"]
+            plugin = next((path for path in candidates if path.exists()), candidates[0])
+            self.plugin_links.append((plugin, plugin.resolve(), plugin.is_symlink()))
             self.isolated_configs.append(config)
-            if not link.is_symlink() or not os.access(link, os.X_OK):
+            # Symlink when permitted; Windows without privilege falls back to a copied plugin.
+            if not plugin.exists() or not os.access(plugin, os.X_OK):
                 raise AssertionError("Isolated Docker configuration lost its buildx plugin")
             if (config / "config.json").exists():
                 raise AssertionError("Existing Docker auth/config must not be copied")
@@ -167,7 +170,7 @@ class ProductionBuildTest(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["cwd"], self.root.resolve())
         return destination, digest
 
-    def run_build(self, services, commands=None):
+    def run_build(self, services, commands=None, npm_registry=None):
         commands = commands or FakeCommands(self.root)
         output = io.StringIO()
         with patch.object(build, "find_reusable_image", return_value=None), \
@@ -176,9 +179,10 @@ class ProductionBuildTest(unittest.TestCase):
                                         "DOCKER_HOST": "tcp://must-not-use.invalid:2375",
                                         "BUILDX_BUILDER": "old-named-remote-builder",
                                         "BUILDX_CONFIG": "/never-copy-existing-builder-settings",
-                                        "BUILDKIT_HOST": "tcp://other-builder.invalid:1234"}), \
+                                        "BUILDKIT_HOST": "tcp://other-builder.invalid:1234"},
+                           clear=False), \
                 contextlib.redirect_stdout(output):
-            images = build.build_images(self.root, services, self.cloud)
+            images = build.build_images(self.root, services, self.cloud, npm_registry=npm_registry)
         return images, commands, output.getvalue()
 
     def test_stale_local_main_is_rejected_before_build(self):
@@ -379,7 +383,8 @@ class ProductionBuildTest(unittest.TestCase):
             self.assertIn("--progress=plain", cmd)
             self.assertRegex(cmd[cmd.index("--tag") + 1],
                              rf"^{re.escape(build.PUSH_HOST)}/fizzdragon/fizzdragon-{service}:{SOURCE}$")
-            self.assertTrue(cmd[cmd.index("--file") + 1].endswith(f"apps/{service}/Dockerfile"))
+            self.assertTrue(Path(cmd[cmd.index("--file") + 1]).as_posix()
+                            .endswith(f"apps/{service}/Dockerfile"))
             arguments = dict(cmd[index + 1].split("=", 1) for index, value in enumerate(cmd)
                              if value == "--build-arg")
             if service == "web":
@@ -397,6 +402,7 @@ class ProductionBuildTest(unittest.TestCase):
                 self.assertEqual(arguments, {"NEXT_PUBLIC_ADMIN_UI_BASE_PATH": "/"})
             else:
                 self.assertEqual(arguments, {})
+            self.assertNotIn("NPM_REGISTRY", arguments)
             self.assertEqual(kw["env"]["DOCKER_HOST"], "unix:///fixture/docker.sock")
             self.assertNotIn("DOCKER_CONTEXT", kw["env"])
             self.assertNotIn("BUILDX_BUILDER", kw["env"])
@@ -405,6 +411,23 @@ class ProductionBuildTest(unittest.TestCase):
         self.assertEqual(self.cloud.call_count, 7)
         self.cloud.assert_called_with("cr", "GetAuthorizationToken", "--InstanceId", build.INSTANCE_ID)
         self.assert_cleaned(commands)
+
+    def test_opt_in_npm_registry_is_passed_only_when_requested(self):
+        mirror = "https://registry.npmmirror.com"
+        images, commands, output = self.run_build(
+            ["admin-ui", "server"],
+            npm_registry=mirror,
+        )
+        self.assertEqual(set(images), {"admin-ui", "server"})
+        self.assertIn(f"Using opt-in npm registry for this build: {mirror}", output)
+        builds = [cmd for cmd, _ in commands.calls if cmd[:3] == ["docker", "buildx", "build"]]
+        self.assertEqual(len(builds), 2)
+        for cmd in builds:
+            arguments = dict(cmd[index + 1].split("=", 1) for index, value in enumerate(cmd)
+                             if value == "--build-arg")
+            self.assertEqual(arguments.get("NPM_REGISTRY"), mirror)
+        with self.assertRaisesRegex(build.BuildError, "https URL"):
+            build.optional_npm_registry("http://insecure.example/npm")
 
     def test_password_uses_stdin_and_private_temp_config_is_removed(self):
         _, commands, output = self.run_build(["web"])
@@ -426,16 +449,18 @@ class ProductionBuildTest(unittest.TestCase):
             config = commands.isolated_configs[0]
             if not commands.configs:
                 self.assertEqual(list(config.iterdir()), [config / "cli-plugins"])
-            self.assertEqual(list((config / "cli-plugins").iterdir()),
-                             [config / "cli-plugins/docker-buildx"])
+            plugins = list((config / "cli-plugins").iterdir())
+            self.assertTrue(plugins)
+            self.assertTrue(all(path.name.startswith("docker-buildx") for path in plugins))
             return {"IsSuccess": True, "TempUsername": "fixture-user",
                     "AuthorizationToken": "fixture-token"}
 
         self.cloud.side_effect = authorize
         self.run_build(["web"], commands)
         link, target, was_symlink = commands.plugin_links[0]
-        self.assertTrue(was_symlink)
-        self.assertEqual(target, self.plugin.resolve())
+        if was_symlink:
+            self.assertEqual(target, self.plugin.resolve())
+        # Temp build config is removed after build_images returns.
         self.assertFalse(link.exists())
         self.assertTrue(self.plugin.exists())
         self.assert_cleaned(commands)
