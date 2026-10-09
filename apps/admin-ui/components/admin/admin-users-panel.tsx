@@ -60,6 +60,8 @@ export type AdminUserRow = {
   status: AdminUserStatus;
   roleKeys: string[];
   roleKey: AdminRoleKey;
+  /** Bound Web/Java lecturer user id for Academy tools. */
+  platformUserId: string | null;
   requireMfa: boolean;
   mfaEnabledAt: string | null;
   lockedUntil: string | null;
@@ -260,7 +262,9 @@ export function AdminUsersPanel({
 
   async function updateUser(
     user: AdminUserRow,
-    input: Partial<Pick<AdminUserRow, "status" | "displayName" | "roleKey" | "requireMfa">>
+    input: Partial<
+      Pick<AdminUserRow, "status" | "displayName" | "roleKey" | "requireMfa" | "platformUserId">
+    >
   ) {
     const operation = begin();
     if (!operation) return;
@@ -504,6 +508,43 @@ export function AdminUsersPanel({
             options={roleSelectOptions}
             className="h-8 min-w-[112px]"
           />
+        );
+      },
+    },
+    {
+      id: "platformUserId",
+      header: "Web 讲师 ID",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const user = row.original;
+        return (
+          <form
+            className="flex min-w-[160px] items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              const next = String(form.get("platformUserId") ?? "").trim();
+              void updateUser(user, {
+                platformUserId: next.length ? next : null,
+              });
+            }}
+          >
+            <Input
+              name="platformUserId"
+              defaultValue={user.platformUserId ?? ""}
+              placeholder="Web userId"
+              className="h-8 font-mono text-[12px]"
+              disabled={loading || pendingKey === `${user.id}:platformUserId`}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              variant="outline"
+              disabled={loading || pendingKey === `${user.id}:platformUserId`}
+            >
+              绑定
+            </Button>
+          </form>
         );
       },
     },

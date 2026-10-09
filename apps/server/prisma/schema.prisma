@@ -3158,6 +3158,8 @@ model AdminUser {
   passwordHash      String?              @map("password_hash") @db.VarChar(255)
   status            AdminUserStatus      @default(invited)
   siteScope         AdminSiteScope       @default(all) @map("site_scope")
+  /// Web/Java platform user id for Academy lecturer binding. Null = operator view.
+  platformUserId    String?              @unique @map("platform_user_id") @db.VarChar(64)
   requireMfa        Boolean              @default(false) @map("require_mfa")
   mfaSecretHash     String?              @map("mfa_secret_hash") @db.VarChar(255)
   mfaEnabledAt      DateTime?            @map("mfa_enabled_at") @db.Timestamptz(6)

@@ -14,6 +14,8 @@ export type AdminSessionUser = {
   avatarUrl?: string | null;
   status: string;
   siteScope: "global" | "cn" | "all";
+  /** Bound Web lecturer id; null means operator (all-courses) Academy scope. */
+  platformUserId?: string | null;
   roleKeys: string[];
   requireMfa: boolean;
   mfaEnabledAt: string | null;

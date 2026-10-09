@@ -185,22 +185,38 @@ export class AdminUsersService {
       }
 
       const nextStatus = input.status ?? existing.status;
-      await tx.adminUser.update({
-        where: { id: userId },
-        data: {
-          displayName: input.displayName,
-          status: input.status as AdminUserStatus | undefined,
-          siteScope: input.siteScope as AdminSiteScope | undefined,
-          requireMfa: input.requireMfa,
-          ...(input.requireMfa === false
-            ? { mfaSecretHash: null, mfaEnabledAt: null }
-            : {}),
-          disabledAt:
-            nextStatus === AdminUserStatus.disabled
-              ? (existing.disabledAt ?? new Date())
-              : null,
-        },
-      });
+      try {
+        await tx.adminUser.update({
+          where: { id: userId },
+          data: {
+            displayName: input.displayName,
+            status: input.status as AdminUserStatus | undefined,
+            siteScope: input.siteScope as AdminSiteScope | undefined,
+            requireMfa: input.requireMfa,
+            ...(input.platformUserId !== undefined
+              ? { platformUserId: input.platformUserId }
+              : {}),
+            ...(input.requireMfa === false
+              ? { mfaSecretHash: null, mfaEnabledAt: null }
+              : {}),
+            disabledAt:
+              nextStatus === AdminUserStatus.disabled
+                ? (existing.disabledAt ?? new Date())
+                : null,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          throw new ConflictException({
+            code: 'ADMIN_PLATFORM_USER_BOUND',
+            msg: '该 Web 用户 ID 已绑定到其他后台账号。',
+          });
+        }
+        throw error;
+      }
       if (nextRoleId) {
         await replaceAdminRoleInTransaction(tx, userId, nextRoleId, actor.id);
       }
@@ -612,6 +628,7 @@ export class AdminUsersService {
       avatarUrl: user.avatarUrl,
       status: user.status,
       siteScope: user.siteScope,
+      platformUserId: user.platformUserId,
       roleKeys: user.roles.map((userRole) => userRole.role.key).sort(),
       roleKey: primaryRoleKey(user),
       requireMfa: user.requireMfa,

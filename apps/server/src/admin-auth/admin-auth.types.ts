@@ -9,6 +9,8 @@ export interface AdminActor {
   avatarUrl?: string | null;
   status: string;
   siteScope: AdminSiteScopeValue;
+  /** Bound Web/Java user id for lecturer-scoped Academy tools; null for operators. */
+  platformUserId?: string | null;
   sessionId: string;
   roleKeys: string[];
   requireMfa: boolean;

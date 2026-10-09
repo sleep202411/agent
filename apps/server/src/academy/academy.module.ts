@@ -2,6 +2,7 @@ import { LegacyCreatorsModule } from '../legacy-creators/legacy-creators.module'
 import { AcademyLearningService } from './academy-learning.service';
 import {
   AcademyAccessController,
+  AcademyLearningAdminController,
   AcademyLearningController,
   AcademyOfferingController,
 } from './academy-learning.controller';
@@ -38,6 +39,7 @@ import {
     AcademyAccessController,
     AcademyLearningController,
     AcademyOfferingController,
+    AcademyLearningAdminController,
   ],
 })
 export class AcademyModule implements OnModuleInit, OnModuleDestroy {

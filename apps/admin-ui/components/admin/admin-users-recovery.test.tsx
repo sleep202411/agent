@@ -91,6 +91,7 @@ const user = (id: string) =>
     displayName: id,
     roleKey: "operations",
     status: "active",
+    platformUserId: null,
     activeSessionCount: 2,
     requireMfa: true,
     updatedAt: "2026-09-01T00:00:00Z",

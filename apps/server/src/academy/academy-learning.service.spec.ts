@@ -177,6 +177,49 @@ it('prefers Java sale terms over a leftover Nest offering', async () => {
     }),
   );
 });
+it('scopes admin homework to the bound Web lecturer id', async () => {
+  const f = fixture();
+  f.db.academyEnrollment.findMany.mockResolvedValue([
+    {
+      ...f.row,
+      id: '11111111-1111-1111-1111-111111111111',
+      teacherId: '200',
+      studentId: '100',
+      status: 'submitted',
+    },
+  ]);
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    certificateId: 13,
+    instructors: [{ userId: 200 }],
+    localized: { 'en-US': { title: 'Course' } },
+  });
+  const page = await f.service.adminHomework(
+    {
+      id: 'admin',
+      email: 't@example.com',
+      displayName: 'Teacher',
+      status: 'active',
+      siteScope: 'global',
+      platformUserId: '200',
+      sessionId: 's',
+      roleKeys: [],
+      requireMfa: false,
+      permissions: ['courses.read'],
+    },
+    undefined,
+    'submitted',
+  );
+  expect(f.db.academyEnrollment.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({ teacherId: '200', status: 'submitted' }),
+    }),
+  );
+  expect(page.scope).toBe('lecturer');
+  expect(page.platformUserId).toBe('200');
+  expect(page.items).toHaveLength(1);
+});
 it('retries a purchased enrollment without another debit', async () => {
   const f = fixture();
   await f.service.enroll('14', '100', 1);

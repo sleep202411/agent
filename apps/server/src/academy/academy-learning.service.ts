@@ -493,6 +493,41 @@ export class AcademyLearningService {
     if (!record || record.teacherId !== teacherId)
       throw new NotFoundException('Homework not found.');
     await this.teacher(record, teacherId);
+    return this.applyReview(id, teacherId, input);
+  }
+
+  /** Admin-ui review: bound lecturers act as themselves; unbound ops act for the course teacher. */
+  async adminReview(
+    admin: AdminActor,
+    id: string,
+    input: z.infer<typeof ReviewHomework>,
+  ) {
+    this.requireCoursesWrite(admin);
+    const record = await this.db.academyEnrollment.findUnique({
+      where: { id },
+    });
+    if (!record) throw new NotFoundException('Homework not found.');
+    const boundTeacherId = admin.platformUserId?.trim() || null;
+    if (boundTeacherId) {
+      if (record.teacherId !== boundTeacherId)
+        throw new ForbiddenException(
+          'Only homework for your bound Web lecturer account can be reviewed.',
+        );
+      await this.teacher(record, boundTeacherId);
+      return this.applyReview(id, boundTeacherId, input);
+    }
+    return this.applyReview(id, `admin:${admin.id}`, input, {
+      walletActorUserId: record.teacherId,
+    });
+  }
+
+  private async applyReview(
+    id: string,
+    actorId: string,
+    input: z.infer<typeof ReviewHomework>,
+    options?: { walletActorUserId?: string },
+  ) {
+    const walletActor = options?.walletActorUserId ?? actorId;
     const result = await this.db.$transaction(async (tx) => {
       const row = await this.lockEnrollment(tx, id);
       if (row.status !== 'submitted' || row.version !== input.expectedVersion)
@@ -530,11 +565,11 @@ export class AcademyLearningService {
             sourceType: 'HOMEWORK_REVIEW_INCOME',
             sourceId: id,
             idempotencyKey: incomeKey(id, payout.teacherId, payouts.length),
-            actorUserId: teacherId,
+            actorUserId: walletActor,
           });
         }
       }
-      await this.event(tx, updated, teacherId, input.decision, {
+      await this.event(tx, updated, actorId, input.decision, {
         score: input.score,
         feedback: input.feedback,
       });
@@ -542,6 +577,123 @@ export class AcademyLearningService {
     });
     if (input.decision === 'approved') await this.issueBadge(id);
     return result;
+  }
+
+  async adminHomework(
+    admin: AdminActor,
+    after?: string,
+    status?: 'submitted' | 'all',
+  ) {
+    const teacherId = admin.platformUserId?.trim() || null;
+    const rows = await this.db.academyEnrollment.findMany({
+      where: {
+        ...(teacherId ? { teacherId } : {}),
+        ...(status === 'submitted' ? { status: 'submitted' } : {}),
+        ...(after ? { id: { lt: after } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: 21,
+    });
+    const page = rows.slice(0, 20);
+    const names = await this.creators.publicCreatorBatch([
+      ...new Set([
+        ...page.map((row) => row.studentId),
+        ...page.map((row) => row.teacherId),
+      ]),
+    ]);
+    const items = [];
+    for (const row of page) {
+      const course = await this.authority
+        .course(row.courseId)
+        .catch(() => null);
+      if (teacherId) {
+        if (!course?.instructors?.some((i) => String(i.userId) === teacherId))
+          continue;
+      }
+      items.push({
+        ...dto(row),
+        studentName:
+          names.find((n) => n.id === row.studentId)?.nick_name ?? row.studentId,
+        teacherName:
+          names.find((n) => n.id === row.teacherId)?.nick_name ?? row.teacherId,
+        courseTitle:
+          course?.localized?.['en-US']?.title ||
+          course?.localized?.['zh-CN']?.title ||
+          row.courseId,
+      });
+    }
+    return {
+      items,
+      nextCursor: rows.length > 20 ? page.at(-1)!.id : null,
+      scope: teacherId ? ('lecturer' as const) : ('operator' as const),
+      platformUserId: teacherId,
+    };
+  }
+
+  async adminIncomeSummary(admin: AdminActor) {
+    const teacherId = admin.platformUserId?.trim() || null;
+    if (teacherId) {
+      return {
+        ...(await this.teachingSummary(teacherId)),
+        scope: 'lecturer' as const,
+        platformUserId: teacherId,
+      };
+    }
+    const [courses, students, pending, earnings] = await Promise.all([
+      this.db.academyOffering.count(),
+      this.db.academyEnrollment.count(),
+      this.db.academyEnrollment.count({ where: { status: 'submitted' } }),
+      this.db.academyEnrollment.aggregate({
+        where: { status: 'approved' },
+        _sum: { teacherCredits: true },
+      }),
+    ]);
+    return {
+      courses,
+      students,
+      pending,
+      earnedCredits: (earnings._sum.teacherCredits ?? 0n).toString(),
+      scope: 'operator' as const,
+      platformUserId: null as string | null,
+    };
+  }
+
+  async adminAttachment(admin: AdminActor, id: string, assetId: string) {
+    const row = await this.db.academyEnrollment.findUnique({ where: { id } });
+    if (!row || !row.assetIds.includes(assetId))
+      throw new NotFoundException('Attachment not found.');
+    const teacherId = admin.platformUserId?.trim() || null;
+    if (teacherId && row.teacherId !== teacherId)
+      throw new ForbiddenException(
+        'Only attachments for your bound Web lecturer account are available.',
+      );
+    if (teacherId) await this.teacher(row, teacherId);
+    const asset = await this.db.mediaAsset.findFirst({
+      where: {
+        id: assetId,
+        createdByUserId: row.studentId,
+        status: 'ready',
+        moderationStatus: { notIn: ['blocked'] },
+      },
+    });
+    if (!asset) throw new NotFoundException('Attachment is unavailable.');
+    return this.storage.createReadUrl(asset, {
+      expiresInSeconds: 120,
+      cacheControl: 'private, no-store',
+      filename: 'homework',
+    });
+  }
+
+  private requireCoursesWrite(admin: AdminActor) {
+    if (
+      admin.status !== 'active' ||
+      !admin.permissions.includes(ADMIN_PERMISSION_KEYS.CoursesWrite) ||
+      (admin.siteScope !== 'all' &&
+        admin.siteScope !== (CURRENT_CELL === 'cn' ? 'cn' : 'global'))
+    )
+      throw new ForbiddenException(
+        'Course management access for this region is required.',
+      );
   }
 
   async issueBadge(id: string) {
