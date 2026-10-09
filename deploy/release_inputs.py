@@ -1,5 +1,7 @@
 """Committed per-service build identities shared by regional release planners."""
 from functools import lru_cache
+import ast
+import shlex
 import hashlib
 import json
 import re
@@ -76,8 +78,79 @@ def inputs(root, revision, service, region):
                 manifest.pop(key, None)
             entry = raw_path + b"\0" + json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
         selected.append(entry)
-    # Include build arguments/recipe, but not publication, chart or polling code.
-    recipe_path = "deploy/cn-remote-build-services.sh" if region == "cn" else "deploy/aliyun-sg/production-build.py"
-    recipe = git(root, "show", f"{revision}:{recipe_path}")
+    recipe = build_recipe(root, revision, service, region)
     return hashlib.sha256(region.encode() + b'\0' + service.encode() + b'\0' + b'\0'.join(selected) + recipe).hexdigest()
 
+
+def build_recipe(root, revision, service, region):
+    """Compare compilation settings, never authentication/publication/rollout.
+
+    Read historical code as data: no importing or executing a candidate commit.
+    Dockerfiles remain in the service tree fingerprint. Unknown recipe layouts
+    fail closed instead of declaring unrelated images equivalent.
+    """
+    if region == 'cn':
+        code = git(root, 'show', f'{revision}:deploy/cn-remote-build-services.sh').decode()
+        lines = code.replace(chr(92) + chr(10), ' ').splitlines()
+        invocation = [shlex.split(line) for line in lines if line.startswith(f'want {service} && build ')]
+        compiler = [shlex.split(line.strip()) for line in lines if line.strip().startswith('docker build ')]
+        if len(invocation) != 1 or len(compiler) != 1:
+            raise ValueError('Unknown CN compilation recipe')
+        # Only globals consumed by this service's arguments are relevant.
+        globals_used = ['NPM_REGISTRY']
+        arguments = ' '.join(invocation[0])
+        globals_used += [name for name in ('APK_MIRROR', 'SERVER_URL') if '$' + name in arguments]
+        settings = []
+        for name in globals_used:
+            values = [line for line in lines if line.startswith(name + '=')]
+            if len(values) != 1:
+                raise ValueError('Unknown CN build argument default')
+            settings.append(shlex.split(values[0]))
+        return json.dumps([invocation, compiler, settings], sort_keys=True).encode()
+
+    code = git(root, 'show', f'{revision}:deploy/aliyun-sg/production-build.py').decode()
+    tree = ast.parse(code)
+    builders = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'build_images']
+    if len(builders) != 1:
+        raise ValueError('Unknown Singapore compilation recipe')
+    builder = builders[0]
+    branches = []
+    for node in ast.walk(builder):
+        if isinstance(node, ast.If) and ast.dump(node.test) == ast.dump(ast.parse(f'service == {service!r}', mode='eval').body):
+            branches.append([ast.dump(statement) for statement in node.body])
+    commands = [node.value for node in ast.walk(builder) if isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == 'command' for t in node.targets)
+                and isinstance(node.value, ast.List)]
+    if len(commands) != 1:
+        raise ValueError('Unknown Singapore compiler command')
+    # Output location, push/load, progress, and provenance do not change the
+    # application filesystem/config. Keep platform and every other build flag.
+    flags = []
+    skip = False
+    for node in commands[0].elts:
+        if skip:
+            skip = False
+            continue
+        value = node.value if isinstance(node, ast.Constant) else None
+        if value in ('--metadata-file', '--tag', '--progress', '--builder'):
+            skip = True
+            continue
+        if value in ('--push', '--load', '--provenance=false', '--progress=plain'):
+            continue
+        flags.append(ast.dump(node))
+    public = []
+    if service == 'web':
+        public = [ast.dump(n.value) for n in tree.body if isinstance(n, ast.Assign)
+                  and any(isinstance(t, ast.Name) and t.id == 'PUBLIC_ARGS' for t in n.targets)]
+        if len(public) != 1:
+            raise ValueError('Unknown Singapore public build arguments')
+    additions = [ast.dump(n) for n in ast.walk(builder) if isinstance(n, ast.AugAssign)
+                 and isinstance(n.target, ast.Name) and n.target.id == 'command']
+    return json.dumps([branches, flags, public, additions], sort_keys=True).encode()
+
+
+def newest_first(root, source, rows):
+    """Prefer the nearest ancestor source, independently of registry page order."""
+    order = git(root, 'rev-list', '--topo-order', source).decode().splitlines()
+    rank = {tag: index for index, tag in enumerate(order)}
+    return sorted((row for row in rows if row[0] in rank), key=lambda row: rank[row[0]])

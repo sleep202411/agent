@@ -4,7 +4,7 @@
 Never treats registry/API failures as cache misses. Existing SHA tags are retained;
 we do not relabel an old image as if it had been built from a newer checkout.
 """
-from release_inputs import inputs as service_inputs
+from release_inputs import inputs as service_inputs, newest_first
 import json
 from pathlib import Path
 import re
@@ -66,7 +66,7 @@ def digest(region, service, tag):
 
 def find(root, source, region, service):
     expected = inputs(root, source, service, region)
-    for tag, listed_digest in candidates(region, service):
+    for tag, listed_digest in newest_first(root, source, candidates(region, service)):
         if not SHA.fullmatch(tag) or not DIGEST.fullmatch(listed_digest):
             continue
         # Do not pull arbitrary branch content into production or trust unknown SHAs.

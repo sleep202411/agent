@@ -508,7 +508,7 @@ class RegistryReuseTests(unittest.TestCase):
                 result.update(Tag=SOURCE, Digest='bad' if corrupt else digest, Status='NORMAL')
             return result
         with patch.object(build, 'service_inputs', side_effect=['current', 'different' if changed else 'current']), \
-                patch.object(build.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, "deploy/aliyun-sg/production-build.py\n")):
+                patch.object(build.subprocess, 'run', side_effect=lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, (SOURCE + '\n').encode() if 'rev-list' in cmd else 'deploy/aliyun-sg/production-build.py\n')):
             return build.find_reusable_image(Path('/fixture'), SOURCE, 'web', cloud), calls
 
     def test_existing_image_reused_after_prior_partial_release(self):
@@ -545,6 +545,7 @@ class HistoricalRecipeTests(unittest.TestCase):
         ])
         with patch.object(build, 'service_inputs', return_value='current') as identity, \
                 patch.object(build.subprocess, 'run', side_effect=[
+                    subprocess.CompletedProcess([], 0, (SOURCE + '\n').encode()),
                     subprocess.CompletedProcess([], 0),
                     subprocess.CompletedProcess([], 0, '')]):
             self.assertIsNone(build.find_reusable_image(Path('/fixture'), SOURCE, 'web', cloud))

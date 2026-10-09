@@ -108,7 +108,12 @@ Previously pushed services remain reusable after another service fails.
 CN and Singapore share `deploy/release_inputs.py`. Dependency declarations,
 lockfiles, consumed workspace code, regional configuration and build recipes
 remain inputs. Unconsumed workspace entry-point/documentation fields do not
-invalidate other services. A build recipe change can still require rebuilding.
+invalidate other services. Historical recipes are parsed as data to compare
+compilation arguments and platform, not whole scripts: login, retry, push/load,
+logging and rollout changes do not require application rebuilds. The newest
+matching ancestor source tag is preferred across all registry pages and its
+digest is verified before reuse. An image whose historical recipe cannot be
+verified is not eligible for reuse.
 
 All selected images are verified or built before deployment. A changed Server image first
 runs native `prisma migrate deploy` in a short-lived Job using that image and

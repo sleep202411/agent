@@ -224,45 +224,52 @@ def find_reusable_image(root, source, service, cloud):
             or repo.get("InstanceId") != INSTANCE_ID or repo.get("RepoStatus") != "NORMAL"):
         raise BuildError("Singapore image repository identity mismatch")
     page = 1
+    all_rows = []
     while True:
         listing = query("ListRepoTag", RepoId=repo["RepoId"], PageNo=page, PageSize=100)
         rows = listing.get("Images")
         total = listing.get("TotalCount")
         if not isinstance(rows, list) or not isinstance(total, int) or total < 0:
             raise BuildError("Invalid Singapore image listing")
-        for row in rows:
-            tag = row.get("Tag", "")
-            digest = row.get("Digest", "")
-            digest = digest if digest.startswith("sha256:") else "sha256:" + digest
-            if (row.get("Status") != "NORMAL" or not re.fullmatch(r"[0-9a-f]{40}", tag)
-                    or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)):
-                continue
-            ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", tag, source],
-                                      capture_output=True)
-            if ancestry.returncode:
-                continue
-            # Registry history can predate this deployment system. Such images
-            # have no comparable recipe and cannot establish safe reuse.
-            recipe = subprocess.run(
-                ["git", "-C", str(root), "ls-tree", "--name-only", tag, "--",
-                 "deploy/aliyun-sg/production-build.py"],
-                capture_output=True, text=True, check=True)
-            if not recipe.stdout.strip():
-                continue
-            if service_inputs(root, tag, service) != expected:
-                continue
-            verified = query("GetRepoTag", RepoId=repo["RepoId"], Tag=tag)
-            current = verified.get("Digest", "")
-            current = current if current.startswith("sha256:") else "sha256:" + current
-            if verified.get("Tag") != tag or verified.get("Status") != "NORMAL" or current != digest:
-                raise BuildError("Singapore image changed during reuse verification")
-            print(f"Reusing .com {service}:{tag} ({digest}); no build", flush=True)
-            return f"{RUNTIME_HOST}/fizzdragon/fizzdragon-{service}@{digest}"
+        all_rows.extend(rows)
         if page * 100 >= total:
-            return None
+            break
         if not rows:
             raise BuildError("Incomplete Singapore image listing")
         page += 1
+    spec = importlib.util.spec_from_file_location(
+        "sg_release_order", Path(__file__).resolve().parents[1] / "release_inputs.py")
+    identity = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(identity)
+    for _, row in identity.newest_first(root, source, [(row.get("Tag", ""), row) for row in all_rows]):
+        tag = row.get("Tag", "")
+        digest = row.get("Digest", "")
+        digest = digest if digest.startswith("sha256:") else "sha256:" + digest
+        if (row.get("Status") != "NORMAL" or not re.fullmatch(r"[0-9a-f]{40}", tag)
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)):
+            continue
+        ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", tag, source],
+                                  capture_output=True)
+        if ancestry.returncode:
+            continue
+        # Registry history can predate this deployment system. Such images
+        # have no comparable recipe and cannot establish safe reuse.
+        recipe = subprocess.run(
+            ["git", "-C", str(root), "ls-tree", "--name-only", tag, "--",
+             "deploy/aliyun-sg/production-build.py"],
+            capture_output=True, text=True, check=True)
+        if not recipe.stdout.strip():
+            continue
+        if service_inputs(root, tag, service) != expected:
+            continue
+        verified = query("GetRepoTag", RepoId=repo["RepoId"], Tag=tag)
+        current = verified.get("Digest", "")
+        current = current if current.startswith("sha256:") else "sha256:" + current
+        if verified.get("Tag") != tag or verified.get("Status") != "NORMAL" or current != digest:
+            raise BuildError("Singapore image changed during reuse verification")
+        print(f"Reusing .com {service}:{tag} ({digest}); no build", flush=True)
+        return f"{RUNTIME_HOST}/fizzdragon/fizzdragon-{service}@{digest}"
+    return None
 
 
 def build_images(root: Path, services: list[str], cloud, source=None) -> dict[str, str]:
