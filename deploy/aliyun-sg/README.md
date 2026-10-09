@@ -1,131 +1,79 @@
 # Singapore .com production deployment
 
-The six `.com` application services run on Alibaba Cloud Singapore ACK:
-`web`, `server`, `studio`, `admin-ui`, `agent-os` and `game-agent` (Harness).
+The six `.com` services run on Alibaba Cloud Singapore ACK: `web`, `server`,
+`studio`, `admin-ui`, `agent-os` and `game-agent` (Harness).
 
-| Setting               | Value                                                           |
-| --------------------- | --------------------------------------------------------------- |
-| Alibaba Cloud account | `5332868355276356`                                              |
-| Local CLI profile     | `acct6`                                                         |
-| Region                | `ap-southeast-1`                                                |
-| ACK cluster           | `fizzdragon-com-sg` / `cb3e336c4059a4112b65c783e7bf67f1e`       |
-| Namespace             | `fizzdragon`                                                    |
-| ACR instance          | `cri-d97629cirhkt3p9e`                                          |
-| Public push host      | `fizzdragon-com-sg-registry.ap-southeast-1.cr.aliyuncs.com`     |
-| Runtime pull host     | `fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com` |
+Normal publishing runs in the managed [Deploy COM pipeline](https://fizzdragon-ap-southeast-1.devops.alibabacloudcs.com/flow/pipelines/3998215/current).
+The GitHub push webhook triggers this pipeline for commits merged into `main`.
+Colleagues only need GitHub repository access. Cloud permissions,
+Docker and Kubernetes credentials stay in the managed job; no ECS Runner,
+local cloud login or personal IP allowlist is required.
 
-Use `deploy/deploy-com.sh` from the repository root. The old Azure deployment
-entrypoint and Azure build workflow are disabled. The `.cn` deployment is
-independent and continues to use its own account, configuration and scripts.
+`deploy/deploy-com.sh` remains the single publishing entrypoint. `.cn` has its own
+account and deployment scripts.
 
-## Operator setup
+| Setting                    | Value                                                           |
+| -------------------------- | --------------------------------------------------------------- |
+| Account / region           | `5332868355276356` / `ap-southeast-1`                           |
+| ACK cluster                | `fizzdragon-com-sg` / `cb3e336c4059a4112b65c783e7bf67f1e`       |
+| Namespace                  | `fizzdragon`                                                    |
+| ACR instance               | `cri-d97629cirhkt3p9e`                                          |
+| Registry for push and pull | `fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com` |
 
-Each deployer uses their own RAM identity and kubeconfig for this account and
-cluster. Reuse the standard system policies `AliyunCSFullAccess` and
-`AliyunContainerRegistryFullAccess`, together with **Administrator** RBAC access
-to this ACK cluster. Cloud API permissions and Kubernetes RBAC are separate;
-both are required. No custom deployment permission hierarchy is needed.
+## Managed pipeline configuration
 
-For operators also managing RDS, `AliyunRDSFullAccess` is the standard system
-policy. It covers all RDS resources in the account, so that scope must be
-authorized before assignment. Database SQL login uses a separate database
-account and network connection; the deployment script uses existing in-cluster
-credentials and does not require a local database password.
+- GitHub App installation: only `Fizzdragon-Pte-Ltd-2/fizzdragon-platform`, with
+  read access to code and metadata. Source connection: `fizzdragon-com-github`.
+- Source: `main`, filter `^main$`, push events only, full history (clone depth `0`).
+  Add the source's GitHub webhook to this repository with a shared signature
+  secret. The deployment helper changes must reach `main` before the first
+  managed publishing run; merging them triggers that first release.
+- Managed VPC pool: `fizzdragon-com-sg`, attached to the existing Singapore VPC.
+  Use `XLARGE_8C16G`, a 60-minute job timeout and Docker Daemon. Set job
+  concurrency across pipeline runs to `1`, with up to `100` pipeline runs
+  running or queued; do not cancel an active deployment when a new push arrives.
+- Native **Setup Kubeconfig**: Singapore cluster connection over Private Network,
+  output `/root/.kube/config`. Its existing RAM role has administrator RBAC for
+  this cluster only. No kubeconfig or account key is stored in the repository.
+- **Prepare COM Tools**: Python 3.11 virtual environment at
+  `/opt/fizzdragon-release` and checksum-verified `kubectl` matching ACK 1.36.
+- Native **Docker Login ACR**: the existing Singapore enterprise ACR connection,
+  using the VPC registry host. The builder uses this job's temporary Docker login.
+- **Publish COM** executes the existing entrypoint from the cloned repository:
 
-1. Install Python 3.9+, Git, Alibaba Cloud CLI, kubectl and Docker with buildx.
-   Start the local Docker daemon before building images.
-2. Configure the local profile with the deployer's own authorized RAM identity:
+  ```bash
+  set -euo pipefail
+  set +x
+  export PATH="/opt/fizzdragon-release/bin:$PATH"
+  ./deploy/deploy-com.sh all --kubeconfig /root/.kube/config
+  ```
 
-   ```bash
-   aliyun configure --profile acct6
-   ```
+For a read-only check in the same environment, replace `all` with `--check`.
+The check validates the known ACK TLS endpoint, namespace identity, six ready
+Deployments, database Secret references, Harness PVC and publishing permissions.
+It reads metadata only and does not build images, run SQL or deploy.
 
-   If that identity supports CLI OAuth login, use
-   `aliyun configure --mode OAuth --profile acct6`, select the international
-   site (`INTL`, `1`) and region `ap-southeast-1`. Do not reuse another
-   operator's CLI configuration or credentials.
+## Release behavior
 
-3. In ACK, open this cluster's connection information and download a kubeconfig
-   for the deployer's identity. Choose an API endpoint reachable from the
-   deployment machine and keep TLS certificate verification enabled.
-4. Select that one kubeconfig and run the read-only preflight:
+Publishing requires a clean `main` checkout and captures its full committed SHA
+once. Builds use an archive of that revision, the repository `.dockerignore` and
+approved public inputs in `apps/web/.env.production.com`; local environment files
+are excluded. Images target `linux/amd64`, carry source/input labels, are tagged
+with the full SHA and are deployed by immutable digest.
 
-   ```bash
-   export KUBECONFIG="$HOME/.kube/config-fizzdragon-com-sg"
-   ./deploy/deploy-com.sh --check
-   kubectl auth can-i patch deployments.apps -n fizzdragon
-   kubectl auth can-i create jobs.batch -n fizzdragon
-   kubectl auth can-i delete jobs.batch -n fizzdragon
-   docker buildx version
-   ```
+The running immutable image is reused when its source is an ancestor of this
+release and its per-service input fingerprint matches. The shared
+`deploy/release_inputs.py` accounts for source, consumed workspace dependencies,
+lockfiles, regional configuration and compilation arguments. Existing images
+without these labels are rebuilt once. Registry errors stop the release.
+A failed push is retried once without recompiling; expired native credentials
+require a new pipeline run.
 
-`--check` verifies account identity, cluster endpoint/TLS, namespace, six ready
-workloads, canonical database Secret references, the Harness workspace PVC and
-the required Kubernetes RBAC permissions. It does not exercise actual writes,
-image builds, registry login/push, SQL migration or a browser journey. The
-commands above do not build or deploy.
-
-## Publish selected services
-
-Review the source and database migrations, complete the relevant local checks,
-and merge the release into `main`. Every release, including `--image`, requires
-literal `main` and a clean working tree, including no untracked files. Then
-deploy the changed services:
-
-```bash
-./deploy/deploy-com.sh web
-./deploy/deploy-com.sh server studio game-agent
-./deploy/deploy-com.sh all
-
-# Deploy a reviewed image already present in Singapore ACR:
-./deploy/deploy-com.sh --image web=sha256:<64-hex-digest>
-```
-
-`all` builds all six services. Legacy `agent` is retired. Server, Studio and
-Game Agent builds require the current Harness integration; deploy components
-that change together in the same invocation. An existing image digest establishes
-content identity; the operator must also verify release compatibility.
-
-The builder captures the committed HEAD SHA once and archives that exact revision
-into a temporary context. It does not follow subsequent branch changes or include
-local modifications/untracked source. Local environment files are excluded;
-public `.com` build inputs come from the committed
-`apps/web/.env.production.com`. Builds target `linux/amd64`, tag images with the
-full source SHA and deploy the pushed immutable `sha256` digest. Registry
-authentication uses a temporary Docker configuration removed after the build.
-The script does not start Docker, prune images or change Git. Read-only `--check`
-does not require `main` or a clean working tree.
-
-Before building, the release scans Singapore ACR for ancestor SHA tags with
-matching per-service committed build inputs, verifies the registry digest, and
-reuses matching images without requiring Docker. Registry errors stop the
-release rather than triggering fallback builds. Missing images are built locally
-with `--load`; credentials are refreshed immediately before pushing, and a failed
-push is retried once without recompilation. The completed local image remains
-available if both pushes fail; a later invocation may use Docker's build cache.
-Previously pushed services remain reusable after another service fails.
-
-CN and Singapore share `deploy/release_inputs.py`. Dependency declarations,
-lockfiles, consumed workspace code, regional configuration and build recipes
-remain inputs. Unconsumed workspace entry-point/documentation fields do not
-invalidate other services. Historical recipes are parsed as data to compare
-compilation arguments and platform, not whole scripts: login, retry, push/load,
-logging and rollout changes do not require application rebuilds. The newest
-matching ancestor source tag is preferred across all registry pages and its
-digest is verified before reuse. An image whose historical recipe cannot be
-verified is not eligible for reuse.
-
-All selected images are verified or built before deployment. A changed Server image first
-runs native `prisma migrate deploy` in a short-lived Job using that image and
-the existing database admin Secret, owner role and CA. Database credentials
-remain in the cluster. Migration failure stops before application image updates;
-each subsequent image update waits for rollout readiness.
-
-The script patches only the selected existing container image fields, including
-an existing Server `db-migrate` init container when present. It preserves runtime
-environment, Secrets, volumes, service identities, networking, replica counts
-and rollout strategies. Concurrent workload changes stop the release rather
-than overwrite another deployment.
+All selected images are ready before any production mutation. A changed Server
+image first runs native Prisma migrations in a Job using existing in-cluster
+credentials. A failed migration stops before application image changes. Each
+image update waits for rollout readiness, preserves runtime configuration and
+stops if another deployment changes the workloads concurrently.
 
 ## Failure handling and configuration changes
 

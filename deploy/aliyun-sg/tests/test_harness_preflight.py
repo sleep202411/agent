@@ -15,12 +15,8 @@ SPEC.loader.exec_module(preflight)
 
 def metadata():
     return [
-        {"AccountId": "5332868355276356"},
-        {"cluster_id": preflight.TARGET["clusterId"], "name": "fizzdragon-com-sg",
-         "region_id": "ap-southeast-1", "state": "running",
-         "master_url": json.dumps({"api_server_endpoint": "https://ack.example.test:6443"})},
-        {"clusters": [{"cluster": {"server": "https://ack.example.test:6443/"}}]},
-        {"metadata": {"name": "fizzdragon", "uid": "namespace-fixture"},
+        {"clusters": [{"cluster": {"server": "https://10.80.22.97:6443/"}}]},
+        {"metadata": {"name": "fizzdragon", "uid": preflight.NAMESPACE_UID},
          "status": {"phase": "Active"}},
         {"items": [{"metadata": {"name": "fixture-disk"},
                     "provisioner": "diskplugin.csi.alibabacloud.com",
@@ -34,74 +30,53 @@ class HarnessPreflightTest(unittest.TestCase):
             result = preflight.verify("/private/fixture-kubeconfig")
         return result, read
 
-    def test_correct_account_and_endpoint_use_only_explicit_read_commands(self):
+    def test_native_credentials_verify_target_without_cloud_keys_or_secret_reads(self):
         result, read = self.verify(metadata())
-        self.assertTrue(result["cloudIdentityVerified"])
+        self.assertTrue(result["clusterIdentityVerified"])
         self.assertTrue(result["kubeconfigEndpointVerified"])
         self.assertFalse(result["secretsRead"])
         self.assertFalse(result["mutationsPerformed"])
         self.assertFalse(result["deploymentReady"])
-        self.assertEqual(result["namespaceUid"], "namespace-fixture")
+        self.assertEqual(result["namespaceUid"], preflight.NAMESPACE_UID)
         self.assertEqual(result["storageClasses"][0]["name"], "fixture-disk")
         calls = [call.args[0] for call in read.call_args_list]
-        self.assertEqual(calls[:2], [
-            ["aliyun", "sts", "GetCallerIdentity", "--profile", "acct6", "--region", "ap-southeast-1"],
-            ["aliyun", "cs", "GET", f"/clusters/{preflight.TARGET['clusterId']}",
-             "--profile", "acct6", "--region", "ap-southeast-1"],
-        ])
-        self.assertEqual([call[5:] for call in calls[2:]], [
+        self.assertEqual([call[5:] for call in calls], [
             ["config", "view", "--minify", "-o", "json"],
             ["get", "namespace", "fizzdragon", "-o", "json"],
             ["get", "storageclass", "-o", "json"],
         ])
-        self.assertTrue(all(call[1:5] == ["--kubeconfig", "/private/fixture-kubeconfig",
-                                        "--namespace", "fizzdragon"] for call in calls[2:]))
+        self.assertTrue(all(call[:5] == ["kubectl", "--kubeconfig", "/private/fixture-kubeconfig",
+                                        "--namespace", "fizzdragon"] for call in calls))
 
-    def test_wrong_account_stops_before_cluster_or_kube_access(self):
-        with patch.object(preflight, "read_json", return_value={"AccountId": "5941647929258385"}) as read:
-            with self.assertRaisesRegex(preflight.PreflightError, "stopped before cluster access"):
-                preflight.verify("unused")
-        self.assertEqual(read.call_count, 1)
-
-    def test_wrong_cluster_identity_or_state_stops_before_kube_access(self):
-        for key, value in [("cluster_id", "other"), ("name", "other"),
-                           ("region_id", "cn-hangzhou"), ("state", "initial")]:
-            with self.subTest(key=key):
-                responses = metadata()
-                responses[1][key] = value
-                with patch.object(preflight, "read_json", side_effect=responses) as read:
-                    with self.assertRaises(preflight.PreflightError):
-                        preflight.verify("unused")
-                self.assertEqual(read.call_count, 2)
+    def test_reviewed_public_endpoint_is_also_supported(self):
+        responses = metadata()
+        responses[0]["clusters"][0]["cluster"]["server"] = "https://8.222.158.175:6443"
+        self.assertTrue(self.verify(responses)[0]["clusterIdentityVerified"])
 
     def test_untrusted_kube_endpoint_or_tls_stops_before_remote_kube_requests(self):
         invalid = [
             {"server": "https://other.example.test:6443"},
-            {"server": "http://ack.example.test:6443"},
-            {"server": "https://token@ack.example.test:6443"},
-            {"server": "https://ack.example.test:6443?token=hidden"},
-            {"server": "https://ack.example.test:6443", "insecure-skip-tls-verify": True},
-            {"server": "https://ack.example.test:6443", "proxy-url": "https://proxy.example.test"},
+            {"server": "http://10.80.22.97:6443"},
+            {"server": "https://token@10.80.22.97:6443"},
+            {"server": "https://10.80.22.97:6443?token=hidden"},
+            {"server": "https://10.80.22.97:6443", "insecure-skip-tls-verify": True},
+            {"server": "https://10.80.22.97:6443", "proxy-url": "https://proxy.example.test"},
         ]
         for cluster in invalid:
             with self.subTest(cluster=cluster):
                 responses = metadata()
-                responses[2]["clusters"][0]["cluster"] = cluster
+                responses[0]["clusters"][0]["cluster"] = cluster
                 with patch.object(preflight, "read_json", side_effect=responses) as read:
                     with self.assertRaises(preflight.PreflightError):
                         preflight.verify("unused")
-                self.assertEqual(read.call_count, 3)
+                self.assertEqual(read.call_count, 1)
 
-    def test_empty_or_malformed_cloud_endpoints_fail_closed(self):
-        for endpoints in [None, "invalid", "{}", {}, [], {"api": "http://ack.example.test"},
-                          {"api": ""}, {"api": 42}]:
-            with self.subTest(endpoints=endpoints):
-                responses = metadata()
-                responses[1]["master_url"] = endpoints
-                with patch.object(preflight, "read_json", side_effect=responses) as read:
-                    with self.assertRaises(preflight.PreflightError):
-                        preflight.verify("unused")
-                self.assertEqual(read.call_count, 2)
+    def test_missing_or_multiple_selected_clusters_fail_closed(self):
+        for config in [{}, {"clusters": []}, {"clusters": [{"cluster": {}}, {"cluster": {}}]}]:
+            with self.subTest(config=config), patch.object(preflight, "read_json", return_value=config) as read:
+                with self.assertRaises(preflight.PreflightError):
+                    preflight.verify("unused")
+                self.assertEqual(read.call_count, 1)
 
     def test_missing_ambiguous_or_inactive_namespace_is_rejected(self):
         for replacement in [{"metadata": {"name": "other", "uid": "x"}},
@@ -110,11 +85,11 @@ class HarnessPreflightTest(unittest.TestCase):
                             {"metadata": {"name": "fizzdragon", "uid": "x", "deletionTimestamp": "now"}},
                             {"metadata": {"name": "fizzdragon", "uid": "x"}, "status": {"phase": "Terminating"}}]:
             responses = metadata()
-            responses[3] = replacement
+            responses[1] = replacement
             with patch.object(preflight, "read_json", side_effect=responses) as read:
                 with self.assertRaises(preflight.PreflightError):
                     preflight.verify("unused")
-            self.assertEqual(read.call_count, 4)
+            self.assertEqual(read.call_count, 2)
 
     def test_cli_errors_and_bad_json_do_not_disclose_raw_output(self):
         for result in [subprocess.CompletedProcess([], 1, "credential-secret", "signed-url-secret"),
@@ -122,7 +97,7 @@ class HarnessPreflightTest(unittest.TestCase):
                        subprocess.CompletedProcess([], 0, "[]", "")]:
             with patch.object(preflight.subprocess, "run", return_value=result):
                 with self.assertRaises(preflight.PreflightError) as error:
-                    preflight.read_json(["aliyun", "sts", "GetCallerIdentity"])
+                    preflight.read_json(["kubectl", "get", "namespace"])
             self.assertNotIn("credential-secret", str(error.exception))
             self.assertNotIn("signed-url-secret", str(error.exception))
 
@@ -133,7 +108,7 @@ class HarnessPreflightTest(unittest.TestCase):
                         {"items": [{"metadata": {"name": "x"}, "provisioner": "p", "reclaimPolicy": {"bad": "value"}}]}]:
             with self.subTest(invalid=invalid):
                 responses = metadata()
-                responses[4] = invalid
+                responses[2] = invalid
                 with self.assertRaises(preflight.PreflightError):
                     self.verify(responses)
 

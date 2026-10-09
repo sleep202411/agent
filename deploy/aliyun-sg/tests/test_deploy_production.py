@@ -438,7 +438,9 @@ class DeployProductionTest(unittest.TestCase):
         original = copy.deepcopy(self.kube.deployments)
         result, _, build = self.main(["web"])
         self.assertEqual(result, 0)
-        build.assert_called_once_with(deploy.ROOT, ["web"], deploy.cloud, source=SOURCE)
+        build.assert_called_once_with(deploy.ROOT, ["web"],
+                                     {s: obj["spec"]["template"]["spec"]["containers"][0]["image"]
+                                      for s, obj in original.items()}, source=SOURCE)
         self.assertEqual([args[2] for args in self.kube.patches()], ["fizzdragon-web"])
         for service in set(deploy.SERVICES) - {"web"}:
             self.assertEqual(self.kube.deployments[service], original[service])
@@ -477,23 +479,22 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual(result, 1); self.assertNotIn("fixture-password", self.output.getvalue())
         self.assertIn("Build or metadata validation failed", self.output.getvalue())
 
-    def test_account_namespace_and_live_validation_fail_before_build(self):
-        for mode in ("account", "verified-namespace", "live-namespace", "pvc"):
+    def test_endpoint_namespace_and_live_validation_fail_before_build(self):
+        for mode in ("endpoint", "verified-namespace", "live-namespace", "pvc"):
             with self.subTest(mode=mode):
                 self.kube = FakeKube()
                 if mode == "live-namespace": self.kube.namespace["metadata"]["uid"] = "wrong"
                 if mode == "pvc": self.kube.pvc["status"]["phase"] = "Pending"
-                error = deploy.preflight.PreflightError("Profile acct6 must address account 5332868355276356") if mode == "account" else None
+                error = deploy.preflight.PreflightError("Kubeconfig endpoint does not match Singapore") if mode == "endpoint" else None
                 result, _, build = self.main(["web"], identity_error=error, wrong_uid=mode == "verified-namespace")
                 self.assertEqual(result, 1); build.assert_not_called(); self.assertFalse(self.kube.patches())
 
-    def test_real_identity_preflight_rejects_wrong_account_before_cluster_or_build(self):
+    def test_real_preflight_rejects_wrong_cluster_before_remote_access_or_build(self):
         with tempfile.NamedTemporaryFile() as kubeconfig:
-            def cloud_identity(args):
-                self.assertEqual(args, ["aliyun", "sts", "GetCallerIdentity", "--profile", "acct6",
-                                        "--region", "ap-southeast-1"])
-                return {"AccountId": "5941647929258385"}
-            with patch.object(deploy.preflight, "read_json", side_effect=cloud_identity) as reads, \
+            def wrong_cluster(args):
+                self.assertEqual(args[-5:], ["config", "view", "--minify", "-o", "json"])
+                return {"clusters": [{"cluster": {"server": "https://cn-cluster.invalid:6443"}}]}
+            with patch.object(deploy.preflight, "read_json", side_effect=wrong_cluster) as reads, \
                     patch.object(deploy.builder, "committed_source", return_value=SOURCE), \
                     patch.object(deploy.builder, "build_images") as build, patch.object(deploy, "command") as command:
                 result = deploy.main(["web", "--kubeconfig", kubeconfig.name])
@@ -506,18 +507,11 @@ class DeployProductionTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile() as kubeconfig:
             def read_metadata(args):
                 calls.append(args)
-                if args[:3] == ["aliyun", "sts", "GetCallerIdentity"]:
-                    return {"AccountId": target["accountId"]}
-                if args[:3] == ["aliyun", "cs", "GET"]:
-                    self.assertEqual(args[3], "/clusters/" + target["clusterId"])
-                    return {"cluster_id": target["clusterId"], "region_id": target["region"],
-                            "name": target["clusterName"], "state": "running",
-                            "master_url": {"internal": "https://fixture-ack.invalid:6443"}}
                 prefix = ["kubectl", "--kubeconfig", kubeconfig.name, "--namespace", "fizzdragon"]
                 self.assertEqual(args[:len(prefix)], prefix)
                 operation = args[len(prefix):]
                 if operation[:2] == ["config", "view"]:
-                    return {"clusters": [{"cluster": {"server": "https://fixture-ack.invalid:6443"}}]}
+                    return {"clusters": [{"cluster": {"server": "https://10.80.22.97:6443"}}]}
                 if operation[:3] == ["get", "namespace", "fizzdragon"]:
                     return {"metadata": {"name": "fizzdragon", "uid": "different-existing-namespace"},
                             "status": {"phase": "Active"}}
@@ -528,7 +522,7 @@ class DeployProductionTest(unittest.TestCase):
                     patch.object(deploy.builder, "build_images") as build, patch.object(deploy, "command") as command:
                 result = deploy.main(["web", "--kubeconfig", kubeconfig.name])
             self.assertEqual(result, 1); build.assert_not_called(); command.assert_not_called()
-            self.assertEqual(len(calls), 5)
+            self.assertEqual(len(calls), 2)
 
     def test_invalid_selection_or_kubeconfig_stops_before_identity_or_build(self):
         with patch.object(deploy.preflight, "verify") as verify, \

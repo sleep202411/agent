@@ -54,10 +54,6 @@ def command(argv, data=None, timeout=45):
     return result.stdout
 
 
-def cloud(*args):
-    return json.loads(command(['aliyun', *args, '--profile', 'acct6', '--region', 'ap-southeast-1']))
-
-
 def pinned_image(service, value):
     if service not in SERVICES:
         raise DeployError(f'Unsupported service: {service}')
@@ -288,7 +284,7 @@ def main(argv=None):
                             '--request-timeout=30s', *arguments], data, timeout)
 
         before = verify_live(kube)
-        print('Verified account 5332868355276356 / ap-southeast-1 / fizzdragon-com-sg / fizzdragon', flush=True)
+        print('Verified Singapore ACK endpoint and existing fizzdragon production namespace', flush=True)
         selected = services or list(images) or (list(SERVICES) if args.check else [])
         migrate_server = 'server' in selected and (
             not images or images.get('server') != before['server']['spec']['template']['spec']['containers'][0]['image'])
@@ -298,7 +294,8 @@ def main(argv=None):
                   'Harness volume and existing Kubernetes publishing permissions.')
             return 0
         if services:
-            images = builder.build_images(ROOT, services, cloud, source=source)
+            images = builder.build_images(ROOT, services, {s: obj['spec']['template']['spec']['containers'][0]['image']
+                                                         for s, obj in before.items()}, source=source)
         current = verify_live(kube)
         unchanged(before, current)
         changed = deploy(kube, images, current)

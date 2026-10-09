@@ -67,8 +67,10 @@ Two production deployments use this monorepo:
 - **`.com`** — Alibaba Cloud Singapore ACK, account `5332868355276356`,
   profile `acct6`, region `ap-southeast-1`, cluster `fizzdragon-com-sg`,
   namespace `fizzdragon`. Six active services: Web, Server, Studio, Admin UI,
-  Agent OS and Harness/Game Agent. Publish through `deploy/deploy-com.sh`;
-  see `deploy/aliyun-sg/README.md` for operator setup and release behavior.
+  Agent OS and Harness/Game Agent. Managed cloud publishing uses the single
+  entrypoint `deploy/deploy-com.sh`; see `deploy/aliyun-sg/README.md` for the
+  `main` push webhook and Flow job configuration. The job supplies temporary ACK
+  and ACR credentials; colleagues need no local cloud profile or ECS Runner.
   Normal releases require clean `main` and build its fixed committed HEAD;
   `--check` is read-only and does not require that branch state.
 - **`.cn`** — Alibaba Cloud Hangzhou ACK, cluster `fizzdragon-cn`, with its own

@@ -13,13 +13,14 @@ from urllib.parse import urlsplit
 
 TARGET = {
     "accountId": "5332868355276356",
-    "profile": "acct6",
     "region": "ap-southeast-1",
     "clusterName": "fizzdragon-com-sg",
     "clusterId": "cb3e336c4059a4112b65c783e7bf67f1e",
     "namespace": "fizzdragon",
     "release": "fizzdragon",
 }
+API_ENDPOINTS = {("10.80.22.97", 6443), ("8.222.158.175", 6443)}
+NAMESPACE_UID = "249a9075-37f2-4c41-aefc-050edd800e63"
 
 
 class PreflightError(Exception):
@@ -63,31 +64,9 @@ def metadata_string(value, limit=256):
 
 
 def verify(kubeconfig):
-    cloud = lambda *args: read_json([
-        "aliyun", *args, "--profile", TARGET["profile"], "--region", TARGET["region"],
-    ])
-    identity = cloud("sts", "GetCallerIdentity")
-    if str(identity.get("AccountId")) != TARGET["accountId"]:
-        raise PreflightError("Profile acct6 must address account 5332868355276356; stopped before cluster access")
-
-    cluster = cloud("cs", "GET", f"/clusters/{TARGET['clusterId']}")
-    if (cluster.get("region_id") != TARGET["region"]
-            or cluster.get("name") != TARGET["clusterName"]
-            or cluster.get("cluster_id") != TARGET["clusterId"]
-            or cluster.get("state") != "running"):
-        raise PreflightError("ACK metadata must match the running fizzdragon-com-sg cluster in Singapore")
-    endpoints = cluster.get("master_url")
-    try:
-        if isinstance(endpoints, str):
-            endpoints = json.loads(endpoints)
-        if not isinstance(endpoints, dict) or not endpoints:
-            raise ValueError()
-        valid_endpoints = {endpoint(value) for value in endpoints.values() if value}
-        if not valid_endpoints:
-            raise ValueError()
-    except (ValueError, TypeError):
-        raise PreflightError("ACK metadata does not contain verifiable API endpoints") from None
-
+    # Flow supplies a temporary kubeconfig through its native ACK connection.
+    # Verify the known production endpoint and namespace identity directly;
+    # the publishing process needs no Alibaba CLI profile or account key.
     kube = lambda *args: read_json([
         "kubectl", "--kubeconfig", kubeconfig, "--namespace", TARGET["namespace"], *args,
     ])
@@ -101,17 +80,17 @@ def verify(kubeconfig):
             raise PreflightError("Kubeconfig must verify the ACK API server TLS certificate")
         if configured_cluster.get("proxy-url"):
             raise PreflightError("Kubeconfig proxy-url requires separate endpoint review")
-        if endpoint(configured_cluster["server"]) not in valid_endpoints:
+        if endpoint(configured_cluster["server"]) not in API_ENDPOINTS:
             raise PreflightError("Kubeconfig endpoint does not match the verified Singapore ACK cluster")
     except (KeyError, IndexError, TypeError, ValueError):
         raise PreflightError("Cannot verify the selected kubeconfig cluster") from None
 
     namespace = kube("get", "namespace", TARGET["namespace"], "-o", "json")
     metadata = namespace.get("metadata", {})
-    if (metadata.get("name") != TARGET["namespace"] or not metadata_string(metadata.get("uid"), 128)
+    if (metadata.get("name") != TARGET["namespace"] or metadata.get("uid") != NAMESPACE_UID
             or metadata.get("deletionTimestamp")
             or namespace.get("status", {}).get("phase") != "Active"):
-        raise PreflightError("The existing fizzdragon namespace must be active")
+        raise PreflightError("The existing Singapore fizzdragon namespace identity must match and be active")
     classes = kube("get", "storageclass", "-o", "json")
     if not isinstance(classes.get("items"), list):
         raise PreflightError("StorageClass list metadata is invalid")
@@ -133,7 +112,7 @@ def verify(kubeconfig):
         "target": TARGET,
         "namespaceUid": metadata["uid"],
         "storageClasses": storage_classes,
-        "cloudIdentityVerified": True,
+        "clusterIdentityVerified": True,
         "kubeconfigEndpointVerified": True,
         "secretsRead": False,
         "mutationsPerformed": False,
