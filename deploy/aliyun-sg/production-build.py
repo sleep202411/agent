@@ -241,6 +241,14 @@ def find_reusable_image(root, source, service, cloud):
                                       capture_output=True)
             if ancestry.returncode:
                 continue
+            # Registry history can predate this deployment system. Such images
+            # have no comparable recipe and cannot establish safe reuse.
+            recipe = subprocess.run(
+                ["git", "-C", str(root), "ls-tree", "--name-only", tag, "--",
+                 "deploy/aliyun-sg/production-build.py"],
+                capture_output=True, text=True, check=True)
+            if not recipe.stdout.strip():
+                continue
             if service_inputs(root, tag, service) != expected:
                 continue
             verified = query("GetRepoTag", RepoId=repo["RepoId"], Tag=tag)

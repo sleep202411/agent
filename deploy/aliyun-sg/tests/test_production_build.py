@@ -508,7 +508,7 @@ class RegistryReuseTests(unittest.TestCase):
                 result.update(Tag=SOURCE, Digest='bad' if corrupt else digest, Status='NORMAL')
             return result
         with patch.object(build, 'service_inputs', side_effect=['current', 'different' if changed else 'current']), \
-                patch.object(build.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)):
+                patch.object(build.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, "deploy/aliyun-sg/production-build.py\n")):
             return build.find_reusable_image(Path('/fixture'), SOURCE, 'web', cloud), calls
 
     def test_existing_image_reused_after_prior_partial_release(self):
@@ -531,3 +531,22 @@ class RegistryReuseTests(unittest.TestCase):
         result, calls = self.lookup(second_page=True)
         self.assertIsNotNone(result)
         self.assertEqual(sum(c[1] == 'ListRepoTag' for c in calls), 2)
+
+
+class HistoricalRecipeTests(unittest.TestCase):
+    def test_legacy_image_without_recipe_is_skipped_before_fingerprinting(self):
+        digest = 'sha256:' + 'a' * 64
+        cloud = Mock(side_effect=[
+            {'IsSuccess': True, 'Code': 'success', 'TotalCount': 1, 'Repositories': [
+                {'RepoId': 'repo', 'RepoName': 'fizzdragon-web', 'RepoNamespaceName': 'fizzdragon',
+                 'InstanceId': build.INSTANCE_ID, 'RepoStatus': 'NORMAL'}]},
+            {'IsSuccess': True, 'Code': 'success', 'TotalCount': 1, 'Images': [
+                {'Tag': SOURCE, 'Digest': digest, 'Status': 'NORMAL'}]},
+        ])
+        with patch.object(build, 'service_inputs', return_value='current') as identity, \
+                patch.object(build.subprocess, 'run', side_effect=[
+                    subprocess.CompletedProcess([], 0),
+                    subprocess.CompletedProcess([], 0, '')]):
+            self.assertIsNone(build.find_reusable_image(Path('/fixture'), SOURCE, 'web', cloud))
+            identity.assert_called_once()
+        self.assertEqual(cloud.call_count, 2)
