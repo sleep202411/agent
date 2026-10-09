@@ -52,6 +52,12 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder --chown=appuser:nodejs /app/apps/admin-ui/.next/standalone ./
 COPY --from=builder --chown=appuser:nodejs /app/apps/admin-ui/.next/static ./apps/admin-ui/.next/static
 COPY --from=builder --chown=appuser:nodejs /app/apps/admin-ui/public ./apps/admin-ui/public
+# Belt-and-suspenders: standalone tracing can drop css-tree/data/*.json
+# (SSR: Cannot find module '../data/patch.json').
+COPY --from=builder --chown=appuser:nodejs /app/node_modules/css-tree/data ./node_modules/css-tree/data
+# Next standalone file tracing can omit css-tree JSON data (MODULE_NOT_FOUND
+# ../data/patch.json) while still shipping lib/data-patch.js — copy explicitly.
+COPY --from=builder --chown=appuser:nodejs /app/node_modules/css-tree/data ./node_modules/css-tree/data
 
 USER appuser
 

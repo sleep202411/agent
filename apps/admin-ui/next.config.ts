@@ -6,6 +6,11 @@ const basePath = rawBasePath === "/" ? "" : rawBasePath.replace(/\/+$/, "");
 const nextConfig: NextConfig = {
   output: "standalone",
   ...(basePath ? { basePath } : {}),
+  // css-tree loads JSON under data/ at runtime; Next file tracing often omits
+  // those assets from standalone and SSR then throws MODULE_NOT_FOUND.
+  outputFileTracingIncludes: {
+    "/**": ["../../node_modules/css-tree/data/**/*"],
+  },
 };
 
 export default nextConfig;
