@@ -8,7 +8,6 @@ type Session = {
   more: boolean;
   busy: boolean;
   failed: boolean;
-  accessDenied: boolean;
   items: CrewAsset[];
 };
 type Snapshot = {
@@ -16,7 +15,6 @@ type Snapshot = {
   items: CrewAsset[];
   loading: boolean;
   error?: string;
-  accessDenied: boolean;
   more: boolean;
 };
 export function useCrewAssets(owner: string | undefined, crewId: string, query: AssetQuery) {
@@ -25,12 +23,6 @@ export function useCrewAssets(owner: string | undefined, crewId: string, query: 
   const key = JSON.stringify([owner, crewId, queryKey, revision]);
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
-  const [snapshotScope, setSnapshotScope] = useState(key);
-  // Returning to an earlier scope requires a fresh response, not its old snapshot.
-  if (snapshotScope !== key) {
-    setSnapshotScope(key);
-    setSnapshot(undefined);
-  }
   const load = useCallback(
     async (session: Session) => {
       if (session.busy || !session.more || session.abort.signal.aborted) return;
@@ -53,13 +45,11 @@ export function useCrewAssets(owner: string | undefined, crewId: string, query: 
         session.cursor = result.nextCursor;
         session.more = !!result.nextCursor;
         session.failed = false;
-        session.accessDenied = false;
       } catch (cause) {
         if (session.abort.signal.aborted) return;
         const status =
           cause && typeof cause === "object" && "status" in cause ? cause.status : undefined;
-        if (status === 401 || status === 403 || status === 404 || status === 410) {
-          session.accessDenied = true;
+        if (status === 401 || status === 403 || status === 404) {
           session.items = [];
           session.cursor = null;
           session.seen.clear();
@@ -74,7 +64,6 @@ export function useCrewAssets(owner: string | undefined, crewId: string, query: 
             items: session.items,
             loading: false,
             error,
-            accessDenied: session.accessDenied,
             more: session.more,
           });
       }
@@ -91,7 +80,6 @@ export function useCrewAssets(owner: string | undefined, crewId: string, query: 
       more: true,
       busy: false,
       failed: false,
-      accessDenied: false,
       items: [],
     };
     current.current = session;
@@ -111,13 +99,7 @@ export function useCrewAssets(owner: string | undefined, crewId: string, query: 
       (session.failed && !retry)
     )
       return;
-    setSnapshot({
-      key,
-      items: session.items,
-      loading: true,
-      more: true,
-      accessDenied: session.accessDenied,
-    });
+    setSnapshot({ key, items: session.items, loading: true, more: true });
     void load(session);
   };
   const visible = owner && snapshot?.key === key ? snapshot : undefined;
@@ -125,7 +107,6 @@ export function useCrewAssets(owner: string | undefined, crewId: string, query: 
     items: visible?.items ?? [],
     loading: !!owner && (visible?.loading ?? true),
     error: visible?.error,
-    accessDenied: visible?.accessDenied ?? false,
     hasMore: visible?.more ?? false,
     loadMore: () => more(false),
     retry: () => more(true),

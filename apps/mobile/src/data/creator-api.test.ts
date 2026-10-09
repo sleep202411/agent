@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { fetchCreatorById, searchCreators } from "./creator-api";
+import { fetchCreatorById } from "./creator-api";
 const mocks = vi.hoisted(() => ({ post: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ api: { post: mocks.post } }));
 vi.mock("@/config", () => ({
@@ -12,9 +12,7 @@ vi.mock("@/config", () => ({
   },
   resolveAssetUrl: (path: string, base: string) => `${base}/${path}`,
 }));
-beforeEach(() => {
-  mocks.post.mockReset();
-});
+beforeEach(() => mocks.post.mockReset());
 it("maps assigned creator qualifications into the existing profile tags", async () => {
   mocks.post.mockResolvedValue({
     info: { id: "creator", nickName: "Artist" },
@@ -68,44 +66,4 @@ it("ignores non-string education without losing the public profile", async () =>
     info: { id: "artist", nickName: "Artist", study: { bad: true } },
   });
   expect(await fetchCreatorById("artist")).toMatchObject({ name: "Artist", study: undefined });
-});
-
-it("uses Web search query parameters and maps wrapped and flat creator rows", async () => {
-  mocks.post.mockResolvedValue({
-    data: [
-      { info: { id: "1", nickName: "Alice" }, level: [{ id: 13, name: "Producer" }] },
-      { id: "2", nickName: "Bob" },
-      { id: "2" },
-      null,
-    ],
-    sum: 71,
-  });
-  const result = await searchCreators(" Alice ", 50, 50);
-  expect(mocks.post).toHaveBeenCalledWith("/user/search/users", {
-    service: "content",
-    params: { key: "Alice", page: 2, pageSize: 50 },
-    raw: true,
-    retry: false,
-  });
-  expect(result.creators.map((c) => c.name)).toEqual(["Alice", "Bob"]);
-  expect(result.creators[0]?.levels[0]?.name).toBe("Producer");
-  expect(result.nextOffset).toBe(100);
-  expect(result.total).toBe(71);
-});
-it("does not turn malformed or failed searches into an empty directory", async () => {
-  mocks.post.mockResolvedValue({ data: null });
-  await expect(searchCreators("A")).rejects.toThrow("response");
-  mocks.post.mockResolvedValue({ data: [], sum: -1 });
-  await expect(searchCreators("A")).rejects.toThrow("total");
-  mocks.post.mockRejectedValue(new Error("Java search unavailable"));
-  await expect(searchCreators("A")).rejects.toThrow("Java search unavailable");
-});
-it("stops search pagination on a genuinely empty transport page", async () => {
-  mocks.post.mockResolvedValue({ data: [], sum: 300 });
-  expect((await searchCreators("A", 50, 100)).nextOffset).toBe(100);
-});
-
-it("preserves profile lookup failures instead of reporting a missing creator", async () => {
-  mocks.post.mockRejectedValue(new Error("Creator service offline"));
-  await expect(fetchCreatorById("artist")).rejects.toThrow("Creator service offline");
 });

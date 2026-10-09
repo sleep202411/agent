@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { useFocusEffect, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -10,10 +10,11 @@ import { LanguageSheet, LOCALE_NAMES } from "@/components/language-switcher";
 import { ThemedText } from "@/components/themed-text";
 import { appEnv, resolveAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
-import { useMyCrews } from "@/features/profile/use-my-crews";
-import { useMyIps } from "@/features/profile/use-my-ips";
+import { fetchMyCrews } from "@/data/crew-api";
+import { fetchMyIps, type MyIp } from "@/data/ip-api";
 import { useMyWorks } from "@/features/profile/use-my-works";
 import { ListFooter } from "@/components/ui";
+import type { CrewSummary } from "@/data/types";
 import { openPaywall } from "@/features/paywall";
 import { usePersonalBalances } from "@/features/profile/use-personal-balances";
 import { useTheme } from "@/hooks/use-theme";
@@ -35,7 +36,6 @@ interface Tile {
   subtitle?: string;
   badge?: string;
   href?: string;
-  editHref?: string;
   /** Tap feedback for tiles with no destination (e.g. unpublished IPs). */
   alert?: { title: string; message: string };
   /** Invisible spacer that pads a partial last row to keep the grid aligned. */
@@ -87,11 +87,36 @@ export default function MineScreen() {
   const [tab, setTab] = useState<TabKey>("works");
   const [languageOpen, setLanguageOpen] = useState(false);
   const ownerWorks = useMyWorks(authOwnerKey);
-  const ownerIps = useMyIps(authOwnerKey);
-  const ownerCrews = useMyCrews(authOwnerKey);
+  const [ips, setIps] = useState<MyIp[]>();
+  const [crews, setCrews] = useState<CrewSummary[]>();
   const balances = usePersonalBalances(authOwnerKey);
   const pointsBalance = balances?.community;
   const computeBalance = balances?.compute;
+  const [loadedFor, setLoadedFor] = useState<string>();
+
+  useEffect(() => {
+    // Personal collections are user-scoped — only fetch once signed in, so a
+    // guest never fires (and 401s) these requests.
+    if (!authOwnerKey) return;
+    let active = true;
+    void Promise.all([fetchMyIps(), fetchMyCrews()])
+      .then(([nextIps, nextCrews]) => {
+        if (!active) return;
+        setIps(nextIps);
+        setCrews(nextCrews);
+        setLoadedFor(authOwnerKey);
+      })
+      .catch(() => {
+        if (!active) return;
+        setIps([]);
+        setCrews([]);
+        setLoadedFor(authOwnerKey);
+      });
+    return () => {
+      active = false;
+    };
+  }, [authOwnerKey]);
+
   const displayName =
     auth.user?.nickName ??
     auth.user?.nickname ??
@@ -109,9 +134,10 @@ export default function MineScreen() {
       ? resolveAssetUrl(rawAvatar, appEnv.assets.userBaseUrl)
       : undefined;
 
+  const hasCurrentUserData = Boolean(authOwnerKey && loadedFor === authOwnerKey);
   const currentWorks = ownerWorks.works;
-  const currentIps = ownerIps.items;
-  const currentCrews = ownerCrews.items;
+  const currentIps = hasCurrentUserData ? ips : undefined;
+  const currentCrews = hasCurrentUserData ? crews : undefined;
 
   const tiles = useMemo<Tile[] | undefined>(() => {
     if (tab === "works") {
@@ -119,7 +145,6 @@ export default function MineScreen() {
         id: work.id,
         title: work.title,
         href: `/work/${encodeURIComponent(work.id)}`,
-        editHref: `/publish-work?workId=${encodeURIComponent(work.id)}`,
         coverUrl: work.coverUrl,
         badge:
           work.reviewStatus === 0
@@ -132,13 +157,18 @@ export default function MineScreen() {
       }));
     }
     if (tab === "ips") {
-      // Published IPs retain playback; drafts open their authenticated editor.
+      // Only published IPs open the public plaza detail; everything else is
+      // not publicly resolvable yet, so explain instead of 404-ing.
       return currentIps?.map((ip) => ({
         id: ip.id,
         title: ip.title,
         coverUrl: ip.coverUrl,
-        editHref: `/ip-studio/${ip.id}`,
-        href: ip.published ? `/ip/${ip.id}` : `/ip-studio/${ip.id}`,
+        ...(ip.published
+          ? { href: `/ip/${ip.id}` }
+          : {
+              badge: t("mine.reviewPending"),
+              alert: { title: t("mine.ipPendingTitle"), message: t("mine.ipPendingBody") },
+            }),
       }));
     }
     return currentCrews?.map((crew) => ({
@@ -193,65 +223,23 @@ export default function MineScreen() {
         columnWrapperStyle={styles.column}
         contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         showsVerticalScrollIndicator={false}
-        onEndReached={
-          tab === "works" ? ownerWorks.loadMore : tab === "ips" ? ownerIps.loadMore : undefined
-        }
+        onEndReached={tab === "works" ? ownerWorks.loadMore : undefined}
         onEndReachedThreshold={0.5}
         ListFooterComponent={
           tab === "works" ? (
             ownerWorks.failed ? (
-              <View style={styles.collectionFooter}>
-                <ThemedText accessibilityRole="alert" style={{ textAlign: "center" }}>
-                  {ownerWorks.error ?? t("creatorDetail.personalWorksError")}
+              <View style={styles.empty}>
+                <ThemedText accessibilityRole="alert">
+                  {t("creatorDetail.personalWorksError")}
                 </ThemedText>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={ownerWorks.retry}
-                  style={{ minHeight: 44, justifyContent: "center" }}
-                >
+                <Pressable accessibilityRole="button" onPress={ownerWorks.retry}>
                   <ThemedText>{t("profileEdit.retry")}</ThemedText>
                 </Pressable>
               </View>
             ) : (
               <ListFooter loading={ownerWorks.loading} />
             )
-          ) : tab === "ips" ? (
-            <View style={styles.empty}>
-              {ownerIps.error ? (
-                <>
-                  <ThemedText accessibilityRole="alert">{ownerIps.error}</ThemedText>
-                  <Pressable accessibilityRole="button" onPress={ownerIps.retry}>
-                    <ThemedText>{t("common.retry")}</ThemedText>
-                  </Pressable>
-                </>
-              ) : ownerIps.loading ? (
-                <ListFooter loading />
-              ) : (
-                <Pressable accessibilityRole="button" onPress={ownerIps.refresh}>
-                  <ThemedText>{t("thread.refresh")}</ThemedText>
-                </Pressable>
-              )}
-            </View>
-          ) : (
-            <View style={styles.collectionFooter}>
-              {ownerCrews.error ? (
-                <ThemedText accessibilityRole="alert" style={{ textAlign: "center" }}>
-                  {ownerCrews.error}
-                </ThemedText>
-              ) : null}
-              {ownerCrews.loading ? (
-                <ListFooter loading />
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={ownerCrews.refresh}
-                  style={{ minHeight: 44, justifyContent: "center" }}
-                >
-                  <ThemedText>{t(ownerCrews.error ? "common.retry" : "thread.refresh")}</ThemedText>
-                </Pressable>
-              )}
-            </View>
-          )
+          ) : null
         }
         ListHeaderComponent={
           <View>
@@ -392,23 +380,6 @@ export default function MineScreen() {
               </View>
             </View>
 
-            {!!balances?.errors.length && (
-              <View style={{ gap: 4, paddingHorizontal: 16 }}>
-                {balances.errors.map((message, index) => (
-                  <ThemedText key={index} type="small" accessibilityRole="alert">
-                    {message}
-                  </ThemedText>
-                ))}
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={balances.refresh}
-                  style={{ paddingVertical: 8 }}
-                >
-                  <ThemedText type="small">{t("common.retry")}</ThemedText>
-                </Pressable>
-              </View>
-            )}
-
             <Pressable
               accessibilityRole="button"
               onPress={() => router.push("/referrals")}
@@ -438,108 +409,6 @@ export default function MineScreen() {
               </View>
             </Pressable>
 
-            <Pressable
-              accessibilityRole="button"
-              style={{ padding: 16 }}
-              onPress={() => router.push(toHref("/ai-lab"))}
-            >
-              <ThemedText type="smallBold">{t("aiLab.heading")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ padding: 16 }}
-              onPress={() => router.push(toHref("/courses"))}
-            >
-              <ThemedText type="smallBold">{t("courses.title")}</ThemedText>
-            </Pressable>
-            {tab === "ips" && (
-              <Pressable
-                accessibilityRole="button"
-                style={{ padding: 16 }}
-                onPress={() => router.push(toHref("/ip-studio/create"))}
-              >
-                <ThemedText type="smallBold">{t("ipCreate.heading")}</ThemedText>
-              </Pressable>
-            )}
-            {tab === "works" && (
-              <Pressable
-                accessibilityRole="button"
-                style={{ padding: 16 }}
-                onPress={() => router.push(toHref("/publish-work"))}
-              >
-                <ThemedText type="smallBold">{t("publishWork.title")}</ThemedText>
-              </Pressable>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/orders"))}
-            >
-              <ThemedText type="smallBold">{t("orders.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/inbox"))}
-            >
-              <ThemedText type="smallBold">{t("inbox.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/my-services"))}
-            >
-              <ThemedText type="smallBold">{t("myServices.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/certification-application"))}
-            >
-              <ThemedText type="smallBold">{t("levelApplication.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/earnings"))}
-            >
-              <ThemedText type="smallBold">{t("creatorEarnings.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/task-center"))}
-            >
-              <ThemedText type="smallBold">{t("crewTaskCenter.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/my-agreements"))}
-            >
-              <ThemedText type="smallBold">{t("myContracts.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/private-cases"))}
-            >
-              <ThemedText type="smallBold">{t("account.resolutionCenter")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/task-feedback"))}
-            >
-              <ThemedText type="smallBold">{t("feedbackHistory.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/text-adventures"))}
-            >
-              <ThemedText type="smallBold">{t("textAdventures.library.title")}</ThemedText>
-            </Pressable>
             {/* Tab bar */}
             <View style={[styles.tabBar, { borderBottomColor: theme.border }]}>
               {TABS.map((item) => {
@@ -573,14 +442,11 @@ export default function MineScreen() {
           </View>
         }
         ListEmptyComponent={
-          loading ||
-          (tab === "works" && (ownerWorks.failed || ownerWorks.loading)) ||
-          (tab === "ips" && (ownerIps.error || ownerIps.loading)) ||
-          (tab === "crews" && (ownerCrews.error || ownerCrews.loading)) ? null : (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-              {emptyText}
-            </ThemedText>
-          )
+          <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
+            {loading || (tab === "works" && (ownerWorks.failed || ownerWorks.loading))
+              ? ""
+              : emptyText}
+          </ThemedText>
         }
         renderItem={({ item }) => {
           if (item.ghost) return <View style={styles.cell} />;
@@ -595,26 +461,6 @@ export default function MineScreen() {
               accessibilityRole={onPress ? "button" : undefined}
               disabled={!onPress}
               onPress={onPress}
-              onLongPress={item.editHref ? () => router.push(toHref(item.editHref!)) : undefined}
-              accessibilityHint={
-                item.editHref
-                  ? t(tab === "ips" ? "ipAuthor.editHint" : "publishWork.editHint")
-                  : undefined
-              }
-              accessibilityActions={
-                item.editHref
-                  ? [
-                      {
-                        name: "edit",
-                        label: t(tab === "ips" ? "ipAuthor.heading" : "publishWork.edit"),
-                      },
-                    ]
-                  : undefined
-              }
-              onAccessibilityAction={(event) => {
-                if (event.nativeEvent.actionName === "edit" && item.editHref)
-                  router.push(toHref(item.editHref));
-              }}
               style={styles.cell}
             >
               <View style={styles.tile}>
@@ -826,12 +672,6 @@ const styles = StyleSheet.create({
   },
   tileTitle: {
     paddingHorizontal: 2,
-  },
-  collectionFooter: {
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
-    alignItems: "center",
-    gap: Spacing.two,
   },
   empty: {
     paddingTop: Spacing.eight,

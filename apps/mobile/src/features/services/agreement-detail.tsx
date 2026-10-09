@@ -14,8 +14,7 @@ import {
 type Props = {
   crewId: string;
   agreementId: string;
-  /** Omitted for direct links; recipient is resolved from the authorized server list. */
-  memberUserId?: string;
+  memberUserId: string;
   userId: string;
   generation: number;
   onClose: () => void;

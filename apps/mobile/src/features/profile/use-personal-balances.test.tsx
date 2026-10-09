@@ -1,26 +1,20 @@
-import { act, useEffect } from "react";
+import { act, useEffect, type EffectCallback } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { usePersonalBalances } from "./use-personal-balances";
-const h = vi.hoisted(() => ({
-  community: vi.fn(),
-  compute: vi.fn(),
-  focused: true,
-  foreground: true,
-}));
-vi.mock("@/hooks/use-app-active", () => ({
-  useScreenActive: () => h.focused && h.foreground,
+const h = vi.hoisted(() => ({ community: vi.fn(), compute: vi.fn(), focused: true }));
+vi.mock("expo-router", () => ({
+  useFocusEffect: (effect: EffectCallback) => {
+    const focused = h.focused;
+    useEffect(() => (focused ? effect() : undefined), [effect, focused]);
+  },
 }));
 vi.mock("@/data/ip-api", () => ({ fetchCommunityPointBalance: h.community }));
 vi.mock("@/features/paywall/lib/compute-wallet", () => ({ fetchComputeWalletBalance: h.compute }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
-let latest: ReturnType<typeof usePersonalBalances>;
 function Probe({ owner }: { owner?: string }) {
   const balances = usePersonalBalances(owner);
-  useEffect(() => {
-    latest = balances;
-  }, [balances]);
   return (
     <div>
       {balances?.community ?? "unknown"}/{balances?.compute ?? "unknown"}
@@ -38,7 +32,6 @@ function deferred<T>() {
 beforeEach(() => {
   vi.resetAllMocks();
   h.focused = true;
-  h.foreground = true;
   h.community.mockResolvedValue("10");
   h.compute.mockResolvedValue("20");
   host = document.createElement("div");
@@ -99,37 +92,4 @@ it("refreshes on return and isolates a failed balance request", async () => {
   h.focused = true;
   await render("alice:1");
   expect(host.textContent).toBe("unknown/88");
-});
-
-it.each(["focused", "foreground"] as const)(
-  "clears stale balances and aborts both reads across %s changes",
-  async (state) => {
-    await render("alice:1");
-    expect(host.textContent).toBe("10/20");
-    const signal = h.community.mock.calls[0][0] as AbortSignal;
-    expect(h.compute.mock.calls[0][0]).toBe(signal);
-    h[state] = false;
-    await render("alice:1");
-    expect(signal.aborted).toBe(true);
-    expect(host.textContent).toBe("unknown/unknown");
-    const next = deferred<string>();
-    h.community.mockReturnValueOnce(next.promise);
-    h.compute.mockResolvedValueOnce("88");
-    h[state] = true;
-    await render("alice:1");
-    expect(host.textContent).toBe("unknown/unknown");
-    expect(h.community).toHaveBeenCalledTimes(2);
-    await act(async () => next.resolve("15"));
-    expect(host.textContent).toBe("15/88");
-  }
-);
-
-it("shows the failed wallet detail and retries without losing the other result", async () => {
-  h.community.mockRejectedValueOnce(Error("Community temporarily unavailable"));
-  await render("alice:1");
-  expect(latest?.errors).toEqual(["Community temporarily unavailable"]);
-  expect(latest?.compute).toBe("20");
-  await act(async () => latest?.refresh());
-  expect(latest?.errors).toEqual([]);
-  expect(host.textContent).toBe("10/20");
 });

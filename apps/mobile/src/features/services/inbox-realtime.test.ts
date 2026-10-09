@@ -3,7 +3,6 @@ import { api } from "@/lib/api-client";
 import { openInboxRealtime } from "./inbox-realtime";
 const h = vi.hoisted(() => ({
   generation: 1,
-  state: "initialized",
   options: {} as any,
   message: undefined as any,
   channelState: undefined as any,
@@ -23,9 +22,6 @@ vi.mock("ably", () => ({
       get: (name: string) => {
         h.channel(name);
         return {
-          get state() {
-            return h.state;
-          },
           subscribe: (_: string, fn: unknown) => {
             h.message = fn;
             return Promise.resolve();
@@ -50,7 +46,6 @@ const grant = { channel: "conversation:user:1", tokenRequest: { clientId: "1", m
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
-  h.state = "initialized";
 });
 it("uses the authenticated grant and invalidates after attach and relevant events", async () => {
   const refresh = vi.fn(),
@@ -104,44 +99,4 @@ it("aborts pending grant requests on close and terminates revoked connections", 
   expect(vi.mocked(api.get).mock.calls[0][1]?.signal?.aborted).toBe(true);
   expect(h.close).toHaveBeenCalledOnce();
   close();
-});
-
-it("refreshes a resumed attached channel without waiting for a new message", () => {
-  const refresh = vi.fn(),
-    error = vi.fn();
-  const close = openInboxRealtime("1", 1, refresh, error);
-  h.connectionState({ current: "connected" });
-  expect(refresh).not.toHaveBeenCalled();
-  h.state = "attached";
-  h.connectionState({ current: "disconnected" });
-  expect(error).toHaveBeenCalledOnce();
-  h.connectionState({ current: "connected" });
-  expect(refresh).toHaveBeenCalledOnce();
-  h.state = "suspended";
-  h.connectionState({ current: "connected" });
-  expect(refresh).toHaveBeenCalledOnce();
-  h.state = "attached";
-  h.generation++;
-  h.connectionState({ current: "connected" });
-  expect(refresh).toHaveBeenCalledOnce();
-  h.generation--;
-  close();
-  h.connectionState({ current: "connected" });
-  expect(refresh).toHaveBeenCalledOnce();
-});
-it("invalidates notifications without trusting event payloads and ignores them after cleanup", () => {
-  const refresh = vi.fn();
-  const close = openInboxRealtime("1", 1, refresh, vi.fn());
-  h.message({
-    data: { event: "notification.created", data: { id: "notice", body: "Untrusted preview" } },
-  });
-  expect(refresh).toHaveBeenCalledOnce();
-  expect(refresh).toHaveBeenCalledWith();
-  h.generation = 2;
-  h.message({ data: { event: "notification.created" } });
-  expect(refresh).toHaveBeenCalledOnce();
-  h.generation = 1;
-  close();
-  h.message({ data: { event: "notification.created" } });
-  expect(refresh).toHaveBeenCalledOnce();
 });

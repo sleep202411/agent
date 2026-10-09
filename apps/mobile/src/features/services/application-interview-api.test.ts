@@ -29,7 +29,6 @@ const row = {
 const page = {
   applicationStatus: "pending",
   canUpdate: true,
-  canMessage: true,
   version: 2,
   state: "confirmed",
   scheduledAt: row.scheduledAt,
@@ -127,28 +126,4 @@ it("requires a completed receipt for completion", async () => {
   await expect(
     updateApplicationInterview("app", "creator", 1, { ...body, action: "complete" })
   ).rejects.toThrow();
-});
-
-it.each([true, false])(
-  "accepts server messaging permission for approved applicants: %s",
-  async (canMessage) => {
-    vi.mocked(api.get).mockResolvedValue({
-      ...page,
-      applicationStatus: "approved",
-      canUpdate: false,
-      canMessage,
-    });
-    await expect(fetchApplicationInterview("app", null, signal())).resolves.toMatchObject({
-      canUpdate: false,
-      canMessage,
-    });
-  }
-);
-it.each([
-  { applicationStatus: "rejected", canUpdate: false, canMessage: true },
-  { canMessage: false },
-  { canMessage: undefined },
-])("rejects inconsistent or missing messaging permission %j", async (patch) => {
-  vi.mocked(api.get).mockResolvedValue({ ...page, ...patch });
-  await expect(fetchApplicationInterview("app", null, signal())).rejects.toThrow();
 });

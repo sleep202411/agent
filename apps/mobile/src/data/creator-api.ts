@@ -89,7 +89,6 @@ export interface CreatorsPage {
   total: number;
   /** Guest hit the public cap (50) and there are more behind a login. */
   requiresLogin: boolean;
-  nextOffset?: number;
 }
 
 type CreatorsListDto = {
@@ -138,53 +137,14 @@ export async function fetchCreators(limit = 50, offset = 0): Promise<CreatorsPag
 }
 
 export async function fetchCreatorById(id: string): Promise<CreatorSummary | undefined> {
-  const envelope = await api.post<CreatorDetailEnvelope>("/user/other/user/info", {
-    params: { UserId: id },
-    raw: true,
-    service: "content",
-  });
-  return mapCreator({ info: envelope.info, level: envelope.level });
-}
-
-/** Web's server-side name search; page offsets count transport rows, not mapped cards. */
-export async function searchCreators(key: string, limit = 50, offset = 0): Promise<CreatorsPage> {
-  if (!key.trim()) return fetchCreators(limit, offset);
-  if (
-    !Number.isSafeInteger(limit) ||
-    limit < 1 ||
-    limit > 50 ||
-    !Number.isSafeInteger(offset) ||
-    offset < 0 ||
-    offset % limit !== 0
-  )
-    throw new Error("Invalid creator search page.");
-  const result = await api.post<{
-    data?: (CreatorRowDto | CreatorInfoDto)[];
-    sum?: number;
-    total?: number;
-  }>("/user/search/users", {
-    service: "content",
-    params: { key: key.trim(), page: offset / limit + 1, pageSize: limit },
-    raw: true,
-    retry: false,
-  });
-  if (!Array.isArray(result.data)) throw new Error("Invalid creator search response.");
-  const total = result.sum ?? result.total ?? offset + result.data.length;
-  if (!Number.isSafeInteger(total) || total < 0) throw new Error("Invalid creator search total.");
-  const seen = new Set<string>();
-  const creators = result.data.flatMap((row) => {
-    if (!row || typeof row !== "object") return [];
-    const creator = mapCreator(
-      "info" in row ? (row as CreatorRowDto) : { info: row as CreatorInfoDto }
-    );
-    if (!creator || seen.has(creator.id)) return [];
-    seen.add(creator.id);
-    return [creator];
-  });
-  return {
-    creators,
-    total,
-    requiresLogin: false,
-    nextOffset: result.data.length ? offset + limit : offset,
-  };
+  try {
+    const envelope = await api.post<CreatorDetailEnvelope>("/user/other/user/info", {
+      params: { UserId: id },
+      raw: true,
+      service: "content",
+    });
+    return mapCreator({ info: envelope.info, level: envelope.level });
+  } catch {
+    return undefined;
+  }
 }

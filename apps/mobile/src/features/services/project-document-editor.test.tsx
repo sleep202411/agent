@@ -4,20 +4,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProjectDocumentEditor } from "./project-document-editor";
 const h = vi.hoisted(() => ({
   generation: 1,
-  prevent: false,
-  routeRemove: undefined as undefined | ((event: { data: { action: { type: string } } }) => void),
-  dispatch: vi.fn(),
   save: vi.fn(),
   close: vi.fn(),
   saved: vi.fn(),
   receive: undefined as undefined | ((raw: unknown) => void),
-}));
-vi.mock("expo-router", () => ({ useNavigation: () => ({ dispatch: h.dispatch }) }));
-vi.mock("expo-router/build/react-navigation/core/usePreventRemove", () => ({
-  usePreventRemove: (prevent: boolean, callback: typeof h.routeRemove) => {
-    h.prevent = prevent;
-    h.routeRemove = callback;
-  },
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -123,36 +113,4 @@ it("ignores duplicated save events while pending and late results after account 
   h.generation = 2;
   await act(async () => resolve(page));
   expect(h.saved).not.toHaveBeenCalled();
-});
-
-it("asks before route removal and dispatches the original action only after discard", async () => {
-  expect(h.prevent).toBe(false);
-  await send({ type: "dirty" });
-  expect(h.prevent).toBe(true);
-  const action = { type: "GO_BACK" };
-  await act(async () => h.routeRemove!({ data: { action } }));
-  expect(h.dispatch).not.toHaveBeenCalled();
-  await click("documentEditor.keepEditing");
-  expect(h.dispatch).not.toHaveBeenCalled();
-  await act(async () => h.routeRemove!({ data: { action } }));
-  await click("documentEditor.discard");
-  expect(h.dispatch).toHaveBeenCalledWith(action);
-  expect(h.close).not.toHaveBeenCalled();
-});
-it("blocks route removal and an already-visible discard while saving", async () => {
-  await send({ type: "dirty" });
-  await click("crewTasks.back");
-  let finish!: (value: unknown) => void;
-  h.save.mockReturnValueOnce(
-    new Promise((resolve) => {
-      finish = resolve;
-    })
-  );
-  await send({ type: "save", document: documentValue });
-  await click("documentEditor.discard");
-  await act(async () => h.routeRemove!({ data: { action: { type: "GO_BACK" } } }));
-  expect(h.close).not.toHaveBeenCalled();
-  expect(h.dispatch).not.toHaveBeenCalled();
-  await act(async () => finish(page));
-  expect(h.saved).toHaveBeenCalledOnce();
 });

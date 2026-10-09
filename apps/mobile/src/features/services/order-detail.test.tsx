@@ -3,7 +3,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { order } from "./order-detail-fixture.test-helper";
 import { OrderDetail } from "./order-detail";
-vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("@/features/services/user-displays", () => ({ useUserDisplays: () => new Map() }));
 const h = vi.hoisted(() => ({
   send: vi.fn(),
@@ -13,7 +12,6 @@ const h = vi.hoisted(() => ({
   generation: 1,
   userId: "buyer",
   authenticated: true,
-  active: true,
 }));
 
 vi.mock("@/lib/api-client", () => ({ api: { post: vi.fn() } }));
@@ -35,7 +33,6 @@ vi.mock("@/auth", () => ({
   }),
   useAuthGate: () => ({ requireAuth: h.gate }),
 }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 const translate = (key: string) => key;
@@ -85,7 +82,6 @@ beforeEach(() => {
   h.generation = 1;
   h.userId = "creator";
   h.authenticated = true;
-  h.active = true;
   h.load.mockResolvedValue(order);
   host = document.createElement("div");
   document.body.append(host);
@@ -141,145 +137,12 @@ it("does not fetch for guests", async () => {
   expect(h.gate).toHaveBeenCalled();
 });
 
-it("requires a fresh read after a failed transition without automatically retrying it", async () => {
+it("keeps the current status and surfaces a failed transition without automatic retry", async () => {
   h.send.mockRejectedValue(new Error("Cannot accept a cancelled order"));
   await render();
   await act(async () => click("orderDetail.action.accept"));
   await act(async () => click("orderDetail.confirm"));
   expect(host.textContent).toContain("Cannot accept a cancelled order");
-  expect(host.textContent).not.toContain("orders.status.pending_creator");
-  expect(host.textContent).not.toContain("orderDetail.confirm");
-  expect(h.send).toHaveBeenCalledTimes(1);
-  h.load.mockResolvedValue({ ...order, status: "cancelled" });
-  await act(async () => click("orderDetail.refresh"));
-  expect(host.textContent).toContain("orders.status.cancelled");
-  expect(host.textContent).not.toContain("orderDetail.action.accept");
-});
-
-it.each(["denied", "foreign response"])(
-  "removes stale order details when refresh returns %s",
-  async (failure) => {
-    await render();
-    expect(host.textContent).toContain("A film");
-    if (failure === "denied") h.load.mockRejectedValue(new Error("Access revoked"));
-    else h.load.mockResolvedValue({ ...order, buyerId: "other-buyer", creatorId: "other-creator" });
-    await act(async () => click("orderDetail.refresh"));
-    expect(host.textContent).not.toContain("A film");
-    expect(host.textContent).not.toContain("orderDetail.action.accept");
-    expect(h.send).not.toHaveBeenCalled();
-    h.load.mockResolvedValue(order);
-    await act(async () => click("orderDetail.refresh"));
-    expect(host.textContent).toContain("A film");
-  }
-);
-
-const typeReason = async (text: string) => {
-  await act(async () => {
-    const input = host.querySelector("input")!;
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-};
-it("recovers revision instructions after a failed submit only after a fresh order read", async () => {
-  h.userId = "buyer";
-  h.load.mockResolvedValue({ ...order, status: "delivered" });
-  h.send.mockRejectedValueOnce(new Error("Response interrupted"));
-  await render();
-  await act(async () => click("orderDetail.action.request_revision"));
-  await typeReason("Please shorten the opening scene and keep the original soundtrack.");
-  await act(async () => click("orderDetail.confirm"));
-  expect(host.textContent).toContain("Response interrupted");
-  expect(host.querySelector("input")).toBeNull();
-  expect(host.textContent).not.toContain("orderDetail.confirm");
-  h.load.mockResolvedValue({ ...order, status: "delivered", version: 2 });
-  await act(async () => click("orderDetail.refresh"));
-  expect(host.querySelector("input")?.value).toBe(
-    "Please shorten the opening scene and keep the original soundtrack."
-  );
-  expect(h.send).toHaveBeenCalledTimes(1);
-  h.send.mockResolvedValue({ ...order, status: "revision_requested", version: 3 });
-  await act(async () => click("orderDetail.confirm"));
-  expect(h.send).toHaveBeenLastCalledWith(
-    expect.objectContaining({ version: 2 }),
-    "buyer",
-    "request_revision",
-    "Please shorten the opening scene and keep the original soundtrack."
-  );
-  expect(host.querySelector("input")).toBeNull();
-});
-it("keeps the action draft across a return but waits for renewed access before confirmation", async () => {
-  await render();
-  await act(async () => click("orderDetail.action.cancel"));
-  await typeReason("The delivery schedule changed");
-  h.active = false;
-  await render();
-  expect(host.textContent).not.toContain("A film");
-  let finish!: (value: unknown) => void;
-  h.load.mockReturnValue(
-    new Promise((resolve) => {
-      finish = resolve;
-    })
-  );
-  h.active = true;
-  await render();
-  expect(host.querySelector("input")).toBeNull();
-  expect(host.textContent).not.toContain("orderDetail.confirm");
-  await act(async () => finish({ ...order, version: 2 }));
-  expect(host.querySelector("input")?.value).toBe("The delivery schedule changed");
-  expect(h.send).not.toHaveBeenCalled();
-  h.send.mockResolvedValue({ ...order, status: "cancelled", version: 3 });
-  await act(async () => click("orderDetail.confirm"));
-  expect(h.send).toHaveBeenCalledWith(
-    expect.objectContaining({ version: 2 }),
-    "creator",
-    "cancel",
-    "The delivery schedule changed"
-  );
-});
-it("drops an obsolete confirmation when another party completed the order during absence", async () => {
-  await render();
-  await act(async () => click("orderDetail.action.cancel"));
-  await typeReason("Draft reason");
-  h.active = false;
-  await render();
-  h.load.mockResolvedValue({ ...order, status: "completed", version: 2 });
-  h.active = true;
-  await render();
-  expect(host.textContent).toContain("orders.status.completed");
-  expect(host.querySelector("input")).toBeNull();
-  expect(host.textContent).not.toContain("orderDetail.confirm");
-  expect(h.send).not.toHaveBeenCalled();
-});
-it("retains the reason through failed refresh without exposing stale actions", async () => {
-  await render();
-  await act(async () => click("orderDetail.action.decline"));
-  await typeReason("Unable to meet the brief");
-  h.load.mockRejectedValue(new Error("Access check unavailable"));
-  await act(async () => click("orderDetail.refresh"));
-  expect(host.textContent).toContain("Access check unavailable");
-  expect(host.querySelector("input")).toBeNull();
-  h.load.mockResolvedValue(order);
-  await act(async () => click("orderDetail.refresh"));
-  expect(host.querySelector("input")?.value).toBe("Unable to meet the brief");
-  expect(h.send).not.toHaveBeenCalled();
-});
-it("ignores an in-flight action receipt after leaving and returning to a fresh order", async () => {
-  let finish!: (value: unknown) => void;
-  h.send.mockReturnValue(
-    new Promise((resolve) => {
-      finish = resolve;
-    })
-  );
-  await render();
-  await act(async () => click("orderDetail.action.accept"));
-  await act(async () => click("orderDetail.confirm"));
-  h.active = false;
-  await render();
-  h.load.mockResolvedValue({ ...order, status: "cancelled", version: 3 });
-  h.active = true;
-  await render();
-  await act(async () => finish({ ...order, status: "in_progress", version: 2 }));
-  expect(host.textContent).toContain("orders.status.cancelled");
-  expect(host.textContent).not.toContain("orders.status.in_progress");
+  expect(host.textContent).toContain("orders.status.pending_creator");
   expect(h.send).toHaveBeenCalledTimes(1);
 });

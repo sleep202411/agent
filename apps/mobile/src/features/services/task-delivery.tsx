@@ -85,7 +85,19 @@ export function TaskDelivery({
               />
             )}
             {submission.assets.map((file) => (
-              <DeliveryFile key={file.id} file={file} />
+              <View key={file.id}>
+                {file.mediaAssetId ? (
+                  <ConversationFile
+                    mediaAssetId={file.mediaAssetId}
+                    name={file.name}
+                    contentType={file.contentType ?? undefined}
+                  />
+                ) : (
+                  <ThemedText>
+                    {file.name} · {t("taskActivity.unavailable")}
+                  </ThemedText>
+                )}
+              </View>
             ))}
             {(submission.canvasVersionId || submission.productionVersionId) && (
               <ThemedText>{t("taskDelivery.snapshot")}</ThemedText>
@@ -152,48 +164,21 @@ function Template({
               {field.required ? ` (${t("taskDelivery.required")})` : ""}
             </ThemedText>
             {!!field.instructions && <ThemedText>{field.instructions}</ThemedText>}
-            {answers &&
-              (field.type === "attachment" && Array.isArray(value) ? (
-                value.length ? (
-                  value.map((id) => {
-                    const file = assets.find((asset) => asset.id === id);
-                    return file ? (
-                      <DeliveryFile key={id} file={file} />
-                    ) : (
-                      <ThemedText key={id}>{t("taskActivity.unavailable")}</ThemedText>
-                    );
-                  })
-                ) : (
-                  <ThemedText>{t("thread.taskUnset")}</ThemedText>
-                )
-              ) : (
-                <ThemedText>
-                  {typeof value === "string" && value ? value : t("thread.taskUnset")}
-                </ThemedText>
-              ))}
+            {answers && (
+              <ThemedText>
+                {Array.isArray(value)
+                  ? value
+                      .map(
+                        (id) =>
+                          assets.find((a) => a.id === id)?.name ?? t("taskActivity.unavailable")
+                      )
+                      .join(", ") || t("thread.taskUnset")
+                  : value || t("thread.taskUnset")}
+              </ThemedText>
+            )}
           </View>
         );
       })}
     </View>
-  );
-}
-
-function DeliveryFile({ file }: { file: TaskSubmission["assets"][number] }) {
-  const t = useTranslations();
-  if (!file.mediaAssetId)
-    return (
-      <ThemedText>
-        {file.name} · {t("taskActivity.unavailable")}
-      </ThemedText>
-    );
-  const contentType = file.contentType?.split(";", 1)[0]?.trim().toLowerCase();
-  const kind = contentType?.split("/", 1)[0];
-  return (
-    <ConversationFile
-      mediaAssetId={file.mediaAssetId}
-      name={file.name}
-      contentType={contentType}
-      mediaKind={kind === "image" || kind === "video" || kind === "audio" ? kind : undefined}
-    />
   );
 }

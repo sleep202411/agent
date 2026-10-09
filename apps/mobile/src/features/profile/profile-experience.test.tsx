@@ -6,7 +6,6 @@ const h = vi.hoisted(() => ({
   focused: true,
   generation: 1,
   authenticated: true,
-  login: vi.fn(),
   refresh: vi.fn(),
   post: vi.fn(),
   get: vi.fn(),
@@ -25,7 +24,6 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("@/auth", () => ({
   useLoginGateOnFocus: vi.fn(),
-  useAuthGate: () => ({ requireAuth: h.login }),
   useAuth: () => ({
     status: h.authenticated ? "authenticated" : "anonymous",
     generation: h.generation,
@@ -221,23 +219,5 @@ it("supports load retry and keeps guest deep links private", async () => {
   expect(h.get).toHaveBeenCalledTimes(2);
   h.authenticated = false;
   await render();
-  expect([...host.querySelectorAll("button")].map((button) => button.textContent)).toEqual([
-    "login.signIn",
-  ]);
-  expect(host.querySelector("input")).toBeNull();
-});
-
-it("keeps a usable sign-in action after the guest closes the login sheet", async () => {
-  h.authenticated = false;
-  await render();
-  expect(host.textContent).not.toContain("loading");
-  expect(host.querySelector("input")).toBeNull();
-  expect(h.post).not.toHaveBeenCalled();
-  const signIn = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "login.signIn"
-  );
-  expect(signIn).toBeDefined();
-  await act(async () => signIn!.click());
-  expect(h.login).toHaveBeenCalledTimes(1);
-  expect(h.post).not.toHaveBeenCalled();
+  expect(host.querySelector("button")).toBeNull();
 });

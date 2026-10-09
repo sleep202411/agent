@@ -7,9 +7,6 @@ export {
   AGENT_OS_STORY_WORKBENCH_MODE,
   createAgentProject,
   loadAgentProjects,
-  loadAgentWorkspaces,
-  canCreateStudioProject,
-  type StudioWorkspace,
   type StoryProjectSummary,
 } from "./api/studio-projects-api";
 export { isAgentOsId } from "./lib/ids";

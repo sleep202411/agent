@@ -3,7 +3,6 @@ import { TaskDetail } from "./task-detail";
 import { AuthedWebView } from "@/components/authed-web-view";
 import { PayoutDecision } from "./payout-decision";
 import { EarningDecision } from "./earning-decision";
-import { useIsFocused } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -32,8 +31,8 @@ const actions: Record<string, MessageKey> = {
   "payout.voided": "crewFinance.eventVoided",
 };
 export function CrewFinanceDetail(props: Props) {
-  const focused = useIsFocused();
-  if (!focused || props.generation !== getAuthGeneration()) return null;
+  const active = useScreenActive();
+  if (!active || props.generation !== getAuthGeneration()) return null;
   return (
     <Session
       key={`${props.crewId}:${props.view}:${props.selected.id}:${props.generation}`}
@@ -42,8 +41,6 @@ export function CrewFinanceDetail(props: Props) {
   );
 }
 function Session(props: Props) {
-  const active = useScreenActive();
-  const [lastActive, setLastActive] = useState(active);
   const t = useTranslations(),
     [revision, setRevision] = useState(0),
     [proofError, setProofError] = useState<string>();
@@ -55,12 +52,7 @@ function Session(props: Props) {
     record?: Awaited<ReturnType<typeof fetchFinanceDetail>>;
     error?: string;
   }>();
-  if (lastActive !== active) {
-    setLastActive(active);
-    if (active) setRevision((value) => value + 1);
-  }
   useEffect(() => {
-    if (!active || taskId || webTask || agreementId) return;
     const controller = new AbortController();
     void fetchFinanceDetail(props.crewId, props.view, props.selected, controller.signal).then(
       (record) => {
@@ -73,17 +65,7 @@ function Session(props: Props) {
       }
     );
     return () => controller.abort();
-  }, [
-    props.crewId,
-    props.view,
-    props.selected,
-    props.generation,
-    revision,
-    active,
-    taskId,
-    webTask,
-    agreementId,
-  ]);
+  }, [props.crewId, props.view, props.selected, props.generation, revision]);
   const visible = snapshot?.revision === revision ? snapshot : undefined,
     record = visible?.record;
   const money = (value: string) => formatFinanceMoney(value, props.selected.currency);
@@ -155,10 +137,7 @@ function Session(props: Props) {
     </Pressable>
   );
   return (
-    <ScrollView
-      style={{ display: active ? "flex" : "none" }}
-      contentContainerStyle={{ padding: 16, gap: 12 }}
-    >
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewFinance.details")}</ThemedText>
       {!visible && <ActivityIndicator />}
       {visible?.error && <ThemedText accessibilityRole="alert">{visible.error}</ThemedText>}
@@ -259,10 +238,7 @@ function Session(props: Props) {
               record={record}
               userId={props.userId}
               generation={props.generation}
-              onSaved={() => {
-                setRevision((n) => n + 1);
-                props.onChanged();
-              }}
+              onSaved={props.onChanged}
             />
           )}
           {"allocations" in record && (
@@ -271,10 +247,7 @@ function Session(props: Props) {
               record={record}
               userId={props.userId}
               generation={props.generation}
-              onSaved={() => {
-                setRevision((n) => n + 1);
-                props.onChanged();
-              }}
+              onSaved={props.onChanged}
             />
           )}
           <ThemedText>{t("crewFinance.audit")}</ThemedText>

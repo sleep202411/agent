@@ -1,4 +1,3 @@
-import { useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -12,13 +11,8 @@ import { moveEpisode, removeEpisode } from "./episode-organization-api";
 type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function EpisodeOrganization(props: Props) {
   const active = useScreenActive();
-  const focused = useIsFocused();
-  if (!focused || props.generation !== getAuthGeneration()) return null;
-  return (
-    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
-      <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
-    </View>
-  );
+  if (!active || props.generation !== getAuthGeneration()) return null;
+  return <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />;
 }
 function Session(props: Props) {
   const t = useTranslations();
@@ -77,7 +71,6 @@ function Session(props: Props) {
   );
 }
 function Editor(props: Props & { rows: CrewEpisode[]; refresh: () => void }) {
-  const active = useScreenActive();
   const t = useTranslations(),
     op = useAuthFormOperation(props.crewId, true);
   const [confirmation, setConfirmation] = useState<CrewEpisode>(),
@@ -87,7 +80,7 @@ function Editor(props: Props & { rows: CrewEpisode[]; refresh: () => void }) {
   const sent = useRef(false);
   const locked = attempted || op.busy;
   const perform = (request: () => Promise<unknown>) => {
-    if (!active || sent.current || props.generation !== getAuthGeneration()) return;
+    if (sent.current || props.generation !== getAuthGeneration()) return;
     void op.run(
       () => {
         sent.current = true;

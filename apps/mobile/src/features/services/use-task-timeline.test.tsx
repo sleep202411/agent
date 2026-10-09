@@ -112,21 +112,3 @@ it("clears revoked data and restarts pagination on explicit retry", async () => 
   await click(1);
   expect(h.load.mock.calls[2][1]).toBeNull();
 });
-
-it("does not restore stale rows while revalidating a return visit", async () => {
-  let finish!: (value: unknown) => void;
-  h.load.mockResolvedValueOnce({ items: [item], nextCursor: null }).mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      })
-  );
-  await render("1");
-  expect(host.textContent).toContain("First");
-  await render();
-  await render("1");
-  expect(host.textContent).not.toContain("First");
-  await act(async () => finish({ items: [], nextCursor: null }));
-  expect(host.textContent).not.toContain("First");
-  expect(h.load).toHaveBeenCalledTimes(2);
-});

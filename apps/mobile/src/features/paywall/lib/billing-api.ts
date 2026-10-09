@@ -67,40 +67,26 @@ export function paywallBillingCurrency(): "CNY" | "USD" {
   return appEnv.appRegion === "cn" ? "CNY" : "USD";
 }
 
-export async function listCommunityPointPackages(
-  currency: string,
-  signal?: AbortSignal
-): Promise<BillingPrice[]> {
+export async function listCommunityPointPackages(currency: string): Promise<BillingPrice[]> {
   const res = await api.get<{ prices?: BillingPrice[] }>("/billing/prices", {
     ...AURORA,
     params: { productType: "community_point_pack", currency },
-    signal,
-    cache: "no-store",
   });
-  if (!Array.isArray(res?.prices))
-    throw Error("Recharge catalog is unavailable: invalid price data.");
-  return res.prices.filter((price) => price.isActive !== false);
+  return (res.prices ?? []).filter((price) => price.isActive !== false);
 }
 
-export async function listMembershipPrices(
-  input: {
-    productType: "membership_plan" | "community_membership_plan";
-    currency: string;
-  },
-  signal?: AbortSignal
-): Promise<BillingPrice[]> {
+export async function listMembershipPrices(input: {
+  productType: "membership_plan" | "community_membership_plan";
+  currency: string;
+}): Promise<BillingPrice[]> {
   const res = await api.get<{ plans?: { prices?: BillingPrice[] }[] }>(
     "/billing/membership-plans",
     {
       ...AURORA,
       params: { productType: input.productType, currency: input.currency },
-      signal,
-      cache: "no-store",
     }
   );
-  if (!Array.isArray(res?.plans) || res.plans.some((plan) => !plan || !Array.isArray(plan.prices)))
-    throw Error("Membership catalog is unavailable: invalid plan data.");
-  return res.plans.flatMap((plan) => plan.prices!);
+  return (res.plans ?? []).flatMap((plan) => plan.prices ?? []);
 }
 
 export async function createBillingCheckout(input: {

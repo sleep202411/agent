@@ -18,24 +18,12 @@ import {
 } from "./payout-create-api";
 import { earningAmountMinor } from "./earning-create-api";
 import { formatFinanceMoney } from "./crew-finance-api";
-type Props = {
-  crewId: string;
-  userId: string;
-  generation: number;
-  refreshKey?: number;
-  onSaved: () => void;
-};
+type Props = { crewId: string; userId: string; generation: number; onSaved: () => void };
 export function PayoutCreate(props: Props) {
   const t = useTranslations();
   const [allowed, setAllowed] = useState(false),
     [open, setOpen] = useState(false),
     [error, setError] = useState<string>();
-  const [lastRefreshKey, setLastRefreshKey] = useState(props.refreshKey);
-  if (lastRefreshKey !== props.refreshKey) {
-    setLastRefreshKey(props.refreshKey);
-    setAllowed(false);
-    setError(undefined);
-  }
   useEffect(() => {
     const controller = new AbortController();
     void fetchPayoutCreateAccess(props.crewId, props.userId, controller.signal).then(
@@ -49,7 +37,7 @@ export function PayoutCreate(props: Props) {
       }
     );
     return () => controller.abort();
-  }, [props.crewId, props.userId, props.generation, props.refreshKey]);
+  }, [props.crewId, props.userId, props.generation]);
   return (
     <>
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}

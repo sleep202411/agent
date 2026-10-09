@@ -36,10 +36,7 @@ export function WechatScanPay({
 }) {
   const t = useTranslations();
   const [status, setStatus] = useState<ScanStatus>("pending");
-  const [error, setError] = useState<string>();
-  const [retry, setRetry] = useState(0);
   const onPaidRef = useRef(onPaid);
-  const statusError = t("paywall.wechat.statusError");
   useEffect(() => {
     onPaidRef.current = onPaid;
   }, [onPaid]);
@@ -73,9 +70,8 @@ export function WechatScanPay({
           setStatus("expired");
           return;
         }
-      } catch (cause) {
-        if (alive) setError(cause instanceof Error && cause.message ? cause.message : statusError);
-        return;
+      } catch {
+        // Transient — keep polling.
       }
       if (alive) timer = setTimeout(() => void tick(), POLL_MS);
     };
@@ -84,7 +80,7 @@ export function WechatScanPay({
       alive = false;
       clearTimeout(timer);
     };
-  }, [orderId, status, retry, statusError]);
+  }, [orderId, status]);
 
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
@@ -111,23 +107,6 @@ export function WechatScanPay({
           </View>
 
           <View style={styles.body}>
-            {error && (
-              <View style={styles.result}>
-                <ThemedText accessibilityRole="alert" style={styles.center}>
-                  {error}
-                </ThemedText>
-                <Pressable
-                  accessibilityRole="button"
-                  style={styles.closeButton}
-                  onPress={() => {
-                    setError(undefined);
-                    setRetry((value) => value + 1);
-                  }}
-                >
-                  <ThemedText type="smallBold">{t("inbox.retry")}</ThemedText>
-                </Pressable>
-              </View>
-            )}
             {status === "pending" ? (
               <>
                 <View style={styles.qrFrame}>
