@@ -22,6 +22,8 @@ export async function requireCrewComputeAllowance(
     select: {
       id: true,
       deletedAt: true,
+      cancelledAt: true,
+      workflowState: { select: { semantic: true } },
       crew: { select: { workspaceId: true, deletedAt: true } },
       computeRequests: {
         select: {
@@ -43,7 +45,13 @@ export async function requireCrewComputeAllowance(
     (request) => request.userId === input.userId,
   );
 
-  if (task.deletedAt || task.crew.deletedAt || !task.assignees.length)
+  if (
+    task.deletedAt ||
+    task.cancelledAt ||
+    task.workflowState?.semantic === 'cancelled' ||
+    task.crew.deletedAt ||
+    !task.assignees.length
+  )
     throw new ForbiddenException(
       'An active assignment is required to spend this task’s compute allowance',
     );

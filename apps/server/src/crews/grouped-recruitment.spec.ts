@@ -45,7 +45,12 @@ function fixture() {
   const service = new PositionsService({} as never, auth as never);
   // Exercise the full bundle validation/write inside the existing authorized transaction boundary.
   jest
-    .spyOn(service as never, 'positionWrite')
+    .spyOn(
+      service as unknown as {
+        positionWrite: (...args: unknown[]) => Promise<unknown>;
+      },
+      'positionWrite',
+    )
     .mockImplementation((...args: unknown[]) =>
       (args[3] as (tx: unknown) => Promise<unknown>)(tx),
     );
@@ -59,6 +64,7 @@ function fixture() {
     targetCount: 1,
     workMode: 'remote',
     employmentType: 'project_based',
+    experienceLevel: 'any',
     requiredSkills: [],
   } as CreatePositionInput;
   return { service, tx, input };

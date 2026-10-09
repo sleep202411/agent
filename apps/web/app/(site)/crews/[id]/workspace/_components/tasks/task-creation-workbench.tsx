@@ -3,7 +3,7 @@ import { WorkbenchPdfImport } from "./workbench-pdf-import";
 import { WorkbenchDashboard } from "./workbench-dashboard";
 import { WorkbenchBatchActions } from "./workbench-batch-actions";
 import { canBatchTask } from "./workbench-batch-input";
-import { CrewComputeFinance } from "@/app/(site)/crews/_components/crew-compute-finance";
+import { CrewComputeTopUpForm } from "@/app/(site)/crews/_components/crew-compute-top-up-form";
 import { CREW_CURRENCY } from "@/src/lib/crew-money";
 import { missingTaskFields } from "./task-required-fields";
 
@@ -592,24 +592,24 @@ function TaskCreationSession({
                       return (
                         <section
                           key={barKey}
-                          className={`rounded-sm bg-white/[0.025] p-4 text-xs transition-colors ${barKey === "scripts" ? "grid gap-4 @[900px]:grid-cols-[240px_1fr]" : ""}`}
+                          className="min-w-0 rounded-sm bg-white/[0.025] p-4 text-xs transition-colors"
                         >
                           {barKey === "scripts" && canManage && (
-                            <aside className="row-span-2 bg-black/20 p-4">
-                              <h3 className="mb-4 text-xs font-semibold uppercase text-primary">
+                            <aside className="mb-4 flex flex-wrap items-center gap-4 bg-black/20 p-3">
+                              <h3 className="text-xs font-semibold uppercase text-primary">
                                 {t("pdfTitle")}
                               </h3>
                               <Button
                                 variant="outline"
                                 color="muted"
-                                className="h-28 w-full whitespace-normal"
+                                className="min-h-11 whitespace-normal"
                                 onClick={() => setPdfOpen(true)}
                               >
                                 {t("pdfChoose")}
                               </Button>
-                              <dl className="mt-4 space-y-3">
+                              <dl className="flex flex-wrap gap-4">
                                 {["characters", "scenes", "props"].map((asset) => (
-                                  <div key={asset} className="flex justify-between">
+                                  <div key={asset} className="flex gap-2">
                                     <dt>{t(`assetGroup_${asset}`)}</dt>
                                     <dd>
                                       {
@@ -624,9 +624,16 @@ function TaskCreationSession({
                           )}
                           <div className="group flex select-none items-center justify-between gap-3 font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
                             <span className="flex items-center gap-2">
-                              <span className={category === "all" ? "" : "sr-only"}>{label}</span>
+                              <span>{label}</span>
                             </span>
-                            {canManageTasks ? (
+                            {canManageTasks &&
+                            categoryDrafts.some(
+                              (draft) =>
+                                draft.taskId &&
+                                savedTasks.some(
+                                  (task) => task.id === draft.taskId && canBatchTask(task)
+                                )
+                            ) ? (
                               <input
                                 type="checkbox"
                                 className="size-4 accent-[#e52227]"
@@ -691,7 +698,7 @@ function TaskCreationSession({
                               type="button"
                               aria-label={`${t("createTask")} · ${label}`}
                               disabled={busy || unresolved}
-                              className="mt-3 inline-flex min-h-16 items-center justify-center rounded-lg border border-dashed border-white/25 px-6 text-sm normal-case text-muted-foreground hover:border-primary hover:text-primary"
+                              className="mt-3 inline-flex min-h-11 items-center justify-center rounded-lg border border-dashed border-white/25 px-6 text-sm normal-case text-muted-foreground hover:border-primary hover:text-primary"
                               onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
@@ -719,7 +726,7 @@ function TaskCreationSession({
                               <div
                                 className={
                                   barKey === "artAssets"
-                                    ? "grid gap-4 @[650px]:grid-cols-2 @[1000px]:grid-cols-4"
+                                    ? "grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-4"
                                     : "space-y-5"
                                 }
                               >
@@ -742,7 +749,7 @@ function TaskCreationSession({
                                       className={
                                         barKey === "artAssets"
                                           ? "grid gap-3"
-                                          : "grid gap-3 @[650px]:grid-cols-2 @[1000px]:grid-cols-3 @[1400px]:grid-cols-4"
+                                          : "grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-3"
                                       }
                                     >
                                       {group.items.map((draft) => (
@@ -1041,17 +1048,18 @@ function TaskCreationSession({
                 if (!value) setCreditTaskId(null);
               }}
             >
-              <DialogContent className="w-[calc(100vw-2rem)] max-w-5xl sm:max-w-5xl">
+              <DialogContent className="w-[calc(100vw-2rem)] max-w-[640px] sm:max-w-[640px]">
                 <DialogHeader>
                   <DialogTitle>{t("addCredit")}</DialogTitle>
                 </DialogHeader>
                 <DialogBody>
                   {creditTaskId && (
-                    <CrewComputeFinance
+                    <CrewComputeTopUpForm
                       key={creditTaskId}
                       crewId={crewId}
                       crewName={crewName}
                       initialTaskId={creditTaskId}
+                      onClose={() => setCreditTaskId(null)}
                     />
                   )}
                 </DialogBody>

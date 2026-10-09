@@ -10746,8 +10746,11 @@ model ProjectTaskTemplate {
   @@map("project_task_templates")
 }
 
-// Approval is an allowance against the existing workspace wallet, never a mint.
+// Initial/historical allowances remain distinct from journal-backed top-ups.
 model CrewComputeRequest {
+  kind String @default("legacy_allowance") @db.VarChar(24)
+  remainingWorkload Decimal? @map("remaining_workload") @db.Decimal(14, 2)
+  workloadUnit String? @map("workload_unit") @db.VarChar(16)
   id String @id @default(uuid(7)) @db.Uuid
   crewId String @map("crew_id")
   taskId String @map("task_id") @db.Uuid

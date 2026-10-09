@@ -26,6 +26,7 @@ import { DecideComputeRequestSchema } from './compute-requests.controller';
 const QueueQuery = z.object({
   status: z.enum(['pending', 'approved', 'rejected']).optional(),
   cursor: z.string().uuid().optional(),
+  crewId: z.string().uuid().optional(),
 });
 
 @Public()
@@ -37,6 +38,26 @@ export class CrewComputeRequestsAdminController {
     private readonly requests: CrewComputeRequestsService,
     private readonly budgets: ProjectBudgetService,
   ) {}
+
+  @Get('projects')
+  async projects(
+    @CurrentAdmin() admin: AdminActor,
+    @Query(
+      new ZodValidationPipe(
+        z.object({
+          search: z.string().trim().max(180).optional(),
+          state: z.enum(['over', 'under']).optional(),
+          cursor: z.string().uuid().optional(),
+        }),
+      ),
+    )
+    query: { search?: string; state?: 'over' | 'under'; cursor?: string },
+  ) {
+    return {
+      code: 200,
+      data: await this.requests.projectSummary(admin, query),
+    };
+  }
 
   @Get(':crewId/budget')
   async budget(

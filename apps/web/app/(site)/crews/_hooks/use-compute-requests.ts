@@ -42,6 +42,8 @@ export function useComputeRequestAction(crewId: string) {
       beneficiaryUserId?: string;
       taskId: string;
       points: number;
+      remainingWorkload: number;
+      workloadUnit: "minutes" | "hours" | "days" | "person_days" | "percent";
       reason: string;
       requestKey: string;
     }) => crewApi.post(`/crews/${encodeURIComponent(crewId)}/compute-requests`, { body: action }),

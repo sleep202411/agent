@@ -63,6 +63,7 @@ export async function grantInitialTaskAllowance(
       );
     await tx.crewComputeRequest.create({
       data: {
+        kind: 'initial_allowance',
         crewId: task.crewId,
         taskId: task.id,
         workspaceId: budget.workspaceId,

@@ -883,7 +883,7 @@ it("exposes Edit and invitation actions for a saved eligible task without openin
     [...document.querySelectorAll('[role="menuitem"]')].find(
       (e) => e.textContent === label
     ) as HTMLElement;
-  expect(item("Add Credit")).toBeDefined();
+  expect(item("Top Up")).toBeDefined();
   await act(async () => item("Edit Task").click());
   expect(editTask).toHaveBeenCalledWith("managed");
   await openMenu();

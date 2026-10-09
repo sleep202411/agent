@@ -13,6 +13,7 @@ import { CURRENT_CELL } from '../../common/region/current-cell';
 import { PrismaService } from '../../infra/db/db.module';
 import { requireRevenueAdmin } from '../../creator-withdrawals/revenue-admin-access';
 import {
+  POINTS_PER_PROJECT_MINUTE,
   readProjectBudget,
   projectBudgetPoints,
   projectComputeUsage,
@@ -182,6 +183,7 @@ export class ProjectBudgetService {
           workspaceId: crew.workspaceId,
           version: 0,
           data: {
+            pointsPerMinute: POINTS_PER_PROJECT_MINUTE,
             durationSeconds: input.durationSeconds,
             totalPoints: projectBudgetPoints(input.durationSeconds).toString(),
             producerTaskId: input.producerTaskId,

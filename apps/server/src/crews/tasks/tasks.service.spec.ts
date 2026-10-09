@@ -644,7 +644,7 @@ describe('CrewTasksService', () => {
       ).toMatchObject({
         compensation: { rewardCurrency, rewardUsdMinor: 5000 },
       });
-      expect(result.rewardCurrency).toBe(rewardCurrency);
+      expect(result).toMatchObject({ rewardCurrency });
     },
   );
 

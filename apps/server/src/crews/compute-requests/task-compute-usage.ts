@@ -5,6 +5,7 @@ export type TaskComputeUsage = {
   taskTitle: string;
   userId: string;
   approvedPoints: string;
+  creditedPoints: string;
   pendingPoints: string;
   consumedPoints: string;
   committedPoints: string;
@@ -20,7 +21,8 @@ export function taskComputeUsage(
     WITH allowance AS (
       SELECT task_id, user_id,
         COALESCE(SUM(points) FILTER (WHERE status='approved'),0) AS approved,
-        COALESCE(SUM(points) FILTER (WHERE status='pending'),0) AS pending
+        COALESCE(SUM(points) FILTER (WHERE status='pending'),0) AS pending,
+        COALESCE(SUM(points) FILTER (WHERE status='approved' AND kind='top_up'),0) AS credited
       FROM crew_compute_requests WHERE crew_id=${crewId}
       GROUP BY task_id,user_id
     ), spend AS (
@@ -38,6 +40,7 @@ export function taskComputeUsage(
       UNION SELECT a.task_id,a.user_id FROM crew_task_assignees a JOIN crew_tasks t ON t.id=a.task_id WHERE t.crew_id=${crewId}
     )
     SELECT t.id AS "taskId",t.title AS "taskTitle",p.user_id AS "userId",
+      COALESCE(a.credited,0)::text AS "creditedPoints",
       COALESCE(a.approved,0)::text AS "approvedPoints",COALESCE(a.pending,0)::text AS "pendingPoints",
       COALESCE(s.consumed,0)::text AS "consumedPoints",COALESCE(s.committed,0)::text AS "committedPoints"
     FROM people p JOIN crew_tasks t ON t.id=p.task_id

@@ -9,14 +9,14 @@ it('separates people/tasks and excludes personal-wallet spending while retaining
       CREATE TABLE crews(id text,workspace_id uuid);
       CREATE TABLE crew_tasks(id text,crew_id text,title text,number int,canvas_project_id text);
       CREATE TABLE crew_task_assignees(task_id text,user_id text);
-      CREATE TABLE crew_compute_requests(task_id text,user_id text,crew_id text,points int,status text);
+      CREATE TABLE crew_compute_requests(task_id text,user_id text,crew_id text,points int,status text,kind text DEFAULT 'legacy_allowance');
       CREATE TABLE wallet_accounts(id text,owner_type text,owner_id text);
       CREATE TABLE wallet_transactions(id text,project_id text,source_type text,actor_user_id text);
       CREATE TABLE wallet_ledger_entries(transaction_id text,account_id text,currency text,entry_type text,amount bigint,available_delta bigint);
       INSERT INTO crews VALUES('crew','11111111-1111-4111-8111-111111111111');
       INSERT INTO crew_tasks VALUES('t1','crew','Shot 1',1,'p1'),('t2','crew','Shot 2',2,'p2');
       INSERT INTO crew_task_assignees VALUES('t1','a'),('t1','b'),('t2','a');
-      INSERT INTO crew_compute_requests VALUES('t1','a','crew',100,'approved'),('t1','a','crew',20,'pending');
+      INSERT INTO crew_compute_requests(task_id,user_id,crew_id,points,status) VALUES('t1','a','crew',100,'approved'),('t1','a','crew',20,'pending');
       INSERT INTO wallet_accounts VALUES('w','workspace','11111111-1111-4111-8111-111111111111'),('personal','user','a');
       INSERT INTO wallet_transactions VALUES('x','p1','ai_job','a'),('y','p1','ai_job','b'),('z','p2','ai_job','a');
       INSERT INTO wallet_ledger_entries VALUES
