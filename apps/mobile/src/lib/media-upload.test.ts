@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api } from "./api-client";
-import { uploadMobileMediaFile } from "./media-upload";
+import { confirmMobileMediaUpload, uploadMobileMediaFile } from "./media-upload";
 vi.mock("./api-client", () => ({ api: { post: vi.fn() } }));
+const auth = vi.hoisted(() => ({ generation: 1 }));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => auth.generation }));
 const fetchMock = vi.fn();
 const file = { uri: "file:///local.pdf", name: "local.pdf", type: "application/pdf", size: 999 };
 const signed = {
@@ -12,6 +14,7 @@ const signed = {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  auth.generation = 1;
   vi.stubGlobal("fetch", fetchMock);
   fetchMock
     .mockResolvedValueOnce({
@@ -61,7 +64,7 @@ it("signs actual bytes and echoes Crew scope through confirmation without leakin
 it("supports an omitted picker size and MIME without inventing an image type", async () => {
   await uploadMobileMediaFile(
     { ...file, type: "", size: undefined },
-    { kind: "ip_audience_reference" }
+    { kind: "ai_reference_image" }
   );
   expect(vi.mocked(api.post).mock.calls[0][1]?.data).toMatchObject({
     sizeBytes: 4,
@@ -78,7 +81,7 @@ it.each(["unreadable", "empty"])("does not sign an %s local file", async (mode) 
   fetchMock
     .mockReset()
     .mockResolvedValue({ ok: mode !== "unreadable", status: 404, blob: async () => new Blob([]) });
-  await expect(uploadMobileMediaFile(file, { kind: "ip_audience_reference" })).rejects.toThrow();
+  await expect(uploadMobileMediaFile(file, { kind: "ai_reference_image" })).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
 it("does not confirm a failed storage PUT", async () => {
@@ -86,9 +89,7 @@ it("does not confirm a failed storage PUT", async () => {
     .mockReset()
     .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
     .mockResolvedValueOnce({ ok: false, status: 503 });
-  await expect(uploadMobileMediaFile(file, { kind: "ip_audience_reference" })).rejects.toThrow(
-    "503"
-  );
+  await expect(uploadMobileMediaFile(file, { kind: "ai_reference_image" })).rejects.toThrow("503");
   expect(api.post).toHaveBeenCalledTimes(1);
 });
 it("stops after local reading if cancellation happened during blob resolution", async () => {
@@ -101,7 +102,7 @@ it("stops after local reading if cancellation happened during blob resolution", 
     },
   });
   await expect(
-    uploadMobileMediaFile(file, { kind: "ip_audience_reference", signal: controller.signal })
+    uploadMobileMediaFile(file, { kind: "ai_reference_image", signal: controller.signal })
   ).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
@@ -111,4 +112,253 @@ it("rejects actual oversized bytes before reserving storage", async () => {
     uploadMobileMediaFile(file, { kind: "crew_asset_file", scope: { crewId: "crew" }, maxBytes: 3 })
   ).rejects.toThrow("allowed upload size");
   expect(api.post).not.toHaveBeenCalled();
+});
+
+it("persists confirmation after PUT and before the confirmation request", async () => {
+  const beforeConfirm = vi.fn(() => {
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  await uploadMobileMediaFile(file, {
+    kind: "crew_asset_file",
+    scope: { crewId: "crew" },
+    beforeConfirm,
+  });
+  expect(beforeConfirm).toHaveBeenCalledWith({
+    storageKey: "issued-key",
+    kind: "crew_asset_file",
+    contentType: "application/pdf",
+    scope: { crewId: "crew" },
+  });
+});
+it("does not confirm if saving recovery data fails", async () => {
+  await expect(
+    uploadMobileMediaFile(file, {
+      kind: "crew_asset_file",
+      scope: { crewId: "crew" },
+      beforeConfirm: () => {
+        throw new Error("Disk full");
+      },
+    })
+  ).rejects.toThrow("Disk full");
+  expect(api.post).toHaveBeenLastCalledWith(
+    "/media/cancel-upload",
+    expect.objectContaining({ timeout: 10000 })
+  );
+});
+
+it("releases the original Crew reservation after an aborted PUT using independent cancellation", async () => {
+  const controller = new AbortController();
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
+    .mockImplementationOnce(() => {
+      controller.abort();
+      throw new Error("Upload interrupted");
+    });
+  await expect(
+    uploadMobileMediaFile(file, {
+      kind: "crew_asset_file",
+      scope: { crewId: "crew" },
+      signal: controller.signal,
+    })
+  ).rejects.toThrow("Upload interrupted");
+  expect(api.post).toHaveBeenLastCalledWith("/media/cancel-upload", {
+    service: "aurora",
+    timeout: 10000,
+    data: {
+      storageKey: "issued-key",
+      kind: "crew_asset_file",
+      contentType: "application/pdf",
+      scope: { crewId: "crew" },
+    },
+  });
+});
+it("preserves the upload failure when reservation cleanup also fails", async () => {
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
+    .mockRejectedValueOnce(new Error("Storage offline"));
+  vi.mocked(api.post)
+    .mockReset()
+    .mockResolvedValueOnce(signed)
+    .mockRejectedValueOnce(new Error("Cleanup offline"));
+  await expect(
+    uploadMobileMediaFile(file, { kind: "crew_asset_file", scope: { crewId: "crew" } })
+  ).rejects.toThrow("Storage offline");
+});
+it("retains a saved confirmation checkpoint after confirmation response loss", async () => {
+  vi.mocked(api.post)
+    .mockReset()
+    .mockResolvedValueOnce(signed)
+    .mockRejectedValueOnce(new Error("Response lost"));
+  await expect(
+    uploadMobileMediaFile(file, {
+      kind: "crew_asset_file",
+      scope: { crewId: "crew" },
+      beforeConfirm: vi.fn(),
+    })
+  ).rejects.toThrow("Response lost");
+  expect(api.post).toHaveBeenCalledTimes(2);
+  expect(api.post).toHaveBeenLastCalledWith("/media/confirm", expect.anything());
+});
+it("does not use a new account to cancel the previous account upload", async () => {
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
+    .mockImplementationOnce(() => {
+      auth.generation = 2;
+      throw new Error("Account changed");
+    });
+  await expect(
+    uploadMobileMediaFile(file, { kind: "crew_asset_file", scope: { crewId: "crew" } })
+  ).rejects.toThrow("Account changed");
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+it("does not reserve storage after the account changes during local file reading", async () => {
+  fetchMock.mockReset().mockResolvedValue({
+    ok: true,
+    blob: async () => {
+      auth.generation = 2;
+      return new Blob(["data"]);
+    },
+  });
+  await expect(uploadMobileMediaFile(file, { kind: "agent_attachment_document" })).rejects.toThrow(
+    "account changed"
+  );
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("does not PUT or confirm after the signing account changes", async () => {
+  vi.mocked(api.post)
+    .mockReset()
+    .mockImplementationOnce(async () => {
+      auth.generation = 2;
+      return signed;
+    });
+  await expect(uploadMobileMediaFile(file, { kind: "agent_attachment_document" })).rejects.toThrow(
+    "account changed"
+  );
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+it("does not confirm under a new account after a successful storage PUT", async () => {
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
+    .mockImplementationOnce(async () => {
+      auth.generation = 2;
+      return { ok: true };
+    });
+  await expect(uploadMobileMediaFile(file, { kind: "agent_attachment_document" })).rejects.toThrow(
+    "account changed"
+  );
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+it("rejects a confirmation receipt after an account switch", async () => {
+  vi.mocked(api.post)
+    .mockReset()
+    .mockResolvedValueOnce(signed)
+    .mockImplementationOnce(async () => {
+      auth.generation = 2;
+      return { mediaAssetId: "media", url: "https://cdn.example/file" };
+    });
+  await expect(uploadMobileMediaFile(file, { kind: "agent_attachment_document" })).rejects.toThrow(
+    "account changed"
+  );
+});
+
+it("preserves Story project scope when signing and confirming", async () => {
+  const scope = { storyProjectId: "00000000-0000-4000-8000-000000000001" };
+  await uploadMobileMediaFile(
+    { ...file, type: "image/png" },
+    { kind: "ai_reference_image", scope }
+  );
+  expect(vi.mocked(api.post).mock.calls[0][1]?.data).toMatchObject({ scope });
+  expect(vi.mocked(api.post).mock.calls[1][1]?.data).toMatchObject({ scope });
+});
+it.each([
+  { crewId: "crew", storyProjectId: "00000000-0000-4000-8000-000000000001" },
+  { storyProjectId: "not-a-project" },
+  {},
+])("rejects invalid or ambiguous upload scope before reading bytes", async (scope) => {
+  await expect(uploadMobileMediaFile(file, { kind: "ai_reference_image", scope })).rejects.toThrow(
+    "scope"
+  );
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it("rejects an unsupported upload kind before file access or transport", async () => {
+  // Exercise untyped callers and stale persisted data against the server's shared enum.
+  await expect(
+    uploadMobileMediaFile(file, { kind: "ip_audience_reference" as never })
+  ).rejects.toThrow();
+  await expect(
+    confirmMobileMediaUpload({
+      storageKey: "old",
+      contentType: "image/png",
+      kind: "ip_audience_reference" as never,
+    })
+  ).rejects.toThrow();
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("retains the original variant ID returned by media confirmation", async () => {
+  vi.mocked(api.post).mockReset().mockResolvedValue({
+    mediaAssetId: "asset",
+    variantId: "original-variant",
+    url: "https://cdn.example/image",
+  });
+  await expect(
+    confirmMobileMediaUpload({
+      kind: "ai_reference_image",
+      storageKey: "key",
+      contentType: "image/png",
+    })
+  ).resolves.toEqual({
+    mediaAssetId: "asset",
+    variantId: "original-variant",
+    url: "https://cdn.example/image",
+  });
+});
+it("uses the official workspace icon kind for reservation and image confirmation", async () => {
+  await uploadMobileMediaFile(
+    { ...file, name: "icon.png", type: "image/png" },
+    {
+      kind: "workspace_icon",
+      maxBytes: 5 * 1024 * 1024,
+    }
+  );
+  expect(vi.mocked(api.post).mock.calls.map(([, options]) => options?.data)).toEqual([
+    { kind: "workspace_icon", contentType: "image/png", fileName: "icon.png", sizeBytes: 4 },
+    { kind: "workspace_icon", contentType: "image/png", storageKey: "issued-key" },
+  ]);
+});
+
+it("corrects image metadata consistently through signing, upload and saved confirmation", async () => {
+  const blob = new Blob([new Uint8Array([255, 216, 255, 0])], { type: "image/png" });
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => blob })
+    .mockResolvedValueOnce({ ok: true });
+  const saved = vi.fn();
+  await uploadMobileMediaFile(
+    { ...file, name: "icon.png", type: "image/png" },
+    { kind: "workspace_icon", beforeConfirm: saved }
+  );
+  expect(api.post).toHaveBeenNthCalledWith(
+    1,
+    "/media/upload-url",
+    expect.objectContaining({
+      data: expect.objectContaining({ contentType: "image/jpeg", fileName: "icon.jpg" }),
+    })
+  );
+  expect(fetchMock).toHaveBeenNthCalledWith(
+    2,
+    signed.uploadUrl,
+    expect.objectContaining({
+      body: blob,
+      headers: expect.objectContaining({ "Content-Type": "image/jpeg" }),
+    })
+  );
+  expect(saved).toHaveBeenCalledWith(expect.objectContaining({ contentType: "image/jpeg" }));
 });

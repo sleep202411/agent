@@ -3,12 +3,16 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import ProfileEditScreen from "@/app/publish-work";
 const h = vi.hoisted(() => ({
+  records: new Map<string, string>(),
+  storageFailure: false,
   workId: undefined as string | undefined,
   find: vi.fn(),
+  page: vi.fn(),
   update: vi.fn(),
   focused: true,
   generation: 1,
   authenticated: true,
+  login: vi.fn(),
   refresh: vi.fn(),
   post: vi.fn(),
   get: vi.fn(),
@@ -18,6 +22,18 @@ const h = vi.hoisted(() => ({
   back: vi.fn(),
   t: (key: string) => key,
 }));
+vi.mock("@/lib/durable-record", () => ({
+  durableRecord: (namespace: string, userId: string, entry: string) => {
+    const key = JSON.stringify([namespace, userId, entry]);
+    return {
+      read: () => h.records.get(key) ?? null,
+      write: (value: string) => {
+        if (h.storageFailure) throw new Error("Disk full");
+        h.records.set(key, value);
+      },
+    };
+  },
+}));
 vi.mock("./publish-work-api", () => ({
   getWorkTags: h.get,
   createWork: h.create,
@@ -25,8 +41,7 @@ vi.mock("./publish-work-api", () => ({
   pickWorkFile: h.pick,
   uploadWorkFile: h.upload,
 }));
-vi.mock("@/data/mine-api", () => ({ findMyWork: h.find }));
-vi.mock("./work-refresh", () => ({ refreshPersonalWorks: vi.fn() }));
+vi.mock("@/data/mine-api", () => ({ findMyWork: h.find, fetchMyWorksPage: h.page }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useLocalSearchParams: () => ({ workId: h.workId }),
@@ -35,6 +50,7 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("@/auth", () => ({
   useLoginGateOnFocus: vi.fn(),
+  useAuthGate: () => ({ requireAuth: h.login }),
   useAuth: () => ({
     status: h.authenticated ? "authenticated" : "anonymous",
     generation: h.generation,
@@ -53,6 +69,7 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("react-native", () => {
   const Box = ({ children }: { children: ReactNode }) => <div>{children}</div>;
   return {
+    AppState: { currentState: "active", addEventListener: () => ({ remove: () => {} }) },
     View: Box,
     ScrollView: Box,
     KeyboardAvoidingView: Box,
@@ -104,6 +121,8 @@ const user = {
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   vi.resetAllMocks();
+  h.records.clear();
+  h.storageFailure = false;
   h.workId = undefined;
   h.focused = true;
   h.generation = 1;
@@ -186,10 +205,12 @@ it("does not upload after a canceled picker or foreign-account completion", asyn
 it("keeps tag failures retryable and never creates before required fields", async () => {
   h.get.mockRejectedValueOnce(new Error("offline"));
   await render();
+  expect(host.textContent).toContain("offline");
   await act(async () => click("publishWork.next"));
   expect(h.create).not.toHaveBeenCalled();
   await act(async () => click("profileEdit.retry"));
   expect(host.textContent).toContain("Drama");
+  expect(host.textContent).not.toContain("offline");
 });
 it("hides publishing from signed-out deep links", async () => {
   h.authenticated = false;
@@ -225,8 +246,173 @@ it("does not expose editing for an unavailable foreign work", async () => {
   h.workId = "foreign";
   h.find.mockRejectedValue(new Error("not found"));
   await render();
-  expect(host.textContent).toContain("publishWork.loadFailed");
+  expect(host.textContent).toContain("not found");
   expect(host.querySelector("input")).toBeNull();
   expect(h.create).not.toHaveBeenCalled();
   expect(h.update).not.toHaveBeenCalled();
+});
+
+it("restores the created work ID after remount and rechecks ownership before uploading", async () => {
+  await fill();
+  await act(async () => click("publishWork.next"));
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  h.find.mockResolvedValue({
+    id: "12",
+    title: "Film",
+    introduction: "Story",
+    isPrivate: false,
+    hasVideo: false,
+  });
+  await render();
+  expect(h.find.mock.calls[0][0]).toBe("12");
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => click("publishWork.video"));
+  expect(h.upload.mock.calls[0][0]).toBe("12");
+  expect(h.create).toHaveBeenCalledTimes(1);
+  await act(async () => click("publishWork.done"));
+  expect([...h.records.values()].every((raw) => JSON.parse(raw).draft === null)).toBe(true);
+});
+it("blocks duplicate creation after a lost response, including after remount", async () => {
+  h.create.mockRejectedValue(new Error("Lost response"));
+  await fill();
+  await act(async () => click("publishWork.next"));
+  await act(async () => click("publishWork.next"));
+  expect(h.create).toHaveBeenCalledTimes(1);
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  expect(input("publishWork.name").value).toBe("Film");
+  expect(input("publishWork.name").disabled).toBe(true);
+  expect(host.textContent).toContain("publishWork.creationUnknown");
+  await act(async () => click("publishWork.next"));
+  expect(h.create).toHaveBeenCalledTimes(1);
+});
+it("does not create when recovery state cannot be saved", async () => {
+  await fill();
+  h.storageFailure = true;
+  await act(async () => click("publishWork.next"));
+  expect(h.create).not.toHaveBeenCalled();
+  expect(input("publishWork.name").disabled).toBe(false);
+  expect(host.textContent).toContain("Disk full");
+});
+
+it("restores an interrupted metadata update without creating another record", async () => {
+  h.workId = "42";
+  h.find.mockResolvedValue({
+    id: "42",
+    title: "Existing",
+    introduction: "Old story",
+    hasVideo: true,
+    isPrivate: true,
+  });
+  h.update
+    .mockRejectedValueOnce(new Error("Lost update response"))
+    .mockResolvedValueOnce(undefined);
+  await render();
+  await act(async () => change("publishWork.name", "Edited title"));
+  await act(async () => click("publishWork.next"));
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+  expect(input("publishWork.name").value).toBe("Edited title");
+  expect(input("publishWork.name").disabled).toBe(true);
+  await act(async () => click("publishWork.next"));
+  expect(h.update.mock.calls[0].slice(0, 3)).toEqual(h.update.mock.calls[1].slice(0, 3));
+  expect(h.create).not.toHaveBeenCalled();
+});
+
+it.each(["success", "not-owned", "changed-account", "storage-failure"])(
+  "recovers an unknown creation through explicit owner selection: %s",
+  async (outcome) => {
+    const owned = {
+      id: "42",
+      title: "Film",
+      introduction: "Story",
+      isPrivate: false,
+      hasVideo: false,
+    };
+    h.page.mockResolvedValue({ works: [owned], hasMore: false });
+    h.create.mockRejectedValue(new Error("Lost response"));
+    await fill();
+    await act(async () => click("publishWork.next"));
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await render();
+    await act(async () => click("publishWork.checkWorks"));
+    await act(async () => click("FilmStory"));
+    expect(h.find).not.toHaveBeenCalled();
+    h.find.mockImplementation(async () => {
+      if (outcome === "not-owned") throw new Error("Not owned");
+      if (outcome === "changed-account") h.generation = 2;
+      if (outcome === "storage-failure") h.storageFailure = true;
+      return owned;
+    });
+    await act(async () => click("publishWork.useExisting"));
+    expect(h.create).toHaveBeenCalledTimes(1);
+    const record = JSON.parse([...h.records.values()][0]).draft;
+    if (outcome === "success") {
+      expect(record.workId).toBe("42");
+      expect(record.phase).toBe("uploading");
+      await act(async () => click("publishWork.video"));
+      expect(h.upload.mock.calls[0][0]).toBe("42");
+    } else {
+      expect(record.phase).toBe("creating");
+      expect(record.workId).toBeUndefined();
+      expect(h.upload).not.toHaveBeenCalled();
+    }
+  }
+);
+
+it("offers sign-in again after the guest dismisses the automatic login sheet", async () => {
+  h.authenticated = false;
+  await render();
+  expect(host.textContent).not.toContain("loading");
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.get).not.toHaveBeenCalled();
+  await act(async () => click("login.signIn"));
+  expect(h.login).toHaveBeenCalledTimes(1);
+  expect(h.create).not.toHaveBeenCalled();
+  h.authenticated = true;
+  await render();
+  expect(input("publishWork.name")).toBeTruthy();
+});
+
+it("shows failed recovery-list detail and retries without repeating creation", async () => {
+  h.create.mockRejectedValueOnce(new Error("Lost response"));
+  h.page
+    .mockRejectedValueOnce(new Error("Owned works temporarily unavailable"))
+    .mockResolvedValueOnce({
+      works: [
+        {
+          id: "42",
+          title: "Recovered film",
+          introduction: "Story",
+          hasVideo: false,
+          isPrivate: false,
+        },
+      ],
+      hasMore: false,
+    });
+  await fill();
+  await act(async () => click("publishWork.next"));
+  await act(async () => click("publishWork.checkWorks"));
+  expect(host.textContent).toContain("Owned works temporarily unavailable");
+  await act(async () => click("profileEdit.retry"));
+  expect(host.textContent).toContain("Recovered film");
+  expect(host.textContent).not.toContain("Owned works temporarily unavailable");
+  expect(h.create).toHaveBeenCalledTimes(1);
+  expect(h.find).not.toHaveBeenCalled();
+});
+
+it("preserves a title-only draft and reaches upload without requiring the tag service", async () => {
+  h.get.mockRejectedValue(new Error("Tag service unavailable"));
+  await render();
+  await act(async () => change("publishWork.name", "Title only"));
+  await act(async () => click("publishWork.next"));
+  expect(h.create).toHaveBeenCalledWith(
+    { title: "Title only", description: "", tagIds: [] },
+    expect.any(AbortSignal)
+  );
+  expect(host.textContent).toContain("publishWork.video");
 });

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { TaskPaymentTermsField } from "./task-payment-terms-field";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
@@ -16,6 +17,7 @@ import {
   type TermsProposal,
 } from "./terms-proposal-api";
 type Props = {
+  active?: boolean;
   crewId: string;
   applicationId: string;
   userId: string;
@@ -44,6 +46,7 @@ function ProposalSession(
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.applicationId, true);
+  const [readRevision, setReadRevision] = useState(0);
   const [context, setContext] = useState<Awaited<ReturnType<typeof fetchProposalContext>>>();
   const [history, setHistory] = useState<Awaited<ReturnType<typeof fetchApplicationTerms>>>();
   const [error, setError] = useState<string>(),
@@ -51,11 +54,22 @@ function ProposalSession(
     [fee, setFee] = useState(""),
     [share, setShare] = useState("0"),
     [basis, setBasis] = useState("");
+  const paymentInitialized = useRef(false);
+  const [paymentTerms, setPaymentTerms] = useState<TermsProposal["paymentTerms"]>(null);
   const [period, setPeriod] = useState<TermsProposal["feePeriod"]>("project");
   const [retry, setRetry] = useState<TermsProposal>(),
     [denied, setDenied] = useState(false),
     [saved, setSaved] = useState(false);
+  const readKey = `${props.active !== false}:${readRevision}`;
+  const [lastReadKey, setLastReadKey] = useState(readKey);
+  if (lastReadKey !== readKey) {
+    setLastReadKey(readKey);
+    setError(undefined);
+    setContext(undefined);
+    setHistory(undefined);
+  }
   useEffect(() => {
+    if (props.active === false) return;
     const c = new AbortController();
     void (async () => {
       const value = await fetchProposalContext(
@@ -70,6 +84,11 @@ function ProposalSession(
           : await fetchApplicationTerms(props.applicationId, props.before, c.signal);
       if (!c.signal.aborted && props.generation === getAuthGeneration()) {
         setContext(value);
+        if (!paymentInitialized.current) {
+          const latest = value.terms.items[0];
+          setPaymentTerms(latest ? (latest.paymentTerms ?? null) : value.advertisedPaymentTerms);
+          paymentInitialized.current = true;
+        }
         setHistory(page);
       }
     })().catch((cause) => {
@@ -77,10 +96,24 @@ function ProposalSession(
         setError(cause instanceof Error ? cause.message : String(cause));
     });
     return () => c.abort();
-  }, [props.crewId, props.applicationId, props.generation, props.before]);
+  }, [
+    props.crewId,
+    props.applicationId,
+    props.generation,
+    props.before,
+    props.active,
+    readRevision,
+  ]);
   const locked = op.busy || !!retry || denied || saved;
   const write = () => {
-    if (!context || denied || saved || props.generation !== getAuthGeneration()) return;
+    if (
+      props.active === false ||
+      !context ||
+      denied ||
+      saved ||
+      props.generation !== getAuthGeneration()
+    )
+      return;
     const feeAmount = proposalMinor(fee),
       shareBp = proposalMinor(share);
     const parsed = termsProposal.safeParse(
@@ -89,6 +122,7 @@ function ProposalSession(
         scope,
         feeAmount,
         currency: proposalCurrency,
+        paymentTerms,
         feePeriod: context.taskLinked ? "project" : period,
         revenueShareBp: shareBp === null ? null : Number(shareBp),
         shareBasis: shareBp !== null && BigInt(shareBp) > 0n ? basis.trim() || null : null,
@@ -178,6 +212,7 @@ function ProposalSession(
       />
     </View>
   );
+  if (props.active === false) return null;
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -216,6 +251,11 @@ function ProposalSession(
               <ThemedText>
                 {t("crewTerms.share")} · {(row.revenueShareBp / 100).toFixed(2)}%
               </ThemedText>
+              {row.paymentTerms && (
+                <ThemedText>
+                  {t("taskPaymentTerms.label")}: {t(`taskPaymentTerms.${row.paymentTerms}`)}
+                </ThemedText>
+              )}
               {row.shareBasis && <ThemedText>{row.shareBasis}</ThemedText>}
             </View>
           ))}
@@ -233,6 +273,11 @@ function ProposalSession(
                   )}
                 </ThemedText>
                 {field("crewTerms.scope", scope, setScope, 10000)}
+                <TaskPaymentTermsField
+                  value={paymentTerms ?? null}
+                  onChange={setPaymentTerms}
+                  locked={locked}
+                />
                 {field("crewTerms.fee", fee, setFee, 17, true)}
                 <ThemedText>{t("crewTerms.period")}</ThemedText>
                 {(["project", "episode", "month"] as const).map((p) => (
@@ -262,6 +307,7 @@ function ProposalSession(
             )}
         </>
       )}
+      {!context && error && action(t("common.retry"), () => setReadRevision((n) => n + 1))}
       {op.busy && <ActivityIndicator />}
       {action(t(saved ? "crewTerms.refresh" : "crewTerms.discardDraft"), props.onRefresh, !!retry)}
       {action(t("nativeApplications.back"), props.onClose)}

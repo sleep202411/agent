@@ -304,7 +304,7 @@ export const RuntimeChoiceExitSchema = z
   .object({
     kind: z.literal("choice"),
     decisionId: stableId,
-    prompt: localizedText,
+    prompt: localizedText.optional(),
     choices: z.array(ChoiceSchema).min(1).max(6),
   })
   .strict();
@@ -648,7 +648,9 @@ const InteractiveFilmReleaseObjectSchema = z
         });
       }
       if (node.exit.kind === "choice") {
-        requireLocaleCoverage(node.exit.prompt, [...exitPath, "prompt"]);
+        if (node.exit.prompt) {
+          requireLocaleCoverage(node.exit.prompt, [...exitPath, "prompt"]);
+        }
         const choiceIds = new Set<string>();
         node.exit.choices.forEach((choice, choiceIndex) => {
           if (choiceIds.has(choice.choiceId)) {

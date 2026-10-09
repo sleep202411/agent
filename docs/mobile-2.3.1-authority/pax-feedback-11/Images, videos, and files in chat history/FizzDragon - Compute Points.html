@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>
+        window.FontAwesomeConfig = {
+          autoReplaceSvg: 'nest'
+        };
+      </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compute Points — FizzDragon</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+      colors: {
+        brand: {
+          red: '#E50914',
+          black: '#050505',
+          dark: '#0A0A0A',
+          card: '#121214',
+          border: '#1F1F23',
+          muted: '#555555',
+          label: '#777777'
+        }
+      }
+    }
+  }
+}
+</script>
+<style>
+  ::-webkit-scrollbar{width:4px;height:4px}
+  ::-webkit-scrollbar-track{background:#050505}
+  ::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
+  .input-focus:focus { border-color: #E50914; outline: none; box-shadow: 0 0 10px rgba(229, 9, 20, 0.15); }
+  .glass { background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(10px); }
+  .glow-border { border: 1px solid rgba(229, 9, 20, 0.1); }
+  .glow-border:hover { border-color: rgba(229, 9, 20, 0.4); box-shadow: 0 0 15px rgba(229, 9, 20, 0.1); }
+</style>
+</head>
+<body class="bg-brand-black text-white font-sans flex items-center justify-center min-h-screen p-4 selection:bg-brand-red/30">
+
+  <!-- Modal Container -->
+  <div class="w-full max-w-2xl bg-brand-dark border border-brand-border rounded-2xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)] overflow-hidden animate-in fade-in zoom-in duration-500 flex flex-col">
+    
+    <!-- Top Header Bar -->
+    <div class="px-6 py-4 border-b border-brand-border flex justify-between items-center bg-black/40 backdrop-blur-md sticky top-0 z-10">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-brand-red rounded flex items-center justify-center font-black text-sm italic shadow-lg shadow-red-900/40">FD</div>
+        <h2 class="text-[10px] font-black tracking-[0.2em] uppercase text-brand-label">Points Allocation Engine</h2>
+      </div>
+      <button class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/5 text-brand-muted hover:text-white transition-all">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <div class="p-8 space-y-10 overflow-y-auto max-h-[85vh] no-scrollbar">
+      
+      <!-- Main Title & Context -->
+      <div class="flex justify-between items-start gap-8">
+        <div class="space-y-3">
+          <h1 class="text-4xl font-black tracking-tight leading-none">Compute points</h1>
+          <div class="flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-brand-red animate-pulse"></span>
+            <p class="text-[11px] font-bold text-brand-muted uppercase tracking-widest">Singapore Tourism IP · <span class="text-white">Active Sprint</span></p>
+          </div>
+        </div>
+        <div class="text-right">
+          <p class="text-[9px] font-black text-brand-label uppercase tracking-widest mb-1">Available Budget</p>
+          <p class="text-2xl font-black text-white">$45,000.00</p>
+        </div>
+      </div>
+
+      <!-- Enhanced Stats Section -->
+      <div class="grid grid-cols-3 gap-4">
+        <div class="bg-brand-card p-5 rounded-xl border border-brand-border glow-border transition-all group">
+          <p class="text-[9px] font-black text-brand-label uppercase tracking-widest mb-3">Pending</p>
+          <div class="flex items-baseline gap-2">
+            <span class="text-2xl font-black group-hover:text-white transition-colors">0</span>
+            <span class="text-[10px] font-bold text-brand-muted uppercase">Requests</span>
+          </div>
+        </div>
+        <div class="bg-brand-card p-5 rounded-xl border border-brand-border glow-border transition-all group">
+          <p class="text-[9px] font-black text-brand-label uppercase tracking-widest mb-3">Approved</p>
+          <div class="flex items-baseline gap-2">
+            <span class="text-2xl font-black group-hover:text-white transition-colors">12.5k</span>
+            <span class="text-[10px] font-bold text-brand-muted uppercase">Points</span>
+          </div>
+        </div>
+        <div class="bg-brand-red/5 p-5 rounded-xl border border-brand-red/20 glow-border transition-all group">
+          <p class="text-[9px] font-black text-brand-red uppercase tracking-widest mb-3">Consumed</p>
+          <div class="flex items-baseline gap-2">
+            <span class="text-2xl font-black text-brand-red">4,820</span>
+            <span class="text-[10px] font-bold text-brand-red/60 uppercase">pts</span>
+          </div>
+          <p class="text-[8px] text-brand-muted font-bold mt-2 leading-tight">≈ USD 48.20 equivalent</p>
+        </div>
+      </div>
+
+      <!-- Middle: Usage Matrix -->
+      <div class="space-y-4">
+        <div class="flex items-center justify-between px-1">
+          <h3 class="text-[10px] font-black text-brand-label uppercase tracking-[0.2em]">Usage Matrix</h3>
+          <button class="text-[9px] font-bold text-brand-muted hover:text-white transition-colors">VIEW ALL LOGS</button>
+        </div>
+        <div class="border border-brand-border rounded-xl bg-brand-card/30 backdrop-blur-sm overflow-hidden">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-brand-black/50 border-b border-brand-border text-[9px] font-black text-[#444] uppercase tracking-widest">
+              <tr>
+                <th class="py-4 px-6">Task Stream</th>
+                <th class="py-4 px-6">Assigned Creator</th>
+                <th class="py-4 px-6 text-right">Consumed</th>
+                <th class="py-4 px-6 text-right">Quota</th>
+              </tr>
+            </thead>
+            <tbody class="text-[11px] font-medium text-brand-muted">
+              <tr class="border-b border-brand-border/30 hover:bg-white/[0.03] transition-colors cursor-pointer group">
+                <td class="py-4 px-6">
+                  <div class="flex items-center gap-3">
+                    <div class="w-1.5 h-1.5 rounded-full bg-brand-red"></div>
+                    <span class="text-white font-bold group-hover:text-brand-red transition-colors">Script Development</span>
+                  </div>
+                </td>
+                <td class="py-4 px-6">
+                  <div class="flex items-center gap-2">
+                    <img src="https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-1.jpg" class="w-5 h-5 rounded-md border border-brand-border" />
+                    <span class="font-bold">FizzDragon AI</span>
+                  </div>
+                </td>
+                <td class="py-4 px-6 text-right font-black text-white">1,240</td>
+                <td class="py-4 px-6 text-right font-black">5,000</td>
+              </tr>
+              <tr class="hover:bg-white/[0.03] transition-colors cursor-pointer group">
+                <td class="py-4 px-6">
+                  <div class="flex items-center gap-3">
+                    <div class="w-1.5 h-1.5 rounded-full bg-brand-muted"></div>
+                    <span class="text-white font-bold group-hover:text-brand-red transition-colors">Visual Generation</span>
+                  </div>
+                </td>
+                <td class="py-4 px-6">
+                  <div class="flex items-center gap-2">
+                    <img src="https://storage.googleapis.com/uxpilot-auth.appspot.com/avatars/avatar-3.jpg" class="w-5 h-5 rounded-md border border-brand-border" />
+                    <span class="font-bold">Devon Park</span>
+                  </div>
+                </td>
+                <td class="py-4 px-6 text-right font-black text-white">3,580</td>
+                <td class="py-4 px-6 text-right font-black">4,500</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Action Area: Form -->
+      <div class="bg-brand-card/50 border border-brand-border rounded-2xl p-8 space-y-8">
+        <div class="flex items-center gap-3">
+          <i class="fa-solid fa-plus-circle text-brand-red"></i>
+          <h3 class="text-xs font-black text-white uppercase tracking-widest">New Point Allocation Request</h3>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-8">
+          <div class="space-y-3">
+            <label class="text-[9px] font-black text-brand-label uppercase tracking-widest ml-1">Select Task Stream</label>
+            <div class="relative">
+              <select class="w-full bg-brand-black border border-brand-border rounded-xl px-5 py-4 text-xs text-white appearance-none input-focus transition-all font-bold">
+                <option>TASK-1 · Script Development</option>
+                <option>TASK-2 · Scene Generation</option>
+                <option>TASK-3 · Audio Post-Prod</option>
+              </select>
+              <i class="fa-solid fa-chevron-down absolute right-5 top-1/2 -translate-y-1/2 text-brand-muted text-[10px] pointer-events-none"></i>
+            </div>
+          </div>
+          <div class="space-y-3">
+            <label class="text-[9px] font-black text-brand-label uppercase tracking-widest ml-1">Point Amount</label>
+            <div class="relative">
+              <input type="number" placeholder="Enter amount..." class="w-full bg-brand-black border border-brand-border rounded-xl px-5 py-4 text-xs text-white input-focus transition-all font-bold placeholder-brand-muted">
+              <span class="absolute right-5 top-1/2 -translate-y-1/2 text-[9px] font-black text-brand-muted uppercase">Points</span>
+            </div>
+          </div>
+          <div class="col-span-2 space-y-3">
+            <label class="text-[9px] font-black text-brand-label uppercase tracking-widest ml-1">Justification</label>
+            <textarea placeholder="Please describe the requirement in detail for administrative review..." class="w-full bg-brand-black border border-brand-border rounded-xl px-5 py-4 text-xs text-white input-focus transition-all font-bold placeholder-brand-muted h-32 no-scrollbar resize-none"></textarea>
+          </div>
+        </div>
+
+        <div class="pt-4 flex flex-col items-center gap-4">
+          <button class="w-full bg-brand-red hover:bg-[#FF0A16] text-white text-[11px] font-black py-5 rounded-xl shadow-[0_20px_40px_-10px_rgba(229,9,20,0.3)] transition-all active:scale-[0.98] uppercase tracking-[0.3em]">
+            Submit Request
+          </button>
+          <p class="text-[9px] text-brand-muted font-bold flex items-center gap-2">
+            <i class="fa-solid fa-shield-halved text-brand-red/40"></i>
+            Requests are typically reviewed by Admin within 12 hours.
+          </p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer Meta -->
+    <div class="px-8 py-4 bg-brand-black border-t border-brand-border flex justify-between items-center shrink-0">
+      <div class="flex gap-6">
+        <div class="flex items-center gap-2 text-[8px] font-black text-[#333] uppercase">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#333]"></span> Secure Session
+        </div>
+        <div class="flex items-center gap-2 text-[8px] font-black text-[#333] uppercase">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-900/50"></span> Service: Active
+        </div>
+      </div>
+      <p class="text-[8px] font-black text-[#333] uppercase tracking-widest">FIZZDRAGON_ALLOC_PRO_V2</p>
+    </div>
+  </div>
+
+</body>
+</html>

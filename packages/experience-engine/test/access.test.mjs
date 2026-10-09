@@ -168,3 +168,69 @@ test("published chapter manifests labelled preview still require access", () => 
   manifest.channel = "preview";
   assert.throws(() => controller(manifest).start(), ExperienceAccessRequiredError);
 });
+
+test("rejected renderer choices are not reported; an unlocked retry reports once", async () => {
+  const manifest = fixture({ targetPaid: true });
+  manifest.rendererRequirements[0].outcomes = [{ outcomeType: "choice-selected" }];
+  manifest.graph.nodes[0].renderers = [
+    {
+      instanceId: "choice",
+      rendererId: "core.text",
+      layer: 0,
+      config: { choices: [{ choiceId: "go", label: "Continue" }] },
+    },
+  ];
+  manifest.graph.nodes[0].eventBindings[0].on = {
+    type: "renderer.outcome",
+    sourceId: "choice",
+    qualifierId: "choice-selected",
+  };
+  const registry = new ExperienceRendererRegistry();
+  registry.register({
+    rendererId: "core.text",
+    apiVersion: "1.0.0",
+    configSchemaVersion: "1.0.0",
+    capabilities: new Set(["core.text"]),
+    supportsCommand: () => false,
+    supportsOutcome: () => true,
+    assertConfig() {},
+    assertCommand() {},
+    assertOutcome() {},
+  });
+  const owned = new Set();
+  const reports = [];
+  const runtime = new ExperienceRuntimeController(manifest, {
+    rendererRegistry: registry,
+    compatibility: {
+      engineApiVersion: "2.0.0",
+      experienceApiVersion: "1.0.0",
+      capabilities: new Set(["core.text", "commerce.community-points"]),
+    },
+    canAccess: (requirement) => owned.has(requirement.key),
+    playSessionReporter: {
+      onStart: async () => ({ sessionId: "play" }),
+      onProgress: async (_id, payload) => {
+        reports.push(payload);
+      },
+      onComplete: async () => {},
+    },
+  });
+  runtime.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  const choose = () =>
+    runtime.emitRendererOutcome({
+      instanceId: "choice",
+      outcomeType: "choice-selected",
+      payload: { choiceId: "go" },
+    });
+  assert.throws(choose, ExperienceAccessRequiredError);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(reports, []);
+  owned.add("node:target");
+  choose();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(reports.filter((report) => report.choice).length, 1);
+  assert.equal(reports[0].currentNode, "start");
+  assert.equal(reports[0].choice.optionId, "go");
+  assert.equal(reports[1].currentNode, "target");
+});

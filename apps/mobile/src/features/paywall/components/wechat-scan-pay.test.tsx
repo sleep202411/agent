@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WechatScanPay } from "./wechat-scan-pay";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), paid: vi.fn() }));
+vi.mock("@/config", () => ({ appEnv: { appRegion: "cn" } }));
 vi.mock("@/lib/api-client", () => ({ api: { get: mocks.get } }));
 vi.mock("@tabler/icons-react-native", () => ({
   IconCircleCheck: () => null,
@@ -20,7 +21,9 @@ vi.mock("react-native", () => {
   return {
     Modal: Box,
     View: Box,
-    Pressable: Box,
+    Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) => (
+      <button onClick={onPress}>{children}</button>
+    ),
     StyleSheet: { create: (value: unknown) => value, absoluteFill: {}, hairlineWidth: 1 },
   };
 });
@@ -111,3 +114,27 @@ it("auto-completes a mock WeChat scan order without Nest polling", async () => {
 vi.mock("@tabler/icons-react-native/IconCircleCheck", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconRefresh", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconX", () => ({ default: () => null }));
+
+it("exposes a failed status read and retries the same order without reporting failure or success", async () => {
+  mocks.get
+    .mockRejectedValueOnce(new Error("Payment status temporarily unavailable"))
+    .mockResolvedValue(order("fulfilled"));
+  await render();
+  expect(host.textContent).toContain("Payment status temporarily unavailable");
+  expect(host.textContent).toContain("QR");
+  expect(host.textContent).not.toContain("paywall.wechat.failed");
+  expect(mocks.paid).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(10000));
+  expect(mocks.get).toHaveBeenCalledTimes(1);
+  const retry = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "inbox.retry"
+  )!;
+  await act(async () => retry.click());
+  expect(mocks.get).toHaveBeenCalledTimes(2);
+  expect(mocks.get.mock.calls.map((call) => call[0])).toEqual([
+    "/billing/orders/order",
+    "/billing/orders/order",
+  ]);
+  expect(host.textContent).not.toContain("Payment status temporarily unavailable");
+  expect(mocks.paid).toHaveBeenCalledTimes(1);
+});

@@ -11,8 +11,8 @@ export const APP_DOWNLOADS_BY_SITE: Readonly<Record<"cn" | "global", readonly Ap
     {
       platform: "android",
       labelKey: "appDownloadAndroid",
-      href: "https://media.fizzspace.cn/releases/android/fizzdragon-cn-2.2.0-80-0254c347.apk",
-      download: "FizzDragon-2.2.0-cn.apk",
+      href: "https://media.fizzspace.cn/releases/android/fizzdragon-cn-2.3.1-82-f14572b2.apk",
+      download: "FizzDragon-2.3.1-cn.apk",
     },
     {
       platform: "ios",

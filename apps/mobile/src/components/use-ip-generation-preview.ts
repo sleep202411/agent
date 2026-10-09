@@ -11,18 +11,20 @@ export function useIpGenerationPreview(input: {
   referenceId: string | null;
 }) {
   const { generation } = useAuth();
+  const [attempt, setAttempt] = useState(0);
   const { ipId, templateId, requiresReference, referenceId } = input;
   const scope = useMemo(
     () =>
       templateId && (!requiresReference || referenceId)
-        ? { ipId, templateId, referenceId, generation }
+        ? { ipId, templateId, referenceId, generation, attempt }
         : null,
-    [ipId, templateId, requiresReference, referenceId, generation]
+    [ipId, templateId, requiresReference, referenceId, generation, attempt]
   );
   const [result, setResult] = useState<{
     scope: NonNullable<typeof scope>;
     cost: CostPreview | null;
     error: boolean;
+    message?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -42,8 +44,14 @@ export function useIpGenerationPreview(input: {
           setResult({ scope, cost: response.cost ?? null, error: !response.cost });
         }
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setResult({ scope, cost: null, error: true });
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted)
+          setResult({
+            scope,
+            cost: null,
+            error: true,
+            message: error instanceof Error ? error.message : undefined,
+          });
       });
     return () => controller.abort();
   }, [scope]);
@@ -54,5 +62,9 @@ export function useIpGenerationPreview(input: {
     costPreview: current?.cost ?? null,
     previewLoading: scope !== null && current === null,
     previewError: current?.error ?? false,
+    previewErrorMessage: current?.message,
+    retryPreview: () => {
+      if (current) setAttempt((value) => value + 1);
+    },
   };
 }

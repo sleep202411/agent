@@ -64,6 +64,9 @@ export default function RootLayout() {
                 <Stack.Screen name="publish-work" />
                 <Stack.Screen name="work/[id]" options={detailHeader} />
                 <Stack.Screen name="about" />
+                <Stack.Screen name="certificate-verify" />
+                <Stack.Screen name="earnings" />
+                <Stack.Screen name="crew-income" />
                 <Stack.Screen name="account-security" />
                 <Stack.Screen name="bind-invite" />
                 <Stack.Screen name="referrals" />
@@ -96,6 +99,10 @@ export default function RootLayout() {
                   }}
                 />
                 <Stack.Screen name="ip/[id]" options={detailHeader} />
+                <Stack.Screen
+                  name="saved-openings"
+                  options={{ ...detailHeader, presentation: "modal" }}
+                />
                 <Stack.Screen name="crew/[id]" options={detailHeader} />
                 <Stack.Screen name="creator/[id]" options={detailHeader} />
                 <Stack.Screen name="service/[id]" options={detailHeader} />

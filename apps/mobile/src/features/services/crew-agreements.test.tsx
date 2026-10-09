@@ -2,12 +2,14 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewAgreements } from "./crew-agreements";
+vi.mock("expo-router", () => ({ useIsFocused: () => true }));
 
 vi.mock("./agreement-create", () => ({ AgreementCreate: () => <span>create form</span> }));
 vi.mock("./earning-decision", () => ({ EarningDecision: () => <span>earning actions</span> }));
 vi.mock("./payout-decision", () => ({ PayoutDecision: () => <span>payout actions</span> }));
 const h = vi.hoisted(() => ({
   generation: 1,
+  active: true,
   detail: vi.fn(),
   sign: vi.fn(),
   open: vi.fn(),
@@ -19,7 +21,7 @@ vi.mock("./crew-agreements-api", async (original) => ({
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white" }) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({
@@ -124,6 +126,7 @@ const render = () =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
   h.detail.mockResolvedValue(page);
   host = document.createElement("div");
   document.body.append(host);
@@ -211,4 +214,37 @@ it("only offers creation when server capability allows it", async () => {
   await act(async () => button("thread.refresh").click());
   await act(async () => button("agreementCreate.title").click());
   expect(host.textContent).toContain("create form");
+});
+
+it("opens a direct agreement without guessing its recipient and returns to the list", async () => {
+  await act(async () =>
+    root.render(
+      <CrewAgreements
+        crewId="crew"
+        userId="user"
+        generation={1}
+        initialAgreementId={record.id}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(host.textContent).toContain(`agreement ${record.id}:`);
+  expect(host.textContent).not.toContain(`agreement ${record.id}:user`);
+  expect(h.detail).not.toHaveBeenCalled();
+  await act(async () => button("return list").click());
+  expect(h.detail).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("Production Agreement");
+});
+
+it("returns to the selected agreement after background instead of resetting the list", async () => {
+  await render();
+  await act(async () => button("Production Agreement · agreementDetail.open").click());
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain(`agreement ${record.id}:user`);
+  expect(h.detail).toHaveBeenCalledTimes(1);
+  await act(async () => button("return list").click());
+  expect(h.detail).toHaveBeenCalledTimes(2);
 });

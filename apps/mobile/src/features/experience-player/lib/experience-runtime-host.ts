@@ -4,19 +4,26 @@ import {
 } from "@repo/shared/experience-runtime";
 import {
   EXPERIENCE_API_VERSION,
+  EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER,
+  EXPERIENCE_CORE_TEXT_RENDERER_ADAPTER,
+  EXPERIENCE_CORE_CHOICE_RENDERER_ADAPTER,
+  EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ADAPTER,
+  EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ADAPTER,
   EXPERIENCE_ENGINE_API_VERSION,
   EXPERIENCE_ENGINE_BUILT_IN_CAPABILITIES,
   ExperienceRendererRegistry,
   ExperienceRuntimeController,
-  type ExperienceRendererAdapter,
   type ExperienceAccessCheck,
+  type PlaySessionReporter,
+  type ExperienceRuntimeRestoreInput,
 } from "@repo/experience-engine";
 
 export interface ExperienceRuntimeOptions {
-  rendererAdapters: readonly ExperienceRendererAdapter[];
-  additionalCapabilities?: ReadonlySet<string>;
   randomSeed?: string;
   canAccess?: ExperienceAccessCheck;
+  worldStreaming?: boolean;
+  reporter?: PlaySessionReporter;
+  restore?: ExperienceRuntimeRestoreInput;
 }
 
 /**
@@ -42,12 +49,20 @@ export function createExperienceRuntime(
   options: ExperienceRuntimeOptions
 ): ExperienceRuntimeController {
   const rendererRegistry = new ExperienceRendererRegistry();
-  options.rendererAdapters.forEach((adapter) => rendererRegistry.register(adapter));
+  // The shared adapter registry describes engine contracts, not native UI.
+  // World streaming is injected only by the authenticated private-preview host.
+  [
+    EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER,
+    EXPERIENCE_CORE_TEXT_RENDERER_ADAPTER,
+    EXPERIENCE_CORE_CHOICE_RENDERER_ADAPTER,
+    EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ADAPTER,
+  ].forEach((adapter) => rendererRegistry.register(adapter));
+  if (options.worldStreaming && manifest.channel === "preview")
+    rendererRegistry.register(EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ADAPTER);
   const capabilities = new Set(EXPERIENCE_ENGINE_BUILT_IN_CAPABILITIES);
   rendererRegistry.capabilities().forEach((capability) => capabilities.add(capability));
   EXPERIENCE_NATIVE_HOST_CAPABILITIES.forEach((capability) => capabilities.add(capability));
   if (options.canAccess) capabilities.add("commerce.community-points");
-  options.additionalCapabilities?.forEach((capability) => capabilities.add(capability));
 
   return new ExperienceRuntimeController(manifest, {
     compatibility: {
@@ -56,7 +71,9 @@ export function createExperienceRuntime(
       capabilities,
     },
     canAccess: options.canAccess,
+    playSessionReporter: options.reporter,
     rendererRegistry,
+    ...(options.restore ? { restore: options.restore } : {}),
     ...(options.randomSeed ? { randomSeed: options.randomSeed } : {}),
   });
 }

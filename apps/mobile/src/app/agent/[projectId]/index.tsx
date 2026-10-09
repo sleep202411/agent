@@ -82,13 +82,28 @@ export default function AgentChatScreen() {
   const prefillDraft = params.prefill?.trim() ?? "";
   const projectId = params.projectId?.trim() ?? "";
   const chapterFromQuery = params.chapterId?.trim() ?? "";
-  const { chapterId: chapterFromContext } = useStoryChapterContext();
+  const {
+    chapterId: chapterFromContext,
+    capabilities,
+    loading: chapterLoading,
+    error: chapterError,
+    refresh: refreshChapter,
+  } = useStoryChapterContext();
   const chapterId = isAgentOsId(chapterFromQuery) ? chapterFromQuery : chapterFromContext;
   const workbenchMode = params.mode?.trim() || AGENT_OS_STORY_WORKBENCH_MODE;
   const projectOk = isAgentOsId(projectId);
+  const chapterReady =
+    projectOk &&
+    !chapterLoading &&
+    !chapterError &&
+    isAgentOsId(chapterFromContext) &&
+    (!isAgentOsId(chapterFromQuery) || chapterFromQuery === chapterFromContext);
+  const readyProjectId = chapterReady ? projectId : "";
+  const canWrite = chapterReady && capabilities.includes("story.edit");
 
   const live = useAgentOsSession({
-    projectId: projectOk ? projectId : "",
+    projectId: readyProjectId,
+    canWrite,
     workbenchMode,
     chapterId: isAgentOsId(chapterId) ? chapterId : undefined,
   });
@@ -100,7 +115,8 @@ export default function AgentChatScreen() {
     projectId,
     chapterId,
     workbenchMode,
-    configured: projectOk,
+    configured: !!chapterReady,
+    canWrite,
     query: initialQuery,
     prefill: prefillDraft,
     send: live.send,
@@ -117,9 +133,9 @@ export default function AgentChatScreen() {
     live.session.status === "waiting_for_external";
   const restoring = live.session.status === "restoring";
   const showStop = isExecuting && !waitingUser;
-  const authoringRun = useStoryAuthoringRun(projectId, chapterId, isExecuting || waitingUser);
+  const authoringRun = useStoryAuthoringRun(readyProjectId, chapterId, isExecuting || waitingUser);
   const storyApprovalRunId = pendingApproval ? storyAgentRunIdFromApproval(pendingApproval) : null;
-  const approvalRun = useStoryAgentRunById(projectId, storyApprovalRunId);
+  const approvalRun = useStoryAgentRunById(readyProjectId, storyApprovalRunId);
   const proposalRun =
     (storyApprovalRunId && approvalRun?.id === storyApprovalRunId ? approvalRun : null) ??
     (storyApprovalRunId && authoringRun?.id === storyApprovalRunId ? authoringRun : null);
@@ -147,8 +163,14 @@ export default function AgentChatScreen() {
     (showStop || waitingUser) &&
     (authoringActivityKey != null || live.activity != null) &&
     (!live.assistantStreaming || live.session.status === "waiting_for_external" || waitingUser);
-  const composerLocked = isExecuting || restoring || waitingUser;
-  const composerTurn = useAgentComposerTurn(projectId, workbenchMode, composerLocked, chapterId);
+  const composerLocked = !canWrite || isExecuting || restoring || waitingUser;
+  const composerTurn = useAgentComposerTurn(
+    projectOk ? projectId : "",
+    workbenchMode,
+    composerLocked,
+    chapterId,
+    chapterReady
+  );
 
   const {
     scrollRef,
@@ -213,6 +235,30 @@ export default function AgentChatScreen() {
     );
   }
 
+  if (!chapterReady) {
+    return (
+      <ThemedView style={styles.screen}>
+        <Stack.Screen options={{ headerTitle: "" }} />
+        <View style={[styles.missing, { paddingTop: topPad }]}>
+          {chapterError ? (
+            <>
+              <ThemedText accessibilityRole="alert">{chapterError}</ThemedText>
+              <Pressable
+                accessibilityRole="button"
+                onPress={refreshChapter}
+                style={{ padding: 12 }}
+              >
+                <ThemedText>{t("common.retry")}</ThemedText>
+              </Pressable>
+            </>
+          ) : (
+            <ActivityIndicator color={theme.brand} />
+          )}
+        </View>
+      </ThemedView>
+    );
+  }
+
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen
@@ -224,7 +270,7 @@ export default function AgentChatScreen() {
               conversationId={live.session.conversationId}
               status={live.session.status}
               error={live.session.error}
-              busy={isExecuting || restoring}
+              busy={!canWrite || isExecuting || restoring}
               onNewChat={live.newChat}
             />
           ),
@@ -347,8 +393,10 @@ export default function AgentChatScreen() {
           >
             {pendingInput ? (
               <AgentUserInputCard
+                draftScope={{ projectId, chapterId, workbenchMode }}
                 request={pendingInput}
                 busy={live.sending}
+                disabled={!canWrite}
                 onSubmit={(answers) => {
                   scrollToLatest(true);
                   void live.answerUserInput(answers);
@@ -361,6 +409,7 @@ export default function AgentChatScreen() {
                 )}
                 assetCount={proposalRun ? storyProposalAssetCount(proposalRun.proposal) : 0}
                 busy={live.sending}
+                disabled={!canWrite}
                 onResolve={(decision, responseText) => {
                   scrollToLatest(true);
                   void live.approve(decision, responseText);
@@ -370,6 +419,7 @@ export default function AgentChatScreen() {
               <AgentApprovalCard
                 approval={pendingApproval}
                 busy={live.sending}
+                disabled={!canWrite}
                 onResolve={(decision) => {
                   scrollToLatest(true);
                   void live.approve(decision);
@@ -381,9 +431,9 @@ export default function AgentChatScreen() {
               value={draft}
               onChangeText={setDraft}
               onSubmit={onSubmit}
-              placeholder={t("agent.threadPlaceholder")}
+              placeholder={t(canWrite ? "agent.threadPlaceholder" : "storyRepair.readOnly")}
               submitAccessibilityLabel={t("agent.send")}
-              busy={showStop}
+              busy={canWrite && showStop}
               onStop={() => void live.cancel()}
               stopAccessibilityLabel={t("agent.stop")}
               sendDisabled={composerLocked || composerTurn.uploading}

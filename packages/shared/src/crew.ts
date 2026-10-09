@@ -333,6 +333,7 @@ export interface CrewPositionDTO {
   // ─── Skills ─────────
   requiredSkills: string[];
   // ─── Compensation ───
+  paymentTerms?: TaskPaymentTerms | null;
   salary: {
     period: SalaryPeriod | null;
     currency: CurrencyCode | null;
@@ -446,3 +447,19 @@ export interface CrewApplicationPageDTO {
   total: number;
   summary: CrewApplicationListSummary;
 }
+
+/** Agreed timing of payment; not a payment rail or a transfer instruction. */
+export const TASK_PAYMENT_TERMS = [
+  "monthly",
+  "half_upfront",
+  "on_completion",
+  "demo_promise",
+] as const;
+export type TaskPaymentTerms = (typeof TASK_PAYMENT_TERMS)[number];
+
+/** Choices for new agreements; monthly remains readable for existing contracts. */
+export const CURRENT_TASK_PAYMENT_TERMS = [
+  "half_upfront",
+  "on_completion",
+  "demo_promise",
+] as const;

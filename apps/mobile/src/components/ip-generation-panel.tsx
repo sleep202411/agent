@@ -1,15 +1,9 @@
+import { saveOutput } from "@/features/ai-lab/save-output";
+import { useScreenActive } from "@/hooks/use-app-active";
+import { useAudienceGeneration } from "@/features/ip-community/use-audience-generation";
 import { useIpGenerationPreview } from "./use-ip-generation-preview";
 import { useCallback, useEffect, useLayoutEffect, useState, useRef } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
@@ -31,14 +25,6 @@ interface AudienceTemplate {
   referenceImageHint: string;
   outputAspectRatio: string;
   order: number;
-}
-
-interface JobStatus {
-  id: string;
-  status: "queued" | "in_progress" | "completed" | "failed" | "cancelled";
-  progress: number | null;
-  outputs: { assetId: string; url?: string }[];
-  error?: { message?: string };
 }
 
 interface IpGenerationPanelProps {
@@ -67,6 +53,9 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   );
   const { requireAuth } = useAuthGate();
 
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [templates, setTemplates] = useState<AudienceTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<AudienceTemplate | null>(null);
 
@@ -74,24 +63,72 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   const [refAssetId, setRefAssetId] = useState<string | null>(null);
   const [refAssetUrl, setRefAssetUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const upload = useRef<AbortController | null>(null);
+  useEffect(() => () => upload.current?.abort(), []);
+  const cancelUpload = () => {
+    upload.current?.abort();
+    upload.current = null;
+    setUploading(false);
+    setUploadError(null);
+  };
 
-  const { costPreview, previewLoading, previewError } = useIpGenerationPreview({
-    ipId,
-    templateId: selectedTemplate?.id ?? null,
-    requiresReference: selectedTemplate?.requireReferenceImage ?? false,
-    referenceId: refAssetId,
-  });
+  const { costPreview, previewLoading, previewError, previewErrorMessage, retryPreview } =
+    useIpGenerationPreview({
+      ipId,
+      templateId: selectedTemplate?.id ?? null,
+      requiresReference: selectedTemplate?.requireReferenceImage ?? false,
+      referenceId: refAssetId,
+    });
 
-  // Job progress state
-  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [genError, setGenError] = useState<string | null>(null);
-
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeAttempt = useRef<AbortController | null>(null);
+  const job = useAudienceGeneration(ipId);
+  const { jobStatus, error: genError } = job;
+  const generating = job.busy || job.submitting;
+  const active = useScreenActive();
+  const saving = useRef<AbortController | null>(null);
+  const [saveToken, setSaveToken] = useState<AbortController | null>(null);
+  const savingOutput = active && !!saveToken && !saveToken.signal.aborted;
+  const [outputError, setOutputError] = useState<string | null>(null);
+  useEffect(() => {
+    if (active) return;
+    saving.current?.abort();
+    saving.current = null;
+  }, [active]);
+  useEffect(() => () => saving.current?.abort(), []);
+  const handleSaveOutput = async () => {
+    const output = jobStatus?.outputs[0];
+    if (!active || !isCurrent() || saving.current || !output?.url) return;
+    const token = new AbortController();
+    saving.current = token;
+    const current = () => isCurrent() && saving.current === token && !token.signal.aborted;
+    setSaveToken(token);
+    setOutputError(null);
+    try {
+      await saveOutput(
+        { id: output.assetId, url: output.url, type: "image" },
+        token.signal,
+        current
+      );
+    } catch (error) {
+      if (current())
+        setOutputError(
+          error instanceof Error && error.message ? error.message : t("ipGeneration.saveFailed")
+        );
+    } finally {
+      if (current()) {
+        saving.current = null;
+        setSaveToken(null);
+      }
+    }
+  };
 
   // User compute balance
-  const balance = useComputeWalletBalance();
+  const {
+    balance,
+    error: balanceError,
+    loading: balanceLoading,
+    refresh: refreshBalance,
+  } = useComputeWalletBalance();
 
   // 1. Fetch available templates on mount
   useEffect(() => {
@@ -107,164 +144,135 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
           setSelectedTemplate(res.templates?.[0] ?? null);
         }
       })
-      .catch(() => {
-        if (!controller.signal.aborted && isCurrent()) setTemplates([]);
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && isCurrent())
+          setCatalogError(error instanceof Error && error.message ? error.message : "");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && isCurrent()) setCatalogLoading(false);
       });
     return () => {
       controller.abort();
     };
-  }, [ipId, isCurrent]);
+  }, [ipId, isCurrent, catalogAttempt]);
 
-  // Clean up poll on unmount
-  useEffect(() => {
-    return () => {
-      activeAttempt.current?.abort();
-      activeAttempt.current = null;
-      if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Pick & upload reference photo
+  // Native pickers can temporarily background the app. Keep this operation
+  // tied to its account, IP and selection; cancellation happens on navigation
+  // unmount or an explicit template/reference change, not picker AppState.
   const handlePickPhoto = async () => {
+    if (!isCurrent() || !active || upload.current || job.attempt) return;
+    if (!user) {
+      requireAuth();
+      return;
+    }
+    const token = new AbortController();
+    upload.current = token;
+    const current = () => isCurrent() && upload.current === token && !token.signal.aborted;
+    setUploading(true);
+    setUploadError(null);
     try {
       const picked = await DocumentPicker.getDocumentAsync({
-        type: ["image/*"],
+        type: ["image/jpeg", "image/png", "image/webp"],
+        multiple: false,
         copyToCacheDirectory: true,
+        base64: false,
       });
-
-      if (!isCurrent() || picked.canceled || !picked.assets?.length) return;
-      const asset = picked.assets[0];
-
-      setUploading(true);
+      if (!current() || picked.canceled) return;
+      const asset = picked.assets?.[0];
+      if (picked.assets?.length !== 1 || !asset?.uri || !asset.name?.trim())
+        throw new Error(t("ipGeneration.referenceInvalid"));
+      const reported = asset.file?.type || asset.mimeType;
+      const extensions: Record<string, string> = {
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        png: "image/png",
+        webp: "image/webp",
+      };
+      const type =
+        reported && reported !== "application/octet-stream"
+          ? reported.toLowerCase()
+          : extensions[asset.name.split(".").pop()?.toLowerCase() ?? ""];
+      if (!type || !["image/jpeg", "image/png", "image/webp"].includes(type))
+        throw new Error(t("ipGeneration.referenceInvalid"));
       const res = await uploadMobileMediaFile(
-        {
-          uri: asset.uri,
-          name: asset.name || "reference.jpg",
-          type: asset.mimeType || "image/jpeg",
-          size: asset.size,
-        },
-        { kind: "ip_audience_reference" }
+        { uri: asset.uri, name: asset.name, type, size: asset.size },
+        { kind: "ai_reference_image", maxBytes: 30 * 1024 ** 2, signal: token.signal }
       );
-
-      if (!isCurrent()) return;
+      if (!current()) return;
       setRefAssetId(res.mediaAssetId);
       setRefAssetUrl(res.url);
-    } catch {
-      if (isCurrent()) Alert.alert(t("ipGeneration.uploadFailed"));
+    } catch (error) {
+      if (current())
+        setUploadError(
+          error instanceof Error && error.message ? error.message : t("ipGeneration.uploadFailed")
+        );
     } finally {
-      if (isCurrent()) setUploading(false);
+      if (current()) {
+        upload.current = null;
+        setUploading(false);
+      }
     }
   };
 
   const handleRemovePhoto = () => {
+    cancelUpload();
     setRefAssetId(null);
     setRefAssetUrl(null);
   };
 
-  // Poll status loop
-  const isActiveAttempt = (attempt: AbortController) =>
-    isCurrent() && activeAttempt.current === attempt && !attempt.signal.aborted;
-
-  const pollStatus = (currentJobId: string, templateId: string, attempt: AbortController) => {
-    if (!isActiveAttempt(attempt)) return;
-
-    api
-      .get<Omit<JobStatus, "id">>(
-        `/ip-commerce/ips/${ipId}/generation-templates/${templateId}/jobs/${currentJobId}`,
-        { ...AURORA, signal: attempt.signal }
-      )
-      .then((statusRes) => {
-        if (!isActiveAttempt(attempt)) return;
-
-        const updated: JobStatus = {
-          id: currentJobId,
-          status: statusRes.status,
-          progress: statusRes.progress,
-          outputs: statusRes.outputs || [],
-          error: statusRes.error,
-        };
-        setJobStatus(updated);
-
-        if (statusRes.status === "completed") {
-          activeAttempt.current = null;
-          setGenerating(false);
-        } else if (statusRes.status === "failed" || statusRes.status === "cancelled") {
-          activeAttempt.current = null;
-          setGenerating(false);
-          setGenError(statusRes.error?.message || t("ipGeneration.errorGeneric"));
-        } else {
-          pollTimerRef.current = setTimeout(() => {
-            pollTimerRef.current = null;
-            pollStatus(currentJobId, templateId, attempt);
-          }, 2000);
-        }
-      })
-      .catch((err) => {
-        if (!isActiveAttempt(attempt)) return;
-        activeAttempt.current = null;
-        setGenerating(false);
-        setGenError(err?.message || t("ipGeneration.errorGeneric"));
-      });
-  };
-
-  // Start Generation
-  const handleStartGeneration = async () => {
-    if (!isCurrent() || activeAttempt.current) return;
+  const handleStartGeneration = () => {
+    if (!isCurrent() || !active || upload.current) return;
     if (!user) {
       requireAuth();
       return;
     }
     if (!selectedTemplate || !costPreview || previewLoading || previewError) return;
-
-    // Keep dispatch locked before React processes another tap. The controller
-    // cancels local reads only; an accepted server job continues independently.
-    const attempt = new AbortController();
-    activeAttempt.current = attempt;
-    setGenerating(true);
-    setGenError(null);
-    setJobStatus(null);
-
-    try {
-      const runRes = await api.post<{ jobId: string }>(
-        `/ip-commerce/ips/${ipId}/generation-templates/${selectedTemplate.id}/run`,
-        {
-          ...AURORA,
-          data: {
-            referenceImageAssetId: refAssetId || undefined,
-            idempotencyKey: `ip-audience:${globalThis.crypto.randomUUID()}`,
-          },
-        }
-      );
-
-      pollStatus(runRes.jobId, selectedTemplate.id, attempt);
-    } catch (err: any) {
-      if (!isActiveAttempt(attempt)) return;
-      activeAttempt.current = null;
-      setGenerating(false);
-      setGenError(err?.message || t("ipGeneration.errorGeneric"));
-    }
+    void job.start(selectedTemplate.id, selectedTemplate.name, refAssetId ?? undefined);
   };
-
-  const handleCancel = () => {
-    activeAttempt.current?.abort();
-    activeAttempt.current = null;
-    if (pollTimerRef.current) {
-      clearTimeout(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    setGenerating(false);
-  };
-
   const handleReset = () => {
-    handleCancel();
-    setJobStatus(null);
-    setGenError(null);
+    if (saving.current) return;
+    setOutputError(null);
+    job.reset();
+    retryPreview();
   };
 
-  if (!templates.length) {
-    return null;
+  if (!templates.length && !job.attempt && !job.blocked) {
+    if (!catalogLoading && catalogError === null) return null;
+    return (
+      <View
+        style={[
+          styles.container,
+          { borderColor: theme.border, backgroundColor: theme.backgroundElement },
+        ]}
+      >
+        <ThemedText style={styles.title}>{t("ipGeneration.title")}</ThemedText>
+        {catalogLoading ? (
+          <View style={styles.costRow}>
+            <ActivityIndicator color={theme.textSecondary} />
+            <ThemedText style={styles.subtitle}>{t("ipGeneration.loadingTemplates")}</ThemedText>
+          </View>
+        ) : (
+          <>
+            <ThemedText style={[styles.errorText, { color: theme.brand }]}>
+              {catalogError || t("ipGeneration.templateLoadFailed")}
+            </ThemedText>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setCatalogLoading(true);
+                setCatalogError(null);
+                setCatalogAttempt((value) => value + 1);
+              }}
+              style={[styles.secondaryButton, { backgroundColor: theme.backgroundSelected }]}
+            >
+              <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>
+                {t("common.retry")}
+              </ThemedText>
+            </Pressable>
+          </>
+        )}
+      </View>
+    );
   }
 
   return (
@@ -279,136 +287,197 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
         {t("ipGeneration.subtitle")}
       </ThemedText>
 
-      {/* 1. Template picker */}
-      <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
-        {t("ipGeneration.templateLabel")}
-      </ThemedText>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templateScroll}>
-        <View style={styles.templateRow}>
-          {templates.map((tpl) => {
-            const isSelected = selectedTemplate?.id === tpl.id;
-            return (
-              <Pressable
-                key={tpl.id}
-                onPress={() => {
-                  setSelectedTemplate(tpl);
-                  setGenError(null);
-                }}
-                style={[
-                  styles.templateCard,
-                  {
-                    borderColor: isSelected ? theme.brand : theme.border,
-                    backgroundColor: isSelected ? theme.backgroundSelected : theme.background,
-                  },
-                ]}
-              >
-                <ThemedText style={styles.templateName}>{tpl.name}</ThemedText>
-                {tpl.description ? (
-                  <ThemedText
-                    style={[styles.templateDesc, { color: theme.textSecondary }]}
-                    numberOfLines={2}
-                  >
-                    {tpl.description}
-                  </ThemedText>
-                ) : null}
-                <ThemedText style={[styles.templateBadge, { color: theme.textSecondary }]}>
-                  {tpl.outputAspectRatio}
-                </ThemedText>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
-
-      {/* 2. Reference photo upload */}
-      {selectedTemplate?.requireReferenceImage && (
-        <View style={styles.uploadSection}>
-          <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
-            {t("ipGeneration.referenceImageLabel")}
+      {job.attempt && (
+        <View style={{ gap: Spacing.two }}>
+          <ThemedText style={styles.sectionLabel}>{job.attempt.templateName}</ThemedText>
+          <ThemedText style={[styles.subtitle, { color: theme.textSecondary }]}>
+            {t("ipGeneration.savedAttempt")}
           </ThemedText>
-          {selectedTemplate.referenceImageHint ? (
-            <ThemedText style={[styles.hint, { color: theme.textSecondary }]}>
-              {selectedTemplate.referenceImageHint}
-            </ThemedText>
-          ) : null}
-
-          {refAssetUrl ? (
-            <View style={styles.thumbnailWrapper}>
-              <Image source={{ uri: refAssetUrl }} style={styles.thumbnail} />
-              <Pressable
-                onPress={handleRemovePhoto}
-                style={[styles.removeButton, { backgroundColor: theme.backgroundSelected }]}
-              >
-                <ThemedText style={[styles.removeButtonText, { color: theme.brand }]}>
-                  {t("ipGeneration.removePhoto")}
-                </ThemedText>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              onPress={handlePickPhoto}
-              disabled={uploading}
-              style={[
-                styles.uploadButton,
-                { borderColor: theme.border, backgroundColor: theme.background },
-              ]}
-            >
-              {uploading ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator size="small" color={theme.brand} />
-                  <ThemedText style={{ color: theme.textSecondary, fontSize: 13 }}>
-                    {t("ipGeneration.uploading")}
-                  </ThemedText>
-                </View>
-              ) : (
-                <ThemedText style={[styles.uploadButtonText, { color: theme.text }]}>
-                  {t("ipGeneration.uploadButton")}
-                </ThemedText>
-              )}
-            </Pressable>
-          )}
         </View>
       )}
-
-      {/* 3. Cost Preview */}
-      <View
-        style={[styles.costBox, { borderColor: theme.border, backgroundColor: theme.background }]}
-      >
-        <View style={styles.costRow}>
-          <ThemedText style={[styles.costLabel, { color: theme.textSecondary }]}>
-            {t("ipGeneration.costLabel")}:
+      {!job.attempt && (
+        <>
+          {/* 1. Template picker */}
+          <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
+            {t("ipGeneration.templateLabel")}
           </ThemedText>
-          {previewLoading ? (
-            <ThemedText style={{ color: theme.textSecondary, fontSize: 13 }}>
-              {t("ipGeneration.previewLoading")}
-            </ThemedText>
-          ) : previewError ? (
-            <ThemedText style={{ color: theme.brand, fontSize: 13 }}>
-              {t("ipGeneration.previewFailed")}
-            </ThemedText>
-          ) : costPreview ? (
-            <ThemedText style={[styles.costValue, { color: theme.brand }]}>
-              {costPreview.isFree
-                ? t("ipGeneration.costFree")
-                : t("ipGeneration.costPoints").replace(
-                    "{points}",
-                    String(costPreview.computePoints)
-                  )}
-            </ThemedText>
-          ) : (
-            <ThemedText style={{ color: theme.textSecondary, fontSize: 13 }}>-</ThemedText>
-          )}
-        </View>
-        {balance !== null && (
-          <View style={styles.costRow}>
-            <ThemedText style={[styles.costLabel, { color: theme.textSecondary }]}>
-              {t("ipGeneration.balanceLabel")}:
-            </ThemedText>
-            <ThemedText style={styles.costLabel}>{balance}</ThemedText>
-          </View>
-        )}
-      </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.templateScroll}
+          >
+            <View style={styles.templateRow}>
+              {templates.map((tpl) => {
+                const isSelected = selectedTemplate?.id === tpl.id;
+                return (
+                  <Pressable
+                    key={tpl.id}
+                    onPress={() => {
+                      if (selectedTemplate?.id !== tpl.id) {
+                        cancelUpload();
+                        setSelectedTemplate(tpl);
+                      }
+                    }}
+                    style={[
+                      styles.templateCard,
+                      {
+                        borderColor: isSelected ? theme.brand : theme.border,
+                        backgroundColor: isSelected ? theme.backgroundSelected : theme.background,
+                      },
+                    ]}
+                  >
+                    <ThemedText style={styles.templateName}>{tpl.name}</ThemedText>
+                    {tpl.description ? (
+                      <ThemedText
+                        style={[styles.templateDesc, { color: theme.textSecondary }]}
+                        numberOfLines={2}
+                      >
+                        {tpl.description}
+                      </ThemedText>
+                    ) : null}
+                    <ThemedText style={[styles.templateBadge, { color: theme.textSecondary }]}>
+                      {tpl.outputAspectRatio}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
 
+          {/* 2. Reference photo upload */}
+          {selectedTemplate?.requireReferenceImage && (
+            <View style={styles.uploadSection}>
+              <ThemedText style={[styles.sectionLabel, { color: theme.textSecondary }]}>
+                {t("ipGeneration.referenceImageLabel")}
+              </ThemedText>
+              {selectedTemplate.referenceImageHint ? (
+                <ThemedText style={[styles.hint, { color: theme.textSecondary }]}>
+                  {selectedTemplate.referenceImageHint}
+                </ThemedText>
+              ) : null}
+
+              {uploadError && (
+                <ThemedText
+                  accessibilityRole="alert"
+                  style={[styles.errorText, { color: theme.brand }]}
+                >
+                  {uploadError}
+                </ThemedText>
+              )}
+              {refAssetUrl ? (
+                <View style={styles.thumbnailWrapper}>
+                  <Image source={{ uri: refAssetUrl }} style={styles.thumbnail} />
+                  <Pressable
+                    onPress={handleRemovePhoto}
+                    style={[styles.removeButton, { backgroundColor: theme.backgroundSelected }]}
+                  >
+                    <ThemedText style={[styles.removeButtonText, { color: theme.brand }]}>
+                      {t("ipGeneration.removePhoto")}
+                    </ThemedText>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={handlePickPhoto}
+                  disabled={uploading}
+                  style={[
+                    styles.uploadButton,
+                    { borderColor: theme.border, backgroundColor: theme.background },
+                  ]}
+                >
+                  {uploading ? (
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator size="small" color={theme.brand} />
+                      <ThemedText style={{ color: theme.textSecondary, fontSize: 13 }}>
+                        {t("ipGeneration.uploading")}
+                      </ThemedText>
+                    </View>
+                  ) : (
+                    <ThemedText style={[styles.uploadButtonText, { color: theme.text }]}>
+                      {t("ipGeneration.uploadButton")}
+                    </ThemedText>
+                  )}
+                </Pressable>
+              )}
+            </View>
+          )}
+
+          {/* 3. Cost Preview */}
+          <View
+            style={[
+              styles.costBox,
+              { borderColor: theme.border, backgroundColor: theme.background },
+            ]}
+          >
+            <View style={styles.costRow}>
+              <ThemedText style={[styles.costLabel, { color: theme.textSecondary }]}>
+                {t("ipGeneration.costLabel")}:
+              </ThemedText>
+              {previewLoading ? (
+                <ThemedText style={{ color: theme.textSecondary, fontSize: 13 }}>
+                  {t("ipGeneration.previewLoading")}
+                </ThemedText>
+              ) : previewError ? (
+                <ThemedText style={{ color: theme.brand, fontSize: 13 }}>
+                  {t("ipGeneration.previewFailed")}
+                </ThemedText>
+              ) : costPreview ? (
+                <ThemedText style={[styles.costValue, { color: theme.brand }]}>
+                  {costPreview.isFree
+                    ? t("ipGeneration.costFree")
+                    : t("ipGeneration.costPoints").replace(
+                        "{points}",
+                        String(costPreview.computePoints)
+                      )}
+                </ThemedText>
+              ) : (
+                <ThemedText style={{ color: theme.textSecondary, fontSize: 13 }}>-</ThemedText>
+              )}
+            </View>
+            {previewError && (
+              <View style={{ gap: Spacing.two }}>
+                {!!previewErrorMessage && (
+                  <ThemedText style={[styles.errorText, { color: theme.brand }]}>
+                    {previewErrorMessage}
+                  </ThemedText>
+                )}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={retryPreview}
+                  style={[styles.secondaryButton, { backgroundColor: theme.backgroundSelected }]}
+                >
+                  <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>
+                    {t("common.retry")}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            )}
+            {balanceError && (
+              <View>
+                <ThemedText type="small" accessibilityRole="alert">
+                  {balanceError}
+                </ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={balanceLoading}
+                  onPress={refreshBalance}
+                  style={{ paddingVertical: 8 }}
+                >
+                  <ThemedText>{t("common.retry")}</ThemedText>
+                </Pressable>
+              </View>
+            )}
+            {balance !== null && (
+              <View style={styles.costRow}>
+                <ThemedText style={[styles.costLabel, { color: theme.textSecondary }]}>
+                  {t("ipGeneration.balanceLabel")}:
+                </ThemedText>
+                <ThemedText style={styles.costLabel}>{balance}</ThemedText>
+              </View>
+            )}
+          </View>
+        </>
+      )}
       {/* 4. Progress and results */}
       {generating && (
         <View style={styles.progressBox}>
@@ -421,9 +490,14 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
               )}
             </ThemedText>
           </View>
-          <Pressable onPress={handleCancel} style={styles.cancelLink}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={job.submitting}
+            onPress={job.stop}
+            style={styles.cancelLink}
+          >
             <ThemedText style={[styles.cancelText, { color: theme.textSecondary }]}>
-              {t("ipGeneration.cancel")}
+              {t("ipGeneration.stopTracking")}
             </ThemedText>
           </Pressable>
         </View>
@@ -452,22 +526,30 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
               resizeMode="contain"
             />
           )}
+          {outputError && (
+            <ThemedText
+              accessibilityRole="alert"
+              style={[styles.errorText, { color: theme.brand }]}
+            >
+              {outputError}
+            </ThemedText>
+          )}
           <View style={styles.actionRow}>
             {jobStatus.outputs?.[0]?.url && (
               <Pressable
-                onPress={() => {
-                  if (jobStatus.outputs[0].url) {
-                    void Linking.openURL(jobStatus.outputs[0].url);
-                  }
-                }}
+                accessibilityRole="button"
+                accessibilityState={{ busy: savingOutput, disabled: savingOutput }}
+                disabled={savingOutput}
+                onPress={() => void handleSaveOutput()}
                 style={[styles.primaryButton, { backgroundColor: theme.brand }]}
               >
                 <ThemedText style={styles.primaryButtonText}>
-                  {t("ipGeneration.downloadButton")}
+                  {savingOutput ? t("ipGeneration.savingOutput") : t("ipGeneration.downloadButton")}
                 </ThemedText>
               </Pressable>
             )}
             <Pressable
+              disabled={savingOutput}
               onPress={handleReset}
               style={[styles.secondaryButton, { backgroundColor: theme.backgroundSelected }]}
             >
@@ -479,10 +561,34 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
         </View>
       )}
 
-      {!generating && jobStatus?.status !== "completed" && (
+      {job.attempt && !generating && !job.terminal && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void job.resume()}
+          style={[styles.secondaryButton, { backgroundColor: theme.backgroundSelected }]}
+        >
+          <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>
+            {t("ipGeneration.recoverJob")}
+          </ThemedText>
+        </Pressable>
+      )}
+      {job.terminal && jobStatus?.status !== "completed" && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={handleReset}
+          style={[styles.secondaryButton, { backgroundColor: theme.backgroundSelected }]}
+        >
+          <ThemedText style={[styles.secondaryButtonText, { color: theme.text }]}>
+            {t("ipGeneration.retry")}
+          </ThemedText>
+        </Pressable>
+      )}
+      {!job.attempt && !job.blocked && !generating && jobStatus?.status !== "completed" && (
         <Pressable
           onPress={handleStartGeneration}
           disabled={
+            uploading ||
+            !active ||
             !selectedTemplate ||
             (selectedTemplate.requireReferenceImage && !refAssetId) ||
             !costPreview
@@ -492,6 +598,8 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
             {
               backgroundColor: theme.brand,
               opacity:
+                uploading ||
+                !active ||
                 !selectedTemplate ||
                 (selectedTemplate.requireReferenceImage && !refAssetId) ||
                 !costPreview
@@ -660,6 +768,8 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
     gap: 10,
   },
   primaryButton: {

@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import { useAuthGate } from "@/auth";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -134,7 +135,7 @@ export default function CrewsScreen() {
             { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
           ]}
         >
-          <ScreenHeader title={t("crews.title")} />
+          <CrewHeader />
           <View style={styles.grid}>
             {[0, 1].map((rowIndex) => (
               <View key={rowIndex} style={styles.gridRow}>
@@ -163,7 +164,7 @@ export default function CrewsScreen() {
             { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
           ]}
         >
-          <ScreenHeader title={t("crews.title")} />
+          <CrewHeader />
           <EmptyState
             title={t("crews.loadErrorTitle")}
             detail={error}
@@ -192,7 +193,7 @@ export default function CrewsScreen() {
             paddingRight: Math.max(insets.right, Spacing.four),
           },
         ]}
-        ListHeaderComponent={<ScreenHeader title={t("crews.title")} />}
+        ListHeaderComponent={<CrewHeader />}
         ListHeaderComponentStyle={styles.listHeader}
         ListEmptyComponent={
           <EmptyState
@@ -217,6 +218,50 @@ export default function CrewsScreen() {
           </View>
         )}
       />
+    </View>
+  );
+}
+
+function CrewHeader() {
+  const t = useTranslations(),
+    gate = useAuthGate();
+  const open = () => router.push(toHref("/crew-create"));
+  return (
+    <View style={{ gap: 8 }}>
+      <ScreenHeader title={t("crews.title")} />
+      <Pressable
+        accessibilityRole="button"
+        style={{ minHeight: 44, paddingVertical: 12 }}
+        onPress={() => router.push(toHref("/openings"))}
+      >
+        <ThemedText type="small">{t("openings.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ minHeight: 44, paddingVertical: 12 }}
+        onPress={() => {
+          const openSaved = () => router.push(toHref("/saved-openings"));
+          if (gate.requireAuth({ onAuthenticated: openSaved })) openSaved();
+        }}
+      >
+        <ThemedText type="small">{t("savedOpenings.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ paddingVertical: 8 }}
+        onPress={() => {
+          if (gate.requireAuth({ onAuthenticated: open })) open();
+        }}
+      >
+        <ThemedText type="smallBold">{t("crewCreate.createDialogTitle")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ paddingVertical: 8 }}
+        onPress={() => router.push(toHref("/crew-invite"))}
+      >
+        <ThemedText type="small">{t("crewJoin.title")}</ThemedText>
+      </Pressable>
     </View>
   );
 }

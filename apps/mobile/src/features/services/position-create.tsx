@@ -1,3 +1,7 @@
+import { TaskPaymentTermsField } from "./task-payment-terms-field";
+import { fetchTaskDetail, type TaskDetail } from "./task-detail-api";
+import { isPresetPosition } from "@repo/shared/crew";
+import { CrewSkillsField } from "./crew-skills-field";
 import {
   positionDraft,
   positionEditDraft,
@@ -33,11 +37,15 @@ import {
   type NewPosition,
 } from "./position-create-api";
 export function PositionCreate(props: {
+  active?: boolean;
   crewId: string;
   userId: string;
   generation: number;
   onClose: () => void;
+  closeLabel?: string;
   editing?: EditablePosition;
+  initialTask?: TaskOption;
+  initialPosition?: (typeof PRESET_POSITIONS)[number]["value"];
 }) {
   const initial = props.editing ? positionDraft(props.editing) : undefined;
   const t = useTranslations(),
@@ -45,10 +53,10 @@ export function PositionCreate(props: {
     op = useAuthFormOperation(props.crewId, true);
   const [access, setAccess] = useState<Awaited<ReturnType<typeof fetchPositionCreateAccess>>>(),
     [error, setError] = useState<string>();
-  const [role, setRole] = useState(initial?.positionType ?? "director"),
+  const [role, setRole] = useState(initial?.positionType ?? props.initialPosition ?? "director"),
     [description, setDescription] = useState(initial?.description ?? ""),
     [count, setCount] = useState(String(initial?.targetCount ?? 1)),
-    [skills, setSkills] = useState(initial?.requiredSkills.join(", ") ?? ""),
+    [skills, setSkills] = useState<string[]>(initial?.requiredSkills ?? []),
     [location, setLocation] = useState(initial?.location ?? ""),
     [min, setMin] = useState(initial?.salary.min == null ? "" : String(initial.salary.min)),
     [max, setMax] = useState(initial?.salary.max == null ? "" : String(initial.salary.max)),
@@ -72,16 +80,30 @@ export function PositionCreate(props: {
     [currency, setCurrency] = useState<CurrencyCode>(
       initial?.salary.currency ?? (isChinaRegion ? "CNY" : "USD")
     ),
-    [negotiable, setNegotiable] = useState(initial?.salary.negotiable ?? false),
-    [visibility, setVisibility] = useState<"public" | "private">(
-      initial?.recruitmentVisibility ?? "public"
-    );
-  const [task, setTask] = useState<TaskOption>(),
+    [negotiable, setNegotiable] = useState(initial?.salary.negotiable ?? false);
+  const [paymentTerms, setPaymentTerms] = useState<NewPosition["paymentTerms"]>(
+    initial?.paymentTerms ?? null
+  );
+  const [roleChosen, setRoleChosen] = useState(!!initial || !!props.initialPosition);
+  const [source, setSource] = useState<{ id: string; data?: TaskDetail; error?: string }>();
+  const [sourceRevision, setSourceRevision] = useState(0);
+  const [importedTask, setImportedTask] = useState<string>();
+  const [task, setTask] = useState<TaskOption | undefined>(props.initialTask),
     [picking, setPicking] = useState(false),
     [expanded, setExpanded] = useState<string>(),
     [attempted, setAttempted] = useState(false),
     [saved, setSaved] = useState<string>();
+  const [readError, setReadError] = useState<string>();
+  const [readRevision, setReadRevision] = useState(0);
+  const readKey = `${props.active !== false}:${readRevision}`;
+  const [previousReadKey, setPreviousReadKey] = useState(readKey);
+  if (previousReadKey !== readKey) {
+    setPreviousReadKey(readKey);
+    setAccess(undefined);
+    setReadError(undefined);
+  }
   useEffect(() => {
+    if (props.active === false) return;
     const c = new AbortController();
     void fetchPositionCreateAccess(props.crewId, props.userId, props.generation, c.signal).then(
       (value) => {
@@ -89,11 +111,68 @@ export function PositionCreate(props: {
       },
       (cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setReadError(cause instanceof Error ? cause.message : String(cause));
       }
     );
     return () => c.abort();
-  }, [props.crewId, props.userId, props.generation]);
+  }, [props.crewId, props.userId, props.generation, props.active, readRevision]);
+  useEffect(() => {
+    if (!task || props.editing || props.active === false || !access?.canLinkTask) return;
+    const controller = new AbortController();
+    void fetchTaskDetail(props.crewId, task.id, controller.signal).then(
+      (data) => {
+        if (!controller.signal.aborted && props.generation === getAuthGeneration())
+          setSource({ id: task.id, data });
+      },
+      (cause) => {
+        if (!controller.signal.aborted && props.generation === getAuthGeneration())
+          setSource({ id: task.id, error: cause instanceof Error ? cause.message : String(cause) });
+      }
+    );
+    return () => controller.abort();
+  }, [
+    task,
+    props.crewId,
+    props.generation,
+    props.active,
+    props.editing,
+    access?.canLinkTask,
+    sourceRevision,
+  ]);
+  const taskSource = task && source?.id === task.id ? source : undefined;
+  const importPending = !!task && !props.editing && !taskSource?.data;
+  if (
+    props.active !== false &&
+    props.generation === getAuthGeneration() &&
+    access?.canLinkTask &&
+    !props.editing &&
+    !op.busy &&
+    !attempted &&
+    taskSource?.data &&
+    importedTask !== task?.id
+  ) {
+    const data = taskSource.data;
+    setImportedTask(task!.id);
+    setPaymentTerms(data.paymentTerms ?? null);
+    if (!roleChosen && data.positionRole && isPresetPosition(data.positionRole)) {
+      setRole(data.positionRole);
+      setRoleChosen(true);
+    }
+    setDescription((current) => (current.trim() ? current : data.description));
+    setSkills((current) => (current.length ? current : (data.requiredSkills ?? [])));
+    if (
+      data.rewardUsdMinor != null &&
+      !min &&
+      !max &&
+      positionCurrencies.includes(data.rewardCurrency ?? "USD")
+    ) {
+      setCurrency(data.rewardCurrency ?? "USD");
+      setMin(String(data.rewardUsdMinor / 100));
+      setMax(String(data.rewardUsdMinor / 100));
+      setPeriod("project");
+    }
+    if (data.dueAt && !closeDate) setCloseDate(data.dueAt.slice(0, 10));
+  }
   const locked = op.busy || attempted;
   const action = (label: string, onPress: () => void, disabled = false, selected = false) => (
     <Pressable
@@ -170,7 +249,14 @@ export function PositionCreate(props: {
     </View>
   );
   const submit = () => {
-    if (!access || locked || props.generation !== getAuthGeneration()) return;
+    if (
+      props.active === false ||
+      !access ||
+      locked ||
+      importPending ||
+      props.generation !== getAuthGeneration()
+    )
+      return;
     let data: PositionEditDraft;
     try {
       if (
@@ -187,10 +273,8 @@ export function PositionCreate(props: {
         location: mode === "remote" ? null : location.trim() || null,
         employmentType: employment,
         experienceLevel: experience,
-        requiredSkills: skills
-          .split(/[,\n]/)
-          .map((s) => s.trim())
-          .filter(Boolean),
+        requiredSkills: skills,
+        paymentTerms,
         salary: {
           period,
           currency,
@@ -206,7 +290,7 @@ export function PositionCreate(props: {
           : task
             ? { taskId: task.id }
             : {}),
-        recruitmentVisibility: visibility,
+        recruitmentVisibility: initial?.recruitmentVisibility ?? "public",
       });
     } catch {
       setError(t("positionCreate.invalid"));
@@ -238,7 +322,8 @@ export function PositionCreate(props: {
       (cause) => setError(cause instanceof Error ? cause.message : String(cause))
     );
   };
-  if (picking)
+  if (props.active === false) return null;
+  if (picking && access)
     return (
       <TaskPicker
         crewId={props.crewId}
@@ -247,6 +332,8 @@ export function PositionCreate(props: {
         title={t("positionCreate.task")}
         closeLabel={t("nativeApplications.back")}
         onSelect={(value) => {
+          setSource(undefined);
+          setImportedTask(undefined);
           setTask(value);
           setPicking(false);
         }}
@@ -259,7 +346,8 @@ export function PositionCreate(props: {
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       <ThemedText>{t(props.editing ? "positionEdit.title" : "positionCreate.title")}</ThemedText>
-      {!access && !error && <ActivityIndicator />}
+      {!access && !readError && <ActivityIndicator />}
+      {readError && <ThemedText accessibilityRole="alert">{readError}</ThemedText>}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {saved && (
         <ThemedText>
@@ -280,13 +368,30 @@ export function PositionCreate(props: {
               "positionCreate.role",
               role,
               PRESET_POSITIONS.map((p) => p.value),
-              setRole,
+              (value) => {
+                setRole(value);
+                setRoleChosen(true);
+              },
               (v) => crewPositionLabel(v, t)
             )
           )}
-          {field("positionCreate.description", description, setDescription, 1000, true)}
+          {field("positionCreate.description", description, setDescription, 10000, true)}
+          {!props.editing &&
+            taskSource?.data &&
+            access.canLinkTask &&
+            action(
+              t("positionCreate.useTaskBrief"),
+              () => setDescription(taskSource.data!.description),
+              locked || !!description.trim()
+            )}
+          <ThemedText>{t("positionCreate.publicBriefHelp")}</ThemedText>
           {field("positionCreate.count", count, setCount, 2)}
-          {field("positionCreate.skills", skills, setSkills, 1300, true)}
+          <CrewSkillsField
+            value={skills}
+            onChange={setSkills}
+            generation={props.generation}
+            locked={locked}
+          />
           {choice("positionCreate.mode", mode, WORK_MODES, setMode, (v) =>
             t(`positionCreate.${v}`)
           )}
@@ -297,6 +402,11 @@ export function PositionCreate(props: {
           {choice("positionCreate.experience", experience, EXPERIENCE_LEVELS, setExperience, (v) =>
             t(`positionCreate.${v}`)
           )}
+          <TaskPaymentTermsField
+            value={paymentTerms ?? null}
+            onChange={setPaymentTerms}
+            locked={locked}
+          />
           {choice("positionCreate.currency", currency, positionCurrencies, setCurrency, (v) => v)}
           {choice("positionCreate.period", period, SALARY_PERIODS, setPeriod, (v) =>
             t(`crewTerms.${v}`)
@@ -319,38 +429,47 @@ export function PositionCreate(props: {
                 () => setPicking(true),
                 locked
               )}
+              {task && importPending && !taskSource?.error && <ActivityIndicator />}
+              {taskSource?.error && (
+                <>
+                  <ThemedText accessibilityRole="alert">{taskSource.error}</ThemedText>
+                  {action(
+                    t("common.retry"),
+                    () => {
+                      setSource(undefined);
+                      setSourceRevision((n) => n + 1);
+                    },
+                    locked
+                  )}
+                </>
+              )}
+              {taskSource?.data?.rewardUsdMinor != null &&
+                !positionCurrencies.includes(taskSource.data.rewardCurrency ?? "USD") && (
+                  <ThemedText>{t("positionCreate.taskUsdReward")}</ThemedText>
+                )}
               {task &&
                 action(
                   t("positionCreate.clearTask"),
                   () => {
                     setTask(undefined);
-                    setVisibility("public");
                   },
                   locked
                 )}
             </>
           )}
-          {!props.editing &&
-            task &&
-            choice(
-              "positionCreate.visibility",
-              visibility,
-              ["public", "private"] as const,
-              setVisibility,
-              (v) => t(`positionCreate.${v}`)
-            )}
           <ThemedText>
             {t(props.editing ? "positionEdit.help" : "positionCreate.visibilityHelp")}
           </ThemedText>
           {action(
             t(props.editing ? "positionEdit.save" : "positionCreate.publish"),
             submit,
-            locked
+            locked || importPending
           )}
         </>
       )}
+      {!access && readError && action(t("common.retry"), () => setReadRevision((n) => n + 1))}
       {op.busy && <ActivityIndicator />}
-      {action(t("nativeApplications.back"), props.onClose)}
+      {action(props.closeLabel ?? t("nativeApplications.back"), props.onClose)}
     </ScrollView>
   );
 }

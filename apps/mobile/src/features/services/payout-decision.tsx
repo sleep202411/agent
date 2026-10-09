@@ -13,22 +13,34 @@ import {
   type DecisionPayout,
 } from "./payout-decision-api";
 import { formatFinanceMoney } from "./crew-finance-api";
-export function PayoutDecision({
-  record,
-  userId,
-  generation,
-  onSaved,
-}: {
+type Props = {
   record: DecisionPayout;
   userId: string;
   generation: number;
   onSaved: () => void;
-}) {
+};
+export function PayoutDecision(props: Props) {
+  return (
+    <PayoutDecisionForm
+      key={JSON.stringify([
+        props.record.crewId,
+        props.record.id,
+        props.record.version,
+        props.userId,
+        props.generation,
+      ])}
+      {...props}
+    />
+  );
+}
+function PayoutDecisionForm({ record, userId, generation, onSaved }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(`${record.id}:${record.version}`, true);
   const [allowed, setAllowed] = useState(false),
     [error, setError] = useState<string>(),
+    [accessError, setAccessError] = useState<string>(),
+    [revision, setRevision] = useState(0),
     [choice, setChoice] = useState<"pay" | "void">(),
     [reason, setReason] = useState(""),
     [reference, setReference] = useState(""),
@@ -45,11 +57,11 @@ export function PayoutDecision({
       },
       (cause) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setAccessError(cause instanceof Error ? cause.message : String(cause));
       }
     );
     return () => controller.abort();
-  }, [record.crewId, userId, generation]);
+  }, [record.crewId, userId, generation, revision]);
   const parsed = payoutDecisionInput.safeParse(
     choice === "pay"
       ? {
@@ -62,6 +74,21 @@ export function PayoutDecision({
   );
   return (
     <View style={{ gap: 12 }}>
+      {accessError && (
+        <View style={{ gap: 6 }}>
+          <ThemedText accessibilityRole="alert">{accessError}</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            style={{ padding: 12 }}
+            onPress={() => {
+              setAccessError(undefined);
+              setRevision((value) => value + 1);
+            }}
+          >
+            <ThemedText>{t("common.retry")}</ThemedText>
+          </Pressable>
+        </View>
+      )}
       {allowed &&
         record.status === "pending" &&
         !choice &&

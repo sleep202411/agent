@@ -161,3 +161,17 @@ it("follows pagination and rejects foreign rows", async () => {
     .mockResolvedValueOnce({ items: [{ ...row, crewId: "other" }], nextCursor: null });
   await expect(fetchEditablePosition("crew", "position", "manager", 1)).rejects.toThrow("changed");
 });
+
+it("changes and explicitly clears payment terms", async () => {
+  const original = { ...row, paymentTerms: "monthly" as const };
+  h.get.mockImplementation(async (path) =>
+    path.endsWith("members/me")
+      ? { userId: "manager", permissions: ["openings.manage"] }
+      : { items: [original], nextCursor: null }
+  );
+  await editPosition(original, "manager", 1, { ...positionDraft(original), paymentTerms: null });
+  expect(h.patch).toHaveBeenCalledWith("/crews/crew/positions/position", {
+    service: "aurora",
+    data: { paymentTerms: null },
+  });
+});
