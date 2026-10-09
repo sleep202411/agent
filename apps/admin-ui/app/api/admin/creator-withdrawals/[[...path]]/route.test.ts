@@ -131,3 +131,27 @@ it("forwards only a withdrawal-scoped proof download", async () => {
     `http://server/admin/creator-withdrawals/${id}/proofs/${id}/download`
   );
 });
+
+it("forwards the audited Academy exchange-rate endpoint with its optimistic version", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{"code":200,"data":{}}')));
+  const body = JSON.stringify({
+    rate: "7.123456",
+    source: "Provider quote",
+    expectedVersion: 2,
+    expiresAt: "2026-10-10T00:00:00Z",
+  });
+  const res = await POST(
+    new NextRequest("http://localhost/api/admin/creator-withdrawals/academy-fx", {
+      method: "POST",
+      body,
+    }),
+    { params: Promise.resolve({ path: ["academy-fx"] }) }
+  );
+  expect(res.status).toBe(200);
+  expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
+    "http://server/admin/creator-withdrawals/academy-fx"
+  );
+  expect(new TextDecoder().decode(vi.mocked(fetch).mock.calls[0][1]?.body as Uint8Array)).toBe(
+    body
+  );
+});

@@ -1,3 +1,4 @@
+import { AcademyFxInput } from './academy-fx';
 import {
   Body,
   Controller,
@@ -96,6 +97,24 @@ export class CreatorWithdrawalsAdminController {
   async overview(@CurrentAdmin() admin: AdminActor) {
     return { code: 200, data: await this.withdrawals.overview(admin) };
   }
+  @Get('academy-fx')
+  @Header('Cache-Control', 'no-store')
+  async academyFx(@CurrentAdmin() admin: AdminActor) {
+    return { code: 200, data: await this.withdrawals.academyFx(admin) };
+  }
+  @Post('academy-fx')
+  @HttpCode(200)
+  async setAcademyFx(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(AcademyFxInput))
+    body: z.infer<typeof AcademyFxInput>,
+  ) {
+    return {
+      code: 200,
+      data: await this.withdrawals.setAcademyFx(admin, body),
+    };
+  }
+
   @Get(':id')
   @Header('Cache-Control', 'no-store')
   async detail(

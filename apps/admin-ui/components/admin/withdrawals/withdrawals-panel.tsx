@@ -31,7 +31,14 @@ type Row = {
 type Detail = Row & {
   paymentProofId: string | null;
   internalPaymentNote: string | null;
-  earnings: { id: string; title: string; crewName: string; withdrawalAmountMinor: string }[];
+  earnings: {
+    id: string;
+    title: string;
+    crewName: string;
+    withdrawalAmountMinor: string;
+    sourceCredits?: string;
+    exchangeRate?: { rate: string; source: string; currency: string } | null;
+  }[];
   events: { id: string; action: string; actorId: string; createdAt: string }[];
 };
 type Overview = {
@@ -484,6 +491,12 @@ export function WithdrawalsPanel({
                       </span>
                       <span className="whitespace-nowrap tabular-nums">
                         {withdrawalMoney(e.withdrawalAmountMinor, detail.currency)}
+                        {e.sourceCredits && e.exchangeRate && (
+                          <span className="block whitespace-normal text-xs text-muted-foreground">
+                            {e.sourceCredits} earned points · USD/{e.exchangeRate.currency}{" "}
+                            {e.exchangeRate.rate} · {e.exchangeRate.source}
+                          </span>
+                        )}
                       </span>
                     </li>
                   ))}

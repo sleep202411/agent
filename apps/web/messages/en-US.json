@@ -11892,7 +11892,9 @@
     },
     "viewPaymentProof": "View payment proof",
     "proofLoading": "Opening proof…",
-    "proofFailed": "Could not open payment proof. Try again."
+    "proofFailed": "Could not open payment proof. Try again.",
+    "academyFx": "Academy conversion: US$1 = RMB {rate} ({source}). The final withdrawal rounds down to whole earned points and may be slightly below this estimate.",
+    "academyFxPending": "Academy points are retained. RMB withdrawal will be available when an FD Admin publishes a valid exchange rate."
   },
   "creatorDeviceCity": {
     "consent": "Use your device location to suggest a city. Your coordinates are sent to our regional map provider for this lookup and are not saved by FizzDragon.",

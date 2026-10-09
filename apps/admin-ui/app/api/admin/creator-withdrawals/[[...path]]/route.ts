@@ -46,8 +46,10 @@ async function forward(request: NextRequest, context: Context) {
   const allowed =
     request.method === "GET"
       ? path.length === 0 ||
-        (path.length === 1 && (["overview", "export"].includes(path[0]) || uuid.test(path[0])))
-      : upload ||
+        (path.length === 1 &&
+          (["overview", "export", "academy-fx"].includes(path[0]) || uuid.test(path[0])))
+      : (path.length === 1 && path[0] === "academy-fx") ||
+        upload ||
         (path.length === 2 && uuid.test(path[0]) && ["recipient", "decision"].includes(path[1])) ||
         (path.length === 4 &&
           uuid.test(path[0]) &&

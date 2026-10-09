@@ -1,3 +1,4 @@
+import * as fx from './academy-fx';
 import type { Prisma, CreatorWithdrawal } from '@prisma/client';
 import { CreatorWithdrawalsService } from './creator-withdrawals.service';
 import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
@@ -150,7 +151,7 @@ it('allows a teacher without Crew earnings to withdraw only the requested share 
   const f = fixture();
   f.tx.crewEarningEntry.findMany.mockReset().mockResolvedValue([]);
   f.tx.$queryRaw
-    .mockResolvedValueOnce([{ id: 'enrollment', available: '200' }])
+    .mockResolvedValueOnce([{ id: 'enrollment', credits: '200' }])
     .mockResolvedValueOnce([]);
   const result = await f.service.request('teacher', {
     ...request,
@@ -181,7 +182,7 @@ it('allows a teacher without Crew earnings to withdraw only the requested share 
 it('reserves a mixed request across Crew, Academy and exact-currency referral sources', async () => {
   const f = fixture();
   f.tx.$queryRaw
-    .mockResolvedValueOnce([{ id: 'course', available: '200' }])
+    .mockResolvedValueOnce([{ id: 'course', credits: '200' }])
     .mockResolvedValueOnce([{ id: 'referral', available: '500' }]);
   const result = await f.service.request('alice', {
     ...request,
@@ -221,4 +222,50 @@ it('withdraws CNY referral cash without converting Academy points into CNY', asy
       }) as unknown,
     }),
   );
+});
+
+it('settles a partial RMB withdrawal with whole source points and replays its original amount', async () => {
+  const quote = {
+    currency: 'CNY' as const,
+    rate: '7.123456',
+    source: 'Provider quote',
+    version: 1,
+    expiresAt: '2099-01-01T00:00:00Z',
+  };
+  const readQuote = jest.spyOn(fx, 'academyQuote').mockResolvedValueOnce(quote);
+  try {
+    const f = fixture();
+    f.tx.crewEarningEntry.findMany.mockReset().mockResolvedValue([]);
+    f.tx.$queryRaw
+      .mockResolvedValueOnce([{ id: 'course', credits: '100' }])
+      .mockResolvedValueOnce([]);
+    const cnRequest = {
+      ...request,
+      currency: 'CNY' as const,
+      expectedAvailableAmountMinor: '712',
+      percentageBps: 1405,
+    };
+    const result = await f.service.request('teacher', cnRequest);
+    expect(result.amountMinor).toBe('99');
+    expect(f.tx.academyWithdrawalAllocation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        amountMinor: 99n,
+        sourceCredits: 14n,
+        exchangeRate: quote,
+      }) as unknown,
+    });
+    expect(f.wallet.postEntryTx).toHaveBeenCalledWith(
+      f.tx,
+      expect.objectContaining({ amount: 14n, heldDelta: 14n }),
+    );
+    const prior = await (f.tx.creatorWithdrawal.create.mock.results[0]
+      .value as Promise<CreatorWithdrawal>);
+    f.tx.creatorWithdrawal.findUnique.mockResolvedValue(prior);
+    expect((await f.service.request('teacher', cnRequest)).amountMinor).toBe(
+      '99',
+    );
+    expect(f.tx.academyWithdrawalAllocation.create).toHaveBeenCalledTimes(1);
+  } finally {
+    readQuote.mockRestore();
+  }
 });

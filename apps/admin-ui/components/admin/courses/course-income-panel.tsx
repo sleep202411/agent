@@ -81,7 +81,7 @@ export function CourseIncomePanel({
       ) : null}
       <p className="text-sm text-slate-600">
         {siteKey === "cn"
-          ? "Earned community points are shown above. RMB settlement requires an approved conversion rate. "
+          ? "100 earned community points = US$1, converted to RMB using the published USD/CNY settlement rate. Manage rates in the withdrawal queue. "
           : "100 earned community points = US$1. "}
         <Link href="/withdrawals" className="ml-1 underline">
           剧组提现

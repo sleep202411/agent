@@ -11892,7 +11892,9 @@
     },
     "viewPaymentProof": "查看付款凭证",
     "proofLoading": "正在打开凭证…",
-    "proofFailed": "无法打开付款凭证，请重试。"
+    "proofFailed": "无法打开付款凭证，请重试。",
+    "academyFx": "授课收入汇率：1美元 = {rate}人民币（{source}）。最终提现按完整已赚积分向下取整，可能略低于估算金额。",
+    "academyFxPending": "授课积分已保留，FD管理员发布有效汇率后可申请人民币提现。"
   },
   "creatorDeviceCity": {
     "consent": "使用设备位置推荐城市。此次查询会将坐标发送至所在区域的地图服务商，FizzDragon 不会保存坐标。",

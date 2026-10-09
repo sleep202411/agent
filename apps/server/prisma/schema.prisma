@@ -11275,6 +11275,8 @@ model AcademyWithdrawalAllocation {
  enrollmentId String @map("enrollment_id") @db.Uuid
  amountMinor BigInt @map("amount_minor")
  currency String @default("USD") @db.VarChar(3)
+ sourceCredits BigInt? @map("source_credits")
+ exchangeRate Json? @map("exchange_rate") @db.JsonB
  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
  withdrawal CreatorWithdrawal @relation(fields:[withdrawalId],references:[id],onDelete:Restrict)
  enrollment AcademyEnrollment @relation(fields:[enrollmentId],references:[id],onDelete:Restrict)
@@ -11322,4 +11324,14 @@ model CrewProjectComputeBudget {
  version Int @default(1)
  data Json @db.JsonB
  @@map("crew_project_compute_budgets")
+}
+
+model AcademyExchangeRate {
+ pair String @id @db.VarChar(16)
+ rate String @db.VarChar(32)
+ source String @db.VarChar(500)
+ expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+ version Int @default(1)
+ updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+ @@map("academy_exchange_rates")
 }

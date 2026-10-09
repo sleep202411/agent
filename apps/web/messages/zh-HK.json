@@ -11892,7 +11892,9 @@
     },
     "viewPaymentProof": "查看付款憑證",
     "proofLoading": "正在開啟憑證…",
-    "proofFailed": "無法開啟付款憑證，請重試。"
+    "proofFailed": "無法開啟付款憑證，請重試。",
+    "academyFx": "授課收入匯率：1美元 = {rate}人民幣（{source}）。最終提現按完整已賺積分向下取整，可能略低於估算金額。",
+    "academyFxPending": "授課積分已保留，FD管理員發布有效匯率後可申請人民幣提現。"
   },
   "creatorDeviceCity": {
     "consent": "使用裝置位置推薦城市。此次查詢會將座標傳送至所在區域的地圖服務商，FizzDragon 不會儲存座標。",
