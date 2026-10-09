@@ -782,7 +782,7 @@ function TaskCreationSession({
                 if (!value) setCreditTaskId(null);
               }}
             >
-              <DialogContent>
+              <DialogContent className="w-[calc(100vw-2rem)] max-w-5xl sm:max-w-5xl">
                 <DialogHeader>
                   <DialogTitle>{t("addCredit")}</DialogTitle>
                 </DialogHeader>

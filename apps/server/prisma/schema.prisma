@@ -10747,6 +10747,7 @@ model CrewComputeRequest {
   taskId String @map("task_id") @db.Uuid
   workspaceId String @map("workspace_id") @db.Uuid
   userId String @map("user_id") @db.VarChar(64)
+  requestedByUserId String? @map("requested_by_user_id") @db.VarChar(64)
   taskTitle String @map("task_title") @db.VarChar(180)
   points Int
   reason String @db.Text

@@ -174,3 +174,5 @@ it("prefills a routed invite without joining and clears the previous review for 
   expect(button("crewJoin.accept")).toBeUndefined();
   expect(h.accept).not.toHaveBeenCalled();
 });
+
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));

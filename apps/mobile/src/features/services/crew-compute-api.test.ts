@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
-import { fetchCompute, createCompute } from "./crew-compute-api";
+import { fetchCompute, createCompute, setupComputeWorkspace } from "./crew-compute-api";
 const h = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
@@ -106,4 +106,21 @@ it("rejects stale session before and after request", async () => {
     return row;
   });
   await expect(createCompute("crew", "user", input, 1)).rejects.toThrow("session");
+});
+
+it("validates the selected recipient rather than confusing them with the owner", async () => {
+  await expect(
+    createCompute("crew", "owner", { ...input, beneficiaryUserId: "user" }, 1)
+  ).resolves.toMatchObject({ userId: "user" });
+  vi.mocked(api.post).mockResolvedValue({ ...row, userId: "owner" });
+  await expect(
+    createCompute("crew", "owner", { ...input, beneficiaryUserId: "user" }, 1)
+  ).rejects.toThrow("receipt");
+});
+it("sets up a workspace only in the current session and validates the receipt", async () => {
+  vi.mocked(api.post).mockResolvedValue({ workspaceId: id });
+  await expect(setupComputeWorkspace("crew", 1)).resolves.toEqual({ workspaceId: id });
+  h.generation = 2;
+  await expect(setupComputeWorkspace("crew", 1)).rejects.toThrow("expired");
+  expect(api.post).toHaveBeenCalledTimes(1);
 });

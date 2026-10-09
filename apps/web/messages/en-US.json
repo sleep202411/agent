@@ -2342,7 +2342,8 @@
         "submit": "Submit Application",
         "submitting": "Submitting…",
         "submitSuccess": "Application submitted",
-        "submitFailed": "Could not submit application"
+        "submitFailed": "Could not submit application",
+        "academy": "Please visit Academy to get your verification"
       }
     },
     "certificates": {
@@ -10010,7 +10011,8 @@
     "taskSkills": "Required skills",
     "taskUnspecified": "Not specified",
     "taskAcceptExplanation": "Accepting joins you to this Crew and assigns this task to you.",
-    "acceptTask": "Accept task"
+    "acceptTask": "Accept task",
+    "goVerification": "Go to verification"
   },
   "tv": {
     "checkingAccess": "Checking episode access…",
@@ -11158,12 +11160,12 @@
     "points": "points",
     "equivalent": "USD equivalent at the standard points rate, not cash paid.",
     "task": "Task",
-    "selectTask": "Select your assigned task",
+    "selectTask": "Select a task",
     "reason": "Reason",
     "request": "Request points",
-    "noTasks": "You need an assigned task before you can request points.",
+    "noTasks": "Assign a creator to a task before requesting points.",
     "decisionNote": "Decision note (optional)",
-    "applicant": "Applicant",
+    "applicant": "Recipient",
     "status": "Status",
     "decision": "Decision",
     "approved": "Approved",
@@ -11179,7 +11181,11 @@
     "producerDeduction": "FD Admin-approved producer deduction: {amount} minor units ({currency})",
     "usageByTask": "Usage by task and person",
     "committed": "Spent + reserved",
-    "creator": "Creator"
+    "creator": "Creator",
+    "ownerOnly": "Only the project owner can request compute points. Ask the owner to link the workspace and request points for your task.",
+    "workspaceRequired": "Set up the project compute workspace before requesting points. This creates or reuses its accounting workspace; it does not add points or move Studio projects.",
+    "selectCreator": "Select an assigned creator",
+    "setupWorkspace": "Set up compute workspace"
   },
   "crewTaskDeliveryLayout": {
     "progress": "Task Delivery Progress",

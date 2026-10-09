@@ -49,6 +49,7 @@ const pageSchema = z.object({
       })
     )
     .optional(),
+  workspaceLinked: z.boolean().optional(),
   isOwner: z.boolean(),
   consumedPoints: z.string().regex(/^\d+$/),
   totals: z.object({
@@ -56,7 +57,14 @@ const pageSchema = z.object({
     approved: z.number().int().nonnegative().optional(),
     rejected: z.number().int().nonnegative().optional(),
   }),
-  tasks: z.array(z.object({ id: z.string().uuid(), title: z.string(), number: z.number().int() })),
+  tasks: z.array(
+    z.object({
+      id: z.string().uuid(),
+      title: z.string(),
+      number: z.number().int(),
+      assignees: z.array(z.object({ userId: z.string() })).optional(),
+    })
+  ),
   nextCursor: z.string().uuid().nullable(),
   items: z.array(computeRequest),
 });
@@ -64,6 +72,7 @@ export type ComputePage = z.infer<typeof pageSchema>;
 export const computeInput = z
   .object({
     taskId: z.string().uuid(),
+    beneficiaryUserId: z.string().min(1).max(64).optional(),
     points: z.number().int().positive().max(2_000_000_000),
     reason: z.string().trim().min(1).max(2000),
     requestKey: z.string().uuid(),
@@ -109,7 +118,7 @@ export async function createCompute(
   if (generation !== getAuthGeneration()) throw new Error("Compute request session expired");
   if (
     receipt.crewId !== crewId ||
-    receipt.userId !== userId ||
+    receipt.userId !== (data.beneficiaryUserId ?? userId) ||
     receipt.taskId !== data.taskId ||
     receipt.points !== data.points ||
     receipt.reason !== data.reason ||
@@ -117,4 +126,16 @@ export async function createCompute(
   )
     throw new Error("Compute request receipt does not match. Refresh before continuing.");
   return receipt;
+}
+
+export async function setupComputeWorkspace(crewId: string, generation: number) {
+  identifier.parse(crewId);
+  if (generation !== getAuthGeneration()) throw new Error("Compute request session expired");
+  const result = z
+    .object({ workspaceId: z.string().uuid() })
+    .parse(
+      await api.post(`/crews/${crewId}/compute-requests/workspace`, { service: "aurora", data: {} })
+    );
+  if (generation !== getAuthGeneration()) throw new Error("Compute request session expired");
+  return result;
 }

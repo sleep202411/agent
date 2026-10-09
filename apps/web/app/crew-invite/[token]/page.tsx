@@ -14,6 +14,7 @@
  * better by clicking again.
  */
 
+import { LevelApplyDialog } from "@/app/(site)/creators/_components/center/dialogs/level-apply-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
@@ -102,6 +103,7 @@ export default function CrewInvitePage() {
 }
 
 function CrewInviteSession({ token }: { token: string }) {
+  const [verificationOpen, setVerificationOpen] = useState(false);
   const t = useTranslations("crewInvite");
   const paymentT = useTranslations("taskPaymentTerms");
   const tc = useTranslations("crewCommunityInvite");
@@ -362,6 +364,14 @@ function CrewInviteSession({ token }: { token: string }) {
                 </p>
               </section>
             ) : null}
+            {view.preview.task && (
+              <>
+                <Button variant="outline" onClick={() => setVerificationOpen(true)}>
+                  {t("goVerification")}
+                </Button>
+                <LevelApplyDialog open={verificationOpen} onOpenChange={setVerificationOpen} />
+              </>
+            )}
             {error ? <p className="m-0 text-sm text-[#ff6b6b]">{error}</p> : null}
             <Button onClick={() => void join()} disabled={joining} className="h-11 w-full">
               {joining ? <IconLoader2 className="mr-2 size-4 animate-spin" /> : null}

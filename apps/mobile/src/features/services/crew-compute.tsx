@@ -9,6 +9,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import {
   fetchCompute,
+  setupComputeWorkspace,
   createCompute,
   computeInput,
   type ComputePage,
@@ -141,7 +142,13 @@ function Panel(props: Props & { onSaved: () => void }) {
                 </ThemedText>
               </View>
             ))}
-          <RequestForm {...props} tasks={page.tasks} />
+          {!page.isOwner ? (
+            <ThemedText>{t("crewComputeFinance.ownerOnly")}</ThemedText>
+          ) : page.workspaceLinked === false ? (
+            <WorkspaceSetup {...props} />
+          ) : (
+            <RequestForm {...props} tasks={page.tasks} />
+          )}
           {!page.items.length && <ThemedText>{t("crewComputeFinance.empty")}</ThemedText>}
           {page.items.map((row) => (
             <View key={row.id} style={{ paddingVertical: 12, gap: 6 }}>
@@ -194,6 +201,9 @@ function RequestForm(props: Props & { tasks: ComputePage["tasks"]; onSaved: () =
     [reason, setReason] = useState(""),
     [error, setError] = useState<string>(),
     [attempted, setAttempted] = useState(false);
+  const [beneficiary, setBeneficiary] = useState("");
+  const assignees = props.tasks.find((task) => task.id === taskId)?.assignees ?? [];
+  const beneficiaryUserId = assignees.length === 1 ? assignees[0]!.userId : beneficiary;
   const request = useRef<ComputeInput | null>(null);
   if (!props.tasks.length) return <ThemedText>{t("crewComputeFinance.noTasks")}</ThemedText>;
   return (
@@ -206,10 +216,29 @@ function RequestForm(props: Props & { tasks: ComputePage["tasks"]; onSaved: () =
           accessibilityState={{ checked: taskId === task.id }}
           disabled={attempted || op.busy}
           style={{ padding: 12 }}
-          onPress={() => setTaskId(task.id)}
+          onPress={() => {
+            setTaskId(task.id);
+            setBeneficiary("");
+          }}
         >
           <ThemedText>
             {taskId === task.id ? "✓ " : ""}TASK-{task.number} · {task.title}
+          </ThemedText>
+        </Pressable>
+      ))}
+      <ThemedText>{t("crewComputeFinance.applicant")}</ThemedText>
+      {assignees.map((a) => (
+        <Pressable
+          key={a.userId}
+          accessibilityRole="radio"
+          accessibilityState={{ checked: beneficiaryUserId === a.userId }}
+          disabled={attempted || op.busy}
+          onPress={() => setBeneficiary(a.userId)}
+          style={{ padding: 12 }}
+        >
+          <ThemedText>
+            {beneficiaryUserId === a.userId ? "✓ " : ""}
+            {a.userId}
           </ThemedText>
         </Pressable>
       ))}
@@ -244,10 +273,15 @@ function RequestForm(props: Props & { tasks: ComputePage["tasks"]; onSaved: () =
           void op.run(
             async () => {
               if (!request.current) {
-                if (!/^\d+$/.test(points) || !props.tasks.some((task) => task.id === taskId))
+                if (
+                  !assignees.some((a) => a.userId === beneficiaryUserId) ||
+                  !/^\d+$/.test(points) ||
+                  !props.tasks.some((task) => task.id === taskId)
+                )
                   throw new Error(t("mobileCompute.invalid"));
                 const parsed = computeInput.safeParse({
                   taskId,
+                  beneficiaryUserId,
                   points: Number(points),
                   reason,
                   requestKey: uuid.v4(),
@@ -270,6 +304,32 @@ function RequestForm(props: Props & { tasks: ComputePage["tasks"]; onSaved: () =
       {op.busy && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {attempted && <ThemedText>{t("mobileCompute.retryHelp")}</ThemedText>}
+    </View>
+  );
+}
+
+function WorkspaceSetup(props: Props & { onSaved: () => void }) {
+  const t = useTranslations();
+  const op = useAuthFormOperation(props.crewId, true);
+  const [error, setError] = useState("");
+  return (
+    <View style={{ gap: 12 }}>
+      <ThemedText>{t("crewComputeFinance.workspaceRequired")}</ThemedText>
+      {error ? <ThemedText accessibilityRole="alert">{error}</ThemedText> : null}
+      <Pressable
+        accessibilityRole="button"
+        disabled={op.busy}
+        style={{ padding: 12 }}
+        onPress={() => {
+          void op.run(
+            () => setupComputeWorkspace(props.crewId, props.generation),
+            props.onSaved,
+            (e) => setError(e instanceof Error ? e.message : String(e))
+          );
+        }}
+      >
+        <ThemedText>{t("crewComputeFinance.setupWorkspace")}</ThemedText>
+      </Pressable>
     </View>
   );
 }

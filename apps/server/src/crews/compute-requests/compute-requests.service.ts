@@ -1,3 +1,4 @@
+import { CrewCollaborationService } from '../collaboration/crew-collaboration.service';
 import { taskComputeUsage } from './task-compute-usage';
 import { readProjectBudget, releasedPoints } from './project-budget';
 import {
@@ -17,6 +18,7 @@ export class CrewComputeRequestsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorization: CrewAuthorizationService,
+    private readonly collaboration: CrewCollaborationService,
   ) {}
 
   private async access(
@@ -28,6 +30,14 @@ export class CrewComputeRequestsService {
     if (!access)
       throw new ForbiddenException('Active Crew membership is required');
     return access;
+  }
+
+  async setupWorkspace(crewId: string, userId: string) {
+    const access = await this.access(crewId, userId);
+    if (!access.isOwner)
+      throw new ForbiddenException('Only the project owner can set up compute');
+    const space = await this.collaboration.ensureCrewSpace(crewId, userId);
+    return { workspaceId: space.workspaceId };
   }
 
   async list(crewId: string, userId: string, cursor?: string) {
@@ -52,8 +62,17 @@ export class CrewComputeRequestsService {
         _sum: { points: true },
       }),
       this.prisma.crewTask.findMany({
-        where: { crewId, deletedAt: null, assignees: { some: { userId } } },
-        select: { id: true, title: true, number: true },
+        where: {
+          crewId,
+          deletedAt: null,
+          ...(access.isOwner ? {} : { assignees: { some: { userId } } }),
+        },
+        select: {
+          id: true,
+          title: true,
+          number: true,
+          assignees: { select: { userId: true } },
+        },
         orderBy: { number: 'desc' },
       }),
       // Actual settled wallet spend, not quote/cost estimates or outstanding holds.
@@ -83,6 +102,10 @@ export class CrewComputeRequestsService {
       }),
     ]);
     const budget = await readProjectBudget(this.prisma, crewId);
+    const crew = await this.prisma.crew.findUnique({
+      where: { id: crewId },
+      select: { workspaceId: true },
+    });
     return {
       projectBudget: budget
         ? {
@@ -103,6 +126,7 @@ export class CrewComputeRequestsService {
         userId,
         access.isOwner,
       ),
+      workspaceLinked: !!crew?.workspaceId,
       isOwner: access.isOwner,
       tasks,
       items: requests.slice(0, 50),
@@ -136,7 +160,7 @@ export class CrewComputeRequestsService {
       );
     if (!task.crew.workspaceId)
       throw new BadRequestException(
-        'Link the Crew to a workspace before requesting compute points',
+        'Ask the project owner to set up the compute workspace, then submit the points request',
       );
     return task;
   }
@@ -146,6 +170,7 @@ export class CrewComputeRequestsService {
     userId: string,
     input: {
       taskId: string;
+      beneficiaryUserId?: string;
       points: number;
       reason: string;
       requestKey: string;
@@ -153,16 +178,28 @@ export class CrewComputeRequestsService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
+      await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR UPDATE`;
+      const owner = await this.access(crewId, userId, tx);
+      if (!owner.isOwner)
+        throw new ForbiddenException(
+          'Only the project owner can request compute points for an assigned creator',
+        );
+      const { beneficiaryUserId = userId, ...requestInput } = input;
       if (input.requestKey === input.taskId)
         throw new BadRequestException(
           'This request key is reserved for the initial allowance.',
         );
-      const task = await this.eligible(tx, crewId, input.taskId, userId);
+      const task = await this.eligible(
+        tx,
+        crewId,
+        input.taskId,
+        beneficiaryUserId,
+      );
       const existing = await tx.crewComputeRequest.findUnique({
         where: {
           crewId_userId_requestKey: {
             crewId,
-            userId,
+            userId: beneficiaryUserId,
             requestKey: input.requestKey,
           },
         },
@@ -197,15 +234,16 @@ export class CrewComputeRequestsService {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${wallet.id}`})::bigint)`;
       const request = await tx.crewComputeRequest.create({
         data: {
-          ...input,
+          ...requestInput,
           crewId,
-          userId,
+          userId: beneficiaryUserId,
+          requestedByUserId: userId,
           taskTitle: task.title,
           workspaceId: task.crew.workspaceId!,
           createdAt: new Date(),
         },
       });
-      await this.eligible(tx, crewId, input.taskId, userId);
+      await this.eligible(tx, crewId, input.taskId, beneficiaryUserId);
       return request;
     });
   }

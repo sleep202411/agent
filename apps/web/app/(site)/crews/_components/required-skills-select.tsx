@@ -33,7 +33,6 @@ export function RequiredSkillsSelect({
   return (
     <fieldset disabled={disabled} className="space-y-2">
       <legend className="mb-2 text-xs font-medium text-muted-foreground">{t("label")}</legend>
-      <p className="text-xs text-muted-foreground">{t("hint")}</p>
       {query.isPending && user ? (
         <p role="status" className="text-xs">
           {t("loading")}

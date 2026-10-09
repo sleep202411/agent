@@ -6,6 +6,7 @@ Source tags identify a committed, clean main revision. Docker applies the
 archived repository's .dockerignore; local edits never enter the build context.
 """
 import io
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -177,11 +178,116 @@ def docker_environment(config: Path, plugins) -> dict[str, str]:
     return environment
 
 
+def registry_login(cloud, environment):
+    auth = cloud("cr", "GetAuthorizationToken", "--InstanceId", INSTANCE_ID, "--ExpiresInHours", "24")
+    username, token = auth.get("TempUsername"), auth.get("AuthorizationToken")
+    if (auth.get("IsSuccess") is not True or not isinstance(username, str)
+            or not username or not isinstance(token, str) or not token):
+        raise BuildError("Singapore registry authorization failed")
+    login = subprocess.run(
+        ["docker", "login", PUSH_HOST, "--username", username, "--password-stdin"],
+        input=token + "\n", text=True, capture_output=True, env=environment, check=False,
+    )
+    del auth, token
+    if login.returncode:
+        raise BuildError("Singapore registry Docker login failed")
+
+
+def service_inputs(root, source, service):
+    spec = importlib.util.spec_from_file_location(
+        "sg_release_inputs", Path(__file__).resolve().parents[1] / "release_inputs.py")
+    identity = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(identity)
+    return identity.inputs(root, source, service, "com")
+
+
+def find_reusable_image(root, source, service, cloud):
+    """Fail closed on registry errors; reuse only verified ancestor inputs."""
+    expected = service_inputs(root, source, service)
+
+    def query(action, **parameters):
+        args = ["cr", action, "--InstanceId", INSTANCE_ID]
+        for key, value in parameters.items():
+            args += ["--" + key, str(value)]
+        result = cloud(*args)
+        if result.get("IsSuccess") is not True or result.get("Code") != "success":
+            raise BuildError("Singapore registry lookup failed; refusing fallback build")
+        return result
+
+    name = f"fizzdragon-{service}"
+    listing = query("ListRepository", RepoNamespaceName="fizzdragon", RepoName=name)
+    rows = listing.get("Repositories", [])
+    if listing.get("TotalCount") != 1 or len(rows) != 1:
+        raise BuildError("Singapore image repository cannot be uniquely verified")
+    repo = rows[0]
+    if (repo.get("RepoName") != name or repo.get("RepoNamespaceName") != "fizzdragon"
+            or repo.get("InstanceId") != INSTANCE_ID or repo.get("RepoStatus") != "NORMAL"):
+        raise BuildError("Singapore image repository identity mismatch")
+    page = 1
+    all_rows = []
+    while True:
+        listing = query("ListRepoTag", RepoId=repo["RepoId"], PageNo=page, PageSize=100)
+        rows = listing.get("Images")
+        total = listing.get("TotalCount")
+        if not isinstance(rows, list) or not isinstance(total, int) or total < 0:
+            raise BuildError("Invalid Singapore image listing")
+        all_rows.extend(rows)
+        if page * 100 >= total:
+            break
+        if not rows:
+            raise BuildError("Incomplete Singapore image listing")
+        page += 1
+    spec = importlib.util.spec_from_file_location(
+        "sg_release_order", Path(__file__).resolve().parents[1] / "release_inputs.py")
+    identity = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(identity)
+    for _, row in identity.newest_first(root, source, [(row.get("Tag", ""), row) for row in all_rows]):
+        tag = row.get("Tag", "")
+        digest = row.get("Digest", "")
+        digest = digest if digest.startswith("sha256:") else "sha256:" + digest
+        if (row.get("Status") != "NORMAL" or not re.fullmatch(r"[0-9a-f]{40}", tag)
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)):
+            continue
+        ancestry = subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", tag, source],
+                                  capture_output=True)
+        if ancestry.returncode:
+            continue
+        # Registry history can predate this deployment system. Such images
+        # have no comparable recipe and cannot establish safe reuse.
+        recipe = subprocess.run(
+            ["git", "-C", str(root), "ls-tree", "--name-only", tag, "--",
+             "deploy/aliyun-sg/production-build.py"],
+            capture_output=True, text=True, check=True)
+        if not recipe.stdout.strip():
+            continue
+        if service_inputs(root, tag, service) != expected:
+            continue
+        verified = query("GetRepoTag", RepoId=repo["RepoId"], Tag=tag)
+        current = verified.get("Digest", "")
+        current = current if current.startswith("sha256:") else "sha256:" + current
+        if verified.get("Tag") != tag or verified.get("Status") != "NORMAL" or current != digest:
+            raise BuildError("Singapore image changed during reuse verification")
+        print(f"Reusing .com {service}:{tag} ({digest}); no build", flush=True)
+        return f"{RUNTIME_HOST}/fizzdragon/fizzdragon-{service}@{digest}"
+    return None
+
+
 def build_images(root: Path, services: list[str], cloud, source=None) -> dict[str, str]:
     """Push all selected amd64 images; return exact VPC runtime digest references."""
     if not services or len(set(services)) != len(services) or not set(services) <= SERVICES:
         raise ValueError("Select unique services: web server studio admin-ui agent-os game-agent")
     source = source or committed_source(root)
+    images = {}
+    missing = []
+    for service in services:
+        existing = find_reusable_image(root, source, service, cloud)
+        if existing:
+            images[service] = existing
+        else:
+            missing.append(service)
+    if not missing:
+        return images
+    services = missing
     checked = subprocess.run(["docker", "info", "--format", "{{json .ClientInfo.Plugins}}"],
                              capture_output=True, text=True, check=False)
     if checked.returncode:
@@ -201,19 +307,7 @@ def build_images(root: Path, services: list[str], cloud, source=None) -> dict[st
         require_harness_source(context, services)
         public = parse_build_env(context / BUILD_ENV)
         environment = docker_environment(config, plugins)
-        auth = cloud("cr", "GetAuthorizationToken", "--InstanceId", INSTANCE_ID)
-        username, token = auth.get("TempUsername"), auth.get("AuthorizationToken")
-        if (auth.get("IsSuccess") is not True or not isinstance(username, str)
-                or not username or not isinstance(token, str) or not token):
-            raise BuildError("Singapore registry authorization failed")
-        login = subprocess.run(
-            ["docker", "login", PUSH_HOST, "--username", username, "--password-stdin"],
-            input=token + "\n", text=True, capture_output=True, env=environment, check=False,
-        )
-        del auth, token
-        if login.returncode:
-            raise BuildError("Singapore registry Docker login failed")
-        images = {}
+        registry_login(cloud, environment)
         for service in services:
             arguments = {}
             if service == "web":
@@ -230,7 +324,7 @@ def build_images(root: Path, services: list[str], cloud, source=None) -> dict[st
                 arguments = {"NEXT_PUBLIC_ADMIN_UI_BASE_PATH": "/"}
             metadata = temporary / f"{service}-metadata.json"
             command = [
-                "docker", "buildx", "build", "--builder", "default", "--platform", "linux/amd64", "--push",
+                "docker", "buildx", "build", "--builder", "default", "--platform", "linux/amd64", "--load",
                 "--provenance=false", "--metadata-file", str(metadata), "--progress=plain",
                 "--file", str(context / f"apps/{service}/Dockerfile"),
                 "--tag", f"{PUSH_HOST}/fizzdragon/fizzdragon-{service}:{tag}",
@@ -239,7 +333,23 @@ def build_images(root: Path, services: list[str], cloud, source=None) -> dict[st
                 command += ["--build-arg", f"{key}={value}"]
             print(f"Building .com {service} ({tag})", flush=True)
             subprocess.run([*command, str(context)], env=environment, check=True)
-            image_digest = json.loads(metadata.read_text()).get("containerimage.digest", "")
+            # Save the completed image locally before contacting the registry.
+            # Refresh credentials after compilation, and retry only the push.
+            reference = f"{PUSH_HOST}/fizzdragon/fizzdragon-{service}:{tag}"
+            for attempt in range(2):
+                registry_login(cloud, environment)
+                pushed = subprocess.run(["docker", "push", reference], env=environment, check=False)
+                if pushed.returncode == 0:
+                    break
+            else:
+                raise BuildError(f"Push failed for {service}; completed image retained locally as {reference}")
+            inspected = subprocess.run(["docker", "image", "inspect", reference,
+                                        "--format", "{{json .RepoDigests}}"],
+                                       env=environment, capture_output=True, text=True, check=True)
+            prefix = reference.rsplit(":", 1)[0] + "@"
+            digests = {value[len(prefix):] for value in json.loads(inspected.stdout)
+                       if value.startswith(prefix)}
+            image_digest = next(iter(digests)) if len(digests) == 1 else ""
             if not isinstance(image_digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", image_digest):
                 raise BuildError(f"Docker did not return a valid pushed digest for {service}")
             images[service] = f"{RUNTIME_HOST}/fizzdragon/fizzdragon-{service}@{image_digest}"

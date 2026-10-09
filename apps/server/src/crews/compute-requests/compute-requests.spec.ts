@@ -57,6 +57,9 @@ function fixture(owner = true) {
       },
     ]),
     $executeRaw: jest.fn().mockResolvedValue(1),
+    crew: {
+      findUnique: jest.fn().mockResolvedValue({ workspaceId: 'workspace' }),
+    },
     crewTask: {
       findFirst: jest.fn().mockResolvedValue(task),
       findMany: jest.fn().mockResolvedValue([]),
@@ -98,14 +101,56 @@ function fixture(owner = true) {
   const authorization = {
     resolve: jest.fn().mockResolvedValue({ isOwner: owner }),
   };
+  const collaboration = {
+    ensureCrewSpace: jest.fn().mockResolvedValue({ workspaceId: 'workspace' }),
+  };
   const service = new CrewComputeRequestsService(
     prisma as never,
     authorization as never,
+    collaboration as never,
   );
-  return { service, tx, authorization, request };
+  return { service, tx, authorization, request, collaboration };
 }
 
 describe('Crew compute requests', () => {
+  it('only allows the owner to explicitly initialize the compute workspace', async () => {
+    const f = fixture(false);
+    await expect(f.service.setupWorkspace('crew', 'creator')).rejects.toThrow(
+      'Only the project owner',
+    );
+    expect(f.collaboration.ensureCrewSpace).not.toHaveBeenCalled();
+    f.authorization.resolve.mockResolvedValue({ isOwner: true });
+    await expect(f.service.setupWorkspace('crew', 'owner')).resolves.toEqual({
+      workspaceId: 'workspace',
+    });
+    expect(f.collaboration.ensureCrewSpace).toHaveBeenCalledWith(
+      'crew',
+      'owner',
+    );
+  });
+
+  it('rejects a creator request before any allowance is written', async () => {
+    const f = fixture(false);
+    await expect(
+      f.service.create('crew', 'creator', f.request),
+    ).rejects.toThrow('Only the project owner');
+    expect(f.tx.crewComputeRequest.create).not.toHaveBeenCalled();
+  });
+  it('checks the recipient assignment, not the requesting owner assignment', async () => {
+    const f = fixture();
+    await f.service.create('crew', 'owner', {
+      ...f.request,
+      beneficiaryUserId: 'creator',
+    });
+    expect(f.tx.crewTask.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: contains({
+          assignees: { some: { userId: 'creator' } },
+        }),
+      }),
+    );
+  });
+
   it.each([0, -1, 1.5, 2_000_000_001])(
     'rejects invalid points %s',
     (points) => {
@@ -142,14 +187,18 @@ describe('Crew compute requests', () => {
       f.service.create('crew', 'creator', { ...f.request, points: 90 }),
     ).rejects.toThrow('different details');
   });
-  it('snapshots the task and workspace and locks admission before creating', async () => {
-    const f = fixture(false);
-    await f.service.create('crew', 'creator', f.request);
+  it('snapshots recipient and requesting owner and locks admission before creating', async () => {
+    const f = fixture();
+    await f.service.create('crew', 'owner', {
+      ...f.request,
+      beneficiaryUserId: 'creator',
+    });
     expect(f.tx.crewComputeRequest.create).toHaveBeenCalledWith({
       data: contains({
         taskTitle: 'Shot',
         workspaceId: 'workspace',
         userId: 'creator',
+        requestedByUserId: 'owner',
       }),
     });
     expect(f.tx.$executeRaw).toHaveBeenCalledTimes(2);

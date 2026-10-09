@@ -861,22 +861,22 @@ it("reopens a staged task, saves edits and preserves unexposed planning fields",
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("saves the reward without exposing the removed profit-share control", async () => {
+it("saves reward and restored profit share exactly", async () => {
   const stage = vi.fn();
   renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
   act(() => {
     fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Paid script");
     fill(document.querySelector<HTMLInputElement>('input[aria-label="Reward (USD)"]')!, "30.25");
-    expect(document.querySelector('input[aria-label="Profit share (%)"]')).toBeNull();
+    fill(document.querySelector<HTMLInputElement>('input[aria-label="Profit share (%)"]')!, "2.5");
   });
   await act(async () => click(exactButton("Add task")));
   expect(stage).toHaveBeenCalledWith(
-    expect.objectContaining({ rewardUsdMinor: 3025, profitShareBps: null })
+    expect.objectContaining({ rewardUsdMinor: 3025, profitShareBps: 250 })
   );
 });
 
-it.each(["-1", "1000000001", "0.001"])(
-  "rejects invalid reward %s before staging",
+it.each(["-1", "1000000001", "0.001", "abc", "1e3"])(
+  "rejects invalid reward input %s without replacing the previous amount",
   async (value) => {
     const stage = vi.fn();
     renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
@@ -885,7 +885,7 @@ it.each(["-1", "1000000001", "0.001"])(
       fill(document.querySelector<HTMLInputElement>('input[aria-label="Reward (USD)"]')!, value);
     });
     await act(async () => click(exactButton("Add task")));
-    expect(stage).not.toHaveBeenCalled();
+    expect(stage).toHaveBeenCalledWith(expect.objectContaining({ rewardUsdMinor: 10000 }));
     expect(state.create).not.toHaveBeenCalled();
   }
 );

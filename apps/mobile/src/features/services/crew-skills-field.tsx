@@ -59,7 +59,6 @@ export function CrewSkillsField({
       </Pressable>
       {open && (
         <>
-          <ThemedText>{t("crewSkills.hint")}</ThemedText>
           {!state.skills && !state.error && (
             <ActivityIndicator accessibilityLabel={t("crewSkills.loading")} />
           )}

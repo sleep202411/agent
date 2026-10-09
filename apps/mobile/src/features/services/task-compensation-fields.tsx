@@ -45,7 +45,13 @@ export function TaskCompensationFields({
               rewardCurrency
             )}
             value={field.value}
-            onChangeText={field.change}
+            onChangeText={(value) => {
+              if (
+                /^\d*(?:\.\d{0,2})?$/.test(value) &&
+                (field.key !== "share" || Number(value || 0) <= 100)
+              )
+                field.change(value);
+            }}
             editable={!locked}
             keyboardType="decimal-pad"
             maxLength={16}

@@ -25,7 +25,7 @@ class InputTests(unittest.TestCase):
             'apps/studio/source.ts': 'studio', 'packages/shared/index.ts': 'shared',
             'package-lock.json': '{}', 'apps/server/package.json': '{}',
             'apps/web/.env.production.cn': 'cn', 'apps/web/.env.production.com': 'com',
-            'deploy/cn-remote-build-services.sh': 'docker build',
+            'deploy/cn-remote-build-services.sh': 'NPM_REGISTRY=mirror\ndocker build -f \"$df\" -t \"$image\" --build-arg \"NPM_REGISTRY=$NPM_REGISTRY\" \"$@\" .\n' + ''.join(f'want {x} && build {x} apps/{x}/Dockerfile\n' for x in ('web','server','studio','admin-ui','game-agent')),
         }.items(): self.write(path, content)
         self.source = self.commit()
     def git(self, *args):
@@ -42,6 +42,67 @@ class InputTests(unittest.TestCase):
         self.write(path, '{"version":"2"}' if path.endswith('.json') else 'changed')
         newer = self.commit()
         self.assertEqual(images.inputs(self.root, self.source, service, region) == images.inputs(self.root, newer, service, region), expected)
+    def test_unrelated_mobile_entrypoint_reuses_every_service(self):
+        self.write('apps/mobile/package.json', '{"name":"mobile","main":"expo-router/entry"}')
+        old = self.commit()
+        self.write('apps/mobile/package.json', '{"name":"mobile","main":"index.js"}')
+        new = self.commit()
+        for service in ('web', 'server', 'studio', 'admin-ui'):
+            self.assertEqual(images.inputs(self.root, old, service, 'cn'),
+                             images.inputs(self.root, new, service, 'cn'))
+
+    def test_unrelated_workspace_dependency_change_rebuilds(self):
+        self.write('apps/mobile/package.json', '{"name":"mobile","dependencies":{"react":"19"}}')
+        old = self.commit()
+        self.write('apps/mobile/package.json', '{"name":"mobile","dependencies":{"react":"20"}}')
+        new = self.commit()
+        self.assertNotEqual(images.inputs(self.root, old, 'web', 'cn'),
+                            images.inputs(self.root, new, 'web', 'cn'))
+
+    def test_cn_authentication_change_reuses_image(self):
+        path = 'deploy/cn-remote-build-services.sh'
+        self.write(path, (self.root / path).read_text() + '\ndocker login registry --password-stdin\n')
+        self.assertEqual(images.inputs(self.root, self.source, 'web', 'cn'),
+                         images.inputs(self.root, self.commit(), 'web', 'cn'))
+
+    def test_newest_matching_image_wins_even_when_registry_lists_oldest_first(self):
+        self.write('docs/new.md', 'deployment note')
+        newer = self.commit()
+        old_digest, new_digest = 'sha256:' + 'a' * 64, 'sha256:' + 'b' * 64
+        with patch.object(images, 'candidates', return_value=[(self.source, old_digest), (newer, new_digest)]), \
+                patch.object(images, 'digest', return_value=new_digest) as verify:
+            self.assertEqual(images.find(self.root, newer, 'cn', 'web'),
+                             {'tag': newer, 'digest': new_digest})
+            verify.assert_called_once_with('cn', 'web', newer)
+
+    def test_singapore_recipe_ignores_auth_but_detects_build_arguments(self):
+        from release_inputs import inputs
+        recipe = Path(__file__).parent / 'aliyun-sg/production-build.py'
+        path = 'deploy/aliyun-sg/production-build.py'
+        self.write(path, recipe.read_text())
+        original = self.commit()
+        self.write(path, recipe.read_text().replace('"--ExpiresInHours", "24"', '"--ExpiresInHours", "12"'))
+        auth_change = self.commit()
+        self.assertEqual(inputs(self.root, original, 'admin-ui', 'com'),
+                         inputs(self.root, auth_change, 'admin-ui', 'com'))
+        self.write(path, recipe.read_text().replace('"NEXT_PUBLIC_ADMIN_UI_BASE_PATH": "/"',
+                                                   '"NEXT_PUBLIC_ADMIN_UI_BASE_PATH": "/admin"'))
+        arg_change = self.commit()
+        self.assertNotEqual(inputs(self.root, original, 'admin-ui', 'com'),
+                            inputs(self.root, arg_change, 'admin-ui', 'com'))
+        self.assertEqual(inputs(self.root, original, 'server', 'com'),
+                         inputs(self.root, arg_change, 'server', 'com'))
+
+    def test_singapore_platform_change_invalidates(self):
+        from release_inputs import inputs
+        recipe = (Path(__file__).parent / 'aliyun-sg/production-build.py').read_text()
+        path = 'deploy/aliyun-sg/production-build.py'
+        self.write(path, recipe)
+        original = self.commit()
+        self.write(path, recipe.replace('linux/amd64', 'linux/arm64'))
+        self.assertNotEqual(inputs(self.root, original, 'server', 'com'),
+                            inputs(self.root, self.commit(), 'server', 'com'))
+
     def test_other_service_change_reuses_web(self): self.compare('apps/server/source.ts', True)
     def test_web_change_rebuilds_web(self): self.compare('apps/web/source.ts', False)
     def test_shared_dependency_rebuilds(self): self.compare('packages/shared/index.ts', False)
@@ -51,7 +112,11 @@ class InputTests(unittest.TestCase):
     def test_chart_does_not_rebuild_images(self): self.compare('deploy/helm/values.yaml', True)
     def test_com_env_does_not_invalidate_cn(self): self.compare('apps/web/.env.production.com', True)
     def test_cn_env_invalidates_studio(self): self.compare('apps/web/.env.production.cn', False, 'studio', 'cn')
-    def test_cn_recipe_change_invalidates(self): self.compare('deploy/cn-remote-build-services.sh', False, region='cn')
+    def test_cn_recipe_change_invalidates(self):
+        path = 'deploy/cn-remote-build-services.sh'
+        self.write(path, (self.root / path).read_text().replace('NPM_REGISTRY=mirror', 'NPM_REGISTRY=new-mirror'))
+        self.assertNotEqual(images.inputs(self.root, self.source, 'web', 'cn'),
+                            images.inputs(self.root, self.commit(), 'web', 'cn'))
     def test_game_agent_source_invalidates_its_cn_image(self):
         self.write('apps/game-agent/package.json', '{"name":"game-agent","dependencies":{"@repo/shared":"*"}}')
         self.write('packages/shared/package.json', '{"name":"@repo/shared"}')

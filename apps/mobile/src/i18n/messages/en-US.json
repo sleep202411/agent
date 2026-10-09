@@ -1879,12 +1879,12 @@
   "crewComputeFinance.points": "points",
   "crewComputeFinance.equivalent": "USD equivalent at the standard points rate, not cash paid.",
   "crewComputeFinance.task": "Task",
-  "crewComputeFinance.selectTask": "Select your assigned task",
+  "crewComputeFinance.selectTask": "Select a task",
   "crewComputeFinance.reason": "Reason",
   "crewComputeFinance.request": "Request points",
-  "crewComputeFinance.noTasks": "You need an assigned task before you can request points.",
+  "crewComputeFinance.noTasks": "Assign a creator to a task before requesting points.",
   "crewComputeFinance.decisionNote": "Decision note (optional)",
-  "crewComputeFinance.applicant": "Applicant",
+  "crewComputeFinance.applicant": "Recipient",
   "crewComputeFinance.status": "Status",
   "crewComputeFinance.decision": "Decision",
   "crewComputeFinance.approved": "Approved",
@@ -5888,5 +5888,11 @@
   "taskMenu.addCredit": "Add Credit",
   "taskMenu.initialComputePoints": "Initial compute points per assignee",
   "taskMenu.initialComputeHint": "Allocated from the released project budget on assignment. Leave blank for no initial allowance. Further points require Admin approval.",
-  "crewComputeFinance.committed": "Spent + reserved"
+  "crewComputeFinance.committed": "Spent + reserved",
+  "crewComputeFinance.ownerOnly": "Only the project owner can request compute points. Ask the owner to link the workspace and request points for your task.",
+  "crewComputeFinance.workspaceRequired": "Set up the project compute workspace before requesting points. This creates or reuses its accounting workspace; it does not add points or move Studio projects.",
+  "crewComputeFinance.selectCreator": "Select an assigned creator",
+  "crewComputeFinance.setupWorkspace": "Set up compute workspace",
+  "crewInvite.goVerification": "Go to verification",
+  "levelApplication.academy": "Please visit Academy to get your verification"
 }

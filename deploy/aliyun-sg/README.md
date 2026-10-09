@@ -96,7 +96,26 @@ authentication uses a temporary Docker configuration removed after the build.
 The script does not start Docker, prune images or change Git. Read-only `--check`
 does not require `main` or a clean working tree.
 
-All selected images are built before deployment. A changed Server image first
+Before building, the release scans Singapore ACR for ancestor SHA tags with
+matching per-service committed build inputs, verifies the registry digest, and
+reuses matching images without requiring Docker. Registry errors stop the
+release rather than triggering fallback builds. Missing images are built locally
+with `--load`; credentials are refreshed immediately before pushing, and a failed
+push is retried once without recompilation. The completed local image remains
+available if both pushes fail; a later invocation may use Docker's build cache.
+Previously pushed services remain reusable after another service fails.
+
+CN and Singapore share `deploy/release_inputs.py`. Dependency declarations,
+lockfiles, consumed workspace code, regional configuration and build recipes
+remain inputs. Unconsumed workspace entry-point/documentation fields do not
+invalidate other services. Historical recipes are parsed as data to compare
+compilation arguments and platform, not whole scripts: login, retry, push/load,
+logging and rollout changes do not require application rebuilds. The newest
+matching ancestor source tag is preferred across all registry pages and its
+digest is verified before reuse. An image whose historical recipe cannot be
+verified is not eligible for reuse.
+
+All selected images are verified or built before deployment. A changed Server image first
 runs native `prisma migrate deploy` in a short-lived Job using that image and
 the existing database admin Secret, owner role and CA. Database credentials
 remain in the cluster. Migration failure stops before application image updates;

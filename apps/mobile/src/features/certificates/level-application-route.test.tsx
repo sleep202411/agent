@@ -10,12 +10,13 @@ const h = vi.hoisted(() => ({
   login: vi.fn(),
   replace: vi.fn(),
   back: vi.fn(),
+  push: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useIsFocused: () => h.focused,
   useLocalSearchParams: () => ({ level: h.level }),
-  useRouter: () => ({ replace: h.replace, back: h.back }),
+  useRouter: () => ({ replace: h.replace, back: h.back, push: h.push }),
 }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({ status: h.status, generation: 1, user: { userId: "actor" } }),
@@ -70,27 +71,34 @@ it("renders a stable server shell without trusting query parameters", () => {
 });
 it("continues login back to the requested certification", async () => {
   await render();
-  expect(host.textContent).toBe("auth.signIn");
-  await act(async () => host.querySelector("button")!.click());
+  expect(host.textContent).toContain("auth.signIn");
+  await act(async () => [...host.querySelectorAll("button")].at(-1)!.click());
   h.login.mock.calls[0][0].onAuthenticated();
   expect(h.replace).toHaveBeenCalledWith("/certification-application?level=13");
 });
 it("rejects invalid certification parameters before asking for login", async () => {
   h.level = "../other";
   await render();
-  expect(host.textContent).toBe("levelApplication.unavailable");
+  expect(host.textContent).toContain("levelApplication.unavailable");
   expect(h.login).not.toHaveBeenCalled();
 });
 it("opens the account-scoped form and returns to its originating screen", async () => {
   h.status = "authenticated";
   await render();
-  expect(host.textContent).toBe("13:actor");
-  await act(async () => host.querySelector("button")!.click());
+  expect(host.textContent).toContain("13:actor");
+  await act(async () => [...host.querySelectorAll("button")].at(-1)!.click());
   expect(h.back).toHaveBeenCalledOnce();
 });
 it("opens the general certification selector when no level is locked", async () => {
   h.status = "authenticated";
   h.level = undefined;
   await render();
-  expect(host.textContent).toBe("all:actor");
+  expect(host.textContent).toContain("all:actor");
+});
+
+it("links certification guidance to native Academy", async () => {
+  h.status = "authenticated";
+  await render();
+  await act(async () => host.querySelector("button")!.click());
+  expect(h.push).toHaveBeenCalledWith("/courses");
 });

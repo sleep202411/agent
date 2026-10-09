@@ -273,3 +273,13 @@ it("reopens an already accepted task without claiming it again", async () => {
   expect(mocks.push).toHaveBeenCalledWith("/en-US/crews/crew/workspace?tab=tasks&task=task");
   expect(mocks.post).not.toHaveBeenCalled();
 });
+
+vi.mock("@/app/(site)/creators/_components/center/dialogs/level-apply-dialog", () => ({
+  LevelApplyDialog: ({ open }: { open: boolean }) => (open ? <div>verification form</div> : null),
+}));
+it("opens verification without accepting the invitation", async () => {
+  await renderTaskOffer();
+  await act(async () => button("goVerification").click());
+  expect(host.textContent).toContain("verification form");
+  expect(mocks.post).not.toHaveBeenCalled();
+});

@@ -1,3 +1,5 @@
+import { useRouter } from "expo-router";
+import { toHref } from "@/lib/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, Pressable, ScrollView, TextInput } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -27,6 +29,7 @@ export function CrewInviteAccept(props: Props) {
   ) : null;
 }
 function Session({ generation, onClose, onOpen, initialLink }: Props) {
+  const router = useRouter();
   const locale = useLocale();
   const t = useTranslations(),
     theme = useTheme(),
@@ -242,6 +245,15 @@ function Session({ generation, onClose, onOpen, initialLink }: Props) {
         </>
       )}
       {uncertain && <ThemedText>{t("crewJoin.uncertain")}</ThemedText>}
+      {review?.value.task && (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push(toHref("/certification-application"))}
+          style={{ padding: 16 }}
+        >
+          <ThemedText>{t("crewInvite.goVerification")}</ThemedText>
+        </Pressable>
+      )}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {busy && <ActivityIndicator />}
       <Action label={t("common.back")} disabled={busy} onPress={onClose} />

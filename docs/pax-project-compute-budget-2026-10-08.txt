@@ -54,13 +54,25 @@ Task Add Credit follow-up
   is invented. Configured points are allocated once at direct assignment or invite
   acceptance from the Admin-released project budget. Existing grants are not
   rewritten when the task default changes; reassignment cannot mint another grant.
-- The task menu on Web/Mobile opens Add Credit with the task selected. Assignees
-  request additional points with a reason; only Admin approves. Blank/zero initial
+- The task menu on Web/Mobile opens Add Credit with the task selected. The project owner
+  requests additional points for a selected assignee with a reason; only Admin approves. Blank/zero initial
   points require an approved request before task generation. Legacy tasks without
   an allowance also need a request; no historical wallet credits are invented.
 - Crew owner can inspect all task/person usage; members see their own. Admin sees
   the applicant's usage when reviewing. Spent means settled workspace-wallet costs;
   committed includes active holds. Personal-wallet costs are excluded. Usage is
   lifetime task spend; allowance enforcement excludes jobs predating its first grant.
-- Deploy Server, Web and Admin UI; rebuild Mobile. No additional migration required
-  beyond the project-budget migration above. No production credits were issued.
+- Deploy Server, Web and Admin UI; rebuild Mobile. Also apply migration 20261009001000_compute_request_owner to retain the requesting
+  owner separately from the allowance recipient. No production credits were issued.
+
+Pax feedback 11 (2026-10-09)
+- Only the Crew owner can submit additional-point requests, including requests on
+  behalf of assigned creators. Member APIs still show their own usage. Approval
+  remains restricted to FD Admin and the released project budget.
+- Owner setup explicitly provisions/reuses the existing collaboration workspace
+  and its empty/default wallet accounts. It does not grant points, fund balances,
+  or repoint Studio links. Concurrent setup serializes and rechecks ownership.
+- Studio workspace sharing and Crew compute accounting are separate fields; the
+  compute panel now offers its own owner-only setup action for missing accounting.
+- Task profit-share entry restored; numeric monetary entry, payment help label,
+  verification entry and Academy guidance aligned on Web/Mobile.
