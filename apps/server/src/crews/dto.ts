@@ -254,6 +254,7 @@ const PositionBaseSchema = z.object({
 });
 
 export const CreatePositionSchema = PositionBaseSchema.extend({
+  expectedTaskVersion: z.number().int().min(0).optional(),
   taskId: z.string().uuid().optional(),
   recruitmentVisibility: z.enum(['public', 'private']).optional(),
 }).refine(

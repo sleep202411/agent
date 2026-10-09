@@ -3,6 +3,18 @@ import { ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
 
+// Expand the immutable enrollment snapshot, including legacy single-instructor rows.
+// A withdrawal belongs to its recipient, not to the enrollment's primary reviewer.
+export const academyPayeesSql = Prisma.sql`SELECT enrollment.id, enrollment.status,
+ enrollment.reviewed_at, share->>'teacherId' AS teacher_id,
+ (share->>'credits')::bigint AS teacher_credits
+ FROM academy_enrollments enrollment CROSS JOIN LATERAL jsonb_array_elements(
+ CASE WHEN jsonb_typeof(enrollment.instructor_shares)='array'
+ AND enrollment.instructor_shares <> '[]'::jsonb THEN enrollment.instructor_shares
+ ELSE jsonb_build_array(jsonb_build_object('teacherId',enrollment.teacher_id,
+ 'credits',enrollment.teacher_credits::text)) END
+ ) share`;
+
 // docs/MEMBERSHIP-SPEC.md: community_point = US$0.01. Only Academy
 // HOMEWORK_REVIEW_INCOME is settled here; cash referral units can be CNY.
 export async function availableAcademyIncome(
@@ -12,11 +24,11 @@ export async function availableAcademyIncome(
 ) {
   if (currency !== 'USD') return [];
   return tx.$queryRaw<{ id: string; available: string }[]>`SELECT e.id,
- (e.teacher_credits - COALESCE(SUM(a.amount_minor) FILTER(WHERE w.status IN ('pending','processing','paid')),0))::text AS available
- FROM academy_enrollments e LEFT JOIN academy_withdrawal_allocations a ON a.enrollment_id=e.id
+ (e.teacher_credits - COALESCE(SUM(a.amount_minor) FILTER(WHERE w.status IN ('pending','processing','paid') AND w.user_id=${userId}),0))::text AS available
+ FROM (${academyPayeesSql}) e LEFT JOIN academy_withdrawal_allocations a ON a.enrollment_id=e.id
  LEFT JOIN creator_withdrawals w ON w.id=a.withdrawal_id
  WHERE e.teacher_id=${userId} AND e.status='approved'
- GROUP BY e.id ORDER BY e.reviewed_at,e.id`;
+ GROUP BY e.id,e.teacher_credits,e.reviewed_at ORDER BY e.reviewed_at,e.id`;
 }
 export async function reserveAcademyIncome(
   tx: Prisma.TransactionClient,
@@ -114,9 +126,9 @@ export const academyTotalsSql = Prisma.sql`SELECT 'USD' AS currency,
  COALESCE(SUM(e.teacher_credits),0) AS confirmed,
  COALESCE(SUM(a.reserved),0) AS reserved,
  COALESCE(SUM(a.paid),0) AS paid
- FROM academy_enrollments e LEFT JOIN (
- SELECT a.enrollment_id,
+ FROM (${academyPayeesSql}) e LEFT JOIN (
+ SELECT a.enrollment_id,w.user_id,
  SUM(a.amount_minor) FILTER(WHERE w.status IN ('pending','processing')) AS reserved,
  SUM(a.amount_minor) FILTER(WHERE w.status='paid') AS paid
- FROM academy_withdrawal_allocations a JOIN creator_withdrawals w ON w.id=a.withdrawal_id GROUP BY a.enrollment_id
- ) a ON a.enrollment_id=e.id WHERE e.status='approved'`;
+ FROM academy_withdrawal_allocations a JOIN creator_withdrawals w ON w.id=a.withdrawal_id GROUP BY a.enrollment_id,w.user_id
+ ) a ON a.enrollment_id=e.id AND a.user_id=e.teacher_id WHERE e.status='approved'`;

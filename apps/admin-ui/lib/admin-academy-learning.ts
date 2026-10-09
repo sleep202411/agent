@@ -48,13 +48,15 @@ async function authHeaders() {
   return adminAuthHeaders(token);
 }
 
-export async function loadAdminHomework(status: "submitted" | "all" = "submitted") {
+export async function loadAdminHomework(status: "submitted" | "all" = "submitted", after?: string) {
   const headers = await authHeaders();
   if (!headers) return { data: null, error: "后台登录已失效。" };
   try {
     const response = await fetch(
-      adminApiUrl(`/academy/learning/homework?status=${encodeURIComponent(status)}`),
-      { headers, cache: "no-store" }
+      adminApiUrl(
+        `/academy/learning/homework?status=${encodeURIComponent(status)}${after ? `&after=${encodeURIComponent(after)}` : ""}`
+      ),
+      { headers, cache: "no-store", signal: AbortSignal.timeout(15000) }
     );
     return { data: await parseAdminEnvelope<AdminHomeworkPage>(response), error: null };
   } catch (error) {
@@ -72,6 +74,7 @@ export async function loadAdminTeachingIncome() {
     const response = await fetch(adminApiUrl("/academy/learning/income"), {
       headers,
       cache: "no-store",
+      signal: AbortSignal.timeout(15000),
     });
     return { data: await parseAdminEnvelope<AdminTeachingIncome>(response), error: null };
   } catch (error) {

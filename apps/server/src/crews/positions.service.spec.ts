@@ -491,6 +491,38 @@ describe('public recruitment producer qualification', () => {
     } as never);
     expect(t.tx.crewPosition.create).toHaveBeenCalled();
   });
+  it('rejects a stale batch recruitment snapshot under the task lock', async () => {
+    const t = writes();
+    t.tx.crewTask.findFirst.mockResolvedValue({
+      workflowState: { semantic: 'open' },
+      version: 3,
+    });
+    await expect(
+      t.service.create(
+        'crew-1',
+        'owner',
+        { taskId: 'task-1', expectedTaskVersion: 2 } as never,
+        [13],
+      ),
+    ).rejects.toThrow('Task changed');
+    expect(t.tx.crewPosition.create).not.toHaveBeenCalled();
+  });
+  it('does not publish a second position when retrying a batch', async () => {
+    const t = writes();
+    t.tx.crewTask.findFirst.mockResolvedValue({
+      workflowState: { semantic: 'open' },
+      version: 2,
+    });
+    await expect(
+      t.service.create(
+        'crew-1',
+        'owner',
+        { taskId: 'task-1', expectedTaskVersion: 2 } as never,
+        [13],
+      ),
+    ).rejects.toThrow('already has recruitment');
+    expect(t.tx.crewPosition.create).not.toHaveBeenCalled();
+  });
   it('allows qualified public creation', async () => {
     const t = writes();
     await t.service.create(

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import {
   availableAcademyIncome,
+  academyTotalsSql,
   reserveAcademyIncome,
   resolveAcademyIncome,
 } from './academy-withdrawals';
@@ -98,3 +99,48 @@ it('keeps Crew-only requests off the Academy wallet', async () => {
   await resolveAcademyIncome(f.db, f.ledger, 'teacher', 'withdrawal', 'pay');
   expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
 });
+
+const { PGlite } = process.getBuiltinModule('module').createRequire(__filename)(
+  '@electric-sql/pglite',
+) as typeof import('@electric-sql/pglite');
+
+it('isolates each instructor share and reservation, including legacy enrollments', async () => {
+  const sql = new PGlite();
+  try {
+    await sql.exec(`
+      CREATE TABLE academy_enrollments (id text PRIMARY KEY, teacher_id text,
+        teacher_credits bigint, instructor_shares jsonb, status text, reviewed_at timestamp);
+      CREATE TABLE academy_withdrawal_allocations (enrollment_id text, withdrawal_id text, amount_minor bigint);
+      CREATE TABLE creator_withdrawals (id text, user_id text, status text);
+      INSERT INTO academy_enrollments VALUES
+       ('split','200',50,'[{"teacherId":"200","credits":"40"},{"teacherId":"201","credits":"10"}]','approved',now()),
+       ('legacy','200',20,'[]','approved',now()),
+       ('pending','201',100,'[]','submitted',now());
+      INSERT INTO creator_withdrawals VALUES ('a','200','pending'),('b','201','paid'),('c','201','rejected');
+      INSERT INTO academy_withdrawal_allocations VALUES ('split','a',15),('split','b',3),('split','c',7);
+    `);
+    const tx = {
+      $queryRaw: async (
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+      ) => {
+        const query = Prisma.sql(strings, ...values);
+        return (await sql.query(query.text, query.values)).rows;
+      },
+    } as unknown as Prisma.TransactionClient;
+    expect(await availableAcademyIncome(tx, '200', 'USD')).toEqual([
+      { id: 'legacy', available: '20' },
+      { id: 'split', available: '25' },
+    ]);
+    expect(await availableAcademyIncome(tx, '201', 'USD')).toEqual([
+      { id: 'split', available: '7' },
+    ]);
+    expect(await availableAcademyIncome(tx, '999', 'USD')).toEqual([]);
+    const totals = Prisma.sql`${academyTotalsSql} AND e.teacher_id=${'201'} HAVING COUNT(*)>0`;
+    expect((await sql.query(totals.text, totals.values)).rows).toEqual([
+      { currency: 'USD', confirmed: '10', reserved: '0', paid: '3' },
+    ]);
+  } finally {
+    await sql.close();
+  }
+}, 30000);

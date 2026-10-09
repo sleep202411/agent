@@ -9,6 +9,7 @@ export default async function CourseIncomePage() {
   const result = await loadAdminTeachingIncome();
   return (
     <CourseIncomePanel
+      siteKey={session.site.key}
       siteLabel={session.site.label}
       databaseLabel={session.site.databaseLabel}
       summary={result.data}

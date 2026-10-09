@@ -126,6 +126,7 @@ export interface SalaryInput {
 }
 
 export interface CreatePositionInput {
+  expectedTaskVersion?: number;
   paymentTerms?: import("@repo/shared/crew").TaskPaymentTerms | null;
   taskId?: string;
   recruitmentVisibility?: "public" | "private";

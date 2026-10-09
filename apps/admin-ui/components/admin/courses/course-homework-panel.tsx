@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { IconRefresh } from "@tabler/icons-react";
 import { PageHeader } from "@/components/admin/page-header";
@@ -19,6 +20,7 @@ export function CourseHomeworkPanel({
   siteLabel,
   databaseLabel,
   initialItems,
+  nextCursor,
   loadError,
   canReview,
   scope,
@@ -27,6 +29,7 @@ export function CourseHomeworkPanel({
   siteLabel: string;
   databaseLabel: string;
   initialItems: AdminHomeworkRow[];
+  nextCursor: string | null;
   loadError: string | null;
   canReview: boolean;
   scope: "lecturer" | "operator";
@@ -37,10 +40,13 @@ export function CourseHomeworkPanel({
   const [selected, setSelected] = useState<AdminHomeworkRow | null>(null);
   const [items, setItems] = useState(initialItems);
   const [error, setError] = useState(loadError);
-  useEffect(() => {
+  const [loaded, setLoaded] = useState({ initialItems, loadError });
+  if (loaded.initialItems !== initialItems || loaded.loadError !== loadError) {
+    setLoaded({ initialItems, loadError });
     setItems(initialItems);
     setError(loadError);
-  }, [initialItems, loadError]);
+    setSelected(null);
+  }
 
   return (
     <div className="space-y-6">
@@ -113,6 +119,19 @@ export function CourseHomeworkPanel({
           </table>
         </div>
       )}
+      <nav aria-label="Homework pages" className="flex items-center gap-4 text-sm">
+        <Link href="/courses/homework" className="underline">
+          First page
+        </Link>
+        {nextCursor ? (
+          <Link
+            href={`/courses/homework?after=${encodeURIComponent(nextCursor)}`}
+            className="underline"
+          >
+            Next page
+          </Link>
+        ) : null}
+      </nav>
       {selected ? (
         <HomeworkReviewDialog
           row={selected}

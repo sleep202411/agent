@@ -34,6 +34,8 @@ function fixture() {
     updatedAt: new Date(),
   };
   const enrollment = {
+    count: jest.fn().mockResolvedValue(2),
+    aggregate: jest.fn().mockResolvedValue({ _sum: { teacherCredits: 50n } }),
     findUnique: jest.fn().mockResolvedValue(row),
     findUniqueOrThrow: jest.fn().mockResolvedValue(row),
     findMany: jest.fn().mockResolvedValue([row]),
@@ -59,6 +61,7 @@ function fixture() {
   const db = {
     academyEnrollment: enrollment,
     academyOffering: {
+      count: jest.fn().mockResolvedValue(1),
       findUnique: jest.fn().mockResolvedValue({
         teacherId: '200',
         priceCredits: 100n,
@@ -396,4 +399,33 @@ it('retains submitted homework attachments with versioned usage records', async 
       }),
     ],
   });
+});
+
+it('reports the recipient share rather than the combined teacher pool', async () => {
+  const f = fixture();
+  f.db.$queryRaw.mockResolvedValue([{ earned: 10n }]);
+  expect(await f.service.teachingSummary('201')).toEqual({
+    courses: 1,
+    students: 2,
+    pending: 2,
+    earnedCredits: '10',
+  });
+  expect(f.db.academyOffering.count).toHaveBeenCalledWith({
+    where: {
+      OR: [
+        { teacherId: '201' },
+        { instructorShares: { array_contains: [{ teacherId: '201' }] } },
+      ],
+    },
+  });
+  expect(f.enrollment.count).toHaveBeenCalledWith({
+    where: { teacherId: '201', status: 'submitted' },
+  });
+});
+
+it('keeps the operator total across all instructors', async () => {
+  const f = fixture();
+  expect(
+    await f.service.adminIncomeSummary({ platformUserId: null } as never),
+  ).toMatchObject({ earnedCredits: '50', scope: 'operator' });
 });

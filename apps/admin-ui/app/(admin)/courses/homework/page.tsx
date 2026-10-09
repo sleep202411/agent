@@ -4,13 +4,18 @@ import { requireContentPagePermission } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
-export default async function CourseHomeworkPage() {
+export default async function CourseHomeworkPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ after?: string }>;
+}) {
   const session = await requireContentPagePermission("courses.read");
-  const result = await loadAdminHomework("submitted");
+  const result = await loadAdminHomework("submitted", (await searchParams).after);
   return (
     <CourseHomeworkPanel
       siteLabel={session.site.label}
       databaseLabel={session.site.databaseLabel}
+      nextCursor={result.data?.nextCursor ?? null}
       initialItems={result.data?.items ?? []}
       loadError={result.error}
       canReview={Boolean(session.user.permissions.includes("courses.write"))}

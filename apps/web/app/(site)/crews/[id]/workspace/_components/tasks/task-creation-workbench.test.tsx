@@ -47,6 +47,8 @@ const state = vi.hoisted(() => ({
   taskMore: false,
   create: vi.fn(),
   post: vi.fn(),
+  get: vi.fn(),
+  patch: vi.fn(),
   invalidate: vi.fn(),
   episode: vi.fn(),
   refresh: vi.fn(),
@@ -60,7 +62,9 @@ vi.mock("@/src/i18n/i18n", () => ({
     return text.replace(/{(\w+)}/g, (_, name) => String(values?.[name] ?? name));
   },
 }));
-vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { post: state.post } }));
+vi.mock("@/app/(site)/crews/_hooks/api", () => ({
+  crewApi: { post: state.post, get: state.get, patch: state.patch },
+}));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: state.invalidate }),
 }));
@@ -281,6 +285,7 @@ it("retains staged tasks across view switches", async () => {
 it("shows assets and production to viewers without creation controls", async () => {
   await render(false);
   expect(button("Create Task")).toBeUndefined();
+  expect(button("Initialize tasks")).toBeUndefined();
   expect(host.textContent).toContain("Scripts");
   expect(host.querySelector("[role=dialog]")).toBeNull();
   await click("Production Episodes");
@@ -465,10 +470,11 @@ it("restores an interrupted create as uncertain instead of retrying", async () =
   expect(state.create).toHaveBeenCalledTimes(1);
   await act(async () => resolve({ id: "created" }));
 });
-it("omits redundant workbench controls while retaining category creation", async () => {
+it("exposes task initialization and category creation", async () => {
   await render();
   expect(button("Search Assets…")).toBeUndefined();
-  expect(button("Create Task")).toBeUndefined();
+  expect(button("Create Task")).toBeDefined();
+  expect(button("Initialize tasks")).toBeDefined();
   expect(button("Create Task · Scripts")).toBeDefined();
 });
 it("restores a reviewed batch without altering its idempotent command", async () => {
@@ -906,4 +912,71 @@ it("exposes Edit and invitation actions for a saved eligible task without openin
   expect(item("Open Recruitment").getAttribute("aria-disabled")).toBe("true");
   await render(false);
   expect(host.querySelector('button[aria-label="Task Actions"]')).toBeNull();
+});
+
+it("selects eligible tasks and stops a batch after a failed response without retrying it", async () => {
+  const tasks = [1, 2].map((number) => ({
+    id: `task-${number}`,
+    title: `Task ${number}`,
+    crewId: "crew",
+    version: 1,
+    parentId: null,
+    status: "open" as const,
+    assetCategory: "scripts",
+    taskKind: "script",
+    assignees: [],
+    positionRole: "screenwriter",
+    rewardCurrency: "CNY",
+    rewardUsdMinor: 1000,
+  }));
+  state.tasks = tasks;
+  state.get.mockImplementation(async (path: string) =>
+    tasks.find((task) => path.endsWith(task.id))
+  );
+  state.post
+    .mockResolvedValueOnce({ id: "position-1" })
+    .mockRejectedValueOnce(new Error("Connection lost"));
+  await render(true, true, "crew", vi.fn());
+  await act(async () =>
+    (host.querySelector('input[aria-label="Select Scripts tasks"]') as HTMLInputElement).click()
+  );
+  expect(host.textContent).toContain("2 selected");
+  await click("Batch recruitment");
+  const confirm = () =>
+    [...host.querySelectorAll('[role="dialog"] button')].find(
+      (node) => node.textContent === "Batch recruitment"
+    ) as HTMLButtonElement;
+  await act(async () => confirm().click());
+  expect(state.post).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("1 of 2 completed");
+  expect(host.textContent).toContain("Connection lost");
+  expect(confirm().disabled).toBe(true);
+});
+it("does not submit a task changed since selection", async () => {
+  state.tasks = [
+    {
+      id: "task",
+      title: "Script",
+      parentId: null,
+      status: "open",
+      assetCategory: "scripts",
+      assignees: [],
+      ...{ crewId: "crew", version: 1, positionRole: "screenwriter" },
+    },
+  ];
+  state.get.mockResolvedValue({ ...state.tasks[0], version: 2 });
+  await render(true, true, "crew", vi.fn());
+  await act(async () =>
+    (host.querySelector('input[aria-label="Select Script"]') as HTMLInputElement).click()
+  );
+  await click("Batch recruitment");
+  await act(async () =>
+    (
+      [...host.querySelectorAll('[role="dialog"] button')].find(
+        (node) => node.textContent === "Batch recruitment"
+      ) as HTMLButtonElement
+    ).click()
+  );
+  expect(state.post).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Script changed");
 });

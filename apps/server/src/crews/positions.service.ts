@@ -502,6 +502,25 @@ export class PositionsService {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
         await this.authorization.require(crewId, ownerId, 'tasks.manage', tx);
         await assertRecruitableTask(tx, crewId, input.taskId);
+        if (input.expectedTaskVersion !== undefined) {
+          const snapshot = await tx.crewTask.findFirst({
+            where: { id: input.taskId, crewId, deletedAt: null },
+            select: { version: true },
+          });
+          if (!snapshot || snapshot.version !== input.expectedTaskVersion)
+            throw new ConflictException(
+              'Task changed. Refresh before publishing recruitment.',
+            );
+          const existing = await tx.crewPosition.findFirst({
+            where: { taskId: input.taskId, deletedAt: null },
+            select: { id: true },
+          });
+          if (existing)
+            throw new ConflictException(
+              'This task already has recruitment. Review its existing position.',
+            );
+        }
+
         const assigned = await tx.crewTaskAssignee.count({
           where: { taskId: input.taskId },
         });

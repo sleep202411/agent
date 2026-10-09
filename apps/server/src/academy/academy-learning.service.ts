@@ -1,3 +1,4 @@
+import { academyPayeesSql } from '../creator-withdrawals/academy-withdrawals';
 import { lockMediaAssetReferences } from '../media/media-asset-lifecycle-lock';
 import { LegacyCreatorsService } from '../legacy-creators/legacy-creators.service';
 import {
@@ -753,21 +754,35 @@ export class AcademyLearningService {
 
   async teachingSummary(userId: string) {
     const [courses, students, pending, earnings] = await Promise.all([
-      this.db.academyOffering.count({ where: { teacherId: userId } }),
-      this.db.academyEnrollment.count({ where: { teacherId: userId } }),
+      this.db.academyOffering.count({
+        where: {
+          OR: [
+            { teacherId: userId },
+            { instructorShares: { array_contains: [{ teacherId: userId }] } },
+          ],
+        },
+      }),
+      this.db.academyEnrollment.count({
+        where: {
+          OR: [
+            { teacherId: userId },
+            { instructorShares: { array_contains: [{ teacherId: userId }] } },
+          ],
+        },
+      }),
       this.db.academyEnrollment.count({
         where: { teacherId: userId, status: 'submitted' },
       }),
-      this.db.academyEnrollment.aggregate({
-        where: { teacherId: userId, status: 'approved' },
-        _sum: { teacherCredits: true },
-      }),
+      this.db.$queryRaw<
+        { earned: bigint }[]
+      >`SELECT COALESCE(SUM(e.teacher_credits),0) AS earned
+        FROM (${academyPayeesSql}) e WHERE e.teacher_id=${userId} AND e.status='approved'`,
     ]);
     return {
       courses,
       students,
       pending,
-      earnedCredits: (earnings._sum.teacherCredits ?? 0n).toString(),
+      earnedCredits: (earnings[0]?.earned ?? 0n).toString(),
     };
   }
 

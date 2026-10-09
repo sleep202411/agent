@@ -19,11 +19,13 @@ const METRICS: {
 ];
 
 export function CourseIncomePanel({
+  siteKey,
   siteLabel,
   databaseLabel,
   summary,
   loadError,
 }: {
+  siteKey: "global" | "cn";
   siteLabel: string;
   databaseLabel: string;
   summary: AdminTeachingIncome | null;
@@ -78,7 +80,9 @@ export function CourseIncomePanel({
         </div>
       ) : null}
       <p className="text-sm text-slate-600">
-        100 已赚取社区积分 = 1 美元。提现审核入口：
+        {siteKey === "cn"
+          ? "Earned community points are shown above. RMB settlement requires an approved conversion rate. "
+          : "100 earned community points = US$1. "}
         <Link href="/withdrawals" className="ml-1 underline">
           剧组提现
         </Link>
