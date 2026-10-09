@@ -6,6 +6,7 @@ Source tags identify a committed, clean main revision. Docker applies the
 archived repository's .dockerignore; local edits never enter the build context.
 """
 import io
+import ipaddress
 import importlib.util
 import json
 import os
@@ -256,6 +257,39 @@ def registry_login_reason(output):
     return "Docker rejected registry login; inspect local Docker connectivity and registry access"
 
 
+def registry_access_diagnosis(cloud):
+    """Read-only diagnosis after a transport failure; never changes endpoint ACLs."""
+    try:
+        result = subprocess.run(
+            ["curl", "-4", "-fsS", "--connect-timeout", "5", "--max-time", "10",
+             "https://api.ipify.org"], capture_output=True, text=True, timeout=12,
+            check=False,
+        )
+        if result.returncode:
+            return None
+        address = ipaddress.IPv4Address(result.stdout.strip())
+        endpoint = cloud("cr", "GetInstanceEndpoint", "--InstanceId", INSTANCE_ID,
+                         "--EndpointType", "internet")
+        if endpoint.get("IsSuccess") is not True or endpoint.get("Code") != "success":
+            return None
+        if endpoint.get("Enable") is False:
+            return "Singapore ACR public endpoint is disabled; enable approved deployment access before retrying"
+        if endpoint.get("AclEnable") is not True:
+            return None
+        entries = endpoint["AclEntries"]
+        allowed = [ipaddress.ip_network(entry["Entry"], strict=False) for entry in entries]
+        if any(address in network for network in allowed):
+            return None
+        return (f"Singapore ACR public endpoint allowlist does not include this host's current IPv4 "
+                f"{address}/32. Add that exact approved operator CIDR to instance {INSTANCE_ID} "
+                "(acct6 / ap-southeast-1), then retry the same release; published matching images "
+                "remain reusable. A remote/proxied Docker daemon needs its own egress IP allowed.")
+    except Exception:
+        # The injected cloud adapter has its own exception type. Diagnostic
+        # permissions/connectivity must not mask the original login failure.
+        return None
+
+
 def registry_login(cloud, environment):
     for attempt in range(3):
         username, token = registry_credentials(cloud)
@@ -274,6 +308,10 @@ def registry_login(cloud, environment):
             raise BuildError("Cannot execute Docker for Singapore registry login") from None
         finally:
             del token
+        if attempt == 0 and ("endpoint unreachable" in reason or "endpoint timed out" in reason):
+            diagnosis = registry_access_diagnosis(cloud)
+            if diagnosis:
+                raise BuildError(diagnosis)
         if attempt < 2:
             print(f"Singapore registry Docker login failed: {reason}; retry {attempt + 2}/3 with fresh credentials", flush=True)
             time.sleep(2 ** attempt)

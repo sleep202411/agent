@@ -246,3 +246,11 @@ the builder. Token expiry is checked; credential values are never logged. The
 second pair is held in the private temporary release directory and removed by
 release cleanup. The build does not use saved `~/.fizzdragon-cn/acr-*.txt` files:
 those one-hour credentials can expire between deployment attempts.
+
+CN build SSH access is checked against the operator's current IPv4 and the
+builder's attached security groups before starting ECS. A missing TCP/22 allow
+rule stops with the exact CIDR and group IDs; no rules are changed automatically.
+The check also runs after a remote build exits with SSH status 255, since a
+changing operator IP can interrupt an established session. Diagnostic API/network
+failures leave the existing SSH readiness checks in place. A matching allow rule
+alone does not prove SSH readiness or exclude higher-priority deny/network rules.

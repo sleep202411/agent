@@ -113,7 +113,12 @@ times with fresh ACR credentials. Errors report a safe network/TLS/authenticatio
 category without exposing tokens or Docker diagnostics. If both Docker and a host
 request to the registry `/v2/` endpoint time out, check network reachability and
 ACR public-endpoint access rules; retries cannot repair a persistent access block.
-This login-only change does not invalidate application image identities.
+After the first transport failure, the script checks the operator IPv4 and ACR
+public endpoint allowlist. A confirmed mismatch stops immediately with the exact
+CIDR needed, instead of refreshing tokens repeatedly. This diagnostic is read-only;
+it never broadens registry access automatically. Remote/proxied Docker daemons
+need their actual egress IP allowed. If diagnosis is unavailable, bounded login
+retries remain in effect. These diagnostics do not invalidate application image identities.
 
 CN and Singapore share `deploy/release_inputs.py`. Dependency declarations,
 lockfiles, consumed workspace code, regional configuration and build recipes

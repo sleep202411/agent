@@ -598,6 +598,21 @@ class HistoricalRecipeTests(unittest.TestCase):
 
 
 class RegistryCredentialRetryTests(unittest.TestCase):
+    def setUp(self):
+        diagnostic = patch.object(build, "registry_access_diagnosis", return_value=None)
+        self.diagnosis = diagnostic.start()
+        self.addCleanup(diagnostic.stop)
+
+    @patch.object(build.subprocess, "run")
+    def test_known_acl_block_stops_without_repeating_token_login(self, run):
+        cloud = Mock(return_value={"IsSuccess": True, "TempUsername": "user", "AuthorizationToken": "secret"})
+        run.return_value = subprocess.CompletedProcess([], 1, "", "context deadline exceeded")
+        self.diagnosis.return_value = "Singapore ACR allowlist missing 192.0.2.10/32"
+        with self.assertRaisesRegex(build.BuildError, "allowlist missing"):
+            build.registry_login(cloud, {})
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(cloud.call_count, 1)
+
     @patch.object(build.time, "sleep")
     @patch.object(build.subprocess, "run")
     def test_transient_authorization_failure_retries_without_rebuilding(self, run, sleep):
@@ -656,3 +671,44 @@ class RegistryCredentialRetryTests(unittest.TestCase):
             reason = build.registry_login_reason(message)
             self.assertIn(expected, reason)
             self.assertNotIn('private-token', reason)
+
+
+class RegistryAccessDiagnosisTests(unittest.TestCase):
+    @patch.object(build.subprocess, "run")
+    def test_changed_operator_ip_names_exact_rule_without_mutating_acl(self, run):
+        run.return_value = subprocess.CompletedProcess([], 0, "192.0.2.10\n", "")
+        cloud = Mock(return_value={"IsSuccess": True, "Code": "success", "Enable": True,
+                                  "AclEnable": True, "AclEntries": [{"Entry": "192.0.2.9/32"}]})
+        reason = build.registry_access_diagnosis(cloud)
+        self.assertIn("192.0.2.10/32", reason)
+        self.assertIn("published matching images remain reusable", reason)
+        cloud.assert_called_once_with("cr", "GetInstanceEndpoint", "--InstanceId", build.INSTANCE_ID,
+                                      "--EndpointType", "internet")
+
+    @patch.object(build.subprocess, "run")
+    def test_existing_subnet_does_not_blame_acl(self, run):
+        run.return_value = subprocess.CompletedProcess([], 0, "192.0.2.10", "")
+        cloud = Mock(return_value={"IsSuccess": True, "Code": "success", "Enable": True,
+                                  "AclEnable": True, "AclEntries": [{"Entry": "192.0.2.0/24"}]})
+        self.assertIsNone(build.registry_access_diagnosis(cloud))
+
+    @patch.object(build.subprocess, "run")
+    def test_failed_diagnostic_preserves_original_transport_error(self, run):
+        run.side_effect = subprocess.TimeoutExpired(["curl"], 12)
+        cloud = Mock()
+        self.assertIsNone(build.registry_access_diagnosis(cloud))
+        cloud.assert_not_called()
+
+    @patch.object(build.subprocess, "run")
+    def test_malformed_acl_is_not_reported_as_known_block(self, run):
+        run.return_value = subprocess.CompletedProcess([], 0, "192.0.2.10", "")
+        cloud = Mock(return_value={"IsSuccess": True, "Code": "success", "AclEnable": True,
+                                  "AclEntries": [{"Entry": "not-a-cidr"}]})
+        self.assertIsNone(build.registry_access_diagnosis(cloud))
+
+
+    @patch.object(build.subprocess, "run")
+    def test_cloud_adapter_permission_failure_does_not_mask_login(self, run):
+        run.return_value = subprocess.CompletedProcess([], 0, "192.0.2.10", "")
+        cloud = Mock(side_effect=Exception("private upstream failure"))
+        self.assertIsNone(build.registry_access_diagnosis(cloud))
