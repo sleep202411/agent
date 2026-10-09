@@ -4,4 +4,5 @@
 # CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --resume --allow-chart-update
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+python3 "$ROOT/deploy/check-python.py"
 exec python3 "$ROOT/deploy/cn_release.py" release "$@"

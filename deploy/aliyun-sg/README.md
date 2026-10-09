@@ -181,3 +181,18 @@ repair to CN, whose network configuration is managed separately.
 
 An ordinary deployment does not change DNS, TLS certificates, edge routing,
 Java services or `.cn` resources.
+
+### Python compatibility
+
+Deployment tooling retains Python 3.9 compatibility for existing operators.
+For new installations, use the latest stable Python 3 release. CI tests 3.9–3.14
+and a floating `3.x` job with `check-latest` on Linux and macOS, so new stable
+releases are included automatically. Python 3.15 prereleases have a separate
+advisory check; a preview result is not production certification. Scheduled
+weekly runs catch interpreter changes even when deployment code is unchanged.
+
+The entrypoints reject Python older than 3.9 before loading release code.
+Use `python3 --version` to check the interpreter selected by your PATH; activate
+your chosen Python environment before running the deployment command. Child
+commands also resolve `python3` from PATH. No automatic interpreter upgrade occurs.
+These tests mock cloud operations; passing them does not establish live rollout success.

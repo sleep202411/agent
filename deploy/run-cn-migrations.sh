@@ -3,4 +3,5 @@
 # Prefer release-cn.sh for the coordinated build, backup and rollout workflow.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+python3 "$ROOT/deploy/check-python.py"
 exec python3 "$ROOT/deploy/cn_release.py" migrate "$@"
