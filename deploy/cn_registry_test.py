@@ -5,6 +5,21 @@ from unittest.mock import Mock, patch
 import cn_registry as registry
 
 
+class GameAgentImageTests(unittest.TestCase):
+    def test_worker_image_is_verified_in_its_cn_repository(self):
+        tag = 'a' * 40
+        digest = 'sha256:' + 'b' * 64
+        repo = {'TotalCount': 1, 'Repositories': [{
+            'RepoName': 'fizzdragon-game-agent', 'RepoNamespaceName': 'fizzdragon',
+            'InstanceId': registry.INSTANCE, 'RepoStatus': 'NORMAL', 'RepoId': 'worker-repo',
+        }]}
+        with patch.object(registry, 'query', side_effect=[repo, {
+                'Tag': tag, 'Status': 'NORMAL', 'Digest': digest,
+        }]) as query:
+            self.assertEqual(registry.verify(tag, ['game-agent']), {'game-agent': digest})
+            self.assertEqual(query.call_args.kwargs, {'RepoId': 'worker-repo', 'Tag': tag})
+
+
 class RegistryRetryTests(unittest.TestCase):
     def success(self):
         return Mock(stdout=json.dumps({'IsSuccess': True, 'Code': 'success', 'Repositories': []}))

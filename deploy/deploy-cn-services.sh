@@ -27,7 +27,7 @@ while [ "$#" -gt 0 ]; do
     --allow-chart-update) ALLOW_CHART_UPDATE=1; shift ;;
     -h|--help)
       echo "Usage: $0 [--tag <git-sha>] [--full] [--build-only|--deploy-only] [--allow-chart-update] <service...|platform>"
-      echo "Services: web studio admin-ui server agent-os; legacy agent requires ALLOW_LEGACY_AGENT_DEPLOY=1"
+      echo "Services: web studio admin-ui server agent-os game-agent; legacy agent requires ALLOW_LEGACY_AGENT_DEPLOY=1"
       exit 0
       ;;
     -*) echo "Unknown option: $1" >&2; exit 2 ;;
@@ -37,14 +37,14 @@ done
 
 [ "${#REQUESTED[@]}" -gt 0 ] || { echo "No services selected" >&2; exit 2; }
 if [ "${REQUESTED[0]}" = platform ] || [ "${REQUESTED[0]}" = all ]; then
-  SERVICES=(server studio web admin-ui agent-os)
+  SERVICES=(server studio web admin-ui agent-os game-agent)
 else
   SERVICES=("${REQUESTED[@]}")
 fi
 
 for service in "${SERVICES[@]}"; do
   case "$service" in
-    web|studio|admin-ui|server|agent-os) ;;
+    web|studio|admin-ui|server|agent-os|game-agent) ;;
     agent)
       [ "${ALLOW_LEGACY_AGENT_DEPLOY:-0}" = 1 ] || {
         echo "FATAL: legacy agent is frozen/quarantined; set ALLOW_LEGACY_AGENT_DEPLOY=1 only after its image passes a real boot test" >&2
@@ -252,6 +252,8 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
   server_tag="$(contains_service server && image_tag server || live_tag fizzdragon-server)"
   agent_os_tag="$(contains_service agent-os && image_tag agent-os || live_tag fizzdragon-agent-os)"
 
+  game_agent_tag="$(contains_service game-agent && image_tag game-agent || live_tag fizzdragon-game-agent)"
+
   helm_sets=(
     --set-string "cnRelease.chartFingerprint=$fingerprint"
     --set-string "web.image.tag=$web_tag"
@@ -259,6 +261,7 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
     --set-string "adminUi.image.tag=$admin_tag"
     --set-string "server.image.tag=$server_tag"
     --set-string "agentOs.image.tag=$agent_os_tag"
+    --set-string "gameAgent.image.tag=$game_agent_tag"
     --set 'server.migrationJob.enabled=false'
   )
   if contains_service agent; then

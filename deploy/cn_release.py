@@ -291,7 +291,7 @@ def release(args):
             if previous and not previous.get("complete"):
                 raise RuntimeError("An unfinished CN release exists. Use --resume; its pinned revision is " + previous["tag"])
             services = args.services or ["web", "server", "studio", "admin-ui"]
-            if any(s not in ("web", "server", "studio", "admin-ui", "agent-os") for s in services):
+            if any(s not in ("web", "server", "studio", "admin-ui", "agent-os", "game-agent") for s in services):
                 raise RuntimeError("Invalid service set")
             state = {"version": 1, "tag": revision(args.tag or "HEAD"), "services": sorted(set(services)),
                      "namespace": os.environ.get("CN_NAMESPACE", "fizzdragon"),

@@ -30,7 +30,7 @@ export DEPLOY_KEY="$HOME/.ssh/id_ed25519_fizzdragon_cn"
 export KUBECONFIG="$HOME/.kube/config-fizzdragon-cn"
 
 CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh \
-  --allow-chart-update web server studio admin-ui
+  --allow-chart-update web server studio admin-ui game-agent
 ```
 
 This automatically:
@@ -196,3 +196,8 @@ assume that bucket discovery proves a destination is suitable. After provisionin
 verify signed upload, authorized download and cleanup, then export a storyboard
 with both images and videos and play the resulting MP4. No bucket or production
 configuration is provisioned by these code changes.
+
+Game Agent uses a separate regional provider Secret (`fizzdragon-game-agent-provider`)
+and internal admission Secret (`fizzdragon-game-agent-internal`). Its private workspace PVC
+survives Recreate rollouts; do not replace it during image releases. Include `game-agent`
+when releasing Harness or shared appearance contracts.

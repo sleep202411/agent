@@ -70,7 +70,7 @@ def transient_code(code):
 def verify(tag, services):
     if not re.fullmatch(r"[0-9a-f]{40}", tag):
         raise ValueError("A full immutable Git SHA is required")
-    if not services or any(s not in ("server", "studio", "web", "admin-ui", "agent-os", "agent") for s in services):
+    if not services or any(s not in ("server", "studio", "web", "admin-ui", "agent-os", "game-agent", "agent") for s in services):
         raise ValueError("Invalid CN services")
     result = {}
     for service in services:

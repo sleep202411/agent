@@ -359,3 +359,20 @@ agentOs:
     baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
   nodeSelector: null
   tolerations: null
+
+# Independent Harness authoring uses the CN provider and private regional volume.
+gameAgent:
+  enabled: true
+  image:
+    tag: "bf3f7eb16d016cea340f5b22832ad3b2175306ae"
+  persistence:
+    storageClassName: alicloud-disk-essd
+  model:
+    name: qwen3.8-max-0902
+    baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
+  studioOrigin: https://fizzstudio.fizzspace.cn
+  secrets:
+    apiKey:
+      name: fizzdragon-game-agent-provider
+    internalToken:
+      name: fizzdragon-game-agent-internal

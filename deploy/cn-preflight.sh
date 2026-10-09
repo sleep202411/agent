@@ -135,6 +135,10 @@ else
     secret_has_key fizzdragon-server-secrets BAILIAN_API_KEY
     secret_has_key fizzdragon-server-secrets MINIMAX_API_KEY
   fi
+  if has_service game-agent; then
+    secret_has_key fizzdragon-game-agent-provider GAME_AGENT_OPENAI_API_KEY
+    secret_has_key fizzdragon-game-agent-internal GAME_AGENT_INTERNAL_TOKEN
+  fi
   if has_service admin-ui; then
     secret_has_key fizzdragon-adminui-secrets JAVA_ADMIN_API_TOKEN
   fi

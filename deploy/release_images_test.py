@@ -52,6 +52,15 @@ class InputTests(unittest.TestCase):
     def test_com_env_does_not_invalidate_cn(self): self.compare('apps/web/.env.production.com', True)
     def test_cn_env_invalidates_studio(self): self.compare('apps/web/.env.production.cn', False, 'studio', 'cn')
     def test_cn_recipe_change_invalidates(self): self.compare('deploy/cn-remote-build-services.sh', False, region='cn')
+    def test_game_agent_source_invalidates_its_cn_image(self):
+        self.write('apps/game-agent/package.json', '{"name":"game-agent","dependencies":{"@repo/shared":"*"}}')
+        self.write('packages/shared/package.json', '{"name":"@repo/shared"}')
+        self.source = self.commit()
+        self.compare('apps/game-agent/source.ts', False, 'game-agent')
+    def test_game_agent_does_not_rebuild_for_other_app_source(self):
+        self.write('apps/game-agent/package.json', '{"name":"game-agent"}')
+        self.source = self.commit()
+        self.compare('apps/web/source.ts', True, 'game-agent')
     def test_existing_image_from_another_operator_is_reused(self):
         self.write('docs/new.md', 'docs')
         source = self.commit()
