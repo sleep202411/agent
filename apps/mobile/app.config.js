@@ -269,7 +269,7 @@ module.exports = ({ config }) => {
     owner: "fizzdragon",
     name: getDisplayName(appRegion, appVariant),
     slug: readSlug(),
-    version: "2.3.1",
+    version: "2.3.2",
     orientation: "default",
     icon: "./assets/images/icon.png",
     scheme: getUrlSchemes(appRegion, appVariant),
@@ -284,7 +284,7 @@ module.exports = ({ config }) => {
       // its own adaptiveIcon below (Xiaomi et al. DO need a safe-zone margin).
       icon: "./assets/images/ios-icon.png",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
-      buildNumber: "80",
+      buildNumber: "81",
       // iPhone-only: no iPad/universal build (UIDeviceFamily=[1]). The 1.0
       // rejection was reviewed on an iPad Air; we do not claim tablet support.
       supportsTablet: false,
@@ -295,7 +295,7 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
-      versionCode: 80,
+      versionCode: 81,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {
