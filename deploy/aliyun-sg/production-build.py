@@ -15,6 +15,7 @@ from shutil import copy2, copyfileobj
 import subprocess
 import tarfile
 import tempfile
+from typing import Optional
 
 INSTANCE_ID = "cri-d97629cirhkt3p9e"
 PUSH_HOST = "fizzdragon-com-sg-registry.ap-southeast-1.cr.aliyuncs.com"
@@ -42,7 +43,7 @@ PUBLIC_ARGS = {
 }
 
 
-def optional_npm_registry(value=None) -> str | None:
+def optional_npm_registry(value=None) -> Optional[str]:
     """Return an opt-in npm registry URL for Docker build-args, or None for Dockerfile default."""
     candidate = value if value is not None else os.environ.get(NPM_REGISTRY_ENV, "")
     if candidate is None:
