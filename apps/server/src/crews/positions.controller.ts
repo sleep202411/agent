@@ -18,7 +18,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { CurrentUser, Public } from '../auth';
+import { AuthService, CurrentUser, Public, ViewerCookie } from '../auth';
 import type { AuthUser } from '../auth';
 import {
   CreatePositionSchema,
@@ -36,7 +36,10 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 
 @Controller('crews/:crewId/positions')
 export class PositionsController {
-  constructor(private readonly svc: PositionsService) {}
+  constructor(
+    private readonly svc: PositionsService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Public()
   @Get()
@@ -55,32 +58,44 @@ export class PositionsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  create(
+  async create(
     @Param('crewId') crewIdRaw: string,
     @CurrentUser() user: AuthUser,
+    @ViewerCookie() cookie: string,
     @Body(new ZodValidationPipe(CreatePositionSchema))
     body: CreatePositionInput,
   ) {
+    const fresh =
+      body.recruitmentVisibility !== 'private'
+        ? await this.authService.validateToken(cookie, { bypassCache: true })
+        : user;
     return this.svc.create(
       parseIdParam(crewIdRaw, 'crewId'),
       user.userId,
       body,
+      fresh?.userId === user.userId ? fresh.levelIds : [],
     );
   }
 
   @Patch(':positionId')
-  update(
+  async update(
     @Param('crewId') crewIdRaw: string,
     @Param('positionId') positionIdRaw: string,
     @CurrentUser() user: AuthUser,
+    @ViewerCookie() cookie: string,
     @Body(new ZodValidationPipe(UpdatePositionSchema))
     body: UpdatePositionInput,
   ) {
+    const fresh =
+      body.status === 'open'
+        ? await this.authService.validateToken(cookie, { bypassCache: true })
+        : user;
     return this.svc.update(
       parseIdParam(crewIdRaw, 'crewId'),
       parseIdParam(positionIdRaw, 'positionId'),
       user.userId,
       body,
+      fresh?.userId === user.userId ? fresh.levelIds : [],
     );
   }
 

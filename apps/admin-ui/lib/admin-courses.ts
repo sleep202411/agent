@@ -43,6 +43,12 @@ async function coursesFetch(path: string, init?: RequestInit): Promise<Response>
     ...init,
     headers,
     cache: "no-store",
+    signal: init?.signal
+      ? AbortSignal.any([
+          init.signal,
+          AbortSignal.timeout(init.body instanceof FormData ? 120_000 : 15_000),
+        ])
+      : AbortSignal.timeout(init?.body instanceof FormData ? 120_000 : 15_000),
   });
 }
 

@@ -44,7 +44,6 @@ import {
 } from '@prisma/client';
 import type { ConversationDTO } from '@repo/shared/conversation';
 import type { AuthUser } from '../auth';
-import { hasCrewCreatePass } from '../integrations/java/user-level-gates';
 import {
   ConversationsService,
   crewCommunityLookupKey,
@@ -83,17 +82,10 @@ export class CrewsService {
   ) {}
 
   creationEligibility(user: AuthUser) {
-    return { eligible: hasCrewCreatePass(user.levelIds) };
+    return { eligible: Boolean(user.userId) };
   }
 
   async create(creator: AuthUser, input: CreateCrewInput) {
-    // Java user_level id=13 is the sole create gate (Nest producer cert dropped).
-    if (!hasCrewCreatePass(creator.levelIds)) {
-      throw new ForbiddenException({
-        code: 'CREW_LEVEL_REQUIRED',
-        message: 'Java certification level 13 is required to create a Crew.',
-      });
-    }
     const creatorUserId = creator.userId;
     const crew = await this.prisma.$transaction(async (tx) => {
       return createCrewTx(tx, this.conversations, creatorUserId, input);

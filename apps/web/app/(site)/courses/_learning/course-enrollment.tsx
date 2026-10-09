@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { isValidLocale, defaultLocale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
 import { Button } from "@/components/ui/button";
 import { uploadFileViaSignedUrl } from "@/src/lib/media-upload";
@@ -127,7 +128,9 @@ function EnrollActions({ courseId, mode }: { courseId: string; mode: "gate" | "h
       >
         <p>{t("signInToEnroll")}</p>
         <Button asChild>
-          <Link href={localizePath("/login", locale)}>{t("signIn")}</Link>
+          <Link href={localizePath("/login", isValidLocale(locale) ? locale : defaultLocale)}>
+            {t("signIn")}
+          </Link>
         </Button>
       </section>
     );

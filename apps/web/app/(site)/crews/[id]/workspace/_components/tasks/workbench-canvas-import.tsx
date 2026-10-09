@@ -215,7 +215,10 @@ function CanvasImportSession({
             </p>
           ) : null}
           {done ? (
-            <p role="status" className="text-sm">
+            <p
+              role="status"
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium leading-6 text-white/80"
+            >
               {t("importDone")}
             </p>
           ) : (

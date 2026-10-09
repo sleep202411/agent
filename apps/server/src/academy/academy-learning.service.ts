@@ -601,7 +601,13 @@ export class AcademyLearningService {
         ...page.map((row) => row.teacherId),
       ]),
     ]);
-    const items = [];
+    const items: Array<
+      ReturnType<typeof dto> & {
+        studentName: string;
+        teacherName: string;
+        courseTitle: string;
+      }
+    > = [];
     for (const row of page) {
       const course = await this.authority
         .course(row.courseId)

@@ -5231,9 +5231,10 @@ function taskCompensation(metadata: Prisma.JsonValue | null) {
       TASK_PAYMENT_TERMS.find((term) => term === compensation?.paymentTerms) ??
       null,
     rewardCurrency:
-      compensation?.rewardCurrency === 'CNY'
-        ? ('CNY' as const)
-        : ('USD' as const),
+      compensation?.rewardCurrency === 'CNY' ||
+      compensation?.rewardCurrency === 'USD'
+        ? compensation.rewardCurrency
+        : crewCurrency(),
     rewardUsdMinor:
       typeof compensation?.rewardUsdMinor === 'number'
         ? compensation.rewardUsdMinor

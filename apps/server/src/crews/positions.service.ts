@@ -11,10 +11,15 @@
  * Hard-soft delete (deletedAt) is ALWAYS blocked while pending
  * applications exist — per spec, owner must process them first.
  */
+import {
+  hasUserLevel,
+  CERTIFIED_PRODUCER_LEVEL_ID,
+} from '../integrations/java/user-level-gates';
 import { assertRecruitableTask } from './task-recruitment';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -37,6 +42,16 @@ export class PositionsService {
     private readonly prisma: PrismaService,
     private readonly authorization: CrewAuthorizationService,
   ) {}
+
+  private requireProducer(levelIds: readonly number[]) {
+    // Java level 13 is the certified producer qualification. Crew creation is unrestricted.
+    if (!hasUserLevel(levelIds, CERTIFIED_PRODUCER_LEVEL_ID))
+      throw new ForbiddenException({
+        code: 'CREW_PRODUCER_REQUIRED',
+        message:
+          'Producer qualification is required to publish recruitment to the Positions plaza.',
+      });
+  }
 
   async list(
     crewId: string,
@@ -469,8 +484,15 @@ export class PositionsService {
     });
   }
 
-  async create(crewId: string, ownerId: string, input: CreatePositionInput) {
+  async create(
+    crewId: string,
+    ownerId: string,
+    input: CreatePositionInput,
+    levelIds: readonly number[] = [],
+  ) {
     await this.authorization.require(crewId, ownerId, 'openings.manage');
+    if (input.recruitmentVisibility !== 'private')
+      this.requireProducer(levelIds);
     if (input.recruitmentVisibility === 'private' && !input.taskId)
       throw new BadRequestException(
         'Private recruitment requires a linked task.',
@@ -539,6 +561,7 @@ export class PositionsService {
     positionId: string,
     ownerId: string,
     input: UpdatePositionInput,
+    levelIds: readonly number[] = [],
   ) {
     await this.authorization.require(crewId, ownerId, 'openings.manage');
     return this.positionWrite(crewId, ownerId, positionId, async (tx) => {
@@ -565,6 +588,13 @@ export class PositionsService {
           nextStatus = 'open';
       }
 
+      if (
+        pos.recruitmentVisibility !== 'private' &&
+        pos.status === 'frozen' &&
+        nextStatus !== 'frozen'
+      ) {
+        this.requireProducer(levelIds);
+      }
       const updated = await tx.crewPosition.update({
         where: { id: positionId },
         data: {

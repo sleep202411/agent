@@ -993,7 +993,11 @@ function SelectChip({
       <p className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
         {icon}
         {ariaLabel}
-        {help}
+        {help ? (
+          <span className="relative inline-flex size-4 shrink-0 items-center justify-center [&>button]:absolute">
+            {help}
+          </span>
+        ) : null}
         {required ? (
           <span aria-hidden="true" className="text-primary">
             *

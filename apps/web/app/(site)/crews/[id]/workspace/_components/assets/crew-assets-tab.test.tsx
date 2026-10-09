@@ -685,7 +685,7 @@ describe("crew asset center", () => {
   });
 });
 
-describe("Link workspace", () => {
+describe("Link Workspace", () => {
   it("links a workspace from the shared header and updates the trigger", async () => {
     const client = await render();
     const sourceKey = ["crew", "assets", "crew_1", "studio-media-options", {}, "user-1"];
@@ -694,13 +694,13 @@ describe("Link workspace", () => {
     for (const key of [sourceKey, otherAccount, otherCrew]) {
       client.setQueryData(key, { workspaceId: "old-workspace", projects: [], items: [] });
     }
-    const trigger = byText("button", "Link workspace");
+    const trigger = byText("button", "Link Workspace");
     const header = document.querySelector('header[aria-label="Crew header"]');
     expect(header?.contains(trigger)).toBe(true);
     expect(header?.contains(byText("button", "New folder"))).toBe(false);
     expect(
       [...document.querySelectorAll("button")].filter(
-        (button) => button.textContent === "Link workspace"
+        (button) => button.textContent === "Link Workspace"
       )
     ).toHaveLength(1);
     await click(trigger);
@@ -726,7 +726,7 @@ describe("Link workspace", () => {
   it("keeps the action disabled without the workspace-link capability", async () => {
     canLink = false;
     await render();
-    expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(true);
+    expect((byText("button", "Link Workspace") as HTMLButtonElement).disabled).toBe(true);
     expect(requests.some((r) => r.url.endsWith("/studio-workspace-options"))).toBe(false);
   });
   it("keeps the picker open and reports a rejected link", async () => {
@@ -734,7 +734,7 @@ describe("Link workspace", () => {
     const client = await render();
     const sourceKey = ["crew", "assets", "crew_1", "studio-media-options", {}, "user-1"];
     client.setQueryData(sourceKey, { workspaceId: "old-workspace", projects: [], items: [] });
-    await click(byText("button", "Link workspace"));
+    await click(byText("button", "Link Workspace"));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
@@ -824,7 +824,7 @@ describe("Legacy project link", () => {
     expect(requests).toContainEqual(
       expect.objectContaining({ method: "PATCH", body: { workspaceId: null } })
     );
-    await vi.waitFor(() => expect(byText("button", "Link workspace")).toBeTruthy());
+    await vi.waitFor(() => expect(byText("button", "Link Workspace")).toBeTruthy());
     expect(client.getQueryState(sourceKey)?.isInvalidated).toBe(true);
   });
   it("keeps a legacy link visible but disabled for non-admins", async () => {
@@ -1191,7 +1191,7 @@ it.each(["trash", "restore"])(
 
 it("disables cached workspace authority after an overview refresh fails", async () => {
   const client = await render();
-  expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(false);
+  expect((byText("button", "Link Workspace") as HTMLButtonElement).disabled).toBe(false);
   const key = ["crew", "production", "crew_1", "overview", "user-1"];
   client.setQueryDefaults(key, { retry: false });
   overviewReadFails = true;
@@ -1199,14 +1199,14 @@ it("disables cached workspace authority after an overview refresh fails", async 
     await client.refetchQueries({ queryKey: key });
   });
   await vi.waitFor(() =>
-    expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(true)
+    expect((byText("button", "Link Workspace") as HTMLButtonElement).disabled).toBe(true)
   );
   overviewReadFails = false;
   await act(async () => {
     await client.refetchQueries({ queryKey: key });
   });
   await vi.waitFor(() =>
-    expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(false)
+    expect((byText("button", "Link Workspace") as HTMLButtonElement).disabled).toBe(false)
   );
 });
 

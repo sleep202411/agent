@@ -296,3 +296,25 @@ describe("project publication dialog entry", () => {
     );
   });
 });
+
+it("refreshes producer capabilities while publication details remain open", async () => {
+  h.capabilities = ["story.read", "story.edit"];
+  await render();
+  const before = h.workbench.mock.calls.length;
+  vi.useFakeTimers();
+  try {
+    await act(async () => {
+      button("Publish").click();
+    });
+    h.capabilities = ["story.read", "story.edit", "story.build", "story.release"];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_100);
+    });
+    expect(h.workbench.mock.calls.length).toBeGreaterThan(before);
+    expect(h.dialogRender.mock.lastCall?.[0].workbench.project.capabilities).toContain(
+      "story.release"
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});

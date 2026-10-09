@@ -2093,6 +2093,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
             description: 'Task work',
             targetCount: 1,
           }),
+          [13],
         );
         openingId = position.id;
         expect(position.taskId).toBe(taskId);
@@ -2132,6 +2133,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
               description: 'Private task',
               targetCount: 1,
             }),
+            [13],
           );
           openingId = privatePosition.id;
           expect(privatePosition.recruitmentVisibility).toBe('private');
@@ -3073,11 +3075,16 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           description: 'Task work',
           targetCount: 1,
         });
-        await expect(positions.create(crewId, owner, input)).rejects.toThrow(
-          'before assigning work',
-        );
         await expect(
-          positions.create(crewId, owner, { ...input, taskId: randomUUID() }),
+          positions.create(crewId, owner, input, [13]),
+        ).rejects.toThrow('before assigning work');
+        await expect(
+          positions.create(
+            crewId,
+            owner,
+            { ...input, taskId: randomUUID() },
+            [13],
+          ),
         ).rejects.toThrow('Recruitment task not found');
         await expect(positions.create(crewId, worker, input)).rejects.toThrow();
       });
@@ -3106,6 +3113,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
               description: 'Task work',
               targetCount: 1,
             }),
+            [13],
           ),
           tasks.update(
             task.id,

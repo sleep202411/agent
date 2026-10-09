@@ -3,10 +3,12 @@
  *
  * Keep aligned with deployed MySQL `user_level` rows. Currently:
  *   12 → free watch of all paid IP episodes (no community-point spend)
- *   13 → create Crew (replaces Nest `fizzdragon_certified_ai_producer`)
+ *   13 → certified producer / public Crew recruitment (not Crew creation)
  */
 export const FREE_IP_WATCH_LEVEL_ID = 12;
-export const CREW_CREATE_LEVEL_ID = 13;
+export const CERTIFIED_PRODUCER_LEVEL_ID = 13;
+// Legacy name retained for IP-commerce entitlement callers.
+export const CREW_CREATE_LEVEL_ID = CERTIFIED_PRODUCER_LEVEL_ID;
 
 export function hasUserLevel(
   levelIds: readonly number[] | undefined,
