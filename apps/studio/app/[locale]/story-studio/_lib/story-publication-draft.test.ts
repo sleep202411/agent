@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  missingPublicationFields,
   migratePublicationDraft,
   migratePublicationDraftSignature,
   parseStoredPublicationDraft,
@@ -34,11 +33,10 @@ const migratedDescription =
   "Unsaved title\n\nUnsaved summary\n\nFirst paragraph\nSecond line\n\nRepeated paragraph\n\nRepeated paragraph";
 
 describe("publication introduction drafts", () => {
-  it("accepts incomplete drafts while reporting fields still needed for submission", () => {
+  it("accepts optional promotional details", () => {
     const draft = empty();
     draft.listing.description = "An unfinished film";
     expect(StoryPublicationDraftSchema.safeParse(draft).success).toBe(true);
-    expect(missingPublicationFields(draft)).toEqual(["cover"]);
   });
 
   it("recovers an incomplete account draft together with its original project version", () => {
@@ -151,14 +149,12 @@ describe("publication introduction drafts", () => {
     expect(StoryPublicationDraftSchema.safeParse(draft).success).toBe(false);
   });
 
-  it("allows an empty saved draft but requires a nonblank introduction for submission", () => {
+  it("allows a blank introduction", () => {
     const draft = empty();
     draft.coverAssetId = firstAsset;
     draft.listing.description = " \n ";
     expect(StoryPublicationDraftSchema.safeParse(draft).success).toBe(true);
-    expect(missingPublicationFields(draft)).toEqual(["description"]);
     draft.listing.description = "A complete introduction\n\nWith another paragraph";
-    expect(missingPublicationFields(draft)).toEqual([]);
     expect(draft.listing.developer).toBe("");
     expect(StoryPublicationDraftSchema.safeParse(draft).success).toBe(true);
   });
@@ -178,7 +174,6 @@ describe("publication introduction drafts", () => {
     expect(JSON.parse(publicationDraftSignature(saved)).listing.developer).toBe(
       "Original film team"
     );
-    expect(missingPublicationFields(saved)).toEqual([]);
   });
 
   it("treats the same restored fields as equal regardless of JSON property order, while keeping screenshot order meaningful", () => {

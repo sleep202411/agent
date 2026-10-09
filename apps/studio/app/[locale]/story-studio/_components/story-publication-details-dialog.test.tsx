@@ -176,11 +176,12 @@ afterEach(async () => {
 });
 
 describe("project publication details dialog", () => {
-  it("saves unfinished introduction drafts while blocking review submission", async () => {
+  it("allows publication without promotional details", async () => {
+    h.workbench!.project.cover = null;
     await render();
     await input("descriptionPlaceholder", "");
     expect(button("saveDraft").disabled).toBe(false);
-    expect(button("submit").disabled).toBe(true);
+    expect(button("submit").disabled).toBe(false);
     await click(button("saveDraft"));
     expect(h.patch).toHaveBeenCalledWith(
       PROJECT_ID,
@@ -232,10 +233,10 @@ describe("project publication details dialog", () => {
     expect(document.body.textContent).toContain("mediaUnavailable");
   });
 
-  it("requires a nonblank introduction while allowing an empty saved draft", async () => {
+  it("allows a blank introduction to be saved and submitted", async () => {
     await render();
     await input("descriptionPlaceholder", "  ");
-    expect(button("submit").disabled).toBe(true);
+    expect(button("submit").disabled).toBe(false);
     expect(button("saveDraft").disabled).toBe(false);
     await click(button("saveDraft"));
     expect(h.patch).toHaveBeenCalledWith(

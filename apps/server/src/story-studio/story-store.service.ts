@@ -142,7 +142,7 @@ export class StoryStoreService {
     const data = snapshot.data.listing;
 
     const assetIds = [
-      snapshot.data.coverAssetId,
+      ...(snapshot.data.coverAssetId ? [snapshot.data.coverAssetId] : []),
       ...(data.trailerAssetId ? [data.trailerAssetId] : []),
       ...data.screenshotAssetIds,
     ];
@@ -152,7 +152,9 @@ export class StoryStoreService {
     });
     const byId = new Map(assets.map((asset) => [asset.id, asset]));
 
-    const cover = byId.get(snapshot.data.coverAssetId);
+    const cover = snapshot.data.coverAssetId
+      ? byId.get(snapshot.data.coverAssetId)
+      : undefined;
     const trailer = data.trailerAssetId
       ? byId.get(data.trailerAssetId)
       : undefined;

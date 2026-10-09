@@ -56,7 +56,7 @@ export function StoryFilmDetailsEditor({
           </h2>
           <p className="mt-1 text-sm leading-6 text-white/45">{t("introDescription")}</p>
         </div>
-        <Field label={t("cover")} required>
+        <Field label={t("cover")}>
           <div className="flex items-center gap-5">
             <MediaThumbnail
               loading={candidates.loading}
@@ -74,10 +74,9 @@ export function StoryFilmDetailsEditor({
             </div>
           </div>
         </Field>
-        <Field label={t("description")} htmlFor={`${id}-description`} required>
+        <Field label={t("description")} htmlFor={`${id}-description`}>
           <Textarea
             id={`${id}-description`}
-            aria-required
             maxLength={13000}
             value={value.listing.description}
             disabled={disabled}

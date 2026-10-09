@@ -49,7 +49,7 @@ const CHAPTER_MANIFEST_UPLOAD_CONCURRENCY = 16;
 // A release Build is replayed by this key, including a failed one. Bump when
 // publishability rules change, otherwise the next submit returns the old
 // failure and never runs the new compiler.
-const RELEASE_BUILD_KEY_VERSION = 4;
+const RELEASE_BUILD_KEY_VERSION = 5;
 
 interface PreparedChapter {
   chapterId: string;
@@ -86,7 +86,13 @@ export class StoryExperienceReleaseService {
     );
     const workbench = await this.projects.workbench(user, projectId, {});
     assertExpectedSnapshot(workbench, input);
-    const coverUrl = requireReleaseCoverUrl(workbench);
+    const coverUrl = workbench.project.cover?.previewUrl?.trim() || undefined;
+    if (workbench.project.cover && !coverUrl) {
+      throw new UnprocessableEntityException({
+        code: 'STORY_RELEASE_COVER_INVALID',
+        message: 'The selected project cover has no available public URL.',
+      });
+    }
     const listingSnapshot = publicationListingSnapshot(workbench.project);
     await this.projects.requireProjectMediaUseAccess(
       user.userId,
@@ -106,7 +112,9 @@ export class StoryExperienceReleaseService {
     const byBuildId = new Map(
       chapters.map((chapter) => [chapter.buildId, chapter]),
     );
-    const opening = chapters[0];
+    const opening = [...chapters].sort(
+      (left, right) => left.rank - right.rank,
+    )[0];
     const plan = planRelease(
       workbench.chapters.map((chapter) => ({
         chapterId: chapter.id,
@@ -216,23 +224,28 @@ export class StoryExperienceReleaseService {
     }
 
     const singleChapter = workbench.chapters.length === 1;
-    for (const chapter of workbench.chapters) {
-      if (!singleChapter && !chapter.entryNodeId) {
-        throw new UnprocessableEntityException({
-          code: 'STORY_RELEASE_CHAPTER_ENTRY_REQUIRED',
-          message: `Chapter ${chapter.title} needs an entry scene before the work can be submitted for review.`,
-          chapterId: chapter.id,
-        });
-      }
+    const opening = [...workbench.chapters].sort(
+      (left, right) => left.rank - right.rank,
+    )[0];
+    if (!singleChapter && !opening.entryNodeId) {
+      throw new UnprocessableEntityException({
+        code: 'STORY_RELEASE_CHAPTER_ENTRY_REQUIRED',
+        message: `Chapter ${opening.title} needs an entry scene before the work can be submitted for review.`,
+        chapterId: opening.id,
+      });
     }
+    // Empty later chapters remain drafts and are omitted from this release.
+    const playableChapters = singleChapter
+      ? workbench.chapters
+      : workbench.chapters.filter((chapter) => chapter.entryNodeId);
 
     const result: PreparedChapter[] = [];
     for (
       let offset = 0;
-      offset < workbench.chapters.length;
+      offset < playableChapters.length;
       offset += RELEASE_BUILD_CONCURRENCY
     ) {
-      const batch = workbench.chapters.slice(
+      const batch = playableChapters.slice(
         offset,
         offset + RELEASE_BUILD_CONCURRENCY,
       );
@@ -450,7 +463,7 @@ function matchesListingSnapshot(
 
 function runtimeReleaseRequest(
   manifest: ExperienceRuntimeManifest,
-  coverUrl: string,
+  coverUrl: string | undefined,
 ): ExperienceReleaseRequest {
   const subtitle = manifest.metadata.summary
     ? localizedText(
@@ -467,7 +480,7 @@ function runtimeReleaseRequest(
         manifest.localization.defaultLocale,
       ),
       ...(subtitle ? { subtitle } : {}),
-      coverUrl,
+      ...(coverUrl ? { coverUrl } : {}),
       status: 'draft',
       setCurrent: true,
     },
@@ -486,16 +499,6 @@ function publishDiagnosticNodeId(diagnostic: {
     return diagnostic.entityId;
   }
   return null;
-}
-
-function requireReleaseCoverUrl(workbench: StoryWorkbenchDto): string {
-  const coverUrl = workbench.project.cover?.previewUrl?.trim();
-  if (coverUrl) return coverUrl;
-  throw new UnprocessableEntityException({
-    code: 'STORY_RELEASE_COVER_REQUIRED',
-    message:
-      'Select a ready project cover before submitting this work for review.',
-  });
 }
 
 function preparedChapter(
@@ -650,7 +653,9 @@ async function assertCandidateListingAssets(
 ): Promise<void> {
   await lockMediaAssetReferences(tx, listingAssetIds(snapshot));
   const expected = new Map<string, 'image' | 'video'>([
-    [snapshot.coverAssetId, 'image'],
+    ...(snapshot.coverAssetId
+      ? [[snapshot.coverAssetId, 'image'] as const]
+      : []),
     ...snapshot.listing.screenshotAssetIds.map((id) => [id, 'image'] as const),
     ...(snapshot.listing.trailerAssetId
       ? [[snapshot.listing.trailerAssetId, 'video'] as const]
@@ -681,7 +686,7 @@ async function assertCandidateListingAssets(
 
 function listingAssetIds(snapshot: StoryPublicationListingSnapshot): string[] {
   return [
-    snapshot.coverAssetId,
+    ...(snapshot.coverAssetId ? [snapshot.coverAssetId] : []),
     ...snapshot.listing.screenshotAssetIds,
     ...(snapshot.listing.trailerAssetId
       ? [snapshot.listing.trailerAssetId]

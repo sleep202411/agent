@@ -137,17 +137,6 @@ export function migratePublicationDraftSignature(signature: string): string {
   }
 }
 
-export type StoryPublicationMissingField = "cover" | "description";
-
-export function missingPublicationFields(
-  draft: StoryPublicationDraft
-): StoryPublicationMissingField[] {
-  const missing: StoryPublicationMissingField[] = [];
-  if (!draft.coverAssetId) missing.push("cover");
-  if (!draft.listing.description.trim()) missing.push("description");
-  return missing;
-}
-
 export interface StoredPublicationDraft {
   value: StoryPublicationDraft;
   projectVersion: number;

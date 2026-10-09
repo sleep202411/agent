@@ -61,6 +61,18 @@ describe('StoryStoreService', () => {
     currentPublicVersion.mockReset().mockResolvedValue('public-version');
   });
 
+  it('serves a minimal published listing without a cover or description', async () => {
+    findFirst.mockResolvedValue(
+      projectRow({ ...snapshot({ description: '' }), coverAssetId: null }),
+    );
+    await expect(service.getListing(GAME_ID)).resolves.toMatchObject({
+      coverUrl: null,
+      description: '',
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: [] } } }),
+    );
+  });
   it('does not expose reviewing or offline works even when a release receipt exists', async () => {
     currentPublicVersion.mockResolvedValue(null);
     expect(await service.getListing(GAME_ID)).toBeNull();

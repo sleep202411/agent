@@ -3,13 +3,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
-import {
-  IconCheck,
-  IconChevronRight,
-  IconExternalLink,
-  IconLoader2,
-  IconX,
-} from "@tabler/icons-react";
+import { IconChevronRight, IconExternalLink, IconLoader2, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useAuth } from "@/app/_components/auth-provider";
 import { useSiteRegion } from "@/app/_components/region-provider";
@@ -17,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { getWebBaseUrl } from "@/lib/web-base";
 import { storyApiErrorMessage, type StoryWorkbench } from "@/lib/story-projects-api";
-import { missingPublicationFields } from "../_lib/story-publication-draft";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { StoryFilmDetailsEditor } from "./story-film-details-editor";
 import { useStoryPublicationDraft } from "./use-story-publication-draft";
@@ -154,44 +147,38 @@ function AccountPublicationDialog({
   }, [projectId, userId]);
   const pending =
     draft.saving || submission.isPending || management.offlineMutation.isPending || navigating;
-  const missing = missingPublicationFields(draft.value);
   const emptyChapters = workbench.chapters.filter(
     (chapter) => !chapter.entryNodeId || !chapter.nodeCount
   );
-  const invalidMedia = [
+  const selectedMediaIds = [
     draft.value.listing.trailerAssetId,
     ...draft.value.listing.screenshotAssetIds,
     draft.value.coverAssetId,
-  ]
-    .filter((id): id is string => Boolean(id))
-    .filter((id) => {
-      const asset =
-        candidates.items.find((candidate) => candidate.asset.id === id)?.asset ??
-        (workbench.project.cover?.id === id ? workbench.project.cover : null);
-      return (
-        !asset ||
-        asset.status !== "ready" ||
-        asset.moderationStatus === "blocked" ||
-        asset.kind !== (id === draft.value.listing.trailerAssetId ? "video" : "image")
-      );
-    });
+  ].filter((id): id is string => Boolean(id));
+  const invalidMedia = selectedMediaIds.filter((id) => {
+    const asset =
+      candidates.items.find((candidate) => candidate.asset.id === id)?.asset ??
+      (workbench.project.cover?.id === id ? workbench.project.cover : null);
+    return (
+      !asset ||
+      asset.status !== "ready" ||
+      asset.moderationStatus === "blocked" ||
+      asset.kind !== (id === draft.value.listing.trailerAssetId ? "video" : "image")
+    );
+  });
   const blockedReason =
     management.disabledReason ??
     (draft.conflicted
       ? t("conflict")
       : !draft.valid
         ? t("invalidDraft")
-        : missing.length
-          ? t("completeFields")
-          : emptyChapters.length
-            ? t("completeChapters")
-            : candidates.loading
-              ? t("mediaChecking")
-              : candidates.failed
-                ? t("details.candidateLoadError")
-                : invalidMedia.length
-                  ? t("mediaUnavailable")
-                  : null);
+        : selectedMediaIds.length && candidates.loading
+          ? t("mediaChecking")
+          : selectedMediaIds.length && candidates.failed
+            ? t("details.candidateLoadError")
+            : invalidMedia.length
+              ? t("mediaUnavailable")
+              : null);
   const canSubmit = management.canSubmit && !pending && !blockedReason;
   const dismissBlocked = pending || state.status === "confirming" || management.offlineIntent;
   const close = () => {
@@ -399,22 +386,6 @@ function AccountPublicationDialog({
                   <h2 className="text-sm font-medium">{t("checksTitle")}</h2>
                   <p className="mt-1 text-xs leading-5 text-white/40">{t("checksDescription")}</p>
                 </div>
-                <ul className="flex flex-wrap gap-x-5 gap-y-3">
-                  {(["cover", "description"] as const).map((field) => (
-                    <li key={field} className="flex items-center gap-3 text-sm">
-                      <span
-                        className={`grid size-5 place-items-center rounded-full ${missing.includes(field) ? "bg-white/[0.07] text-white/25" : "bg-white/[0.1] text-white/75"}`}
-                      >
-                        {missing.includes(field) ? (
-                          <span className="size-1 rounded-full bg-current" />
-                        ) : (
-                          <IconCheck className="size-3.5" />
-                        )}
-                      </span>
-                      <span className="text-white/60">{t(`details.${field}`)}</span>
-                    </li>
-                  ))}
-                </ul>
                 <div className="space-y-1">
                   <p className="text-xs text-white/50">
                     {emptyChapters.length

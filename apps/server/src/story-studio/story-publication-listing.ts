@@ -6,25 +6,12 @@ import {
   type StoryProjectSummaryDto,
 } from './dto';
 
-/** A release introduction requires a description; creator metadata may be empty. */
-export const PublishedStoreListingSchema = StoreListingSchema.superRefine(
-  (listing, context) => {
-    if (!listing.description) {
-      context.addIssue({
-        code: 'custom',
-        path: ['description'],
-        message: 'Add a work description before submitting for review.',
-      });
-    }
-  },
-);
-
 export const StoryPublicationListingSnapshotSchema = z
   .object({
     title: z.string().trim().min(1).max(160),
     defaultLocale: z.string().trim().min(2).max(16),
-    coverAssetId: z.uuid(),
-    listing: StoredStoreListingSchema.pipe(PublishedStoreListingSchema),
+    coverAssetId: z.uuid().nullable(),
+    listing: StoredStoreListingSchema.pipe(StoreListingSchema),
   })
   .strict();
 
@@ -35,11 +22,19 @@ export type StoryPublicationListingSnapshot = z.infer<
 export function publicationListingSnapshot(
   project: StoryProjectSummaryDto,
 ): StoryPublicationListingSnapshot {
-  const parsed = PublishedStoreListingSchema.safeParse(project.storeListing);
+  const parsed = StoreListingSchema.safeParse(
+    project.storeListing ?? {
+      description: '',
+      tags: [],
+      developer: '',
+      trailerAssetId: null,
+      screenshotAssetIds: [],
+    },
+  );
   if (!parsed.success) {
     throw new UnprocessableEntityException({
-      code: 'STORY_RELEASE_INTRODUCTION_REQUIRED',
-      message: 'Add a work description before submitting for review.',
+      code: 'STORY_RELEASE_INTRODUCTION_INVALID',
+      message: 'The work introduction contains invalid fields.',
       fields: [
         ...new Set(
           parsed.error.issues.map((issue) =>
@@ -49,17 +44,10 @@ export function publicationListingSnapshot(
       ],
     });
   }
-  if (!project.cover?.id) {
-    throw new UnprocessableEntityException({
-      code: 'STORY_RELEASE_COVER_REQUIRED',
-      message:
-        'Select a ready project cover before submitting this work for review.',
-    });
-  }
   return StoryPublicationListingSnapshotSchema.parse({
     title: project.title,
     defaultLocale: project.defaultLocale,
-    coverAssetId: project.cover.id,
+    coverAssetId: project.cover?.id ?? null,
     listing: parsed.data,
   });
 }

@@ -3,10 +3,7 @@ import {
   StoreListingSchema,
   StoredStoreListingSchema,
 } from './dto';
-import {
-  PublishedStoreListingSchema,
-  StoryPublicationListingSnapshotSchema,
-} from './story-publication-listing';
+import { StoryPublicationListingSnapshotSchema } from './story-publication-listing';
 
 const emptyDraft = {
   description: '',
@@ -56,13 +53,15 @@ describe('Publication introduction validation', () => {
       }).success,
     ).toBe(false);
   });
-  it('requires a description at the release boundary', () => {
-    const result = PublishedStoreListingSchema.safeParse(emptyDraft);
-    expect(result.success).toBe(false);
-    if (!result.success)
-      expect(result.error.issues.map((issue) => issue.path[0])).toEqual([
-        'description',
-      ]);
+  it('accepts a release without promotional details', () => {
+    expect(
+      StoryPublicationListingSnapshotSchema.safeParse({
+        title: 'A film',
+        defaultLocale: 'en-US',
+        coverAssetId: null,
+        listing: emptyDraft,
+      }).success,
+    ).toBe(true);
   });
   it.each(['', 'Existing Crew'])(
     'freezes complete introductions while retaining creator metadata: %j',
@@ -190,13 +189,13 @@ describe('Publication introduction validation', () => {
         title: 'A film',
         defaultLocale: 'en-US',
         coverAssetId: '019f60f4-b101-70d4-8000-000000000099',
-        listing: { ...emptyLegacyDraft, genres: ['Drama'] },
+        listing: { ...emptyLegacyDraft, unknownField: 'Unexpected' },
       }).success,
     ).toBe(false);
   });
   it('accepts complete descriptions without making promotional assets mandatory', () => {
     expect(
-      PublishedStoreListingSchema.safeParse({
+      StoreListingSchema.safeParse({
         ...emptyDraft,
         description: 'A film\n\nMake choices\n\nYour story',
         developer: 'Crew',

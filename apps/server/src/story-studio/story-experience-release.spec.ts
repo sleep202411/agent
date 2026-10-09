@@ -77,7 +77,7 @@ describe('StoryExperienceReleaseService', () => {
       expect.anything(),
       PROJECT_ID,
       expect.anything(),
-      expect.stringMatching(/^story-review:v4:/),
+      expect.stringMatching(/^story-review:v5:/),
     );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -239,11 +239,91 @@ describe('StoryExperienceReleaseService', () => {
     expect(workbench.project.storeListing!.developer).toBe('');
   });
 
-  it('requires a nonempty work description before building for review', async () => {
+  it('prepares a playable release without a cover or introduction', async () => {
+    const workbench = workbenchFixture(
+      [{ id: 'chapter', title: 'Opening', rank: 0 }],
+      null,
+    );
+    workbench.project.storeListing = null;
+    const manifest = manifestFixture(FIRST_BUILD_ID, 'production');
+    const draftUpsert = jest.fn(
+      ({ create }: { create: Record<string, unknown> }) =>
+        Promise.resolve({ id: 'minimal-receipt', ...create }),
+    );
+    const dependencies = serviceDependencies({
+      workbench,
+      builds: [buildFixture(FIRST_BUILD_ID, manifest)],
+      draftUpsert,
+    });
+    const release = await dependencies.service.prepareProjectCandidate(
+      { userId: USER_ID } as never,
+      PROJECT_ID,
+      {
+        expectedProjectVersion: 3,
+        expectedDraftRevision: 7,
+        expectedVideoSnapshotHash: HASH,
+      },
+    );
+    expect(release).not.toHaveProperty('coverUrl');
+    expect(draftUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          listingSnapshot: expect.objectContaining({
+            coverAssetId: null,
+            listing: expect.objectContaining({ description: '' }),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('leaves an empty later chapter in draft without blocking the opening chapter', async () => {
     const workbench = workbenchFixture([
-      { id: 'chapter', title: 'Opening', rank: 0 },
+      { id: 'opening', title: 'Opening', rank: 0 },
+      { id: 'unfinished', title: 'Unfinished', rank: 1 },
     ]);
-    workbench.project.storeListing!.description = ' \n\n ';
+    workbench.chapters[1].entryNodeId = null;
+    const manifest = manifestFixture(FIRST_BUILD_ID, 'preview');
+    const gameUpsert = jest.fn(
+      ({
+        create,
+      }: {
+        create: Record<string, unknown> & {
+          chapters: { create: Array<Record<string, unknown>> };
+        };
+      }) =>
+        Promise.resolve({
+          id: 'serial-receipt',
+          ...create,
+          chapters: create.chapters.create,
+        }),
+    );
+    const dependencies = serviceDependencies({
+      workbench,
+      builds: [buildFixture(FIRST_BUILD_ID, manifest)],
+      gameUpsert,
+    });
+    const release = await dependencies.service.prepareProjectCandidate(
+      { userId: USER_ID } as never,
+      PROJECT_ID,
+      {
+        expectedProjectVersion: 3,
+        expectedDraftRevision: 7,
+        expectedVideoSnapshotHash: HASH,
+      },
+    );
+    expect(release.manifest).toMatchObject({
+      chapters: [expect.objectContaining({ chapterId: 'opening' })],
+    });
+    expect(dependencies.buildService.createBuild).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a serial opening chapter that cannot run', async () => {
+    const workbench = workbenchFixture([
+      { id: 'opening', title: 'Opening', rank: 0 },
+      { id: 'later', title: 'Later', rank: 1 },
+    ]);
+    workbench.chapters[0].entryNodeId = null;
     const dependencies = serviceDependencies({ workbench, builds: [] });
     await expect(
       dependencies.service.prepareProjectCandidate(
@@ -256,11 +336,7 @@ describe('StoryExperienceReleaseService', () => {
         },
       ),
     ).rejects.toMatchObject({
-      response: {
-        code: 'STORY_RELEASE_INTRODUCTION_REQUIRED',
-        message: 'Add a work description before submitting for review.',
-        fields: ['description'],
-      },
+      response: { code: 'STORY_RELEASE_CHAPTER_ENTRY_REQUIRED' },
     });
     expect(dependencies.buildService.createBuild).not.toHaveBeenCalled();
   });
@@ -598,36 +674,6 @@ describe('StoryExperienceReleaseService', () => {
       }
     },
   );
-
-  it('rejects review submission when the project has no public cover URL', async () => {
-    const dependencies = serviceDependencies({
-      workbench: workbenchFixture(
-        [
-          {
-            id: '019f60f4-b101-70d4-8000-000000000021',
-            title: 'Opening',
-            rank: 0,
-          },
-        ],
-        null,
-      ),
-      builds: [],
-    });
-
-    await expect(
-      dependencies.service.prepareProjectCandidate(
-        { userId: USER_ID } as never,
-        PROJECT_ID,
-        {
-          expectedProjectVersion: 3,
-          expectedDraftRevision: 7,
-          expectedVideoSnapshotHash: HASH,
-        },
-      ),
-    ).rejects.toMatchObject({
-      response: { code: 'STORY_RELEASE_COVER_REQUIRED' },
-    });
-  });
 });
 
 function serviceDependencies({
@@ -736,7 +782,10 @@ function workbenchFixture(
     },
     draft: { revision: 7 },
     video: { snapshotHash: HASH },
-    chapters: chapters.map((chapter) => ({ entryNodeId: null, ...chapter })),
+    chapters: chapters.map((chapter) => ({
+      entryNodeId: 'scene.entry',
+      ...chapter,
+    })),
   } as unknown as StoryWorkbenchDto;
 }
 
