@@ -54,7 +54,13 @@ async function migrate() {
       ["/app/node_modules/prisma/build/index.js", "migrate", "deploy"],
       {
         cwd: "/app/apps/server",
-        env: { ...process.env, DATABASE_URL: url.toString(), DOTENV_CONFIG_PATH: "/dev/null" },
+        env: {
+          ...process.env,
+          DATABASE_URL: url.toString(),
+          DOTENV_CONFIG_PATH: "/dev/null",
+          // Prisma's sslcert loads one PEM; OpenSSL needs the full RDS CA bundle.
+          SSL_CERT_FILE: "/etc/fizzdragon/certs/ApsaraDB-CA-Chain.pem",
+        },
         stdio: "inherit",
         timeout: 540000,
       }
