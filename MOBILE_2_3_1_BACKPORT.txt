@@ -1,0 +1,110 @@
+HISTORICAL BACKPORT RECORD — branch reconciliation supersedes the branch boundaries below.
+See MOBILE_BRANCH_RECONCILIATION.txt for the unified four-branch state and current validation.
+
+FizzDragon 2.3.1 mobile backport — 2026-10-09
+
+Target: origin/feat/mobile-2.3.1-pay (base 4e54645d2).
+Source snapshot: 99ebe6ca8; mobile runtime fix: 12303ee1a.
+Authorization: user explicitly requested immediate transfer of important/essential/critical
+mobile fixes, followed by inclusion of linked items and Pax/Isaac authoritative items,
+including material at the workspace/repository root.
+
+AUTHORITATIVE INPUTS (original files retained, not assistant acceptance claims)
+- docs/mobile-2.3.1-authority/FizzDragon平台checklist.xlsx
+- docs/mobile-2.3.1-authority/pax-feedback-10/Chat History.txt
+- docs/mobile-2.3.1-authority/pax-feedback-11/Chat History.txt
+- Every local screenshot and HTML prototype referenced by those two chat exports.
+- Root pricing-reference workbook and FizzDragon - Dashboard.html in the same directory.
+- docs/pax-project-compute-budget-2026-10-08.txt: implementation contract and migration dependencies.
+- source-integrity.json records SHA-256 hashes for the preserved original inputs.
+- AGENTS.md, DESIGN.md, apps/mobile/AGENTS.md, DESIGN.md, README.md and BUILD.md
+  were consulted for repository, runtime, UI, ownership and release rules.
+- The previously open pax-checklist-verification-2026-10-08.txt and pasted attachment
+  are absent from the available checkout. No missing report was reconstructed as fact.
+
+INSTRUCTIONS PROVIDED BY THE USER IN THIS SESSION
+Isaac: signal.throwIfAborted() is unsupported in React Native; referenced original
+commit b6b8ccea979f2339ded67dee6e3f026a0e6536ac. Mobile changes need a new version;
+Ric must test on a physical phone first.
+Pax: coordinate before touching mobile; preserve module ownership. Update both
+China and overseas mobile versions. This transfer is the user's renewed assignment.
+Shuai Yong: use 50 real scripts, including official-site cases, and run them through
+successfully before launch. A five-minute promotional video is optional.
+User: perform local checks first. No teammate notification or phone acceptance is
+claimed, and no store publication is authorized by this backport record.
+
+COVERAGE / IMPLEMENTATION MAP
+1. Runtime crash: apps/mobile/index.js and src/lib/abort-signal-polyfill.ts;
+   startup registration, native AbortController coverage, Agent OS session regression.
+2. Task create/edit, invitation/recruitment, submission templates and default folders,
+   review scores, saved openings, draft recovery: src/features/services, linked Crew
+   and task routes, shared crew/notification contracts, localized messages.
+3. Pax October 9 task feedback: numeric inputs, profit share, payment terms help,
+   verification/Academy links: task-create, task editor, review/qualification modules.
+4. Compute money controls: owner-only requests, workspace setup guidance, per-task
+   allowances, staged budgets and producer deductions: services compute/finance modules.
+5. Income, downloadable contracts, withdrawals/payment evidence and resolution tracking:
+   earnings, profile, services agreements/private-case modules and linked routes.
+6. Academy courses, enrollment/community credit, homework, teacher reviews and income,
+   certificate/skill guidance: courses, certificates, Academy teaching routes.
+7. Storyboard/canvas: authoring entry, safe-area positioning, media selection, shot
+   reordering, sequential/mixed-media playback, export and recovery: agent modules,
+   canvas/script editor source plus bundled assets, experience player and engine.
+8. Payment safety: account-scoped WeChat order recovery and post-checkout sync,
+   wallet restore refresh, billing catalog retry, same-order status retry: paywall.
+9. Regional correctness: app configuration/deep-link handlers, API routing and Metro
+   cache separation. Package and lockfile dependencies travel with the fixes.
+10. Linked dependencies: native route wrappers, auth/lifetime guards, media uploads,
+    profile/verification, referenced IP/AI/media services, shared schema exports and
+    runtime source. A dependency-complete snapshot is used instead of applying later
+    patches against missing intermediate APIs.
+
+BOUNDARIES
+- 2.3.1 Home feed and five-tab shell are retained; no version/build bump.
+- Mobile implementations and their imported shared/experience-engine packages only;
+  no Server/Web/Admin/Studio application snapshot or deployment scripts are merged.
+- Source commit provenance and retained source authority documents distinguish this
+  implementation transfer from completed real-world acceptance.
+
+LINKED SERVER / RELEASE PREREQUISITES
+Use compatible regional APIs corresponding to source snapshot 99ebe6ca8. This mobile
+branch must not be used to downgrade the regional backend to its older branch base.
+Compute budgeting needs 20261008110000_project_compute_budgets and owner requests need
+20261009001000_compute_request_owner. Academy needs its platform migration and Java
+playback gate; course/badge assignments and teacher settlements are backend workflows.
+Other transferred interfaces likewise require their matching deployed API contracts.
+No remote migration, credit grant, payment, or production data mutation was performed.
+The live invitation URL in Pax feedback 11 could not be read by the available web tool;
+its original text and screenshots are preserved, and no invitation was accepted.
+
+RELEASE GATE
+Local tests/bundles do not constitute 50 real-script runs or physical-device testing.
+Both regional mobile versions require device acceptance and coordinated release.
+Local validation results are recorded after completion; never infer acceptance merely
+from code being present on this branch.
+
+ADDITIONAL LINKED RUNTIME FIX FOUND DURING BACKPORT VALIDATION
+A clean rebuild of shared contracts exposed css-tree 3.2.1 through the runtime
+barrel. Metro's existing blanket explicit-extension resolver bypassed css-tree's
+browser redirects and tried to bundle the Node-only module package. The exception
+is now restricted to country-flag-icons, preserving ordinary browser mappings.
+Regression coverage verifies both browser delegation and the original icon case.
+
+LOCAL VALIDATION COMPLETED — 2026-10-09
+Code revision: e83622961 (runtime backport 94d7acd54; workflow/authority transfer 7dbffd8b5).
+- Mobile suite: 818 test files, 7,917 tests passed.
+- Additional Metro resolver/cache check: 2 files, 3 tests passed (2 new resolver
+  tests plus the existing regional-cache test rerun after the resolver correction).
+- Shared contracts: 22 files, 294 tests passed; rebuilt from this checkout's sources.
+- Experience engine and release-target validation: 66 tests passed.
+- Mobile type checking: passed after the resolver correction.
+- Targeted lint: no errors; existing native-payment-sdks.ts require-style warning.
+- Global development native export: both iOS and Android passed after the resolver fix.
+- CN/global configuration: expected regional endpoints and unchanged 2.3.1/build 80
+  confirmed. Metro cache/routing tests cover region separation. A new CN native
+  export was not run in this backport checkout.
+- Preserved authority integrity: 32 original-source hashes and 27 locally linked
+  screenshots/files verified; no missing local chat attachment.
+- Temporary dependency symlinks were exposed to Metro through a local preload
+  harness used only for validation; it is not part of the committed application.
+- No signed release, store upload, phone test, or real-script generation performed.

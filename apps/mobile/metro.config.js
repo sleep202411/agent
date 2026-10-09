@@ -35,7 +35,13 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   // `./XX.js` re-exports when the exports map only lists the extensionless key —
   // e.g. country-flag-icons' string/3x2 barrel does `export … from './PF.js'`
   // but its exports map has "./string/3x2/PF" (no .js), so the .js import 404s.
-  if (/^\.\.?\//.test(moduleName) && /\.(cjs|mjs|js)$/.test(moduleName)) {
+  // Restrict this exception to the affected icon package. Other packages (e.g.
+  // css-tree) need Metro's browser mappings to replace Node-only modules.
+  if (
+    /[/\\]country-flag-icons[/\\]/.test(context.originModulePath) &&
+    /^\.\.?\//.test(moduleName) &&
+    /\.(cjs|mjs|js)$/.test(moduleName)
+  ) {
     const candidate = path.resolve(path.dirname(context.originModulePath), moduleName);
 
     if (fs.existsSync(candidate)) {
