@@ -64,7 +64,6 @@ it("isolates credentials, removes shell tools and honors the Flash non-thinking 
     const tools = entries
       .flatMap((entry) => entry.insert ?? [])
       .find((entry) => entry.id === "fizzdragon-appearance-tools")!;
-    expect(tools.config.gameUI).toBe(false);
     await writeFile(
       tools.config.resultPath as string,
       JSON.stringify({

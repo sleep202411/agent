@@ -3572,6 +3572,7 @@
         "draftRevision": "Draft r{revision}",
         "loading": "Preparing the playtest…",
         "errorFallback": "The playtest could not be loaded.",
+        "popupBlocked": "Allow pop-ups for this site, then open the preview again.",
         "buildNumber": "Build {number}",
         "retry": "Retry",
         "refresh": "Refresh preview",
@@ -4736,9 +4737,6 @@
     "columnNode": "Node"
   },
   "appearancePreview": {
-    "resizePanels": "Resize preview and chat panels",
-    "resizePanelsHint": "Drag to resize · Double-click to reset · Arrow keys to adjust",
-    "panelSize": "Preview {percent}%",
     "back": "Back to Studio",
     "project": "A Dream of Jinling",
     "saveFailed": "Not saved",
@@ -4752,8 +4750,8 @@
     "backProject": "Return to project",
     "previewTitle": "Story preview",
     "chat": {
-      "readOnly": "This preview is read-only. Open an editable project to use FizzAgent.",
-      "label": "FizzAgent appearance conversation",
+      "readOnly": "This preview is read-only. Open an editable project to use Game Agent.",
+      "label": "Game Agent appearance conversation",
       "undo": "Undo",
       "generating": "Updating the appearance…",
       "generatingFor": "Updating the appearance · {duration}",

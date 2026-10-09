@@ -1,3 +1,4 @@
+import { TooltipProvider } from "@/components/ui/tooltip";
 // @vitest-environment jsdom
 import { act, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -29,6 +30,9 @@ vi.mock("@repo/shared/experience-runtime", async (importOriginal) => {
   };
 });
 
+vi.mock("@/app/[locale]/story-studio/_components/story-project-header-actions", () => ({
+  StoryProjectHeaderActions: () => null,
+}));
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
   useLocale: () => "zh-CN",
@@ -123,10 +127,6 @@ beforeEach(() => {
   );
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   localStorage.clear();
-  vi.stubGlobal(
-    "matchMedia",
-    vi.fn(() => ({ matches: false }))
-  );
   root = createRoot(host);
   state.design.mockImplementation(sessionResponse);
   state.getProject.mockResolvedValue({
@@ -153,10 +153,12 @@ const renderPlaytest = async () => {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <StoryProjectPlaytest
-          projectId="project-1"
-          source={{ kind: "draft", chapterId: "chapter-1", sceneId: "clip:scene-1" }}
-        />
+        <TooltipProvider>
+          <StoryProjectPlaytest
+            projectId="project-1"
+            source={{ kind: "draft", chapterId: "chapter-1", sceneId: "clip:scene-1" }}
+          />
+        </TooltipProvider>
       </QueryClientProvider>
     );
   });
@@ -231,9 +233,6 @@ const appearanceFixture = () => {
 
 it("embeds official chat and keeps the player mounted when a validated result arrives", async () => {
   appearanceFixture();
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
-    new DOMRect(0, 0, 1280, 844)
-  );
   let request: { requestId: string; appearance: object };
   let applied = false;
   state.design.mockImplementation(async (_url, config) => {
@@ -291,19 +290,6 @@ it("embeds official chat and keeps the player mounted when a validated result ar
   );
   expect(host.querySelector('[data-testid="player"]')?.getAttribute("data-position")).toBe("1");
   expect(state.playerMounts).toBe(1);
-  const frame = host.querySelector("iframe");
-  const separator = host.querySelector<HTMLElement>('[role="separator"]')!;
-  await act(async () => {
-    separator.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
-  });
-  expect(separator.getAttribute("aria-valuenow")).toBe("76");
-  expect(
-    JSON.parse(localStorage.getItem("fizzdragon.appearance.panel-layout.v1")!).horizontal
-  ).toBeCloseTo(1 - 300 / 1272);
-  expect(frame).not.toBeNull();
-  expect(host.querySelector("iframe")).toBe(frame);
-  expect(host.querySelector('[data-testid="player"]')?.getAttribute("data-position")).toBe("1");
-  expect(state.playerMounts).toBe(1);
   await act(async () =>
     Array.from(host.querySelectorAll<HTMLButtonElement>("button"))
       .find((button) => button.textContent === "chat.undo")!
@@ -345,6 +331,7 @@ it("collapses and restores chat without recreating the iframe or the running pla
     await new Promise((resolve) => setTimeout(resolve, 30));
   });
   const frame = host.querySelector("iframe");
+  expect(host.querySelector('[role="separator"]')).toBeNull();
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="hideChat"]')!.click());
   expect(host.querySelector("main")?.hasAttribute("data-chat-hidden")).toBe(true);
   expect(frame).not.toBeNull();
@@ -366,11 +353,10 @@ it("saves the local draft with its original project version and keeps it after a
   localStorage.setItem(
     "fizzdragon.appearance-ux.v1:project-1",
     JSON.stringify({
+      version: 3,
       applied: appearance,
-      candidate: null,
       prompt: "",
-      history: [],
-      candidateLabel: "adjustment",
+      undo: [],
       baseProjectVersion: 2,
     })
   );
@@ -393,7 +379,6 @@ it("saves the local draft with its original project version and keeps it after a
   expect(state.saveProject).toHaveBeenCalledWith("project-1", {
     expectedProjectVersion: 2,
     appearance,
-    gameUiSource: null,
   });
   expect(host.textContent).toContain("The project changed.");
   expect(
@@ -429,7 +414,6 @@ it("saves the local draft with its original project version and keeps it after a
   expect(state.saveProject).toHaveBeenLastCalledWith("project-1", {
     expectedProjectVersion: 4,
     appearance,
-    gameUiSource: null,
   });
   await vi.waitFor(async () => {
     await act(async () => Promise.resolve());

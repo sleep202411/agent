@@ -33,7 +33,6 @@ RUN groupadd --system --gid 1001 gameagent \
 COPY --from=pruner /app/out/json/ .
 RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/packages/game-ui-build/dist ./packages/game-ui-build/dist
 COPY --from=builder /app/packages/game-agent-protocol/dist ./packages/game-agent-protocol/dist
 COPY --from=builder /app/packages/appearance-harness-ui/index.js ./packages/appearance-harness-ui/index.js
 COPY --from=builder /app/packages/appearance-harness-ui/client.js ./packages/appearance-harness-ui/client.js
@@ -43,9 +42,7 @@ USER gameagent
 WORKDIR /app/apps/game-agent
 RUN node --input-type=module -e "\
 await import('game-agent/appearance-harness-plugin');\
-const {buildGameUI}=await import('@repo/game-ui-build');\
-await buildGameUI({apiVersion:1,surface:'main-menu',entry:'menu.js',files:[{path:'menu.js',content:'export function mount() {}'}]});\
-console.log('Game Agent runtime imports and compiler: ok');"
+console.log('Game Agent runtime imports: ok');"
 
 EXPOSE 4396
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \

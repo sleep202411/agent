@@ -19,7 +19,7 @@ Use check_appearance, fix errors, then submit_appearance exactly once. After suc
 Read uiContract and themeContract before writing CSS. Respect allowed selectors, properties, functions and bounds.
 Theme shape: {version:1,name:"short theme name",css:"stylesheet",assets:[{id:"ornament",svg:"static SVG"}]}.
 Use an exact region then part selector, e.g. [data-experience-ui-region="choices"] [data-ui-part="option"].
-Region roots permit paint and alignment only: justify-items:start/center/end places menu panels; align-items:start/center/end places choices vertically. Use flex-direction:row/column on the choices list for side-by-side/stacked options.
+Region roots permit paint and alignment only: justify-items:start/center/end places the start panel; align-items:start/center/end places choices vertically. Use flex-direction:row/column on the choices list for side-by-side/stacked options.
 Provide explicit desktop layout as well as paint; adapt with simple container queries in pixels. Preserve readable labels, touch targets, scroll recovery and authored media fitting.
 Use ::before/::after for decoration: content:"";position:absolute;inset:0;background-image:asset("ornament"). Decorations contain no text or input.
 SVG needs xmlns="http://www.w3.org/2000/svg", a bounded viewBox, static paths/shapes/groups/gradients. No scripts, events, images, external resources or XML declarations.
@@ -115,7 +115,7 @@ export async function runAppearanceDesign(
           {
             id: "fizzdragon-appearance-tools",
             name: pluginPath,
-            config: { contextPath, resultPath, gameUI: false },
+            config: { contextPath, resultPath },
           },
         ],
       },

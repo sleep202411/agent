@@ -1,7 +1,4 @@
-import {
-  migrateStoredExperienceAppearance,
-  GameUIProjectSchema,
-} from '@repo/shared/experience-runtime';
+import { ExperienceAppearanceSchema } from '@repo/shared/experience-runtime';
 import {
   ConflictException,
   Injectable,
@@ -125,7 +122,6 @@ export class StoryWorkingPreviewService {
       summary: string | null;
       coverAssetId: string | null;
       appearance?: Prisma.JsonValue;
-      gameUi?: Prisma.JsonValue;
     },
     projectId: string,
     chapterId: string | undefined,
@@ -393,11 +389,7 @@ export class StoryWorkingPreviewService {
       appearance:
         project.appearance == null
           ? undefined
-          : migrateStoredExperienceAppearance(project.appearance),
-      gameUi:
-        project.gameUi == null
-          ? undefined
-          : GameUIProjectSchema.parse(project.gameUi).artifact,
+          : ExperienceAppearanceSchema.parse(project.appearance),
     });
 
     return {

@@ -22,7 +22,7 @@ const InputSchema = z
   .strict();
 const RecordSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     identity: z.string().regex(/^[a-f0-9]{64}$/),
     id: z.string().uuid(),
     sessionId: z
@@ -362,7 +362,7 @@ export function createAppearanceWorkspaceStore(workspaceRoot: string) {
               "Appearance workspace metadata is missing from an existing workspace; saved work was preserved."
             );
           record = {
-            version: 1,
+            version: 2,
             identity,
             id: randomUUID(),
             sessionId: `session-${randomUUID()}`,

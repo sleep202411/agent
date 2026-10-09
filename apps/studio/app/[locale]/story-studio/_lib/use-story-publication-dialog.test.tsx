@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   userId: "alice" as string | null,
   projectId: "project-one",
   barrier: null as null | ((submit: (revision: number) => Promise<unknown>) => Promise<unknown>),
+  beforeOpen: undefined as undefined | (() => Promise<void>),
   error: vi.fn(),
 }));
 vi.mock("@/app/_components/auth-provider", () => ({
@@ -25,7 +26,7 @@ vi.mock("../_stores/story-project-ui-store", () => ({
 
 let host: HTMLDivElement, root: Root, hook: ReturnType<typeof useStoryPublicationDialog>;
 function Harness() {
-  const value = useStoryPublicationDialog(h.projectId);
+  const value = useStoryPublicationDialog(h.projectId, h.beforeOpen);
   useLayoutEffect(() => {
     hook = value;
   });
@@ -47,6 +48,7 @@ beforeEach(() => {
   h.userId = "alice";
   h.projectId = "project-one";
   h.barrier = null;
+  h.beforeOpen = undefined;
   window.history.replaceState(
     null,
     "",
@@ -62,6 +64,29 @@ afterEach(async () => {
 });
 
 describe("publication dialog entry", () => {
+  it("saves preview appearance before the canvas barrier and keeps failed saves out of review", async () => {
+    const order: string[] = [];
+    h.beforeOpen = async () => {
+      order.push("appearance");
+      throw new Error("Appearance version conflict");
+    };
+    h.barrier = async (submit) => {
+      order.push("canvas");
+      return submit(7);
+    };
+    await render();
+    await act(async () => hook.openPublication());
+    expect(order).toEqual(["appearance"]);
+    expect(hook.open).toBe(false);
+    expect(h.error).toHaveBeenCalledWith("Appearance version conflict");
+    h.beforeOpen = async () => {
+      order.push("appearance");
+    };
+    await render();
+    await act(async () => hook.openPublication());
+    expect(order).toEqual(["appearance", "appearance", "canvas"]);
+    expect(hook.open).toBe(true);
+  });
   it("waits for the canvas save before opening and retains the full canvas URL", async () => {
     const saved = deferred();
     h.barrier = async (submit) => {

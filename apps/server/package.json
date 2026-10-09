@@ -10,7 +10,7 @@
     "build": "prisma generate && nest build && tsc -p tsconfig.catalog-update.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "cross-env PORT=4399 nest start",
-    "prestart:dev": "npm run build -w @repo/shared && npm run build -w @repo/game-ui-build && npm run build -w @repo/game-agent-protocol && npm run build -w @repo/agent-policy && npm run build -w @repo/agent-tools && npm run build -w @repo/agent-capabilities && npm run build -w @repo/agent-protocol && npm run build -w @repo/agent-skills",
+    "prestart:dev": "npm run build -w @repo/shared && npm run build -w @repo/game-agent-protocol && npm run build -w @repo/agent-policy && npm run build -w @repo/agent-tools && npm run build -w @repo/agent-capabilities && npm run build -w @repo/agent-protocol && npm run build -w @repo/agent-skills",
     "start:dev": "cross-env PORT=4399 nest start --watch",
     "start:debug": "cross-env PORT=4399 nest start --debug --watch",
     "start:prod": "cross-env PORT=4399 node dist/main",
@@ -101,7 +101,6 @@
     "yaml": "^2.9.0",
     "yjs": "^13.6.27",
     "zod": "^4.3.6",
-    "@repo/game-ui-build": "*",
     "@repo/game-agent-protocol": "*"
   },
   "devDependencies": {
@@ -167,7 +166,6 @@
       "^@repo/agent-tools$": "<rootDir>/../../../packages/agent-tools/src/index.ts",
       "^@repo/agent-policy$": "<rootDir>/../../../packages/agent-policy/src/index.ts",
       "^@repo/agent-protocol$": "<rootDir>/../../../packages/agent-protocol/src/index.ts",
-      "^@repo/game-ui-build$": "<rootDir>/../../../packages/game-ui-build/src/index.ts",
       "^@repo/game-agent-protocol$": "<rootDir>/../../../packages/game-agent-protocol/src/index.ts"
     },
     "collectCoverageFrom": [

@@ -26,8 +26,13 @@ it("rejects execution identities and host paths outside the authoring contract",
   ).toBe(false);
 });
 
-it("rejects an empty success result and accepts an explicit native-menu restoration", () => {
+it("rejects an empty success result and accepts a validated appearance", () => {
   const result = { requestId: request.requestId, appearance: request.appearance, message: "Done" };
   expect(AppearanceDesignResultSchema.safeParse(result).success).toBe(false);
-  expect(AppearanceDesignResultSchema.parse({ ...result, gameUi: null }).gameUi).toBeNull();
+  expect(
+    AppearanceDesignResultSchema.parse({
+      ...result,
+      appearance: { version: 1, presentation: { copy: { start: { "en-US": "Enter" } } } },
+    }).appearance.presentation
+  ).toBeDefined();
 });

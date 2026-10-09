@@ -10,10 +10,11 @@ import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { StoryProductionSteps } from "./story-production-steps";
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
 
-const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({
@@ -34,7 +35,7 @@ vi.mock("@/i18n/navigation", () => ({
       {children}
     </a>
   ),
-  useRouter: () => ({ push: navigation.push }),
+  getPathname: ({ locale, href }: { locale: string; href: string }) => `/${locale}${href}`,
 }));
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
@@ -45,7 +46,13 @@ describe("StoryProductionSteps", () => {
 
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    navigation.push.mockReset();
+    navigation.replace.mockReset();
+    vi.spyOn(window, "open").mockReturnValue({
+      opener: null,
+      closed: false,
+      location: { replace: navigation.replace },
+      close: vi.fn(),
+    } as unknown as Window);
     useStoryProjectUiStore.setState({
       activeChapterId: "chapter-1",
       draftBarrier: null,
@@ -58,6 +65,7 @@ describe("StoryProductionSteps", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    vi.restoreAllMocks();
   });
 
   it("keeps every readiness state navigable within the active chapter", async () => {
@@ -98,8 +106,9 @@ describe("StoryProductionSteps", () => {
 
     await act(async () => preview?.click());
     expect(barrier).toHaveBeenCalledTimes(1);
-    expect(navigation.push).toHaveBeenCalledWith(
-      "/story-studio/projects/project-1/playtest?chapter=chapter-1"
+    expect(window.open).toHaveBeenCalledWith("about:blank", "_blank");
+    expect(navigation.replace).toHaveBeenCalledWith(
+      "/en-US/story-studio/projects/project-1/playtest?chapter=chapter-1"
     );
   });
 

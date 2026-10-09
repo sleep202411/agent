@@ -7,7 +7,6 @@ it("reuses the same admission on reload and revokes it when editable content cha
     prompt: "Design",
     locale: "en-US",
     appearance: { version: 1 },
-    gameUi: null,
     context: { title: "Home", choiceLabels: [] },
     history: [],
   };

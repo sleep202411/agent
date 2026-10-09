@@ -3,10 +3,6 @@ import { DEFAULT_EXPERIENCE_APPEARANCE } from "@repo/shared/experience-runtime";
 import { ExperienceAppearanceStage } from "./experience-appearance-stage";
 import { ExperienceThemedPauseUI } from "./experience-themed-pause";
 import type { ExperiencePlayerUI } from "./experience-ui";
-import { createGameSession, type GameSessionHost, type GameSnapshot } from "@repo/game-sdk";
-import { ExperienceDefaultMainMenuUI } from "./experience-main-menu";
-import { ExperienceCodeMenu } from "./experience-code-menu";
-import menuStyles from "./experience-main-menu.module.css";
 import { ExperienceDefaultStartUI, ExperienceDefaultChoicesUI } from "./experience-ui-defaults";
 import { ExperienceDefaultPauseUI } from "./experience-playback-controls";
 
@@ -74,13 +70,7 @@ import {
   type ExperienceTimelineCursor,
   type PlaySessionReporter,
 } from "@repo/experience-engine";
-import {
-  IconAlertTriangle,
-  IconArrowRight,
-  IconHome,
-  IconRefresh,
-  IconRoute,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowRight, IconRefresh, IconRoute } from "@tabler/icons-react";
 import { classNames } from "./class-names";
 import {
   loadExperienceTheme as defaultLoadExperienceTheme,
@@ -442,13 +432,7 @@ function ActiveExperienceRuntimePlayer({
   );
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
   const completedEndingRef = useRef(Boolean(runtimeState.completedEndingId));
-  const [menuOpen, setMenuOpen] = useState(true);
-  const menuOpenRef = useRef(true);
-  const menuRegionRef = useRef<HTMLDivElement | null>(null);
-  const menuOriginRef = useRef<HTMLElement | null>(null);
-  const menuFocusPendingRef = useRef(false);
   const gameFocusPendingRef = useRef(false);
-  const returnMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const [initialJourney] = useState(() =>
     entryCheckpoint?.journey
       ? validateExperienceJourney(manifest, entryCheckpoint.journey)
@@ -461,17 +445,15 @@ function ActiveExperienceRuntimePlayer({
   const journeyWasPlayingRef = useRef(false);
   const journeyMapCornerButtonRef = useRef<HTMLButtonElement | null>(null);
   const journeyMapTransportButtonRef = useRef<HTMLButtonElement | null>(null);
-  const journeyMapOriginRef = useRef<"corner" | "transport" | "menu">("corner");
+  const journeyMapOriginRef = useRef<"corner" | "transport">("corner");
   const restoreJourneyFocusRef = useRef(false);
   useLayoutEffect(() => {
     if (!journeyMapOpen && restoreJourneyFocusRef.current) {
       restoreJourneyFocusRef.current = false;
       const origin =
-        journeyMapOriginRef.current === "menu"
-          ? menuOriginRef.current
-          : journeyMapOriginRef.current === "transport"
-            ? journeyMapTransportButtonRef.current
-            : journeyMapCornerButtonRef.current;
+        journeyMapOriginRef.current === "transport"
+          ? journeyMapTransportButtonRef.current
+          : journeyMapCornerButtonRef.current;
       queueMicrotask(() => {
         if (!aliveRef.current || journeyMapOpenRef.current) return;
         (origin?.isConnected ? origin : journeyMapCornerButtonRef.current)?.focus({
@@ -663,7 +645,6 @@ function ActiveExperienceRuntimePlayer({
     nodeGate: nodeGate !== null,
     chargeGate: timelineHoldGate,
     journeyMap: journeyMapOpen,
-    mainMenu: menuOpen,
   };
   const holds = resolveExperiencePlaybackHolds(playbackGates);
   const committedGatesRef = useRef(playbackGates);
@@ -677,7 +658,6 @@ function ActiveExperienceRuntimePlayer({
         viewerPause: viewerPauseRef.current,
         accessPending: accessPendingRef.current,
         journeyMap: journeyMapOpenRef.current,
-        mainMenu: menuOpenRef.current,
       }),
     []
   );
@@ -1514,7 +1494,7 @@ function ActiveExperienceRuntimePlayer({
   // take focus from a pointer, so a pause made with one still finds it where
   // the viewer had it.
   useEffect(() => {
-    if (menuOpen || journeyMapOpen) return;
+    if (!started || journeyMapOpen) return;
     if (viewerPause === "refused") {
       if (focusIsFree(shellRef.current)) pausedFrameRef.current?.focus({ preventScroll: true });
       return;
@@ -1527,7 +1507,7 @@ function ActiveExperienceRuntimePlayer({
     if (!holds.running || !focusIsFree(shellRef.current)) return;
     if (target?.isConnected) target.focus({ preventScroll: true });
     else if (pausedFrameFocused) toggleRef.current?.focus({ preventScroll: true });
-  }, [holds.running, viewerPause, menuOpen, journeyMapOpen]);
+  }, [holds.running, viewerPause, started, journeyMapOpen]);
 
   const begin = (): Promise<boolean> => {
     if (
@@ -1578,8 +1558,7 @@ function ActiveExperienceRuntimePlayer({
         // The clip hold lifts with this, and its effect plays the entry clip
         // through `playHandle`: a refusal is a pause and a tap, not a dialog.
         startedRef.current = true;
-        menuOpenRef.current = false;
-        setMenuOpen(false);
+
         setStarted(true);
         gameFocusPendingRef.current = true;
         publishCheckpoint("transition");
@@ -1851,21 +1830,19 @@ function ActiveExperienceRuntimePlayer({
     }
     return details;
   }, [journeyForMap, manifest, orientation, playbackLocale]);
-  const openJourneyMap = (origin: "corner" | "transport" | "menu") => {
+  const openJourneyMap = (origin: "corner" | "transport") => {
     if (
       !aliveRef.current ||
+      !startedRef.current ||
       !mapAvailable ||
       startingRef.current ||
       accessPendingRef.current ||
       journeyMapOpenRef.current
     )
       return false;
-    if (origin === "menu")
-      menuOriginRef.current =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
     journeyMapOriginRef.current = origin;
     journeyWasPlayingRef.current = viewerPauseRef.current === null && !holdsNow().storyHeld;
-    if (!menuOpenRef.current) pauseStory("user");
+    pauseStory("user");
     journeyMapOpenRef.current = true;
     setJourneyMapOpen(true);
     setJourneyForMap(journeyRef.current);
@@ -1954,8 +1931,7 @@ function ActiveExperienceRuntimePlayer({
       setRuntimeState(state);
       journeyMapOpenRef.current = false;
       setJourneyMapOpen(false);
-      menuOpenRef.current = false;
-      setMenuOpen(false);
+
       viewerPauseRef.current = null;
       setViewerPause(null);
       storyClock.resume();
@@ -1970,14 +1946,10 @@ function ActiveExperienceRuntimePlayer({
       if (aliveRef.current) setJourneyMapSuspended(false);
     }
   };
-  const mapGraph = useMemo(() => {
-    const graph = projectExperienceJourneyGraph(manifest, journeyForMap);
-    // A restored save has not passed its start/access flow yet. Browsing its
-    // explored map must not offer replay buttons that cannot execute.
-    return started
-      ? graph
-      : { ...graph, nodes: graph.nodes.map((node) => ({ ...node, replayable: false })) };
-  }, [manifest, journeyForMap, started]);
+  const mapGraph = useMemo(
+    () => projectExperienceJourneyGraph(manifest, journeyForMap),
+    [manifest, journeyForMap]
+  );
   const mapButton = mapAvailable ? (
     <button
       type="button"
@@ -1993,7 +1965,7 @@ function ActiveExperienceRuntimePlayer({
     </button>
   ) : null;
   const cornerMapButton =
-    started && mapAvailable && !menuOpen && !journeyMapOpen ? (
+    started && mapAvailable && !journeyMapOpen ? (
       <button
         type="button"
         ref={journeyMapCornerButtonRef}
@@ -2008,163 +1980,28 @@ function ActiveExperienceRuntimePlayer({
       </button>
     ) : null;
 
-  const readGameSnapshot = (): GameSnapshot => {
-    const gates = committedGatesRef.current;
-    const ended = completedEndingRef.current;
-    const blocked =
-      gates.failed ||
-      accessPendingRef.current ||
-      gates.retryAccess ||
-      gates.nodeGate ||
-      startingRef.current ||
-      journeyReplayPendingRef.current;
-    const inMenu = menuOpenRef.current;
-    const map = journeyMapOpenRef.current;
-    return {
-      screen: inMenu ? "menu" : "game",
-      started: startedRef.current,
-      status: gates.failed
-        ? "failed"
-        : ended
-          ? "completed"
-          : startingRef.current
-            ? "starting"
-            : !startedRef.current
-              ? !theme || entryMediaPending
-                ? "loading"
-                : "ready"
-              : viewerPauseRef.current
-                ? "paused"
-                : "playing",
-      mapOpen: map,
-      actions: {
-        start:
-          !blocked && inMenu && !map && !startedRef.current && Boolean(theme) && !entryMediaPending,
-        continue: !blocked && inMenu && !map && startedRef.current && !ended,
-        restart: !blocked && !map && ended,
-        "open-map": !blocked && !map && (startedRef.current || !entryLocked),
-        "close-map": map && !journeyReplayPendingRef.current && !accessPendingRef.current,
-        "return-menu": !blocked && !inMenu && !map && startedRef.current,
-      },
-    };
-  };
-  const gameHostRef = useRef<GameSessionHost>(null!);
-  gameHostRef.current = {
-    isActive: () => aliveRef.current,
-    read: readGameSnapshot,
-    execute: (action) => {
-      // Recheck immediately: refs change before React commits a new snapshot.
-      if (!readGameSnapshot().actions[action]) return false;
-      switch (action) {
-        case "start":
-          return begin();
-        case "continue":
-          gameFocusPendingRef.current = true;
-          menuOpenRef.current = false;
-          setMenuOpen(false);
-          resumeStory("gesture");
-          return true;
-        case "restart":
-          onRestart();
-          return true;
-        case "open-map":
-          return openJourneyMap(menuOpenRef.current ? "menu" : "corner");
-        case "close-map":
-          return closeJourneyMap();
-        case "return-menu":
-          pauseStory("user");
-          menuOpenRef.current = true;
-          setMenuOpen(true);
-          menuFocusPendingRef.current = true;
-          publishCheckpoint("pause");
-          return true;
-      }
-    },
-  };
-  const [gameAdapter] = useState(() =>
-    createGameSession({
-      isActive: () => gameHostRef.current.isActive(),
-      read: () => gameHostRef.current.read(),
-      execute: (action) => gameHostRef.current.execute(action),
-    })
-  );
   useLayoutEffect(() => {
-    gameAdapter.publish();
-    if (!menuOpen && gameFocusPendingRef.current && !journeyMapOpen) {
+    if (started && gameFocusPendingRef.current && !journeyMapOpen) {
       queueMicrotask(() => {
-        if (!aliveRef.current || menuOpenRef.current || journeyMapOpenRef.current) return;
+        if (!aliveRef.current || !startedRef.current || journeyMapOpenRef.current) return;
         gameFocusPendingRef.current = false;
         if (!focusedWithin(storyLayerRef.current) && focusIsFree(shellRef.current))
-          (toggleRef.current ?? returnMenuButtonRef.current)?.focus({ preventScroll: true });
-      });
-    }
-    if (menuOpen && menuFocusPendingRef.current && !journeyMapOpen) {
-      // Publish first: the custom screen may need its new snapshot to enable
-      // Continue. Focus its committed controls after that render finishes.
-      queueMicrotask(() => {
-        if (!aliveRef.current || !menuOpenRef.current || journeyMapOpenRef.current) return;
-        menuFocusPendingRef.current = false;
-        menuRegionRef.current
-          ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
-          ?.focus({ preventScroll: true });
+          toggleRef.current?.focus({ preventScroll: true });
       });
     }
   });
-  useEffect(
-    () => () => {
-      // StrictMode replays effects on the same instance. Revoke only after its
-      // layout ownership has actually ended, including restarts and navigation.
-      queueMicrotask(() => {
-        if (!aliveRef.current) gameAdapter.dispose();
-      });
-    },
-    [gameAdapter]
-  );
-  const MainMenuUI = ui?.mainMenu ?? ExperienceDefaultMainMenuUI;
-  const codeMenu = ui?.gameUi !== undefined ? ui.gameUi : manifest.gameUi;
-  const menuTitle = localize(
+  const startTitle = localize(
     manifest.metadata.title,
     playbackLocale,
     manifest.localization.defaultLocale
   );
-  const menuSummary = manifest.metadata.summary
+  const startSummary = manifest.metadata.summary
     ? localize(manifest.metadata.summary, playbackLocale, manifest.localization.defaultLocale)
     : undefined;
-  const menuCopy = {
-    start: resolveExperienceStartLabel(ui?.copy, locale, copy.start),
-    starting: copy.starting,
-    loading: copy.loadingMedia,
-    continue: copy.continueGame,
-    restart: copy.playAgain,
-    map: copy.journeyMap.open,
-  };
-  const returnMenuButton =
-    started &&
-    !menuOpen &&
-    !journeyMapOpen &&
-    !runtimeError &&
-    !accessPending &&
-    !retryAccess &&
-    !nodeGate ? (
-      <button
-        type="button"
-        data-game-action="return-menu"
-        ref={returnMenuButtonRef}
-        aria-label={copy.returnToMenu}
-        onClick={() => {
-          void gameAdapter.session.invoke("return-menu");
-        }}
-        className="pointer-events-auto inline-flex min-h-11 items-center gap-2 rounded-full bg-black/65 px-4 text-sm font-semibold text-white outline-none hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-white/70"
-      >
-        <IconHome className="size-5" aria-hidden="true" />
-        {copy.mainMenu}
-      </button>
-    ) : null;
-
   return (
     <PlayerFrame
       shellRef={shellRef}
-      menuOpen={menuOpen}
+      showStart={!started}
       orientation={orientation}
       experienceProfile={experienceProfile}
       stageProfile={stageProfile}
@@ -2180,9 +2017,8 @@ function ActiveExperienceRuntimePlayer({
       }}
       cornerControls={
         <>
-          {returnMenuButton}
           {cornerMapButton}
-          {!menuOpen && playbackStatus}
+          {started && playbackStatus}
         </>
       }
       stage={
@@ -2196,7 +2032,7 @@ function ActiveExperienceRuntimePlayer({
             ref={storyLayerRef}
             data-experience-story-layer=""
             data-experience-paused={viewerPause ?? undefined}
-            inert={viewerPause !== null || menuOpen || journeyMapOpen}
+            inert={viewerPause !== null || !started || journeyMapOpen}
             className="absolute inset-0"
             style={
               {
@@ -2406,81 +2242,41 @@ function ActiveExperienceRuntimePlayer({
         />
       ) : null}
 
-      {menuOpen && !runtimeError && !nodeGate ? (
+      {!started && !runtimeError && !nodeGate ? (
         <div
-          ref={menuRegionRef}
-          data-experience-main-menu=""
           data-experience-ui-region="start"
           role="region"
-          aria-label={copy.mainMenu}
-          inert={journeyMapOpen}
-          className={menuStyles.screen}
+          aria-label={copy.start}
+          className="pointer-events-auto absolute inset-0 isolate grid place-items-center overflow-y-auto bg-black p-6 text-center"
         >
           {coverUri && (
-            <img src={coverUri} alt="" aria-hidden="true" className={menuStyles.background} />
-          )}
-          {codeMenu ? (
-            <ExperienceCodeMenu
-              key={codeMenu.artifactHash}
-              artifact={codeMenu}
-              coverUrl={coverUri ?? undefined}
-              title={menuTitle}
-              summary={menuSummary}
-              eyebrow={experienceProfile === "cinematic" ? copy.interactiveFilm : undefined}
-              session={gameAdapter.session}
-              copy={menuCopy}
-              failureCopy={copy.codeMenu}
-            />
-          ) : ui?.start && !ui.mainMenu ? (
-            <div className="flex max-h-full w-full max-w-sm flex-col gap-4 overflow-y-auto">
-              <StartUI
-                title={menuTitle}
-                summary={menuSummary}
-                eyebrow={experienceProfile === "cinematic" ? copy.interactiveFilm : undefined}
-                state={starting ? "starting" : !theme || entryMediaPending ? "loading" : "ready"}
-                actionLabel={
-                  endingId
-                    ? copy.playAgain
-                    : started
-                      ? copy.continueGame
-                      : starting
-                        ? copy.starting
-                        : !theme || entryMediaPending
-                          ? copy.loadingMedia
-                          : menuCopy.start
-                }
-                onStart={() => {
-                  void gameAdapter.session.invoke(
-                    endingId ? "restart" : started ? "continue" : "start"
-                  );
-                }}
-              />
-              <button
-                type="button"
-                data-ui-part="secondary"
-                className="min-h-11 rounded-xl bg-white/10 p-3"
-                aria-haspopup="dialog"
-                disabled={!mapAvailable}
-                onClick={() => {
-                  void gameAdapter.session.invoke("open-map");
-                }}
-              >
-                {copy.journeyMap.open}
-              </button>
-            </div>
-          ) : (
-            <MainMenuUI
-              title={menuTitle}
-              summary={menuSummary}
-              eyebrow={experienceProfile === "cinematic" ? copy.interactiveFilm : undefined}
-              session={gameAdapter.session}
-              copy={menuCopy}
+            <img
+              src={coverUri}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 -z-10 size-full object-contain"
             />
           )}
+          <StartUI
+            title={startTitle}
+            summary={startSummary}
+            eyebrow={experienceProfile === "cinematic" ? copy.interactiveFilm : undefined}
+            state={starting ? "starting" : !theme || entryMediaPending ? "loading" : "ready"}
+            actionLabel={
+              starting
+                ? copy.starting
+                : !theme || entryMediaPending
+                  ? copy.loadingMedia
+                  : resolveExperienceStartLabel(ui?.copy, locale, copy.start)
+            }
+            onStart={() => {
+              void begin();
+            }}
+          />
         </div>
       ) : null}
 
-      {endingId && !runtimeError && !menuOpen ? (
+      {endingId && !runtimeError && started ? (
         <div
           role="dialog"
           aria-modal="true"
@@ -3730,7 +3526,7 @@ const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
  */
 function PlayerFrame({
   shellRef,
-  menuOpen = false,
+  showStart = false,
   orientation,
   experienceProfile,
   stageProfile,
@@ -3745,7 +3541,7 @@ function PlayerFrame({
   children,
 }: {
   shellRef: React.RefObject<HTMLDivElement | null>;
-  menuOpen?: boolean;
+  showStart?: boolean;
   orientation: ExperienceOrientation;
   experienceProfile: ExperienceProfile;
   stageProfile: ExperienceProfile;
@@ -3808,7 +3604,7 @@ function PlayerFrame({
       aria-label={copy.regionLabel}
       // Keep the fitted stage from scrolling the shell when focus moves.
       style={{ ...style, overflow: "clip" }}
-      data-experience-screen={menuOpen ? "menu" : "game"}
+      data-experience-screen={showStart ? "start" : "game"}
       data-experience-profile={experienceProfile}
       data-experience-stage-profile={stageProfile}
       className="relative isolate h-full min-h-[inherit] w-full bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
@@ -3816,13 +3612,13 @@ function PlayerFrame({
     >
       <div
         data-experience-landscape-viewport=""
-        inert={menuOpen}
-        aria-hidden={menuOpen || undefined}
+        inert={showStart}
+        aria-hidden={showStart || undefined}
         data-experience-frame-rotated={turned ? "" : undefined}
         className="absolute left-1/2 top-1/2 isolate z-0"
         style={{
           ...viewportStyle,
-          visibility: menuOpen ? "hidden" : "visible",
+          visibility: showStart ? "hidden" : "visible",
           transform: turned ? "translate(-50%, -50%) rotate(90deg)" : "translate(-50%, -50%)",
         }}
       >

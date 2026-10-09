@@ -77,10 +77,10 @@ export const EXPERIENCE_UI_CONTRACT = {
   },
   regions: {
     start: {
-      parts: ["panel", "eyebrow", "title", "summary", "primary", "secondary"],
-      actions: ["start", "continue", "restart", "open-map"],
+      parts: ["panel", "eyebrow", "title", "summary", "primary"],
+      actions: ["start"],
       description:
-        "Independent main menu. Primary starts or continues the same run; secondary opens the real journey map. Menu placement uses theme region alignment. Returning to the menu suspends, rather than resets, the run.",
+        "Initial start screen. Primary enters the film after access checks; placement uses theme region alignment.",
       space: "viewport",
     },
     playback: {

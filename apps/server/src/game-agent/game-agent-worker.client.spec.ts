@@ -5,7 +5,7 @@ import { GameAgentWorkerClient } from './game-agent-worker.client';
 const request: AppearanceDesignRequest = {
   requestId: '135b85a7-1c82-4b1f-8f7c-fbc174f19ea2',
   locale: 'en-US',
-  prompt: 'Restore menu',
+  prompt: 'Style the start button',
   appearance: {
     version: 1,
   },
@@ -14,8 +14,10 @@ const request: AppearanceDesignRequest = {
 };
 const result = {
   requestId: request.requestId,
-  appearance: request.appearance,
-  gameUi: null,
+  appearance: {
+    version: 1,
+    presentation: { copy: { start: { 'en-US': 'Enter' } } },
+  },
   message: 'Done',
 };
 const client = () =>

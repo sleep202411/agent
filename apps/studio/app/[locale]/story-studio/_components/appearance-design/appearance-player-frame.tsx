@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import type { ExperienceAppearance, GameUIArtifact } from "@repo/shared/experience-runtime";
+import type { ExperienceAppearance } from "@repo/shared/experience-runtime";
 import type { StoryFrameProfile } from "@/lib/story-projects-api";
 import {
   isPreviewPlayerPeer,
@@ -15,7 +15,6 @@ export interface AppearancePlayerFrameProps {
   runtime: Record<string, unknown>;
   locale: string;
   appearance: ExperienceAppearance;
-  gameUi?: GameUIArtifact | null;
   frameProfile?: StoryFrameProfile;
   coverUrl?: string | null;
   startSceneId?: string | null;
@@ -25,7 +24,6 @@ export interface AppearancePlayerFrameProps {
 /** A real browser viewport: player portals, focus, CSS breakpoints and shortcuts stay inside. */
 export function AppearancePlayerFrame({
   appearance,
-  gameUi,
   onPreviewStateChange,
   ...player
 }: AppearancePlayerFrameProps) {
@@ -41,21 +39,20 @@ export function AppearancePlayerFrame({
     () => ({ runtime, locale, frameProfile, coverUrl, startSceneId }),
     [runtime, locale, frameProfile, coverUrl, startSceneId]
   );
-  const current = useRef({ config, appearance, gameUi, revision: 1, onPreviewStateChange });
+  const current = useRef({ config, appearance, revision: 1, onPreviewStateChange });
   useLayoutEffect(() => {
     const previous = current.current;
     current.current = {
       config,
       appearance,
-      gameUi,
       onPreviewStateChange,
       revision: previous.revision + Number(previous.config !== config),
     };
-  }, [config, appearance, gameUi, onPreviewStateChange]);
+  }, [config, appearance, onPreviewStateChange]);
   const initialize = useCallback(() => {
-    const { config, appearance, gameUi, revision } = current.current;
+    const { config, appearance, revision } = current.current;
     frame.current?.contentWindow?.postMessage(
-      { type: "fizz.preview.initialize", channel, revision, config, appearance, gameUi },
+      { type: "fizz.preview.initialize", channel, revision, config, appearance },
       window.location.origin
     );
   }, [channel]);
@@ -86,7 +83,7 @@ export function AppearancePlayerFrame({
     initialize();
   }, [config, initialize]);
   useEffect(() => {
-    const serial = JSON.stringify({ appearance, gameUi });
+    const serial = JSON.stringify({ appearance });
     // Chat draft updates may recreate equal objects; they must not update the player.
     if (lastAppearance.current === serial) return;
     lastAppearance.current = serial;
@@ -96,11 +93,10 @@ export function AppearancePlayerFrame({
         channel,
         revision: current.current.revision,
         appearance,
-        gameUi,
       },
       window.location.origin
     );
-  }, [appearance, gameUi, channel]);
+  }, [appearance, channel]);
   return (
     <div className={styles.playerWindow}>
       <iframe

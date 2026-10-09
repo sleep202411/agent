@@ -54,13 +54,7 @@ export function AppearancePlayerPreview({
       backHref={backHref}
       previewTools={previewTools}
       choiceLabels={choiceLabels}
-      renderStage={(stage) => (
-        <AppearancePlayerFrame
-          {...player}
-          appearance={stage.appearance}
-          gameUi={stage.gameUi?.artifact ?? null}
-        />
-      )}
+      renderStage={(stage) => <AppearancePlayerFrame {...player} appearance={stage.appearance} />}
     />
   );
 }

@@ -1,8 +1,6 @@
 import { STORY_CHAPTER_NODES_MAX } from '@repo/shared/story-production';
 import {
   ExperienceAppearanceSchema,
-  GameUISourceSchema,
-  type GameUIProject,
   type ExperienceAppearance,
 } from '@repo/shared/experience-runtime';
 import { z } from 'zod';
@@ -390,7 +388,6 @@ export const PatchStoryProjectSchema = z
     tags: StoryTagsSchema.optional(),
     storeListing: StoreListingSchema.nullable().optional(),
     appearance: ExperienceAppearanceSchema.nullable().optional(),
-    gameUiSource: GameUISourceSchema.nullable().optional(),
     frameProfile: StoryFrameProfileSchema.optional(),
     durationPreset: StoryDurationPresetSchema.optional(),
     visualStyle: StoryVisualStyleSchema.optional(),
@@ -818,7 +815,6 @@ export interface StoryProjectSummaryDto {
   /** Publication introduction draft; null when unset. */
   storeListing: StoreListing | null;
   appearance: ExperienceAppearance | null;
-  gameUi: GameUIProject | null;
   sourceIpId: string | null;
   projectVersion: number;
   draftRevision: number;

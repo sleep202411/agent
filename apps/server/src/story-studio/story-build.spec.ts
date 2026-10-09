@@ -146,26 +146,6 @@ function input(
 
 describe('compileStoryBuild', () => {
   it.each(['preview', 'production'] as const)(
-    'freezes the identical code artifact in the %s player manifest',
-    (channel) => {
-      const gameUi = {
-        apiVersion: 1 as const,
-        surface: 'main-menu' as const,
-        sourceHash: 'a'.repeat(64),
-        artifactHash: 'b'.repeat(64),
-        toolchain: 'test',
-        javascript: 'var FizzGameUI={mount(){}}',
-        css: 'button{min-height:44px}',
-      };
-      const compiled = compileStoryBuild(input({ channel, gameUi }));
-      expect(compiled.runtime?.gameUi).toEqual(gameUi);
-      gameUi.javascript = 'Changed later';
-      expect(compiled.runtime?.gameUi?.javascript).toBe(
-        'var FizzGameUI={mount(){}}',
-      );
-    },
-  );
-  it.each(['preview', 'production'] as const)(
     'freezes identical validated appearance in %s manifests',
     (channel) => {
       const appearance = {
@@ -439,7 +419,7 @@ describe('compileStoryBuild', () => {
           entityType: 'node',
           entityId: 'right',
           message:
-            '"The turn" in "Right road" has no selected video, so playtest skips that shot.',
+            '"The turn" in "Right road" has no selected video, so playback uses a placeholder when the scene has no footage.',
           details: {
             kind: 'shot',
             sceneTitle: 'Right road',

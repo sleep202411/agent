@@ -3572,6 +3572,7 @@
         "draftRevision": "草稿 r{revision}",
         "loading": "正在准备试玩…",
         "errorFallback": "无法加载试玩。",
+        "popupBlocked": "请允许此站点的弹出窗口，然后重新打开预览。",
         "buildNumber": "构建 {number}",
         "retry": "重试",
         "refresh": "刷新试玩",
@@ -4736,9 +4737,6 @@
     "columnNode": "节点"
   },
   "appearancePreview": {
-    "resizePanels": "调整预览与对话面板大小",
-    "resizePanelsHint": "拖动调整大小 · 双击恢复默认 · 方向键微调",
-    "panelSize": "预览占 {percent}%",
     "back": "返回工作室",
     "project": "入梦金陵",
     "saveFailed": "尚未保存",
@@ -4752,8 +4750,8 @@
     "backProject": "返回项目",
     "previewTitle": "作品预览",
     "chat": {
-      "readOnly": "当前为只读预览。在可编辑的项目中可使用 FizzAgent。",
-      "label": "FizzAgent 界面设计对话",
+      "readOnly": "当前为只读预览。在可编辑的项目中可使用 Game Agent。",
+      "label": "Game Agent 界面设计对话",
       "undo": "撤销",
       "generating": "正在调整样式…",
       "generatingFor": "正在调整样式 · {duration}",

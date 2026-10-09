@@ -1,9 +1,5 @@
 import type { StoryPlotMediaBinding } from "./story-plot-media";
-import type {
-  ExperienceAppearance,
-  GameUIProject,
-  GameUISource,
-} from "@repo/shared/experience-runtime";
+import type { ExperienceAppearance } from "@repo/shared/experience-runtime";
 import { api, ApiRequestError } from "@/lib/api";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS, type StoryVisualStyleSkillSlug } from "@repo/shared";
 import type {
@@ -129,7 +125,6 @@ export interface StoryProjectSummary {
   /** Publication introduction authored by the creator; null when unset. */
   storeListing: StoryStoreListing | null;
   appearance: ExperienceAppearance | null;
-  gameUi?: GameUIProject | null;
   sourceIpId: string | null;
   projectVersion: number;
   draftRevision: number;
@@ -741,7 +736,6 @@ export async function updateStoryProject(
     tags?: string[];
     storeListing?: StoryStoreListing | null;
     appearance?: ExperienceAppearance | null;
-    gameUiSource?: GameUISource | null;
     frameProfile?: StoryFrameProfile;
     durationPreset?: StoryDurationPreset;
     visualStyle?: StoryVisualStyle;

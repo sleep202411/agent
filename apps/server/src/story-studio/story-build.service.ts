@@ -1,7 +1,5 @@
 import {
-  migrateStoredExperienceAppearance,
-  GameUIProjectSchema,
-  type GameUIProject,
+  ExperienceAppearanceSchema,
   type ExperienceAppearance,
 } from '@repo/shared/experience-runtime';
 import { StoryCommunityAccessService } from './story-community-access.service';
@@ -206,7 +204,7 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
-export const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 9;
+export const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 10;
 
 interface BuildCursor {
   number: number;
@@ -222,7 +220,6 @@ interface ValidatedBuildSnapshot {
     defaultLocale: string;
     frameProfile: StoryFrameProfile;
     appearance: ExperienceAppearance | null;
-    gameUi: GameUIProject | null;
   };
   draft: {
     revision: number;
@@ -325,7 +322,6 @@ export class StoryBuildService {
               scope: input.scope,
               frameProfile: snapshot.project.frameProfile,
               appearance: snapshot.project.appearance ?? undefined,
-              gameUi: snapshot.project.gameUi?.artifact,
               defaultLocale: snapshot.project.defaultLocale,
               metadata: {
                 title: snapshot.project.title,
@@ -963,7 +959,6 @@ async function loadValidatedBuildSnapshot(
       defaultLocale: true,
       frameProfile: true,
       appearance: true,
-      gameUi: true,
     },
   });
   if (!project) throw projectNotFound();
@@ -1070,11 +1065,7 @@ async function loadValidatedBuildSnapshot(
       appearance:
         project.appearance == null
           ? null
-          : migrateStoredExperienceAppearance(project.appearance),
-      gameUi:
-        project.gameUi == null
-          ? null
-          : GameUIProjectSchema.parse(project.gameUi),
+          : ExperienceAppearanceSchema.parse(project.appearance),
       frameProfile: project.frameProfile,
     },
     draft: {
@@ -1301,7 +1292,6 @@ export function storyBuildInputManifest(
       title: snapshot.project.title,
       summary: snapshot.project.summary,
       appearance: snapshot.project.appearance,
-      gameUi: snapshot.project.gameUi,
     },
     story: {
       sourceRevisionId,

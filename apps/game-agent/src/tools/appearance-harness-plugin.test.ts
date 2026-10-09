@@ -25,7 +25,7 @@ const presentation = {
     assets: [],
   },
 };
-async function fixture(nestedOutput = false, initialPresentation?: unknown, gameUI = true) {
+async function fixture(nestedOutput = false, initialPresentation?: unknown) {
   const root = await mkdtemp(join(tmpdir(), "appearance-test-"));
   directories.push(root);
   const requestId = randomUUID();
@@ -55,44 +55,28 @@ async function fixture(nestedOutput = false, initialPresentation?: unknown, game
       },
     },
   } as unknown as Context;
-  await apply(ctx, { contextPath, resultPath, gameUI });
+  await apply(ctx, { contextPath, resultPath });
   const execute = (name: string, args: unknown, signal = new AbortController().signal) =>
     registry.get(name)!.execute(args as never, { signal } as never);
   const reopen = async () => {
     registry.clear();
-    await apply(ctx, { contextPath, resultPath, gameUI });
+    await apply(ctx, { contextPath, resultPath });
   };
   return { execute, resultPath, contextPath, requestId, guard, registry, root, reopen };
 }
 
-it.each([false, true])("only submits a checked presentation once (gameUI=%s)", async (gameUI) => {
-  const f = await fixture(false, undefined, gameUI);
+it("only exposes appearance tools and submits an exact checked presentation once", async () => {
+  const f = await fixture();
   expect([...f.registry.keys()]).toEqual([
     "read_appearance",
     "check_appearance",
     "submit_appearance",
-    ...(gameUI
-      ? [
-          "read_game_ui",
-          "read_game_ui_file",
-          "write_game_ui_file",
-          "delete_game_ui_file",
-          "check_game_ui",
-          "submit_game_ui",
-          "restore_game_ui",
-        ]
-      : []),
   ]);
   expect(f.guard({ name: "bash" })).toBeTypeOf("string");
   expect(f.guard({ name: "read_appearance" })).toBeUndefined();
   const proposal = { presentation, message: "Centered the choices." };
   await expect(f.execute("submit_appearance", proposal)).rejects.toThrow("read_appearance");
-  const view = JSON.parse(String(await f.execute("read_appearance", {})));
-  expect(Boolean(view.gameUIContract)).toBe(gameUI);
-  for (const tool of ["read_game_ui", "write_game_ui_file", "restore_game_ui"])
-    expect(f.guard({ name: tool })).toBe(
-      gameUI ? undefined : "This capability is unavailable for appearance design."
-    );
+  await f.execute("read_appearance", {});
   await expect(f.execute("submit_appearance", proposal)).rejects.toThrow("Check");
   await f.execute("check_appearance", proposal);
   await expect(
@@ -105,176 +89,30 @@ it.each([false, true])("only submits a checked presentation once (gameUI=%s)", a
   const result = AppearanceDesignResultSchema.parse(
     JSON.parse(await readFile(f.resultPath, "utf8"))
   );
-  expect(result.requestId).toBe(f.requestId);
   expect(result.appearance.presentation).toEqual(presentation);
   await expect(f.execute("submit_appearance", proposal)).rejects.toThrow("Already submitted");
 });
 
-const codeSource = {
-  apiVersion: 1,
-  surface: "main-menu",
-  entry: "menu.js",
-  files: [
-    {
-      path: "menu.js",
-      content:
-        'export function mount({root,game,context}) { const button=document.createElement("button");button.textContent=context.copy.start;button.onclick=()=>game.invoke("start");root.append(button); }',
-    },
-  ],
-};
-async function stageCode(f: Awaited<ReturnType<typeof fixture>>) {
-  await f.execute("read_game_ui", {});
-  for (const file of codeSource.files) await f.execute("write_game_ui_file", file);
-}
-it("allows only one concurrent submission across native appearance and menu source", async () => {
+it("fences concurrent submissions and preserves submitted results across tool-host restart", async () => {
   const f = await fixture();
+  const proposal = { presentation, message: "Updated." };
   await f.execute("read_appearance", {});
-  await f.execute("check_appearance", { presentation, message: "Updated." });
-  await stageCode(f);
-  await f.execute("check_game_ui", { entry: "menu.js" });
+  await f.execute("check_appearance", proposal);
   const results = await Promise.allSettled([
-    f.execute("submit_appearance", { presentation, message: "Updated." }),
-    f.execute("submit_game_ui", { message: "Created menu." }),
+    f.execute("submit_appearance", proposal),
+    f.execute("submit_appearance", proposal),
   ]);
   expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-  const rejected = results.find((result) => result.status === "rejected");
-  expect(rejected?.status === "rejected" && rejected.reason.message).toContain("Already submitted");
-  const result = AppearanceDesignResultSchema.parse(
-    JSON.parse(await readFile(f.resultPath, "utf8"))
-  );
-  expect(result.requestId).toBe(f.requestId);
-  expect(result.gameUi ? result.gameUi.source : result.appearance.presentation).toEqual(
-    result.gameUi ? codeSource : presentation
-  );
-});
-it.each(["submit_appearance", "submit_game_ui"])(
-  "preserves the submitted result across tool-host restart before %s",
-  async (tool) => {
-    const f = await fixture();
-    const proposal = { presentation, message: "Original preview." };
-    await f.execute("read_appearance", {});
-    await f.execute("check_appearance", proposal);
-    await f.execute("submit_appearance", proposal);
-    const saved = await readFile(f.resultPath, "utf8");
-    await f.reopen();
-    if (tool === "submit_appearance") {
-      await f.execute("read_appearance", {});
-      await f.execute("check_appearance", proposal);
-    } else {
-      await stageCode(f);
-      await f.execute("check_game_ui", { entry: "menu.js" });
-    }
-    await expect(
-      f.execute(tool, tool === "submit_appearance" ? proposal : { message: "Changed menu." })
-    ).rejects.toThrow("Already submitted");
-    expect(await readFile(f.resultPath, "utf8")).toBe(saved);
-
-    const next = JSON.parse(await readFile(f.contextPath, "utf8"));
-    next.requestId = randomUUID();
-    await writeFile(f.contextPath, JSON.stringify(next));
-    await f.execute("read_appearance", {});
-    await f.execute("check_appearance", proposal);
-    await f.execute("submit_appearance", proposal);
-    expect(JSON.parse(await readFile(f.resultPath, "utf8")).requestId).toBe(next.requestId);
-  }
-);
-it("restores unfinished game source after tool-host restart, requires a fresh check and fences changed contexts", async () => {
-  const f = await fixture();
-  await stageCode(f);
-  await Promise.all([
-    f.execute("write_game_ui_file", { path: "menu.js", content: "export function mount( {" }),
-    f.execute("write_game_ui_file", { path: "game.css", content: "button {min-height:44px}" }),
-  ]);
-  await expect(f.execute("check_game_ui", { entry: "menu.js" })).rejects.toThrow();
+  const saved = await readFile(f.resultPath, "utf8");
   await f.reopen();
-  const restored = JSON.parse(String(await f.execute("read_game_ui", {})));
-  expect(restored).toMatchObject({ surface: "main-menu", recoveredCandidate: true });
-  expect(restored.files.map((file: { path: string }) => file.path)).toEqual([
-    "menu.js",
-    "game.css",
-  ]);
-  expect(
-    JSON.parse(String(await f.execute("read_game_ui_file", { path: "menu.js" }))).content
-  ).toBe("export function mount( {");
-  await expect(f.execute("submit_game_ui", { message: "Recovered" })).rejects.toThrow("Check");
-  await f.execute("write_game_ui_file", codeSource.files[0]);
-  await f.execute("check_game_ui", { entry: "menu.js" });
-  await f.execute("submit_game_ui", { message: "Recovered" });
-  const next = JSON.parse(await readFile(f.contextPath, "utf8"));
-  next.requestId = randomUUID();
-  await writeFile(f.contextPath, JSON.stringify(next));
-  const changed = JSON.parse(String(await f.execute("read_game_ui", {})));
-  expect(changed).toMatchObject({ surface: "main-menu", files: [], recoveredCandidate: false });
-});
-it("builds and applies staged files while preserving the existing appearance", async () => {
-  const f = await fixture(false, presentation);
-  const view = JSON.parse(String(await f.execute("read_game_ui", {})));
-  expect(view.contract.game.snapshotExample.actions.start).toBe(true);
-  expect(view.files).toEqual([]);
-  const proposal = { message: "Created the game menu." };
-  await f.execute("write_game_ui_file", codeSource.files[0]);
-  await expect(f.execute("submit_game_ui", proposal)).rejects.toThrow("Check");
-  await f.execute("check_game_ui", { entry: "menu.js" });
-  await f.execute("submit_game_ui", proposal);
-  const result = AppearanceDesignResultSchema.parse(
-    JSON.parse(await readFile(f.resultPath, "utf8"))
-  );
-  expect(result.appearance.presentation).toEqual(presentation);
-  expect(result.gameUi?.source).toEqual(codeSource);
-  expect(result.gameUi?.artifact.javascript).toContain("mount");
-  await expect(f.execute("submit_game_ui", proposal)).rejects.toThrow("Already submitted");
-});
-it("retains failed candidate files and repairs through the same file tools", async () => {
-  const f = await fixture();
-  await f.execute("read_game_ui", {});
-  const broken = { path: "menu.js", content: "export function mount( {" };
-  await f.execute("write_game_ui_file", broken);
-  await expect(f.execute("check_game_ui", { entry: "menu.js" })).rejects.toThrow();
-  expect(JSON.parse(await readFile(`${f.resultPath}.candidate.json`, "utf8")).source.files).toEqual(
-    [broken]
-  );
-  await expect(readFile(f.resultPath)).rejects.toThrow();
-  await f.execute("write_game_ui_file", codeSource.files[0]);
-  await f.execute("check_game_ui", { entry: "menu.js" });
-  await f.execute("submit_game_ui", { message: "Repaired" });
-  expect(JSON.parse(await readFile(f.resultPath, "utf8")).gameUi.source).toEqual(codeSource);
-});
-it("rejects post-check edits, escaped paths, stale context and cancelled submits", async () => {
-  const f = await fixture();
-  await stageCode(f);
-  await f.execute("check_game_ui", { entry: "menu.js" });
-  await expect(
-    f.execute("write_game_ui_file", { path: "../escape.js", content: "" })
-  ).rejects.toThrow();
-  await f.execute("write_game_ui_file", { path: "menu.js", content: "export function mount(){}" });
-  await expect(f.execute("submit_game_ui", { message: "Edited" })).rejects.toThrow("Check");
-  await f.execute("check_game_ui", { entry: "menu.js" });
-  const controller = new AbortController();
-  controller.abort();
-  await expect(
-    f.execute("submit_game_ui", { message: "Changed" }, controller.signal)
-  ).rejects.toThrow();
-  const request = JSON.parse(await readFile(f.contextPath, "utf8"));
-  request.requestId = randomUUID();
-  await writeFile(f.contextPath, JSON.stringify(request));
-  await expect(f.execute("submit_game_ui", { message: "Changed" })).rejects.toThrow(
-    "Preview changed"
-  );
-  await expect(readFile(f.resultPath)).rejects.toThrow();
-});
-it("reads and deletes virtual files without touching host paths", async () => {
-  const f = await fixture();
-  await stageCode(f);
-  expect(JSON.parse(String(await f.execute("read_game_ui_file", { path: "menu.js" })))).toEqual(
-    codeSource.files[0]
-  );
-  await f.execute("delete_game_ui_file", { path: "menu.js" });
-  await expect(f.execute("read_game_ui_file", { path: "menu.js" })).rejects.toThrow("not found");
-  await expect(f.execute("check_game_ui", { entry: "menu.js" })).rejects.toThrow();
+  await f.execute("read_appearance", {});
+  await f.execute("check_appearance", proposal);
+  await expect(f.execute("submit_appearance", proposal)).rejects.toThrow("Already submitted");
+  expect(await readFile(f.resultPath, "utf8")).toBe(saved);
 });
 
-it.each([false, true])("can retry an interrupted output write (gameUI=%s)", async (gameUI) => {
-  const f = await fixture(true, undefined, gameUI);
+it("can retry an interrupted output write", async () => {
+  const f = await fixture(true, undefined);
   const proposal = { presentation, message: "Updated." };
   await f.execute("read_appearance", {});
   await f.execute("check_appearance", proposal);
@@ -322,24 +160,21 @@ it("does not produce a result after cancellation", async () => {
   await expect(readFile(f.resultPath)).rejects.toThrow();
 });
 
-it.each([false, true])(
-  "rejects stale results and reads the new context (gameUI=%s)",
-  async (gameUI) => {
-    const f = await fixture(false, undefined, gameUI);
-    const proposal = { presentation, message: "Updated." };
-    await f.execute("read_appearance", {});
-    await f.execute("check_appearance", proposal);
-    const request = JSON.parse(await readFile(f.contextPath, "utf8"));
-    request.requestId = randomUUID();
-    await writeFile(f.contextPath, JSON.stringify(request));
-    await expect(f.execute("submit_appearance", proposal)).rejects.toThrow("Preview changed");
-    await expect(readFile(f.resultPath)).rejects.toThrow();
-    await f.execute("read_appearance", {});
-    await f.execute("check_appearance", proposal);
-    await f.execute("submit_appearance", proposal);
-    expect(JSON.parse(await readFile(f.resultPath, "utf8")).requestId).toBe(request.requestId);
-  }
-);
+it("rejects stale results and reads the new context", async () => {
+  const f = await fixture(false, undefined);
+  const proposal = { presentation, message: "Updated." };
+  await f.execute("read_appearance", {});
+  await f.execute("check_appearance", proposal);
+  const request = JSON.parse(await readFile(f.contextPath, "utf8"));
+  request.requestId = randomUUID();
+  await writeFile(f.contextPath, JSON.stringify(request));
+  await expect(f.execute("submit_appearance", proposal)).rejects.toThrow("Preview changed");
+  await expect(readFile(f.resultPath)).rejects.toThrow();
+  await f.execute("read_appearance", {});
+  await f.execute("check_appearance", proposal);
+  await f.execute("submit_appearance", proposal);
+  expect(JSON.parse(await readFile(f.resultPath, "utf8")).requestId).toBe(request.requestId);
+});
 
 it("exposes the versioned UI contract and preserves copy while replacing the complete theme", async () => {
   const f = await fixture(false, { ...presentation, copy: { start: { "en-US": "Enter" } } });

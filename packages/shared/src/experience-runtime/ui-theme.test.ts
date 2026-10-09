@@ -62,6 +62,7 @@ describe("player theme trust boundary", () => {
     `${selector} + iframe{color:red}`,
     `${selector}:has(img){color:red}`,
     '[data-experience-ui-region="start"] [data-ui-part="price"]{color:red}',
+    '[data-experience-ui-region="start"] [data-ui-part="secondary"]{color:red}',
     `${selector}{background:url(https://evil.invalid/image)}`,
     `${selector}{background:u\\72l(https://evil.invalid/image)}`,
     `${selector}{background:image-set("https://evil.invalid/image")}`,

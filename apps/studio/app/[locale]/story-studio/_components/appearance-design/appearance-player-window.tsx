@@ -37,9 +37,7 @@ export function AppearancePlayerWindow({ channel }: { channel: string }) {
         );
       } else if (message.revision === revision.current) {
         setInput((previous) =>
-          previous
-            ? { ...previous, appearance: message.appearance, gameUi: message.gameUi }
-            : previous
+          previous ? { ...previous, appearance: message.appearance } : previous
         );
       }
     };
@@ -70,7 +68,7 @@ export function AppearancePlayerWindow({ channel }: { channel: string }) {
         <ExperienceRuntimePlayer
           key={input.revision}
           {...input.config}
-          ui={{ apiVersion: 1, appearance: input.appearance, gameUi: input.gameUi }}
+          ui={{ apiVersion: 1, appearance: input.appearance }}
           onStateChange={reportState}
           playSessionReporter={reporter}
         />

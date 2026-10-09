@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import {
   IconArrowLeft,
@@ -18,6 +10,7 @@ import {
   IconDeviceFloppy,
 } from "@tabler/icons-react";
 import { Link } from "@/i18n/navigation";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DEFAULT_APPEARANCE,
   useAppearanceWorkspace,
@@ -28,7 +21,6 @@ import {
   AppearanceWebOpenResultSchema,
   AppearanceWebPollResultSchema,
 } from "@repo/game-agent-protocol";
-import type { GameUIProject } from "@repo/shared/experience-runtime";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getStoryProject,
@@ -37,12 +29,11 @@ import {
 } from "@/lib/story-projects-api";
 import { api, ApiRequestError } from "@/lib/api";
 import styles from "./appearance-preview.module.css";
-import { AppearanceSplitPanels } from "./appearance-split-panels";
+import { StoryProjectHeaderActions } from "../story-project-header-actions";
 import { appearanceWindowIdentity } from "./appearance-window-identity";
 
 export interface AppearanceStageProps {
   appearance: Appearance;
-  gameUi: GameUIProject | null;
 }
 interface WebSession {
   leaseId: string;
@@ -72,7 +63,6 @@ export function AppearancePreview({
   choiceLabels?: string[];
 }) {
   const t = useTranslations("appearancePreview");
-  const previewId = useId();
   const locale = useLocale();
   const fallbackTitle = t("project");
   const saveFailed = t("saveFailed");
@@ -153,12 +143,10 @@ export function AppearancePreview({
   const admitted = useRef<{
     requestId: string;
     before: Appearance;
-    beforeGameUi: GameUIProject | null;
   } | null>(null);
   const seen = useRef<string | null>(null);
   const serial = JSON.stringify({
     appearance,
-    gameUi: workspace.gameUi,
     title: projectTitle,
     choiceLabels,
   });
@@ -175,7 +163,6 @@ export function AppearancePreview({
     }
     const controller = new AbortController();
     const before = current.current.appearance;
-    const beforeGameUi = current.current.workspace.gameUi ?? null;
     const requestId = crypto.randomUUID();
     admitted.current = null;
     void api
@@ -191,7 +178,6 @@ export function AppearancePreview({
             prompt: "Design the current preview according to the next user message.",
             locale,
             appearance: before,
-            gameUi: beforeGameUi,
             context: { title: (projectTitle || fallbackTitle).slice(0, 200), choiceLabels },
             history: [],
           },
@@ -218,7 +204,7 @@ export function AppearancePreview({
         }
         if (!lease.current) setRunning(false);
         lease.current = { id: result.id, leaseId: result.leaseId, controlPath };
-        admitted.current = { requestId: result.requestId, before, beforeGameUi };
+        admitted.current = { requestId: result.requestId, before };
         setSession((previous) =>
           previous?.id === result.id && previous.admissionContext === admissionContext
             ? previous
@@ -272,16 +258,11 @@ export function AppearancePreview({
             seen.current = result.requestId;
             const { update } = current.current;
             const saved = update((state) => {
-              if (
-                JSON.stringify(state.applied) !== JSON.stringify(request.before) ||
-                JSON.stringify(state.gameUi ?? null) !== JSON.stringify(request.beforeGameUi)
-              )
-                return state;
+              if (JSON.stringify(state.applied) !== JSON.stringify(request.before)) return state;
               return {
                 ...state,
                 applied: result.appearance,
-                gameUi: result.gameUi !== undefined ? result.gameUi : state.gameUi,
-                undo: [...state.undo, { applied: request.before, gameUi: request.beforeGameUi }],
+                undo: [...state.undo, { applied: request.before }],
               };
             });
             if (!saved) setError(saveFailed);
@@ -374,129 +355,176 @@ export function AppearancePreview({
     () =>
       Boolean(
         project &&
-        (JSON.stringify(appearance) !== JSON.stringify(project.appearance ?? DEFAULT_APPEARANCE) ||
-          JSON.stringify(workspace.gameUi ?? null) !== JSON.stringify(project.gameUi ?? null))
+        JSON.stringify(appearance) !== JSON.stringify(project.appearance ?? DEFAULT_APPEARANCE)
       ),
-    [appearance, project, workspace.gameUi]
+    [appearance, project]
   );
   async function saveAppearance() {
-    if (!projectId || !project || !canEdit || saving || running) return;
+    if (!projectId || !project || !canEdit || saving || running) return new Error(saveFailed);
     setSaving(true);
     setSaveError("");
     try {
       const saved = await updateStoryProject(projectId, {
         expectedProjectVersion: workspace.baseProjectVersion ?? project.projectVersion,
         appearance,
-        gameUiSource: workspace.gameUi?.source ?? null,
       });
       update((state) => ({ ...state, baseProjectVersion: saved.projectVersion }));
       cacheProject(saved);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["story-studio", "script-workbench", projectId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["story-studio", "chapter-workbench", projectId],
+        }),
+      ]);
       // Other project surfaces fetch the new version on return; keep this player's runtime mounted.
       void queryClient.invalidateQueries({
         queryKey: ["story-studio", "chapter-scope", projectId],
         refetchType: "none",
       });
+      return undefined;
     } catch (reason) {
-      setSaveError(reason instanceof Error ? reason.message : String(reason));
+      const failure = reason instanceof Error ? reason : new Error(String(reason));
+      setSaveError(failure.message);
+      return failure;
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <AppearanceSplitPanels
-      chatVisible={chatVisible && canDesign}
-      previewId={previewId}
-      preview={
-        <section id={previewId} className={styles.preview} aria-label={t("preview")}>
-          <header className={styles.previewHeader}>
-            <div className={styles.identity}>
-              <Link
-                href={backHref}
-                className={styles.back}
-                aria-label={t(projectId ? "backProject" : "back")}
-              >
-                <IconArrowLeft size={18} />
-              </Link>
-              <h1>{projectTitle || t(projectId ? "projectFallback" : "project")}</h1>
-              <span className={styles.previewBadge}>{t("previewTitle")}</span>
-            </div>
-            <div className={styles.previewActions}>
-              {project && canEdit && (
-                <button
-                  type="button"
-                  className={styles.undo}
-                  disabled={!dirty || saving || running}
-                  onClick={() => void saveAppearance()}
-                >
-                  <IconDeviceFloppy size={16} />
-                  {t(saving ? "savingProject" : dirty ? "saveProject" : "savedProject")}
-                </button>
-              )}
-              {canEdit && workspace.undo.length > 0 && (
-                <button
-                  className={styles.undo}
-                  disabled={running || saving}
-                  onClick={() =>
-                    update((state) => {
-                      const previous = state.undo.at(-1);
-                      return previous
-                        ? { ...state, ...previous, undo: state.undo.slice(0, -1) }
-                        : state;
-                    })
-                  }
-                >
-                  <IconArrowBackUp size={14} />
-                  {t("chat.undo")}
-                </button>
-              )}
-              {previewTools}
-              {canDesign && (
-                <button
-                  type="button"
+    <main className={styles.workspace} data-chat-hidden={!chatVisible || !canDesign || undefined}>
+      <section className={styles.preview} aria-label={t("preview")}>
+        <header className={styles.previewHeader}>
+          <div className={styles.identity}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href={backHref}
                   className={styles.back}
-                  aria-label={t(chatVisible ? "hideChat" : "showChat")}
-                  title={t(chatVisible ? "hideChat" : "showChat")}
-                  aria-expanded={chatVisible}
-                  onClick={() => setChatVisible((value) => !value)}
+                  aria-label={t(projectId ? "backProject" : "back")}
                 >
-                  {chatVisible ? (
-                    <IconLayoutSidebarRightCollapse size={18} />
-                  ) : (
-                    <IconLayoutSidebarRightExpand size={18} />
-                  )}
-                </button>
-              )}
-            </div>
-          </header>
-          {(saveError || restoreError || persistenceFailed) && (
-            <div className={styles.saveError} role="alert">
-              <p>
-                {saveError ||
-                  (restoreError
-                    ? `${t("restoreDraftFailed")} ${restoreError}`
-                    : t("draftSaveFailed"))}
-              </p>
-              {saveError && project && (
-                <button type="button" disabled={saving} onClick={() => void reloadProject()}>
-                  {t("reloadProject")}
-                </button>
-              )}
-              {persistenceFailed && !restoreError && (
-                <button type="button" onClick={() => update((state) => state)}>
-                  {t("retryDraftSave")}
-                </button>
-              )}
-            </div>
-          )}
-          <div className={styles.stage}>
-            <div className={styles.stageFrame}>
-              {renderStage({ appearance, gameUi: workspace.gameUi ?? null })}
-            </div>
+                  <IconArrowLeft size={18} />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={8}>
+                {t(projectId ? "backProject" : "back")}
+              </TooltipContent>
+            </Tooltip>
+            <h1>{projectTitle || t(projectId ? "projectFallback" : "project")}</h1>
+            <span className={styles.previewBadge}>{t("previewTitle")}</span>
           </div>
-        </section>
-      }
-      chat={
+          <div className={styles.previewActions}>
+            {project && canEdit && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <button
+                      type="button"
+                      className={styles.undo}
+                      disabled={!dirty || saving || running}
+                      onClick={() => void saveAppearance()}
+                    >
+                      <IconDeviceFloppy size={16} />
+                      {t(saving ? "savingProject" : dirty ? "saveProject" : "savedProject")}
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={8}>
+                  {t(saving ? "savingProject" : dirty ? "saveProject" : "savedProject")}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {canEdit && workspace.undo.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <button
+                      className={styles.undo}
+                      disabled={running || saving}
+                      onClick={() =>
+                        update((state) => {
+                          const previous = state.undo.at(-1);
+                          return previous
+                            ? { ...state, ...previous, undo: state.undo.slice(0, -1) }
+                            : state;
+                        })
+                      }
+                    >
+                      <IconArrowBackUp size={14} />
+                      {t("chat.undo")}
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={8}>
+                  {t("chat.undo")}
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {projectId && project && (
+              <StoryProjectHeaderActions
+                projectId={projectId}
+                compact
+                disabled={saving || running || Boolean(restoreError) || persistenceFailed}
+                beforeOpen={async () => {
+                  if (dirty && canEdit) {
+                    const failure = await saveAppearance();
+                    if (failure) throw failure;
+                  }
+                }}
+              />
+            )}
+            {previewTools}
+            {canDesign && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={styles.back}
+                    aria-label={t(chatVisible ? "hideChat" : "showChat")}
+                    aria-expanded={chatVisible}
+                    onClick={() => setChatVisible((value) => !value)}
+                  >
+                    {chatVisible ? (
+                      <IconLayoutSidebarRightCollapse size={18} />
+                    ) : (
+                      <IconLayoutSidebarRightExpand size={18} />
+                    )}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={8}>
+                  {t(chatVisible ? "hideChat" : "showChat")}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </header>
+        {(saveError || restoreError || persistenceFailed) && (
+          <div className={styles.saveError} role="alert">
+            <p>
+              {saveError ||
+                (restoreError
+                  ? `${t("restoreDraftFailed")} ${restoreError}`
+                  : t("draftSaveFailed"))}
+            </p>
+            {saveError && project && (
+              <button type="button" disabled={saving} onClick={() => void reloadProject()}>
+                {t("reloadProject")}
+              </button>
+            )}
+            {persistenceFailed && !restoreError && (
+              <button type="button" onClick={() => update((state) => state)}>
+                {t("retryDraftSave")}
+              </button>
+            )}
+          </div>
+        )}
+        <div className={styles.stage}>
+          <div className={styles.stageFrame}>{renderStage({ appearance })}</div>
+        </div>
+      </section>
+      <div className={styles.chatContainer} hidden={!chatVisible || !canDesign}>
         <aside className={styles.chat} aria-label={t("chat.label")}>
           {error && (
             <div className={styles.connectionError} role="alert">
@@ -530,7 +558,7 @@ export function AppearancePreview({
             )
           )}
         </aside>
-      }
-    />
+      </div>
+    </main>
   );
 }

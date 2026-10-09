@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -7,6 +8,7 @@ import type { StoryProjectSummary } from "@/lib/story-projects-api";
 import { setApiWorkspaceId } from "@/lib/api";
 import { AppearancePreview } from "./appearance-preview";
 
+vi.mock("../story-project-header-actions", () => ({ StoryProjectHeaderActions: () => null }));
 vi.mock("next-intl", () => ({
   useLocale: () => activeLocale,
   useTranslations: () => (key: string) => key,
@@ -16,23 +18,6 @@ vi.mock("@/i18n/navigation", () => ({
     <a {...props}>{children}</a>
   ),
 }));
-vi.mock("./appearance-split-panels", () => ({
-  AppearanceSplitPanels: ({
-    preview,
-    chat,
-    chatVisible,
-  }: {
-    preview: ReactNode;
-    chat: ReactNode;
-    chatVisible: boolean;
-  }) => (
-    <main>
-      {preview}
-      {chatVisible && chat}
-    </main>
-  ),
-}));
-
 const PROJECT = "019f60f4-b101-70d4-8000-000000000002";
 const OTHER_PROJECT = "019f60f4-b101-70d4-8000-000000000007";
 const ID = "019f60f4-b101-70d4-8000-000000000003";
@@ -61,7 +46,6 @@ function project(
     tags: [],
     storeListing: null,
     appearance: null,
-    gameUi: null,
     sourceIpId: null,
     projectVersion: 1,
     draftRevision: 1,
@@ -145,7 +129,9 @@ async function render(
   await act(async () =>
     root.render(
       <QueryClientProvider client={queryClient}>
-        <AppearancePreview {...props} renderStage={() => <button>Preview</button>} />
+        <TooltipProvider>
+          <AppearancePreview {...props} renderStage={() => <button>Preview</button>} />
+        </TooltipProvider>
       </QueryClientProvider>
     )
   );

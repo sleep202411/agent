@@ -166,6 +166,18 @@ function pathOf(raw = "/") {
     pathname.split("/").some((part) => part === "." || part === "..")
   )
     throw new Rejection(404, "Harness route not found.");
+  // Query serializers encode Harness's combo key and append an empty '='.
+  // Restore that syntax before the registered-resource allowlist validates it.
+  if (pathname === "/plugins/") {
+    const entries = [...new URLSearchParams(raw.slice(pathname.length + 1))];
+    if (
+      entries.length === 2 &&
+      entries[0][0].startsWith("?") &&
+      entries[0][1] === "" &&
+      entries[1][0] === "rev"
+    )
+      raw = `${pathname}?${entries[0][0]}&rev=${entries[1][1]}`;
+  }
   return { raw, pathname };
 }
 

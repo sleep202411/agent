@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { ExperienceAppearanceSchema } from "./appearance.js";
-import { GameUIArtifactSchema } from "./game-ui.js";
 import { ExperienceRuntimeAssetSchema, type ExperienceRuntimeAsset } from "./assets.js";
 import { ExperienceAudioDefinitionSchema } from "./audio.js";
 import {
@@ -93,7 +92,6 @@ const ExperienceRuntimeManifestBaseSchema = z
     assets: z.array(ExperienceRuntimeAssetSchema).default([]),
     theme: ExperienceThemeReferenceSchema,
     appearance: ExperienceAppearanceSchema.optional(),
-    gameUi: GameUIArtifactSchema.optional(),
     audio: ExperienceAudioDefinitionSchema.optional(),
     telemetryDefinitions: z.array(ExperienceTelemetryDefinitionSchema).default([]),
     endings: z.array(ExperienceEndingSchema).default([]),

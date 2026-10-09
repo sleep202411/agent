@@ -22,8 +22,6 @@ import type {
   ExperiencePlaybackUIProps,
 } from "./experience-ui";
 import { journeyMapTestCopy } from "./experience-journey-test-copy";
-import { ExperienceDefaultMainMenuUI } from "./experience-main-menu";
-import type { GameSession } from "@repo/game-sdk";
 
 /**
  * The paused state, driven through the real player. Only Vidstack is stubbed —
@@ -110,10 +108,6 @@ const copy = {
   interactiveFilm: "Interactive film",
   starting: "Starting",
   start: "Start",
-  mainMenu: "Main menu",
-  returnToMenu: "Return to main menu",
-  continueGame: "Continue game",
-  codeMenu: { failed: "Custom menu failed", retry: "Retry", restore: "Use default menu" },
   endingEyebrow: "Ending",
   unknownEnding: (endingId: string) => endingId,
   playAgain: "Play again",
@@ -678,109 +672,8 @@ describe("ExperiencePlayer paused state", () => {
     await start();
   };
 
-  it("opens the map from home without starting the game or spending story time, then restores focus", async () => {
-    const onStateChange = vi.fn();
-    await render(choiceFilm(), { onStateChange });
-    await fire("/a.mp4", "onCanPlay");
-    const initial = structuredClone(onStateChange.mock.lastCall?.[0]);
-    const primary = button(copy.start)!;
-    expect(container.querySelector('[data-experience-screen="menu"]')).not.toBeNull();
-    expect(
-      container.querySelector("[data-experience-landscape-viewport]")?.hasAttribute("inert")
-    ).toBe(true);
-    const map = button(copy.journeyMap.open)!;
-    await act(async () => {
-      map.focus();
-      map.click();
-    });
-    await settle();
-    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
-    expect(onStateChange.mock.lastCall?.[0]).toEqual(initial);
-    expect(play).not.toHaveBeenCalled();
-    await act(async () => {
-      document.body
-        .querySelector<HTMLButtonElement>(`button[aria-label="${copy.journeyMap.close}"]`)!
-        .click();
-    });
-    await settle();
-    expect(document.activeElement).toBe(map);
-    expect(primary.disabled).toBe(false);
-    expect(container.querySelector('[data-experience-screen="menu"]')).not.toBeNull();
-  });
-
-  it("returns to a fixed home screen and continues the same run, media element, and position", async () => {
-    const onStateChange = vi.fn();
-    const onCheckpoint = vi.fn();
-    await startFilm(twoClipFilm(), ["/a.mp4"], { onStateChange, onCheckpoint });
-    await fire("/a.mp4", "onPlaying");
-    await playedTo("/a.mp4", 0.5);
-    const media = element("/a.mp4");
-    const state = structuredClone(onStateChange.mock.lastCall?.[0]);
-    await act(async () => {
-      button(copy.mainMenu)!.click();
-    });
-    await settle();
-    expect(container.querySelector("[data-experience-main-menu]")).not.toBeNull();
-    expect(container.querySelector("[data-experience-paused-frame]")).toBeNull();
-    expect(element("/a.mp4")).toBe(media);
-    expect(media.paused).toBe(true);
-    expect(onStateChange.mock.lastCall?.[0]).toEqual(state);
-    expect(onCheckpoint.mock.lastCall?.[0].playback.sceneTimeMs).toBe(500);
-    const continueButton = button(copy.continueGame)!;
-    expect(document.activeElement).toBe(continueButton);
-    play.mockClear();
-    await act(async () => {
-      continueButton.click();
-    });
-    await settle();
-    expect(container.querySelector('[data-experience-screen="game"]')).not.toBeNull();
-    expect(container.querySelector("[data-experience-main-menu]")).toBeNull();
-    expect(element("/a.mp4")).toBe(media);
-    expect(onStateChange.mock.lastCall?.[0]).toEqual(state);
-    expect(play).toHaveBeenCalled();
-  });
-
-  it("gives custom home screens bounded actions and revokes sessions after unmounting", async () => {
-    let session!: GameSession;
-    const ui: ExperiencePlayerUI = {
-      apiVersion: 1,
-      mainMenu: (props) => {
-        session = props.session;
-        return <ExperienceDefaultMainMenuUI {...props} />;
-      },
-    };
-    await render(choiceFilm(), { ui });
-    expect(await session.invoke("continue")).toEqual({ ok: false, reason: "unavailable" });
-    await fire("/a.mp4", "onCanPlay");
-    const oldSession = session;
-    await act(async () => {
-      await session.invoke("start");
-    });
-    await settle();
-    await act(async () => {
-      await oldSession.invoke("return-menu");
-    });
-    await settle();
-    expect(session).toBe(oldSession);
-    await act(async () => {
-      root.unmount();
-    });
-    expect(await oldSession.invoke("open-map")).toEqual({ ok: false, reason: "disposed" });
-    // Restore a root so the shared afterEach still owns a mounted React root.
-    root = createRoot(container);
-  });
-
-  it("keeps a live SDK through StrictMode replay and gives an explicit new game a fresh session", async () => {
-    let session!: GameSession;
-    const ui: ExperiencePlayerUI = {
-      apiVersion: 1,
-      mainMenu: (props) => {
-        session = props.session;
-        return <ExperienceDefaultMainMenuUI {...props} />;
-      },
-    };
+  it("offers only Start before playback and replay after completion, including StrictMode", async () => {
     const runtime = choiceFilm();
-    const loadTheme = () => Promise.resolve(theme);
     await act(async () => {
       root.render(
         <StrictMode>
@@ -788,36 +681,31 @@ describe("ExperiencePlayer paused state", () => {
             runtime={runtime}
             locale="en-US"
             copy={copy}
-            ui={ui}
-            loadTheme={loadTheme}
+            loadTheme={() => Promise.resolve(theme)}
           />
         </StrictMode>
       );
     });
     await fire("/a.mp4", "onCanPlay");
-    const first = session;
-    await act(async () => {
-      expect(await first.invoke("start")).toEqual({ ok: true });
-    });
+    expect(container.querySelector('[data-experience-screen="start"]')).not.toBeNull();
+    const startRegion = container.querySelector('[data-experience-ui-region="start"]')!;
+    expect(startRegion.querySelectorAll("button")).toHaveLength(1);
+    expect(container.querySelector('[data-experience-journey-map-trigger="corner"]')).toBeNull();
+    await start();
+    expect(container.querySelector('[data-experience-ui-region="start"]')).toBeNull();
+    expect(
+      container.querySelector('[data-experience-journey-map-trigger="corner"]')
+    ).not.toBeNull();
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-experience-choice]")!.click()
+    );
     await settle();
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>("[data-experience-choice]")!.click();
-    });
-    await settle();
-    expect(first.getSnapshot().status).toBe("completed");
-    await act(async () => {
-      expect(await first.invoke("return-menu")).toEqual({ ok: true });
-    });
-    await settle();
-    expect(button(copy.continueGame)).toBeUndefined();
+    expect(container.textContent).toContain(copy.endingEyebrow);
     expect(button(copy.playAgain)).toBeDefined();
-    await act(async () => {
-      expect(await first.invoke("restart")).toEqual({ ok: true });
-    });
+    await act(async () => button(copy.playAgain)!.click());
     await settle();
-    expect(session).not.toBe(first);
-    expect(await first.invoke("open-map")).toEqual({ ok: false, reason: "disposed" });
-    expect(session.getSnapshot().started).toBe(false);
+    expect(button(copy.playAgain)).toBeUndefined();
+    expect(container.querySelector('[data-experience-ui-region="start"]')).not.toBeNull();
   });
 
   it("renders frozen themes and live authoring overrides through the same player without resetting playback", async () => {

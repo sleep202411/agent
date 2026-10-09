@@ -9651,15 +9651,7 @@
       "unlocking": "Unlocking…",
       "failed": "Unable to unlock. Please try again."
     },
-    "retryReport": "Retry saving report",
-    "mainMenu": "Main menu",
-    "returnToMenu": "Return to main menu",
-    "continueGame": "Continue game",
-    "codeMenu": {
-      "failed": "The custom game menu could not load.",
-      "retry": "Try again",
-      "restore": "Use the default menu"
-    }
+    "retryReport": "Retry saving report"
   },
   "games": {
     "back": "Back to IP plaza",

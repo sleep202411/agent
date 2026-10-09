@@ -12,7 +12,6 @@ import {
 import type {
   ExperienceRuntimeManifest,
   ExperienceAppearance,
-  GameUIArtifact,
 } from '@repo/shared/experience-runtime';
 import type {
   StoryBuildDiagnosticDto,
@@ -77,7 +76,6 @@ interface FrozenNodeTimeline {
 
 export interface StoryBuildCompilerInput {
   appearance?: ExperienceAppearance;
-  gameUi?: GameUIArtifact;
   projectId: string;
   buildId: string;
   sourceDraftRevision: number;
@@ -167,7 +165,7 @@ export function compileStoryBuild(
   // ship a work in progress on purpose; the release reports what is unfilled
   // and the publish surface repeats it, so the decision stays theirs instead
   // of the pipeline making it for them. A scene with no footage still plays —
-  // the runtime holds an empty sequence and moves on.
+  // the runtime holds an empty sequence for its default beat and moves on.
   const missingSeverity = 'warning' as const;
   const includedTimelines: FrozenNodeTimeline[] = [...requiredGraphNodeIds]
     .sort()
@@ -183,7 +181,7 @@ export function compileStoryBuild(
           diagnostic(
             missingSeverity,
             'STORY_BUILD_SEQUENCE_REQUIRED',
-            `"${scene}" has no storyboard yet, so playtest skips that scene.`,
+            `"${scene}" has no storyboard yet, so playback holds its placeholder before continuing.`,
             'node',
             graphNodeId,
             { kind: 'missing-sequence', sceneTitle: scene },
@@ -199,7 +197,7 @@ export function compileStoryBuild(
           diagnostic(
             missingSeverity,
             'STORY_BUILD_CLIP_MEDIA_REQUIRED',
-            `"${shot}" in "${scene}" has no selected video, so playtest skips that shot.`,
+            `"${shot}" in "${scene}" has no selected video, so playback uses a placeholder when the scene has no footage.`,
             'node',
             graphNodeId,
             { kind: 'shot', sceneTitle: scene, shotTitle: shot },
@@ -212,7 +210,7 @@ export function compileStoryBuild(
           diagnostic(
             missingSeverity,
             'STORY_BUILD_CLIP_MEDIA_REQUIRED',
-            `"${scene}" has an empty storyboard, so playtest skips that scene.`,
+            `"${scene}" has an empty storyboard, so playback holds its placeholder before continuing.`,
             'node',
             graphNodeId,
             { kind: 'missing-sequence', sceneTitle: scene },
@@ -303,7 +301,6 @@ export function compileStoryBuild(
       const compiled = compileStoryExperienceManifest({
         release: release.data,
         appearance: input.appearance,
-        gameUi: input.gameUi,
         experienceProfile: 'cinematic',
         metadata: {
           ...input.metadata,
@@ -1081,7 +1078,7 @@ function omitUnplayablePreviewShots(
           diagnostic(
             'warning',
             'STORY_BUILD_VIDEO_STORAGE_UNAVAILABLE',
-            `"${shot}" in "${scene}" has no playable file, so playtest skips that shot.`,
+            `"${shot}" in "${scene}" has no playable file, so playback uses a placeholder when the scene has no footage.`,
             'node',
             timeline.graphNodeId,
             { kind: 'shot', sceneTitle: scene, shotTitle: shot },

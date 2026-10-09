@@ -44,6 +44,9 @@ const JAVA_STUDIO = requiredEnv("JAVA_STUDIO_URL");
 requiredEnv("NEXT_PUBLIC_SITE_REGION");
 
 const nextConfig: NextConfig = {
+  // Preserve proxied directory URLs so Harness can resolve its relative assets.
+  // Page canonicalization remains with next-intl; backend paths own their slashes.
+  skipTrailingSlashRedirect: true,
   // Allow an isolated local instance without sharing the normal dev lock/cache.
   distDir: process.env.STUDIO_DEV_DIST_DIR || ".next",
   // Self-contained server bundle for the Docker runner stage.
@@ -82,6 +85,10 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
+      {
+        source: "/aurora/:path*/",
+        destination: STRIP_PREFIX ? `${AURORA_TARGET}/:path*/` : `${AURORA_TARGET}/aurora/:path*/`,
+      },
       {
         source: "/aurora/:path*",
         destination: STRIP_PREFIX ? `${AURORA_TARGET}/:path*` : `${AURORA_TARGET}/aurora/:path*`,

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { GameUIProjectSchema } from "@repo/shared/experience-runtime";
 
 export { ExperienceUIPresentationSchema as AppearancePresentationSchema } from "@repo/shared/experience-runtime";
 import { ExperienceUIPresentationSchema as AppearancePresentationSchema } from "@repo/shared/experience-runtime";
@@ -16,7 +15,6 @@ export const AppearanceDesignRequestSchema = z
     prompt: z.string().trim().min(1).max(2000),
     locale: z.enum(["en-US", "zh-CN", "zh-HK"]),
     appearance: AppearanceStateSchema,
-    gameUi: GameUIProjectSchema.nullable().optional(),
     // Context is explicitly supplied data, never a path for the executor to read.
     context: z
       .object({
@@ -42,13 +40,12 @@ export const AppearanceDesignResultSchema = z
   .object({
     requestId: z.string().uuid(),
     appearance: AppearanceStateSchema,
-    gameUi: GameUIProjectSchema.nullable().optional(),
     message: z.string().trim().min(1).max(2000),
   })
   .strict()
   .refine(
-    (result) => result.gameUi !== undefined || result.appearance.presentation !== undefined,
-    "A design result must contain an appearance presentation or game UI source."
+    (result) => result.appearance.presentation !== undefined,
+    "A design result must contain an appearance presentation."
   );
 export type AppearanceDesignResult = z.infer<typeof AppearanceDesignResultSchema>;
 

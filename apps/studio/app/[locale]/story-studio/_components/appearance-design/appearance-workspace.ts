@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
-import type { ExperienceAppearance, GameUIProject } from "@repo/shared/experience-runtime";
+import type { ExperienceAppearance } from "@repo/shared/experience-runtime";
 import {
   DEFAULT_APPEARANCE,
   decodeAppearanceWorkspace,
@@ -25,15 +25,12 @@ function createWorkspaceStore(key: string, initial: Workspace) {
   const hydrate = (raw: string | null) => {
     if (!raw) return;
     try {
-      const compact = encodeAppearanceWorkspace(decodeAppearanceWorkspace(raw));
-      store.setState({ workspace: compact.workspace, restoreError: "", persistenceFailed: false });
-      try {
-        if (compact.raw !== raw) localStorage.setItem(key, compact.raw);
-        volatile = false;
-      } catch {
-        volatile = true;
-        store.setState({ persistenceFailed: true });
-      }
+      store.setState({
+        workspace: decodeAppearanceWorkspace(raw),
+        restoreError: "",
+        persistenceFailed: false,
+      });
+      volatile = false;
     } catch (reason) {
       store.setState({ restoreError: reason instanceof Error ? reason.message : String(reason) });
     }
@@ -100,14 +97,13 @@ const stores = new Map<string, ReturnType<typeof createWorkspaceStore>>();
 /** Project-local drafts. Quota failures preserve memory edits and existing disk data. */
 export function useAppearanceWorkspace(
   projectId?: string,
-  initial?: { appearance: Appearance | null; projectVersion: number; gameUi?: GameUIProject | null }
+  initial?: { appearance: Appearance | null; projectVersion: number }
 ) {
   const key = projectId ? `${STORAGE_KEY}:${encodeURIComponent(projectId)}` : STORAGE_KEY;
   const record = useMemo(() => {
     const fresh = () =>
       createWorkspaceStore(key, {
         applied: initial?.appearance ?? DEFAULT_APPEARANCE,
-        gameUi: initial?.gameUi ?? null,
         baseProjectVersion: initial?.projectVersion,
         prompt: "",
         undo: [],

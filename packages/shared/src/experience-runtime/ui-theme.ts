@@ -3,7 +3,7 @@ import * as css from "css-tree";
 import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 
 const PARTS: Record<string, readonly string[]> = {
-  start: ["panel", "eyebrow", "title", "summary", "primary", "secondary"],
+  start: ["panel", "eyebrow", "title", "summary", "primary"],
   playback: ["controls", "progress", "pause", "rate"],
   choices: ["prompt", "list", "option", "index", "price"],
   pause: ["panel", "title", "summary", "primary", "secondary"],

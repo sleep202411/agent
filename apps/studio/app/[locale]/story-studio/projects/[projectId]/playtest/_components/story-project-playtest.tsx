@@ -9,6 +9,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { ExperienceRuntimePlayer } from "@/components/experience-runtime/experience-runtime-player";
 import { StoryPlaytestStateHud } from "./story-playtest-state-hud";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link } from "@/i18n/navigation";
 import {
   getStoryBuild,
@@ -186,15 +187,22 @@ export function StoryProjectPlaytest({
                 completedEndingIds={completedEndingIds}
               />
             )}
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label={t("refresh")}
-              onClick={() => void runtimeQuery.refetch()}
-            >
-              <IconRefresh className="size-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t("refresh")}
+                  onClick={() => void runtimeQuery.refetch()}
+                >
+                  <IconRefresh className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={8}>
+                {t("refresh")}
+              </TooltipContent>
+            </Tooltip>
           </div>
         }
         key={`${parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}:${source.sceneId ?? "entry"}`}
@@ -260,17 +268,23 @@ export function StoryProjectPlaytest({
               completedEndingIds={completedEndingIds}
             />
           ) : null}
-          <Button
-            type="button"
-            size="icon"
-            variant="secondary"
-            className="pointer-events-auto"
-            aria-label={t("refresh")}
-            title={t("refresh")}
-            onClick={() => void runtimeQuery.refetch()}
-          >
-            <IconRefresh className="size-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="secondary"
+                className="pointer-events-auto"
+                aria-label={t("refresh")}
+                onClick={() => void runtimeQuery.refetch()}
+              >
+                <IconRefresh className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={8}>
+              {t("refresh")}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </header>
     </main>

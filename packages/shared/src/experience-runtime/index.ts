@@ -19,5 +19,3 @@ export * from "./ui.js";
 export * from "./ui-theme.js";
 
 export * from "./appearance.js";
-export * from "./game-ui.js";
-export * from "./appearance-migration.js";

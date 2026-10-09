@@ -4,12 +4,7 @@ import {
   clipKey,
   resolveStoryPlotImportMedia,
 } from './story-plot-import-media';
-import {
-  migrateStoredExperienceAppearance,
-  GameUIProjectSchema,
-  type GameUIProject,
-} from '@repo/shared/experience-runtime';
-import { buildGameUI } from '@repo/game-ui-build';
+import { ExperienceAppearanceSchema } from '@repo/shared/experience-runtime';
 import {
   CREW_STUDIO_MEMBER_SELECT,
   crewStudioRoleForMember,
@@ -604,24 +599,6 @@ export class StoryProjectsService {
   ): Promise<StoryProjectSummaryDto> {
     await this.requireProject(user, projectId, 'story.edit');
 
-    // Compile before entering the transaction. Failed builds cannot replace the
-    // last usable project artifact; the existing version CAS owns the commit.
-    let gameUi: GameUIProject | null | undefined;
-    if (input.gameUiSource === null) gameUi = null;
-    else if (input.gameUiSource !== undefined) {
-      try {
-        gameUi = {
-          source: input.gameUiSource,
-          artifact: await buildGameUI(input.gameUiSource),
-        };
-      } catch (error) {
-        throw new UnprocessableEntityException({
-          code: 'STORY_GAME_UI_BUILD_FAILED',
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const visualStyleSkill = input.confirmCreativeProfile
@@ -743,9 +720,6 @@ export class StoryProjectsService {
                 appearance:
                   input.appearance === null ? Prisma.DbNull : input.appearance,
               }
-            : {}),
-          ...(gameUi !== undefined
-            ? { gameUi: gameUi === null ? Prisma.DbNull : gameUi }
             : {}),
           ...(input.storeListing !== undefined
             ? {
@@ -2354,9 +2328,8 @@ export class StoryProjectsService {
       appearance:
         row.appearance == null
           ? null
-          : migrateStoredExperienceAppearance(row.appearance),
+          : ExperienceAppearanceSchema.parse(row.appearance),
       sourceIpId: row.sourceIpId,
-      gameUi: row.gameUi == null ? null : GameUIProjectSchema.parse(row.gameUi),
       projectVersion: row.version,
       draftRevision: row.draft?.revision ?? 0,
       activeRevision: row.revisions[0]

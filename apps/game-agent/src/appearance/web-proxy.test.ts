@@ -245,6 +245,29 @@ it("permits the official registered plugin combo and chunk URLs", async () => {
     expect((await fetch(f.url + path)).status).toBe(200);
 });
 
+it("restores a query-serialized plugin combo before forwarding it to Harness", async () => {
+  const f = await fixture();
+  const resource =
+    "?@deepseek-ai/dsh-client-modules/client.js,@repo/appearance-harness-ui/client.js";
+  const query = new URLSearchParams([
+    [resource, ""],
+    ["rev", "1234567890abcdef"],
+  ]);
+  expect((await fetch(`${f.url}/plugins/?${query}`)).status).toBe(200);
+  expect(f.seen.at(-1)?.path).toBe(`/plugins/?${resource}&rev=1234567890abcdef`);
+});
+
+it.each([
+  "?%3F%40deepseek-ai%2Fdsh-client-modules%2Fclient.js=extra&rev=1234567890abcdef",
+  "?%3F%40deepseek-ai%2Fdsh-client-modules%2Fclient.js=&rev=1234567890abcdef&rev=1234567890abcdef",
+  "?%3F%40unregistered%2Fclient.js=&rev=1234567890abcdef",
+  "?%253F%2540deepseek-ai%252Fdsh-client-modules%252Fclient.js=&rev=1234567890abcdef",
+])("rejects invalid serialized plugin query %s before reaching Harness", async (query) => {
+  const f = await fixture();
+  expect((await fetch(`${f.url}/plugins/${query}`)).status).toBe(404);
+  expect(f.seen).toHaveLength(0);
+});
+
 it("initializes the admitted workspace and fixed session before serving the first index", async () => {
   const f = await fixture();
   await Promise.all([initializeAppearanceWebProxy(f.context), fetch(f.url)]);

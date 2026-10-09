@@ -1,31 +1,8 @@
 import type { ComponentType, Ref } from "react";
-import type {
-  ExperienceUICopy,
-  ExperienceAppearance,
-  GameUIArtifact,
-} from "@repo/shared/experience-runtime";
+import type { ExperienceUICopy, ExperienceAppearance } from "@repo/shared/experience-runtime";
 import type { ExperiencePlayerPlaybackCopy } from "./experience-player-copy";
 import type { ExperienceViewerPauseReason } from "./experience-playback-holds";
 import type { ExperiencePlaybackTransportControlsProps } from "./experience-transport-controls";
-import type { GameSession } from "@repo/game-sdk";
-
-/** A complete home screen can arrange its own UI and invoke bounded game actions. */
-export interface ExperienceMainMenuUIProps {
-  readonly title: string;
-  readonly locale?: string;
-  readonly summary?: string;
-  readonly eyebrow?: string;
-  readonly session: GameSession;
-  readonly copy: {
-    readonly start: string;
-    readonly starting: string;
-    readonly loading: string;
-    readonly continue: string;
-    readonly restart: string;
-    readonly map: string;
-    readonly returnMenu?: string;
-  };
-}
 
 /** Components receive view data and bounded actions, never the engine/controller. */
 export interface ExperienceStartUIProps {
@@ -69,11 +46,7 @@ export interface ExperiencePlayerUI {
   readonly apiVersion: 1;
   /** Live authoring override; published playback uses the manifest snapshot. */
   readonly appearance?: ExperienceAppearance;
-  /** `null` restores the native menu in a live draft; releases use their artifact snapshot. */
-  readonly gameUi?: GameUIArtifact | null;
   readonly copy?: ExperienceUICopy;
-  readonly mainMenu?: ComponentType<ExperienceMainMenuUIProps>;
-  /** Prefer mainMenu for a complete home screen with shared game actions. */
   readonly start?: ComponentType<ExperienceStartUIProps>;
   readonly playback?: ComponentType<ExperiencePlaybackUIProps>;
   readonly choices?: ComponentType<ExperienceChoicesUIProps>;

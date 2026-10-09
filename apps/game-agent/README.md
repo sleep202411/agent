@@ -6,13 +6,13 @@ runtime, journals, event protocol, Ably, database or environment configuration.
 
 ## Ownership
 
-| Layer                       | Responsibility                                                                     |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| Studio                      | Authoring page, independent player/chat windows, preview drafts                    |
-| Game Agent                  | Harness sessions, provider calls, bounded authoring tools                          |
-| Server                      | Authentication, project permission, source compilation, versioned save/publication |
-| Game SDK/player             | Actual player actions and isolated code UI in Studio/Web                           |
-| `@repo/game-agent-protocol` | Validated authoring requests/results shared by these clients                       |
+| Layer                       | Responsibility                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| Studio                      | Authoring page, independent player/chat windows, preview drafts                      |
+| Game Agent                  | Harness sessions, provider calls, bounded authoring tools                            |
+| Server                      | Authentication, project permission, validated appearance, versioned save/publication |
+| Shared film player          | Story, media, choices, state and player actions in Studio/Web                        |
+| `@repo/game-agent-protocol` | Validated authoring requests/results shared by these clients                         |
 
 The remaining `packages/appearance-harness-ui` is an official UI composition
 adapter. It contains no custom conversation renderer or agent loop.
@@ -97,11 +97,8 @@ Worker endpoints:
   transport, requiring the service token and Server-derived scope header.
 
 Both request hosts load `game-agent/appearance-harness-plugin`. Appearance reading,
-validation, merging and submission have one implementation. The SDK host mounts
-only the three appearance tools; the official GUI also enables the film-menu file
-tools through host configuration. Neither the model nor a request can widen this
-allowlist. Both tool families share request checks and one atomic result writer;
-cancelled, stale, duplicate or unchanged appearance submissions do not become new
+validation, merging and submission have one implementation and the same three-tool
+allowlist. Cancelled, stale, duplicate or unchanged submissions do not become new
 preview results. A failed write can be retried without losing the checked proposal.
 
 All worker routes except health require `x-game-agent-internal-token`. Container listeners bind
@@ -125,24 +122,19 @@ not interpreted as another styling layer by the tools or renderer.
 
 ## Current limits
 
-Code authoring supports the film main menu through the existing Game SDK actions.
-File tools read, edit, compile and submit the exact checked menu source. The film
-engine continues to own chapters, playback, choices, numeric state and saves.
-Unfinished candidate files are atomically saved in order and reloaded for the same
-request when the local tool host resumes, including incomplete or invalid source.
-Restored source needs a fresh check; changed preview contexts reject stale candidates.
+Customization is CSS/SVG appearance and localized start copy only. The player owns
+the initial start screen, playback, choices, pause and completion/replay. Generated
+source, menu file tools, code compilation and a separate menu runtime are removed.
 
 ## Durable sessions and deployment contract
 
 Workspace identity hashes the authenticated actor, existing Story project, browser
 window key and locale. Its private directory retains a stable public session UUID,
-official session ID, last validated context, unfinished candidates and official
-history. Metadata/context writes are atomic and synced. Invalid/incompatible
+official session ID, last validated context and official history. Metadata/context writes are atomic and synced. Invalid/incompatible
 metadata, unexpected existing files and symlinked paths fail without replacing
 saved work. A normal departure or graceful worker restart stops the child process
 group and releases compute ownership while keeping those files. Returning with the
-same scope/window/locale reopens the saved official session. Changed source/context
-continues to invalidate stale proposals; restored candidates require fresh checking.
+same scope/window/locale reopens the saved official session. Changed appearance/context continues to invalidate stale proposals.
 
 Production requires one Game Agent worker replica, a Recreate deployment strategy
 and a private persistent ReadWriteOnce volume. The Helm component mounts the PVC
@@ -210,5 +202,5 @@ not establish uninterrupted automatic reconnect or forced-crash recovery.
 The completed cutover separately verified canonical database bindings and public
 HTTPS/readiness and unauthenticated access checks. A fresh authenticated browser
 journey through the public domain was not performed during the cutover. The
-checks above do not cover every project asset or extend the supported menu SDK
+checks above do not cover every project asset or extend the supported appearance contract
 capabilities.

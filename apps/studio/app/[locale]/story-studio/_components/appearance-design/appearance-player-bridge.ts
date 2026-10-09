@@ -1,7 +1,6 @@
 import { z } from "zod/v4";
 import {
   ExperienceAppearanceSchema,
-  GameUIArtifactSchema,
   ExperienceJsonObjectSchema,
   ExperienceRuntimeManifestSchema,
 } from "@repo/shared/experience-runtime";
@@ -27,7 +26,6 @@ export const PreviewPlayerCommandSchema = z.discriminatedUnion("type", [
       revision,
       config: PreviewPlayerConfigSchema,
       appearance: ExperienceAppearanceSchema,
-      gameUi: GameUIArtifactSchema.nullable().optional(),
     })
     .strict(),
   z
@@ -36,7 +34,6 @@ export const PreviewPlayerCommandSchema = z.discriminatedUnion("type", [
       channel,
       revision,
       appearance: ExperienceAppearanceSchema,
-      gameUi: GameUIArtifactSchema.nullable().optional(),
     })
     .strict(),
 ]);

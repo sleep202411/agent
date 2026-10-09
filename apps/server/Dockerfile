@@ -59,7 +59,6 @@ RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 # static and evaluated at module load, so a missing one crashes the whole API
 # tier even when the feature it belongs to is disabled by flag.
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder /app/packages/game-ui-build/dist ./packages/game-ui-build/dist
 COPY --from=builder /app/packages/game-agent-protocol/dist ./packages/game-agent-protocol/dist
 COPY --from=builder /app/packages/agent-skills/dist ./packages/agent-skills/dist
 COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capabilities/dist
@@ -126,8 +125,6 @@ import {readFileSync} from 'node:fs';\
 const pkg=JSON.parse(readFileSync('apps/server/package.json','utf8'));\
 const names=Object.keys(pkg.dependencies||{}).filter(name=>name.startsWith('@repo/'));\
 await Promise.all(names.map(name=>import(name)));\
-const {buildGameUI}=await import('@repo/game-ui-build');\
-await buildGameUI({apiVersion:1,surface:'main-menu',entry:'menu.js',files:[{path:'menu.js',content:'export function mount() {}'}]});\
 console.log('workspace runtime imports: ok');"
 
 WORKDIR /app/apps/server

@@ -129,6 +129,27 @@ it("restores stable official and public sessions, candidates and official histor
   );
 });
 
+it.each([
+  (metadata: Record<string, unknown>) => ({ ...metadata, version: 1 }),
+  (metadata: Record<string, unknown>) => ({ ...metadata, retiredSource: "unsupported" }),
+  (metadata: Record<string, unknown>) => ({
+    ...metadata,
+    request: { ...(metadata.request as AppearanceDesignRequest), retiredSource: "unsupported" },
+  }),
+])("rejects unsupported session formats without changing saved work (%#)", async (change) => {
+  const { store: storage } = await store();
+  const original = input();
+  const first = await hold(storage.open(original));
+  await first.release();
+  const metadata = JSON.parse(await readFile(join(first.root, "workspace.json"), "utf8"));
+  const saved = JSON.stringify(change(metadata));
+  await writeFile(join(first.root, "workspace.json"), saved);
+  await writeFile(join(first.root, "result.json"), "authored result");
+  await expect(storage.open(original)).rejects.toThrow("corrupt or incompatible");
+  expect(await readFile(join(first.root, "workspace.json"), "utf8")).toBe(saved);
+  expect(await readFile(join(first.root, "result.json"), "utf8")).toBe("authored result");
+});
+
 it("serializes context updates, persists their final value and protects stored objects from mutation", async () => {
   const { root, store: storage } = await store();
   const original = input();

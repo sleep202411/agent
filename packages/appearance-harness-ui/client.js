@@ -10,8 +10,8 @@ window.__ModuleLoader__.load({
       apply(ctx) {
         const boot = window.__FIZZ_APPEARANCE__;
         const tokens = {
-          "--dsw-alias-bg-base": "#0f0f0f",
-          "--dsw-alias-bg-layer-1": "#1a1a1a",
+          "--dsw-alias-bg-base": "oklch(0.215 0 0)",
+          "--dsw-alias-bg-layer-1": "oklch(0.235 0 0)",
           "--dsw-alias-bg-layer-2": "#242424",
           "--dsw-specific-input-major": "#242424",
           "--dsw-specific-bubble": "#242424",
@@ -112,6 +112,7 @@ window.__ModuleLoader__.load({
                       flexShrink: 0,
                       display: "flex",
                       alignItems: "center",
+                      gap: 8,
                       padding: "0 18px",
                       fontSize: 13,
                       fontWeight: 600,
@@ -119,7 +120,31 @@ window.__ModuleLoader__.load({
                       letterSpacing: "-0.02em",
                     },
                   },
-                  "FizzAgent"
+                  React.createElement(
+                    "svg",
+                    {
+                      width: 18,
+                      height: 18,
+                      viewBox: "0 0 24 24",
+                      fill: "none",
+                      stroke: "currentColor",
+                      strokeWidth: 1.7,
+                      strokeLinecap: "round",
+                      strokeLinejoin: "round",
+                      "aria-hidden": true,
+                      focusable: false,
+                    },
+                    // Tabler RobotFace, matching Studio's outline icon set (MIT).
+                    [
+                      "M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2",
+                      "M9 16c1 .667 2 1 3 1s2 -.333 3 -1",
+                      "M9 7l-1 -4",
+                      "M15 7l1 -4",
+                      "M9 12v-1",
+                      "M15 12v-1",
+                    ].map((d) => React.createElement("path", { key: d, d }))
+                  ),
+                  "Game Agent"
                 ),
                 renderFactorySlot("conversation.content", {
                   variant: "embedded",

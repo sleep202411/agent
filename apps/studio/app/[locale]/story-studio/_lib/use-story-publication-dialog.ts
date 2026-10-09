@@ -15,7 +15,7 @@ type PublicationDialogOwner = {
 };
 
 /** Save the mounted canvas before opening publication details in place. */
-export function useStoryPublicationDialog(projectId: string) {
+export function useStoryPublicationDialog(projectId: string, beforeOpen?: () => Promise<void>) {
   const t = useTranslations("storyStudio.canvas.publish");
   const { user, isCurrentAccount } = useAuth();
   const userId = user?.id ?? null;
@@ -56,6 +56,8 @@ export function useStoryPublicationDialog(projectId: string) {
     owner.running = true;
     setState({ scopeKey, open: false, pending: true });
     try {
+      if (beforeOpen) await beforeOpen();
+      if (!isCurrent()) return;
       if (draftBarrier) await draftBarrier(async () => undefined);
       if (isCurrent()) setState({ scopeKey, open: true, pending: false });
     } catch (error) {
@@ -66,7 +68,7 @@ export function useStoryPublicationDialog(projectId: string) {
         setState((current) => ({ ...current, pending: false }));
       }
     }
-  }, [draftBarrier, isCurrentAccount, scopeKey, state.open, state.scopeKey, t, userId]);
+  }, [beforeOpen, draftBarrier, isCurrentAccount, scopeKey, state.open, state.scopeKey, t, userId]);
 
   const closePublication = useCallback(() => {
     const owner = ownerRef.current;

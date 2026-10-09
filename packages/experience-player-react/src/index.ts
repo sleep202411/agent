@@ -25,7 +25,6 @@ export { ExperienceJourneyMap, type ExperienceJourneyMapProps } from "./experien
 
 export type {
   ExperiencePlayerUI,
-  ExperienceMainMenuUIProps,
   ExperienceStartUIProps,
   ExperiencePlaybackUIProps,
   ExperienceChoicesUIProps,
@@ -33,7 +32,5 @@ export type {
   ExperiencePauseUIProps,
 } from "./experience-ui";
 export { ExperienceDefaultStartUI, ExperienceDefaultChoicesUI } from "./experience-ui-defaults";
-export { ExperienceDefaultMainMenuUI } from "./experience-main-menu";
-export type { GameSession, GameAction, GameSnapshot, GameActionResult } from "@repo/game-sdk";
 export { ExperienceDefaultPauseUI } from "./experience-playback-controls";
 export { ExperiencePlaybackTransportControls } from "./experience-transport-controls";
