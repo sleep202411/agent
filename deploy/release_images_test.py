@@ -42,6 +42,27 @@ class InputTests(unittest.TestCase):
         self.write(path, '{"version":"2"}' if path.endswith('.json') else 'changed')
         newer = self.commit()
         self.assertEqual(images.inputs(self.root, self.source, service, region) == images.inputs(self.root, newer, service, region), expected)
+    def test_removing_mobile_handoff_reports_preserves_all_regional_inputs(self):
+        from release_inputs import inputs
+        recipe = 'deploy/cn-remote-build-services.sh'
+        self.write(recipe, (self.root / recipe).read_text() +
+                   'want agent-os && build agent-os apps/agent-os/Dockerfile\n')
+        reports = ('MOBILE_2_4_0_ROLLBACK_REVIEW.txt',
+                   'MOBILE_2_3_1_BACKPORT.txt', 'MOBILE_BRANCH_RECONCILIATION.txt')
+        self.write('deploy/aliyun-sg/production-build.py',
+                   (Path(__file__).parent / 'aliyun-sg/production-build.py').read_text())
+        for report in reports:
+            self.write(report, 'Mobile handoff documentation')
+        old = self.commit()
+        for report in reports:
+            (self.root / report).unlink()
+        new = self.commit()
+        for region in ('com', 'cn'):
+            for service in ('web', 'server', 'studio', 'admin-ui', 'agent-os', 'game-agent'):
+                with self.subTest(region=region, service=service):
+                    self.assertEqual(inputs(self.root, old, service, region),
+                                     inputs(self.root, new, service, region))
+
     def test_unrelated_mobile_entrypoint_reuses_every_service(self):
         self.write('apps/mobile/package.json', '{"name":"mobile","main":"expo-router/entry"}')
         old = self.commit()
