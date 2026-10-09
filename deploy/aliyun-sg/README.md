@@ -108,6 +108,12 @@ with `--load`; credentials are refreshed immediately before pushing, and a faile
 push is retried once without recompilation. The completed local image remains
 available if both pushes fail; a later invocation may use Docker's build cache.
 Previously pushed services remain reusable after another service fails.
+Docker registry login is limited to 60 seconds per attempt and retried up to three
+times with fresh ACR credentials. Errors report a safe network/TLS/authentication
+category without exposing tokens or Docker diagnostics. If both Docker and a host
+request to the registry `/v2/` endpoint time out, check network reachability and
+ACR public-endpoint access rules; retries cannot repair a persistent access block.
+This login-only change does not invalidate application image identities.
 
 CN and Singapore share `deploy/release_inputs.py`. Dependency declarations,
 lockfiles, consumed workspace code, regional configuration and build recipes

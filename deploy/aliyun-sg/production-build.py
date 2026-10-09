@@ -216,7 +216,7 @@ def docker_environment(config: Path, plugins) -> dict[str, str]:
     return environment
 
 
-def registry_login(cloud, environment):
+def registry_credentials(cloud):
     for attempt in range(3):
         try:
             auth = cloud("cr", "GetAuthorizationToken", "--InstanceId", INSTANCE_ID)
@@ -235,13 +235,49 @@ def registry_login(cloud, environment):
     if (auth.get("IsSuccess") is not True or not isinstance(username, str)
             or not username or not isinstance(token, str) or not token):
         raise BuildError("Singapore registry authorization failed")
-    login = subprocess.run(
-        ["docker", "login", PUSH_HOST, "--username", username, "--password-stdin"],
-        input=token + "\n", text=True, capture_output=True, env=environment, check=False,
-    )
-    del auth, token
-    if login.returncode:
-        raise BuildError("Singapore registry Docker login failed")
+    return username, token
+
+
+def registry_login_reason(output):
+    """Classify locally; never echo Docker output, credentials or proxy URLs."""
+    text = output.lower()
+    if any(word in text for word in ("x509", "certificate", "tls handshake")):
+        return "TLS validation failed; check Docker's registry trust and proxy configuration"
+    if any(word in text for word in ("timeout", "timed out", "deadline exceeded", "connection reset",
+                                    "no such host", "network is unreachable", "eof", "connection refused")):
+        return ("registry endpoint unreachable or timed out; check Docker/network connectivity "
+                "and Singapore ACR public-endpoint access rules")
+    if any(word in text for word in ("unauthorized", "authentication required", "denied", "incorrect username")):
+        return "registry rejected fresh credentials; check acct6 registry permissions and endpoint access rules"
+    if any(word in text for word in ("error saving credentials", "credentials store")):
+        return "Docker could not save credentials in the isolated configuration"
+    if any(word in text for word in ("cannot connect", "daemon is not running")):
+        return "local Docker daemon is unavailable"
+    return "Docker rejected registry login; inspect local Docker connectivity and registry access"
+
+
+def registry_login(cloud, environment):
+    for attempt in range(3):
+        username, token = registry_credentials(cloud)
+        try:
+            login = subprocess.run(
+                ["docker", "login", PUSH_HOST, "--username", username, "--password-stdin"],
+                input=token + "\n", text=True, capture_output=True, env=environment,
+                check=False, timeout=60,
+            )
+            if login.returncode == 0:
+                return
+            reason = registry_login_reason((login.stderr or "") + " " + (login.stdout or ""))
+        except subprocess.TimeoutExpired:
+            reason = "registry endpoint timed out after 60 seconds; check Docker/network connectivity and ACR access rules"
+        except OSError:
+            raise BuildError("Cannot execute Docker for Singapore registry login") from None
+        finally:
+            del token
+        if attempt < 2:
+            print(f"Singapore registry Docker login failed: {reason}; retry {attempt + 2}/3 with fresh credentials", flush=True)
+            time.sleep(2 ** attempt)
+    raise BuildError(f"Singapore registry Docker login failed after 3 attempts: {reason}") from None
 
 
 def service_inputs(root, source, service):

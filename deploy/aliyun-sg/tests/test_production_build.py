@@ -620,3 +620,39 @@ class RegistryCredentialRetryTests(unittest.TestCase):
         self.assertNotIn("private-token", str(raised.exception))
         self.assertEqual(cloud.call_count, 3)
         run.assert_not_called()
+
+
+    @patch.object(build.time, "sleep")
+    @patch.object(build.subprocess, "run")
+    def test_docker_timeout_retries_with_fresh_token_without_leaking_output(self, run, sleep):
+        cloud = Mock(side_effect=[{"IsSuccess": True, "TempUsername": "user", "AuthorizationToken": f"secret-{i}"} for i in range(2)])
+        run.side_effect = [subprocess.CompletedProcess([], 1, "", "secret-0 context deadline exceeded"), subprocess.CompletedProcess([], 0, "", "")]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            build.registry_login(cloud, {})
+        self.assertEqual(cloud.call_count, 2)
+        self.assertEqual([call.kwargs['input'] for call in run.call_args_list], ['secret-0\n', 'secret-1\n'])
+        self.assertTrue(all(call.kwargs['timeout'] == 60 for call in run.call_args_list))
+        self.assertNotIn('secret-', output.getvalue())
+        self.assertIn('endpoint unreachable', output.getvalue())
+        sleep.assert_called_once_with(1)
+
+    @patch.object(build.time, "sleep")
+    @patch.object(build.subprocess, "run")
+    def test_subprocess_login_timeout_is_bounded_and_safe(self, run, sleep):
+        cloud = Mock(return_value={"IsSuccess": True, "TempUsername": "user", "AuthorizationToken": "secret"})
+        run.side_effect = subprocess.TimeoutExpired(['docker'], 60, output='secret', stderr='secret')
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), self.assertRaises(build.BuildError) as raised:
+            build.registry_login(cloud, {})
+        self.assertIn('after 3 attempts', str(raised.exception))
+        self.assertIn('timed out', str(raised.exception))
+        self.assertNotIn('secret', str(raised.exception) + output.getvalue())
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(cloud.call_count, 3)
+
+    def test_login_failure_categories_never_echo_arbitrary_diagnostics(self):
+        for message, expected in [('x509 private-token', 'TLS'), ('unauthorized private-token', 'rejected fresh credentials'), ('no such host private-token', 'endpoint unreachable'), ('error saving credentials private-token', 'save credentials'), ('cannot connect to daemon private-token', 'daemon'), ('private-token', 'Docker rejected')]:
+            reason = build.registry_login_reason(message)
+            self.assertIn(expected, reason)
+            self.assertNotIn('private-token', reason)
