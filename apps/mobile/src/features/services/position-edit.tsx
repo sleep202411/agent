@@ -7,7 +7,6 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { PositionCreate } from "./position-create";
 import { fetchEditablePosition, type EditablePosition } from "./position-edit-api";
 export function PositionEdit(props: {
-  active?: boolean;
   crewId: string;
   positionId: string;
   userId: string;
@@ -38,7 +37,6 @@ export function PositionEdit(props: {
     return () => c.abort();
   }, [props.crewId, props.positionId, props.userId, props.generation]);
   if (position) return <PositionCreate {...props} editing={position} />;
-  if (props.active === false) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("positionEdit.title")}</ThemedText>

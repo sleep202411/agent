@@ -1,12 +1,8 @@
-import { createExperienceJourneyMapCopy } from "@/features/experience-player/lib/experience-player-copy";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ExperiencePublishedPlayer } from "@/features/experience-player/components/experience-published-player";
-import { useAuth } from "@/auth";
-import { createPlaySessionReporter } from "@/features/experience-player/lib/play-session-reporter";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
@@ -18,6 +14,7 @@ import {
 import {
   ExperienceChapterButton,
   ExperienceChapterPicker,
+  ExperiencePlayerWithAccess,
   ExperienceShareButton,
   ExperienceStartShell,
   buildExperiencePlayShareUrl,
@@ -43,8 +40,6 @@ function firstParam(value: string | string[] | undefined): string | undefined {
  */
 export default function PlayGameScreen() {
   const t = useTranslations();
-  const auth = useAuth();
-  const reporter = useMemo(() => createPlaySessionReporter(auth.generation), [auth.generation]);
   const locale = useLocale();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -58,8 +53,6 @@ export default function PlayGameScreen() {
   }>();
   const gameId = firstParam(params.gameId);
   const chapterId = firstParam(params.chapter);
-  const [chapterIntent, setChapterIntent] = useState({ gameId, explicit: Boolean(chapterId) });
-  if (chapterIntent.gameId !== gameId) setChapterIntent({ gameId, explicit: Boolean(chapterId) });
   const previewTitle = firstParam(params.title)?.trim() || "";
   const previewSummary = firstParam(params.subtitle)?.trim() || "";
   const previewCoverUrl = firstParam(params.coverUrl)?.trim() || "";
@@ -74,19 +67,7 @@ export default function PlayGameScreen() {
 
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
-      journeyMap: createExperienceJourneyMapCopy(t),
-      seek: {
-        back: t("play.seek.back"),
-        forward: t("play.seek.forward"),
-        progress: t("play.seek.progress"),
-        watchedOnly: t("play.seek.watchedOnly"),
-      },
-      speed: {
-        label: t("play.speed.label"),
-        interactionBlocked: t("play.speed.interactionBlocked"),
-      },
       invalidManifest: t("play.invalidManifest"),
-      unsupportedRuntime: t("play.unsupportedRuntime"),
       manifestRoot: t("play.manifestRoot"),
       interactiveFilm: t("play.interactiveFilm"),
       starting: t("play.starting"),
@@ -97,12 +78,8 @@ export default function PlayGameScreen() {
       playAgain: t("play.playAgain"),
       runtimeError: t("play.runtimeError"),
       restart: t("play.restart"),
-      retryReport: t("play.retryReport"),
       noVisibleChoices: t("play.noVisibleChoices"),
       continue: t("play.continue"),
-      pause: t("play.pause"),
-      resume: t("play.resume"),
-      paused: t("play.paused"),
       emptySequence: t("play.emptySequence"),
       mediaError: (assetId: string) => t("play.mediaError").replace("{assetId}", assetId),
     }),
@@ -115,13 +92,12 @@ export default function PlayGameScreen() {
 
   const selectChapter = useCallback(
     (nextChapterId: string) => {
-      setChapterIntent({ gameId, explicit: true });
       setChapterPickerOpen(false);
       if (nextChapterId === chapterId) return;
       // Same play route — only the chapter search param changes.
       router.setParams({ chapter: nextChapterId });
     },
-    [chapterId, gameId, router]
+    [chapterId, router]
   );
 
   useEffect(() => {
@@ -249,13 +225,9 @@ export default function PlayGameScreen() {
         <View style={styles.blackGate} />
       ) : published ? (
         <View style={styles.body}>
-          <ExperiencePublishedPlayer
-            key={`${playerKey}:${auth.generation}`}
-            reporter={reporter}
-            chapterId={published.activeChapterId ?? ""}
-            availableChapterIds={chapters.map((chapter) => chapter.chapterId)}
-            explicitChapter={chapterIntent.explicit}
-            onSavedChapter={selectChapter}
+          <ExperiencePlayerWithAccess
+            key={playerKey}
+            accessMode="published"
             runtime={published.manifest}
             locale={locale}
             copy={copy}

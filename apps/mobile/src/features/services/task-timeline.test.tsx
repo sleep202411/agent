@@ -13,8 +13,6 @@ const h = vi.hoisted(() => ({
   composer: vi.fn(),
   retry: vi.fn(),
   error: undefined as string | undefined,
-  loading: false,
-  unmount: vi.fn(),
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
 vi.mock("./task-comment-edit", () => ({
@@ -32,7 +30,6 @@ vi.mock("./task-comment-remove", () => ({
 vi.mock("./task-comment", () => ({
   TaskComment: function MockComment(props: {
     reply?: { id: string };
-    suspended: boolean;
     onReplyAvailability: (value: {
       allowed: boolean;
       locked: boolean;
@@ -41,7 +38,6 @@ vi.mock("./task-comment", () => ({
   }) {
     const { onReplyAvailability } = props;
     h.composer(props);
-    useEffect(() => () => h.unmount(), []);
     const { allowed, locked, canManage } = h;
     useEffect(() => {
       onReplyAvailability({ allowed, locked, canManage });
@@ -53,7 +49,7 @@ vi.mock("./use-task-timeline", () => ({
   useTaskTimeline: () => ({
     items: h.items,
     hasMore: true,
-    loading: h.loading,
+    loading: false,
     error: h.error,
     loadMore: h.more,
     retry: h.retry,
@@ -123,7 +119,6 @@ beforeEach(() => {
   h.canManage = false;
   h.items = [item];
   h.error = undefined;
-  h.loading = false;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -210,20 +205,4 @@ it("limits removal to live comments by self or explicit task managers", async ()
   h.error = "Forbidden";
   await render();
   expect(removals()).toHaveLength(0);
-});
-
-it("keeps the composer mounted but suspended through failed history and retry", async () => {
-  await render();
-  expect(h.composer.mock.calls.at(-1)![0].suspended).toBe(false);
-  h.error = "History unavailable";
-  await render();
-  expect(h.composer.mock.calls.at(-1)![0].suspended).toBe(true);
-  h.error = undefined;
-  h.loading = true;
-  await render();
-  expect(h.composer.mock.calls.at(-1)![0].suspended).toBe(true);
-  h.loading = false;
-  await render();
-  expect(h.composer.mock.calls.at(-1)![0].suspended).toBe(false);
-  expect(h.unmount).not.toHaveBeenCalled();
 });

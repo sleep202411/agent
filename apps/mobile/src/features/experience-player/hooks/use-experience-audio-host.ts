@@ -9,10 +9,6 @@ import type {
 } from "@repo/shared/experience-runtime";
 
 import { ensureAudioCached, maintainExperienceAudioCache } from "../lib/experience-audio-cache";
-import {
-  validateExperienceAudioCheckpoint,
-  type ExperienceAudioCheckpoint,
-} from "../lib/experience-audio-checkpoint";
 
 type AudioEffect = Extract<ExperienceRuntimeEffect, { kind: `audio.${string}` }>;
 
@@ -26,7 +22,6 @@ type PlaybackGainFactor = "envelope" | "busGain";
 
 type ActivePlayback = {
   key: string;
-  effect: Extract<AudioEffect, { kind: "audio.play" }>;
   publicId?: string;
   cue: ExperienceAudioCue;
   player: AudioPlayer;
@@ -114,11 +109,7 @@ export function useExperienceAudioHost(
     if (audioEffects.length > 0) hostRef.current?.enqueue(audioEffects);
   }, []);
 
-  const checkpoint = useCallback(() => hostRef.current?.checkpoint(), []);
-  const restore = useCallback((snapshot?: ExperienceAudioCheckpoint) => {
-    hostRef.current?.restore(snapshot);
-  }, []);
-  return { unlock, suspend, applyEffects, checkpoint, restore };
+  return { unlock, suspend, applyEffects };
 }
 
 class ExperienceAudioHost {
@@ -132,9 +123,6 @@ class ExperienceAudioHost {
   #disposed = false;
   #unlocked = false;
   #suspended = false;
-  #generation = 0;
-  readonly #preparing = new Set<AudioPlayer>();
-  readonly #pending = new Map<string, ExperienceAudioCheckpoint["playbacks"][number]>();
 
   constructor(
     manifest: ExperienceRuntimeManifest,
@@ -165,6 +153,7 @@ class ExperienceAudioHost {
       this.#unlocked = true;
       this.#suspended = false;
       for (const playback of this.#active.values()) {
+        if (playback.stopping) continue;
         playback.player.play();
       }
     });
@@ -203,80 +192,17 @@ class ExperienceAudioHost {
   }
 
   enqueue(effects: readonly AudioEffect[]): void {
-    const generation = this.#generation;
-    for (const effect of effects) {
-      if (effect.kind === "audio.play") {
-        const { kind: _, ...identity } = effect;
-        this.#pending.set(`${effect.cueId}:${effect.playbackOrdinal}`, {
-          ...identity,
-          positionSeconds: 0,
-        });
-      }
-    }
     this.#queue = this.#queue
       .then(async () => {
-        for (const effect of effects) {
-          if (generation !== this.#generation || this.#disposed) return;
-          await this.#apply(effect, generation);
-        }
+        for (const effect of effects) await this.#apply(effect);
       })
       .catch((error: unknown) => {
-        if (!this.#disposed && generation === this.#generation)
-          this.#onError(runtimeErrorMessage(error));
-      });
-  }
-
-  checkpoint(): ExperienceAudioCheckpoint {
-    const playbacks = new Map(this.#pending);
-    for (const [key, playback] of this.#active) {
-      if (playback.stopping) {
-        playbacks.delete(key);
-        continue;
-      }
-      const { kind: _, ...identity } = playback.effect;
-      playbacks.set(key, {
-        ...identity,
-        positionSeconds: Math.max(0, playback.player.currentTime),
-      });
-    }
-    return structuredClone({
-      playbacks: [...playbacks.values()],
-      busGains: Object.fromEntries(this.#busBaseGains),
-    });
-  }
-
-  restore(input?: ExperienceAudioCheckpoint): void {
-    const snapshot = validateExperienceAudioCheckpoint(this.#manifest, input);
-    const generation = ++this.#generation;
-    this.#pending.clear();
-    this.#releasePreparing();
-    for (const playback of [...this.#active.values()]) this.#teardown(playback);
-    this.#initBuses();
-    for (const [busId, gain] of Object.entries(snapshot?.busGains ?? {}))
-      this.#busBaseGains.set(busId, gain);
-    for (const playback of snapshot?.playbacks ?? []) {
-      this.#pending.set(`${playback.cueId}:${playback.playbackOrdinal}`, playback);
-    }
-    // A rewind must not wait behind downloads belonging to the abandoned branch.
-    this.#queue = Promise.resolve()
-      .then(async () => {
-        for (const playback of snapshot?.playbacks ?? []) {
-          if (generation !== this.#generation || this.#disposed) return;
-          const { positionSeconds, ...identity } = playback;
-          await this.#play({ kind: "audio.play", ...identity }, generation, positionSeconds);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!this.#disposed && generation === this.#generation)
-          this.#onError(runtimeErrorMessage(error));
+        if (!this.#disposed) this.#onError(runtimeErrorMessage(error));
       });
   }
 
   async dispose(): Promise<void> {
     this.#disposed = true;
-    this.#generation++;
-    this.#pending.clear();
-    this.#releasePreparing();
     for (const playback of [...this.#active.values()]) {
       this.#teardown(playback);
     }
@@ -303,21 +229,13 @@ class ExperienceAudioHost {
     }
   }
 
-  async #apply(effect: AudioEffect, generation: number): Promise<void> {
+  async #apply(effect: AudioEffect): Promise<void> {
     if (this.#disposed) return;
     if (effect.kind === "audio.play") {
-      await this.#play(effect, generation);
+      await this.#play(effect);
       return;
     }
     if (effect.kind === "audio.stop") {
-      for (const [key, pending] of this.#pending) {
-        if (
-          effect.target === "cue"
-            ? pending.cueId === effect.targetId
-            : pending.playbackId === effect.targetId
-        )
-          this.#pending.delete(key);
-      }
       this.#stop(effect.target, effect.targetId, effect.fadeOutMs);
       return;
     }
@@ -334,18 +252,10 @@ class ExperienceAudioHost {
     }
   }
 
-  async #play(
-    effect: Extract<AudioEffect, { kind: "audio.play" }>,
-    generation: number,
-    positionSeconds?: number
-  ): Promise<void> {
-    const key = `${effect.cueId}:${effect.playbackOrdinal}`;
+  async #play(effect: Extract<AudioEffect, { kind: "audio.play" }>): Promise<void> {
     const cue = this.#manifest.audio?.cues.find((candidate) => candidate.cueId === effect.cueId);
     if (!cue) throw new Error(`Unknown audio cue ${effect.cueId}`);
-    if (!this.#acceptConcurrency(cue, false)) {
-      this.#pending.delete(key);
-      return;
-    }
+    if (!this.#acceptConcurrency(cue, false)) return;
     const asset = this.#manifest.assets.find(
       (candidate): candidate is ExperienceAudioAsset =>
         candidate.assetId === effect.assetId && candidate.kind === "audio"
@@ -361,37 +271,20 @@ class ExperienceAudioHost {
       asset.variants[0];
     if (!variant) throw new Error(`Audio asset ${asset.assetId} has no playable variant`);
 
-    if (!this.#unlocked && !this.#suspended) await this.unlock();
-    if (this.#disposed || generation !== this.#generation) return;
+    if (!this.#unlocked) await this.unlock();
+    if (this.#disposed) return;
 
     const localUri = await ensureAudioCached(variant.uri, variant.sha256);
-    if (this.#disposed || generation !== this.#generation) return;
+    if (this.#disposed) return;
     // Replace an existing cue only once the incoming bytes are available.
-    if (!this.#acceptConcurrency(cue)) {
-      this.#pending.delete(key);
-      return;
-    }
+    if (!this.#acceptConcurrency(cue)) return;
 
     const player = createAudioPlayer({ uri: localUri }, { updateInterval: 250 });
     player.loop = cue.loop;
     player.setPlaybackRate(effect.playbackRate);
-    if (positionSeconds !== undefined) {
-      this.#preparing.add(player);
-      try {
-        await player.seekTo(positionSeconds);
-      } catch (error) {
-        if (this.#preparing.delete(player)) player.remove();
-        throw error;
-      }
-      const owned = this.#preparing.delete(player);
-      if (this.#disposed || generation !== this.#generation) {
-        if (owned) player.remove();
-        return;
-      }
-    }
+    const key = `${cue.cueId}:${effect.playbackOrdinal}`;
     const playback: ActivePlayback = {
       key,
-      effect,
       ...(effect.playbackId ? { publicId: effect.playbackId } : {}),
       cue,
       player,
@@ -403,9 +296,7 @@ class ExperienceAudioHost {
       statusSub: null,
     };
     this.#active.set(key, playback);
-    this.#pending.delete(key);
     playback.statusSub = player.addListener("playbackStatusUpdate", (status) => {
-      if (this.#active.get(key) !== playback) return;
       if (!status.didJustFinish || cue.loop) return;
       this.#finishPlayback(key);
     });
@@ -467,7 +358,7 @@ class ExperienceAudioHost {
   #teardown(playback: ActivePlayback): void {
     this.#cancelRamp(playback, "envelope");
     this.#cancelRamp(playback, "busGain");
-    if (this.#active.get(playback.key) === playback) this.#active.delete(playback.key);
+    this.#active.delete(playback.key);
     for (const release of [
       () => playback.statusSub?.remove(),
       () => playback.player.pause(),
@@ -480,17 +371,6 @@ class ExperienceAudioHost {
       }
     }
     playback.statusSub = null;
-  }
-
-  #releasePreparing(): void {
-    for (const player of this.#preparing) {
-      try {
-        player.remove();
-      } catch {
-        /* Already released by the native host. */
-      }
-    }
-    this.#preparing.clear();
   }
 
   #setBusGain(busId: string, gain: number, durationMs: number): void {
@@ -601,7 +481,6 @@ class ExperienceAudioHost {
     const steps = Math.max(1, Math.ceil(durationMs / FADE_STEP_MS));
     let step = 0;
     playback.ramps[factor] = setInterval(() => {
-      if (this.#suspended) return;
       step += 1;
       const progress = Math.min(1, step / steps);
       playback[factor] = from + (to - from) * progress;

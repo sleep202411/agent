@@ -38,13 +38,5 @@ export function conversationActivity(
       () => name
     );
   }
-  const label = inboxPreview(
-    { lastMessageType: "system", lastMessagePreview: `[system:${kind}]` },
-    t
-  );
-  const reason = message.payload.system.params.reason;
-  // Revision instructions are user-authored plain text, not translation parameters or markup.
-  return kind === "order.revision_requested" && typeof reason === "string" && reason
-    ? `${label}\n\n${reason}`
-    : label;
+  return inboxPreview({ lastMessageType: "system", lastMessagePreview: `[system:${kind}]` }, t);
 }

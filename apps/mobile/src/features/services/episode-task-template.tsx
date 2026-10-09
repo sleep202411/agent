@@ -1,11 +1,3 @@
-import {
-  customFieldText,
-  fetchTaskFieldDefinitions,
-  type CustomField,
-  type CustomValue,
-} from "./task-custom-fields-api";
-import { normalizeCustomValue } from "./task-custom-field-edit-api";
-import { TaskCustomFieldControl } from "./task-custom-field-control";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -24,15 +16,14 @@ type Props = {
   userId: string;
   generation: number;
   onClose: () => void;
-  initialEpisodeId?: string;
   onStage?: (episode: PlanningOption, plan: EpisodeTaskPlan) => void;
 };
 export function EpisodeTaskTemplate(props: Props) {
-  if (props.generation !== getAuthGeneration()) return null;
+  const active = useScreenActive();
+  if (!active || props.generation !== getAuthGeneration()) return null;
   return <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />;
 }
-function Session({ crewId, userId, generation, onClose, onStage, initialEpisodeId }: Props) {
-  const active = useScreenActive();
+function Session({ crewId, userId, generation, onClose, onStage }: Props) {
   const t = useTranslations();
   const [revision, setRevision] = useState(0),
     [selected, setSelected] = useState<PlanningOption>();
@@ -53,36 +44,27 @@ function Session({ crewId, userId, generation, onClose, onStage, initialEpisodeI
           return;
         }
         const episodes = await fetchTaskPlanningOptions(crewId, "episode", controller.signal);
-        if (!controller.signal.aborted && generation === getAuthGeneration()) {
-          if (initialEpisodeId) {
-            const target = episodes.find((episode) => episode.id === initialEpisodeId);
-            if (!target)
-              throw new Error("The selected episode is no longer available. Refresh setup.");
-            setSelected(target);
-          }
+        if (!controller.signal.aborted && generation === getAuthGeneration())
           setSnapshot({ revision, episodes });
-        }
       } catch (cause) {
         if (!controller.signal.aborted && generation === getAuthGeneration())
           setSnapshot({ revision, error: cause instanceof Error ? cause.message : String(cause) });
       }
     })();
     return () => controller.abort();
-  }, [crewId, userId, generation, revision, initialEpisodeId]);
+  }, [crewId, userId, generation, revision]);
   if (selected)
     return (
       <Preview
         key={selected.id}
         crewId={crewId}
         episode={selected}
-        userId={userId}
         generation={generation}
         onStage={onStage}
         onClose={() => setSelected(undefined)}
       />
     );
   const visible = snapshot?.revision === revision ? snapshot : undefined;
-  if (!active) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("episodeTaskTemplate.title")}</ThemedText>
@@ -120,7 +102,6 @@ function Session({ crewId, userId, generation, onClose, onStage, initialEpisodeI
   );
 }
 function Preview({
-  userId,
   crewId,
   episode,
   generation,
@@ -129,25 +110,20 @@ function Preview({
 }: {
   crewId: string;
   episode: PlanningOption;
-  userId: string;
   generation: number;
   onClose: () => void;
   onStage?: Props["onStage"];
 }) {
-  const active = useScreenActive();
   const t = useTranslations();
   const [revision, setRevision] = useState(0);
   const [snapshot, setSnapshot] = useState<{
     revision: number;
     plan?: EpisodeTaskPlan;
-    fields?: CustomField[];
     error?: string;
   }>();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [result, setResult] = useState<Awaited<ReturnType<typeof applyEpisodeTaskPlan>>>();
-  const [drafts, setDrafts] = useState<Record<string, Record<string, CustomValue>>>({});
-  const [attempted, setAttempted] = useState<EpisodeTaskPlan>();
   const completed = useRef(false);
   const lock = useRef(false),
     alive = useRef(true);
@@ -159,13 +135,10 @@ function Preview({
   }, []);
   useEffect(() => {
     const controller = new AbortController();
-    void Promise.all([
-      fetchEpisodeTaskPlan(crewId, episode.id, controller.signal),
-      fetchTaskFieldDefinitions(crewId, controller.signal),
-    ]).then(
-      ([plan, fields]) => {
+    void fetchEpisodeTaskPlan(crewId, episode.id, controller.signal).then(
+      (plan) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setSnapshot({ revision, plan, fields });
+          setSnapshot({ revision, plan });
       },
       (cause) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
@@ -175,46 +148,12 @@ function Preview({
     return () => controller.abort();
   }, [crewId, episode.id, generation, revision]);
   const visible = snapshot?.revision === revision ? snapshot : undefined;
-  let prepared: EpisodeTaskPlan | undefined;
-  if (visible?.plan && visible.fields) {
-    try {
-      const taskFields = visible.plan.items
-        .map((item) => ({
-          templateKey: item.templateKey,
-          values: visible
-            .fields!.map((field) => ({
-              fieldId: field.id,
-              value: normalizeCustomValue(field, drafts[item.templateKey]?.[field.id] ?? null),
-            }))
-            .filter((row) => row.value !== null),
-        }))
-        .filter((row) => row.values.length);
-      prepared = taskFields.length
-        ? {
-            ...visible.plan,
-            taskFields,
-            fieldReview: Object.fromEntries(
-              taskFields.map((row) => [
-                row.templateKey,
-                row.values.map((value) => {
-                  const field = visible.fields!.find((field) => field.id === value.fieldId)!;
-                  return `${field.name}: ${customFieldText(field, value.value, { unset: t("thread.taskUnset"), yes: t("taskCustomFields.yes"), no: t("taskCustomFields.no") })}`;
-                }),
-              ])
-            ),
-          }
-        : visible.plan;
-    } catch {
-      /* Incomplete fields keep confirmation disabled. */
-    }
-  }
   async function confirm() {
     if (
-      !active ||
       lock.current ||
       completed.current ||
       result ||
-      !(attempted ?? prepared) ||
+      !visible?.plan ||
       generation !== getAuthGeneration()
     )
       return;
@@ -222,14 +161,12 @@ function Preview({
     setBusy(true);
     setError(undefined);
     try {
-      const command = attempted ?? prepared!;
       if (onStage) {
-        onStage(episode, command);
+        onStage(episode, visible.plan);
         completed.current = true;
         return;
       }
-      setAttempted(command);
-      const receipt = await applyEpisodeTaskPlan(crewId, episode.id, command, generation);
+      const receipt = await applyEpisodeTaskPlan(crewId, episode.id, visible.plan, generation);
       completed.current = true;
       if (alive.current && generation === getAuthGeneration()) setResult(receipt);
     } catch (cause) {
@@ -240,7 +177,6 @@ function Preview({
       if (alive.current && generation === getAuthGeneration()) setBusy(false);
     }
   }
-  if (!active) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{episode.name}</ThemedText>
@@ -263,24 +199,6 @@ function Preview({
           {visible.plan.items.map((item) => (
             <View key={item.templateKey} style={{ gap: 8, paddingVertical: 12 }}>
               <ThemedText>{item.title}</ThemedText>
-              {visible.fields?.map((field) => (
-                <TaskCustomFieldControl
-                  key={field.id}
-                  field={field}
-                  draft={drafts[item.templateKey]?.[field.id] ?? null}
-                  locked={busy || !!attempted || !!result}
-                  crewId={crewId}
-                  userId={userId}
-                  generation={generation}
-                  setDraft={(value) => {
-                    if (lock.current || attempted || generation !== getAuthGeneration()) return;
-                    setDrafts((current) => ({
-                      ...current,
-                      [item.templateKey]: { ...current[item.templateKey], [field.id]: value },
-                    }));
-                  }}
-                />
-              ))}
               <ThemedText>
                 {t("episodeTaskTemplate.role")} · {item.roleRequirement || "—"}
               </ThemedText>
@@ -298,7 +216,7 @@ function Preview({
         <>
           <Pressable
             accessibilityRole="button"
-            disabled={busy || !(attempted ?? prepared)}
+            disabled={busy || !visible?.plan}
             onPress={() => void confirm()}
             style={{ padding: 12 }}
           >
@@ -314,11 +232,10 @@ function Preview({
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            disabled={busy || !!attempted}
+            disabled={busy}
             onPress={() => {
-              if (!lock.current && !attempted && generation === getAuthGeneration()) {
+              if (!lock.current && generation === getAuthGeneration()) {
                 setError(undefined);
-                setDrafts({});
                 setRevision((value) => value + 1);
               }
             }}

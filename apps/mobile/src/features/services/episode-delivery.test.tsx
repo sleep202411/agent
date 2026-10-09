@@ -4,8 +4,6 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { EpisodeDelivery } from "./episode-delivery";
 const h = vi.hoisted(() => ({
   generation: 1,
-  active: true,
-  focused: true,
   load: vi.fn(),
   submit: vi.fn(),
   review: vi.fn(),
@@ -20,13 +18,7 @@ vi.mock("./episode-delivery-api", () => ({
 }));
 vi.mock("./conversation-file", () => ({ ConversationFile: () => <span>video preview</span> }));
 vi.mock("react-native-safe-area-context", () => ({
-  SafeAreaView: ({
-    children,
-    style,
-  }: {
-    children: ReactNode;
-    style?: { display?: "none" | "flex" };
-  }) => <div style={{ display: style?.display }}>{children}</div>,
+  SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("@/features/crew-assets/asset-picker", () => ({
   CrewAssetPicker: ({ onSelect }: { onSelect: (rows: unknown[]) => void }) => (
@@ -48,9 +40,8 @@ vi.mock("@/features/crew-assets/asset-picker", () => ({
     </>
   ),
 }));
-vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white" }) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({
@@ -58,9 +49,7 @@ vi.mock("@/components/themed-text", () => ({
 }));
 vi.mock("react-native", () => ({
   Modal: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  View: ({ children, style }: { children: ReactNode; style?: { display?: "none" | "flex" } }) => (
-    <div style={{ display: style?.display }}>{children}</div>
-  ),
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
   Pressable: ({
@@ -138,8 +127,6 @@ const click = (name: string) => act(async () => button(name).click());
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
-  h.active = true;
-  h.focused = true;
   h.load.mockResolvedValue(data);
   h.video.mockResolvedValue({
     name: "movie",
@@ -255,27 +242,4 @@ it("keeps refresh and navigation locked during a write", async () => {
   h.generation = 2;
   await act(async () => resolve({}));
   expect(host.textContent).not.toContain("episodeDelivery.saved");
-});
-
-it("retains the selected delivery asset and note through background without submitting", async () => {
-  await render();
-  await click("episodeDelivery.select");
-  await click("pick video");
-  const input = host.querySelector<HTMLInputElement>('input[aria-label="episodeDelivery.note"]')!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      input,
-      "Final cut ready"
-    );
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  h.active = false;
-  await render();
-  expect((host.firstElementChild as HTMLElement).style.display).toBe("none");
-  await click("episodeDelivery.submit");
-  expect(h.submit).not.toHaveBeenCalled();
-  h.active = true;
-  await render();
-  await click("episodeDelivery.submit");
-  expect(h.submit).toHaveBeenCalledWith(data.episode.id, "asset", "Final cut ready", "user", 1);
 });

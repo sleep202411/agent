@@ -21,14 +21,12 @@ export function TaskPlanningFields({
   value,
   onChange,
   locked,
-  showCycle = true,
 }: {
   crewId: string;
   generation: number;
   value: TaskPlanningDraft;
   onChange: Dispatch<SetStateAction<TaskPlanningDraft>>;
   locked: boolean;
-  showCycle?: boolean;
 }) {
   const t = useTranslations(),
     theme = useTheme();
@@ -36,62 +34,60 @@ export function TaskPlanningFields({
   const current = () => !locked && generation === getAuthGeneration();
   return (
     <View style={{ gap: 8 }}>
-      {(["cycle", "episode", "labels"] as const)
-        .filter((key) => showCycle || key !== "cycle")
-        .map((key) => (
-          <View key={key} style={{ gap: 8 }}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={locked || (key === "labels" && value.labels.length >= 20)}
-              style={{ padding: 12 }}
-              onPress={() => {
-                if (current()) setKind(key);
-              }}
-            >
-              <ThemedText>
-                {t(`taskPlanning.${key}`)}
-                {key === "labels"
-                  ? ` · ${value.labels.length}/20`
-                  : value[key]
-                    ? ` · ${value[key].name}`
-                    : ""}
-              </ThemedText>
-            </Pressable>
-            {key === "labels"
-              ? value.labels.map((label) => (
-                  <Pressable
-                    key={label.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${t("taskPlanning.remove")} ${label.name}`}
-                    disabled={locked}
-                    style={{ padding: 12 }}
-                    onPress={() => {
-                      if (current())
-                        onChange((old) => ({
-                          ...old,
-                          labels: old.labels.filter((item) => item.id !== label.id),
-                        }));
-                    }}
-                  >
-                    <ThemedText>{label.name} ×</ThemedText>
-                  </Pressable>
-                ))
-              : value[key] && (
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={locked}
-                    style={{ padding: 12 }}
-                    onPress={() => {
-                      if (current()) onChange((old) => ({ ...old, [key]: null }));
-                    }}
-                  >
-                    <ThemedText>
-                      {t(`taskPlanning.clear${key === "cycle" ? "Cycle" : "Episode"}`)}
-                    </ThemedText>
-                  </Pressable>
-                )}
-          </View>
-        ))}
+      {(["cycle", "episode", "labels"] as const).map((key) => (
+        <View key={key} style={{ gap: 8 }}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={locked || (key === "labels" && value.labels.length >= 20)}
+            style={{ padding: 12 }}
+            onPress={() => {
+              if (current()) setKind(key);
+            }}
+          >
+            <ThemedText>
+              {t(`taskPlanning.${key}`)}
+              {key === "labels"
+                ? ` · ${value.labels.length}/20`
+                : value[key]
+                  ? ` · ${value[key].name}`
+                  : ""}
+            </ThemedText>
+          </Pressable>
+          {key === "labels"
+            ? value.labels.map((label) => (
+                <Pressable
+                  key={label.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t("taskPlanning.remove")} ${label.name}`}
+                  disabled={locked}
+                  style={{ padding: 12 }}
+                  onPress={() => {
+                    if (current())
+                      onChange((old) => ({
+                        ...old,
+                        labels: old.labels.filter((item) => item.id !== label.id),
+                      }));
+                  }}
+                >
+                  <ThemedText>{label.name} ×</ThemedText>
+                </Pressable>
+              ))
+            : value[key] && (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={locked}
+                  style={{ padding: 12 }}
+                  onPress={() => {
+                    if (current()) onChange((old) => ({ ...old, [key]: null }));
+                  }}
+                >
+                  <ThemedText>
+                    {t(`taskPlanning.clear${key === "cycle" ? "Cycle" : "Episode"}`)}
+                  </ThemedText>
+                </Pressable>
+              )}
+        </View>
+      ))}
       <Modal
         visible={!!kind && !locked}
         animationType="slide"

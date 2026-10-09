@@ -180,28 +180,3 @@ it("does not accept signing response after account changes", async () => {
     "session expired"
   );
 });
-it("resolves a direct notification reference using only the server-authorized Crew list", async () => {
-  vi.mocked(api.get).mockResolvedValue({
-    items: [record],
-    capabilities: { sync: false },
-    nextCursor: null,
-  });
-  expect(await fetchLinkedAgreement("crew", record.id, undefined, 1, signal())).toEqual({
-    ...record,
-    canSync: false,
-  });
-  vi.mocked(api.get).mockResolvedValue({
-    items: [],
-    capabilities: { sync: false },
-    nextCursor: null,
-  });
-  expect(await fetchLinkedAgreement("crew", record.id, undefined, 1, signal())).toBeNull();
-  vi.mocked(api.get).mockResolvedValue({
-    items: [{ ...record, crewId: "other" }],
-    capabilities: { sync: false },
-    nextCursor: null,
-  });
-  await expect(fetchLinkedAgreement("crew", record.id, undefined, 1, signal())).rejects.toThrow(
-    "scope"
-  );
-});

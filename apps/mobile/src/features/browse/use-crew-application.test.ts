@@ -49,7 +49,7 @@ it("admits only one request from repeated confirmations before a render", async 
     first = state.submit("position", success, failure);
     void state.submit("position", success, failure);
   });
-  expect(h.request).toHaveBeenCalledExactlyOnceWith("crew-a", "position", expect.any(AbortSignal));
+  expect(h.request).toHaveBeenCalledExactlyOnceWith("crew-a", "position");
   expect(state.applying).toBe(true);
   await act(async () => {
     request.resolve();

@@ -1,6 +1,3 @@
-import type { TaskPaymentTerms } from "@repo/shared/crew";
-import { requiredSkillsSchema, sameSkills } from "./crew-skills-api";
-import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { taskDetailSchema, type TaskDetail } from "./task-detail-api";
@@ -30,10 +27,6 @@ const planningSnapshotSchema = taskDetailSchema
 export type PlanningSnapshot = z.infer<typeof planningSnapshotSchema>;
 export const planningEditInput = z
   .object({
-    ...taskCompensationShape,
-    contractAssetNodeId: z.string().uuid().nullable().optional(),
-    requiredSkills: requiredSkillsSchema.optional(),
-    positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     taskKind: taskKindSchema.nullable().optional(),
     expectedVersion: z.number().int().positive(),
     estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
@@ -49,12 +42,6 @@ export const planningEditInput = z
   .strict()
   .refine(
     (data) =>
-      data.contractAssetNodeId !== undefined ||
-      data.requiredSkills !== undefined ||
-      data.positionRole !== undefined ||
-      data.paymentTerms !== undefined ||
-      data.rewardUsdMinor !== undefined ||
-      data.profitShareBps !== undefined ||
       data.estimatePoints !== undefined ||
       data.revisionLimit !== undefined ||
       data.taskKind !== undefined ||
@@ -76,16 +63,7 @@ export function planningChanges(
   task: PlanningSnapshot,
   draft: TaskPlanningDraft,
   taskKind: TaskKind | null = task.taskKind,
-  values: {
-    contractAssetNodeId?: string | null;
-    requiredSkills?: string[];
-    positionRole?: string | null;
-    estimatePoints: number | null;
-    revisionLimit: number | null;
-    paymentTerms?: TaskPaymentTerms | null;
-    rewardUsdMinor?: number | null;
-    profitShareBps?: number | null;
-  } = {
+  numbers: { estimatePoints: number | null; revisionLimit: number | null } = {
     estimatePoints: task.estimatePoints,
     revisionLimit: task.revisionLimit,
   }
@@ -95,45 +73,16 @@ export function planningChanges(
   const ids = draft.labels.map((label) => label.id);
   return planningEditInput
     .refine(
-      (value) =>
-        !task.contractAssetNodeId ||
-        value.contractAssetNodeId === undefined ||
-        value.contractAssetNodeId === task.contractAssetNodeId,
-      "Attached contracts cannot be replaced or removed"
-    )
-    .refine(
       (value) => value.revisionLimit == null || value.revisionLimit >= task.revisionRoundsUsed,
       "Revision limit is below used rounds"
     )
     .safeParse({
       expectedVersion: task.version,
-      ...(values.paymentTerms !== undefined && values.paymentTerms !== (task.paymentTerms ?? null)
-        ? { paymentTerms: values.paymentTerms }
+      ...(numbers.estimatePoints !== task.estimatePoints
+        ? { estimatePoints: numbers.estimatePoints }
         : {}),
-      ...(values.contractAssetNodeId !== undefined &&
-      values.contractAssetNodeId !== (task.contractAssetNodeId ?? null)
-        ? { contractAssetNodeId: values.contractAssetNodeId }
-        : {}),
-      ...(values.requiredSkills !== undefined &&
-      !sameSkills(values.requiredSkills, task.requiredSkills)
-        ? { requiredSkills: values.requiredSkills }
-        : {}),
-      ...(values.positionRole !== undefined && values.positionRole !== (task.positionRole ?? null)
-        ? { positionRole: values.positionRole }
-        : {}),
-      ...(values.rewardUsdMinor !== undefined &&
-      values.rewardUsdMinor !== (task.rewardUsdMinor ?? null)
-        ? { rewardUsdMinor: values.rewardUsdMinor }
-        : {}),
-      ...(values.profitShareBps !== undefined &&
-      values.profitShareBps !== (task.profitShareBps ?? null)
-        ? { profitShareBps: values.profitShareBps }
-        : {}),
-      ...(values.estimatePoints !== task.estimatePoints
-        ? { estimatePoints: values.estimatePoints }
-        : {}),
-      ...(values.revisionLimit !== task.revisionLimit
-        ? { revisionLimit: values.revisionLimit }
+      ...(numbers.revisionLimit !== task.revisionLimit
+        ? { revisionLimit: numbers.revisionLimit }
         : {}),
       ...(taskKind !== task.taskKind ? { taskKind } : {}),
       ...(cycleId !== task.cycleId ? { cycleId } : {}),
@@ -159,12 +108,6 @@ export async function updateTaskPlanning(
 ) {
   z.string().uuid().parse(task.id);
   const data = planningEditInput.parse(value);
-  if (
-    task.contractAssetNodeId &&
-    data.contractAssetNodeId !== undefined &&
-    data.contractAssetNodeId !== task.contractAssetNodeId
-  )
-    throw new Error("Attached contracts cannot be replaced or removed");
   if (data.expectedVersion !== task.version) throw new Error("Task planning version mismatch");
   if (data.revisionLimit != null && data.revisionLimit < task.revisionRoundsUsed)
     throw new Error("Revision limit is below used rounds");
@@ -175,19 +118,6 @@ export async function updateTaskPlanning(
   const episodeId = data.episodeId === undefined ? task.episodeId : data.episodeId;
   const labels = data.labelIds ?? task.labels.map((label) => label.id);
   if (
-    (result.contractAssetNodeId ?? null) !==
-      (data.contractAssetNodeId === undefined
-        ? (task.contractAssetNodeId ?? null)
-        : data.contractAssetNodeId) ||
-    !sameSkills(result.requiredSkills, data.requiredSkills ?? task.requiredSkills) ||
-    (result.positionRole ?? null) !==
-      (data.positionRole === undefined ? (task.positionRole ?? null) : data.positionRole) ||
-    (result.paymentTerms ?? null) !==
-      (data.paymentTerms === undefined ? (task.paymentTerms ?? null) : data.paymentTerms) ||
-    result.rewardUsdMinor !==
-      (data.rewardUsdMinor === undefined ? task.rewardUsdMinor : data.rewardUsdMinor) ||
-    result.profitShareBps !==
-      (data.profitShareBps === undefined ? task.profitShareBps : data.profitShareBps) ||
     result.id !== task.id ||
     result.crewId !== task.crewId ||
     result.version !== data.expectedVersion + 1 ||

@@ -1,14 +1,9 @@
-import { requiredSkillsSchema, sameSkills } from "./crew-skills-api";
-import { assertTaskCreationRequired } from "./task-creation-required";
-import { assertTaskCreationDeadline } from "./task-creation-deadline";
-import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { taskKindSchema } from "./task-kind-api";
 import { taskDetailSchema } from "./task-detail-api";
 export const taskCreateInput = z
   .object({
-    ...taskCompensationShape,
     customFieldValues: z
       .array(
         z
@@ -30,11 +25,7 @@ export const taskCreateInput = z
         "Duplicate custom fields"
       )
       .optional(),
-    contractAssetNodeId: z.string().uuid().nullable().optional(),
-    requiredSkills: requiredSkillsSchema.optional(),
-    positionRole: z.string().trim().min(1).max(80).nullable().optional(),
     taskKind: taskKindSchema.nullable().optional(),
-    computeBudgetPoints: z.number().int().min(0).max(2_000_000_000).nullable().optional(),
     estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
     revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
     cycleId: z.string().uuid().nullable().optional(),
@@ -77,8 +68,6 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
     .regex(/^[A-Za-z0-9_-]{1,64}$/)
     .parse(crewId);
   const data = taskCreateInput.parse(input);
-  assertTaskCreationRequired(data);
-  assertTaskCreationDeadline(data.dueAt);
   const result = taskDetailSchema
     .extend({
       customFieldValues: z
@@ -109,16 +98,6 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
       }));
   if (
     !customMatches ||
-    (data.contractAssetNodeId !== undefined &&
-      (result.contractAssetNodeId ?? null) !== data.contractAssetNodeId) ||
-    (data.requiredSkills !== undefined &&
-      !sameSkills(result.requiredSkills, data.requiredSkills)) ||
-    (data.positionRole !== undefined && (result.positionRole ?? null) !== data.positionRole) ||
-    (data.paymentTerms !== undefined && (result.paymentTerms ?? null) !== data.paymentTerms) ||
-    (data.rewardCurrency !== undefined &&
-      (result.rewardCurrency ?? "USD") !== data.rewardCurrency) ||
-    (data.rewardUsdMinor !== undefined && result.rewardUsdMinor !== data.rewardUsdMinor) ||
-    (data.profitShareBps !== undefined && result.profitShareBps !== data.profitShareBps) ||
     result.crewId !== crewId ||
     (data.estimatePoints !== undefined && result.estimatePoints !== data.estimatePoints) ||
     (data.revisionLimit !== undefined && result.revisionLimit !== data.revisionLimit) ||

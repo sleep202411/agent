@@ -4,8 +4,22 @@ import {
   type ExperienceJsonValue,
   type ExperienceRuntimeManifest,
 } from "@repo/shared/experience-runtime";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadExperienceTheme } from "./experience-theme-loader";
+
+// Run the interactive-player theme checks with the reported native API gap.
+const nativeAbortCheck = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "throwIfAborted");
+beforeAll(async () => {
+  Reflect.deleteProperty(AbortSignal.prototype, "throwIfAborted");
+  await import("@/lib/abort-signal-polyfill");
+});
+afterAll(() => {
+  if (nativeAbortCheck) {
+    Object.defineProperty(AbortSignal.prototype, "throwIfAborted", nativeAbortCheck);
+  } else {
+    Reflect.deleteProperty(AbortSignal.prototype, "throwIfAborted");
+  }
+});
 
 const THEME = {
   schemaVersion: 1,

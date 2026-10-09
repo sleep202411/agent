@@ -15,7 +15,6 @@
     "expo-asset": "~57.0.5",
     "expo-audio": "~57.0.3",
     "expo-build-properties": "~57.0.17",
-    "expo-clipboard": "~57.0.1",
     "expo-constants": "~57.0.5",
     "expo-dev-client": "~57.0.10",
     "expo-device": "~57.0.1",
@@ -26,7 +25,6 @@
     "expo-image": "~57.0.1",
     "expo-linking": "~57.0.3",
     "expo-localization": "~57.0.1",
-    "expo-location": "~57.0.8",
     "expo-media-library": "~57.0.2",
     "expo-modules-core": "~57.0.10",
     "expo-router": "~57.0.6",
@@ -40,7 +38,6 @@
     "expo-video": "~57.0.1",
     "expo-web-browser": "~57.0.1",
     "expo-wechat": "^0.4.0",
-    "hls.js": "1.6.16",
     "nativewind": "^4.2.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -64,7 +61,6 @@
   "devDependencies": {
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~57.0.0",
-    "elkjs": "^0.11.1",
     "eslint-config-expo": "~57.0.0",
     "jsdom": "^28.1.0",
     "prettier-plugin-tailwindcss": "^0.5.14",
@@ -90,19 +86,7 @@
     "check-types": "tsc --noEmit",
     "test": "vitest run",
     "build:document-editor": "node scripts/build-document-editor.mjs",
-    "check:document-editor": "node scripts/build-document-editor.mjs --check",
-    "build:discovery-map": "node scripts/build-discovery-map.mjs",
-    "check:discovery-map": "node scripts/build-discovery-map.mjs --check",
-    "build:script-editor": "node ./scripts/build-script-editor.mjs",
-    "check:script-editor": "node ./scripts/build-script-editor.mjs --check",
-    "build:canvas-runtime": "node ./scripts/build-canvas-runtime.mjs",
-    "check:canvas-runtime": "node ./scripts/build-canvas-runtime.mjs --check",
-    "build:world-player": "node ./scripts/build-world-player.mjs",
-    "check:world-player": "node ./scripts/build-world-player.mjs --check",
-    "build:panorama-runtime": "node ./scripts/build-panorama-runtime.mjs",
-    "check:panorama-runtime": "node ./scripts/build-panorama-runtime.mjs --check",
-    "build:canvas-tidy": "node ./scripts/build-canvas-tidy.mjs",
-    "check:canvas-tidy": "node ./scripts/build-canvas-tidy.mjs --check"
+    "check:document-editor": "node scripts/build-document-editor.mjs --check"
   },
   "private": true
 }

@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigation } from "expo-router";
-import { usePreventRemove } from "expo-router/build/react-navigation/core/usePreventRemove";
 import { BackHandler, Pressable, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
@@ -81,9 +79,6 @@ export function ProjectDocumentEditor({
   onSaved: () => void;
 }) {
   const t = useTranslations();
-  const navigation = useNavigation();
-  const routeExit = useRef<(() => void) | null>(null);
-  const [hasEdits, setHasEdits] = useState(false);
   const [html] = useState(() =>
     documentEditorHtml(
       page.document,
@@ -98,20 +93,10 @@ export function ProjectDocumentEditor({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [confirm, setConfirm] = useState(false);
-  usePreventRemove(hasEdits || busy, ({ data }) => {
-    if (generation !== getAuthGeneration()) {
-      navigation.dispatch(data.action);
-      return;
-    }
-    if (pending.current) return;
-    routeExit.current = () => navigation.dispatch(data.action);
-    setConfirm(true);
-  });
   useEffect(() => {
     active.current = true;
     const back = BackHandler.addEventListener("hardwareBackPress", () => {
       if (!pending.current) {
-        routeExit.current = null;
         if (dirty.current) setConfirm(true);
         else onClose();
       }
@@ -131,32 +116,10 @@ export function ProjectDocumentEditor({
       {confirm ? (
         <View>
           <ThemedText>{t("documentEditor.discardQuestion")}</ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            disabled={busy}
-            accessibilityState={{ disabled: busy }}
-            style={{ opacity: busy ? 0.5 : 1 }}
-            onPress={() => {
-              if (!current() || pending.current) return;
-              const exit = routeExit.current;
-              routeExit.current = null;
-              if (exit) exit();
-              else onClose();
-            }}
-          >
+          <Pressable accessibilityRole="button" onPress={onClose}>
             <ThemedText>{t("documentEditor.discard")}</ThemedText>
           </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            disabled={busy}
-            accessibilityState={{ disabled: busy }}
-            style={{ opacity: busy ? 0.5 : 1 }}
-            onPress={() => {
-              if (!current() || pending.current) return;
-              routeExit.current = null;
-              setConfirm(false);
-            }}
-          >
+          <Pressable accessibilityRole="button" onPress={() => setConfirm(false)}>
             <ThemedText>{t("documentEditor.keepEditing")}</ThemedText>
           </Pressable>
         </View>
@@ -165,8 +128,6 @@ export function ProjectDocumentEditor({
           accessibilityRole="button"
           disabled={busy}
           onPress={() => {
-            if (!current() || pending.current) return;
-            routeExit.current = null;
             if (dirty.current) setConfirm(true);
             else onClose();
           }}
@@ -189,7 +150,6 @@ export function ProjectDocumentEditor({
           if (!message) return;
           if (message.type === "dirty") {
             dirty.current = true;
-            setHasEdits(true);
             return;
           }
           if (message.type === "error") {
@@ -198,7 +158,6 @@ export function ProjectDocumentEditor({
             return;
           }
           if (message.type !== "save" || pending.current || locked.current) return;
-          setHasEdits(true);
           pending.current = true;
           dirty.current = true;
           setBusy(true);

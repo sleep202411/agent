@@ -1,5 +1,4 @@
-import { conversationOutbox } from "./conversation-outbox";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -11,7 +10,7 @@ import {
   View,
   type ViewToken,
 } from "react-native";
-import { useIsFocused, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { getAuthGeneration } from "@/auth/auth-store";
 import {
   pickAndUploadCrewFile,
@@ -31,7 +30,6 @@ import { useUserDisplays } from "./user-displays";
 import { inquiryKey } from "./inquiry-api";
 import { conversationActivity, conversationDisplayIds } from "./conversation-activity";
 import { ConversationProposal, ConversationProposalEditor } from "./conversation-proposal-ui";
-import { AssetOrganization } from "@/features/crew-assets/organization";
 import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
 import type { CrewAsset } from "@/features/crew-assets/api";
 import { canAttachCrewFiles, sendConversationAttachments } from "./conversation-attachments";
@@ -41,14 +39,7 @@ import { taskLabel } from "./task-options";
 import { ConversationFile } from "./conversation-file";
 import { AuthedWebView } from "@/components/authed-web-view";
 
-type VisibleMessage = NativeMessage & { visibilityScope: object };
-
-type ConversationProps = { id: string; userId: string; generation: number };
-export function NativeConversation(props: ConversationProps) {
-  if (props.generation !== getAuthGeneration()) return null;
-  return <ConversationSession key={`${props.id}:${props.userId}:${props.generation}`} {...props} />;
-}
-function ConversationSession({
+export function NativeConversation({
   id,
   userId,
   generation,
@@ -57,8 +48,7 @@ function ConversationSession({
   userId: string;
   generation: number;
 }) {
-  const focused = useIsFocused(),
-    active = useScreenActive(),
+  const active = useScreenActive(),
     t = useTranslations(),
     theme = useTheme(),
     router = useRouter();
@@ -72,17 +62,7 @@ function ConversationSession({
     )
   );
   const op = useAuthFormOperation(id, active);
-  const [outbox] = useState(() => conversationOutbox(id, userId, generation));
-  const [initial] = useState(() => {
-    try {
-      return { pending: outbox.read(), error: undefined };
-    } catch (cause) {
-      return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
-    }
-  });
-  const storageError = initial.error;
-  const restored = initial.error === undefined;
-  const [body, setBody] = useState(initial.pending?.body ?? ""),
+  const [body, setBody] = useState(""),
     [sendError, setSendError] = useState<string>();
   const [assets, setAssets] = useState<CrewAsset[]>([]),
     [picking, setPicking] = useState(false),
@@ -93,13 +73,13 @@ function ConversationSession({
   const pendingUploads = useRef<{ crewId: string; items: CrewUpload[]; attempted: boolean }>({
     crewId: "",
     items: [],
-    attempted: !!initial.pending,
+    attempted: false,
   });
   useEffect(
     () => () => {
       uploadRequest.current?.abort();
     },
-    [focused]
+    [active]
   );
   useEffect(
     () => () => {
@@ -110,17 +90,12 @@ function ConversationSession({
     },
     [generation]
   );
-  const [mentions, setMentions] = useState<{ userId: string; label: string }[]>(
-      initial.pending?.mentions ?? []
-    ),
+  const [mentions, setMentions] = useState<{ userId: string; label: string }[]>([]),
     [mentionPicker, setMentionPicker] = useState(false),
     [mentionQuery, setMentionQuery] = useState("");
   const [taskPicker, setTaskPicker] = useState(false),
-    [taskReferences, setTaskReferences] = useState<{ taskId: string; label: string }[]>(
-      initial.pending?.tasks ?? []
-    );
+    [taskReferences, setTaskReferences] = useState<{ taskId: string; label: string }[]>([]);
   const [selectedTask, setSelectedTask] = useState<{ crewId: string; taskId: string }>();
-  const [selectedAsset, setSelectedAsset] = useState<{ crewId: string; nodeId: string }>();
   const [taskTarget, setTaskTarget] = useState<string>();
   const intent = useRef<
     | {
@@ -131,56 +106,19 @@ function ConversationSession({
         tasks?: { taskId: string; label: string }[];
       }
     | undefined
-  >(
-    initial.pending
-      ? { ...initial.pending, attachments: initial.pending.attachments ?? [] }
-      : undefined
-  );
-  const [pendingAttachmentCount, setPendingAttachmentCount] = useState(
-    initial.pending?.attachments?.length ?? 0
-  );
-  const [visible, setVisible] = useState<{ scope: object; id: string }>(),
+  >(undefined);
+  const [visibleId, setVisibleId] = useState<string>(),
     [readError, setReadError] = useState<string>(),
     [readRetry, setReadRetry] = useState(0);
   const [viewConfig] = useState({ itemVisiblePercentThreshold: 80, minimumViewTime: 500 });
-  const [attempted, setAttempted] = useState(!!initial.pending);
+  const [attempted, setAttempted] = useState(false);
   const detailId = history.detail?.id;
   const contextType = history.detail?.contextType;
   const crewChannel = history.detail?.crewChannel;
   const requiresWeb =
     contextType === "crew" && crewChannel !== "team" && crewChannel !== "community";
-  const visibilityScope = useMemo(
-    () => ({ active, web, requiresWeb, selectedTask, selectedAsset }),
-    [active, web, requiresWeb, selectedTask, selectedAsset]
-  );
-  const visibleMessages = useMemo(
-    () => [...history.messages].reverse().map((message) => ({ ...message, visibilityScope })),
-    [history.messages, visibilityScope]
-  );
-  const onViewableItemsChanged = useCallback(
-    ({ viewableItems }: { viewableItems: ViewToken<VisibleMessage>[] }) => {
-      const newest = [...viewableItems]
-        .filter((value) => value.isViewable && value.index !== null)
-        .sort((a, b) => a.index! - b.index!)[0];
-      if (newest) setVisible({ scope: newest.item.visibilityScope, id: newest.item.id });
-    },
-    []
-  );
-  const visibleId = visible?.scope === visibilityScope ? visible.id : undefined;
   useEffect(() => {
-    if (
-      !active ||
-      !visibleId ||
-      !detailId ||
-      history.loading ||
-      history.error ||
-      !history.messages.some((message) => message.id === visibleId) ||
-      web ||
-      requiresWeb ||
-      selectedTask ||
-      selectedAsset
-    )
-      return;
+    if (!active || !visibleId || !detailId || web || requiresWeb || selectedTask) return;
     const controller = new AbortController();
     void markConversationRead(id, visibleId, controller.signal).then(
       () => {
@@ -192,20 +130,7 @@ function ConversationSession({
       }
     );
     return () => controller.abort();
-  }, [
-    id,
-    visibleId,
-    active,
-    detailId,
-    history.loading,
-    history.error,
-    history.messages,
-    requiresWeb,
-    web,
-    readRetry,
-    selectedTask,
-    selectedAsset,
-  ]);
+  }, [id, visibleId, active, detailId, requiresWeb, web, readRetry, selectedTask]);
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
@@ -216,7 +141,6 @@ function ConversationSession({
       <ThemedText>{label}</ThemedText>
     </Pressable>
   );
-  if (!focused) return null;
   if (web || requiresWeb)
     return (
       <View style={{ flex: 1 }}>
@@ -225,6 +149,14 @@ function ConversationSession({
           path={taskTarget ?? `/messages/${encodeURIComponent(id)}`}
           title={t("serviceContact.open")}
         />
+      </View>
+    );
+  if (!history.detail)
+    return (
+      <View style={{ padding: 16 }}>
+        {history.loading && <ActivityIndicator />}
+        {history.error && <ThemedText accessibilityRole="alert">{history.error}</ThemedText>}
+        {button(t("inbox.retry"), history.retry, history.loading)}
       </View>
     );
   if (selectedTask)
@@ -242,27 +174,6 @@ function ConversationSession({
           setWeb(true);
         }}
       />
-    );
-  if (selectedAsset)
-    return (
-      <View style={{ flex: 1 }}>
-        {button(t("thread.backToChat"), () => setSelectedAsset(undefined))}
-        <AssetOrganization
-          crewId={selectedAsset.crewId}
-          userId={userId}
-          generation={generation}
-          initialNodeId={selectedAsset.nodeId}
-          onClose={() => setSelectedAsset(undefined)}
-        />
-      </View>
-    );
-  if (!history.detail)
-    return (
-      <View style={{ padding: 16 }}>
-        {history.loading && <ActivityIndicator />}
-        {history.error && <ThemedText accessibilityRole="alert">{history.error}</ThemedText>}
-        {button(t("inbox.retry"), history.retry, history.loading)}
-      </View>
     );
   const conversation = history.detail;
   const canAttach = canAttachCrewFiles(conversation, userId);
@@ -339,13 +250,22 @@ function ConversationSession({
       </View>
       {unavailable && <ThemedText>{t("inbox.liveUnavailable")}</ThemedText>}
       <FlatList
-        data={visibleMessages}
+        data={[...history.messages].reverse()}
         inverted
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ padding: 12 }}
         keyboardShouldPersistTaps="handled"
         viewabilityConfig={viewConfig}
-        onViewableItemsChanged={onViewableItemsChanged}
+        onViewableItemsChanged={({
+          viewableItems,
+        }: {
+          viewableItems: ViewToken<NativeMessage>[];
+        }) => {
+          const newest = [...viewableItems]
+            .filter((v) => v.isViewable && v.index !== null)
+            .sort((a, b) => a.index! - b.index!)[0];
+          if (newest) setVisibleId(newest.item.id);
+        }}
         onEndReached={history.loadOlder}
         ListEmptyComponent={!history.loading ? <ThemedText>{t("thread.empty")}</ThemedText> : null}
         ListFooterComponent={
@@ -386,25 +306,13 @@ function ConversationSession({
             )}
             {item.payload?.kind === "attachments" &&
               item.payload.attachments.map((file) => (
-                <View key={file.assetNodeId}>
-                  <ConversationFile
-                    inlinePreview
-                    mediaAssetId={file.mediaAssetId}
-                    mediaKind={file.mediaKind}
-                    contentType={file.contentType}
-                    name={file.name}
-                  />
-                  {conversation.contextType === "crew" &&
-                    button(
-                      t("thread.openInCrewAssets"),
-                      () =>
-                        setSelectedAsset({
-                          crewId: conversation.contextId,
-                          nodeId: file.assetNodeId!,
-                        }),
-                      uploading || op.busy
-                    )}
-                </View>
+                <ConversationFile
+                  key={file.assetNodeId}
+                  mediaAssetId={file.mediaAssetId}
+                  mediaKind={file.mediaKind}
+                  contentType={file.contentType}
+                  name={file.name}
+                />
               ))}
             {conversation.contextType === "crew" &&
               (item.payload?.kind === "text" || item.payload?.kind === "attachments") &&
@@ -555,7 +463,7 @@ function ConversationSession({
                   accessibilityLabel={t("thread.findMember")}
                   value={mentionQuery}
                   onChangeText={setMentionQuery}
-                  editable={restored && !storageError && !op.busy && !attempted}
+                  editable={!op.busy && !attempted}
                   style={{ color: theme.text, padding: 10 }}
                 />
                 <ScrollView style={{ maxHeight: 140 }} keyboardShouldPersistTaps="handled">
@@ -605,7 +513,7 @@ function ConversationSession({
           multiline
           maxLength={4000}
           value={body}
-          editable={restored && !storageError && !op.busy && !attempted}
+          editable={!op.busy && !attempted}
           onChangeText={(value) => {
             setBody(value);
             setTaskReferences((previous) =>
@@ -623,67 +531,43 @@ function ConversationSession({
         />
         {attempted && <ThemedText>{t("thread.retryHint")}</ThemedText>}
         {sendError && <ThemedText accessibilityRole="alert">{sendError}</ThemedText>}
-        {storageError && <ThemedText accessibilityRole="alert">{storageError}</ThemedText>}
-        {attempted && pendingAttachmentCount ? (
-          <ThemedText>
-            {t("thread.pendingAttachments")}: {pendingAttachmentCount}
-          </ThemedText>
-        ) : null}
         <Pressable
           accessibilityRole="button"
-          disabled={
-            !restored ||
-            !!storageError ||
-            op.busy ||
-            uploading ||
-            (!attempted && !body.trim() && !assets.length && !uploads.length)
-          }
+          disabled={op.busy || uploading || (!body.trim() && !assets.length && !uploads.length)}
           onPress={() => {
-            if (
-              !restored ||
-              storageError ||
-              !active ||
-              generation !== getAuthGeneration() ||
-              uploadRequest.current ||
-              (!intent.current && !body.trim() && !assets.length && !uploads.length)
-            )
+            if (uploadRequest.current || (!body.trim() && !assets.length && !uploads.length))
               return;
-            const submitted = intent.current ?? {
-              body: body.trim(),
-              clientKey: inquiryKey(),
-              ...(canAttach && taskReferences.length
-                ? { tasks: taskReferences.filter((task) => body.includes(`#${task.label}`)) }
-                : {}),
-              ...(canAttach && mentions.length
-                ? { mentions: mentions.filter((m) => body.includes(`@${m.label}`)) }
-                : {}),
-              attachments: [
-                ...assets.map((a) => ({ source: "asset" as const, assetNodeId: a.id })),
-                ...uploads,
-              ],
-            };
+            if (!intent.current)
+              intent.current = {
+                body: body.trim(),
+                clientKey: inquiryKey(),
+                ...(canAttach && taskReferences.length
+                  ? { tasks: taskReferences.filter((task) => body.includes(`#${task.label}`)) }
+                  : {}),
+                ...(canAttach && mentions.length
+                  ? { mentions: mentions.filter((m) => body.includes(`@${m.label}`)) }
+                  : {}),
+                attachments: [
+                  ...assets.map((a) => ({ source: "asset" as const, assetNodeId: a.id })),
+                  ...uploads,
+                ],
+              };
+            const submitted = intent.current;
+            pendingUploads.current.attempted = true;
+            setAttempted(true);
             void op.run(
-              async () => {
-                outbox.save(submitted);
-                intent.current = submitted;
-                setPendingAttachmentCount(submitted.attachments.length);
-                pendingUploads.current.attempted = true;
-                setAttempted(true);
-                const result = await (submitted.attachments.length
+              () =>
+                submitted.attachments.length
                   ? sendConversationAttachments(conversation, userId, submitted)
                   : sendConversationText(id, {
                       body: submitted.body,
                       clientKey: submitted.clientKey,
                       ...(submitted.tasks ? { tasks: submitted.tasks } : {}),
                       ...(submitted.mentions ? { mentions: submitted.mentions } : {}),
-                    }));
-                outbox.clear(submitted.clientKey);
-                return result;
-              },
+                    }),
               () => {
                 intent.current = undefined;
                 setAttempted(false);
-                setPendingAttachmentCount(0);
                 setBody("");
                 setMentions([]);
                 setTaskReferences([]);

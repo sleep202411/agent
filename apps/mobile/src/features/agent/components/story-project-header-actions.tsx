@@ -1,12 +1,3 @@
-import { StoryListingEditor } from "./story-listing-editor";
-import { StoryChaptersSheet } from "./story-chapters-sheet";
-import { StoryRepairSheet } from "./story-repair-sheet";
-import {
-  storyPublicationActionErrorKind,
-  storyPublicationActionDetail,
-  storyPublicationDiagnostics,
-  type StoryPublicationDiagnostics,
-} from "../api/story-publication-errors";
 import {
   IconAlertTriangle,
   IconBolt,
@@ -14,12 +5,8 @@ import {
   IconCloudOff,
   IconCloudUpload,
   IconLoader2,
-  IconSitemap,
 } from "@tabler/icons-react-native";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useAuth, useAuthGate } from "@/auth";
-import { useScreenActive } from "@/hooks/use-app-active";
-import { getAuthGeneration } from "@/auth/auth-store";
+import { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   offlineInteractiveFilm,
@@ -102,199 +89,30 @@ export function StoryCreditsButton() {
 
 /** Project header actions: publication badge + submit + take offline + credits. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
-  const context = useStoryChapterContext();
-  const t = useTranslations();
-  const [chaptersOpen, setChaptersOpen] = useState(false);
-  const [listingOpen, setListingOpen] = useState(false);
-  const { generation, user } = useAuth();
-  const active = useScreenActive();
-  const [repair, setRepair] = useState<{
-    projectId: string;
-    generation: number;
-    diagnostics: StoryPublicationDiagnostics;
-  }>();
-  const scope = useMemo(
-    () => ({ projectId, chapterId: repair?.diagnostics.chapterId ?? "", generation }),
-    [projectId, repair?.diagnostics.chapterId, generation]
-  );
-  const listingScope = useMemo(
-    () => ({ projectId, generation, chapterId: context.chapterId ?? "" }),
-    [projectId, generation, context.chapterId]
-  );
-  const chapterScope = useMemo(() => ({ projectId, generation }), [projectId, generation]);
-  const parentToken = useMemo(
-    () => ({ projectId, generation, active }),
-    [projectId, generation, active]
-  );
-  const parentLife = useRef<{ token: typeof parentToken; controller: AbortController } | null>(
-    null
-  );
-  useLayoutEffect(() => {
-    const controller = new AbortController();
-    parentLife.current = { token: parentToken, controller };
-    return () => controller.abort();
-  }, [parentToken]);
-  const authGate = useAuthGate();
-  const currentParent = () =>
-    active &&
-    !!parentLife.current &&
-    parentLife.current.token === parentToken &&
-    !parentLife.current.controller.signal.aborted &&
-    generation === getAuthGeneration();
-  const userId = String(user?.userId ?? user?.id ?? "");
-  const identity = JSON.stringify([
-    projectId,
-    generation,
-    active,
-    ...(["story.release", "story.edit", "story.build"] as const).map((capability) =>
-      context.capabilities.includes(capability)
-    ),
-    context.projectVersion,
-    context.draftRevision,
-    context.videoSnapshotHash,
-    context.publication?.status,
-    context.publicationFailed,
-    context.publicationLoading,
-    context.loading,
-  ]);
-  return (
-    <>
-      {active && userId && context.capabilities.includes("story.read") ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("storyChapters.title")}
-          onPress={() => setChaptersOpen(true)}
-          style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}
-        >
-          <Text style={{ color: "#f5f5f5", fontSize: 12 }}>{t("storyChapters.title")}</Text>
-        </Pressable>
-      ) : null}
-      {active && userId && chaptersOpen && context.capabilities.includes("story.read") ? (
-        <StoryChaptersSheet
-          scope={chapterScope}
-          userId={userId}
-          activeChapterId={context.chapterId}
-          onClose={() => setChaptersOpen(false)}
-          onChanged={() => {
-            context.refresh();
-            context.refreshPublication();
-          }}
-        />
-      ) : null}
-      {active && userId && context.capabilities.includes("story.read") && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("storyListing.title")}
-          onPress={() => setListingOpen(true)}
-          style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 8 }}
-        >
-          <Text style={{ color: "#f5f5f5", fontSize: 12 }}>{t("storyListing.title")}</Text>
-        </Pressable>
-      )}
-      {active && userId && listingOpen && context.capabilities.includes("story.read") && (
-        <StoryListingEditor
-          key={projectId + ":" + generation}
-          scope={listingScope}
-          userId={userId}
-          onClose={() => setListingOpen(false)}
-          onSaved={() => {
-            context.refresh();
-            context.refreshPublication();
-          }}
-        />
-      )}
-      <OwnedStoryProjectHeaderActions
-        key={identity}
-        projectId={projectId}
-        active={active}
-        onDiagnostics={(diagnostics) => {
-          if (currentParent() && userId) setRepair({ projectId, generation, diagnostics });
-        }}
-        onSignIn={() => {
-          if (currentParent()) authGate.openLogin();
-        }}
-      />
-      {active &&
-      userId &&
-      repair?.projectId === projectId &&
-      repair.generation === generation &&
-      scope.chapterId &&
-      context.capabilities.includes("story.read") ? (
-        <StoryRepairSheet
-          scope={scope}
-          userId={userId}
-          issues={repair.diagnostics.issues}
-          onClose={() => setRepair(undefined)}
-          onSaved={() => {
-            context.refresh();
-            context.refreshPublication();
-          }}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function OwnedStoryProjectHeaderActions({
-  projectId,
-  active,
-  onDiagnostics,
-  onSignIn,
-}: {
-  projectId: string;
-  active: boolean;
-  onDiagnostics: (diagnostics: StoryPublicationDiagnostics) => void;
-  onSignIn: () => void;
-}) {
   const t = useTranslations();
   const {
-    chapterId,
     capabilities,
-    projectVersion,
     draftRevision,
     videoSnapshotHash,
     loading: workbenchLoading,
     publication,
     publicationLoading,
     publicationFailed,
-    publicationError,
-    publicationErrorKind,
-    refreshPublication,
-    refresh,
     setPublication,
   } = useStoryChapterContext();
 
-  const { generation } = useAuth();
-  const gate = useAuthGate();
-  const life = useRef<AbortController | null>(null);
-  const locked = useRef(false);
-  useLayoutEffect(() => {
-    const controller = new AbortController();
-    life.current = controller;
-    return () => controller.abort();
-  }, [projectId, generation]);
-  const current = () =>
-    active && !!life.current && !life.current.signal.aborted && generation === getAuthGeneration();
   const [submitting, setSubmitting] = useState(false);
   const [offlining, setOfflining] = useState(false);
 
-  const canReadPublication = capabilities.includes("story.read");
   const canRelease = capabilities.includes("story.release");
   const canEdit = capabilities.includes("story.edit");
   const canBuild = capabilities.includes("story.build");
   const status = publication?.status ?? null;
   const rejectReason = publication?.rejectReason ?? null;
   const canSubmitStatus = status === null || status === "draft" || status === "offline";
-  const canOffline =
-    canRelease &&
-    !publicationFailed &&
-    !publicationLoading &&
-    (status === "reviewing" || status === "published");
+  const canOffline = canRelease && (status === "reviewing" || status === "published");
   const busy = submitting || offlining;
   const hasSnapshot =
-    typeof projectVersion === "number" &&
-    Number.isSafeInteger(projectVersion) &&
-    projectVersion >= 0 &&
     typeof draftRevision === "number" &&
     typeof videoSnapshotHash === "string" &&
     /^[a-f0-9]{64}$/.test(videoSnapshotHash);
@@ -324,29 +142,6 @@ function OwnedStoryProjectHeaderActions({
                 ? t("agent.publish.notReady")
                 : null;
 
-  const showActionError = (title: string, error: unknown, fallback: string) => {
-    const kind = storyPublicationActionErrorKind(error);
-    const detail = storyPublicationActionDetail(error, fallback);
-    const message = kind ? `${t(`agent.publish.actionError.${kind}`)}\n\n${detail}` : detail;
-    const diagnostics = storyPublicationDiagnostics(error);
-    Alert.alert(title, message, [
-      ...(diagnostics.chapterId && diagnostics.issues.length > 0
-        ? [{ text: t("storyRepair.title"), onPress: () => onDiagnostics(diagnostics) }]
-        : []),
-      { text: t("agent.publish.cancel"), style: "cancel" },
-      ...(kind === "auth"
-        ? [
-            {
-              text: t("agent.publish.signIn"),
-              onPress: () => {
-                onSignIn();
-              },
-            },
-          ]
-        : []),
-    ]);
-  };
-
   const onPublishPress = () => {
     if (!canSubmit) {
       if (disabledReason) Alert.alert(t("agent.publish.action"), disabledReason);
@@ -358,40 +153,24 @@ function OwnedStoryProjectHeaderActions({
         text: t("agent.publish.confirm"),
         onPress: () => {
           void (async () => {
-            if (
-              !current() ||
-              locked.current ||
-              projectVersion == null ||
-              draftRevision == null ||
-              !videoSnapshotHash
-            )
-              return;
-            locked.current = true;
-            const signal = life.current!.signal;
+            if (draftRevision == null || !videoSnapshotHash) return;
             setSubmitting(true);
             try {
-              const release = await prepareInteractiveFilmRelease(
-                projectId,
-                {
-                  expectedProjectVersion: projectVersion,
-                  expectedDraftRevision: draftRevision,
-                  expectedVideoSnapshotHash: videoSnapshotHash,
-                },
-                signal
-              );
-              if (!current() || signal.aborted) return;
-              const next = await submitInteractiveFilmRelease(projectId, release, signal);
-              if (!current() || signal.aborted) return;
+              const release = await prepareInteractiveFilmRelease(projectId, {
+                expectedDraftRevision: draftRevision,
+                expectedVideoSnapshotHash: videoSnapshotHash,
+              });
+              const next = await submitInteractiveFilmRelease(projectId, release);
               setPublication(next);
               Alert.alert(t("agent.publish.successTitle"), t("agent.publish.success"));
             } catch (error) {
-              if (!current()) return;
-              showActionError(t("agent.publish.action"), error, t("agent.publish.failed"));
-              refresh();
-              void refreshPublication();
+              const message =
+                error instanceof Error && error.message.trim()
+                  ? error.message
+                  : t("agent.publish.failed");
+              Alert.alert(t("agent.publish.action"), message);
             } finally {
-              locked.current = false;
-              if (current()) setSubmitting(false);
+              setSubmitting(false);
             }
           })();
         },
@@ -408,26 +187,19 @@ function OwnedStoryProjectHeaderActions({
         style: "destructive",
         onPress: () => {
           void (async () => {
-            if (!current() || locked.current) return;
-            locked.current = true;
-            const signal = life.current!.signal;
             setOfflining(true);
             try {
-              const next = await offlineInteractiveFilm(projectId, signal);
-              if (!current() || signal.aborted) return;
+              const next = await offlineInteractiveFilm(projectId);
               setPublication(next);
               Alert.alert(t("agent.publish.offline.action"), t("agent.publish.offline.success"));
             } catch (error) {
-              if (!current()) return;
-              showActionError(
-                t("agent.publish.offline.action"),
-                error,
-                t("agent.publish.offline.failed")
-              );
-              void refreshPublication();
+              const message =
+                error instanceof Error && error.message.trim()
+                  ? error.message
+                  : t("agent.publish.offline.failed");
+              Alert.alert(t("agent.publish.offline.action"), message);
             } finally {
-              locked.current = false;
-              if (current()) setOfflining(false);
+              setOfflining(false);
             }
           })();
         },
@@ -463,53 +235,9 @@ function OwnedStoryProjectHeaderActions({
 
   return (
     <View style={styles.row}>
-      {canReadPublication && chapterId && !workbenchLoading ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("storyNode.open")}
-          hitSlop={8}
-          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-          onPress={() => {
-            if (active && generation === getAuthGeneration())
-              onDiagnostics({ chapterId, issues: [] });
-          }}
-        >
-          <IconSitemap size={18} color="rgba(255,255,255,0.68)" strokeWidth={1.8} />
-        </Pressable>
-      ) : null}
-      {canReadPublication ? (
+      {canRelease ? (
         <View style={styles.publishGroup}>
-          {publicationFailed ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("agent.publish.retryStatus")}
-              disabled={publicationLoading}
-              hitSlop={6}
-              onPress={() =>
-                Alert.alert(
-                  t("agent.publish.statusUnavailable"),
-                  [
-                    t(`agent.publish.guidance.${publicationErrorKind ?? "service"}`),
-                    publicationError,
-                  ]
-                    .filter(Boolean)
-                    .join("\n\n"),
-                  [
-                    { text: t("agent.publish.cancel"), style: "cancel" },
-                    ...(publicationErrorKind === "auth"
-                      ? [{ text: t("agent.publish.signIn"), onPress: () => gate.openLogin() }]
-                      : []),
-                    { text: t("agent.publish.retryStatus"), onPress: refreshPublication },
-                  ]
-                )
-              }
-            >
-              <View style={styles.badge}>
-                <IconAlertTriangle color="rgba(255,255,255,0.72)" size={14} strokeWidth={1.8} />
-                <Text style={styles.badgeText}>{t("agent.publish.status.unavailable")}</Text>
-              </View>
-            </Pressable>
-          ) : !publicationLoading ? (
+          {!publicationLoading && !publicationFailed ? (
             rejectReason ? (
               <Pressable
                 accessibilityRole="button"
@@ -526,21 +254,19 @@ function OwnedStoryProjectHeaderActions({
               badge
             )
           ) : null}
-          {canRelease && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t(submitActionKey(status, submitting, rejectReason))}
-              hitSlop={8}
-              onPress={onPublishPress}
-              style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-            >
-              {submitting ? (
-                <ActivityIndicator color="rgba(255,255,255,0.72)" size="small" />
-              ) : (
-                <PublishIcon color="rgba(255,255,255,0.68)" size={18} strokeWidth={1.8} />
-              )}
-            </Pressable>
-          )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t(submitActionKey(status, submitting, rejectReason))}
+            hitSlop={8}
+            onPress={onPublishPress}
+            style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
+          >
+            {submitting ? (
+              <ActivityIndicator color="rgba(255,255,255,0.72)" size="small" />
+            ) : (
+              <PublishIcon color="rgba(255,255,255,0.68)" size={18} strokeWidth={1.8} />
+            )}
+          </Pressable>
           {canOffline ? (
             <Pressable
               accessibilityRole="button"

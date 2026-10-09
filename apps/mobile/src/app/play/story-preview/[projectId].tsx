@@ -1,4 +1,3 @@
-import { createExperienceJourneyMapCopy } from "@/features/experience-player/lib/experience-player-copy";
 import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react-native";
 import {
   ExperienceRuntimeManifestSchema,
@@ -9,13 +8,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuth } from "@/auth";
-import { getAuthGeneration } from "@/auth/auth-store";
-import {
-  hasWorldRenderer,
-  loadWorldPreviewScope,
-  type WorldPreviewScope,
-} from "@/features/experience-player/world/world-preview-scope";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
@@ -49,7 +41,6 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 export default function StoryPreviewScreen() {
   const t = useTranslations();
   const locale = useLocale();
-  const auth = useAuth();
   const insets = useSafeAreaInsets();
   const { landscapeReady, exiting, onStageLayout } = usePlayScreenOrientation();
   const params = useLocalSearchParams<{
@@ -63,40 +54,14 @@ export default function StoryPreviewScreen() {
   const previewTitle = firstParam(params.title)?.trim() || "";
   const previewCoverUrl = firstParam(params.coverUrl)?.trim() || "";
 
-  const [loadedPreview, setPreview] = useState<
-    StoryWorkingPreview & {
-      generation: number;
-      projectId: string;
-      chapterId?: string;
-      worldScope?: WorldPreviewScope;
-    }
-  >();
-  const preview =
-    auth.status === "authenticated" &&
-    loadedPreview?.generation === auth.generation &&
-    loadedPreview.projectId === projectId &&
-    loadedPreview.chapterId === chapterId
-      ? loadedPreview
-      : undefined;
+  const [preview, setPreview] = useState<StoryWorkingPreview>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [reloadToken, setReloadToken] = useState(0);
 
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
-      journeyMap: createExperienceJourneyMapCopy(t),
-      seek: {
-        back: t("play.seek.back"),
-        forward: t("play.seek.forward"),
-        progress: t("play.seek.progress"),
-        watchedOnly: t("play.seek.watchedOnly"),
-      },
-      speed: {
-        label: t("play.speed.label"),
-        interactionBlocked: t("play.speed.interactionBlocked"),
-      },
       invalidManifest: t("play.invalidManifest"),
-      unsupportedRuntime: t("play.unsupportedRuntime"),
       manifestRoot: t("play.manifestRoot"),
       interactiveFilm: t("play.playtest.eyebrow"),
       starting: t("play.starting"),
@@ -109,9 +74,6 @@ export default function StoryPreviewScreen() {
       restart: t("play.restart"),
       noVisibleChoices: t("play.noVisibleChoices"),
       continue: t("play.continue"),
-      pause: t("play.pause"),
-      resume: t("play.resume"),
-      paused: t("play.paused"),
       emptySequence: t("play.emptySequence"),
       mediaError: (assetId: string) => t("play.mediaError").replace("{assetId}", assetId),
     }),
@@ -125,16 +87,8 @@ export default function StoryPreviewScreen() {
   useEffect(() => {
     if (!landscapeReady) return;
 
-    const abort = new AbortController();
-    const generation = auth.generation;
-    const current = () => !abort.signal.aborted && generation === getAuthGeneration();
+    let cancelled = false;
     const run = async () => {
-      if (auth.status !== "authenticated") {
-        setPreview(undefined);
-        setLoading(false);
-        setError(t("agent.signInToLoadProjects"));
-        return;
-      }
       if (!projectId) {
         setError(t("play.playtest.missingProjectId"));
         setLoading(false);
@@ -144,29 +98,23 @@ export default function StoryPreviewScreen() {
       setLoading(true);
       setError(undefined);
       try {
-        const next = await getStoryWorkingPreview(projectId, chapterId, abort.signal);
-        if (!current()) return;
-        const parsed = ExperienceRuntimeManifestSchema.safeParse(next.runtime);
-        const worldScope =
-          parsed.success && hasWorldRenderer(parsed.data)
-            ? await loadWorldPreviewScope(projectId, generation, abort.signal)
-            : undefined;
-        if (!current()) return;
-        setPreview({ ...next, generation, projectId, chapterId, worldScope });
+        const next = await getStoryWorkingPreview(projectId, chapterId);
+        if (cancelled) return;
+        setPreview(next);
       } catch (loadError) {
-        if (!current()) return;
+        if (cancelled) return;
         setError(playtestErrorMessage(loadError, t("play.playtest.errorFallback")));
         setPreview(undefined);
       } finally {
-        if (current()) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     void run();
     return () => {
-      abort.abort();
+      cancelled = true;
     };
-  }, [chapterId, landscapeReady, projectId, reloadToken, t, auth.generation, auth.status]);
+  }, [chapterId, landscapeReady, projectId, reloadToken, t]);
 
   const parsedRuntime = useMemo(() => {
     if (!preview?.runtime) return null;
@@ -235,7 +183,6 @@ export default function StoryPreviewScreen() {
           <ExperiencePlayerWithAccess
             key={`${parsedRuntime?.buildId ?? "invalid-runtime"}:${preview?.draftRevision ?? 0}:${reloadToken}`}
             accessMode="preview"
-            worldScope={preview?.worldScope}
             runtime={playableRuntime}
             locale={locale}
             copy={copy}

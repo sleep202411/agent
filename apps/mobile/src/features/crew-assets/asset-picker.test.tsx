@@ -10,8 +10,6 @@ const h = vi.hoisted(() => ({
   items: [] as CrewAsset[],
   error: undefined as string | undefined,
   more: false,
-  loading: false,
-  accessDenied: false,
   load: vi.fn(),
   query: vi.fn(),
   select: vi.fn(),
@@ -32,8 +30,7 @@ vi.mock("./use-crew-assets", () => ({
     h.query(...args);
     return {
       items: h.items,
-      loading: h.loading,
-      accessDenied: h.accessDenied,
+      loading: false,
       error: h.error,
       hasMore: h.more,
       loadMore: h.load,
@@ -126,8 +123,6 @@ beforeEach(() => {
   h.authenticated = true;
   h.error = undefined;
   h.more = false;
-  h.loading = false;
-  h.accessDenied = false;
   h.items = [folder, file];
   host = document.createElement("div");
   document.body.append(host);
@@ -225,43 +220,4 @@ it("can remove selected files after navigating away and release capacity", async
   await click("New");
   await click("crewAssets.attach");
   expect(h.select.mock.calls[0][0][0].id).toBe("new");
-});
-
-it("removes revoked selections and does not restore them after retry", async () => {
-  await render();
-  await click("Film");
-  expect(button("crewAssets.attach").disabled).toBe(false);
-  h.accessDenied = true;
-  h.error = "Access revoked";
-  h.items = [];
-  await render();
-  expect(host.textContent).not.toContain("Film");
-  expect(button("crewAssets.attach").disabled).toBe(true);
-  h.error = undefined;
-  h.loading = true;
-  await render();
-  expect(button("crewAssets.attach").disabled).toBe(true);
-  h.loading = false;
-  h.accessDenied = false;
-  h.items = [file];
-  await render();
-  expect(button("crewAssets.attach").disabled).toBe(true);
-  await click("Film");
-  await click("crewAssets.attach");
-  expect(h.select).toHaveBeenCalledWith([file]);
-});
-it("retains selections on network failure but prevents attachment during retry", async () => {
-  await render();
-  await click("Film");
-  h.error = "offline";
-  await render();
-  expect(button("crewAssets.attach").disabled).toBe(true);
-  h.error = undefined;
-  h.loading = true;
-  await render();
-  expect(button("crewAssets.attach").disabled).toBe(true);
-  h.loading = false;
-  await render();
-  await click("crewAssets.attach");
-  expect(h.select).toHaveBeenCalledWith([file]);
 });

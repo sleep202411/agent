@@ -10,8 +10,6 @@ const card = z.object({
   counterpartyRole: z.enum(["buyer", "creator", "member"]),
   crewChannel: z.enum(["team", "community"]).nullish(),
   crewName: z.string().optional(),
-  crewLogo: z.string().optional(),
-  memberCount: z.number().int().nonnegative().optional(),
   lastMessagePreview: z.string(),
   lastMessageType: z.enum(CONVERSATION_MESSAGE_TYPES),
   lastMessageAt: z.string(),

@@ -1,18 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
-import {
-  useTaskAssignmentSession,
-  parseAssignmentDraft,
-  type TaskAssignmentSession,
-} from "./use-task-assignment-session";
+import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { useTheme } from "@/hooks/use-theme";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import { fetchTaskCommentAccess } from "./task-comment-api";
 import {
+  assignmentInput,
   fetchTaskAssignments,
+  parseTaskReward,
   taskRewardText,
+  updateTaskAssignments,
   type AssignmentSnapshot,
 } from "./task-assignment-api";
 import { appEnv } from "@/config";
@@ -20,35 +19,16 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { TaskMentionPicker } from "./task-mention-picker";
 import { useUserDisplays } from "./user-displays";
 import type { TaskDetail } from "./task-detail-api";
-type Props = {
-  task: TaskDetail;
-  userId: string;
-  generation: number;
-  onRefresh: () => void;
-  session?: TaskAssignmentSession;
-};
+type Props = { task: TaskDetail; userId: string; generation: number; onRefresh: () => void };
 export function TaskAssignments(props: Props) {
-  if (props.session) return <AssignmentAccess {...props} session={props.session} />;
-  return <LocalAssignments key={`${props.task.id}:${props.generation}`} {...props} />;
-}
-function LocalAssignments(props: Props) {
-  const session = useTaskAssignmentSession(props.task.id, props.generation, props.onRefresh);
-  return <AssignmentAccess {...props} session={session} />;
-}
-function AssignmentAccess(props: Props & { session: TaskAssignmentSession }) {
   if (["approved", "cancelled"].includes(props.task.status)) return null;
   return <Access key={`${props.task.id}:${props.task.version}:${props.generation}`} {...props} />;
 }
-function Access({
-  task,
-  userId,
-  generation,
-  onRefresh,
-  session,
-}: Props & { session: TaskAssignmentSession }) {
+function Access({ task, userId, generation, onRefresh }: Props) {
   const t = useTranslations();
   const [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>();
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     void fetchTaskCommentAccess(task.crewId, userId, controller.signal).then(
@@ -64,9 +44,14 @@ function Access({
     return () => controller.abort();
   }, [task.crewId, userId, generation]);
   if (allowed === false) return null;
-  if (session.editing && allowed)
+  if (editing && allowed)
     return (
-      <LoadEditor task={task} generation={generation} onRefresh={onRefresh} session={session} />
+      <LoadEditor
+        task={task}
+        generation={generation}
+        onRefresh={onRefresh}
+        onCancel={() => setEditing(false)}
+      />
     );
   return (
     <View style={{ gap: 8 }}>
@@ -83,7 +68,7 @@ function Access({
         <Pressable
           accessibilityRole="button"
           onPress={() => {
-            if (generation === getAuthGeneration()) session.open();
+            if (generation === getAuthGeneration()) setEditing(true);
           }}
           style={{ padding: 12 }}
         >
@@ -94,19 +79,16 @@ function Access({
   );
 }
 
-function LoadEditor(props: Omit<Props, "userId"> & { session: TaskAssignmentSession }) {
+function LoadEditor(props: Omit<Props, "userId"> & { onCancel: () => void }) {
   const t = useTranslations();
-  const initialize = props.session.initialize;
   const [snapshot, setSnapshot] = useState<AssignmentSnapshot>(),
     [error, setError] = useState<string>();
   useEffect(() => {
     const controller = new AbortController();
     void fetchTaskAssignments(props.task, controller.signal).then(
       (value) => {
-        if (!controller.signal.aborted && props.generation === getAuthGeneration()) {
-          initialize(value);
+        if (!controller.signal.aborted && props.generation === getAuthGeneration())
           setSnapshot(value);
-        }
       },
       (cause) => {
         if (!controller.signal.aborted && props.generation === getAuthGeneration())
@@ -114,16 +96,13 @@ function LoadEditor(props: Omit<Props, "userId"> & { session: TaskAssignmentSess
       }
     );
     return () => controller.abort();
-  }, [props.task, props.generation, initialize]);
-  if (snapshot && props.session.draft) return <Editor {...props} snapshot={snapshot} />;
+  }, [props.task, props.generation]);
+  if (snapshot) return <Editor {...props} snapshot={snapshot} />;
   return (
     <View style={{ gap: 8 }}>
       {!error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      <Pressable
-        accessibilityRole="button"
-        onPress={error ? props.onRefresh : props.session.cancel}
-      >
+      <Pressable accessibilityRole="button" onPress={error ? props.onRefresh : props.onCancel}>
         <ThemedText>{t(error ? "thread.refresh" : "myServices.cancel")}</ThemedText>
       </Pressable>
     </View>
@@ -133,34 +112,52 @@ function Editor({
   snapshot,
   generation,
   onRefresh,
-  session,
+  onCancel,
 }: {
   snapshot: AssignmentSnapshot;
   generation: number;
   onRefresh: () => void;
-  session: TaskAssignmentSession;
+  onCancel: () => void;
 }) {
   const t = useTranslations(),
-    theme = useTheme();
+    theme = useTheme(),
+    op = useAuthFormOperation(snapshot.id, true);
   const regionalCurrency = appEnv.siteRegion === "cn" ? "CNY" : "USD";
-  const state = session.draft!,
-    draft = state.rows,
-    error = state.error;
-  const [picker, setPicker] = useState(false);
-  const locked = session.busy || !!state.attemptedAt;
-  const stale = snapshot.version !== state.snapshot.version;
-  const canReview =
-    !session.busy && (stale || (!!state.attemptedAt && snapshot !== state.attemptedAt));
-  const displays = useUserDisplays(String(generation), [
-    ...new Set([...draft.map((a) => a.userId), ...snapshot.assignees.map((a) => a.userId)]),
-  ]);
-  const input = parseAssignmentDraft(state);
+  const [draft, setDraft] = useState(() =>
+    snapshot.assignees.map((a) => ({
+      userId: a.userId,
+      currency: a.rewardAmountMinor === null ? regionalCurrency : a.currency,
+      reward: taskRewardText(a.rewardAmountMinor),
+    }))
+  );
+  const [picker, setPicker] = useState(false),
+    [attempted, setAttempted] = useState(false),
+    [error, setError] = useState<string>();
+  const attemptedRef = useRef(false),
+    locked = attempted || op.busy;
+  const displays = useUserDisplays(
+    String(generation),
+    draft.map((a) => a.userId)
+  );
+  let input: ReturnType<typeof assignmentInput.parse> | undefined;
+  try {
+    input = assignmentInput.parse({
+      expectedVersion: snapshot.version,
+      assignees: draft.map((a) => ({
+        userId: a.userId,
+        currency: a.currency,
+        rewardAmountMinor: parseTaskReward(a.reward),
+      })),
+    });
+  } catch {
+    /* Keep invalid amounts editable. */
+  }
   const changed =
     input &&
-    (input.assignees.length !== state.snapshot.assignees.length ||
+    (input.assignees.length !== snapshot.assignees.length ||
       input.assignees.some(
         (a) =>
-          !state.snapshot.assignees.some(
+          !snapshot.assignees.some(
             (old) =>
               old.userId === a.userId &&
               old.currency === a.currency &&
@@ -184,7 +181,7 @@ function Editor({
             editable={!locked}
             maxLength={12}
             onChangeText={(reward) =>
-              session.change((current) =>
+              setDraft((current) =>
                 current.map((item) => (item.userId === a.userId ? { ...item, reward } : item))
               )
             }
@@ -194,7 +191,7 @@ function Editor({
             accessibilityRole="button"
             disabled={locked}
             onPress={() =>
-              session.change((current) => current.filter((item) => item.userId !== a.userId))
+              setDraft((current) => current.filter((item) => item.userId !== a.userId))
             }
             style={{ padding: 12 }}
           >
@@ -214,65 +211,47 @@ function Editor({
         <ThemedText>{t("taskCreate.add")}</ThemedText>
       </Pressable>
       {!input && <ThemedText accessibilityRole="alert">{t("taskAssignments.invalid")}</ThemedText>}
-      {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      {(error || stale) && (
-        <Pressable
-          accessibilityRole="button"
-          disabled={session.busy}
-          onPress={onRefresh}
-          style={{ padding: 12 }}
-        >
-          <ThemedText>{t("thread.refresh")}</ThemedText>
-        </Pressable>
-      )}
-      {canReview && (
-        <View style={{ gap: 8 }}>
-          <ThemedText>{t("taskAssignments.latest")}</ThemedText>
-          {snapshot.assignees.length ? (
-            snapshot.assignees.map((a) => (
-              <ThemedText key={a.userId}>
-                {label(a.userId)} · {a.currency} ·{" "}
-                {taskRewardText(a.rewardAmountMinor) || t("thread.taskUnset")}
-              </ThemedText>
-            ))
-          ) : (
-            <ThemedText>{t("thread.taskUnset")}</ThemedText>
-          )}
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => session.review(snapshot)}
-            style={{ padding: 12 }}
-          >
-            <ThemedText>{t("taskBrief.reviewLatest")}</ThemedText>
+      {error && (
+        <>
+          <ThemedText accessibilityRole="alert">{error}</ThemedText>
+          <Pressable accessibilityRole="button" onPress={onRefresh}>
+            <ThemedText>{t("thread.refresh")}</ThemedText>
           </Pressable>
-        </View>
+        </>
       )}
       <Pressable
         accessibilityRole="button"
-        disabled={!input || !changed || locked || stale}
-        style={{ padding: 12, opacity: !input || !changed || locked || stale ? 0.45 : 1 }}
+        disabled={!input || !changed || locked}
+        style={{ padding: 12 }}
         onPress={() => {
-          if (input && changed && !locked && !stale) session.save(snapshot);
+          if (!input || !changed || attemptedRef.current || generation !== getAuthGeneration())
+            return;
+          const data = input;
+          void op.run(
+            () => {
+              attemptedRef.current = true;
+              setAttempted(true);
+              return updateTaskAssignments(snapshot, data);
+            },
+            onRefresh,
+            (cause) => setError(cause instanceof Error ? cause.message : String(cause))
+          );
         }}
       >
         <ThemedText>{t("taskBrief.save")}</ThemedText>
       </Pressable>
-      {session.busy && <ActivityIndicator />}
+      {op.busy && <ActivityIndicator />}
       <Pressable
         accessibilityRole="button"
-        disabled={session.busy}
-        onPress={session.cancel}
+        disabled={op.busy}
+        onPress={attempted ? onRefresh : onCancel}
         style={{ padding: 12 }}
       >
         <ThemedText>{t("myServices.cancel")}</ThemedText>
       </Pressable>
-      <Modal
-        visible={picker && !locked}
-        animationType="slide"
-        onRequestClose={() => setPicker(false)}
-      >
+      <Modal visible={picker} animationType="slide" onRequestClose={() => setPicker(false)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-          {picker && !locked && (
+          {picker && (
             <TaskMentionPicker
               crewId={snapshot.crewId}
               userId=""
@@ -282,8 +261,8 @@ function Editor({
               excludedIds={draft.map((a) => a.userId)}
               onClose={() => setPicker(false)}
               onSelect={(member) => {
-                if (generation !== getAuthGeneration() || locked) return;
-                session.change((current) =>
+                if (generation !== getAuthGeneration() || attemptedRef.current) return;
+                setDraft((current) =>
                   current.length >= 30 || current.some((a) => a.userId === member.userId)
                     ? current
                     : [

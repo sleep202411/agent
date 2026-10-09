@@ -28,7 +28,6 @@ export function positionDraft(row: EditablePosition): PositionEditDraft {
     employmentType: row.employmentType,
     experienceLevel: row.experienceLevel,
     requiredSkills: row.requiredSkills,
-    paymentTerms: row.paymentTerms ?? null,
     salary: {
       period: row.salary.period ?? "project",
       currency,

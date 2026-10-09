@@ -1,4 +1,3 @@
-import { taskWorkflowLabel } from "./task-workflow-label";
 import { Pressable, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
@@ -37,7 +36,7 @@ export function TaskRelations({
                   TASK-{item.number} · {item.title}
                 </ThemedText>
                 <ThemedText type="small">
-                  {taskWorkflowLabel(item.workflowState, t)}
+                  {item.workflowState.name}
                   {"resolved" in item
                     ? ` · ${t(item.resolved ? "taskRelations.resolved" : "taskRelations.unresolved")}`
                     : ""}

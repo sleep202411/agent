@@ -1,23 +1,15 @@
-import { ServiceEditorDrafts } from "./service-editor-drafts";
-import { ServiceIntentProvider } from "./service-intent";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { service } from "./order-fixture.test-helper";
 import { ServiceOrder } from "./service-order";
 const h = vi.hoisted(() => ({
-  read: vi.fn(),
-  save: vi.fn(),
-  clear: vi.fn(),
   send: vi.fn(),
   push: vi.fn(),
   gate: vi.fn(),
   generation: 1,
   userId: "buyer",
   authenticated: true,
-}));
-vi.mock("./order-outbox", () => ({
-  orderOutbox: () => ({ read: h.read, save: h.save, clear: h.clear }),
 }));
 vi.mock("./inquiry-api", () => ({ sendServiceInquiry: h.send, inquiryKey: () => "stable-key" }));
 vi.mock("@/lib/api-client", () => ({ api: { post: vi.fn() } }));
@@ -84,8 +76,6 @@ function type(text: string) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
-  h.read.mockReturnValue(null);
-  h.save.mockImplementation((value) => value);
   h.generation = 1;
   h.userId = "buyer";
   h.authenticated = true;
@@ -127,8 +117,7 @@ it("retries the identical request after network failure and freezes its inputs",
   await compose();
   await act(async () => click("serviceOrder.submit"));
   expect(host.querySelector("input")!.disabled).toBe(true);
-  expect(host.textContent).toContain("serviceOrder.retryHint");
-  await act(async () => click("inbox.retry"));
+  await act(async () => click("serviceOrder.submit"));
   expect(h.send.mock.calls[0][0]).toEqual(h.send.mock.calls[1][0]);
 });
 it("ignores old-account completion and resets the questionnaire", async () => {
@@ -143,10 +132,8 @@ it("ignores old-account completion and resets the questionnaire", async () => {
   h.generation = 2;
   await render();
   await act(async () => finish("old"));
-  expect(host.querySelector("input")).toBeNull();
-  expect(host.textContent).not.toContain("serviceOrder.sent");
-  await act(async () => click("serviceOrder.title"));
   expect(host.querySelector("input")!.value).toBe("");
+  expect(host.textContent).not.toContain("serviceOrder.sent");
 });
 it("requires sign-in and hides order entry for the owner or an unlisted service", async () => {
   h.authenticated = false;
@@ -162,273 +149,3 @@ it("requires sign-in and hides order entry for the owner or an unlisted service"
   await render("paused");
   expect(host.textContent).toBe("");
 });
-
-it("restores original terms and answers even after the service changes", async () => {
-  const pending = {
-    clientKey: "old-request-key",
-    payload: {
-      serviceId: service.id,
-      expectedServiceVersion: 2,
-      packageTier: "premium",
-      answers: [{ questionId: "old-brief", answer: "Original brief" }],
-      note: "Original note",
-      idempotencyKey: "old-request-key",
-    },
-    offer: {
-      packages: [
-        {
-          ...service.packages[1],
-          title: "Original package",
-          price: 20,
-          deliveryDays: 7,
-          revisions: -1,
-        },
-      ],
-      requirementQuestions: [{ id: "old-brief", prompt: "Original question", required: true }],
-    },
-  };
-  h.read.mockReturnValue(pending);
-  h.send.mockResolvedValue("original-order");
-  await render();
-  await act(async () => click("serviceOrder.title"));
-  expect(host.textContent).toContain("Original package");
-  expect(host.textContent).toContain(
-    "7 serviceDetail.days · serviceDetail.unlimitedRevisions serviceDetail.revisions"
-  );
-  expect(host.textContent).toContain("Original question");
-  expect(host.querySelector("input")!.value).toBe("Original brief");
-  expect(host.querySelector("input")!.disabled).toBe(true);
-  expect(host.textContent).toContain("serviceOrder.retryHint");
-  await act(async () => click("inbox.retry"));
-  expect(h.send).toHaveBeenCalledWith(pending.payload);
-  expect(h.save.mock.invocationCallOrder[0]).toBeLessThan(h.send.mock.invocationCallOrder[0]);
-  expect(h.clear).toHaveBeenCalledWith("old-request-key");
-});
-it("does not submit or freeze edits when saving fails", async () => {
-  h.save.mockImplementationOnce(() => {
-    throw new Error("Disk full");
-  });
-  h.send.mockResolvedValue("order");
-  await compose();
-  await act(async () => click("serviceOrder.submit"));
-  expect(h.send).not.toHaveBeenCalled();
-  expect(host.querySelector("input")!.disabled).toBe(false);
-  await act(async () => type("Changed before submission"));
-  await act(async () => click("serviceOrder.submit"));
-  expect(h.send.mock.calls[0][0].answers[0].answer).toBe("Changed before submission");
-});
-
-it("allows an original pending order to be recovered when the service is paused", async () => {
-  const payload = {
-    serviceId: service.id,
-    expectedServiceVersion: 2,
-    packageTier: "basic",
-    answers: [],
-    idempotencyKey: "pending-key",
-  };
-  h.read.mockReturnValue({
-    clientKey: "pending-key",
-    payload,
-    offer: { packages: service.packages, requirementQuestions: [] },
-  });
-  h.send.mockResolvedValue("original-order");
-  await render("paused");
-  await act(async () => click("serviceOrder.title"));
-  await act(async () => click("inbox.retry"));
-  expect(h.send).toHaveBeenCalledWith(payload);
-});
-
-it("resumes the guest action after login replaces the service controls", async () => {
-  h.authenticated = false;
-  let complete!: () => void;
-  h.gate.mockImplementation(({ onAuthenticated }: { onAuthenticated: () => void }) => {
-    complete = onAuthenticated;
-  });
-  const page = (ready: boolean) =>
-    act(async () =>
-      root.render(
-        <ServiceIntentProvider>
-          {ready ? <ServiceOrder service={service} /> : <span>reloading service</span>}
-        </ServiceIntentProvider>
-      )
-    );
-  await page(true);
-  await act(async () => click("serviceOrder.title"));
-  h.authenticated = true;
-  h.generation = 2;
-  await page(false);
-  await act(async () => complete());
-  await page(true);
-  expect(host.querySelector("input")).not.toBeNull();
-  expect(h.send).not.toHaveBeenCalled();
-  h.generation = 3;
-  await page(true);
-  expect(host.querySelector("input")).toBeNull();
-});
-
-it("does not resume an old guest action on a different service page", async () => {
-  h.authenticated = false;
-  let complete!: () => void;
-  h.gate.mockImplementation(({ onAuthenticated }: { onAuthenticated: () => void }) => {
-    complete = onAuthenticated;
-  });
-  const page = (id: string) =>
-    act(async () =>
-      root.render(
-        <ServiceIntentProvider key={id}>
-          <ServiceOrder service={{ ...service, id }} />
-        </ServiceIntentProvider>
-      )
-    );
-  await page("first");
-  await act(async () => click("serviceOrder.title"));
-  h.authenticated = true;
-  h.generation = 2;
-  await page("second");
-  await act(async () => complete());
-  expect(host.querySelector("input")).toBeNull();
-  expect(h.send).not.toHaveBeenCalled();
-});
-
-it("preserves unsent answers on reload and requires review of a changed offer", async () => {
-  const draw = (shown: boolean, version = 3, scope = "buyer") =>
-    act(async () =>
-      root.render(
-        <ServiceEditorDrafts key={scope}>
-          <ServiceIntentProvider>
-            {shown && (
-              <ServiceOrder
-                key={version}
-                service={{
-                  ...service,
-                  version,
-                  packages: service.packages.map((p) => ({
-                    ...p,
-                    price: version === 3 ? p.price : p.price + 10,
-                  })),
-                }}
-              />
-            )}
-          </ServiceIntentProvider>
-        </ServiceEditorDrafts>
-      )
-    );
-  await draw(true);
-  await act(async () => click("serviceOrder.title"));
-  await act(async () => type("Keep this brief"));
-  const note = host.querySelectorAll("input")[2]!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      note,
-      "Keep this note"
-    );
-    note.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await draw(false);
-  await draw(true);
-  expect(host.querySelectorAll("input")[0]?.value).toBe("Keep this brief");
-  expect(host.querySelectorAll("input")[2]?.value).toBe("Keep this note");
-  expect(host.textContent).not.toContain("serviceOrder.offerChanged");
-  await draw(false);
-  await draw(true, 4);
-  expect(host.querySelectorAll("input")[0]?.value).toBe("Keep this brief");
-  expect(host.textContent).toContain("serviceOrder.offerChanged");
-  await act(async () => click("serviceOrder.submit"));
-  expect(h.send).not.toHaveBeenCalled();
-  await act(async () => click("serviceOrder.reviewOffer"));
-  h.send.mockResolvedValue("order");
-  await act(async () => click("serviceOrder.submit"));
-  expect(h.send).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({
-      expectedServiceVersion: 4,
-      note: "Keep this note",
-      answers: expect.arrayContaining([{ questionId: "brief", answer: "Keep this brief" }]),
-    })
-  );
-  await act(async () => click("experienceEdit.cancel"));
-  await act(async () => click("serviceOrder.title"));
-  expect(host.querySelector("input")?.value).toBe("");
-  await act(async () => type("Different draft"));
-  await draw(true, 4, "other-account");
-  await act(async () => click("serviceOrder.title"));
-  expect(host.querySelector("input")?.value).toBe("");
-});
-
-it("requires choosing a remaining package when the selected tier was removed", async () => {
-  const draw = (version: number) =>
-    act(async () =>
-      root.render(
-        <ServiceEditorDrafts>
-          <ServiceIntentProvider>
-            <ServiceOrder
-              key={version}
-              service={{
-                ...service,
-                version,
-                packages: version === 3 ? service.packages : service.packages.slice(1),
-              }}
-            />
-          </ServiceIntentProvider>
-        </ServiceEditorDrafts>
-      )
-    );
-  await draw(3);
-  await act(async () => click("serviceOrder.title"));
-  await act(async () => type("Keep this brief"));
-  await draw(4);
-  await act(async () => click("serviceOrder.reviewOffer"));
-  await act(async () => click("serviceOrder.submit"));
-  expect(h.send).not.toHaveBeenCalled();
-  await act(async () => click("Premium · $30.003 serviceDetail.days · 2 serviceDetail.revisions"));
-  h.send.mockResolvedValue("order");
-  await act(async () => click("serviceOrder.submit"));
-  expect(h.send).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ packageTier: "premium", expectedServiceVersion: 4 })
-  );
-});
-
-it.each([false, true])(
-  "retains a confirmed result when its original form unmounts (return before reply: %s)",
-  async (returnFirst) => {
-    let finish!: (id: string) => void;
-    h.send.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        })
-    );
-    const draw = (shown: boolean, scope = "buyer", status = "listed") =>
-      act(async () =>
-        root.render(
-          <ServiceEditorDrafts key={scope}>
-            <ServiceIntentProvider>
-              {shown && (
-                <ServiceOrder
-                  service={{
-                    ...service,
-                    status,
-                    packages: status === "paused" ? [] : service.packages,
-                  }}
-                />
-              )}
-            </ServiceIntentProvider>
-          </ServiceEditorDrafts>
-        )
-      );
-    await draw(true);
-    await act(async () => click("serviceOrder.title"));
-    await act(async () => type("Keep the confirmed result"));
-    await act(async () => click("serviceOrder.submit"));
-    await draw(false);
-    if (returnFirst) await draw(true);
-    await act(async () => finish("confirmed"));
-    await draw(true, "buyer", "paused");
-    expect(host.textContent).toContain("serviceOrder.sent");
-    expect(host.querySelector("input")).toBeNull();
-    expect(h.send).toHaveBeenCalledOnce();
-    await act(async () => click("serviceOrder.open"));
-    expect(h.push).toHaveBeenCalledWith("/order/confirmed");
-    await draw(true, "other-account");
-    expect(host.textContent).not.toContain("serviceOrder.sent");
-  }
-);

@@ -1,7 +1,6 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { useTaskAssignmentSession } from "./use-task-assignment-session";
 import { TaskAssignments } from "./task-assignments";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({
@@ -191,68 +190,4 @@ it("ignores save completion after switching accounts", async () => {
   h.generation = 2;
   await act(async () => finish());
   expect(h.refresh).not.toHaveBeenCalled();
-});
-
-function RefreshingAssignments({ value, visible }: { value: TaskDetail; visible: boolean }) {
-  const session = useTaskAssignmentSession(value.id, 1, h.refresh);
-  return visible ? (
-    <TaskAssignments
-      key={value.version}
-      task={value}
-      userId="1"
-      generation={1}
-      onRefresh={h.refresh}
-      session={session}
-    />
-  ) : null;
-}
-const refreshRender = (value = task, visible = true) =>
-  act(async () => root.render(<RefreshingAssignments value={value} visible={visible} />));
-it("retains selected contributors and rewards across reload, requiring explicit version review", async () => {
-  await refreshRender();
-  await act(async () => button("taskAssignments.edit")!.click());
-  await act(async () => type(0, "150.50"));
-  await act(async () => button("taskCreate.add")!.click());
-  await act(async () => button("pick")!.click());
-  await refreshRender(task, false);
-  const latest = { ...(await h.fetch()), version: 5 };
-  h.fetch.mockResolvedValue(latest);
-  await refreshRender({ ...task, version: 5 });
-  expect(host.querySelectorAll("input")[0]!.value).toBe("150.50");
-  expect(host.querySelectorAll("input")).toHaveLength(2);
-  expect(button("taskBrief.save")!.disabled).toBe(true);
-  await act(async () => button("taskBrief.reviewLatest")!.click());
-  await act(async () => button("taskBrief.save")!.click());
-  expect(h.update).toHaveBeenCalledExactlyOnceWith(latest, {
-    expectedVersion: 5,
-    assignees: [
-      { userId: "1", currency: "USD", rewardAmountMinor: 15050 },
-      { userId: "2", currency: "CNY", rewardAmountMinor: null },
-    ],
-  });
-});
-it("retains pending assignment locks through refresh and preserves conflict details", async () => {
-  let fail!: (e: Error) => void;
-  h.update.mockImplementation(
-    () =>
-      new Promise((_, reject) => {
-        fail = reject;
-      })
-  );
-  await refreshRender();
-  await act(async () => button("taskAssignments.edit")!.click());
-  await act(async () => type(0, "150.50"));
-  await act(async () => button("taskBrief.save")!.click());
-  await refreshRender(task, false);
-  h.fetch.mockResolvedValue({ ...(await h.fetch()) });
-  await refreshRender({ ...task });
-  expect(button("taskBrief.save")!.disabled).toBe(true);
-  expect(button("myServices.cancel")!.disabled).toBe(true);
-  expect(button("taskBrief.reviewLatest")).toBeUndefined();
-  await act(async () => fail(new Error("Assignment conflict")));
-  expect(host.textContent).toContain("Assignment conflict");
-  expect(host.querySelector("input")!.value).toBe("150.50");
-  await act(async () => button("taskBrief.reviewLatest")!.click());
-  expect(button("taskBrief.save")!.disabled).toBe(false);
-  expect(h.update).toHaveBeenCalledOnce();
 });

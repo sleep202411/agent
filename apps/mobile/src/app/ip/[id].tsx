@@ -1,18 +1,3 @@
-import { PublicIpReleaseLinks } from "@/features/ip-author/public-ip-release-links";
-import { NextVideoControl } from "@/features/content-gps/next-video-control";
-import { useMemberView } from "@/features/ip-community/use-member-view";
-import { ChannelSubmissions } from "@/features/ip-community/channel-submissions";
-import { IpProductionStage } from "@/features/ip-community/ip-production-stage";
-import { IpReportSheet } from "@/features/ip-community/ip-report-sheet";
-import { useIpModeration } from "@/features/ip-community/use-ip-moderation";
-import { useIpEngagement } from "@/features/ip-community/use-ip-engagement";
-import { IpFanCommunity } from "@/features/ip-community/ip-fan-community";
-import { IpContributingStudios } from "@/features/studios/ip-contributing-studios";
-import { resolvePlan, type UnlockPlan } from "@/features/content-gps/episode-access";
-import { usePlaybackDetail } from "@/features/content-gps/use-playback-detail";
-import { resolvePlaybackEntry } from "@/features/content-gps/playback-entry";
-import { BookmarkControl } from "@/features/ip-collection/bookmark-control";
-import { IpTags } from "@/features/browse/ip-tags";
 import { EpisodeFeedback } from "@/components/episode-feedback";
 import { IpKnowledgeChat } from "@/components/ip-knowledge-chat";
 import { IpGenerationPanel } from "@/components/ip-generation-panel";
@@ -34,25 +19,51 @@ import { useVideoPlayer, VideoView } from "expo-video";
 
 import { useAuth, useAuthGate } from "@/auth";
 import { ShareSheet } from "@/components/ip-share-sheet";
-import { MoreActionsButton } from "@/components/report-actions";
+import {
+  MoreActionsButton,
+  ReportReasonSheet,
+  showContentActionsMenu,
+} from "@/components/report-actions";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { EmptyState, PosterImage, SectionHeader } from "@/components/ui";
+import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { webBaseUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { promptInsufficientPaywall } from "@/features/paywall";
 import { useScreenActive } from "@/hooks/use-app-active";
+import { invalidateBrowse } from "@/data/browse-refresh";
 import {
+  blockIpContent,
+  fetchIpAccess,
+  getIpById,
   isInsufficientBalanceError,
   isMemberOnlyError,
+  likeIp,
   purchaseIpContent,
+  recordIpView,
+  reportIpContent,
+  unlikeIp,
+  type IpReportReason,
 } from "@/data/browse-service";
-import type { IpEngagementSnapshot, IpEpisode, Person } from "@/data/types";
+import type {
+  EpisodeAccess,
+  IpAccess,
+  IpDetail,
+  IpEngagementSnapshot,
+  IpEpisode,
+  Person,
+  PriceRule,
+} from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 import { dicebearAvatarUrl } from "@/lib/avatar";
 import { toHref } from "@/lib/navigation";
+
+/** Charge price = the member-discounted amount when present, else list amount. */
+function chargeAmount(rule: PriceRule): string {
+  return rule.memberAmount ?? rule.amount;
+}
 
 /** Format whole community points for display (locale-grouped; amounts are BigInt strings). */
 function formatPoints(value: string, locale: string): string {
@@ -84,32 +95,58 @@ function formatEngagementCount(value: number, locale: string): string {
   }
 }
 
-export default function IpDetailScreen() {
-  const params = useLocalSearchParams<{
-    id: string;
-    watch?: string | string[];
-    episode?: string | string[];
-  }>();
-  const auth = useAuth();
-  const locale = useLocale();
-  // A different viewer, locale or playback target cannot retain the previous video.
-  return (
-    <IpDetailSession
-      key={JSON.stringify([params.id, params.watch, params.episode, auth.generation, locale])}
-    />
-  );
+/** Resolved action for a locked episode. */
+type UnlockPlan =
+  | { kind: "pending" }
+  | { kind: "member" }
+  | {
+      kind: "buy";
+      targetType: "ip" | "episode";
+      episodeId?: string;
+      priceRuleId?: string;
+      /** Community points to charge (whole points, string). */
+      points: string;
+    };
+
+/** Access codes that are already watchable — no unlock action. */
+const GRANTED_ACCESS: EpisodeAccess[] = [
+  "owned_ip",
+  "owned_episode",
+  "free_preview",
+  "member_free",
+  "free",
+];
+
+/** What tapping an episode does, from the authoritative access map. Returns
+ *  undefined when the episode is already granted (play it) OR access is unknown
+ *  (degrade to the media-URL fallback). Pure so it can run against a freshly
+ *  refetched access after login. */
+function resolvePlan(access: IpAccess | undefined, episode: IpEpisode): UnlockPlan | undefined {
+  const state = access?.episodes[episode.id];
+  if (!state) return undefined; // access not loaded — fall back to videoUrl presence
+  if (GRANTED_ACCESS.includes(state.access)) return undefined; // already watchable
+  if (state.access.startsWith("pending_unlock")) return { kind: "pending" };
+  if (state.access === "member_locked") return { kind: "member" };
+  // A per-episode price → buy just this episode.
+  if (state.access === "locked" && state.price) {
+    return {
+      kind: "buy",
+      targetType: "episode",
+      episodeId: episode.id,
+      priceRuleId: state.price.id,
+      points: chargeAmount(state.price),
+    };
+  }
+  // Gated by the whole-IP bundle price → buy the IP (unlocks all episodes).
+  const ipRule = access?.ip.price ?? null;
+  if (ipRule) {
+    return { kind: "buy", targetType: "ip", priceRuleId: ipRule.id, points: chargeAmount(ipRule) };
+  }
+  return undefined;
 }
 
-function IpDetailSession() {
-  const params = useLocalSearchParams<{
-    id: string;
-    watch?: string | string[];
-    episode?: string | string[];
-  }>();
-  const { id } = params;
-  // Invalid duplicate parameters remain invalid, with stable effect dependencies.
-  const watch = Array.isArray(params.watch) ? "invalid" : params.watch;
-  const episode = Array.isArray(params.episode) ? "" : params.episode;
+export default function IpDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const t = useTranslations();
@@ -118,30 +155,44 @@ function IpDetailSession() {
   const authGate = useAuthGate();
   const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
-  const active = useScreenActive();
-  const {
-    ip,
-    setIp,
-    access,
-    accessError,
-    accessBusy,
-    loading,
-    playing,
-    setPlaying,
-    refresh,
-    aliveRef,
-    revision,
-    isCurrent,
-  } = usePlaybackDetail(id, watch, episode, active);
-  // Preserve pending feedback while playback is hidden during an access recheck.
-  const [feedbackEpisodeId, setFeedbackEpisodeId] = useState<string>();
-  if (playing?.episodeId && playing.episodeId !== feedbackEpisodeId) {
-    setFeedbackEpisodeId(playing.episodeId);
-  }
-  const unlockBusyRef = useRef(false);
+  const viewedIpRef = useRef<string | null>(null);
+  const [ip, setIp] = useState<IpDetail>();
+  // Per-viewer access + community-point balance + prices (authoritative unlock state).
+  const [access, setAccess] = useState<IpAccess>();
+  const [loading, setLoading] = useState(true);
   const [unlocking, setUnlocking] = useState(false);
+  const [likeBusy, setLikeBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [playing, setPlaying] = useState<{ url: string; title: string; episodeId?: string }>();
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      setLoading(true);
+      try {
+        // Detail carries the episode list + (once entitled) the video URLs;
+        // access carries per-viewer unlock state, prices and the point balance.
+        const [detail, acc] = await Promise.all([
+          getIpById(id),
+          fetchIpAccess(id).catch(() => undefined),
+        ]);
+        if (!alive) return;
+        setIp(detail);
+        setAccess(acc);
+      } catch {
+        if (alive) setIp(undefined);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      alive = false;
+    };
+  }, [id]);
 
   const applyEngagement = useCallback(
     (ipId: string, engagement: IpEngagementSnapshot | undefined) => {
@@ -158,18 +209,43 @@ function IpDetailSession() {
           : current
       );
     },
-    [locale, setIp]
+    [locale]
   );
 
-  const engagement = useIpEngagement(ip, active && !accessBusy, applyEngagement, refresh, (error) =>
-    Alert.alert(t("ipDetail.likeFailed"), error instanceof Error ? error.message : undefined)
-  );
+  useEffect(() => {
+    const ipId = ip?.id;
+    if (!ipId || viewedIpRef.current === ipId) return;
+    viewedIpRef.current = ipId;
+    let alive = true;
+    void recordIpView(ipId, { source: "mobile_detail" })
+      .then((engagement) => {
+        if (!alive) return;
+        applyEngagement(ipId, engagement);
+        if (engagement) invalidateBrowse();
+      })
+      .catch(() => {
+        // Browsing should never dead-end because analytics recording failed.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [applyEngagement, ip?.id]);
 
-  const moderation = useIpModeration(id, active, () => router.back());
-
-  const retryAccess = () => {
-    if (!accessBusy && !unlocking) void refresh(true);
-  };
+  // Re-pull detail + access after an unlock (media URL appears; balance drops).
+  // Returns both so the caller can auto-play the episode + read the fresh balance
+  // without waiting on a state-update tick.
+  const refreshAfterUnlock = useCallback(async (): Promise<{
+    detail: IpDetail | undefined;
+    access: IpAccess | undefined;
+  }> => {
+    const [detail, acc] = await Promise.all([
+      getIpById(id),
+      fetchIpAccess(id).catch(() => undefined),
+    ]);
+    setIp(detail);
+    setAccess(acc);
+    return { detail, access: acc };
+  }, [id]);
 
   if (loading) {
     return (
@@ -183,30 +259,37 @@ function IpDetailSession() {
     return (
       <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
         <EmptyState
-          title={t(accessError !== null ? "ipDetail.accessCheckFailed" : "ipDetail.notFoundTitle")}
-          detail={
-            accessError ||
-            t(accessError !== null ? "ipDetail.accessCheckFailed" : "ipDetail.notFoundDetail")
-          }
+          title={t("ipDetail.notFoundTitle")}
+          detail={t("ipDetail.notFoundDetail")}
           symbol={{ ios: "film", android: "movie", web: "movie" }}
         />
-        {accessError !== null && (
-          <Pressable
-            accessibilityRole="button"
-            disabled={accessBusy}
-            onPress={retryAccess}
-            style={{ minHeight: 44, justifyContent: "center" }}
-          >
-            <ThemedText type="smallBold" style={{ color: theme.brand }}>
-              {t("common.retry")}
-            </ThemedText>
-          </Pressable>
-        )}
       </ThemedView>
     );
   }
 
   const planFor = (episode: IpEpisode) => resolvePlan(access, episode);
+
+  const submitLikeToggle = async () => {
+    if (likeBusy) return;
+    setLikeBusy(true);
+    try {
+      const engagement = ip.viewerHasLiked ? await unlikeIp(ip.id) : await likeIp(ip.id);
+      applyEngagement(ip.id, engagement);
+      invalidateBrowse();
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        authGate.openLogin({ onAuthenticated: () => void submitLikeToggle() });
+        return;
+      }
+      Alert.alert(t("ipDetail.likeFailed"));
+    } finally {
+      setLikeBusy(false);
+    }
+  };
+
+  const toggleLike = () => {
+    authGate.requireAuth({ onAuthenticated: () => void submitLikeToggle() });
+  };
 
   const metaParts = [
     ip.year?.toString(),
@@ -219,8 +302,6 @@ function IpDetailSession() {
     setPlaying({
       url,
       title: title ?? ip.title,
-      targetEpisodeId: episode?.id,
-      source: episode ? undefined : "trailer",
       episodeId: episode?.feedbackEligible ? episode.id : undefined,
     });
     scrollRef.current?.scrollTo({ y: 0, animated: true });
@@ -231,17 +312,7 @@ function IpDetailSession() {
     `${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`;
 
   // Tap action for an episode, against the current access snapshot.
-  const runPurchase = async (
-    plan: Extract<UnlockPlan, { kind: "buy" }>,
-    episode: IpEpisode,
-    version: number
-  ) => {
-    if (!isCurrent(version)) {
-      if (isCurrent(revision.current)) Alert.alert(t("ipDetail.accessChanged"));
-      return;
-    }
-    if (unlockBusyRef.current || !aliveRef.current) return;
-    unlockBusyRef.current = true;
+  const runPurchase = async (plan: Extract<UnlockPlan, { kind: "buy" }>, episode: IpEpisode) => {
     setUnlocking(true);
     try {
       await purchaseIpContent({
@@ -250,33 +321,24 @@ function IpDetailSession() {
         episodeId: plan.episodeId,
         priceRuleId: plan.priceRuleId,
       });
-      if (!aliveRef.current) return;
-      // Successful writes are followed by a read, never automatically replayed.
-      // A background completion is reconciled by the next foreground read.
-      const refreshed = await refresh();
-      if (!refreshed) return;
-      const { detail, access: acc } = refreshed;
+      const { detail, access: acc } = await refreshAfterUnlock();
       // The just-unlocked episode's media URL now resolves — start playback.
       const fresh = detail?.episodes.find((e) => e.id === episode.id);
-      if (fresh?.mediaUrl && !resolvePlan(acc, fresh)) {
-        playVideo(fresh.mediaUrl, epLabel(fresh), fresh);
+      if (fresh?.videoUrl && !resolvePlan(acc, fresh)) {
+        playVideo(fresh.videoUrl, epLabel(fresh), fresh);
       }
     } catch (error) {
-      if (!aliveRef.current) return;
       if (isInsufficientBalanceError(error)) {
         promptCommunityPaywall();
       } else if (isMemberOnlyError(error)) {
         promptCommunityMembership();
       } else if (error instanceof ApiRequestError && error.status === 401) {
-        authGate.openLogin({
-          onAuthenticated: () => router.setParams({ watch: "1", episode: episode.id }),
-        });
+        authGate.openLogin({ onAuthenticated: () => void runPurchase(plan, episode) });
       } else {
         Alert.alert(t("ipDetail.unlockFailed"));
       }
     } finally {
-      unlockBusyRef.current = false;
-      if (aliveRef.current) setUnlocking(false);
+      setUnlocking(false);
     }
   };
 
@@ -290,7 +352,6 @@ function IpDetailSession() {
       promptCommunityPaywall();
       return;
     }
-    const version = revision.current;
     const unit = t("ipDetail.pointsUnit");
     const lines = [`${t("ipDetail.unlockSpend")}${formatPoints(plan.points, locale)} ${unit}`];
     if (balance != null) {
@@ -300,13 +361,13 @@ function IpDetailSession() {
       plan.targetType === "ip" ? t("ipDetail.unlockAllTitle") : t("ipDetail.unlockConfirmTitle");
     Alert.alert(title, lines.join("\n"), [
       { text: t("report.cancel"), style: "cancel" },
-      { text: t("ipDetail.unlock"), onPress: () => void runPurchase(plan, episode, version) },
+      { text: t("ipDetail.unlock"), onPress: () => void runPurchase(plan, episode) },
     ]);
   };
 
   // Act on a resolved (non-pending) plan: member → upsell, buy → confirm+charge.
   const startUnlock = (
-    plan: Extract<UnlockPlan, { kind: "member" | "buy" }>,
+    plan: Exclude<UnlockPlan, { kind: "pending" }>,
     episode: IpEpisode,
     balance: string | null
   ) => {
@@ -319,19 +380,91 @@ function IpDetailSession() {
 
   const unlockEpisode = (episode: IpEpisode) => {
     const plan = planFor(episode);
-    if (!plan || plan.kind === "pending" || plan.kind === "unavailable") return;
+    if (!plan || plan.kind === "pending") return;
     // Not signed in → sign in FIRST (before any member/price decision), then
     // re-derive against the fresh access: the viewer may now be a member (free
     // or member-priced) or the episode may have become playable.
     if (auth.status !== "authenticated") {
       authGate.openLogin({
-        // The viewer-keyed session remounts after login. Resume via route intent,
-        // never through a callback holding the previous viewer's state or price.
-        onAuthenticated: () => router.setParams({ watch: "1", episode: episode.id }),
+        onAuthenticated: () => {
+          void refreshAfterUnlock().then(({ detail, access: acc }) => {
+            const fresh = detail?.episodes.find((e) => e.id === episode.id) ?? episode;
+            const freshPlan = resolvePlan(acc, fresh);
+            if (!freshPlan) {
+              // Now granted → just play it (member-free media, etc).
+              if (fresh.videoUrl) playVideo(fresh.videoUrl, epLabel(fresh), fresh);
+              return;
+            }
+            if (freshPlan.kind === "pending") return;
+            startUnlock(freshPlan, fresh, acc?.balance ?? null);
+          });
+        },
       });
       return;
     }
     startUnlock(plan, episode, access?.balance ?? null);
+  };
+
+  const showActions = () => {
+    showContentActionsMenu({
+      t,
+      blockLabel: t("ipDetail.blockAction"),
+      onReport: () => setReportOpen(true),
+      onBlock: confirmBlock,
+    });
+  };
+
+  const submitBlock = async () => {
+    try {
+      await blockIpContent(ip.id);
+      // Lists are filtered server-side for this viewer; nudge browse screens
+      // to refetch, then leave the page.
+      invalidateBrowse();
+      Alert.alert(t("ipDetail.blockSuccessTitle"), t("ipDetail.blockSuccessBody"), [
+        { text: t("report.close"), onPress: () => router.back() },
+      ]);
+    } catch (error) {
+      // A 401 means the session expired mid-call (the global handler already
+      // cleared it) — tell the user to sign back in, not "try again later".
+      if (error instanceof ApiRequestError && error.status === 401) {
+        authGate.openLogin({ onAuthenticated: confirmBlock });
+        return;
+      }
+      Alert.alert(t("ipDetail.blockFailed"));
+    }
+  };
+
+  const confirmBlock = () => {
+    Alert.alert(t("ipDetail.blockConfirmTitle"), t("ipDetail.blockConfirmBody"), [
+      { text: t("report.cancel"), style: "cancel" },
+      {
+        text: t("ipDetail.blockConfirmAction"),
+        style: "destructive",
+        onPress: () => void submitBlock(),
+      },
+    ]);
+  };
+
+  const submitReport = async (reason: IpReportReason) => {
+    setReporting(true);
+    try {
+      await reportIpContent(ip.id, reason);
+      setReportOpen(false);
+      Alert.alert(t("report.successTitle"), t("report.successBody"));
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.status === 401) {
+        setReportOpen(false);
+        authGate.openLogin({ onAuthenticated: () => setReportOpen(true) });
+        return;
+      }
+      Alert.alert(t("report.failed"));
+    } finally {
+      setReporting(false);
+    }
+  };
+
+  const openActions = () => {
+    authGate.requireAuth({ onAuthenticated: showActions });
   };
 
   // The web uses locale-prefixed routes (e.g. /en-US/ips/<id>) against the
@@ -363,39 +496,27 @@ function IpDetailSession() {
     ? (creator.avatarUrl ?? dicebearAvatarUrl(`user:${creator.userId ?? creator.id}`))
     : undefined;
 
-  const openContentActions = () =>
-    moderation.openActions({
-      targetType: playing?.targetEpisodeId ? "episode" : "ip",
-      targetId: playing?.targetEpisodeId ?? ip.id,
-      title: playing?.targetEpisodeId
-        ? (ip.episodes.find((item) => item.id === playing.targetEpisodeId)?.title ?? playing.title)
-        : ip.title,
-    });
-
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen
         options={{
-          // Playback keeps reporting available alongside its close button —
+          // While the inline player is up the slot becomes its close button —
           // a floating control under the transparent native header would not
           // receive taps (the navigation bar wins the hit test).
           headerRight: playing
             ? () => (
-                <View style={styles.headerActions}>
-                  <MoreActionsButton label={t("report.moreActions")} onPress={openContentActions} />
-                  <Pressable
-                    accessibilityLabel={t("ipDetail.close")}
-                    accessibilityRole="button"
-                    hitSlop={10}
-                    onPress={() => setPlaying(undefined)}
-                  >
-                    <SymbolView
-                      name={{ ios: "xmark", android: "close", web: "close" }}
-                      size={18}
-                      tintColor="#FFFFFF"
-                    />
-                  </Pressable>
-                </View>
+                <Pressable
+                  accessibilityLabel={t("ipDetail.close")}
+                  accessibilityRole="button"
+                  hitSlop={10}
+                  onPress={() => setPlaying(undefined)}
+                >
+                  <SymbolView
+                    name={{ ios: "xmark", android: "close", web: "close" }}
+                    size={18}
+                    tintColor="#FFFFFF"
+                  />
+                </Pressable>
               )
             : () => (
                 <View style={styles.headerActions}>
@@ -413,27 +534,19 @@ function IpDetailSession() {
                     />
                   </Pressable>
                   <View style={styles.headerButton}>
-                    <MoreActionsButton
-                      label={t("report.moreActions")}
-                      onPress={openContentActions}
-                    />
+                    <MoreActionsButton label={t("report.moreActions")} onPress={openActions} />
                   </View>
                 </View>
               ),
         }}
       />
 
-      {moderation.draft && (
-        <IpReportSheet
-          visible={moderation.reportOpen}
-          submitting={moderation.busy}
-          accepted={moderation.accepted}
-          draft={moderation.draft}
-          onChange={moderation.updateDraft}
-          onSubmit={moderation.submitReport}
-          onClose={moderation.closeReport}
-        />
-      )}
+      <ReportReasonSheet
+        visible={reportOpen}
+        submitting={reporting}
+        onSelect={(reason) => void submitReport(reason)}
+        onClose={() => setReportOpen(false)}
+      />
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
@@ -443,20 +556,7 @@ function IpDetailSession() {
         <View style={[styles.backdrop, playing && styles.backdropPlaying]}>
           {playing ? (
             <View style={[styles.videoBox, { top: insets.top + 44 }]}>
-              <InlineVideo
-                key={playing.url}
-                url={playing.url}
-                episode={(() => {
-                  const fullEpisode = ip.episodes.find(
-                    (entry) => entry.id === playing.targetEpisodeId
-                  );
-                  return fullEpisode?.mediaUrl === playing.url &&
-                    !accessBusy &&
-                    resolvePlan(access, fullEpisode) === undefined
-                    ? { ipId: ip.id, episodeId: fullEpisode.id }
-                    : undefined;
-                })()}
-              />
+              <InlineVideo key={playing.url} url={playing.url} />
             </View>
           ) : (
             <>
@@ -471,28 +571,14 @@ function IpDetailSession() {
           )}
         </View>
 
-        {playing && <NextVideoControl ipId={ip.id} />}
-
         <View style={styles.body}>
-          {watch !== undefined && !playing && !resolvePlaybackEntry(ip, access, watch, episode) && (
-            <ThemedText type="small" themeColor="textSecondary">
-              {t("contentGpsDiscovery.playbackUnavailable")}
-            </ThemedText>
-          )}
-          {feedbackEpisodeId && (
-            <EpisodeFeedback
-              ipId={ip.id}
-              episodeId={feedbackEpisodeId}
-              visible={playing?.episodeId === feedbackEpisodeId && !accessBusy}
-            />
-          )}
+          {playing?.episodeId && <EpisodeFeedback ipId={ip.id} episodeId={playing.episodeId} />}
           <IpKnowledgeChat ipId={ip.id} ipTitle={ip.title} />
           <IpGenerationPanel ipId={ip.id} />
           <View style={styles.titleBlock}>
             <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
               {ip.title}
             </ThemedText>
-            <IpProductionStage ipId={ip.id} />
             <View style={styles.metaRow}>
               {ip.rating != null ? (
                 <View style={styles.ratingRow}>
@@ -540,51 +626,15 @@ function IpDetailSession() {
                   ip.viewerHasLiked ? "rgba(229,34,39,0.14)" : theme.backgroundElement
                 }
                 borderColor={ip.viewerHasLiked ? theme.brand : theme.border}
-                disabled={engagement.busy || accessBusy}
-                onPress={() => void engagement.toggle()}
+                disabled={likeBusy}
+                onPress={toggleLike}
               />
             </View>
           </View>
 
-          <BookmarkControl
-            key={ip.id}
-            ipId={ip.id}
-            episodes={ip.episodes.map((episode) => ({ id: episode.id, title: epLabel(episode) }))}
-          />
-
           <ThemedText type="small" themeColor="textSecondary">
             {t("ipDetail.likeFanNotice")}
           </ThemedText>
-          <IpFanCommunity ipId={ip.id} />
-          <ChannelSubmissions ipId={ip.id} />
-          <PublicIpReleaseLinks ipId={ip.id} />
-
-          {(() => {
-            const pubItems = (ip.publishers ?? []).filter((p) => p.logoUrl?.trim()).slice(0, 4);
-            if (!pubItems.length) return null;
-            return (
-              <View style={styles.publisherSection}>
-                <ThemedText type="code" themeColor="textSecondary" style={styles.publisherLabel}>
-                  {t("ip.publishers")}
-                </ThemedText>
-                <View style={styles.publisherRow}>
-                  {pubItems.map((pub) => (
-                    <View
-                      key={pub.id}
-                      style={[styles.publisherChip, { backgroundColor: theme.backgroundElement }]}
-                    >
-                      <Image
-                        source={{ uri: pub.logoUrl! }}
-                        style={styles.publisherLogo}
-                        contentFit="contain"
-                        accessibilityLabel={pub.name}
-                      />
-                    </View>
-                  ))}
-                </View>
-              </View>
-            );
-          })()}
 
           {ip.episodes.length ? (
             <View style={styles.section}>
@@ -607,30 +657,6 @@ function IpDetailSession() {
                   </ThemedText>
                 </View>
               ) : null}
-              {accessBusy ? (
-                <View style={{ flexDirection: "row", gap: Spacing.two, alignItems: "center" }}>
-                  <ActivityIndicator color={theme.textSecondary} />
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {t("ipDetail.checkingAccess")}
-                  </ThemedText>
-                </View>
-              ) : accessError !== null || ip.episodes.some((item) => !access?.episodes[item.id]) ? (
-                <View style={{ gap: Spacing.two }}>
-                  <ThemedText type="small" themeColor="textSecondary" accessibilityRole="alert">
-                    {accessError || t("ipDetail.accessCheckFailed")}
-                  </ThemedText>
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={accessBusy || unlocking}
-                    onPress={() => void retryAccess()}
-                    style={{ minHeight: 44, justifyContent: "center" }}
-                  >
-                    <ThemedText type="smallBold" style={{ color: theme.brand }}>
-                      {t("common.retry")}
-                    </ThemedText>
-                  </Pressable>
-                </View>
-              ) : null}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -651,8 +677,8 @@ function IpDetailSession() {
                     label={epLabel(episode)}
                     plan={planFor(episode)}
                     locale={locale}
-                    disabled={unlocking || accessBusy}
-                    onPlay={() => playVideo(episode.mediaUrl, epLabel(episode), episode)}
+                    disabled={unlocking}
+                    onPlay={() => playVideo(episode.videoUrl, epLabel(episode), episode)}
                     onUnlock={() => unlockEpisode(episode)}
                   />
                 ))}
@@ -692,7 +718,9 @@ function IpDetailSession() {
           </View>
 
           <View style={styles.tagWrap}>
-            <IpTags ip={ip} />
+            {ip.tags.map((tag) => (
+              <Tag key={tag} label={tag} />
+            ))}
           </View>
 
           <View style={styles.section}>
@@ -703,8 +731,6 @@ function IpDetailSession() {
               ))}
             </View>
           </View>
-
-          <IpContributingStudios ipId={ip.id} />
 
           <View style={styles.section}>
             <SectionHeader title={t("ipDetail.rightsTitle")} />
@@ -728,7 +754,7 @@ function IpDetailSession() {
       {/* Last child so the in-tree overlay paints above the page content (and,
           being in this stack screen's tree, above the native tab bar). */}
       <ShareSheet
-        visible={active && shareOpen}
+        visible={shareOpen}
         ip={ip}
         creatorName={creatorName}
         creatorAvatar={creatorAvatar}
@@ -803,13 +829,7 @@ function EngagementPill({
   );
 }
 
-function InlineVideo({
-  url,
-  episode,
-}: {
-  url: string;
-  episode?: { ipId: string; episodeId: string };
-}) {
+function InlineVideo({ url }: { url: string }) {
   const t = useTranslations();
   const resumeWhenPresentingRef = useRef(false);
   // Native player (expo-video) — autoplays, native controls incl. a fullscreen
@@ -848,8 +868,6 @@ function InlineVideo({
   }, [player]);
 
   const { status } = useEvent(player, "statusChange", { status: player.status });
-  const { isPlaying } = useEvent(player, "playingChange", { isPlaying: player.playing });
-  useMemberView(episode, presenting && isPlaying && status === "readyToPlay");
   // `idle`/`loading` cover first open + mid-playback rebuffer; hide once
   // frames are ready. Playback errors stay on the native player UI.
   const showLoading = status === "idle" || status === "loading";
@@ -929,8 +947,10 @@ function EpisodeCard({
   onUnlock: () => void;
 }) {
   const t = useTranslations();
-  // Never substitute videoUrl: it may be a trailer. Missing access is locked too.
-  const playable = !!episode.mediaUrl && !plan;
+  // Watchable now only when access grants it (no actionable plan) AND a media URL
+  // exists. A locked episode may still carry a trailer URL, so `videoUrl` alone
+  // is NOT proof of access — the plan (buy/member/pending) means not-yet-granted.
+  const playable = !!episode.videoUrl && !plan;
   const buyPlan = plan?.kind === "buy" ? plan : undefined;
   const pending = plan?.kind === "pending";
   const memberLocked = plan?.kind === "member";
@@ -1104,33 +1124,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 30,
     lineHeight: 34,
-  },
-  publisherSection: {
-    gap: Spacing.one,
-  },
-  publisherLabel: {
-    fontSize: 11,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  publisherRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: Spacing.two,
-  },
-  publisherChip: {
-    height: 28,
-    width: 56,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  publisherLogo: {
-    width: "100%",
-    height: "100%",
   },
   metaRow: {
     flexDirection: "row",

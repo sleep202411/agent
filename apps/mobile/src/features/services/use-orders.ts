@@ -27,12 +27,6 @@ export function useOrders(owner: string | undefined, role: OrderRole, status: Or
   const key = JSON.stringify([owner, role, status, revision]);
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
-  const [snapshotScope, setSnapshotScope] = useState(key);
-  // A return visit must await its own read, even when the account/filter matches.
-  if (snapshotScope !== key) {
-    setSnapshotScope(key);
-    setSnapshot(undefined);
-  }
   const load = useCallback(
     async (session: Session) => {
       if (session.busy || !session.more || session.abort.signal.aborted) return;
@@ -53,14 +47,6 @@ export function useOrders(owner: string | undefined, role: OrderRole, status: Or
       } catch (cause) {
         if (session.abort.signal.aborted) return;
         session.failed = true;
-        const status =
-          cause && typeof cause === "object" && "status" in cause ? cause.status : undefined;
-        if (status === 401 || status === 403) {
-          session.items = [];
-          session.cursor = null;
-          session.seen.clear();
-          session.more = true;
-        }
         error = cause instanceof Error ? cause.message : "Unable to load orders";
       } finally {
         session.busy = false;
