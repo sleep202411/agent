@@ -201,3 +201,24 @@ Game Agent uses a separate regional provider Secret (`fizzdragon-game-agent-prov
 and internal admission Secret (`fizzdragon-game-agent-internal`). Its private workspace PVC
 survives Recreate rollouts; do not replace it during image releases. Include `game-agent`
 when releasing Harness or shared appearance contracts.
+
+## Complete the six-service CN release
+
+Run `python3 deploy/cn-game-agent-secrets.py` before first enabling Game Agent.
+It creates missing, separate provider/admission Secrets in the pinned CN cluster,
+using the existing CN Server Bailian credential in memory and a freshly generated
+internal token. Existing Secrets are validated, never rotated or printed. The
+`alicloud-disk-essd` StorageClass must exist for the private Harness workspace.
+
+A new full release selects all six services explicitly:
+
+```bash
+CONFIRM_CN_PROD_MIGRATION=YES deploy/release-cn.sh --allow-chart-update \
+  web server studio admin-ui agent-os game-agent
+```
+
+For an unfinished five-service receipt still before successful build/backup,
+resume with `--add-service game-agent`. The coordinator holds both release locks,
+retains source/target/history and replans image reuse. Once build or backup has
+completed, finish the original release and start a new six-service release;
+never manually edit the receipt or clear an active owner's lock.

@@ -265,6 +265,22 @@ def migration(tag, backup_id=None, state=None, persist=None, render_only=False, 
         print(f"DONE: migrations completed for {tag}", flush=True)
 
 
+def extend_services(state, additions):
+    if not additions:
+        return
+    allowed = {"web", "server", "studio", "admin-ui", "agent-os", "game-agent"}
+    if not set(additions) <= allowed:
+        raise RuntimeError("Invalid added service")
+    if set(additions) <= set(state["services"]):
+        return
+    if state.get("complete") or state.get("built") or state.get("backupRequested") or state.get("backupId") or state.get("backupJobId"):
+        raise RuntimeError("Service additions require a pre-build receipt; finish this release, then start a new six-service release")
+    state["services"] = sorted(set(state["services"]) | set(additions))
+    state.pop("imageTags", None)
+    state.pop("digests", None)
+    state["useExistingImages"] = False
+
+
 def release(args):
     run("git", "diff", "--exit-code", "--quiet")
     run("git", "diff", "--cached", "--exit-code", "--quiet")
@@ -278,6 +294,8 @@ def release(args):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError("Another CN release is running from this repository") from None
+        if getattr(args, "add_service", None) and not args.resume:
+            raise RuntimeError("--add-service requires --resume")
         previous = json.loads(path.read_text()) if path.exists() else None
         if args.resume:
             if not previous:
@@ -301,14 +319,17 @@ def release(args):
                      "useExistingImages": bool(args.use_existing_images)}
             save(path, state)
         if state.get("complete"):
+            extend_services(state, getattr(args, "add_service", None))
             print(f"DONE: saved CN release {state['tag']} already completed; no deployment repeated")
             return
-        if "server" in state["services"] and os.environ.get("CONFIRM_CN_PROD_MIGRATION") != "YES":
+        if "server" in (set(state["services"]) | set(getattr(args, "add_service", None) or [])) and os.environ.get("CONFIRM_CN_PROD_MIGRATION") != "YES":
             raise RuntimeError("Set CONFIRM_CN_PROD_MIGRATION=YES for the automated backup/migration workflow")
         # Refuse accidental resume against another cluster, namespace or Helm release.
         if state.get("clusterServer") != cluster_server() or state.get("version") != 1 or state["namespace"] != os.environ.get("CN_NAMESPACE", "fizzdragon") or state["release"] != os.environ.get("CN_RELEASE", "fizzdragon") or state["context"] != kubectl("config", "current-context", capture=True):
             raise RuntimeError("Release target differs from the saved receipt")
+        extend_services(state, getattr(args, "add_service", None))
         persist = lambda: save(path, state)
+        persist()
         run_cycles(state, args, persist)
 
 
@@ -433,6 +454,7 @@ def main():
     p = sub.add_parser("release")
     p.add_argument("--tag")
     p.add_argument("--resume", action="store_true")
+    p.add_argument("--add-service", action="append", default=[], help="Add a service to an unfinished pre-build resume receipt")
     p.add_argument("--use-existing-images", action="store_true", help="Verify and reuse all selected images at the pinned tag without building")
     p.add_argument("--allow-chart-update", action="store_true")
     p.add_argument("--backup-id", help="Completed manual BackupId for recovery, not BackupJobId")
