@@ -1,0 +1,78 @@
+Mobile 2.4.0 rollback for Hu Xuan review — 2026-10-09 (Asia/Singapore)
+
+CURRENT SCOPE (supersedes earlier branch-alignment/backport records)
+User relayed Hu Xuan's final direction: leave 2.3.1 alone; restore 2.4.0's mobile
+app to the 2.3.1 version and repair interactive movie/game errors; review before
+any merge into main/develop. User explicitly authorized commit/push to 2.4.0, then subsequently instructed
+aligning 2.3.1 to that same tested commit. This latest instruction supersedes the
+earlier instruction to leave 2.3.1 untouched.
+
+BASELINE AND TARGET
+Targets: feat/mobile-2.4.0-scrolling-screen first, then feat/mobile-2.3.1-pay.
+Starting target commit: 43641d5f8.
+Mobile baseline: 4e54645d2, Hu Xuan (sleep202411), final pre-transfer 2.3.1 payment
+commit. This restores that version, not a claim that all historical Ric code is
+removed. The broader historical reconstruction was set aside when the owner
+specified the 2.3.1 baseline.
+
+WHAT CHANGES
+Restore apps/mobile to the baseline above, removing the subsequently introduced
+features, including the Discovery vertical preview feed and its entry point.
+Payment production source matches that baseline byte-for-byte. Its version and
+build metadata remain 2.3.1 / 80; this review does not claim a new app release.
+Shared packages and non-mobile applications stay at the current branch versions.
+The root lockfile is regenerated only to match the restored mobile dependencies.
+
+NECESSARY DIFFERENCES FROM THE MOBILE BASELINE (fourteen files)
+- Isaac's fd5a45867 fix (player, localization helper and test): handle absent or
+  blank choice prompts accepted by the current shared runtime schema.
+- tsconfig.json: include DOM iterable declarations used by existing tests.
+- index.js and package.json: load native compatibility support before Expo Router.
+- src/lib/abort-signal-polyfill.ts and its test: implement the missing native
+  throwIfAborted API, preserving cancellation and AbortError semantics.
+- metro.config.js and src/config/metro-resolver.test.ts: limit the relative-file
+  bypass to country-flag-icons so browser mappings (including css-tree) work.
+- Agent session test and interactive-player theme-loader test: remove the native
+  method in tests, load the same startup fix, and exercise recovery/cancellation.
+- Authenticated WebView test: align the old test with the baseline native Crew
+  applications route and mock that component; no production behavior changes.
+- WeChat scan test: mock regional configuration to isolate the existing payment
+  test from native Expo imports; no payment production behavior changes.
+
+REVIEW AND RELEASE BOUNDARIES
+No main/develop merge is authorized before Hu Xuan review. The subsequent user
+instruction authorizes aligning 2.3.1 after the successful 2.4.0 push.
+Existing work remains in Git history and the unchanged other branch tips.
+No production deployment, native signing, app-store upload, or database change.
+Phone acceptance, real payments and the requested real-script acceptance remain
+separate checks. Local bundles/tests do not establish those results.
+
+VALIDATION
+- Shared contracts and experience engine rebuilt from this checkout: passed.
+- Final targeted suite: 22 files, 167 tests passed (interactive player, paywall,
+  native abort compatibility, Agent session, Metro resolver, authenticated WebView).
+- Mobile type checking: passed after restoring DOM iterable test declarations
+  and retaining Isaac's optional-choice-prompt compatibility fix.
+- Targeted ESLint: passed. Critical changes formatted with Prettier.
+- Release-target scripts: 14 tests passed.
+- Payment production source is byte-identical to 4e54645d2; fourteen reviewed
+  mobile files differ from that baseline. No shared/backend source changes.
+- Full-suite rerun: 293 files, 2811 tests; 2810 passed and one 5-second
+  timeout in crew-finance-trend while native compilation was running. That
+  unchanged file passed both tests on isolated rerun (73 ms test execution).
+- Global iOS and Android native exports with Hermes bytecode: passed.
+- China iOS and Android JavaScript exports (--no-bytecode): passed. China
+  bytecode/signing/device installation were not tested in this run.
+- Both use APP_VARIANT=development and the corresponding FD_APP_REGION; these
+  are local bundle checks, not production-signed releases. Production export
+  was not run because this checkout lacks required production identifiers.
+- A temporary, uncommitted Metro harness exposed reused node_modules symlink
+  targets for this isolated worktree. No resolver stubs or API behavior changes.
+- Existing @noble/hashes export-map fallback warnings were non-fatal.
+- No further passing-test reruns were scheduled after the user requested limiting
+  CPU use; remaining native compiler priority was reduced.
+
+Commit handling: the repository pre-commit hook rewrites every staged TS/JSON
+file. This snapshot restoration preserves the original baseline bytes instead;
+formatting was run only on the reviewed changes and tests/type/lint were run
+explicitly. The formatting-only hook is disabled for this restoration commit.

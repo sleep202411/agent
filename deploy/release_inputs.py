@@ -112,7 +112,12 @@ def inputs(root, revision, service, region):
         path = raw_path.decode()
         if path.startswith(('docs/', '.github/')) or ('/' not in path and path.endswith('.md')):
             continue
-        if path == 'MOBILE_2_4_0_ROLLBACK_REVIEW.txt':
+        # Root handoff reports contain no application or build configuration.
+        if path in {
+            'MOBILE_2_4_0_ROLLBACK_REVIEW.txt',
+            'MOBILE_2_3_1_BACKPORT.txt',
+            'MOBILE_BRANCH_RECONCILIATION.txt',
+        }:
             continue
         if path.startswith('deploy/'):
             continue
