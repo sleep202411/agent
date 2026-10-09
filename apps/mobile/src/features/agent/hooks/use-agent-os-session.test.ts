@@ -1,7 +1,21 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { useAgentOsSession } from "./use-agent-os-session";
+
+const nativeAbortCheck = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "throwIfAborted");
+beforeAll(async () => {
+  // Exercise the reported React Native runtime gap, not jsdom's built-in method.
+  Reflect.deleteProperty(AbortSignal.prototype, "throwIfAborted");
+  await import("@/lib/abort-signal-polyfill");
+});
+afterAll(() => {
+  if (nativeAbortCheck) {
+    Object.defineProperty(AbortSignal.prototype, "throwIfAborted", nativeAbortCheck);
+  } else {
+    Reflect.deleteProperty(AbortSignal.prototype, "throwIfAborted");
+  }
+});
 
 const api = vi.hoisted(() => ({
   listModels: vi.fn(),
