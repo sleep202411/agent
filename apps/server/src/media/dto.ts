@@ -78,6 +78,8 @@ export const ConfirmUploadSchema = z.object({
   kind: UploadKindSchema,
   /** Re-asserted against storage metadata and, for verified images, bytes. */
   contentType: z.string().trim().min(1).max(128),
+  /** Display metadata only; never used to derive the storage identity. */
+  fileName: z.string().min(1).max(256).optional(),
   scope: z
     .object({
       crewId: z.string().trim().min(1).max(64).optional(),

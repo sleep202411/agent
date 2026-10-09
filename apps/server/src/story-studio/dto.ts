@@ -739,6 +739,7 @@ export interface CursorPageDto<T> {
 
 export interface MediaAssetSummaryDto {
   id: string;
+  fileName: string | null;
   kind: 'image' | 'video' | 'audio' | 'document' | 'other';
   status: 'uploading' | 'ready' | 'failed' | 'deleted';
   moderationStatus: 'unreviewed' | 'approved' | 'flagged' | 'blocked';

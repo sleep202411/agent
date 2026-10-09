@@ -59,6 +59,7 @@ describe("uploadFileViaSignedUrl", () => {
       expect(FakeXMLHttpRequest.instances[0]?.headers.get("Content-Type")).toBe(expected);
       expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
         contentType: expected,
+        fileName: name,
       });
     }
   );

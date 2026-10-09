@@ -309,6 +309,7 @@ export async function uploadFileViaSignedUrl(
     CONFIRM_ENDPOINT,
     {
       storageKey: info.storageKey,
+      fileName: file.name,
       ...(opts.scope ? { scope: opts.scope } : {}),
       kind: opts.kind,
       contentType,

@@ -899,6 +899,7 @@ export class MediaUploadService {
               workspaceId: uploadScope.workspaceId,
               metadata: {
                 uploadKind: input.kind,
+                ...(input.fileName ? { fileName: input.fileName } : {}),
                 ...(uploadScope.storyProjectId
                   ? { storyProjectId: uploadScope.storyProjectId }
                   : {}),

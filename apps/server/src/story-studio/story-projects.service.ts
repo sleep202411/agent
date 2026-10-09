@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mediaAssetFileName } from '../media/media-asset-file-name';
 import {
   clipKey,
   resolveStoryPlotImportMedia,
@@ -2710,6 +2711,7 @@ function arraysEqual(
 function toMediaAsset(row: StoryMediaAssetRow): MediaAssetSummaryDto {
   return {
     id: row.id,
+    fileName: mediaAssetFileName(row.metadata),
     kind: row.kind,
     status: row.status,
     moderationStatus: row.moderationStatus,

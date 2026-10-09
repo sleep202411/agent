@@ -132,6 +132,7 @@ function CrewCandidateDialog(
       result.push({
         asset: {
           ...node.media,
+          fileName: node.name,
           status: "ready",
           moderationStatus: "unreviewed",
           checksumSha256: null,
@@ -617,7 +618,7 @@ function CandidatePickerCard({
 }) {
   const t = useTranslations("storyStudio.canvas.candidatePicker");
   const { asset } = candidate;
-  const label = t(`assetLabel.${asset.kind}`, { index: index + 1 });
+  const label = asset.fileName || t(`assetLabel.${asset.kind}`, { index: index + 1 });
   const metadataIncomplete =
     asset.kind === "video" &&
     candidate.videoVariant !== null &&
@@ -678,7 +679,9 @@ function CandidatePickerCard({
       </div>
       <div className="px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-[10px] font-medium text-white/68">{label}</p>
+          <p title={label} className="truncate text-[10px] font-medium text-white/68">
+            {label}
+          </p>
           <span className="shrink-0 text-[8px] text-white/28">{t(`filters.${asset.kind}`)}</span>
         </div>
         <p className="mt-1 truncate text-[9px] text-white/32">

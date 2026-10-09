@@ -61,6 +61,7 @@ export interface CursorPage<T> {
 
 export interface MediaAssetSummary {
   id: string;
+  fileName?: string | null;
   kind: "image" | "video" | "audio" | "document" | "other";
   status: "uploading" | "ready" | "failed" | "deleted";
   moderationStatus: "unreviewed" | "approved" | "flagged" | "blocked";

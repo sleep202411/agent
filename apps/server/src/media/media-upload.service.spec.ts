@@ -385,6 +385,7 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
     await fixture.service.confirmUpload(USER_ID, {
       kind: 'crew_asset_file',
       contentType: 'image/png',
+      fileName: 'concept.png',
       storageKey: issued.storageKey,
       scope: { crewId: 'crew-1' },
     });
@@ -396,6 +397,7 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
           objectKey: expect.stringContaining('/crew-asset-final/'),
           metadata: {
             uploadKind: 'crew_asset_file',
+            fileName: 'concept.png',
             crewId: 'crew-1',
           },
         }),

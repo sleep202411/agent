@@ -1043,6 +1043,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
   it('curates durable workspace media independently from canvas layout', async () => {
     const candidate = candidateAssetRow();
+    candidate.asset.metadata = { fileName: 'opening.mp4' };
     const listFindMany = jest.fn().mockResolvedValue([candidate]);
     const listHarness = serviceWith({
       storyCandidateAsset: { findMany: listFindMany },
@@ -1055,6 +1056,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]?.asset).toMatchObject({
       id: MEDIA_ASSET_ID,
+      fileName: 'opening.mp4',
       kind: 'video',
       previewUrl: 'https://media.example/candidate.mp4',
     });

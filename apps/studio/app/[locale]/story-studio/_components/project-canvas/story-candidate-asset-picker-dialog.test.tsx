@@ -139,6 +139,17 @@ describe("StoryCandidateAssetPickerDialog", () => {
     expect(buttonByText("Videos").getAttribute("aria-selected")).toBe("true");
   });
 
+  it("shows the original filename in the card and its accessible name", async () => {
+    const fileName = "开场镜头 final.mp4";
+    await renderDialog({
+      items: [{ ...otherVideoCandidate, asset: { ...otherVideoCandidate.asset, fileName } }],
+      allowedKinds: ["video"],
+    });
+    expect(buttonByLabel(`Select ${fileName}`)).toBeDefined();
+    expect(document.querySelector(`p[title="${fileName}"]`)?.textContent).toBe(fileName);
+    expect(document.body.textContent).not.toContain("Video 1");
+  });
+
   it("keeps the current media interactive and deselects it explicitly", async () => {
     const onOpenChange = vi.fn();
     const onSelect = vi.fn().mockResolvedValue(undefined);
@@ -378,7 +389,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
-    await click(await waitForButton("Select Video 1"));
+    await click(await waitForButton("Select Shared clip"));
     expect(shared.add).toHaveBeenCalledWith(
       "story-project",
       otherVideoCandidate.asset.id,
@@ -417,7 +428,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
-      const button = await waitForButton("Select Video 1");
+      const button = await waitForButton("Select Shared clip");
       await act(async () => {
         button.click();
         button.click();
@@ -511,7 +522,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
       },
     ]);
     await renderDialog({ projectId: "story-project", allowedKinds: ["video"] });
-    expect(await waitForButton("Select Video 1")).toBeDefined();
+    expect(await waitForButton("Select Shared clip")).toBeDefined();
     shared.list.mockImplementationOnce(() => new Promise(() => {}));
     await act(async () => {
       client.setQueryData(
@@ -520,7 +531,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
       );
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
-    expect(document.querySelector('button[aria-label="Select Video 1"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Select Shared clip"]')).toBeNull();
     expect(shared.list).toHaveBeenCalledTimes(2);
     const signal = shared.list.mock.calls[1]![1] as AbortSignal;
     await act(async () => {
@@ -532,7 +543,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
     });
     expect(signal.aborted).toBe(true);
     expect(shared.list).toHaveBeenCalledTimes(2);
-    expect(document.querySelector('button[aria-label="Select Video 1"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Select Shared clip"]')).toBeNull();
   });
   it("keeps project candidates available when no Crew is linked", async () => {
     shared.context.mockResolvedValue({ crew: null, assetContext: null });
