@@ -24,7 +24,6 @@ import {
   type ExperiencePlayerCopy,
 } from "@/features/experience-player";
 import { usePlayScreenOrientation } from "@/hooks/use-screen-orientation";
-import { PLAY_ROUTE_SCREEN_OPTIONS } from "@/hooks/play-orientation";
 import { useLocale, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 
@@ -42,7 +41,7 @@ export default function StoryPreviewScreen() {
   const t = useTranslations();
   const locale = useLocale();
   const insets = useSafeAreaInsets();
-  const { landscapeReady, exiting, onStageLayout } = usePlayScreenOrientation();
+  const { landscapeReady, exiting } = usePlayScreenOrientation();
   const params = useLocalSearchParams<{
     projectId?: string | string[];
     chapter?: string | string[];
@@ -153,7 +152,7 @@ export default function StoryPreviewScreen() {
   const refreshReady = Boolean(preview) && !loading && landscapeReady && !exiting;
 
   return (
-    <ThemedView style={[styles.screen, { backgroundColor: "#000000" }]} onLayout={onStageLayout}>
+    <ThemedView style={[styles.screen, { backgroundColor: "#000000" }]}>
       <Stack.Screen
         options={{
           headerShown: true,
@@ -161,7 +160,6 @@ export default function StoryPreviewScreen() {
           headerTitle: "",
           headerTintColor: "#FFFFFF",
           headerBackButtonDisplayMode: "minimal",
-          ...PLAY_ROUTE_SCREEN_OPTIONS,
           headerRight: refreshReady ? headerRight : undefined,
         }}
       />
