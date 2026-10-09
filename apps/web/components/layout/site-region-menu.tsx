@@ -43,8 +43,8 @@ export function SiteRegionMenu({ className }: { className?: string }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button type="button" className={cn(className, "gap-1.5")} aria-label={t("siteSwitch")}>
-          <IconWorld className="size-3.5 shrink-0 opacity-80" aria-hidden />
+        <button type="button" className={className} aria-label={t("siteSwitch")}>
+          <IconWorld className="shrink-0 opacity-80" aria-hidden />
           <span>{labelFor(current)}</span>
         </button>
       </PopoverTrigger>

@@ -211,6 +211,32 @@
   white-space: nowrap;
 }
 
+/* APP + site-region: same height as FizzStudio CTA, matched equal width. */
+.fd-secret-cta-shell.fd-secret-cta-shell-compact,
+.fd-secret-cta.fd-secret-cta-compact {
+  box-sizing: border-box;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+}
+
+.fd-secret-cta.fd-secret-cta-compact {
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+  padding: 0 16px;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  gap: 6px;
+}
+
+.fd-secret-cta.fd-secret-cta-compact :where(svg) {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
 .fd-secret-cta:hover {
   background: rgb(255 255 255 / 0.1);
   color: #fff;
@@ -778,6 +804,20 @@
     padding: 0 24px;
   }
 
+  .fd-secret-cta-shell.fd-secret-cta-shell-compact,
+  .fd-secret-cta.fd-secret-cta-compact {
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+  }
+
+  .fd-secret-cta.fd-secret-cta-compact {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+    padding: 0 16px;
+  }
+
   .fd-secret-nav-wordmark {
     width: 154px;
   }
@@ -816,6 +856,20 @@
   .fd-secret-header .fd-secret-cta {
     min-width: 148px;
     padding: 0 24px;
+  }
+
+  .fd-secret-header .fd-secret-cta-shell.fd-secret-cta-shell-compact,
+  .fd-secret-header .fd-secret-cta.fd-secret-cta-compact {
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+  }
+
+  .fd-secret-header .fd-secret-cta.fd-secret-cta-compact {
+    width: 120px;
+    min-width: 120px;
+    max-width: 120px;
+    padding: 0 16px;
   }
 
   .fd-secret-header .fd-secret-account-bell :where(button),

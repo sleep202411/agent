@@ -10,7 +10,7 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
-import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
+import { SITE_LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { UserAvatar } from "@/components/user-avatar";
 import {
   DropdownMenu,
@@ -129,10 +129,10 @@ export function StudioUserMenu({ credits, onTeam, onIntegralRecords }: StudioUse
             <span className="text-sm">{tn("language")}</span>
           </div>
           <div className="flex rounded-lg border border-border">
-            {LOCALE_OPTIONS.map((opt, i) => {
+            {SITE_LOCALE_OPTIONS.map((opt, i) => {
               const current = opt.value === locale;
               const isFirst = i === 0;
-              const isLast = i === LOCALE_OPTIONS.length - 1;
+              const isLast = i === SITE_LOCALE_OPTIONS.length - 1;
               return (
                 <button
                   key={opt.value}

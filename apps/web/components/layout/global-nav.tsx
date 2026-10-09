@@ -21,7 +21,7 @@ import { useLogout } from "@/src/hooks/use-logout";
 import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
-import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
+import { SITE_LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { getStudioHref } from "@/src/lib/region/cell";
 import { AppDownloadMenu, APP_DOWNLOADS } from "./app-download-menu";
 import { SiteRegionMenu } from "./site-region-menu";
@@ -278,9 +278,15 @@ export function GlobalNav() {
       </nav>
 
       <div className={navCx("fd-secret-right-cluster hidden md:flex js-header-cta")}>
-        <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
+        <span
+          className={navCx(
+            "fd-secret-glass-wrapper fd-secret-cta-shell fd-secret-cta-shell-compact"
+          )}
+        >
           <span className={navCx("fd-secret-glass-effect")} aria-hidden />
-          <AppDownloadMenu className={navCx("fd-secret-glass-content fd-secret-cta")} />
+          <AppDownloadMenu
+            className={navCx("fd-secret-glass-content fd-secret-cta fd-secret-cta-compact")}
+          />
         </span>
         <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
           <span className={navCx("fd-secret-glass-effect")} aria-hidden />
@@ -294,9 +300,15 @@ export function GlobalNav() {
             <ShinyText text={ctaItem.label} color="#ffffff" shineColor="#ff3d42" speed={2.5} yoyo />
           </Link>
         </span>
-        <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
+        <span
+          className={navCx(
+            "fd-secret-glass-wrapper fd-secret-cta-shell fd-secret-cta-shell-compact"
+          )}
+        >
           <span className={navCx("fd-secret-glass-effect")} aria-hidden />
-          <SiteRegionMenu className={navCx("fd-secret-glass-content fd-secret-cta")} />
+          <SiteRegionMenu
+            className={navCx("fd-secret-glass-content fd-secret-cta fd-secret-cta-compact")}
+          />
         </span>
 
         {user ? (
@@ -440,7 +452,7 @@ export function GlobalNav() {
 
               <div className={navCx("fd-secret-mobile-section")}>
                 <span className={navCx("fd-secret-mobile-section-label")}>{t("language")}</span>
-                {LOCALE_OPTIONS.map((opt) => {
+                {SITE_LOCALE_OPTIONS.map((opt) => {
                   const current = opt.value === locale;
                   return (
                     <button
@@ -701,7 +713,7 @@ function SecretAccountMenu({
               <span className="flex-1">{navT("language")}</span>
             </div>
             <div className={navCx("fd-secret-locale-grid")} aria-label={navT("language")}>
-              {LOCALE_OPTIONS.map((opt) => {
+              {SITE_LOCALE_OPTIONS.map((opt) => {
                 const current = opt.value === locale;
                 return (
                   <button

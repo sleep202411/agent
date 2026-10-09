@@ -1,7 +1,13 @@
 import { useCallback } from "react";
 import i18n from "i18next";
 import { initReactI18next, useTranslation } from "react-i18next";
-import { defaultLocale, detectBrowserLocale, isValidLocale, type Locale } from "./config";
+import {
+  defaultLocale,
+  detectBrowserLocale,
+  isSiteLocale,
+  isValidLocale,
+  type Locale,
+} from "./config";
 
 import enUS from "@/messages/en-US.json";
 import zhCN from "@/messages/zh-CN.json";
@@ -100,7 +106,8 @@ const LOCALE_COOKIE_NAME = "NEXT_LOCALE";
 const LOCALE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
 
 export function setLanguage(lng: string): void {
-  if (!isValidLocale(lng)) return;
+  // Reject locales the current cell does not offer (e.g. en-US on CN).
+  if (!isValidLocale(lng) || !isSiteLocale(lng)) return;
   void i18n.changeLanguage(lng);
   if (typeof window !== "undefined") {
     localStorage.setItem("language", lng);
