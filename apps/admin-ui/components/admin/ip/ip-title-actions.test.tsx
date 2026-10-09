@@ -7,6 +7,33 @@ import { AdminSessionBoundary } from "../admin-session-boundary";
 import { IpTitlesPanel } from "./titles-panel";
 import type { IpRow, AdminIpDetail } from "./types";
 vi.mock("./ip-revenue-section", () => ({ IpRevenueSection: () => null }));
+vi.mock("@/components/ui/select", () => ({
+  Select: ({
+    value,
+    onValueChange,
+    children,
+    disabled,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+    children: ReactNode;
+    disabled?: boolean;
+  }) => (
+    <select
+      value={value}
+      disabled={disabled}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {children}
+    </select>
+  ),
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: ({ children }: { children: ReactNode }) => <>{children}</>,
+  SelectItem: ({ value, children }: { value: string; children: ReactNode }) => (
+    <option value={value}>{children}</option>
+  ),
+}));
 vi.mock("@/components/ui/sheet", () => {
   const Context = createContext<(open: boolean) => void>(() => undefined);
   const Part = ({ children }: { children: ReactNode }) => <div>{children}</div>;
@@ -144,6 +171,49 @@ const detail = {
   review: { openReportCount: 1, needsAttention: true },
   reports: [{ id: "report-one", status: "submitted", reason: "other", createdAt: null }],
 } as unknown as AdminIpDetail;
+it.each(["hidden", "suspended", "archived"])(
+  "applies selected %s status without requiring publish-ready media",
+  async (status) => {
+    fetchMock
+      .mockResolvedValueOnce(response({ ip: detail }))
+      .mockResolvedValue(response({ ip: { ...detail, status }, items: [], nextCursor: null }));
+    await render(view());
+    await act(async () => click("查看"));
+    const select = [
+      ...container.querySelectorAll<HTMLSelectElement>('[role="dialog"] select'),
+    ].find((element) => [...element.options].some((option) => option.value === "hidden"))!;
+    await act(async () => {
+      select.value = status;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => click("Apply selected status"));
+    const patches = fetchMock.mock.calls.filter((call) => call[1]?.method === "PATCH");
+    expect(patches).toHaveLength(1);
+    expect(JSON.parse(patches[0]![1].body)).toMatchObject({
+      status,
+      listingVisibility: "private",
+      expectedVersion: 1,
+    });
+  }
+);
+it("does not publish an unready IP through the selected-status action", async () => {
+  fetchMock.mockResolvedValue(response({ ip: detail }));
+  await render(view());
+  await act(async () => click("查看"));
+  const select = [...container.querySelectorAll<HTMLSelectElement>('[role="dialog"] select')].find(
+    (element) => [...element.options].some((option) => option.value === "hidden")
+  )!;
+  await act(async () => {
+    select.value = "published";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const apply = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent?.trim() === "Apply selected status"
+  )!;
+  expect(apply.disabled).toBe(true);
+  await act(async () => apply.click());
+  expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "PATCH")).toHaveLength(0);
+});
 it("excludes duplicate publication and competing report actions and retains failed drafts", async () => {
   const pending = deferred<ReturnType<typeof response>>();
   fetchMock

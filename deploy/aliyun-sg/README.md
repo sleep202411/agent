@@ -140,6 +140,29 @@ configuration. Runtime configuration changes need a separately reviewed change t
 production resources; do not use a whole-release Helm upgrade for an image-only
 release.
 
+### Agent OS connectivity repair
+
+The retained Harness server isolation policy does not allow the Agent OS
+connection on TCP 4301 or its domain callbacks on TCP 3001. Both Deployments can
+be Ready while conversations fail with `Could not reach the Agent OS worker`.
+`agent-os-server-networkpolicy.yaml` adds only those two same-namespace,
+pod-selected paths. It preserves the existing policies and requires no image
+build or pod restart. Apply it only to the existing Singapore namespace:
+
+```bash
+export KUBECONFIG="$HOME/.kube/config-fizzdragon-com-sg"
+test "$(kubectl get namespace fizzdragon -o jsonpath='{.metadata.uid}')" = \
+  '249a9075-37f2-4c41-aefc-050edd800e63' &&
+kubectl apply -f deploy/aliyun-sg/agent-os-server-networkpolicy.yaml
+```
+
+Verify server-to-worker `/health` and authenticated `/v1/agent-os/models`,
+and worker-to-server `/healthz` from their respective pods. Do not print the
+internal token. These reads establish transport and model-list authorization;
+a signed-in conversation is still required to verify inference and tool execution.
+Ordinary image deployments preserve this policy. Do not apply this Singapore
+repair to CN, whose network configuration is managed separately.
+
 ## Routing and retained dependencies
 
 - `fizzstudio.fizzdragon.com`, `studio.fizzdragon.com` and

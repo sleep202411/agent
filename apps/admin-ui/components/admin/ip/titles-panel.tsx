@@ -1085,6 +1085,20 @@ function IpDetailDrawer({
                   <Button
                     type="button"
                     variant="outline"
+                    onClick={() => void submitAction()}
+                    disabled={
+                      saving ||
+                      loading ||
+                      Boolean(reportSavingId) ||
+                      ((status === "published" || status === "scheduled") &&
+                        !publishReadiness?.ready)
+                    }
+                  >
+                    Apply selected status
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => void submitAction("changes_requested")}
                     disabled={saving || loading || Boolean(reportSavingId)}
                   >
