@@ -86,3 +86,22 @@ barrel. Metro's existing blanket explicit-extension resolver bypassed css-tree's
 browser redirects and tried to bundle the Node-only module package. The exception
 is now restricted to country-flag-icons, preserving ordinary browser mappings.
 Regression coverage verifies both browser delegation and the original icon case.
+
+LOCAL VALIDATION COMPLETED — 2026-10-09
+Code revision: e83622961 (runtime backport 94d7acd54; workflow/authority transfer 7dbffd8b5).
+- Mobile suite: 818 test files, 7,917 tests passed.
+- Additional Metro resolver/cache check: 2 files, 3 tests passed (2 new resolver
+  tests plus the existing regional-cache test rerun after the resolver correction).
+- Shared contracts: 22 files, 294 tests passed; rebuilt from this checkout's sources.
+- Experience engine and release-target validation: 66 tests passed.
+- Mobile type checking: passed after the resolver correction.
+- Targeted lint: no errors; existing native-payment-sdks.ts require-style warning.
+- Global development native export: both iOS and Android passed after the resolver fix.
+- CN/global configuration: expected regional endpoints and unchanged 2.3.1/build 80
+  confirmed. Metro cache/routing tests cover region separation. A new CN native
+  export was not run in this backport checkout.
+- Preserved authority integrity: 32 original-source hashes and 27 locally linked
+  screenshots/files verified; no missing local chat attachment.
+- Temporary dependency symlinks were exposed to Metro through a local preload
+  harness used only for validation; it is not part of the committed application.
+- No signed release, store upload, phone test, or real-script generation performed.
