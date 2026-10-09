@@ -116,6 +116,11 @@ class FakeCommands:
             metadata = Path(command[command.index("--metadata-file") + 1])
             metadata.write_text(json.dumps({"containerimage.digest": self.digest}))
             return subprocess.CompletedProcess(command, 0)
+        if command[:2] == ["docker", "push"]:
+            return subprocess.CompletedProcess(command, 0)
+        if command[:3] == ["docker", "image", "inspect"]:
+            repository = command[3].rsplit(":", 1)[0]
+            return subprocess.CompletedProcess(command, 0, json.dumps([repository + "@" + str(self.digest)]))
         raise AssertionError(f"Unexpected executable/operation: {command}")
 
 
@@ -161,7 +166,8 @@ class ProductionBuildTest(unittest.TestCase):
     def run_build(self, services, commands=None):
         commands = commands or FakeCommands(self.root)
         output = io.StringIO()
-        with patch.object(build.subprocess, "run", side_effect=commands), \
+        with patch.object(build, "find_reusable_image", return_value=None), \
+                patch.object(build.subprocess, "run", side_effect=commands), \
                 patch.dict(os.environ, {"DOCKER_CONTEXT": "desktop-linux",
                                         "DOCKER_HOST": "tcp://must-not-use.invalid:2375",
                                         "BUILDX_BUILDER": "old-named-remote-builder",
@@ -170,6 +176,50 @@ class ProductionBuildTest(unittest.TestCase):
                 contextlib.redirect_stdout(output):
             images = build.build_images(self.root, services, self.cloud)
         return images, commands, output.getvalue()
+
+    def test_all_reused_skips_docker_entirely(self):
+        with patch.object(build, 'find_reusable_image', return_value='verified@sha256:digest'), \
+                patch.object(build.subprocess, 'run') as run:
+            self.assertEqual(build.build_images(self.root, ['web'], self.cloud, source=SOURCE),
+                             {'web': 'verified@sha256:digest'})
+            run.assert_not_called()
+
+    def test_partial_reuse_builds_only_missing_service(self):
+        commands = FakeCommands(self.root)
+        with patch.object(build, 'find_reusable_image', side_effect=['verified-image', None]), \
+                patch.object(build.subprocess, 'run', side_effect=commands):
+            images = build.build_images(self.root, ['web', 'admin-ui'], self.cloud, source=SOURCE)
+        self.assertEqual(images['web'], 'verified-image')
+        builds = [c for c, _ in commands.calls if c[:3] == ['docker', 'buildx', 'build']]
+        self.assertEqual(len(builds), 1)
+        self.assertIn('admin-ui/Dockerfile', builds[0][builds[0].index('--file') + 1])
+
+    def test_persistent_push_failure_stops_after_two_attempts(self):
+        commands = FakeCommands(self.root)
+        pushes = []
+        def execute(command, **kwargs):
+            if command[:2] == ['docker', 'push']:
+                pushes.append(command)
+                return subprocess.CompletedProcess(command, 1)
+            return commands(command, **kwargs)
+        with self.assertRaisesRegex(build.BuildError, 'completed image retained locally'):
+            self.run_build(['web'], execute)
+        self.assertEqual(len(pushes), 2)
+        self.assertEqual(sum(c[:3] == ['docker', 'buildx', 'build'] for c, _ in commands.calls), 1)
+        self.assert_cleaned(commands)
+
+    def test_failed_push_retries_without_rebuilding(self):
+        commands = FakeCommands(self.root)
+        pushes = []
+        def execute(command, **kwargs):
+            if command[:2] == ['docker', 'push']:
+                pushes.append(command)
+                return subprocess.CompletedProcess(command, 1 if len(pushes) == 1 else 0)
+            return commands(command, **kwargs)
+        self.run_build(['web'], execute)
+        self.assertEqual(len(pushes), 2)
+        self.assertEqual(sum(c[:3] == ['docker', 'buildx', 'build'] for c, _ in commands.calls), 1)
+        self.assertEqual(self.cloud.call_count, 3)
 
     def assert_cleaned(self, commands):
         self.assertTrue(commands.isolated_configs)
@@ -207,7 +257,8 @@ class ProductionBuildTest(unittest.TestCase):
 
     def test_explicit_pinned_revision_does_not_reread_a_later_checkout_head(self):
         commands = FakeCommands(self.root)
-        with patch.object(build.subprocess, "run", side_effect=commands), \
+        with patch.object(build, "find_reusable_image", return_value=None), \
+                patch.object(build.subprocess, "run", side_effect=commands), \
                 contextlib.redirect_stdout(io.StringIO()):
             build.build_images(self.root, ["web"], self.cloud, source=SOURCE)
         git_calls = [command for command, _ in commands.calls if command[0] == "git"]
@@ -304,7 +355,7 @@ class ProductionBuildTest(unittest.TestCase):
                              f"{build.RUNTIME_HOST}/fizzdragon/fizzdragon-{service}@{commands.digest}")
             self.assertEqual(cmd[cmd.index("--platform") + 1], "linux/amd64")
             self.assertEqual(cmd[cmd.index("--builder") + 1], "default")
-            self.assertIn("--push", cmd)
+            self.assertIn("--load", cmd)
             self.assertIn("--provenance=false", cmd)
             self.assertIn("--progress=plain", cmd)
             self.assertRegex(cmd[cmd.index("--tag") + 1],
@@ -332,7 +383,8 @@ class ProductionBuildTest(unittest.TestCase):
             self.assertNotIn("BUILDX_BUILDER", kw["env"])
             self.assertNotIn("BUILDX_CONFIG", kw["env"])
             self.assertNotIn("BUILDKIT_HOST", kw["env"])
-        self.cloud.assert_called_once_with("cr", "GetAuthorizationToken", "--InstanceId", build.INSTANCE_ID)
+        self.assertEqual(self.cloud.call_count, 7)
+        self.cloud.assert_called_with("cr", "GetAuthorizationToken", "--InstanceId", build.INSTANCE_ID, "--ExpiresInHours", "24")
         self.assert_cleaned(commands)
 
     def test_password_uses_stdin_and_private_temp_config_is_removed(self):
@@ -351,9 +403,10 @@ class ProductionBuildTest(unittest.TestCase):
 
         def authorize(*args):
             self.assertEqual(len(commands.plugin_links), 1)
-            self.assertFalse(commands.configs)  # Login has not run yet.
+            # Every refresh still occurs after isolated buildx setup.
             config = commands.isolated_configs[0]
-            self.assertEqual(list(config.iterdir()), [config / "cli-plugins"])
+            if not commands.configs:
+                self.assertEqual(list(config.iterdir()), [config / "cli-plugins"])
             self.assertEqual(list((config / "cli-plugins").iterdir()),
                              [config / "cli-plugins/docker-buildx"])
             return {"IsSuccess": True, "TempUsername": "fixture-user",
@@ -430,3 +483,51 @@ class ProductionBuildTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RegistryReuseTests(unittest.TestCase):
+    def lookup(self, changed=False, corrupt=False, failure=False, second_page=False):
+        digest = 'sha256:' + 'a' * 64
+        calls = []
+        def cloud(*args):
+            calls.append(args)
+            if failure:
+                raise RuntimeError('registry unavailable')
+            result = {'IsSuccess': True, 'Code': 'success'}
+            if args[1] == 'ListRepository':
+                result.update(TotalCount=1, Repositories=[{'RepoId': 'repo',
+                    'RepoName': 'fizzdragon-web', 'RepoNamespaceName': 'fizzdragon',
+                    'InstanceId': build.INSTANCE_ID, 'RepoStatus': 'NORMAL'}])
+            elif args[1] == 'ListRepoTag':
+                page = args[args.index('--PageNo') + 1]
+                rows = [{'Tag': SOURCE, 'Digest': digest, 'Status': 'NORMAL'}]
+                if second_page and page == '1':
+                    rows = [{'Tag': 'not-a-commit'}] * 100
+                result.update(TotalCount=101 if second_page else 1, Images=rows)
+            else:
+                result.update(Tag=SOURCE, Digest='bad' if corrupt else digest, Status='NORMAL')
+            return result
+        with patch.object(build, 'service_inputs', side_effect=['current', 'different' if changed else 'current']), \
+                patch.object(build.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)):
+            return build.find_reusable_image(Path('/fixture'), SOURCE, 'web', cloud), calls
+
+    def test_existing_image_reused_after_prior_partial_release(self):
+        result, calls = self.lookup()
+        self.assertTrue(result.endswith('@sha256:' + 'a' * 64))
+        self.assertEqual(calls[-1][1], 'GetRepoTag')
+
+    def test_changed_inputs_require_build(self):
+        self.assertIsNone(self.lookup(changed=True)[0])
+
+    def test_registry_error_is_not_cache_miss(self):
+        with self.assertRaises(RuntimeError):
+            self.lookup(failure=True)
+
+    def test_changed_digest_rejected(self):
+        with self.assertRaises(build.BuildError):
+            self.lookup(corrupt=True)
+
+    def test_registry_pagination(self):
+        result, calls = self.lookup(second_page=True)
+        self.assertIsNotNone(result)
+        self.assertEqual(sum(c[1] == 'ListRepoTag' for c in calls), 2)

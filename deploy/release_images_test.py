@@ -42,6 +42,23 @@ class InputTests(unittest.TestCase):
         self.write(path, '{"version":"2"}' if path.endswith('.json') else 'changed')
         newer = self.commit()
         self.assertEqual(images.inputs(self.root, self.source, service, region) == images.inputs(self.root, newer, service, region), expected)
+    def test_unrelated_mobile_entrypoint_reuses_every_service(self):
+        self.write('apps/mobile/package.json', '{"name":"mobile","main":"expo-router/entry"}')
+        old = self.commit()
+        self.write('apps/mobile/package.json', '{"name":"mobile","main":"index.js"}')
+        new = self.commit()
+        for service in ('web', 'server', 'studio', 'admin-ui'):
+            self.assertEqual(images.inputs(self.root, old, service, 'cn'),
+                             images.inputs(self.root, new, service, 'cn'))
+
+    def test_unrelated_workspace_dependency_change_rebuilds(self):
+        self.write('apps/mobile/package.json', '{"name":"mobile","dependencies":{"react":"19"}}')
+        old = self.commit()
+        self.write('apps/mobile/package.json', '{"name":"mobile","dependencies":{"react":"20"}}')
+        new = self.commit()
+        self.assertNotEqual(images.inputs(self.root, old, 'web', 'cn'),
+                            images.inputs(self.root, new, 'web', 'cn'))
+
     def test_other_service_change_reuses_web(self): self.compare('apps/server/source.ts', True)
     def test_web_change_rebuilds_web(self): self.compare('apps/web/source.ts', False)
     def test_shared_dependency_rebuilds(self): self.compare('packages/shared/index.ts', False)
