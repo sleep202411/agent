@@ -237,3 +237,12 @@ Use `python3 --version` to check the interpreter selected by your PATH; activate
 your chosen Python environment before running the deployment command. Child
 commands also resolve `python3` from PATH. No automatic interpreter upgrade occurs.
 These tests mock cloud operations; passing them does not establish live rollout success.
+
+## CN build registry credentials
+
+The release obtains fresh ACR temporary credentials from the pinned Hangzhou
+instance/profile during build preflight and again immediately before upload to
+the builder. Token expiry is checked; credential values are never logged. The
+second pair is held in the private temporary release directory and removed by
+release cleanup. The build does not use saved `~/.fizzdragon-cn/acr-*.txt` files:
+those one-hour credentials can expire between deployment attempts.

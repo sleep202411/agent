@@ -218,8 +218,11 @@ if { [ "$PHASE" = build ] || [ "$PHASE" = all ]; } && [ "${#BUILD_SERVICES[@]}" 
   [ "$remote_sha" = "$archive_sha" ] || { echo "FATAL: source archive checksum mismatch" >&2; exit 1; }
 
   echo "==> in-region build and push"
-  "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-username.txt" "root@$ECS_IP:/root/.acr_user"
-  "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
+  # ACR tokens last about one hour. Fetch after source transfer, not from a
+  # persistent file that can silently expire between release attempts.
+  python3 "$TOOLS_ROOT/deploy/cn_build_credentials.py" --output-dir "$RELEASE_DIR/credentials"
+  "${SCP[@]}" "$RELEASE_DIR/credentials/acr-username.txt" "root@$ECS_IP:/root/.acr_user"
+  "${SCP[@]}" "$RELEASE_DIR/credentials/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
   "${SCP[@]}" "$TMP_DIR/deploy/cn-remote-build-services.sh" "root@$ECS_IP:/root/cn-remote-build-services.sh"
   "${SSH[@]}" "root@$ECS_IP" "sed -i 's/\r$//' /root/cn-remote-build-services.sh && TAG='$TAG' EXPECTED_REVISION='$TAG' SERVICES='${BUILD_SERVICES[*]}' bash /root/cn-remote-build-services.sh" \
     | tee "$RELEASE_DIR/build.log"

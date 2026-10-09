@@ -40,6 +40,7 @@ function run(t, scenario, phase = "all", pinned = false) {
   put("deploy/verify_release_image.py", "import os,sys\nsys.exit(1 if os.environ.get('QA_SCENARIO') == 'missing-image' else 0)\n");
   put("deploy/release_revision.py", "import os,sys\nprint(os.environ['QA_FUTURE'])\n");
   put("deploy/release_lock.py", "import os,sys\nos.environ['FD_REGIONAL_LOCK_CN']='fixture'\nos.execvp(sys.argv[3],sys.argv[3:])\n");
+  put("deploy/cn_build_credentials.py", "import os,sys\nfrom pathlib import Path\nif os.environ.get('QA_SCENARIO')=='auth-failure': sys.exit(1)\np=Path(sys.argv[2]);p.mkdir(parents=True);(p/'acr-username.txt').write_text('fixture-user');(p/'acr-password.txt').write_text('fixture-token')\n");
   put("deploy/cn-preflight.sh", "#!/bin/bash\nexit 0\n");
   put("deploy/cn-remote-build-services.sh", "# snapshot A\n");
   put("deploy/cn-source-relay.cjs", "// mocked relay\n");
@@ -266,4 +267,18 @@ test("direct CN deployment restores desired reused images without rebuilding", (
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(upgrades.length, 1);
   assert.equal(calls.some(c => c.cmd === "ssh"), false);
+});
+
+test("build uploads only newly acquired credentials from its private release directory", (t) => {
+  const { result, calls } = run(t, "normal", "build");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const uploads = calls.filter((c) => c.cmd === "scp" && c.args.some((a) => /\/credentials\/acr-/.test(a)));
+  assert.equal(uploads.length, 2);
+  assert.equal(calls.some((c) => c.cmd === "scp" && c.args.some((a) => a.includes(".fizzdragon-cn/acr-"))), false);
+});
+test("failed token refresh prevents credential upload and deployment", (t) => {
+  const { result, calls, upgrades } = run(t, "auth-failure");
+  assert.notEqual(result.status, 0);
+  assert.equal(upgrades.length, 0);
+  assert.equal(calls.some((c) => c.cmd === "scp"), false);
 });
