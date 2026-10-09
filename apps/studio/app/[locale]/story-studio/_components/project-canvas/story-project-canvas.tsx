@@ -3574,6 +3574,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
           ) : (
             <StoryVideoPreview
               interactive={false}
+              hasMedia={Boolean(coverage?.ready)}
               frameAspectRatio={data.frameAspectRatio}
               ariaLabel={t("production.node.videoPreview")}
               emptyLabel={t(
@@ -3796,6 +3797,7 @@ function StoryVideoPreview({
   source,
   poster,
   interactive,
+  hasMedia = false,
   frameAspectRatio,
   ariaLabel,
   emptyLabel,
@@ -3808,6 +3810,7 @@ function StoryVideoPreview({
   source?: StudioVideoSource;
   poster?: string | null;
   interactive: boolean;
+  hasMedia?: boolean;
   frameAspectRatio?: string;
   ariaLabel: string;
   emptyLabel: string;
@@ -3838,13 +3841,25 @@ function StoryVideoPreview({
         )
       ) : (
         <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
-          <span className="grid size-9 place-items-center rounded-full bg-white/[0.055]">
-            <IconMovie className="size-4" />
+          <span
+            className={cn(
+              "grid place-items-center",
+              hasMedia
+                ? "size-10 rounded-[14px] bg-primary/10 shadow-[0_10px_26px_rgba(0,0,0,0.22)]"
+                : "size-9 rounded-full bg-white/[0.055]"
+            )}
+          >
+            <span
+              className={
+                hasMedia
+                  ? "grid size-7 place-items-center rounded-[10px] bg-primary/18 text-[#ff9b9e]"
+                  : undefined
+              }
+            >
+              <IconMovie className="size-4" stroke={2} />
+            </span>
           </span>
           <span className="text-[9px] font-semibold">{emptyLabel}</span>
-          {frameAspectRatio ? (
-            <span className="text-[8px] tabular-nums text-white/18">{frameAspectRatio}</span>
-          ) : null}
         </div>
       )}
     </div>
