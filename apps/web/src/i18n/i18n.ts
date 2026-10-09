@@ -110,7 +110,11 @@ export function setLanguage(lng: string): void {
   if (!isValidLocale(lng) || !isSiteLocale(lng)) return;
   void i18n.changeLanguage(lng);
   if (typeof window !== "undefined") {
-    localStorage.setItem("language", lng);
+    try {
+      localStorage.setItem("language", lng);
+    } catch {
+      // Continue updating the document and cookie when browser storage is unavailable.
+    }
     document.documentElement.lang = lng;
     const secure = window.location.protocol === "https:" ? "; Secure" : "";
     document.cookie = `${LOCALE_COOKIE_NAME}=${encodeURIComponent(lng)}; Path=/; Max-Age=${LOCALE_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;

@@ -4899,6 +4899,7 @@ enum CrewAgreementArchiveJobStatus {
 }
 
 model Crew {
+  pdfTaskImports CrewPdfTaskImport[]
   computeBudget CrewProjectComputeBudget?
   revenueDrafts CrewRevenueDraft[]
   revenueContracts CrewRevenueContract[]
@@ -11334,4 +11335,21 @@ model AcademyExchangeRate {
  version Int @default(1)
  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
  @@map("academy_exchange_rates")
+}
+
+/// Durable PDF analysis and confirmation receipt. No uploaded PDF is retained.
+model CrewPdfTaskImport {
+  crew Crew @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  id String @id @db.Uuid
+  crewId String @map("crew_id")
+  userId String @map("user_id") @db.VarChar(64)
+  sourceHash String @map("source_hash") @db.VarChar(64)
+  status String @db.VarChar(20)
+  proposals Json @default("{}") @db.JsonB
+  selection Json? @db.JsonB
+  taskIds String[] @default([]) @map("task_ids")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  @@index([crewId, userId, createdAt])
+  @@map("crew_pdf_task_imports")
 }

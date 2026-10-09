@@ -692,3 +692,23 @@ There are no seeded course/certificate pairs. Existing skill-to-certificate
 configuration does not establish a course relationship. Saving an association
 also does not award a badge: student qualification remains governed by the
 existing Java review and certification flow, not playback progress.
+
+### Production dashboard PDF task imports
+
+The workbench accepts text PDFs up to 5 MB / 60,000 extracted characters and
+proposes at most 100 tasks. Scanned PDFs must first undergo OCR. The existing
+`ALIBABA_API_KEY` and optional `ALIBABA_BASE_URL` configure Qwen analysis in each
+regional Server. Analysis uses the platform provider account; it does not award
+or deduct creator points. Ten analyses per user/crew/hour are allowed, with one
+active analysis at a time. Automatic provider retries are disabled.
+
+Deploy migration `20261009220000_pdf_task_import` with Server before using the
+updated Web. Analysis IDs are durable and scoped to the requesting user and
+crew. Creation requires `tasks.manage`, explicit preview selection, and an
+active open workflow. Crews requiring custom fields use individual task creation
+until those required fields can be supplied. Preview creation does not assign
+creators, set payment terms or create tasks. Confirmation atomically creates
+selected tasks and their delivery folders, with a replayable receipt. Previews
+expire after 24 hours; completed receipts remain available for safe retries.
+Raw PDFs are not retained. Proposals and their source excerpts are retained in
+the crew database, and deleting the crew cascades to these analysis records.

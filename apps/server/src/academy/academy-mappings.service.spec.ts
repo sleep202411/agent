@@ -18,6 +18,7 @@ const certificates = [{ id: 13, name: 'AI Producer', type: 4 }];
 function fixture() {
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([]),
+    $executeRaw: jest.fn().mockResolvedValue(1),
     academyCourseCertificate: {
       findUnique: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
@@ -121,6 +122,7 @@ describe('Academy course mappings', () => {
       service.save(admin, '42', { certificateId: 13, expectedVersion: 0 }),
     ).resolves.toMatchObject({ certificateId: 13, version: 1 });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(tx.adminAuditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         actorUserId: 'admin',

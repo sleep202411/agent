@@ -49,8 +49,12 @@ export function normalizeSiteLocale(value: string | null | undefined): Locale {
 /** Detect preferred locale from browser settings. */
 export function detectBrowserLocale(): Locale {
   if (typeof window === "undefined") return defaultLocale;
-  const stored = localStorage.getItem("language");
-  if (stored && isSiteLocale(stored)) return stored;
+  try {
+    const stored = localStorage.getItem("language");
+    if (stored && isSiteLocale(stored)) return stored;
+  } catch {
+    // Storage may be blocked in private/embedded browsers; browser locale still works.
+  }
   const lang = navigator.language;
   if (lang.startsWith("zh-HK") || lang.startsWith("zh-TW")) return "zh-HK";
   if (lang.startsWith("zh")) return "zh-CN";

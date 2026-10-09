@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { IconCheck, IconWorld } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
 import { usePathname } from "@/i18n/navigation";
@@ -23,14 +23,15 @@ export function SiteRegionSwitcher() {
   const current = useSiteRegion();
   const [pathWithSearchHash, setPathWithSearchHash] = useState(pathname);
 
-  useEffect(() => {
-    setPathWithSearchHash(`${pathname}${window.location.search}${window.location.hash}`);
-  }, [pathname]);
-
   const labelFor = (region: SiteRegion) => (region === "cn" ? t("cn") : t("global"));
 
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open)
+          setPathWithSearchHash(`${pathname}${window.location.search}${window.location.hash}`);
+      }}
+    >
       <DropdownMenuTrigger
         aria-label={t("label")}
         title={t("label")}
