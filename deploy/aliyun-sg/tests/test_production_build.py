@@ -144,7 +144,7 @@ class ProductionBuildTest(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["cwd"], self.root.resolve())
         return destination, digest
 
-    def run_build(self, services, commands=None):
+    def run_build(self, services, commands=None, npm_registry=None):
         commands = commands or FakeCommands(self.root)
         output = io.StringIO()
         with patch.object(build, "find_reusable_image", return_value=None), \
@@ -157,7 +157,7 @@ class ProductionBuildTest(unittest.TestCase):
                                         "BUILDX_CONFIG": "/never-copy-existing-builder-settings",
                                         "BUILDKIT_HOST": "tcp://other-builder.invalid:1234"}), \
                 contextlib.redirect_stdout(output):
-            images = build.build_images(self.root, services, self.current_images)
+            images = build.build_images(self.root, services, self.current_images, npm_registry=npm_registry)
         return images, commands, output.getvalue()
 
     def test_all_reused_skips_compilation_and_publication(self):
@@ -168,6 +168,31 @@ class ProductionBuildTest(unittest.TestCase):
                              {'web': 'verified@sha256:digest'})
         self.assertTrue(all(c[0] == 'docker' and 'build' not in c and 'push' not in c
                             for c, _ in commands.calls))
+
+    def test_opt_in_npm_registry_is_passed_only_when_requested(self):
+        mirror = "https://registry.npmmirror.com"
+        images, commands, _ = self.run_build(["admin-ui", "server"], npm_registry=mirror)
+        self.assertEqual(set(images), {"admin-ui", "server"})
+        builds = [cmd for cmd, _ in commands.calls if cmd[:3] == ["docker", "buildx", "build"]]
+        self.assertEqual(len(builds), 2)
+        for cmd in builds:
+            arguments = dict(cmd[index + 1].split("=", 1) for index, value in enumerate(cmd)
+                             if value == "--build-arg")
+            self.assertEqual(arguments.get("NPM_REGISTRY"), mirror)
+        with self.assertRaisesRegex(build.BuildError, "https URL"):
+            build.optional_npm_registry("http://insecure.example/npm")
+
+    def test_npm_registry_override_participates_in_reuse_identity(self):
+        identity = Mock()
+        identity.inputs.return_value = "f" * 64
+        spec = Mock()
+        with patch.object(build.importlib.util, "spec_from_file_location", return_value=spec), \
+                patch.object(build.importlib.util, "module_from_spec", return_value=identity):
+            default = build.service_inputs(self.root, SOURCE, "web")
+            first = build.service_inputs(self.root, SOURCE, "web", "https://registry.npmmirror.com")
+            second = build.service_inputs(self.root, SOURCE, "web", "https://registry.npmjs.org")
+        self.assertEqual(default, "f" * 64)
+        self.assertEqual(len({default, first, second}), 3)
 
     def test_partial_reuse_builds_only_missing_service(self):
         commands = FakeCommands(self.root)

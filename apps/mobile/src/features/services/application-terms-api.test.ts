@@ -1,8 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import {
-  acceptApplicationOffer,
-  fetchApplicationThread,
   fetchMyApplications,
   fetchApplicationTerms,
   confirmApplicationTerms,
@@ -136,105 +134,4 @@ it("ignores confirmation arriving after account switch", async () => {
     return result;
   });
   await expect(confirmApplicationTerms(app, row, "creator", 1)).rejects.toThrow("session expired");
-});
-
-const thread = {
-  ...app,
-  positionId: "position",
-  ownerUserId: "owner",
-  taskTitle: "Storyboard",
-  dueAt: null,
-};
-it("looks up the exact applicant thread independently of list pagination", async () => {
-  vi.mocked(api.get).mockResolvedValue(thread);
-  expect(await fetchApplicationThread("app", "creator", 1, signal())).toEqual(thread);
-  expect(api.get).toHaveBeenCalledWith(
-    "/applications/app",
-    expect.objectContaining({ retry: false, credentials: "include" })
-  );
-  await expect(fetchApplicationThread("app", "other", 1, signal())).rejects.toThrow("account");
-});
-it("accepts the exact reviewed offer and verifies confirmed terms after approval", async () => {
-  vi.mocked(api.post).mockResolvedValue({ ...thread, status: "approved" });
-  vi.mocked(api.get).mockResolvedValue({
-    currentVersion: 2,
-    items: [result],
-    nextBeforeVersion: null,
-  });
-  expect(await acceptApplicationOffer(thread, row, "creator", 1)).toEqual(result);
-  expect(api.post).toHaveBeenCalledWith(
-    "/applications/app/accept-offer",
-    expect.objectContaining({ retry: false, data: { version: 2 } })
-  );
-});
-it.each([
-  { applicantId: "other" },
-  { id: "other" },
-  { crewId: "other" },
-  { positionId: "other" },
-  { status: "pending" },
-])("does not trust mismatched offer receipts %j", async (patch) => {
-  vi.mocked(api.post).mockResolvedValue({ ...thread, status: "approved", ...patch });
-  await expect(acceptApplicationOffer(thread, row, "creator", 1)).rejects.toThrow();
-});
-it("does not claim acceptance when confirmed terms differ or cannot be read", async () => {
-  vi.mocked(api.post).mockResolvedValue({ ...thread, status: "approved" });
-  vi.mocked(api.get).mockResolvedValue({
-    currentVersion: 2,
-    items: [{ ...result, feeAmount: "1" }],
-    nextBeforeVersion: null,
-  });
-  await expect(acceptApplicationOffer(thread, row, "creator", 1)).rejects.toThrow("verified");
-  vi.mocked(api.get).mockRejectedValue(new Error("Offline"));
-  await expect(acceptApplicationOffer(thread, row, "creator", 1)).rejects.toThrow("Offline");
-});
-it("allows accepting already confirmed terms but rejects wrong applicants and stale sessions", async () => {
-  vi.mocked(api.post).mockResolvedValue({ ...thread, status: "approved" });
-  vi.mocked(api.get).mockResolvedValue({
-    currentVersion: 2,
-    items: [result],
-    nextBeforeVersion: null,
-  });
-  expect(await acceptApplicationOffer(thread, result, "creator", 1)).toEqual(result);
-  vi.mocked(api.post).mockClear();
-  await expect(acceptApplicationOffer(thread, row, "other", 1)).rejects.toThrow();
-  h.generation = 2;
-  await expect(acceptApplicationOffer(thread, row, "creator", 1)).rejects.toThrow("expired");
-  expect(api.post).not.toHaveBeenCalled();
-});
-
-it("allows server-authorized reviewers only in explicit participant mode", async () => {
-  vi.mocked(api.get).mockResolvedValue(thread);
-  await expect(fetchApplicationThread("app", "reviewer", 1, signal())).rejects.toThrow("account");
-  expect(await fetchApplicationThread("app", "reviewer", 1, signal(), "either")).toEqual(thread);
-  vi.mocked(api.get).mockResolvedValue({ ...thread, id: "wrong" });
-  await expect(fetchApplicationThread("app", "reviewer", 1, signal(), "either")).rejects.toThrow(
-    "account"
-  );
-});
-
-it("requests received applications and verifies the current owner on each row", async () => {
-  vi.mocked(api.get).mockResolvedValue({
-    items: [{ ...app, applicantId: "other", ownerUserId: "creator" }],
-    nextCursor: null,
-  });
-  expect((await fetchMyApplications("creator", null, signal(), "received")).items).toHaveLength(1);
-  expect(api.get).toHaveBeenCalledWith(
-    "/me/crew-applications",
-    expect.objectContaining({ params: { limit: 20, scope: "received" } })
-  );
-  vi.mocked(api.get).mockResolvedValue({
-    items: [{ ...app, ownerUserId: "other" }],
-    nextCursor: null,
-  });
-  await expect(fetchMyApplications("creator", null, signal(), "received")).rejects.toThrow(
-    "account"
-  );
-});
-
-it("refuses confirmation if the returned payment terms differ from the reviewed offer", async () => {
-  vi.mocked(api.post).mockResolvedValue({ ...result, paymentTerms: "monthly" });
-  await expect(
-    confirmApplicationTerms(app, { ...row, paymentTerms: "half_upfront" }, "creator", 1)
-  ).rejects.toThrow("could not be verified");
 });

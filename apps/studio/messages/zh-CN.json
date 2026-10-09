@@ -50,6 +50,11 @@
   "localeSwitcher": {
     "label": "语言"
   },
+  "siteSwitcher": {
+    "label": "站点",
+    "global": "国际站",
+    "cn": "中文站"
+  },
   "account": {
     "signIn": "登录",
     "account": "账户",

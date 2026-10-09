@@ -1,3 +1,4 @@
+import { CrewPdfTaskImportService } from './production/pdf-task-import';
 import { CrewApplicationAmendmentsService } from './application-amendments';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { CrewTaskFeedbackAppealsService } from './accountability/task-feedback-appeals';
@@ -2093,6 +2094,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
             description: 'Task work',
             targetCount: 1,
           }),
+          [13],
         );
         openingId = position.id;
         expect(position.taskId).toBe(taskId);
@@ -2132,6 +2134,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
               description: 'Private task',
               targetCount: 1,
             }),
+            [13],
           );
           openingId = privatePosition.id;
           expect(privatePosition.recruitmentVisibility).toBe('private');
@@ -3073,11 +3076,16 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           description: 'Task work',
           targetCount: 1,
         });
-        await expect(positions.create(crewId, owner, input)).rejects.toThrow(
-          'before assigning work',
-        );
         await expect(
-          positions.create(crewId, owner, { ...input, taskId: randomUUID() }),
+          positions.create(crewId, owner, input, [13]),
+        ).rejects.toThrow('before assigning work');
+        await expect(
+          positions.create(
+            crewId,
+            owner,
+            { ...input, taskId: randomUUID() },
+            [13],
+          ),
         ).rejects.toThrow('Recruitment task not found');
         await expect(positions.create(crewId, worker, input)).rejects.toThrow();
       });
@@ -3106,6 +3114,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
               description: 'Task work',
               targetCount: 1,
             }),
+            [13],
           ),
           tasks.update(
             task.id,
@@ -3380,6 +3389,186 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         await expect(
           interviews.update(appId, owner, change(1, 'schedule')),
         ).rejects.toThrow('Reviewed applications');
+      });
+    });
+
+    describe('Grouped workbench operations', () => {
+      async function selectedTasks() {
+        const result: Array<{ id: string; version: number }> = [];
+        for (const title of ['Character A', 'Character B'])
+          result.push(
+            await tasks.create(
+              crewId,
+              owner,
+              CreateCrewTaskSchema.parse({
+                title,
+                description: 'Design the character',
+                taskKind: 'art',
+                dueAt: '2099-10-03T00:00:00.000Z',
+                rewardUsdMinor: 1200,
+                rewardCurrency: crewCurrency(),
+                paymentTerms: 'on_completion',
+                assignees: [],
+              }),
+            ),
+          );
+        return result;
+      }
+      it('claims a persisted PDF only once across two workers', async () => {
+        const id = randomUUID();
+        await db.crewPdfTaskImport.create({
+          data: {
+            id,
+            crewId,
+            userId: owner,
+            sourceHash: 'hash',
+            status: 'queued',
+            sourceText: 'Script text',
+          },
+        });
+        const first = new CrewPdfTaskImportService(
+          db as never,
+          authorization,
+          conversations,
+        );
+        const second = new CrewPdfTaskImportService(
+          db as never,
+          authorization,
+          conversations,
+        );
+        const a = jest.spyOn(first, 'process').mockResolvedValue(undefined);
+        const b = jest.spyOn(second, 'process').mockResolvedValue(undefined);
+        await Promise.all([first.drain(), second.drain()]);
+        expect(a.mock.calls.length + b.mock.calls.length).toBe(1);
+        expect(
+          (await db.crewPdfTaskImport.findUniqueOrThrow({ where: { id } }))
+            .status,
+        ).toBe('analyzing');
+      });
+      it('rolls back every assignment if a later task is stale', async () => {
+        const selected = (await selectedTasks()).sort((a, b) =>
+          a.id.localeCompare(b.id),
+        );
+        await expect(
+          tasks.batchAssign(crewId, owner, {
+            assigneeId: worker,
+            tasks: selected.map((task, i) => ({
+              id: task.id,
+              expectedVersion: task.version + i,
+            })),
+          }),
+        ).rejects.toThrow();
+        expect(
+          await db.crewTaskAssignee.count({
+            where: { taskId: { in: selected.map((t) => t.id) } },
+          }),
+        ).toBe(0);
+        const versions = await db.crewTask.findMany({
+          where: { id: { in: selected.map((t) => t.id) } },
+        });
+        expect(
+          versions.every(
+            (t) => t.version === selected.find((s) => s.id === t.id)!.version,
+          ),
+        ).toBe(true);
+      });
+      it('assigns every selected task in one transaction', async () => {
+        const selected = await selectedTasks();
+        await tasks.batchAssign(crewId, owner, {
+          assigneeId: worker,
+          tasks: selected.map((task) => ({
+            id: task.id,
+            expectedVersion: task.version,
+          })),
+        });
+        expect(
+          await db.crewTaskAssignee.count({
+            where: {
+              taskId: { in: selected.map((t) => t.id) },
+              userId: worker,
+            },
+          }),
+        ).toBe(2);
+      });
+      it('recruits once and assigns the accepted per-task allocations', async () => {
+        const selected = await selectedTasks();
+        const positions = new PositionsService(db as never, authorization);
+        const position = await positions.create(
+          crewId,
+          owner,
+          CreatePositionSchema.parse({
+            tasks: selected.map((task) => ({
+              id: task.id,
+              expectedVersion: task.version,
+            })),
+            positionType: 'character_design',
+            description: 'Characters',
+            targetCount: 1,
+          }),
+          [13],
+        );
+        expect(
+          await db.crewPosition.count({
+            where: {
+              groupedTasks: { some: { id: { in: selected.map((t) => t.id) } } },
+            },
+          }),
+        ).toBe(1);
+        expect((await tasks.get(selected[0].id, owner)).isRecruiting).toBe(
+          true,
+        );
+        const app = await applications.apply(crewId, position.id, worker, {});
+        const terms = new CrewApplicationTermsService(
+          db as never,
+          authorization,
+        );
+        await terms.propose(app.id, owner, {
+          expectedVersion: 0,
+          scope: 'Both characters',
+          feeAmount: '2400',
+          currency: crewCurrency(),
+          feePeriod: 'project',
+          revenueShareBp: 0,
+          shareBasis: null,
+        });
+        await terms.confirm(app.id, worker, 1);
+        await applications.approve(app.id, owner);
+        for (const task of selected) {
+          expect(
+            (await tasks.recruitmentTerms(task.id, owner, worker)).items[0]
+              .feeAmount,
+          ).toBe('1200');
+          await expect(
+            tasks.update(task.id, owner, {
+              expectedVersion: task.version,
+              assignees: [
+                {
+                  userId: worker,
+                  currency: crewCurrency(),
+                  rewardAmountMinor: 2400,
+                },
+              ],
+            }),
+          ).rejects.toThrow('confirmed');
+          await tasks.update(task.id, owner, {
+            expectedVersion: task.version,
+            assignees: [
+              {
+                userId: worker,
+                currency: crewCurrency(),
+                rewardAmountMinor: 1200,
+              },
+            ],
+          });
+        }
+        expect(
+          await db.crewTaskAssignee.count({
+            where: {
+              taskId: { in: selected.map((t) => t.id) },
+              rewardAmountMinor: 1200,
+            },
+          }),
+        ).toBe(2);
       });
     });
 

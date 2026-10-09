@@ -10,15 +10,9 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
 import { fetchCrewAssetAccess } from "@/features/crew-assets/api";
-type Props = {
-  mediaAssetId: string;
-  name: string;
-  mediaKind?: string;
-  contentType?: string;
-  inlinePreview?: boolean;
-};
+type Props = { mediaAssetId: string; name: string; mediaKind?: string; contentType?: string };
 /** Resolve access on tap; media URLs live only in the active preview, never persisted. */
-function File({ mediaAssetId, name, mediaKind, contentType, inlinePreview }: Props) {
+function File({ mediaAssetId, name, mediaKind, contentType }: Props) {
   const insets = useSafeAreaInsets();
   const t = useTranslations(),
     theme = useTheme();
@@ -79,9 +73,6 @@ function File({ mediaAssetId, name, mediaKind, contentType, inlinePreview }: Pro
         }}
         style={{ padding: 12 }}
       >
-        {inlinePreview && canPreview && !isAudio && !isVideo && (
-          <ImageThumbnail mediaAssetId={mediaAssetId} name={name} />
-        )}
         <ThemedText>
           {t("thread.openFile")}: {name}
         </ThemedText>
@@ -138,41 +129,4 @@ function File({ mediaAssetId, name, mediaKind, contentType, inlinePreview }: Pro
 export function ConversationFile(props: Props) {
   const active = useScreenActive();
   return active ? <File key={`${props.mediaAssetId}:${getAuthGeneration()}`} {...props} /> : null;
-}
-
-/** Inline images use fresh authorized URLs, never persisted or cached on disk. */
-function ImageThumbnail({ mediaAssetId, name }: { mediaAssetId: string; name: string }) {
-  const [url, setUrl] = useState<string>();
-  useEffect(() => {
-    const controller = new AbortController(),
-      generation = getAuthGeneration();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    void fetchCrewAssetAccess(mediaAssetId, controller.signal).then(
-      (access) => {
-        if (controller.signal.aborted || generation !== getAuthGeneration()) return;
-        const remaining = access.expiresAt ? Date.parse(access.expiresAt) - Date.now() : undefined;
-        if (remaining !== undefined && (!Number.isFinite(remaining) || remaining <= 0)) return;
-        setUrl(access.url);
-        if (remaining !== undefined)
-          timer = setTimeout(() => setUrl(undefined), Math.min(2147483647, remaining));
-      },
-      () => {
-        /* Keep the file action available; opening it reports authorization failures. */
-      }
-    );
-    return () => {
-      controller.abort();
-      if (timer) clearTimeout(timer);
-    };
-  }, [mediaAssetId]);
-  return url ? (
-    <Image
-      source={{ uri: url }}
-      style={{ width: 140, height: 90, borderRadius: 8 }}
-      contentFit="cover"
-      cachePolicy="none"
-      accessibilityLabel={name}
-      onError={() => setUrl(undefined)}
-    />
-  ) : null;
 }

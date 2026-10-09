@@ -39,6 +39,15 @@ describe('Crew compute request migration', () => {
         'utf8',
       ),
     );
+    await db.exec(
+      readFileSync(
+        resolve(
+          __dirname,
+          '../../../prisma/migrations/20261010001000_task_compute_topups/migration.sql',
+        ),
+        'utf8',
+      ),
+    );
   }, 30000);
   afterAll(async () => {
     await db.close();
@@ -88,6 +97,31 @@ describe('Crew compute request migration', () => {
     await expect(
       db.exec(
         "INSERT INTO crew_compute_requests SELECT '01994bd8-0000-7000-8000-000000000005', crew_id, task_id, workspace_id, user_id, task_title, points, reason, status, decided_by_user_id, decision_note, decided_at, created_at, request_key, NULL FROM crew_compute_requests",
+      ),
+    ).rejects.toThrow();
+  });
+  it('preserves legacy allowances and enforces top-up terms and a single task application', async () => {
+    await insert();
+    expect(
+      (await db.query('SELECT kind FROM crew_compute_requests')).rows,
+    ).toEqual([{ kind: 'legacy_allowance' }]);
+    await expect(
+      db.exec("UPDATE crew_compute_requests SET kind='top_up'"),
+    ).rejects.toThrow();
+    await db.exec(
+      "UPDATE crew_compute_requests SET kind='top_up', remaining_workload=10.5, workload_unit='minutes'",
+    );
+    await expect(
+      db.exec('UPDATE crew_compute_requests SET points=501'),
+    ).rejects.toThrow();
+    await expect(
+      db.exec(
+        "UPDATE crew_compute_requests SET workload_unit='percent', remaining_workload=101",
+      ),
+    ).rejects.toThrow();
+    await expect(
+      db.exec(
+        "INSERT INTO crew_compute_requests(id,crew_id,task_id,workspace_id,user_id,task_title,points,reason,request_key,kind,remaining_workload,workload_unit) SELECT '01994bd8-0000-7000-8000-000000000099',crew_id,task_id,workspace_id,'other',task_title,points,reason,'01994bd8-0000-7000-8000-000000000098',kind,remaining_workload,workload_unit FROM crew_compute_requests",
       ),
     ).rejects.toThrow();
   });

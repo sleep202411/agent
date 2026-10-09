@@ -1,11 +1,6 @@
-import { useRouter, useIsFocused } from "expo-router";
-import { toHref } from "@/lib/navigation";
-import { useUserDisplays } from "./user-displays";
-import { ApplicationReview } from "./application-review";
 import { ApplicationAmendments } from "./application-amendments";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
-import { ApiRequestError } from "@/lib/api-client";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -16,63 +11,29 @@ import { formatFinanceMoney } from "./crew-finance-api";
 import {
   fetchMyApplications,
   fetchApplicationTerms,
-  acceptApplicationOffer,
-  fetchApplicationThread,
-  type ApplicationThread,
+  confirmApplicationTerms,
   type Application,
   type Terms,
 } from "./application-terms-api";
 import { PositionInvitations } from "./position-invitations";
 import { ApplicationInterview } from "./application-interview";
-type Props = {
-  active?: boolean;
-  userId: string;
-  generation: number;
-  onWeb: () => void;
-  initialApplicationId?: string;
-};
+type Props = { userId: string; generation: number; onWeb: () => void };
 export function CrewApplications(props: Props) {
   const active = useScreenActive();
-  const focused = useIsFocused();
-  return focused && props.generation === getAuthGeneration() ? (
-    <Applications
-      key={`${props.userId}:${props.generation}:${props.initialApplicationId ?? ""}`}
-      {...props}
-      active={active}
-    />
+  return active && props.generation === getAuthGeneration() ? (
+    <Applications key={`${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
-function Applications(props: Props & { active: boolean }) {
-  const [scope, setScope] = useState<"sent" | "received">("sent");
-  const [requested, setRequested] = useState(props.initialApplicationId);
+function Applications(props: Props) {
   const [invitations, setInvitations] = useState(false);
   const [revision, setRevision] = useState(0),
     [selected, setSelected] = useState<Application>();
-  if (requested)
-    return (
-      <RequestedApplication
-        {...props}
-        applicationId={requested}
-        onClose={() => setRequested(undefined)}
-      />
-    );
-  if (invitations && props.active)
+  if (invitations)
     return (
       <PositionInvitations
         {...props}
         onClose={() => {
           setInvitations(false);
-          setRevision((n) => n + 1);
-        }}
-      />
-    );
-  if (selected && selected.applicantId !== props.userId)
-    return (
-      <RequestedApplication
-        {...props}
-        applicationId={selected.id}
-        onClose={() => {
-          setSelected(undefined);
           setRevision((n) => n + 1);
         }}
       />
@@ -88,13 +49,10 @@ function Applications(props: Props & { active: boolean }) {
         }}
       />
     );
-  if (!props.active) return null;
   return (
     <ApplicationPage
-      key={`${revision}:${scope}`}
+      key={revision}
       {...props}
-      scope={scope}
-      onScope={setScope}
       onInvitations={() => setInvitations(true)}
       onSelect={setSelected}
       onRefresh={() => {
@@ -103,62 +61,8 @@ function Applications(props: Props & { active: boolean }) {
     />
   );
 }
-function RequestedApplication(props: Props & { applicationId: string; onClose: () => void }) {
-  const t = useTranslations();
-  const [thread, setThread] = useState<ApplicationThread>();
-  const [error, setError] = useState<string>();
-  const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetchApplicationThread(
-      props.applicationId,
-      props.userId,
-      props.generation,
-      controller.signal,
-      "either"
-    ).then(
-      (value) => {
-        if (!controller.signal.aborted && props.generation === getAuthGeneration())
-          setThread(value);
-      },
-      (cause) => {
-        if (!controller.signal.aborted && props.generation === getAuthGeneration())
-          setError(cause instanceof Error ? cause.message : String(cause));
-      }
-    );
-    return () => controller.abort();
-  }, [props.applicationId, props.userId, props.generation, revision]);
-  if (thread)
-    return thread.applicantId === props.userId ? (
-      <TermsReview {...props} application={thread} />
-    ) : (
-      <ApplicationReview {...props} crewId={thread.crewId} initialApplicationId={thread.id} />
-    );
-  if (props.active === false) return null;
-  return (
-    <View style={{ padding: 16, gap: 12 }}>
-      {error ? (
-        <>
-          <ThemedText accessibilityRole="alert">{error}</ThemedText>
-          <Action
-            label={t("common.retry")}
-            onPress={() => {
-              setError(undefined);
-              setRevision((n) => n + 1);
-            }}
-          />
-        </>
-      ) : (
-        <ActivityIndicator />
-      )}
-      <Action label={t("nativeApplications.back")} onPress={props.onClose} />
-    </View>
-  );
-}
 function ApplicationPage(
   props: Props & {
-    scope: "sent" | "received";
-    onScope: (scope: "sent" | "received") => void;
     onInvitations: () => void;
     onSelect: (app: Application) => void;
     onRefresh: () => void;
@@ -166,32 +70,16 @@ function ApplicationPage(
 ) {
   const t = useTranslations();
   const [cursor, setCursor] = useState<string | null>(null);
-  const [retry, setRetry] = useState(0);
-  const [retryable, setRetryable] = useState(false);
   const [page, setPage] = useState<Awaited<ReturnType<typeof fetchMyApplications>>>();
   const [error, setError] = useState<string>(),
     [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const peerId = (row: Application) =>
-    row.applicantId === props.userId ? row.ownerUserId : row.applicantId;
-  const displays = useUserDisplays(
-    `${props.userId}:${props.generation}`,
-    (page?.items ?? []).flatMap((row) => (peerId(row) ? [peerId(row)!] : []))
-  );
-  const peerName = (row: Application) => displays?.get(peerId(row) ?? "")?.nickname ?? "";
-  const filtered = page?.items.filter((row) =>
-    `${peerName(row)} ${row.crewName} ${row.taskTitle ?? row.positionType}`
-      .toLocaleLowerCase()
-      .includes(search.trim().toLocaleLowerCase())
-  );
-  const theme = useTheme();
   const records = useRef<Application[]>([]),
     seen = useRef(new Set<string>()),
     pending = useRef(false);
   useEffect(() => {
     const c = new AbortController();
     pending.current = true;
-    void fetchMyApplications(props.userId, cursor, c.signal, props.scope)
+    void fetchMyApplications(props.userId, cursor, c.signal)
       .then((value) => {
         if (c.signal.aborted || props.generation !== getAuthGeneration()) return;
         if (
@@ -205,11 +93,7 @@ function ApplicationPage(
       })
       .catch((cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration()) {
-          const temporary =
-            cause instanceof ApiRequestError &&
-            (cause.status === 0 || cause.status === 429 || cause.status >= 500);
-          setRetryable(temporary);
-          if (!temporary) setPage(undefined);
+          setPage(undefined);
           setError(cause instanceof Error ? cause.message : String(cause));
         }
       })
@@ -220,72 +104,24 @@ function ApplicationPage(
         }
       });
     return () => c.abort();
-  }, [props.userId, props.generation, cursor, props.scope, retry]);
+  }, [props.userId, props.generation, cursor]);
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewTerms.myApplications")}</ThemedText>
       <Action label={t("crewPositionInvites.title")} onPress={props.onInvitations} />
       <Action label={t("nativeApplications.webWorkflow")} onPress={props.onWeb} />
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        {(["sent", "received"] as const).map((value) => (
-          <Pressable
-            key={value}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: props.scope === value }}
-            style={{
-              padding: 12,
-              minHeight: 44,
-              borderRadius: 8,
-              backgroundColor:
-                props.scope === value ? theme.backgroundSelected : theme.backgroundElement,
-            }}
-            onPress={() => props.onScope(value)}
-          >
-            <ThemedText>{t(`crewRecruitment.${value}`)}</ThemedText>
-          </Pressable>
-        ))}
-      </View>
-      <TextInput
-        accessibilityLabel={t("crewRecruitment.search")}
-        placeholder={t("crewRecruitment.search")}
-        value={search}
-        onChangeText={setSearch}
-        style={{
-          color: theme.text,
-          minHeight: 44,
-          padding: 12,
-          borderWidth: 1,
-          borderColor: theme.border,
-          borderRadius: 8,
-        }}
-        placeholderTextColor={theme.textSecondary}
-      />
       {loading && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      {filtered?.map((row) => (
+      {page?.items.map((row) => (
         <Action
           key={row.id}
           disabled={loading}
-          label={`${peerName(row) ? `${peerName(row)} · ` : ""}${row.crewName} · ${row.taskTitle ?? row.positionType} · ${row.createdAt.slice(0, 10)} · ${t(`crewTerms.${row.status}`)}`}
+          label={`${row.crewName} · ${row.positionType} · ${row.createdAt.slice(0, 10)} · ${t(`crewTerms.${row.status}`)}`}
           onPress={() => props.onSelect(row)}
         />
       ))}
-      {filtered?.length === 0 && <ThemedText>{t("crewTerms.empty")}</ThemedText>}
-      {error && retryable && (
-        <Action
-          label={t("common.retry")}
-          disabled={loading}
-          onPress={() => {
-            if (pending.current) return;
-            pending.current = true;
-            setLoading(true);
-            setError(undefined);
-            setRetryable(false);
-            setRetry((n) => n + 1);
-          }}
-        />
-      )}
-      {!error && page?.nextCursor && (
+      {page?.items.length === 0 && <ThemedText>{t("crewTerms.empty")}</ThemedText>}
+      {page?.nextCursor && (
         <Action
           disabled={loading}
           label={t("crewTerms.more")}
@@ -303,19 +139,19 @@ function ApplicationPage(
 }
 function TermsReview(props: Props & { application: Application; onClose: () => void }) {
   const [interview, setInterview] = useState(false);
-  const [amendments, setAmendments] = useState<ApplicationThread>();
+  const [amendments, setAmendments] = useState(false);
   const [before, setBefore] = useState<number | null>(null),
     [revision, setRevision] = useState(0);
   if (amendments)
     return (
       <ApplicationAmendments
         {...props}
-        crewId={amendments.crewId}
-        applicationId={amendments.id}
-        applicantId={amendments.applicantId}
-        taskId={amendments.taskId!}
+        crewId={props.application.crewId}
+        applicationId={props.application.id}
+        applicantId={props.application.applicantId}
+        taskId={props.application.taskId!}
         onClose={() => {
-          setAmendments(undefined);
+          setAmendments(false);
           setBefore(null);
           setRevision((n) => n + 1);
         }}
@@ -324,19 +160,17 @@ function TermsReview(props: Props & { application: Application; onClose: () => v
   if (interview)
     return (
       <ApplicationInterview
-        active={props.active}
         applicationId={props.application.id}
         userId={props.userId}
         generation={props.generation}
         onClose={() => setInterview(false)}
       />
     );
-  if (props.active === false) return null;
   return (
     <TermsPage
       key={`${revision}:${before}`}
       {...props}
-      onAmendments={setAmendments}
+      onAmendments={() => setAmendments(true)}
       onInterview={() => setInterview(true)}
       before={before}
       onMore={setBefore}
@@ -352,7 +186,7 @@ function TermsPage(
     application: Application;
     onClose: () => void;
     onInterview: () => void;
-    onAmendments: (thread: ApplicationThread) => void;
+    onAmendments: () => void;
     before: number | null;
     onMore: (before: number) => void;
     onRefresh: () => void;
@@ -360,9 +194,7 @@ function TermsPage(
 ) {
   const t = useTranslations(),
     op = useAuthFormOperation(props.application.id, true);
-  const router = useRouter();
   const theme = useTheme();
-  const [thread, setThread] = useState<ApplicationThread>();
   const [page, setPage] = useState<Awaited<ReturnType<typeof fetchApplicationTerms>>>(),
     [error, setError] = useState<string>(),
     [result, setResult] = useState<Terms>(),
@@ -370,15 +202,9 @@ function TermsPage(
     [denied, setDenied] = useState(false);
   useEffect(() => {
     const c = new AbortController();
-    void Promise.all([
-      fetchApplicationTerms(props.application.id, props.before, c.signal),
-      fetchApplicationThread(props.application.id, props.userId, props.generation, c.signal),
-    ]).then(
+    void fetchApplicationTerms(props.application.id, props.before, c.signal).then(
       (value) => {
-        if (!c.signal.aborted && props.generation === getAuthGeneration()) {
-          setPage(value[0]);
-          setThread(value[1]);
-        }
+        if (!c.signal.aborted && props.generation === getAuthGeneration()) setPage(value);
       },
       (cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
@@ -386,7 +212,7 @@ function TermsPage(
       }
     );
     return () => c.abort();
-  }, [props.application.id, props.before, props.generation, props.userId]);
+  }, [props.application.id, props.before, props.generation]);
   const latest = page?.items.find((row) => row.version === page.currentVersion);
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
@@ -394,34 +220,9 @@ function TermsPage(
         {props.application.crewName} · {props.application.positionType}
       </ThemedText>
       <Action disabled={op.busy} label={t("crewInterview.title")} onPress={props.onInterview} />
-      {thread?.status === "approved" && thread.taskId && (
-        <>
-          <Action
-            disabled={op.busy}
-            label={t("crewFinance.openTask")}
-            onPress={() => {
-              if (props.generation !== getAuthGeneration()) return;
-              router.push(
-                toHref(
-                  `/crew-tasks/${encodeURIComponent(thread.crewId)}?task=${encodeURIComponent(thread.taskId!)}`
-                )
-              );
-            }}
-          />
-          <Action
-            disabled={op.busy}
-            label={t("crewAmendments.title")}
-            onPress={() => props.onAmendments(thread)}
-          />
-        </>
+      {props.application.status === "approved" && props.application.taskId && (
+        <Action disabled={op.busy} label={t("crewAmendments.title")} onPress={props.onAmendments} />
       )}
-      {thread?.taskTitle && <ThemedText>{thread.taskTitle}</ThemedText>}
-      {thread?.dueAt && (
-        <ThemedText>
-          {t("crewOffers.deadline")}: {thread.dueAt.slice(0, 10)}
-        </ThemedText>
-      )}
-      {result && <ThemedText>{t("crewOffers.accepted")}</ThemedText>}
       <ThemedText>{t("crewTerms.title")}</ThemedText>
       {!page && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
@@ -452,48 +253,52 @@ function TermsPage(
           <ThemedText>
             {t("crewTerms.share")} · {(row.revenueShareBp / 100).toFixed(2)}%
           </ThemedText>
-          {row.paymentTerms && (
-            <ThemedText>
-              {t("taskPaymentTerms.label")}: {t(`taskPaymentTerms.${row.paymentTerms}`)}
-            </ThemedText>
-          )}
           {row.shareBasis && <ThemedText>{row.shareBasis}</ThemedText>}
         </View>
       ))}
-      {latest && !result && thread?.status === "pending" && thread.applicantId === props.userId && (
-        <View style={{ gap: 12 }}>
-          <ThemedText>{t("nativeApplications.review")}</ThemedText>
-          <ThemedText>{t("crewOffers.effect")}</ThemedText>
-          <Action
-            primary
-            disabled={op.busy || denied}
-            label={
-              attempted
-                ? t("nativeApplications.retry")
-                : t("crewOffers.accept").replace("{version}", String(latest.version))
-            }
-            onPress={() => {
-              if (props.generation !== getAuthGeneration()) return;
-              void op.run(
-                () => {
-                  setAttempted(true);
-                  setError(undefined);
-                  return acceptApplicationOffer(thread, latest, props.userId, props.generation);
-                },
-                setResult,
-                (cause) => {
-                  setError(cause instanceof Error ? cause.message : String(cause));
-                  const status =
-                    cause && typeof cause === "object" && "status" in cause
-                      ? Number(cause.status)
-                      : 0;
-                  if ([400, 401, 403, 404, 409, 422].includes(status)) setDenied(true);
-                }
-              );
-            }}
-          />
-        </View>
-      )}
+      {latest &&
+        !latest.confirmedAt &&
+        !result &&
+        props.application.status === "pending" &&
+        props.application.applicantId === props.userId && (
+          <View style={{ gap: 12 }}>
+            <ThemedText>{t("nativeApplications.review")}</ThemedText>
+            <ThemedText>{t("crewTerms.noPayment")}</ThemedText>
+            <Action
+              primary
+              disabled={op.busy || denied}
+              label={
+                attempted
+                  ? t("nativeApplications.retry")
+                  : t("crewTerms.confirm").replace("{version}", String(latest.version))
+              }
+              onPress={() => {
+                if (props.generation !== getAuthGeneration()) return;
+                void op.run(
+                  () => {
+                    setAttempted(true);
+                    setError(undefined);
+                    return confirmApplicationTerms(
+                      props.application,
+                      latest,
+                      props.userId,
+                      props.generation
+                    );
+                  },
+                  setResult,
+                  (cause) => {
+                    setError(cause instanceof Error ? cause.message : String(cause));
+                    const status =
+                      cause && typeof cause === "object" && "status" in cause
+                        ? Number(cause.status)
+                        : 0;
+                    if ([400, 401, 403, 404, 409, 422].includes(status)) setDenied(true);
+                  }
+                );
+              }}
+            />
+          </View>
+        )}
       {op.busy && <ActivityIndicator />}
       {page?.nextBeforeVersion && (
         <Action

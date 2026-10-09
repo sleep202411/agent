@@ -12,13 +12,31 @@ import { CurrentUser, type AuthUser } from '../../auth';
 import { ZodValidationPipe } from '../../common/zod.pipe';
 import { parseIdParam } from '../../common/params';
 import { CrewComputeRequestsService } from './compute-requests.service';
-export const CreateComputeRequestSchema = z.object({
-  taskId: z.string().uuid(),
-  beneficiaryUserId: z.string().trim().min(1).max(64).optional(),
-  points: z.number().int().positive().max(2_000_000_000),
-  reason: z.string().trim().min(1).max(2000),
-  requestKey: z.string().uuid(),
-});
+export const CreateComputeRequestSchema = z
+  .object({
+    taskId: z.string().uuid(),
+    beneficiaryUserId: z.string().trim().min(1).max(64).optional(),
+    points: z.number().int().positive().max(500),
+    remainingWorkload: z
+      .number()
+      .positive()
+      .max(999_999_999_999)
+      .multipleOf(0.01),
+    workloadUnit: z.enum([
+      'minutes',
+      'hours',
+      'days',
+      'person_days',
+      'percent',
+    ]),
+    reason: z.string().trim().min(1).max(2000),
+    requestKey: z.string().uuid(),
+  })
+  .refine(
+    (value) =>
+      value.workloadUnit !== 'percent' || value.remainingWorkload <= 100,
+    { message: 'Remaining percentage cannot exceed 100' },
+  );
 export const DecideComputeRequestSchema = z.object({
   status: z.enum(['approved', 'rejected']),
   note: z.string().trim().max(2000).default(''),

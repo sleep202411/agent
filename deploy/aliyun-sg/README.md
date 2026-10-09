@@ -61,6 +61,10 @@ approved public inputs in `apps/web/.env.production.com`; local environment file
 are excluded. Images target `linux/amd64`, carry source/input labels, are tagged
 with the full SHA and are deployed by immutable digest.
 
+The optional `--npm-registry https://registry.npmmirror.com` argument (or
+`FIZZ_COM_NPM_REGISTRY`) overrides the npm registry for a build. Unset retains
+the Dockerfile default. This override participates in the image input identity.
+
 The running immutable image is reused when its source is an ancestor of this
 release and its per-service input fingerprint matches. The shared
 `deploy/release_inputs.py` accounts for source, consumed workspace dependencies,
@@ -87,6 +91,16 @@ The production entrypoint does not apply historical migration preparation
 configuration. Runtime configuration changes need a separately reviewed change to the actual
 production resources; do not use a whole-release Helm upgrade for an image-only
 release.
+
+The existing `agent-os-server-networkpolicy.yaml` permits the same-namespace
+Server → Agent OS TCP 4301 and Agent OS → Server TCP 3001 paths. It is a separate
+connectivity repair, preserved by normal image releases. Apply it only after
+verifying the Singapore namespace UID, then check both services' health and an
+authenticated conversation; readiness alone does not prove agent connectivity.
+
+Deployment tooling supports Python 3.9 and later. The managed job uses Python
+3.11; CI checks stable Python versions on Linux and macOS and runs a separate
+advisory preview check. These mocked checks do not establish live rollout success.
 
 ## Routing and retained dependencies
 

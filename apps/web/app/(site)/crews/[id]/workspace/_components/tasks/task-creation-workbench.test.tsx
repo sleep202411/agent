@@ -1,3 +1,21 @@
+vi.mock("@/components/ui/native-select", () => ({
+  NativeSelect: ({
+    onChange,
+    children,
+    ...props
+  }: Omit<React.SelectHTMLAttributes<HTMLSelectElement>, "onChange"> & {
+    onChange: (value: string) => void;
+  }) => (
+    // Unit-test adapter for NativeSelect value callbacks; production uses Radix.
+    // eslint-disable-next-line no-restricted-syntax
+    <select {...props} onChange={(event) => onChange(event.target.value)}>
+      {children}
+    </select>
+  ),
+  NativeSelectOption: (props: React.OptionHTMLAttributes<HTMLOptionElement>) => (
+    <option {...props} />
+  ),
+}));
 vi.mock("@/components/user-avatar", () => ({
   UserAvatar: ({ src, name }: { src: string; name: string }) => (
     <span role="img" data-src={src} aria-label={name} />
@@ -47,6 +65,8 @@ const state = vi.hoisted(() => ({
   taskMore: false,
   create: vi.fn(),
   post: vi.fn(),
+  get: vi.fn(),
+  patch: vi.fn(),
   invalidate: vi.fn(),
   episode: vi.fn(),
   refresh: vi.fn(),
@@ -60,7 +80,9 @@ vi.mock("@/src/i18n/i18n", () => ({
     return text.replace(/{(\w+)}/g, (_, name) => String(values?.[name] ?? name));
   },
 }));
-vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { post: state.post } }));
+vi.mock("@/app/(site)/crews/_hooks/api", () => ({
+  crewApi: { post: state.post, get: state.get, patch: state.patch },
+}));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: state.invalidate }),
 }));
@@ -153,6 +175,8 @@ let root: Root;
 let host: HTMLDivElement;
 const project = { views: [{ filters: {} }] } as CrewTaskProjectDTO;
 beforeEach(() => {
+  state.taskLoading = false;
+  state.taskMore = false;
   publishCallback = undefined;
   window.localStorage.clear();
   state.userId = "user";
@@ -252,7 +276,7 @@ it("stages without posting and submits once despite rapid confirmation clicks", 
     button("Create All Tasks").click();
   });
   expect(state.create).toHaveBeenCalledTimes(1);
-  expect(host.textContent).toContain("Created");
+  expect(host.querySelectorAll("article")).toHaveLength(1);
   expect(button("Create All Tasks")).toBeUndefined();
 });
 it("stops after an uncertain response and never resubmits a confirmed task", async () => {
@@ -281,6 +305,7 @@ it("retains staged tasks across view switches", async () => {
 it("shows assets and production to viewers without creation controls", async () => {
   await render(false);
   expect(button("Create Task")).toBeUndefined();
+  expect(button("Initialize tasks")).toBeUndefined();
   expect(host.textContent).toContain("Scripts");
   expect(host.querySelector("[role=dialog]")).toBeNull();
   await click("Production Episodes");
@@ -311,20 +336,10 @@ it("hides template creation from members without task management permission", as
   expect(button("Preview Tasks")).toBeUndefined();
 });
 
-it.each(["taskLoading", "taskMore"] as const)(
-  "withholds counters while %s is incomplete",
-  async (key) => {
-    state[key] = true;
-    try {
-      await render();
-      const progress = host.querySelector('section[aria-label="Approved / Created Tasks"]');
-      expect(progress?.textContent).toContain("—");
-      expect(progress?.textContent).not.toContain("0/0");
-    } finally {
-      state[key] = false;
-    }
-  }
-);
+it("removes the obsolete progress summary", async () => {
+  await render();
+  expect(host.querySelector('section[aria-label="Approved / Created Tasks"]')).toBeNull();
+});
 
 it("keeps existing task tables out of creation and anchors confirmation in the footer", async () => {
   await render();
@@ -393,25 +408,15 @@ it("shows saved progress separately from two staged scripts and updates on remov
   await render();
   await stage();
   await stage();
-  const progress = () => host.querySelector('section[aria-label="Approved / Created Tasks"]')!;
-  expect(progress().textContent).toContain("1/1");
-  expect(progress().textContent).toContain("2 To Create");
+  expect(host.querySelectorAll("article")).toHaveLength(3);
   await act(async () =>
     host.querySelector<HTMLButtonElement>('button[aria-label="Remove Storyboard"]')!.click()
   );
-  expect(progress().textContent).toContain("1/1");
-  expect(progress().textContent).toContain("1 To Create");
+  expect(host.querySelectorAll("article")).toHaveLength(2);
 });
 it("starts with zero saved counts and opens episode selection immediately", async () => {
   await render();
-  expect(host.querySelectorAll('section[aria-label="Approved / Created Tasks"] dd')).toHaveLength(
-    8
-  );
-  expect(
-    [...host.querySelectorAll('section[aria-label="Approved / Created Tasks"] dd')].every(
-      (node) => node.textContent === "0/0"
-    )
-  ).toBe(true);
+  expect(host.querySelectorAll("article")).toHaveLength(0);
   await click("Production Episodes");
   expect(host.querySelector('[role="dialog"]')?.textContent).toContain("Pilot");
   expect(button("Stage Standard Tasks")).toBeUndefined();
@@ -465,10 +470,11 @@ it("restores an interrupted create as uncertain instead of retrying", async () =
   expect(state.create).toHaveBeenCalledTimes(1);
   await act(async () => resolve({ id: "created" }));
 });
-it("omits redundant workbench controls while retaining category creation", async () => {
+it("exposes task initialization and category creation", async () => {
   await render();
   expect(button("Search Assets…")).toBeUndefined();
-  expect(button("Create Task")).toBeUndefined();
+  expect(button("Create Task")).toBeDefined();
+  expect(button("Initialize tasks")).toBeDefined();
   expect(button("Create Task · Scripts")).toBeDefined();
 });
 it("restores a reviewed batch without altering its idempotent command", async () => {
@@ -599,8 +605,8 @@ it("saves category-specific tasks directly to the server", async () => {
     [...host.querySelectorAll("button")].find((b) => b.textContent === "Save Task")!.click()
   );
   expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ taskKind: "music" }));
-  const music = [...host.querySelectorAll("details")]
-    .filter((d) => d.querySelector("summary")?.textContent?.includes("Music"))
+  const music = [...host.querySelectorAll("section")]
+    .filter((d) => d.textContent?.includes("Music"))
     .at(-1);
   expect(music).toBeDefined();
 });
@@ -667,15 +673,13 @@ it("counts saved tasks and keeps template previews out of task categories", asyn
   );
   await render();
   const scripts = () =>
-    [...host.querySelectorAll("details")]
-      .filter((d) => d.querySelector("summary")?.textContent?.includes("Scripts"))
-      .at(-1)!;
-  expect(scripts().querySelector("summary")?.textContent).toMatch(/0$/);
+    [...host.querySelectorAll("section")].filter((d) => d.textContent?.includes("Scripts")).at(-1)!;
+  expect(host.querySelectorAll("article")).toHaveLength(0);
   expect(scripts().textContent).not.toContain("Template item");
   expect(host.textContent).toContain("Saved template drafts (1)");
   state.tasks = [{ id: "saved", parentId: null, status: "open", assetCategory: "scripts" }];
   await render();
-  expect(scripts().querySelector("summary")?.textContent).toMatch(/1$/);
+  expect(host.querySelectorAll("article")).toHaveLength(1);
 });
 
 it("does not resurrect a deleted server task from an old confirmed browser draft", async () => {
@@ -756,14 +760,9 @@ it("imports new canvas tasks directly instead of staging another browser draft",
   expect(button("Create All Tasks")).toBeUndefined();
 });
 
-it("reveals tasks arriving after loading without reopening a manually collapsed group", async () => {
+it("reveals tasks arriving after loading in permanently expanded categories", async () => {
   state.taskLoading = true;
   await render();
-  const scripts = () =>
-    [...host.querySelectorAll("details")].find((d) =>
-      d.querySelector('button[aria-label="Create Task · Scripts"]')
-    )!;
-  expect(scripts().open).toBe(false);
   state.taskLoading = false;
   state.tasks = [
     {
@@ -772,22 +771,13 @@ it("reveals tasks arriving after loading without reopening a manually collapsed 
       status: "open",
       assetCategory: "scripts",
       title: "Loaded script",
-      description: "Brief",
-      ...{
-        workflowStateId: "workflow-open",
-        rewardUsdMinor: 10000,
-        dueAt: "2099-10-03T00:00:00.000Z",
-      },
-      priority: "normal",
       taskKind: "script",
       assignees: [],
     },
   ];
   await render();
-  expect(scripts().open).toBe(true);
-  scripts().open = false;
-  await render();
-  expect(scripts().open).toBe(false);
+  expect(host.textContent).toContain("Loaded script");
+  expect(host.querySelector("details")).toBeNull();
 });
 it("does not carry a recovered draft episode into a new category task", async () => {
   window.localStorage.setItem(
@@ -893,7 +883,7 @@ it("exposes Edit and invitation actions for a saved eligible task without openin
     [...document.querySelectorAll('[role="menuitem"]')].find(
       (e) => e.textContent === label
     ) as HTMLElement;
-  expect(item("Add Credit")).toBeDefined();
+  expect(item("Top Up")).toBeDefined();
   await act(async () => item("Edit Task").click());
   expect(editTask).toHaveBeenCalledWith("managed");
   await openMenu();
@@ -906,4 +896,71 @@ it("exposes Edit and invitation actions for a saved eligible task without openin
   expect(item("Open Recruitment").getAttribute("aria-disabled")).toBe("true");
   await render(false);
   expect(host.querySelector('button[aria-label="Task Actions"]')).toBeNull();
+});
+
+it("creates one recruitment request for all selected tasks", async () => {
+  state.tasks = [1, 2].map((n) => ({
+    id: `task-${n}`,
+    title: `Task ${n}`,
+    parentId: null,
+    status: "open" as const,
+    assetCategory: "scripts",
+    taskKind: "script",
+    assignees: [],
+    crewId: "crew",
+    version: 1,
+  }));
+  state.post.mockResolvedValue({ id: "position" });
+  await render(true, true, "crew", vi.fn());
+  await act(async () =>
+    (host.querySelector('input[aria-label="Select Scripts tasks"]') as HTMLInputElement).click()
+  );
+  expect(host.textContent).toContain("2 selected");
+  await click("Batch recruitment");
+  const select = host.querySelector('[role="dialog"] select') as HTMLSelectElement;
+  await act(async () => {
+    select.value = "screenwriter";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const confirm = [...host.querySelectorAll('[role="dialog"] button')].find(
+    (node) => node.textContent === "Batch recruitment"
+  ) as HTMLButtonElement;
+  await act(async () => confirm.click());
+  expect(state.post).toHaveBeenCalledTimes(1);
+  expect(state.post.mock.calls[0][1].body.tasks).toEqual([
+    { id: "task-1", expectedVersion: 1 },
+    { id: "task-2", expectedVersion: 1 },
+  ]);
+});
+it("keeps a rejected stale batch from being retried without refreshing", async () => {
+  state.tasks = [
+    {
+      id: "task",
+      title: "Script",
+      parentId: null,
+      status: "open",
+      assetCategory: "scripts",
+      assignees: [],
+      crewId: "crew",
+      version: 1,
+    } as (typeof state.tasks)[number],
+  ];
+  state.post.mockRejectedValue(new Error("Task changed. Refresh before recruiting."));
+  await render(true, true, "crew", vi.fn());
+  await act(async () =>
+    (host.querySelector('input[aria-label="Select Script"]') as HTMLInputElement).click()
+  );
+  await click("Batch recruitment");
+  const select = host.querySelector('[role="dialog"] select') as HTMLSelectElement;
+  await act(async () => {
+    select.value = "screenwriter";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const confirm = [...host.querySelectorAll('[role="dialog"] button')].find(
+    (node) => node.textContent === "Batch recruitment"
+  ) as HTMLButtonElement;
+  await act(async () => confirm.click());
+  expect(state.post).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("Task changed");
+  expect(confirm.disabled).toBe(true);
 });

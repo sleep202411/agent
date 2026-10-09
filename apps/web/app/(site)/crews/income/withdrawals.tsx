@@ -10,6 +10,13 @@ import { CREW_CURRENCY, formatCrewMoney, type CrewLedgerCurrency } from "@/src/l
 import { crewApi, CrewApiError } from "../_hooks/api";
 
 interface Balance {
+  academyExchangeRate?: {
+    currency: string;
+    rate: string;
+    source: string;
+    expiresAt: string | null;
+  } | null;
+  academySettlementPending?: boolean;
   currency: CrewLedgerCurrency;
   confirmedAmountMinor: string;
   availableAmountMinor: string;
@@ -140,6 +147,11 @@ function WithdrawalSession({ userId }: { userId: string }) {
           {t("refresh")}
         </Button>
       </div>
+      {balance?.academySettlementPending && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t("academyFxPending")}
+        </p>
+      )}
       {balances.isPending && <p role="status">{t("loading")}</p>}
       {balances.isError && (
         <p role="alert" className="text-destructive">
@@ -345,6 +357,19 @@ function WithdrawalForm({
       )}
       {!loading && !loadError && (
         <>
+          {balance.academyExchangeRate?.currency === "CNY" ? (
+            <p className="text-sm text-muted-foreground">
+              {t("academyFx", {
+                rate: balance.academyExchangeRate.rate,
+                source: balance.academyExchangeRate.source,
+              })}
+            </p>
+          ) : null}
+          {balance.academySettlementPending ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {t("academyFxPending")}
+            </p>
+          ) : null}
           <fieldset disabled={sending || retrying} className="grid gap-4 sm:grid-cols-2">
             <label className="space-y-1 text-sm">
               <span>{t("percentage")}</span>

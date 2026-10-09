@@ -1,9 +1,10 @@
 import { ConflictException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
-export const POINTS_PER_PROJECT_MINUTE = 4462;
+export const POINTS_PER_PROJECT_MINUTE = 4460;
 const minor = z.string().regex(/^\d+$/);
 export const ProjectBudgetData = z.object({
+  pointsPerMinute: z.number().int().positive().optional(),
   durationSeconds: z.number().int().positive().max(360000),
   totalPoints: minor,
   producerTaskId: z.string().uuid(),

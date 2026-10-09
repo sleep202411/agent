@@ -1,3 +1,4 @@
+import { academyPayeesSql } from '../creator-withdrawals/academy-withdrawals';
 import { lockMediaAssetReferences } from '../media/media-asset-lifecycle-lock';
 import { LegacyCreatorsService } from '../legacy-creators/legacy-creators.service';
 import {
@@ -7,7 +8,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { AcademyEnrollment, Prisma } from '@prisma/client';
+import { Prisma, type AcademyEnrollment } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
@@ -351,6 +352,11 @@ export class AcademyLearningService {
             shareBps: offer.teacherShareBps,
           });
       if (
+        !/^[1-9]\d{0,15}$/.test(offer.teacherId) ||
+        shares.some((share) => !/^[1-9]\d{0,15}$/.test(share.teacherId))
+      )
+        throw new ConflictException('Course teacher assignment is incomplete.');
+      if (
         shares.some(
           (share) =>
             !course.instructors?.some(
@@ -361,9 +367,18 @@ export class AcademyLearningService {
         throw new ConflictException(
           'The assigned teacher is no longer available.',
         );
-      if (course.instructors?.some((i) => String(i.userId) === studentId))
+      if (
+        offer.teacherId === studentId ||
+        shares.some((share) => share.teacherId === studentId) ||
+        course.instructors?.some((i) => String(i.userId) === studentId)
+      )
         throw new ForbiddenException(
           'Course teachers cannot purchase their own course.',
+        );
+      const totalBps = shares.reduce((sum, share) => sum + share.shareBps, 0);
+      if (totalBps > 10000)
+        throw new ConflictException(
+          'Course instructor shares are misconfigured.',
         );
       const payouts = shares.map((share) => ({
         teacherId: share.teacherId,
@@ -373,48 +388,75 @@ export class AcademyLearningService {
         (sum, item) => sum + item.credits,
         0n,
       );
-      const row = await tx.academyEnrollment.create({
-        data: {
-          courseId,
-          studentId,
-          teacherId: offer.teacherId,
+      if (teacherCredits > offer.priceCredits)
+        throw new ConflictException(
+          'Course instructor shares are misconfigured.',
+        );
+      try {
+        const row = await tx.academyEnrollment.create({
+          data: {
+            courseId,
+            studentId,
+            teacherId: offer.teacherId,
+            certificateId: certificate.id,
+            offeringVersion: offer.version,
+            priceCredits: offer.priceCredits,
+            teacherCredits,
+            instructorShares: payouts.map((item) => ({
+              teacherId: item.teacherId,
+              credits: item.credits.toString(),
+            })),
+          },
+        });
+        if (offer.priceCredits > 0n) {
+          const account = await ensureWalletAccount(tx, {
+            ownerType: 'user',
+            ownerId: studentId,
+            currency: 'community_point',
+            balanceKind: 'consumable',
+          });
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)`;
+          await expireLapsedGrantsTx(tx, account.id);
+          await this.wallet.postEntryTx(tx, {
+            accountId: account.id,
+            entryType: 'debit',
+            amount: offer.priceCredits,
+            availableDelta: -offer.priceCredits,
+            heldDelta: 0n,
+            reason: 'Academy course enrollment',
+            sourceType: 'academy_enrollment',
+            sourceId: row.id,
+            idempotencyKey: `academy:purchase:${row.id}`,
+            actorUserId: studentId,
+          });
+        }
+        await this.event(tx, row, studentId, 'enrolled', {
+          priceCredits: offer.priceCredits.toString(),
           certificateId: certificate.id,
-          offeringVersion: offer.version,
-          priceCredits: offer.priceCredits,
-          teacherCredits,
-          instructorShares: payouts.map((item) => ({
-            teacherId: item.teacherId,
-            credits: item.credits.toString(),
-          })),
-        },
-      });
-      if (offer.priceCredits > 0n) {
-        const account = await ensureWalletAccount(tx, {
-          ownerType: 'user',
-          ownerId: studentId,
-          currency: 'community_point',
-          balanceKind: 'consumable',
         });
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)`;
-        await expireLapsedGrantsTx(tx, account.id);
-        await this.wallet.postEntryTx(tx, {
-          accountId: account.id,
-          entryType: 'debit',
-          amount: offer.priceCredits,
-          availableDelta: -offer.priceCredits,
-          heldDelta: 0n,
-          reason: 'Academy course enrollment',
-          sourceType: 'academy_enrollment',
-          sourceId: row.id,
-          idempotencyKey: `academy:purchase:${row.id}`,
-          actorUserId: studentId,
-        });
+        return dto(row);
+      } catch (error) {
+        if (
+          error instanceof BadRequestException ||
+          error instanceof ConflictException ||
+          error instanceof ForbiddenException ||
+          error instanceof NotFoundException
+        )
+          throw error;
+        const detail = error instanceof Error ? error.message : '';
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        )
+          throw new ConflictException(
+            'You are already enrolled in this course.',
+          );
+        if (/check constraint|academy_enrollments/i.test(detail))
+          throw new ConflictException(
+            'Course enrollment terms are invalid. Reload and try again.',
+          );
+        throw error;
       }
-      await this.event(tx, row, studentId, 'enrolled', {
-        priceCredits: offer.priceCredits.toString(),
-        certificateId: certificate.id,
-      });
-      return dto(row);
     });
   }
 
@@ -493,6 +535,41 @@ export class AcademyLearningService {
     if (!record || record.teacherId !== teacherId)
       throw new NotFoundException('Homework not found.');
     await this.teacher(record, teacherId);
+    return this.applyReview(id, teacherId, input);
+  }
+
+  /** Admin-ui review: bound lecturers act as themselves; unbound ops act for the course teacher. */
+  async adminReview(
+    admin: AdminActor,
+    id: string,
+    input: z.infer<typeof ReviewHomework>,
+  ) {
+    this.requireCoursesWrite(admin);
+    const record = await this.db.academyEnrollment.findUnique({
+      where: { id },
+    });
+    if (!record) throw new NotFoundException('Homework not found.');
+    const boundTeacherId = admin.platformUserId?.trim() || null;
+    if (boundTeacherId) {
+      if (record.teacherId !== boundTeacherId)
+        throw new ForbiddenException(
+          'Only homework for your bound Web lecturer account can be reviewed.',
+        );
+      await this.teacher(record, boundTeacherId);
+      return this.applyReview(id, boundTeacherId, input);
+    }
+    return this.applyReview(id, `admin:${admin.id}`, input, {
+      walletActorUserId: record.teacherId,
+    });
+  }
+
+  private async applyReview(
+    id: string,
+    actorId: string,
+    input: z.infer<typeof ReviewHomework>,
+    options?: { walletActorUserId?: string },
+  ) {
+    const walletActor = options?.walletActorUserId ?? actorId;
     const result = await this.db.$transaction(async (tx) => {
       const row = await this.lockEnrollment(tx, id);
       if (row.status !== 'submitted' || row.version !== input.expectedVersion)
@@ -530,11 +607,11 @@ export class AcademyLearningService {
             sourceType: 'HOMEWORK_REVIEW_INCOME',
             sourceId: id,
             idempotencyKey: incomeKey(id, payout.teacherId, payouts.length),
-            actorUserId: teacherId,
+            actorUserId: walletActor,
           });
         }
       }
-      await this.event(tx, updated, teacherId, input.decision, {
+      await this.event(tx, updated, actorId, input.decision, {
         score: input.score,
         feedback: input.feedback,
       });
@@ -542,6 +619,129 @@ export class AcademyLearningService {
     });
     if (input.decision === 'approved') await this.issueBadge(id);
     return result;
+  }
+
+  async adminHomework(
+    admin: AdminActor,
+    after?: string,
+    status?: 'submitted' | 'all',
+  ) {
+    const teacherId = admin.platformUserId?.trim() || null;
+    const rows = await this.db.academyEnrollment.findMany({
+      where: {
+        ...(teacherId ? { teacherId } : {}),
+        ...(status === 'submitted' ? { status: 'submitted' } : {}),
+        ...(after ? { id: { lt: after } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: 21,
+    });
+    const page = rows.slice(0, 20);
+    const names = await this.creators.publicCreatorBatch([
+      ...new Set([
+        ...page.map((row) => row.studentId),
+        ...page.map((row) => row.teacherId),
+      ]),
+    ]);
+    const items: Array<
+      ReturnType<typeof dto> & {
+        studentName: string;
+        teacherName: string;
+        courseTitle: string;
+      }
+    > = [];
+    for (const row of page) {
+      const course = await this.authority
+        .course(row.courseId)
+        .catch(() => null);
+      if (teacherId) {
+        if (!course?.instructors?.some((i) => String(i.userId) === teacherId))
+          continue;
+      }
+      items.push({
+        ...dto(row),
+        studentName:
+          names.find((n) => n.id === row.studentId)?.nick_name ?? row.studentId,
+        teacherName:
+          names.find((n) => n.id === row.teacherId)?.nick_name ?? row.teacherId,
+        courseTitle:
+          course?.localized?.['en-US']?.title ||
+          course?.localized?.['zh-CN']?.title ||
+          row.courseId,
+      });
+    }
+    return {
+      items,
+      nextCursor: rows.length > 20 ? page.at(-1)!.id : null,
+      scope: teacherId ? ('lecturer' as const) : ('operator' as const),
+      platformUserId: teacherId,
+    };
+  }
+
+  async adminIncomeSummary(admin: AdminActor) {
+    const teacherId = admin.platformUserId?.trim() || null;
+    if (teacherId) {
+      return {
+        ...(await this.teachingSummary(teacherId)),
+        scope: 'lecturer' as const,
+        platformUserId: teacherId,
+      };
+    }
+    const [courses, students, pending, earnings] = await Promise.all([
+      this.db.academyOffering.count(),
+      this.db.academyEnrollment.count(),
+      this.db.academyEnrollment.count({ where: { status: 'submitted' } }),
+      this.db.academyEnrollment.aggregate({
+        where: { status: 'approved' },
+        _sum: { teacherCredits: true },
+      }),
+    ]);
+    return {
+      courses,
+      students,
+      pending,
+      earnedCredits: (earnings._sum.teacherCredits ?? 0n).toString(),
+      scope: 'operator' as const,
+      platformUserId: null as string | null,
+    };
+  }
+
+  async adminAttachment(admin: AdminActor, id: string, assetId: string) {
+    const row = await this.db.academyEnrollment.findUnique({ where: { id } });
+    if (!row || !row.assetIds.includes(assetId))
+      throw new NotFoundException('Attachment not found.');
+    const teacherId = admin.platformUserId?.trim() || null;
+    if (teacherId && row.teacherId !== teacherId)
+      throw new ForbiddenException(
+        'Only attachments for your bound Web lecturer account are available.',
+      );
+    if (teacherId) await this.teacher(row, teacherId);
+    const asset = await this.db.mediaAsset.findFirst({
+      where: {
+        id: assetId,
+        createdByUserId: row.studentId,
+        status: 'ready',
+        moderationStatus: { notIn: ['blocked'] },
+      },
+    });
+    if (!asset) throw new NotFoundException('Attachment is unavailable.');
+    return this.storage.createReadUrl(asset, {
+      expiresInSeconds: 120,
+      cacheControl: 'private, no-store',
+      filename: 'homework',
+    });
+  }
+
+  private requireCoursesWrite(admin: AdminActor) {
+    if (
+      admin.status !== 'active' ||
+      !admin.permissions.includes(ADMIN_PERMISSION_KEYS.CoursesWrite) ||
+      (admin.siteScope !== 'all' &&
+        admin.siteScope !== (CURRENT_CELL === 'cn' ? 'cn' : 'global'))
+    )
+      throw new ForbiddenException(
+        'Course management access for this region is required.',
+      );
   }
 
   async issueBadge(id: string) {
@@ -595,21 +795,35 @@ export class AcademyLearningService {
 
   async teachingSummary(userId: string) {
     const [courses, students, pending, earnings] = await Promise.all([
-      this.db.academyOffering.count({ where: { teacherId: userId } }),
-      this.db.academyEnrollment.count({ where: { teacherId: userId } }),
+      this.db.academyOffering.count({
+        where: {
+          OR: [
+            { teacherId: userId },
+            { instructorShares: { array_contains: [{ teacherId: userId }] } },
+          ],
+        },
+      }),
+      this.db.academyEnrollment.count({
+        where: {
+          OR: [
+            { teacherId: userId },
+            { instructorShares: { array_contains: [{ teacherId: userId }] } },
+          ],
+        },
+      }),
       this.db.academyEnrollment.count({
         where: { teacherId: userId, status: 'submitted' },
       }),
-      this.db.academyEnrollment.aggregate({
-        where: { teacherId: userId, status: 'approved' },
-        _sum: { teacherCredits: true },
-      }),
+      this.db.$queryRaw<
+        { earned: bigint }[]
+      >`SELECT COALESCE(SUM(e.teacher_credits),0) AS earned
+        FROM (${academyPayeesSql}) e WHERE e.teacher_id=${userId} AND e.status='approved'`,
     ]);
     return {
       courses,
       students,
       pending,
-      earnedCredits: (earnings._sum.teacherCredits ?? 0n).toString(),
+      earnedCredits: (earnings[0]?.earned ?? 0n).toString(),
     };
   }
 
@@ -689,7 +903,8 @@ export class AcademyLearningService {
       );
   }
   private async lock(tx: Prisma.TransactionClient, key: string) {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`academy:${key}`},0))`;
+    // hashtext is available on every supported Postgres; hashtextextended needs PG14+.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`academy:${key}`})::bigint)`;
   }
   private async lockEnrollment(tx: Prisma.TransactionClient, id: string) {
     await tx.$queryRaw`SELECT id FROM academy_enrollments WHERE id=${id}::uuid FOR UPDATE`;

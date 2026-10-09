@@ -31,7 +31,7 @@ export async function assertRecruitedTaskAssignees(
   }>,
 ) {
   const positions = await tx.crewPosition.findMany({
-    where: { taskId },
+    where: { OR: [{ taskId }, { groupedTasks: { some: { id: taskId } } }] },
     select: { id: true },
   });
   if (!positions.length) return;
@@ -44,7 +44,7 @@ export async function assertRecruitedTaskAssignees(
       SELECT m.id FROM crew_members m
       JOIN crew_member_positions mp ON mp.member_id=m.id
       JOIN crew_positions p ON p.id=mp.source_position_id
-      WHERE p.task_id=${taskId}::uuid AND m.user_id=${assignee.userId}
+      WHERE (p.task_id=${taskId}::uuid OR EXISTS (SELECT 1 FROM "_GroupedRecruitment" g WHERE g."A"=p.id AND g."B"=${taskId}::uuid)) AND m.user_id=${assignee.userId}
         AND m.status='active' AND m.removed_at IS NULL
       ORDER BY m.id, mp.id FOR SHARE OF m, mp
     `;
@@ -66,7 +66,10 @@ export async function assertRecruitedTaskAssignees(
         },
         termsVersion: { gt: 0 },
       },
-      include: { terms: true },
+      include: {
+        terms: true,
+        position: { select: { groupedTaskTerms: true } },
+      },
     });
     const matches = applications.some((app) =>
       app.terms.some(
@@ -75,7 +78,10 @@ export async function assertRecruitedTaskAssignees(
           term.confirmedAt &&
           term.feePeriod === 'project' &&
           term.currency === assignee.currency &&
-          term.feeAmount === BigInt(assignee.rewardAmountMinor ?? 0),
+          (groupedTaskAmount(app.position?.groupedTaskTerms, taskId)
+            ? groupedTaskAmount(app.position.groupedTaskTerms, taskId)!
+                .amount === (assignee.rewardAmountMinor ?? 0)
+            : term.feeAmount === BigInt(assignee.rewardAmountMinor ?? 0)),
       ),
     );
     if (!matches)
@@ -83,4 +89,48 @@ export async function assertRecruitedTaskAssignees(
         'Task assignment requires approved recruitment and confirmed project-fee terms matching the assigned reward.',
       );
   }
+}
+
+/** A bundle's accepted project fee is allocated by its published task amounts. */
+export function groupedTaskAmount(
+  terms: Prisma.JsonValue | null | undefined,
+  taskId: string,
+): { amount: number; currency: string } | null {
+  if (!terms || typeof terms !== 'object' || Array.isArray(terms)) return null;
+  const value = terms[taskId];
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    typeof value.amount !== 'number' ||
+    typeof value.currency !== 'string'
+  )
+    return null;
+  return { amount: value.amount, currency: value.currency };
+}
+
+export function assertGroupedFee(
+  terms: Prisma.JsonValue | null | undefined,
+  input: {
+    feeAmount: string | bigint;
+    currency: string;
+    feePeriod: string;
+    revenueShareBp?: number | null;
+  },
+) {
+  if (!terms || typeof terms !== 'object' || Array.isArray(terms)) return;
+  const allocations = Object.keys(terms).map((id) =>
+    groupedTaskAmount(terms, id),
+  );
+  if (
+    !allocations.length ||
+    allocations.some((a) => !a || a.currency !== input.currency) ||
+    input.feePeriod !== 'project' ||
+    Boolean(input.revenueShareBp) ||
+    allocations.reduce((sum, a) => sum + BigInt(a!.amount), 0n) !==
+      BigInt(input.feeAmount)
+  )
+    throw new ConflictException(
+      'Grouped recruitment requires the published total project fee and currency, preserving each task allocation.',
+    );
 }

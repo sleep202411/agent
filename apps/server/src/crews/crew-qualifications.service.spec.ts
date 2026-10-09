@@ -12,11 +12,18 @@ const requirement = {
   requiredSkills: ['Editing', 'music'],
 };
 let fetcher: jest.SpyInstance;
+const liveOptions = [
+  { id: 901, name: 'editing', type: 4 },
+  { id: 903, name: 'music', type: 4 },
+  { id: 950, name: 'Lighting', type: 4 },
+  { id: 103, name: 'FD3', type: 1 },
+];
 const response = (ids: number[] | null, id = '42', code = 200) => ({
   ok: true,
   json: () =>
     Promise.resolve({
       code,
+      data: liveOptions,
       info: { id },
       level: ids?.map((id) => ({ id, type: id < 900 ? 1 : 4 })) ?? null,
     }),
@@ -34,13 +41,22 @@ afterEach(() => {
   else process.env.CREW_QUALIFICATION_CATALOG_JSON = original;
 });
 describe('Current Java qualification admission', () => {
-  it('offers the same configured skills used by application eligibility', () => {
-    expect(service.catalog()).toEqual({ skills: ['editing', 'music'] });
-    expect(fetcher).not.toHaveBeenCalled();
+  it('offers all current regional verification skills, excluding FD ranks', async () => {
+    await expect(service.catalog('fixture-session')).resolves.toEqual({
+      skills: ['Lighting', 'editing', 'music'],
+    });
   });
-  it('does not silently offer an empty catalog when configuration is missing', () => {
+  it('loads live skills without a static skill configuration', async () => {
     delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
-    expect(() => service.catalog()).toThrow('Configure this site');
+    await expect(service.catalog('fixture-session')).resolves.toEqual({
+      skills: ['Lighting', 'editing', 'music'],
+    });
+  });
+  it('fails closed when the regional skill catalogue is unavailable', async () => {
+    fetcher.mockRejectedValue(new Error('network'));
+    await expect(service.catalog('fixture-session')).rejects.toMatchObject({
+      status: 503,
+    });
   });
   it('boots without a regional catalog but fails closed on qualified recruiting', async () => {
     // Catalog present: init succeeds.
@@ -81,7 +97,7 @@ describe('Current Java qualification admission', () => {
     await expect(
       service.assertEligible('42', 'fixture-session', requirement),
     ).rejects.toMatchObject({ response: { missingSkills: ['Editing'] } });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(4);
   });
   it.each([
     response([103, 901, 903], 'other'),
@@ -106,6 +122,7 @@ describe('Current Java qualification admission', () => {
       json: () =>
         Promise.resolve({
           code: 200,
+          data: liveOptions,
           info: { id: '42' },
           level: [
             { id: 103, type: 4 },
@@ -125,7 +142,7 @@ describe('Current Java qualification admission', () => {
         requiredSkills: ['Unmapped skill'],
       }),
     ).rejects.toMatchObject({ status: 503 });
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('does not require Java for an unrestricted position', async () => {
     delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
@@ -134,5 +151,80 @@ describe('Current Java qualification admission', () => {
       requiredSkills: [],
     });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+it('admits a newly added verification skill without editing static deployment mappings', async () => {
+  delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
+  fetcher.mockResolvedValue(response([950]) as Response);
+  await service.assertEligible('42', 'fixture-session', {
+    experienceLevel: 'any',
+    requiredSkills: ['Lighting'],
+  });
+});
+
+describe('Historical skill aliases', () => {
+  const aliasRequirement = {
+    experienceLevel: 'any' as const,
+    requiredSkills: ['Legacy editing'],
+  };
+  beforeEach(() => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = JSON.stringify({
+      ...catalog,
+      skills: { 'Legacy editing': [901] },
+    });
+  });
+  it.each(['any', 'mid'] as const)(
+    'admits the same valid alias for %s experience',
+    async (experienceLevel) => {
+      await expect(
+        service.assertEligible('42', 'fixture-session', {
+          ...aliasRequirement,
+          experienceLevel,
+        }),
+      ).resolves.toBeUndefined();
+    },
+  );
+  it('rejects a revoked certificate', async () => {
+    fetcher.mockResolvedValue(response([103]) as Response);
+    await expect(
+      service.assertEligible('42', 'fixture-session', aliasRequirement),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+  it('rejects a historical mapping to an ID removed from live verification', async () => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = JSON.stringify({
+      ...catalog,
+      skills: { 'Legacy editing': [999] },
+    });
+    await expect(
+      service.assertEligible('42', 'fixture-session', aliasRequirement),
+    ).rejects.toMatchObject({ status: 503 });
+  });
+  it('does not let an alias override a current skill with the same name', async () => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = JSON.stringify({
+      ...catalog,
+      skills: { Lighting: [901] },
+    });
+    await expect(
+      service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: ['Lighting'],
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+  it('does not consult malformed static configuration for a current live skill', async () => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = 'invalid';
+    await expect(
+      service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: ['editing'],
+      }),
+    ).resolves.toBeUndefined();
+  });
+  it('fails closed on malformed configuration when an alias is needed', async () => {
+    process.env.CREW_QUALIFICATION_CATALOG_JSON = 'invalid';
+    await expect(
+      service.assertEligible('42', 'fixture-session', aliasRequirement),
+    ).rejects.toMatchObject({ status: 503 });
   });
 });

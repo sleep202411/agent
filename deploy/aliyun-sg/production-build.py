@@ -7,6 +7,7 @@ archived repository's .dockerignore; local edits never enter the build context.
 """
 import io
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -16,11 +17,13 @@ import subprocess
 import tarfile
 import tempfile
 from urllib.parse import urlsplit
+from typing import Optional
 
 PUSH_HOST = "fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com"
 RUNTIME_HOST = "fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com"
 SERVICES = {"web", "server", "studio", "admin-ui", "agent-os", "game-agent"}
 BUILD_ENV = "apps/web/.env.production.com"
+NPM_REGISTRY_ENV = "FIZZ_COM_NPM_REGISTRY"
 
 
 class BuildError(RuntimeError):
@@ -40,11 +43,23 @@ PUBLIC_ARGS = {
 }
 
 
+def optional_npm_registry(value=None) -> Optional[str]:
+    candidate = value if value is not None else os.environ.get(NPM_REGISTRY_ENV, "")
+    if candidate is None:
+        return None
+    registry = str(candidate).strip()
+    if not registry:
+        return None
+    if not re.fullmatch(r"https://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", registry):
+        raise BuildError("NPM registry must be an https URL (set --npm-registry or FIZZ_COM_NPM_REGISTRY)")
+    return registry
+
+
 def parse_build_env(path: Path) -> dict[str, str]:
     """Read approved public/.com URLs as data, never as shell instructions."""
     allowed = PUBLIC_ARGS | {"JAVA_STUDIO_URL", "JAVA_CONTENT_URL"}
     result = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -133,7 +148,7 @@ def require_harness_source(context: Path, services: list[str]) -> None:
     }
     for relative, marker in checks.items():
         path = context / relative
-        if not path.is_file() or marker not in path.read_text():
+        if not path.is_file() or marker not in path.read_text(encoding="utf-8"):
             raise ValueError(f"Current Harness integration is missing: {relative}")
     for relative in ("apps/game-agent/Dockerfile", "packages/game-agent-protocol/package.json"):
         if not (context / relative).is_file():
@@ -176,15 +191,18 @@ def docker_environment() -> dict[str, str]:
     return environment
 
 
-def service_inputs(root, source, service):
+def service_inputs(root, source, service, npm_registry=None):
     spec = importlib.util.spec_from_file_location(
         "sg_release_inputs", Path(__file__).resolve().parents[1] / "release_inputs.py")
     identity = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(identity)
-    return identity.inputs(root, source, service, "com")
+    fingerprint = identity.inputs(root, source, service, "com")
+    if npm_registry:
+        fingerprint = hashlib.sha256(f"{fingerprint}\0npm-registry={npm_registry}".encode()).hexdigest()
+    return fingerprint
 
 
-def find_reusable_image(root, source, service, image, environment):
+def find_reusable_image(root, source, service, image, environment, npm_registry=None):
     """Reuse the running immutable image only when its committed inputs match."""
     prefix = f"{RUNTIME_HOST}/fizzdragon/fizzdragon-{service}@"
     if not isinstance(image, str) or not re.fullmatch(re.escape(prefix) + r"sha256:[0-9a-f]{64}", image):
@@ -221,22 +239,23 @@ def find_reusable_image(root, source, service, image, environment):
     )
     if ancestor.returncode not in (0, 1):
         raise BuildError("Cannot verify the running image's committed source ancestry")
-    if ancestor.returncode or fingerprint != service_inputs(root, source, service):
+    if ancestor.returncode or fingerprint != service_inputs(root, source, service, npm_registry):
         return None
     print(f"Reusing .com {service} ({image.rsplit('@', 1)[1]}); no build", flush=True)
     return image
 
 
-def build_images(root: Path, services: list[str], current_images, source=None) -> dict[str, str]:
+def build_images(root: Path, services: list[str], current_images, source=None, npm_registry=None) -> dict[str, str]:
     """Push all selected amd64 images; return exact VPC runtime digest references."""
     if not services or len(set(services)) != len(services) or not set(services) <= SERVICES:
         raise ValueError("Select unique services: web server studio admin-ui agent-os game-agent")
     source = source or committed_source(root)
+    registry = optional_npm_registry(npm_registry)
     environment = docker_environment()
     images = {}
     missing = []
     for service in services:
-        existing = find_reusable_image(root, source, service, current_images.get(service), environment)
+        existing = find_reusable_image(root, source, service, current_images.get(service), environment, registry)
         if existing:
             images[service] = existing
         else:
@@ -265,6 +284,8 @@ def build_images(root: Path, services: list[str], current_images, source=None) -
                                   "AURORA_STRIP_PREFIX": "1"})
             elif service == "admin-ui":
                 arguments = {"NEXT_PUBLIC_ADMIN_UI_BASE_PATH": "/"}
+            if registry:
+                arguments["NPM_REGISTRY"] = registry
             metadata = temporary / f"{service}-metadata.json"
             command = [
                 "docker", "buildx", "build", "--builder", "default", "--platform", "linux/amd64", "--load",
@@ -274,7 +295,7 @@ def build_images(root: Path, services: list[str], current_images, source=None) -
             ]
             for key, value in sorted(arguments.items()):
                 command += ["--build-arg", f"{key}={value}"]
-            command += ["--label", f"com.fizzdragon.release-inputs={service_inputs(root, source, service)}",
+            command += ["--label", f"com.fizzdragon.release-inputs={service_inputs(root, source, service, registry)}",
                         "--label", f"org.opencontainers.image.revision={source}"]
             print(f"Building .com {service} ({tag})", flush=True)
             subprocess.run([*command, str(context)], env=environment, check=True)

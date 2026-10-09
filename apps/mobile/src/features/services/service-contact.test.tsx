@@ -1,22 +1,14 @@
-import { ServiceEditorDrafts } from "./service-editor-drafts";
-import { ServiceIntentProvider } from "./service-intent";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ServiceContact } from "./service-contact";
 const h = vi.hoisted(() => ({
-  read: vi.fn(),
-  save: vi.fn(),
-  clear: vi.fn(),
   send: vi.fn(),
   push: vi.fn(),
   gate: vi.fn(),
   generation: 1,
   userId: "buyer",
   authenticated: true,
-}));
-vi.mock("./inquiry-outbox", () => ({
-  inquiryOutbox: () => ({ read: h.read, save: h.save, clear: h.clear }),
 }));
 vi.mock("./inquiry-api", () => ({ sendServiceInquiry: h.send, inquiryKey: () => "stable-key" }));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }), useIsFocused: () => true }));
@@ -77,7 +69,6 @@ function type(text: string) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
-  h.read.mockReturnValue(null);
   h.generation = 1;
   h.userId = "buyer";
   h.authenticated = true;
@@ -128,8 +119,7 @@ it("preserves text and idempotency identity for a retry", async () => {
   await compose();
   await act(async () => click("serviceContact.send"));
   expect(host.querySelector("input")!.value).toBe("Hello");
-  expect(host.textContent).toContain("thread.retryHint");
-  await act(async () => click("inbox.retry"));
+  await act(async () => click("serviceContact.send"));
   expect(h.send.mock.calls[0]).toEqual(h.send.mock.calls[1]);
 });
 it("ignores late success after an account change and clears the draft", async () => {
@@ -147,156 +137,3 @@ it("ignores late success after an account change and clears the draft", async ()
   expect(host.querySelector("input")!.value).toBe("");
   expect(host.textContent).not.toContain("serviceContact.sent");
 });
-
-it("restores the original inquiry after reopening and freezes edits until acknowledgement", async () => {
-  h.read.mockReturnValue({ body: "Recovered inquiry", clientKey: "original-key" });
-  h.send.mockResolvedValue("conversation");
-  await render();
-  await act(async () => click("serviceContact.title"));
-  expect(host.querySelector("input")!.value).toBe("Recovered inquiry");
-  expect(host.querySelector("input")!.disabled).toBe(true);
-  expect(host.textContent).toContain("thread.retryHint");
-  await act(async () => click("inbox.retry"));
-  expect(h.send).toHaveBeenCalledWith("service", "Recovered inquiry", "original-key");
-  expect(h.save.mock.invocationCallOrder[0]).toBeLessThan(h.send.mock.invocationCallOrder[0]);
-  expect(h.clear).toHaveBeenCalledWith("original-key");
-});
-it("does not send when durable storage fails", async () => {
-  h.save.mockImplementation(() => {
-    throw new Error("Disk full");
-  });
-  await compose();
-  await act(async () => click("serviceContact.send"));
-  expect(h.send).not.toHaveBeenCalled();
-  expect(h.clear).not.toHaveBeenCalled();
-  expect(host.textContent).toContain("Disk full");
-});
-
-it("keeps an uncertain send immutable until the same request is acknowledged", async () => {
-  h.send.mockRejectedValueOnce(new Error("Lost response")).mockResolvedValue("conversation");
-  await compose();
-  await act(async () => click("serviceContact.send"));
-  expect(host.querySelector("input")!.disabled).toBe(true);
-  expect(h.clear).not.toHaveBeenCalled();
-  await act(async () => click("inbox.retry"));
-  expect(h.send.mock.calls[0]).toEqual(h.send.mock.calls[1]);
-  expect(h.clear).toHaveBeenCalledWith("stable-key");
-});
-it("allows editing after a storage failure that prevented sending", async () => {
-  h.save.mockImplementationOnce(() => {
-    throw new Error("Disk full");
-  });
-  h.send.mockResolvedValue("conversation");
-  await compose();
-  await act(async () => click("serviceContact.send"));
-  expect(host.querySelector("input")!.disabled).toBe(false);
-  await act(async () => type("Updated before any send"));
-  await act(async () => click("serviceContact.send"));
-  expect(h.send).toHaveBeenCalledWith("service", "Updated before any send", "stable-key");
-});
-
-it("resumes the guest action after login replaces the service controls", async () => {
-  h.authenticated = false;
-  let complete!: () => void;
-  h.gate.mockImplementation(({ onAuthenticated }: { onAuthenticated: () => void }) => {
-    complete = onAuthenticated;
-  });
-  const page = (ready: boolean) =>
-    act(async () =>
-      root.render(
-        <ServiceIntentProvider>
-          {ready ? (
-            <ServiceContact serviceId="service" creatorId="creator" status="listed" />
-          ) : (
-            <span>reloading service</span>
-          )}
-        </ServiceIntentProvider>
-      )
-    );
-  await page(true);
-  await act(async () => click("serviceContact.title"));
-  h.authenticated = true;
-  h.generation = 2;
-  await page(false);
-  await act(async () => complete());
-  await page(true);
-  expect(host.querySelector("input")).not.toBeNull();
-  expect(h.send).not.toHaveBeenCalled();
-  h.generation = 3;
-  await page(true);
-  expect(host.querySelector("input")).toBeNull();
-});
-
-it("retains an unsent inquiry through reload but clears cancelled, sent and foreign-account drafts", async () => {
-  const draw = (shown: boolean, scope = "buyer", status = "listed") =>
-    act(async () =>
-      root.render(
-        <ServiceEditorDrafts key={scope}>
-          <ServiceIntentProvider>
-            {shown && <ServiceContact serviceId="service" creatorId="creator" status={status} />}
-          </ServiceIntentProvider>
-        </ServiceEditorDrafts>
-      )
-    );
-  await draw(true);
-  await act(async () => click("serviceContact.title"));
-  await act(async () => type("Keep my project inquiry"));
-  await draw(false);
-  await draw(true, "buyer", "paused");
-  expect(host.querySelector("input")).toBeNull();
-  await draw(true);
-  expect(host.querySelector("input")?.value).toBe("Keep my project inquiry");
-  expect(h.send).not.toHaveBeenCalled();
-  await act(async () => click("experienceEdit.cancel"));
-  await act(async () => click("serviceContact.title"));
-  expect(host.querySelector("input")?.value).toBe("");
-  await act(async () => type("Send this inquiry"));
-  h.send.mockResolvedValue("conversation");
-  await act(async () => click("serviceContact.send"));
-  expect(h.send).toHaveBeenCalledExactlyOnceWith("service", "Send this inquiry", "stable-key");
-  await act(async () => click("experienceEdit.cancel"));
-  await act(async () => click("serviceContact.title"));
-  expect(host.querySelector("input")?.value).toBe("");
-  await act(async () => type("Private draft"));
-  await draw(true, "different-account");
-  await act(async () => click("serviceContact.title"));
-  expect(host.querySelector("input")?.value).toBe("");
-});
-
-it.each([false, true])(
-  "retains a confirmed result when its original form unmounts (return before reply: %s)",
-  async (returnFirst) => {
-    let finish!: (id: string) => void;
-    h.send.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        })
-    );
-    const draw = (shown: boolean, scope = "buyer", status = "listed") =>
-      act(async () =>
-        root.render(
-          <ServiceEditorDrafts key={scope}>
-            <ServiceIntentProvider>
-              {shown && <ServiceContact serviceId="service" creatorId="creator" status={status} />}
-            </ServiceIntentProvider>
-          </ServiceEditorDrafts>
-        )
-      );
-    await draw(true);
-    await act(async () => click("serviceContact.title"));
-    await act(async () => type("Keep the confirmed result"));
-    await act(async () => click("serviceContact.send"));
-    await draw(false);
-    if (returnFirst) await draw(true);
-    await act(async () => finish("confirmed"));
-    await draw(true, "buyer", "paused");
-    expect(host.textContent).toContain("serviceContact.sent");
-    expect(host.querySelector("input")).toBeNull();
-    expect(h.send).toHaveBeenCalledOnce();
-    await act(async () => click("serviceContact.open"));
-    expect(h.push).toHaveBeenCalledWith("/conversation/confirmed");
-    await draw(true, "other-account");
-    expect(host.textContent).not.toContain("serviceContact.sent");
-  }
-);

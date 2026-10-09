@@ -89,9 +89,9 @@ function fixture(initial: ProjectBudget | null = plan()) {
     },
   };
 }
-it('calculates a whole-project allowance at 4462/minute, rounding fractional points up once', () => {
-  expect(projectBudgetPoints(60)).toBe(4462n);
-  expect(projectBudgetPoints(600)).toBe(44620n);
+it('calculates a whole-project allowance at 4460/minute, rounding fractional points up once', () => {
+  expect(projectBudgetPoints(60)).toBe(4460n);
+  expect(projectBudgetPoints(600)).toBe(44600n);
   expect(projectBudgetPoints(1)).toBe(75n);
   expect(() => projectBudgetPoints(0)).toThrow();
 });

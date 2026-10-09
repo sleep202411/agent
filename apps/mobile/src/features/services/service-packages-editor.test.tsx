@@ -9,7 +9,6 @@ const h = vi.hoisted(() => ({
   user: "owner",
   generation: 1,
   authenticated: true,
-  region: "global",
 }));
 vi.mock("./service-packages-api", async (original) => ({
   ...(await original<typeof import("./service-packages-api")>()),
@@ -84,13 +83,7 @@ vi.mock("react-native", () => ({
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
 
-vi.mock("@/config", () => ({
-  appEnv: {
-    get siteRegion() {
-      return h.region;
-    },
-  },
-}));
+vi.mock("@/config", () => ({ appEnv: { siteRegion: "global" } }));
 const service = {
   id: "s",
   creatorId: "owner",
@@ -123,7 +116,6 @@ beforeEach(() => {
   h.user = "owner";
   h.generation = 1;
   h.authenticated = true;
-  h.region = "global";
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -197,17 +189,4 @@ it("gates nonowners and shows conflicts without refreshing away edits", async ()
   await act(async () => click("profileEdit.save"));
   expect(host.textContent).toContain("Version conflict");
   expect(h.refresh).not.toHaveBeenCalled();
-});
-
-it.each([
-  ["global", "USD", "CNY"],
-  ["cn", "CNY", "USD"],
-])("%s package currency choices are limited to %s", async (region, allowed, denied) => {
-  h.region = region;
-  await render();
-  await act(async () => click("servicePackages.title"));
-  const labels = Array.from(host.querySelectorAll("button")).map((b) => b.textContent);
-  expect(labels).toContain(allowed);
-  expect(labels).not.toContain(denied);
-  expect(labels).not.toContain("EUR");
 });

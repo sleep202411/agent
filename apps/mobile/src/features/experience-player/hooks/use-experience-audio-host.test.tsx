@@ -18,17 +18,7 @@ const manifest = {
     buses: [{ busId: "music", defaultGain: 1 }],
     snapshots: [],
     duckingRules: [],
-    cues: [
-      {
-        cueId: "cue",
-        assetIds: ["asset"],
-        busId: "music",
-        gain: 1,
-        loop: false,
-        fadeInMs: 0,
-        fadeOutMs: 0,
-      },
-    ],
+    cues: [{ cueId: "cue", busId: "music", gain: 1, loop: false, fadeInMs: 0, fadeOutMs: 0 }],
   },
   assets: [
     { kind: "audio", assetId: "asset", variants: [{ locale: "en-US", uri: "fixture.mp3" }] },
@@ -154,8 +144,6 @@ function playerFixture() {
     volume: 1,
     playing: true,
     loop: false,
-    currentTime: 0,
-    seekTo: vi.fn().mockResolvedValue(undefined),
     play: vi.fn(),
     pause: vi.fn(),
     remove: vi.fn(),
@@ -163,189 +151,6 @@ function playerFixture() {
     addListener: vi.fn(() => ({ remove: vi.fn() })),
   };
 }
-it("captures cue identity, current time and bus gain and restores by seeking before play", async () => {
-  const first = playerFixture();
-  const second = playerFixture();
-  native.createAudioPlayer.mockReturnValueOnce(first).mockReturnValueOnce(second);
-  native.ensureAudioCached.mockResolvedValue("file://cached.mp3");
-  await act(async () => {
-    play(3);
-  });
-  first.currentTime = 12.5;
-  latest.applyEffects([{ kind: "audio.fade-bus", busId: "music", gain: 0.4, durationMs: 0 }]);
-  await act(async () => {});
-  const snapshot = latest.checkpoint()!;
-  expect(snapshot).toEqual({
-    playbacks: [
-      {
-        cueId: "cue",
-        assetId: "asset",
-        playbackRate: 1,
-        playbackOrdinal: 3,
-        positionSeconds: 12.5,
-      },
-    ],
-    busGains: { music: 0.4 },
-  });
-  await act(async () => {
-    latest.restore(snapshot);
-  });
-  expect(first.remove).toHaveBeenCalled();
-  expect(second.seekTo).toHaveBeenCalledWith(12.5);
-  expect(second.play).toHaveBeenCalledOnce();
-  expect(second.seekTo.mock.invocationCallOrder[0]).toBeLessThan(
-    second.play.mock.invocationCallOrder[0]!
-  );
-  expect(second.volume).toBe(0.4);
-});
-it("retains pending offsets while restoring and suppresses an abandoned download", async () => {
-  let oldReady!: (uri: string) => void;
-  native.ensureAudioCached
-    .mockImplementationOnce(
-      () =>
-        new Promise<string>((resolve) => {
-          oldReady = resolve;
-        })
-    )
-    .mockResolvedValue("file://new.mp3");
-  const player = playerFixture();
-  native.createAudioPlayer.mockReturnValue(player);
-  await act(async () => {
-    play(1);
-  });
-  expect(latest.checkpoint()!.playbacks[0]!.playbackOrdinal).toBe(1);
-  await act(async () => {
-    latest.restore({
-      playbacks: [
-        {
-          cueId: "cue",
-          assetId: "asset",
-          playbackRate: 1.25,
-          playbackOrdinal: 5,
-          positionSeconds: 8,
-        },
-      ],
-      busGains: {},
-    });
-    expect(latest.checkpoint()!.playbacks[0]!.positionSeconds).toBe(8);
-  });
-  expect(player.seekTo).toHaveBeenCalledWith(8);
-  await act(async () => {
-    oldReady("file://old.mp3");
-  });
-  expect(native.createAudioPlayer).toHaveBeenCalledOnce();
-  expect(latest.checkpoint()!.playbacks[0]!.playbackOrdinal).toBe(5);
-});
-it("keeps restored audio paused and resets it without replay when cleared", async () => {
-  const player = playerFixture();
-  native.createAudioPlayer.mockReturnValue(player);
-  native.ensureAudioCached.mockResolvedValue("file://cached.mp3");
-  await act(async () => {
-    await latest.unlock();
-    await latest.suspend();
-  });
-  await act(async () => {
-    latest.restore({
-      playbacks: [
-        { cueId: "cue", assetId: "asset", playbackRate: 1, playbackOrdinal: 1, positionSeconds: 9 },
-      ],
-      busGains: { music: 0.2 },
-    });
-  });
-  expect(player.play).not.toHaveBeenCalled();
-  expect(player.seekTo).toHaveBeenCalledWith(9);
-  await act(async () => {
-    latest.restore();
-  });
-  expect(player.remove).toHaveBeenCalled();
-  expect(latest.checkpoint()).toEqual({ playbacks: [], busGains: { music: 1 } });
-});
-it("rejects invalid restoration before replacing currently playing cues", async () => {
-  const player = playerFixture();
-  native.createAudioPlayer.mockReturnValue(player);
-  native.ensureAudioCached.mockResolvedValue("file://cached.mp3");
-  await act(async () => {
-    play();
-  });
-  expect(() => latest.restore({ playbacks: [], busGains: { removed: 1 } })).toThrow();
-  expect(player.remove).not.toHaveBeenCalled();
-});
-it("releases an in-flight seek immediately on unmount and never plays its late result", async () => {
-  const player = playerFixture();
-  let finish!: () => void;
-  player.seekTo.mockImplementation(
-    () =>
-      new Promise<void>((resolve) => {
-        finish = resolve;
-      })
-  );
-  native.createAudioPlayer.mockReturnValue(player);
-  native.ensureAudioCached.mockResolvedValue("file://cached.mp3");
-  await act(async () => {
-    latest.restore({
-      playbacks: [
-        { cueId: "cue", assetId: "asset", playbackRate: 1, playbackOrdinal: 1, positionSeconds: 2 },
-      ],
-      busGains: {},
-    });
-  });
-  expect(player.seekTo).toHaveBeenCalled();
-  await act(async () => {
-    root.unmount();
-  });
-  expect(player.remove).toHaveBeenCalledOnce();
-  await act(async () => {
-    finish();
-  });
-  expect(player.play).not.toHaveBeenCalled();
-  expect(player.remove).toHaveBeenCalledOnce();
-});
-it("does not activate a suspended fresh host while preparing restored audio", async () => {
-  const player = playerFixture();
-  native.createAudioPlayer.mockReturnValue(player);
-  native.ensureAudioCached.mockResolvedValue("file://cached.mp3");
-  await act(async () => {
-    await latest.suspend();
-  });
-  native.setIsAudioActiveAsync.mockClear();
-  await act(async () => {
-    latest.restore({
-      playbacks: [
-        { cueId: "cue", assetId: "asset", playbackRate: 1, playbackOrdinal: 1, positionSeconds: 2 },
-      ],
-      busGains: {},
-    });
-  });
-  expect(native.setIsAudioActiveAsync).not.toHaveBeenCalled();
-  expect(player.play).not.toHaveBeenCalled();
-  await act(async () => {
-    await latest.unlock();
-  });
-  expect(player.play).toHaveBeenCalledOnce();
-});
-it("ignores a removed player's late completion after restoring the same cue ordinal", async () => {
-  let oldFinished!: (status: { didJustFinish: boolean }) => void;
-  const first = playerFixture();
-  const second = playerFixture();
-  first.addListener.mockImplementation((...args: unknown[]) => {
-    oldFinished = args[1] as typeof oldFinished;
-    return { remove: vi.fn() };
-  });
-  native.createAudioPlayer.mockReturnValueOnce(first).mockReturnValueOnce(second);
-  native.ensureAudioCached.mockResolvedValue("file://cached.mp3");
-  await act(async () => {
-    play();
-  });
-  const snapshot = latest.checkpoint();
-  await act(async () => {
-    latest.restore(snapshot);
-  });
-  await act(async () => {
-    oldFinished({ didJustFinish: true });
-  });
-  expect(second.remove).not.toHaveBeenCalled();
-  expect(latest.checkpoint()!.playbacks).toHaveLength(1);
-});
 async function concurrencyFixture(overflowBehavior: "stop-oldest" | "reject-new" = "stop-oldest") {
   const definition = {
     ...manifest,
@@ -458,40 +263,4 @@ it("continues native cleanup after a status subscription is already detached", a
   expect(players[0]!.pause).toHaveBeenCalledTimes(1);
   expect(players[0]!.remove).toHaveBeenCalledTimes(1);
   expect(native.setIsAudioActiveAsync).toHaveBeenLastCalledWith(false);
-});
-it("freezes an in-flight fade while paused and resumes the fading cue", async () => {
-  vi.useFakeTimers();
-  try {
-    const players = await concurrencyFixture();
-    await act(async () => {
-      play(1);
-    });
-    await act(async () => {
-      play(2);
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    const fading = players[0]!;
-    const volume = fading.volume;
-    await act(async () => {
-      await latest.suspend();
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(20000);
-    });
-    expect(fading.volume).toBe(volume);
-    expect(fading.remove).not.toHaveBeenCalled();
-    const plays = fading.play.mock.calls.length;
-    await act(async () => {
-      await latest.unlock();
-    });
-    expect(fading.play).toHaveBeenCalledTimes(plays + 1);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(500);
-    });
-    expect(fading.remove).toHaveBeenCalledTimes(1);
-  } finally {
-    vi.useRealTimers();
-  }
 });

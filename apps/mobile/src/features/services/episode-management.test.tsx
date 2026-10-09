@@ -8,8 +8,6 @@ vi.mock("./episode-organization", () => ({
 }));
 const h = vi.hoisted(() => ({
   generation: 1,
-  active: true,
-  focused: true,
   access: vi.fn(),
   rows: vi.fn(),
   update: vi.fn(),
@@ -27,18 +25,15 @@ vi.mock("./episode-management-api", async (original) => ({
   updateEpisodeMetadata: h.update,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
-vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white" }) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
-  View: ({ children, style }: { children: ReactNode; style?: { display?: "none" | "flex" } }) => (
-    <div style={{ display: style?.display }}>{children}</div>
-  ),
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
   Pressable: ({
@@ -108,8 +103,6 @@ async function edit() {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
-  h.active = true;
-  h.focused = true;
   h.access.mockResolvedValue(true);
   h.rows.mockResolvedValue([episode]);
   h.update.mockResolvedValue({ ...episode, version: 5 });
@@ -197,22 +190,4 @@ it("opens organization for production managers", async () => {
   await render();
   await act(async () => button("episodeOrganization.title").click());
   expect(host.textContent).toContain("organize episodes");
-});
-
-it("retains the selected editor and original version through background", async () => {
-  await edit();
-  await enter("episodeCreate.name", "Background edit");
-  h.active = false;
-  await render();
-  expect((host.firstElementChild as HTMLElement).style.display).toBe("none");
-  await act(async () => button("episodeManagement.save").click());
-  expect(h.update).not.toHaveBeenCalled();
-  h.active = true;
-  await render();
-  await act(async () => button("episodeManagement.save").click());
-  expect(h.update).toHaveBeenCalledWith(
-    episode,
-    expect.objectContaining({ title: "Background edit", expectedVersion: 4 }),
-    1
-  );
 });

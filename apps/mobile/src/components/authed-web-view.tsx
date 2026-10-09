@@ -16,7 +16,7 @@
  * If the web side still bounces to /login (expired/revoked token), we stop
  * and show a native sign-in prompt instead of rendering the web login page.
  */
-import { Stack, useIsFocused } from "expo-router";
+import { Stack } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -80,7 +80,6 @@ export function AuthedWebView(props: AuthedWebViewProps) {
 }
 
 function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebViewProps) {
-  const focused = useIsFocused();
   const auth = useAuth();
   const authGate = useAuthGate();
   const locale = useLocale();
@@ -89,9 +88,6 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
   const webViewRef = useRef<WebView>(null);
   const canGoBackRef = useRef(false);
   const [loaded, setLoaded] = useState(false);
-  const [errorDetail, setErrorDetail] = useState<string | null>(null);
-  const documentUrl = useRef("");
-  const currentAttempt = useRef(0);
   const [failure, setFailure] = useState<"error" | "auth" | null>(null);
   /** Bumping remounts the WebView — the reliable "reload with cookie" reset. */
   const [attempt, setAttempt] = useState(0);
@@ -116,7 +112,7 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
 
   // Android hardware back walks the in-webview history before leaving.
   useEffect(() => {
-    if (Platform.OS !== "android" || !focused) return;
+    if (Platform.OS !== "android") return;
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
       if (canGoBackRef.current && webViewRef.current) {
         webViewRef.current.goBack();
@@ -125,27 +121,19 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
       return false;
     });
     return () => subscription.remove();
-  }, [focused]);
+  }, []);
 
-  const onNavigationStateChange = useCallback(
-    (navState: WebViewNavigation) => {
-      if (attempt !== currentAttempt.current) return;
-      canGoBackRef.current = navState.canGoBack;
-      // The web side only redirects to /login when the token was rejected —
-      // surface the NATIVE sign-in instead of rendering the web login page.
-      if (isAppLoginUrl(navState.url)) {
-        webViewRef.current?.stopLoading();
-        setFailure("auth");
-      }
-    },
-    [attempt]
-  );
+  const onNavigationStateChange = useCallback((navState: WebViewNavigation) => {
+    canGoBackRef.current = navState.canGoBack;
+    // The web side only redirects to /login when the token was rejected —
+    // surface the NATIVE sign-in instead of rendering the web login page.
+    if (isAppLoginUrl(navState.url)) {
+      webViewRef.current?.stopLoading();
+      setFailure("auth");
+    }
+  }, []);
 
   const retry = useCallback(() => {
-    currentAttempt.current += 1;
-    canGoBackRef.current = false;
-    documentUrl.current = "";
-    setErrorDetail(null);
     setFailure(null);
     setLoaded(false);
     setAttempt((current) => current + 1);
@@ -205,32 +193,8 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
         sharedCookiesEnabled
         thirdPartyCookiesEnabled={false}
         pullToRefreshEnabled
-        onLoadStart={({ nativeEvent }) => {
-          if (attempt !== currentAttempt.current) return;
-          documentUrl.current = nativeEvent.url;
-        }}
-        onLoadEnd={() => {
-          if (attempt === currentAttempt.current) setLoaded(true);
-        }}
-        onError={({ nativeEvent }) => {
-          if (attempt !== currentAttempt.current) return;
-          setErrorDetail(nativeEvent.description?.trim() || null);
-          setFailure("error");
-        }}
-        onHttpError={({ nativeEvent }) => {
-          if (attempt !== currentAttempt.current) return;
-          // Android also reports failed images/scripts. Only a failed document
-          // should replace the page with the native retry state.
-          const currentDocument = documentUrl.current || uri;
-          if (nativeEvent.url.split("#")[0] !== currentDocument.split("#")[0]) return;
-          if (nativeEvent.statusCode < 400) return;
-          setErrorDetail(
-            [`HTTP ${nativeEvent.statusCode}`, nativeEvent.description?.trim()]
-              .filter(Boolean)
-              .join(": ")
-          );
-          setFailure("error");
-        }}
+        onLoadEnd={() => setLoaded(true)}
+        onError={() => setFailure("error")}
         onNavigationStateChange={onNavigationStateChange}
         style={{ backgroundColor: theme.background }}
         // The page is dark-only; keep the native side dark too so there is
@@ -252,11 +216,6 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
           <ThemedText type="small" themeColor="textSecondary" style={styles.centerBody}>
             {t("authedWeb.loadFailed")}
           </ThemedText>
-          {errorDetail ? (
-            <ThemedText type="small" themeColor="textSecondary" style={styles.centerBody}>
-              {errorDetail}
-            </ThemedText>
-          ) : null}
           <Pressable
             accessibilityRole="button"
             onPress={retry}

@@ -1,174 +1,100 @@
-import { Image } from "expo-image";
-import { storyVisualStyleSkillBySlug } from "@repo/shared";
-import { storyVisualStylePreviews } from "../lib/story-visual-style-previews";
-import { useMemo } from "react";
-import { useAuth } from "@/auth";
-import { durableRecord } from "@/lib/durable-record";
-import { agentInputRequestKey, type AgentInputDraftStorage } from "../lib/agent-input-draft";
 import { SymbolView } from "expo-symbols";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
 import { useLocale, useTranslations } from "@/i18n";
 
-import { agentInputQuestionCopy, agentInputOptionLabel } from "../lib/agent-input-copy";
-import { fillMessageTemplate } from "../api/story-production-api";
 import { useAgentInputForm } from "../hooks/use-agent-input-form";
 import type { AgentOsPendingUserInput } from "../api/agent-os-api";
 
 const theme = Colors.dark;
 
 type AgentUserInputCardProps = {
-  draftScope: { projectId: string; chapterId: string; workbenchMode: string };
   request: AgentOsPendingUserInput;
   busy: boolean;
-  disabled?: boolean;
   onSubmit: (answers: Record<string, string>) => void;
 };
 
 /** Multi-step user input gate — mirrors PC `AgentOsUserInputCard`. */
 export function AgentUserInputCard(props: AgentUserInputCardProps) {
-  const auth = useAuth();
-  const userId = auth.user?.id ?? auth.user?.userId;
-  const identity = JSON.stringify(props.draftScope);
-  const requestKey = agentInputRequestKey(props.request);
-  const storage = useMemo(
-    () =>
-      auth.status === "authenticated" && userId
-        ? { record: durableRecord("story-input-draft", String(userId), identity), requestKey }
-        : undefined,
-    [auth.status, userId, identity, requestKey]
-  );
-  return (
-    <AgentUserInputView
-      key={JSON.stringify([auth.generation, userId, identity, requestKey])}
-      {...props}
-      storage={storage}
-    />
-  );
+  return <AgentUserInputView key={JSON.stringify(props.request)} {...props} />;
 }
 
-function AgentUserInputView({
-  request,
-  busy,
-  onSubmit,
-  storage,
-  disabled = false,
-}: AgentUserInputCardProps & { storage?: AgentInputDraftStorage }) {
+function AgentUserInputView({ request, busy, onSubmit }: AgentUserInputCardProps) {
   const t = useTranslations();
   const locale = useLocale();
-  const { height } = useWindowDimensions();
   const questions = request.questions;
-  const locked = busy || disabled;
-  const { step, question, isLast, selected, choose, back, submit, error } = useAgentInputForm(
+  const { step, question, isLast, selected, choose, back, submit } = useAgentInputForm(
     questions,
-    locked,
-    onSubmit,
-    storage
+    busy,
+    onSubmit
   );
 
   if (!question) return null;
-  const questionCopy = agentInputQuestionCopy(request.formId, question, t);
 
-  const stepLabel = fillMessageTemplate(t("agent.userInputStep"), {
-    current: step + 1,
-    total: questions.length,
-  });
+  const stepLabel =
+    locale === "en-US"
+      ? `Step ${step + 1}/${questions.length}`
+      : locale === "zh-HK"
+        ? `步驟 ${step + 1}/${questions.length}`
+        : `步骤 ${step + 1}/${questions.length}`;
 
   return (
     <View style={styles.card}>
-      <ScrollView
-        key={question.id}
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="handled"
-        style={{ maxHeight: Math.max(140, height * 0.42) }}
-        contentContainerStyle={styles.body}
-      >
-        {error ? (
-          <Text accessibilityRole="alert" style={{ color: theme.brand }}>
-            {error}
-          </Text>
-        ) : null}
-        <View style={styles.stepRow}>
-          <Text style={styles.stepLabel}>{stepLabel}</Text>
-          <View style={styles.progressTrack}>
-            {questions.map((item, index) => (
-              <View
-                key={item.id}
-                style={[
-                  styles.progressSegment,
-                  index <= step ? styles.progressActive : styles.progressIdle,
-                ]}
-              />
-            ))}
-          </View>
+      <View style={styles.stepRow}>
+        <Text style={styles.stepLabel}>{stepLabel}</Text>
+        <View style={styles.progressTrack}>
+          {questions.map((item, index) => (
+            <View
+              key={item.id}
+              style={[
+                styles.progressSegment,
+                index <= step ? styles.progressActive : styles.progressIdle,
+              ]}
+            />
+          ))}
         </View>
+      </View>
 
-        <View style={styles.questionHeader}>
-          <View style={styles.qBadge}>
-            <Text style={styles.qBadgeText}>Q{step + 1}</Text>
-          </View>
-          {questionCopy.header ? (
-            <Text style={styles.questionHeaderText}>{questionCopy.header}</Text>
-          ) : null}
-          <Text style={styles.requiredMark}>*</Text>
+      <View style={styles.questionHeader}>
+        <View style={styles.qBadge}>
+          <Text style={styles.qBadgeText}>Q{step + 1}</Text>
         </View>
-        <Text style={styles.questionBody}>{questionCopy.question}</Text>
+        {question.header ? <Text style={styles.questionHeaderText}>{question.header}</Text> : null}
+        <Text style={styles.requiredMark}>*</Text>
+      </View>
+      <Text style={styles.questionBody}>{question.question}</Text>
 
-        <View style={styles.optionsGrid}>
-          {question.options.map((option) => {
-            const checked = option.value === selected;
-            const visualStyle =
-              request.formId === "story_creative_profile" && question.id === "visual_direction"
-                ? storyVisualStyleSkillBySlug(option.value)
-                : undefined;
-            return (
-              <Pressable
-                key={option.value}
-                accessibilityRole="radio"
-                accessibilityState={{ checked, disabled: locked }}
-                aria-checked={checked}
-                disabled={locked}
-                onPress={() => choose(option.value)}
-                style={({ pressed }) => [
-                  styles.option,
-                  visualStyle && styles.previewOption,
-                  checked && styles.optionSelected,
-                  pressed && !locked && styles.pressed,
-                ]}
-              >
-                {visualStyle ? (
-                  <Image
-                    source={storyVisualStylePreviews[visualStyle.slug]}
-                    contentFit="cover"
-                    accessible={false}
-                    style={styles.preview}
-                  />
-                ) : null}
-                <Text style={[styles.optionLabel, visualStyle && styles.previewLabel]}>
-                  {agentInputOptionLabel(request.formId, question.id, option, locale, t)}
-                </Text>
-                {option.description ? (
-                  <Text style={styles.optionDescription}>{option.description}</Text>
-                ) : null}
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+      <View style={styles.optionsGrid}>
+        {question.options.map((option) => {
+          const checked = option.value === selected;
+          return (
+            <Pressable
+              key={option.value}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: checked }}
+              disabled={busy}
+              onPress={() => choose(option.value)}
+              style={({ pressed }) => [
+                styles.option,
+                checked && styles.optionSelected,
+                pressed && !busy && styles.pressed,
+              ]}
+            >
+              <Text style={styles.optionLabel}>{option.label}</Text>
+              {option.description ? (
+                <Text style={styles.optionDescription}>{option.description}</Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </View>
+
       <View style={styles.actions}>
         {step > 0 ? (
           <Pressable
             accessibilityRole="button"
-            disabled={locked}
+            disabled={busy}
             onPress={back}
             style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
           >
@@ -182,16 +108,16 @@ function AgentUserInputView({
         ) : null}
         <Pressable
           accessibilityRole="button"
-          disabled={!selected || locked}
+          disabled={!selected || busy}
           onPress={submit}
           style={({ pressed }) => [
             styles.submitBtn,
-            !selected || locked ? styles.submitDisabled : styles.submitEnabled,
-            pressed && selected && !locked && styles.pressed,
+            !selected || busy ? styles.submitDisabled : styles.submitEnabled,
+            pressed && selected && !busy && styles.pressed,
           ]}
         >
           {busy ? <ActivityIndicator color="#FFFFFF" size="small" style={styles.spinner} /> : null}
-          <Text style={[styles.submitText, (!selected || locked) && styles.submitTextDisabled]}>
+          <Text style={[styles.submitText, (!selected || busy) && styles.submitTextDisabled]}>
             {busy
               ? t("agent.userInputSubmitting")
               : isLast
@@ -205,7 +131,6 @@ function AgentUserInputView({
 }
 
 const styles = StyleSheet.create({
-  body: { gap: Spacing.three },
   card: {
     backgroundColor: "rgba(255,255,255,0.04)",
     borderRadius: 22,
@@ -291,19 +216,6 @@ const styles = StyleSheet.create({
     minHeight: 80,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
-  },
-  previewOption: {
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    overflow: "hidden",
-  },
-  preview: {
-    width: "100%",
-    aspectRatio: 2 / 3,
-  },
-  previewLabel: {
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
   },
   optionSelected: {
     backgroundColor: "rgba(229,34,39,0.095)",

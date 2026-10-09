@@ -50,6 +50,11 @@
   "localeSwitcher": {
     "label": "Language"
   },
+  "siteSwitcher": {
+    "label": "Site",
+    "global": "Global",
+    "cn": "CN"
+  },
   "account": {
     "signIn": "Sign in",
     "account": "Account",

@@ -1,3 +1,5 @@
+import { projectPointsSummary } from './project-points-summary';
+import { CURRENT_CELL } from '../../common/region/current-cell';
 import { CrewCollaborationService } from '../collaboration/crew-collaboration.service';
 import { taskComputeUsage } from './task-compute-usage';
 import { readProjectBudget, releasedPoints } from './project-budget';
@@ -8,6 +10,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { WalletLedgerService } from '../../workspaces/wallet-ledger.service';
 import { type Prisma } from '@prisma/client';
 import { ADMIN_PERMISSION_KEYS, type AdminActor } from '../../admin-auth';
 import { PrismaService } from '../../infra/db/db.module';
@@ -19,6 +22,7 @@ export class CrewComputeRequestsService {
     private readonly prisma: PrismaService,
     private readonly authorization: CrewAuthorizationService,
     private readonly collaboration: CrewCollaborationService,
+    private readonly walletLedger: WalletLedgerService,
   ) {}
 
   private async access(
@@ -65,12 +69,18 @@ export class CrewComputeRequestsService {
         where: {
           crewId,
           deletedAt: null,
+          cancelledAt: null,
+          workflowState: { semantic: { not: 'cancelled' } },
           ...(access.isOwner ? {} : { assignees: { some: { userId } } }),
         },
         select: {
           id: true,
           title: true,
           number: true,
+          computeRequests: {
+            where: { kind: { not: 'initial_allowance' } },
+            select: { requestKey: true },
+          },
           assignees: { select: { userId: true } },
         },
         orderBy: { number: 'desc' },
@@ -110,6 +120,7 @@ export class CrewComputeRequestsService {
       projectBudget: budget
         ? {
             version: budget.version,
+            pointsPerMinute: budget.data.pointsPerMinute ?? 4462,
             durationSeconds: budget.data.durationSeconds,
             totalPoints: budget.data.totalPoints,
             releasedPoints: releasedPoints(budget).toString(),
@@ -128,7 +139,12 @@ export class CrewComputeRequestsService {
       ),
       workspaceLinked: !!crew?.workspaceId,
       isOwner: access.isOwner,
-      tasks,
+      tasks: tasks.map(({ computeRequests, ...task }) => ({
+        ...task,
+        topUpRequested: computeRequests.some(
+          (request) => request.requestKey !== task.id,
+        ),
+      })),
       items: requests.slice(0, 50),
       nextCursor: requests.length > 50 ? requests[49].id : null,
       totals: Object.fromEntries(
@@ -150,13 +166,22 @@ export class CrewComputeRequestsService {
         id: taskId,
         crewId,
         deletedAt: null,
+        cancelledAt: null,
+        workflowState: { semantic: { not: 'cancelled' } },
         assignees: { some: { userId } },
       },
-      include: { crew: { select: { workspaceId: true } } },
+      include: {
+        crew: { select: { workspaceId: true } },
+        workflowState: { select: { semantic: true } },
+      },
     });
-    if (!task)
+    if (
+      !task ||
+      task.cancelledAt ||
+      task.workflowState?.semantic === 'cancelled'
+    )
       throw new ForbiddenException(
-        'Select a task currently assigned to you in this Crew',
+        'Select an active, non-cancelled task currently assigned to the creator in this Crew',
       );
     if (!task.crew.workspaceId)
       throw new BadRequestException(
@@ -172,10 +197,26 @@ export class CrewComputeRequestsService {
       taskId: string;
       beneficiaryUserId?: string;
       points: number;
+      remainingWorkload: number;
+      workloadUnit: 'minutes' | 'hours' | 'days' | 'person_days' | 'percent';
       reason: string;
       requestKey: string;
     },
   ) {
+    if (
+      !Number.isInteger(input.points) ||
+      input.points < 1 ||
+      input.points > 500 ||
+      !Number.isFinite(input.remainingWorkload) ||
+      input.remainingWorkload <= 0 ||
+      !['minutes', 'hours', 'days', 'person_days', 'percent'].includes(
+        input.workloadUnit,
+      ) ||
+      (input.workloadUnit === 'percent' && input.remainingWorkload > 100)
+    )
+      throw new BadRequestException(
+        'Top-ups require 1–500 points and a valid remaining workload',
+      );
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
       await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR UPDATE`;
@@ -208,13 +249,22 @@ export class CrewComputeRequestsService {
         if (
           existing.taskId !== input.taskId ||
           existing.points !== input.points ||
-          existing.reason !== input.reason
+          existing.reason !== input.reason ||
+          Number(existing.remainingWorkload) !== input.remainingWorkload ||
+          existing.workloadUnit !== input.workloadUnit
         )
           throw new ConflictException(
             'Request key already used for different details',
           );
         return existing;
       }
+      const priorTopUp = await tx.crewComputeRequest.findFirst({
+        where: { taskId: input.taskId, requestKey: { not: input.taskId } },
+      });
+      if (priorTopUp)
+        throw new ConflictException(
+          'Only one top-up application is allowed per task, including rejected applications',
+        );
       // Serialize the first request against generation admission so its timestamp
       // cleanly separates existing jobs from jobs governed by this allowance.
       const wallet = await tx.walletAccount.findUnique({
@@ -235,6 +285,7 @@ export class CrewComputeRequestsService {
       const request = await tx.crewComputeRequest.create({
         data: {
           ...requestInput,
+          kind: 'top_up',
           crewId,
           userId: beneficiaryUserId,
           requestedByUserId: userId,
@@ -252,20 +303,31 @@ export class CrewComputeRequestsService {
     if (
       !admin?.id ||
       admin.status !== 'active' ||
+      (admin.siteScope !== 'all' &&
+        admin.siteScope !== (CURRENT_CELL === 'cn' ? 'cn' : 'global')) ||
       !admin.permissions?.includes(ADMIN_PERMISSION_KEYS.CrewComputeReview)
     ) {
       throw new ForbiddenException('需要算力审批权限');
     }
   }
 
+  async projectSummary(
+    admin: AdminActor,
+    query: Parameters<typeof projectPointsSummary>[1],
+  ) {
+    this.requireAdmin(admin);
+    return projectPointsSummary(this.prisma, query);
+  }
+
   async listAdmin(
     admin: AdminActor,
-    query: { status?: string; cursor?: string },
+    query: { status?: string; cursor?: string; crewId?: string },
   ) {
     this.requireAdmin(admin);
     const rows = await this.prisma.crewComputeRequest.findMany({
       where: {
         ...(query.status ? { status: query.status } : {}),
+        ...(query.crewId ? { crewId: query.crewId } : {}),
         ...(query.cursor ? { id: { lt: query.cursor } } : {}),
       },
       orderBy: { id: 'desc' },
@@ -274,8 +336,16 @@ export class CrewComputeRequestsService {
     });
     const usage = (
       await Promise.all(
-        [...new Set(rows.map((row) => row.crewId))].map((crewId) =>
-          taskComputeUsage(this.prisma, crewId, admin.id, true),
+        [...new Set(rows.slice(0, 50).map((row) => row.crewId))].map(
+          async (crewId) =>
+            (await taskComputeUsage(this.prisma, crewId, admin.id, true)).map(
+              (item) => ({
+                ...item,
+                crewId,
+                crewName: rows.find((row) => row.crewId === crewId)!.task.crew
+                  .name,
+              }),
+            ),
         ),
       )
     ).flat();
@@ -288,6 +358,7 @@ export class CrewComputeRequestsService {
             (item) => item.taskId === row.taskId && item.userId === row.userId,
           ) ?? null,
       })),
+      statistics: usage,
       nextCursor: rows.length > 50 ? rows[49].id : null,
     };
   }
@@ -349,13 +420,35 @@ export class CrewComputeRequestsService {
         if (
           !account ||
           account.status !== 'active' ||
-          account.availableBalance < BigInt(request.points)
+          (request.kind !== 'top_up' &&
+            account.availableBalance < BigInt(request.points))
         )
           throw new ConflictException(
             'The linked workspace has insufficient available compute points',
           );
-        // This is a spending allowance. Generation still reserves/settles the
-        // existing workspace wallet atomically; approval never grants currency.
+        if (request.kind === 'top_up') {
+          await this.walletLedger.postEntryTx(tx, {
+            accountId: account.id,
+            entryType: 'adjustment',
+            amount: BigInt(request.points),
+            availableDelta: BigInt(request.points),
+            heldDelta: 0n,
+            sourceType: 'crew_compute_topup',
+            sourceId: request.id,
+            idempotencyKey: `crew_compute_topup:${request.id}`,
+            workspaceId: request.workspaceId,
+            reason: input.note || 'Admin-approved task compute top-up',
+            description: request.taskTitle,
+            metadata: {
+              crewId,
+              taskId: request.taskId,
+              beneficiaryUserId: request.userId,
+              requestedByUserId: request.requestedByUserId,
+              approvedByAdminId: admin.id,
+            },
+            creditGrant: { grantType: 'admin_adjustment' },
+          });
+        }
       }
       const result = await tx.crewComputeRequest.update({
         where: { id },
@@ -382,7 +475,9 @@ export class CrewComputeRequestsService {
             crewId,
             taskId: request.taskId,
             workspaceId: request.workspaceId,
-            applicantUserId: request.userId,
+            applicantUserId: request.requestedByUserId,
+            beneficiaryUserId: request.userId,
+            kind: request.kind,
             points: request.points,
             note: input.note,
           },

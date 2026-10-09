@@ -18,6 +18,7 @@ type Plan = {
     version: number;
     data: {
       durationSeconds: number;
+      pointsPerMinute?: number;
       totalPoints: string;
       producerTaskId: string;
       producerUserId: string;
@@ -32,7 +33,13 @@ type Plan = {
     };
   };
 };
-export function ProjectBudgetPanel({ crewId }: { crewId: string }) {
+export function ProjectBudgetPanel({
+  crewId,
+  onChange,
+}: {
+  crewId: string;
+  onChange?: () => void;
+}) {
   const [plan, setPlan] = useState<Plan>();
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState("");
@@ -84,6 +91,7 @@ export function ProjectBudgetPanel({ crewId }: { crewId: string }) {
         setPlan(undefined);
         setRevision((x) => x + 1);
         setNote("");
+        onChange?.();
       }
     } catch (e) {
       if (!abort.signal.aborted) setError(String(e));
@@ -105,9 +113,10 @@ export function ProjectBudgetPanel({ crewId }: { crewId: string }) {
     <section className="space-y-3 border-y py-4">
       <h2 className="font-semibold">Project compute budget · {plan?.crewName ?? crewId}</h2>
       <p className="text-sm text-muted-foreground">
-        4,462 points per minute for the whole project. Staged releases authorize spending from its
-        dedicated workspace; they do not top up the wallet. Producer deductions require documented
-        FD Admin approval.
+        {(plan?.budget ? (plan.budget.data.pointsPerMinute ?? 4462) : 4460).toLocaleString()} points
+        per minute for the whole project. Staged releases authorize spending from its dedicated
+        workspace; they do not top up the wallet. Producer deductions require documented FD Admin
+        approval.
       </p>
       {error && <p role="alert">{error}</p>}
       <Button

@@ -59,6 +59,7 @@ export const AdminSessionResponseSchema = z.object({
     avatarUrl: z.string().url().nullable().optional(),
     status: z.string(),
     siteScope: z.enum(['global', 'cn', 'all']),
+    platformUserId: z.string().nullable().optional(),
     roleKeys: z.array(z.string()).optional(),
     requireMfa: z.boolean().optional(),
     mfaEnabledAt: z.string().nullable().optional(),

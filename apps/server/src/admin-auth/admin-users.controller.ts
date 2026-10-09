@@ -326,6 +326,7 @@ function summarizeAdminUser(user: AdminUserSummary) {
     avatarUrl: user.avatarUrl,
     status: user.status,
     siteScope: user.siteScope,
+    platformUserId: user.platformUserId,
     roleKeys: user.roleKeys,
     roleKey: user.roleKey,
     requireMfa: user.requireMfa,

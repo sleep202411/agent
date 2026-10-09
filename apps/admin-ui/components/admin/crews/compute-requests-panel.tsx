@@ -1,5 +1,6 @@
 "use client";
 
+import { ProjectPointsSummary } from "./project-points-summary";
 import { ProjectBudgetPanel } from "./project-budget-panel";
 import { useEffect, useRef, useState } from "react";
 import { adminUiApiPath } from "@/lib/admin-api";
@@ -23,6 +24,10 @@ type ComputeRequest = {
   taskTitle: string;
   workspaceId: string;
   userId: string;
+  requestedByUserId?: string | null;
+  kind?: string;
+  remainingWorkload?: string | null;
+  workloadUnit?: string | null;
   points: number;
   reason: string;
   status: "pending" | "approved" | "rejected";
@@ -32,7 +37,22 @@ type ComputeRequest = {
   decisionNote: string | null;
   decidedAt: string | null;
 };
-type Queue = { items: ComputeRequest[]; nextCursor: string | null };
+type Queue = {
+  items: ComputeRequest[];
+  nextCursor: string | null;
+  statistics?: {
+    crewId: string;
+    crewName: string;
+    taskId: string;
+    taskTitle: string;
+    userId: string;
+    approvedPoints: string;
+    creditedPoints: string;
+    pendingPoints: string;
+    consumedPoints: string;
+    committedPoints: string;
+  }[];
+};
 
 async function request<T>(path: string, signal: AbortSignal, body?: unknown): Promise<T> {
   const response = await fetch(adminUiApiPath(`/api/admin/crew-compute-requests${path}`), {
@@ -50,7 +70,7 @@ async function request<T>(path: string, signal: AbortSignal, body?: unknown): Pr
 }
 
 export function ComputeRequestsPanel() {
-  const [query, setQuery] = useState({ status: "pending", cursor: "", revision: 0 });
+  const [query, setQuery] = useState({ status: "pending", cursor: "", revision: 0, crewId: "" });
   const [queue, setQueue] = useState<Queue>({ items: [], nextCursor: null });
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
@@ -66,6 +86,7 @@ export function ComputeRequestsPanel() {
     const params = new URLSearchParams();
     if (query.status) params.set("status", query.status);
     if (query.cursor) params.set("cursor", query.cursor);
+    if (query.crewId) params.set("crewId", query.crewId);
     request<Queue>(`?${params}`, controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) {
@@ -82,13 +103,13 @@ export function ComputeRequestsPanel() {
     return () => controller.abort();
   }, [query]);
 
-  const load = (status = query.status, cursor = "") => {
+  const load = (status = query.status, cursor = "", crewId = query.crewId) => {
     setQueue({ items: [], nextCursor: null });
     setLoading(true);
     setError("");
     setSelected(null);
     setNote("");
-    setQuery((previous) => ({ status, cursor, revision: previous.revision + 1 }));
+    setQuery((previous) => ({ status, cursor, crewId, revision: previous.revision + 1 }));
   };
   const decide = async (status: "approved" | "rejected") => {
     if (!selected || action.current) return;
@@ -118,11 +139,31 @@ export function ComputeRequestsPanel() {
       <div>
         <h1 className="text-xl font-semibold">Compute requests</h1>
         <p className="text-sm text-muted-foreground">
-          Admin review authorizes task spending from the linked workspace balance. Approval does not
-          add points.
+          Top-up approval credits the linked workspace and increases the task allowance. Initial and
+          historical allowances do not add wallet points.
         </p>
       </div>
-      {budgetCrew && <ProjectBudgetPanel key={budgetCrew} crewId={budgetCrew} />}
+      <ProjectPointsSummary
+        revision={query.revision}
+        onDetails={(crewId) => {
+          setBudgetCrew(crewId);
+          load("", "", crewId);
+        }}
+      />
+      {budgetCrew && (
+        <ProjectBudgetPanel key={budgetCrew} crewId={budgetCrew} onChange={() => load()} />
+      )}
+      {query.crewId && (
+        <Button
+          variant="outline"
+          onClick={() => {
+            setBudgetCrew(null);
+            load(query.status, "", "");
+          }}
+        >
+          Show all projects
+        </Button>
+      )}
       <div className="flex flex-wrap gap-2">
         {["pending", "approved", "rejected", ""].map((status) => (
           <Button
@@ -156,7 +197,12 @@ export function ComputeRequestsPanel() {
                 points
               </h2>
               <p className="text-sm">
-                Applicant: {selected.userId} · Workspace: {selected.workspaceId}
+                Requester: {selected.requestedByUserId ?? "—"} · Creator: {selected.userId} ·
+                Workspace: {selected.workspaceId}
+              </p>
+              <p>
+                Remaining workload: {selected.remainingWorkload ?? "—"}{" "}
+                {selected.workloadUnit?.replaceAll("_", " ")}
               </p>
               <p className="whitespace-pre-wrap break-words">{selected.reason}</p>
               <Textarea
@@ -169,7 +215,7 @@ export function ComputeRequestsPanel() {
               />
               <div className="flex gap-2">
                 <Button disabled={pending} onClick={() => void decide("approved")}>
-                  Approve allowance
+                  {selected.kind === "top_up" ? "Approve top-up" : "Approve allowance"}
                 </Button>
                 <Button
                   variant="outline"
@@ -187,11 +233,17 @@ export function ComputeRequestsPanel() {
           <Table>
             <TableHeader>
               <TableRow>
-                {["Crew / task", "Applicant", "Points", "Status", "Decision", "Action"].map(
-                  (label) => (
-                    <TableHead key={label}>{label}</TableHead>
-                  )
-                )}
+                {[
+                  "Crew / task",
+                  "Requester / creator",
+                  "Points / type",
+                  "Remaining workload",
+                  "Status",
+                  "Decision",
+                  "Action",
+                ].map((label) => (
+                  <TableHead key={label}>{label}</TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -204,8 +256,23 @@ export function ComputeRequestsPanel() {
                       {row.crewId} · {new Date(row.createdAt).toLocaleString()}
                     </p>
                   </TableCell>
-                  <TableCell>{row.userId}</TableCell>
-                  <TableCell>{row.points.toLocaleString()}</TableCell>
+                  <TableCell>
+                    <p>Requester: {row.requestedByUserId ?? "—"}</p>
+                    <p>Creator: {row.userId}</p>
+                  </TableCell>
+                  <TableCell>
+                    {row.points.toLocaleString()}
+                    <p>
+                      {row.kind === "top_up"
+                        ? "Top-up"
+                        : row.kind === "initial_allowance"
+                          ? "Initial allowance"
+                          : "Historical allowance"}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    {row.remainingWorkload ?? "—"} {row.workloadUnit?.replaceAll("_", " ")}
+                  </TableCell>
                   <TableCell>{row.status}</TableCell>
                   <TableCell>
                     {row.decidedByAdminId
@@ -238,6 +305,52 @@ export function ComputeRequestsPanel() {
             </TableBody>
           </Table>
           {!queue.items.length && <p>No requests.</p>}
+          {!!queue.statistics?.length && (
+            <section className="space-y-2" aria-label="Compute statistics">
+              <h2 className="font-semibold">Compute statistics</h2>
+              <p className="text-sm text-muted-foreground">
+                All task and creator usage for projects represented on this request page. Credited
+                points are approved top-ups; allowances also include initial allocations.
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    {[
+                      "Project / task",
+                      "Creator",
+                      "Approved allowance",
+                      "Wallet credited",
+                      "Pending",
+                      "Spent",
+                      "Spent + reserved",
+                    ].map((label) => (
+                      <TableHead key={label}>{label}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {queue.statistics.map((row) => (
+                    <TableRow key={`${row.taskId}:${row.userId}`}>
+                      <TableCell>
+                        {row.crewName}
+                        <p>{row.taskTitle}</p>
+                      </TableCell>
+                      <TableCell>{row.userId}</TableCell>
+                      {[
+                        row.approvedPoints,
+                        row.creditedPoints,
+                        row.pendingPoints,
+                        row.consumedPoints,
+                        row.committedPoints,
+                      ].map((value, index) => (
+                        <TableCell key={index}>{BigInt(value).toLocaleString()}</TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </section>
+          )}
           <div className="flex gap-2">
             {query.cursor && (
               <Button variant="outline" disabled={pending} onClick={() => load()}>

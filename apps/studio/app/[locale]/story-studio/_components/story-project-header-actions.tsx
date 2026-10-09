@@ -64,6 +64,9 @@ function AccountStoryProjectHeaderActions({
     queryFn: ({ signal }) => getStoryWorkbench(projectId, activeChapterId ?? undefined, signal),
     enabled: Boolean(projectId && user),
     retry: false,
+    // Role changes made by another operator must reach an already-open dialog.
+    refetchInterval: open ? 15_000 : false,
+    refetchOnWindowFocus: true,
   });
   const canEdit =
     !workbenchQuery.data || workbenchQuery.data.project.capabilities.includes("story.edit");

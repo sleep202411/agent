@@ -101,8 +101,11 @@ fi
 
 if [ "$PHASE" = build ]; then
   [ -s "${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}" ] && ok "CN build SSH key exists" || fail "CN build SSH key is missing"
-  [ -s "$HOME/.fizzdragon-cn/acr-username.txt" ] && ok "CN ACR username file exists" || fail "CN ACR username file is missing"
-  [ -s "$HOME/.fizzdragon-cn/acr-password.txt" ] && ok "CN ACR password file exists" || fail "CN ACR password file is missing"
+  if python3 "$ROOT/deploy/cn_build_credentials.py"; then
+    ok "CN ACR can issue fresh temporary credentials"
+  else
+    fail "CN ACR temporary credential acquisition failed"
+  fi
   if aliyun ecs DescribeInstances --InstanceIds "['$ECS_ID']" \
     --RegionId cn-hangzhou --profile default >/dev/null 2>&1; then
     ok "CN build ECS is visible"

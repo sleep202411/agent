@@ -254,6 +254,17 @@ const PositionBaseSchema = z.object({
 });
 
 export const CreatePositionSchema = PositionBaseSchema.extend({
+  tasks: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        expectedVersion: z.number().int().min(0),
+      }),
+    )
+    .min(1)
+    .max(100)
+    .optional(),
+  expectedTaskVersion: z.number().int().min(0).optional(),
   taskId: z.string().uuid().optional(),
   recruitmentVisibility: z.enum(['public', 'private']).optional(),
 }).refine(
@@ -662,6 +673,7 @@ export const CreateCrewTaskSchema = z
     customFieldValues: z.array(TaskCustomFieldValueSchema).max(50).default([]),
     labelIds: z.array(z.string().uuid()).max(20).default([]),
     assignees: z.array(TaskAssigneeSchema).max(30).default([]),
+    assetCategory: z.enum(['characters', 'scenes', 'props', 'art']).optional(),
     taskKind: z
       .enum([
         'script',
@@ -805,6 +817,7 @@ export const UpdateCrewTaskSchema = z
     labelIds: z.array(z.string().uuid()).max(20).optional(),
     workflowStateId: z.string().uuid().optional(),
     assignees: z.array(TaskAssigneeSchema).max(30).optional(),
+    assetCategory: z.enum(['characters', 'scenes', 'props', 'art']).optional(),
     taskKind: z
       .enum([
         'script',

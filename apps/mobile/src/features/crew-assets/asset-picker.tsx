@@ -52,17 +52,7 @@ function Picker({
     query: query || undefined,
   });
   const limit = Number.isFinite(remaining) ? Math.max(0, Math.min(10, Math.floor(remaining))) : 0;
-  if (listing.accessDenied && selected.length) setSelected([]);
-  const eligible = listing.accessDenied
-    ? []
-    : selected.filter((asset) => !excludedIds.includes(asset.id));
-  const attachDisabled =
-    submitted ||
-    !eligible.length ||
-    eligible.length > limit ||
-    !!listing.error ||
-    listing.loading ||
-    listing.accessDenied;
+  const eligible = selected.filter((asset) => !excludedIds.includes(asset.id));
   const toggle = (asset: CrewAsset) => {
     if (
       submittedRef.current ||
@@ -246,13 +236,10 @@ function Picker({
       <View style={{ flexDirection: "row", gap: 12 }}>
         <Pressable
           accessibilityRole="button"
-          disabled={attachDisabled}
+          disabled={submitted || !eligible.length || eligible.length > limit || !!listing.error}
           onPress={() => {
             if (
               submittedRef.current ||
-              listing.loading ||
-              !!listing.error ||
-              listing.accessDenied ||
               String(getAuthGeneration()) !== owner ||
               !eligible.length ||
               eligible.length > limit
@@ -262,7 +249,7 @@ function Picker({
             setSubmitted(true);
             onSelect(eligible);
           }}
-          style={{ padding: 12, opacity: attachDisabled ? 0.5 : 1 }}
+          style={{ padding: 12 }}
         >
           <ThemedText>{t("crewAssets.attach")}</ThemedText>
         </Pressable>

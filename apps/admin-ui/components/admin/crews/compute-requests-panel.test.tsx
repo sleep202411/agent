@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ComputeRequestsPanel } from "./compute-requests-panel";
 
+vi.mock("./project-points-summary", () => ({ ProjectPointsSummary: () => null }));
 vi.mock("@/lib/admin-api", () => ({ adminUiApiPath: (path: string) => path }));
 vi.mock("@/components/ui/button", () => ({
   Button: ({

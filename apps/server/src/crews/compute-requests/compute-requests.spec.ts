@@ -21,6 +21,9 @@ function fixture(owner = true) {
     workspaceId: 'workspace',
     userId: 'creator',
     points: 50,
+    remainingWorkload: 10,
+    workloadUnit: 'minutes' as const,
+    kind: 'top_up',
     reason: 'Render',
     requestKey: 'key',
     status: 'pending',
@@ -68,7 +71,9 @@ function fixture(owner = true) {
       aggregate: jest.fn().mockResolvedValue({ _sum: { points: 0 } }),
       findFirst: jest
         .fn()
-        .mockImplementation(() => Promise.resolve({ ...request })),
+        .mockImplementation(({ where }: { where: { id?: string } }) =>
+          Promise.resolve(where.id ? { ...request } : null),
+        ),
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest
         .fn()
@@ -104,12 +109,14 @@ function fixture(owner = true) {
   const collaboration = {
     ensureCrewSpace: jest.fn().mockResolvedValue({ workspaceId: 'workspace' }),
   };
+  const walletLedger = { postEntryTx: jest.fn().mockResolvedValue({}) };
   const service = new CrewComputeRequestsService(
     prisma as never,
     authorization as never,
     collaboration as never,
+    walletLedger as never,
   );
-  return { service, tx, authorization, request, collaboration };
+  return { service, tx, authorization, request, collaboration, walletLedger };
 }
 
 describe('Crew compute requests', () => {
@@ -151,7 +158,7 @@ describe('Crew compute requests', () => {
     );
   });
 
-  it.each([0, -1, 1.5, 2_000_000_001])(
+  it.each([0, -1, 1.5, 501, 2_000_000_001])(
     'rejects invalid points %s',
     (points) => {
       expect(
@@ -160,6 +167,8 @@ describe('Crew compute requests', () => {
           requestKey: '01994bd8-0000-7000-8000-000000000002',
           points,
           reason: 'Render',
+          remainingWorkload: 10,
+          workloadUnit: 'minutes',
         }).success,
       ).toBe(false);
     },
@@ -245,6 +254,15 @@ describe('Crew compute requests', () => {
     await f.service.decideAdmin('crew', 'request', admin, input);
     expect(f.tx.crewComputeRequest.update).toHaveBeenCalledTimes(1);
     expect(f.tx.adminAuditLog.create).toHaveBeenCalledTimes(1);
+    expect(f.walletLedger.postEntryTx).toHaveBeenCalledTimes(1);
+    expect(f.walletLedger.postEntryTx).toHaveBeenCalledWith(
+      f.tx,
+      expect.objectContaining({
+        availableDelta: 50n,
+        workspaceId: 'workspace',
+        sourceId: 'request',
+      }),
+    );
     expect(f.request).toMatchObject({
       status: 'approved',
       decidedByAdminId: 'admin',
@@ -257,7 +275,7 @@ describe('Crew compute requests', () => {
       }),
     ).rejects.toThrow('already been decided');
   });
-  it('rechecks assignment and workspace balance before approval', async () => {
+  it('rechecks assignment and can credit an empty workspace wallet', async () => {
     const f = fixture();
     f.tx.crewTask.findFirst.mockResolvedValueOnce(null);
     await expect(
@@ -276,8 +294,8 @@ describe('Crew compute requests', () => {
         status: 'approved',
         note: '',
       }),
-    ).rejects.toThrow('insufficient');
-    expect(f.tx.crewComputeRequest.update).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ status: 'approved' });
+    expect(f.walletLedger.postEntryTx).toHaveBeenCalledTimes(1);
   });
   it('allows rejection after an assignment is removed', async () => {
     const f = fixture();
@@ -336,6 +354,7 @@ describe('task allowance admission', () => {
     const task = {
       id: 'task',
       deletedAt: null,
+      cancelledAt: null as Date | null,
       crew: { workspaceId: 'workspace', deletedAt: null },
       assignees: [{ userId: 'creator' }],
       computeRequests: [
@@ -410,6 +429,14 @@ describe('task allowance admission', () => {
       requireCrewComputeAllowance(f.tx as never, f.input),
     ).rejects.toThrow('active assignment');
   });
+  it('prevents spending from a cancelled task despite an active assignment', async () => {
+    const f = allowance();
+    f.task.cancelledAt = new Date();
+    await expect(
+      requireCrewComputeAllowance(f.tx as never, f.input),
+    ).rejects.toThrow('active assignment');
+    expect(f.tx.walletTransaction.findMany).not.toHaveBeenCalled();
+  });
   it('only counts jobs admitted after the first request, excluding old-job releases', async () => {
     const f = allowance();
     await requireCrewComputeAllowance(f.tx as never, f.input);
@@ -428,5 +455,87 @@ describe('task allowance admission', () => {
         }),
       }),
     );
+  });
+});
+
+describe('top-up financial boundaries', () => {
+  it('counts a rejected request by another recipient as the one application', async () => {
+    const f = fixture();
+    f.tx.crewComputeRequest.findFirst.mockResolvedValueOnce({
+      ...f.request,
+      userId: 'other',
+      status: 'rejected',
+    });
+    await expect(f.service.create('crew', 'owner', f.request)).rejects.toThrow(
+      'Only one top-up',
+    );
+    expect(f.tx.crewComputeRequest.create).not.toHaveBeenCalled();
+  });
+  it('rejects changed workload on an idempotent retry', async () => {
+    const f = fixture();
+    f.tx.crewComputeRequest.findUnique.mockResolvedValue(f.request);
+    await expect(
+      f.service.create('crew', 'owner', {
+        ...f.request,
+        remainingWorkload: 11,
+      }),
+    ).rejects.toThrow('different details');
+  });
+  it('rejects cancelled tasks on approval even when an assignment remains', async () => {
+    const f = fixture();
+    f.tx.crewTask.findFirst.mockResolvedValue({
+      id: 'task',
+      title: 'Shot',
+      canvasProjectId: 'project',
+      crew: { workspaceId: 'workspace' },
+      cancelledAt: new Date(),
+    } as never);
+    await expect(
+      f.service.decideAdmin('crew', 'request', admin, {
+        status: 'approved',
+        note: '',
+      }),
+    ).rejects.toThrow('non-cancelled');
+    expect(f.walletLedger.postEntryTx).not.toHaveBeenCalled();
+  });
+  it('does not mark approval when posting the credit fails', async () => {
+    const f = fixture();
+    f.walletLedger.postEntryTx.mockRejectedValue(
+      new Error('journal unavailable'),
+    );
+    await expect(
+      f.service.decideAdmin('crew', 'request', admin, {
+        status: 'approved',
+        note: '',
+      }),
+    ).rejects.toThrow('journal unavailable');
+    expect(f.tx.crewComputeRequest.update).not.toHaveBeenCalled();
+  });
+  it('never retroactively credits historical allowances', async () => {
+    const f = fixture();
+    f.request.kind = 'legacy_allowance';
+    await f.service.decideAdmin('crew', 'request', admin, {
+      status: 'approved',
+      note: '',
+    });
+    expect(f.walletLedger.postEntryTx).not.toHaveBeenCalled();
+  });
+  it('validates the 500-point boundary and percentage workload', () => {
+    const value = {
+      taskId: '01994bd8-0000-7000-8000-000000000001',
+      requestKey: '01994bd8-0000-7000-8000-000000000002',
+      points: 500,
+      reason: 'Render',
+      remainingWorkload: 100,
+      workloadUnit: 'percent',
+    };
+    expect(CreateComputeRequestSchema.safeParse(value).success).toBe(true);
+    expect(
+      CreateComputeRequestSchema.safeParse({ ...value, points: 501 }).success,
+    ).toBe(false);
+    expect(
+      CreateComputeRequestSchema.safeParse({ ...value, remainingWorkload: 101 })
+        .success,
+    ).toBe(false);
   });
 });

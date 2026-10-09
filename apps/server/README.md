@@ -692,3 +692,45 @@ There are no seeded course/certificate pairs. Existing skill-to-certificate
 configuration does not establish a course relationship. Saving an association
 also does not award a badge: student qualification remains governed by the
 existing Java review and certification flow, not playback progress.
+
+### Production dashboard document task imports
+
+The workbench accepts text PDFs and Word DOC/DOCX files up to 5 MB / 60,000 extracted characters and
+proposes at most 100 tasks. Scanned PDFs must first undergo OCR. The existing
+`ALIBABA_API_KEY` and optional `ALIBABA_BASE_URL` configure Qwen analysis in each
+regional Server. Analysis uses the platform provider account; it does not award
+or deduct creator points. Ten analyses per user/crew/hour are allowed, with one
+active analysis at a time. Automatic provider retries are disabled.
+
+Deploy migration `20261009220000_pdf_task_import` with Server before using the
+updated Web. Analysis IDs are durable and scoped to the requesting user and
+crew. Creation requires `tasks.manage`, explicit preview selection, and an
+active open workflow. Crews requiring custom fields use individual task creation
+until those required fields can be supplied. Preview creation does not assign
+creators, set payment terms or create tasks. Confirmation atomically creates
+selected tasks and their delivery folders, with a replayable receipt. Previews
+expire after 24 hours; completed receipts remain available for safe retries.
+Raw uploaded documents are not retained. Proposals and their source excerpts are retained in
+the crew database, and deleting the crew cascades to these analysis records.
+
+The PDF worker persists extracted text while queued, claims one job per pod with
+PostgreSQL `SKIP LOCKED`, and clears that text after success/failure. Web polls
+status, including retries of transient recovery reads after reopening the workbench.
+Permanent missing/forbidden responses stop recovery; saved task-creation selections
+remain explicit retries and never trigger automatic analysis or creation.
+No AI call is held open through the upload request. Interrupted analyses
+fail after five minutes and require an explicit new request (no automatic paid
+retry). Apply `20261010010000_grouped_recruitment_pdf_queue` before the new Server.
+
+Grouped recruitment publishes one position for one creator with immutable
+per-task allocations. Selected tasks must have fixed rewards, the same currency
+and payment terms, and no revenue share. The accepted project fee must equal
+the published total; assigning each task uses its own allocation. Batch task
+assignment commits or rolls back the whole selection.
+
+Task skill choices are loaded from the regional Java `/user/levels/options` verification catalogue (type 4), using the current session. Eligibility checks re-read that catalogue and current certificates. FD rank requirements still require the explicit regional `CREW_QUALIFICATION_CATALOG_JSON` rank mapping; numeric certificate IDs are never inferred as ranks.
+
+Historical skill aliases may use the optional regional mapping even when a position
+requires no FD rank, provided every mapped certificate ID remains in the live
+verification catalogue. Current live-name skill-only roles do not require static
+configuration; aliases cannot override current names or grant revoked certificates.

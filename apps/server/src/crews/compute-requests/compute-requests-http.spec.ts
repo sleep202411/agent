@@ -58,6 +58,9 @@ describe('Admin-only compute request HTTP boundary', () => {
       .get('/admin/crew-compute-requests')
       .expect(403);
     await request(app.getHttpServer() as Server)
+      .get('/admin/crew-compute-requests/projects')
+      .expect(403);
+    await request(app.getHttpServer() as Server)
       .post(`/admin/crew-compute-requests/${crewId}/${requestId}/decision`)
       .send({ status: 'approved' })
       .expect(403);

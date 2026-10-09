@@ -106,7 +106,8 @@ export class AcademyMappingsService {
       );
     }
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`academy-course:${courseId}`}, 0))`;
+      // hashtext is available on every supported Postgres; hashtextextended needs PG14+.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`academy-course:${courseId}`})::bigint)`;
       const previous = await tx.academyCourseCertificate.findUnique({
         where: { courseId },
       });

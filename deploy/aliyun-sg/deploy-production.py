@@ -23,7 +23,7 @@ REGISTRY = 'fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com/fizzdr
 NS_UID = '249a9075-37f2-4c41-aefc-050edd800e63'
 PVC = 'fizzdragon-game-agent-workspaces'
 PVC_UID = '9948697c-65de-4146-b279-2d4bf657d4da'
-MIGRATION_SCRIPT = Path(__file__).with_name('production-migrate.cjs').read_text()
+MIGRATION_SCRIPT = Path(__file__).with_name('production-migrate.cjs').read_text(encoding='utf-8')
 
 
 class DeployError(Exception):
@@ -257,6 +257,9 @@ def main(argv=None):
     parser.add_argument('--kubeconfig', default=os.environ.get('KUBECONFIG'), help='One existing Singapore kubeconfig file')
     parser.add_argument('--image', action='append', default=[], metavar='SERVICE=DIGEST', help='Deploy an already reviewed image instead of building')
     parser.add_argument('--check', action='store_true', help='Read-only identity and existing workload checks; no build/deployment')
+    parser.add_argument('--npm-registry', default=os.environ.get(builder.NPM_REGISTRY_ENV),
+                        help='Opt-in npm registry build-arg; unset keeps the Dockerfile default. '
+                             f'Also accepted via {builder.NPM_REGISTRY_ENV}.')
     args = parser.parse_args(argv)
     services = list(SERVICES) if args.services == ['all'] else args.services
     if len(set(services)) != len(services) or any(s not in SERVICES for s in services):
@@ -295,7 +298,8 @@ def main(argv=None):
             return 0
         if services:
             images = builder.build_images(ROOT, services, {s: obj['spec']['template']['spec']['containers'][0]['image']
-                                                         for s, obj in before.items()}, source=source)
+                                                         for s, obj in before.items()}, source=source,
+                                          npm_registry=args.npm_registry)
         current = verify_live(kube)
         unchanged(before, current)
         changed = deploy(kube, images, current)

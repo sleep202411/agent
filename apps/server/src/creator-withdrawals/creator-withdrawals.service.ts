@@ -1,3 +1,4 @@
+import { academyQuote } from './academy-fx';
 import {
   availableReferralIncome,
   reserveReferralIncome,
@@ -6,7 +7,8 @@ import {
 import {
   availableAcademyIncome,
   reserveAcademyIncome,
-  academyTotalsSql,
+  academyTotals,
+  planAcademyIncome,
 } from './academy-withdrawals';
 import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
 import {
@@ -42,7 +44,8 @@ export class CreatorWithdrawalsService {
    * are being processed. Each currency remains separate; points are not cash. */
   async balances(userId: string) {
     if (!userId || userId.length > 64) throw new UnauthorizedException();
-    return this.prisma.$queryRaw<
+    const quote = await academyQuote(this.prisma);
+    const balances = await this.prisma.$queryRaw<
       {
         currency: string;
         pendingAmountMinor: string;
@@ -68,7 +71,7 @@ export class CreatorWithdrawalsService {
       WHERE e.user_id=${userId} AND ${eligibleCashEarningsSql}
         AND e.currency IN ('USD','CNY')
       GROUP BY e.currency
-    ), academy_totals AS (${academyTotalsSql} AND e.teacher_id=${userId} HAVING COUNT(*)>0), referral_totals AS (${referralTotalsSql} AND r.user_id=${userId} GROUP BY COALESCE(i.currency,r.currency)), totals AS (
+    ), academy_totals AS (${academyTotals(quote)} AND e.teacher_id=${userId} GROUP BY e.currency HAVING COUNT(*)>0), referral_totals AS (${referralTotalsSql} AND r.user_id=${userId} GROUP BY COALESCE(i.currency,r.currency)), totals AS (
  SELECT currency,SUM(pending) AS pending,SUM(confirmed) AS confirmed,SUM(reserved) AS reserved,SUM(paid) AS paid FROM (
  SELECT * FROM crew_totals UNION ALL SELECT currency,0 AS pending,confirmed,reserved,paid FROM academy_totals UNION ALL SELECT currency,0 AS pending,confirmed,reserved,paid FROM referral_totals
  ) sources GROUP BY currency
@@ -76,6 +79,11 @@ export class CreatorWithdrawalsService {
       confirmed::text AS "confirmedAmountMinor", reserved::text AS "reservedAmountMinor",
       paid::text AS "paidAmountMinor", (confirmed-reserved-paid)::text AS "availableAmountMinor"
       FROM totals ORDER BY currency`;
+    return balances.map((row) => ({
+      ...row,
+      academyExchangeRate: quote,
+      academySettlementPending: quote === null,
+    }));
   }
 
   async savedRecipient(userId: string) {
@@ -195,7 +203,13 @@ export class CreatorWithdrawalsService {
           earning.amountMinor -
           earning.payoutAllocations.reduce((n, a) => n + a.amountMinor, 0n),
       }));
-      const academy = await availableAcademyIncome(tx, userId, input.currency);
+      const quote = await academyQuote(tx);
+      const academy = await availableAcademyIncome(
+        tx,
+        userId,
+        input.currency,
+        quote,
+      );
       const academyAvailable = academy.reduce(
         (sum, e) => sum + (BigInt(e.available) > 0n ? BigInt(e.available) : 0n),
         0n,
@@ -228,6 +242,24 @@ export class CreatorWithdrawalsService {
           error instanceof Error ? error.message : 'Invalid amount.',
         );
       }
+      const crewAvailable = eligible.reduce(
+        (sum, row) => sum + (row.available > 0n ? row.available : 0n),
+        0n,
+      );
+      const crewPortion = amount < crewAvailable ? amount : crewAvailable;
+      const academyBudget =
+        amount - crewPortion < academyAvailable
+          ? amount - crewPortion
+          : academyAvailable;
+      const academyPlan = planAcademyIncome(academyBudget, academy);
+      const referralBudget = amount - crewPortion - academyPlan.amount;
+      const referralPortion =
+        referralBudget < referralAvailable ? referralBudget : referralAvailable;
+      amount = crewPortion + academyPlan.amount + referralPortion;
+      if (amount <= 0n)
+        throw new BadRequestException(
+          'Choose a larger percentage to withdraw a whole earned point.',
+        );
       const id = randomUUID();
       const label =
         `${input.recipient.fullName} · ••••${input.recipient.accountNumber.slice(-4)}`.slice(
@@ -311,8 +343,7 @@ export class CreatorWithdrawalsService {
           },
         });
       }
-      const academyAmount =
-        remaining < academyAvailable ? remaining : academyAvailable;
+      const academyAmount = academyPlan.amount;
       await reserveAcademyIncome(
         tx,
         this.wallet,

@@ -9,10 +9,13 @@
  *        the user's explicit choice and survives across sessions.
  *     2. `Accept-Language` request header — first supported language
  *        from the browser's preference list.
- *     3. `DEFAULT_LOCALE` (en-US).
+ *     3. Site default locale (`zh-CN` on the CN cell, `en-US` elsewhere).
  *   We use 307 (not 308) for these so the redirect target can change
  *   when the cookie is updated; 308 is permanent and intermediaries
  *   are allowed to cache it forever.
+ * - On the CN cell, English is not offered: `/en-US/...` redirects to
+ *   the matching `/zh-CN/...` path, and Accept-Language `en` falls back
+ *   to zh-CN.
  *
  * Proxy action:
  * - /zh-CN/crews → rewrite internally to /crews so Next routes to
@@ -40,11 +43,19 @@ import { isProtectedPath, SESSION_COOKIE_NAME } from "@/src/lib/auth/protected-p
 
 const LOCALES = ["en-US", "zh-HK", "zh-CN"] as const;
 type SupportedLocale = (typeof LOCALES)[number];
-const DEFAULT_LOCALE: SupportedLocale = "en-US";
+const IS_CN_SITE = process.env.NEXT_PUBLIC_SITE_REGION === "cn";
+const SITE_LOCALES = (
+  IS_CN_SITE ? (["zh-CN", "zh-HK"] as const) : LOCALES
+) as readonly SupportedLocale[];
+const DEFAULT_LOCALE: SupportedLocale = IS_CN_SITE ? "zh-CN" : "en-US";
 const LOCALE_COOKIE_NAME = "NEXT_LOCALE";
 
 function isSupportedLocale(value: string): value is SupportedLocale {
   return (LOCALES as readonly string[]).includes(value);
+}
+
+function isSiteLocale(value: string): value is SupportedLocale {
+  return (SITE_LOCALES as readonly string[]).includes(value);
 }
 
 // Hosts that should land visitors on /art-studio when they hit the
@@ -85,7 +96,7 @@ function studioRedirect(pathname: string): boolean {
  */
 function pickRedirectLocale(request: NextRequest): SupportedLocale {
   const cookieValue = request.cookies.get(LOCALE_COOKIE_NAME)?.value;
-  if (cookieValue && isSupportedLocale(cookieValue)) return cookieValue;
+  if (cookieValue && isSiteLocale(cookieValue)) return cookieValue;
 
   const accept = request.headers.get("accept-language");
   if (accept) {
@@ -106,12 +117,12 @@ function pickRedirectLocale(request: NextRequest): SupportedLocale {
       .sort((a, b) => b.weight - a.weight);
 
     for (const { tag } of ranked) {
-      if (isSupportedLocale(tag)) return tag;
+      if (isSiteLocale(tag)) return tag;
       // Region aliases.
       if (tag === "zh-TW" || tag === "zh-Hant") return "zh-HK";
       if (tag === "zh" || tag.startsWith("zh-")) return "zh-CN";
       const base = tag.split("-")[0];
-      if (base === "en") return "en-US";
+      if (base === "en") return IS_CN_SITE ? "zh-CN" : "en-US";
     }
   }
 
@@ -143,6 +154,13 @@ export function proxy(request: NextRequest) {
     const target = pickRedirectLocale(request);
     const url = request.nextUrl.clone();
     url.pathname = `/${target}${pathname === "/" ? "" : pathname}`;
+    return NextResponse.redirect(url, 307);
+  }
+
+  // CN cell: drop English URLs onto the site default Chinese locale.
+  if (!isSiteLocale(matchedLocale)) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/${DEFAULT_LOCALE}${rewrittenPathname === "/" ? "" : rewrittenPathname}`;
     return NextResponse.redirect(url, 307);
   }
 

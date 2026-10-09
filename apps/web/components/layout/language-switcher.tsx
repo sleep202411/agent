@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { IconCheck, IconLanguage } from "@tabler/icons-react";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
-import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
+import { SITE_LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,7 +21,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
   const router = useRouter();
   const pathname = usePathname() ?? "/";
 
-  const currentLabel = LOCALE_OPTIONS.find((o) => o.value === locale)?.label ?? locale;
+  const currentLabel = SITE_LOCALE_OPTIONS.find((o) => o.value === locale)?.label ?? locale;
 
   const switchLocale = (next: Locale) => {
     if (next === locale) return;
@@ -49,7 +49,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
       <DropdownMenuContent align="end" className="min-w-36">
         <DropdownMenuLabel>{t("language")}</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {LOCALE_OPTIONS.map((opt) => {
+        {SITE_LOCALE_OPTIONS.map((opt) => {
           const current = opt.value === locale;
           return (
             <DropdownMenuItem

@@ -5,7 +5,6 @@ import { StudioMedia } from "./studio-media";
 const h = vi.hoisted(() => ({
   generation: 1,
   list: vi.fn(),
-  assetScope: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   close: vi.fn(),
@@ -23,17 +22,14 @@ vi.mock("./studio-media-api", () => ({
 }));
 vi.mock("./api", () => ({ fetchCrewAssetContext: h.context }));
 vi.mock("./use-crew-assets", () => ({
-  useCrewAssets: (owner: string | undefined) => {
-    h.assetScope(owner);
-    return {
-      items: h.items,
-      loading: false,
-      error: undefined,
-      hasMore: false,
-      refresh: h.refresh,
-      loadMore: h.loadMore,
-    };
-  },
+  useCrewAssets: () => ({
+    items: h.items,
+    loading: false,
+    error: undefined,
+    hasMore: false,
+    refresh: h.refresh,
+    loadMore: h.loadMore,
+  }),
 }));
 vi.mock("../services/conversation-file", () => ({
   ConversationFile: ({ name }: { name: string }) => <span>Preview {name}</span>,
@@ -108,7 +104,7 @@ beforeEach(() => {
   h.create.mockResolvedValue(label);
   h.update.mockResolvedValue(label);
   h.items = [];
-  h.context.mockResolvedValue({ capabilities: { view: true, upload: true } });
+  h.context.mockResolvedValue({ capabilities: { upload: true } });
   h.node.mockResolvedValue(node);
   host = document.createElement("div");
   document.body.append(host);
@@ -139,7 +135,7 @@ it("imports into the root after explicit confirmation", async () => {
   expect(h.refresh).toHaveBeenCalled();
 });
 it("disables root imports when upload is forbidden", async () => {
-  h.context.mockResolvedValue({ capabilities: { view: true, upload: false } });
+  h.context.mockResolvedValue({ capabilities: { upload: false } });
   await render();
   expect(button("studioMedia.importHere")?.disabled).toBe(true);
 });
@@ -147,7 +143,7 @@ it("shows context errors and refreshes permissions", async () => {
   h.context.mockRejectedValue(new Error("Context failed"));
   await render();
   expect(host.textContent).toContain("Context failed");
-  h.context.mockResolvedValue({ capabilities: { view: true, upload: true } });
+  h.context.mockResolvedValue({ capabilities: { upload: true } });
   await click("thread.refresh");
   expect(button("studioMedia.importHere")?.disabled).toBe(false);
 });
@@ -262,38 +258,4 @@ it("rechecks file permission before offering link controls", async () => {
   await click("Crew File");
   expect(host.textContent).toContain("Manage permission");
   expect(button("studioMedia.save")).toBeUndefined();
-});
-
-it("hides cached rows and destination actions when context revokes view, then retries", async () => {
-  h.items = [node];
-  await render();
-  expect(host.textContent).toContain("Crew File");
-  h.context.mockResolvedValue({ capabilities: { view: false, upload: true } });
-  await click("thread.refresh");
-  expect(host.textContent).not.toContain("Crew File");
-  expect(host.textContent).toContain("studioMedia.accessDenied");
-  expect(button("studioMedia.importHere")).toBeUndefined();
-  expect(h.assetScope).toHaveBeenLastCalledWith(undefined);
-  h.context.mockResolvedValue({ capabilities: { view: true, upload: true } });
-  await click("thread.refresh");
-  expect(host.textContent).toContain("Crew File");
-  expect(h.assetScope).toHaveBeenLastCalledWith("1");
-});
-it("hides cached rows while revalidating or when context fails", async () => {
-  h.items = [node];
-  await render();
-  let reject!: (e: Error) => void;
-  h.context.mockImplementationOnce(
-    () =>
-      new Promise((_resolve, r) => {
-        reject = r;
-      })
-  );
-  await click("thread.refresh");
-  expect(host.textContent).not.toContain("Crew File");
-  expect(h.assetScope).toHaveBeenLastCalledWith(undefined);
-  await act(async () => reject(new Error("Context unavailable")));
-  expect(host.textContent).not.toContain("Crew File");
-  expect(host.textContent).toContain("Context unavailable");
-  expect(button("studioMedia.importHere")).toBeUndefined();
 });

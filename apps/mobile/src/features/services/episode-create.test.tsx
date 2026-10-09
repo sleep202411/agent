@@ -2,32 +2,21 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EpisodeCreate } from "./episode-create";
-const h = vi.hoisted(() => ({
-  generation: 1,
-  active: true,
-  focused: true,
-  access: vi.fn(),
-  create: vi.fn(),
-  close: vi.fn(),
-}));
+const h = vi.hoisted(() => ({ generation: 1, access: vi.fn(), create: vi.fn(), close: vi.fn() }));
 vi.mock("./episode-create-api", async (original) => ({
   ...(await original<typeof import("./episode-create-api")>()),
   fetchEpisodeCreateAccess: h.access,
   createEpisode: h.create,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
-vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white" }) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
-  View: ({ children, style }: { children: ReactNode; style?: { display?: "none" | "flex" } }) => (
-    <div style={{ display: style?.display }}>{children}</div>
-  ),
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
   Pressable: ({
@@ -81,8 +70,6 @@ async function enter(label: string, value: string) {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
-  h.active = true;
-  h.focused = true;
   h.access.mockResolvedValue(true);
   h.create.mockResolvedValue({ number: 1, title: "Pilot" });
   host = document.createElement("div");
@@ -129,31 +116,4 @@ it("blocks a stale account's submit", async () => {
   h.generation = 2;
   await act(async () => button("episodeCreate.confirm").click());
   expect(h.create).not.toHaveBeenCalled();
-});
-
-it("retains creation fields through background but retires them on route exit", async () => {
-  await render();
-  await enter("episodeCreate.name", "Unsent pilot");
-  await enter("episodeCreate.synopsis", "Opening scene");
-  h.active = false;
-  await render();
-  expect((host.firstElementChild as HTMLElement).style.display).toBe("none");
-  await act(async () => button("episodeCreate.confirm").click());
-  expect(h.create).not.toHaveBeenCalled();
-  h.active = true;
-  await render();
-  expect(
-    host.querySelector<HTMLInputElement>('input[aria-label="episodeCreate.name"]')?.value
-  ).toBe("Unsent pilot");
-  expect(
-    host.querySelector<HTMLInputElement>('input[aria-label="episodeCreate.synopsis"]')?.value
-  ).toBe("Opening scene");
-  h.focused = false;
-  await render();
-  expect(host.textContent).toBe("");
-  h.focused = true;
-  await render();
-  expect(
-    host.querySelector<HTMLInputElement>('input[aria-label="episodeCreate.name"]')?.value
-  ).toBe("");
 });

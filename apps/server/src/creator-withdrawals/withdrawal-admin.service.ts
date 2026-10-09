@@ -1,8 +1,9 @@
+import { academyQuote, AcademyFxInput, rateUnits } from './academy-fx';
 import {
   resolveReferralIncome,
   referralTotalsSql,
 } from './referral-withdrawals';
-import { resolveAcademyIncome, academyTotalsSql } from './academy-withdrawals';
+import { resolveAcademyIncome, academyTotals } from './academy-withdrawals';
 import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
 import { eligibleCashEarningsSql } from './eligible-cash-earnings';
 import type { Prisma } from '@prisma/client';
@@ -214,8 +215,75 @@ export class WithdrawalAdminService {
     };
   }
 
+  async academyFx(admin: AdminActor) {
+    this.assertAccess(admin);
+    return this.prisma.academyExchangeRate.findUnique({
+      where: { pair: 'USD/CNY' },
+    });
+  }
+
+  async setAcademyFx(admin: AdminActor, raw: z.input<typeof AcademyFxInput>) {
+    this.assertAccess(admin);
+    if (CURRENT_CELL !== 'cn')
+      throw new BadRequestException(
+        'RMB settlement rates belong to the China site.',
+      );
+    const input = AcademyFxInput.parse(raw);
+    rateUnits(input.rate);
+    const expiresAt = new Date(input.expiresAt);
+    if (
+      expiresAt.getTime() <= Date.now() ||
+      expiresAt.getTime() > Date.now() + 7 * 86400000
+    )
+      throw new BadRequestException(
+        'Rate validity must end within the next seven days.',
+      );
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('academy-fx:USD/CNY',0))`;
+      const before = await tx.academyExchangeRate.findUnique({
+        where: { pair: 'USD/CNY' },
+      });
+      if ((before?.version ?? 0) !== input.expectedVersion)
+        throw new ConflictException(
+          'The exchange rate changed. Refresh before saving.',
+        );
+      const after = await tx.academyExchangeRate.upsert({
+        where: { pair: 'USD/CNY' },
+        create: {
+          pair: 'USD/CNY',
+          rate: input.rate,
+          source: input.source,
+          expiresAt,
+        },
+        update: {
+          rate: input.rate,
+          source: input.source,
+          expiresAt,
+          version: { increment: 1 },
+        },
+      });
+      await tx.adminAuditLog.create({
+        data: {
+          actorUserId: admin.id,
+          actorSessionId: admin.sessionId,
+          siteScope: admin.siteScope,
+          action: 'academy.exchange_rate.updated',
+          resourceType: 'academy_exchange_rate',
+          resourceId: 'USD/CNY',
+          before: before
+            ? (JSON.parse(JSON.stringify(before)) as Prisma.InputJsonValue)
+            : undefined,
+          after: JSON.parse(JSON.stringify(after)) as Prisma.InputJsonValue,
+          reason: input.source,
+        },
+      });
+      return after;
+    });
+  }
+
   async overview(admin: AdminActor) {
     this.assertAccess(admin);
+    const quote = await academyQuote(this.prisma);
     return this.prisma.$queryRaw<
       {
         currency: string;
@@ -234,7 +302,7 @@ export class WithdrawalAdminService {
       JOIN crew_earning_entries e ON e.id=a.earning_id
       WHERE ${eligibleCashEarningsSql} AND e.status='posted' AND p.status IN ('pending','paid')
       GROUP BY e.currency
-    ), academy AS (${academyTotalsSql} HAVING COUNT(*)>0), referrals AS (${referralTotalsSql} GROUP BY COALESCE(i.currency,r.currency)), withdrawals AS (
+    ), academy AS (${academyTotals(quote)} GROUP BY e.currency HAVING COUNT(*)>0), referrals AS (${referralTotalsSql} GROUP BY COALESCE(i.currency,r.currency)), withdrawals AS (
       SELECT currency,
         SUM(amount_minor) FILTER (WHERE status='paid') AS paid,
         SUM(amount_minor) FILTER (WHERE status IN ('pending','processing')) AS pending,
@@ -328,6 +396,8 @@ export class WithdrawalAdminService {
           confirmedAt: a.rewardItem.grantedAt?.toISOString() ?? null,
         })),
         ...row.academyAllocations.map((a) => ({
+          sourceCredits: (a.sourceCredits ?? a.amountMinor).toString(),
+          exchangeRate: a.exchangeRate,
           id: a.enrollmentId,
           taskId: null,
           title: `Course ${a.enrollment.courseId}`,

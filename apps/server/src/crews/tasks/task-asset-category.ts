@@ -8,13 +8,24 @@ export function taskAssetCategory(
       ? (metadata as Record<string, unknown>)
       : {};
   if (
+    (kind === 'art' || kind == null) &&
     typeof record.assetCategory === 'string' &&
-    ['characters', 'scenes', 'props'].includes(record.assetCategory)
+    ['characters', 'scenes', 'props', 'art'].includes(record.assetCategory)
   ) {
     return record.assetCategory;
   }
-  if (record.templateKey === 'character_art') return 'characters';
-  if (record.templateKey === 'scene_art') return 'scenes';
+  if (
+    (kind === 'art' || kind == null) &&
+    record.assetCategory !== null &&
+    record.templateKey === 'character_art'
+  )
+    return 'characters';
+  if (
+    (kind === 'art' || kind == null) &&
+    record.assetCategory !== null &&
+    record.templateKey === 'scene_art'
+  )
+    return 'scenes';
   if (kind === 'script') return 'scripts';
   if (kind === 'music') return 'music';
   if (kind === 'art') return 'art';

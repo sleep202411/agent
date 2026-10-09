@@ -182,3 +182,12 @@ it.each([
 ])("only restarts pagination for the endpoint's structured rejection (%s)", (error, expected) => {
   expect(isCrewCursorError(error, "CREW_CURSOR_INVALID")).toBe(expected);
 });
+
+it("renders a gateway HTML response as an actionable HTTP error", () => {
+  const error = new CrewApiError(502, "<!DOCTYPE html><html><title>Bad gateway</title></html>");
+  expect(error.message).toContain("HTTP 502");
+  expect(error.message).not.toContain("<html>");
+  expect(new CrewApiError(409, { message: "Task changed. Refresh." }).message).toBe(
+    "Task changed. Refresh."
+  );
+});

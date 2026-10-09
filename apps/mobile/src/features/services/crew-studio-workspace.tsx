@@ -11,13 +11,7 @@ import {
   linkCrewStudioWorkspace,
   type CrewStudioWorkspaceState,
 } from "./crew-studio-workspace-api";
-type Props = {
-  crewId: string;
-  userId: string;
-  generation: number;
-  onClose: () => void;
-  backLabel?: string;
-};
+type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function CrewStudioWorkspace(props: Props) {
   return props.generation === getAuthGeneration() ? (
     <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
@@ -55,7 +49,7 @@ function Session(props: Props) {
       {!visible && <ActivityIndicator />}
       {visible?.error && <ThemedText accessibilityRole="alert">{visible.error}</ThemedText>}
       <Button label={t("thread.refresh")} onPress={refresh} />
-      <Button label={props.backLabel ?? t("crewTasks.back")} onPress={props.onClose} />
+      <Button label={t("crewTasks.back")} onPress={props.onClose} />
     </ScrollView>
   );
 }
@@ -179,11 +173,7 @@ function Form(props: Props & { snapshot: CrewStudioWorkspaceState; refresh: () =
       {error && attempted && <ThemedText>{t("crewStudio.recheck")}</ThemedText>}
       {op.busy && <ActivityIndicator />}
       <Button label={t("thread.refresh")} disabled={op.busy} onPress={props.refresh} />
-      <Button
-        label={props.backLabel ?? t("crewTasks.back")}
-        disabled={op.busy}
-        onPress={props.onClose}
-      />
+      <Button label={t("crewTasks.back")} disabled={op.busy} onPress={props.onClose} />
     </ScrollView>
   );
 }

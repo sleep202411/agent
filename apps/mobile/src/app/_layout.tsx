@@ -14,7 +14,8 @@ import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import { ConsentGate } from "@/components/consent-gate";
 import { MobileAppFrame } from "@/components/mobile-app-frame";
 import { Colors } from "@/constants/theme";
-import { APP_STACK_ORIENTATION, PLAY_ROUTE_SCREEN_OPTIONS } from "@/hooks/play-orientation";
+import { PLAY_ROUTE_NAV_OPTIONS } from "@/hooks/play-orientation";
+import { lockAppPortrait } from "@/hooks/use-screen-orientation";
 
 // Anchor deep links (e.g. a shared /ip/<id>) on top of the tab shell so the
 // native back button always has somewhere to return to.
@@ -36,6 +37,7 @@ export default function RootLayout() {
   useEffect(() => {
     void initLocale();
     void checkForUpdate();
+    lockAppPortrait();
   }, []);
 
   return (
@@ -46,12 +48,7 @@ export default function RootLayout() {
           <AuthProvider>
             <AnimatedSplashOverlay />
             <MobileAppFrame>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  orientation: APP_STACK_ORIENTATION,
-                }}
-              >
+              <Stack screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="agent/index" options={detailHeader} />
                 <Stack.Screen name="agent/[projectId]" options={{ headerShown: false }} />
@@ -64,9 +61,6 @@ export default function RootLayout() {
                 <Stack.Screen name="publish-work" />
                 <Stack.Screen name="work/[id]" options={detailHeader} />
                 <Stack.Screen name="about" />
-                <Stack.Screen name="certificate-verify" />
-                <Stack.Screen name="earnings" />
-                <Stack.Screen name="crew-income" />
                 <Stack.Screen name="account-security" />
                 <Stack.Screen name="bind-invite" />
                 <Stack.Screen name="referrals" />
@@ -88,21 +82,17 @@ export default function RootLayout() {
                   name="play/interactive-film/[gameId]"
                   options={{
                     ...detailHeader,
-                    ...PLAY_ROUTE_SCREEN_OPTIONS,
+                    ...PLAY_ROUTE_NAV_OPTIONS,
                   }}
                 />
                 <Stack.Screen
                   name="play/story-preview/[projectId]"
                   options={{
                     ...detailHeader,
-                    ...PLAY_ROUTE_SCREEN_OPTIONS,
+                    ...PLAY_ROUTE_NAV_OPTIONS,
                   }}
                 />
                 <Stack.Screen name="ip/[id]" options={detailHeader} />
-                <Stack.Screen
-                  name="saved-openings"
-                  options={{ ...detailHeader, presentation: "modal" }}
-                />
                 <Stack.Screen name="crew/[id]" options={detailHeader} />
                 <Stack.Screen name="creator/[id]" options={detailHeader} />
                 <Stack.Screen name="service/[id]" options={detailHeader} />

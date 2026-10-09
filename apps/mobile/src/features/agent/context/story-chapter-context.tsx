@@ -1,8 +1,4 @@
-import {
-  storyPublicationErrorKind,
-  type StoryPublicationErrorKind,
-} from "@/features/agent/api/story-publication-errors";
-import { useGlobalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import {
   createContext,
   useCallback,
@@ -24,7 +20,6 @@ import {
   type StoryCapability,
 } from "@/features/agent/api/studio-projects-api";
 import { isAppActive, subscribeAppActive } from "@/hooks/app-active";
-import { useTranslations } from "@/i18n";
 
 /** Header remote reads — same cadence as H5 credits / publication badges. */
 const REMOTE_POLL_MS = 30_000;
@@ -33,18 +28,13 @@ type StoryChapterContextValue = {
   projectId: string;
   projectTitle: string;
   chapterId: string;
-  requestedChapterId: string;
   capabilities: StoryCapability[];
-  projectVersion: number | null;
   draftRevision: number | null;
   videoSnapshotHash: string | null;
   billingBalance: StoryBillingBalance | null;
   publication: InteractiveFilmPublication | null;
   publicationLoading: boolean;
   publicationFailed: boolean;
-  publicationError: string | undefined;
-  publicationErrorKind: StoryPublicationErrorKind | undefined;
-  refreshPublication: () => void;
   loading: boolean;
   error: string | undefined;
   refresh: () => void;
@@ -65,36 +55,23 @@ export function StoryChapterProvider({
   projectId: string;
   children: ReactNode;
 }) {
-  const chapterUnavailable = useTranslations()("agent.chapterUnavailable");
-  const route = useGlobalSearchParams<{
-    projectId?: string | string[];
+  const { chapterId: chapterIdParam, title: titleParam } = useLocalSearchParams<{
     chapterId?: string | string[];
     title?: string | string[];
   }>();
-  // This provider belongs to the parent tab layout; its local params omit
-  // the focused child route's query. Ignore global updates for other projects.
-  const [selection, setSelection] = useState({ chapterId: "", title: "" });
-  const focusedProject = firstParam(route.projectId) === projectId;
-  const chapterIdFromQuery = focusedProject ? firstParam(route.chapterId) : selection.chapterId;
-  const previewTitle = focusedProject ? firstParam(route.title) : selection.title;
-  if (selection.chapterId !== chapterIdFromQuery || selection.title !== previewTitle)
-    setSelection({ chapterId: chapterIdFromQuery, title: previewTitle });
+  const chapterIdFromQuery = firstParam(chapterIdParam);
+  const previewTitle = firstParam(titleParam);
   const [chapterId, setChapterId] = useState(
     isAgentOsId(chapterIdFromQuery) ? chapterIdFromQuery : ""
   );
   const [projectTitle, setProjectTitle] = useState(previewTitle);
   const [capabilities, setCapabilities] = useState<StoryCapability[]>([]);
-  const [projectVersion, setProjectVersion] = useState<number | null>(null);
   const [draftRevision, setDraftRevision] = useState<number | null>(null);
   const [videoSnapshotHash, setVideoSnapshotHash] = useState<string | null>(null);
   const [billingBalance, setBillingBalance] = useState<StoryBillingBalance | null>(null);
   const [publication, setPublication] = useState<InteractiveFilmPublication | null>(null);
   const [publicationLoading, setPublicationLoading] = useState(true);
   const [publicationFailed, setPublicationFailed] = useState(false);
-  const [publicationError, setPublicationError] = useState<string>();
-  const [publicationErrorKind, setPublicationErrorKind] = useState<StoryPublicationErrorKind>();
-  const [publicationRefreshKey, setPublicationRefreshKey] = useState(0);
-  const refreshPublication = useCallback(() => setPublicationRefreshKey((value) => value + 1), []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -119,8 +96,6 @@ export function StoryChapterProvider({
         const chapterHint = isAgentOsId(chapterIdFromQuery) ? chapterIdFromQuery : undefined;
         const workbench = await storyProjectsApi.getWorkbench(projectId, chapterHint);
         if (cancelled) return;
-        if (chapterHint && !workbench.chapters?.some((chapter) => chapter.id === chapterHint))
-          throw new Error(chapterUnavailable);
         const resolvedChapter =
           (chapterHint &&
             workbench.chapters?.some((chapter) => chapter.id === chapterHint) &&
@@ -134,12 +109,6 @@ export function StoryChapterProvider({
         setChapterId(resolvedChapter);
         setProjectTitle(workbench.project?.title?.trim() || previewTitle);
         setCapabilities(workbench.project?.capabilities ?? []);
-        const version = workbench.project?.projectVersion;
-        setProjectVersion(
-          typeof version === "number" && Number.isSafeInteger(version) && version >= 0
-            ? version
-            : null
-        );
         setDraftRevision(
           typeof workbench.draft?.revision === "number" ? workbench.draft.revision : null
         );
@@ -150,7 +119,6 @@ export function StoryChapterProvider({
         if (!previewTitle) setProjectTitle("");
         setCapabilities([]);
         setDraftRevision(null);
-        setProjectVersion(null);
         setVideoSnapshotHash(null);
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -161,7 +129,7 @@ export function StoryChapterProvider({
     return () => {
       cancelled = true;
     };
-  }, [chapterIdFromQuery, previewTitle, projectId, refreshKey, chapterUnavailable]);
+  }, [chapterIdFromQuery, previewTitle, projectId, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -193,32 +161,26 @@ export function StoryChapterProvider({
     };
   }, [projectId, refreshKey]);
 
-  const canReadPublication = capabilities.includes("story.read");
+  const canRelease = capabilities.includes("story.release");
 
   useEffect(() => {
-    if (!canReadPublication) return;
+    if (!canRelease) return;
 
     let cancelled = false;
     const controller = new AbortController();
-    let pending = false;
     const load = async (silent: boolean) => {
-      if (pending) return;
-      pending = true;
       if (!silent) setPublicationLoading(true);
       try {
         const next = await getInteractiveFilmPublication(projectId, controller.signal);
         if (cancelled || controller.signal.aborted) return;
         setPublication(next);
         setPublicationFailed(false);
-        setPublicationError(undefined);
-        setPublicationErrorKind(undefined);
-      } catch (error) {
+      } catch {
         if (cancelled || controller.signal.aborted) return;
+        if (silent) return;
+        setPublication(null);
         setPublicationFailed(true);
-        setPublicationErrorKind(storyPublicationErrorKind(error));
-        setPublicationError(error instanceof Error ? error.message : String(error));
       } finally {
-        pending = false;
         if (!cancelled && !controller.signal.aborted && !silent) setPublicationLoading(false);
       }
     };
@@ -234,25 +196,20 @@ export function StoryChapterProvider({
       controller.abort();
       clearInterval(timer);
     };
-  }, [canReadPublication, projectId, publicationRefreshKey]);
+  }, [canRelease, projectId]);
 
   const value = useMemo(
     () => ({
       projectId,
       projectTitle,
       chapterId,
-      requestedChapterId: chapterIdFromQuery,
       capabilities,
-      projectVersion,
       draftRevision,
       videoSnapshotHash,
       billingBalance,
-      publication: canReadPublication ? publication : null,
-      publicationLoading: loading || (canReadPublication && publicationLoading),
-      publicationFailed: canReadPublication && publicationFailed,
-      publicationError: canReadPublication ? publicationError : undefined,
-      publicationErrorKind: canReadPublication ? publicationErrorKind : undefined,
-      refreshPublication,
+      publication: canRelease ? publication : null,
+      publicationLoading: loading || (canRelease && publicationLoading),
+      publicationFailed: canRelease && publicationFailed,
       loading,
       error,
       refresh,
@@ -260,11 +217,9 @@ export function StoryChapterProvider({
     }),
     [
       billingBalance,
-      canReadPublication,
+      canRelease,
       capabilities,
       chapterId,
-      chapterIdFromQuery,
-      projectVersion,
       draftRevision,
       error,
       loading,
@@ -272,9 +227,6 @@ export function StoryChapterProvider({
       projectTitle,
       publication,
       publicationFailed,
-      publicationError,
-      publicationErrorKind,
-      refreshPublication,
       publicationLoading,
       refresh,
       videoSnapshotHash,

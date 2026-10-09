@@ -1213,3 +1213,26 @@ it("edits an existing task in the populated creation form without creating anoth
   expect(state.create).not.toHaveBeenCalled();
   expect(close).toHaveBeenCalledWith(false);
 });
+
+it("preserves the chosen Art subtype when editing a task", async () => {
+  const stage = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, {
+    initialInput: {
+      title: "Library",
+      description: "Design the library",
+      taskKind: "art",
+      assetCategory: "scenes",
+      priority: "normal",
+      workflowStateId: "workflow-open",
+      rewardUsdMinor: 10000,
+      dueAt: "2099-10-03T00:00:00.000Z",
+      assignees: [],
+      labelIds: [],
+    },
+    onStage: stage,
+  });
+  await act(async () => click(exactButton("Save Changes")));
+  expect(stage).toHaveBeenCalledWith(
+    expect.objectContaining({ taskKind: "art", assetCategory: "scenes" })
+  );
+});

@@ -32,13 +32,11 @@ it("uses explicit current-member permissions and rejects another account", async
   expect(await fetchTaskCommentAccess("crew", "1", signal)).toEqual({
     allowed: false,
     canManage: false,
-    canInvite: false,
   });
   vi.mocked(api.get).mockResolvedValue({ userId: "1", permissions: ["tasks.comment"] });
   expect(await fetchTaskCommentAccess("crew", "1", signal)).toEqual({
     allowed: true,
     canManage: false,
-    canInvite: false,
   });
   expect(api.get).toHaveBeenCalledWith("/crews/crew/members/me", { service: "aurora", signal });
   await expect(fetchTaskCommentAccess("crew", "2", signal)).rejects.toThrow("account mismatch");
@@ -198,7 +196,6 @@ it("uses explicit manage permission and the existing comment deletion endpoint",
   expect(await fetchTaskCommentAccess("crew", "1", new AbortController().signal)).toEqual({
     allowed: true,
     canManage: true,
-    canInvite: false,
   });
   await removeTaskComment(id);
   expect(api.delete).toHaveBeenCalledExactlyOnceWith(`/crew-task-comments/${id}`, {

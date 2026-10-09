@@ -167,6 +167,7 @@ elif [ "${CN_RELEASE_COORDINATED:-0}" != 1 ]; then
 fi
 
 if { [ "$PHASE" = build ] || [ "$PHASE" = all ]; } && [ "${#BUILD_SERVICES[@]}" -gt 0 ]; then
+  python3 "$TOOLS_ROOT/deploy/cn_ssh_access.py" "$ECS_ID"
   echo "==> start CN build ECS (tag=$TAG services=${BUILD_SERVICES[*]})"
   start_requested=0
   for _ in $(seq 1 40); do
@@ -218,11 +219,21 @@ if { [ "$PHASE" = build ] || [ "$PHASE" = all ]; } && [ "${#BUILD_SERVICES[@]}" 
   [ "$remote_sha" = "$archive_sha" ] || { echo "FATAL: source archive checksum mismatch" >&2; exit 1; }
 
   echo "==> in-region build and push"
-  "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-username.txt" "root@$ECS_IP:/root/.acr_user"
-  "${SCP[@]}" "$HOME/.fizzdragon-cn/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
+  # ACR tokens last about one hour. Fetch after source transfer, not from a
+  # persistent file that can silently expire between release attempts.
+  python3 "$TOOLS_ROOT/deploy/cn_build_credentials.py" --output-dir "$RELEASE_DIR/credentials"
+  "${SCP[@]}" "$RELEASE_DIR/credentials/acr-username.txt" "root@$ECS_IP:/root/.acr_user"
+  "${SCP[@]}" "$RELEASE_DIR/credentials/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
   "${SCP[@]}" "$TMP_DIR/deploy/cn-remote-build-services.sh" "root@$ECS_IP:/root/cn-remote-build-services.sh"
+  build_status=0
   "${SSH[@]}" "root@$ECS_IP" "sed -i 's/\r$//' /root/cn-remote-build-services.sh && TAG='$TAG' EXPECTED_REVISION='$TAG' SERVICES='${BUILD_SERVICES[*]}' bash /root/cn-remote-build-services.sh" \
-    | tee "$RELEASE_DIR/build.log"
+    | tee "$RELEASE_DIR/build.log" || build_status=$?
+  if [ "$build_status" -ne 0 ]; then
+    if [ "$build_status" -eq 255 ]; then
+      python3 "$TOOLS_ROOT/deploy/cn_ssh_access.py" "$ECS_ID" || true
+    fi
+    exit "$build_status"
+  fi
   echo "==> images built and pushed; no ACK workload changed"
 fi
 

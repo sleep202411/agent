@@ -7,8 +7,6 @@ import CreatorsScreen from "@/app/(tabs)/creators";
 const h = vi.hoisted(() => ({
   feed: vi.fn(),
   tags: vi.fn(),
-  gate: vi.fn(),
-  push: vi.fn(),
   locale: "en-US",
   t: (key: string) => key,
 }));
@@ -20,11 +18,9 @@ type ListProps = {
   ListFooterComponent: ReactNode;
 };
 let list: ListProps;
-vi.mock("expo-router", () => ({ router: { push: h.push } }));
+vi.mock("expo-router", () => ({ router: { push: vi.fn() } }));
 vi.mock("expo-image", () => ({ Image: () => null }));
-vi.mock("@/auth", () => ({
-  useAuthGate: () => ({ isAuthenticated: true, openLogin: vi.fn(), requireAuth: h.gate }),
-}));
+vi.mock("@/auth", () => ({ useAuthGate: () => ({ isAuthenticated: true, openLogin: vi.fn() }) }));
 vi.mock("@/data/browse-refresh", () => ({ useBrowseVersion: () => 0 }));
 vi.mock("@/lib/navigation", () => ({ toHref: (v: string) => v }));
 vi.mock("@/lib/avatar", () => ({ dicebearAvatarUrl: () => "" }));
@@ -46,10 +42,7 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (v: unknown) => v },
   Platform: { OS: "web", select: (v: Record<string, unknown>) => v.web ?? v.default },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
-    <button onClick={onPress}>{children}</button>
-  ),
-  TextInput: () => null,
+  Pressable: () => null,
   RefreshControl: ({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) => (
     <button onClick={onRefresh} data-refresh={refreshing}>
       refresh
@@ -104,9 +97,6 @@ const click = (label: string) =>
   });
 
 beforeEach(() => {
-  h.gate.mockReset();
-  h.gate.mockReturnValue(true);
-  h.push.mockReset();
   h.feed.mockReset();
   h.feed.mockResolvedValue(page("a", "b"));
   host = document.createElement("div");
@@ -167,15 +157,3 @@ for (const [name, Screen] of [
     expect(list.data.map((x) => x.id)).toEqual(["a", "b", "c"]);
   });
 }
-
-it("opens Crew creation for signed-in users and resumes the same intent after guest login", async () => {
-  await act(async () => root.render(<CrewsScreen />));
-  await act(async () => click("crewCreate.createDialogTitle"));
-  expect(h.push).toHaveBeenCalledWith("/crew-create");
-  h.push.mockClear();
-  h.gate.mockReturnValue(false);
-  await act(async () => click("crewCreate.createDialogTitle"));
-  expect(h.push).not.toHaveBeenCalled();
-  await act(async () => h.gate.mock.calls.at(-1)![0].onAuthenticated());
-  expect(h.push).toHaveBeenCalledWith("/crew-create");
-});

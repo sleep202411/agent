@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { LegacyCreatorsService } from '../legacy-creators/legacy-creators.service';
 import {
   AcademyLearningService,
@@ -34,6 +35,8 @@ function fixture() {
     updatedAt: new Date(),
   };
   const enrollment = {
+    count: jest.fn().mockResolvedValue(2),
+    aggregate: jest.fn().mockResolvedValue({ _sum: { teacherCredits: 50n } }),
     findUnique: jest.fn().mockResolvedValue(row),
     findUniqueOrThrow: jest.fn().mockResolvedValue(row),
     findMany: jest.fn().mockResolvedValue([row]),
@@ -59,6 +62,7 @@ function fixture() {
   const db = {
     academyEnrollment: enrollment,
     academyOffering: {
+      count: jest.fn().mockResolvedValue(1),
       findUnique: jest.fn().mockResolvedValue({
         teacherId: '200',
         priceCredits: 100n,
@@ -177,6 +181,49 @@ it('prefers Java sale terms over a leftover Nest offering', async () => {
     }),
   );
 });
+it('scopes admin homework to the bound Web lecturer id', async () => {
+  const f = fixture();
+  f.db.academyEnrollment.findMany.mockResolvedValue([
+    {
+      ...f.row,
+      id: '11111111-1111-1111-1111-111111111111',
+      teacherId: '200',
+      studentId: '100',
+      status: 'submitted',
+    },
+  ]);
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    certificateId: 13,
+    instructors: [{ userId: 200 }],
+    localized: { 'en-US': { title: 'Course' } },
+  });
+  const page = await f.service.adminHomework(
+    {
+      id: 'admin',
+      email: 't@example.com',
+      displayName: 'Teacher',
+      status: 'active',
+      siteScope: 'global',
+      platformUserId: '200',
+      sessionId: 's',
+      roleKeys: [],
+      requireMfa: false,
+      permissions: ['courses.read'],
+    },
+    undefined,
+    'submitted',
+  );
+  expect(f.db.academyEnrollment.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({ teacherId: '200', status: 'submitted' }),
+    }),
+  );
+  expect(page.scope).toBe('lecturer');
+  expect(page.platformUserId).toBe('200');
+  expect(page.items).toHaveLength(1);
+});
 it('retries a purchased enrollment without another debit', async () => {
   const f = fixture();
   await f.service.enroll('14', '100', 1);
@@ -214,6 +261,45 @@ it('blocks self-purchase and self-review', async () => {
   await expect(f.service.review('enrollment', '100', review)).rejects.toThrow(
     'not found',
   );
+});
+it('rejects misconfigured instructor shares before debiting', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  f.db.academyOffering.findUnique.mockResolvedValue({
+    teacherId: '200',
+    priceCredits: 100n,
+    teacherShareBps: 6000,
+    instructorShares: [
+      { teacherId: '200', shareBps: 6000 },
+      { teacherId: '201', shareBps: 6000 },
+    ],
+    enabled: true,
+    version: 1,
+  });
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    instructors: [{ userId: 200 }, { userId: 201 }],
+  });
+  await expect(f.service.enroll('14', '100', 1)).rejects.toThrow(
+    'instructor shares are misconfigured',
+  );
+  expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
+});
+it('rejects incomplete teacher assignment before debiting', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    enrollmentEnabled: true,
+    priceCredits: 500,
+    instructors: [],
+  });
+  await expect(f.service.enroll('14', '100', 1)).rejects.toThrow(
+    'teacher assignment is incomplete',
+  );
+  expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
 });
 it('refuses a removed teacher before issuing income or badges', async () => {
   const f = fixture();
@@ -353,4 +439,56 @@ it('retains submitted homework attachments with versioned usage records', async 
       }),
     ],
   });
+});
+
+it('reports the recipient share rather than the combined teacher pool', async () => {
+  const f = fixture();
+  f.db.$queryRaw.mockResolvedValue([{ earned: 10n }]);
+  expect(await f.service.teachingSummary('201')).toEqual({
+    courses: 1,
+    students: 2,
+    pending: 2,
+    earnedCredits: '10',
+  });
+  expect(f.db.academyOffering.count).toHaveBeenCalledWith({
+    where: {
+      OR: [
+        { teacherId: '201' },
+        { instructorShares: { array_contains: [{ teacherId: '201' }] } },
+      ],
+    },
+  });
+  expect(f.enrollment.count).toHaveBeenCalledWith({
+    where: { teacherId: '201', status: 'submitted' },
+  });
+});
+
+it('keeps the operator total across all instructors', async () => {
+  const f = fixture();
+  expect(
+    await f.service.adminIncomeSummary({ platformUserId: null } as never),
+  ).toMatchObject({ earnedCredits: '50', scope: 'operator' });
+});
+
+it('maps a concurrent enrollment uniqueness failure to an actionable conflict', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  f.enrollment.create.mockImplementation(() => {
+    throw new Prisma.PrismaClientKnownRequestError('Duplicate enrollment', {
+      code: 'P2002',
+      clientVersion: Prisma.prismaVersion.client,
+    });
+  });
+  await expect(f.service.enroll('14', '100', 1)).rejects.toThrow(
+    'You are already enrolled in this course.',
+  );
+});
+it('preserves an unexpected enrollment database error', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  const failure = new Error('Database connection interrupted');
+  f.enrollment.create.mockImplementation(() => {
+    throw failure;
+  });
+  await expect(f.service.enroll('14', '100', 1)).rejects.toBe(failure);
 });

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, TextInput, View } from "react-native";
-import { ApiRequestError } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -68,16 +67,15 @@ export function TaskMentionPicker({
         setMore(!!cursor);
       } catch (cause) {
         if (current()) {
-          const retryable =
-            cause instanceof ApiRequestError &&
-            (cause.status === 0 || cause.status === 429 || cause.status >= 500);
-          if (!retryable) {
+          setItems([]);
+          const status =
+            cause && typeof cause === "object" && "status" in cause ? cause.status : undefined;
+          if (status === 401 || status === 403 || status === 404) {
             loaded = [];
             cursor = null;
             seen.clear();
             setMore(false);
           }
-          setItems(loaded);
           setError(cause instanceof Error ? cause.message : String(cause));
         }
       } finally {
@@ -110,8 +108,6 @@ export function TaskMentionPicker({
       <ThemedText>{title ?? t("thread.mention")}</ThemedText>
       <TextInput
         accessibilityLabel={t("thread.findMember")}
-        placeholder={t("thread.findMember")}
-        placeholderTextColor={theme.textSecondary}
         value={query}
         onChangeText={setQuery}
         style={{ color: theme.text, padding: 12 }}
@@ -145,23 +141,13 @@ export function TaskMentionPicker({
       {error && (
         <>
           <ThemedText accessibilityRole="alert">{error}</ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            disabled={loading}
-            onPress={() => loader.current()}
-            style={{ padding: 12 }}
-          >
+          <Pressable onPress={() => loader.current()}>
             <ThemedText>{t("inbox.retry")}</ThemedText>
           </Pressable>
         </>
       )}
       {more && !error && (
-        <Pressable
-          accessibilityRole="button"
-          disabled={loading}
-          onPress={() => loader.current()}
-          style={{ padding: 12 }}
-        >
+        <Pressable disabled={loading} onPress={() => loader.current()}>
           <ThemedText>{t("discovery.more")}</ThemedText>
         </Pressable>
       )}

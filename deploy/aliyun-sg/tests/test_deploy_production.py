@@ -440,7 +440,7 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual(result, 0)
         build.assert_called_once_with(deploy.ROOT, ["web"],
                                      {s: obj["spec"]["template"]["spec"]["containers"][0]["image"]
-                                      for s, obj in original.items()}, source=SOURCE)
+                                      for s, obj in original.items()}, source=SOURCE, npm_registry=None)
         self.assertEqual([args[2] for args in self.kube.patches()], ["fizzdragon-web"])
         for service in set(deploy.SERVICES) - {"web"}:
             self.assertEqual(self.kube.deployments[service], original[service])

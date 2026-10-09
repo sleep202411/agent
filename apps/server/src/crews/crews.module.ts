@@ -1,3 +1,7 @@
+import {
+  CrewPdfTaskImportController,
+  CrewPdfTaskImportService,
+} from './production/pdf-task-import';
 import { ProjectBudgetService } from './compute-requests/project-budget.service';
 import { TaskPaymentsService } from './tasks/task-payments.service';
 import { TaskPaymentsController } from './tasks/task-payments.controller';
@@ -214,6 +218,7 @@ import { CrewProductionService } from './production/production.service';
     CrewTaskContractsController,
     CrewProductionController,
     CrewCanvasTaskImportController,
+    CrewPdfTaskImportController,
     CrewAgreementsController,
     CrewEarningsController,
     CrewComputeRequestsController,
@@ -260,6 +265,7 @@ import { CrewProductionService } from './production/production.service';
     CrewTaskDraftService,
     CrewProductionService,
     CrewCanvasTaskImportService,
+    CrewPdfTaskImportService,
     CrewAgreementsService,
     CrewAgreementSendWorker,
     CrewAgreementArchiveWorker,

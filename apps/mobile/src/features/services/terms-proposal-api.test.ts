@@ -128,7 +128,7 @@ it("rejects stale accounts before and after requests", async () => {
     "session expired"
   );
 });
-function contextMock(pages: unknown[], taskId: string | null = null) {
+function contextMock(pages: unknown[]) {
   let index = 0;
   vi.mocked(api.get).mockImplementation(async (path) => {
     if (path.endsWith("/positions")) return pages[index++];
@@ -137,27 +137,23 @@ function contextMock(pages: unknown[], taskId: string | null = null) {
       return {
         applicationStatus: "pending",
         canUpdate: true,
-        canMessage: true,
         version: 0,
         state: "not_started",
         scheduledAt: null,
         items: [],
         nextBeforeVersion: null,
       };
-    return { ...app, taskId };
+    return app;
   });
 }
 it("resolves task linkage beyond the first position page", async () => {
-  contextMock(
-    [
-      { items: [{ id: "first", crewId: "crew", taskId: null }], nextCursor: "first" },
-      {
-        items: [{ id: "position", crewId: "crew", taskId: "00000000-0000-4000-8000-000000000002" }],
-        nextCursor: null,
-      },
-    ],
-    "00000000-0000-4000-8000-000000000002"
-  );
+  contextMock([
+    { items: [{ id: "first", crewId: "crew", taskId: null }], nextCursor: "first" },
+    {
+      items: [{ id: "position", crewId: "crew", taskId: "00000000-0000-4000-8000-000000000002" }],
+      nextCursor: null,
+    },
+  ]);
   expect(
     (await fetchProposalContext("crew", "app", 1, new AbortController().signal)).taskLinked
   ).toBe(true);
@@ -180,11 +176,4 @@ it.each(
   await expect(
     fetchProposalContext("crew", "app", 1, new AbortController().signal)
   ).rejects.toThrow();
-});
-
-it("verifies payment terms in proposal receipts", async () => {
-  vi.mocked(api.post).mockResolvedValue({ ...receipt, paymentTerms: "monthly" });
-  await expect(
-    proposeApplicationTerms(app, false, { ...data, paymentTerms: "half_upfront" }, "manager", 1)
-  ).rejects.toThrow("could not be verified");
 });

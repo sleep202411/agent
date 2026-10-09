@@ -17,7 +17,6 @@ type ListProps = {
   ListFooterComponent: ReactNode;
 };
 let list: ListProps;
-vi.mock("@/features/ip-community/video-channel-picker", () => ({ VideoChannelPicker: () => null }));
 vi.mock("expo-router", () => ({
   router: { push: vi.fn() },
   useLocalSearchParams: () => ({}),
@@ -58,9 +57,6 @@ vi.mock("react-native", () => ({
     list = props;
     return (
       <div>
-        {props.data.map((item) => (
-          <span key={item.id}>{item.id}</span>
-        ))}
         {props.ListHeaderComponent}
         {props.refreshControl}
         {props.ListFooterComponent}
@@ -78,18 +74,7 @@ vi.mock("@/components/ui", () => ({
   ChipRail: ({ onChange }: { onChange: (index: number) => void }) => (
     <button onClick={() => onChange(1)}>tag</button>
   ),
-  EmptyState: ({
-    detail,
-    action,
-  }: {
-    detail: string;
-    action?: { label: string; onPress: () => void };
-  }) => (
-    <div>
-      {detail}
-      {action ? <button onClick={action.onPress}>{action.label}</button> : null}
-    </div>
-  ),
+  EmptyState: () => null,
   ListFooter: () => <span>paging</span>,
   PosterImage: () => null,
   ScreenHeader: () => null,
@@ -158,10 +143,9 @@ it("does not combine a retained cursor with a failed replacement filter", async 
   await act(async () => click("tag"));
   await act(async () => list.onEndReached());
   expect(h.feed).toHaveBeenCalledTimes(2);
-  expect(host.textContent).toContain("offline");
-  expect(host.querySelectorAll("span")).toHaveLength(0);
+  expect(list.data.map((x) => x.id)).toEqual(["a", "b"]);
   h.feed.mockResolvedValueOnce(page("new"));
-  await act(async () => click("common.retry"));
+  await act(async () => click("refresh"));
   h.feed.mockResolvedValueOnce(page("next"));
   await act(async () => list.onEndReached());
   expect(list.data.map((x) => x.id)).toEqual(["new", "next"]);
@@ -173,58 +157,7 @@ it("retries a failed page using the same filter and cursor", async () => {
   await act(async () => list.onEndReached());
   expect(list.data.map((x) => x.id)).toEqual(["a", "b"]);
   h.feed.mockResolvedValueOnce(page("next"));
-  expect(host.textContent).toContain("offline");
   await act(async () => list.onEndReached());
-  expect(h.feed).toHaveBeenCalledTimes(2);
-  await act(async () => click("common.retry"));
   expect(h.feed.mock.calls[1]).toEqual(h.feed.mock.calls[2]);
   expect(list.data.map((x) => x.id)).toEqual(["a", "b", "next"]);
-});
-
-it("offers a retry after an initial failure", async () => {
-  h.feed.mockRejectedValueOnce(new Error("Catalog unavailable"));
-  await render();
-  expect(host.textContent).toContain("Catalog unavailable");
-  h.feed.mockResolvedValueOnce(page("recovered"));
-  await act(async () => click("common.retry"));
-  expect(list.data.map((x) => x.id)).toEqual(["recovered"]);
-  expect(host.textContent).not.toContain("Catalog unavailable");
-});
-
-it("preserves current results on refresh failure and exposes a retry", async () => {
-  await render();
-  h.feed.mockRejectedValueOnce(new Error("Refresh unavailable"));
-  await act(async () => click("refresh"));
-  expect(list.data.map((x) => x.id)).toEqual(["a", "b"]);
-  expect(host.textContent).toContain("Refresh unavailable");
-  h.feed.mockResolvedValueOnce(page("fresh"));
-  await act(async () => click("common.retry"));
-  expect(list.data.map((x) => x.id)).toEqual(["fresh"]);
-  expect(host.textContent).not.toContain("Refresh unavailable");
-});
-
-it("does not show a late pagination failure on a replacement filter", async () => {
-  await render();
-  let reject!: (error: Error) => void;
-  h.feed.mockReturnValueOnce(
-    new Promise((_, fail) => {
-      reject = fail;
-    })
-  );
-  await act(async () => list.onEndReached());
-  h.feed.mockResolvedValueOnce(page("filtered"));
-  await act(async () => click("tag"));
-  await act(async () => reject(new Error("Stale failure")));
-  expect(list.data.map((x) => x.id)).toEqual(["filtered"]);
-  expect(host.textContent).not.toContain("Stale failure");
-});
-
-it("hides previous results while a replacement filter is loading", async () => {
-  await render();
-  const pending = deferred();
-  h.feed.mockReturnValueOnce(pending.promise);
-  await act(async () => click("tag"));
-  expect(host.querySelectorAll("span")).toHaveLength(0);
-  await act(async () => pending.resolve(page("filtered")));
-  expect(list.data.map((x) => x.id)).toEqual(["filtered"]);
 });

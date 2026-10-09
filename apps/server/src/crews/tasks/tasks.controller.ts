@@ -89,6 +89,40 @@ export class CrewTasksController {
     private readonly taskDrafts: CrewTaskDraftService,
   ) {}
 
+  @Post('crews/:crewId/tasks/batch-assign')
+  batchAssign(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(
+      new ZodValidationPipe(
+        z
+          .object({
+            tasks: z
+              .array(
+                z.object({
+                  id: z.string().uuid(),
+                  expectedVersion: z.number().int().min(0),
+                }),
+              )
+              .min(1)
+              .max(100),
+            assigneeId: z.string().min(1).max(64),
+          })
+          .strict(),
+      ),
+    )
+    body: {
+      tasks: Array<{ id: string; expectedVersion: number }>;
+      assigneeId: string;
+    },
+  ) {
+    return this.tasks.batchAssign(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
+      body,
+    );
+  }
+
   @Post('crew-tasks/:taskId/close')
   close(
     @Param('taskId') taskId: string,

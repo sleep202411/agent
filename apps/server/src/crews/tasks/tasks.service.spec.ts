@@ -11,6 +11,7 @@ import {
   ListCrewTasksQuerySchema,
 } from './project-dto';
 import { CrewTasksService } from './tasks.service';
+import * as ledgerCurrency from '../earnings/ledger-currency';
 import * as cardApproval from './card-approval';
 
 const CREW_ID = 'crew-1';
@@ -602,6 +603,26 @@ describe('CrewTasksService', () => {
     expect(result).toMatchObject({ rewardUsdMinor: 3025, profitShareBps: 250 });
   });
 
+  it.each(['CNY', 'USD'] as const)(
+    'defaults legacy task currency to the %s region',
+    async (currency) => {
+      const spy = jest
+        .spyOn(ledgerCurrency, 'crewCurrency')
+        .mockReturnValue(currency);
+      try {
+        const t = build();
+        t.prisma.crewTask.findUnique.mockResolvedValue(
+          task({ metadata: { compensation: { rewardUsdMinor: 3000 } } }),
+        );
+        expect((await t.service.get(TASK_ID, OWNER_ID)).rewardCurrency).toBe(
+          currency,
+        );
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
   it.each(['CNY', 'USD'])(
     'keeps %s reward currency while editing the amount',
     async (rewardCurrency) => {
@@ -623,7 +644,7 @@ describe('CrewTasksService', () => {
       ).toMatchObject({
         compensation: { rewardCurrency, rewardUsdMinor: 5000 },
       });
-      expect(result.rewardCurrency).toBe(rewardCurrency);
+      expect(result).toMatchObject({ rewardCurrency });
     },
   );
 

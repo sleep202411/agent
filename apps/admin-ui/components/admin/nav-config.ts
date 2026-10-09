@@ -175,6 +175,31 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
  * folded into the catalog group, so there is no standalone overview page.
  */
 export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
+  "/courses": [
+    {
+      label: "课程运营",
+      items: [
+        {
+          href: "/courses",
+          label: "课程列表",
+          icon: IconBook2,
+          permission: "courses.read",
+        },
+        {
+          href: "/courses/homework",
+          label: "作业审核",
+          icon: IconChecklist,
+          permission: "courses.read",
+        },
+        {
+          href: "/courses/income",
+          label: "授课收入",
+          icon: IconReportMoney,
+          permission: "courses.read",
+        },
+      ],
+    },
+  ],
   "/billing": [
     {
       label: "商品计划",

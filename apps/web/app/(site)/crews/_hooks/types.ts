@@ -126,6 +126,7 @@ export interface SalaryInput {
 }
 
 export interface CreatePositionInput {
+  expectedTaskVersion?: number;
   paymentTerms?: import("@repo/shared/crew").TaskPaymentTerms | null;
   taskId?: string;
   recruitmentVisibility?: "public" | "private";
@@ -704,6 +705,7 @@ export interface UpdateCrewTaskInput {
   customFieldValues?: Array<{ fieldId: string; value: CrewTaskCustomValue }>;
   labelIds?: string[];
   workflowStateId?: string;
+  assetCategory?: "characters" | "scenes" | "props" | "art";
   taskKind?: CrewTaskKind | null;
   assignees?: CreateCrewTaskInput["assignees"];
 }
@@ -749,6 +751,7 @@ export interface CreateCrewTaskInput {
   blockedByTaskIds?: string[];
   customFieldValues?: Array<{ fieldId: string; value: CrewTaskCustomValue }>;
   labelIds?: string[];
+  assetCategory?: "characters" | "scenes" | "props" | "art";
   taskKind?: CrewTaskKind | null;
   assignees: Array<{
     userId: string;

@@ -4,7 +4,6 @@ export const taskWorkflowSchema = z.object({
   id: z.string().uuid(),
   crewId: z.string().min(1),
   name: z.string().min(1),
-  systemKey: z.string().nullish(),
   semantic: z.enum([
     "open",
     "in_progress",

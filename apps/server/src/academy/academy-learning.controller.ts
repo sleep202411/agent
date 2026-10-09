@@ -150,6 +150,69 @@ export class AcademyOfferingController {
 }
 
 @SkipEndUserAuth()
+@UseGuards(AdminAuthGuard, AdminPermissionGuard)
+@Controller('admin/academy/learning')
+export class AcademyLearningAdminController {
+  constructor(private readonly learning: AcademyLearningService) {}
+
+  @Header('Cache-Control', 'private, no-store')
+  @Get('homework')
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CoursesRead)
+  async homework(
+    @CurrentAdmin() admin: AdminActor,
+    @Query(
+      new ZodValidationPipe(
+        z.strictObject({
+          after: z.uuid().optional(),
+          status: z.enum(['submitted', 'all']).default('submitted'),
+        }),
+      ),
+    )
+    query: { after?: string; status: 'submitted' | 'all' },
+  ) {
+    return {
+      code: 200,
+      data: await this.learning.adminHomework(admin, query.after, query.status),
+    };
+  }
+
+  @Header('Cache-Control', 'private, no-store')
+  @Get('income')
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CoursesRead)
+  async income(@CurrentAdmin() admin: AdminActor) {
+    return { code: 200, data: await this.learning.adminIncomeSummary(admin) };
+  }
+
+  @Post('enrollments/:id/review')
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CoursesWrite)
+  async review(
+    @CurrentAdmin() admin: AdminActor,
+    @Param('id', new ZodValidationPipe(z.uuid())) id: string,
+    @Body(new ZodValidationPipe(ReviewHomework))
+    body: z.infer<typeof ReviewHomework>,
+  ) {
+    return {
+      code: 200,
+      data: await this.learning.adminReview(admin, id, body),
+    };
+  }
+
+  @Header('Cache-Control', 'private, no-store')
+  @Get('enrollments/:id/attachments/:assetId')
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CoursesRead)
+  async attachment(
+    @CurrentAdmin() admin: AdminActor,
+    @Param('id', new ZodValidationPipe(z.uuid())) id: string,
+    @Param('assetId', new ZodValidationPipe(z.uuid())) assetId: string,
+  ) {
+    return {
+      code: 200,
+      data: await this.learning.adminAttachment(admin, id, assetId),
+    };
+  }
+}
+
+@SkipEndUserAuth()
 @UseGuards(ServiceTokenGuard)
 @Controller('internal/academy')
 export class AcademyAccessController {

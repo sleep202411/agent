@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { useTaskOptions } from "./use-task-options";
-type AssetQuery = { query?: string; recruitmentOnly?: boolean };
+type AssetQuery = { query?: string };
 const h = vi.hoisted(() => ({ load: vi.fn() }));
 vi.mock("./task-options", () => ({ fetchTaskOptions: h.load }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -33,7 +33,6 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
-  vi.useRealTimers();
 });
 it("loads only authenticated scopes, advances cursors and deduplicates items", async () => {
   await render();
@@ -112,82 +111,4 @@ it("clears revoked data and restarts pagination on explicit retry", async () => 
   expect(host.textContent).toContain("Access revoked");
   await click(1);
   expect(h.load.mock.calls[2][2]).toBeNull();
-});
-
-it("does not restore stale rows while revalidating a return visit", async () => {
-  let finish!: (value: unknown) => void;
-  h.load.mockResolvedValueOnce({ items: [item], nextCursor: null }).mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      })
-  );
-  await render("1");
-  expect(host.textContent).toContain("First");
-  await render();
-  await render("1");
-  expect(host.textContent).not.toContain("First");
-  await act(async () => finish({ items: [], nextCursor: null }));
-  expect(host.textContent).not.toContain("First");
-  expect(h.load).toHaveBeenCalledTimes(2);
-});
-
-it("refreshes recruitable tasks and removes newly assigned rows, but stops when inactive", async () => {
-  vi.useFakeTimers();
-  h.load.mockResolvedValue({ items: [item], nextCursor: null });
-  await render("1", { recruitmentOnly: true });
-  h.load.mockResolvedValue({ items: [{ id: "new", title: "New task" }], nextCursor: null });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(30_000);
-  });
-  expect(host.textContent).toContain("New task");
-  expect(host.textContent).not.toContain("First");
-  h.load.mockRejectedValue(Object.assign(new Error("Access revoked"), { status: 403 }));
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(30_000);
-  });
-  expect(host.textContent).not.toContain("New task");
-  expect(host.textContent).toContain("Access revoked");
-  await render(undefined, { recruitmentOnly: true });
-  const calls = h.load.mock.calls.length;
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(60_000);
-  });
-  expect(h.load).toHaveBeenCalledTimes(calls);
-});
-it("does not poll ordinary task pickers", async () => {
-  vi.useFakeTimers();
-  h.load.mockResolvedValue({ items: [item], nextCursor: null });
-  await render("1");
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(60_000);
-  });
-  expect(h.load).toHaveBeenCalledTimes(1);
-});
-
-it("revalidates a loaded recruitment window atomically without overlapping requests", async () => {
-  vi.useFakeTimers();
-  h.load
-    .mockResolvedValueOnce({ items: [item], nextCursor: "next" })
-    .mockResolvedValueOnce({ items: [{ id: "two", title: "Second" }], nextCursor: null });
-  await render("1", { recruitmentOnly: true });
-  await click(0);
-  let finish!: (page: unknown) => void;
-  h.load
-    .mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        })
-    )
-    .mockResolvedValueOnce({ items: [{ id: "three", title: "Third" }], nextCursor: null });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(60_000);
-  });
-  expect(h.load).toHaveBeenCalledTimes(3);
-  expect(host.textContent).toContain("Second");
-  await act(async () => finish({ items: [item], nextCursor: "new-next" }));
-  expect(host.textContent).toContain("Third");
-  expect(host.textContent).not.toContain("Second");
-  expect(h.load.mock.calls[3][2]).toBe("new-next");
 });

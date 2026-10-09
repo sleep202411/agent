@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { AccountMenu } from "./account-menu";
 import { CreditsBadge } from "./credits-badge";
 import { LocaleSwitcher } from "./locale-switcher";
+import { SiteRegionSwitcher } from "./site-region-switcher";
 import { SubscriptionDialog } from "./subscription-dialog";
 import { useAuth } from "./auth-provider";
 import { formatEntitlementPlanName, useMyEntitlement } from "./entitlement-context";
@@ -29,6 +30,7 @@ export function StudioHeader() {
   return (
     <header className="relative z-40 flex h-16 items-center justify-end gap-4 overflow-visible px-3 text-[14px] sm:px-6">
       <div className="flex min-w-0 max-w-full items-center gap-2">
+        <SiteRegionSwitcher />
         <LocaleSwitcher />
         {!loading &&
           (user ? (

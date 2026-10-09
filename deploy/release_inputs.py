@@ -14,6 +14,62 @@ def git(root, *args):
     return subprocess.run(['git', '-C', str(root), *args], check=True,
                           capture_output=True).stdout
 
+def dependency_snapshot(lock, workspaces):
+    """Fingerprint installed dependency closure, preserving physical resolution.
+
+    Resolve nested/hoisted dependencies from the npm lock's installed paths.
+    Include optional and peer edges, workspace links, integrity and root build
+    tools. Unsupported/invalid layouts conservatively retain the full lock.
+    """
+    packages = lock.get('packages')
+    if lock.get('lockfileVersion') not in (2, 3) or not isinstance(packages, dict):
+        return None
+    roots = {'', *workspaces}
+    if not roots <= packages.keys():
+        return None
+    selected, pending = {}, list(roots)
+
+    def resolve(path, name):
+        parts = path.split('/') if path else []
+        while True:
+            if not parts or parts[-1] != 'node_modules':
+                candidate = '/'.join(parts + ['node_modules', name])
+                if candidate in packages:
+                    return candidate
+            if not parts:
+                return None
+            parts.pop()
+
+    while pending:
+        path = pending.pop()
+        if path in selected:
+            continue
+        entry = packages.get(path)
+        if not isinstance(entry, dict):
+            return None
+        selected[path] = entry
+        if entry.get('link'):
+            target = entry.get('resolved')
+            if target not in packages or target.startswith(('/', '../')):
+                return None
+            pending.append(target)
+            continue
+        kinds = ['dependencies', 'optionalDependencies', 'peerDependencies']
+        if path in roots or not path.startswith('node_modules/') and '/node_modules/' not in path:
+            kinds.append('devDependencies')
+        for kind in kinds:
+            dependencies = entry.get(kind, {})
+            if not isinstance(dependencies, dict):
+                return None
+            for name in dependencies:
+                target = resolve(path, name)
+                if target is not None:
+                    pending.append(target)
+                elif kind in ('dependencies', 'devDependencies') and name not in entry.get('optionalDependencies', {}):
+                    return None
+    return {'lockfileVersion': lock['lockfileVersion'], 'packages': selected}
+
+
 @lru_cache(maxsize=256)
 def inputs(root, revision, service, region):
     if region not in ("cn", "com"):
@@ -46,6 +102,8 @@ def inputs(root, revision, service, region):
                     pending.append(dependency)
     # Old/unknown layouts are conservative rather than silently under-scoped.
     known_layout = f'apps/{service}' in manifests
+    lock = json.loads(git(root, 'show', f'{revision}:package-lock.json'))
+    scoped_lock = dependency_snapshot(lock, included) if known_layout else None
     selected = []
     for entry in entries:
         if not entry:
@@ -53,6 +111,13 @@ def inputs(root, revision, service, region):
         metadata, raw_path = entry.split(b'\t', 1)
         path = raw_path.decode()
         if path.startswith(('docs/', '.github/')) or ('/' not in path and path.endswith('.md')):
+            continue
+        # Root handoff reports contain no application or build configuration.
+        if path in {
+            'MOBILE_2_4_0_ROLLBACK_REVIEW.txt',
+            'MOBILE_2_3_1_BACKPORT.txt',
+            'MOBILE_BRANCH_RECONCILIATION.txt',
+        }:
             continue
         if path.startswith('deploy/'):
             continue
@@ -68,7 +133,12 @@ def inputs(root, revision, service, region):
                     continue
             if path.startswith('apps/web/.env.production.') and path != f'apps/web/.env.production.{region}':
                 continue
+        if path == 'package-lock.json' and scoped_lock is not None:
+            selected.append(raw_path + b"\0" + json.dumps(scoped_lock, sort_keys=True, separators=(",", ":")).encode())
+            continue
         workspace = path.rsplit("/", 1)[0]
+        if scoped_lock is not None and path.endswith('/package.json') and workspace not in included:
+            continue
         if path.endswith("/package.json") and workspace in manifests and workspace not in included:
             # Entry points/documentation of an unconsumed workspace do not affect
             # installation. Keep every other field conservatively (including

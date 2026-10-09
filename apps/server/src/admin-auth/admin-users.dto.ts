@@ -73,6 +73,12 @@ export const CreateAdminUserSchema = z
   .strict();
 export type CreateAdminUserInput = z.infer<typeof CreateAdminUserSchema>;
 
+/** Web/Java platform user id used on course instructor rows. */
+export const PlatformUserIdSchema = z
+  .string()
+  .trim()
+  .regex(/^[1-9]\d{0,15}$/, '须为 Web 端用户数字 ID。');
+
 export const UpdateAdminUserSchema = z
   .object({
     displayName: z.string().trim().min(1).max(120).optional(),
@@ -80,6 +86,11 @@ export const UpdateAdminUserSchema = z
     roleKey: AssignableAdminRoleKeySchema.optional(),
     requireMfa: z.boolean().optional(),
     status: AdminUserStatusSchema.optional(),
+    platformUserId: z.preprocess(
+      (value) =>
+        typeof value === 'string' && value.trim() === '' ? null : value,
+      PlatformUserIdSchema.nullable().optional(),
+    ),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {

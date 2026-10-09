@@ -132,6 +132,9 @@ export function TaskQuickCreate({
   const [title, setTitle] = useState(initialInput?.title ?? "");
   const [description, setDescription] = useState(initialInput?.description ?? "");
   const [priority, setPriority] = useState<CrewTaskPriority>(initialInput?.priority ?? "normal");
+  const [assetCategory, setAssetCategory] = useState<"characters" | "scenes" | "props" | "art">(
+    initialInput?.assetCategory ?? "art"
+  );
   const [taskKind, setTaskKind] = useState<CrewTaskKind | "">(
     initialInput?.taskKind ?? presetTaskKind ?? ""
   );
@@ -181,6 +184,7 @@ export function TaskQuickCreate({
     setTitle(initialInput?.title ?? "");
     setDescription(initialInput?.description ?? "");
     setPriority(initialInput?.priority ?? "normal");
+    setAssetCategory(initialInput?.assetCategory ?? "art");
     setTaskKind(initialInput?.taskKind ?? presetTaskKind ?? "");
     setWorkflowStateId(initialInput?.workflowStateId ?? null);
     setAssigneeUserId(initialInput?.assignees[0]?.userId ?? "");
@@ -457,6 +461,7 @@ export function TaskQuickCreate({
         description: description.trim(),
         workflowStateId: resolvedWorkflowStateId,
         priority,
+        ...(taskKind === "art" ? { assetCategory } : {}),
         ...(taskKind ? { taskKind } : initialInput ? { taskKind: null } : {}),
         dueAt:
           initialInput && dueDate === (initialInput.dueAt?.slice(0, 10) ?? "")
@@ -635,6 +640,22 @@ export function TaskQuickCreate({
                 })),
               ]}
             />
+            {taskKind === "art" && (
+              <SelectChip
+                icon={<IconCategory className="size-3.5" />}
+                value={assetCategory}
+                label={t(`assetCategory_${assetCategory}`)}
+                ariaLabel={t("assetCategory")}
+                onChange={(value) => {
+                  draftRevision.current += 1;
+                  setAssetCategory(value as typeof assetCategory);
+                }}
+                options={["characters", "scenes", "props", "art"].map((value) => ({
+                  value,
+                  label: t(`assetCategory_${value}`),
+                }))}
+              />
+            )}
             <SelectChip
               icon={<IconUserCircle className="size-3.5" />}
               value={positionRole}
@@ -993,7 +1014,11 @@ function SelectChip({
       <p className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
         {icon}
         {ariaLabel}
-        {help}
+        {help ? (
+          <span className="relative inline-flex size-4 shrink-0 items-center justify-center [&>button]:absolute">
+            {help}
+          </span>
+        ) : null}
         {required ? (
           <span aria-hidden="true" className="text-primary">
             *

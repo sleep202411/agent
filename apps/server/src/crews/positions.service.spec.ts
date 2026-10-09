@@ -445,3 +445,113 @@ it('applies every selected capability to both count and paginated search', async
     hasSome: ['AI Producer', 'Editor'],
   });
 });
+
+describe('public recruitment producer qualification', () => {
+  function writes(status = 'frozen', visibility = 'public') {
+    const row = {
+      ...position('p1'),
+      status,
+      recruitmentVisibility: visibility,
+    };
+    const tx = {
+      $queryRaw: jest.fn(),
+      $executeRaw: jest.fn(),
+      crewTask: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ workflowState: { semantic: 'open' } }),
+      },
+      crewTaskAssignee: { count: jest.fn().mockResolvedValue(0) },
+      crewPosition: {
+        findFirst: jest.fn().mockResolvedValue(row),
+        create: jest.fn().mockResolvedValue(row),
+        update: jest.fn().mockResolvedValue(row),
+      },
+    };
+    const service = new PositionsService(
+      { $transaction: (fn: (db: unknown) => unknown) => fn(tx) } as never,
+      { require: jest.fn().mockResolvedValue({}) } as never,
+    );
+    return { service, tx };
+  }
+  it('rejects public creation without a producer qualification', async () => {
+    const t = writes();
+    await expect(
+      t.service.create('crew-1', 'owner', {} as never),
+    ).rejects.toMatchObject({ response: { code: 'CREW_PRODUCER_REQUIRED' } });
+    expect(t.tx.crewPosition.create).not.toHaveBeenCalled();
+  });
+  it('allows private task invitations without producer qualification', async () => {
+    const t = writes();
+    await t.service.create('crew-1', 'owner', {
+      taskId: 'task-1',
+      recruitmentVisibility: 'private',
+      positionType: 'storyboard',
+      targetCount: 1,
+    } as never);
+    expect(t.tx.crewPosition.create).toHaveBeenCalled();
+  });
+  it('rejects a stale batch recruitment snapshot under the task lock', async () => {
+    const t = writes();
+    t.tx.crewTask.findFirst.mockResolvedValue({
+      workflowState: { semantic: 'open' },
+      version: 3,
+    });
+    await expect(
+      t.service.create(
+        'crew-1',
+        'owner',
+        { taskId: 'task-1', expectedTaskVersion: 2 } as never,
+        [13],
+      ),
+    ).rejects.toThrow('Task changed');
+    expect(t.tx.crewPosition.create).not.toHaveBeenCalled();
+  });
+  it('does not publish a second position when retrying a batch', async () => {
+    const t = writes();
+    t.tx.crewTask.findFirst.mockResolvedValue({
+      workflowState: { semantic: 'open' },
+      version: 2,
+    });
+    await expect(
+      t.service.create(
+        'crew-1',
+        'owner',
+        { taskId: 'task-1', expectedTaskVersion: 2 } as never,
+        [13],
+      ),
+    ).rejects.toThrow('already has recruitment');
+    expect(t.tx.crewPosition.create).not.toHaveBeenCalled();
+  });
+  it('allows qualified public creation', async () => {
+    const t = writes();
+    await t.service.create(
+      'crew-1',
+      'owner',
+      { positionType: 'storyboard', targetCount: 1 } as never,
+      [13],
+    );
+    expect(t.tx.crewPosition.create).toHaveBeenCalled();
+  });
+  it('cannot reopen a frozen public posting without qualification', async () => {
+    const t = writes();
+    await expect(
+      t.service.update('crew-1', 'p1', 'owner', { status: 'open' } as never),
+    ).rejects.toMatchObject({ response: { code: 'CREW_PRODUCER_REQUIRED' } });
+    expect(t.tx.crewPosition.update).not.toHaveBeenCalled();
+  });
+  it('can close public recruitment without qualification', async () => {
+    const t = writes('open');
+    await t.service.update('crew-1', 'p1', 'owner', {
+      status: 'frozen',
+    } as never);
+    expect(t.tx.crewPosition.update).toHaveBeenCalled();
+  });
+  it('can reopen private recruitment without qualification', async () => {
+    const t = writes('frozen', 'private');
+    await t.service.update('crew-1', 'p1', 'owner', {
+      status: 'open',
+    } as never);
+    expect(t.tx.crewPosition.update).toHaveBeenCalled();
+  });
+});

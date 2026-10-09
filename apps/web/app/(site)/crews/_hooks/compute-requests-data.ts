@@ -4,6 +4,7 @@ export const computeRequestsPageSchema = z.object({
   projectBudget: z
     .object({
       version: z.number().int().positive(),
+      pointsPerMinute: z.number().int().positive().optional(),
       durationSeconds: z.number().int().positive(),
       totalPoints: z.string().regex(/^\d+$/),
       releasedPoints: z.string().regex(/^\d+$/),
@@ -46,6 +47,7 @@ export const computeRequestsPageSchema = z.object({
       id: z.string().min(1),
       title: z.string(),
       number: z.number().int(),
+      topUpRequested: z.boolean().optional(),
       assignees: z.array(z.object({ userId: z.string() })).optional(),
     })
   ),
@@ -56,6 +58,10 @@ export const computeRequestsPageSchema = z.object({
       taskId: z.string(),
       taskTitle: z.string(),
       userId: z.string(),
+      requestedByUserId: z.string().nullable().optional(),
+      kind: z.string().optional(),
+      remainingWorkload: z.string().nullable().optional(),
+      workloadUnit: z.string().nullable().optional(),
       points: z.number().int().nonnegative(),
       reason: z.string(),
       status: z.enum(["pending", "approved", "rejected"]),

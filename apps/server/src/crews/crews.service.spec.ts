@@ -499,17 +499,16 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
 });
 
 describe('Crew create level gate', () => {
-  it('denies creation before any Crew write when level 13 is missing', async () => {
+  it('allows authenticated creation without producer qualification', async () => {
     const t = build();
-    await expect(
-      t.service.create(
-        { userId: FOUNDER, levelIds: [] },
-        CREATE_INPUT as never,
-      ),
-    ).rejects.toMatchObject({
-      response: { code: 'CREW_LEVEL_REQUIRED' },
-    });
-    expect(t.tx.crew.create).not.toHaveBeenCalled();
+    expect(
+      t.service.creationEligibility({ userId: FOUNDER, levelIds: [] }),
+    ).toEqual({ eligible: true });
+    await t.service.create(
+      { userId: FOUNDER, levelIds: [] },
+      CREATE_INPUT as never,
+    );
+    expect(t.tx.crew.create).toHaveBeenCalled();
   });
   it('allows creation when level 13 is present', async () => {
     const t = build();

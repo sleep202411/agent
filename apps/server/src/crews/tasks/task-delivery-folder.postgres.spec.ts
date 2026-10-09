@@ -293,18 +293,22 @@ const url = process.env.TASK_DELIVERY_FOLDER_TEST_DATABASE_URL;
         expectedVersion: legacy.version,
         taskKind: 'script',
       });
-      expect(updated.assetCategory).toBe('scripts');
+      expect(updated).toMatchObject({ assetCategory: 'scripts' });
       expect(updated.deliveryFolder).not.toBeNull();
+      if (!updated.deliveryFolder || !('id' in updated.deliveryFolder))
+        throw Error('Expected a serialized delivery folder');
       const folder = await db.crewAssetNode.findUniqueOrThrow({
-        where: { id: updated.deliveryFolder!.id },
+        where: { id: updated.deliveryFolder.id },
       });
       expect(folder.parentId).toBe(categoryId);
       const edited = await service.update(legacy.id, owner, {
         expectedVersion: updated.version,
         taskKind: 'art',
       });
-      expect(edited.assetCategory).toBe('art');
-      expect(edited.deliveryFolder?.id).toBe(folder.id);
+      expect(edited).toMatchObject({
+        assetCategory: 'art',
+        deliveryFolder: { id: folder.id },
+      });
       expect(
         await db.crewTaskDeliveryFolder.count({ where: { taskId: legacy.id } }),
       ).toBe(1);

@@ -1,41 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { TaskPicker } from "./task-picker";
+import type { TaskOption } from "./task-options";
 import { getAuthGeneration } from "@/auth/auth-store";
-import {
-  useTaskRelationshipSession,
-  type TaskRelationshipSession,
-} from "./use-task-relationship-session";
+import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { useTheme } from "@/hooks/use-theme";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import { fetchTaskCommentAccess } from "./task-comment-api";
+import { updateTaskRelationships } from "./task-relationship-api";
 import type { TaskDetail } from "./task-detail-api";
-type Props = {
-  task: TaskDetail;
-  userId: string;
-  generation: number;
-  onRefresh: () => void;
-  session?: TaskRelationshipSession;
-};
+type Props = { task: TaskDetail; userId: string; generation: number; onRefresh: () => void };
 export function TaskRelationshipEditor(props: Props) {
-  if (props.session) return <RelationshipAccess {...props} session={props.session} />;
-  return <LocalRelationships key={`${props.task.id}:${props.generation}`} {...props} />;
-}
-function LocalRelationships(props: Props) {
-  const session = useTaskRelationshipSession(props.task.id, props.generation, props.onRefresh);
-  return <RelationshipAccess {...props} session={session} />;
-}
-type ActiveProps = Props & { session: TaskRelationshipSession };
-function RelationshipAccess(props: ActiveProps) {
   if (["approved", "cancelled"].includes(props.task.status)) return null;
   return <Access key={`${props.task.id}:${props.task.version}:${props.generation}`} {...props} />;
 }
-function Access({ task, userId, generation, onRefresh, session }: ActiveProps) {
+function Access({ task, userId, generation, onRefresh }: Props) {
   const t = useTranslations();
   const [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>();
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     void fetchTaskCommentAccess(task.crewId, userId, controller.signal).then(
@@ -51,8 +36,15 @@ function Access({ task, userId, generation, onRefresh, session }: ActiveProps) {
     return () => controller.abort();
   }, [task.crewId, userId, generation]);
   if (allowed === false) return null;
-  if (session.draft && allowed)
-    return <Editor task={task} generation={generation} onRefresh={onRefresh} session={session} />;
+  if (editing && allowed)
+    return (
+      <Editor
+        task={task}
+        generation={generation}
+        onRefresh={onRefresh}
+        onCancel={() => setEditing(false)}
+      />
+    );
   return (
     <View style={{ gap: 8 }}>
       {allowed === undefined && !error && <ActivityIndicator />}
@@ -68,7 +60,7 @@ function Access({ task, userId, generation, onRefresh, session }: ActiveProps) {
         <Pressable
           accessibilityRole="button"
           onPress={() => {
-            if (generation === getAuthGeneration()) session.open(task);
+            if (generation === getAuthGeneration()) setEditing(true);
           }}
           style={{ padding: 12 }}
         >
@@ -78,19 +70,29 @@ function Access({ task, userId, generation, onRefresh, session }: ActiveProps) {
     </View>
   );
 }
-function Editor({ task, generation, onRefresh, session }: Omit<ActiveProps, "userId">) {
+function Editor({
+  task,
+  generation,
+  onRefresh,
+  onCancel,
+}: Omit<Props, "userId"> & { onCancel: () => void }) {
   const t = useTranslations(),
-    theme = useTheme();
-  const { snapshot, parent, blockers, error, attemptedAt } = session.draft!;
+    theme = useTheme(),
+    op = useAuthFormOperation(task.id, true);
+  // Captured at editor opening; never rebase a draft onto a refreshed server version.
+  const [snapshot] = useState(task);
+  const [parent, setParent] = useState<TaskOption | null>(task.parent);
+  const [blockers, setBlockers] = useState<TaskOption[]>(task.blockedBy);
   const [picker, setPicker] = useState<"parent" | "blocker">();
-  const locked = session.busy || !!attemptedAt;
-  const stale = task.version !== snapshot.version;
-  const canReview = !session.busy && (stale || (!!attemptedAt && task !== attemptedAt));
+  const [error, setError] = useState<string>(),
+    [attempted, setAttempted] = useState(false);
+  const attemptedRef = useRef(false);
+  const locked = op.busy || attempted;
   const changed =
     (parent?.id ?? null) !== (snapshot.parent?.id ?? null) ||
     blockers.length !== snapshot.blockedBy.length ||
     blockers.some((item) => !snapshot.blockedBy.some((old) => old.id === item.id));
-  const canSave = changed && !locked && !stale;
+  const canSave = changed && !locked;
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("taskRelationships.edit")}</ThemedText>
@@ -112,7 +114,7 @@ function Editor({ task, generation, onRefresh, session }: Omit<ActiveProps, "use
         <Pressable
           accessibilityRole="button"
           disabled={locked}
-          onPress={() => session.change((draft) => ({ parent: null, blockers: draft.blockers }))}
+          onPress={() => setParent(null)}
           style={{ padding: 12 }}
         >
           <ThemedText>{t("taskRelationships.removeParent")}</ThemedText>
@@ -127,12 +129,7 @@ function Editor({ task, generation, onRefresh, session }: Omit<ActiveProps, "use
           accessibilityRole="button"
           disabled={locked}
           accessibilityLabel={`${t("taskRelationships.removeBlocker")} TASK-${item.number} ${item.title}`}
-          onPress={() =>
-            session.change((draft) => ({
-              parent: draft.parent,
-              blockers: draft.blockers.filter((b) => b.id !== item.id),
-            }))
-          }
+          onPress={() => setBlockers((current) => current.filter((b) => b.id !== item.id))}
           style={{ padding: 12 }}
         >
           <ThemedText>
@@ -148,69 +145,49 @@ function Editor({ task, generation, onRefresh, session }: Omit<ActiveProps, "use
       >
         <ThemedText>{t("taskRelationships.addBlocker")}</ThemedText>
       </Pressable>
-      {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      {(error || stale) && (
-        <Pressable
-          accessibilityRole="button"
-          disabled={session.busy}
-          onPress={onRefresh}
-          style={{ padding: 12 }}
-        >
-          <ThemedText>{t("thread.refresh")}</ThemedText>
-        </Pressable>
-      )}
-      {canReview && (
-        <View style={{ gap: 8 }}>
-          <ThemedText>{t("taskRelationships.latest")}</ThemedText>
-          <ThemedText>
-            {t("taskRelations.parentTask")}:{" "}
-            {task.parent
-              ? `TASK-${task.parent.number} · ${task.parent.title}`
-              : t("thread.taskUnset")}
-          </ThemedText>
-          <ThemedText>
-            {t("taskRelations.blockedBy")} · {task.blockedBy.length}
-          </ThemedText>
-          {task.blockedBy.map((item) => (
-            <ThemedText key={item.id}>
-              TASK-{item.number} · {item.title}
-            </ThemedText>
-          ))}
-          <Pressable
-            accessibilityRole="button"
-            style={{ padding: 12 }}
-            onPress={() => session.review(task)}
-          >
-            <ThemedText>{t("taskBrief.reviewLatest")}</ThemedText>
+      {error && (
+        <>
+          <ThemedText accessibilityRole="alert">{error}</ThemedText>
+          <Pressable accessibilityRole="button" onPress={onRefresh}>
+            <ThemedText>{t("thread.refresh")}</ThemedText>
           </Pressable>
-        </View>
+        </>
       )}
       <Pressable
         accessibilityRole="button"
         disabled={!canSave}
-        style={{ padding: 12, opacity: canSave ? 1 : 0.45 }}
+        style={{ padding: 12 }}
         onPress={() => {
-          if (canSave) session.save(task);
+          if (!canSave || attemptedRef.current || generation !== getAuthGeneration()) return;
+          void op.run(
+            () => {
+              attemptedRef.current = true;
+              setAttempted(true);
+              return updateTaskRelationships(snapshot, {
+                expectedVersion: snapshot.version,
+                parentId: parent?.id ?? null,
+                blockedByTaskIds: blockers.map((item) => item.id),
+              });
+            },
+            onRefresh,
+            (cause) => setError(cause instanceof Error ? cause.message : String(cause))
+          );
         }}
       >
         <ThemedText>{t("taskRelationships.save")}</ThemedText>
       </Pressable>
       <Pressable
         accessibilityRole="button"
-        disabled={session.busy}
-        onPress={session.cancel}
+        disabled={op.busy}
+        onPress={attempted ? onRefresh : onCancel}
         style={{ padding: 12 }}
       >
         <ThemedText>{t("myServices.cancel")}</ThemedText>
       </Pressable>
-      {session.busy && <ActivityIndicator />}
-      <Modal
-        visible={!!picker && !locked}
-        animationType="slide"
-        onRequestClose={() => setPicker(undefined)}
-      >
+      {op.busy && <ActivityIndicator />}
+      <Modal visible={!!picker} animationType="slide" onRequestClose={() => setPicker(undefined)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
-          {picker && !locked && (
+          {picker && (
             <TaskPicker
               closeLabel={t("myServices.cancel")}
               crewId={task.crewId}
@@ -223,16 +200,19 @@ function Editor({ task, generation, onRefresh, session }: Omit<ActiveProps, "use
               excludedIds={[task.id, ...(picker === "blocker" ? blockers.map((b) => b.id) : [])]}
               onClose={() => setPicker(undefined)}
               onSelect={(item) => {
-                if (generation !== getAuthGeneration() || locked || item.id === task.id) return;
-                session.change((draft) => ({
-                  parent: picker === "parent" ? item : draft.parent,
-                  blockers:
-                    picker === "blocker" &&
-                    !draft.blockers.some((b) => b.id === item.id) &&
-                    draft.blockers.length < 50
-                      ? [...draft.blockers, item]
-                      : draft.blockers,
-                }));
+                if (
+                  generation !== getAuthGeneration() ||
+                  attemptedRef.current ||
+                  item.id === task.id
+                )
+                  return;
+                if (picker === "parent") setParent(item);
+                else
+                  setBlockers((current) =>
+                    current.some((b) => b.id === item.id) || current.length >= 50
+                      ? current
+                      : [...current, item]
+                  );
                 setPicker(undefined);
               }}
             />

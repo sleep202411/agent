@@ -1,4 +1,3 @@
-import { getAuthGeneration } from "@/auth/auth-store";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { type DeliveryTemplate } from "./task-delivery-api";
@@ -44,7 +43,8 @@ export async function fetchTaskSubmitPermission(
   if (member.userId !== userId) throw new Error("Crew membership account mismatch");
   return (
     member.permissions.includes("tasks.submit_assigned") &&
-    task.assignees.some((a) => a.userId === userId) &&
+    (member.permissions.includes("tasks.manage") ||
+      task.assignees.some((a) => a.userId === userId)) &&
     ["open", "in_progress", "revision_requested"].includes(task.status)
   );
 }
@@ -162,37 +162,4 @@ function sameDeliveryAnswers(
         : a === b;
     })
   );
-}
-
-/** The server reuses the assigned folder or creates the task's automatic folder atomically. */
-export async function ensureTaskDeliveryFolder(
-  taskId: string,
-  crewId: string,
-  generation: number,
-  signal: AbortSignal
-) {
-  z.string().uuid().parse(taskId);
-  const current = () => {
-    if (signal.aborted || generation !== getAuthGeneration())
-      throw Error("Task delivery session expired.");
-  };
-  current();
-  const result = z
-    .object({
-      id: z.string().uuid(),
-      crewId: z.string(),
-      deliveryFolder: z.object({ id: z.string().uuid(), name: z.string() }),
-    })
-    .parse(
-      await api.put(`/crew-tasks/${taskId}/delivery-folder`, {
-        service: "aurora",
-        data: { deliveryFolderId: null },
-        signal,
-        retry: false,
-      })
-    );
-  current();
-  if (result.id !== taskId || result.crewId !== crewId)
-    throw Error("Task delivery folder scope mismatch.");
-  return result.deliveryFolder;
 }

@@ -40,6 +40,8 @@ function run(t, scenario, phase = "all", pinned = false) {
   put("deploy/verify_release_image.py", "import os,sys\nsys.exit(1 if os.environ.get('QA_SCENARIO') == 'missing-image' else 0)\n");
   put("deploy/release_revision.py", "import os,sys\nprint(os.environ['QA_FUTURE'])\n");
   put("deploy/release_lock.py", "import os,sys\nos.environ['FD_REGIONAL_LOCK_CN']='fixture'\nos.execvp(sys.argv[3],sys.argv[3:])\n");
+  put("deploy/cn_build_credentials.py", "import os,sys\nfrom pathlib import Path\nif os.environ.get('QA_SCENARIO')=='auth-failure': sys.exit(1)\np=Path(sys.argv[2]);p.mkdir(parents=True);(p/'acr-username.txt').write_text('fixture-user');(p/'acr-password.txt').write_text('fixture-token')\n");
+  put("deploy/cn_ssh_access.py", "import os,sys\nsys.exit(2 if os.environ.get('QA_SCENARIO') == 'ssh-blocked' else 0)\n");
   put("deploy/cn-preflight.sh", "#!/bin/bash\nexit 0\n");
   put("deploy/cn-remote-build-services.sh", "# snapshot A\n");
   put("deploy/cn-source-relay.cjs", "// mocked relay\n");
@@ -97,6 +99,7 @@ if(cmd==='aliyun') {
    console.log('https://fixture.invalid/archive');
  }
 } else if(cmd==='ssh') {
+ if(scenario==='ssh-disconnected' && args.at(-1).includes('bash /root/cn-remote-build-services.sh')) process.exit(255);
  if(args.at(-1).includes('sha256sum')) console.log(scenario==='checksum' ? 'wrong' : fs.readFileSync(root+'/digest','utf8'));
 } else if(cmd==='scp') {
  const source=args.at(-2);
@@ -156,7 +159,7 @@ if(cmd==='aliyun') {
     assert.equal(existsSync(chart), false, "chart snapshot cleaned up");
     return { result, upgrades, repo, revision, calls };
   }
-  if (scenario === "start-rejected" || scenario === "reuse-existing") return { result, upgrades, calls };
+  if (scenario === "start-rejected" || scenario === "reuse-existing" || scenario === "ssh-blocked") return { result, upgrades, calls };
   const captured = join(root, "captured");
   assert.equal(readFileSync(join(captured, "source.txt"), "utf8"), "A");
   assert.equal(
@@ -266,4 +269,35 @@ test("direct CN deployment restores desired reused images without rebuilding", (
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(upgrades.length, 1);
   assert.equal(calls.some(c => c.cmd === "ssh"), false);
+});
+
+test("build uploads only newly acquired credentials from its private release directory", (t) => {
+  const { result, calls } = run(t, "normal", "build");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const uploads = calls.filter((c) => c.cmd === "scp" && c.args.some((a) => /\/credentials\/acr-/.test(a)));
+  assert.equal(uploads.length, 2);
+  assert.equal(calls.some((c) => c.cmd === "scp" && c.args.some((a) => a.includes(".fizzdragon-cn/acr-"))), false);
+});
+test("failed token refresh prevents credential upload and deployment", (t) => {
+  const { result, calls, upgrades } = run(t, "auth-failure");
+  assert.notEqual(result.status, 0);
+  assert.equal(upgrades.length, 0);
+  assert.equal(calls.some((c) => c.cmd === "scp"), false);
+});
+
+
+test("known SSH allowlist mismatch stops before starting builder", (t) => {
+  const { result, calls, upgrades } = run(t, "ssh-blocked", "build");
+  assert.equal(result.status, 2);
+  assert.equal(upgrades.length, 0);
+  assert.equal(calls.some(c => c.cmd === "aliyun" && c.args[1] === "StartInstance"), false);
+  assert.equal(calls.some(c => c.cmd === "ssh" || c.cmd === "scp"), false);
+});
+
+
+test("SSH build disconnect preserves failure and prevents Helm deployment", (t) => {
+  const { result, upgrades } = run(t, "ssh-disconnected");
+  assert.equal(result.status, 255);
+  assert.equal(upgrades.length, 0);
+  assert.doesNotMatch(result.stdout, /images built and pushed/);
 });

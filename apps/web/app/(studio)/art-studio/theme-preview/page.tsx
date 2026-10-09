@@ -39,6 +39,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
+import { SITE_LOCALE_OPTIONS } from "@/src/i18n/config";
 import { setCurrentLocale } from "@/src/i18n/locale-url";
 import { useRouter } from "next/navigation";
 
@@ -64,14 +65,14 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-3">
               <div className="flex gap-1 text-sm">
-                {(["zh-CN", "zh-HK", "en-US"] as const).map((lng) => (
+                {SITE_LOCALE_OPTIONS.map((lng) => (
                   <button
-                    key={lng}
+                    key={lng.value}
                     type="button"
-                    onClick={() => switchLang(lng)}
-                    className={`px-2 py-1 rounded ${locale === lng ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => switchLang(lng.value)}
+                    className={`px-2 py-1 rounded ${locale === lng.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
                   >
-                    {lng === "zh-CN" ? "简" : lng === "zh-HK" ? "繁" : "EN"}
+                    {lng.value === "zh-CN" ? "简" : lng.value === "zh-HK" ? "繁" : "EN"}
                   </button>
                 ))}
               </div>

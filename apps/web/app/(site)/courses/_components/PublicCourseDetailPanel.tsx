@@ -10,12 +10,14 @@ import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import type { PublicCourseDetailView } from "@/src/hooks/use-courses-public";
 import { resolveCourseCoverUrl } from "@/src/services/courses-public";
-import { CourseEnrollment } from "../_learning/course-enrollment";
+import { CourseHomeworkPanel } from "../_learning/course-enrollment";
 import { CourseCertificate } from "./CourseCertificate";
 
 interface PublicCourseDetailPanelProps {
   detail: PublicCourseDetailView;
   onVideoSelect: (videoId: number) => void;
+  /** Homework belongs inside the lesson after enrollment — not on the enroll gate. */
+  showHomework?: boolean;
 }
 
 function formatUpdateTime(updateTime: string, locale: string) {
@@ -25,7 +27,11 @@ function formatUpdateTime(updateTime: string, locale: string) {
   return date.toLocaleDateString(locale);
 }
 
-export function PublicCourseDetailPanel({ detail, onVideoSelect }: PublicCourseDetailPanelProps) {
+export function PublicCourseDetailPanel({
+  detail,
+  onVideoSelect,
+  showHomework = false,
+}: PublicCourseDetailPanelProps) {
   const t = useTranslations("courses");
   const locale = useLocale() as Locale;
 
@@ -48,7 +54,12 @@ export function PublicCourseDetailPanel({ detail, onVideoSelect }: PublicCourseD
         ) : null}
 
         <CourseCertificate key={detail.courseId} courseId={detail.courseId} />
-        <CourseEnrollment key={`learning:${detail.courseId}`} courseId={String(detail.courseId)} />
+        {showHomework ? (
+          <CourseHomeworkPanel
+            key={`learning:${detail.courseId}`}
+            courseId={String(detail.courseId)}
+          />
+        ) : null}
         {detail.instructors.length > 0 ? (
           <div className="mt-3 flex flex-col gap-1.5">
             <span className="text-[11px] font-medium text-[#6f7585]">{t("instructors")}</span>

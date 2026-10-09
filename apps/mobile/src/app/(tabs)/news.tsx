@@ -49,8 +49,6 @@ export default function NewsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filtering, setFiltering] = useState(false);
   const [error, setError] = useState<string>();
-  const [pageError, setPageError] = useState<string>();
-  const [readError, setReadError] = useState<{ message: string; tag?: string | null }>();
   // null = frontend "All" chip — no server-side tag filter.
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
   const hasDataRef = useRef(false);
@@ -79,8 +77,6 @@ export default function NewsScreen() {
     setFiltering(false);
     setLoading(hasDataRef.current === false);
     setError(undefined);
-    setPageError(undefined);
-    setReadError(undefined);
     try {
       const tag = activeTagIdRef.current;
       const [feed, tags] = await Promise.all([
@@ -114,10 +110,8 @@ export default function NewsScreen() {
       setPage(1);
       setHasMore(pageHasMore(feed.articles.length, feed.articles, feed.total));
     } catch (loadError) {
-      if (seq === requestSeqRef.current) {
-        const message = loadError instanceof Error ? loadError.message : t("news.loadError");
-        if (hasDataRef.current) setReadError({ message });
-        else setError(message);
+      if (seq === requestSeqRef.current && !hasDataRef.current) {
+        setError(loadError instanceof Error ? loadError.message : t("news.loadError"));
       }
     } finally {
       if (seq === requestSeqRef.current) {
@@ -138,59 +132,48 @@ export default function NewsScreen() {
     };
   }, [loadFirstPage]);
 
-  const canLoadMore = hasMore && !filtering && !readError;
+  const canLoadMore = hasMore && !filtering;
 
-  const loadMore = useCallback(
-    async (explicit = false) => {
-      if (
-        !canLoadMore ||
-        replacingRef.current ||
-        loadingMoreRef.current ||
-        (pageError && !explicit)
-      )
+  const loadMore = useCallback(async () => {
+    if (!canLoadMore || replacingRef.current || loadingMoreRef.current) return;
+    const operation = {};
+    loadingMoreRef.current = operation;
+    setLoadingMore(true);
+    const seq = requestSeqRef.current;
+    const tag = activeTagIdRef.current;
+    const nextPage = page + 1;
+    try {
+      const feed = await getNewsFeed(locale, {
+        page: nextPage,
+        pageSize: NEWS_PAGE_SIZE,
+        ...(tag ? { tag } : {}),
+      });
+      if (seq !== requestSeqRef.current) return;
+
+      if (feed.articles.length === 0) {
+        setHasMore(false);
         return;
-      setPageError(undefined);
-      const operation = {};
-      loadingMoreRef.current = operation;
-      setLoadingMore(true);
-      const seq = requestSeqRef.current;
-      const tag = activeTagIdRef.current;
-      const nextPage = page + 1;
-      try {
-        const feed = await getNewsFeed(locale, {
-          page: nextPage,
-          pageSize: NEWS_PAGE_SIZE,
-          ...(tag ? { tag } : {}),
-        });
-        if (seq !== requestSeqRef.current) return;
-
-        if (feed.articles.length === 0) {
-          setHasMore(false);
-          return;
-        }
-
-        const seen = new Set(articlesRef.current.map((article) => article.id));
-        const merged = [...articlesRef.current];
-        for (const article of feed.articles) {
-          if (seen.has(article.id)) continue;
-          seen.add(article.id);
-          merged.push(article);
-        }
-        replaceArticles(merged);
-        setPage(nextPage);
-        setHasMore(pageHasMore(merged.length, feed.articles, feed.total));
-      } catch (cause) {
-        if (seq === requestSeqRef.current)
-          setPageError(cause instanceof Error ? cause.message : t("news.loadError"));
-      } finally {
-        if (loadingMoreRef.current === operation) {
-          loadingMoreRef.current = null;
-          setLoadingMore(false);
-        }
       }
-    },
-    [canLoadMore, locale, page, replaceArticles, pageError, t]
-  );
+
+      const seen = new Set(articlesRef.current.map((article) => article.id));
+      const merged = [...articlesRef.current];
+      for (const article of feed.articles) {
+        if (seen.has(article.id)) continue;
+        seen.add(article.id);
+        merged.push(article);
+      }
+      replaceArticles(merged);
+      setPage(nextPage);
+      setHasMore(pageHasMore(merged.length, feed.articles, feed.total));
+    } catch {
+      // Keep the loaded page and page number so the next end-reached event retries it.
+    } finally {
+      if (loadingMoreRef.current === operation) {
+        loadingMoreRef.current = null;
+        setLoadingMore(false);
+      }
+    }
+  }, [canLoadMore, locale, page, replaceArticles]);
 
   const onRefresh = useCallback(async () => {
     const pending = loadFirstPage();
@@ -215,8 +198,6 @@ export default function NewsScreen() {
       setLoadingMore(false);
       setRefreshing(false);
       setFiltering(true);
-      setPageError(undefined);
-      setReadError(undefined);
       try {
         const feed = await getNewsFeed(locale, {
           page: 1,
@@ -227,15 +208,11 @@ export default function NewsScreen() {
         replaceArticles(feed.articles);
         setPage(1);
         setHasMore(pageHasMore(feed.articles.length, feed.articles, feed.total));
-      } catch (cause) {
-        // Keep the current list and offer retry of the requested filter.
+      } catch {
+        // Keep the current list on a failed filter fetch — revert the chip.
         if (seq === requestSeqRef.current) {
           activeTagIdRef.current = previous;
           setActiveTagId(previous);
-          setReadError({
-            message: cause instanceof Error ? cause.message : t("news.loadError"),
-            tag: tagId,
-          });
         }
       } finally {
         if (seq === requestSeqRef.current) {
@@ -244,7 +221,7 @@ export default function NewsScreen() {
         }
       }
     },
-    [locale, replaceArticles, t]
+    [locale, replaceArticles]
   );
 
   // The native tab host does NOT inset content below the status bar (verified
@@ -288,7 +265,6 @@ export default function NewsScreen() {
             detail={error}
             symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
           />
-          <NewsRetry label={t("common.retry")} onPress={() => void loadFirstPage()} />
         </View>
       </View>
     );
@@ -313,15 +289,6 @@ export default function NewsScreen() {
       ListHeaderComponent={
         <View style={styles.header}>
           <ScreenHeader eyebrow={t("news.eyebrow")} title={t("news.title")} />
-          {readError ? (
-            <NewsRetry
-              message={readError.message}
-              label={t("common.retry")}
-              onPress={() =>
-                void (readError.tag !== undefined ? selectTag(readError.tag) : loadFirstPage())
-              }
-            />
-          ) : null}
           {tagOptions.length ? (
             <ChipRail
               items={[t("news.tagAll"), ...tagOptions.map((tag) => tag.label)]}
@@ -344,12 +311,6 @@ export default function NewsScreen() {
       ListFooterComponent={
         loadingMore ? (
           <ListFooter loading />
-        ) : pageError ? (
-          <NewsRetry
-            message={pageError}
-            label={t("common.retry")}
-            onPress={() => void loadMore(true)}
-          />
         ) : hasMore || articles.length === 0 ? null : (
           <View style={[styles.endOfList, { marginBottom: -(bottomInset - Spacing.three) }]}>
             <ThemedText type="code" themeColor="textSecondary">
@@ -378,33 +339,6 @@ export default function NewsScreen() {
         )
       }
     />
-  );
-}
-
-function NewsRetry({
-  message,
-  label,
-  onPress,
-}: {
-  message?: string;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <View style={{ gap: Spacing.two, paddingVertical: Spacing.three }}>
-      {message ? (
-        <ThemedText type="small" accessibilityRole="alert">
-          {message}
-        </ThemedText>
-      ) : null}
-      <Pressable
-        accessibilityRole="button"
-        onPress={onPress}
-        style={{ paddingVertical: Spacing.two }}
-      >
-        <ThemedText type="smallBold">{label}</ThemedText>
-      </Pressable>
-    </View>
   );
 }
 

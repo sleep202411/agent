@@ -1,7 +1,6 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { useTaskBriefSession } from "./use-task-brief-session";
 import { TaskBrief } from "./task-brief";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({ access: vi.fn(), update: vi.fn(), refresh: vi.fn(), generation: 1 }));
@@ -181,77 +180,4 @@ it("aborts permission reads and ignores late account results", async () => {
   expect(button("taskBrief.edit")).toBeUndefined();
   await act(async () => root.render(null));
   expect(signal.aborted).toBe(true);
-});
-
-function RefreshingTask({ value, visible }: { value: TaskDetail; visible: boolean }) {
-  const session = useTaskBriefSession(value.id, 1, h.refresh);
-  return visible ? (
-    <TaskBrief task={value} userId="1" generation={1} onRefresh={h.refresh} session={session} />
-  ) : null;
-}
-const refreshRender = (value = task, visible = true) =>
-  act(async () => root.render(<RefreshingTask value={value} visible={visible} />));
-it("preserves a draft through loading and explicitly reviews a newer version", async () => {
-  await refreshRender();
-  await act(async () => button("taskBrief.edit")!.click());
-  await act(async () => type(0, "My draft"));
-  await refreshRender(task, false);
-  const fresh = { ...task, version: 5, title: "Another editor's title" };
-  await refreshRender(fresh);
-  expect(host.querySelector("input")!.value).toBe("My draft");
-  expect(button("taskBrief.save")!.disabled).toBe(true);
-  expect(host.textContent).toContain("Another editor's title");
-  await act(async () => button("taskBrief.reviewLatest")!.click());
-  await act(async () => button("taskBrief.save")!.click());
-  expect(h.update).toHaveBeenCalledWith(fresh, {
-    expectedVersion: 5,
-    title: "My draft",
-    description: "Brief",
-  });
-});
-it("keeps a pending write serialized across editor unmount and refresh", async () => {
-  let reject!: (error: Error) => void;
-  h.update.mockImplementation(
-    () =>
-      new Promise((_resolve, fail) => {
-        reject = fail;
-      })
-  );
-  await refreshRender();
-  await act(async () => button("taskBrief.edit")!.click());
-  await act(async () => type(0, "My draft"));
-  await act(async () => button("taskBrief.save")!.click());
-  await refreshRender(task, false);
-  await refreshRender({ ...task });
-  expect(host.querySelector("input")!.value).toBe("My draft");
-  expect(button("taskBrief.save")!.disabled).toBe(true);
-  expect(button("myServices.cancel")!.disabled).toBe(true);
-  expect(button("taskBrief.reviewLatest")).toBeUndefined();
-  await act(async () => reject(new Error("Version changed")));
-  expect(host.textContent).toContain("Version changed");
-  expect(h.update).toHaveBeenCalledTimes(1);
-});
-it("retains a conflicted draft until a fresh read is explicitly reviewed", async () => {
-  h.update.mockRejectedValueOnce(new Error("Version changed"));
-  await refreshRender();
-  await act(async () => button("taskBrief.edit")!.click());
-  await act(async () => type(1, "My description"));
-  await act(async () => button("taskBrief.save")!.click());
-  expect(button("taskBrief.reviewLatest")).toBeUndefined();
-  await refreshRender({ ...task });
-  expect(host.querySelectorAll("input")[1]!.value).toBe("My description");
-  expect(button("taskBrief.save")!.disabled).toBe(true);
-  await act(async () => button("taskBrief.reviewLatest")!.click());
-  expect(button("taskBrief.save")!.disabled).toBe(false);
-  expect(h.update).toHaveBeenCalledTimes(1);
-});
-
-it("does not carry a local brief draft into another task", async () => {
-  await render();
-  await act(async () => button("taskBrief.edit")!.click());
-  await act(async () => type(0, "Private unsaved draft"));
-  await render({ ...task, id: "other-task" });
-  expect(host.querySelector("input")).toBeNull();
-  await act(async () => button("taskBrief.edit")!.click());
-  expect(host.querySelector("input")!.value).toBe("Shot");
 });

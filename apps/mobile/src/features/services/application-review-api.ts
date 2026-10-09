@@ -67,12 +67,8 @@ export async function fetchReviewApplication(
   id.parse(crewId);
   id.parse(applicationId);
   current(generation);
-  const app = reviewApplication.extend({ taskId: z.string().uuid().nullable() }).parse(
-    await api.get(`/applications/${applicationId}`, {
-      service: "aurora",
-      signal,
-      cache: "no-store",
-    })
+  const app = reviewApplication.parse(
+    await api.get(`/crews/${crewId}/applications/${applicationId}`, { service: "aurora", signal })
   );
   current(generation);
   if (app.crewId !== crewId || app.id !== applicationId)
@@ -94,8 +90,7 @@ export function canApproveReview(
     review.app.applicantId !== userId &&
     review.interview.applicationStatus === "pending" &&
     !["proposed", "confirmed"].includes(review.interview.state) &&
-    review.terms.currentVersion > 0 &&
-    !!latest?.confirmedAt
+    (review.terms.currentVersion === 0 || !!latest?.confirmedAt)
   );
 }
 export async function decideReviewApplication(

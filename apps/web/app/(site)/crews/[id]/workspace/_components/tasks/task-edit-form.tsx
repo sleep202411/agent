@@ -16,6 +16,13 @@ export function taskFormInput(task: CrewTaskDTO): CreateCrewTaskInput {
     priority: task.priority,
     workflowStateId: task.workflowStateId,
     taskKind: task.taskKind,
+    ...(task.taskKind === "art"
+      ? {
+          assetCategory: (["characters", "scenes", "props"].includes(task.assetCategory ?? "")
+            ? task.assetCategory
+            : "art") as "characters" | "scenes" | "props" | "art",
+        }
+      : {}),
     startAt: task.startAt,
     dueAt: task.dueAt,
     requiredSkills: task.requiredSkills,

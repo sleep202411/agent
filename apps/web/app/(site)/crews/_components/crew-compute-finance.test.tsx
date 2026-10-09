@@ -9,7 +9,13 @@ const h = vi.hoisted(() => ({
   failed: false,
   pending: false,
   refetch: vi.fn(),
-  tasks: [] as { id: string; title: string; number: number; assignees?: { userId: string }[] }[],
+  tasks: [] as {
+    id: string;
+    title: string;
+    number: number;
+    assignees?: { userId: string }[];
+    topUpRequested?: boolean;
+  }[],
   mutate: vi.fn(),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
@@ -30,6 +36,7 @@ vi.mock("../_hooks/use-compute-requests", () => ({
     refetch: h.refetch,
     data: h.badData ?? {
       isOwner: h.owner,
+      workspaceLinked: true,
       tasks: h.tasks,
       totals: { pending: 50, approved: 100 },
       consumedPoints: h.consumed,
@@ -107,7 +114,10 @@ it("keeps the submit key stable across retries until details change", async () =
       .click();
   });
   await act(async () => {
-    const input = host.querySelector('input[type="number"]')!;
+    const workload = host.querySelector('input[step="0.01"]')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(workload, "10");
+    workload.dispatchEvent(new Event("input", { bubbles: true }));
+    const input = host.querySelector('input[step="1"]')!;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "50");
     input.dispatchEvent(new Event("input", { bubbles: true }));
     const textarea = host.querySelector("textarea")!;
@@ -249,4 +259,28 @@ it("shows owner guidance instead of a request form to creators", async () => {
   await render();
   expect(host.textContent).toContain("ownerOnly");
   expect(host.querySelector("form")).toBeNull();
+});
+
+it("requires assignment and blocks a second application independently of request-page pagination", async () => {
+  h.owner = true;
+  h.tasks = [{ id: "task", title: "Shot one", number: 1, assignees: [] }];
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "chooseTask")!.click()
+  );
+  expect(host.textContent).toContain("assignFirst");
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  h.tasks = [
+    {
+      id: "task",
+      title: "Shot one",
+      number: 1,
+      assignees: [{ userId: "creator" }],
+      topUpRequested: true,
+    },
+  ];
+  await render();
+  expect(host.textContent).toContain("topUpAlreadyApplied");
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  expect(host.querySelector<HTMLInputElement>('input[step="1"]')!.max).toBe("500");
 });

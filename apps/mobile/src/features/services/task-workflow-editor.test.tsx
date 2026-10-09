@@ -1,7 +1,6 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { useTaskWorkflowSession } from "./use-task-workflow-session";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({
@@ -215,62 +214,4 @@ it("aborts workflow snapshot reads when leaving", async () => {
   const signal = h.fetch.mock.calls[0]![1] as AbortSignal;
   await act(async () => root.render(null));
   expect(signal.aborted).toBe(true);
-});
-
-function RefreshingWorkflow({ value, visible }: { value: TaskDetail; visible: boolean }) {
-  const session = useTaskWorkflowSession(value.id, 1, h.refresh);
-  return visible ? (
-    <TaskWorkflowEditor
-      key={value.version}
-      task={value}
-      userId="1"
-      generation={1}
-      onRefresh={h.refresh}
-      session={session}
-    />
-  ) : null;
-}
-const refreshRender = (value = task, visible = true) =>
-  act(async () => root.render(<RefreshingWorkflow value={value} visible={visible} />));
-it("keeps the chosen status across reload and requires reviewing the current version", async () => {
-  await refreshRender();
-  await act(async () => button("taskWorkflow.edit")!.click());
-  await choose();
-  await refreshRender(task, false);
-  const latest = { ...(await h.fetch()), version: 5 };
-  h.fetch.mockResolvedValue(latest);
-  await refreshRender({ ...task, version: 5 });
-  expect(button("Working")).toBeDefined();
-  expect(button("taskWorkflow.save")!.disabled).toBe(true);
-  await act(async () => button("taskBrief.reviewLatest")!.click());
-  await act(async () => button("taskWorkflow.save")!.click());
-  expect(h.update).toHaveBeenCalledExactlyOnceWith(
-    latest,
-    expect.objectContaining({ name: "Working" })
-  );
-});
-it("keeps pending workflow changes locked after refresh and exposes a conflict without resending", async () => {
-  let fail!: (e: Error) => void;
-  h.update.mockImplementation(
-    () =>
-      new Promise((_, reject) => {
-        fail = reject;
-      })
-  );
-  await refreshRender();
-  await act(async () => button("taskWorkflow.edit")!.click());
-  await choose();
-  await act(async () => button("taskWorkflow.save")!.click());
-  await refreshRender(task, false);
-  h.fetch.mockResolvedValue({ ...(await h.fetch()) });
-  await refreshRender({ ...task });
-  expect(button("taskWorkflow.save")!.disabled).toBe(true);
-  expect(button("myServices.cancel")!.disabled).toBe(true);
-  expect(button("taskBrief.reviewLatest")).toBeUndefined();
-  await act(async () => fail(new Error("Workflow conflict")));
-  expect(host.textContent).toContain("Workflow conflict");
-  expect(button("Working")).toBeDefined();
-  await act(async () => button("taskBrief.reviewLatest")!.click());
-  expect(button("taskWorkflow.save")!.disabled).toBe(false);
-  expect(h.update).toHaveBeenCalledOnce();
 });
