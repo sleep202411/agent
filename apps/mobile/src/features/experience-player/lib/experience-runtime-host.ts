@@ -1,5 +1,6 @@
 import {
   EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY,
+  EXPERIENCE_CORE_VIDEO_SUBTITLE_CAPABILITY,
   type ExperienceRuntimeManifest,
 } from "@repo/shared/experience-runtime";
 import {
@@ -34,6 +35,7 @@ const EXPERIENCE_NATIVE_HOST_CAPABILITIES = new Set([
   // this — the whole point is that it is refused by name instead of showing an
   // empty frame.
   EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY,
+  EXPERIENCE_CORE_VIDEO_SUBTITLE_CAPABILITY,
 ]);
 
 /** Host adapter around the shared headless experience controller (web parity). */

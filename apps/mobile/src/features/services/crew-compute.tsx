@@ -9,6 +9,8 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import {
   fetchCompute,
+  setupComputeWorkspace,
+  workloadUnits,
   createCompute,
   computeInput,
   type ComputePage,
@@ -98,7 +100,7 @@ function Panel(props: Props & { onSaved: () => void }) {
             )
           </ThemedText>
           <ThemedText>{t("crewComputeFinance.equivalent")}</ThemedText>
-          <RequestForm {...props} tasks={page.tasks} />
+          <RequestForm {...props} page={page} />
           {!page.items.length && <ThemedText>{t("crewComputeFinance.empty")}</ThemedText>}
           {page.items.map((row) => (
             <View key={row.id} style={{ paddingVertical: 12, gap: 6 }}>
@@ -106,11 +108,25 @@ function Panel(props: Props & { onSaved: () => void }) {
                 {row.taskTitle} · {t(`crewComputeFinance.${row.status}`)}
               </ThemedText>
               <ThemedText>
-                {t("crewComputeFinance.applicant")} · {row.userId}
+                {t("crewComputeFinance.applicant")} · {row.requestedByUserId ?? row.userId}
               </ThemedText>
               <ThemedText>
                 {row.points} {t("crewComputeFinance.points")}
               </ThemedText>
+              <ThemedText>
+                {t("crewComputeFinance.creator")} · {row.userId}
+              </ThemedText>
+              {row.remainingWorkload && (
+                <ThemedText>
+                  {t("crewComputeFinance.remainingWorkload")} · {row.remainingWorkload}{" "}
+                  {row.workloadUnit &&
+                  workloadUnits.includes(row.workloadUnit as (typeof workloadUnits)[number])
+                    ? t(
+                        `crewComputeFinance.workloadUnits.${row.workloadUnit as (typeof workloadUnits)[number]}`
+                      )
+                    : row.workloadUnit}
+                </ThemedText>
+              )}
               <ThemedText>{row.reason}</ThemedText>
               <ThemedText>{new Date(row.createdAt).toLocaleString()}</ThemedText>
               {row.decidedByAdminId ? (
@@ -142,44 +158,127 @@ function Panel(props: Props & { onSaved: () => void }) {
     </ScrollView>
   );
 }
-function RequestForm(props: Props & { tasks: ComputePage["tasks"]; onSaved: () => void }) {
+function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.crewId, true);
   const [taskId, setTaskId] = useState(""),
     [points, setPoints] = useState(""),
     [reason, setReason] = useState(""),
+    [beneficiary, setBeneficiary] = useState(""),
+    [workload, setWorkload] = useState(""),
+    [unit, setUnit] = useState<(typeof workloadUnits)[number]>("minutes"),
     [error, setError] = useState<string>(),
     [attempted, setAttempted] = useState(false);
   const request = useRef<ComputeInput | null>(null);
-  if (!props.tasks.length) return <ThemedText>{t("crewComputeFinance.noTasks")}</ThemedText>;
+  const tasks = props.page.tasks;
+  const selected = tasks.find((task) => task.id === taskId);
+  const assignees = selected?.assignees ?? [];
+  const recipient = assignees.length === 1 ? assignees[0]!.userId : beneficiary;
+  if (!props.page.isOwner) return <ThemedText>{t("crewComputeFinance.ownerOnly")}</ThemedText>;
+  if (!props.page.workspaceLinked)
+    return (
+      <View>
+        <ThemedText>{t("crewComputeFinance.workspaceRequired")}</ThemedText>
+        <Pressable
+          accessibilityRole="button"
+          disabled={op.busy}
+          onPress={() => {
+            if (props.generation !== getAuthGeneration()) return;
+            void op.run(
+              () => setupComputeWorkspace(props.crewId, props.generation),
+              props.onSaved,
+              (e) => setError(e instanceof Error ? e.message : String(e))
+            );
+          }}
+        >
+          <ThemedText>{t("crewComputeFinance.setupWorkspace")}</ThemedText>
+        </Pressable>
+        {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
+      </View>
+    );
+  if (!tasks.length) return <ThemedText>{t("crewComputeFinance.noTasks")}</ThemedText>;
   return (
     <View style={{ gap: 12 }}>
       <ThemedText>{t("crewComputeFinance.task")}</ThemedText>
-      {props.tasks.map((task) => (
+      {tasks.map((task) => (
         <Pressable
           key={task.id}
           accessibilityRole="radio"
           accessibilityState={{ checked: taskId === task.id }}
           disabled={attempted || op.busy}
           style={{ padding: 12 }}
-          onPress={() => setTaskId(task.id)}
+          onPress={() => {
+            setTaskId(task.id);
+            setBeneficiary("");
+          }}
         >
           <ThemedText>
             {taskId === task.id ? "✓ " : ""}TASK-{task.number} · {task.title}
           </ThemedText>
         </Pressable>
       ))}
-      {(["points", "reason"] as const).map((field) => (
+      <ThemedText>{t("crewComputeFinance.topUpPolicy")}</ThemedText>
+      {selected?.topUpRequested && (
+        <ThemedText>{t("crewComputeFinance.topUpAlreadyApplied")}</ThemedText>
+      )}
+      {selected && !assignees.length && (
+        <ThemedText>{t("crewComputeFinance.assignFirst")}</ThemedText>
+      )}
+      <ThemedText>{t("crewComputeFinance.creator")}</ThemedText>
+      {assignees.map((a) => (
+        <Pressable
+          key={a.userId}
+          accessibilityRole="radio"
+          accessibilityState={{ checked: recipient === a.userId }}
+          disabled={attempted || op.busy}
+          onPress={() => setBeneficiary(a.userId)}
+          style={{ padding: 12 }}
+        >
+          <ThemedText>
+            {recipient === a.userId ? "✓ " : ""}
+            {a.userId}
+          </ThemedText>
+        </Pressable>
+      ))}
+      <ThemedText>{t("crewComputeFinance.workloadUnit")}</ThemedText>
+      {workloadUnits.map((value) => (
+        <Pressable
+          key={value}
+          accessibilityRole="radio"
+          accessibilityState={{ checked: unit === value }}
+          disabled={attempted || op.busy}
+          onPress={() => setUnit(value)}
+          style={{ padding: 12 }}
+        >
+          <ThemedText>
+            {unit === value ? "✓ " : ""}
+            {t(`crewComputeFinance.workloadUnits.${value}`)}
+          </ThemedText>
+        </Pressable>
+      ))}
+      {(["points", "remainingWorkload", "reason"] as const).map((field) => (
         <View key={field}>
           <ThemedText>{t(`crewComputeFinance.${field}`)} *</ThemedText>
           <TextInput
             accessibilityLabel={t(`crewComputeFinance.${field}`)}
-            value={field === "points" ? points : reason}
-            onChangeText={field === "points" ? setPoints : setReason}
-            keyboardType={field === "points" ? "number-pad" : "default"}
+            value={field === "points" ? points : field === "remainingWorkload" ? workload : reason}
+            onChangeText={
+              field === "points"
+                ? setPoints
+                : field === "remainingWorkload"
+                  ? setWorkload
+                  : setReason
+            }
+            keyboardType={
+              field === "points"
+                ? "number-pad"
+                : field === "remainingWorkload"
+                  ? "decimal-pad"
+                  : "default"
+            }
             multiline={field === "reason"}
-            maxLength={field === "points" ? 10 : 2000}
+            maxLength={field === "points" ? 3 : field === "remainingWorkload" ? 15 : 2000}
             editable={!attempted && !op.busy}
             style={{
               color: theme.text,
@@ -195,17 +294,26 @@ function RequestForm(props: Props & { tasks: ComputePage["tasks"]; onSaved: () =
       <Pressable
         accessibilityRole="button"
         style={{ padding: 12 }}
-        disabled={op.busy}
+        disabled={op.busy || (!attempted && !!selected?.topUpRequested)}
         onPress={() => {
           if (props.generation !== getAuthGeneration()) return;
           void op.run(
             async () => {
               if (!request.current) {
-                if (!/^\d+$/.test(points) || !props.tasks.some((task) => task.id === taskId))
+                if (
+                  !/^\d+$/.test(points) ||
+                  !/^\d+(\.\d{1,2})?$/.test(workload) ||
+                  !selected ||
+                  selected.topUpRequested ||
+                  !assignees.some((a) => a.userId === recipient)
+                )
                   throw new Error(t("mobileCompute.invalid"));
                 const parsed = computeInput.safeParse({
                   taskId,
                   points: Number(points),
+                  beneficiaryUserId: recipient,
+                  remainingWorkload: Number(workload),
+                  workloadUnit: unit,
                   reason,
                   requestKey: uuid.v4(),
                 });

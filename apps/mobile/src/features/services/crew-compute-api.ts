@@ -6,6 +6,9 @@ export const computeRequest = z.object({
   id: z.string().uuid(),
   crewId: identifier,
   userId: z.string().min(1),
+  requestedByUserId: z.string().nullable(),
+  remainingWorkload: z.string().nullable(),
+  workloadUnit: z.string().nullable(),
   taskId: z.string().uuid(),
   taskTitle: z.string(),
   points: z.number().int().positive().max(2_000_000_000),
@@ -18,25 +21,40 @@ export const computeRequest = z.object({
 });
 const pageSchema = z.object({
   isOwner: z.boolean(),
+  workspaceLinked: z.boolean(),
   consumedPoints: z.string().regex(/^\d+$/),
   totals: z.object({
     pending: z.number().int().nonnegative().optional(),
     approved: z.number().int().nonnegative().optional(),
     rejected: z.number().int().nonnegative().optional(),
   }),
-  tasks: z.array(z.object({ id: z.string().uuid(), title: z.string(), number: z.number().int() })),
+  tasks: z.array(
+    z.object({
+      id: z.string().uuid(),
+      title: z.string(),
+      number: z.number().int(),
+      topUpRequested: z.boolean(),
+      assignees: z.array(z.object({ userId: z.string().min(1) })),
+    })
+  ),
   nextCursor: z.string().uuid().nullable(),
   items: z.array(computeRequest),
 });
 export type ComputePage = z.infer<typeof pageSchema>;
+export const workloadUnits = ["minutes", "hours", "days", "person_days", "percent"] as const;
 export const computeInput = z
   .object({
     taskId: z.string().uuid(),
-    points: z.number().int().positive().max(2_000_000_000),
+    beneficiaryUserId: z.string().trim().min(1).max(64),
+    points: z.number().int().positive().max(500),
+    remainingWorkload: z.number().positive().max(999_999_999_999).multipleOf(0.01),
+    workloadUnit: z.enum(workloadUnits),
     reason: z.string().trim().min(1).max(2000),
     requestKey: z.string().uuid(),
   })
-  .strict();
+  .strict()
+  .refine((value) => value.workloadUnit !== "percent" || value.remainingWorkload <= 100)
+  .refine((value) => value.requestKey !== value.taskId);
 export type ComputeInput = z.infer<typeof computeInput>;
 export async function fetchCompute(
   crewId: string,
@@ -77,7 +95,10 @@ export async function createCompute(
   if (generation !== getAuthGeneration()) throw new Error("Compute request session expired");
   if (
     receipt.crewId !== crewId ||
-    receipt.userId !== userId ||
+    receipt.userId !== data.beneficiaryUserId ||
+    receipt.requestedByUserId !== userId ||
+    Number(receipt.remainingWorkload) !== data.remainingWorkload ||
+    receipt.workloadUnit !== data.workloadUnit ||
     receipt.taskId !== data.taskId ||
     receipt.points !== data.points ||
     receipt.reason !== data.reason ||
@@ -85,4 +106,14 @@ export async function createCompute(
   )
     throw new Error("Compute request receipt does not match. Refresh before continuing.");
   return receipt;
+}
+
+export async function setupComputeWorkspace(crewId: string, generation: number) {
+  identifier.parse(crewId);
+  if (generation !== getAuthGeneration()) throw new Error("Compute request session expired");
+  const result = await api.post(`/crews/${crewId}/compute-requests/workspace`, {
+    service: "aurora",
+  });
+  if (generation !== getAuthGeneration()) throw new Error("Compute request session expired");
+  return z.object({ workspaceId: z.string().min(1) }).parse(result);
 }

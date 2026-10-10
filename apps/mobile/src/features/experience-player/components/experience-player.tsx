@@ -1,3 +1,4 @@
+import { ExperienceSubtitleProvider, ExperienceSubtitleControl } from "./experience-subtitles";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
@@ -675,51 +676,54 @@ function ActiveExperienceRuntimePlayer({
     // pauses via playback handles, not this gate — otherwise the still clock
     // and video presenting effect would fight the hold.
     <ScreenActiveGateContext.Provider value={active}>
-      <View style={styles.stage}>
-        {visibleRenderers.map((renderer) => (
-          <View
-            key={`${scene?.sceneId}:${sceneEpoch}:${renderer.instanceId}`}
-            style={[styles.rendererLayer, { zIndex: renderer.layer }]}
-            pointerEvents="box-none"
-          >
-            <RendererPanel
+      <ExperienceSubtitleProvider manifest={manifest} locale={locale}>
+        <View style={styles.stage}>
+          {visibleRenderers.map((renderer) => (
+            <View
+              key={`${scene?.sceneId}:${sceneEpoch}:${renderer.instanceId}`}
+              style={[styles.rendererLayer, { zIndex: renderer.layer }]}
+              pointerEvents="box-none"
+            >
+              <RendererPanel
+                manifest={manifest}
+                renderer={renderer}
+                runtimeState={runtimeState}
+                open={openRendererIds.has(renderer.instanceId)}
+                locale={locale}
+                copy={copy}
+                accent={accent}
+                formatPrice={access?.formatPrice}
+                onOutcome={emitOutcome}
+                onRuntimeError={setRuntimeError}
+                onTimelineTimeMs={(positionMs) => advanceTimeline(renderer.instanceId, positionMs)}
+                onPlaybackHandle={registerPlaybackHandle}
+              />
+            </View>
+          ))}
+          {scene && started && !endingId && !accessPending && !retryAccess ? (
+            <ExperienceSpatialLayer
+              key={scene.sceneId}
               manifest={manifest}
-              renderer={renderer}
+              scene={scene}
               runtimeState={runtimeState}
-              open={openRendererIds.has(renderer.instanceId)}
-              locale={locale}
-              copy={copy}
-              accent={accent}
-              formatPrice={access?.formatPrice}
-              onOutcome={emitOutcome}
+              sceneTimeMs={sceneTimeMs}
+              locale={playbackLocale}
+              viewerLocale={locale}
+              orientation={EXPERIENCE_PLAY_ORIENTATION}
+              onEvents={emitRuntimeEvents}
               onRuntimeError={setRuntimeError}
-              onTimelineTimeMs={(positionMs) => advanceTimeline(renderer.instanceId, positionMs)}
-              onPlaybackHandle={registerPlaybackHandle}
+              onTimelineHoldGateChange={setTimelineHoldGate}
             />
-          </View>
-        ))}
-        {scene && started && !endingId && !accessPending && !retryAccess ? (
-          <ExperienceSpatialLayer
-            key={scene.sceneId}
-            manifest={manifest}
-            scene={scene}
-            runtimeState={runtimeState}
-            sceneTimeMs={sceneTimeMs}
-            locale={playbackLocale}
-            viewerLocale={locale}
-            orientation={EXPERIENCE_PLAY_ORIENTATION}
-            onEvents={emitRuntimeEvents}
-            onRuntimeError={setRuntimeError}
-            onTimelineHoldGateChange={setTimelineHoldGate}
-          />
-        ) : null}
-        {nodeGate ? <View pointerEvents="none" style={styles.nodeGate} /> : null}
-        {retryAccess && started && !nodeGate ? (
-          <View style={styles.retryOverlay}>
-            <PrimaryButton label={copy.continue} accent={accent} onPress={retryAccess} />
-          </View>
-        ) : null}
-      </View>
+          ) : null}
+          <ExperienceSubtitleControl />
+          {nodeGate ? <View pointerEvents="none" style={styles.nodeGate} /> : null}
+          {retryAccess && started && !nodeGate ? (
+            <View style={styles.retryOverlay}>
+              <PrimaryButton label={copy.continue} accent={accent} onPress={retryAccess} />
+            </View>
+          ) : null}
+        </View>
+      </ExperienceSubtitleProvider>
     </ScreenActiveGateContext.Provider>
   );
 }

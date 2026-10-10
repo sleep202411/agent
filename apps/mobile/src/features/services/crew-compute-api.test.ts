@@ -9,7 +9,10 @@ const id = "11111111-1111-4111-8111-111111111111",
 const row = {
   id,
   crewId: "crew",
-  userId: "user",
+  userId: "creator",
+  requestedByUserId: "user",
+  remainingWorkload: "1.5",
+  workloadUnit: "hours",
   taskId: id,
   taskTitle: "Scene",
   points: 20,
@@ -19,18 +22,29 @@ const row = {
   decidedByAdminId: null,
   decidedByUserId: null,
   decisionNote: null,
-  requestKey: id,
+  requestKey: next,
 };
 const page = {
-  isOwner: false,
+  isOwner: true,
+  workspaceLinked: true,
   consumedPoints: "9007199254740993",
   totals: { pending: 20 },
-  tasks: [{ id, title: "Scene", number: 1 }],
+  tasks: [
+    { id, title: "Scene", number: 1, topUpRequested: false, assignees: [{ userId: "creator" }] },
+  ],
   items: [row],
   nextCursor: null,
 };
 
-const input = { taskId: id, points: 20, reason: " Render ", requestKey: id };
+const input = {
+  taskId: id,
+  beneficiaryUserId: "creator",
+  points: 20,
+  remainingWorkload: 1.5,
+  workloadUnit: "hours" as const,
+  reason: " Render ",
+  requestKey: next,
+};
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
@@ -48,7 +62,11 @@ it("reads scoped requests and preserves exact usage", async () => {
 it.each([{ crewId: "other" }, { userId: "other" }])(
   "rejects unauthorized row %j",
   async (change) => {
-    vi.mocked(api.get).mockResolvedValue({ ...page, items: [{ ...row, ...change }] });
+    vi.mocked(api.get).mockResolvedValue({
+      ...page,
+      isOwner: false,
+      items: [{ ...row, ...change }],
+    });
     await expect(fetchCompute("crew", "user", null, new AbortController().signal)).rejects.toThrow(
       "scope"
     );
@@ -81,7 +99,7 @@ it("submits normalized request key and permits already decided retry receipt", a
     data: { ...input, reason: "Render" },
   });
 });
-it.each([0, 1.5, 2000000001])("rejects invalid points %s", async (points) => {
+it.each([0, 1.5, 501, 2000000001])("rejects invalid points %s", async (points) => {
   await expect(createCompute("crew", "user", { ...input, points }, 1)).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
@@ -89,9 +107,12 @@ it.each([
   { crewId: "other" },
   { userId: "other" },
   { taskId: next },
-  { requestKey: next },
+  { requestKey: id },
   { points: 21 },
   { reason: "Other" },
+  { requestedByUserId: "other" },
+  { remainingWorkload: "1.6" },
+  { workloadUnit: "days" },
 ])("rejects mismatched receipt %j", async (change) => {
   vi.mocked(api.post).mockResolvedValue({ ...row, ...change });
   await expect(createCompute("crew", "user", input, 1)).rejects.toThrow("receipt");
@@ -106,4 +127,13 @@ it("rejects stale session before and after request", async () => {
     return row;
   });
   await expect(createCompute("crew", "user", input, 1)).rejects.toThrow("session");
+});
+
+it.each([
+  { remainingWorkload: 0 },
+  { remainingWorkload: 1.001 },
+  { remainingWorkload: 101, workloadUnit: "percent" as const },
+])("rejects invalid workload %j before posting", async (change) => {
+  await expect(createCompute("crew", "user", { ...input, ...change }, 1)).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
 });
