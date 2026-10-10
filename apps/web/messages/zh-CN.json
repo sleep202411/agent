@@ -5397,6 +5397,7 @@
       "pdfCheck": "检查分析状态",
       "pdfNewAnalysis": "重新分析",
       "pdfPending": "分析正在进行，请稍后检查状态；重复同一请求不会再次调用 AI。",
+      "pdfAnalysisId": "分析编号：{id}",
       "pdfFailed": "分析失败，请启动新的分析重试。",
       "pdfCreated": "已创建 {count} 个任务。",
       "pdfReview": "请审核 {count} 个建议任务，并选择需要创建的任务。",

@@ -318,7 +318,9 @@ it('accepts a 20 MiB document and rejects anything larger before parsing', async
   try {
     const { service } = fixture();
     jest
-      .mocked(pdfParse)
+      .mocked(
+        pdfParse as unknown as (buffer: Buffer) => Promise<{ text: string }>,
+      )
       .mockResolvedValue({ text: proposals.tasks[0].evidence } as never);
     const buffer = Buffer.alloc(20 * 1024 * 1024);
     buffer.write('%PDF-');
@@ -328,7 +330,11 @@ it('accepts a 20 MiB document and rejects anything larger before parsing', async
         originalname: 'large.pdf',
       }),
     ).resolves.toMatchObject({ status: 'queued' });
-    jest.mocked(pdfParse).mockClear();
+    jest
+      .mocked(
+        pdfParse as unknown as (buffer: Buffer) => Promise<{ text: string }>,
+      )
+      .mockClear();
     await expect(
       service.analyze('crew', 'user', 'larger', {
         buffer: Buffer.concat([buffer, Buffer.from('x')]),
@@ -336,6 +342,33 @@ it('accepts a 20 MiB document and rejects anything larger before parsing', async
       }),
     ).rejects.toThrow('20 MB');
     expect(pdfParse).not.toHaveBeenCalled();
+  } finally {
+    if (old === undefined) delete process.env.ALIBABA_API_KEY;
+    else process.env.ALIBABA_API_KEY = old;
+  }
+});
+
+it('persists a safe provider failure and returns it after polling', async () => {
+  const old = process.env.ALIBABA_API_KEY;
+  process.env.ALIBABA_API_KEY = 'fixture';
+  try {
+    const { service, row, db } = fixture();
+    row.status = 'analyzing';
+    jest.mocked(generateObject).mockRejectedValue(
+      Object.assign(new Error('private-script secret-key'), {
+        statusCode: 429,
+      }),
+    );
+    await service.process('crew', 'user', 'id', 'private-script');
+    const result = await service.get('crew', 'user', 'id');
+    expect(result).toMatchObject({
+      status: 'failed',
+      failure: { code: 'provider_limit' },
+      tasks: [],
+    });
+    expect(JSON.stringify(result)).not.toContain('private-script');
+    expect(JSON.stringify(row.proposals)).not.toContain('secret-key');
+    expect(db.crewTask.create).not.toHaveBeenCalled();
   } finally {
     if (old === undefined) delete process.env.ALIBABA_API_KEY;
     else process.env.ALIBABA_API_KEY = old;

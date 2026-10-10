@@ -249,3 +249,21 @@ it("allows documents up to 20 MiB and blocks larger uploads", async () => {
     expect(button.disabled).toBe(size > 20 * 1024 * 1024);
   }
 });
+
+it("shows persisted analysis failures and their support ID after recovery", async () => {
+  localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+  state.get.mockResolvedValue({
+    ...preview,
+    status: "failed",
+    tasks: [],
+    failure: {
+      code: "provider_limit",
+      message: "The AI provider rejected the request because of a rate or quota limit.",
+    },
+  });
+  await mount();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("rate or quota limit");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(id);
+  expect(host.textContent).toContain("New analysis");
+  expect(state.post).not.toHaveBeenCalled();
+});
