@@ -9,6 +9,7 @@ export type AdminInteractiveFilmListing = {
   tags: string[];
   developer: string;
   coverUrl: string | null;
+  coverStatus: "not_provided" | "available" | "unavailable";
   trailerUrl: string | null;
   screenshots: { url: string }[];
 };
@@ -27,7 +28,12 @@ export type AdminInteractiveFilmListingLoadResult = {
 export function areInteractiveFilmMaterialsReady(
   snapshot: AdminInteractiveFilmListingSnapshot | null
 ): boolean {
-  return Boolean(snapshot && (snapshot.listing === null || snapshot.listing.coverUrl));
+  return Boolean(
+    snapshot &&
+    (snapshot.listing === null ||
+      snapshot.listing.coverStatus === "not_provided" ||
+      (snapshot.listing.coverStatus === "available" && snapshot.listing.coverUrl))
+  );
 }
 
 /** Mirrors the Java version that the moderation action will publish or has published. */
@@ -65,16 +71,28 @@ export function parseAdminInteractiveFilmListingSnapshot(
   if (!Array.isArray(listing.screenshots) || listing.screenshots.length > 8) invalidResponse();
   const screenshots = listing.screenshots.map((item) => ({ url: url(object(item).url)! }));
   if (screenshots.some((item) => !item.url)) invalidResponse();
+  const coverUrl = url(listing.coverUrl);
+  const coverStatus = listing.coverStatus;
+  if (
+    coverStatus !== "not_provided" &&
+    coverStatus !== "available" &&
+    coverStatus !== "unavailable"
+  ) {
+    invalidResponse();
+  }
+  if ((coverStatus === "available") !== Boolean(coverUrl)) invalidResponse();
   return {
     contentVersion,
     listing: {
       gameId,
       title: string(listing.title, 240),
       defaultLocale: string(listing.defaultLocale, 80),
-      description: string(listing.description, 13_000),
+      // Descriptions can be empty in frozen publication snapshots.
+      description: string(listing.description, 13_000, true),
       tags,
       developer: string(listing.developer, 240, true),
-      coverUrl: url(listing.coverUrl),
+      coverUrl,
+      coverStatus,
       trailerUrl: url(listing.trailerUrl),
       screenshots,
     },

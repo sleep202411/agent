@@ -9,12 +9,12 @@ import { CURRENT_CELL } from '../common/region/current-cell';
 import { StoryPublicationJavaService } from './story-publication-java.service';
 import {
   StoryStoreService,
-  type StoryStoreListingDto,
+  type StoryStoreReviewListingDto,
 } from './story-store.service';
 
 export interface StoryPublicationReviewListingDto {
   contentVersion: string;
-  listing: StoryStoreListingDto | null;
+  listing: StoryStoreReviewListingDto | null;
 }
 
 /** Admin reads the same immutable promotional material the player will see. */
