@@ -99,6 +99,15 @@ if(cmd==='aliyun') {
    console.log('https://fixture.invalid/archive');
  }
 } else if(cmd==='ssh') {
+ if(args.at(-1).includes('read -r url')) {
+   const url=fs.readFileSync(0,'utf8');
+   if(url.trim()!=='https://fixture.invalid/archive') process.exit(54);
+   if(scenario==='source-always-disconnected') process.exit(255);
+   if(scenario==='source-disconnected' && !fs.existsSync(root+'/source-retried')) {
+     fs.writeFileSync(root+'/source-retried','1'); process.exit(255);
+   }
+ }
+
  if(scenario==='ssh-disconnected' && args.at(-1).includes('bash /root/cn-remote-build-services.sh')) process.exit(255);
  if(args.at(-1).includes('sha256sum')) console.log(scenario==='checksum' ? 'wrong' : fs.readFileSync(root+'/digest','utf8'));
 } else if(cmd==='scp') {
@@ -300,4 +309,23 @@ test("SSH build disconnect preserves failure and prevents Helm deployment", (t) 
   assert.equal(result.status, 255);
   assert.equal(upgrades.length, 0);
   assert.doesNotMatch(result.stdout, /images built and pushed/);
+});
+
+
+test("source transfer reconnects with replayed input and shared SSH connection", (t) => {
+  const { result, calls } = run(t, "source-disconnected", "build");
+  assert.equal(result.status, 0, result.stderr);
+  const transfers = calls.filter(c => c.cmd === "ssh" && c.args.at(-1).includes("read -r url"));
+  assert.equal(transfers.length, 2);
+  assert.ok(transfers.every(c => c.args.includes("ControlMaster=auto")));
+  const paths = calls.filter(c => c.cmd === "ssh" || c.cmd === "scp").flatMap(c => c.args.filter(a => a.startsWith("ControlPath=")));
+  assert.equal(new Set(paths).size, 1);
+});
+
+test("source connection retries are bounded and never start a build after exhaustion", (t) => {
+  const { result, calls, upgrades } = run(t, "source-always-disconnected", "build");
+  assert.equal(result.status, 255);
+  assert.equal(calls.filter(c => c.cmd === "ssh" && c.args.at(-1).includes("read -r url")).length, 3);
+  assert.equal(calls.some(c => c.cmd === "ssh" && c.args.at(-1).includes("bash /root/cn-remote-build-services.sh")), false);
+  assert.equal(upgrades.length, 0);
 });

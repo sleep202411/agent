@@ -93,6 +93,20 @@ LIVE_ORIGIN="https://fizzstudio.fizzspace.cn"
 SSH=(ssh -i "$DEPLOY_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
 SCP=(scp -i "$DEPLOY_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=3)
 
+# Only retry idempotent preparation, never the remote build command.
+retry_transfer() {
+  local input="$1" attempt status
+  shift
+  for attempt in 1 2 3; do
+    if "$@" < "$input"; then return 0; else status=$?; fi
+    [ "$status" = 255 ] || return "$status"
+    [ "$attempt" != 3 ] || return "$status"
+    echo "==> CN SSH transfer interrupted; rechecking access before retry $((attempt + 1))/3" >&2
+    python3 "$TOOLS_ROOT/deploy/cn_ssh_access.py" "$ECS_ID" --required >&2 || return 2
+    sleep 5
+  done
+}
+
 contains_service() {
   local wanted="$1" service
   for service in "${SERVICES[@]}"; do [ "$service" = "$wanted" ] && return 0; done
@@ -120,7 +134,12 @@ TMP_DIR=""
 ECS_IP=""
 MANIFEST_FILE=""
 RELAY_KEY=""
+SSH_SOCKET_DIR=""
 cleanup() {
+  if [ -n "$SSH_SOCKET_DIR" ]; then
+    "${SSH[@]}" -O exit "root@$ECS_IP" >/dev/null 2>&1 || true
+    rm -rf "$SSH_SOCKET_DIR"
+  fi
   [ -z "$RELAY_KEY" ] || node "${TOOLS_ROOT:-$ROOT}/deploy/cn-source-relay.cjs" delete "$RELAY_KEY" >/dev/null 2>&1 || true
   [ -z "$RELEASE_DIR" ] || rm -rf "$RELEASE_DIR"
   [ -z "$MANIFEST_FILE" ] || rm -f "$MANIFEST_FILE"
@@ -196,11 +215,15 @@ if { [ "$PHASE" = build ] || [ "$PHASE" = all ]; } && [ "${#BUILD_SERVICES[@]}" 
   ECS_IP="$(aliyun ecs DescribeInstances --InstanceIds "['$ECS_ID']" --RegionId cn-hangzhou --profile default 2>/dev/null \
     | python3 -c 'import json,sys; i=json.load(sys.stdin)["Instances"]["Instance"][0]; e=i.get("EipAddress",{}).get("IpAddress",""); p=i.get("PublicIpAddress",{}).get("IpAddress",[]); print(e or (p[0] if p else ""))')"
   [ -n "$ECS_IP" ] || { echo "FATAL: no build ECS public IP" >&2; exit 1; }
+  # Use a short private socket path (macOS Unix sockets have a small path limit).
+  SSH_SOCKET_DIR="$(mktemp -d /tmp/fd-cn-ssh.XXXXXX)"
+  SSH+=(-o ControlMaster=auto -o ControlPersist=600 -o "ControlPath=$SSH_SOCKET_DIR/socket")
+  SCP+=(-o ControlMaster=auto -o ControlPersist=600 -o "ControlPath=$SSH_SOCKET_DIR/socket")
   for _ in $(seq 1 12); do
     "${SSH[@]}" "root@$ECS_IP" true >/dev/null 2>&1 && break
     sleep 5
   done
-  "${SSH[@]}" "root@$ECS_IP" true >/dev/null
+  retry_transfer /dev/null "${SSH[@]}" "root@$ECS_IP" true >/dev/null
 
   echo "==> full secret-free source sync"
   find "$TMP_DIR" -type f -name '.env*' ! -path '*/apps/web/.env.production.cn' -delete
@@ -213,21 +236,23 @@ if { [ "$PHASE" = build ] || [ "$PHASE" = all ]; } && [ "${#BUILD_SERVICES[@]}" 
   # private relay bucket is reached over OSS acceleration and read in-region.
   RELAY_KEY="src/${TAG}-$(openssl rand -hex 8).tar.gz"
   relay_url="$(node "${TOOLS_ROOT:-$ROOT}/deploy/cn-source-relay.cjs" put "$SOURCE_ARCHIVE" "$RELAY_KEY")"
-  printf '%s\n' "$relay_url" | "${SSH[@]}" "root@$ECS_IP" \
-    'set -e; read -r url; rm -f /root/src.tar.gz; curl -fsS --retry 3 --max-time 900 -o /root/src.tar.gz "$url"'
+  (umask 077; printf '%s\n' "$relay_url" > "$RELEASE_DIR/relay-url")
   unset relay_url
+  retry_transfer "$RELEASE_DIR/relay-url" "${SSH[@]}" "root@$ECS_IP" \
+    'set -e; read -r url; tmp=$(mktemp /root/src-download.XXXXXX); trap "rm -f $tmp" EXIT; curl -fsS --retry 3 --max-time 900 -o "$tmp" "$url"; mv "$tmp" /root/src.tar.gz'
+  rm -f "$RELEASE_DIR/relay-url"
   node "${TOOLS_ROOT:-$ROOT}/deploy/cn-source-relay.cjs" delete "$RELAY_KEY"
   RELAY_KEY=""
-  remote_sha="$("${SSH[@]}" "root@$ECS_IP" 'sha256sum /root/src.tar.gz | awk '\''{print $1}'\''' 2>/dev/null)"
+  remote_sha="$(retry_transfer /dev/null "${SSH[@]}" "root@$ECS_IP" 'sha256sum /root/src.tar.gz | awk '\''{print $1}'\''' 2>/dev/null)"
   [ "$remote_sha" = "$archive_sha" ] || { echo "FATAL: source archive checksum mismatch" >&2; exit 1; }
 
   echo "==> in-region build and push"
   # ACR tokens last about one hour. Fetch after source transfer, not from a
   # persistent file that can silently expire between release attempts.
   python3 "$TOOLS_ROOT/deploy/cn_build_credentials.py" --output-dir "$RELEASE_DIR/credentials"
-  "${SCP[@]}" "$RELEASE_DIR/credentials/acr-username.txt" "root@$ECS_IP:/root/.acr_user"
-  "${SCP[@]}" "$RELEASE_DIR/credentials/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
-  "${SCP[@]}" "$TMP_DIR/deploy/cn-remote-build-services.sh" "root@$ECS_IP:/root/cn-remote-build-services.sh"
+  retry_transfer /dev/null "${SCP[@]}" "$RELEASE_DIR/credentials/acr-username.txt" "root@$ECS_IP:/root/.acr_user"
+  retry_transfer /dev/null "${SCP[@]}" "$RELEASE_DIR/credentials/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
+  retry_transfer /dev/null "${SCP[@]}" "$TMP_DIR/deploy/cn-remote-build-services.sh" "root@$ECS_IP:/root/cn-remote-build-services.sh"
   build_status=0
   "${SSH[@]}" "root@$ECS_IP" "sed -i 's/\r$//' /root/cn-remote-build-services.sh && TAG='$TAG' EXPECTED_REVISION='$TAG' SERVICES='${BUILD_SERVICES[*]}' bash /root/cn-remote-build-services.sh" \
     | tee "$RELEASE_DIR/build.log" || build_status=$?
