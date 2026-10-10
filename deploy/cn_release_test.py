@@ -20,6 +20,16 @@ def job(condition=None):
 
 
 class ReleaseTests(unittest.TestCase):
+    @patch.dict(r.os.environ, {}, clear=True)
+    @patch.object(r.sys, 'argv', ['cn_release.py', 'release', 'web'])
+    @patch.object(r.os, 'execv')
+    @patch.object(r, 'run', side_effect=RuntimeError('SSH blocked'))
+    def test_ssh_failure_occurs_before_lock_or_checkout(self, run, execute):
+        with self.assertRaisesRegex(RuntimeError, 'SSH blocked'):
+            r.main()
+        execute.assert_not_called()
+        self.assertIn('--required', run.call_args.args)
+
     def test_backup_job_id_is_resolved_to_backup_id(self):
         state = {}
         with patch.object(r, 'rds', side_effect=[{'BackupJobId': 456}, {'Items': {'BackupJob': [

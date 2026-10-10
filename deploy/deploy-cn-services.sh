@@ -62,6 +62,9 @@ fi
 
 # Serialize operators before source snapshots, image lookup or remote mutations.
 if [ -z "${FD_REGIONAL_LOCK_CN:-}" ]; then
+  if [ "$PHASE" != deploy ]; then
+    python3 "$ROOT/deploy/cn_ssh_access.py" "${CN_BUILD_ECS_ID:-i-bp11r90r4g91u39iimnx}" --required
+  fi
   exec python3 "$ROOT/deploy/release_lock.py" cn -- bash "$ROOT/deploy/deploy-cn-services.sh" "${RELEASE_ARGS[@]}"
 fi
 python3 "$ROOT/deploy/release_lock.py" cn -- true

@@ -468,6 +468,9 @@ def main():
         from release_lock import Lock
         owner = os.environ.get("FD_REGIONAL_LOCK_CN")
         if not owner:
+            if args.action == "release" and not args.use_existing_images:
+                run(sys.executable, ROOT / "deploy/cn_ssh_access.py",
+                    os.environ.get("CN_BUILD_ECS_ID", "i-bp11r90r4g91u39iimnx"), "--required")
             os.execv(sys.executable, [sys.executable, str(ROOT / "deploy/release_lock.py"),
                                      "cn", "--", sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
         Lock("cn").check(owner)

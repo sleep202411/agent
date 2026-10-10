@@ -254,3 +254,25 @@ The check also runs after a remote build exits with SSH status 255, since a
 changing operator IP can interrupt an established session. Diagnostic API/network
 failures leave the existing SSH readiness checks in place. A matching allow rule
 alone does not prove SSH readiness or exclude higher-priority deny/network rules.
+
+### Automatic operator SSH authorization (explicit opt-in)
+
+Build-capable entry points check current-IP SSH access before acquiring the
+release lock. A failed access lookup or missing allow rule stops without creating
+a new lock. Deploy-only and existing-image releases do not require builder access.
+The build checks access again before starting ECS because the operator IP can change.
+
+To authorize the current operator IPv4 automatically on each invocation, set:
+
+```bash
+export CN_AUTHORIZE_CURRENT_IP=YES
+export CN_SSH_SECURITY_GROUP=sg-bp1e4dekh1wmj99tama7
+```
+
+This grants only TCP/22 from the detected `/32`, verifies that the chosen security
+group is attached to the builder, and reads back the rule. The CLI identity needs
+`ecs:AuthorizeSecurityGroup`. No existing rules are deleted, no broad CIDR is
+added, and authorization failures stop the precheck. Unset these variables to
+return to read-only access checks. Operator rules persist; administrators should
+periodically remove obsolete entries. Existing locks are never silently cleared;
+use the exact-owner recovery procedure above after verifying remote work stopped.
