@@ -838,7 +838,12 @@ export class AcademyLearningService {
     for (const row of page) {
       const course = await this.authority
         .course(row.courseId)
-        .catch(() => null);
+        .catch((error: unknown) => {
+          // A deleted course cannot authorize a lecturer. An unavailable authority
+          // is not an empty queue: preserve the error so the operator can retry.
+          if (error instanceof NotFoundException) return null;
+          throw error;
+        });
       if (teacherId) {
         if (!course?.instructors?.some((i) => String(i.userId) === teacherId))
           continue;

@@ -174,3 +174,78 @@ it('continues past a full unaffordable page and emits bounded notification pages
     gt: 'funded-19',
   });
 });
+
+it('uses the frozen payer for legacy batches rather than the project workspace', async () => {
+  enqueueRealtimeEventMock.mockClear();
+  const rows = [
+    {
+      id: 'personal-paid',
+      workspaceId: 'project-workspace',
+      billingSubjectType: 'workspace',
+      billingSubjectId: 'personal-wallet',
+    },
+    {
+      id: 'other-payer',
+      workspaceId: 'personal-wallet',
+      billingSubjectType: 'workspace',
+      billingSubjectId: 'someone-else',
+    },
+  ].map((row) => ({
+    ...row,
+    storyProjectId: 'project',
+    storyChapterId: 'chapter',
+    items: [{ quotedPoints: 10 }],
+  }));
+  const tx = {
+    storyGenerationBatch: {
+      findMany: jest.fn(
+        ({
+          where,
+        }: {
+          where: {
+            workspaceId?: string;
+            billingSubjectType?: string;
+            billingSubjectId?: string;
+          };
+        }) =>
+          Promise.resolve(
+            rows.filter((row) =>
+              Object.entries(where).every(
+                ([key, value]) =>
+                  ![
+                    'workspaceId',
+                    'billingSubjectType',
+                    'billingSubjectId',
+                  ].includes(key) ||
+                  row[
+                    key as
+                      | 'workspaceId'
+                      | 'billingSubjectType'
+                      | 'billingSubjectId'
+                  ] === value,
+              ),
+            ),
+          ),
+      ),
+    },
+  };
+  await enqueueStoryBatchesResumableIfFunded(
+    tx as never,
+    account({ ownerId: 'personal-wallet' }),
+    100n,
+  );
+  expect(enqueueRealtimeEventMock).toHaveBeenCalledTimes(1);
+  expect(enqueueRealtimeEventMock.mock.calls[0][1]).toMatchObject({
+    channel: 'wallet:workspace:personal-wallet',
+    payload: {
+      batches: [
+        {
+          batchId: 'personal-paid',
+          projectId: 'project',
+          chapterId: 'chapter',
+          requiredPoints: '10',
+        },
+      ],
+    },
+  });
+});

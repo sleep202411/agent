@@ -39,7 +39,10 @@ export async function enqueueStoryBatchesResumableIfFunded(
   while (true) {
     const blocked = await tx.storyGenerationBatch.findMany({
       where: {
-        workspaceId: account.ownerId,
+        // Quotes retain their payer across billing-policy changes. Legacy
+        // personal-workspace payers may differ from the project's workspace.
+        billingSubjectType: 'workspace',
+        billingSubjectId: account.ownerId,
         ...(after ? { id: { gt: after } } : {}),
         status: StoryGenerationBatchStatus.blocked,
         OR: [

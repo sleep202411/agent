@@ -41,7 +41,7 @@ function fixture() {
   const enrollment = {
     count: jest.fn().mockResolvedValue(2),
     groupBy: jest.fn().mockImplementation(
-      async ({
+      ({
         by,
         where,
       }: {
@@ -856,7 +856,7 @@ it('includes co-instructor homework in the Admin queue while requiring current c
           { teacherId: '201' },
           { instructorShares: { array_contains: [{ teacherId: '201' }] } },
         ],
-      }),
+      }) as unknown,
     }),
   );
   f.authority.course.mockResolvedValue({
@@ -866,4 +866,24 @@ it('includes co-instructor homework in the Admin queue while requiring current c
   expect(
     (await f.service.adminHomework({ platformUserId: '201' } as never)).items,
   ).toHaveLength(0);
+});
+
+it('reports an Admin course-authority outage instead of silently hiding homework', async () => {
+  const f = fixture();
+  f.authority.course.mockRejectedValue(
+    new BadGatewayException('Authority unavailable.'),
+  );
+  await expect(
+    f.service.adminHomework({ platformUserId: '200' } as never),
+  ).rejects.toThrow('Authority unavailable.');
+});
+
+it('keeps deleted courses inaccessible to bound Admin lecturers', async () => {
+  const f = fixture();
+  f.authority.course.mockRejectedValue(
+    new NotFoundException('Course not found.'),
+  );
+  await expect(
+    f.service.adminHomework({ platformUserId: '200' } as never),
+  ).resolves.toMatchObject({ items: [] });
 });
