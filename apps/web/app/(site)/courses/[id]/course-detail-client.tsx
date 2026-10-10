@@ -14,6 +14,7 @@ import { PublicCourseDetailPanel } from "../_components/PublicCourseDetailPanel"
 import {
   CourseEnrollGate,
   courseRequiresEnrollment,
+  isParticipatingInstructor,
   useCourseLearning,
 } from "../_learning/course-enrollment";
 
@@ -44,8 +45,15 @@ export default function CourseDetailClient({ preview }: { preview?: ReactNode })
   } = usePublicCourseDetail(params.id);
 
   const learningPending = Boolean(user) && learning.isPending;
+  const instructor = isParticipatingInstructor(learning.data, user?.id, detail?.instructors);
   const needsEnrollment =
-    Boolean(user) && learning.isSuccess && courseRequiresEnrollment(learning.data);
+    Boolean(user) &&
+    !instructor &&
+    learning.isSuccess &&
+    courseRequiresEnrollment(learning.data, {
+      userId: user?.id,
+      instructors: detail?.instructors,
+    });
   const showHomework = Boolean(user && learning.isSuccess && learning.data?.enrollment);
 
   useEffect(() => {
@@ -76,7 +84,7 @@ export default function CourseDetailClient({ preview }: { preview?: ReactNode })
 
       {!isLoading && !learningPending && !error && detail ? (
         <div className="lg:grid lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_520px]">
-          {user && learning.isError ? (
+          {user && learning.isError && !instructor ? (
             <div className="flex items-center justify-center p-5">
               <CourseEnrollGate courseId={String(detail.courseId)} />
             </div>

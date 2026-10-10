@@ -343,6 +343,26 @@ export type ListAdminComputeMemberUsageQuery = z.infer<
   typeof ListAdminComputeMemberUsageQuerySchema
 >;
 
+/**
+ * Cross-workspace project consumption for ops: which projects spent how
+ * much from which workspace pot. Rows are workspace × project pairs,
+ * rolled up per workspace and sorted by credits desc.
+ */
+export const ListAdminComputeProjectUsageQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30),
+  workspaceKind: z.enum(['personal', 'shared', 'all']).default('all'),
+  /** credits = heaviest spend; recent = last settle/debit first. */
+  sort: z.enum(['credits', 'recent']).default('credits'),
+  workspaceId: z.string().uuid().optional(),
+  workspaceQuery: z.string().trim().min(1).max(160).optional(),
+  /** Substring match against current project name. */
+  projectQuery: z.string().trim().min(1).max(160).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+});
+export type ListAdminComputeProjectUsageQuery = z.infer<
+  typeof ListAdminComputeProjectUsageQuerySchema
+>;
+
 export const ListAdminBillingPricesQuerySchema = z.object({
   productType: BillingProductTypeSchema.optional(),
   provider: AdminPaymentProviderSchema.optional(),

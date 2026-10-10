@@ -379,4 +379,86 @@ integration('Compute member usage rollup (owned PostgreSQL)', () => {
       service().walletMemberUsage({ userId: actor }, { days: 30 }),
     ).rejects.toThrow();
   });
+  it('rolls project spend up by workspace and keeps unassigned jobs', async () => {
+    const shared = await workspace();
+    const personal = await workspace(true);
+    const film = await db.platformProject.create({
+      data: { workspaceId: shared.id, name: 'Pilot', createdById: actor },
+    });
+    const extra = await db.platformProject.create({
+      data: { workspaceId: shared.id, name: 'B-roll', createdById: actor },
+    });
+    const filmTx = await debit(shared.accountId, 40n);
+    const extraTx = await debit(shared.accountId, 10n);
+    await debit(shared.accountId, 5n);
+    await debit(personal.accountId, 7n);
+    await db.walletTransaction.update({
+      where: { id: filmTx },
+      data: { projectId: film.id },
+    });
+    await db.walletTransaction.update({
+      where: { id: extraTx },
+      data: { projectId: extra.id },
+    });
+    const sharedUsage = await service().listAdminComputeProjectUsage({
+      days: 30,
+      workspaceKind: 'all',
+      sort: 'credits',
+      workspaceId: shared.id,
+      limit: 20,
+    });
+    expect(sharedUsage).toMatchObject({
+      totalCredits: '55',
+      workspaceCount: 1,
+      projectCount: 3,
+    });
+    expect(sharedUsage.workspaces[0]).toMatchObject({
+      workspaceId: shared.id,
+      isPersonal: false,
+      totalCredits: '55',
+      projectCount: 3,
+    });
+    expect(sharedUsage.workspaces[0].projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          projectId: film.id,
+          projectName: 'Pilot',
+          credits: '40',
+        }),
+        expect.objectContaining({
+          projectId: extra.id,
+          projectName: 'B-roll',
+          credits: '10',
+        }),
+        expect.objectContaining({ projectId: null, credits: '5' }),
+      ]),
+    );
+    const personalUsage = await service().listAdminComputeProjectUsage({
+      days: 30,
+      workspaceKind: 'personal',
+      sort: 'credits',
+      workspaceId: personal.id,
+      limit: 20,
+    });
+    expect(personalUsage).toMatchObject({
+      totalCredits: '7',
+      workspaceCount: 1,
+    });
+    const named = await service().listAdminComputeProjectUsage({
+      days: 30,
+      workspaceKind: 'shared',
+      sort: 'credits',
+      workspaceId: shared.id,
+      projectQuery: 'Pilot',
+      limit: 20,
+    });
+    expect(named).toMatchObject({
+      totalCredits: '40',
+      workspaceCount: 1,
+      projectCount: 1,
+    });
+    expect(named.workspaces[0].projects).toEqual([
+      expect.objectContaining({ projectId: film.id, projectName: 'Pilot' }),
+    ]);
+  });
 });

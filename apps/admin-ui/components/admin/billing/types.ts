@@ -689,6 +689,43 @@ export type AdminComputeMemberUsageData = {
   members: AdminComputeMemberUsageMember[];
 };
 
+export type AdminComputeProjectUsageSort = "credits" | "recent";
+
+export type AdminComputeProjectUsageProject = {
+  projectId: string | null;
+  projectName: string | null;
+  lastSpentAt: string | null;
+  credits: string;
+  jobs: number;
+  imageJobs: number;
+  videoJobs: number;
+};
+
+export type AdminComputeProjectUsageWorkspace = {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceStatus: string | null;
+  isPersonal: boolean;
+  lastSpentAt: string | null;
+  totalCredits: string;
+  totalJobs: number;
+  totalImageJobs: number;
+  totalVideoJobs: number;
+  projectCount: number;
+  projects: AdminComputeProjectUsageProject[];
+};
+
+export type AdminComputeProjectUsageData = {
+  rangeDays: number;
+  workspaceKind: "personal" | "shared" | "all";
+  sort: AdminComputeProjectUsageSort;
+  workspaceId: string | null;
+  totalCredits: string;
+  workspaceCount: number;
+  projectCount: number;
+  workspaces: AdminComputeProjectUsageWorkspace[];
+};
+
 export type VoucherStatus = "active" | "redeemed" | "void" | "expired";
 export type VoucherGrantType = "compute_credits";
 

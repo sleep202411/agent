@@ -1,6 +1,7 @@
 import {
   IconActivity,
   IconBook2,
+  IconSchool,
   IconCertificate,
   IconChecklist,
   IconCloud,
@@ -25,6 +26,7 @@ import {
   IconReceipt2,
   IconReceiptRefund,
   IconReportMoney,
+  IconFolders,
   IconRobot,
   IconScale,
   IconShieldLock,
@@ -69,7 +71,7 @@ export type ModuleNavGroup = {
 };
 
 /**
- * GLOBAL narrow left rail — flat top-level modules.
+ * GLOBAL left rail — flat top-level modules with visible labels.
  * `/` (运营总览) and `/account` (我的账户) are ungated; the rest are permission-gated.
  * The `key` doubles as the module prefix used by `activeModule`.
  */
@@ -186,6 +188,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           permission: "courses.read",
         },
         {
+          href: "/courses/mine",
+          label: "我的课程",
+          icon: IconSchool,
+          permission: "courses.read",
+        },
+        {
           href: "/courses/homework",
           label: "作业审核",
           icon: IconChecklist,
@@ -231,6 +239,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/billing/usage",
           label: "成员消耗",
           icon: IconReportMoney,
+          permission: "billing.read",
+        },
+        {
+          href: "/billing/project-usage",
+          label: "项目消耗",
+          icon: IconFolders,
           permission: "billing.read",
         },
       ],

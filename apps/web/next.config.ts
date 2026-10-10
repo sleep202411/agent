@@ -97,20 +97,15 @@ const nextConfig: NextConfig = {
         { source: "/studio/:path*", destination: `${JAVA_STUDIO_URL}/:path*` },
         { source: "/test1/:path*", destination: `${JAVA_CONTENT_URL}/:path*` },
         { source: "/test2/:path*", destination: `${JAVA_STUDIO_URL}/:path*` },
-        // Legacy iframe content endpoint. The catch-all page in
-        // `app/(site)/[...legacyPath]/page.tsx` builds an iframe whose
-        // src is `/__legacy/<original-path>`; this rewrite returns the
-        // bundled `public/legacy.html` for any such URL. The legacy
-        // bundle then strips the `/__legacy` prefix client-side (see
+        // Legacy iframe content endpoint. The remaining legacy page in
+        // `app/(site)/pages/course/course/page.tsx` builds an iframe
+        // whose src is `/__legacy/pages/course/course`; this rewrite
+        // returns the bundled `public/legacy.html`. The legacy bundle
+        // then strips the `/__legacy` prefix client-side (see
         // scripts/sync-legacy.mjs) so its history router reads the
         // intended pathname.
         { source: "/__legacy/:path*", destination: "/legacy.html" },
       ],
-      // Strangler-fig fallback: any unmatched URL falls into the
-      // catch-all page under `(site)`, which renders the legacy app
-      // inside an iframe so the platform's GlobalNav + SiteFooter
-      // wrap it. The page itself routes via Next.js — no rewrite
-      // needed here.
       fallback: [],
     };
   },

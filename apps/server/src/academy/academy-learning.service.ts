@@ -33,6 +33,30 @@ export function teacherShare(price: bigint, bps: number) {
   return (price * BigInt(bps)) / 10000n;
 }
 
+type InstructorAssignment = {
+  teacherId?: string | null;
+  instructorShares?: Array<{ teacherId: string }> | null;
+};
+
+export function isCourseInstructor(
+  course:
+    | { instructors?: Array<{ userId: string | number }> }
+    | null
+    | undefined,
+  userId: string | null | undefined,
+  assigned?: InstructorAssignment | null,
+) {
+  if (!userId) return false;
+  if (course?.instructors?.some((item) => String(item.userId) === userId))
+    return true;
+  if (assigned?.teacherId && String(assigned.teacherId) === userId) return true;
+  return Boolean(
+    assigned?.instructorShares?.some(
+      (item) => String(item.teacherId) === userId,
+    ),
+  );
+}
+
 type JavaCourse = Awaited<ReturnType<AcademyAuthorityService['course']>>;
 
 export function commerceFromJava(course: JavaCourse) {
@@ -136,6 +160,72 @@ export function parsedOfferingShares(
   return parsed.success && parsed.data.length ? parsed.data : [fallback];
 }
 
+export function teacherShareBpsFor(
+  teacherId: string | null,
+  input: {
+    javaShares: Share[];
+    offering?: {
+      teacherId: string;
+      teacherShareBps: number;
+      instructorShares: Prisma.JsonValue | null | undefined;
+    } | null;
+    sample?: {
+      teacherId: string;
+      teacherCredits: bigint;
+      priceCredits: bigint;
+    } | null;
+  },
+): number | null {
+  const offeringShares = input.offering
+    ? parsedOfferingShares(input.offering.instructorShares, {
+        teacherId: input.offering.teacherId,
+        shareBps: input.offering.teacherShareBps,
+      })
+    : [];
+  const shares = input.javaShares.length ? input.javaShares : offeringShares;
+  if (teacherId) {
+    const mine = shares.find((share) => share.teacherId === teacherId);
+    if (mine) return mine.shareBps;
+    if (input.offering?.teacherId === teacherId)
+      return input.offering.teacherShareBps;
+    const sample = input.sample;
+    if (sample && sample.teacherId === teacherId && sample.priceCredits > 0n) {
+      return Number((sample.teacherCredits * 10000n) / sample.priceCredits);
+    }
+    return null;
+  }
+  if (shares[0]) return shares[0].shareBps;
+  if (input.offering) return input.offering.teacherShareBps;
+  if (input.sample && input.sample.priceCredits > 0n) {
+    return Number(
+      (input.sample.teacherCredits * 10000n) / input.sample.priceCredits,
+    );
+  }
+  return null;
+}
+
+function javaInstructorShares(course: JavaCourse | null): Share[] {
+  if (!course) return [];
+  const commerce = commerceFromJava(course);
+  if (commerce?.instructorShares.length) return commerce.instructorShares;
+  return (
+    course.instructors
+      ?.filter((item) => item.shareBps != null)
+      .map((item) => ({
+        teacherId: String(item.userId),
+        shareBps: item.shareBps as number,
+      })) ?? []
+  );
+}
+
+function courseTitleOf(course: JavaCourse | null, courseId: string) {
+  return (
+    course?.localized?.['en-US']?.title ||
+    course?.localized?.['zh-CN']?.title ||
+    courseId
+  );
+}
+
 function enrollmentPayouts(row: AcademyEnrollment): {
   teacherId: string;
   credits: bigint;
@@ -166,7 +256,33 @@ function dto(row: AcademyEnrollment) {
     ...row,
     priceCredits: row.priceCredits.toString(),
     teacherCredits: row.teacherCredits.toString(),
+    submittedAt: row.updatedAt.toISOString(),
   };
+}
+
+function instructorWhere(userId: string) {
+  return {
+    OR: [
+      { teacherId: userId },
+      { instructorShares: { array_contains: [{ teacherId: userId }] } },
+    ],
+  };
+}
+
+function taughtInMonth(userId: string, createdAt: { gte: Date; lt?: Date }) {
+  return {
+    AND: [instructorWhere(userId), { createdAt }],
+  };
+}
+
+/** Product days for Academy workbench metrics use UTC+8 (SG and CN ops). */
+export function academyMonthBounds(now = new Date()) {
+  const shifted = new Date(now.getTime() + 8 * 3600_000);
+  const year = shifted.getUTCFullYear();
+  const month = shifted.getUTCMonth();
+  const start = new Date(Date.UTC(year, month, 1) - 8 * 3600_000);
+  const previous = new Date(Date.UTC(year, month - 1, 1) - 8 * 3600_000);
+  return { start, previous };
 }
 @Injectable()
 export class AcademyLearningService {
@@ -189,6 +305,18 @@ export class AcademyLearningService {
     const configured = java ? javaCommerceLive(java) : Boolean(offer);
     // Unconfigured catalogue entries retain existing free playback behavior.
     if (!configured) return { allowed: true };
+    const assigned = java
+      ? { teacherId: java.teacherId, instructorShares: java.instructorShares }
+      : offer
+        ? {
+            teacherId: offer.teacherId,
+            instructorShares: parsedOfferingShares(offer.instructorShares, {
+              teacherId: offer.teacherId,
+              shareBps: offer.teacherShareBps,
+            }),
+          }
+        : null;
+    if (isCourseInstructor(course, userId, assigned)) return { allowed: true };
     if (!userId) return { allowed: false };
     const enrollment = await this.db.academyEnrollment.findUnique({
       where: { courseId_studentId: { courseId, studentId: userId } },
@@ -208,7 +336,19 @@ export class AcademyLearningService {
         : null,
     ]);
     const java = commerceFromJava(course);
+    const assigned = java
+      ? { teacherId: java.teacherId, instructorShares: java.instructorShares }
+      : stored
+        ? {
+            teacherId: stored.teacherId,
+            instructorShares: parsedOfferingShares(stored.instructorShares, {
+              teacherId: stored.teacherId,
+              shareBps: stored.teacherShareBps,
+            }),
+          }
+        : null;
     return {
+      instructor: isCourseInstructor(course, studentId, assigned),
       offering: java
         ? javaCommerceLive(java)
           ? {
@@ -407,9 +547,10 @@ export class AcademyLearningService {
           'The assigned teacher is no longer available.',
         );
       if (
-        offer.teacherId === studentId ||
-        shares.some((share) => share.teacherId === studentId) ||
-        course.instructors?.some((i) => String(i.userId) === studentId)
+        isCourseInstructor(course, studentId, {
+          teacherId: offer.teacherId,
+          instructorShares: shares,
+        })
       )
         throw new ForbiddenException(
           'Course teachers cannot purchase their own course.',
@@ -571,7 +712,7 @@ export class AcademyLearningService {
     const record = await this.db.academyEnrollment.findUnique({
       where: { id },
     });
-    if (!record || record.teacherId !== teacherId)
+    if (!record || record.studentId === teacherId)
       throw new NotFoundException('Homework not found.');
     await this.teacher(record, teacherId);
     return this.applyReview(id, teacherId, input);
@@ -676,15 +817,24 @@ export class AcademyLearningService {
       take: 21,
     });
     const page = rows.slice(0, 20);
-    const names = await this.creators.publicCreatorBatch([
+    const creatorRows = await this.creators.publicCreatorBatch([
       ...new Set([
         ...page.map((row) => row.studentId),
         ...page.map((row) => row.teacherId),
       ]),
     ]);
+    const creators = new Map(
+      await Promise.all(
+        creatorRows.map(async (row) => {
+          const display = await this.creators.publicCreatorDisplay(row);
+          return [display.id, display] as const;
+        }),
+      ),
+    );
     const items: Array<
       ReturnType<typeof dto> & {
         studentName: string;
+        studentAvatar: string | null;
         teacherName: string;
         courseTitle: string;
       }
@@ -697,12 +847,12 @@ export class AcademyLearningService {
         if (!course?.instructors?.some((i) => String(i.userId) === teacherId))
           continue;
       }
+      const student = creators.get(row.studentId);
       items.push({
         ...dto(row),
-        studentName:
-          names.find((n) => n.id === row.studentId)?.nick_name ?? row.studentId,
-        teacherName:
-          names.find((n) => n.id === row.teacherId)?.nick_name ?? row.teacherId,
+        studentName: student?.name ?? row.studentId,
+        studentAvatar: student?.avatarUrl ?? null,
+        teacherName: creators.get(row.teacherId)?.name ?? row.teacherId,
         courseTitle:
           course?.localized?.['en-US']?.title ||
           course?.localized?.['zh-CN']?.title ||
@@ -726,22 +876,138 @@ export class AcademyLearningService {
         platformUserId: teacherId,
       };
     }
-    const [courses, students, pending, earnings] = await Promise.all([
-      this.db.academyOffering.count(),
-      this.db.academyEnrollment.count(),
+    const { start, previous } = academyMonthBounds();
+    const [
+      offered,
+      enrolledCourses,
+      students,
+      pending,
+      earnings,
+      monthly,
+      previousMonth,
+    ] = await Promise.all([
+      this.db.academyOffering.findMany({ select: { courseId: true } }),
+      this.db.academyEnrollment.groupBy({
+        by: ['courseId'],
+        _count: { courseId: true },
+      }),
+      this.db.academyEnrollment.groupBy({
+        by: ['studentId'],
+        _count: { studentId: true },
+      }),
       this.db.academyEnrollment.count({ where: { status: 'submitted' } }),
       this.db.academyEnrollment.aggregate({
         where: { status: 'approved' },
         _sum: { teacherCredits: true },
       }),
+      this.db.academyEnrollment.groupBy({
+        by: ['studentId'],
+        where: { createdAt: { gte: start } },
+        _count: { studentId: true },
+      }),
+      this.db.academyEnrollment.groupBy({
+        by: ['studentId'],
+        where: { createdAt: { gte: previous, lt: start } },
+        _count: { studentId: true },
+      }),
     ]);
     return {
-      courses,
-      students,
+      courses: new Set([
+        ...offered.map((row) => row.courseId),
+        ...enrolledCourses.map((row) => row.courseId),
+      ]).size,
+      students: students.length,
       pending,
+      monthlyNewStudents: monthly.length,
+      previousMonthNewStudents: previousMonth.length,
       earnedCredits: (earnings._sum.teacherCredits ?? 0n).toString(),
       scope: 'operator' as const,
       platformUserId: null as string | null,
+    };
+  }
+
+  async adminTeachingCourses(admin: AdminActor) {
+    const teacherId = admin.platformUserId?.trim() || null;
+    const taught = teacherId ? instructorWhere(teacherId) : {};
+    const [offerings, enrollments, earnings] = await Promise.all([
+      this.db.academyOffering.findMany({
+        where: taught,
+        select: {
+          courseId: true,
+          teacherId: true,
+          teacherShareBps: true,
+          instructorShares: true,
+        },
+      }),
+      this.db.academyEnrollment.findMany({
+        where: taught,
+        select: {
+          courseId: true,
+          studentId: true,
+          teacherId: true,
+          teacherCredits: true,
+          priceCredits: true,
+        },
+      }),
+      teacherId
+        ? this.db.$queryRaw<{ courseId: string; earned: bigint }[]>`
+            SELECT ae.course_id AS "courseId",
+                   COALESCE(SUM(e.teacher_credits),0) AS earned
+            FROM (${academyPayeesSql}) e
+            INNER JOIN academy_enrollments ae ON ae.id = e.id
+            WHERE e.teacher_id=${teacherId} AND e.status='approved'
+            GROUP BY ae.course_id`
+        : this.db.$queryRaw<{ courseId: string; earned: bigint }[]>`
+            SELECT ae.course_id AS "courseId",
+                   COALESCE(SUM(e.teacher_credits),0) AS earned
+            FROM (${academyPayeesSql}) e
+            INNER JOIN academy_enrollments ae ON ae.id = e.id
+            WHERE e.status='approved'
+            GROUP BY ae.course_id`,
+    ]);
+    const earnedByCourse = new Map(
+      earnings.map((row) => [row.courseId, row.earned ?? 0n]),
+    );
+    const offeringByCourse = new Map(
+      offerings.map((row) => [row.courseId, row] as const),
+    );
+    const courseIds = [
+      ...new Set([
+        ...offerings.map((row) => row.courseId),
+        ...enrollments.map((row) => row.courseId),
+      ]),
+    ];
+    const items: Array<{
+      courseId: string;
+      courseTitle: string;
+      shareBps: number | null;
+      students: number;
+      earnedCredits: string;
+    }> = [];
+    for (const courseId of courseIds) {
+      const course = await this.authority.course(courseId).catch(() => null);
+      const rows = enrollments.filter((row) => row.courseId === courseId);
+      items.push({
+        courseId,
+        courseTitle: courseTitleOf(course, courseId),
+        shareBps: teacherShareBpsFor(teacherId, {
+          javaShares: javaInstructorShares(course),
+          offering: offeringByCourse.get(courseId) ?? null,
+          sample: rows[0] ?? null,
+        }),
+        students: new Set(rows.map((row) => row.studentId)).size,
+        earnedCredits: (earnedByCourse.get(courseId) ?? 0n).toString(),
+      });
+    }
+    items.sort(
+      (left, right) =>
+        Number(right.earnedCredits) - Number(left.earnedCredits) ||
+        left.courseTitle.localeCompare(right.courseTitle, 'zh-CN'),
+    );
+    return {
+      items,
+      scope: teacherId ? ('lecturer' as const) : ('operator' as const),
+      platformUserId: teacherId,
     };
   }
 
@@ -833,35 +1099,58 @@ export class AcademyLearningService {
   }
 
   async teachingSummary(userId: string) {
-    const [courses, students, pending, earnings] = await Promise.all([
-      this.db.academyOffering.count({
-        where: {
-          OR: [
-            { teacherId: userId },
-            { instructorShares: { array_contains: [{ teacherId: userId }] } },
-          ],
-        },
+    const taught = instructorWhere(userId);
+    const { start, previous } = academyMonthBounds();
+    const [
+      offered,
+      enrolledCourses,
+      students,
+      pending,
+      earnings,
+      monthly,
+      previousMonth,
+    ] = await Promise.all([
+      this.db.academyOffering.findMany({
+        where: taught,
+        select: { courseId: true },
+      }),
+      this.db.academyEnrollment.groupBy({
+        by: ['courseId'],
+        where: taught,
+        _count: { courseId: true },
+      }),
+      this.db.academyEnrollment.groupBy({
+        by: ['studentId'],
+        where: taught,
+        _count: { studentId: true },
       }),
       this.db.academyEnrollment.count({
-        where: {
-          OR: [
-            { teacherId: userId },
-            { instructorShares: { array_contains: [{ teacherId: userId }] } },
-          ],
-        },
-      }),
-      this.db.academyEnrollment.count({
-        where: { teacherId: userId, status: 'submitted' },
+        where: { AND: [instructorWhere(userId), { status: 'submitted' }] },
       }),
       this.db.$queryRaw<
         { earned: bigint }[]
       >`SELECT COALESCE(SUM(e.teacher_credits),0) AS earned
         FROM (${academyPayeesSql}) e WHERE e.teacher_id=${userId} AND e.status='approved'`,
+      this.db.academyEnrollment.groupBy({
+        by: ['studentId'],
+        where: taughtInMonth(userId, { gte: start }),
+        _count: { studentId: true },
+      }),
+      this.db.academyEnrollment.groupBy({
+        by: ['studentId'],
+        where: taughtInMonth(userId, { gte: previous, lt: start }),
+        _count: { studentId: true },
+      }),
     ]);
     return {
-      courses,
-      students,
+      courses: new Set([
+        ...offered.map((row) => row.courseId),
+        ...enrolledCourses.map((row) => row.courseId),
+      ]).size,
+      students: students.length,
       pending,
+      monthlyNewStudents: monthly.length,
+      previousMonthNewStudents: previousMonth.length,
       earnedCredits: (earnings[0]?.earned ?? 0n).toString(),
     };
   }
@@ -869,7 +1158,7 @@ export class AcademyLearningService {
   async list(userId: string, teacher: boolean, after?: string) {
     const rows = await this.db.academyEnrollment.findMany({
       where: {
-        ...(teacher ? { teacherId: userId } : { studentId: userId }),
+        ...(teacher ? instructorWhere(userId) : { studentId: userId }),
         ...(after ? { id: { lt: after } } : {}),
       },
       orderBy: { id: 'desc' },
@@ -895,8 +1184,7 @@ export class AcademyLearningService {
           throw error;
         });
       if (teacher) {
-        if (!course?.instructors?.some((i) => String(i.userId) === userId))
-          continue;
+        if (!isCourseInstructor(course, userId)) continue;
       }
       visible.push({
         ...dto(row),
@@ -916,13 +1204,15 @@ export class AcademyLearningService {
 
   async attachment(id: string, assetId: string, userId: string) {
     const row = await this.db.academyEnrollment.findUnique({ where: { id } });
-    if (
-      !row ||
-      !row.assetIds.includes(assetId) ||
-      ![row.studentId, row.teacherId].includes(userId)
-    )
+    if (!row || !row.assetIds.includes(assetId))
       throw new NotFoundException('Attachment not found.');
-    if (userId === row.teacherId) await this.teacher(row, userId);
+    if (row.studentId !== userId) {
+      try {
+        await this.teacher(row, userId);
+      } catch {
+        throw new NotFoundException('Attachment not found.');
+      }
+    }
     const asset = await this.db.mediaAsset.findFirst({
       where: {
         id: assetId,
@@ -940,11 +1230,7 @@ export class AcademyLearningService {
   }
   private async teacher(row: AcademyEnrollment, userId: string) {
     const course = await this.authority.course(row.courseId);
-    if (
-      row.teacherId !== userId ||
-      row.studentId === userId ||
-      !course.instructors?.some((i) => String(i.userId) === userId)
-    )
+    if (row.studentId === userId || !isCourseInstructor(course, userId))
       throw new ForbiddenException(
         'Only the assigned course teacher can review this homework.',
       );

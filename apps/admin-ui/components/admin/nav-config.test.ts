@@ -67,11 +67,12 @@ it("keeps homework review and teaching income under 课程管理", () => {
   const courses = GLOBAL_NAV.find((entry) => entry.key === "/courses")!;
   const hrefs = MODULE_NAV["/courses"].flatMap((group) => group.items.map((item) => item.href));
   expect(hrefs).toEqual(
-    expect.arrayContaining(["/courses", "/courses/homework", "/courses/income"])
+    expect.arrayContaining(["/courses", "/courses/mine", "/courses/homework", "/courses/income"])
   );
   expect(moduleLandingHref(courses, (permission) => permission === "courses.read")).toBe(
     "/courses"
   );
+  expect(activeModule("/courses/mine")).toBe("/courses");
   expect(activeModule("/courses/homework")).toBe("/courses");
   expect(activeModule("/courses/income")).toBe("/courses");
 });

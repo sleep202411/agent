@@ -1,19 +1,27 @@
 import { CourseIncomePanel } from "@/components/admin/courses/course-income-panel";
-import { loadAdminTeachingIncome } from "@/lib/admin-academy-learning";
+import { loadAdminHomework, loadAdminTeachingIncome } from "@/lib/admin-academy-learning";
 import { requireContentPagePermission } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
 
-export default async function CourseIncomePage() {
+export default async function CourseIncomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ after?: string }>;
+}) {
   const session = await requireContentPagePermission("courses.read");
-  const result = await loadAdminTeachingIncome();
+  const after = (await searchParams).after;
+  const [income, homework] = await Promise.all([
+    loadAdminTeachingIncome(),
+    loadAdminHomework("all", after),
+  ]);
   return (
     <CourseIncomePanel
-      siteKey={session.site.key}
       siteLabel={session.site.label}
       databaseLabel={session.site.databaseLabel}
-      summary={result.data}
-      loadError={result.error}
+      summary={income.data}
+      items={homework.data?.items ?? []}
+      loadError={income.error || homework.error}
     />
   );
 }

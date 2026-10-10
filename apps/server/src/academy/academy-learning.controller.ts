@@ -183,6 +183,13 @@ export class AcademyLearningAdminController {
     return { code: 200, data: await this.learning.adminIncomeSummary(admin) };
   }
 
+  @Header('Cache-Control', 'private, no-store')
+  @Get('courses')
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CoursesRead)
+  async courses(@CurrentAdmin() admin: AdminActor) {
+    return { code: 200, data: await this.learning.adminTeachingCourses(admin) };
+  }
+
   @Post('enrollments/:id/review')
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CoursesWrite)
   async review(

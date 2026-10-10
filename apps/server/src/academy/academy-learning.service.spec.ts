@@ -3,10 +3,12 @@ import { Prisma } from '@prisma/client';
 import { LegacyCreatorsService } from '../legacy-creators/legacy-creators.service';
 import {
   AcademyLearningService,
+  academyMonthBounds,
   commerceFromJava,
   javaCommerceLive,
   javaOfferingVersion,
   teacherShare,
+  teacherShareBpsFor,
 } from './academy-learning.service';
 import { PrismaService } from '../infra/db/db.module';
 import { AcademyAuthorityService } from './academy-authority.service';
@@ -38,6 +40,26 @@ function fixture() {
   };
   const enrollment = {
     count: jest.fn().mockResolvedValue(2),
+    groupBy: jest.fn().mockImplementation(
+      async ({
+        by,
+        where,
+      }: {
+        by?: string[];
+        where?: {
+          createdAt?: { gte?: Date; lt?: Date };
+          AND?: Array<{ createdAt?: { gte?: Date; lt?: Date } }>;
+        };
+      }) => {
+        if (by?.[0] === 'courseId') return [{ courseId: '14' }];
+        const createdAt =
+          where?.createdAt ??
+          where?.AND?.find((part) => part.createdAt)?.createdAt;
+        if (createdAt?.lt) return [];
+        if (createdAt?.gte) return [{ studentId: '100' }];
+        return [{ studentId: '100' }, { studentId: '101' }];
+      },
+    ),
     aggregate: jest.fn().mockResolvedValue({ _sum: { teacherCredits: 50n } }),
     findUnique: jest.fn().mockResolvedValue(row),
     findUniqueOrThrow: jest.fn().mockResolvedValue(row),
@@ -65,6 +87,7 @@ function fixture() {
     academyEnrollment: enrollment,
     academyOffering: {
       count: jest.fn().mockResolvedValue(1),
+      findMany: jest.fn().mockResolvedValue([]),
       findUnique: jest.fn().mockResolvedValue({
         teacherId: '200',
         priceCredits: 100n,
@@ -124,6 +147,11 @@ const review = {
 };
 it('uses integer earned-credit shares, never a fiat conversion', () =>
   expect(teacherShare(101n, 5000)).toBe(50n));
+it('anchors Academy workbench months on UTC+8', () => {
+  const bounds = academyMonthBounds(new Date('2026-10-01T00:30:00.000Z'));
+  expect(bounds.start.toISOString()).toBe('2026-09-30T16:00:00.000Z');
+  expect(bounds.previous.toISOString()).toBe('2026-08-31T16:00:00.000Z');
+});
 it('ignores omitted Java commerce so Nest offerings still gate existing paid courses', () => {
   expect(
     commerceFromJava({
@@ -229,6 +257,11 @@ it('scopes admin homework to the bound Web lecturer id', async () => {
   expect(page.scope).toBe('lecturer');
   expect(page.platformUserId).toBe('200');
   expect(page.items).toHaveLength(1);
+  expect(page.items[0]).toMatchObject({
+    studentName: '100',
+    studentAvatar: null,
+    submittedAt: f.row.updatedAt.toISOString(),
+  });
 });
 it('retries a purchased enrollment without another debit', async () => {
   const f = fixture();
@@ -339,6 +372,20 @@ it('uses the stable homework-income receipt key', async () => {
     }),
   );
 });
+it('lets every current course instructor review submitted homework', async () => {
+  const f = fixture();
+  f.row.instructorShares = [
+    { teacherId: '200', credits: '40' },
+    { teacherId: '201', credits: '10' },
+  ];
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    instructors: [{ userId: 200 }, { userId: 201 }],
+  });
+  await f.service.review('enrollment', '201', review);
+  expect(f.enrollment.update).toHaveBeenCalled();
+});
 it('pays every instructor share from the enrollment snapshot', async () => {
   const f = fixture();
   f.row.instructorShares = [
@@ -418,6 +465,55 @@ it('keeps configured playback gated when new sales are disabled', async () => {
     allowed: false,
   });
 });
+it('lets a current instructor watch without buying the course', async () => {
+  const f = fixture();
+  f.db.academyOffering.findUnique.mockResolvedValue({ enabled: true });
+  f.enrollment.findUnique.mockResolvedValue(null);
+  await expect(f.service.playbackAccess('14', '200')).resolves.toEqual({
+    allowed: true,
+  });
+  expect(f.enrollment.findUnique).not.toHaveBeenCalled();
+});
+it('lets an offering teacher watch even when Java instructors omitted them', async () => {
+  const f = fixture();
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    instructors: [],
+  });
+  f.db.academyOffering.findUnique.mockResolvedValue({
+    enabled: true,
+    teacherId: '201',
+    teacherShareBps: 5000,
+    priceCredits: 200n,
+    instructorShares: [{ teacherId: '201', shareBps: 5000 }],
+  });
+  f.enrollment.findUnique.mockResolvedValue(null);
+  await expect(f.service.playbackAccess('14', '201')).resolves.toEqual({
+    allowed: true,
+  });
+  await expect(f.service.offering('14', '201')).resolves.toMatchObject({
+    instructor: true,
+  });
+});
+it('marks the signed-in Java instructor on the course offering', async () => {
+  const f = fixture();
+  f.db.academyOffering.findUnique.mockResolvedValue({
+    enabled: true,
+    teacherId: '200',
+    teacherShareBps: 5000,
+    priceCredits: 200n,
+    instructorShares: [],
+  });
+  f.enrollment.findUnique.mockResolvedValue(null);
+  await expect(f.service.offering('14', '200')).resolves.toMatchObject({
+    instructor: true,
+    enrollment: null,
+  });
+  await expect(f.service.offering('14', '100')).resolves.toMatchObject({
+    instructor: false,
+  });
+});
 it('preserves free playback for unconfigured catalogue entries', async () => {
   const f = fixture();
   f.db.academyOffering.findUnique.mockResolvedValue(null);
@@ -455,19 +551,42 @@ it('reports the recipient share rather than the combined teacher pool', async ()
     courses: 1,
     students: 2,
     pending: 2,
+    monthlyNewStudents: 1,
+    previousMonthNewStudents: 0,
     earnedCredits: '10',
   });
-  expect(f.db.academyOffering.count).toHaveBeenCalledWith({
+  expect(f.db.academyOffering.findMany).toHaveBeenCalledWith({
     where: {
       OR: [
         { teacherId: '201' },
         { instructorShares: { array_contains: [{ teacherId: '201' }] } },
       ],
     },
+    select: { courseId: true },
   });
+  expect(f.enrollment.groupBy).toHaveBeenCalledWith(
+    expect.objectContaining({ by: ['courseId'] }),
+  );
   expect(f.enrollment.count).toHaveBeenCalledWith({
-    where: { teacherId: '201', status: 'submitted' },
+    where: {
+      AND: [
+        {
+          OR: [
+            { teacherId: '201' },
+            { instructorShares: { array_contains: [{ teacherId: '201' }] } },
+          ],
+        },
+        { status: 'submitted' },
+      ],
+    },
   });
+});
+
+it('counts taught courses from enrollments when Nest offerings are empty', async () => {
+  const f = fixture();
+  f.db.$queryRaw.mockResolvedValue([{ earned: 0n }]);
+  f.db.academyOffering.findMany.mockResolvedValue([]);
+  expect((await f.service.teachingSummary('200')).courses).toBe(1);
 });
 
 it('keeps the operator total across all instructors', async () => {
@@ -475,6 +594,51 @@ it('keeps the operator total across all instructors', async () => {
   expect(
     await f.service.adminIncomeSummary({ platformUserId: null } as never),
   ).toMatchObject({ earnedCredits: '50', scope: 'operator' });
+});
+
+it('prefers the lecturer share on a taught course list', () => {
+  expect(
+    teacherShareBpsFor('201', {
+      javaShares: [
+        { teacherId: '200', shareBps: 6000 },
+        { teacherId: '201', shareBps: 4000 },
+      ],
+    }),
+  ).toBe(4000);
+});
+
+it('lists taught courses with share, students and earned credits', async () => {
+  const f = fixture();
+  f.db.$queryRaw.mockResolvedValue([{ courseId: '14', earned: 100n }]);
+  f.db.academyOffering.findMany.mockResolvedValue([
+    {
+      courseId: '14',
+      teacherId: '200',
+      teacherShareBps: 5000,
+      instructorShares: [],
+    },
+  ]);
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    instructors: [{ userId: 200, shareBps: 5000 }],
+    localized: { 'zh-CN': { title: '测试课' } },
+  });
+  expect(
+    await f.service.adminTeachingCourses({ platformUserId: '200' } as never),
+  ).toEqual({
+    items: [
+      {
+        courseId: '14',
+        courseTitle: '测试课',
+        shareBps: 5000,
+        students: 1,
+        earnedCredits: '100',
+      },
+    ],
+    scope: 'lecturer',
+    platformUserId: '200',
+  });
 });
 
 it('maps a concurrent enrollment uniqueness failure to an actionable conflict', async () => {
