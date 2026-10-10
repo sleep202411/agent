@@ -120,7 +120,9 @@ export function CourseHomeworkPanel({
   }
 
   const fromCatalog = queueMetrics(catalog);
-  const pending = items.filter((row) => row.status === "submitted").length;
+  const pagePending = items.filter((row) => row.status === "submitted").length;
+  const initialPending = initialItems.filter((row) => row.status === "submitted").length;
+  const pending = Math.max(0, (summary?.pending ?? initialPending) - initialPending + pagePending);
   const courses = Math.max(summary?.courses ?? 0, fromCatalog.courses);
   const students = Math.max(summary?.students ?? 0, fromCatalog.students);
   const monthly = Math.max(summary?.monthlyNewStudents ?? 0, fromCatalog.monthly);
