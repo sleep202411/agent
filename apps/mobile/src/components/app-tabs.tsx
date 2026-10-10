@@ -40,8 +40,8 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="news">
-        <NativeTabs.Trigger.Label hidden>{t("tabs.news")}</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="courses">
+        <NativeTabs.Trigger.Label hidden>{t("tabs.courses")}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require("@/assets/images/tab-icons/tab-news.png")}
           renderingMode="template"

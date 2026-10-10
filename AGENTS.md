@@ -191,7 +191,7 @@ file under ~200 lines — it should be readable in one scroll.
 
 - The user's temporary Mobile exception reopened native Courses. Catalogue,
   search, lessons, playback/resume and Academy certificate mappings now use the
-  regional Web APIs; Home, Creators, Crews, News and Mine remain the five tabs.
+  regional Web APIs; Home, Creators, Crews, Courses and Mine are the five tabs.
 - The native Courses deferral is superseded. The separate daily Discovery
   assistant remains deferred pending Pax's final design. Watching a course
   does not award a certificate; real course/badge assignments belong in Admin.

@@ -191,7 +191,8 @@ export function StoryGenerationBatchTranscript({
       assets={live.assets}
       storyboard={live.storyboard}
       mutating={live.mutating}
-      actionError={live.actionError}
+      cancelError={live.cancelError}
+      resumeError={live.resumeError}
       onCancel={live.cancel}
       onResume={live.resume}
     />
@@ -203,7 +204,8 @@ function BatchBody({
   assets,
   storyboard,
   mutating,
-  actionError,
+  cancelError,
+  resumeError,
   onCancel,
   onResume,
 }: {
@@ -211,7 +213,8 @@ function BatchBody({
   assets: StoryAssetSpec[];
   storyboard: StoryStoryboardSequence[];
   mutating: boolean;
-  actionError: string | null;
+  cancelError: string | null;
+  resumeError: string | null;
   onCancel: () => Promise<void>;
   onResume: () => Promise<void>;
 }) {
@@ -352,15 +355,12 @@ function BatchBody({
               </Pressable>
             </View>
           </View>
+          {resumeError ? (
+            <Text style={styles.alertText}>
+              {actionFailureText(resumeError, t("agent.generation.recovery.resumeError"))}
+            </Text>
+          ) : null}
         </View>
-      ) : null}
-
-      {actionError && recoverable ? (
-        <Text style={styles.alertText}>
-          {isGenericRequestFailed(actionError)
-            ? t("agent.generation.recovery.resumeError")
-            : actionError}
-        </Text>
       ) : null}
 
       {targetKind === "storyboard_clip" && batch.status === "completed" ? (
@@ -380,8 +380,18 @@ function BatchBody({
           </View>
         </Pressable>
       ) : null}
+
+      {cancelError ? (
+        <Text style={styles.alertText}>
+          {actionFailureText(cancelError, t("agent.generation.cancelError"))}
+        </Text>
+      ) : null}
     </View>
   );
+}
+
+function actionFailureText(message: string, fallback: string) {
+  return isGenericRequestFailed(message) ? fallback : message;
 }
 
 function AssetCard({
@@ -582,6 +592,11 @@ function StoryboardStream({
                               onPress={() => void onCancel()}
                             >
                               <View style={[styles.quietChrome, mutating && styles.disabled]}>
+                                <IconBan
+                                  size={14}
+                                  color="rgba(255,255,255,0.82)"
+                                  strokeWidth={1.8}
+                                />
                                 <Text style={styles.quietText}>{t("agent.generation.cancel")}</Text>
                               </View>
                             </Pressable>

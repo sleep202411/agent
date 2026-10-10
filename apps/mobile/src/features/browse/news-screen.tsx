@@ -1,10 +1,10 @@
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
+import { useTabScreenInsets } from "@/components/tab-screen";
 import {
   ChipRail,
   EmptyState,
@@ -14,7 +14,7 @@ import {
   Skeleton,
 } from "@/components/ui";
 import { webBaseUrl, type AppLocale } from "@/config";
-import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
+import { MaxContentWidth, Spacing } from "@/constants/theme";
 import { getNewsFeed, getNewsTags, NEWS_PAGE_SIZE } from "@/data/browse-service";
 import type { NewsArticle, NewsTag } from "@/data/types";
 import { useLocale, useTranslations } from "@/i18n";
@@ -39,7 +39,7 @@ export default function NewsScreen() {
   const t = useTranslations();
   const locale = useLocale();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const { topInset, bottomInset, contentPadding } = useTabScreenInsets();
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -224,19 +224,16 @@ export default function NewsScreen() {
     [locale, replaceArticles]
   );
 
-  // The native tab host does NOT inset content below the status bar (verified
-  // on iOS 26.3) — pad by the safe-area inset ourselves, like the mine tab.
-  const topInset = insets.top + (Platform.OS === "web" ? Spacing.four : Spacing.three);
-  const bottomInset = insets.bottom + BottomTabInset + Spacing.four;
-  const horizontalPadding = {
-    paddingLeft: Math.max(insets.left, Spacing.four),
-    paddingRight: Math.max(insets.right, Spacing.four),
+  const headerPadding = {
+    paddingTop: topInset,
+    paddingLeft: contentPadding.paddingLeft,
+    paddingRight: contentPadding.paddingRight,
   };
 
   if (loading) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
-        <View style={[styles.stateContainer, { paddingTop: topInset }, horizontalPadding]}>
+        <View style={[styles.stateContainer, headerPadding]}>
           <ScreenHeader eyebrow={t("news.eyebrow")} title={t("news.title")} />
           <View style={styles.skeletonList}>
             <Skeleton height={196} radius={10} />
@@ -258,7 +255,7 @@ export default function NewsScreen() {
   if (error) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
-        <View style={[styles.stateContainer, { paddingTop: topInset }, horizontalPadding]}>
+        <View style={[styles.stateContainer, headerPadding]}>
           <ScreenHeader eyebrow={t("news.eyebrow")} title={t("news.title")} />
           <EmptyState
             title={t("news.errorTitle")}
@@ -281,11 +278,7 @@ export default function NewsScreen() {
       keyExtractor={(article) => article.id}
       showsVerticalScrollIndicator={false}
       contentInsetAdjustmentBehavior="never"
-      contentContainerStyle={[
-        styles.listContent,
-        { paddingTop: topInset, paddingBottom: bottomInset },
-        horizontalPadding,
-      ]}
+      contentContainerStyle={[styles.listContent, contentPadding]}
       ListHeaderComponent={
         <View style={styles.header}>
           <ScreenHeader eyebrow={t("news.eyebrow")} title={t("news.title")} />

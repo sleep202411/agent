@@ -3,7 +3,6 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -11,10 +10,10 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Carousel from "react-native-reanimated-carousel";
 
 import { ThemedText } from "@/components/themed-text";
+import { useTabScreenInsets } from "@/components/tab-screen";
 import type { AppLocale } from "@/config";
 import {
   ChipRail,
@@ -26,7 +25,7 @@ import {
   Skeleton,
   Tag,
 } from "@/components/ui";
-import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
+import { MaxContentWidth, Spacing } from "@/constants/theme";
 import { useBrowseVersion } from "@/data/browse-refresh";
 import { getIpCatalogPage, getIpDiscovery, type IpDiscovery } from "@/data/browse-service";
 import {
@@ -83,7 +82,7 @@ function openGame(game: ExperienceGameSummary) {
 export default function IpDiscoveryScreen() {
   const t = useTranslations();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const { topInset, contentPadding } = useTabScreenInsets();
   const agentAction = useAgentHeaderAction();
   const { width } = useWindowDimensions();
   const featuredWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
@@ -359,18 +358,16 @@ export default function IpDiscoveryScreen() {
     </View>
   );
 
-  const topInset = insets.top + (Platform.OS === "web" ? Spacing.four : Spacing.three);
-  const bottomInset = insets.bottom + BottomTabInset + Spacing.four;
+  const headerPadding = {
+    paddingTop: topInset,
+    paddingLeft: contentPadding.paddingLeft,
+    paddingRight: contentPadding.paddingRight,
+  };
 
   if (loading) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
-        <View
-          style={[
-            styles.stateContainer,
-            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
-          ]}
-        >
+        <View style={[styles.stateContainer, headerPadding]}>
           <ScreenHeader title={t("home.title")} action={agentAction} />
           <DiscoverySkeleton width={featuredWidth} />
         </View>
@@ -381,12 +378,7 @@ export default function IpDiscoveryScreen() {
   if (error) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
-        <View
-          style={[
-            styles.stateContainer,
-            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
-          ]}
-        >
+        <View style={[styles.stateContainer, headerPadding]}>
           <ScreenHeader title={t("home.title")} action={agentAction} />
           <EmptyState
             title={t("home.errorTitle")}
@@ -414,15 +406,7 @@ export default function IpDiscoveryScreen() {
           homeScrollY = selectedGenreCode ? 0 : event.nativeEvent.contentOffset.y;
         }}
         scrollEventThrottle={100}
-        contentContainerStyle={[
-          styles.listContent,
-          {
-            paddingTop: topInset,
-            paddingBottom: bottomInset,
-            paddingLeft: Math.max(insets.left, Spacing.four),
-            paddingRight: Math.max(insets.right, Spacing.four),
-          },
-        ]}
+        contentContainerStyle={[styles.listContent, contentPadding]}
         ListHeaderComponent={header}
         ListHeaderComponentStyle={styles.listHeader}
         ListEmptyComponent={

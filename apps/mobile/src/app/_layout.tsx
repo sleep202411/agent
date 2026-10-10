@@ -93,6 +93,7 @@ export default function RootLayout() {
                   }}
                 />
                 <Stack.Screen name="ip/[id]" options={detailHeader} />
+                <Stack.Screen name="courses/[id]" options={detailHeader} />
                 <Stack.Screen name="crew/[id]" options={detailHeader} />
                 <Stack.Screen name="creator/[id]" options={detailHeader} />
                 <Stack.Screen name="service/[id]" options={detailHeader} />

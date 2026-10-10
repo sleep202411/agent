@@ -1,11 +1,11 @@
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
+import { useTabScreenInsets } from "@/components/tab-screen";
 import { EmptyState, ListFooter, PosterImage, ScreenHeader, Skeleton, Tag } from "@/components/ui";
-import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
+import { MaxContentWidth, Spacing } from "@/constants/theme";
 import { useBrowseVersion } from "@/data/browse-refresh";
 import { getCrewFeedPage } from "@/data/browse-service";
 import type { CrewStatus, CrewSummary } from "@/data/types";
@@ -27,7 +27,7 @@ export function crewStatusTag(status: CrewStatus): {
 export default function CrewsScreen() {
   const t = useTranslations();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
+  const { topInset, contentPadding } = useTabScreenInsets();
   const [crews, setCrews] = useState<CrewSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,18 +122,16 @@ export default function CrewsScreen() {
     }
   }, [load]);
 
-  const topInset = insets.top + (Platform.OS === "web" ? Spacing.four : Spacing.three);
-  const bottomInset = insets.bottom + BottomTabInset + Spacing.four;
+  const headerPadding = {
+    paddingTop: topInset,
+    paddingLeft: contentPadding.paddingLeft,
+    paddingRight: contentPadding.paddingRight,
+  };
 
   if (loading) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
-        <View
-          style={[
-            styles.stateContainer,
-            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
-          ]}
-        >
+        <View style={[styles.stateContainer, headerPadding]}>
           <ScreenHeader title={t("crews.title")} />
           <View style={styles.grid}>
             {[0, 1].map((rowIndex) => (
@@ -157,12 +155,7 @@ export default function CrewsScreen() {
   if (error) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
-        <View
-          style={[
-            styles.stateContainer,
-            { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
-          ]}
-        >
+        <View style={[styles.stateContainer, headerPadding]}>
           <ScreenHeader title={t("crews.title")} />
           <EmptyState
             title={t("crews.loadErrorTitle")}
@@ -183,15 +176,7 @@ export default function CrewsScreen() {
         columnWrapperStyle={styles.column}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={[
-          styles.listContent,
-          {
-            paddingTop: topInset,
-            paddingBottom: bottomInset,
-            paddingLeft: Math.max(insets.left, Spacing.four),
-            paddingRight: Math.max(insets.right, Spacing.four),
-          },
-        ]}
+        contentContainerStyle={[styles.listContent, contentPadding]}
         ListHeaderComponent={<ScreenHeader title={t("crews.title")} />}
         ListHeaderComponentStyle={styles.listHeader}
         ListEmptyComponent={
