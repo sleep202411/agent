@@ -39,7 +39,7 @@ beforeEach(() => {
   h.generation = 1;
   h.terms.mockResolvedValue({ currentVersion: 0, items: [], nextBeforeVersion: null });
   h.interview.mockResolvedValue({ applicationStatus: "pending", state: "not_started", items: [] });
-  vi.mocked(api.get).mockResolvedValue(app);
+  vi.mocked(api.get).mockResolvedValue({ ...app, taskId: null });
   vi.mocked(api.post).mockResolvedValue(result);
 });
 it("reads filtered reviewer inbox", async () => {
@@ -65,12 +65,16 @@ it("rejects duplicate records", async () => {
 });
 it("reads fresh detail before terms and interview", async () => {
   const review = await fetchReviewApplication("crew", "app", 1, signal());
-  expect(review.app).toEqual(app);
-  expect(canApproveReview(review, "manager")).toBe(true);
+  expect(review.app).toEqual({ ...app, taskId: null });
+  expect(api.get).toHaveBeenCalledWith(
+    "/applications/app",
+    expect.objectContaining({ cache: "no-store" })
+  );
+  expect(canApproveReview(review, "manager")).toBe(false);
   expect(canApproveReview(review, "creator")).toBe(false);
 });
 it("does not read private related data after foreign detail", async () => {
-  vi.mocked(api.get).mockResolvedValue({ ...app, crewId: "other" });
+  vi.mocked(api.get).mockResolvedValue({ ...app, taskId: null, crewId: "other" });
   await expect(fetchReviewApplication("crew", "app", 1, signal())).rejects.toThrow();
   expect(h.terms).not.toHaveBeenCalled();
 });
@@ -129,3 +133,41 @@ it("never automatically retries a decision", async () => {
   await expect(decideReviewApplication(app, "manager", 1, "approve")).rejects.toThrow();
   expect(api.post).toHaveBeenCalledTimes(1);
 });
+
+it("retains the task link from the official reviewer thread", async () => {
+  const taskId = "00000000-0000-4000-8000-000000000001";
+  vi.mocked(api.get).mockResolvedValue({ ...app, taskId });
+  expect((await fetchReviewApplication("crew", "app", 1, signal())).app.taskId).toBe(taskId);
+});
+it("rejects malformed task links before loading related private data", async () => {
+  vi.mocked(api.get).mockResolvedValue({ ...app, taskId: "bad" });
+  await expect(fetchReviewApplication("crew", "app", 1, signal())).rejects.toThrow();
+  expect(h.terms).not.toHaveBeenCalled();
+});
+
+it.each([null, "00000000-0000-4000-8000-000000000001"])(
+  "requires confirmed terms for recruitment with task %s",
+  async (taskId) => {
+    vi.mocked(api.get).mockResolvedValue({ ...app, taskId });
+    expect(
+      canApproveReview(await fetchReviewApplication("crew", "app", 1, signal()), "manager")
+    ).toBe(false);
+    h.terms.mockResolvedValue({
+      currentVersion: 2,
+      items: [
+        { version: 1, confirmedAt: app.createdAt },
+        { version: 2, confirmedAt: null },
+      ],
+    });
+    expect(
+      canApproveReview(await fetchReviewApplication("crew", "app", 1, signal()), "manager")
+    ).toBe(false);
+    h.terms.mockResolvedValue({
+      currentVersion: 2,
+      items: [{ version: 2, confirmedAt: app.createdAt }],
+    });
+    expect(
+      canApproveReview(await fetchReviewApplication("crew", "app", 1, signal()), "manager")
+    ).toBe(true);
+  }
+);

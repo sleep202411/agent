@@ -6,6 +6,9 @@ import type { NativeConversation, NativeMessage } from "./conversation-api";
 
 const h = vi.hoisted(() => ({
   change: vi.fn(),
+  outboxRead: vi.fn(),
+  outboxSave: vi.fn(),
+  outboxClear: vi.fn(),
   accept: vi.fn(),
   decline: vi.fn(),
   open: vi.fn(),
@@ -13,6 +16,9 @@ const h = vi.hoisted(() => ({
   user: "owner",
   generation: 1,
   authenticated: true,
+}));
+vi.mock("./proposal-outbox", () => ({
+  proposalOutbox: () => ({ read: h.outboxRead, save: h.outboxSave, clear: h.outboxClear }),
 }));
 vi.mock("./conversation-proposals", async (original) => ({
   ...(await original<typeof import("./conversation-proposals")>()),
@@ -160,6 +166,7 @@ const type = (label: string, value: string) => {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  h.outboxRead.mockReturnValue(null);
   h.generation = 1;
   host = document.createElement("div");
   document.body.append(host);
@@ -238,4 +245,49 @@ it("retains exact offer terms and idempotency key across retry", async () => {
   expect(h.change.mock.calls[1]).toEqual(h.change.mock.calls[0]);
   expect(h.change.mock.calls[0][2]).toMatchObject({ price: 12.5, revisions: -1 });
   expect(h.refresh).toHaveBeenCalledTimes(1);
+});
+it("restores frozen offer terms after restart and saves before sending", async () => {
+  const saved = {
+    clientKey: "saved-key",
+    packageTier: "basic",
+    price: 12.5,
+    currency: "USD",
+    deliveryDays: 3,
+    revisions: -1,
+    scope: ["Edit"],
+    note: "Original",
+  };
+  h.outboxRead.mockReturnValue(saved);
+  h.change.mockResolvedValue(message);
+  await editor();
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="servicePackages.price"]')!.value
+  ).toBe("12.5");
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  expect(h.change).not.toHaveBeenCalled();
+  await act(async () => click("inbox.retry"));
+  expect(h.change).toHaveBeenCalledWith(conversation, "creator", saved);
+  expect(h.outboxSave.mock.invocationCallOrder[0]).toBeLessThan(
+    h.change.mock.invocationCallOrder[0]
+  );
+  expect(h.outboxClear).toHaveBeenCalledWith("saved-key");
+});
+it("does not send a recovered offer if persistence fails", async () => {
+  h.outboxRead.mockReturnValue({
+    clientKey: "saved-key",
+    packageTier: "basic",
+    price: 12.5,
+    currency: "USD",
+    deliveryDays: 3,
+    revisions: 0,
+    scope: [],
+    note: "",
+  });
+  h.outboxSave.mockImplementation(() => {
+    throw new Error("Storage unavailable");
+  });
+  await editor();
+  await act(async () => click("inbox.retry"));
+  expect(h.change).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Storage unavailable");
 });

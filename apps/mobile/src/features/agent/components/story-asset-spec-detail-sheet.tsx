@@ -1,4 +1,10 @@
-import type { ReactNode } from "react";
+import { StoryCandidatesPanel } from "./story-candidates-panel";
+import { StoryAssetMediaVersions } from "./story-asset-media-versions";
+import { StoryAssetEditFields, initialAssetEditDraft } from "./story-asset-edit-fields";
+import type { AssetCommand } from "../api/story-asset-mutations";
+import { useMemo, useState, type ReactNode } from "react";
+import { AssetGenerationPanel } from "./story-asset-generation-panel";
+import type { TimelineScope } from "../api/story-timeline-api";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -13,27 +19,64 @@ function statusLabelKey(status: StoryAssetSpec["status"]) {
   return "agent.assets.status.current" as const;
 }
 
-/** Read-only asset detail sheet — mirrors H5 detail inspection without edit/generate. */
+/** Existing asset detail sheet, with permission-gated editing actions. */
 export function StoryAssetSpecDetailSheet({
   asset,
   visible,
   onClose,
+  editing,
+  recovery,
+  generation,
 }: {
   asset: StoryAssetSpec | null;
   visible: boolean;
   onClose: () => void;
+  recovery?: ReactNode;
+  generation?: {
+    scope: TimelineScope;
+    userId: string;
+    canGenerate: boolean;
+    locked: boolean;
+    refresh: () => void;
+  };
+  editing?: { locked: boolean; submit: (command: AssetCommand) => void };
 }) {
   const t = useTranslations();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const [candidateId, setCandidateId] = useState<string>();
+  const [purpose, setPurpose] = useState<"primary" | "turnaround">();
+  // The route keys this sheet by chapter, asset and version. Retain fields
+  // while an inactive visit hides the modal and unmounts its contents.
+  const draftState = useState(() => initialAssetEditDraft(asset));
+  const baseScope = generation?.scope,
+    assetId = asset?.id;
+  const scope = useMemo(
+    () =>
+      baseScope && assetId && purpose
+        ? { ...baseScope, assetId, purpose, outputKind: "image" as const }
+        : undefined,
+    [baseScope, assetId, purpose]
+  );
   if (!asset) return null;
+  const latest = purpose
+    ? (asset.latestGenerations?.[purpose] ??
+      (asset.latestGeneration?.purpose === purpose ? asset.latestGeneration : null))
+    : null;
 
   const reference = asset.stableKey.startsWith("@") ? asset.stableKey : `@${asset.stableKey}`;
   const prompt = asset.imagePrompt?.trim() || "—";
+  const candidateOpen = !!(candidateId && generation && visible && editing);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable
+        style={styles.backdrop}
+        onPress={onClose}
+        accessibilityElementsHidden={candidateOpen}
+        importantForAccessibility={candidateOpen ? "no-hide-descendants" : "auto"}
+        aria-hidden={candidateOpen}
+      >
         <Pressable
           style={[
             styles.sheet,
@@ -56,16 +99,73 @@ export function StoryAssetSpecDetailSheet({
             <Field label={t("agent.assets.detail.status")}>
               <ThemedText type="small">{t(statusLabelKey(asset.status))}</ThemedText>
             </Field>
-            <Field label={t("agent.assets.detail.description")}>
-              <ThemedText type="small" themeColor="textSecondary">
-                {asset.description?.trim() || "—"}
-              </ThemedText>
-            </Field>
-            <Field label={t("agent.assets.detail.imagePrompt")}>
-              <ThemedText type="small" themeColor="textSecondary">
-                {prompt}
-              </ThemedText>
-            </Field>
+            {!editing && (
+              <>
+                <Field label={t("agent.assets.detail.description")}>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {asset.description?.trim() || "—"}
+                  </ThemedText>
+                </Field>
+                <Field label={t("agent.assets.detail.imagePrompt")}>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    {prompt}
+                  </ThemedText>
+                </Field>
+              </>
+            )}
+            {recovery}
+            {scope && generation ? (
+              <AssetGenerationPanel
+                scope={scope}
+                userId={generation.userId}
+                version={asset.version}
+                kind="image"
+                newGenerationDisabledReason={
+                  purpose === "turnaround" && !asset.selectedMediaVersion
+                    ? t("assetEdit.turnaroundNeedsPrimary")
+                    : undefined
+                }
+                latestId={latest?.outputKind === "image" ? latest.id : undefined}
+                canGenerate={generation.canGenerate && !generation.locked}
+                onClose={() => {
+                  setPurpose(undefined);
+                  generation.refresh();
+                }}
+              />
+            ) : (
+              <>
+                {!editing && <StoryAssetMediaVersions asset={asset} />}
+                {!editing &&
+                  generation &&
+                  (["primary", ...(asset.kind === "character" ? ["turnaround"] : [])] as const).map(
+                    (target) => (
+                      <Pressable
+                        key={target}
+                        accessibilityRole="button"
+                        onPress={() => setPurpose(target as "primary" | "turnaround")}
+                      >
+                        <ThemedText type="smallBold">
+                          {t(
+                            target === "primary"
+                              ? "assetEdit.generateImage"
+                              : "assetEdit.generateTurnaround"
+                          )}
+                        </ThemedText>
+                      </Pressable>
+                    )
+                  )}
+                {editing && (
+                  <StoryAssetEditFields
+                    key={`${asset.id}:${asset.version}`}
+                    asset={asset}
+                    draftState={draftState}
+                    onSaveCandidate={generation ? setCandidateId : undefined}
+                    {...editing}
+                    onGenerate={generation && !generation.locked ? setPurpose : undefined}
+                  />
+                )}
+              </>
+            )}
           </ScrollView>
 
           <Pressable
@@ -81,6 +181,14 @@ export function StoryAssetSpecDetailSheet({
           </Pressable>
         </Pressable>
       </Pressable>
+      {candidateId && generation && visible && editing && (
+        <StoryCandidatesPanel
+          scope={generation.scope}
+          userId={generation.userId}
+          mediaAssetId={candidateId}
+          close={() => setCandidateId(undefined)}
+        />
+      )}
     </Modal>
   );
 }

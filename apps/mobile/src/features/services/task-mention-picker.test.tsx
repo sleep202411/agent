@@ -1,8 +1,20 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { ApiRequestError } from "@/lib/api-client";
 import { TaskMentionPicker } from "./task-mention-picker";
 const h = vi.hoisted(() => ({ fetch: vi.fn(), select: vi.fn(), generation: 1 }));
+vi.mock("@/lib/api-client", () => ({
+  ApiRequestError: class extends Error {
+    constructor(
+      public code: string,
+      message: string,
+      public status: number
+    ) {
+      super(message);
+    }
+  },
+}));
 vi.mock("./task-mentions", () => ({ fetchMentionMembers: h.fetch }));
 vi.mock("./user-displays", () => ({
   useUserDisplays: () => new Map([["2", { nickname: "Artist" }]]),
@@ -168,4 +180,38 @@ it("returns the crew membership identifier for earning recipients including self
   );
   await act(async () => button("@1 · 1").click());
   expect(h.select).toHaveBeenCalledExactlyOnceWith({ crewMemberId: "m1", userId: "1", label: "1" });
+});
+
+it.each([0, 429, 503])(
+  "retains loaded candidates on transient %s failures and retries the failed cursor",
+  async (status) => {
+    h.fetch
+      .mockResolvedValueOnce({ items: [member("2")], nextCursor: "m2" })
+      .mockRejectedValueOnce(
+        new ApiRequestError("TEMPORARY", "Members temporarily unavailable", status)
+      )
+      .mockResolvedValueOnce({ items: [member("4")], nextCursor: null });
+    await render();
+    await act(async () => button("discovery.more").click());
+    expect(host.textContent).toContain("@Artist · 2");
+    expect(host.textContent).toContain("Members temporarily unavailable");
+    expect(button("discovery.more")).toBeUndefined();
+    await act(async () => button("inbox.retry").click());
+    expect(h.fetch.mock.calls[2][1]).toBe("m2");
+    expect(host.textContent).toContain("@Artist · 2");
+    expect(host.textContent).toContain("@4 · 4");
+  }
+);
+it("clears invalid pagination context and explicitly restarts from the first page", async () => {
+  h.fetch
+    .mockResolvedValueOnce({ items: [member("2")], nextCursor: "m2" })
+    .mockRejectedValueOnce(new ApiRequestError("BAD_CURSOR", "Cursor no longer valid", 400))
+    .mockResolvedValueOnce({ items: [member("4")], nextCursor: null });
+  await render();
+  await act(async () => button("discovery.more").click());
+  expect(host.textContent).not.toContain("@Artist");
+  expect(host.textContent).toContain("Cursor no longer valid");
+  await act(async () => button("inbox.retry").click());
+  expect(h.fetch.mock.calls[2][1]).toBeNull();
+  expect(host.textContent).toContain("@4 · 4");
 });

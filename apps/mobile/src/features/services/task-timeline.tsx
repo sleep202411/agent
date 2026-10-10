@@ -11,11 +11,13 @@ import { TaskComment } from "./task-comment";
 import { ConversationFile } from "./conversation-file";
 /** Parent task detail is scoped to account/focus and revalidates tasks.view first. */
 export function TaskTimeline({
+  suspended = false,
   crewId,
   taskId,
   userId,
   generation,
 }: {
+  suspended?: boolean;
   crewId: string;
   taskId: string;
   userId: string;
@@ -29,13 +31,13 @@ export function TaskTimeline({
     locked: boolean;
     canManage?: boolean;
   }>({ allowed: false, locked: false });
-  const history = useTaskTimeline(String(generation), taskId);
+  const history = useTaskTimeline(suspended ? undefined : String(generation), taskId);
   const displays = useUserDisplays(
     String(generation),
     history.items.flatMap((item) => (item.actorUserId ? [item.actorUserId] : []))
   );
   return (
-    <View style={{ gap: 12 }}>
+    <View style={{ gap: 12, ...(suspended ? { display: "none" } : {}) }}>
       <ThemedText type="smallBold">{t("taskActivity.title")}</ThemedText>
       {history.items.map((item) => (
         <View key={item.id} style={{ gap: 6, paddingVertical: 8 }}>
@@ -116,18 +118,17 @@ export function TaskTimeline({
           )}
         </View>
       ))}
-      {!history.error && (
-        <TaskComment
-          crewId={crewId}
-          taskId={taskId}
-          userId={userId}
-          generation={generation}
-          onSent={history.refresh}
-          reply={reply}
-          onClearReply={() => setReply(undefined)}
-          onReplyAvailability={setReplyAccess}
-        />
-      )}
+      <TaskComment
+        suspended={suspended || history.loading || !!history.error}
+        crewId={crewId}
+        taskId={taskId}
+        userId={userId}
+        generation={generation}
+        onSent={history.refresh}
+        reply={reply}
+        onClearReply={() => setReply(undefined)}
+        onReplyAvailability={setReplyAccess}
+      />
       {history.loading && <ActivityIndicator />}
       {!history.loading && !history.error && history.items.length === 0 && (
         <ThemedText>{t("taskActivity.empty")}</ThemedText>

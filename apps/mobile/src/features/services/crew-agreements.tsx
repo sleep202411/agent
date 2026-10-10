@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -12,17 +13,55 @@ import {
   type AgreementPage,
   type AgreementView,
 } from "./crew-agreements-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  initialAgreementId?: string;
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+};
 export function CrewAgreements(props: Props) {
-  const active = useScreenActive();
-  return active && props.generation === getAuthGeneration() ? (
-    <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
+  const focused = useIsFocused();
+  return focused && props.generation === getAuthGeneration() ? (
+    <Session
+      key={`${props.crewId}:${props.userId}:${props.initialAgreementId ?? ""}:${props.generation}`}
+      {...props}
+    />
   ) : null;
 }
 function Session(props: Props) {
   const t = useTranslations();
+  const active = useScreenActive();
+  const [creating, setCreating] = useState(false);
+  const [memberUserId, setMemberUserId] = useState<string>();
+  const [directAgreement, setDirectAgreement] = useState(props.initialAgreementId);
   const [view, setView] = useState<AgreementView>("all"),
     [revision, setRevision] = useState(0);
+  const finishCreate = () => {
+    setCreating(false);
+    setView("all");
+    setRevision((n) => n + 1);
+  };
+  if (creating)
+    return (
+      <CreateSession {...props} active={active} onClose={finishCreate} onSaved={finishCreate} />
+    );
+  if (directAgreement)
+    return (
+      <AgreementDetail
+        crewId={props.crewId}
+        agreementId={directAgreement}
+        memberUserId={memberUserId}
+        userId={props.userId}
+        generation={props.generation}
+        closeLabel={t("crewAgreements.backToList")}
+        onClose={() => {
+          setDirectAgreement(undefined);
+          setMemberUserId(undefined);
+        }}
+      />
+    );
+  if (!active) return null;
   return (
     <View style={{ flex: 1 }}>
       <ThemedText>{t("crewAgreements.title")}</ThemedText>
@@ -43,9 +82,10 @@ function Session(props: Props) {
         key={`${view}:${revision}`}
         {...props}
         view={view}
-        created={() => {
-          setView("all");
-          setRevision((n) => n + 1);
+        create={() => setCreating(true)}
+        select={(row) => {
+          setDirectAgreement(row.id);
+          setMemberUserId(row.memberUserId);
         }}
         refresh={() => setRevision((n) => n + 1)}
       />
@@ -62,14 +102,19 @@ function Session(props: Props) {
     </View>
   );
 }
-function Listing(props: Props & { view: AgreementView; refresh: () => void; created: () => void }) {
+function Listing(
+  props: Props & {
+    view: AgreementView;
+    refresh: () => void;
+    create: () => void;
+    select: (row: AgreementPage["items"][number]) => void;
+  }
+) {
   const t = useTranslations();
   const [page, setPage] = useState<AgreementPage>(),
     [cursor, setCursor] = useState<string | null>(null),
     [busy, setBusy] = useState(true),
     [error, setError] = useState<string>();
-  const [creating, setCreating] = useState(false);
-  const [selected, setSelected] = useState<AgreementPage["items"][number]>();
   const collected = useRef<AgreementPage["items"]>([]),
     seen = useRef(new Set<string>()),
     requesting = useRef(false);
@@ -102,29 +147,11 @@ function Listing(props: Props & { view: AgreementView; refresh: () => void; crea
       });
     return () => c.abort();
   }, [props.crewId, props.view, props.generation, cursor]);
-  if (creating && page?.capabilities.create)
-    return <AgreementCreate {...props} onClose={props.refresh} onSaved={props.created} />;
-  if (selected)
-    return (
-      <AgreementDetail
-        crewId={props.crewId}
-        userId={props.userId}
-        generation={props.generation}
-        agreementId={selected.id}
-        memberUserId={selected.memberUserId}
-        closeLabel={t("crewAgreements.backToList")}
-        onClose={props.refresh}
-      />
-    );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewAgreements.scopeHelp")}</ThemedText>
       {page?.capabilities.create && (
-        <Pressable
-          accessibilityRole="button"
-          style={{ padding: 12 }}
-          onPress={() => setCreating(true)}
-        >
+        <Pressable accessibilityRole="button" style={{ padding: 12 }} onPress={props.create}>
           <ThemedText>{t("agreementCreate.title")}</ThemedText>
         </Pressable>
       )}
@@ -144,7 +171,7 @@ function Listing(props: Props & { view: AgreementView; refresh: () => void; crea
           accessibilityRole="button"
           style={{ paddingVertical: 12, gap: 6 }}
           onPress={() => {
-            if (props.generation === getAuthGeneration()) setSelected(item);
+            if (props.generation === getAuthGeneration()) props.select(item);
           }}
         >
           <ThemedText>
@@ -177,5 +204,71 @@ function Listing(props: Props & { view: AgreementView; refresh: () => void; crea
         </Pressable>
       )}
     </ScrollView>
+  );
+}
+
+function CreateSession(props: Props & { active: boolean; onSaved: () => void }) {
+  const t = useTranslations();
+  const [revision, setRevision] = useState(0);
+  const [creatingBusy, setCreatingBusy] = useState(false);
+  const readKey = `${props.active}:${revision}`;
+  const [previousKey, setPreviousKey] = useState(readKey);
+  const [access, setAccess] = useState<boolean>();
+  const [error, setError] = useState<string>();
+  if (previousKey !== readKey) {
+    setPreviousKey(readKey);
+    setAccess(undefined);
+    setError(undefined);
+  }
+  useEffect(() => {
+    if (!props.active) return;
+    const c = new AbortController();
+    void fetchCrewAgreements(props.crewId, "all", null, c.signal).then(
+      (page) => {
+        if (!c.signal.aborted && props.generation === getAuthGeneration())
+          setAccess(page.capabilities.create);
+      },
+      (cause) => {
+        if (!c.signal.aborted && props.generation === getAuthGeneration())
+          setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    );
+    return () => c.abort();
+  }, [props.active, props.crewId, props.generation, revision]);
+  return (
+    <>
+      <AgreementCreate
+        {...props}
+        available={props.active && access === true}
+        onBusyChange={setCreatingBusy}
+      />
+      {props.active && access !== true && (
+        <View style={{ padding: 16, gap: 12 }}>
+          {error ? (
+            <ThemedText accessibilityRole="alert">{error}</ThemedText>
+          ) : access === false ? (
+            <ThemedText>{t("agreementCreate.denied")}</ThemedText>
+          ) : (
+            <ActivityIndicator />
+          )}
+          <Pressable
+            accessibilityRole="button"
+            disabled={creatingBusy}
+            onPress={() => setRevision((n) => n + 1)}
+            style={{ padding: 12 }}
+          >
+            <ThemedText>{t("common.retry")}</ThemedText>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={creatingBusy}
+            onPress={props.onClose}
+            style={{ padding: 12 }}
+          >
+            <ThemedText>{t("crewAgreements.backToList")}</ThemedText>
+          </Pressable>
+        </View>
+      )}
+    </>
   );
 }

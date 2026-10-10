@@ -1,3 +1,4 @@
+import { TASK_PAYMENT_TERMS } from "@repo/shared/crew";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -12,6 +13,9 @@ export const application = z.object({
   taskId: z.string().uuid().nullable(),
   status: z.enum(["pending", "approved", "rejected"]),
   createdAt: date,
+  ownerUserId: id.nullable().optional(),
+  taskTitle: z.string().nullable().optional(),
+  dueAt: date.nullable().optional(),
 });
 export type Application = z.infer<typeof application>;
 export const terms = z.object({
@@ -21,6 +25,7 @@ export const terms = z.object({
   scope: z.string(),
   feeAmount: z.string().regex(/^(0|[1-9][0-9]{0,15})$/),
   currency: z.enum(["USD", "CNY"]),
+  paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
   feePeriod: z.enum(["project", "episode", "month"]),
   revenueShareBp: z.number().int().min(0).max(5000),
   shareBasis: z.string().nullable(),
@@ -32,19 +37,27 @@ export type Terms = z.infer<typeof terms>;
 export async function fetchMyApplications(
   userId: string,
   cursor: string | null,
-  signal: AbortSignal
+  signal: AbortSignal,
+  scope: "sent" | "received" = "sent"
 ) {
   id.parse(userId);
+  z.enum(["sent", "received"]).parse(scope);
   if (cursor) id.parse(cursor);
   const page = z.object({ items: z.array(application), nextCursor: id.nullable() }).parse(
     await api.get("/me/crew-applications", {
       service: "aurora",
       signal,
-      params: { limit: 20, ...(cursor ? { cursor } : {}) },
+      params: {
+        limit: 20,
+        ...(scope === "received" ? { scope } : {}),
+        ...(cursor ? { cursor } : {}),
+      },
     })
   );
   if (
-    page.items.some((r) => r.applicantId !== userId) ||
+    page.items.some((r) =>
+      scope === "sent" ? r.applicantId !== userId : r.ownerUserId !== userId
+    ) ||
     new Set(page.items.map((r) => r.id)).size !== page.items.length ||
     (cursor !== null && page.nextCursor === cursor)
   )
@@ -121,4 +134,88 @@ export async function confirmApplicationTerms(
       "Confirmation could not be verified. Retry the same version or refresh to review."
     );
   return result;
+}
+
+const applicationThread = application.extend({
+  positionId: id,
+  ownerUserId: id.nullable(),
+  taskTitle: z.string().nullable(),
+  dueAt: date.nullable(),
+});
+export type ApplicationThread = z.infer<typeof applicationThread>;
+export async function fetchApplicationThread(
+  applicationId: string,
+  userId: string,
+  generation: number,
+  signal: AbortSignal,
+  participant: "applicant" | "either" = "applicant"
+) {
+  id.parse(applicationId);
+  id.parse(userId);
+  const current = () => {
+    if (signal.aborted || generation !== getAuthGeneration())
+      throw Error("Application session expired");
+  };
+  current();
+  const result = applicationThread.parse(
+    await api.get(`/applications/${applicationId}`, {
+      service: "aurora",
+      credentials: "include",
+      retry: false,
+      signal,
+    })
+  );
+  current();
+  if (result.id !== applicationId || (participant === "applicant" && result.applicantId !== userId))
+    throw Error("Application account changed. Refresh to reload.");
+  return result;
+}
+
+/** Accept precisely the reviewed offer. The server makes same-version retries idempotent. */
+export async function acceptApplicationOffer(
+  app: ApplicationThread,
+  record: Terms,
+  userId: string,
+  generation: number
+) {
+  const reviewedApp = applicationThread.parse(app),
+    reviewed = terms.parse(record);
+  if (
+    reviewedApp.applicantId !== userId ||
+    reviewed.applicationId !== reviewedApp.id ||
+    reviewedApp.status !== "pending"
+  )
+    throw Error("Only the applicant can accept a pending offer.");
+  const current = () => {
+    if (generation !== getAuthGeneration()) throw Error("Application session expired");
+  };
+  current();
+  const receipt = z
+    .object({ id, crewId: id, positionId: id, applicantId: id, status: z.literal("approved") })
+    .parse(
+      await api.post(`/applications/${reviewedApp.id}/accept-offer`, {
+        service: "aurora",
+        credentials: "include",
+        retry: false,
+        data: { version: reviewed.version },
+      })
+    );
+  current();
+  if (
+    receipt.id !== reviewedApp.id ||
+    receipt.crewId !== reviewedApp.crewId ||
+    receipt.positionId !== reviewedApp.positionId ||
+    receipt.applicantId !== userId
+  )
+    throw Error("Offer acceptance could not be verified. Refresh the application.");
+  const page = await fetchApplicationTerms(reviewedApp.id, null, new AbortController().signal);
+  current();
+  const confirmed = page.items.find((row) => row.version === reviewed.version);
+  if (
+    !confirmed?.confirmedAt ||
+    JSON.stringify({ ...confirmed, confirmedAt: null }) !==
+      JSON.stringify({ ...reviewed, confirmedAt: null })
+  )
+    throw Error("Offer acceptance could not be verified. Refresh the application.");
+  return confirmed;
 }

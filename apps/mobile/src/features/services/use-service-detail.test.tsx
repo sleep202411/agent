@@ -50,3 +50,51 @@ it("hides old route/session data, ignores aborted results and retries errors", a
   }
   expect(pending[3].signal?.aborted).toBe(true);
 });
+
+it("hides stale details on every foreground render and retries a revoked service read", async () => {
+  const pending: {
+    resolve: (value: CreatorServiceDetail | undefined) => void;
+    reject: (error: Error) => void;
+    signal?: AbortSignal;
+  }[] = [];
+  vi.mocked(fetchCreatorServiceById).mockImplementation(
+    (_id, signal) => new Promise((resolve, reject) => pending.push({ resolve, reject, signal }))
+  );
+  const host = document.createElement("div"),
+    root = createRoot(host);
+  let current!: ReturnType<typeof useServiceDetail>;
+  const renders: string[] = [];
+  function Probe({ active }: { active: boolean }) {
+    current = useServiceDetail("service", 1, active);
+    renders.push(current.service?.title ?? "none");
+    return (
+      <span>
+        {current.loading ? "loading" : current.error || current.service?.title || "missing"}
+      </span>
+    );
+  }
+  const render = (active: boolean) => act(async () => root.render(<Probe active={active} />));
+  try {
+    await render(true);
+    await act(async () => pending[0].resolve({ title: "Old service" } as CreatorServiceDetail));
+    await render(false);
+    expect(pending[0].signal?.aborted).toBe(true);
+    expect(pending).toHaveLength(1);
+    expect(host.textContent).toBe("missing");
+    renders.length = 0;
+    await render(true);
+    expect(renders).not.toContain("Old service");
+    expect(host.textContent).toBe("loading");
+    await act(async () => pending[1].reject(new Error("Service no longer available")));
+    expect(host.textContent).toBe("Service no longer available");
+    await act(async () => current.retry());
+    await render(false);
+    await act(async () => pending[2].resolve({ title: "Obsolete retry" } as CreatorServiceDetail));
+    expect(host.textContent).toBe("missing");
+    await render(true);
+    await act(async () => pending[3].resolve({ title: "Current service" } as CreatorServiceDetail));
+    expect(host.textContent).toBe("Current service");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

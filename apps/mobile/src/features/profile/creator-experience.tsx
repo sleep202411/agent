@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
@@ -11,21 +12,26 @@ export function CreatorExperience({ creatorId }: { creatorId: string }) {
 }
 function ExperienceSession({ creatorId }: { creatorId: string }) {
   const t = useTranslations();
+  const focused = useIsFocused();
   const [rows, setRows] = useState<ExperienceEntry[]>();
   const [failed, setFailed] = useState<Error | boolean>(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
+    if (!focused) return;
     const controller = new AbortController();
     void getCreatorExperience(creatorId, controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted) setRows(result);
+        if (!controller.signal.aborted) {
+          setRows(result);
+          setFailed(false);
+        }
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) setFailed(cause instanceof Error ? cause : true);
       });
     return () => controller.abort();
-  }, [creatorId, attempt]);
-  if (rows?.length === 0) return null;
+  }, [creatorId, attempt, focused]);
+  if (!failed && rows?.length === 0) return null;
   return (
     <View style={styles.section}>
       <SectionHeader title={t("creatorDetail.experienceTitle")} />

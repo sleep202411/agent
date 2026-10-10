@@ -15,8 +15,10 @@ function Probe({ owner, role }: { owner?: string; role: InboxFilter }) {
         <span key={i.id}>{i.lastMessagePreview}</span>
       ))}
       {state.error}
+      {state.loading && <em>Loading</em>}
       <button onClick={state.loadMore}>more</button>
       <button onClick={state.retry}>retry</button>
+      <button onClick={state.loadMoreOnScroll}>scroll</button>
     </div>
   );
 }
@@ -90,4 +92,84 @@ it("stops repeated cursors instead of looping forever", async () => {
   expect(host.textContent).toContain("did not advance");
   await click(0);
   expect(h.load).toHaveBeenCalledTimes(2);
+});
+
+it.each([401, 403])(
+  "clears private previews on %s and explicitly restarts pagination",
+  async (status) => {
+    h.load
+      .mockResolvedValueOnce({ items: [item], nextCursor: "next" })
+      .mockRejectedValueOnce(Object.assign(new Error("Access denied"), { status }))
+      .mockResolvedValueOnce({
+        items: [{ ...item, lastMessagePreview: "Revalidated" }],
+        nextCursor: "next",
+      })
+      .mockResolvedValueOnce({ items: [], nextCursor: null });
+    await render("1");
+    await click(0);
+    expect(host.textContent).not.toContain("First");
+    expect(host.textContent).toContain("Access denied");
+    await click(0);
+    expect(h.load).toHaveBeenCalledTimes(2);
+    await click(1);
+    expect(h.load.mock.calls[2][1]).toBeNull();
+    expect(host.textContent).toContain("Revalidated");
+    expect(host.textContent).not.toContain("Access denied");
+    await click(0);
+    expect(h.load.mock.calls[3][1]).toBe("next");
+  }
+);
+
+it("revalidates return visits without showing the previous visit's rows", async () => {
+  let finish!: (value: unknown) => void;
+  h.load.mockResolvedValueOnce({ items: [item], nextCursor: null }).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render("1");
+  expect(host.textContent).toContain("First");
+  await render();
+  await render("1");
+  expect(host.textContent).not.toContain("First");
+  expect(host.textContent).toContain("Loading");
+  await act(async () => finish({ items: [], nextCursor: null }));
+  expect(host.textContent).not.toContain("Loading");
+  expect(h.load).toHaveBeenCalledTimes(2);
+});
+
+it("walks empty cursor pages until a visible conversation is found", async () => {
+  h.load
+    .mockResolvedValueOnce({ items: [], nextCursor: "a" })
+    .mockResolvedValueOnce({ items: [], nextCursor: "b" })
+    .mockResolvedValueOnce({ items: [item], nextCursor: null });
+  await render("1", "crew");
+  expect(h.load.mock.calls.map((call) => call[1])).toEqual([null, "a", "b"]);
+  expect(host.textContent).toContain("First");
+});
+it("caps automatic empty-page traversal but allows explicit continuation", async () => {
+  let page = 0;
+  h.load.mockImplementation(async () => ({ items: [], nextCursor: String(++page) }));
+  await render("1");
+  expect(h.load).toHaveBeenCalledTimes(9);
+  await click(2);
+  expect(h.load).toHaveBeenCalledTimes(9);
+  h.load.mockResolvedValueOnce({ items: [item], nextCursor: null });
+  await click(0);
+  expect(h.load.mock.calls[9][1]).toBe("9");
+  expect(host.textContent).toContain("First");
+});
+it("retries the interrupted empty-page cursor without replaying earlier pages", async () => {
+  h.load
+    .mockResolvedValueOnce({ items: [], nextCursor: "next" })
+    .mockRejectedValueOnce(Error("Offline"))
+    .mockResolvedValueOnce({ items: [item], nextCursor: null });
+  await render("1");
+  expect(host.textContent).toContain("Offline");
+  await click(2);
+  expect(h.load).toHaveBeenCalledTimes(2);
+  await click(1);
+  expect(h.load.mock.calls[2][1]).toBe("next");
+  expect(host.textContent).toContain("First");
 });

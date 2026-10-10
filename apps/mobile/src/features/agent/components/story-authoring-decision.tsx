@@ -15,11 +15,13 @@ export function StoryAuthoringDecision({
   stage,
   assetCount = 0,
   busy,
+  disabled = false,
   onResolve,
 }: {
   stage: StoryProposalStage;
   assetCount?: number;
   busy: boolean;
+  disabled?: boolean;
   onResolve: (decision: "approve" | "reject", responseText: string) => void;
 }) {
   const t = useTranslations();
@@ -33,22 +35,22 @@ export function StoryAuthoringDecision({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={stopText}
-          disabled={busy}
+          disabled={busy || disabled}
           onPress={() => onResolve("reject", stopText)}
           style={styles.actionHit}
         >
-          <View style={[styles.stopChrome, busy && styles.disabled]}>
+          <View style={[styles.stopChrome, (busy || disabled) && styles.disabled]}>
             <Text style={styles.stopText}>{stopText}</Text>
           </View>
         </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={continueText}
-          disabled={busy}
+          disabled={busy || disabled}
           onPress={() => onResolve("approve", continueText)}
           style={styles.actionHit}
         >
-          <View style={[styles.continueChrome, busy && styles.disabled]}>
+          <View style={[styles.continueChrome, (busy || disabled) && styles.disabled]}>
             {busy ? <IconLoader2 size={14} color="#FFFFFF" strokeWidth={1.8} /> : null}
             <Text style={styles.continueText}>{continueText}</Text>
           </View>

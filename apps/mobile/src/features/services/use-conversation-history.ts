@@ -46,6 +46,11 @@ export function useConversationHistory(
   const key = JSON.stringify([conversationId, viewerId, generation, active]);
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
+  const [snapshotScope, setSnapshotScope] = useState(key);
+  if (snapshotScope !== key) {
+    setSnapshotScope(key);
+    setSnapshot(undefined);
+  }
   const load = useCallback(
     async function run(session: Session, mode: Mode) {
       if (session.abort.signal.aborted) return;

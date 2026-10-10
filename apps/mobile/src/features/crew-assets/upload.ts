@@ -1,7 +1,7 @@
 import * as DocumentPicker from "expo-document-picker";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
-import { uploadMobileMediaFile } from "@/lib/media-upload";
+import { uploadMobileMediaFile, type MediaConfirmation } from "@/lib/media-upload";
 import { fetchCrewAssetContext } from "./api";
 export type CrewUpload = { source: "upload"; mediaAssetId: string; name: string };
 export async function discardCrewUpload(crewId: string, mediaAssetId: string) {
@@ -12,7 +12,8 @@ export async function discardCrewUpload(crewId: string, mediaAssetId: string) {
 }
 export async function pickAndUploadCrewFile(
   crewId: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  beforeConfirm?: (confirmation: MediaConfirmation, name: string) => void
 ): Promise<CrewUpload | null> {
   const context = await fetchCrewAssetContext(crewId, signal);
   signal.throwIfAborted();
@@ -36,7 +37,13 @@ export async function pickAndUploadCrewFile(
     throw new Error("Selected file exceeds the allowed size or is empty");
   const result = await uploadMobileMediaFile(
     { uri: file.uri, name, type: file.mimeType || "application/octet-stream", size: file.size },
-    { kind: "crew_asset_file", scope: { crewId }, signal, maxBytes: context.maxUploadBytes }
+    {
+      kind: "crew_asset_file",
+      scope: { crewId },
+      signal,
+      maxBytes: context.maxUploadBytes,
+      beforeConfirm: (confirmation) => beforeConfirm?.(confirmation, name),
+    }
   );
   return { source: "upload", mediaAssetId: z.string().uuid().parse(result.mediaAssetId), name };
 }
