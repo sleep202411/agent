@@ -1,4 +1,5 @@
 "use client";
+import { createPortal } from "react-dom";
 import { taskLocalDate } from "./task-local-date";
 import { TaskCardPoints, taskRequestedPoints } from "./task-card-points";
 import { useComputeRequests } from "@/app/(site)/crews/_hooks/use-compute-requests";
@@ -98,6 +99,7 @@ function TaskCreationSession({
   canSubmitAssigned = false,
   canManageEpisodes,
   active,
+  toolbarTarget,
   onSelectTask,
   onEditTask,
   onSubmitTask,
@@ -114,6 +116,7 @@ function TaskCreationSession({
   canSubmitAssigned?: boolean;
   canManageEpisodes: boolean;
   active: boolean;
+  toolbarTarget?: HTMLElement | null;
   onSelectTask: (id: string) => void;
   onEditTask?: (id: string) => void;
   onSubmitTask?: (id: string) => void;
@@ -122,6 +125,7 @@ function TaskCreationSession({
   onInviteTask?: (task: CrewTaskListItemDTO) => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
+  const [analysisStatus, setAnalysisStatus] = useState("idle");
   const [presetTaskKind, setPresetTaskKind] = useState<CreateCrewTaskInput["taskKind"]>();
   const displays = useUserDisplays(members.map((member) => member.userId));
   const taskT = useTranslations("crewTasks");
@@ -334,6 +338,72 @@ function TaskCreationSession({
       if (alive.current) setBusy(false);
     }
   }
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="ghost" size="sm" onClick={() => setShowEpisodes(true)}>
+        {t("episodes")}
+      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        {onViewTasks &&
+        (drafts.some((draft) => draft.state === "created") ||
+          batches.some((batch) => batch.created) ||
+          unresolved) ? (
+          <Button variant="ghost" color="muted" size="sm" onClick={onViewTasks}>
+            {t("viewTasks")}
+          </Button>
+        ) : null}
+        {canManage ? (
+          <>
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              onClick={() => setProductionOpen(true)}
+            >
+              {t("canvasImport")}
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {canManage && analysisStatus !== "idle" && !pdfOpen && (
+        <Button variant="outline" size="sm" onClick={() => setPdfOpen(true)}>
+          {t("analysisStatus", { status: t(`analysis_${analysisStatus}`) })}
+        </Button>
+      )}
+      {canManageTasks ? (
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {t("batchSelected", { count: selectedTasks.length })}
+          </span>
+          <Button
+            size="sm"
+            variant="solid"
+            color="primary"
+            disabled={!batchReady}
+            onClick={() => setBatchMode("assign")}
+          >
+            {t("batchAssign")}
+          </Button>
+          {onPublishTask ? (
+            <Button
+              size="sm"
+              variant="solid"
+              color="primary"
+              disabled={!batchReady}
+              onClick={() => setBatchMode("recruit")}
+            >
+              {t("batchRecruit")}
+            </Button>
+          ) : null}
+          {selectedTaskIds.length ? (
+            <Button size="sm" variant="ghost" color="muted" onClick={() => setSelectedTaskIds([])}>
+              {t("batchClear")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
   return (
     <div hidden={!active} className="min-h-0 min-w-0 flex-1 overflow-auto @container">
       {batchMode ? (
@@ -358,83 +428,7 @@ function TaskCreationSession({
       ) : null}
       <div className="flex min-h-full flex-col bg-[#090a0c] text-[13px]">
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex flex-wrap items-center gap-3 border-b border-white/10 px-4 py-2">
-            <div className="flex flex-wrap items-center gap-3">
-              <div>
-                <h2 className="sr-only">{t("title")}</h2>
-                <p className="mt-1 text-xs text-muted-foreground">{crewName}</p>
-              </div>
-              <button
-                type="button"
-                aria-label={t("episodes")}
-                onClick={() => setShowEpisodes(true)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                {!episodes.isError && episodes.data
-                  ? t("episodeCount", { count: episodes.data.length })
-                  : ""}
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              {onViewTasks &&
-              (drafts.some((draft) => draft.state === "created") ||
-                batches.some((batch) => batch.created) ||
-                unresolved) ? (
-                <Button variant="ghost" color="muted" size="sm" onClick={onViewTasks}>
-                  {t("viewTasks")}
-                </Button>
-              ) : null}
-              {canManage ? (
-                <>
-                  <Button
-                    variant="outline"
-                    color="muted"
-                    size="sm"
-                    onClick={() => setProductionOpen(true)}
-                  >
-                    {t("canvasImport")}
-                  </Button>
-                </>
-              ) : null}
-            </div>
-            {canManageTasks ? (
-              <div className="ml-auto flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {t("batchSelected", { count: selectedTasks.length })}
-                </span>
-                <Button
-                  size="sm"
-                  variant="solid"
-                  color="primary"
-                  disabled={!batchReady}
-                  onClick={() => setBatchMode("assign")}
-                >
-                  {t("batchAssign")}
-                </Button>
-                {onPublishTask ? (
-                  <Button
-                    size="sm"
-                    variant="solid"
-                    color="primary"
-                    disabled={!batchReady}
-                    onClick={() => setBatchMode("recruit")}
-                  >
-                    {t("batchRecruit")}
-                  </Button>
-                ) : null}
-                {selectedTaskIds.length ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    color="muted"
-                    onClick={() => setSelectedTaskIds([])}
-                  >
-                    {t("batchClear")}
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-          </header>
+          {toolbarTarget ? createPortal(toolbar, toolbarTarget) : toolbar}
           <div className="flex-1 space-y-3 p-3">
             {selectedTasks.length > MAX_BATCH_TASKS && (
               <p role="alert" className="text-sm text-destructive">
@@ -448,16 +442,28 @@ function TaskCreationSession({
               disabled={busy}
               onInitialize={() => setPdfOpen(true)}
             />
-            <Dialog open={pdfOpen} onOpenChange={setPdfOpen}>
-              <DialogContent className="w-[calc(100vw-2rem)] max-w-3xl sm:max-w-3xl">
-                <DialogHeader>
-                  <DialogTitle>{t("finalScript")}</DialogTitle>
-                </DialogHeader>
-                <DialogBody>
-                  <WorkbenchPdfImport crewId={crewId} />
-                </DialogBody>
-              </DialogContent>
-            </Dialog>
+            {canManage && (
+              <section
+                hidden={!pdfOpen}
+                role={pdfOpen ? "dialog" : undefined}
+                aria-label={t("finalScript")}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setPdfOpen(false);
+                }}
+                className={`${pdfOpen ? "flex" : "hidden"} fixed inset-x-4 top-20 z-50 mx-auto max-h-[80dvh] max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl`}
+              >
+                <header className="flex items-center justify-between border-b border-border p-4">
+                  <h2>{t("finalScript")}</h2>
+                  <Button variant="ghost" size="sm" onClick={() => setPdfOpen(false)}>
+                    {t("minimizeAnalysis")}
+                  </Button>
+                </header>
+                <div className="overflow-y-auto p-4">
+                  <WorkbenchPdfImport crewId={crewId} onStatus={setAnalysisStatus} />
+                </div>
+              </section>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10">
               <div className="flex min-w-0 gap-1 overflow-x-auto" aria-label={t("batchCategories")}>
                 {STAGED_CATEGORY_BARS.map((key) => (

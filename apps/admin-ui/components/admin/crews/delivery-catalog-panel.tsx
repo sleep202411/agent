@@ -226,11 +226,34 @@ export function DeliveryCatalogPanel() {
                 <input
                   className={inputClass}
                   placeholder="e.g. storyboard_delivery"
+                  list="delivery-work-types"
                   value={draft.definition.categoryKey ?? ""}
                   maxLength={48}
                   onChange={(e) => change({ categoryKey: e.target.value.trim() || undefined })}
                 />
               </label>
+              <datalist id="delivery-work-types">
+                {Object.entries({
+                  script_delivery: "Script",
+                  character_art_delivery: "Characters",
+                  scene_art_delivery: "Scenes",
+                  prop_art_delivery: "Props",
+                  art_delivery: "Other art",
+                  music_delivery: "Music",
+                  storyboard_delivery: "Storyboard",
+                  shot_delivery: "Shot",
+                  assembly_delivery: "Final editing",
+                  qa_delivery: "Quality assurance",
+                }).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </datalist>
+              <p className="text-xs text-muted-foreground">
+                Matching new tasks use this category’s latest active revision. Existing tasks retain
+                their agreed requirements.
+              </p>
               {!draft.definition.categoryKey && (
                 <p className="text-xs text-amber-500">
                   Set a category key to enable task binding for this category.

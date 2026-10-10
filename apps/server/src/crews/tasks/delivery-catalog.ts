@@ -1,3 +1,4 @@
+import { findActiveDeliveryCategory } from './task-delivery-binding';
 import {
   Body,
   ConflictException,
@@ -159,13 +160,11 @@ export class CrewDeliveryCatalogService {
         input.definition.categoryKey &&
         input.definition.status === 'active'
       ) {
-        const [duplicate] = await tx.$queryRaw<
-          Array<{ categoryId: string }>
-        >`SELECT category_id AS "categoryId" FROM crew_delivery_catalog_revisions
-          WHERE category_id != ${id}::uuid
-            AND definition->>'status' = 'active'
-            AND definition->>'categoryKey' = ${input.definition.categoryKey}
-          LIMIT 1`;
+        const duplicate = await findActiveDeliveryCategory(
+          tx,
+          input.definition.categoryKey,
+          id,
+        );
         if (duplicate) {
           throw new ConflictException(
             `categoryKey "${input.definition.categoryKey}" is already in use by another active category.`,

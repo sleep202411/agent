@@ -14,11 +14,27 @@ type Preview = {
   tasks: Array<{ title: string; description: string; category: string; evidence: string }>;
   taskIds: string[];
 };
-export function WorkbenchPdfImport({ crewId }: { crewId: string }) {
+export function WorkbenchPdfImport({
+  crewId,
+  onStatus,
+}: {
+  crewId: string;
+  onStatus?: (status: string) => void;
+}) {
   const { user } = useCurrentUser();
-  return user ? <PdfSession key={`${crewId}:${user.id}`} crewId={crewId} userId={user.id} /> : null;
+  return user ? (
+    <PdfSession key={`${crewId}:${user.id}`} crewId={crewId} userId={user.id} onStatus={onStatus} />
+  ) : null;
 }
-function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
+function PdfSession({
+  crewId,
+  userId,
+  onStatus,
+}: {
+  crewId: string;
+  userId: string;
+  onStatus?: (status: string) => void;
+}) {
   const t = useTranslations("crewTaskProject.workbench");
   const client = useQueryClient();
   const [now, setNow] = useState(() => Date.now());
@@ -30,6 +46,9 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [selection, setSelection] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    onStatus?.(preview?.status ?? (busy ? "analyzing" : "idle"));
+  }, [preview?.status, busy, onStatus]);
   const [error, setError] = useState<string | null>(null);
   const [uncertain, setUncertain] = useState(false);
   const [hasRequest, setHasRequest] = useState(false);
@@ -262,7 +281,7 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
             } catch {
               /* Optional storage. */
             }
-            if (next && next.size > 5 * 1024 * 1024) {
+            if (next && next.size > 20 * 1024 * 1024) {
               setFile(null);
               setError(t("pdfTooLarge"));
               return;

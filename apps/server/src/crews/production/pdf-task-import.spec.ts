@@ -311,3 +311,33 @@ it.each(['doc', 'docx'])(
     }
   },
 );
+
+it('accepts a 20 MiB document and rejects anything larger before parsing', async () => {
+  const old = process.env.ALIBABA_API_KEY;
+  process.env.ALIBABA_API_KEY = 'fixture';
+  try {
+    const { service } = fixture();
+    jest
+      .mocked(pdfParse)
+      .mockResolvedValue({ text: proposals.tasks[0].evidence } as never);
+    const buffer = Buffer.alloc(20 * 1024 * 1024);
+    buffer.write('%PDF-');
+    await expect(
+      service.analyze('crew', 'user', 'large', {
+        buffer,
+        originalname: 'large.pdf',
+      }),
+    ).resolves.toMatchObject({ status: 'queued' });
+    jest.mocked(pdfParse).mockClear();
+    await expect(
+      service.analyze('crew', 'user', 'larger', {
+        buffer: Buffer.concat([buffer, Buffer.from('x')]),
+        originalname: 'large.pdf',
+      }),
+    ).rejects.toThrow('20 MB');
+    expect(pdfParse).not.toHaveBeenCalled();
+  } finally {
+    if (old === undefined) delete process.env.ALIBABA_API_KEY;
+    else process.env.ALIBABA_API_KEY = old;
+  }
+});

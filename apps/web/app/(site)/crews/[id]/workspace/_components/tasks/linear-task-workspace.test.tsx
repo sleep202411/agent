@@ -1,3 +1,6 @@
+vi.mock("./task-delivery-template", () => ({
+  TaskDeliveryTemplatePanel: () => <div data-template-selector />,
+}));
 vi.mock("./task-creation-workbench", () => ({
   TaskCreationWorkbench: ({
     active,
@@ -218,7 +221,12 @@ vi.mock("./task-quick-create", () => ({
     ) : null,
 }));
 vi.mock("./task-dialogs", () => ({
-  SubmitTaskDialog: () => <div data-delivery-form>Shared delivery form</div>,
+  SubmitTaskDialog: ({ readOnly }: { readOnly?: boolean }) =>
+    readOnly ? (
+      <div data-delivery-preview>Delivery preview</div>
+    ) : (
+      <div data-delivery-form>Shared delivery form</div>
+    ),
 }));
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {

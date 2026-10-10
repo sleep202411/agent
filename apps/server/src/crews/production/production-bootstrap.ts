@@ -1,3 +1,7 @@
+import {
+  bindTaskDeliveryCategoryKey,
+  bindNewTaskDeliveryTemplate,
+} from '../tasks/task-delivery-binding';
 import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import { randomUUID } from 'node:crypto';
 import type { PlotTreeImportInput } from '../templates/project-task-template.types';
@@ -225,6 +229,7 @@ export async function seedCrewProductionTasks(
 ) {
   const createTask = async (args: Prisma.CrewTaskCreateArgs) => {
     const task = await tx.crewTask.create(args);
+    await bindNewTaskDeliveryTemplate(tx, task);
     await provisionTaskDeliveryFolderTx(tx, task, input.userId);
     return task;
   };
@@ -584,22 +589,4 @@ export async function seedCrewTaskKindTemplates(
 
 export { CrewTaskStatus };
 
-export async function bindTaskDeliveryCategoryKey(
-  tx: Prisma.TransactionClient,
-  taskId: string,
-  deliveryCategoryKey?: string,
-) {
-  if (!deliveryCategoryKey) return;
-  const [row] = await tx.$queryRaw<
-    Array<{ category_id: string; version: number }>
-  >`SELECT category_id, version
-    FROM crew_delivery_catalog_revisions
-    WHERE definition->>'status' = 'active'
-      AND definition->>'categoryKey' = ${deliveryCategoryKey}
-    ORDER BY version DESC LIMIT 1`;
-  if (row) {
-    await tx.$executeRaw`INSERT INTO crew_task_delivery_templates(task_id, category_id, category_version)
-      VALUES (${taskId}::uuid, ${row.category_id}::uuid, ${row.version})
-      ON CONFLICT DO NOTHING`;
-  }
-}
+export { bindTaskDeliveryCategoryKey } from '../tasks/task-delivery-binding';
