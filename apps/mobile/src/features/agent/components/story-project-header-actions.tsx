@@ -16,6 +16,7 @@ import {
 } from "@/features/agent/api/interactive-film-publication-api";
 import { fillMessageTemplate } from "@/features/agent/api/story-production-api";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
+import { openComputeRecharge } from "@/features/agent/lib/open-compute-recharge";
 import { useTranslations, type MessageKey } from "@/i18n";
 
 function formatPoints(value: string | undefined): string {
@@ -70,11 +71,7 @@ export function StoryCreditsButton() {
       accessibilityRole="button"
       accessibilityLabel={t("agent.credits.manage")}
       hitSlop={6}
-      onPress={() =>
-        Alert.alert(t("agent.credits.webRechargeTitle"), t("agent.credits.webRechargeBody"), [
-          { text: t("common.ok") },
-        ])
-      }
+      onPress={openComputeRecharge}
       style={({ pressed }) => [styles.creditsButton, pressed && styles.pressed]}
     >
       <View style={styles.creditsChrome}>

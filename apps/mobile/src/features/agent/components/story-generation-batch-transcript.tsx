@@ -15,18 +15,11 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useLayoutEffect, useMemo, useState, type ComponentType } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
+import { openComputeRecharge } from "@/features/agent/lib/open-compute-recharge";
 import { navigateToStoryPreview } from "@/features/experience-player";
 import { useTranslations, type MessageKey } from "@/i18n";
 
@@ -299,13 +292,7 @@ function BatchBody({
                 <Pressable
                   accessibilityRole="button"
                   disabled={mutating}
-                  onPress={() =>
-                    Alert.alert(
-                      t("agent.credits.webRechargeTitle"),
-                      t("agent.credits.webRechargeBody"),
-                      [{ text: t("common.ok") }]
-                    )
-                  }
+                  onPress={openComputeRecharge}
                 >
                   <View style={[styles.continueChrome, mutating && styles.disabled]}>
                     <IconWallet size={14} color="#FFFFFF" strokeWidth={1.8} />

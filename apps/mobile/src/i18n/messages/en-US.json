@@ -987,6 +987,7 @@
   "agent.credits.insufficientBody": "Buy compute credits to continue generation.",
   "agent.credits.webRechargeTitle": "Recharge on the web",
   "agent.credits.webRechargeBody": "Top up compute credits on the FizzDragon website, then come back to continue.",
+  "agent.credits.webRechargeOpen": "Go to recharge",
   "ipDetail.likeFanNotice": "If this IP has a linked Crew, liking joins its public fan community. Unliking does not leave it.",
   "episodeFeedback.title": "First-three-episode feedback",
   "episodeFeedback.like": "Like",

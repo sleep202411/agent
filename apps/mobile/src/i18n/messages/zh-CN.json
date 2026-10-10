@@ -987,6 +987,7 @@
   "agent.credits.insufficientBody": "请购买算力积分后继续生成。",
   "agent.credits.webRechargeTitle": "请到网页端充值",
   "agent.credits.webRechargeBody": "请到 FizzDragon 网页端充值算力积分，充值后再回来继续。",
+  "agent.credits.webRechargeOpen": "去充值",
   "ipDetail.likeFanNotice": "若此 IP 已关联剧组，点赞会加入其公开粉丝社区。取消点赞不会退出社区。",
   "episodeFeedback.title": "前三集反馈",
   "episodeFeedback.like": "喜欢",

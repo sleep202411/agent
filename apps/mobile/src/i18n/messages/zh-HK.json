@@ -987,6 +987,7 @@
   "agent.credits.insufficientBody": "請購買算力積分後繼續生成。",
   "agent.credits.webRechargeTitle": "請到網頁端充值",
   "agent.credits.webRechargeBody": "請到 FizzDragon 網頁端充值算力積分，充值後再回來繼續。",
+  "agent.credits.webRechargeOpen": "去充值",
   "ipDetail.likeFanNotice": "若此 IP 已關聯劇組，讚好會加入其公開粉絲社區。取消讚好不會退出社區。",
   "episodeFeedback.title": "前三集回饋",
   "episodeFeedback.like": "喜歡",
