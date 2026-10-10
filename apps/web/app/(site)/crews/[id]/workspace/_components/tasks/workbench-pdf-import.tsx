@@ -60,6 +60,26 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
       /* Ignore unavailable or invalid recovery storage. */
     }
   }, [crewId, recoveryKey]);
+  const expired =
+    preview?.status === "expired" ||
+    (preview?.status === "ready" &&
+      !uncertain &&
+      preview.createdAt != null &&
+      new Date(preview.createdAt).getTime() < now - 86_400_000);
+  function newAnalysis() {
+    request.current = null;
+    recoveredSelection.current = null;
+    setHasRequest(false);
+    setPreview(null);
+    setSelection([]);
+    setUncertain(false);
+    setError(null);
+    try {
+      localStorage.removeItem(recoveryKey);
+    } catch {
+      /* Optional storage. */
+    }
+  }
   const base = `/crews/${encodeURIComponent(crewId)}/pdf-task-imports`;
   async function refresh() {
     await Promise.all(
@@ -138,7 +158,8 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
       uncertain ||
       preview?.status === "ready" ||
       preview?.status === "applied" ||
-      preview?.status === "failed"
+      preview?.status === "failed" ||
+      preview?.status === "expired"
     )
       return;
     let active = true;
@@ -187,7 +208,7 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
     };
   }, [hasRequest, busy, preview?.status, uncertain, base, recoveryKey]);
   async function apply() {
-    if (guard.current || !preview || !selection.length) return;
+    if (guard.current || !preview || !selection.length || expired) return;
     guard.current = true;
     setBusy(true);
     setError(null);
@@ -205,6 +226,14 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
       if (cause instanceof CrewApiError && [400, 403, 404, 409].includes(cause.status)) {
         setUncertain(false);
         persist(preview.id);
+        if (
+          cause.body &&
+          typeof cause.body === "object" &&
+          "code" in cause.body &&
+          cause.body.code === "PREVIEW_EXPIRED"
+        ) {
+          setPreview({ ...preview, status: "expired" });
+        }
       }
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -254,21 +283,8 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
         >
           {busy ? t("pdfWorking") : t("pdfAnalyze")}
         </Button>
-        {preview?.status === "failed" && (
-          <Button
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              request.current = null;
-              setHasRequest(false);
-              try {
-                localStorage.removeItem(recoveryKey);
-              } catch {
-                /* Optional storage. */
-              }
-              setPreview(null);
-            }}
-          >
+        {(preview?.status === "failed" || expired) && (
+          <Button variant="outline" disabled={busy} onClick={newAnalysis}>
             {t("pdfNewAnalysis")}
           </Button>
         )}
@@ -292,7 +308,8 @@ function PdfSession({ crewId, userId }: { crewId: string; userId: string }) {
       {preview?.status === "applied" && (
         <p role="status">{t("pdfCreated", { count: preview.taskIds.length })}</p>
       )}
-      {preview?.status === "ready" && (
+      {expired && <p role="status">{t("pdfExpired")}</p>}
+      {preview?.status === "ready" && !expired && (
         <>
           <p className="text-sm">{t("pdfReview", { count: preview.tasks.length })}</p>
           <div className="max-h-[45vh] space-y-2 overflow-y-auto">

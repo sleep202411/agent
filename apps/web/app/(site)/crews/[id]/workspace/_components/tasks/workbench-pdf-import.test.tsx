@@ -185,3 +185,30 @@ it("cancels recovery on account change and ignores the old response", async () =
   expect(host.textContent).not.toContain("The library doors open");
   expect(state.get).toHaveBeenCalledTimes(1);
 });
+
+it("restarts an expired recovered preview without offering a doomed task creation", async () => {
+  localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+  state.get.mockResolvedValue({ ...preview, createdAt: "2020-01-01T00:00:00Z" });
+  await mount();
+  expect(host.textContent).toContain("This preview has expired.");
+  expect(host.textContent).not.toContain("Create 1 tasks");
+  await click("New analysis");
+  expect(localStorage.getItem("crew-pdf-import:crew:user")).toBeNull();
+  expect(host.textContent).not.toContain("This preview has expired.");
+  expect(state.post).not.toHaveBeenCalled();
+});
+it("honors server expiry even when the browser clock considers the preview fresh", async () => {
+  localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+  state.get.mockResolvedValue({ ...preview, createdAt: new Date().toISOString() });
+  state.post.mockRejectedValue(
+    new CrewApiError(409, {
+      code: "PREVIEW_EXPIRED",
+      message: "This preview has expired. Analyze the PDF again.",
+    })
+  );
+  await mount();
+  await click("Create 1 tasks");
+  expect(host.textContent).not.toContain("Create 1 tasks");
+  await click("New analysis");
+  expect(localStorage.getItem("crew-pdf-import:crew:user")).toBeNull();
+});

@@ -5,6 +5,9 @@ import type {
 } from "@/app/(site)/crews/_hooks/types";
 import { CREW_CURRENCY } from "@/src/lib/crew-money";
 
+// Both batch endpoints accept at most 100 tasks per atomic operation.
+export const MAX_BATCH_TASKS = 100;
+
 export function canBatchTask(task: CrewTaskListItemDTO): boolean {
   return (
     Array.isArray(task.assignees) &&

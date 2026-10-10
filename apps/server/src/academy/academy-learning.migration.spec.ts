@@ -44,6 +44,15 @@ beforeAll(async () => {
     ),
   );
   await db.exec(
+    readFileSync(
+      join(
+        __dirname,
+        '../../prisma/migrations/20261009170000_academy_settlement_fx/migration.sql',
+      ),
+      'utf8',
+    ),
+  );
+  await db.exec(
     `CREATE CONSTRAINT TRIGGER creator_withdrawal_test_consistency AFTER INSERT OR UPDATE ON creator_withdrawals DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_creator_withdrawal_payouts();`,
   );
 });
@@ -177,6 +186,14 @@ it('shows source-specific available, reserved and paid teaching cash for only th
   expect(await service.balances(teacher)).toEqual([
     {
       currency: 'USD',
+      academySettlementPending: false,
+      academyExchangeRate: {
+        currency: 'USD',
+        expiresAt: null,
+        rate: '1.000000',
+        source: 'Academy: 100 earned credits = US$1',
+        version: 0,
+      },
       pendingAmountMinor: '0',
       confirmedAmountMinor: '50',
       reservedAmountMinor: '0',

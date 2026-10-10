@@ -288,9 +288,10 @@ export class CrewPdfTaskImportService
             'Wait for a successful PDF analysis before creating tasks.',
           );
         if (preview.createdAt.getTime() < Date.now() - 86400_000)
-          throw new ConflictException(
-            'This preview has expired. Analyze the PDF again.',
-          );
+          throw new ConflictException({
+            code: 'PREVIEW_EXPIRED',
+            message: 'This preview has expired. Analyze the PDF again.',
+          });
         const tasks = PdfTasksSchema.parse(preview.proposals).tasks;
         if (indices.some((index) => !tasks[index]))
           throw new BadRequestException(

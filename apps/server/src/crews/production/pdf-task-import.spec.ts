@@ -140,7 +140,12 @@ it('rejects expired, out-of-range and required-field imports before creating tas
   row.createdAt = new Date(0);
   await expect(
     service.apply('crew', 'user', 'id', { indices: [0] }),
-  ).rejects.toThrow('expired');
+  ).rejects.toMatchObject({
+    response: {
+      code: 'PREVIEW_EXPIRED',
+      message: 'This preview has expired. Analyze the PDF again.',
+    },
+  });
   row.createdAt = new Date();
   await expect(
     service.apply('crew', 'user', 'id', { indices: [1] }),

@@ -2,7 +2,7 @@
 import { WorkbenchPdfImport } from "./workbench-pdf-import";
 import { WorkbenchDashboard } from "./workbench-dashboard";
 import { WorkbenchBatchActions } from "./workbench-batch-actions";
-import { canBatchTask } from "./workbench-batch-input";
+import { canBatchTask, MAX_BATCH_TASKS } from "./workbench-batch-input";
 import { CrewComputeTopUpForm } from "@/app/(site)/crews/_components/crew-compute-top-up-form";
 import { CREW_CURRENCY } from "@/src/lib/crew-money";
 import { missingTaskFields } from "./task-required-fields";
@@ -126,7 +126,7 @@ function TaskCreationSession({
   const { user } = useCurrentUser();
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [batchMode, setBatchMode] = useState<"assign" | "recruit" | null>(null);
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useState("scripts");
   const [showEpisodes, setShowEpisodes] = useState(false);
   const { drafts, setDrafts, batches, setBatches, storageError } = useWorkbenchDrafts(
     user!.id,
@@ -153,9 +153,16 @@ function TaskCreationSession({
   const progressReady =
     !tasks.isLoading && !tasks.isFetching && !tasks.hasNextPage && !tasks.isError;
   const savedTasks = tasks.data;
+  const canApplyCredit = members.some(
+    (member) => member.userId === user!.id && member.isOwner && member.status === "active"
+  );
   const selectedTasks = savedTasks.filter((task) => selectedTaskIds.includes(task.id));
   const batchReady =
-    !busy && progressReady && selectedTasks.length > 0 && selectedTasks.every(canBatchTask);
+    !busy &&
+    progressReady &&
+    selectedTasks.length > 0 &&
+    selectedTasks.length <= MAX_BATCH_TASKS &&
+    selectedTasks.every(canBatchTask);
   function toggleSelection(id: string) {
     setSelectedTaskIds((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
@@ -373,21 +380,6 @@ function TaskCreationSession({
               ) : null}
               {canManage ? (
                 <>
-                  <Button size="sm" disabled={busy || unresolved} onClick={() => openTask()}>
-                    {t("createTask")}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    color="muted"
-                    size="sm"
-                    disabled={busy || episodes.isLoading || episodes.isError}
-                    onClick={() => {
-                      if (episodes.data?.length === 1) setTemplateEpisodeId(episodes.data[0]!.id);
-                      else setShowEpisodes(true);
-                    }}
-                  >
-                    {t("initializeTasks")}
-                  </Button>
                   <Button
                     variant="outline"
                     color="muted"
@@ -400,7 +392,7 @@ function TaskCreationSession({
               ) : null}
             </div>
             {canManageTasks ? (
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="ml-auto flex flex-wrap items-center gap-2">
                 <span className="text-xs text-muted-foreground">
                   {t("batchSelected", { count: selectedTasks.length })}
                 </span>
@@ -438,6 +430,11 @@ function TaskCreationSession({
             ) : null}
           </header>
           <div className="flex-1 space-y-3 p-3">
+            {selectedTasks.length > MAX_BATCH_TASKS && (
+              <p role="alert" className="text-sm text-destructive">
+                {t("batchLimit", { count: MAX_BATCH_TASKS })}
+              </p>
+            )}
             <WorkbenchDashboard
               tasks={savedTasks}
               ready={progressReady}
@@ -455,45 +452,40 @@ function TaskCreationSession({
                 </DialogBody>
               </DialogContent>
             </Dialog>
-            <div
-              className="flex flex-wrap justify-end gap-3 text-xs text-muted-foreground"
-              aria-label={t("statusLegend")}
-            >
-              {(
-                [
-                  ["open", "bg-neutral-400"],
-                  ["in_progress", "bg-blue-400"],
-                  ["approved", "bg-emerald-400"],
-                  ["overdue", "bg-red-400"],
-                ] as const
-              ).map(([status, color]) => (
-                <span key={status} className="inline-flex items-center gap-1.5">
-                  <span aria-hidden="true" className={`size-2 rounded-full ${color}`} />
-                  {status === "overdue" ? t("statusOverdue") : taskT(`status.${status}`)}
-                </span>
-              ))}
-            </div>
-            <div
-              className="flex gap-1 overflow-x-auto border-b border-white/10 pb-1"
-              aria-label={t("batchCategories")}
-            >
-              {["all", ...STAGED_CATEGORY_BARS].map((key) => (
-                <Button
-                  key={key}
-                  size="sm"
-                  variant="ghost"
-                  className={`shrink-0 rounded-none border-0 border-b-2 px-4 uppercase tracking-wide ${category === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
-                  color="muted"
-                  aria-pressed={category === key}
-                  onClick={() => setCategory(key)}
-                >
-                  {key === "all"
-                    ? t("batchAll")
-                    : key === "artAssets"
-                      ? t("artAssets")
-                      : t(`assetGroup_${key}`)}
-                </Button>
-              ))}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10">
+              <div className="flex min-w-0 gap-1 overflow-x-auto" aria-label={t("batchCategories")}>
+                {STAGED_CATEGORY_BARS.map((key) => (
+                  <Button
+                    key={key}
+                    size="sm"
+                    variant="ghost"
+                    className={`shrink-0 rounded-none border-0 border-b-2 px-4 uppercase tracking-wide ${category === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
+                    color="muted"
+                    aria-pressed={category === key}
+                    onClick={() => setCategory(key)}
+                  >
+                    {key === "artAssets" ? t("artAssets") : t(`assetGroup_${key}`)}
+                  </Button>
+                ))}
+              </div>
+              <div
+                className="flex flex-wrap justify-end gap-3 text-xs text-muted-foreground"
+                aria-label={t("statusLegend")}
+              >
+                {(
+                  [
+                    ["open", "bg-neutral-400"],
+                    ["in_progress", "bg-blue-400"],
+                    ["approved", "bg-emerald-400"],
+                    ["overdue", "bg-red-400"],
+                  ] as const
+                ).map(([status, color]) => (
+                  <span key={status} className="inline-flex items-center gap-1.5">
+                    <span aria-hidden="true" className={`size-2 rounded-full ${color}`} />
+                    {status === "overdue" ? t("statusOverdue") : taskT(`status.${status}`)}
+                  </span>
+                ))}
+              </div>
             </div>
             {storageError ? (
               <p role="alert" className="text-xs text-destructive">
@@ -540,91 +532,93 @@ function TaskCreationSession({
             {
               <section>
                 <div className="space-y-4">
-                  {STAGED_CATEGORY_BARS.filter((key) => category === "all" || key === category).map(
-                    (barKey) => {
-                      const label =
-                        barKey === "artAssets" ? t("artAssets") : t(`assetGroup_${barKey}`);
-                      const categoryDrafts = visibleDrafts.filter(
-                        (draft) =>
-                          normalizeCategory(
-                            draft.input.taskKind
-                              ? stagedCategoryKey(draft.input.taskKind)
-                              : (savedTasks.find((task) => task.id === draft.taskId)
-                                  ?.assetCategory ?? "other")
-                          ) === barKey
-                      );
-                      const itemCount = categoryDrafts.filter(
-                        (draft) => draft.state === "created"
-                      ).length;
+                  {STAGED_CATEGORY_BARS.filter((key) => key === category).map((barKey) => {
+                    const label =
+                      barKey === "artAssets" ? t("artAssets") : t(`assetGroup_${barKey}`);
+                    const categoryDrafts = visibleDrafts.filter(
+                      (draft) =>
+                        normalizeCategory(
+                          draft.input.taskKind
+                            ? stagedCategoryKey(draft.input.taskKind)
+                            : (savedTasks.find((task) => task.id === draft.taskId)?.assetCategory ??
+                                "other")
+                        ) === barKey
+                    );
+                    const itemCount = categoryDrafts.filter(
+                      (draft) => draft.state === "created"
+                    ).length;
 
-                      const groups =
-                        barKey === "artAssets"
-                          ? ["characters", "scenes", "props", "art"].map((key) => ({
+                    const groups =
+                      barKey === "artAssets"
+                        ? ["characters", "scenes", "props", "art"].map((key) => ({
+                            key,
+                            title: t(`assetGroup_${key}`),
+                            items: categoryDrafts.filter((draft) => {
+                              const asset = savedTasks.find(
+                                (task) => task.id === draft.taskId
+                              )?.assetCategory;
+                              return (
+                                (["characters", "scenes", "props"].includes(asset ?? "")
+                                  ? asset
+                                  : "art") === key
+                              );
+                            }),
+                          }))
+                        : barKey === "production"
+                          ? [
+                              ...new Set(
+                                categoryDrafts.map((draft) => draft.input.episodeId ?? "")
+                              ),
+                            ].map((key) => ({
                               key,
-                              title: t(`assetGroup_${key}`),
-                              items: categoryDrafts.filter((draft) => {
-                                const asset = savedTasks.find(
-                                  (task) => task.id === draft.taskId
-                                )?.assetCategory;
-                                return (
-                                  (["characters", "scenes", "props"].includes(asset ?? "")
-                                    ? asset
-                                    : "art") === key
-                                );
-                              }),
+                              title:
+                                episodes.data?.find((episode) => episode.id === key)?.title ??
+                                taskT("noEpisode"),
+                              items: categoryDrafts.filter(
+                                (draft) => (draft.input.episodeId ?? "") === key
+                              ),
                             }))
-                          : barKey === "production"
-                            ? [
-                                ...new Set(
-                                  categoryDrafts.map((draft) => draft.input.episodeId ?? "")
-                                ),
-                              ].map((key) => ({
-                                key,
-                                title:
-                                  episodes.data?.find((episode) => episode.id === key)?.title ??
-                                  taskT("noEpisode"),
-                                items: categoryDrafts.filter(
-                                  (draft) => (draft.input.episodeId ?? "") === key
-                                ),
-                              }))
-                            : [{ key: barKey, title: "", items: categoryDrafts }];
+                          : [{ key: barKey, title: "", items: categoryDrafts }];
 
-                      return (
-                        <section
-                          key={barKey}
-                          className="min-w-0 rounded-sm bg-white/[0.025] p-4 text-xs transition-colors"
-                        >
-                          {barKey === "scripts" && canManage && (
-                            <aside className="mb-4 flex flex-wrap items-center gap-4 bg-black/20 p-3">
-                              <h3 className="text-xs font-semibold uppercase text-primary">
-                                {t("pdfTitle")}
-                              </h3>
-                              <Button
-                                variant="outline"
-                                color="muted"
-                                className="min-h-11 whitespace-normal"
-                                onClick={() => setPdfOpen(true)}
-                              >
-                                {t("pdfChoose")}
-                              </Button>
-                              <dl className="flex flex-wrap gap-4">
-                                {["characters", "scenes", "props"].map((asset) => (
-                                  <div key={asset} className="flex gap-2">
-                                    <dt>{t(`assetGroup_${asset}`)}</dt>
-                                    <dd>
-                                      {
-                                        savedTasks.filter((task) => task.assetCategory === asset)
-                                          .length
-                                      }
-                                    </dd>
-                                  </div>
-                                ))}
-                              </dl>
-                            </aside>
-                          )}
+                    return (
+                      <section
+                        key={barKey}
+                        className={`min-w-0 text-xs ${barKey === "scripts" && canManage ? "grid items-start gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(0,2fr)]" : ""}`}
+                      >
+                        {barKey === "scripts" && canManage && (
+                          <aside className="grid gap-3 rounded-lg bg-white/[0.025] p-4">
+                            <h3 className="text-xs font-semibold uppercase text-primary">
+                              {t("pdfTitle")}
+                            </h3>
+                            <Button
+                              variant="outline"
+                              color="muted"
+                              className="min-h-32 whitespace-normal border-dashed"
+                              onClick={() => setPdfOpen(true)}
+                            >
+                              {t("pdfChoose")}
+                            </Button>
+                            <dl className="flex flex-wrap gap-4">
+                              {["characters", "scenes", "props"].map((asset) => (
+                                <div key={asset} className="flex gap-2">
+                                  <dt>{t(`assetGroup_${asset}`)}</dt>
+                                  <dd>
+                                    {
+                                      savedTasks.filter((task) => task.assetCategory === asset)
+                                        .length
+                                    }
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </aside>
+                        )}
+                        <div className="min-w-0">
                           <div className="group flex select-none items-center justify-between gap-3 font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
                             <span className="flex items-center gap-2">
-                              <span>{label}</span>
+                              <span className={barKey === "scripts" ? "" : "sr-only"}>
+                                {barKey === "scripts" ? t("scriptTasks") : label}
+                              </span>
                             </span>
                             {canManageTasks &&
                             categoryDrafts.some(
@@ -692,42 +686,42 @@ function TaskCreationSession({
                             >
                               {progressReady ? itemCount : "—"}
                             </span>
+                            {canManage ? (
+                              <button
+                                type="button"
+                                aria-label={`${t("createTask")} · ${label}`}
+                                disabled={busy || unresolved}
+                                className="inline-flex size-11 shrink-0 items-center justify-center rounded-md text-2xl font-semibold text-primary hover:bg-primary/10"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  openTask();
+                                  setPresetTaskKind(
+                                    (
+                                      {
+                                        scripts: "script",
+                                        artAssets: "art",
+                                        music: "music",
+                                        production: "storyboard",
+                                        finalEditing: "edit",
+                                        other: "other",
+                                      } as const
+                                    )[barKey]
+                                  );
+                                  setOpen(true);
+                                }}
+                              >
+                                <span aria-hidden="true">+</span>
+                              </button>
+                            ) : null}
                           </div>
-                          {canManage ? (
-                            <button
-                              type="button"
-                              aria-label={`${t("createTask")} · ${label}`}
-                              disabled={busy || unresolved}
-                              className="mt-3 inline-flex min-h-11 items-center justify-center rounded-lg border border-dashed border-white/25 px-6 text-sm normal-case text-muted-foreground hover:border-primary hover:text-primary"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                openTask();
-                                setPresetTaskKind(
-                                  (
-                                    {
-                                      scripts: "script",
-                                      artAssets: "art",
-                                      music: "music",
-                                      production: "storyboard",
-                                      finalEditing: "edit",
-                                      other: "other",
-                                    } as const
-                                  )[barKey]
-                                );
-                                setOpen(true);
-                              }}
-                            >
-                              + {t("newTask")}
-                            </button>
-                          ) : null}
-                          <div className="mt-3 space-y-3 border-t border-white/[0.06] pt-3">
+                          <div className="space-y-2">
                             {categoryDrafts.length > 0 ? (
                               <div
                                 className={
                                   barKey === "artAssets"
-                                    ? "grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-4"
-                                    : "space-y-5"
+                                    ? "grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-2"
+                                    : "space-y-2"
                                 }
                               >
                                 {groups.map((group) => (
@@ -735,7 +729,7 @@ function TaskCreationSession({
                                     key={group.key}
                                     className={
                                       barKey === "artAssets"
-                                        ? "min-w-0 min-h-64 bg-white/[0.025] p-3"
+                                        ? "min-w-0 bg-white/[0.025] p-2"
                                         : "min-w-0"
                                     }
                                   >
@@ -755,126 +749,150 @@ function TaskCreationSession({
                                       {group.items.map((draft) => (
                                         <article
                                           key={draft.id}
-                                          className="relative flex min-w-0 flex-col rounded-lg border border-white/15 bg-[#151618] p-3 transition-colors hover:bg-[#1a1b1e]"
+                                          className="relative flex min-w-0 flex-col rounded-lg bg-[#151618] p-3 transition-colors hover:bg-[#1a1b1e]"
                                         >
-                                          {canManageTasks && draft.taskId ? (
-                                            <input
-                                              type="checkbox"
-                                              className="relative z-30 mb-2 size-4 accent-[#e52227]"
-                                              aria-label={t("batchSelectTask", {
-                                                title: draft.input.title,
-                                              })}
-                                              disabled={
-                                                busy ||
-                                                !canBatchTask(
-                                                  savedTasks.find(
-                                                    (task) => task.id === draft.taskId
-                                                  )!
-                                                )
-                                              }
-                                              checked={selectedTaskIds.includes(draft.taskId)}
-                                              onChange={() => toggleSelection(draft.taskId!)}
-                                            />
-                                          ) : null}
-                                          <div className="flex items-start justify-between gap-2">
-                                            <span className="ml-auto rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                              {taskT(
-                                                CREW_TASK_KIND_MESSAGE_KEYS[
-                                                  draft.input.taskKind ?? "other"
-                                                ]
-                                              )}
-                                            </span>
-                                            {draft.state === "staged" ? (
-                                              <button
-                                                disabled={busy}
-                                                className="relative z-10"
-                                                aria-label={t("remove", {
+                                          <div className="flex min-h-8 items-center gap-2 pr-8">
+                                            {canManageTasks && draft.taskId ? (
+                                              <input
+                                                type="checkbox"
+                                                className="relative z-30 size-4 shrink-0 accent-[#e52227]"
+                                                aria-label={t("batchSelectTask", {
                                                   title: draft.input.title,
                                                 })}
-                                                onClick={() => {
-                                                  if (lock.current) return;
-                                                  setDrafts((current) =>
-                                                    current.filter((item) => item.id !== draft.id)
-                                                  );
-                                                }}
-                                              >
-                                                <IconX className="size-4" />
-                                              </button>
+                                                disabled={
+                                                  busy ||
+                                                  !canBatchTask(
+                                                    savedTasks.find(
+                                                      (task) => task.id === draft.taskId
+                                                    )!
+                                                  )
+                                                }
+                                                checked={selectedTaskIds.includes(draft.taskId)}
+                                                onChange={() => toggleSelection(draft.taskId!)}
+                                              />
                                             ) : null}
+                                            <button
+                                              type="button"
+                                              className="min-w-0 flex-1 flex cursor-pointer items-center gap-2 break-words text-left text-sm font-medium after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-white/40 disabled:cursor-default disabled:after:hidden"
+                                              disabled={
+                                                busy ||
+                                                draft.state === "creating" ||
+                                                draft.state === "uncertain"
+                                              }
+                                              aria-label={
+                                                draft.taskId
+                                                  ? `${t("openTask")}: ${draft.input.title}`
+                                                  : t("editDraft", { title: draft.input.title })
+                                              }
+                                              onClick={() => {
+                                                if (draft.taskId) {
+                                                  onSelectTask(draft.taskId);
+                                                  return;
+                                                }
+                                                if (draft.state !== "staged" || lock.current)
+                                                  return;
+                                                setEditingId(draft.id);
+                                                setEpisodeId(draft.input.episodeId ?? null);
+                                                setOpen(true);
+                                              }}
+                                            >
+                                              <span className="min-w-0 flex-1">
+                                                {draft.input.title}
+                                              </span>
+                                            </button>
+                                            <div className="flex items-start justify-between gap-2">
+                                              <span className="ml-auto rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                                {taskT(
+                                                  CREW_TASK_KIND_MESSAGE_KEYS[
+                                                    draft.input.taskKind ?? "other"
+                                                  ]
+                                                )}
+                                              </span>
+                                              {draft.state === "staged" ? (
+                                                <button
+                                                  disabled={busy}
+                                                  className="relative z-10"
+                                                  aria-label={t("remove", {
+                                                    title: draft.input.title,
+                                                  })}
+                                                  onClick={() => {
+                                                    if (lock.current) return;
+                                                    setDrafts((current) =>
+                                                      current.filter((item) => item.id !== draft.id)
+                                                    );
+                                                  }}
+                                                >
+                                                  <IconX className="size-4" />
+                                                </button>
+                                              ) : null}
+                                            </div>
                                           </div>
-                                          {draft.taskId &&
-                                            (canManageTasks ||
-                                              savedTasks.some(
-                                                (task) =>
-                                                  task.id === draft.taskId &&
-                                                  task.assignees.some((a) => a.userId === user!.id)
-                                              )) && (
-                                              <div className="absolute right-2 top-2 z-20">
-                                                <DropdownMenu>
-                                                  <DropdownMenuTrigger asChild>
-                                                    <button
-                                                      type="button"
-                                                      className="rounded p-2 hover:bg-white/10"
-                                                      aria-label={t("taskActions")}
+                                          {draft.taskId && (canManageTasks || canApplyCredit) && (
+                                            <div className="absolute right-2 top-2 z-20">
+                                              <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                  <button
+                                                    type="button"
+                                                    className="rounded p-2 hover:bg-white/10"
+                                                    aria-label={t("taskActions")}
+                                                  >
+                                                    <IconDots className="size-4" />
+                                                  </button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-56">
+                                                  {canManageTasks && onEditTask && (
+                                                    <DropdownMenuItem
+                                                      onSelect={() => onEditTask(draft.taskId!)}
                                                     >
-                                                      <IconDots className="size-4" />
-                                                    </button>
-                                                  </DropdownMenuTrigger>
-                                                  <DropdownMenuContent align="end" className="w-56">
-                                                    {canManageTasks && onEditTask && (
-                                                      <DropdownMenuItem
-                                                        onSelect={() => onEditTask(draft.taskId!)}
-                                                      >
-                                                        {t("editTask")}
-                                                      </DropdownMenuItem>
-                                                    )}
-                                                    {canManageTasks && onInviteTask && (
-                                                      <DropdownMenuItem
-                                                        title={t("inviteAvailability")}
-                                                        disabled={
-                                                          !savedTasks.some(
-                                                            (task) =>
-                                                              task.id === draft.taskId &&
-                                                              !task.assignees.length &&
-                                                              !task.isRecruiting &&
-                                                              ![
-                                                                "approved",
-                                                                "cancelled",
-                                                                "submitted",
-                                                              ].includes(task.status)
-                                                          )
-                                                        }
-                                                        onSelect={() => {
-                                                          const task = savedTasks.find(
-                                                            (item) => item.id === draft.taskId
-                                                          );
-                                                          if (task) onInviteTask(task);
-                                                        }}
-                                                      >
-                                                        {t("inviteLink")}
-                                                      </DropdownMenuItem>
-                                                    )}
-                                                    {canManageTasks && onPublishTask && (
-                                                      <DropdownMenuItem
-                                                        disabled={
-                                                          !savedTasks.some(
-                                                            (task) =>
-                                                              task.id === draft.taskId &&
-                                                              !task.assignees.length &&
-                                                              ![
-                                                                "approved",
-                                                                "cancelled",
-                                                                "submitted",
-                                                              ].includes(task.status)
-                                                          )
-                                                        }
-                                                        onSelect={() =>
-                                                          onPublishTask(draft.taskId!)
-                                                        }
-                                                      >
-                                                        {t("openRecruitment")}
-                                                      </DropdownMenuItem>
-                                                    )}
+                                                      {t("editTask")}
+                                                    </DropdownMenuItem>
+                                                  )}
+                                                  {canManageTasks && onInviteTask && (
+                                                    <DropdownMenuItem
+                                                      title={t("inviteAvailability")}
+                                                      disabled={
+                                                        !savedTasks.some(
+                                                          (task) =>
+                                                            task.id === draft.taskId &&
+                                                            !task.assignees.length &&
+                                                            !task.isRecruiting &&
+                                                            ![
+                                                              "approved",
+                                                              "cancelled",
+                                                              "submitted",
+                                                            ].includes(task.status)
+                                                        )
+                                                      }
+                                                      onSelect={() => {
+                                                        const task = savedTasks.find(
+                                                          (item) => item.id === draft.taskId
+                                                        );
+                                                        if (task) onInviteTask(task);
+                                                      }}
+                                                    >
+                                                      {t("inviteLink")}
+                                                    </DropdownMenuItem>
+                                                  )}
+                                                  {canManageTasks && onPublishTask && (
+                                                    <DropdownMenuItem
+                                                      disabled={
+                                                        !savedTasks.some(
+                                                          (task) =>
+                                                            task.id === draft.taskId &&
+                                                            !task.assignees.length &&
+                                                            ![
+                                                              "approved",
+                                                              "cancelled",
+                                                              "submitted",
+                                                            ].includes(task.status)
+                                                        )
+                                                      }
+                                                      onSelect={() => onPublishTask(draft.taskId!)}
+                                                    >
+                                                      {t("openRecruitment")}
+                                                    </DropdownMenuItem>
+                                                  )}
+                                                  {canApplyCredit && (
                                                     <DropdownMenuItem
                                                       onSelect={() =>
                                                         setCreditTaskId(draft.taskId!)
@@ -882,39 +900,12 @@ function TaskCreationSession({
                                                     >
                                                       {t("addCredit")}
                                                     </DropdownMenuItem>
-                                                  </DropdownMenuContent>
-                                                </DropdownMenu>
-                                              </div>
-                                            )}
-                                          <button
-                                            type="button"
-                                            className="mt-3 flex cursor-pointer items-start gap-2 break-words text-left text-sm font-medium after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-white/40 disabled:cursor-default disabled:after:hidden"
-                                            disabled={
-                                              busy ||
-                                              draft.state === "creating" ||
-                                              draft.state === "uncertain"
-                                            }
-                                            aria-label={
-                                              draft.taskId
-                                                ? `${t("openTask")}: ${draft.input.title}`
-                                                : t("editDraft", { title: draft.input.title })
-                                            }
-                                            onClick={() => {
-                                              if (draft.taskId) {
-                                                onSelectTask(draft.taskId);
-                                                return;
-                                              }
-                                              if (draft.state !== "staged" || lock.current) return;
-                                              setEditingId(draft.id);
-                                              setEpisodeId(draft.input.episodeId ?? null);
-                                              setOpen(true);
-                                            }}
-                                          >
-                                            <span className="min-w-0 flex-1">
-                                              {draft.input.title}
-                                            </span>
-                                          </button>
-                                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3 text-xs text-muted-foreground">
+                                                  )}
+                                                </DropdownMenuContent>
+                                              </DropdownMenu>
+                                            </div>
+                                          )}
+                                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
                                             {draft.state !== "staged" ? (
                                               <span className="inline-flex items-center gap-1.5">
                                                 <span
@@ -930,11 +921,6 @@ function TaskCreationSession({
                                                 </span>
                                               </span>
                                             ) : null}
-                                            <span>
-                                              {draft.input.dueAt
-                                                ? `${taskT("due")}: ${draft.input.dueAt.slice(0, 10)}`
-                                                : t("noDeadline")}
-                                            </span>
                                             <span className="flex flex-wrap items-center gap-3">
                                               {draft.input.assignees.length ? (
                                                 <span>{t("assigned")}</span>
@@ -1035,10 +1021,10 @@ function TaskCreationSession({
                               </div>
                             ) : null}
                           </div>
-                        </section>
-                      );
-                    }
-                  )}
+                        </div>
+                      </section>
+                    );
+                  })}
                 </div>
               </section>
             }
