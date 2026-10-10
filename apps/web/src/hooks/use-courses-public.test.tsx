@@ -20,6 +20,10 @@ vi.mock("@/src/services/courses-public", () => ({
   getPublicCoursePlayUrl: mocks.play,
   listPublicCourses: mocks.list,
   resolveCourseCoverUrl: (s: string) => s || "",
+  publicCoursePriceCredits: () => null,
+  publicCourseCertificateId: () => null,
+  matchesPublicCoursePriceRange: () => true,
+  getAssignedCourseCertificate: async () => null,
 }));
 let root: Root;
 let container: HTMLDivElement;

@@ -15,6 +15,7 @@ vi.mock("react-native", () => ({
   ScrollView: "div",
   StyleSheet: { create: (styles: unknown) => styles },
 }));
+vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({ ThemedText: "span" }));
 vi.mock("@/config", () => ({ resolveExperienceAssetUrl: (uri: string) => uri }));
 vi.mock("@/constants/theme", () => ({ Spacing: {} }));

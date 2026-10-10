@@ -165,7 +165,7 @@ async function main() {
 
   // 1) Hide the legacy AppLayout navbar + footer. The platform is the
   //    only consumer of this bundle now (strangler-fig), and the
-  //    catch-all page in `app/(site)/[...legacyPath]/page.tsx` wraps
+  //    legacy page in `app/(site)/pages/course/course/page.tsx` wraps
   //    legacy content with the platform's GlobalNav + SiteFooter via
   //    iframe — so legacy's own chrome would just duplicate.
   //

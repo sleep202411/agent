@@ -15,7 +15,7 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 import type { CrewMemberDTO, CrewTaskListItemDTO } from "@/app/(site)/crews/_hooks/types";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
-import { canBatchTask } from "./workbench-batch-input";
+import { canBatchTask, MAX_BATCH_TASKS } from "./workbench-batch-input";
 
 export function WorkbenchBatchActions({
   crewId,
@@ -50,7 +50,7 @@ export function WorkbenchBatchActions({
   }, []);
   // A lost response may follow a committed write. Refresh before a new attempt.
   const [attempted, setAttempted] = useState(false);
-  const eligible = tasks.length > 0 && tasks.every(canBatchTask);
+  const eligible = tasks.length > 0 && tasks.length <= MAX_BATCH_TASKS && tasks.every(canBatchTask);
   const valid =
     eligible &&
     (mode === "assign" ? Boolean(assignee) : PRESET_POSITIONS.some((item) => item.value === role));
@@ -160,7 +160,9 @@ export function WorkbenchBatchActions({
           </ul>
           {!eligible ? (
             <p role="alert" className="text-sm text-destructive">
-              {t("batchEligibility")}
+              {tasks.length > MAX_BATCH_TASKS
+                ? t("batchLimit", { count: MAX_BATCH_TASKS })
+                : t("batchEligibility")}
             </p>
           ) : null}
           {error ? (

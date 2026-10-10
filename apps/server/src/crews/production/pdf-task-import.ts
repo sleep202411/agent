@@ -1,3 +1,4 @@
+import { bindNewTaskDeliveryTemplate } from '../tasks/task-delivery-binding';
 import { backgroundTasksEnabled } from '../../common/background-tasks';
 import { createHash } from 'node:crypto';
 import {
@@ -37,7 +38,7 @@ import {
   groundedPdfTasks,
   PdfTasksSchema,
 } from './pdf-task-schema';
-const MAX_BYTES = 5 * 1024 * 1024;
+const MAX_BYTES = 20 * 1024 * 1024;
 const requestId = (id: string) => {
   const result = z.string().uuid().safeParse(id);
   if (!result.success)
@@ -136,7 +137,7 @@ export class CrewPdfTaskImportService
       )
     )
       throw new BadRequestException(
-        'Upload a PDF, DOC or DOCX document no larger than 5 MB.',
+        'Upload a PDF, DOC or DOCX document no larger than 20 MB.',
       );
     const sourceHash = createHash('sha256').update(file.buffer).digest('hex');
     const apiKey = process.env.ALIBABA_API_KEY;
@@ -288,9 +289,10 @@ export class CrewPdfTaskImportService
             'Wait for a successful PDF analysis before creating tasks.',
           );
         if (preview.createdAt.getTime() < Date.now() - 86400_000)
-          throw new ConflictException(
-            'This preview has expired. Analyze the PDF again.',
-          );
+          throw new ConflictException({
+            code: 'PREVIEW_EXPIRED',
+            message: 'This preview has expired. Analyze the PDF again.',
+          });
         const tasks = PdfTasksSchema.parse(preview.proposals).tasks;
         if (indices.some((index) => !tasks[index]))
           throw new BadRequestException(
@@ -357,6 +359,7 @@ export class CrewPdfTaskImportService
               },
             },
           });
+          await bindNewTaskDeliveryTemplate(tx, task);
           await provisionTaskDeliveryFolderTx(tx, task, userId);
           taskIds.push(task.id);
         }

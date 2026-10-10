@@ -10,6 +10,8 @@ describe('ProjectTaskTemplateService', () => {
   let service: ProjectTaskTemplateService;
   const makePrisma = () => ({ projectTaskTemplate: { findFirst: jest.fn() } });
   const makeTx = () => ({
+    $queryRaw: jest.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
+    $executeRaw: jest.fn(),
     crewTask: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
     crewTaskWorkflowState: { findFirst: jest.fn() },
     crewEpisode: { findFirst: jest.fn() },

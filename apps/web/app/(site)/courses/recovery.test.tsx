@@ -11,11 +11,26 @@ vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: () => (key: string) => key,
 }));
 vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "a" } }) }));
+vi.mock("./_learning/course-enrollment", () => ({
+  CourseEnrollGate: () => null,
+  useCourseLearning: () => ({
+    isPending: false,
+    isSuccess: true,
+    isError: false,
+    data: { offering: null, enrollment: null },
+  }),
+  courseRequiresEnrollment: () => false,
+  isParticipatingInstructor: () => false,
+}));
 vi.mock("@/src/services/courses-public", () => ({
   listPublicCourses: s.list,
   getPublicCourse: s.detail,
   getPublicCoursePlayUrl: s.play,
   resolveCourseCoverUrl: (url: string) => url,
+  publicCoursePriceCredits: () => null,
+  publicCourseCertificateId: () => null,
+  matchesPublicCoursePriceRange: () => true,
+  getAssignedCourseCertificate: async () => null,
 }));
 vi.mock("@/components/layout/plaza-hero", () => ({ PlazaHero: () => null }));
 vi.mock("./_components/PublicCourseList", () => ({

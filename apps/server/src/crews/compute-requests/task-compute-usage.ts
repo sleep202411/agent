@@ -4,6 +4,7 @@ export type TaskComputeUsage = {
   taskId: string;
   taskTitle: string;
   userId: string;
+  requestedPoints: string;
   approvedPoints: string;
   creditedPoints: string;
   pendingPoints: string;
@@ -20,6 +21,7 @@ export function taskComputeUsage(
   return tx.$queryRaw<TaskComputeUsage[]>`
     WITH allowance AS (
       SELECT task_id, user_id,
+        COALESCE(SUM(points),0) AS requested,
         COALESCE(SUM(points) FILTER (WHERE status='approved'),0) AS approved,
         COALESCE(SUM(points) FILTER (WHERE status='pending'),0) AS pending,
         COALESCE(SUM(points) FILTER (WHERE status='approved' AND kind='top_up'),0) AS credited
@@ -40,6 +42,7 @@ export function taskComputeUsage(
       UNION SELECT a.task_id,a.user_id FROM crew_task_assignees a JOIN crew_tasks t ON t.id=a.task_id WHERE t.crew_id=${crewId}
     )
     SELECT t.id AS "taskId",t.title AS "taskTitle",p.user_id AS "userId",
+      COALESCE(a.requested,0)::text AS "requestedPoints",
       COALESCE(a.credited,0)::text AS "creditedPoints",
       COALESCE(a.approved,0)::text AS "approvedPoints",COALESCE(a.pending,0)::text AS "pendingPoints",
       COALESCE(s.consumed,0)::text AS "consumedPoints",COALESCE(s.committed,0)::text AS "committedPoints"

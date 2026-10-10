@@ -23,13 +23,16 @@ import {
 } from "@/components/admin/nav-config";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { adminUiApiPath } from "@/lib/admin-api";
 import { grantsAdminAccess } from "@/lib/admin-capability";
 import { cn } from "@/lib/utils";
 import type { AdminSession } from "@/lib/admin-session";
 
-const GLOBAL_RAIL_WIDTH = "w-[60px]";
+const GLOBAL_RAIL_WIDTH = "w-[132px]";
+const MODULE_RAIL_WIDTH = "w-[132px]";
+const MODULE_RAIL_LEFT = "left-[132px]";
+const CONTENT_OFFSET_WITH_MODULE = "md:pl-[264px]";
+const CONTENT_OFFSET_GLOBAL_ONLY = "md:pl-[132px]";
 
 function hasPermission(session: AdminSession, permission?: string) {
   return grantsAdminAccess(session.user, permission);
@@ -103,59 +106,51 @@ export function AdminShell({
   }
 
   // Combined desktop rail offset so the content area clears both rails.
-  const contentOffset = hasModuleRail ? "md:pl-[268px]" : "md:pl-[60px]";
+  const contentOffset = hasModuleRail ? CONTENT_OFFSET_WITH_MODULE : CONTENT_OFFSET_GLOBAL_ONLY;
 
   return (
     <div className="min-h-dvh bg-[#f6f7f9] text-slate-950">
-      {/* GLOBAL narrow rail (desktop) */}
+      {/* GLOBAL rail (desktop) — icon + label */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-slate-200 bg-white/95 px-1.5 py-3 backdrop-blur md:flex",
           GLOBAL_RAIL_WIDTH
         )}
       >
-        <Link href="/" className="mb-3 flex items-center justify-center px-1" title="管理后台">
-          <BrandLogo compact className="w-[40px]" />
+        <Link href="/" className="mb-3 flex items-center px-1.5" title="管理后台">
+          <BrandLogo compact className="w-[96px]" />
         </Link>
 
-        <TooltipProvider delayDuration={0}>
-          <nav className="flex flex-1 flex-col items-center gap-1.5 overflow-y-auto">
-            {visibleGlobalNav.map((entry) => {
-              const Icon = entry.icon;
-              const active = isGlobalActive(entry);
-              return (
-                <Tooltip key={entry.key}>
-                  <TooltipTrigger asChild>
-                    <Link
-                      href={moduleLandingHref(entry, granted)}
-                      aria-label={entry.label}
-                      className={cn(
-                        "flex size-10 items-center justify-center rounded-lg transition",
-                        active
-                          ? "bg-slate-950 text-white"
-                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-950"
-                      )}
-                    >
-                      <Icon className="size-5" />
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
-                    {entry.label}
-                  </TooltipContent>
-                </Tooltip>
-              );
-            })}
-          </nav>
-        </TooltipProvider>
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
+          {visibleGlobalNav.map((entry) => {
+            const Icon = entry.icon;
+            const active = isGlobalActive(entry);
+            return (
+              <Link
+                key={entry.key}
+                href={moduleLandingHref(entry, granted)}
+                className={cn(
+                  "flex h-8 items-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium transition",
+                  active
+                    ? "bg-slate-950 text-white"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                )}
+              >
+                <Icon className="size-4 shrink-0" />
+                <span className="min-w-0 truncate">{entry.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
 
-        <div className="mt-auto flex flex-col items-center gap-1.5 border-t border-slate-200 pt-2">
+        <div className="mt-auto flex items-center gap-1.5 border-t border-slate-200 px-1.5 pt-2">
           <span
-            className="size-1.5 rounded-full bg-emerald-500"
+            className="size-1.5 shrink-0 rounded-full bg-emerald-500"
             title={`${session.site.label} · ${session.site.domain}`}
           />
           <Link
             href="/account"
-            className="flex size-8 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-[11px] font-semibold text-white transition hover:opacity-90"
+            className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-950 text-[11px] font-semibold text-white transition hover:opacity-90"
             title={`${session.user.displayName} · ${session.user.email}`}
           >
             {session.user.avatarUrl && !avatarError ? (
@@ -173,7 +168,7 @@ export function AdminShell({
           <Button
             variant="ghost"
             size="icon"
-            className="size-7 text-slate-500 hover:text-slate-900"
+            className="ml-auto size-7 text-slate-500 hover:text-slate-900"
             onClick={logout}
             title="退出登录"
             aria-label="退出登录"
@@ -185,14 +180,20 @@ export function AdminShell({
 
       {/* SECOND module rail (desktop) — only when the active module has secondary nav */}
       {hasModuleRail ? (
-        <aside className="fixed inset-y-0 left-[60px] z-30 hidden w-[208px] flex-col border-r border-slate-200 bg-white/95 px-3 py-4 backdrop-blur md:flex">
-          <p className="px-2 pb-3 text-sm font-semibold text-slate-900">
+        <aside
+          className={cn(
+            "fixed inset-y-0 z-30 hidden flex-col border-r border-slate-200 bg-white/95 px-1.5 py-3 backdrop-blur md:flex",
+            MODULE_RAIL_LEFT,
+            MODULE_RAIL_WIDTH
+          )}
+        >
+          <p className="truncate px-1.5 pb-2 text-[13px] font-semibold text-slate-900">
             {activeGlobalEntry?.label}
           </p>
-          <nav className="space-y-4 overflow-y-auto pr-1">
+          <nav className="space-y-3 overflow-y-auto">
             {moduleGroups.map((group) => (
-              <div key={group.label} className="space-y-1">
-                <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              <div key={group.label} className="space-y-0.5">
+                <p className="truncate px-1.5 text-[10px] font-semibold text-slate-400">
                   {group.label}
                 </p>
                 {group.items.map((item) => {
@@ -202,16 +203,16 @@ export function AdminShell({
                     <Link
                       key={item.href}
                       href={item.href}
+                      title={item.label}
                       className={cn(
-                        "group flex h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-slate-600 transition",
+                        "flex h-8 items-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium text-slate-600 transition",
                         active
                           ? "bg-slate-950 text-white"
                           : "hover:bg-slate-100 hover:text-slate-950"
                       )}
                     >
-                      <Icon className="size-4" />
-                      <span className="flex-1">{item.label}</span>
-                      {active ? <IconChevronRight className="size-3.5" /> : null}
+                      <Icon className="size-4 shrink-0" />
+                      <span className="min-w-0 truncate">{item.label}</span>
                     </Link>
                   );
                 })}

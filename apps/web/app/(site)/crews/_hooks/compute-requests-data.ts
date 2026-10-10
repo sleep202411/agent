@@ -27,6 +27,7 @@ export const computeRequestsPageSchema = z.object({
         taskId: z.string(),
         taskTitle: z.string(),
         userId: z.string(),
+        requestedPoints: z.string().regex(/^\d+$/).optional(),
         approvedPoints: z.string().regex(/^\d+$/),
         pendingPoints: z.string().regex(/^\d+$/),
         consumedPoints: z.string().regex(/^\d+$/),

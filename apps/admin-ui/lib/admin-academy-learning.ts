@@ -25,6 +25,9 @@ export type AdminHomeworkRow = {
   teacherCredits: string;
   priceCredits: string;
   createdAt: string;
+  submittedAt?: string;
+  reviewedAt?: string | null;
+  studentAvatar?: string | null;
 };
 
 export type AdminHomeworkPage = {
@@ -38,7 +41,23 @@ export type AdminTeachingIncome = {
   courses: number;
   students: number;
   pending: number;
+  monthlyNewStudents: number;
+  previousMonthNewStudents: number;
   earnedCredits: string;
+  scope: "lecturer" | "operator";
+  platformUserId: string | null;
+};
+
+export type AdminTeachingCourse = {
+  courseId: string;
+  courseTitle: string;
+  shareBps: number | null;
+  students: number;
+  earnedCredits: string;
+};
+
+export type AdminTeachingCourses = {
+  items: AdminTeachingCourse[];
   scope: "lecturer" | "operator";
   platformUserId: string | null;
 };
@@ -81,6 +100,24 @@ export async function loadAdminTeachingIncome() {
     return {
       data: null,
       error: error instanceof Error ? error.message : "授课收入加载失败。",
+    };
+  }
+}
+
+export async function loadAdminTeachingCourses() {
+  const headers = await authHeaders();
+  if (!headers) return { data: null, error: "后台登录已失效。" };
+  try {
+    const response = await fetch(adminApiUrl("/academy/learning/courses"), {
+      headers,
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    });
+    return { data: await parseAdminEnvelope<AdminTeachingCourses>(response), error: null };
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error.message : "课程列表加载失败。",
     };
   }
 }

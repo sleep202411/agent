@@ -63,7 +63,7 @@ vi.mock("react-native", () => ({
 }));
 
 vi.mock("expo-modules-core", () => ({
-  uuid: { v4: () => "11111111-1111-4111-8111-111111111111" },
+  uuid: { v4: () => "33333333-3333-4333-8333-333333333333" },
 }));
 vi.mock("@/config/app-env", () => ({ isChinaRegion: false }));
 vi.mock("./crew-compute-api", async (original) => ({
@@ -76,7 +76,10 @@ const id = "11111111-1111-4111-8111-111111111111",
 const row = {
   id,
   crewId: "crew",
-  userId: "user",
+  userId: "creator",
+  requestedByUserId: "user",
+  remainingWorkload: "1.5",
+  workloadUnit: "hours",
   taskId: id,
   taskTitle: "Scene",
   points: 20,
@@ -86,13 +89,16 @@ const row = {
   decidedByAdminId: null,
   decidedByUserId: null,
   decisionNote: null,
-  requestKey: id,
+  requestKey: next,
 };
 const page = {
-  isOwner: false,
+  isOwner: true,
+  workspaceLinked: true,
   consumedPoints: "9007199254740993",
   totals: { pending: 20 },
-  tasks: [{ id, title: "Scene", number: 1 }],
+  tasks: [
+    { id, title: "Scene", number: 1, topUpRequested: false, assignees: [{ userId: "creator" }] },
+  ],
   items: [row],
   nextCursor: null,
 };
@@ -129,6 +135,7 @@ async function fill() {
   await act(async () => button("TASK-1").click());
   await enter("crewComputeFinance.points", "20");
   await enter("crewComputeFinance.reason", "Render");
+  await enter("crewComputeFinance.remainingWorkload", "1.5");
 }
 it("shows authoritative usage, applicant and no approval control", async () => {
   await render();
@@ -178,4 +185,32 @@ it("does not refresh stale account on completion", async () => {
   h.generation = 2;
   await act(async () => resolve());
   expect(h.detail).toHaveBeenCalledTimes(1);
+});
+
+it("only lets owners apply for an assigned beneficiary", async () => {
+  h.detail.mockResolvedValue({ ...page, isOwner: false });
+  await render();
+  expect(host.textContent).toContain("crewComputeFinance.ownerOnly");
+  expect(button("crewComputeFinance.request")).toBeUndefined();
+});
+it("blocks a second application even after rejection", async () => {
+  h.detail.mockResolvedValue({ ...page, tasks: [{ ...page.tasks[0], topUpRequested: true }] });
+  await render();
+  await act(async () => button("TASK-1").click());
+  expect(host.textContent).toContain("crewComputeFinance.topUpAlreadyApplied");
+  expect(button("crewComputeFinance.request").disabled).toBe(true);
+});
+it("sends owner-selected beneficiary and workload", async () => {
+  await fill();
+  await act(async () => button("crewComputeFinance.request").click());
+  expect(h.sign).toHaveBeenCalledWith(
+    "crew",
+    "user",
+    expect.objectContaining({
+      beneficiaryUserId: "creator",
+      remainingWorkload: 1.5,
+      workloadUnit: "minutes",
+    }),
+    1
+  );
 });

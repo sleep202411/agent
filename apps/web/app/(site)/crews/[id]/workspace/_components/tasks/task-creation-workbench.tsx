@@ -1,8 +1,12 @@
 "use client";
+import { createPortal } from "react-dom";
+import { taskLocalDate } from "./task-local-date";
+import { TaskCardPoints, taskRequestedPoints } from "./task-card-points";
+import { useComputeRequests } from "@/app/(site)/crews/_hooks/use-compute-requests";
 import { WorkbenchPdfImport } from "./workbench-pdf-import";
 import { WorkbenchDashboard } from "./workbench-dashboard";
 import { WorkbenchBatchActions } from "./workbench-batch-actions";
-import { canBatchTask } from "./workbench-batch-input";
+import { canBatchTask, MAX_BATCH_TASKS } from "./workbench-batch-input";
 import { CrewComputeTopUpForm } from "@/app/(site)/crews/_components/crew-compute-top-up-form";
 import { CREW_CURRENCY } from "@/src/lib/crew-money";
 import { missingTaskFields } from "./task-required-fields";
@@ -11,7 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
-import { IconX, IconUsers, IconDots } from "@tabler/icons-react";
+import { IconUpload, IconX, IconUsers, IconDotsVertical, IconChecks } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
   DropdownMenu,
@@ -95,6 +99,7 @@ function TaskCreationSession({
   canSubmitAssigned = false,
   canManageEpisodes,
   active,
+  toolbarTarget,
   onSelectTask,
   onEditTask,
   onSubmitTask,
@@ -111,6 +116,7 @@ function TaskCreationSession({
   canSubmitAssigned?: boolean;
   canManageEpisodes: boolean;
   active: boolean;
+  toolbarTarget?: HTMLElement | null;
   onSelectTask: (id: string) => void;
   onEditTask?: (id: string) => void;
   onSubmitTask?: (id: string) => void;
@@ -119,6 +125,7 @@ function TaskCreationSession({
   onInviteTask?: (task: CrewTaskListItemDTO) => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
+  const [analysisStatus, setAnalysisStatus] = useState("idle");
   const [presetTaskKind, setPresetTaskKind] = useState<CreateCrewTaskInput["taskKind"]>();
   const displays = useUserDisplays(members.map((member) => member.userId));
   const taskT = useTranslations("crewTasks");
@@ -126,7 +133,7 @@ function TaskCreationSession({
   const { user } = useCurrentUser();
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [batchMode, setBatchMode] = useState<"assign" | "recruit" | null>(null);
-  const [category, setCategory] = useState("all");
+  const [category, setCategory] = useState("scripts");
   const [showEpisodes, setShowEpisodes] = useState(false);
   const { drafts, setDrafts, batches, setBatches, storageError } = useWorkbenchDrafts(
     user!.id,
@@ -153,9 +160,18 @@ function TaskCreationSession({
   const progressReady =
     !tasks.isLoading && !tasks.isFetching && !tasks.hasNextPage && !tasks.isError;
   const savedTasks = tasks.data;
+  const compute = useComputeRequests(crewId);
+  const pointTotals = compute.isError ? null : taskRequestedPoints(compute.data);
+  const canApplyCredit = members.some(
+    (member) => member.userId === user!.id && member.isOwner && member.status === "active"
+  );
   const selectedTasks = savedTasks.filter((task) => selectedTaskIds.includes(task.id));
   const batchReady =
-    !busy && progressReady && selectedTasks.length > 0 && selectedTasks.every(canBatchTask);
+    !busy &&
+    progressReady &&
+    selectedTasks.length > 0 &&
+    selectedTasks.length <= MAX_BATCH_TASKS &&
+    selectedTasks.every(canBatchTask);
   function toggleSelection(id: string) {
     setSelectedTaskIds((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
@@ -173,6 +189,7 @@ function TaskCreationSession({
         priority: task.priority,
         taskKind: task.taskKind,
         dueAt: task.dueAt,
+        computeBudgetPoints: task.computeBudgetPoints,
         episodeId: task.episodeId,
         assignees: task.assignees ?? [],
       },
@@ -321,6 +338,72 @@ function TaskCreationSession({
       if (alive.current) setBusy(false);
     }
   }
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="ghost" size="sm" onClick={() => setShowEpisodes(true)}>
+        {t("episodes")}
+      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        {onViewTasks &&
+        (drafts.some((draft) => draft.state === "created") ||
+          batches.some((batch) => batch.created) ||
+          unresolved) ? (
+          <Button variant="ghost" color="muted" size="sm" onClick={onViewTasks}>
+            {t("viewTasks")}
+          </Button>
+        ) : null}
+        {canManage ? (
+          <>
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              onClick={() => setProductionOpen(true)}
+            >
+              {t("canvasImport")}
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {canManage && analysisStatus !== "idle" && !pdfOpen && (
+        <Button variant="outline" size="sm" onClick={() => setPdfOpen(true)}>
+          {t("analysisStatus", { status: t(`analysis_${analysisStatus}`) })}
+        </Button>
+      )}
+      {canManageTasks ? (
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {t("batchSelected", { count: selectedTasks.length })}
+          </span>
+          <Button
+            size="sm"
+            variant="solid"
+            color="primary"
+            disabled={!batchReady}
+            onClick={() => setBatchMode("assign")}
+          >
+            {t("batchAssign")}
+          </Button>
+          {onPublishTask ? (
+            <Button
+              size="sm"
+              variant="solid"
+              color="primary"
+              disabled={!batchReady}
+              onClick={() => setBatchMode("recruit")}
+            >
+              {t("batchRecruit")}
+            </Button>
+          ) : null}
+          {selectedTaskIds.length ? (
+            <Button size="sm" variant="ghost" color="muted" onClick={() => setSelectedTaskIds([])}>
+              {t("batchClear")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
   return (
     <div hidden={!active} className="min-h-0 min-w-0 flex-1 overflow-auto @container">
       {batchMode ? (
@@ -345,99 +428,13 @@ function TaskCreationSession({
       ) : null}
       <div className="flex min-h-full flex-col bg-[#090a0c] text-[13px]">
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex flex-wrap items-center gap-3 border-b border-white/10 px-4 py-2">
-            <div className="flex flex-wrap items-center gap-3">
-              <div>
-                <h2 className="sr-only">{t("title")}</h2>
-                <p className="mt-1 text-xs text-muted-foreground">{crewName}</p>
-              </div>
-              <button
-                type="button"
-                aria-label={t("episodes")}
-                onClick={() => setShowEpisodes(true)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                {!episodes.isError && episodes.data
-                  ? t("episodeCount", { count: episodes.data.length })
-                  : ""}
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              {onViewTasks &&
-              (drafts.some((draft) => draft.state === "created") ||
-                batches.some((batch) => batch.created) ||
-                unresolved) ? (
-                <Button variant="ghost" color="muted" size="sm" onClick={onViewTasks}>
-                  {t("viewTasks")}
-                </Button>
-              ) : null}
-              {canManage ? (
-                <>
-                  <Button size="sm" disabled={busy || unresolved} onClick={() => openTask()}>
-                    {t("createTask")}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    color="muted"
-                    size="sm"
-                    disabled={busy || episodes.isLoading || episodes.isError}
-                    onClick={() => {
-                      if (episodes.data?.length === 1) setTemplateEpisodeId(episodes.data[0]!.id);
-                      else setShowEpisodes(true);
-                    }}
-                  >
-                    {t("initializeTasks")}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    color="muted"
-                    size="sm"
-                    onClick={() => setProductionOpen(true)}
-                  >
-                    {t("canvasImport")}
-                  </Button>
-                </>
-              ) : null}
-            </div>
-            {canManageTasks ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs text-muted-foreground">
-                  {t("batchSelected", { count: selectedTasks.length })}
-                </span>
-                <Button
-                  size="sm"
-                  variant="solid"
-                  color="primary"
-                  disabled={!batchReady}
-                  onClick={() => setBatchMode("assign")}
-                >
-                  {t("batchAssign")}
-                </Button>
-                {onPublishTask ? (
-                  <Button
-                    size="sm"
-                    variant="solid"
-                    color="primary"
-                    disabled={!batchReady}
-                    onClick={() => setBatchMode("recruit")}
-                  >
-                    {t("batchRecruit")}
-                  </Button>
-                ) : null}
-                {selectedTaskIds.length ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    color="muted"
-                    onClick={() => setSelectedTaskIds([])}
-                  >
-                    {t("batchClear")}
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-          </header>
+          {toolbarTarget ? createPortal(toolbar, toolbarTarget) : toolbar}
           <div className="flex-1 space-y-3 p-3">
+            {selectedTasks.length > MAX_BATCH_TASKS && (
+              <p role="alert" className="text-sm text-destructive">
+                {t("batchLimit", { count: MAX_BATCH_TASKS })}
+              </p>
+            )}
             <WorkbenchDashboard
               tasks={savedTasks}
               ready={progressReady}
@@ -445,55 +442,62 @@ function TaskCreationSession({
               disabled={busy}
               onInitialize={() => setPdfOpen(true)}
             />
-            <Dialog open={pdfOpen} onOpenChange={setPdfOpen}>
-              <DialogContent className="w-[calc(100vw-2rem)] max-w-3xl sm:max-w-3xl">
-                <DialogHeader>
-                  <DialogTitle>{t("pdfTitle")}</DialogTitle>
-                </DialogHeader>
-                <DialogBody>
-                  <WorkbenchPdfImport crewId={crewId} />
-                </DialogBody>
-              </DialogContent>
-            </Dialog>
-            <div
-              className="flex flex-wrap justify-end gap-3 text-xs text-muted-foreground"
-              aria-label={t("statusLegend")}
-            >
-              {(
-                [
-                  ["open", "bg-neutral-400"],
-                  ["in_progress", "bg-blue-400"],
-                  ["approved", "bg-emerald-400"],
-                  ["overdue", "bg-red-400"],
-                ] as const
-              ).map(([status, color]) => (
-                <span key={status} className="inline-flex items-center gap-1.5">
-                  <span aria-hidden="true" className={`size-2 rounded-full ${color}`} />
-                  {status === "overdue" ? t("statusOverdue") : taskT(`status.${status}`)}
-                </span>
-              ))}
-            </div>
-            <div
-              className="flex gap-1 overflow-x-auto border-b border-white/10 pb-1"
-              aria-label={t("batchCategories")}
-            >
-              {["all", ...STAGED_CATEGORY_BARS].map((key) => (
-                <Button
-                  key={key}
-                  size="sm"
-                  variant="ghost"
-                  className={`shrink-0 rounded-none border-0 border-b-2 px-4 uppercase tracking-wide ${category === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
-                  color="muted"
-                  aria-pressed={category === key}
-                  onClick={() => setCategory(key)}
-                >
-                  {key === "all"
-                    ? t("batchAll")
-                    : key === "artAssets"
-                      ? t("artAssets")
-                      : t(`assetGroup_${key}`)}
-                </Button>
-              ))}
+            {canManage && (
+              <section
+                hidden={!pdfOpen}
+                role={pdfOpen ? "dialog" : undefined}
+                aria-label={t("finalScript")}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setPdfOpen(false);
+                }}
+                className={`${pdfOpen ? "flex" : "hidden"} fixed inset-x-4 top-20 z-50 mx-auto max-h-[80dvh] max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl`}
+              >
+                <header className="flex items-center justify-between border-b border-border p-4">
+                  <h2>{t("finalScript")}</h2>
+                  <Button variant="ghost" size="sm" onClick={() => setPdfOpen(false)}>
+                    {t("minimizeAnalysis")}
+                  </Button>
+                </header>
+                <div className="overflow-y-auto p-4">
+                  <WorkbenchPdfImport crewId={crewId} onStatus={setAnalysisStatus} />
+                </div>
+              </section>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10">
+              <div className="flex min-w-0 gap-1 overflow-x-auto" aria-label={t("batchCategories")}>
+                {STAGED_CATEGORY_BARS.map((key) => (
+                  <Button
+                    key={key}
+                    size="sm"
+                    variant="ghost"
+                    className={`shrink-0 rounded-none border-0 border-b-2 px-4 uppercase tracking-wide ${category === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
+                    color="muted"
+                    aria-pressed={category === key}
+                    onClick={() => setCategory(key)}
+                  >
+                    {key === "artAssets" ? t("artAssets") : t(`assetGroup_${key}`)}
+                  </Button>
+                ))}
+              </div>
+              <div
+                className="flex flex-wrap justify-end gap-3 text-xs text-muted-foreground"
+                aria-label={t("statusLegend")}
+              >
+                {(
+                  [
+                    ["open", "bg-neutral-400"],
+                    ["in_progress", "bg-blue-400"],
+                    ["approved", "bg-emerald-400"],
+                    ["overdue", "bg-red-400"],
+                  ] as const
+                ).map(([status, color]) => (
+                  <span key={status} className="inline-flex items-center gap-1.5">
+                    <span aria-hidden="true" className={`size-2 rounded-full ${color}`} />
+                    {status === "overdue" ? t("statusOverdue") : taskT(`status.${status}`)}
+                  </span>
+                ))}
+              </div>
             </div>
             {storageError ? (
               <p role="alert" className="text-xs text-destructive">
@@ -540,91 +544,98 @@ function TaskCreationSession({
             {
               <section>
                 <div className="space-y-4">
-                  {STAGED_CATEGORY_BARS.filter((key) => category === "all" || key === category).map(
-                    (barKey) => {
-                      const label =
-                        barKey === "artAssets" ? t("artAssets") : t(`assetGroup_${barKey}`);
-                      const categoryDrafts = visibleDrafts.filter(
-                        (draft) =>
-                          normalizeCategory(
-                            draft.input.taskKind
-                              ? stagedCategoryKey(draft.input.taskKind)
-                              : (savedTasks.find((task) => task.id === draft.taskId)
-                                  ?.assetCategory ?? "other")
-                          ) === barKey
-                      );
-                      const itemCount = categoryDrafts.filter(
-                        (draft) => draft.state === "created"
-                      ).length;
+                  {STAGED_CATEGORY_BARS.filter((key) => key === category).map((barKey) => {
+                    const label =
+                      barKey === "artAssets" ? t("artAssets") : t(`assetGroup_${barKey}`);
+                    const categoryDrafts = visibleDrafts.filter(
+                      (draft) =>
+                        normalizeCategory(
+                          draft.input.taskKind
+                            ? stagedCategoryKey(draft.input.taskKind)
+                            : (savedTasks.find((task) => task.id === draft.taskId)?.assetCategory ??
+                                "other")
+                        ) === barKey
+                    );
+                    const itemCount = categoryDrafts.filter(
+                      (draft) => draft.state === "created"
+                    ).length;
 
-                      const groups =
-                        barKey === "artAssets"
-                          ? ["characters", "scenes", "props", "art"].map((key) => ({
+                    const groups =
+                      barKey === "artAssets"
+                        ? ["characters", "scenes", "props", "art"].map((key) => ({
+                            key,
+                            title: t(`assetGroup_${key}`),
+                            items: categoryDrafts.filter((draft) => {
+                              const asset = savedTasks.find(
+                                (task) => task.id === draft.taskId
+                              )?.assetCategory;
+                              return (
+                                (["characters", "scenes", "props"].includes(asset ?? "")
+                                  ? asset
+                                  : "art") === key
+                              );
+                            }),
+                          }))
+                        : barKey === "production"
+                          ? [
+                              ...new Set(
+                                categoryDrafts.map((draft) => draft.input.episodeId ?? "")
+                              ),
+                            ].map((key) => ({
                               key,
-                              title: t(`assetGroup_${key}`),
-                              items: categoryDrafts.filter((draft) => {
-                                const asset = savedTasks.find(
-                                  (task) => task.id === draft.taskId
-                                )?.assetCategory;
-                                return (
-                                  (["characters", "scenes", "props"].includes(asset ?? "")
-                                    ? asset
-                                    : "art") === key
-                                );
-                              }),
+                              title:
+                                episodes.data?.find((episode) => episode.id === key)?.title ??
+                                taskT("noEpisode"),
+                              items: categoryDrafts.filter(
+                                (draft) => (draft.input.episodeId ?? "") === key
+                              ),
                             }))
-                          : barKey === "production"
-                            ? [
-                                ...new Set(
-                                  categoryDrafts.map((draft) => draft.input.episodeId ?? "")
-                                ),
-                              ].map((key) => ({
-                                key,
-                                title:
-                                  episodes.data?.find((episode) => episode.id === key)?.title ??
-                                  taskT("noEpisode"),
-                                items: categoryDrafts.filter(
-                                  (draft) => (draft.input.episodeId ?? "") === key
-                                ),
-                              }))
-                            : [{ key: barKey, title: "", items: categoryDrafts }];
+                          : [{ key: barKey, title: "", items: categoryDrafts }];
 
-                      return (
-                        <section
-                          key={barKey}
-                          className="min-w-0 rounded-sm bg-white/[0.025] p-4 text-xs transition-colors"
-                        >
-                          {barKey === "scripts" && canManage && (
-                            <aside className="mb-4 flex flex-wrap items-center gap-4 bg-black/20 p-3">
-                              <h3 className="text-xs font-semibold uppercase text-primary">
-                                {t("pdfTitle")}
-                              </h3>
-                              <Button
-                                variant="outline"
-                                color="muted"
-                                className="min-h-11 whitespace-normal"
-                                onClick={() => setPdfOpen(true)}
-                              >
-                                {t("pdfChoose")}
-                              </Button>
-                              <dl className="flex flex-wrap gap-4">
-                                {["characters", "scenes", "props"].map((asset) => (
-                                  <div key={asset} className="flex gap-2">
-                                    <dt>{t(`assetGroup_${asset}`)}</dt>
-                                    <dd>
-                                      {
-                                        savedTasks.filter((task) => task.assetCategory === asset)
-                                          .length
-                                      }
-                                    </dd>
-                                  </div>
-                                ))}
-                              </dl>
-                            </aside>
-                          )}
-                          <div className="group flex select-none items-center justify-between gap-3 font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                    return (
+                      <section
+                        key={barKey}
+                        className={`min-w-0 text-xs ${barKey === "scripts" && canManage ? "grid items-start gap-3 lg:grid-cols-[minmax(220px,1fr)_minmax(0,2fr)]" : ""}`}
+                      >
+                        {barKey === "scripts" && canManage && (
+                          <aside className="grid gap-3 rounded-lg bg-white/[0.025] p-4">
+                            <h3 className="text-xs font-semibold uppercase text-primary">
+                              {t("finalScript")}
+                            </h3>
+                            <Button
+                              variant="outline"
+                              color="muted"
+                              className="min-h-32 flex-col gap-2 whitespace-normal border-dashed"
+                              onClick={() => setPdfOpen(true)}
+                            >
+                              <IconUpload className="size-6" aria-hidden="true" />
+                              {t("uploadFinalScript")}
+                            </Button>
+                            <dl className="grid gap-2">
+                              {["characters", "scenes", "props"].map((asset) => (
+                                <div key={asset} className="flex justify-between gap-2">
+                                  <dt>{t(`assetGroup_${asset}`)}</dt>
+                                  <dd>
+                                    {
+                                      savedTasks.filter((task) => task.assetCategory === asset)
+                                        .length
+                                    }
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </aside>
+                        )}
+                        <div className="min-w-0">
+                          <div className="group flex select-none items-center gap-3 font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
                             <span className="flex items-center gap-2">
-                              <span>{label}</span>
+                              <span>{barKey === "scripts" ? t("scriptTasks") : label}</span>
+                              <span
+                                className="rounded bg-black/20 px-2 py-0.5 text-xs font-normal normal-case text-muted-foreground"
+                                title={t("assetProgress")}
+                              >
+                                {progressReady ? itemCount : "—"}
+                              </span>
                             </span>
                             {canManageTasks &&
                             categoryDrafts.some(
@@ -686,48 +697,42 @@ function TaskCreationSession({
                                 }}
                               />
                             ) : null}
-                            <span
-                              className="rounded bg-black/20 px-2 py-0.5 text-xs font-normal normal-case text-muted-foreground"
-                              title={t("assetProgress")}
-                            >
-                              {progressReady ? itemCount : "—"}
-                            </span>
+                            {canManage ? (
+                              <button
+                                type="button"
+                                aria-label={`${t("createTask")} · ${label}`}
+                                disabled={busy || unresolved}
+                                className="ml-auto inline-flex size-11 shrink-0 items-center justify-center rounded-md text-2xl font-semibold text-primary hover:bg-primary/10"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  openTask();
+                                  setPresetTaskKind(
+                                    (
+                                      {
+                                        scripts: "script",
+                                        artAssets: "art",
+                                        music: "music",
+                                        production: "storyboard",
+                                        finalEditing: "edit",
+                                        other: "other",
+                                      } as const
+                                    )[barKey]
+                                  );
+                                  setOpen(true);
+                                }}
+                              >
+                                <span aria-hidden="true">+</span>
+                              </button>
+                            ) : null}
                           </div>
-                          {canManage ? (
-                            <button
-                              type="button"
-                              aria-label={`${t("createTask")} · ${label}`}
-                              disabled={busy || unresolved}
-                              className="mt-3 inline-flex min-h-11 items-center justify-center rounded-lg border border-dashed border-white/25 px-6 text-sm normal-case text-muted-foreground hover:border-primary hover:text-primary"
-                              onClick={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                openTask();
-                                setPresetTaskKind(
-                                  (
-                                    {
-                                      scripts: "script",
-                                      artAssets: "art",
-                                      music: "music",
-                                      production: "storyboard",
-                                      finalEditing: "edit",
-                                      other: "other",
-                                    } as const
-                                  )[barKey]
-                                );
-                                setOpen(true);
-                              }}
-                            >
-                              + {t("newTask")}
-                            </button>
-                          ) : null}
-                          <div className="mt-3 space-y-3 border-t border-white/[0.06] pt-3">
+                          <div className="space-y-2">
                             {categoryDrafts.length > 0 ? (
                               <div
                                 className={
                                   barKey === "artAssets"
-                                    ? "grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-4"
-                                    : "space-y-5"
+                                    ? "flex items-stretch gap-3 overflow-x-auto pb-2"
+                                    : "space-y-2"
                                 }
                               >
                                 {groups.map((group) => (
@@ -735,7 +740,7 @@ function TaskCreationSession({
                                     key={group.key}
                                     className={
                                       barKey === "artAssets"
-                                        ? "min-w-0 min-h-64 bg-white/[0.025] p-3"
+                                        ? "min-w-0 w-[284px] max-w-full shrink-0 rounded-lg bg-white/[0.06] p-3"
                                         : "min-w-0"
                                     }
                                   >
@@ -749,67 +754,87 @@ function TaskCreationSession({
                                       className={
                                         barKey === "artAssets"
                                           ? "grid gap-3"
-                                          : "grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-3"
+                                          : "flex flex-wrap items-start gap-3"
                                       }
                                     >
                                       {group.items.map((draft) => (
                                         <article
                                           key={draft.id}
-                                          className="relative flex min-w-0 flex-col rounded-lg border border-white/15 bg-[#151618] p-3 transition-colors hover:bg-[#1a1b1e]"
+                                          className={`relative flex w-[260px] max-w-full min-w-0 flex-col gap-1.5 rounded-md border bg-black px-3 py-2.5 transition-colors hover:border-primary ${draft.taskId && selectedTaskIds.includes(draft.taskId) ? "border-primary" : "border-white/20"}`}
                                         >
-                                          {canManageTasks && draft.taskId ? (
-                                            <input
-                                              type="checkbox"
-                                              className="relative z-30 mb-2 size-4 accent-[#e52227]"
-                                              aria-label={t("batchSelectTask", {
-                                                title: draft.input.title,
-                                              })}
+                                          <div className="flex min-h-8 items-center gap-1">
+                                            <button
+                                              type="button"
+                                              className="min-w-0 flex-1 flex cursor-pointer items-center gap-2 break-words text-left text-[14px] font-bold after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-white/40 disabled:cursor-default disabled:after:hidden"
                                               disabled={
                                                 busy ||
-                                                !canBatchTask(
-                                                  savedTasks.find(
-                                                    (task) => task.id === draft.taskId
-                                                  )!
-                                                )
+                                                draft.state === "creating" ||
+                                                draft.state === "uncertain"
                                               }
-                                              checked={selectedTaskIds.includes(draft.taskId)}
-                                              onChange={() => toggleSelection(draft.taskId!)}
-                                            />
-                                          ) : null}
-                                          <div className="flex items-start justify-between gap-2">
-                                            <span className="ml-auto rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                              {taskT(
-                                                CREW_TASK_KIND_MESSAGE_KEYS[
-                                                  draft.input.taskKind ?? "other"
-                                                ]
-                                              )}
-                                            </span>
-                                            {draft.state === "staged" ? (
-                                              <button
-                                                disabled={busy}
-                                                className="relative z-10"
-                                                aria-label={t("remove", {
+                                              aria-label={
+                                                draft.taskId
+                                                  ? `${t("openTask")}: ${draft.input.title}`
+                                                  : t("editDraft", { title: draft.input.title })
+                                              }
+                                              onClick={() => {
+                                                if (draft.taskId) {
+                                                  onSelectTask(draft.taskId);
+                                                  return;
+                                                }
+                                                if (draft.state !== "staged" || lock.current)
+                                                  return;
+                                                setEditingId(draft.id);
+                                                setEpisodeId(draft.input.episodeId ?? null);
+                                                setOpen(true);
+                                              }}
+                                            >
+                                              <span
+                                                className="min-w-0 flex-1 truncate"
+                                                title={draft.input.title}
+                                              >
+                                                {draft.input.title}
+                                              </span>
+                                            </button>
+                                            {canManageTasks && draft.taskId ? (
+                                              <input
+                                                type="checkbox"
+                                                className="relative z-30 size-4 shrink-0 accent-[#e52227]"
+                                                aria-label={t("batchSelectTask", {
                                                   title: draft.input.title,
                                                 })}
-                                                onClick={() => {
-                                                  if (lock.current) return;
-                                                  setDrafts((current) =>
-                                                    current.filter((item) => item.id !== draft.id)
-                                                  );
-                                                }}
-                                              >
-                                                <IconX className="size-4" />
-                                              </button>
+                                                disabled={
+                                                  busy ||
+                                                  !canBatchTask(
+                                                    savedTasks.find(
+                                                      (task) => task.id === draft.taskId
+                                                    )!
+                                                  )
+                                                }
+                                                checked={selectedTaskIds.includes(draft.taskId)}
+                                                onChange={() => toggleSelection(draft.taskId!)}
+                                              />
                                             ) : null}
-                                          </div>
-                                          {draft.taskId &&
-                                            (canManageTasks ||
-                                              savedTasks.some(
-                                                (task) =>
-                                                  task.id === draft.taskId &&
-                                                  task.assignees.some((a) => a.userId === user!.id)
-                                              )) && (
-                                              <div className="absolute right-2 top-2 z-20">
+                                            <div className="flex items-center">
+                                              {draft.state === "staged" ? (
+                                                <button
+                                                  disabled={busy}
+                                                  className="relative z-10"
+                                                  aria-label={t("remove", {
+                                                    title: draft.input.title,
+                                                  })}
+                                                  onClick={() => {
+                                                    if (lock.current) return;
+                                                    setDrafts((current) =>
+                                                      current.filter((item) => item.id !== draft.id)
+                                                    );
+                                                  }}
+                                                >
+                                                  <IconX className="size-4" />
+                                                </button>
+                                              ) : null}
+                                            </div>
+                                            {draft.taskId && (canManageTasks || canApplyCredit) && (
+                                              <div className="relative z-20 shrink-0">
                                                 <DropdownMenu>
                                                   <DropdownMenuTrigger asChild>
                                                     <button
@@ -817,7 +842,7 @@ function TaskCreationSession({
                                                       className="rounded p-2 hover:bg-white/10"
                                                       aria-label={t("taskActions")}
                                                     >
-                                                      <IconDots className="size-4" />
+                                                      <IconDotsVertical className="size-3" />
                                                     </button>
                                                   </DropdownMenuTrigger>
                                                   <DropdownMenuContent align="end" className="w-56">
@@ -875,70 +900,23 @@ function TaskCreationSession({
                                                         {t("openRecruitment")}
                                                       </DropdownMenuItem>
                                                     )}
-                                                    <DropdownMenuItem
-                                                      onSelect={() =>
-                                                        setCreditTaskId(draft.taskId!)
-                                                      }
-                                                    >
-                                                      {t("addCredit")}
-                                                    </DropdownMenuItem>
+                                                    {canApplyCredit && (
+                                                      <DropdownMenuItem
+                                                        onSelect={() =>
+                                                          setCreditTaskId(draft.taskId!)
+                                                        }
+                                                      >
+                                                        {t("addCredit")}
+                                                      </DropdownMenuItem>
+                                                    )}
                                                   </DropdownMenuContent>
                                                 </DropdownMenu>
                                               </div>
                                             )}
-                                          <button
-                                            type="button"
-                                            className="mt-3 flex cursor-pointer items-start gap-2 break-words text-left text-sm font-medium after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-white/40 disabled:cursor-default disabled:after:hidden"
-                                            disabled={
-                                              busy ||
-                                              draft.state === "creating" ||
-                                              draft.state === "uncertain"
-                                            }
-                                            aria-label={
-                                              draft.taskId
-                                                ? `${t("openTask")}: ${draft.input.title}`
-                                                : t("editDraft", { title: draft.input.title })
-                                            }
-                                            onClick={() => {
-                                              if (draft.taskId) {
-                                                onSelectTask(draft.taskId);
-                                                return;
-                                              }
-                                              if (draft.state !== "staged" || lock.current) return;
-                                              setEditingId(draft.id);
-                                              setEpisodeId(draft.input.episodeId ?? null);
-                                              setOpen(true);
-                                            }}
-                                          >
-                                            <span className="min-w-0 flex-1">
-                                              {draft.input.title}
-                                            </span>
-                                          </button>
-                                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3 text-xs text-muted-foreground">
-                                            {draft.state !== "staged" ? (
-                                              <span className="inline-flex items-center gap-1.5">
-                                                <span
-                                                  aria-hidden="true"
-                                                  className={`size-2 shrink-0 rounded-full ${savedTasks.find((task) => task.id === draft.taskId)?.status === "approved" ? "bg-emerald-400" : draft.input.dueAt && new Date(draft.input.dueAt).getTime() < Date.now() ? "bg-red-400" : savedTasks.find((task) => task.id === draft.taskId)?.status === "open" ? "bg-neutral-400" : "bg-blue-400"}`}
-                                                />
-                                                <span className="sr-only">
-                                                  {draft.taskId
-                                                    ? taskT(
-                                                        `status.${savedTasks.find((task) => task.id === draft.taskId)?.status ?? "open"}`
-                                                      )
-                                                    : t(draft.state)}
-                                                </span>
-                                              </span>
-                                            ) : null}
-                                            <span>
-                                              {draft.input.dueAt
-                                                ? `${taskT("due")}: ${draft.input.dueAt.slice(0, 10)}`
-                                                : t("noDeadline")}
-                                            </span>
-                                            <span className="flex flex-wrap items-center gap-3">
-                                              {draft.input.assignees.length ? (
-                                                <span>{t("assigned")}</span>
-                                              ) : (
+                                          </div>
+                                          <div className="flex min-w-0 items-center justify-between gap-2 text-xs text-zinc-300">
+                                            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                              {!draft.input.assignees.length ? (
                                                 <span
                                                   className={
                                                     draft.isRecruiting
@@ -950,32 +928,96 @@ function TaskCreationSession({
                                                     ? t("recruiting")
                                                     : taskT("unassigned")}
                                                 </span>
-                                              )}
+                                              ) : null}
                                               {draft.input.assignees.map(({ userId }) => (
                                                 <span
                                                   key={userId}
                                                   title={displayNameOf(userId, displays)}
-                                                  className="inline-flex items-center gap-1.5"
+                                                  className="inline-flex max-w-full min-w-0 items-center gap-1.5"
                                                 >
                                                   <UserAvatar
                                                     src={displays.get(userId)?.avatar}
                                                     name={displayNameOf(userId, displays)}
                                                     seed={userId}
-                                                    className="size-6 shrink-0"
+                                                    className="size-[18px] shrink-0"
                                                   />
-                                                  <span>{displayNameOf(userId, displays)}</span>
+                                                  <span className="truncate">
+                                                    {displayNameOf(userId, displays)}
+                                                  </span>
                                                 </span>
                                               ))}
                                             </span>
+                                            <span className="shrink-0 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                              {taskT(
+                                                CREW_TASK_KIND_MESSAGE_KEYS[
+                                                  draft.input.taskKind ?? "other"
+                                                ]
+                                              )}
+                                            </span>
+                                          </div>
+                                          <TaskCardPoints
+                                            requested={
+                                              draft.taskId && pointTotals
+                                                ? (pointTotals.byTask.get(draft.taskId) ??
+                                                  (pointTotals.isOwner &&
+                                                  !pointTotals.byTask.has(draft.taskId)
+                                                    ? "0"
+                                                    : null))
+                                                : null
+                                            }
+                                            estimated={draft.input.computeBudgetPoints}
+                                            isOwner={pointTotals?.isOwner ?? canApplyCredit}
+                                          />
+                                          <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-muted-foreground">
+                                            {draft.state !== "staged" ? (
+                                              <span className="inline-flex items-center gap-1.5">
+                                                <span
+                                                  aria-hidden="true"
+                                                  className={`size-2 shrink-0 rounded-full ${savedTasks.find((task) => task.id === draft.taskId)?.status === "approved" ? "bg-emerald-400" : ["submitted", "cancelled"].includes(savedTasks.find((task) => task.id === draft.taskId)?.status ?? "") ? "bg-neutral-400" : draft.input.dueAt && new Date(draft.input.dueAt).getTime() < Date.now() ? "bg-red-400" : savedTasks.find((task) => task.id === draft.taskId)?.status === "open" ? "bg-neutral-400" : "bg-blue-400"}`}
+                                                />
+                                                <span className="sr-only">
+                                                  {draft.taskId
+                                                    ? taskT(
+                                                        `status.${savedTasks.find((task) => task.id === draft.taskId)?.status ?? "open"}`
+                                                      )
+                                                    : t(draft.state)}
+                                                </span>
+                                              </span>
+                                            ) : null}
                                             {draft.input.dueAt ? (
                                               <span
                                                 className={
+                                                  !["approved", "submitted", "cancelled"].includes(
+                                                    savedTasks.find(
+                                                      (task) => task.id === draft.taskId
+                                                    )?.status ?? ""
+                                                  ) &&
                                                   new Date(draft.input.dueAt).getTime() < Date.now()
                                                     ? "text-red-400"
                                                     : "text-muted-foreground"
                                                 }
                                               >
-                                                <TaskCountdown dueAt={draft.input.dueAt} />
+                                                {["approved", "submitted", "cancelled"].includes(
+                                                  savedTasks.find(
+                                                    (task) => task.id === draft.taskId
+                                                  )?.status ?? ""
+                                                ) ? (
+                                                  taskT(
+                                                    `status.${savedTasks.find((task) => task.id === draft.taskId)!.status}`
+                                                  )
+                                                ) : (
+                                                  <TaskCountdown dueAt={draft.input.dueAt} />
+                                                )}
+                                                <span
+                                                  className="ml-2 text-muted-foreground"
+                                                  title={draft.input.dueAt}
+                                                >
+                                                  {t("shortDeadline", {
+                                                    date: taskLocalDate(draft.input.dueAt)
+                                                      .slice(5, 10)
+                                                      .replace("-", "/"),
+                                                  })}
+                                                </span>
                                               </span>
                                             ) : null}
                                           </div>
@@ -1003,7 +1045,7 @@ function TaskCreationSession({
                                           onPublishTask ? (
                                             <button
                                               type="button"
-                                              className="relative z-10 mt-2 inline-flex h-8 items-center justify-center rounded-md border border-white/15 px-3 text-xs font-medium text-white transition-colors hover:bg-white/10"
+                                              className="relative z-10 mt-2 inline-flex min-h-11 sm:min-h-8 items-center justify-center rounded-md border border-white/15 px-3 text-xs font-medium text-white transition-colors hover:bg-white/10"
                                               onClick={() => onPublishTask(draft.taskId!)}
                                             >
                                               {t("publishJob")}
@@ -1021,12 +1063,28 @@ function TaskCreationSession({
                                           ) ? (
                                             <button
                                               type="button"
-                                              className="relative z-10 mt-2 inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-white hover:bg-primary/85"
+                                              className="relative z-10 mt-2 inline-flex min-h-11 sm:min-h-8 items-center justify-center rounded-md border border-white/15 bg-zinc-900 px-3 text-[11px] font-bold text-white hover:border-primary/50 hover:bg-primary/10"
                                               onClick={() => onSubmitTask(draft.taskId!)}
                                             >
                                               {taskT("submit")}
                                             </button>
                                           ) : null}
+                                          {draft.taskId &&
+                                            ["submitted", "approved"].includes(
+                                              savedTasks.find((task) => task.id === draft.taskId)
+                                                ?.status ?? ""
+                                            ) && (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="relative z-10 mt-1 inline-flex min-h-11 sm:min-h-8 w-full items-center justify-center gap-1.5 rounded border border-zinc-700 bg-zinc-800 text-[11px] font-bold text-zinc-500"
+                                              >
+                                                <IconChecks className="size-3" />
+                                                {taskT(
+                                                  `status.${savedTasks.find((task) => task.id === draft.taskId)!.status}`
+                                                )}
+                                              </button>
+                                            )}
                                         </article>
                                       ))}
                                     </div>
@@ -1035,10 +1093,10 @@ function TaskCreationSession({
                               </div>
                             ) : null}
                           </div>
-                        </section>
-                      );
-                    }
-                  )}
+                        </div>
+                      </section>
+                    );
+                  })}
                 </div>
               </section>
             }

@@ -10,9 +10,13 @@ import {
   readStoredEpisodeProgress,
 } from "@/src/hooks/use-courses";
 import {
+  getAssignedCourseCertificate,
   getPublicCourse,
   getPublicCoursePlayUrl,
   listPublicCourses,
+  matchesPublicCoursePriceRange,
+  publicCourseCertificateId,
+  publicCoursePriceCredits,
   resolveCourseCoverUrl,
   type PublicCourseDetail,
   type PublicCourseInstructor,
@@ -29,7 +33,10 @@ export interface PublicCourseCardModel {
   /** Null when list payload has no count — hide “N lessons” badge. */
   episodeCount: number | null;
   instructors: PublicCourseInstructor[];
-  price: "free";
+  /** Null when the course is free / not for sale. */
+  priceCredits: number | null;
+  /** Null when no skill certificate is assigned. */
+  certificateId: number | null;
 }
 
 export interface PublicCourseDetailView {
@@ -56,19 +63,25 @@ function toCard(summary: PublicCourseSummary): PublicCourseCardModel {
     updateTime: summary.updateTime ?? "",
     episodeCount: typeof count === "number" && count >= 0 ? count : null,
     instructors: summary.instructors ?? [],
-    price: "free",
+    priceCredits: publicCoursePriceCredits(summary),
+    certificateId: publicCourseCertificateId(summary),
   };
 }
 
-function filterBySearch(courses: PublicCourseCardModel[], searchQuery: string) {
+function filterCatalog(
+  courses: PublicCourseCardModel[],
+  searchQuery: string,
+  priceRange: string | null
+) {
   const query = searchQuery.trim().toLowerCase();
-  if (!query) return courses;
-  return courses.filter(
-    (course) =>
+  return courses.filter((course) => {
+    const matchesQuery =
+      !query ||
       course.title.toLowerCase().includes(query) ||
       course.description.toLowerCase().includes(query) ||
-      course.instructors.some((i) => i.nickName.toLowerCase().includes(query))
-  );
+      course.instructors.some((i) => i.nickName.toLowerCase().includes(query));
+    return matchesQuery && matchesPublicCoursePriceRange(course.priceCredits, priceRange);
+  });
 }
 
 const PROGRESS_PREFIX = "public-course-progress-v1:";
@@ -183,7 +196,7 @@ export function readPublicCourseProgress(courseId: number, episodeCount?: number
   return derivePublicCourseProgressFromEpisodes(courseId, episodeCount);
 }
 
-export function usePublicCourseList(searchQuery = "") {
+export function usePublicCourseList(searchQuery = "", priceRange: string | null = null) {
   const { user } = useCurrentUser();
   const locale = useLocale() as Locale;
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -193,11 +206,20 @@ export function usePublicCourseList(searchQuery = "") {
 
   const courses = useMemo(() => (data ?? []).map(toCard), [data]);
   const filteredCourses = useMemo(
-    () => filterBySearch(courses, searchQuery),
-    [courses, searchQuery]
+    () => filterCatalog(courses, searchQuery, priceRange),
+    [courses, searchQuery, priceRange]
   );
 
   return { isLoading, error, courses, filteredCourses, refetch, isFetching };
+}
+
+export function useAssignedCourseCertificate(courseId: number | null) {
+  return useQuery({
+    queryKey: ["academy-course-certificate", String(courseId)],
+    enabled: courseId != null,
+    queryFn: ({ signal }) => getAssignedCourseCertificate(courseId!, signal),
+    staleTime: 60_000,
+  });
 }
 
 export function usePublicCourseDetail(courseIdParam: string | undefined) {

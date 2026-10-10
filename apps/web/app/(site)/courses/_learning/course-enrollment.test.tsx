@@ -2,7 +2,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
-import { CourseEnrollGate, CourseHomeworkPanel } from "./course-enrollment";
+import {
+  CourseEnrollGate,
+  CourseHomeworkPanel,
+  courseRequiresEnrollment,
+} from "./course-enrollment";
 const h = vi.hoisted(() => ({
   user: "student" as string | null,
   course: vi.fn(),
@@ -77,6 +81,33 @@ async function renderHomework() {
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
 }
+it("does not charge a participating instructor for their own course", async () => {
+  h.user = "200";
+  h.course.mockResolvedValue({
+    offering: { version: 3, enabled: true, priceCredits: "200" },
+    enrollment: null,
+    instructor: true,
+  });
+  expect(
+    courseRequiresEnrollment({
+      offering: { version: 3, enabled: true, priceCredits: "200", teacherId: "200" },
+      enrollment: null,
+      instructor: true,
+    })
+  ).toBe(false);
+  expect(
+    courseRequiresEnrollment(
+      {
+        offering: { version: 3, enabled: true, priceCredits: "200", teacherId: "200" },
+        enrollment: null,
+      },
+      { userId: 15, instructors: [{ userId: 15 }] }
+    )
+  ).toBe(false);
+  await renderGate();
+  expect(host.textContent).not.toContain("enrollToWatch");
+  expect(h.enroll).not.toHaveBeenCalled();
+});
 it("charges only on explicit enrollment and refreshes playback after purchase", async () => {
   const invalidate = vi.spyOn(qc, "invalidateQueries");
   await renderGate();
@@ -97,7 +128,29 @@ it("keeps homework inside the course after enrollment", async () => {
   h.course.mockResolvedValue({ enrollment, offering: null });
   await renderHomework();
   expect(host.textContent).toContain("homeworkSection");
+  expect(host.textContent).toContain("notSubmitted");
+  expect(host.textContent).toContain("submitHint");
   expect(host.querySelector("form")).not.toBeNull();
+});
+it("separates score, feedback and badge after approval", async () => {
+  h.course.mockResolvedValue({
+    offering: null,
+    enrollment: {
+      ...enrollment,
+      status: "approved",
+      score: 100,
+      feedback: "1",
+      badgeIssuedAt: "2026-10-10T02:30:00.000Z",
+    },
+  });
+  await renderHomework();
+  expect(host.textContent).toContain("approved");
+  expect(host.textContent).toContain("yourScore");
+  expect(host.textContent).toContain("100");
+  expect(host.textContent).toContain("teacherFeedback");
+  expect(host.textContent).toContain("badgeIssued");
+  expect(host.textContent).not.toContain("100/100 · 1");
+  expect(host.querySelector("form")).toBeNull();
 });
 it("clears private homework drafts on account switch", async () => {
   h.course.mockResolvedValue({ enrollment, offering: null });

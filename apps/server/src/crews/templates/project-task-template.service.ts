@@ -1,3 +1,4 @@
+import { bindNewTaskDeliveryTemplate } from '../tasks/task-delivery-binding';
 import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import { TaskTemplateDefinitionSchema } from './project-task-template.schema';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
@@ -189,6 +190,9 @@ export class ProjectTaskTemplateService {
           ? { idempotencyKey: options.idempotencyKey }
           : {}),
         category: item.category,
+        ...(item.deliveryCategoryKey
+          ? { deliveryCategoryKey: item.deliveryCategoryKey }
+          : {}),
         roleRequirement: item.roleRequirement,
         deliveryFields: item.deliveryFields as unknown as Prisma.InputJsonValue,
         unit: item.unit,
@@ -231,6 +235,7 @@ export class ProjectTaskTemplateService {
               : {}),
           },
         });
+        await bindNewTaskDeliveryTemplate(tx, task);
         await provisionTaskDeliveryFolderTx(
           tx,
           task,

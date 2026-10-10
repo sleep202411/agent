@@ -1,3 +1,4 @@
+import { ExperienceSubtitleLayer } from "./experience-subtitles";
 import { ExperienceStillSegment } from "./experience-still-segment";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
@@ -66,6 +67,7 @@ async function loadAndPlayClip(
     isPresenting: () => boolean;
     onDeferredAutoplay: () => void;
     onPlayableResolved: (playableUri: string) => void;
+    onReady: () => void;
     signal: AbortSignal;
   }
 ): Promise<void> {
@@ -78,6 +80,7 @@ async function loadAndPlayClip(
   if (options.clipStartTime !== undefined) {
     player.currentTime = options.clipStartTime;
   }
+  options.onReady();
   if (!options.shouldAutoplay) return;
   if (!options.isPresenting()) {
     options.onDeferredAutoplay();
@@ -140,6 +143,11 @@ export function ExperienceVideoRenderer({
   const resumeAtSecondsRef = useRef<number | null>(null);
   const [reloadEpoch, setReloadEpoch] = useState(0);
 
+  const [subtitlePosition, setSubtitlePosition] = useState<{
+    identity: string;
+    positionMs: number;
+  } | null>(null);
+  const readyIdentity = useRef<string | null>(null);
   const clip = config.sequence[sequenceIndex];
   const assetId = terminalMode?.kind === "loop" ? terminalMode.assetId : clip?.assetId;
   const media = assetId
@@ -311,6 +319,11 @@ export function ExperienceVideoRenderer({
   }, [sequenceIndex, videoHoldMs]);
 
   const reportTimeline = useEffectEvent((currentTime: number) => {
+    if (isStill || readyIdentity.current !== playbackIdentity) return;
+    setSubtitlePosition({
+      identity: playbackIdentity,
+      positionMs: Math.round(currentTime * 1_000),
+    });
     onTimelineTimeMs(timelineOffsetMs + Math.round(currentTime * 1_000));
     if (isStill || terminalMode?.kind === "loop" || terminalMode?.kind === "held") return;
     const totalSeconds =
@@ -366,6 +379,7 @@ export function ExperienceVideoRenderer({
     const abort = new AbortController();
     resumeWhenPresentingRef.current = false;
     playableUriRef.current = null;
+    readyIdentity.current = null;
     const resumeAtSeconds = resumeAtSecondsRef.current;
     resumeAtSecondsRef.current = null;
     void loadAndPlayClip(player, {
@@ -379,6 +393,13 @@ export function ExperienceVideoRenderer({
       },
       onPlayableResolved: (playableUri) => {
         playableUriRef.current = playableUri;
+      },
+      onReady: () => {
+        readyIdentity.current = playbackIdentity;
+        setSubtitlePosition({
+          identity: playbackIdentity,
+          positionMs: Math.round(player.currentTime * 1000),
+        });
       },
       signal: abort.signal,
     }).catch((error: unknown) => {
@@ -429,6 +450,10 @@ export function ExperienceVideoRenderer({
       },
       seek: (seconds) => {
         player.currentTime = Math.max(0, seconds);
+        setSubtitlePosition({
+          identity: playbackIdentity,
+          positionMs: Math.round(Math.max(0, seconds) * 1000),
+        });
       },
     };
     onPlaybackHandle(renderer.instanceId, handle);
@@ -477,7 +502,10 @@ export function ExperienceVideoRenderer({
       presenting={presenting}
       onDisplayed={handleEnd}
       onHoldComplete={advanceSequence}
-      onTimelineTimeMs={onTimelineTimeMs}
+      onTimelineTimeMs={(timeMs) => {
+        setSubtitlePosition({ identity: playbackIdentity, positionMs: timeMs - timelineOffsetMs });
+        onTimelineTimeMs(timeMs);
+      }}
       onLoadError={() => onRuntimeError(copy.mediaError(assetId))}
     />
   ) : (
@@ -497,6 +525,17 @@ export function ExperienceVideoRenderer({
     </View>
   );
 
+  const subtitles = (
+    <ExperienceSubtitleLayer
+      tracks={clip.subtitles ?? []}
+      positionMs={subtitlePosition?.identity === playbackIdentity ? subtitlePosition.positionMs : 0}
+      visible={
+        presenting &&
+        subtitlePosition?.identity === playbackIdentity &&
+        (isStill || terminalMode === null)
+      }
+    />
+  );
   if (config.fit === "native") {
     return (
       <View style={styles.nativeStage}>
@@ -509,12 +548,18 @@ export function ExperienceVideoRenderer({
           ]}
         >
           {visual}
+          {subtitles}
         </View>
       </View>
     );
   }
 
-  return visual;
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      {visual}
+      {subtitles}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

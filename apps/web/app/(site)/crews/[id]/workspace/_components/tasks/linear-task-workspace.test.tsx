@@ -1,3 +1,6 @@
+vi.mock("./task-delivery-template", () => ({
+  TaskDeliveryTemplatePanel: () => <div data-template-selector />,
+}));
 vi.mock("./task-creation-workbench", () => ({
   TaskCreationWorkbench: ({
     active,
@@ -218,7 +221,12 @@ vi.mock("./task-quick-create", () => ({
     ) : null,
 }));
 vi.mock("./task-dialogs", () => ({
-  SubmitTaskDialog: () => <div data-delivery-form>Shared delivery form</div>,
+  SubmitTaskDialog: ({ readOnly }: { readOnly?: boolean }) =>
+    readOnly ? (
+      <div data-delivery-preview>Delivery preview</div>
+    ) : (
+      <div data-delivery-form>Shared delivery form</div>
+    ),
 }));
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {
@@ -660,4 +668,22 @@ it("opens editing when the same task detail is already mounted", async () => {
   )!;
   await act(async () => edit.click());
   expect(document.querySelector('[data-editing="true"]')).not.toBeNull();
+});
+
+it("closes the inline submission from its visible header button", async () => {
+  state.locale = "en-US";
+  state.canSubmit = true;
+  state.assignee = "alice";
+  state.taskStatus = "open";
+  await render(undefined, false, true);
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((b) => b.textContent === "Submit from workbench")!
+      .click()
+  );
+  expect(document.querySelector("[data-delivery-form]")).not.toBeNull();
+  const close = document.querySelector<HTMLButtonElement>('button[aria-label="Close"]');
+  expect(close).not.toBeNull();
+  await act(async () => close!.click());
+  expect(document.querySelector("[data-delivery-form]")).toBeNull();
 });

@@ -54,6 +54,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
+import { TaskDeliveryTemplatePanel } from "./task-delivery-template";
 import { TaskIssueDetail } from "./task-issue-detail";
 import { TaskProjectView } from "./task-project-views";
 import { ProjectSettingsDialog } from "./task-project-settings";
@@ -120,6 +121,7 @@ function LinearTaskSession({
 }: LinearTaskWorkspaceProps) {
   const [inviteTask, setInviteTask] = useState<CrewTaskListItemDTO | null>(null);
   const t = useTranslations("crewTaskProject");
+  const commonT = useTranslations("common");
   const projectQuery = useCrewTaskProject(crewId);
   const summaryQuery = useCrewTaskSummary(crewId);
   const productionOverviewQuery = useCrewProductionOverview(crewId);
@@ -159,6 +161,7 @@ function LinearTaskSession({
     state: CrewTaskWorkflowStateDTO | null;
     afterStateId: string | null;
   } | null>(null);
+  const [workbenchToolbar, setWorkbenchToolbar] = useState<HTMLDivElement | null>(null);
   const [submissionOpen, setSubmissionOpen] = useState(true);
   const [favorite, setFavorite] = useState(false);
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
@@ -411,6 +414,12 @@ function LinearTaskSession({
               </button>
             ) : null}
           </>
+          <div
+            ref={setWorkbenchToolbar}
+            className={
+              section === "production" ? "ml-auto flex flex-wrap items-center gap-2" : "hidden"
+            }
+          />
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <button
               type="button"
@@ -571,6 +580,7 @@ function LinearTaskSession({
       ) : null}
 
       <TaskCreationWorkbench
+        toolbarTarget={workbenchToolbar}
         crewId={crewId}
         crewName={crewName}
         project={project}
@@ -851,8 +861,19 @@ function LinearTaskSession({
             ["open", "in_progress", "revision_requested"].includes(taskQuery.data.status) ? (
             <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden p-6">
               <div className="shrink-0 space-y-6">
-                <h2 className="text-lg font-semibold">{taskQuery.data.title}</h2>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">{taskQuery.data.title}</h2>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={commonT("close")}
+                    onClick={() => selectTask(null)}
+                  >
+                    <IconX className="size-4" />
+                  </Button>
+                </div>
                 <TaskDeliveryProgress status={taskQuery.data.status} />
+                {isOwner && <TaskDeliveryTemplatePanel task={taskQuery.data} canManage />}
               </div>
               <SubmitTaskDialog
                 inline
@@ -867,31 +888,62 @@ function LinearTaskSession({
               />
             </div>
           ) : taskQuery.data ? (
-            <TaskIssueDetail
-              key={`${taskQuery.data.id}:${submissionOpen ? "view" : "edit"}`}
-              initiallyEditing={!submissionOpen && isOwner}
-              task={taskQuery.data}
-              members={members}
-              isOwner={isOwner}
-              canCreate={canCreate}
-              onPublishTask={onPublishTask}
-              onInviteTask={canInvite ? setInviteTask : undefined}
-              canReview={canReview}
-              canSubmitAssigned={canSubmitAssigned}
-              canComment={canComment}
-              canWork={
-                isOwner ||
-                Boolean(
-                  viewerUserId &&
-                  taskQuery.data.assignees.some((item) => item.userId === viewerUserId)
-                )
-              }
-              viewerUserId={viewerUserId}
-              displays={displays}
-              onClose={() => selectTask(null)}
-              onSubmit={() => setSubmissionOpen(true)}
-              onReviewed={() => undefined}
-            />
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold">{taskQuery.data.title}</h2>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={commonT("close")}
+                  onClick={() => selectTask(null)}
+                >
+                  <IconX className="size-4" />
+                </Button>
+              </div>
+              <TaskDeliveryProgress status={taskQuery.data.status} />
+              {isOwner && <TaskDeliveryTemplatePanel task={taskQuery.data} canManage />}
+              <div className="flex min-h-[28rem] flex-col">
+                <SubmitTaskDialog
+                  inline
+                  readOnly
+                  open
+                  crewId={crewId}
+                  task={taskQuery.data}
+                  onOpenChange={(open) => {
+                    if (!open) selectTask(null);
+                  }}
+                  onSubmitted={() => selectTask(null)}
+                />
+              </div>
+              <details open={taskQuery.data.status === "submitted"}>
+                <summary className="cursor-pointer py-3">{t("deliveryHistory")}</summary>
+                <TaskIssueDetail
+                  key={`${taskQuery.data.id}:${submissionOpen ? "view" : "edit"}`}
+                  initiallyEditing={!submissionOpen && isOwner}
+                  task={taskQuery.data}
+                  members={members}
+                  isOwner={isOwner}
+                  canCreate={canCreate}
+                  onPublishTask={onPublishTask}
+                  onInviteTask={canInvite ? setInviteTask : undefined}
+                  canReview={canReview}
+                  canSubmitAssigned={canSubmitAssigned}
+                  canComment={canComment}
+                  canWork={
+                    isOwner ||
+                    Boolean(
+                      viewerUserId &&
+                      taskQuery.data.assignees.some((item) => item.userId === viewerUserId)
+                    )
+                  }
+                  viewerUserId={viewerUserId}
+                  displays={displays}
+                  onClose={() => selectTask(null)}
+                  onSubmit={() => setSubmissionOpen(true)}
+                  onReviewed={() => undefined}
+                />
+              </details>
+            </div>
           ) : null}
         </SheetContent>
       </Sheet>

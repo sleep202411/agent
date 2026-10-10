@@ -42,6 +42,21 @@ class InputTests(unittest.TestCase):
         self.write(path, '{"version":"2"}' if path.endswith('.json') else 'changed')
         newer = self.commit()
         self.assertEqual(images.inputs(self.root, self.source, service, region) == images.inputs(self.root, newer, service, region), expected)
+    def test_studio_tracks_imported_web_translations_in_both_regions(self):
+        from release_inputs import inputs
+        self.write('apps/studio/package.json', '{"name":"studio"}')
+        self.write('deploy/aliyun-sg/production-build.py', 'def build_images():\n    command = ["docker", "build"]\n')
+        self.write('apps/web/messages/en-US.json', '{"subtitles":"old"}')
+        before = self.commit()
+        self.write('apps/web/messages/en-US.json', '{"subtitles":"new"}')
+        after = self.commit()
+        for region in ('cn', 'com'):
+            with self.subTest(region=region):
+                self.assertNotEqual(inputs(self.root, before, 'studio', region),
+                                    inputs(self.root, after, 'studio', region))
+                self.assertEqual(inputs(self.root, before, 'server', region),
+                                 inputs(self.root, after, 'server', region))
+
     def test_removing_mobile_handoff_reports_preserves_all_regional_inputs(self):
         from release_inputs import inputs
         recipe = 'deploy/cn-remote-build-services.sh'

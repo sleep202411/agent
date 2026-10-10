@@ -18,7 +18,7 @@ interface PageFilters {
 
 /**
  * Courses plaza — public catalog from Java `/project/courses`.
- * Category / price filters stay visual-only for now (all free).
+ * Price filters use community-credit sale terms from the list payload.
  */
 export default function CoursesPage() {
   const t = useTranslations("courses");
@@ -29,7 +29,8 @@ export default function CoursesPage() {
   });
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const { isLoading, error, courses, filteredCourses, refetch, isFetching } = usePublicCourseList(
-    filters.searchQuery
+    filters.searchQuery,
+    filters.selectedPriceRange
   );
 
   function handleFiltersChange(updates: Partial<PageFilters>) {

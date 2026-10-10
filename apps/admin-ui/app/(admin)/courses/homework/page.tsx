@@ -1,5 +1,5 @@
 import { CourseHomeworkPanel } from "@/components/admin/courses/course-homework-panel";
-import { loadAdminHomework } from "@/lib/admin-academy-learning";
+import { loadAdminHomework, loadAdminTeachingIncome } from "@/lib/admin-academy-learning";
 import { requireContentPagePermission } from "@/lib/admin-content-permission";
 
 export const dynamic = "force-dynamic";
@@ -10,17 +10,23 @@ export default async function CourseHomeworkPage({
   searchParams: Promise<{ after?: string }>;
 }) {
   const session = await requireContentPagePermission("courses.read");
-  const result = await loadAdminHomework("submitted", (await searchParams).after);
+  const after = (await searchParams).after;
+  const [homework, catalog, income] = await Promise.all([
+    loadAdminHomework("submitted", after),
+    loadAdminHomework("all"),
+    loadAdminTeachingIncome(),
+  ]);
   return (
     <CourseHomeworkPanel
       siteLabel={session.site.label}
       databaseLabel={session.site.databaseLabel}
-      nextCursor={result.data?.nextCursor ?? null}
-      initialItems={result.data?.items ?? []}
-      loadError={result.error}
+      displayName={session.user.displayName}
+      initialItems={homework.data?.items ?? []}
+      metricItems={catalog.data?.items ?? homework.data?.items ?? []}
+      summary={income.data}
+      loadError={homework.error || catalog.error || income.error}
       canReview={Boolean(session.user.permissions.includes("courses.write"))}
-      scope={result.data?.scope ?? (session.user.platformUserId ? "lecturer" : "operator")}
-      platformUserId={result.data?.platformUserId ?? session.user.platformUserId ?? null}
+      scope={homework.data?.scope ?? (session.user.platformUserId ? "lecturer" : "operator")}
     />
   );
 }

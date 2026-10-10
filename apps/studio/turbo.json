@@ -1,0 +1,8 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "$TURBO_ROOT$/apps/web/messages/**"]
+    }
+  }
+}

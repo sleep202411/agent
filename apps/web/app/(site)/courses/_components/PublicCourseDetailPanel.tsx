@@ -53,44 +53,47 @@ export function PublicCourseDetailPanel({
           </p>
         ) : null}
 
-        <CourseCertificate key={detail.courseId} courseId={detail.courseId} />
+        <div className="mt-4 space-y-3 border-t border-[#1d1d29] pt-3">
+          <CourseCertificate key={detail.courseId} courseId={detail.courseId} />
+          {detail.instructors.length > 0 ? (
+            <div className="flex gap-2.5">
+              <span className="text-[11px] font-medium leading-7 text-[#6f7585]">
+                {t("instructors")}
+              </span>
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                {detail.instructors.map((instructor) => {
+                  const name = instructor.nickName.trim() || t("unknownInstructor");
+                  return (
+                    <Link
+                      key={instructor.userId}
+                      href={localizePath(`/creators/${encodeUserId(instructor.userId)}`, locale)}
+                      className="inline-flex max-w-[48%] items-center gap-1.5 rounded-full bg-[#111119] py-0.5 pl-0.5 pr-2 text-[12px] font-medium text-[#d5dbe8] transition-colors hover:bg-[#181822] hover:text-white"
+                    >
+                      <UserAvatar
+                        src={instructor.avatar}
+                        seed={instructor.userId}
+                        name={name}
+                        size={20}
+                        className="size-5 shrink-0"
+                      />
+                      <span className="truncate">{name}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          {detail.updateTime ? (
+            <p className="text-[11px] text-[#5c6374]">
+              {formatUpdateTime(detail.updateTime, locale)}
+            </p>
+          ) : null}
+        </div>
         {showHomework ? (
           <CourseHomeworkPanel
             key={`learning:${detail.courseId}`}
             courseId={String(detail.courseId)}
           />
-        ) : null}
-        {detail.instructors.length > 0 ? (
-          <div className="mt-3 flex flex-col gap-1.5">
-            <span className="text-[11px] font-medium text-[#6f7585]">{t("instructors")}</span>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              {detail.instructors.map((instructor) => {
-                const name = instructor.nickName.trim() || t("unknownInstructor");
-                return (
-                  <Link
-                    key={instructor.userId}
-                    href={localizePath(`/creators/${encodeUserId(instructor.userId)}`, locale)}
-                    className="inline-flex max-w-[46%] items-center gap-1.5 text-[12px] font-medium text-[#d5dbe8] transition-colors hover:text-white"
-                  >
-                    <UserAvatar
-                      src={instructor.avatar}
-                      seed={instructor.userId}
-                      name={name}
-                      size={22}
-                      className="size-[22px] shrink-0"
-                    />
-                    <span className="truncate">{name}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        {detail.updateTime ? (
-          <p className="mt-2.5 text-[11px] text-[#6f7585]">
-            {formatUpdateTime(detail.updateTime, locale)}
-          </p>
         ) : null}
       </div>
 

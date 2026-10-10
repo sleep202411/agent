@@ -31,12 +31,7 @@ function currentBuildCode(): number | null {
   return null;
 }
 
-function promptUpdate(
-  versionName: string,
-  notes: string | undefined,
-  url: string,
-  forced: boolean
-) {
+function promptUpdate(versionName: string, notes: string | undefined, url: string) {
   const openUpdate = async () => {
     try {
       await Linking.openURL(url);
@@ -44,19 +39,15 @@ function promptUpdate(
       Alert.alert(t("update.openFailed"), error instanceof Error ? error.message : undefined);
     }
   };
-  const buttons = forced
-    ? [{ text: t("update.updateNow"), onPress: () => void openUpdate() }]
-    : [
-        { text: t("update.later"), style: "cancel" as const },
-        { text: t("update.updateNow"), onPress: () => void openUpdate() },
-      ];
+  const buttons = [
+    { text: t("update.later"), style: "cancel" as const },
+    { text: t("update.updateNow"), onPress: () => void openUpdate() },
+  ];
   Alert.alert(
     `${t("update.availableTitle")} ${versionName}`,
     notes || t("update.availableDetail"),
     buttons,
-    // A forced prompt re-surfaces on next launch anyway; cancelable:false just
-    // stops the Android back button from silently dismissing it.
-    { cancelable: !forced }
+    { cancelable: true }
   );
 }
 
@@ -67,10 +58,8 @@ export async function checkForUpdate({ manual = false } = {}): Promise<void> {
   const current = currentBuildCode();
   if (current === null) return;
 
-  // Always fetch, even on auto launches: we can't know whether an update is
-  // FORCED (current < minSupportedCode) without the manifest, and a forced
-  // prompt must re-surface every launch. The throttle below gates only the
-  // dismissable prompt, never the network call.
+  // Mobile updates remain optional, including when the manifest advertises
+  // a higher minimum build. Only an explicit user action opens the update URL.
   let release;
   try {
     release = await fetchLatestRelease();
@@ -84,15 +73,12 @@ export async function checkForUpdate({ manual = false } = {}): Promise<void> {
     return;
   }
 
-  const forced = release.minSupportedCode !== undefined && current < release.minSupportedCode;
-
-  // Optional auto prompts are throttled to once/day so we don't nag on every
-  // cold start; a forced update ignores the throttle and re-prompts until taken.
-  if (!manual && !forced) {
+  // Automatic prompts are limited to once per day; manual checks bypass this.
+  if (!manual) {
     const last = Number(await getStoredString(LAST_CHECK_KEY).catch(() => null));
     if (Number.isFinite(last) && Date.now() - last < AUTO_CHECK_INTERVAL_MS) return;
   }
   if (!manual) void setStoredString(LAST_CHECK_KEY, String(Date.now())).catch(() => {});
 
-  promptUpdate(release.versionName, release.releaseNotes, release.downloadUrl, forced);
+  promptUpdate(release.versionName, release.releaseNotes, release.downloadUrl);
 }

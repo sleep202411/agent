@@ -30,10 +30,11 @@ export const learningApi = {
       { signal }
     ),
   course: (courseId: string, signal?: AbortSignal) =>
-    api.get<{ offering: Offering | null; enrollment: Enrollment | null }>(
-      `/aurora/academy/learning/courses/${encodeURIComponent(courseId)}`,
-      { signal }
-    ),
+    api.get<{
+      offering: Offering | null;
+      enrollment: Enrollment | null;
+      instructor: boolean;
+    }>(`/aurora/academy/learning/courses/${encodeURIComponent(courseId)}`, { signal }),
   enroll: (courseId: string, expectedVersion: number, signal?: AbortSignal) =>
     api.post<Enrollment>(
       `/aurora/academy/learning/courses/${encodeURIComponent(courseId)}/enroll`,

@@ -185,3 +185,67 @@ it("cancels recovery on account change and ignores the old response", async () =
   expect(host.textContent).not.toContain("The library doors open");
   expect(state.get).toHaveBeenCalledTimes(1);
 });
+
+it("restarts an expired recovered preview without offering a doomed task creation", async () => {
+  localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+  state.get.mockResolvedValue({ ...preview, createdAt: "2020-01-01T00:00:00Z" });
+  await mount();
+  expect(host.textContent).toContain("This preview has expired.");
+  expect(host.textContent).not.toContain("Create 1 tasks");
+  await click("New analysis");
+  expect(localStorage.getItem("crew-pdf-import:crew:user")).toBeNull();
+  expect(host.textContent).not.toContain("This preview has expired.");
+  expect(state.post).not.toHaveBeenCalled();
+});
+it("honors server expiry even when the browser clock considers the preview fresh", async () => {
+  localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+  state.get.mockResolvedValue({ ...preview, createdAt: new Date().toISOString() });
+  state.post.mockRejectedValue(
+    new CrewApiError(409, {
+      code: "PREVIEW_EXPIRED",
+      message: "This preview has expired. Analyze the PDF again.",
+    })
+  );
+  await mount();
+  await click("Create 1 tasks");
+  expect(host.textContent).not.toContain("Create 1 tasks");
+  await click("New analysis");
+  expect(localStorage.getItem("crew-pdf-import:crew:user")).toBeNull();
+});
+
+it("reports background progress without repeating analysis when its window is hidden", async () => {
+  vi.useFakeTimers();
+  try {
+    localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+    state.get
+      .mockResolvedValueOnce({ ...preview, status: "queued", tasks: [] })
+      .mockResolvedValue(preview);
+    const onStatus = vi.fn();
+    await act(async () => root.render(<WorkbenchPdfImport crewId="crew" onStatus={onStatus} />));
+    expect(onStatus).toHaveBeenCalledWith("queued");
+    host.hidden = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(onStatus).toHaveBeenCalledWith("ready");
+    host.hidden = false;
+    expect(host.textContent).toContain("The library doors open");
+    expect(state.post).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("allows documents up to 20 MiB and blocks larger uploads", async () => {
+  await mount();
+  const input = host.querySelector<HTMLInputElement>("input[type=file]")!;
+  for (const size of [20 * 1024 * 1024, 20 * 1024 * 1024 + 1]) {
+    const file = new File(["%PDF"], "script.pdf", { type: "application/pdf" });
+    Object.defineProperty(file, "size", { value: size });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    const button = [...host.querySelectorAll("button")].find(
+      (b) => b.textContent === "Analyze document"
+    )!;
+    expect(button.disabled).toBe(size > 20 * 1024 * 1024);
+  }
+});

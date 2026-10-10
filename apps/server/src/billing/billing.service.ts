@@ -92,6 +92,7 @@ import type {
   GetAdminWorkspaceWalletCreditQueryInput,
   ListAdminWorkspacesQueryInput,
   ListAdminComputeMemberUsageQuery,
+  ListAdminComputeProjectUsageQuery,
   CreateAdminWalletAdjustmentInput,
   ListAdminBillingOrdersQuery,
   ListAdminBillingProviderEventsQuery,
@@ -1131,6 +1132,275 @@ export class BillingService {
       memberCount: Number(rows[0].memberCount),
       workspaceCount: Number(rows[0].workspaceCount),
       members,
+    };
+  }
+
+  /**
+   * Admin project consumption rolled up by workspace pot. Same settle/debit
+   * compute ledger as member usage; grouped workspace → project so ops can
+   * see which projects drained which wallet.
+   */
+  async listAdminComputeProjectUsage(query: ListAdminComputeProjectUsageQuery) {
+    const workspaceOffset = query.workspaceOffset ?? 0;
+    const projectOffset = query.projectOffset ?? 0;
+    if (projectOffset && !query.workspaceId)
+      throw new BadRequestException(
+        'Project pagination requires a workspaceId.',
+      );
+    const from = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
+    const workspaceIdFilter = query.workspaceId
+      ? Prisma.sql`AND a.owner_id = ${query.workspaceId}`
+      : Prisma.empty;
+    const kindFilter =
+      query.workspaceKind === 'personal'
+        ? Prisma.sql`AND w.default_for_user_id IS NOT NULL`
+        : query.workspaceKind === 'shared'
+          ? Prisma.sql`AND w.default_for_user_id IS NULL`
+          : Prisma.empty;
+    const workspaceNeedle = query.workspaceQuery?.trim();
+    const workspaceNameFilter = workspaceNeedle
+      ? Prisma.sql`AND w.name ILIKE ${likeContainsPattern(workspaceNeedle)} ESCAPE '\\'`
+      : Prisma.empty;
+    const projectNeedle = query.projectQuery?.trim();
+    const projectNameFilter = projectNeedle
+      ? Prisma.sql`AND EXISTS (
+          SELECT 1 FROM platform_projects p
+          WHERE p.id = t.project_id
+            AND p.deleted_at IS NULL
+            AND p.name ILIKE ${likeContainsPattern(projectNeedle)} ESCAPE '\\'
+        )`
+      : Prisma.empty;
+    const sort = query.sort ?? 'credits';
+    const recent = sort === 'recent';
+    const workspaceSelectOrder = recent
+      ? Prisma.sql`last_spent_at DESC NULLS LAST, credits DESC, workspace ASC`
+      : Prisma.sql`credits DESC, workspace ASC`;
+    const projectWindowOrder = recent
+      ? Prisma.sql`p.last_spent_at DESC NULLS LAST, p.credits DESC, p.project ASC NULLS LAST`
+      : Prisma.sql`p.credits DESC, p.project ASC NULLS LAST`;
+    const detailOrder = recent
+      ? Prisma.sql`d.workspace_last_spent_at DESC NULLS LAST, d.workspace_credits DESC, d.workspace ASC, d.last_spent_at DESC NULLS LAST, d.credits DESC, d.project ASC NULLS LAST`
+      : Prisma.sql`d.workspace_credits DESC, d.workspace ASC, d.credits DESC, d.project ASC NULLS LAST`;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        workspaceId: string;
+        projectId: string | null;
+        credits: string;
+        jobs: string;
+        imageJobs: string;
+        videoJobs: string;
+        lastSpentAt: Date | string | null;
+        workspaceCredits: string;
+        workspaceJobs: string;
+        workspaceImageJobs: string;
+        workspaceVideoJobs: string;
+        workspaceProjects: string;
+        workspaceLastSpentAt: Date | string | null;
+        totalCredits: string;
+        workspaceCount: string;
+        projectCount: string;
+      }>
+    >(Prisma.sql`
+      WITH pairs AS (
+        SELECT a.owner_id AS workspace, t.project_id AS project,
+               SUM(e.amount) AS credits, COUNT(*) AS jobs,
+               COUNT(*) FILTER (WHERE j.type::text = 'image') AS image_jobs,
+               COUNT(*) FILTER (WHERE j.type::text = 'video') AS video_jobs,
+               MAX(e.created_at) AS last_spent_at
+        FROM wallet_ledger_entries e
+        JOIN wallet_transactions t ON t.id = e.transaction_id
+        JOIN wallet_accounts a ON a.id = e.account_id
+        JOIN workspaces w ON w.id::text = a.owner_id AND w.deleted_at IS NULL
+        LEFT JOIN ai_jobs j ON t.source_type = 'ai_job' AND j.id::text = t.source_id
+        WHERE a.owner_type::text = 'workspace'
+          AND a.currency::text = 'compute_point'
+          AND a.balance_kind::text = 'consumable'
+          AND t.status = 'posted'
+          AND e.entry_type::text IN ('settle', 'debit')
+          AND e.created_at >= ${from}
+          ${workspaceIdFilter} ${kindFilter} ${workspaceNameFilter} ${projectNameFilter}
+        GROUP BY a.owner_id, t.project_id
+      ), totals AS (
+        SELECT SUM(credits)::text AS credits,
+               COUNT(DISTINCT workspace)::text AS workspaces,
+               COUNT(DISTINCT COALESCE(project::text, ''))::text AS projects
+        FROM pairs
+      ), selected AS (
+        SELECT workspace, SUM(credits) AS credits, SUM(jobs) AS jobs,
+               SUM(image_jobs) AS image_jobs, SUM(video_jobs) AS video_jobs,
+               COUNT(*) AS projects, MAX(last_spent_at) AS last_spent_at
+        FROM pairs GROUP BY workspace ORDER BY ${workspaceSelectOrder} LIMIT ${query.limit} OFFSET ${workspaceOffset}
+      ), details AS (
+        SELECT p.*, s.credits AS workspace_credits, s.jobs AS workspace_jobs,
+               s.image_jobs AS workspace_image_jobs, s.video_jobs AS workspace_video_jobs,
+               s.projects AS workspace_projects, s.last_spent_at AS workspace_last_spent_at,
+               ROW_NUMBER() OVER (
+                 PARTITION BY p.workspace ORDER BY ${projectWindowOrder}
+               ) AS ordinal
+        FROM pairs p JOIN selected s ON s.workspace = p.workspace
+      )
+      SELECT d.workspace AS "workspaceId", d.project AS "projectId",
+             d.credits::text AS credits, d.jobs::text AS jobs,
+             d.image_jobs::text AS "imageJobs", d.video_jobs::text AS "videoJobs",
+             d.last_spent_at AS "lastSpentAt",
+             d.workspace_credits::text AS "workspaceCredits",
+             d.workspace_jobs::text AS "workspaceJobs",
+             d.workspace_image_jobs::text AS "workspaceImageJobs",
+             d.workspace_video_jobs::text AS "workspaceVideoJobs",
+             d.workspace_projects::text AS "workspaceProjects",
+             d.workspace_last_spent_at AS "workspaceLastSpentAt",
+             t.credits AS "totalCredits", t.workspaces AS "workspaceCount",
+             t.projects AS "projectCount"
+      FROM details d CROSS JOIN totals t WHERE d.ordinal > ${projectOffset} AND d.ordinal <= ${projectOffset + 40}
+      ORDER BY ${detailOrder}
+    `);
+
+    if (rows.length === 0) {
+      return {
+        rangeDays: query.days,
+        workspaceKind: query.workspaceKind,
+        sort,
+        workspaceId: query.workspaceId ?? null,
+        nextWorkspaceOffset: null,
+        totalCredits: '0',
+        workspaceCount: 0,
+        projectCount: 0,
+        workspaces: [],
+      };
+    }
+
+    const workspaceIdPattern =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const workspaceIds = [
+      ...new Set(
+        rows
+          .map((row) => row.workspaceId)
+          .filter((id) => workspaceIdPattern.test(id)),
+      ),
+    ];
+    const workspaces =
+      workspaceIds.length === 0
+        ? []
+        : await this.prisma.workspace.findMany({
+            where: { id: { in: workspaceIds } },
+            select: {
+              id: true,
+              name: true,
+              defaultForUserId: true,
+              status: true,
+            },
+          });
+    const workspaceById = new Map(workspaces.map((ws) => [ws.id, ws]));
+
+    const projectIds = [
+      ...new Set(
+        rows
+          .map((row) => row.projectId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const projects = projectIds.length
+      ? await this.prisma.platformProject.findMany({
+          where: { id: { in: projectIds } },
+          select: { id: true, name: true, deletedAt: true },
+        })
+      : [];
+    const projectNameById = new Map(
+      projects
+        .filter((project) => project.deletedAt == null)
+        .map((project) => [project.id, project.name]),
+    );
+
+    type ProjectAgg = {
+      projectId: string | null;
+      credits: bigint;
+      jobs: number;
+      imageJobs: number;
+      videoJobs: number;
+      lastSpentAt: string | null;
+    };
+    type WorkspaceAgg = {
+      workspaceId: string;
+      totalCredits: bigint;
+      totalJobs: number;
+      totalImageJobs: number;
+      totalVideoJobs: number;
+      projectCount: number;
+      lastSpentAt: string | null;
+      projects: ProjectAgg[];
+    };
+    const byWorkspace = new Map<string, WorkspaceAgg>();
+    for (const row of rows) {
+      let workspace = byWorkspace.get(row.workspaceId);
+      if (!workspace) {
+        workspace = {
+          workspaceId: row.workspaceId,
+          totalCredits: BigInt(row.workspaceCredits),
+          totalJobs: Number(row.workspaceJobs),
+          totalImageJobs: Number(row.workspaceImageJobs),
+          totalVideoJobs: Number(row.workspaceVideoJobs),
+          projectCount: Number(row.workspaceProjects),
+          lastSpentAt: isoTimestamp(row.workspaceLastSpentAt),
+          projects: [],
+        };
+        byWorkspace.set(row.workspaceId, workspace);
+      }
+      workspace.projects.push({
+        projectId: row.projectId,
+        credits: BigInt(row.credits),
+        jobs: Number(row.jobs),
+        imageJobs: Number(row.imageJobs),
+        videoJobs: Number(row.videoJobs),
+        lastSpentAt: isoTimestamp(row.lastSpentAt),
+      });
+    }
+
+    return {
+      rangeDays: query.days,
+      workspaceKind: query.workspaceKind,
+      sort,
+      workspaceId: query.workspaceId ?? null,
+      nextWorkspaceOffset:
+        workspaceOffset + byWorkspace.size < Number(rows[0].workspaceCount)
+          ? workspaceOffset + byWorkspace.size
+          : null,
+      totalCredits: rows[0].totalCredits,
+      workspaceCount: Number(rows[0].workspaceCount),
+      projectCount: Number(rows[0].projectCount),
+      workspaces: [...byWorkspace.values()]
+        .sort((a, b) => compareProjectUsage(a, b, recent))
+        .map((workspace) => {
+          const meta = workspaceById.get(workspace.workspaceId);
+          return {
+            workspaceId: workspace.workspaceId,
+            workspaceName: meta?.name ?? workspace.workspaceId,
+            workspaceStatus: meta?.status ?? null,
+            isPersonal: Boolean(meta?.defaultForUserId),
+            lastSpentAt: workspace.lastSpentAt,
+            totalCredits: workspace.totalCredits.toString(),
+            totalJobs: workspace.totalJobs,
+            totalImageJobs: workspace.totalImageJobs,
+            totalVideoJobs: workspace.totalVideoJobs,
+            projectCount: workspace.projectCount,
+            nextProjectOffset:
+              projectOffset + workspace.projects.length < workspace.projectCount
+                ? projectOffset + workspace.projects.length
+                : null,
+            projects: workspace.projects
+              .sort((a, b) => compareProjectUsage(a, b, recent))
+              .map((project) => ({
+                projectId: project.projectId,
+                projectName: project.projectId
+                  ? (projectNameById.get(project.projectId) ?? null)
+                  : null,
+                lastSpentAt: project.lastSpentAt,
+                credits: project.credits.toString(),
+                jobs: project.jobs,
+                imageJobs: project.imageJobs,
+                videoJobs: project.videoJobs,
+              })),
+          };
+        }),
     };
   }
 
@@ -9533,4 +9803,44 @@ function refundIntentFingerprint(
 /** Escape `\`, `%`, `_` so user input is treated as a literal ILIKE substring. */
 function likeContainsPattern(raw: string): string {
   return `%${raw.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+}
+
+function isoTimestamp(value: Date | string | null | undefined) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function usageCredits(row: { credits?: bigint; totalCredits?: bigint }) {
+  return row.credits ?? row.totalCredits ?? 0n;
+}
+
+function compareProjectUsage(
+  a: {
+    lastSpentAt: string | null;
+    credits?: bigint;
+    totalCredits?: bigint;
+    workspaceId?: string;
+    projectId?: string | null;
+  },
+  b: {
+    lastSpentAt: string | null;
+    credits?: bigint;
+    totalCredits?: bigint;
+    workspaceId?: string;
+    projectId?: string | null;
+  },
+  recent: boolean,
+) {
+  if (recent) {
+    const left = a.lastSpentAt ?? '';
+    const right = b.lastSpentAt ?? '';
+    if (left !== right) return right.localeCompare(left);
+  }
+  const leftCredits = usageCredits(a);
+  const rightCredits = usageCredits(b);
+  if (leftCredits !== rightCredits) return rightCredits > leftCredits ? 1 : -1;
+  return (a.workspaceId ?? a.projectId ?? '').localeCompare(
+    b.workspaceId ?? b.projectId ?? '',
+  );
 }

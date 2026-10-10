@@ -35,7 +35,7 @@ let root: Root | undefined;
 let host: HTMLDivElement;
 const onSubmitted = vi.fn();
 const onOpenChange = vi.fn();
-function render(taskId: string, open = true, extra: Partial<CrewTaskDTO> = {}) {
+function render(taskId: string, open = true, extra: Partial<CrewTaskDTO> = {}, readOnly = false) {
   if (!root) {
     host = document.createElement("div");
     document.body.append(host);
@@ -45,6 +45,7 @@ function render(taskId: string, open = true, extra: Partial<CrewTaskDTO> = {}) {
     root!.render(
       <SubmitTaskDialog
         open={open}
+        readOnly={readOnly}
         crewId="crew-1"
         task={{ id: taskId, ...extra } as CrewTaskDTO}
         onSubmitted={onSubmitted}
@@ -321,8 +322,7 @@ it("requires nonblank text and a still-attached file, preserving answers after v
 it("shows default delivery slots and persists the link with the submission note", async () => {
   submit.mockResolvedValue({ id: "task-1" });
   render("task-1");
-  for (const label of ["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"])
-    expect(document.body.textContent).toContain(label);
+  for (const label of ["sourceFiles"]) expect(document.body.textContent).toContain(label);
   const input = document.querySelector<HTMLInputElement>('input[aria-label="deliveryLink"]')!;
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -406,4 +406,24 @@ it("allows the linked canvas as delivery and shows the existing task destination
   submit.mockResolvedValue({ id: "task-1" });
   await act(async () => clickSubmit());
   expect(submit).toHaveBeenCalledWith({ taskId: "task-1", note: "", assetNodeIds: [] });
+});
+
+it("does not upload or submit from a read-only delivery preview", async () => {
+  render("task-1", true, { taskKind: "script" }, true);
+  expect(document.querySelector("fieldset")!.disabled).toBe(true);
+  await act(async () => clickSubmit());
+  expect(submit).not.toHaveBeenCalled();
+});
+it.each(["script", "art", "music"] as const)(
+  "does not show video-specific slots for %s work",
+  (taskKind) => {
+    render("task-1", true, { taskKind });
+    expect(document.body.textContent).toContain("sourceFiles");
+    expect(document.body.textContent).not.toContain("subtitledVideo");
+  }
+);
+it("retains video deliverables for final editing", () => {
+  render("task-1", true, { taskKind: "edit" });
+  expect(document.body.textContent).toContain("subtitledVideo");
+  expect(document.body.textContent).toContain("subtitleFile");
 });

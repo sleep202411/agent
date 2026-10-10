@@ -250,6 +250,8 @@ describe('Episode task templates', () => {
   it('scopes template reuse to the selected episode and propagates real dependency failures', async () => {
     const service = new ProjectTaskTemplateService({} as never);
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      $executeRaw: jest.fn(),
       crewTask: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
@@ -478,6 +480,8 @@ describe('Episode template task custom fields', () => {
   it('persists per-task fields in the same task creation statement', async () => {
     const { template } = setup();
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      $executeRaw: jest.fn(),
       crewTask: {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),

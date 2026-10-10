@@ -48,6 +48,8 @@ vi.mock("@/components/ui/dialog", () => ({
 }));
 const state = vi.hoisted(() => ({
   userId: "user",
+  isOwner: true,
+  computeData: undefined as unknown,
   assetQuery: vi.fn(),
   tasks: [] as Array<{
     id: string;
@@ -71,6 +73,9 @@ const state = vi.hoisted(() => ({
   episode: vi.fn(),
   refresh: vi.fn(),
   episodeId: null as string | null,
+}));
+vi.mock("@/app/(site)/crews/_hooks/use-compute-requests", () => ({
+  useComputeRequests: () => ({ data: state.computeData, isError: false }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: (ns: string) => (key: string, values?: Record<string, unknown>) => {
@@ -198,6 +203,8 @@ beforeEach(() => {
   });
   state.refresh.mockReset();
   state.tasks = [];
+  state.isOwner = true;
+  state.computeData = undefined;
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -220,7 +227,21 @@ async function render(
         crewId={crewId}
         crewName="Crew"
         project={project}
-        members={[]}
+        members={[
+          {
+            id: "member",
+            crewId,
+            userId: state.userId,
+            isOwner: canManage && state.isOwner,
+            status: "active",
+            joinedVia: "creation",
+            positions: [],
+            policyKeys: [],
+            joinedAt: "",
+            removedAt: null,
+            version: 1,
+          },
+        ]}
         canManage={canManage}
         canSubmitAssigned
         canManageEpisodes={canManage}
@@ -473,8 +494,13 @@ it("restores an interrupted create as uncertain instead of retrying", async () =
 it("exposes task initialization and category creation", async () => {
   await render();
   expect(button("Search Assets…")).toBeUndefined();
-  expect(button("Create Task")).toBeDefined();
-  expect(button("Initialize tasks")).toBeDefined();
+  expect(button("Create Task")).toBeUndefined();
+  expect(button("All")).toBeUndefined();
+  expect(
+    [...host.querySelectorAll("button")].filter((item) =>
+      item.textContent?.includes("Initialize tasks")
+    )
+  ).toHaveLength(1);
   expect(button("Create Task · Scripts")).toBeDefined();
 });
 it("restores a reviewed batch without altering its idempotent command", async () => {
@@ -567,7 +593,7 @@ it("shows deadline and named assignee without staging or reward clutter", async 
     })
   );
   await render();
-  expect(host.textContent).toContain("2026-10-03");
+  expect(host.textContent).not.toContain("2026-10-03");
   expect(host.textContent).not.toContain("Reward not set");
   expect(host.textContent).toContain("assigned-user");
   expect(host.textContent).not.toMatch(/\bStaged\b/);
@@ -598,6 +624,7 @@ it("saves category-specific tasks directly to the server", async () => {
       />
     )
   );
+  await click("Music");
   const add = host.querySelector<HTMLButtonElement>('button[aria-label="Create Task · Music"]');
   expect(add).not.toBeNull();
   await act(async () => add!.click());
@@ -626,6 +653,7 @@ it("formats long deadlines in weeks, days and hours", async () => {
             state: "staged",
             input: {
               title: "Future task",
+              taskKind: "script",
               description: "",
               priority: "normal",
               assignees: [],
@@ -673,7 +701,9 @@ it("counts saved tasks and keeps template previews out of task categories", asyn
   );
   await render();
   const scripts = () =>
-    [...host.querySelectorAll("section")].filter((d) => d.textContent?.includes("Scripts")).at(-1)!;
+    [...host.querySelectorAll("section")]
+      .filter((d) => d.textContent?.includes("Script Tasks"))
+      .at(-1)!;
   expect(host.querySelectorAll("article")).toHaveLength(0);
   expect(scripts().textContent).not.toContain("Template item");
   expect(host.textContent).toContain("Saved template drafts (1)");
@@ -809,6 +839,7 @@ it("does not carry a recovered draft episode into a new category task", async ()
   await render();
   await click("Edit Episode draft");
   await click("Save Draft");
+  await click("Music");
   await click("Create Task · Music");
   await click("Save Task");
   expect(state.create).toHaveBeenCalledWith(
@@ -883,7 +914,7 @@ it("exposes Edit and invitation actions for a saved eligible task without openin
     [...document.querySelectorAll('[role="menuitem"]')].find(
       (e) => e.textContent === label
     ) as HTMLElement;
-  expect(item("Top Up")).toBeDefined();
+  expect(item("Apply for credit")).toBeDefined();
   await act(async () => item("Edit Task").click());
   expect(editTask).toHaveBeenCalledWith("managed");
   await openMenu();
@@ -963,4 +994,104 @@ it("keeps a rejected stale batch from being retried without refreshing", async (
   expect(state.post).toHaveBeenCalledTimes(1);
   expect(host.textContent).toContain("Task changed");
   expect(confirm.disabled).toBe(true);
+});
+
+it("blocks oversized batches and allows the 100-task boundary after deselection", async () => {
+  state.tasks = Array.from({ length: 101 }, (_, n) => ({
+    id: `task-${n}`,
+    title: `Task ${n}`,
+    parentId: null,
+    status: "open" as const,
+    assetCategory: "scripts",
+    taskKind: "script",
+    assignees: [],
+    version: 1,
+  }));
+  await render(true, true, "crew", vi.fn());
+  await act(async () =>
+    (host.querySelector('input[aria-label="Select Scripts tasks"]') as HTMLInputElement).click()
+  );
+  expect(button("Batch recruitment").disabled).toBe(true);
+  expect(button("Batch assignment").disabled).toBe(true);
+  expect(host.textContent).toContain("Select at most 100 tasks per batch.");
+  expect(state.post).not.toHaveBeenCalled();
+  await act(async () =>
+    (host.querySelector('input[aria-label="Select Task 0"]') as HTMLInputElement).click()
+  );
+  expect(button("Batch recruitment").disabled).toBe(false);
+  expect(button("Batch assignment").disabled).toBe(false);
+});
+it("does not expose owner-only credit applications to task managers or assignees", async () => {
+  state.isOwner = false;
+  state.tasks = [
+    {
+      id: "assigned",
+      title: "Script",
+      parentId: null,
+      status: "open",
+      assetCategory: "scripts",
+      taskKind: "script",
+      assignees: [{ userId: "user" }],
+    },
+  ];
+  await render(true, true, "crew", undefined, true);
+  await act(async () =>
+    host
+      .querySelector('button[aria-label="Task Actions"]')!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+  );
+  expect(
+    [...document.querySelectorAll('[role="menuitem"]')].some(
+      (e) => e.textContent === "Apply for credit"
+    )
+  ).toBe(false);
+  await render(false);
+  expect(host.querySelector('button[aria-label="Task Actions"]')).toBeNull();
+});
+
+it("shows actual point totals, compact deadlines and a disabled submitted state", async () => {
+  state.tasks = [
+    {
+      id: "submitted",
+      title: "Finished script",
+      parentId: null,
+      status: "submitted",
+      taskKind: "script",
+      assetCategory: "scripts",
+      assignees: [{ userId: "user" }],
+      dueAt: "2026-10-15T12:00:00Z",
+      computeBudgetPoints: 4460,
+    } as unknown as (typeof state.tasks)[number],
+  ];
+  state.computeData = {
+    isOwner: true,
+    consumedPoints: "999",
+    totals: {},
+    tasks: [],
+    nextCursor: null,
+    items: [],
+    taskUsage: [
+      {
+        taskId: "submitted",
+        taskTitle: "Script",
+        userId: "user",
+        requestedPoints: "4500",
+        approvedPoints: "4460",
+        pendingPoints: "40",
+        consumedPoints: "999",
+        committedPoints: "999",
+      },
+    ],
+  };
+  await render();
+  const card = host.querySelector("article")!;
+  expect(card.textContent).toContain("4,500");
+  expect(card.textContent).toContain("4,460");
+  expect(card.textContent).not.toContain("999");
+  expect(card.textContent).toContain("10/15 due");
+  const submitted = [...card.querySelectorAll("button")].find(
+    (b) => b.textContent === "status.submitted"
+  )!;
+  expect(submitted.disabled).toBe(true);
+  expect(button("submit")).toBeUndefined();
 });

@@ -1,3 +1,4 @@
+import { bindNewTaskDeliveryTemplate } from './task-delivery-binding';
 import { groupedTaskAmount } from '../task-recruitment';
 import { grantInitialTaskAllowance } from '../compute-requests/initial-allowance';
 import { readProjectBudget } from '../compute-requests/project-budget';
@@ -2315,6 +2316,7 @@ export class CrewTasksService {
         },
         include: taskInclude,
       });
+      await bindNewTaskDeliveryTemplate(tx, created);
       await grantInitialTaskAllowance(tx, created, uniqueAssigneeIds, userId);
       await provisionTaskDeliveryFolderTx(tx, created, userId);
       await recordTaskContractFile(
