@@ -23,6 +23,7 @@ export type AdminHomeworkRow = {
   score: number | null;
   feedback: string | null;
   teacherCredits: string;
+  instructorShares?: Array<{ teacherId: string; credits: string }>;
   priceCredits: string;
   createdAt: string;
   submittedAt?: string;

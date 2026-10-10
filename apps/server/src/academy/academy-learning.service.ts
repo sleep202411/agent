@@ -1206,8 +1206,13 @@ export class AcademyLearningService {
     if (row.studentId !== userId) {
       try {
         await this.teacher(row, userId);
-      } catch {
-        throw new NotFoundException('Attachment not found.');
+      } catch (error: unknown) {
+        if (
+          error instanceof ForbiddenException ||
+          error instanceof NotFoundException
+        )
+          throw new NotFoundException('Attachment not found.');
+        throw error;
       }
     }
     const asset = await this.db.mediaAsset.findFirst({

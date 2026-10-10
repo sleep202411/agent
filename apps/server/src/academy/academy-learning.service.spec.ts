@@ -887,3 +887,24 @@ it('keeps deleted courses inaccessible to bound Admin lecturers', async () => {
     f.service.adminHomework({ platformUserId: '200' } as never),
   ).resolves.toMatchObject({ items: [] });
 });
+
+it('preserves course-service failures when a teacher opens homework', async () => {
+  const f = fixture();
+  const outage = new BadGatewayException('Authority unavailable.');
+  f.authority.course.mockRejectedValue(outage);
+  await expect(f.service.attachment('enrollment', 'asset', '200')).rejects.toBe(
+    outage,
+  );
+  expect(f.db.mediaAsset.findFirst).not.toHaveBeenCalled();
+  expect(f.storage.createReadUrl).not.toHaveBeenCalled();
+});
+it('hides homework attachments when the course no longer exists', async () => {
+  const f = fixture();
+  f.authority.course.mockRejectedValue(
+    new NotFoundException('Course not found.'),
+  );
+  await expect(
+    f.service.attachment('enrollment', 'asset', '200'),
+  ).rejects.toThrow('Attachment not found.');
+  expect(f.storage.createReadUrl).not.toHaveBeenCalled();
+});
