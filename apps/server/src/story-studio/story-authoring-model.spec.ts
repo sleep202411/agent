@@ -18,57 +18,77 @@ jest.mock('ai', () => {
 const mockedGenerateObject = jest.mocked(generateObject);
 
 describe('runStoryAuthoringStage', () => {
-  it('sends strict JSON Schema through the actual Alibaba provider transport', async () => {
+  it('uses Qwen-compatible JSON Object through the real SDK and provider', async () => {
     const previous = process.env.ALIBABA_API_KEY;
     process.env.ALIBABA_API_KEY = 'unit-test-key';
-    const fetchMock = jest.spyOn(globalThis, 'fetch').mockImplementation(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            id: 'fixture',
-            created: 1,
-            model: 'fixture',
-            choices: [
-              {
-                index: 0,
-                message: { role: 'assistant', content: '{"value":"ok"}' },
-                finish_reason: 'stop',
-              },
-            ],
-            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          }),
-          { headers: { 'content-type': 'application/json' } },
-        ),
-      ),
+    mockedGenerateObject.mockImplementationOnce(
+      jest.requireActual<typeof import('ai')>('ai').generateObject,
     );
-    try {
-      const model = createStoryAuthoringModel();
-      if (typeof model === 'string') throw new Error('Expected provider model');
-      await model.doGenerate({
-        prompt: [
-          {
-            role: 'user',
-            content: [{ type: 'text', text: 'Return the fixture.' }],
-          },
-        ],
-        responseFormat: {
-          type: 'json',
-          schema: {
-            type: 'object',
-            properties: { value: { type: 'string' } },
-            required: ['value'],
-            additionalProperties: false,
-          },
-        },
-        maxOutputTokens: 32,
-        providerOptions: { alibaba: { enableThinking: false } },
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((_url, init) => {
+        const body = JSON.parse(init!.body as string) as {
+          response_format?: { type: string };
+        };
+        if (body.response_format?.type !== 'json_object') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                error: {
+                  message: 'Unsupported response_format for qwen3-max',
+                  type: 'invalid_request_error',
+                  code: 'InvalidParameter',
+                },
+              }),
+              { status: 400, headers: { 'content-type': 'application/json' } },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'fixture',
+              created: 1,
+              model: 'qwen3-max',
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: '{"value":"ok"}' },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: {
+                prompt_tokens: 1,
+                completion_tokens: 1,
+                total_tokens: 2,
+              },
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          ),
+        );
       });
+    try {
+      await expect(
+        runStoryAuthoringStage(createStoryAuthoringModel('qwen3-max'), {
+          stage: 'structure',
+          schema: z.object({ value: z.string() }),
+          system: 'Return the fixture.',
+          prompt: 'fixture',
+          maxOutputTokens: 32,
+          timeoutMs: 1000,
+          maxAttempts: 1,
+          signal: new AbortController().signal,
+        }),
+      ).resolves.toEqual({ value: 'ok' });
       const body = JSON.parse(fetchMock.mock.calls[0][1]!.body as string) as {
-        response_format: { json_schema: { strict: boolean } };
+        response_format: { type: string };
+        messages: unknown;
         max_tokens: number;
         enable_thinking: boolean;
       };
-      expect(body.response_format.json_schema.strict).toBe(true);
+      expect(body.response_format).toEqual({ type: 'json_object' });
+      expect(JSON.stringify(body.messages)).toContain('JSON');
+      expect(JSON.stringify(body.messages)).toContain('required');
       expect(body.max_tokens).toBe(32);
       expect(body.enable_thinking).toBe(false);
     } finally {
@@ -153,15 +173,14 @@ describe('runStoryAuthoringStage', () => {
       signal: new AbortController().signal,
     });
     const request = mockedGenerateObject.mock.calls[0][0];
-    if (!('schema' in request)) throw new Error('Missing provider schema');
-    const wrapper = request.schema as {
-      jsonSchema: {
-        required: string[];
-        properties: Record<string, { $ref: string }>;
-        definitions: Record<string, unknown>;
-      };
+    expect(request.output).toBe('no-schema');
+    const provider = JSON.parse(
+      (request.system as string).split('conforming to this schema: ')[1],
+    ) as {
+      required: string[];
+      properties: Record<string, { $ref: string }>;
+      definitions: Record<string, unknown>;
     };
-    const provider = wrapper.jsonSchema;
     expect(provider.required).toEqual(['first', 'second']);
     expect(provider.properties.first.$ref).toBe(
       provider.properties.second.$ref,
@@ -172,6 +191,49 @@ describe('runStoryAuthoringStage', () => {
       required: ['title'],
       additionalProperties: false,
     });
+  });
+
+  it('repairs invalid JSON objects and applies Zod transforms before semantic validation', async () => {
+    mockedGenerateObject
+      .mockResolvedValueOnce({ object: { value: 123 } } as never)
+      .mockResolvedValueOnce({ object: { value: '  valid  ' } } as never);
+    const validate = jest.fn(() => []);
+    const result = await runStoryAuthoringStage({} as never, {
+      stage: 'structure',
+      schema: z.object({ value: z.string().trim() }),
+      system: 'system',
+      prompt: 'source',
+      maxOutputTokens: 100,
+      timeoutMs: 1000,
+      maxAttempts: 2,
+      signal: new AbortController().signal,
+      validate,
+    });
+    expect(result).toEqual({ value: 'valid' });
+    expect(validate).toHaveBeenCalledTimes(1);
+    expect(validate).toHaveBeenCalledWith({ value: 'valid' });
+    expect(mockedGenerateObject.mock.calls[1][0].prompt).toContain('123');
+    expect(mockedGenerateObject.mock.calls[1][0].prompt).toContain('value');
+  });
+
+  it('rejects schema-invalid JSON when its repair budget is exhausted', async () => {
+    mockedGenerateObject.mockResolvedValue({ object: { value: 123 } } as never);
+    const validate = jest.fn(() => []);
+    await expect(
+      runStoryAuthoringStage({} as never, {
+        stage: 'structure',
+        schema: z.object({ value: z.string() }),
+        system: 'system',
+        prompt: 'source',
+        maxOutputTokens: 100,
+        timeoutMs: 1000,
+        maxAttempts: 2,
+        signal: new AbortController().signal,
+        validate,
+      }),
+    ).rejects.toThrow('exhausted 2 attempts');
+    expect(validate).not.toHaveBeenCalled();
+    expect(mockedGenerateObject).toHaveBeenCalledTimes(2);
   });
 
   it('preserves the final deterministic validation failure after attempts are exhausted', async () => {
