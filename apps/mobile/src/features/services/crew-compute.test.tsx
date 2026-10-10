@@ -77,6 +77,7 @@ const row = {
   id,
   crewId: "crew",
   userId: "creator",
+  kind: "top_up",
   requestedByUserId: "user",
   remainingWorkload: "1.5",
   workloadUnit: "hours",
@@ -94,6 +95,8 @@ const row = {
 const page = {
   isOwner: true,
   workspaceLinked: true,
+  projectBudget: null,
+  taskUsage: [],
   consumedPoints: "9007199254740993",
   totals: { pending: 20 },
   tasks: [
@@ -213,4 +216,32 @@ it("sends owner-selected beneficiary and workload", async () => {
     }),
     1
   );
+});
+
+it("shows the stored budget rate and separates credited points from allowance", async () => {
+  h.detail.mockResolvedValue({
+    ...page,
+    projectBudget: {
+      pointsPerMinute: 4460,
+      totalPoints: "44600",
+      releasedPoints: "22300",
+      closed: false,
+    },
+    taskUsage: [
+      {
+        taskId: id,
+        taskTitle: "Scene",
+        userId: "creator",
+        approvedPoints: "900",
+        creditedPoints: "400",
+        pendingPoints: "0",
+        consumedPoints: "100",
+        committedPoints: "200",
+      },
+    ],
+  });
+  await render();
+  expect(host.textContent).toContain("crewComputeFinance.approvedTotal · 900");
+  expect(host.textContent).toContain("mobileProduction.credited · 400");
+  expect(host.textContent).toContain("crewComputeFinance.committed · 200");
 });

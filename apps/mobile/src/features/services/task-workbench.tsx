@@ -1,3 +1,5 @@
+import { PdfTaskImport } from "./pdf-task-import";
+import { TaskBatch } from "./task-batch";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -44,7 +46,7 @@ function Session(props: Props) {
     [error, setError] = useState<string>(),
     [remove, setRemove] = useState<number>();
   const [section, setSection] = useState<
-    "assets" | "progress" | "episodes" | "template" | "canvas"
+    "assets" | "progress" | "episodes" | "template" | "canvas" | "pdf" | "assign" | "recruit"
   >();
   const alive = useRef(false);
   useEffect(() => {
@@ -69,6 +71,9 @@ function Session(props: Props) {
   // Each destination checks its own read/write permissions independently.
   if (section) {
     const childProps = { ...props, onClose: () => setSection(undefined) };
+    if (section === "pdf") return <PdfTaskImport {...childProps} />;
+    if (section === "assign" || section === "recruit")
+      return <TaskBatch {...childProps} mode={section} />;
     if (section === "assets") return <AssetOrganization {...childProps} />;
     if (section === "progress") return <AssetTaskProgress {...childProps} />;
     if (section === "canvas")
@@ -163,6 +168,21 @@ function Session(props: Props) {
             label={t("canvasImport.title")}
             disabled={snapshot.busy}
             onPress={() => setSection("canvas")}
+          />
+          <Button
+            label={t("mobileProduction.pdfTitle")}
+            disabled={snapshot.busy}
+            onPress={() => setSection("pdf")}
+          />
+          <Button
+            label={t("mobileProduction.batchAssign")}
+            disabled={snapshot.busy}
+            onPress={() => setSection("assign")}
+          />
+          <Button
+            label={t("mobileProduction.batchRecruit")}
+            disabled={snapshot.busy}
+            onPress={() => setSection("recruit")}
           />
           <ThemedText>{t("taskWorkbench.count").replace("{count}", String(staged))}</ThemedText>
           {snapshot.drafts.map((row) => (

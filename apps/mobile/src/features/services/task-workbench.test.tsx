@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskWorkbench } from "./task-workbench";
 import type { TaskDraftInput, TaskDraftReview } from "./task-draft-session";
+vi.mock("./pdf-task-import", () => ({ PdfTaskImport: () => <span>pdf import</span> }));
+vi.mock("./task-batch", () => ({ TaskBatch: () => <span>batch tasks</span> }));
 const h = vi.hoisted(() => ({
   generation: 10,
   active: true,
