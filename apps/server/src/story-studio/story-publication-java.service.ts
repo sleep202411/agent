@@ -44,7 +44,11 @@ export class StoryPublicationJavaService {
 
   constructor() {
     this.baseUrl = requiredStudioUrl();
-    this.token = requiredValue('JAVA_ADMIN_API_TOKEN');
+    this.token = process.env.JAVA_ADMIN_API_TOKEN?.trim() ?? '';
+    // Local authoring/preview does not use Java's admin API. Production still
+    // validates its credential at startup; local requests validate on use.
+    if (!this.token && !allowsTokenlessLocalStartup())
+      requiredValue('JAVA_ADMIN_API_TOKEN');
     this.tokenHeader =
       process.env.JAVA_ADMIN_API_TOKEN_HEADER?.trim() || 'X-Admin-Api-Token';
     if (
@@ -151,8 +155,15 @@ export class StoryPublicationJavaService {
       ? AbortSignal.any([operationSignal, requestDeadline])
       : requestDeadline;
     const headers = new Headers({ accept: 'application/json' });
-    if (authentication === 'service') headers.set(this.tokenHeader, this.token);
-    else headers.set('cookie', actorCookie!);
+    if (authentication === 'service') {
+      if (!this.token)
+        throw new ServiceUnavailableException({
+          code: 'STORY_PUBLICATION_SERVICE_NOT_CONFIGURED',
+          message:
+            'Publication management requires JAVA_ADMIN_API_TOKEN. Local authoring and previews remain available.',
+        });
+      headers.set(this.tokenHeader, this.token);
+    } else headers.set('cookie', actorCookie!);
     if (body !== undefined) headers.set('content-type', 'application/json');
     let response: Response;
     let envelope: JavaEnvelope | null;
@@ -274,6 +285,20 @@ function invalidResponse(message: string): BadGatewayException {
     code: 'STORY_PUBLICATION_INVALID_RESPONSE',
     message,
   });
+}
+
+function allowsTokenlessLocalStartup(): boolean {
+  if (process.env.NODE_ENV === 'production') return false;
+  if (process.env.NODE_ENV === 'test') return true;
+  try {
+    const database = new URL(process.env.DATABASE_URL ?? '');
+    return (
+      ['postgres:', 'postgresql:'].includes(database.protocol) &&
+      ['localhost', '127.0.0.1', '[::1]'].includes(database.hostname)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function requiredValue(name: string): string {

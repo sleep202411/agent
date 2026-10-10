@@ -9,7 +9,7 @@ import {
 } from "@repo/shared/experience-runtime";
 import { ExperiencePlayer } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
-import { journeyMapTestCopy } from "./experience-journey-test-copy";
+import { journeyMapTestCopy, subtitleTestCopy } from "./experience-journey-test-copy";
 
 /**
  * A `fixed` scene clock is the only clock the experience owns rather than reads
@@ -41,7 +41,10 @@ const copy = {
   emptySequence: "No footage yet",
   loadingMedia: "Loading",
   regionLabel: "Experience player",
-  video: { unmute: "Unmute" },
+  video: {
+    unmute: "Unmute",
+    subtitles: subtitleTestCopy,
+  },
   playback: {
     transport: {
       controlsLabel: "Playback controls",

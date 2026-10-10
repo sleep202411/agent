@@ -92,7 +92,7 @@ import {
   type ReorderStoryChaptersInput,
 } from './dto';
 import {
-  storyboardClipSnapshotEntry,
+  storyboardSequenceSnapshotEntries,
   storyVideoSnapshotHash,
 } from './story-video-production.schema';
 import {
@@ -2748,9 +2748,7 @@ function projectStoryVideoWorkbench(
   );
   const entries = sequences
     .filter((sequence) => liveNodeIds.has(sequence.plotNodeId))
-    .flatMap((sequence) =>
-      sequence.clips.map((clip) => storyboardClipSnapshotEntry(clip)),
-    );
+    .flatMap((sequence) => storyboardSequenceSnapshotEntries(sequence));
   return { snapshotHash: storyVideoSnapshotHash(entries) };
 }
 

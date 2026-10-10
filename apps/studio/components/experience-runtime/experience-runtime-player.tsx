@@ -19,6 +19,7 @@ export function ExperienceRuntimePlayer({
   frameProfile,
   coverUrl,
   startSceneId,
+  initialSubtitleLanguage,
   onStateChange,
   playSessionReporter,
   ui,
@@ -33,6 +34,7 @@ export function ExperienceRuntimePlayer({
    * to it too.
    */
   startSceneId?: string | null;
+  initialSubtitleLanguage?: ExperiencePlayerProps["initialSubtitleLanguage"];
   onStateChange?: ExperiencePlayerProps["onStateChange"];
   playSessionReporter?: PlaySessionReporter;
   ui?: ExperiencePlayerProps["ui"];
@@ -68,7 +70,18 @@ export function ExperienceRuntimePlayer({
       noVisibleChoices: t("noVisibleChoices"),
       continue: t("continue"),
       regionLabel: t("regionLabel"),
-      video: { unmute: t("video.unmute") },
+      video: {
+        unmute: t("video.unmute"),
+        subtitles: {
+          label: t("video.subtitles.label"),
+          off: t("video.subtitles.off"),
+          languages: {
+            "zh-CN": t("video.subtitles.languages.zh-CN"),
+            "zh-HK": t("video.subtitles.languages.zh-HK"),
+            "en-US": t("video.subtitles.languages.en-US"),
+          },
+        },
+      },
       journeyMap: {
         open: t("journeyMap.open"),
         title: t("journeyMap.title"),
@@ -113,6 +126,7 @@ export function ExperienceRuntimePlayer({
   return (
     <>
       <ExperiencePlayer
+        initialSubtitleLanguage={initialSubtitleLanguage}
         ui={ui}
         access={access}
         runtime={runtime}

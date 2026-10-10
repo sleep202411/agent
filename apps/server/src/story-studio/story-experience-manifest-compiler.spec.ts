@@ -130,6 +130,35 @@ function compile(value = release()) {
 }
 
 describe('Story Runtime Manifest v2 compiler', () => {
+  it('freezes shot subtitles and requires a host that supports timed captions', () => {
+    const value = release();
+    const first = value.nodes[0].presentation;
+    if (first.kind !== 'video') throw new Error('Expected video fixture');
+    first.sequence[0].subtitles = [
+      {
+        language: 'zh-HK',
+        cues: [{ startMs: 500, endMs: 1800, text: 'Welcome' }],
+      },
+    ];
+    const result = compile(value);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.manifest?.compatibility.requiredCapabilities).toContain(
+      'core.video.subtitles',
+    );
+    const scene = result.manifest?.graph.nodes.find(
+      (node) => node.sceneId === 'clip.start',
+    );
+    expect(
+      scene?.kind === 'scene' && scene.renderers[0].config.sequence,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ subtitles: first.sequence[0].subtitles }),
+      ]),
+    );
+    expect(
+      compile().manifest?.compatibility.requiredCapabilities,
+    ).not.toContain('core.video.subtitles');
+  });
   it('is deterministic and preserves raw UUID release identity', () => {
     const first = compile();
     const second = compile();

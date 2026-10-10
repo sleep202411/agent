@@ -548,7 +548,18 @@ function ResolvedRuntimePlayer({
       noVisibleChoices: t("noVisibleChoices"),
       continue: t("continue"),
       regionLabel: t("regionLabel"),
-      video: { unmute: t("video.unmute") },
+      video: {
+        unmute: t("video.unmute"),
+        subtitles: {
+          label: t("video.subtitles.label"),
+          off: t("video.subtitles.off"),
+          languages: {
+            "zh-CN": t("video.subtitles.languages.zh-CN"),
+            "zh-HK": t("video.subtitles.languages.zh-HK"),
+            "en-US": t("video.subtitles.languages.en-US"),
+          },
+        },
+      },
       journeyMap: {
         open: t("journeyMap.open"),
         title: t("journeyMap.title"),

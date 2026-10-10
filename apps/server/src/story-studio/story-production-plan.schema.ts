@@ -1,4 +1,8 @@
 import {
+  StorySubtitleUploadSchema,
+  StorySubtitleLanguageSchema,
+} from '@repo/shared/story-subtitles';
+import {
   STORY_AUTHORING_DESCRIPTION_MAX,
   STORY_AUTHORING_PROMPT_MAX,
   STORY_AUTHORING_NEGATIVE_PROMPT_MAX,
@@ -162,8 +166,13 @@ export const PatchStoryStoryboardSequenceSchema = z
       .max(STORY_AUTHORING_DESCRIPTION_MAX)
       .nullable()
       .optional(),
+    subtitleUpload: StorySubtitleUploadSchema.optional(),
+    removeSubtitleLanguage: StorySubtitleLanguageSchema.optional(),
   })
   .strict()
+  .refine((value) => !(value.subtitleUpload && value.removeSubtitleLanguage), {
+    message: 'Upload or remove one subtitle track at a time.',
+  })
   .refine(
     (value) => Object.keys(value).some((key) => key !== 'expectedVersion'),
     {

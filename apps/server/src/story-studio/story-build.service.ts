@@ -4,6 +4,10 @@ import {
 } from '@repo/shared/experience-runtime';
 import { StoryCommunityAccessService } from './story-community-access.service';
 import { readStoryPoster } from './story-build-poster';
+import {
+  orderedSubtitleClips,
+  resolveStorySubtitleTracks,
+} from './story-subtitle-tracks';
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -84,7 +88,7 @@ import { StoryProjectWriteGuardService } from './story-project-write-guard.servi
 import {
   chooseStoryboardClipVariant,
   isBrowserSafeMp4Metadata,
-  storyboardClipSnapshotEntry,
+  storyboardSequenceSnapshotEntries,
   storyVideoSnapshotHash,
   type StoryVideoSnapshotEntry,
 } from './story-video-production.schema';
@@ -204,7 +208,7 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
-export const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 10;
+export const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 11;
 
 interface BuildCursor {
   number: number;
@@ -1033,17 +1037,36 @@ async function loadValidatedBuildSnapshot(
   );
   const timelines: StoryBuildNodeTimelineInput[] = clipNodes.map((node) => {
     const sequence = sequenceByNodeId.get(node.nodeId) ?? null;
+    const subtitleResult = sequence
+      ? resolveStorySubtitleTracks(sequence)
+      : null;
     return {
       graphNodeId: node.nodeId,
       sequenceId: sequence?.id ?? null,
-      segments: (sequence?.clips ?? []).map((clip) =>
-        prepareBuildSegment(project, buildId, node.nodeId, clip),
-      ),
+      segments: orderedSubtitleClips(sequence?.clips ?? []).map((clip) => {
+        const segment = prepareBuildSegment(
+          project,
+          buildId,
+          node.nodeId,
+          clip,
+        );
+        segment.subtitles = subtitleResult?.byClipId.get(clip.id) ?? [];
+        if (subtitleResult?.stale || subtitleResult?.outOfRange)
+          segment.eligibilityDiagnostics.push(
+            buildDiagnostic(
+              'STORY_SUBTITLE_REVIEW_REQUIRED',
+              'This storyboard node timeline changed. Re-upload or remove its subtitles before publishing.',
+              'node',
+              node.nodeId,
+            ),
+          );
+        return segment;
+      }),
     };
   });
   const entries = timelines.flatMap((timeline) => {
     const sequence = sequenceByNodeId.get(timeline.graphNodeId) ?? null;
-    return (sequence?.clips ?? []).map((clip) => clipSnapshotEntry(clip));
+    return sequence ? storyboardSequenceSnapshotEntries(sequence) : [];
   });
   const videoSnapshotHash = storyVideoSnapshotHash(entries);
   if (
@@ -1079,7 +1102,6 @@ async function loadValidatedBuildSnapshot(
   };
 }
 
-const clipSnapshotEntry = storyboardClipSnapshotEntry;
 const chooseClipVariant = chooseStoryboardClipVariant;
 
 function prepareBuildSegment(

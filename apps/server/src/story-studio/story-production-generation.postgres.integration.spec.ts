@@ -80,6 +80,154 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     await prisma.$disconnect();
   });
 
+  it('persists subtitle languages with idempotency and version checks, rejecting invalid and stale uploads atomically', async () => {
+    const fixture = await createFixture(prisma, workspaceIds);
+    const materializer = materializationService(prisma, fixture);
+    const reference = await createCompletedAssetGeneration(
+      prisma,
+      fixture,
+      'subtitle-reference',
+    );
+    await materializer.onAiGenerationCompleted({
+      id: reference.job.id,
+      sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
+    } as AiJob);
+    const generated = await createCompletedClipGeneration(
+      prisma,
+      fixture,
+      'subtitle-video',
+    );
+    await materializer.onAiGenerationCompleted({
+      id: generated.job.id,
+      sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
+    } as AiJob);
+    // This fixture represents a probed video; node timing must never guess
+    // duration from planned shot coordinates.
+    await prisma.mediaAssetVariant.upsert({
+      where: {
+        assetId_variantKey: {
+          assetId: generated.output.assetId!,
+          variantKey: 'original',
+        },
+      },
+      create: {
+        assetId: generated.output.assetId!,
+        variantKey: 'original',
+        kind: 'original',
+        status: 'ready',
+        contentType: 'video/mp4',
+        durationMs: 10_000,
+      },
+      update: { status: 'ready', durationMs: 10_000 },
+    });
+    const plans = editablePlanService(prisma, fixture);
+    const [sequence] = await plans.getStoryboard(
+      { userId: fixture.userId } as never,
+      fixture.projectId,
+      fixture.chapterId,
+    );
+    const upload = {
+      language: 'en-US' as const,
+      timelineFingerprint: sequence.subtitleTimeline.fingerprint,
+      fileName: 'english.srt',
+      format: 'srt' as const,
+      content: '1\n00:00:00,500 --> 00:00:02,000\nHello',
+    };
+    const patch = (
+      key: string,
+      input: Parameters<typeof plans.patchSequence>[5],
+    ) =>
+      plans.patchSequence(
+        { userId: fixture.userId } as never,
+        fixture.projectId,
+        fixture.chapterId,
+        fixture.sequenceId,
+        `${fixture.prefix}:${key}`,
+        input,
+      );
+    const first = await patch('subtitle-upload', {
+      expectedVersion: sequence.version,
+      subtitleUpload: upload,
+    });
+    const replay = await patch('subtitle-upload', {
+      expectedVersion: sequence.version,
+      subtitleUpload: upload,
+    });
+    expect(replay).toEqual(first);
+    expect(first.version).toBe(sequence.version + 1);
+    expect(first.subtitleTracks).toMatchObject([
+      {
+        language: 'en-US' as const,
+        timelineFingerprint: upload.timelineFingerprint,
+        cues: [{ startMs: 500, endMs: 2000, text: 'Hello' }],
+      },
+    ]);
+    const second = await patch('subtitle-traditional', {
+      expectedVersion: first.version,
+      subtitleUpload: { ...upload, language: 'zh-HK' },
+    });
+    const replaced = await patch('subtitle-replace', {
+      expectedVersion: second.version,
+      subtitleUpload: {
+        ...upload,
+        content: upload.content.replace('Hello', 'Replaced'),
+      },
+    });
+    expect(
+      replaced.subtitleTracks.map((track) => track.language).sort(),
+    ).toEqual(['en-US', 'zh-HK']);
+    expect(
+      replaced.subtitleTracks.find((track) => track.language === 'en-US')
+        ?.cues[0].text,
+    ).toBe('Replaced');
+    for (const [key, invalidUpload, code] of [
+      [
+        'invalid',
+        { ...upload, content: 'broken file' },
+        'STORY_SUBTITLE_INVALID',
+      ],
+      [
+        'stale-media',
+        { ...upload, timelineFingerprint: 'f'.repeat(64) },
+        'STORY_SUBTITLE_TIMELINE_CHANGED',
+      ],
+      [
+        'duration',
+        { ...upload, content: '1\n00:00:00,000 --> 00:00:59,000\nToo long' },
+        'STORY_SUBTITLE_DURATION',
+      ],
+    ] as const) {
+      await expect(
+        patch(`subtitle-${key}`, {
+          expectedVersion: replaced.version,
+          subtitleUpload: invalidUpload,
+        }),
+      ).rejects.toMatchObject({ response: { code } });
+    }
+    await expect(
+      patch('subtitle-cas-conflict', {
+        expectedVersion: first.version,
+        removeSubtitleLanguage: 'zh-HK',
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'STORY_PRODUCTION_VERSION_CONFLICT' },
+    });
+    expect(
+      await prisma.storyStoryboardSequence.findUniqueOrThrow({
+        where: { id: fixture.sequenceId },
+      }),
+    ).toMatchObject({
+      version: replaced.version,
+      subtitleTracks: replaced.subtitleTracks,
+    });
+    const removed = await patch('subtitle-remove', {
+      expectedVersion: replaced.version,
+      removeSubtitleLanguage: 'zh-HK',
+    });
+    expect(removed.subtitleTracks).toHaveLength(1);
+    expect(removed.subtitleTracks[0].language).toBe('en-US');
+  });
+
   it('materializes a completed fake output exactly once, resolves follow-selected, and deletes a retry chain with its chapter', async () => {
     const fixture = await createFixture(prisma, workspaceIds);
     const [first, second] = await Promise.all([

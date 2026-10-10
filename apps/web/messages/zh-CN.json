@@ -9684,7 +9684,16 @@
     "loadErrorUnknown": "无法加载已发布的互动体验。",
     "returnToGames": "返回游戏列表",
     "video": {
-      "unmute": "取消静音"
+      "unmute": "取消静音",
+      "subtitles": {
+        "label": "字幕语言",
+        "off": "关闭字幕",
+        "languages": {
+          "en-US": "英语",
+          "zh-CN": "简体中文",
+          "zh-HK": "繁体中文"
+        }
+      }
     },
     "share": "分享",
     "shareCopied": "链接已复制",
@@ -12037,5 +12046,37 @@
     "retry": "重试",
     "more": "加载更多",
     "all": "查看全部收藏岗位"
+  },
+  "storyStudio": {
+    "subtitles": {
+      "title": "字幕",
+      "description": "每个分镜节点按语言上传一份 SRT 或 VTT 文件。UTF-8 · 最大 500 KB。时间码从 0 开始，覆盖节点内按播放顺序衔接的所有片段。",
+      "language": "字幕语言",
+      "upload": "上传字幕",
+      "replace": "替换字幕",
+      "invalidFormat": "请选择 SRT 或 VTT 字幕文件。",
+      "tooLarge": "字幕文件不能超过 500 KB。",
+      "encodingError": "请将字幕文件保存为 UTF-8 编码后重新上传。",
+      "saveError": "字幕保存失败。",
+      "saved": "字幕已保存",
+      "empty": "还没有字幕，先添加一种语言。",
+      "cueCount": "{count} 条字幕",
+      "stale": "节点素材、顺序或时长已改变。发布前请重新上传或移除此字幕。",
+      "preview": "预览",
+      "hidePreview": "收起",
+      "remove": "移除{language}字幕",
+      "videoPreview": "节点字幕预览",
+      "cuesPreview": "字幕内容",
+      "timelineRequired": "请先为节点内的每个片段选择可播放、时长明确的素材，再上传字幕。",
+      "duration": "节点播放总长：{seconds} 秒",
+      "close": "关闭",
+      "loadingPreview": "正在加载节点预览…",
+      "previewUnavailable": "此节点暂时无法预览。",
+      "languages": {
+        "en-US": "英语",
+        "zh-CN": "简体中文",
+        "zh-HK": "繁体中文"
+      }
+    }
   }
 }

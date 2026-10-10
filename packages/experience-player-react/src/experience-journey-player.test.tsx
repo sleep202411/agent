@@ -13,7 +13,7 @@ import {
   type ExperienceAccessCheckpoint,
   type ExperiencePlayerAccess,
 } from "./experience-player";
-import { journeyMapTestCopy } from "./experience-journey-test-copy";
+import { journeyMapTestCopy, subtitleTestCopy } from "./experience-journey-test-copy";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 
 const text = (value: string) => ({ "en-US": value });
@@ -43,7 +43,10 @@ const copy: ExperiencePlayerCopy = {
   noVisibleChoices: "No choices",
   continue: "Continue",
   regionLabel: "Region",
-  video: { unmute: "Sound" },
+  video: {
+    unmute: "Sound",
+    subtitles: subtitleTestCopy,
+  },
   journeyMap: journeyMapTestCopy,
   playback: {
     pause: "Pause",

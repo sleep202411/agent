@@ -74,6 +74,10 @@
       "types": "./dist/interactive-film-runtime.d.ts",
       "default": "./dist/interactive-film-runtime.js"
     },
+    "./story-subtitles": {
+      "types": "./dist/story-subtitles.d.ts",
+      "default": "./dist/story-subtitles.js"
+    },
     "./story-stats": {
       "types": "./dist/story-stats.d.ts",
       "default": "./dist/story-stats.js"

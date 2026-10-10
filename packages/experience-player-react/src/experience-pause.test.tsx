@@ -21,7 +21,7 @@ import type {
   ExperiencePauseUIProps,
   ExperiencePlaybackUIProps,
 } from "./experience-ui";
-import { journeyMapTestCopy } from "./experience-journey-test-copy";
+import { journeyMapTestCopy, subtitleTestCopy } from "./experience-journey-test-copy";
 
 /**
  * The paused state, driven through the real player. Only Vidstack is stubbed —
@@ -120,7 +120,10 @@ const copy = {
   emptySequence: "No footage yet",
   loadingMedia: "Loading",
   regionLabel: "Experience player",
-  video: { unmute: "Unmute" },
+  video: {
+    unmute: "Unmute",
+    subtitles: subtitleTestCopy,
+  },
   playback: {
     transport: {
       controlsLabel: "Playback controls",

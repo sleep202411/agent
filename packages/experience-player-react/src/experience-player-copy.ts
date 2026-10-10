@@ -1,5 +1,8 @@
+import type { StorySubtitleLanguage } from "@repo/shared/story-subtitles";
+
 export interface ExperiencePlayerVideoCopy {
   unmute: string;
+  subtitles: { label: string; off: string; languages: Record<StorySubtitleLanguage, string> };
 }
 
 export interface ExperienceJourneyMapCopy {

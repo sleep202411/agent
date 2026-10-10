@@ -5,6 +5,7 @@ import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-tes
 import { INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION } from './interactive-film.schema';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
+import { storySubtitleTimeline } from './story-subtitle-tracks';
 import { storyVideoSnapshotHash } from './story-video-production.schema';
 
 const USER = { userId: 'user-1' };
@@ -157,11 +158,15 @@ function previewSequences(draft: Draft) {
         plotNodeId: node.nodeId,
         stableKey: `seq.${node.clipKey}`,
         status: 'current',
+        version: 0,
         clips: [
           {
             id: uuidAt(500 + index),
             stableKey: `shot.${node.clipKey}.a`,
             kind: 'video',
+            track: 'visual',
+            startMs: 0,
+            rank: 0,
             durationMs: 15_000,
             version: index + 3,
             status: 'current',
@@ -179,6 +184,101 @@ function previewSequences(draft: Draft) {
 }
 
 describe('StoryWorkingPreviewService', () => {
+  it('includes current shot subtitles in playtest and warns without playing a stale track', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const sequences = previewSequences(draft);
+    const clip = sequences[0].clips[0];
+    const tracks = [
+      {
+        language: 'en-US',
+        timelineFingerprint: storySubtitleTimeline(sequences[0]).fingerprint,
+        fileName: 'en.srt',
+        format: 'srt',
+        cues: [{ startMs: 0, endMs: 2000, text: 'Current dialogue' }],
+      },
+    ];
+    Object.assign(sequences[0], { subtitleTracks: tracks });
+    const preview = await scopedService(
+      draft,
+      sequences,
+    ).service.getWorkingPreview(USER as never, PROJECT_ID);
+    const runtime = ExperienceRuntimeManifestSchema.parse(preview.runtime);
+    expect(runtime.compatibility.requiredCapabilities).toContain(
+      'core.video.subtitles',
+    );
+    const shots = runtime.graph.nodes
+      .flatMap((node) => (node.kind === 'scene' ? node.renderers : []))
+      .filter((renderer) => renderer.rendererId === 'core.video')
+      .flatMap((renderer) => renderer.config.sequence as unknown[]);
+    expect(shots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          clipId: clip.id,
+          subtitles: [{ language: 'en-US', cues: tracks[0].cues }],
+        }),
+      ]),
+    );
+    tracks[0].timelineFingerprint = 'f'.repeat(64);
+    const stale = await scopedService(
+      draft,
+      sequences,
+    ).service.getWorkingPreview(USER as never, PROJECT_ID);
+    expect(stale.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_SUBTITLE_REVIEW_REQUIRED',
+          severity: 'warning',
+        }),
+      ]),
+    );
+    expect(
+      ExperienceRuntimeManifestSchema.parse(stale.runtime).compatibility
+        .requiredCapabilities,
+    ).not.toContain('core.video.subtitles');
+  });
+  it('hides node captions when a segment is skipped due to an unavailable playback URL', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const sequences = previewSequences(draft),
+      node = sequences[0];
+    const first = node.clips[0];
+    node.clips.push({
+      ...first,
+      id: uuidAt(998),
+      startMs: 15000,
+      selectedMediaVersion: {
+        ...first.selectedMediaVersion,
+        id: uuidAt(997),
+        mediaAsset: {
+          ...first.selectedMediaVersion.mediaAsset,
+          externalUrl: 'http://localhost:9999/unavailable.mp4',
+        },
+      },
+    });
+    Object.assign(node, {
+      subtitleTracks: [
+        {
+          language: 'en-US',
+          timelineFingerprint: storySubtitleTimeline(node).fingerprint,
+          fileName: 'node.srt',
+          format: 'srt',
+          cues: [{ startMs: 0, endMs: 30000, text: 'Whole node' }],
+        },
+      ],
+    });
+    const preview = await scopedService(
+      draft,
+      sequences,
+    ).service.getWorkingPreview(USER as never, PROJECT_ID);
+    expect(preview.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'STORY_SUBTITLE_PLAYBACK_INCOMPLETE' }),
+      ]),
+    );
+    expect(
+      ExperienceRuntimeManifestSchema.parse(preview.runtime).compatibility
+        .requiredCapabilities,
+    ).not.toContain('core.video.subtitles');
+  });
   it('identifies an invalid choice effect and its canvas destination', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     draft.storyBible.stateVariables = [

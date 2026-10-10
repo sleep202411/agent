@@ -181,3 +181,26 @@ export function storyboardClipSnapshotEntry(
     browserSafeMp4: null,
   });
 }
+
+/** Sequence edits include node subtitle changes, and must invalidate immutable Builds. */
+export function storyboardSequenceSnapshotEntries(sequence: {
+  id: string;
+  version: number;
+  clips: readonly StoryboardClipSnapshotSource[];
+}): StoryVideoSnapshotEntry[] {
+  return [
+    {
+      graphNodeId: sequence.id,
+      selectionVersion: sequence.version,
+      assetId: null,
+      variantId: null,
+      checksumSha256: null,
+      contentType: null,
+      durationMs: null,
+      width: null,
+      height: null,
+      browserSafeMp4: null,
+    },
+    ...sequence.clips.map(storyboardClipSnapshotEntry),
+  ];
+}

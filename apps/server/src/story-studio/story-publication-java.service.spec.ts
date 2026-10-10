@@ -23,6 +23,8 @@ describe('Java project publication adapter (fixture responses)', () => {
     url: process.env.JAVA_STUDIO_URL,
     token: process.env.JAVA_ADMIN_API_TOKEN,
     header: process.env.JAVA_ADMIN_API_TOKEN_HEADER,
+    nodeEnv: process.env.NODE_ENV,
+    databaseUrl: process.env.DATABASE_URL,
   };
   let fetchSpy: jest.SpyInstance;
   beforeEach(() => {
@@ -36,6 +38,8 @@ describe('Java project publication adapter (fixture responses)', () => {
   afterEach(() => {
     fetchSpy.mockRestore();
     jest.useRealTimers();
+    restore('NODE_ENV', original.nodeEnv);
+    restore('DATABASE_URL', original.databaseUrl);
   });
   afterAll(() => {
     restore('JAVA_STUDIO_URL', original.url);
@@ -44,13 +48,49 @@ describe('Java project publication adapter (fixture responses)', () => {
   });
 
   it.each(['JAVA_STUDIO_URL', 'JAVA_ADMIN_API_TOKEN'])(
-    'fails readiness when %s is missing',
+    'fails production readiness when %s is missing',
     (name) => {
       delete process.env[name];
+      process.env.NODE_ENV = 'production';
       expect(() => new StoryPublicationJavaService()).toThrow(name);
       expect(fetchSpy).not.toHaveBeenCalled();
     },
   );
+  it('starts locally without the admin token and refuses only admin requests before network I/O', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.DATABASE_URL = 'postgresql://localhost:5433/fizzdragon';
+    delete process.env.JAVA_ADMIN_API_TOKEN;
+    const service = new StoryPublicationJavaService();
+    await expect(service.read(GAME)).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'STORY_PUBLICATION_SERVICE_NOT_CONFIGURED' },
+    });
+    await expect(service.transition(GAME, 'submit')).rejects.toMatchObject({
+      status: 503,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockResolvedValueOnce(
+      response({
+        gameId: GAME,
+        contentVersion: VERSION,
+        status: 'draft',
+        manifestUrl: 'https://media.test.invalid/manifest.json',
+      }),
+    );
+    await expect(
+      service.upload(candidate, 'satoken=actual-actor'),
+    ).resolves.toBeUndefined();
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).has('X-Admin-Api-Token')).toBe(false);
+  });
+  it('still requires the token in a development process using a remote database', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.DATABASE_URL = 'postgresql://remote.test.invalid/fizzdragon';
+    delete process.env.JAVA_ADMIN_API_TOKEN;
+    expect(() => new StoryPublicationJavaService()).toThrow(
+      'JAVA_ADMIN_API_TOKEN',
+    );
+  });
   it.each([
     'https://user:password@java.test.invalid',
     'https://java.test.invalid/?secret=value',

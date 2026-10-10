@@ -12,7 +12,7 @@ import {
 } from "@repo/shared/experience-runtime";
 import { ExperiencePlayer, type ExperienceAccessCheckpoint } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
-import { journeyMapTestCopy } from "./experience-journey-test-copy";
+import { journeyMapTestCopy, subtitleTestCopy } from "./experience-journey-test-copy";
 import { createExperienceRuntime } from "./experience-runtime-host";
 import {
   mediaPlaybackSignature,
@@ -103,7 +103,10 @@ const copy: ExperiencePlayerCopy = {
   emptySequence: "No footage",
   loadingMedia: "Loading",
   regionLabel: "Player",
-  video: { unmute: "Unmute" },
+  video: {
+    unmute: "Unmute",
+    subtitles: subtitleTestCopy,
+  },
   playback: {
     pause: "Pause",
     resume: "Resume",

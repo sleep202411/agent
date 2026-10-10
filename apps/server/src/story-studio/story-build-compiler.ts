@@ -48,6 +48,7 @@ export interface FrozenStoryVideoAsset {
  * of a node's playable content.
  */
 export interface StoryBuildSegmentInput {
+  subtitles?: import('@repo/shared/story-subtitles').RuntimeSubtitleTrack[];
   clipId: string;
   clipKey: string;
   /** Creator-facing shot title. Playback identity stays `clipId`. */
@@ -861,6 +862,9 @@ function compileIntermediateRelease(
           return {
             clipId: slot.sequenceClipId,
             assetId: slot.assetId,
+            ...(segment.subtitles?.length
+              ? { subtitles: segment.subtitles }
+              : {}),
             endBehavior:
               segment.kind === 'video'
                 ? ({ behavior: 'advance' } as const)

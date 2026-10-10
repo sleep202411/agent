@@ -11,8 +11,23 @@ export default getRequestConfig(async ({ requestLocale }) => {
   const requested = await requestLocale;
   const locale = hasLocale(routing.locales, requested) ? requested : routing.defaultLocale;
 
+  const [studio, web] = await Promise.all([
+    import(`../messages/${locale}.json`),
+    import(`../../web/messages/${locale}.json`),
+  ]);
+  // Subtitle copy has one canonical catalogue, as required by root AGENTS.md.
   return {
     locale,
-    messages: (await import(`../messages/${locale}.json`)).default,
+    messages: {
+      ...studio.default,
+      storyStudio: { ...studio.default.storyStudio, subtitles: web.default.storyStudio.subtitles },
+      experiencePlayer: {
+        ...studio.default.experiencePlayer,
+        video: {
+          ...studio.default.experiencePlayer.video,
+          subtitles: web.default.experiencePlayer.video.subtitles,
+        },
+      },
+    },
   };
 });

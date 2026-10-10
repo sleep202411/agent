@@ -9224,6 +9224,7 @@ model StoryStoryboardSequence {
   description          String?                   @db.Text
   suggestedDurationMs  Int                       @map("suggested_duration_ms")
   durationMs           Int                       @map("duration_ms")
+  subtitleTracks       Json                      @default("[]") @map("subtitle_tracks") @db.JsonB
   sourceFingerprint    String                    @map("source_fingerprint") @db.VarChar(64)
   status               StoryProductionSpecStatus @default(current)
   version              Int                       @default(0)

@@ -1,6 +1,12 @@
 "use client";
+
+import type { StorySubtitleLanguage } from "@repo/shared/story-subtitles";
 import { DEFAULT_EXPERIENCE_APPEARANCE } from "@repo/shared/experience-runtime";
 import { ExperienceAppearanceStage } from "./experience-appearance-stage";
+import {
+  ExperienceSubtitlePreferencesProvider,
+  ExperienceSubtitleLayer,
+} from "./experience-subtitles";
 import { ExperienceThemedPauseUI } from "./experience-themed-pause";
 import type { ExperiencePlayerUI } from "./experience-ui";
 import { ExperienceDefaultStartUI, ExperienceDefaultChoicesUI } from "./experience-ui-defaults";
@@ -190,6 +196,7 @@ export interface ExperiencePlayerProps {
    * the first run.
    */
   startSceneId?: string;
+  initialSubtitleLanguage?: StorySubtitleLanguage;
   onAccessCheckpoint?: (checkpoint: ExperienceAccessCheckpoint) => void;
   access?: ExperiencePlayerAccess;
   /** Only private authoring hosts may bypass payment for playtests. */
@@ -239,6 +246,7 @@ export function ExperiencePlayer({
   previewAccess = false,
   accessCheckpoint,
   startSceneId,
+  initialSubtitleLanguage,
   onAccessCheckpoint,
   onStateChange,
   onCheckpoint,
@@ -345,31 +353,37 @@ export function ExperiencePlayer({
   return (
     <ExperienceAppearanceStage appearance={appearance}>
       <ExperiencePlaybackDeliveryContext.Provider value={delivery}>
-        <ActiveExperienceRuntimePlayer
-          key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
-          access={access}
-          previewAccess={previewAccess}
-          entryCheckpoint={prepared.entryCheckpoint}
-          onAccessCheckpoint={onAccessCheckpoint}
-          onStateChange={onStateChange}
-          onCheckpoint={onCheckpoint}
-          playbackStatus={playbackStatus}
+        <ExperienceSubtitlePreferencesProvider
           manifest={prepared.manifest}
-          controller={prepared.controller}
-          delivery={delivery}
           locale={locale}
-          copy={copy}
-          coverUrl={coverUrl}
-          frameProfile={frameProfile}
-          loadTheme={loadTheme}
-          ui={resolvedUI}
-          renderWorldModel={renderWorldModel}
-          endingExtra={endingExtra}
-          onRestart={() => {
-            setRandomSeed(globalThis.crypto.randomUUID());
-            setRestartEpoch((value) => value + 1);
-          }}
-        />
+          initialLanguage={initialSubtitleLanguage}
+        >
+          <ActiveExperienceRuntimePlayer
+            key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
+            access={access}
+            previewAccess={previewAccess}
+            entryCheckpoint={prepared.entryCheckpoint}
+            onAccessCheckpoint={onAccessCheckpoint}
+            onStateChange={onStateChange}
+            onCheckpoint={onCheckpoint}
+            playbackStatus={playbackStatus}
+            manifest={prepared.manifest}
+            controller={prepared.controller}
+            delivery={delivery}
+            locale={locale}
+            copy={copy}
+            coverUrl={coverUrl}
+            frameProfile={frameProfile}
+            loadTheme={loadTheme}
+            ui={resolvedUI}
+            renderWorldModel={renderWorldModel}
+            endingExtra={endingExtra}
+            onRestart={() => {
+              setRandomSeed(globalThis.crypto.randomUUID());
+              setRestartEpoch((value) => value + 1);
+            }}
+          />
+        </ExperienceSubtitlePreferencesProvider>
       </ExperiencePlaybackDeliveryContext.Provider>
     </ExperienceAppearanceStage>
   );
@@ -2788,8 +2802,15 @@ function CoreVideoRenderer({
   onSoundBlocked: () => void;
   onContentSize: (size: { width: number; height: number }) => void;
 }) {
-  const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
+  const config = useMemo(
+    () => ExperienceCoreVideoRendererConfigSchema.parse(renderer.config),
+    [renderer.config]
+  );
   const storyClock = useContext(ExperienceStoryClockContext);
+  const [subtitlePosition, setSubtitlePosition] = useState<{
+    identity: string;
+    positionMs: number;
+  } | null>(null);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
     initialCoreVideoPlaybackState(entryKey, renderer.instanceId, initialPlayback)
   );
@@ -2819,6 +2840,7 @@ function CoreVideoRenderer({
   } | null>(null);
   const missingAssetRef = useRef<string | null>(null);
   const clip = config.sequence[sequenceIndex];
+  const hasTimedSubtitles = Boolean(clip?.subtitles?.length);
   const assetId = terminalMode?.kind === "loop" ? terminalMode.assetId : clip?.assetId;
   const media = assetId ? resolveVideoMedia(manifest.assets, assetId, orientation) : null;
   const posterAssetId = clip?.posterAssetId ?? config.posterAssetId;
@@ -2860,9 +2882,14 @@ function CoreVideoRenderer({
   );
   const recordPosition = useCallback(
     (positionMs: number, natural = true) => {
+      if (!Number.isFinite(positionMs)) return;
+      if (hasTimedSubtitles)
+        setSubtitlePosition({
+          identity: playbackIdentity,
+          positionMs: Math.max(0, positionMs),
+        });
       const progress = progressRef.current;
-      if (!progress || progress.identity !== playbackIdentity || !Number.isFinite(positionMs))
-        return;
+      if (!progress || progress.identity !== playbackIdentity) return;
       const checkpoint = progress.checkpoint;
       if (checkpoint.durationMs <= 0) return;
       const next = Math.max(0, Math.min(positionMs, checkpoint.durationMs || positionMs));
@@ -2885,7 +2912,7 @@ function CoreVideoRenderer({
       checkpoint.positionMs = next;
       emitProgress(playbackIdentity);
     },
-    [emitProgress, playbackIdentity, storyClock]
+    [emitProgress, hasTimedSubtitles, playbackIdentity, storyClock]
   );
   const registerPlaybackHandle = useCallback(
     (handle: ExperienceMediaPlaybackHandle | null) => {
@@ -3211,6 +3238,18 @@ function CoreVideoRenderer({
       playbackIdentity={playbackIdentity}
     />
   );
+  const subtitles = (
+    <ExperienceSubtitleLayer
+      tracks={clip.subtitles ?? []}
+      positionMs={
+        subtitlePosition?.identity === playbackIdentity
+          ? subtitlePosition.positionMs
+          : (initialPositionMs ?? 0)
+      }
+      visible={Boolean(stillImage) || terminalMode === null}
+      copy={copy.video.subtitles}
+    />
+  );
   if (native) {
     return (
       <div
@@ -3235,6 +3274,7 @@ function CoreVideoRenderer({
           }}
         >
           {player}
+          {subtitles}
         </div>
       </div>
     );
@@ -3242,6 +3282,7 @@ function CoreVideoRenderer({
   return (
     <div className="absolute inset-0" style={{ zIndex: renderer.layer }}>
       {player}
+      {subtitles}
     </div>
   );
 }

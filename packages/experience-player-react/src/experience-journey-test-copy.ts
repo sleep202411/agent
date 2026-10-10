@@ -1,4 +1,15 @@
-import type { ExperienceJourneyMapCopy } from "./experience-player-copy";
+import type { ExperienceJourneyMapCopy, ExperiencePlayerVideoCopy } from "./experience-player-copy";
+
+/** Shared subtitle copy for player fixtures; production hosts use localized messages. */
+export const subtitleTestCopy: ExperiencePlayerVideoCopy["subtitles"] = {
+  label: "Subtitle language",
+  off: "Subtitles off",
+  languages: {
+    "en-US": "English",
+    "zh-CN": "Simplified Chinese",
+    "zh-HK": "Traditional Chinese",
+  },
+};
 
 /** Shared map copy for player tests; production hosts use their localized messages. */
 export const journeyMapTestCopy: ExperienceJourneyMapCopy = {

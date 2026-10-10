@@ -11,6 +11,7 @@ import {
   EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY,
+  EXPERIENCE_CORE_VIDEO_SUBTITLE_CAPABILITY,
   EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
   EXPERIENCE_GESTURE_CAPABILITY,
   ExperienceRuntimeManifestSchema,
@@ -247,6 +248,13 @@ export function compileStoryExperienceManifest(
           ? ['commerce.community-points']
           : []),
         ...(hasStillSegments ? [EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY] : []),
+        ...(input.release.nodes.some(
+          (node) =>
+            node.presentation.kind === 'video' &&
+            node.presentation.sequence.some((clip) => clip.subtitles?.length),
+        )
+          ? [EXPERIENCE_CORE_VIDEO_SUBTITLE_CAPABILITY]
+          : []),
         ...(hasSpatialInteractions
           ? [
               'spatial.anchor',

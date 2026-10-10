@@ -12,7 +12,7 @@ import {
 } from "@repo/shared/experience-runtime";
 import { ExperiencePlayer, type ExperienceAccessCheckpoint } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
-import { journeyMapTestCopy } from "./experience-journey-test-copy";
+import { journeyMapTestCopy, subtitleTestCopy } from "./experience-journey-test-copy";
 import { createExperienceRuntime } from "./experience-runtime-host";
 import {
   mediaPlaybackSignature,
@@ -103,7 +103,10 @@ const copy: ExperiencePlayerCopy = {
   emptySequence: "No footage",
   loadingMedia: "Loading",
   regionLabel: "Player",
-  video: { unmute: "Unmute" },
+  video: {
+    unmute: "Unmute",
+    subtitles: subtitleTestCopy,
+  },
   playback: {
     pause: "Pause",
     resume: "Resume",
@@ -378,6 +381,111 @@ describe("Core media seconds resume", () => {
     });
     expect(container.querySelector('[role="alertdialog"]')).toBeNull();
     expect(observed.mock.lastCall?.[0].state.status).toBe("active");
+  });
+
+  it("switches subtitle language independently, follows seeks, clears cues on the next shot and keeps captions off", async () => {
+    const manifest = fixture();
+    const scene = manifest.graph.nodes[0];
+    if (scene?.kind !== "scene") throw new Error("Expected scene");
+    const renderer = scene.renderers[0]!;
+    const sequence = renderer.config.sequence as { subtitles?: unknown }[];
+    sequence[0]!.subtitles = [
+      { language: "en-US", cues: [{ startMs: 500, endMs: 2000, text: "First line" }] },
+      { language: "zh-HK", cues: [{ startMs: 500, endMs: 2000, text: "Traditional line" }] },
+    ];
+    sequence[1]!.subtitles = [
+      { language: "en-US", cues: [{ startMs: 0, endMs: 1000, text: "Second shot" }] },
+    ];
+    manifest.compatibility.requiredCapabilities.push("core.video.subtitles");
+    await render(manifest);
+    await click("Start");
+    await act(async () => mediaEvents.get("/a.mp4")!.time(1));
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe("First line");
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Subtitle language"]'
+    )!;
+    await act(async () => {
+      select.value = "zh-HK";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe(
+      "Traditional line"
+    );
+    await act(async () => mediaEvents.get("/a.mp4")!.time(3));
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe("");
+    await act(async () => mediaEvents.get("/a.mp4")!.time(1));
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe(
+      "Traditional line"
+    );
+    await act(async () => mediaEvents.get("/a.mp4")!.end());
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe("");
+    expect(select.value).toBe("zh-HK");
+    await act(async () => {
+      select.value = "";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => mediaEvents.get("/b.mp4")!.time(0.5));
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe("");
+    await act(async () => {
+      select.value = "en-US";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe("Second shot");
+  });
+
+  it("keeps a node cue visible across video cuts", async () => {
+    const manifest = fixture();
+    const scene = manifest.graph.nodes[0]!;
+    if (scene.kind !== "scene") throw new Error("Expected scene");
+    const sequence = scene.renderers[0]!.config.sequence as { subtitles?: unknown }[];
+    sequence[0]!.subtitles = [
+      { language: "en-US", cues: [{ startMs: 9500, endMs: 10000, text: "Across the cut" }] },
+    ];
+    sequence[1]!.subtitles = [
+      { language: "en-US", cues: [{ startMs: 0, endMs: 500, text: "Across the cut" }] },
+    ];
+    manifest.compatibility.requiredCapabilities.push("core.video.subtitles");
+    await render(manifest);
+    await click("Start");
+    await act(async () => mediaEvents.get("/a.mp4")!.time(9.8));
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe(
+      "Across the cut"
+    );
+    await act(async () => mediaEvents.get("/a.mp4")!.end());
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe(
+      "Across the cut"
+    );
+    await act(async () => mediaEvents.get("/b.mp4")!.time(0.5));
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe("");
+  });
+
+  it("advances image captions with the node playback clock and freezes them while paused", async () => {
+    const manifest = fixture(true);
+    const scene = manifest.graph.nodes[0]!;
+    if (scene.kind !== "scene") throw new Error("Expected scene");
+    const sequence = scene.renderers[0]!.config.sequence as { subtitles?: unknown }[];
+    sequence[0]!.subtitles = [
+      { language: "en-US", cues: [{ startMs: 500, endMs: 2500, text: "Still dialogue" }] },
+    ];
+    manifest.compatibility.requiredCapabilities.push("core.video.subtitles");
+    await render(manifest);
+    await click("Start");
+    await tick(1000);
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe(
+      "Still dialogue"
+    );
+    await act(async () =>
+      container.querySelector<HTMLElement>("[data-experience-media-stage]")!.click()
+    );
+    await tick(4000);
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe(
+      "Still dialogue"
+    );
+    await act(async () =>
+      container.querySelector<HTMLElement>("[data-experience-paused-frame]")!.click()
+    );
+    await tick(2000);
+    expect(container.querySelector("[data-experience-subtitles]")?.textContent).toBe("");
   });
 
   it("resumes the second sequence at its saved second without replaying the first", async () => {

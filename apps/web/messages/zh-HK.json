@@ -9684,7 +9684,16 @@
     "loadErrorUnknown": "無法載入已發佈的互動體驗。",
     "returnToGames": "返回遊戲列表",
     "video": {
-      "unmute": "取消靜音"
+      "unmute": "取消靜音",
+      "subtitles": {
+        "label": "字幕語言",
+        "off": "關閉字幕",
+        "languages": {
+          "en-US": "英語",
+          "zh-CN": "簡體中文",
+          "zh-HK": "繁體中文"
+        }
+      }
     },
     "share": "分享",
     "shareCopied": "連結已複製",
@@ -12037,5 +12046,37 @@
     "retry": "重試",
     "more": "載入更多",
     "all": "查看全部收藏職位"
+  },
+  "storyStudio": {
+    "subtitles": {
+      "title": "字幕",
+      "description": "每個分鏡節點按語言上傳一份 SRT 或 VTT 檔案。UTF-8 · 最大 500 KB。時間碼從 0 開始，涵蓋節點內按播放順序銜接的所有片段。",
+      "language": "字幕語言",
+      "upload": "上傳字幕",
+      "replace": "替換字幕",
+      "invalidFormat": "請選擇 SRT 或 VTT 字幕檔案。",
+      "tooLarge": "字幕檔案不能超過 500 KB。",
+      "encodingError": "請將字幕檔案儲存為 UTF-8 編碼後重新上傳。",
+      "saveError": "字幕儲存失敗。",
+      "saved": "字幕已儲存",
+      "empty": "還沒有字幕，先加入一種語言。",
+      "cueCount": "{count} 條字幕",
+      "stale": "節點素材、順序或時長已改變。發佈前請重新上傳或移除此字幕。",
+      "preview": "預覽",
+      "hidePreview": "收起",
+      "remove": "移除{language}字幕",
+      "videoPreview": "節點字幕預覽",
+      "cuesPreview": "字幕內容",
+      "timelineRequired": "請先為節點內的每個片段選擇可播放、時長明確的素材，再上傳字幕。",
+      "duration": "節點播放總長：{seconds} 秒",
+      "close": "關閉",
+      "loadingPreview": "正在載入節點預覽…",
+      "previewUnavailable": "此節點暫時無法預覽。",
+      "languages": {
+        "en-US": "英語",
+        "zh-CN": "簡體中文",
+        "zh-HK": "繁體中文"
+      }
+    }
   }
 }

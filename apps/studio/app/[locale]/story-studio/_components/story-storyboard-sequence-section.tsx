@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { IconPencil, IconPhoto, IconVideo } from "@tabler/icons-react";
+import { IconPencil, IconPhoto, IconVideo, IconSubtitles } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import type { StoryStoryboardSequence } from "@/lib/story-production-api";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 import { StoryClipDetailDialog } from "./story-clip-detail-dialog";
+import { StorySequenceSubtitlesDialog } from "./story-sequence-subtitles-dialog";
 import { StoryClipVideoReplace } from "./story-clip-video-replace";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
@@ -67,16 +68,20 @@ function StoryClipTile({
         secondaryAction={
           <button
             type="button"
-            onClick={() => setDetailOpen(true)}
+            onClick={() => {
+              setDetailOpen(true);
+            }}
             className="rounded-md bg-black/45 px-2 py-1 text-[11px] font-medium text-white/72 backdrop-blur-sm transition hover:bg-black/60 hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
           >
             {t("details")}
           </button>
         }
       />
-      <p className="mt-1.5 truncate text-[11px] tabular-nums text-white/62">
-        {clip.title} · {durationLabel}
-      </p>
+      <div className="mt-1.5 flex items-center gap-1">
+        <p className="min-w-0 flex-1 truncate text-[11px] tabular-nums text-white/62">
+          {clip.title} · {durationLabel}
+        </p>
+      </div>
       <StoryClipVideoReplace
         projectId={scope.projectId}
         chapterId={scope.chapterId}
@@ -169,6 +174,8 @@ export function StoryStoryboardSequenceSection({
   aspectRatio?: string;
 }) {
   const t = useTranslations("storyStudio.storyboardPage");
+  const subtitlesT = useTranslations("storyStudio.subtitles");
+  const [subtitlesOpen, setSubtitlesOpen] = useState(false);
   const scope = { projectId, chapterId };
   const readableTitle = title.trim() && title.trim() !== clipKey ? title.trim() : "";
   // Storage and timeline invariants stay in milliseconds; seconds are display-only.
@@ -193,14 +200,27 @@ export function StoryStoryboardSequenceSection({
             {t("seconds", { value: seconds(sequence.durationMs) })}
           </span>
         </div>
-        <Button asChild variant="primary-ghost" size="sm">
-          <Link
-            href={`/story-studio/projects/${projectId}/edit?chapter=${encodeURIComponent(chapterId)}&node=${encodeURIComponent(sequence.plotNodeId)}`}
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-haspopup="dialog"
+            aria-expanded={subtitlesOpen}
+            onClick={() => setSubtitlesOpen(true)}
           >
-            <IconPencil aria-hidden="true" />
-            {t("editTimeline")}
-          </Link>
-        </Button>
+            <IconSubtitles aria-hidden="true" />
+            {subtitlesT("title")}
+            {sequence.subtitleTracks.length > 0 ? ` (${sequence.subtitleTracks.length})` : ""}
+          </Button>
+          <Button asChild variant="primary-ghost" size="sm">
+            <Link
+              href={`/story-studio/projects/${projectId}/edit?chapter=${encodeURIComponent(chapterId)}&node=${encodeURIComponent(sequence.plotNodeId)}`}
+            >
+              <IconPencil aria-hidden="true" />
+              {t("editTimeline")}
+            </Link>
+          </Button>
+        </div>
       </header>
       {description.trim() ? (
         <div className="mt-3 max-w-3xl">
@@ -232,6 +252,15 @@ export function StoryStoryboardSequenceSection({
           aspectRatio={aspectRatio}
         />
       </div>
+      <StorySequenceSubtitlesDialog
+        sequence={sequence}
+        title={readableTitle || t("plotNode", { index: index + 1 })}
+        projectId={projectId}
+        chapterId={chapterId}
+        open={subtitlesOpen}
+        onOpenChange={setSubtitlesOpen}
+        editable={allowGeneration}
+      />
     </article>
   );
 }

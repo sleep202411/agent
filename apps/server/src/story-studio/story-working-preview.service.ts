@@ -31,12 +31,16 @@ import {
   type StoryBuildSegmentInput,
 } from './story-build-compiler';
 import { resolveStoryCoverUrl } from './story-cover-media';
+import {
+  orderedSubtitleClips,
+  resolveStorySubtitleTracks,
+} from './story-subtitle-tracks';
 import { StoryPermissionService } from './story-permission.service';
 import { assertStoryChapterGraphPartition } from './story-chapter-graph-invariant';
 import {
   chooseStoryboardClipVariant,
   isBrowserSafeMp4Metadata,
-  storyboardClipSnapshotEntry,
+  storyboardSequenceSnapshotEntries,
   storyVideoSnapshotHash,
   StoryVideoSnapshotEntrySchema,
   type StoryVideoSnapshotEntry,
@@ -423,9 +427,50 @@ function prepareWorkingPreviewTimeline(
       snapshotEntries: [],
     };
   }
-  const segments = sequence.clips.map((clip) =>
-    prepareWorkingPreviewSegment(graphNodeId, sceneTitle, clip, assetUrls),
+  const subtitleResult = resolveStorySubtitleTracks(sequence);
+  const segments = orderedSubtitleClips(sequence.clips).map((clip) => {
+    const prepared = prepareWorkingPreviewSegment(
+      graphNodeId,
+      sceneTitle,
+      clip,
+      assetUrls,
+    );
+    prepared.segment.subtitles = subtitleResult.byClipId.get(clip.id) ?? [];
+    if (subtitleResult.stale || subtitleResult.outOfRange)
+      prepared.segment.eligibilityDiagnostics.push(
+        previewDiagnostic(
+          'warning',
+          'STORY_SUBTITLE_REVIEW_REQUIRED',
+          `"${sceneTitle}" has subtitles for a changed node timeline. Re-upload or remove those tracks before publishing.`,
+          'node',
+          graphNodeId,
+        ),
+      );
+    return prepared;
+  });
+  const incompletePlayback = segments.some(
+    ({ segment }) =>
+      !segment.asset ||
+      !(
+        segment.asset.url.trim().startsWith('/') ||
+        segment.asset.url.trim().startsWith('https://')
+      ),
   );
+  if (
+    incompletePlayback &&
+    segments.some(({ segment }) => segment.subtitles?.length)
+  ) {
+    for (const { segment } of segments) segment.subtitles = [];
+    segments[0].segment.eligibilityDiagnostics.push(
+      previewDiagnostic(
+        'warning',
+        'STORY_SUBTITLE_PLAYBACK_INCOMPLETE',
+        `"${sceneTitle}" skips unavailable footage in playtest. Node subtitles are hidden until every segment can play.`,
+        'node',
+        graphNodeId,
+      ),
+    );
+  }
   return {
     timeline: {
       graphNodeId,
@@ -433,7 +478,7 @@ function prepareWorkingPreviewTimeline(
       segments: segments.map((item) => item.segment),
     },
     sources: segments.flatMap((item) => (item.source ? [item.source] : [])),
-    snapshotEntries: segments.map((item) => item.snapshotEntry),
+    snapshotEntries: storyboardSequenceSnapshotEntries(sequence),
   };
 }
 
@@ -447,7 +492,6 @@ function prepareWorkingPreviewSegment(
 ): {
   segment: StoryBuildSegmentInput;
   source: StoryWorkingPreviewDto['sources'][number] | null;
-  snapshotEntry: StoryVideoSnapshotEntry;
 } {
   const diagnostics: StoryBuildDiagnosticDto[] = [];
   let asset: FrozenStoryVideoAsset | null = null;
@@ -463,7 +507,6 @@ function prepareWorkingPreviewSegment(
     sceneTitle,
     shotTitle: shot,
   };
-  const snapshotEntry = previewClipSnapshotEntry(clip);
 
   if (media && !variant) {
     diagnostics.push(
@@ -603,13 +646,8 @@ function prepareWorkingPreviewSegment(
             selection: 'current',
           }
         : null,
-    snapshotEntry,
   };
 }
-
-const previewClipSnapshotEntry = (
-  clip: WorkingPreviewClip,
-): StoryVideoSnapshotEntry => storyboardClipSnapshotEntry(clip);
 
 function emptyVideoSnapshotEntry(
   graphNodeId: string,

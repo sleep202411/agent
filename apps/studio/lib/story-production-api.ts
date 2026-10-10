@@ -1,3 +1,9 @@
+import type {
+  StorySubtitleTrack,
+  StorySubtitleUpload,
+  StorySubtitleLanguage,
+  StorySubtitleTimeline,
+} from "@repo/shared/story-subtitles";
 import type { PutStoryStoryboardTimelineInput } from "@repo/shared";
 import { api } from "@/lib/api";
 
@@ -210,6 +216,8 @@ export interface StoryStoryboardSequence {
   status: StoryProductionSpecStatus;
   version: number;
   userModifiedAt: string | null;
+  subtitleTracks: StorySubtitleTrack[];
+  subtitleTimeline: StorySubtitleTimeline;
   clips: StoryStoryboardClip[];
   cues: StoryStoryboardCue[];
   updatedAt: string;
@@ -750,6 +758,28 @@ export async function archiveStoryAssetSpec(
 ): Promise<StoryAssetSpec> {
   const value = await api.delete<StoryAssetSpec>(
     chapterPath(projectId, chapterId, `asset-specs/${encodeURIComponent(assetSpecId)}`),
+    projectMutationConfig(idempotencyKey, input)
+  );
+  assertChapterScope(value, projectId, chapterId);
+  return value;
+}
+
+export interface PatchStoryStoryboardSequenceInput {
+  expectedVersion: number;
+  description?: string | null;
+  subtitleUpload?: StorySubtitleUpload;
+  removeSubtitleLanguage?: StorySubtitleLanguage;
+}
+
+export async function patchStoryStoryboardSequence(
+  projectId: string,
+  chapterId: string,
+  sequenceId: string,
+  idempotencyKey: string,
+  input: PatchStoryStoryboardSequenceInput
+): Promise<StoryStoryboardSequence> {
+  const value = await api.patch<StoryStoryboardSequence>(
+    chapterPath(projectId, chapterId, `storyboard/sequences/${encodeURIComponent(sequenceId)}`),
     projectMutationConfig(idempotencyKey, input)
   );
   assertChapterScope(value, projectId, chapterId);

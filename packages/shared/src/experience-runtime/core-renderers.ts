@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RuntimeSubtitleTracksSchema } from "../story-subtitles.js";
 import { ExperienceLocalizedTextSchema, ExperienceStableIdSchema } from "./common.js";
 import { ExperienceConditionSchema } from "./state.js";
 
@@ -16,6 +17,7 @@ export const EXPERIENCE_CORE_VIDEO_RENDERER_ID = "core.video" as const;
  * construction, by name, instead of silently showing an empty frame.
  */
 export const EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY = "core.video.still" as const;
+export const EXPERIENCE_CORE_VIDEO_SUBTITLE_CAPABILITY = "core.video.subtitles" as const;
 export const EXPERIENCE_CORE_TEXT_RENDERER_ID = "core.text" as const;
 export const EXPERIENCE_CORE_CHOICE_RENDERER_ID = "core.choice" as const;
 export const EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID = "core.charge-feedback" as const;
@@ -79,6 +81,7 @@ const ExperienceCoreVideoSequenceClipSchema = z
     clipId: ExperienceStableIdSchema,
     assetId: ExperienceStableIdSchema,
     posterAssetId: ExperienceStableIdSchema.optional(),
+    subtitles: RuntimeSubtitleTracksSchema.optional(),
     endBehavior: ExperienceCoreVideoEndBehaviorSchema,
   })
   .strict();

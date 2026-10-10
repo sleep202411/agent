@@ -267,6 +267,23 @@ and verify their buckets deny anonymous reads. Existing objects in public media
 storage need a separate migration and public-copy cleanup; this worker change
 does not relocate them.
 
+## Story node subtitles
+
+The authenticated storyboard sequence PATCH accepts `subtitleUpload` with
+`language` (`zh-CN`, `zh-HK` or `en-US`), `timelineFingerprint`, `fileName`,
+`format` (`srt` or `vtt`) and UTF-8 `content`, or `removeSubtitleLanguage`.
+It uses `story.edit`, `expectedVersion` and `Idempotency-Key` as other node edits.
+Each storyboard node keeps one complete file per platform language; limits are
+512,000 bytes and 2,000 ordered cues. Timecodes start at zero and cover the entire
+node in playback order. Upload requires playable selections and known durations:
+video uses actual rendition duration, images use their configured hold time.
+The fingerprint binds order, selections and durations. Changed timelines retain
+uploads for inspection but exclude stale captions from preview and block publication
+until replacement or removal. Runtime compilation slices overlapping cues at
+segment boundaries without rewriting authored node cues. Builds freeze captions,
+include node versions in their snapshot identity and declare `core.video.subtitles`.
+This upload flow performs no speech recognition or translation.
+
 ## Story project publication gateway
 
 Authenticated Studio clients use the project gateway instead of Java's
@@ -291,7 +308,11 @@ not exposed. Upload uses the selected authenticated actor's own session, never
 an owner's borrowed session. Existing Java authorship is retained. No Java
 source change is required for this integration.
 
-`JAVA_STUDIO_URL` and `JAVA_ADMIN_API_TOKEN` are required at server readiness.
+`JAVA_STUDIO_URL` is required at server readiness. `JAVA_ADMIN_API_TOKEN` is
+required at production readiness. Local development with a loopback PostgreSQL
+database, and unit tests, can start without it; authoring and preview remain
+available. An admin publication request without the credential returns an
+explicit configuration error before contacting Java.
 An optional `JAVA_ADMIN_API_TOKEN_HEADER` overrides `X-Admin-Api-Token` with a
 dedicated HTTP header name. Supply the regional value from the existing secret
 store to the server Secret; never expose it through public environment variables,

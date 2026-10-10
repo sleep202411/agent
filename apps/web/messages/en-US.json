@@ -9684,7 +9684,16 @@
     "loadErrorUnknown": "The published experience could not be loaded.",
     "returnToGames": "Back to games",
     "video": {
-      "unmute": "Unmute"
+      "unmute": "Unmute",
+      "subtitles": {
+        "label": "Subtitle language",
+        "off": "Subtitles off",
+        "languages": {
+          "en-US": "English",
+          "zh-CN": "Simplified Chinese",
+          "zh-HK": "Traditional Chinese"
+        }
+      }
     },
     "share": "Share",
     "shareCopied": "Link copied",
@@ -12037,5 +12046,37 @@
     "retry": "Retry",
     "more": "Load more",
     "all": "See all saved jobs"
+  },
+  "storyStudio": {
+    "subtitles": {
+      "title": "Subtitles",
+      "description": "Upload one SRT or VTT file per language for this storyboard node. UTF-8 · up to 500 KB. Timecodes start at 0 and cover all segments in playback order.",
+      "language": "Subtitle language",
+      "upload": "Upload subtitles",
+      "replace": "Replace subtitles",
+      "invalidFormat": "Choose an SRT or VTT subtitle file.",
+      "tooLarge": "Subtitle files must be no larger than 500 KB.",
+      "encodingError": "Save this subtitle file as UTF-8 and upload it again.",
+      "saveError": "Could not save subtitles.",
+      "saved": "Subtitles saved",
+      "empty": "No subtitles yet. Add a language to get started.",
+      "cueCount": "{count} cues",
+      "stale": "Node footage, order or duration changed. Re-upload or remove this track before publishing.",
+      "preview": "Preview",
+      "hidePreview": "Hide",
+      "remove": "Remove {language} subtitles",
+      "videoPreview": "Node with subtitles",
+      "cuesPreview": "Subtitle cues",
+      "timelineRequired": "Select playable media with known durations for every segment before uploading subtitles.",
+      "duration": "Node playback: {seconds}s",
+      "close": "Close",
+      "loadingPreview": "Loading node preview…",
+      "previewUnavailable": "This node cannot be previewed yet.",
+      "languages": {
+        "en-US": "English",
+        "zh-CN": "Simplified Chinese",
+        "zh-HK": "Traditional Chinese"
+      }
+    }
   }
 }

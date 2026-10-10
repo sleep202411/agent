@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RuntimeSubtitleTracksSchema } from "./story-subtitles.js";
 import {
   StoryAutoRoutesSchema,
   StoryConditionSchema,
@@ -334,6 +335,7 @@ const VideoSequenceClipSchema = z
     clipId: stableId,
     assetId: stableId,
     posterAssetId: stableId.optional(),
+    subtitles: RuntimeSubtitleTracksSchema.optional(),
     endBehavior: VideoSequenceEndBehaviorSchema,
   })
   .strict();

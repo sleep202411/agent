@@ -121,6 +121,8 @@ function fixtureSequence(): StoryStoryboardSequence {
     status: "current",
     version: 4,
     userModifiedAt: null,
+    subtitleTracks: [],
+    subtitleTimeline: { fingerprint: "a".repeat(64), durationMs: null, ready: false, segments: [] },
     clips: [fixtureClip()],
     cues: [],
     updatedAt: "2026-08-28T00:00:00.000Z",

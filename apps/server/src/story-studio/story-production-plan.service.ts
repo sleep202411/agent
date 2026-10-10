@@ -5,6 +5,9 @@ import {
 } from './story-candidate-media';
 export { assertStoryboardClipMediaKind } from './story-candidate-media';
 import { STORY_CHAPTER_ASSETS_MAX } from '@repo/shared/story-production';
+import { StorySubtitleTracksSchema } from '@repo/shared/story-subtitles';
+import { parseStorySubtitleFile } from './story-subtitle-file';
+import { storySubtitleTimeline } from './story-subtitle-tracks';
 import {
   BadRequestException,
   ConflictException,
@@ -983,14 +986,60 @@ export class StoryProductionPlanService {
             id: sequenceId,
             storyProjectId: projectId,
             storyChapterId: chapterId,
+            status: { not: StoryProductionSpecStatus.archived },
           },
+          include: STORYBOARD_INCLUDE,
         });
         if (!sequence)
           throw productionNotFound('Storyboard sequence', sequenceId);
+        let subtitleTracks: Prisma.InputJsonValue | undefined;
+        if (input.subtitleUpload || input.removeSubtitleLanguage) {
+          const tracks = StorySubtitleTracksSchema.parse(
+            sequence.subtitleTracks,
+          );
+          if (input.subtitleUpload) {
+            const upload = input.subtitleUpload;
+            const timeline = storySubtitleTimeline(sequence);
+            if (upload.timelineFingerprint !== timeline.fingerprint)
+              throw new ConflictException({
+                code: 'STORY_SUBTITLE_TIMELINE_CHANGED',
+                message:
+                  'The storyboard node timeline changed. Refresh before uploading subtitles.',
+              });
+            if (!timeline.ready)
+              throw new BadRequestException({
+                code: 'STORY_SUBTITLE_TIMELINE_REQUIRED',
+                message:
+                  'Select playable media with known durations for every segment before uploading node subtitles.',
+              });
+            const cues = parseStorySubtitleFile(upload.content, upload.format);
+            if (cues.some((cue) => cue.endMs > timeline.durationMs!))
+              throw new BadRequestException({
+                code: 'STORY_SUBTITLE_DURATION',
+                message:
+                  'A subtitle extends beyond this storyboard node. Check its timecodes.',
+              });
+            subtitleTracks = StorySubtitleTracksSchema.parse([
+              ...tracks.filter((track) => track.language !== upload.language),
+              {
+                language: upload.language,
+                timelineFingerprint: timeline.fingerprint,
+                fileName: upload.fileName,
+                format: upload.format,
+                cues,
+              },
+            ]);
+          } else {
+            subtitleTracks = tracks.filter(
+              (track) => track.language !== input.removeSubtitleLanguage,
+            );
+          }
+        }
         const updated = await tx.storyStoryboardSequence.updateMany({
           where: { id: sequence.id, version: input.expectedVersion },
           data: {
             ...defined(input, 'description'),
+            ...(subtitleTracks !== undefined ? { subtitleTracks } : {}),
             userModifiedAt: now,
             userModifiedByUserId: user.userId,
             version: { increment: 1 },
@@ -3256,6 +3305,8 @@ function toStoryboardSequenceDto(row: StoryboardSequenceRow) {
     status: row.status,
     version: row.version,
     userModifiedAt: row.userModifiedAt?.toISOString() ?? null,
+    subtitleTracks: StorySubtitleTracksSchema.parse(row.subtitleTracks ?? []),
+    subtitleTimeline: storySubtitleTimeline(row),
     clips: row.clips.map((clip) => ({
       id: clip.id,
       stableKey: clip.stableKey,
