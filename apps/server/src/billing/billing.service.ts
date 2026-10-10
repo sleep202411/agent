@@ -1141,6 +1141,12 @@ export class BillingService {
    * see which projects drained which wallet.
    */
   async listAdminComputeProjectUsage(query: ListAdminComputeProjectUsageQuery) {
+    const workspaceOffset = query.workspaceOffset ?? 0;
+    const projectOffset = query.projectOffset ?? 0;
+    if (projectOffset && !query.workspaceId)
+      throw new BadRequestException(
+        'Project pagination requires a workspaceId.',
+      );
     const from = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
     const workspaceIdFilter = query.workspaceId
       ? Prisma.sql`AND a.owner_id = ${query.workspaceId}`
@@ -1223,7 +1229,7 @@ export class BillingService {
         SELECT workspace, SUM(credits) AS credits, SUM(jobs) AS jobs,
                SUM(image_jobs) AS image_jobs, SUM(video_jobs) AS video_jobs,
                COUNT(*) AS projects, MAX(last_spent_at) AS last_spent_at
-        FROM pairs GROUP BY workspace ORDER BY ${workspaceSelectOrder} LIMIT ${query.limit}
+        FROM pairs GROUP BY workspace ORDER BY ${workspaceSelectOrder} LIMIT ${query.limit} OFFSET ${workspaceOffset}
       ), details AS (
         SELECT p.*, s.credits AS workspace_credits, s.jobs AS workspace_jobs,
                s.image_jobs AS workspace_image_jobs, s.video_jobs AS workspace_video_jobs,
@@ -1245,7 +1251,7 @@ export class BillingService {
              d.workspace_last_spent_at AS "workspaceLastSpentAt",
              t.credits AS "totalCredits", t.workspaces AS "workspaceCount",
              t.projects AS "projectCount"
-      FROM details d CROSS JOIN totals t WHERE d.ordinal <= 40
+      FROM details d CROSS JOIN totals t WHERE d.ordinal > ${projectOffset} AND d.ordinal <= ${projectOffset + 40}
       ORDER BY ${detailOrder}
     `);
 
@@ -1255,6 +1261,7 @@ export class BillingService {
         workspaceKind: query.workspaceKind,
         sort,
         workspaceId: query.workspaceId ?? null,
+        nextWorkspaceOffset: null,
         totalCredits: '0',
         workspaceCount: 0,
         projectCount: 0,
@@ -1353,6 +1360,10 @@ export class BillingService {
       workspaceKind: query.workspaceKind,
       sort,
       workspaceId: query.workspaceId ?? null,
+      nextWorkspaceOffset:
+        workspaceOffset + byWorkspace.size < Number(rows[0].workspaceCount)
+          ? workspaceOffset + byWorkspace.size
+          : null,
       totalCredits: rows[0].totalCredits,
       workspaceCount: Number(rows[0].workspaceCount),
       projectCount: Number(rows[0].projectCount),
@@ -1371,6 +1382,10 @@ export class BillingService {
             totalImageJobs: workspace.totalImageJobs,
             totalVideoJobs: workspace.totalVideoJobs,
             projectCount: workspace.projectCount,
+            nextProjectOffset:
+              projectOffset + workspace.projects.length < workspace.projectCount
+                ? projectOffset + workspace.projects.length
+                : null,
             projects: workspace.projects
               .sort((a, b) => compareProjectUsage(a, b, recent))
               .map((project) => ({

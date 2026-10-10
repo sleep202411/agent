@@ -712,6 +712,7 @@ export type AdminComputeProjectUsageWorkspace = {
   totalImageJobs: number;
   totalVideoJobs: number;
   projectCount: number;
+  nextProjectOffset?: number | null;
   projects: AdminComputeProjectUsageProject[];
 };
 
@@ -723,6 +724,7 @@ export type AdminComputeProjectUsageData = {
   totalCredits: string;
   workspaceCount: number;
   projectCount: number;
+  nextWorkspaceOffset?: number | null;
   workspaces: AdminComputeProjectUsageWorkspace[];
 };
 

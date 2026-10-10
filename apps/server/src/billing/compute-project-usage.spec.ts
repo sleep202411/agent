@@ -40,6 +40,7 @@ it('returns an empty workspace rollup when the compute ledger has no spend', asy
     workspaceKind: 'shared',
     sort: 'recent',
     workspaceId: null,
+    nextWorkspaceOffset: null,
     totalCredits: '0',
     workspaceCount: 0,
     projectCount: 0,

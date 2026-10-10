@@ -249,7 +249,10 @@ it('scopes admin homework to the bound Web lecturer id', async () => {
   expect(f.db.academyEnrollment.findMany).toHaveBeenCalledWith(
     expect.objectContaining({
       where: expect.objectContaining({
-        teacherId: '200',
+        OR: [
+          { teacherId: '200' },
+          { instructorShares: { array_contains: [{ teacherId: '200' }] } },
+        ],
         status: 'submitted',
       }) as Prisma.AcademyEnrollmentWhereInput,
     }),
@@ -830,4 +833,37 @@ describe('enrollment history when catalogue records disappear', () => {
       ).rejects.toThrow('Authority unavailable.');
     },
   );
+});
+
+it('includes co-instructor homework in the Admin queue while requiring current course authority', async () => {
+  const f = fixture();
+  f.row.instructorShares = [
+    { teacherId: '200', credits: '40' },
+    { teacherId: '201', credits: '10' },
+  ];
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    instructors: [{ userId: 200 }, { userId: 201 }],
+  });
+  const page = await f.service.adminHomework({
+    platformUserId: '201',
+  } as never);
+  expect(page.items).toHaveLength(1);
+  expect(f.db.academyEnrollment.findMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({
+        OR: [
+          { teacherId: '201' },
+          { instructorShares: { array_contains: [{ teacherId: '201' }] } },
+        ],
+      }),
+    }),
+  );
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    instructors: [{ userId: 200 }],
+  });
+  expect(
+    (await f.service.adminHomework({ platformUserId: '201' } as never)).items,
+  ).toHaveLength(0);
 });

@@ -731,10 +731,6 @@ export class AcademyLearningService {
     if (!record) throw new NotFoundException('Homework not found.');
     const boundTeacherId = admin.platformUserId?.trim() || null;
     if (boundTeacherId) {
-      if (record.teacherId !== boundTeacherId)
-        throw new ForbiddenException(
-          'Only homework for your bound Web lecturer account can be reviewed.',
-        );
       await this.teacher(record, boundTeacherId);
       return this.applyReview(id, boundTeacherId, input);
     }
@@ -809,7 +805,7 @@ export class AcademyLearningService {
     const teacherId = admin.platformUserId?.trim() || null;
     const rows = await this.db.academyEnrollment.findMany({
       where: {
-        ...(teacherId ? { teacherId } : {}),
+        ...(teacherId ? instructorWhere(teacherId) : {}),
         ...(status === 'submitted' ? { status: 'submitted' } : {}),
         ...(after ? { id: { lt: after } } : {}),
       },
@@ -1016,10 +1012,6 @@ export class AcademyLearningService {
     if (!row || !row.assetIds.includes(assetId))
       throw new NotFoundException('Attachment not found.');
     const teacherId = admin.platformUserId?.trim() || null;
-    if (teacherId && row.teacherId !== teacherId)
-      throw new ForbiddenException(
-        'Only attachments for your bound Web lecturer account are available.',
-      );
     if (teacherId) await this.teacher(row, teacherId);
     const asset = await this.db.mediaAsset.findFirst({
       where: {

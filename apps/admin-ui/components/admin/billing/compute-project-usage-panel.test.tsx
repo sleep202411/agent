@@ -155,3 +155,53 @@ it("requests recent activity order when that sort is selected", async () => {
   await act(async () => click("最近活跃"));
   expect(fetchMock.mock.calls[0][0]).toContain("sort=recent");
 });
+
+it("loads remaining projects without losing the first page or global totals", async () => {
+  const initial = data("Initial");
+  initial.workspaces[0].nextProjectOffset = 40;
+  initial.workspaces[0].projectCount = 41;
+  const page = data("Next");
+  page.workspaces[0].projects[0].projectId = "next-project";
+  page.workspaces[0].nextProjectOffset = null;
+  fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ code: 200, data: page }) });
+  await render("alice", "Initial", initial);
+  await act(async () => {
+    [...container.querySelectorAll("button")]
+      .find((b) => b.textContent?.includes("Initial"))!
+      .click();
+  });
+  await act(async () => click("Load more projects"));
+  expect(fetchMock.mock.calls[0][0]).toContain("projectOffset=40");
+  expect(fetchMock.mock.calls[0][0]).toContain("workspaceId=workspace");
+  expect(container.textContent).toContain("Initial film");
+  expect(container.textContent).toContain("Next film");
+  expect(container.textContent).not.toContain("Load more projects");
+});
+
+it("loads additional workspaces and retains earlier rows", async () => {
+  const initial = data("Initial");
+  initial.nextWorkspaceOffset = 100;
+  const page = data("Next");
+  page.workspaces[0].workspaceId = "other-workspace";
+  page.nextWorkspaceOffset = null;
+  fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ code: 200, data: page }) });
+  await render("alice", "Initial", initial);
+  await act(async () => click("Load more workspaces"));
+  expect(fetchMock.mock.calls[0][0]).toContain("workspaceOffset=100");
+  expect(container.textContent).toContain("Initial");
+  expect(container.textContent).toContain("Next");
+  expect(container.textContent).not.toContain("Load more workspaces");
+});
+
+it("ignores a displaced pagination response after changing filters", async () => {
+  const initial = data("Initial");
+  initial.nextWorkspaceOffset = 100;
+  const pending = deferred();
+  fetchMock.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(response("Filtered"));
+  await render("alice", "Initial", initial);
+  await act(async () => click("Load more workspaces"));
+  await act(async () => click("7 天"));
+  await act(async () => pending.resolve(response("Stale page")));
+  expect(container.textContent).toContain("Filtered");
+  expect(container.textContent).not.toContain("Stale page");
+});

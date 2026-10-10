@@ -75,6 +75,15 @@ export function BillingComputeProjectUsagePanel({
   const [data, setData] = useState<AdminComputeProjectUsageData>(initialData ?? emptyUsage);
   const [previousInitialData, setPreviousInitialData] = useState(initialData);
   const { busy: loading, begin } = useAdminOperation();
+  const loadedParams = useRef(
+    new URLSearchParams({
+      days: String(initialData?.rangeDays ?? 30),
+      workspaceKind: initialData?.workspaceKind ?? "all",
+      sort: initialData?.sort ?? "credits",
+      limit: "100",
+      ...(initialData?.workspaceId ? { workspaceId: initialData.workspaceId } : {}),
+    })
+  );
   const filters = useRef({ days, workspaceKind, sort });
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -115,8 +124,73 @@ export function BillingComputeProjectUsagePanel({
         operation.signal
       );
       if (!operation.current()) return;
+      loadedParams.current = params;
       setData(nextData);
       setExpanded(new Set());
+    } catch (err) {
+      if (operation.current()) setError(toErrorMessage(err));
+    } finally {
+      operation.finish();
+    }
+  }
+
+  async function loadMore(workspace?: AdminComputeProjectUsageWorkspace) {
+    if (loading) return;
+    const offset = workspace ? workspace.nextProjectOffset : data.nextWorkspaceOffset;
+    if (offset == null) return;
+    const operation = begin("read");
+    if (!operation) return;
+    setError(null);
+    const params = new URLSearchParams(loadedParams.current);
+    if (workspace) {
+      params.set("workspaceId", workspace.workspaceId);
+      params.set("projectOffset", String(offset));
+      params.delete("workspaceOffset");
+    } else {
+      params.set("workspaceOffset", String(offset));
+      params.delete("projectOffset");
+    }
+    try {
+      const page = await requestEnvelope<AdminComputeProjectUsageData>(
+        `/api/admin/billing/usage/project-compute?${params.toString()}`,
+        operation.signal
+      );
+      if (!operation.current()) return;
+      setData((previous) => {
+        if (workspace) {
+          const incoming = page.workspaces.find(
+            (item) => item.workspaceId === workspace.workspaceId
+          );
+          return {
+            ...previous,
+            workspaces: previous.workspaces.map((item) =>
+              item.workspaceId !== workspace.workspaceId
+                ? item
+                : {
+                    ...item,
+                    nextProjectOffset: incoming?.nextProjectOffset ?? null,
+                    projects: [
+                      ...new Map(
+                        [...item.projects, ...(incoming?.projects ?? [])].map((project) => [
+                          project.projectId,
+                          project,
+                        ])
+                      ).values(),
+                    ],
+                  }
+            ),
+          };
+        }
+        return {
+          ...previous,
+          nextWorkspaceOffset: page.nextWorkspaceOffset ?? null,
+          workspaces: [
+            ...new Map(
+              [...previous.workspaces, ...page.workspaces].map((item) => [item.workspaceId, item])
+            ).values(),
+          ],
+        };
+      });
     } catch (err) {
       if (operation.current()) setError(toErrorMessage(err));
     } finally {
@@ -295,10 +369,23 @@ export function BillingComputeProjectUsagePanel({
                 workspace={workspace}
                 open={expanded.has(workspace.workspaceId)}
                 onToggle={() => toggle(workspace.workspaceId)}
+                loading={loading}
+                onLoadMore={() => void loadMore(workspace)}
               />
             ))}
           </ul>
         )}
+        {data.nextWorkspaceOffset != null ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="m-4"
+            disabled={loading}
+            onClick={() => void loadMore()}
+          >
+            Load more workspaces
+          </Button>
+        ) : null}
       </section>
     </div>
   );
@@ -308,10 +395,14 @@ function WorkspaceRow({
   workspace,
   open,
   onToggle,
+  onLoadMore,
+  loading,
 }: {
   workspace: AdminComputeProjectUsageWorkspace;
   open: boolean;
   onToggle: () => void;
+  onLoadMore: () => void;
+  loading: boolean;
 }) {
   return (
     <li>
@@ -396,6 +487,13 @@ function WorkspaceRow({
               </p>
             </li>
           ))}
+          {workspace.nextProjectOffset != null ? (
+            <li>
+              <Button type="button" variant="outline" disabled={loading} onClick={onLoadMore}>
+                Load more projects
+              </Button>
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </li>

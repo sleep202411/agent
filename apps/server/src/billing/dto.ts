@@ -358,6 +358,8 @@ export const ListAdminComputeProjectUsageQuerySchema = z.object({
   /** Substring match against current project name. */
   projectQuery: z.string().trim().min(1).max(160).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
+  workspaceOffset: z.coerce.number().int().min(0).max(1000000).optional(),
+  projectOffset: z.coerce.number().int().min(0).max(1000000).optional(),
 });
 export type ListAdminComputeProjectUsageQuery = z.infer<
   typeof ListAdminComputeProjectUsageQuerySchema
