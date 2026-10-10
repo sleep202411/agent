@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import { classifyTerminalExecutionFailure } from "./execution-failure.js";
+import { InvalidToolResponseError } from "@repo/model-router";
 
 describe("classifyTerminalExecutionFailure", () => {
+  it("terminalizes an exhausted tool protocol retry even through an error cause", () => {
+    expect(
+      classifyTerminalExecutionFailure(
+        new Error("Invocation failed", {
+          cause: new InvalidToolResponseError(),
+        })
+      )
+    ).toMatchObject({ code: "MODEL_TOOL_CALL_INVALID", retryable: false });
+  });
   it("stops deterministic provider content rejections without exposing diagnostics", () => {
     const error = Object.assign(
       new Error("400 Input text data may contain inappropriate content."),

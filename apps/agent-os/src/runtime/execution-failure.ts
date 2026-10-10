@@ -1,5 +1,9 @@
 export interface TerminalExecutionFailure {
-  code: "MODEL_CONTENT_REJECTED" | "MODEL_OUTPUT_LIMIT" | "REQUEST_REJECTED";
+  code:
+    | "MODEL_CONTENT_REJECTED"
+    | "MODEL_OUTPUT_LIMIT"
+    | "MODEL_TOOL_CALL_INVALID"
+    | "REQUEST_REJECTED";
   message: string;
   retryable: false;
 }
@@ -25,6 +29,16 @@ const OUTPUT_LIMIT_MARKERS = [
 export function classifyTerminalExecutionFailure(error: unknown): TerminalExecutionFailure | null {
   const details = errorDetails(error);
   const searchable = details.text.toLowerCase();
+
+  // The model node has already exhausted its bounded retry. Redispatching the
+  // whole execution must not turn a protocol failure into a silent stuck run.
+  if (searchable.includes("model_tool_call_invalid")) {
+    return {
+      code: "MODEL_TOOL_CALL_INVALID",
+      message: "The model could not execute this request. Please try again.",
+      retryable: false,
+    };
+  }
 
   if (CONTENT_REJECTION_MARKERS.some((marker) => searchable.includes(marker))) {
     return {

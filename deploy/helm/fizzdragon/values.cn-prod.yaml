@@ -237,6 +237,8 @@ server:
     # against the CN catalog at server boot; minimax-h3-max is deliberately
     # NOT used (it has never been catalogued in any production cell).
     AGENT_OS_MOBILE_IMAGE_MODEL: wan-image-2.7
+    # Qualified against this region's endpoint with isolated Story tool fixtures.
+    AGENT_OS_MOBILE_CHAT_MODEL: qwen3.7-plus
     AGENT_OS_MOBILE_VIDEO_MODEL: minimax-h3
     # CN banner bucket for crew logos (relative keys). Admin DTOs resolve
     # crew.logo with this base; never inherit the .com Singapore banner bucket.
