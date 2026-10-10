@@ -524,6 +524,21 @@ export type CreateCrewInviteLinkInput = z.infer<
   typeof CreateCrewInviteLinkSchema
 >;
 
+export const ListCrewInviteLinksQuerySchema = z
+  .object({
+    paginated: z.enum(['true', 'false']).optional(),
+    scope: z.literal('general').optional(),
+    taskId: z.string().uuid().optional(),
+    cursor: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .refine((query) => !(query.scope && query.taskId), {
+    message: 'Choose a task or general links, not both.',
+  });
+export type ListCrewInviteLinksQuery = z.infer<
+  typeof ListCrewInviteLinksQuerySchema
+>;
+
 export const ListCrewInvitationsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   cursor: z
