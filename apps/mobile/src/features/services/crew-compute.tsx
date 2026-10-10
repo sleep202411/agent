@@ -17,7 +17,13 @@ import {
   type ComputeInput,
 } from "./crew-compute-api";
 import { formatFinanceMoney } from "./crew-finance-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  initialTaskId?: string;
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+};
 export function CrewCompute(props: Props) {
   const t = useTranslations();
   const [revision, setRevision] = useState(0);
@@ -124,28 +130,30 @@ function Panel(props: Props & { onSaved: () => void }) {
             </View>
           )}
           <ThemedText>{t("crewComputeFinance.usageByTask")}</ThemedText>
-          {page.taskUsage.map((row) => (
-            <View key={`${row.taskId}:${row.userId}`} style={{ paddingVertical: 8, gap: 4 }}>
-              <ThemedText>
-                {row.taskTitle} · {row.userId}
-              </ThemedText>
-              <ThemedText>
-                {t("crewComputeFinance.approvedTotal")} · {row.approvedPoints}
-              </ThemedText>
-              <ThemedText>
-                {t("mobileProduction.credited")} · {row.creditedPoints}
-              </ThemedText>
-              <ThemedText>
-                {t("crewComputeFinance.pending")} · {row.pendingPoints}
-              </ThemedText>
-              <ThemedText>
-                {t("crewComputeFinance.consumed")} · {row.consumedPoints}
-              </ThemedText>
-              <ThemedText>
-                {t("crewComputeFinance.committed")} · {row.committedPoints}
-              </ThemedText>
-            </View>
-          ))}
+          {page.taskUsage
+            .filter((row) => !props.initialTaskId || row.taskId === props.initialTaskId)
+            .map((row) => (
+              <View key={`${row.taskId}:${row.userId}`} style={{ paddingVertical: 8, gap: 4 }}>
+                <ThemedText>
+                  {row.taskTitle} · {row.userId}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.approvedTotal")} · {row.approvedPoints}
+                </ThemedText>
+                <ThemedText>
+                  {t("mobileProduction.credited")} · {row.creditedPoints}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.pending")} · {row.pendingPoints}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.consumed")} · {row.consumedPoints}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.committed")} · {row.committedPoints}
+                </ThemedText>
+              </View>
+            ))}
           <RequestForm {...props} page={page} />
           {!page.items.length && <ThemedText>{t("crewComputeFinance.empty")}</ThemedText>}
           {page.items.map((row) => (
@@ -209,7 +217,7 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.crewId, true);
-  const [taskId, setTaskId] = useState(""),
+  const [taskId, setTaskId] = useState(props.initialTaskId ?? ""),
     [points, setPoints] = useState(""),
     [reason, setReason] = useState(""),
     [beneficiary, setBeneficiary] = useState(""),

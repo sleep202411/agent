@@ -1,3 +1,10 @@
+import {
+  useServiceEditorState,
+  useClearServiceEditorDraft,
+  useServiceReceipt,
+} from "./service-editor-drafts";
+import { useServiceIntent } from "./service-intent";
+import { orderOutbox } from "./order-outbox";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useIsFocused, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
@@ -12,10 +19,34 @@ import { formatServicePrice } from "@/lib/creator-service-format";
 import { inquiryKey } from "./inquiry-api";
 import { orderPayload, submitServiceOrder } from "./order-api";
 export function ServiceOrder({ service }: { service: CreatorServiceDetail }) {
+  const auth = useAuth();
+  return (
+    <ScopedServiceOrder
+      key={JSON.stringify([service.id, auth.generation, auth.status])}
+      service={service}
+    />
+  );
+}
+function ScopedServiceOrder({ service }: { service: CreatorServiceDetail }) {
   const auth = useAuth(),
     gate = useAuthGate(),
     t = useTranslations();
   const [open, setOpen] = useState(false);
+  const intentControl = useServiceIntent();
+  const receipt = useServiceReceipt("order");
+  const isOpen = intentControl ? intentControl.kind === "order" : open;
+  const [hasPending, setHasPending] = useState(() => {
+    if (auth.status !== "authenticated") return false;
+    try {
+      return !!orderOutbox(
+        service.id,
+        String(auth.user?.userId ?? auth.user?.id ?? ""),
+        auth.generation
+      ).read();
+    } catch {
+      return false;
+    }
+  });
   const active = useRef(false);
   useLayoutEffect(() => {
     active.current = true;
@@ -24,58 +55,130 @@ export function ServiceOrder({ service }: { service: CreatorServiceDetail }) {
     };
   }, []);
   if (
-    service.status !== "listed" ||
     String(auth.user?.userId ?? auth.user?.id ?? "") === service.creatorId ||
-    !Number.isSafeInteger(service.version) ||
-    !service.packages.length
+    (!hasPending &&
+      !receipt.id &&
+      (service.status !== "listed" ||
+        !Number.isSafeInteger(service.version) ||
+        !service.packages.length))
   )
     return null;
-  return open && auth.status === "authenticated" ? (
+  return isOpen && auth.status === "authenticated" ? (
     <RequestForm
       key={JSON.stringify([service.id, service.version, auth.generation])}
       service={service}
-      close={() => setOpen(false)}
+      onPending={() => setHasPending(true)}
+      close={() => {
+        setOpen(false);
+        intentControl?.close();
+        try {
+          setHasPending(
+            !!orderOutbox(
+              service.id,
+              String(auth.user?.userId ?? auth.user?.id ?? ""),
+              auth.generation
+            ).read()
+          );
+        } catch {
+          /* Preserve the recovery entry if storage is temporarily unavailable. */
+        }
+      }}
     />
   ) : (
     <Pressable
       accessibilityRole="button"
       onPress={() =>
-        gate.requireAuth({
-          onAuthenticated: () => {
-            if (active.current) setOpen(true);
-          },
-        })
+        intentControl
+          ? intentControl.request("order")
+          : gate.requireAuth({
+              onAuthenticated: () => {
+                if (active.current) setOpen(true);
+              },
+            })
       }
     >
       <ThemedText type="smallBold">{t("serviceOrder.title")}</ThemedText>
     </Pressable>
   );
 }
-function RequestForm({ service, close }: { service: CreatorServiceDetail; close: () => void }) {
+function RequestForm({
+  service,
+  close,
+  onPending,
+}: {
+  service: CreatorServiceDetail;
+  close: () => void;
+  onPending: () => void;
+}) {
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme(),
     router = useRouter();
+  const auth = useAuth();
   const op = useAuthFormOperation(service.id, useIsFocused());
-  const [tier, setTier] = useState(service.packages[0]!.tier),
-    [answers, setAnswers] = useState<Record<string, string>>({}),
-    [note, setNote] = useState(""),
-    [error, setError] = useState<string>(),
-    [order, setOrder] = useState<string>(),
-    [locked, setLocked] = useState(false);
-  const intent = useRef<ReturnType<typeof orderPayload> | undefined>(undefined);
-  const valid = !service.requirementQuestions.some(
-    (q) => q.required && !(answers[q.id] ?? "").trim()
+  const [outbox] = useState(() =>
+    orderOutbox(service.id, String(auth.user?.userId ?? auth.user?.id ?? ""), auth.generation)
   );
+  const [initial] = useState(() => {
+    try {
+      return { pending: outbox.read(), error: undefined };
+    } catch (cause) {
+      return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+  const receipt = useServiceReceipt("order");
+  const clearDraft = useClearServiceEditorDraft("order");
+  useServiceEditorState("order:open", true);
+  const [reviewedVersion, setReviewedVersion] = useServiceEditorState(
+    "order:version",
+    service.version
+  );
+  const offer = initial.pending?.offer ?? service;
+  const [tier, setTier] = useServiceEditorState(
+      "order:tier",
+      initial.pending?.payload.packageTier ?? service.packages[0]?.tier ?? ""
+    ),
+    [answers, setAnswers] = useServiceEditorState<Record<string, string>>(
+      "order:answers",
+      Object.fromEntries(
+        initial.pending?.payload.answers.map((answer) => [answer.questionId, answer.answer]) ?? []
+      )
+    ),
+    [note, setNote] = useServiceEditorState("order:note", initial.pending?.payload.note ?? ""),
+    [error, setError] = useState<string | undefined>(initial.error),
+    [localResult, setOrder] = useState<string>(),
+    [locked, setLocked] = useState(!!initial.pending);
+  const order = receipt.id ?? localResult;
+  const intent = useRef(initial.pending ?? undefined);
+  const needsReview = !locked && reviewedVersion !== service.version;
+  const valid =
+    locked ||
+    (!needsReview &&
+      offer.packages.some((pkg) => pkg.tier === tier) &&
+      !offer.requirementQuestions.some((q) => q.required && !(answers[q.id] ?? "").trim()));
   const send = () =>
     void op.run(
       async () => {
         setError(undefined);
-        intent.current ??= orderPayload(service, tier, answers, note, inquiryKey());
+        if (initial.error) throw new Error(initial.error);
+        const key = intent.current?.clientKey ?? inquiryKey();
+        const pending = intent.current ?? {
+          clientKey: key,
+          payload: orderPayload(service, tier, answers, note, key),
+          offer: { packages: service.packages, requirementQuestions: service.requirementQuestions },
+        };
+        intent.current = outbox.save(pending);
+        onPending();
         setLocked(true);
-        return submitServiceOrder(intent.current);
+        const id = await submitServiceOrder(intent.current.payload);
+        outbox.clear(intent.current.clientKey);
+        clearDraft();
+        receipt.save(id);
+        return id;
       },
-      setOrder,
+      (id) => {
+        setOrder(id);
+      },
       (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
     );
   const inputStyle = {
@@ -103,12 +206,12 @@ function RequestForm({ service, close }: { service: CreatorServiceDetail; close:
         </>
       ) : (
         <>
-          {service.packages.map((pkg) => (
+          {offer.packages.map((pkg) => (
             <Pressable
               key={pkg.id}
               accessibilityRole="radio"
               accessibilityState={{ selected: pkg.tier === tier }}
-              disabled={locked || op.busy}
+              disabled={locked || op.busy || !!initial.error}
               onPress={() => setTier(pkg.tier)}
               style={{
                 padding: 12,
@@ -121,9 +224,14 @@ function RequestForm({ service, close }: { service: CreatorServiceDetail; close:
                 {pkg.title} ·{" "}
                 {formatServicePrice({ startingPrice: pkg.price, currency: pkg.currency }, locale)}
               </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {pkg.deliveryDays} {t("serviceDetail.days")} ·{" "}
+                {pkg.revisions < 0 ? t("serviceDetail.unlimitedRevisions") : pkg.revisions}{" "}
+                {t("serviceDetail.revisions")}
+              </ThemedText>
             </Pressable>
           ))}
-          {service.requirementQuestions.map((q) => (
+          {offer.requirementQuestions.map((q) => (
             <View key={q.id}>
               <ThemedText>
                 {q.prompt}
@@ -134,7 +242,7 @@ function RequestForm({ service, close }: { service: CreatorServiceDetail; close:
                 accessibilityLabel={q.prompt}
                 value={answers[q.id] ?? ""}
                 onChangeText={(value) => setAnswers((current) => ({ ...current, [q.id]: value }))}
-                editable={!locked && !op.busy}
+                editable={!locked && !op.busy && !initial.error}
                 multiline
                 maxLength={4000}
                 style={inputStyle}
@@ -146,20 +254,43 @@ function RequestForm({ service, close }: { service: CreatorServiceDetail; close:
             accessibilityLabel={t("serviceOrder.note")}
             value={note}
             onChangeText={setNote}
-            editable={!locked && !op.busy}
+            editable={!locked && !op.busy && !initial.error}
             multiline
             maxLength={2000}
             style={inputStyle}
           />
-          {locked && error && <ThemedText>{t("serviceOrder.retryHint")}</ThemedText>}
-          <Pressable accessibilityRole="button" disabled={op.busy || !valid} onPress={send}>
-            <ThemedText>{t("serviceOrder.submit")}</ThemedText>
+          {needsReview && (
+            <View style={{ gap: 8 }}>
+              <ThemedText>{t("serviceOrder.offerChanged")}</ThemedText>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setReviewedVersion(service.version)}
+              >
+                <ThemedText>{t("serviceOrder.reviewOffer")}</ThemedText>
+              </Pressable>
+            </View>
+          )}
+          {locked && <ThemedText>{t("serviceOrder.retryHint")}</ThemedText>}
+          <Pressable
+            accessibilityRole="button"
+            disabled={op.busy || !valid || !!initial.error}
+            onPress={send}
+          >
+            <ThemedText>{t(locked ? "inbox.retry" : "serviceOrder.submit")}</ThemedText>
           </Pressable>
         </>
       )}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {op.busy && <ActivityIndicator />}
-      <Pressable accessibilityRole="button" disabled={op.busy} onPress={close}>
+      <Pressable
+        accessibilityRole="button"
+        disabled={op.busy}
+        onPress={() => {
+          clearDraft();
+          receipt.clear();
+          close();
+        }}
+      >
         <ThemedText>{t("experienceEdit.cancel")}</ThemedText>
       </Pressable>
     </View>

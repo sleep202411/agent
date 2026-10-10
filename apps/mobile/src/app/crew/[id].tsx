@@ -1,33 +1,30 @@
+import { crewApplicationError } from "@/features/browse/crew-qualification-error";
+import { CrewLinkedResources } from "@/features/services/crew-linked-resources";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useState } from "react";
-import {
-  ActionSheetIOS,
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuthGate } from "@/auth";
+import { useAuth, useAuthGate } from "@/auth";
 import { MoreActionsButton, ReportReasonSheet } from "@/components/report-actions";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
 import { invalidateBrowse } from "@/data/browse-refresh";
-import { blockCrew, getCrewById, reportCrew, type IpReportReason } from "@/data/browse-service";
+import { getCrewById, type IpReportReason } from "@/data/browse-service";
 import type { CrewDetail, CrewRoleOpening, CrewStatus, Person } from "@/data/types";
+import { getAuthGeneration } from "@/auth/auth-store";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { type MessageKey, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
+import { CrewRolePicker } from "@/features/browse/crew-role-picker";
+import { useCrewModeration } from "@/features/browse/use-crew-moderation";
 import { useCrewApplication } from "@/features/browse/use-crew-application";
 import { crewPositionLabel } from "@/lib/crew-position-label";
-import { showCrewActionsMenu } from "@/features/browse/crew-actions-menu";
+import { CrewActionsMenu, type CrewAction } from "@/features/browse/crew-actions-menu";
 import { toHref } from "@/lib/navigation";
 
 function crewStatusTag(
@@ -51,6 +48,15 @@ const EMPLOYMENT_LABELS: Record<string, MessageKey> = {
   project_based: "crewDetail.employmentProjectBased",
 };
 
+function CrewReadState({ children }: { children?: ReactNode }) {
+  return (
+    <>
+      <Stack.Screen options={{ headerRight: () => null }} />
+      {children}
+    </>
+  );
+}
+
 export default function CrewDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -58,88 +64,93 @@ export default function CrewDetailScreen() {
   const t = useTranslations();
   const router = useRouter();
   const authGate = useAuthGate();
-  const [crew, setCrew] = useState<CrewDetail>();
-  const [loading, setLoading] = useState(true);
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reporting, setReporting] = useState(false);
+  const auth = useAuth();
+  const active = useScreenActive();
+  const [revision, setRevision] = useState(0);
+  const scope = useMemo(
+    () => ({ id, generation: auth.generation, status: auth.status, active, revision, t }),
+    [id, auth.generation, auth.status, active, revision, t]
+  );
+  const [read, setRead] = useState<{ scope: typeof scope; crew?: CrewDetail; error?: string }>();
+  const [rolePicker, setRolePicker] = useState<{ crewId: string; generation: number }>();
+  const moderation = useCrewModeration(id, auth.generation, active);
+  const [actionsIntent, setActionsIntent] = useState<{ crewId: string; generation: number }>();
+  const [reportScope, setReportScope] = useState<typeof moderation.scope>();
   const { applying, submit: apply } = useCrewApplication(id);
 
   useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      try {
-        const data = await getCrewById(id);
-        if (alive) setCrew(data);
-      } catch {
-        if (alive) setCrew(undefined);
-      } finally {
-        if (alive) setLoading(false);
+    if (!scope.active || scope.status === "hydrating") return;
+    const controller = new AbortController();
+    const current = () => !controller.signal.aborted && scope.generation === getAuthGeneration();
+    void getCrewById(scope.id, controller.signal).then(
+      (crew) => {
+        if (current()) setRead({ scope, crew });
+      },
+      (error) => {
+        if (current())
+          setRead({
+            scope,
+            error:
+              error instanceof Error && error.message.trim()
+                ? error.message
+                : scope.t("crews.loadErrorFallback"),
+          });
       }
+    );
+    return () => controller.abort();
+  }, [scope]);
+
+  const crew = read?.scope === scope ? read.crew : undefined;
+  const selectAction = (action: CrewAction) => {
+    if (!crew || !moderation.isCurrent()) return;
+    setActionsIntent(undefined);
+    if (action === "report") {
+      setReportScope(moderation.scope);
+      return;
     }
-    void load();
-    return () => {
-      alive = false;
+    if (action === "block") {
+      confirmBlock();
+      return;
+    }
+    const paths = {
+      applications: "/crew-applications",
+      agreements: `/crew-agreements/${encodeURIComponent(crew.id)}`,
+      reviews: `/crew-reviews/${encodeURIComponent(crew.id)}`,
+      invitations: `/crew-invitations/${encodeURIComponent(crew.id)}`,
+      finance: `/crew-finance/${encodeURIComponent(crew.id)}`,
+      tasks: `/crew-tasks/${encodeURIComponent(crew.id)}`,
     };
-  }, [id]);
-
-  if (loading) {
-    return (
-      <ThemedView style={styles.fullCenter}>
-        <ActivityIndicator color={theme.textSecondary} />
-      </ThemedView>
-    );
-  }
-
-  if (!crew) {
-    return (
-      <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
-        <EmptyState
-          title={t("crewDetail.notFoundTitle")}
-          detail={t("crewDetail.notFoundDetail")}
-          symbol={{ ios: "person.2", android: "group", web: "group" }}
-        />
-      </ThemedView>
-    );
-  }
-
-  const tag = crewStatusTag(crew.status, t);
-  const roleTitle = (role: CrewRoleOpening) =>
-    crewPositionLabel(role.positionType ?? role.title, t);
-
-  const showActions = () => {
-    showCrewActionsMenu({
-      t,
-      onApplications: () => router.push(toHref("/crew-applications")),
-      onAgreements: () => router.push(toHref(`/crew-agreements/${encodeURIComponent(crew.id)}`)),
-      onReviews: () => router.push(toHref(`/crew-reviews/${encodeURIComponent(crew.id)}`)),
-      onInvitations: () => router.push(toHref(`/crew-invitations/${encodeURIComponent(crew.id)}`)),
-      onFinance: () => router.push(toHref(`/crew-finance/${encodeURIComponent(crew.id)}`)),
-      onTasks: () => router.push(toHref(`/crew-tasks/${encodeURIComponent(crew.id)}`)),
-      onReport: () => setReportOpen(true),
-      onBlock: confirmBlock,
-    });
+    router.push(toHref(paths[action]));
   };
 
-  const submitBlock = async () => {
-    try {
-      await blockCrew(crew.id);
-      // The crews list is filtered server-side for this viewer; nudge it to
-      // refetch, then leave the page.
-      invalidateBrowse();
-      Alert.alert(t("crewDetail.blockSuccessTitle"), t("crewDetail.blockSuccessBody"), [
-        { text: t("report.close"), onPress: () => router.back() },
-      ]);
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) {
-        authGate.openLogin({ onAuthenticated: confirmBlock });
-        return;
-      }
-      Alert.alert(t("crewDetail.blockFailed"));
+  const moderationError = (title: string, error: unknown) => {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      setReportScope(undefined);
+      authGate.openLogin();
+      return;
     }
+    Alert.alert(title, error instanceof Error && error.message.trim() ? error.message : undefined);
   };
+
+  const submitBlock = () =>
+    moderation.submit(
+      undefined,
+      () => {
+        invalidateBrowse();
+        Alert.alert(t("crewDetail.blockSuccessTitle"), t("crewDetail.blockSuccessBody"), [
+          {
+            text: t("report.close"),
+            onPress: () => {
+              if (moderation.isCurrent()) router.back();
+            },
+          },
+        ]);
+      },
+      (error) => moderationError(t("crewDetail.blockFailed"), error)
+    );
 
   const confirmBlock = () => {
+    if (!moderation.isCurrent() || moderation.submitting) return;
     Alert.alert(t("crewDetail.blockConfirmTitle"), t("crewDetail.blockConfirmBody"), [
       { text: t("report.cancel"), style: "cancel" },
       {
@@ -150,40 +161,83 @@ export default function CrewDetailScreen() {
     ]);
   };
 
-  const submitReport = async (reason: IpReportReason) => {
-    setReporting(true);
-    try {
-      await reportCrew(crew.id, reason);
-      setReportOpen(false);
-      Alert.alert(t("report.successTitle"), t("report.successBody"));
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) {
-        setReportOpen(false);
-        authGate.openLogin({ onAuthenticated: () => setReportOpen(true) });
-        return;
-      }
-      Alert.alert(t("report.failed"));
-    } finally {
-      setReporting(false);
-    }
-  };
+  const submitReport = (reason: IpReportReason) =>
+    moderation.submit(
+      reason,
+      () => {
+        setReportScope(undefined);
+        Alert.alert(t("report.successTitle"), t("report.successBody"));
+      },
+      (error) => moderationError(t("report.failed"), error)
+    );
 
   const openActions = () => {
-    authGate.requireAuth({ onAuthenticated: showActions });
+    authGate.requireAuth({
+      onAuthenticated: () => setActionsIntent({ crewId: id, generation: getAuthGeneration() }),
+    });
   };
+
+  // Hide stale recruitment/access data immediately while a return or account change is read.
+  // Keep the component mounted so pending application requests remain serialized.
+  if (!active || auth.status === "hydrating") return <CrewReadState />;
+  const loadError = read?.scope === scope ? read.error : undefined;
+  if (read?.scope !== scope) {
+    return (
+      <CrewReadState>
+        <ThemedView style={styles.fullCenter}>
+          <ActivityIndicator color={theme.textSecondary} />
+        </ThemedView>
+      </CrewReadState>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <CrewReadState>
+        <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
+          <EmptyState title={t("crews.loadErrorTitle")} detail={loadError} />
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setRevision((value) => value + 1)}
+            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: Spacing.four }}
+          >
+            <ThemedText>{t("common.retry")}</ThemedText>
+          </Pressable>
+        </ThemedView>
+      </CrewReadState>
+    );
+  }
+
+  if (!crew) {
+    return (
+      <CrewReadState>
+        <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
+          <EmptyState
+            title={t("crewDetail.notFoundTitle")}
+            detail={t("crewDetail.notFoundDetail")}
+            symbol={{ ios: "person.2", android: "group", web: "group" }}
+          />
+        </ThemedView>
+      </CrewReadState>
+    );
+  }
+
+  const tag = crewStatusTag(crew.status, t);
+  const roleTitle = (role: CrewRoleOpening) =>
+    crewPositionLabel(role.positionType ?? role.title, t);
 
   const submitApply = async (positionId: string) => {
     await apply(
       positionId,
-      () => {
-        Alert.alert(t("crewDetail.applySubmittedTitle"), t("crewDetail.applySubmittedBody"));
+      (applicationId) => {
+        router.push(toHref(`/crew-applications?application=${encodeURIComponent(applicationId)}`));
       },
       (error) => {
         if (error instanceof ApiRequestError && error.status === 401) {
           authGate.openLogin({ onAuthenticated: () => void submitApply(positionId) });
           return;
         }
-        const detail = error instanceof ApiRequestError ? error.message : undefined;
+        const detail = crewApplicationError(error, t);
         Alert.alert(t("crewDetail.applyFailed"), detail);
       }
     );
@@ -197,44 +251,9 @@ export default function CrewDetailScreen() {
     return parts.join(" · ");
   };
 
-  // Recruiting CTA: one open position applies directly (after a confirm),
-  // multiple → pick which position first.
   const handleApply = () => {
     authGate.requireAuth({
-      onAuthenticated: () => {
-        const roles = crew.roles;
-        if (roles.length === 0) return;
-        if (roles.length === 1) {
-          Alert.alert(t("crewDetail.applyConfirmTitle"), roleTitle(roles[0]), [
-            { text: t("report.cancel"), style: "cancel" },
-            {
-              text: t("crewDetail.applyConfirmAction"),
-              onPress: () => void submitApply(roles[0].id),
-            },
-          ]);
-          return;
-        }
-        if (Platform.OS === "ios") {
-          ActionSheetIOS.showActionSheetWithOptions(
-            {
-              title: t("crewDetail.applyPickTitle"),
-              options: [t("report.cancel"), ...roles.map(roleTitle)],
-              cancelButtonIndex: 0,
-            },
-            (index) => {
-              if (index > 0) void submitApply(roles[index - 1].id);
-            }
-          );
-          return;
-        }
-        Alert.alert(t("crewDetail.applyPickTitle"), undefined, [
-          ...roles.map((role) => ({
-            text: roleTitle(role),
-            onPress: () => void submitApply(role.id),
-          })),
-          { text: t("report.cancel"), style: "cancel" as const },
-        ]);
-      },
+      onAuthenticated: () => setRolePicker({ crewId: id, generation: getAuthGeneration() }),
     });
   };
 
@@ -247,11 +266,37 @@ export default function CrewDetailScreen() {
           ),
         }}
       />
+      <CrewRolePicker
+        visible={
+          rolePicker?.crewId === crew.id &&
+          rolePicker.generation === auth.generation &&
+          crew.roles.length > 0
+        }
+        roles={crew.roles}
+        onClose={() => setRolePicker(undefined)}
+        onSelect={(positionId) => {
+          if (auth.generation !== getAuthGeneration() || applying) return;
+          setRolePicker(undefined);
+          void submitApply(positionId);
+        }}
+      />
+      <CrewActionsMenu
+        visible={
+          auth.status === "authenticated" &&
+          actionsIntent?.crewId === id &&
+          actionsIntent.generation === auth.generation
+        }
+        busy={moderation.submitting}
+        onSelect={selectAction}
+        onClose={() => setActionsIntent(undefined)}
+      />
       <ReportReasonSheet
-        visible={reportOpen}
-        submitting={reporting}
+        visible={reportScope === moderation.scope}
+        submitting={moderation.submitting}
         onSelect={(reason) => void submitReport(reason)}
-        onClose={() => setReportOpen(false)}
+        onClose={() => {
+          if (!moderation.submitting) setReportScope(undefined);
+        }}
       />
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -303,6 +348,8 @@ export default function CrewDetailScreen() {
             {crew.description}
           </ThemedText>
 
+          <CrewLinkedResources crewId={crew.id} />
+
           {crew.roles.length ? (
             <View style={styles.section}>
               <SectionHeader
@@ -313,7 +360,15 @@ export default function CrewDetailScreen() {
                 {crew.roles.map((role, index) => {
                   const meta = roleMeta(role);
                   return (
-                    <View
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() =>
+                        router.push(
+                          toHref(
+                            `/crew-opening?crewId=${encodeURIComponent(crew.id)}&positionId=${encodeURIComponent(role.id)}`
+                          )
+                        )
+                      }
                       key={role.id}
                       style={[
                         styles.roleRow,
@@ -332,7 +387,7 @@ export default function CrewDetailScreen() {
                         ) : null}
                       </View>
                       <Tag label={`${role.count} ${t("crewDetail.openSuffix")}`} tone="brand" />
-                    </View>
+                    </Pressable>
                   );
                 })}
               </ThemedView>

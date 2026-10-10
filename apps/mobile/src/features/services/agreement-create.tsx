@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
@@ -8,6 +8,8 @@ import { useTranslations } from "@/i18n";
 import { TaskMentionPicker } from "./task-mention-picker";
 import { createAgreement, newAgreement, type NewAgreement } from "./agreement-create-api";
 export function AgreementCreate(props: {
+  available?: boolean;
+  onBusyChange?: (busy: boolean) => void;
   crewId: string;
   userId: string;
   generation: number;
@@ -29,6 +31,11 @@ export function AgreementCreate(props: {
     [attempted, setAttempted] = useState(false);
   const sent = useRef(false);
   const locked = attempted || op.busy;
+  const { onBusyChange } = props;
+  useEffect(() => {
+    onBusyChange?.(op.busy);
+  }, [op.busy, onBusyChange]);
+  if (props.available === false) return null;
   if (picker)
     return (
       <TaskMentionPicker
@@ -121,7 +128,12 @@ export function AgreementCreate(props: {
             style={{ padding: 12 }}
             disabled={locked}
             onPress={() => {
-              if (sent.current || props.generation !== getAuthGeneration()) return;
+              if (
+                props.available === false ||
+                sent.current ||
+                props.generation !== getAuthGeneration()
+              )
+                return;
               void op.run(
                 () => {
                   sent.current = true;

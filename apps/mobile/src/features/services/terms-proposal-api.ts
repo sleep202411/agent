@@ -1,3 +1,4 @@
+import { TASK_PAYMENT_TERMS } from "@repo/shared/crew";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -16,6 +17,7 @@ export const termsProposal = z
     scope: z.string().trim().min(1).max(10000),
     feeAmount: z.string().regex(/^(0|[1-9][0-9]{0,15})$/),
     currency: z.enum(["USD", "CNY"]),
+    paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
     feePeriod: z.enum(["project", "episode", "month"]),
     revenueShareBp: z.number().int().min(0).max(5000),
     shareBasis: z.string().trim().min(1).max(5000).nullable(),
@@ -46,7 +48,14 @@ export async function fetchProposalContext(
     current(generation);
     const page = z
       .object({
-        items: z.array(z.object({ id, crewId: id, taskId: z.string().uuid().nullable() })),
+        items: z.array(
+          z.object({
+            id,
+            crewId: id,
+            taskId: z.string().uuid().nullable(),
+            paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
+          })
+        ),
         nextCursor: id.nullable(),
       })
       .parse(
@@ -69,7 +78,12 @@ export async function fetchProposalContext(
       throw new Error("Position pagination changed. Refresh to reload.");
     const position = page.items.find((row) => row.id === review.app.positionId);
     if (position)
-      return { ...review, taskLinked: position.taskId !== null, taskId: position.taskId };
+      return {
+        ...review,
+        taskLinked: position.taskId !== null,
+        taskId: position.taskId,
+        advertisedPaymentTerms: position.paymentTerms ?? null,
+      };
     cursor = page.nextCursor;
   } while (cursor !== null && !signal.aborted);
   throw new Error("Application position is unavailable. Refresh to reload.");
@@ -104,7 +118,8 @@ export async function proposeApplicationTerms(
     result.currency !== data.currency ||
     result.feePeriod !== data.feePeriod ||
     result.revenueShareBp !== data.revenueShareBp ||
-    result.shareBasis !== data.shareBasis
+    result.shareBasis !== data.shareBasis ||
+    (result.paymentTerms ?? null) !== (data.paymentTerms ?? null)
   )
     throw new Error(
       "Proposal receipt could not be verified. Retry the same proposal or review the latest terms."

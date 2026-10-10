@@ -37,8 +37,10 @@ let root: Root | undefined;
 let hook: ReturnType<typeof useAgentComposerTurn>;
 let project = "project-a";
 let disabled = false;
+let configured = true;
+let chapter: string | undefined = "chapter-a";
 function Probe() {
-  const observed = useAgentComposerTurn(project, "story", disabled);
+  const observed = useAgentComposerTurn(project, "story", disabled, chapter, configured);
   useLayoutEffect(() => {
     hook = observed;
   });
@@ -79,6 +81,8 @@ afterEach(async () => {
   root = undefined;
   project = "project-a";
   disabled = false;
+  configured = true;
+  chapter = "chapter-a";
   mocks.token = "alice";
   vi.resetAllMocks();
 });
@@ -240,4 +244,76 @@ it("captures extras without deleting them and consumes only accepted attachments
   });
   expect(hook.pendingFiles.map((file) => file.id)).toEqual(["file-b"]);
   expect(hook.turnSkillIds).toEqual([]);
+});
+
+it("retains completed attachments during unresolved chapter refresh but locks actions and reads", async () => {
+  await render();
+  await act(async () => hook.pickAndUpload());
+  const skillSignal = mocks.listSkills.mock.calls[0][2] as AbortSignal;
+  const installationSignal = mocks.installations.mock.calls[0][2] as AbortSignal;
+  configured = false;
+  chapter = undefined;
+  await render();
+  expect(skillSignal.aborted).toBe(true);
+  expect(installationSignal.aborted).toBe(true);
+  expect(hook.pendingFiles.map((file) => file.id)).toEqual(["file-a"]);
+  expect(hook.getSendExtras()).toBeUndefined();
+  await act(async () => hook.pickAndUpload());
+  expect(mocks.picker).toHaveBeenCalledTimes(1);
+  configured = true;
+  chapter = "chapter-a";
+  await render();
+  expect(hook.getSendExtras()?.attachmentIds).toEqual(["file-a"]);
+  expect(mocks.listSkills).toHaveBeenCalledTimes(2);
+  chapter = "chapter-b";
+  await render();
+  expect(hook.pendingFiles).toEqual([]);
+});
+it("retains each successful upload while another file is interrupted, without admitting late results", async () => {
+  const slow = deferred<ReturnType<typeof ready>>();
+  mocks.picker.mockResolvedValueOnce(picked(2));
+  mocks.uploadAttachment.mockResolvedValueOnce(ready("finished")).mockReturnValueOnce(slow.promise);
+  await render();
+  let request!: Promise<void>;
+  await act(async () => {
+    request = hook.pickAndUpload();
+  });
+  expect(hook.pendingFiles.map((file) => file.id)).toEqual(["finished"]);
+  expect(hook.uploading).toBe(true);
+  configured = false;
+  await render();
+  expect((mocks.uploadAttachment.mock.calls[1][2] as AbortSignal).aborted).toBe(true);
+  await act(async () => {
+    slow.resolve(ready("late"));
+    await request;
+  });
+  configured = true;
+  await render();
+  expect(hook.getSendExtras()?.attachmentIds).toEqual(["finished"]);
+});
+
+it("does not start private skill reads or picking before the chapter is configured", async () => {
+  configured = false;
+  await render();
+  await act(async () => hook.pickAndUpload());
+  expect(mocks.listSkills).not.toHaveBeenCalled();
+  expect(mocks.installations).not.toHaveBeenCalled();
+  expect(mocks.picker).not.toHaveBeenCalled();
+  expect(hook.getSendExtras()).toBeUndefined();
+});
+it("preserves picker order when concurrent uploads finish out of order", async () => {
+  const first = deferred<ReturnType<typeof ready>>();
+  mocks.picker.mockResolvedValueOnce(picked(2));
+  mocks.uploadAttachment.mockReturnValueOnce(first.promise).mockResolvedValueOnce(ready("second"));
+  await render();
+  let request!: Promise<void>;
+  await act(async () => {
+    request = hook.pickAndUpload();
+  });
+  expect(hook.pendingFiles.map((file) => file.id)).toEqual(["second"]);
+  await act(async () => {
+    first.resolve(ready("first"));
+    await request;
+  });
+  expect(hook.getSendExtras()?.attachmentIds).toEqual(["first", "second"]);
 });

@@ -5,6 +5,11 @@ import { TaskWorkbench } from "./task-workbench";
 import type { TaskDraftInput, TaskDraftReview } from "./task-draft-session";
 vi.mock("./pdf-task-import", () => ({ PdfTaskImport: () => <span>pdf import</span> }));
 vi.mock("./task-batch", () => ({ TaskBatch: () => <span>batch tasks</span> }));
+vi.mock("expo-image", () => ({ Image: () => null }));
+vi.mock("./crew-film-picker", () => ({ CrewFilmPicker: () => null }));
+vi.mock("./task-draft-storage", () => ({
+  taskDraftStorage: () => ({ read: () => null, write: () => {} }),
+}));
 const h = vi.hoisted(() => ({
   generation: 10,
   active: true,
@@ -68,7 +73,10 @@ vi.mock("./task-create-api", async (original) => ({
   createTask: h.create,
 }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/i18n", () => ({
+  useTranslations: () => (key: string) => key,
+  useLocale: () => "en-US",
+}));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
@@ -99,6 +107,7 @@ vi.mock("./task-create", () => ({
     onClose: () => void;
   }) => (
     <>
+      <input aria-label="unstaged title" defaultValue="" />
       <button
         onClick={() =>
           onStage(
@@ -107,7 +116,9 @@ vi.mock("./task-create", () => ({
               description: "Episode 1",
               priority: "normal",
               startAt: null,
-              dueAt: null,
+              dueAt: "2099-01-01T00:00:00Z",
+              taskKind: "script",
+              rewardUsdMinor: 0,
               parentId: null,
               blockedByTaskIds: [],
               assignees: [],
@@ -168,7 +179,7 @@ it("requires management access before showing drafts or creation", async () => {
 });
 it("reviews staged task details without writing until Create All", async () => {
   await render();
-  expect(button("taskWorkbench.createAll").disabled).toBe(true);
+  expect(button("taskWorkbench.createAll")).toBeUndefined();
   await stage();
   expect(host.textContent).toContain("Storyboard");
   expect(host.textContent).toContain("Episode 1");
@@ -305,4 +316,129 @@ it("stops queued writes when the screen becomes inactive and retains the complet
   expect(h.create).toHaveBeenCalledTimes(1);
   expect(host.textContent).toContain("taskWorkbench.created");
   expect(button("taskWorkbench.createAll").disabled).toBe(false);
+});
+
+it("keeps the open creation form across background/foreground without staging it", async () => {
+  await render();
+  await click("taskCreate.title");
+  expect(button("stage form")).toBeDefined();
+  const title = host.querySelector("input")!;
+  title.value = "Unstaged user title";
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(button("stage form")).toBeDefined();
+  expect(h.create).not.toHaveBeenCalled();
+  expect(h.access).toHaveBeenCalledTimes(2);
+  expect(host.querySelector("input")).toBe(title);
+  expect(host.querySelector("input")!.value).toBe("Unstaged user title");
+});
+it("closes the preserved editor when management permission was revoked in background", async () => {
+  await render();
+  await click("taskCreate.title");
+  h.active = false;
+  await render();
+  h.access.mockResolvedValue({ canManage: false });
+  h.active = true;
+  await render();
+  expect(button("stage form")).toBeUndefined();
+  expect(host.textContent).toContain("taskCreate.managerOnly");
+});
+it("stops a batch after its in-flight receipt when backgrounded", async () => {
+  let resolve!: (value: unknown) => void;
+  h.create.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  await render();
+  await stage();
+  await stage();
+  await click("taskWorkbench.createAll");
+  h.active = false;
+  await render();
+  await act(async () => resolve({ id: "created" }));
+  h.active = true;
+  await render();
+  expect(h.create).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("taskWorkbench.created");
+  expect(button("taskWorkbench.createAll").disabled).toBe(false);
+});
+
+it("does not resume a paused batch just because the screen foregrounded before its receipt", async () => {
+  let resolve!: (value: unknown) => void;
+  h.create.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  await render();
+  await stage();
+  await stage();
+  await click("taskWorkbench.createAll");
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  await act(async () => resolve({ id: "created" }));
+  expect(h.create).toHaveBeenCalledTimes(1);
+  expect(button("taskWorkbench.createAll").disabled).toBe(false);
+});
+
+it("reopens and saves a staged card in place without adding a second task", async () => {
+  await render();
+  await stage();
+  await click("taskWorkbench.editDraft");
+  await click("stage form");
+  expect(
+    [...host.querySelectorAll("button")].filter((b) => b.textContent === "taskWorkbench.editDraft")
+  ).toHaveLength(1);
+  await click("taskWorkbench.createAll");
+  expect(h.create).toHaveBeenCalledOnce();
+});
+
+it("requires a fresh permission result after returning and preserves drafts through retry", async () => {
+  await render();
+  await stage();
+  h.active = false;
+  await render();
+  let fail!: (e: Error) => void;
+  h.access.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      })
+  );
+  h.active = true;
+  await render();
+  expect(button("taskCreate.title")).toBeUndefined();
+  expect(host.textContent).not.toContain("Storyboard");
+  await act(async () => fail(Error("Permission lookup failed")));
+  expect(button("taskCreate.title")).toBeUndefined();
+  expect(host.textContent).toContain("Permission lookup failed");
+  await click("inbox.retry");
+  expect(button("taskCreate.title")).toBeDefined();
+  expect(host.textContent).toContain("Storyboard");
+  expect(host.textContent).not.toContain("Permission lookup failed");
+  expect(h.create).not.toHaveBeenCalled();
+});
+
+it("retains the unstaged editor through a failed foreground permission lookup and retry", async () => {
+  await render();
+  await click("taskCreate.title");
+  const title = host.querySelector("input")!;
+  title.value = "Keep through retry";
+  h.active = false;
+  await render();
+  h.access.mockRejectedValueOnce(new Error("Permission lookup failed"));
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Permission lookup failed");
+  await click("inbox.retry");
+  expect(host.querySelector("input")).toBe(title);
+  expect(title.value).toBe("Keep through retry");
+  expect(h.create).not.toHaveBeenCalled();
 });

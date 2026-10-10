@@ -86,3 +86,45 @@ it("does not continue when the cursor contradicts the reported total", async () 
   await expect(fetchAssetTaskProgress("crew", 1, signal())).rejects.toThrow("pagination");
   expect(api.get).toHaveBeenCalledTimes(1);
 });
+
+it("accepts Production rows from the current server without dropping progress", async () => {
+  vi.mocked(api.get).mockResolvedValue({
+    items: [{ ...task(1, "approved"), assetCategory: "production" }],
+    total: 1,
+    nextCursor: null,
+  });
+  expect((await fetchAssetTaskProgress("crew", 1, signal())).production).toEqual({
+    approved: 1,
+    total: 1,
+  });
+});
+it("keeps pending counts separate and excludes created or uncertain drafts", async () => {
+  const { pendingAssetTasks } = await import("./asset-task-progress-api");
+  const base = {
+    id: 1,
+    kind: "task" as const,
+    state: "staged" as const,
+    input: {
+      title: "Script",
+      description: "",
+      priority: "normal" as const,
+      startAt: null,
+      dueAt: null,
+      parentId: null,
+      blockedByTaskIds: [],
+      assignees: [],
+      taskKind: "script" as const,
+    },
+    review: { context: [], assignees: [], customFields: [] },
+  };
+  const result = pendingAssetTasks([
+    base,
+    { ...base, id: 2 },
+    { ...base, id: 3, state: "created" },
+    { ...base, id: 4, state: "uncertain" },
+    { ...base, id: 5, input: { ...base.input, taskKind: "storyboard" } },
+  ]);
+  expect(result.scripts).toBe(2);
+  expect(result.production).toBe(1);
+  expect(summarizeAssetTasks([]).scripts).toEqual({ approved: 0, total: 0 });
+});

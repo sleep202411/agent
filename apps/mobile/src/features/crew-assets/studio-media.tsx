@@ -31,11 +31,14 @@ function Browser(props: Props) {
   const [contextResult, setContextResult] = useState<{
     revision: number;
     upload?: boolean;
+    view?: boolean;
     error?: string;
   }>();
-  const rootUpload = contextResult?.revision === contextRevision && contextResult.upload;
+  const context = contextResult?.revision === contextRevision ? contextResult : undefined;
+  const canView = context?.view === true && !context.error;
+  const rootUpload = canView && context?.upload;
   const parent = folders.at(-1);
-  const listing = useCrewAssets(String(props.generation), props.crewId, {
+  const listing = useCrewAssets(canView ? String(props.generation) : undefined, props.crewId, {
     parentId: parent?.id,
     source: "all",
   });
@@ -44,7 +47,11 @@ function Browser(props: Props) {
     void fetchCrewAssetContext(props.crewId, c.signal).then(
       (context) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setContextResult({ revision: contextRevision, upload: context.capabilities.upload });
+          setContextResult({
+            revision: contextRevision,
+            upload: context.capabilities.upload,
+            view: context.capabilities.view,
+          });
       },
       (e) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
@@ -64,6 +71,21 @@ function Browser(props: Props) {
     setTarget(undefined);
     refresh();
   };
+  if (!canView)
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+        <ThemedText type="smallBold">{t("studioMedia.title")}</ThemedText>
+        {!context ? (
+          <ActivityIndicator />
+        ) : (
+          <ThemedText accessibilityRole="alert">
+            {context.error || t("studioMedia.accessDenied")}
+          </ThemedText>
+        )}
+        <Button label={t("thread.refresh")} onPress={refresh} />
+        <Button label={t("crewTasks.back")} onPress={props.onClose} />
+      </ScrollView>
+    );
   if (target) return <Selection {...props} target={target} onClose={back} />;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>

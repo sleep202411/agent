@@ -3,16 +3,28 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewFinanceDetail } from "./crew-finance-detail";
 import type { FinanceRow } from "./crew-finance-api";
-vi.mock("./earning-decision", () => ({ EarningDecision: () => <span>earning actions</span> }));
+vi.mock("./earning-decision", () => ({
+  EarningDecision: ({ onSaved }: { onSaved: () => void }) => (
+    <button onClick={onSaved}>earning actions</button>
+  ),
+}));
 vi.mock("./payout-decision", () => ({ PayoutDecision: () => <span>payout actions</span> }));
-const h = vi.hoisted(() => ({ generation: 1, detail: vi.fn(), open: vi.fn(), close: vi.fn() }));
+const h = vi.hoisted(() => ({
+  generation: 1,
+  active: true,
+  focused: true,
+  detail: vi.fn(),
+  open: vi.fn(),
+  close: vi.fn(),
+}));
 vi.mock("./crew-finance-detail-api", async (original) => ({
   ...(await original<typeof import("./crew-finance-detail-api")>()),
   fetchFinanceDetail: h.detail,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white" }) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({
@@ -98,6 +110,8 @@ const button = (name: string) =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
+  h.focused = true;
   h.detail.mockResolvedValue(earning);
   host = document.createElement("div");
   document.body.append(host);
@@ -270,4 +284,38 @@ it("opens the linked agreement for the earning recipient and refreshes on return
   await act(async () => button("agreement back").click());
   expect(h.detail).toHaveBeenCalledTimes(2);
   expect(host.textContent).not.toContain("native agreement");
+});
+
+it("keeps the nested task selected through background and rechecks finance on explicit return", async () => {
+  h.detail.mockResolvedValue({ ...earning, task });
+  await render();
+  await act(async () => button(taskButton).click());
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain(`native task crew:${task.id}:user`);
+  expect(h.detail).toHaveBeenCalledTimes(1);
+  h.detail.mockRejectedValueOnce(new Error("Record access denied"));
+  await act(async () => button("crewFinance.backToRecord").click());
+  expect(host.textContent).toContain("Record access denied");
+  expect(host.textContent).not.toContain("Needs evidence");
+});
+it("revalidates a visible record after background without accepting its old data", async () => {
+  await render();
+  h.active = false;
+  await render();
+  h.detail.mockRejectedValueOnce(new Error("Record removed"));
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Record removed");
+  expect(host.textContent).not.toContain("Needs evidence");
+});
+
+it("reloads the selected record after an earning decision while notifying its ledger", async () => {
+  await render();
+  h.detail.mockResolvedValue({ ...earning, amountMinor: "300" });
+  await act(async () => button("earning actions").click());
+  expect(h.detail).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("USD 3.00");
 });

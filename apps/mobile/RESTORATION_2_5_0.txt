@@ -1,0 +1,55 @@
+Mobile restoration — 2026-10-09 (Asia/Singapore)
+
+Scope: feat/mobile-2.5.0 only. User explicitly authorized restoring the mobile
+features removed by the 2.3.1 rollback, while preserving all 2.3.2 release items.
+This instruction supersedes the historical rollback restriction for this new
+branch only. No merge of this restoration into other branches is authorized.
+
+Aligned baseline: e530134a3288c221e79e7c0e10de1d085616f1ee.
+main, develop, feat/mobile-2.3.1-pay and feat/mobile-2.4.0-scrolling-screen
+were aligned at that commit. Its tree is identical to main at 7527868d8.
+
+Restoration source: parent of rollback 21e77eced3ca8ab1d297ede55a8dcc732069c5e5
+(the reviewed pre-rollback Mobile snapshot). Restores the removed native
+features, routes, assets, editor runtimes, tests and Mobile dependency entries.
+Non-mobile application, shared package and deployment sources are unchanged.
+
+Preserved 2.3.2 release items:
+- Expo version 2.3.2, iOS buildNumber 81 and Android versionCode 81.
+  The new branch name is not an instruction to bump release metadata.
+- Native AbortSignal.throwIfAborted implementation and index.js startup order.
+- Metro country-flag-icons exception, preserving other browser mappings.
+- Optional/blank choice prompt localization and interactive-player handling.
+- DOM.Iterable TypeScript declarations.
+- Regional payment-test isolation and native Crew application routing tests.
+- Agent-session and theme-loader regression coverage for missing native abort API.
+
+The restored snapshot already contained most compatibility fixes. The remaining
+merge differences are release metadata and three regression-test adjustments.
+Verification additionally found that current official Studio templates include
+videoFile on clips. The restored Mobile importer now preserves and validates
+that optional field using the current Server rules; a regression test covers
+Unicode filenames, invalid formats, control characters, length and image clips.
+The root lockfile restores only the removed Mobile dependency entries; no
+existing dependency versions are upgraded.
+
+This is source restoration, not a signed application release or physical-device
+acceptance. Hu Xuan retains mobile ownership after this explicitly assigned work.
+
+Verification:
+- Mobile TypeScript check: passed.
+- Targeted ESLint for the four merge-adjusted files: passed.
+- Release-target tests: 14 passed.
+- CN/global development config: 2.3.2 / iOS 81 / Android 81 confirmed.
+- Existing non-Mobile lockfile entries: byte-equivalent parsed values.
+- Native abort/startup and choice-localization fixes: byte-identical to main.
+- Restored generated runtime/license files retain their historical whitespace.
+- Full Mobile suite: 819 files passed; three official-template cases failed
+  in the restored importer (7,925 passed / 3 failed). After the compatibility
+  correction, that entire file passed all seven tests, including the new case.
+  No other test files changed after the full run.
+- Targeted importer ESLint: passed.
+
+The formatting-only pre-commit hook is disabled for the restoration commit to
+preserve historical snapshot bytes, including generated assets and licenses.
+The edited importer files were formatted explicitly and linted.

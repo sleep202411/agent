@@ -1,19 +1,61 @@
 import { z } from "zod";
+import { taskKindSchema } from "./task-kind-api";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 const snapshot = z.object({
   templateId: z.string().uuid(),
   templateVersion: z.number().int().positive(),
   episodeVersion: z.number().int().positive(),
+  taskFields: z
+    .array(
+      z
+        .object({
+          templateKey: z.string().min(1).max(128),
+          values: z
+            .array(
+              z
+                .object({
+                  fieldId: z.string().uuid(),
+                  value: z.union([
+                    z.string().max(4000),
+                    z.number().finite(),
+                    z.boolean(),
+                    z.array(z.string().max(128)).max(50),
+                    z.null(),
+                  ]),
+                })
+                .strict()
+            )
+            .max(50)
+            .refine((rows) => new Set(rows.map((row) => row.fieldId)).size === rows.length),
+        })
+        .strict()
+    )
+    .max(200)
+    .optional(),
 });
 export const episodeTaskPlan = snapshot
   .extend({
     name: z.string().min(1),
+    fieldReview: z.record(z.string(), z.array(z.string())).optional(),
     items: z
       .array(
         z.object({
           templateKey: z.string().min(1),
           title: z.string().min(1),
+          taskKind: taskKindSchema.nullable().optional(),
+          assetCategory: z
+            .enum([
+              "scripts",
+              "characters",
+              "scenes",
+              "props",
+              "art",
+              "music",
+              "production",
+              "other",
+            ])
+            .optional(),
           roleRequirement: z.string(),
           defaultDependencies: z.array(z.string()),
           deliveryFields: z.array(z.object({ type: z.string().min(1), required: z.boolean() })),
@@ -25,6 +67,9 @@ export const episodeTaskPlan = snapshot
     const keys = new Set(plan.items.map((item) => item.templateKey));
     return (
       keys.size === plan.items.length &&
+      new Set((plan.taskFields ?? []).map((row) => row.templateKey)).size ===
+        (plan.taskFields ?? []).length &&
+      (plan.taskFields ?? []).every((row) => keys.has(row.templateKey)) &&
       plan.items.every((item) =>
         item.defaultDependencies.every((key) => keys.has(key) && key !== item.templateKey)
       )
@@ -54,6 +99,6 @@ export async function applyEpisodeTaskPlan(
   generation: number
 ) {
   if (generation !== getAuthGeneration()) throw new Error("Task template session expired");
-  const data = snapshot.parse(plan);
+  const data = snapshot.parse(episodeTaskPlan.parse(plan));
   return receipt.parse(await api.post(path(crewId, episodeId), { service: "aurora", data }));
 }
