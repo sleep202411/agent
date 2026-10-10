@@ -2243,6 +2243,7 @@
     "ctaFollowComingSoon": "追蹤創作者功能即將上線。",
     "ctaWorksEdit": "目前請前往舊版「發布作品」入口管理。",
     "cta": {
+      "viewServices": "查看服務",
       "backToProfile": "返回個人檔案",
       "manageServices": "管理服務包",
       "createService": "新增服務包",

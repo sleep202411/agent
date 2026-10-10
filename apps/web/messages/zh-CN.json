@@ -2243,6 +2243,7 @@
     "ctaFollowComingSoon": "关注创作者功能即将上线。",
     "ctaWorksEdit": "目前请前往旧版「发布作品」入口管理。",
     "cta": {
+      "viewServices": "查看服务",
       "backToProfile": "返回个人档案",
       "manageServices": "管理服务包",
       "createService": "新建服务包",

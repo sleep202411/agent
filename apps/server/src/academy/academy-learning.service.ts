@@ -885,9 +885,17 @@ export class AcademyLearningService {
       courseTitle: string;
     })[] = [];
     for (const row of page) {
-      const course = await this.authority.course(row.courseId);
+      const course = await this.authority
+        .course(row.courseId)
+        .catch((error: unknown) => {
+          // An enrollment outlives its catalogue record. Preserve the student's
+          // history, but never infer teacher access when authority is unavailable.
+          // Other upstream failures must remain visible rather than looking empty.
+          if (error instanceof NotFoundException) return null;
+          throw error;
+        });
       if (teacher) {
-        if (!course.instructors?.some((i) => String(i.userId) === userId))
+        if (!course?.instructors?.some((i) => String(i.userId) === userId))
           continue;
       }
       visible.push({
@@ -895,8 +903,8 @@ export class AcademyLearningService {
         studentName:
           names.find((n) => n.id === row.studentId)?.nick_name ?? row.studentId,
         courseTitle:
-          course.localized?.['en-US']?.title ||
-          course.localized?.['zh-CN']?.title ||
+          course?.localized?.['en-US']?.title ||
+          course?.localized?.['zh-CN']?.title ||
           row.courseId,
       });
     }

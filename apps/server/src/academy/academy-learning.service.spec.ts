@@ -1,3 +1,4 @@
+import { BadGatewayException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { LegacyCreatorsService } from '../legacy-creators/legacy-creators.service';
 import {
@@ -596,4 +597,73 @@ it('returns existing enrollment on response-loss retry without another debit', a
     id: 'enrollment',
   });
   expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
+});
+
+describe('enrollment history when catalogue records disappear', () => {
+  function history() {
+    const f = fixture();
+    f.enrollment.findMany.mockResolvedValue([
+      { ...f.row, id: 'missing-enrollment', courseId: 'missing' },
+      { ...f.row, id: 'healthy-enrollment' },
+    ]);
+    f.authority.course.mockImplementation((id: string) => {
+      if (id === 'missing')
+        return Promise.reject(new NotFoundException('Course not found.'));
+      return Promise.resolve({
+        id: 14,
+        published: true,
+        instructors: [{ userId: 200 }],
+      });
+    });
+    return f;
+  }
+
+  it('keeps student history and healthy enrollments when a course is missing', async () => {
+    const { service } = history();
+    const result = await service.list('100', false);
+    expect(result.items.map((item) => [item.id, item.courseTitle])).toEqual([
+      ['missing-enrollment', 'missing'],
+      ['healthy-enrollment', '14'],
+    ]);
+  });
+
+  it('keeps healthy teacher work without granting access to a missing course', async () => {
+    const { service } = history();
+    expect(
+      (await service.list('200', true)).items.map((item) => item.id),
+    ).toEqual(['healthy-enrollment']);
+  });
+
+  it('still hides work when the teacher has been removed from the course', async () => {
+    const { service } = history();
+    expect((await service.list('300', true)).items).toEqual([]);
+  });
+
+  it('advances the cursor even when the whole teacher page is hidden', async () => {
+    const { service, enrollment, authority, row } = history();
+    enrollment.findMany.mockResolvedValue(
+      Array.from({ length: 21 }, (_, index) => ({
+        ...row,
+        id: `enrollment-${index}`,
+      })),
+    );
+    authority.course.mockRejectedValue(
+      new NotFoundException('Course not found.'),
+    );
+    const result = await service.list('200', true);
+    expect(result).toEqual({ items: [], nextCursor: 'enrollment-19' });
+  });
+
+  it.each([false, true])(
+    'surfaces provider outages for teacher=%s',
+    async (teacher) => {
+      const { service, authority } = history();
+      authority.course.mockRejectedValue(
+        new BadGatewayException('Authority unavailable.'),
+      );
+      await expect(
+        service.list(teacher ? '200' : '100', teacher),
+      ).rejects.toThrow('Authority unavailable.');
+    },
+  );
 });

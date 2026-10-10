@@ -13,6 +13,7 @@
  * laser-focused on stats + business info.
  */
 import Link from "next/link";
+import { CREATOR_SECTION_ID } from "./tab-bar";
 import { creatorQualificationKind } from "@/src/services/creator-qualification";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -25,10 +26,7 @@ import {
   IconInbox,
   IconLink,
   IconLoader2,
-  IconMail,
-  IconMessage,
   IconShare3,
-  IconUserPlus,
   IconWallet,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -183,9 +181,11 @@ function OwnerCtas({
           <DropdownMenuItem asChild>
             <Link href={localizePath("/profile/services", locale)}>{t("cta.manageServices")}</Link>
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => toast.info(t("ctaPhase1bHint"))}>
-            <IconInbox className="size-4 text-muted-foreground" />
-            <span>{t("cta.inbox")}</span>
+          <DropdownMenuItem asChild>
+            <Link href={localizePath("/messages", locale)}>
+              <IconInbox className="size-4 text-muted-foreground" />
+              <span>{t("cta.inbox")}</span>
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuItem disabled={referralPending} onSelect={() => onShareReferral?.()}>
             <IconLink className="size-4 text-muted-foreground" />
@@ -202,36 +202,12 @@ function OwnerCtas({
 }
 
 function VisitorCtas({ t }: { t: (k: string) => string }) {
+  // Requests and first contact require a service context. Let visitors choose
+  // a real package before entering its existing request/message workflow.
   return (
-    <>
-      <Button
-        type="button"
-        variant="solid"
-        color="primary"
-        onClick={() => toast.info(t("ctaPhase1bHint"))}
-      >
-        <IconUserPlus className="size-4" />
-        {t("cta.startRequest")}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        color="muted"
-        onClick={() => toast.info(t("ctaPhase1bHint"))}
-      >
-        <IconMessage className="size-4" />
-        {t("cta.message")}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        color="muted"
-        onClick={() => toast.info(t("ctaFollowComingSoon"))}
-      >
-        <IconMail className="size-4" />
-        {t("cta.follow")}
-      </Button>
-    </>
+    <Button variant="solid" color="primary" asChild>
+      <a href={`#${CREATOR_SECTION_ID("services")}`}>{t("cta.viewServices")}</a>
+    </Button>
   );
 }
 

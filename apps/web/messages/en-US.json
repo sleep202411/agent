@@ -2243,6 +2243,7 @@
     "ctaFollowComingSoon": "Following creators is coming soon.",
     "ctaWorksEdit": "Manage your works from the legacy publish flow for now.",
     "cta": {
+      "viewServices": "View services",
       "backToProfile": "Back to profile",
       "manageServices": "Manage services",
       "createService": "New service package",
