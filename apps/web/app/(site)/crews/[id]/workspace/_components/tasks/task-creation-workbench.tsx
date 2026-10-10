@@ -1,4 +1,6 @@
 "use client";
+import { TaskCardPoints, taskRequestedPoints } from "./task-card-points";
+import { useComputeRequests } from "@/app/(site)/crews/_hooks/use-compute-requests";
 import { WorkbenchPdfImport } from "./workbench-pdf-import";
 import { WorkbenchDashboard } from "./workbench-dashboard";
 import { WorkbenchBatchActions } from "./workbench-batch-actions";
@@ -11,7 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
-import { IconX, IconUsers, IconDots } from "@tabler/icons-react";
+import { IconX, IconUsers, IconDotsVertical, IconChecks } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
   DropdownMenu,
@@ -153,6 +155,8 @@ function TaskCreationSession({
   const progressReady =
     !tasks.isLoading && !tasks.isFetching && !tasks.hasNextPage && !tasks.isError;
   const savedTasks = tasks.data;
+  const compute = useComputeRequests(crewId);
+  const pointTotals = compute.isError ? null : taskRequestedPoints(compute.data);
   const canApplyCredit = members.some(
     (member) => member.userId === user!.id && member.isOwner && member.status === "active"
   );
@@ -180,6 +184,7 @@ function TaskCreationSession({
         priority: task.priority,
         taskKind: task.taskKind,
         dueAt: task.dueAt,
+        computeBudgetPoints: task.computeBudgetPoints,
         episodeId: task.episodeId,
         assignees: task.assignees ?? [],
       },
@@ -720,7 +725,7 @@ function TaskCreationSession({
                               <div
                                 className={
                                   barKey === "artAssets"
-                                    ? "grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-2"
+                                    ? "flex flex-wrap items-start gap-3"
                                     : "space-y-2"
                                 }
                               >
@@ -729,7 +734,7 @@ function TaskCreationSession({
                                     key={group.key}
                                     className={
                                       barKey === "artAssets"
-                                        ? "min-w-0 bg-white/[0.025] p-2"
+                                        ? "min-w-0 w-[260px] max-w-full"
                                         : "min-w-0"
                                     }
                                   >
@@ -743,37 +748,18 @@ function TaskCreationSession({
                                       className={
                                         barKey === "artAssets"
                                           ? "grid gap-3"
-                                          : "grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-3"
+                                          : "flex flex-wrap items-start gap-3"
                                       }
                                     >
                                       {group.items.map((draft) => (
                                         <article
                                           key={draft.id}
-                                          className="relative flex min-w-0 flex-col rounded-lg bg-[#151618] p-3 transition-colors hover:bg-[#1a1b1e]"
+                                          className={`relative flex w-[260px] max-w-full min-w-0 flex-col gap-1.5 rounded-md border bg-black px-3 py-2.5 transition-colors hover:border-primary ${draft.taskId && selectedTaskIds.includes(draft.taskId) ? "border-primary" : "border-white/20"}`}
                                         >
-                                          <div className="flex min-h-8 items-center gap-2 pr-8">
-                                            {canManageTasks && draft.taskId ? (
-                                              <input
-                                                type="checkbox"
-                                                className="relative z-30 size-4 shrink-0 accent-[#e52227]"
-                                                aria-label={t("batchSelectTask", {
-                                                  title: draft.input.title,
-                                                })}
-                                                disabled={
-                                                  busy ||
-                                                  !canBatchTask(
-                                                    savedTasks.find(
-                                                      (task) => task.id === draft.taskId
-                                                    )!
-                                                  )
-                                                }
-                                                checked={selectedTaskIds.includes(draft.taskId)}
-                                                onChange={() => toggleSelection(draft.taskId!)}
-                                              />
-                                            ) : null}
+                                          <div className="flex min-h-6 items-center gap-2 pr-7">
                                             <button
                                               type="button"
-                                              className="min-w-0 flex-1 flex cursor-pointer items-center gap-2 break-words text-left text-sm font-medium after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-white/40 disabled:cursor-default disabled:after:hidden"
+                                              className="min-w-0 flex-1 flex cursor-pointer items-center gap-2 break-words text-left text-[14px] font-bold after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-white/40 disabled:cursor-default disabled:after:hidden"
                                               disabled={
                                                 busy ||
                                                 draft.state === "creating" ||
@@ -796,18 +782,33 @@ function TaskCreationSession({
                                                 setOpen(true);
                                               }}
                                             >
-                                              <span className="min-w-0 flex-1">
+                                              <span
+                                                className="min-w-0 flex-1 truncate"
+                                                title={draft.input.title}
+                                              >
                                                 {draft.input.title}
                                               </span>
                                             </button>
-                                            <div className="flex items-start justify-between gap-2">
-                                              <span className="ml-auto rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                                {taskT(
-                                                  CREW_TASK_KIND_MESSAGE_KEYS[
-                                                    draft.input.taskKind ?? "other"
-                                                  ]
-                                                )}
-                                              </span>
+                                            {canManageTasks && draft.taskId ? (
+                                              <input
+                                                type="checkbox"
+                                                className="relative z-30 size-4 shrink-0 accent-[#e52227]"
+                                                aria-label={t("batchSelectTask", {
+                                                  title: draft.input.title,
+                                                })}
+                                                disabled={
+                                                  busy ||
+                                                  !canBatchTask(
+                                                    savedTasks.find(
+                                                      (task) => task.id === draft.taskId
+                                                    )!
+                                                  )
+                                                }
+                                                checked={selectedTaskIds.includes(draft.taskId)}
+                                                onChange={() => toggleSelection(draft.taskId!)}
+                                              />
+                                            ) : null}
+                                            <div className="flex items-center">
                                               {draft.state === "staged" ? (
                                                 <button
                                                   disabled={busy}
@@ -828,7 +829,7 @@ function TaskCreationSession({
                                             </div>
                                           </div>
                                           {draft.taskId && (canManageTasks || canApplyCredit) && (
-                                            <div className="absolute right-2 top-2 z-20">
+                                            <div className="absolute right-1 top-1 z-20">
                                               <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
                                                   <button
@@ -836,7 +837,7 @@ function TaskCreationSession({
                                                     className="rounded p-2 hover:bg-white/10"
                                                     aria-label={t("taskActions")}
                                                   >
-                                                    <IconDots className="size-4" />
+                                                    <IconDotsVertical className="size-3" />
                                                   </button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" className="w-56">
@@ -905,26 +906,9 @@ function TaskCreationSession({
                                               </DropdownMenu>
                                             </div>
                                           )}
-                                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
-                                            {draft.state !== "staged" ? (
-                                              <span className="inline-flex items-center gap-1.5">
-                                                <span
-                                                  aria-hidden="true"
-                                                  className={`size-2 shrink-0 rounded-full ${savedTasks.find((task) => task.id === draft.taskId)?.status === "approved" ? "bg-emerald-400" : draft.input.dueAt && new Date(draft.input.dueAt).getTime() < Date.now() ? "bg-red-400" : savedTasks.find((task) => task.id === draft.taskId)?.status === "open" ? "bg-neutral-400" : "bg-blue-400"}`}
-                                                />
-                                                <span className="sr-only">
-                                                  {draft.taskId
-                                                    ? taskT(
-                                                        `status.${savedTasks.find((task) => task.id === draft.taskId)?.status ?? "open"}`
-                                                      )
-                                                    : t(draft.state)}
-                                                </span>
-                                              </span>
-                                            ) : null}
-                                            <span className="flex flex-wrap items-center gap-3">
-                                              {draft.input.assignees.length ? (
-                                                <span>{t("assigned")}</span>
-                                              ) : (
+                                          <div className="flex min-w-0 items-center justify-between gap-2 text-xs text-zinc-300">
+                                            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                              {!draft.input.assignees.length ? (
                                                 <span
                                                   className={
                                                     draft.isRecruiting
@@ -936,32 +920,96 @@ function TaskCreationSession({
                                                     ? t("recruiting")
                                                     : taskT("unassigned")}
                                                 </span>
-                                              )}
+                                              ) : null}
                                               {draft.input.assignees.map(({ userId }) => (
                                                 <span
                                                   key={userId}
                                                   title={displayNameOf(userId, displays)}
-                                                  className="inline-flex items-center gap-1.5"
+                                                  className="inline-flex max-w-full min-w-0 items-center gap-1.5"
                                                 >
                                                   <UserAvatar
                                                     src={displays.get(userId)?.avatar}
                                                     name={displayNameOf(userId, displays)}
                                                     seed={userId}
-                                                    className="size-6 shrink-0"
+                                                    className="size-[18px] shrink-0"
                                                   />
-                                                  <span>{displayNameOf(userId, displays)}</span>
+                                                  <span className="truncate">
+                                                    {displayNameOf(userId, displays)}
+                                                  </span>
                                                 </span>
                                               ))}
                                             </span>
+                                            <span className="shrink-0 rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                              {taskT(
+                                                CREW_TASK_KIND_MESSAGE_KEYS[
+                                                  draft.input.taskKind ?? "other"
+                                                ]
+                                              )}
+                                            </span>
+                                          </div>
+                                          <TaskCardPoints
+                                            requested={
+                                              draft.taskId && pointTotals
+                                                ? (pointTotals.byTask.get(draft.taskId) ??
+                                                  (pointTotals.isOwner &&
+                                                  !pointTotals.byTask.has(draft.taskId)
+                                                    ? "0"
+                                                    : null))
+                                                : null
+                                            }
+                                            estimated={draft.input.computeBudgetPoints}
+                                            isOwner={pointTotals?.isOwner ?? canApplyCredit}
+                                          />
+                                          <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] text-muted-foreground">
+                                            {draft.state !== "staged" ? (
+                                              <span className="inline-flex items-center gap-1.5">
+                                                <span
+                                                  aria-hidden="true"
+                                                  className={`size-2 shrink-0 rounded-full ${savedTasks.find((task) => task.id === draft.taskId)?.status === "approved" ? "bg-emerald-400" : ["submitted", "cancelled"].includes(savedTasks.find((task) => task.id === draft.taskId)?.status ?? "") ? "bg-neutral-400" : draft.input.dueAt && new Date(draft.input.dueAt).getTime() < Date.now() ? "bg-red-400" : savedTasks.find((task) => task.id === draft.taskId)?.status === "open" ? "bg-neutral-400" : "bg-blue-400"}`}
+                                                />
+                                                <span className="sr-only">
+                                                  {draft.taskId
+                                                    ? taskT(
+                                                        `status.${savedTasks.find((task) => task.id === draft.taskId)?.status ?? "open"}`
+                                                      )
+                                                    : t(draft.state)}
+                                                </span>
+                                              </span>
+                                            ) : null}
                                             {draft.input.dueAt ? (
                                               <span
                                                 className={
+                                                  !["approved", "submitted", "cancelled"].includes(
+                                                    savedTasks.find(
+                                                      (task) => task.id === draft.taskId
+                                                    )?.status ?? ""
+                                                  ) &&
                                                   new Date(draft.input.dueAt).getTime() < Date.now()
                                                     ? "text-red-400"
                                                     : "text-muted-foreground"
                                                 }
                                               >
-                                                <TaskCountdown dueAt={draft.input.dueAt} />
+                                                {["approved", "submitted", "cancelled"].includes(
+                                                  savedTasks.find(
+                                                    (task) => task.id === draft.taskId
+                                                  )?.status ?? ""
+                                                ) ? (
+                                                  taskT(
+                                                    `status.${savedTasks.find((task) => task.id === draft.taskId)!.status}`
+                                                  )
+                                                ) : (
+                                                  <TaskCountdown dueAt={draft.input.dueAt} />
+                                                )}
+                                                <span
+                                                  className="ml-2 text-muted-foreground"
+                                                  title={draft.input.dueAt}
+                                                >
+                                                  {t("shortDeadline", {
+                                                    date: draft.input.dueAt
+                                                      .slice(5, 10)
+                                                      .replace("-", "/"),
+                                                  })}
+                                                </span>
                                               </span>
                                             ) : null}
                                           </div>
@@ -989,7 +1037,7 @@ function TaskCreationSession({
                                           onPublishTask ? (
                                             <button
                                               type="button"
-                                              className="relative z-10 mt-2 inline-flex h-8 items-center justify-center rounded-md border border-white/15 px-3 text-xs font-medium text-white transition-colors hover:bg-white/10"
+                                              className="relative z-10 mt-2 inline-flex min-h-11 sm:min-h-8 items-center justify-center rounded-md border border-white/15 px-3 text-xs font-medium text-white transition-colors hover:bg-white/10"
                                               onClick={() => onPublishTask(draft.taskId!)}
                                             >
                                               {t("publishJob")}
@@ -1007,12 +1055,28 @@ function TaskCreationSession({
                                           ) ? (
                                             <button
                                               type="button"
-                                              className="relative z-10 mt-2 inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-sm font-medium text-white hover:bg-primary/85"
+                                              className="relative z-10 mt-2 inline-flex min-h-11 sm:min-h-8 items-center justify-center rounded-md border border-white/15 bg-zinc-900 px-3 text-[11px] font-bold text-white hover:border-primary/50 hover:bg-primary/10"
                                               onClick={() => onSubmitTask(draft.taskId!)}
                                             >
                                               {taskT("submit")}
                                             </button>
                                           ) : null}
+                                          {draft.taskId &&
+                                            ["submitted", "approved"].includes(
+                                              savedTasks.find((task) => task.id === draft.taskId)
+                                                ?.status ?? ""
+                                            ) && (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="relative z-10 mt-1 inline-flex min-h-11 sm:min-h-8 w-full items-center justify-center gap-1.5 rounded border border-zinc-700 bg-zinc-800 text-[11px] font-bold text-zinc-500"
+                                              >
+                                                <IconChecks className="size-3" />
+                                                {taskT(
+                                                  `status.${savedTasks.find((task) => task.id === draft.taskId)!.status}`
+                                                )}
+                                              </button>
+                                            )}
                                         </article>
                                       ))}
                                     </div>

@@ -49,6 +49,7 @@ vi.mock("@/components/ui/dialog", () => ({
 const state = vi.hoisted(() => ({
   userId: "user",
   isOwner: true,
+  computeData: undefined as unknown,
   assetQuery: vi.fn(),
   tasks: [] as Array<{
     id: string;
@@ -72,6 +73,9 @@ const state = vi.hoisted(() => ({
   episode: vi.fn(),
   refresh: vi.fn(),
   episodeId: null as string | null,
+}));
+vi.mock("@/app/(site)/crews/_hooks/use-compute-requests", () => ({
+  useComputeRequests: () => ({ data: state.computeData, isError: false }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: (ns: string) => (key: string, values?: Record<string, unknown>) => {
@@ -200,6 +204,7 @@ beforeEach(() => {
   state.refresh.mockReset();
   state.tasks = [];
   state.isOwner = true;
+  state.computeData = undefined;
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -1042,4 +1047,51 @@ it("does not expose owner-only credit applications to task managers or assignees
   ).toBe(false);
   await render(false);
   expect(host.querySelector('button[aria-label="Task Actions"]')).toBeNull();
+});
+
+it("shows actual point totals, compact deadlines and a disabled submitted state", async () => {
+  state.tasks = [
+    {
+      id: "submitted",
+      title: "Finished script",
+      parentId: null,
+      status: "submitted",
+      taskKind: "script",
+      assetCategory: "scripts",
+      assignees: [{ userId: "user" }],
+      dueAt: "2026-10-15T12:00:00Z",
+      computeBudgetPoints: 4460,
+    } as unknown as (typeof state.tasks)[number],
+  ];
+  state.computeData = {
+    isOwner: true,
+    consumedPoints: "999",
+    totals: {},
+    tasks: [],
+    nextCursor: null,
+    items: [],
+    taskUsage: [
+      {
+        taskId: "submitted",
+        taskTitle: "Script",
+        userId: "user",
+        requestedPoints: "4500",
+        approvedPoints: "4460",
+        pendingPoints: "40",
+        consumedPoints: "999",
+        committedPoints: "999",
+      },
+    ],
+  };
+  await render();
+  const card = host.querySelector("article")!;
+  expect(card.textContent).toContain("4,500");
+  expect(card.textContent).toContain("4,460");
+  expect(card.textContent).not.toContain("999");
+  expect(card.textContent).toContain("10/15 due");
+  const submitted = [...card.querySelectorAll("button")].find(
+    (b) => b.textContent === "status.submitted"
+  )!;
+  expect(submitted.disabled).toBe(true);
+  expect(button("submit")).toBeUndefined();
 });

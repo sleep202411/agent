@@ -17,6 +17,7 @@ it('separates people/tasks and excludes personal-wallet spending while retaining
       INSERT INTO crew_tasks VALUES('t1','crew','Shot 1',1,'p1'),('t2','crew','Shot 2',2,'p2');
       INSERT INTO crew_task_assignees VALUES('t1','a'),('t1','b'),('t2','a');
       INSERT INTO crew_compute_requests(task_id,user_id,crew_id,points,status) VALUES('t1','a','crew',100,'approved'),('t1','a','crew',20,'pending');
+      INSERT INTO crew_compute_requests VALUES('t1','a','crew',40,'rejected','top_up'),('t1','a','crew',60,'approved','initial_allowance'),('t1','b','crew',200,'pending','top_up');
       INSERT INTO wallet_accounts VALUES('w','workspace','11111111-1111-4111-8111-111111111111'),('personal','user','a');
       INSERT INTO wallet_transactions VALUES('x','p1','ai_job','a'),('y','p1','ai_job','b'),('z','p2','ai_job','a');
       INSERT INTO wallet_ledger_entries VALUES
@@ -37,19 +38,22 @@ it('separates people/tasks and excludes personal-wallet spending while retaining
     expect(owner[0]).toMatchObject({
       taskId: 't1',
       userId: 'a',
-      approvedPoints: '100',
+      requestedPoints: '220',
+      approvedPoints: '160',
       pendingPoints: '20',
       consumedPoints: '20',
       committedPoints: '20',
     });
     expect(owner[1]).toMatchObject({
       userId: 'b',
+      requestedPoints: '200',
       consumedPoints: '0',
       committedPoints: '5',
     });
     const member = await taskComputeUsage(tx as never, 'crew', 'a', false);
     expect(member).toHaveLength(2);
     expect(member.every((r) => r.userId === 'a')).toBe(true);
+    expect(member[0].requestedPoints).toBe('220');
   } finally {
     await db.close();
   }
