@@ -3145,6 +3145,10 @@
       },
       "filterLabel": "按类型筛选资产规格",
       "batch": {
+        "recoveryPaused": "生成已暂停，已完成 {completed}/{total} 项。请按需补充积分后继续。",
+        "recoveryResume": "继续生成",
+        "recoveryOwner": "仅此批次的创建者可以继续或取消生成。",
+        "recoveryError": "无法更新此批次，请重试。",
         "generate": "批量生成",
         "allGenerated": "当前分类已全部生成",
         "tooltip": "使用 {model} 及当前参数，批量生成此分类中剩余的 {count} 项空资产。",

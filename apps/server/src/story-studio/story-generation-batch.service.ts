@@ -590,7 +590,27 @@ export class StoryGenerationBatchService {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 20,
     });
-    return batches.map((batch) =>
+    // Recent quotes/history must never displace unfinished work and its controls.
+    const unfinished = await this.prisma.storyGenerationBatch.findMany({
+      where: {
+        workspaceId: project.workspaceId,
+        storyProjectId: projectId,
+        storyChapterId: chapterId,
+        status: { in: visibleActiveStatuses },
+      },
+      include: {
+        items: {
+          orderBy: { ordinal: 'asc' },
+          include: { generation: { select: { id: true, aiJobId: true } } },
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+    const visible = new Map(unfinished.map((batch) => [batch.id, batch]));
+    for (const batch of batches) {
+      if (!visible.has(batch.id)) visible.set(batch.id, batch);
+    }
+    return [...visible.values()].map((batch) =>
       batchDto(batch, batch.actorUserId === user.userId),
     );
   }

@@ -121,3 +121,56 @@ describe('enqueueStoryBatchesResumableIfFunded', () => {
     expect(enqueueRealtimeEventMock).not.toHaveBeenCalled();
   });
 });
+
+it('continues past a full unaffordable page and emits bounded notification pages', async () => {
+  enqueueRealtimeEventMock.mockClear();
+  const row = (id: string, quotedPoints: number) => ({
+    id,
+    storyProjectId: 'p',
+    storyChapterId: id,
+    items: [{ quotedPoints }],
+  });
+  const tx = makeTx([]);
+  tx.storyGenerationBatch.findMany
+    .mockResolvedValueOnce(
+      Array.from({ length: 20 }, (_, i) => row(`expensive-${i}`, 50000)),
+    )
+    .mockResolvedValueOnce(
+      Array.from({ length: 20 }, (_, i) => row(`funded-${i}`, 10)),
+    )
+    .mockResolvedValueOnce([row('last', 10)]);
+  await enqueueStoryBatchesResumableIfFunded(tx as never, account({}), 100n);
+  expect(enqueueRealtimeEventMock).toHaveBeenCalledTimes(2);
+  expect(
+    (
+      enqueueRealtimeEventMock.mock.calls[0][1].payload as {
+        batches: unknown[];
+      }
+    ).batches,
+  ).toHaveLength(20);
+  expect(
+    (
+      enqueueRealtimeEventMock.mock.calls[1][1].payload as {
+        batches: unknown[];
+      }
+    ).batches,
+  ).toHaveLength(1);
+  expect(
+    (
+      tx.storyGenerationBatch.findMany.mock.calls[1] as [
+        { where: { id: unknown } },
+      ]
+    )[0].where.id,
+  ).toEqual({
+    gt: 'expensive-19',
+  });
+  expect(
+    (
+      tx.storyGenerationBatch.findMany.mock.calls[2] as [
+        { where: { id: unknown } },
+      ]
+    )[0].where.id,
+  ).toEqual({
+    gt: 'funded-19',
+  });
+});

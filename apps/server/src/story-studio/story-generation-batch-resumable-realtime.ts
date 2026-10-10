@@ -35,51 +35,71 @@ export async function enqueueStoryBatchesResumableIfFunded(
   if (account.ownerType !== WalletOwnerType.workspace) return;
   if (account.balanceKind !== WalletBalanceKind.consumable) return;
 
-  const blocked = await tx.storyGenerationBatch.findMany({
-    where: {
-      workspaceId: account.ownerId,
-      status: StoryGenerationBatchStatus.blocked,
-      blockReason: { path: ['code'], equals: 'INSUFFICIENT_COMPUTE_POINTS' },
-    },
-    select: {
-      id: true,
-      storyProjectId: true,
-      storyChapterId: true,
-      items: {
-        where: { status: { not: 'completed' } },
-        orderBy: { ordinal: 'asc' },
-        take: 1,
-        select: { quotedPoints: true },
+  let after: string | undefined;
+  while (true) {
+    const blocked = await tx.storyGenerationBatch.findMany({
+      where: {
+        workspaceId: account.ownerId,
+        ...(after ? { id: { gt: after } } : {}),
+        status: StoryGenerationBatchStatus.blocked,
+        OR: [
+          {
+            blockReason: {
+              path: ['code'],
+              equals: 'INSUFFICIENT_COMPUTE_POINTS',
+            },
+          },
+          {
+            blockReason: {
+              path: ['code'],
+              equals: 'INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS',
+            },
+          },
+        ],
       },
-    },
-    take: 20,
-  });
+      select: {
+        id: true,
+        storyProjectId: true,
+        storyChapterId: true,
+        items: {
+          where: { status: { not: 'completed' } },
+          orderBy: { ordinal: 'asc' },
+          take: 1,
+          select: { quotedPoints: true },
+        },
+      },
+      orderBy: { id: 'asc' },
+      take: 20,
+    });
 
-  const resumable = blocked
-    .filter((batch) => batch.items[0])
-    .filter(
-      (batch) =>
-        BigInt(batch.items[0].quotedPoints) <= account.availableBalance,
-    )
-    .map((batch) => ({
-      batchId: batch.id,
-      projectId: batch.storyProjectId,
-      chapterId: batch.storyChapterId,
-      requiredPoints: batch.items[0].quotedPoints.toString(),
-    }));
-  if (resumable.length === 0) return;
-
-  const event: AssetEvent = {
-    kind: 'story_generation_batches_resumable',
-    workspaceId: account.ownerId,
-    availableBalance: account.availableBalance.toString(),
-    batches: resumable,
-    ts: Date.now(),
-  };
-  await enqueueRealtimeEvent(tx, {
-    channel: walletWorkspaceChannel(account.ownerId),
-    eventType: AiOutboxEventType.story_generation_batches_resumable,
-    payload: event as unknown as Prisma.InputJsonValue,
-    userId: account.ownerId,
-  });
+    const resumable = blocked
+      .filter((batch) => batch.items[0])
+      .filter(
+        (batch) =>
+          BigInt(batch.items[0].quotedPoints) <= account.availableBalance,
+      )
+      .map((batch) => ({
+        batchId: batch.id,
+        projectId: batch.storyProjectId,
+        chapterId: batch.storyChapterId,
+        requiredPoints: batch.items[0].quotedPoints.toString(),
+      }));
+    if (resumable.length > 0) {
+      const event: AssetEvent = {
+        kind: 'story_generation_batches_resumable',
+        workspaceId: account.ownerId,
+        availableBalance: account.availableBalance.toString(),
+        batches: resumable,
+        ts: Date.now(),
+      };
+      await enqueueRealtimeEvent(tx, {
+        channel: walletWorkspaceChannel(account.ownerId),
+        eventType: AiOutboxEventType.story_generation_batches_resumable,
+        payload: event as unknown as Prisma.InputJsonValue,
+        userId: account.ownerId,
+      });
+    }
+    if (blocked.length < 20) break;
+    after = blocked[blocked.length - 1].id;
+  }
 }
