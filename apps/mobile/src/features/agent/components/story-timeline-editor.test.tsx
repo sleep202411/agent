@@ -2,6 +2,12 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TimelineEditor } from "./story-timeline-editor";
+vi.mock("./story-batch-panel", () => ({
+  StoryBatchPanel: (props: unknown) => {
+    h.batch(props);
+    return <span>Batch panel</span>;
+  },
+}));
 vi.mock("./story-candidates-panel", () => ({
   StoryCandidatesPanel: ({ mediaAssetId, close }: { mediaAssetId: string; close: () => void }) => (
     <button onClick={close}>{mediaAssetId}</button>
@@ -12,6 +18,7 @@ vi.mock("./story-timeline-generation-panel", () => ({
   TimelineGenerationPanel: () => <span>Generation panel</span>,
 }));
 const h = vi.hoisted(() => ({
+  batch: vi.fn(),
   fetch: vi.fn(),
   read: vi.fn(),
   save: vi.fn(),
@@ -283,4 +290,28 @@ it("does not expose candidate saving to read-only viewers", async () => {
   await render(false);
   await click("Scene");
   expect(host.textContent).not.toContain("storyCandidates.save");
+});
+
+it("opens saved clips with sequence identity for batch generation", async () => {
+  await render();
+  await click("storyBatch.title");
+  expect(h.batch).toHaveBeenCalledWith(
+    expect.objectContaining({
+      mode: "storyboard",
+      assets: [
+        expect.objectContaining({
+          id: row.clips[0].id,
+          sequenceId: row.id,
+          version: row.clips[0].version,
+        }),
+      ],
+    })
+  );
+});
+it("prevents batch generation from ignoring unsaved timeline edits", async () => {
+  await render();
+  await click("Scene");
+  await click("timeline.remove");
+  expect(button("storyBatch.title").disabled).toBe(true);
+  expect(h.batch).not.toHaveBeenCalled();
 });

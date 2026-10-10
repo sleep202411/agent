@@ -238,3 +238,18 @@ it("refreshes badge status automatically while active", async () => {
   await act(async () => vi.advanceTimersByTimeAsync(15000));
   expect(host.textContent).toContain("academyLearning.badgeIssued");
 });
+
+it("does not offer paid enrollment to a participating instructor", async () => {
+  h.course.mockResolvedValue({
+    offering: { enabled: true, priceCredits: "100", version: 3, teacherId: "2" },
+    enrollment: null,
+    instructor: true,
+  });
+  await mount();
+  expect(
+    [...host.querySelectorAll("button")].some(
+      (button) => button.textContent === "academyLearning.enroll"
+    )
+  ).toBe(false);
+  expect(h.enroll).not.toHaveBeenCalled();
+});

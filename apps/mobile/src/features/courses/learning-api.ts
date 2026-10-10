@@ -12,6 +12,7 @@ const enrollment = z.object({
   version: z.number().int().positive(),
   priceCredits: amount,
   teacherCredits: amount,
+  instructorShares: z.array(z.object({ teacherId: z.string(), credits: amount })).nullish(),
   status: z.enum(["enrolled", "submitted", "revision", "approved"]),
   description: z.string().nullable(),
   assetIds: z.array(id),
@@ -28,7 +29,11 @@ const offering = z.object({
   priceCredits: amount,
   teacherId: z.string(),
 });
-const course = z.object({ offering: offering.nullable(), enrollment: enrollment.nullable() });
+const course = z.object({
+  offering: offering.nullable(),
+  enrollment: enrollment.nullable(),
+  instructor: z.boolean().optional(),
+});
 const summary = z.object({
   courses: z.number().int().nonnegative(),
   students: z.number().int().nonnegative(),
