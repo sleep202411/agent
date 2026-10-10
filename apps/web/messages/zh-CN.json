@@ -10608,6 +10608,7 @@
     "correction": "已更正结果"
   },
   "crewDeliveryTemplate": {
+    "clearFailedUpload": "清除失败的上传",
     "uploadFile": "上传文件",
     "uploadProgress": "上传中… {percent}%",
     "uploadUnavailable": "暂时无法上传文件。",

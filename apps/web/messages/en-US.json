@@ -10608,6 +10608,7 @@
     "correction": "Result corrected"
   },
   "crewDeliveryTemplate": {
+    "clearFailedUpload": "Clear failed upload",
     "uploadFile": "Upload file",
     "uploadProgress": "Uploading… {percent}%",
     "uploadUnavailable": "File upload is currently unavailable.",
