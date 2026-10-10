@@ -2441,5 +2441,6 @@
   "mobileProduction.credited": "已到賬的追加積分",
   "mobileProduction.top_up": "追加積分",
   "mobileProduction.initial_allowance": "初始額度",
-  "mobileProduction.legacy_allowance": "已有額度"
+  "mobileProduction.legacy_allowance": "已有額度",
+  "paywall.wechat.statusError": "無法查詢付款狀態。請重試查詢此訂單。"
 }

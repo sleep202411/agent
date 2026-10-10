@@ -2441,5 +2441,6 @@
   "mobileProduction.credited": "已到账的追加积分",
   "mobileProduction.top_up": "追加积分",
   "mobileProduction.initial_allowance": "初始额度",
-  "mobileProduction.legacy_allowance": "已有额度"
+  "mobileProduction.legacy_allowance": "已有额度",
+  "paywall.wechat.statusError": "无法查询支付状态。请重试查询此订单。"
 }

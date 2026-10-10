@@ -2441,5 +2441,6 @@
   "mobileProduction.credited": "Top-up points credited",
   "mobileProduction.top_up": "Top-up",
   "mobileProduction.initial_allowance": "Initial allowance",
-  "mobileProduction.legacy_allowance": "Existing allowance"
+  "mobileProduction.legacy_allowance": "Existing allowance",
+  "paywall.wechat.statusError": "Could not check payment status. Retry to check this order again."
 }

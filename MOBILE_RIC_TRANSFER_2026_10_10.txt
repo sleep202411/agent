@@ -1,0 +1,51 @@
+Mobile 2.4.0 Ric transfer — 2026-10-10 (Asia/Singapore)
+
+Authoritative working agreement from the user
+- Further mobile work targets only the 2.4.0 Ric and 2.5.0 Ric branches.
+- Hu Xuan's branches remain untouched.
+- Main/develop work goes only to main/develop, kept at the same commit.
+- This assignment authorizes a push ONLY to feat/mobile-2.4.0-film-value-system-ric.
+
+Reviewed baseline
+- main and develop: 9960699c2 (same commit).
+- target 2.4.0 Ric: e1093be0a; already includes that main/develop baseline.
+- source 2.5.0 Ric: 21c85be2e.
+
+Selected transfer
+1. WeChat scan status errors become visible with an explicit retry for the same
+   order. A failed status lookup does not imply payment failure or success.
+2. Background order polling is scoped to the accepted account generation. Late
+   responses after logout/account replacement cannot complete another session's
+   payment, and concurrent calls share only the same account/order operation.
+3. Additional adjustment: key the scan surface by order ID so a new order clears
+   prior success/error state and disposes the old order's polling callback.
+4. Transfer the related regression tests and the single status-error message in
+   English, Simplified Chinese, and Traditional Chinese.
+
+Compatibility and provenance
+- Builds on the existing payment workflow developed by Hu Xuan, retaining its
+  checkout, RevenueCat/WeChat integration and fulfillment semantics.
+- Main's authenticated GET /billing/orders/:orderId and its fulfilled/terminal
+  statuses remain the contract. No new API or database migration is required.
+- Pax's owner-controlled Crew compute-request rules remain intact. This payment
+  reliability selection is an engineering decision, not a claim that Pax explicitly
+  requested these UI changes or approved a mobile release.
+- Isaac's Story subtitles and runtime work and other colleagues' current code
+  remain intact. No additional change is attributed to Yuanzheng without evidence.
+- Version/build, signing, dependencies, branch names and release settings are unchanged.
+
+Deferred from 2.5.0
+Adaptive/world playback, saved games/journey controls, additional catalogue or
+subscription screens, and the broader native-feature restoration are not included.
+The changed compute-wallet hook contract is also deferred with its UI consumers.
+
+Review
+Inspected stale responses, account replacement, retry without duplicate checkout,
+unmount cleanup, terminal states and order replacement. Tests exercise these
+boundaries. Only local fixtures were used; no real payment or release was run.
+
+Validation
+- Targeted payment suites: 3 files / 19 tests passed, one worker.
+- Targeted ESLint: passed.
+- Mobile type check: passed.
+- No full-suite rerun or native build/export performed for this scoped transfer.
