@@ -5377,6 +5377,8 @@
       "dashboard_overdue": "已逾期",
       "dashboard_completed": "已完成",
       "dashboardInitializeHelp": "上傳 PDF 或 Word 劇本並審核建議任務。",
+      "finalScript": "最終劇本",
+      "uploadFinalScript": "上傳最終劇本",
       "pdfTitle": "文件生成任務",
       "pdfHelp": "上傳 PDF、DOC 或 DOCX（最大 5 MB、60,000 字元）。請先審核建議任務再建立。",
       "pdfChoose": "選擇 PDF 或 Word 文件",

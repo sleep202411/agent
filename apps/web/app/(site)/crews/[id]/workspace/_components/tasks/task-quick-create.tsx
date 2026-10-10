@@ -1,4 +1,5 @@
 "use client";
+import { taskLocalDate } from "./task-local-date";
 import { Input } from "@/components/ui/input";
 import { TaskPaymentHelp } from "../../../../_components/task-payment-help";
 import {
@@ -168,7 +169,7 @@ export function TaskQuickCreate({
   const [profitShare, setProfitShare] = useState(
     initialInput?.profitShareBps == null ? "" : String(initialInput.profitShareBps / 100)
   );
-  const [dueDate, setDueDate] = useState(initialInput?.dueAt?.slice(0, 10) ?? "");
+  const [dueDate, setDueDate] = useState(taskLocalDate(initialInput?.dueAt));
   const [createMore, setCreateMore] = useState(false);
   const [draft, setDraft] = useState<CrewTaskDraftDTO | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -206,7 +207,7 @@ export function TaskQuickCreate({
     setProfitShare(
       initialInput?.profitShareBps == null ? "" : String(initialInput.profitShareBps / 100)
     );
-    setDueDate(initialInput?.dueAt?.slice(0, 10) ?? "");
+    setDueDate(taskLocalDate(initialInput?.dueAt));
     setDraft(null);
   }
   const session = useRef(0);

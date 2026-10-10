@@ -1,29 +1,17 @@
 "use client";
 import { TaskInviteDialog } from "@/app/(site)/crews/_components/task-invite-dialog";
 import { TaskContractFiles } from "@/app/(site)/crews/_components/task-contract-files";
-
-import { workflowStateLabel } from "@/app/(site)/crews/_lib/workflow-state-label";
 import { CustomFieldControl, normalizeCustomFieldDraft } from "./task-custom-field-control";
 
 import { TaskFeedbackPanel } from "@/app/(site)/crews/_components/task-feedback-panel";
 import { TaskClosureControl } from "@/app/(site)/crews/_components/task-closure-control";
-import { TaskAgreedFee } from "@/app/(site)/crews/_components/task-agreed-fee";
 
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
-
-import {
-  CREW_CURRENCY,
-  formatCrewMoney,
-  parseCrewMoney,
-  formatCrewMoneyInput,
-  type CrewLedgerCurrency,
-} from "@/src/lib/crew-money";
+import { formatCrewMoney, type CrewLedgerCurrency } from "@/src/lib/crew-money";
 import { TaskDeliveryProgress } from "./task-delivery-progress";
 import { TaskDeliverySummary } from "./task-delivery-summary";
 import { TaskReviewForm } from "./task-review-form";
 import { DeleteTaskButton } from "./delete-task-button";
-
-import { isCrewTaskOverdue } from "@/app/(site)/crews/_lib/task-dates";
 
 import {
   useLayoutEffect,
@@ -37,48 +25,35 @@ import Link from "next/link";
 import {
   IconArrowUpRight,
   IconAt,
-  IconCalendar,
-  IconCategory,
   IconCheck,
   IconChevronDown,
-  IconCircle,
   IconClipboardCheck,
   IconClock,
   IconEdit,
   IconFile,
-  IconFlag3,
   IconFolder,
   IconGitBranch,
   IconLoader2,
   IconMessage,
-  IconMovie,
   IconPaperclip,
   IconPhoto,
   IconRefresh,
-  IconSitemap,
   IconCornerUpLeft,
   IconSend,
   IconTrash,
-  IconTag,
   IconUpload,
-  IconUserCircle,
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  CREW_TASK_KIND_MESSAGE_KEYS,
-  CREW_TASK_KINDS,
   useCreateCrewTaskComment,
   useDeleteCrewTaskComment,
-  useCrewTaskOptions,
-  useCrewEpisodes,
   useCrewTaskProject,
   useUpdateCrewTask,
   useSetTaskDeliveryFolder,
@@ -88,10 +63,7 @@ import {
   type CrewTaskCommentAttachmentInput,
   type CrewTaskCustomValue,
   type CrewTaskDTO,
-  type CrewTaskKind,
   type CrewTaskFieldDTO,
-  type CrewTaskLabelDTO,
-  type CrewTaskPriority,
   type CrewTaskStatus,
   type CrewTaskTimelineItemDTO,
   type UpdateCrewTaskInput,
@@ -107,8 +79,6 @@ import {
   useCrewAssets,
   useCrewAssetFolders,
 } from "../../_hooks/use-crew-assets";
-import { TaskQuickCreate } from "./task-quick-create";
-import { TaskSelect } from "./task-select";
 
 const ACTIVE_STATUSES: CrewTaskStatus[] = ["open", "in_progress", "revision_requested"];
 
@@ -136,9 +106,7 @@ export function TaskIssueDetail({
   task,
   members,
   isOwner,
-  canCreate = false,
   onPublishTask,
-  onInviteTask,
   canReview,
   canSubmitAssigned,
   canComment,
@@ -157,7 +125,6 @@ export function TaskIssueDetail({
   const assetFolders = useCrewAssetFolders(task.crewId, true);
   const timeline = useCrewTaskTimeline(task.id);
   const project = useCrewTaskProject(task.crewId).data;
-  const episodes = useCrewEpisodes(task.crewId).data ?? [];
   const [editingBrief, setEditingBrief] = useState(initiallyEditing && isOwner);
   const [draftTitle, setDraftTitle] = useState(task.title);
   const [draftDescription, setDraftDescription] = useState(task.description);
@@ -178,7 +145,6 @@ export function TaskIssueDetail({
     setBriefVersion(task.version);
     setEditingBrief(true);
   };
-  const [subtaskOpen, setSubtaskOpen] = useState(false);
   const canShowSubmit = canWork && canSubmitAssigned && ACTIVE_STATUSES.includes(task.status);
   const unresolvedBlockers = task.blockedBy.filter((blocker) => !blocker.resolved);
   const canSubmit = canShowSubmit && unresolvedBlockers.length === 0;
@@ -296,8 +262,8 @@ export function TaskIssueDetail({
       </header>
       <TaskDeliveryProgress status={task.status} />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_340px]">
-        <main className="min-h-0 min-w-0 overflow-y-auto bg-[#101012]">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <main className="min-w-0 bg-[#101012]">
           <div className="w-full px-5 py-6 lg:px-6">
             <section className="mb-8">
               {editingBrief ? (
@@ -462,7 +428,7 @@ export function TaskIssueDetail({
           </div>
         </main>
 
-        <aside className="min-h-0 overflow-y-auto bg-[#161618] px-7 py-8">
+        <section className="border-t border-white/10 bg-[#101012] px-7 py-6">
           {canReview && task.status === "submitted" ? (
             <TaskReviewForm task={task} onReviewed={onReviewed} />
           ) : null}
@@ -471,188 +437,6 @@ export function TaskIssueDetail({
               <TaskFeedbackPanel task={task} />
             </div>
           ) : null}
-          <RailSection title={projectT("properties")}>
-            <RailRow icon={<IconCircle className="size-4" />}>
-              {isOwner && !["submitted", "approved", "cancelled"].includes(task.status) ? (
-                <InlinePropertySelect
-                  value={task.workflowStateId}
-                  onChange={(workflowStateId) => void quickPatch({ workflowStateId })}
-                  options={(project?.workflowStates ?? [])
-                    .filter(
-                      (state) =>
-                        !state.archived &&
-                        ["open", "in_progress", "revision_requested"].includes(state.semantic)
-                    )
-                    .map((state) => ({
-                      value: state.id,
-                      label: workflowStateLabel(state, t),
-                    }))}
-                />
-              ) : (
-                <TaskStatusPill task={task} />
-              )}
-            </RailRow>
-            <RailRow icon={<IconFlag3 className="size-4" />}>
-              {isOwner ? (
-                <InlinePropertySelect
-                  value={task.priority}
-                  onChange={(priority) =>
-                    void quickPatch({ priority: priority as CrewTaskPriority })
-                  }
-                  options={(["urgent", "high", "normal", "low"] as const).map((priority) => ({
-                    value: priority,
-                    label: t(`priority.${priority}`),
-                  }))}
-                />
-              ) : (
-                <span>{t(`priority.${task.priority}`)}</span>
-              )}
-            </RailRow>
-            <RailRow icon={<IconCategory className="size-4" />}>
-              {isOwner ? (
-                <InlinePropertySelect
-                  value={task.taskKind ?? ""}
-                  onChange={(value) =>
-                    void quickPatch({ taskKind: (value || null) as CrewTaskKind | null })
-                  }
-                  options={[
-                    { value: "", label: t("taskKindUnset") },
-                    ...CREW_TASK_KINDS.map((kind) => ({
-                      value: kind,
-                      label: t(CREW_TASK_KIND_MESSAGE_KEYS[kind]),
-                    })),
-                  ]}
-                />
-              ) : (
-                <span>
-                  {task.taskKind
-                    ? t(CREW_TASK_KIND_MESSAGE_KEYS[task.taskKind])
-                    : t("taskKindUnset")}
-                </span>
-              )}
-            </RailRow>
-            <RailRow icon={<IconUserCircle className="size-4" />} align="start">
-              <AssigneesEditor
-                task={task}
-                members={members}
-                displays={displays}
-                editable={isOwner}
-                pending={patching}
-                onSave={quickPatch}
-              />
-            </RailRow>
-          </RailSection>
-
-          <RailSection title={t("labels")}>
-            <RailRow icon={<IconTag className="size-4" />} align="start">
-              <LabelsEditor
-                version={task.version}
-                labels={project?.labels ?? []}
-                selected={task.labels}
-                editable={isOwner}
-                pending={patching}
-                onSave={quickPatch}
-              />
-            </RailRow>
-          </RailSection>
-
-          <RailSection title={t("relationships")}>
-            <RailRow icon={<IconMovie className="size-4" />}>
-              {isOwner ? (
-                <InlinePropertySelect
-                  value={task.episodeId ?? ""}
-                  onChange={(episodeId) => void quickPatch({ episodeId: episodeId || null })}
-                  options={[
-                    { value: "", label: t("noEpisode") },
-                    ...episodes
-                      .filter((episode) => episode.status !== "cancelled")
-                      .map((episode) => ({
-                        value: episode.id,
-                        label: `${t("episodeNumber", { number: episode.number })} · ${episode.title}`,
-                      })),
-                  ]}
-                />
-              ) : (
-                <span>
-                  {task.episode
-                    ? `${t("episodeNumber", { number: task.episode.number })} · ${task.episode.title}`
-                    : t("noEpisode")}
-                </span>
-              )}
-            </RailRow>
-            <RailRow icon={<IconCalendar className="size-4" />}>
-              {isOwner ? (
-                <InlinePropertySelect
-                  value={task.cycleId ?? ""}
-                  onChange={(cycleId) => void quickPatch({ cycleId: cycleId || null })}
-                  options={[
-                    { value: "", label: t("backlog") },
-                    ...(project?.cycles ?? [])
-                      .filter((cycle) => cycle.status !== "cancelled")
-                      .map((cycle) => ({ value: cycle.id, label: cycle.name })),
-                  ]}
-                />
-              ) : (
-                <span>{task.cycle?.name ?? t("backlog")}</span>
-              )}
-            </RailRow>
-            <RailRow icon={<IconClock className="size-4" />} align="start">
-              <PlanningEditor
-                task={task}
-                editable={isOwner}
-                pending={patching}
-                onSave={quickPatch}
-              />
-            </RailRow>
-            <RailRow icon={<IconSitemap className="size-4" />} align="start">
-              <div className="w-full space-y-2">
-                <TaskRelationshipsEditor
-                  task={task}
-                  editable={isOwner}
-                  pending={patching}
-                  onSave={quickPatch}
-                />
-                {task.children.length > 0 ? (
-                  <>
-                    <div className="flex items-center justify-between text-[10px] text-[#777980]">
-                      <span>{t("subtasks")}</span>
-                      <span>
-                        {task.subtaskProgress.completed}/{task.subtaskProgress.total}
-                      </span>
-                    </div>
-                    <div className="h-1 overflow-hidden rounded-full bg-white/[0.07]">
-                      <div
-                        className="h-full rounded-full bg-[#e12b32]"
-                        style={{
-                          width: `${Math.round(
-                            (task.subtaskProgress.completed /
-                              Math.max(task.subtaskProgress.total, 1)) *
-                              100
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      {task.children.map((child) => (
-                        <TaskReferenceLink key={child.id} crewId={task.crewId} task={child} />
-                      ))}
-                    </div>
-                  </>
-                ) : null}
-                {canCreate && task.status !== "approved" && task.status !== "cancelled" ? (
-                  <button
-                    type="button"
-                    onClick={() => setSubtaskOpen(true)}
-                    className="-ml-1 inline-flex items-center gap-2 rounded-md px-1 py-1.5 text-[11px] text-[#8b8d94] transition-colors hover:bg-white/[0.045] hover:text-[#d7d8dc]"
-                  >
-                    <IconSitemap className="size-3.5" />
-                    {t("addSubtask")}
-                  </button>
-                ) : null}
-              </div>
-            </RailRow>
-          </RailSection>
-
           {project?.fields.length ? (
             <RailSection title={t("customFields")}>
               {project.fields.map((field) => {
@@ -851,22 +635,8 @@ export function TaskIssueDetail({
               <span className="text-[#8b8d94]">{new Date(task.updatedAt).toLocaleString()}</span>
             </RailRow>
           </RailSection>
-        </aside>
+        </section>
       </div>
-
-      {project?.views[0] ? (
-        <TaskQuickCreate
-          open={canCreate && subtaskOpen}
-          onOpenChange={setSubtaskOpen}
-          crewId={task.crewId}
-          members={members}
-          project={project}
-          activeView={project.views[0]}
-          presetWorkflowStateId={task.workflowStateId}
-          parentId={task.id}
-          onInviteTask={onInviteTask}
-        />
-      ) : null}
     </div>
   );
 }
@@ -1609,38 +1379,6 @@ function PickerPanel({
   );
 }
 
-function TaskReferenceLink({
-  crewId,
-  task,
-  resolved,
-}: {
-  crewId: string;
-  task: CrewTaskDTO["children"][number];
-  resolved?: boolean;
-}) {
-  return (
-    <Link
-      href={localizePath(
-        `/crews/${crewId}/workspace?tab=tasks&task=${task.id}`,
-        getCurrentLocale()
-      )}
-      className="flex items-center gap-2 rounded-md border border-white/[0.065] bg-white/[0.02] px-2.5 py-2 text-[10px] hover:border-white/[0.12] hover:bg-white/[0.04]"
-    >
-      <span
-        className={cn(
-          "size-1.5 rounded-full",
-          resolved || task.status === "approved" || task.status === "cancelled"
-            ? "bg-emerald-400"
-            : "bg-amber-400"
-        )}
-      />
-      <span className="font-mono text-[#666c76]">#{task.number}</span>
-      <span className="min-w-0 flex-1 truncate text-[#b9bdc4]">{task.title}</span>
-      <IconArrowUpRight className="size-3 text-[#5f6570]" />
-    </Link>
-  );
-}
-
 type TaskPatch = (
   input: Omit<UpdateCrewTaskInput, "expectedVersion">,
   expectedVersion?: number
@@ -1690,504 +1428,6 @@ function useTaskPropertySession(
 
 const PROPERTY_POPOVER_CLASS =
   "w-80 gap-3 border border-white/[0.1] bg-[#19191c] p-3 text-[#d8dade] shadow-[0_20px_60px_rgba(0,0,0,.55)]";
-
-function AssigneesEditor({
-  task,
-  members,
-  displays,
-  editable,
-  pending,
-  onSave,
-}: {
-  task: CrewTaskDTO;
-  members: CrewMemberDTO[];
-  displays: ReturnType<typeof useUserDisplays>;
-  editable: boolean;
-  pending: boolean;
-  onSave: TaskPatch;
-}) {
-  const t = useTranslations("crewTasks");
-
-  const suggestedPriceMin = (
-    task as CrewTaskDTO & { metadata?: { priceRange?: { min?: unknown } } }
-  ).metadata?.priceRange?.min;
-
-  const [draft, setDraft] = useState(() =>
-    task.assignees.map((assignee) => ({
-      userId: assignee.userId,
-      currency: assignee.rewardAmountMinor == null ? CREW_CURRENCY : assignee.currency,
-      rewardAmountMinor:
-        assignee.rewardAmountMinor == null
-          ? ""
-          : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
-      isSuggested: false,
-    }))
-  );
-  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => {
-    setDraft(
-      task.assignees.map((assignee) => ({
-        userId: assignee.userId,
-        currency: assignee.rewardAmountMinor == null ? CREW_CURRENCY : assignee.currency,
-        rewardAmountMinor:
-          assignee.rewardAmountMinor == null
-            ? ""
-            : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
-        isSuggested: false,
-      }))
-    );
-  });
-  const invalidReward = draft.some(
-    (item) => item.rewardAmountMinor !== "" && parseReward(item.rewardAmountMinor) == null
-  );
-
-  const summary = (
-    <div className="w-full space-y-2">
-      {task.assignees.length === 0 ? (
-        <span className="text-[#777980]">{t("unassigned")}</span>
-      ) : (
-        task.assignees.map((assignee) => (
-          <div key={assignee.id} className="flex items-center gap-2">
-            <UserMark name={displayNameOf(assignee.userId, displays)} compact />
-            <span className="min-w-0 flex-1 truncate">
-              {displayNameOf(assignee.userId, displays)}
-            </span>
-            {assignee.rewardAmountMinor != null ? (
-              <span className="font-mono text-[9px] text-[#777d87]">
-                {formatReward(assignee.rewardAmountMinor, assignee.currency)}
-              </span>
-            ) : null}
-          </div>
-        ))
-      )}
-    </div>
-  );
-
-  if (!editable) return summary;
-
-  const toggleMember = (userId: string) => {
-    setDraft((current) => {
-      if (current.some((item) => item.userId === userId)) {
-        return current.filter((item) => item.userId !== userId);
-      }
-      // TODO(#557): confirm with Pax whether the default source is
-      // task template priceRange, catalog referencePrice, or manual-only.
-      const prefill =
-        typeof suggestedPriceMin === "number" && suggestedPriceMin > 0
-          ? formatCrewMoneyInput(String(suggestedPriceMin * 100))
-          : "";
-      return [
-        ...current,
-        {
-          userId,
-          rewardAmountMinor: prefill,
-          currency: CREW_CURRENCY,
-          isSuggested: Boolean(prefill),
-        },
-      ];
-    });
-  };
-
-  const save = async () => {
-    const assignees = draft.map((item) => ({
-      userId: item.userId,
-      currency: item.currency,
-      rewardAmountMinor: parseReward(item.rewardAmountMinor),
-    }));
-    if (await saveDraft({ assignees })) setOpen(false);
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="w-full rounded-md px-1 py-1 text-left transition-colors hover:bg-white/[0.045]"
-        >
-          {summary}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
-        <fieldset disabled={pending} className="contents">
-          <p className="text-[12px] font-semibold">{t("chooseAssignees")}</p>
-          <div className="max-h-64 space-y-1 overflow-y-auto">
-            {members.map((member) => {
-              const selected = draft.find((item) => item.userId === member.userId);
-              return (
-                <div
-                  key={member.id}
-                  className="grid min-h-9 grid-cols-[16px_minmax(0,1fr)_104px] items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
-                >
-                  <Checkbox
-                    checked={Boolean(selected)}
-                    onCheckedChange={() => toggleMember(member.userId)}
-                    aria-label={displayNameOf(member.userId, displays)}
-                  />
-                  <span className="truncate text-[11px]">
-                    {displayNameOf(member.userId, displays)}
-                  </span>
-                  <div className="flex flex-col justify-center">
-                    <Input
-                      type="number"
-                      min={0.01}
-                      max={100_000_000}
-                      step={0.01}
-                      disabled={!selected}
-                      value={selected?.rewardAmountMinor ?? ""}
-                      onChange={(event) =>
-                        setDraft((current) =>
-                          current.map((item) =>
-                            item.userId === member.userId
-                              ? {
-                                  ...item,
-                                  rewardAmountMinor: event.target.value,
-                                  isSuggested: false,
-                                }
-                              : item
-                          )
-                        )
-                      }
-                      aria-label={`${t("reward")} (${selected?.currency ?? CREW_CURRENCY})`}
-                      placeholder={selected?.currency ?? CREW_CURRENCY}
-                      className="h-7 text-[10px]"
-                    />
-                    {selected?.isSuggested && (
-                      <span className="mt-0.5 text-[9px] text-muted-foreground">
-                        {t("rewardSuggestedHint")}
-                      </span>
-                    )}
-                  </div>
-                  {selected && open && (
-                    <TaskAgreedFee
-                      taskId={task.id}
-                      userId={member.userId}
-                      onUse={(currency, fee) =>
-                        setDraft((current) =>
-                          current.map((item) =>
-                            item.userId === member.userId
-                              ? { ...item, currency, rewardAmountMinor: fee === "0.00" ? "" : fee }
-                              : item
-                          )
-                        )
-                      }
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <PropertyActions
-            pending={pending}
-            disabled={invalidReward}
-            onCancel={() => setOpen(false)}
-            onSave={() => void save()}
-          />
-        </fieldset>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function LabelsEditor({
-  version,
-  labels,
-  selected,
-  editable,
-  pending,
-  onSave,
-}: {
-  version: number;
-  labels: CrewTaskLabelDTO[];
-  selected: CrewTaskLabelDTO[];
-  editable: boolean;
-  pending: boolean;
-  onSave: TaskPatch;
-}) {
-  const t = useTranslations("crewTasks");
-
-  const [ids, setIds] = useState(() => selected.map((label) => label.id));
-  const { open, setOpen, saveDraft } = useTaskPropertySession(version, pending, onSave, () => {
-    setIds(selected.map((label) => label.id));
-  });
-  const summary = selected.length ? (
-    <div className="flex flex-wrap gap-1.5">
-      {selected.map((label) => (
-        <span
-          key={label.id}
-          className="rounded-full px-2 py-1 text-[10px]"
-          style={{ color: label.color, backgroundColor: `${label.color}18` }}
-        >
-          {label.name}
-        </span>
-      ))}
-    </div>
-  ) : (
-    <span className="text-[#777980]">{t("none")}</span>
-  );
-  if (!editable) return summary;
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="w-full rounded-md px-1 py-1 text-left transition-colors hover:bg-white/[0.045]"
-        >
-          {summary}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
-        <fieldset disabled={pending} className="contents">
-          <p className="text-[12px] font-semibold">{t("labels")}</p>
-          {labels.length ? (
-            <div className="max-h-56 space-y-1 overflow-y-auto">
-              {labels.map((label) => (
-                <label
-                  key={label.id}
-                  className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
-                >
-                  <Checkbox
-                    checked={ids.includes(label.id)}
-                    onCheckedChange={() =>
-                      setIds((current) =>
-                        current.includes(label.id)
-                          ? current.filter((id) => id !== label.id)
-                          : [...current, label.id]
-                      )
-                    }
-                  />
-                  <span className="size-2 rounded-full" style={{ backgroundColor: label.color }} />
-                  <span className="text-[11px]">{label.name}</span>
-                </label>
-              ))}
-            </div>
-          ) : (
-            <p className="py-5 text-center text-[10px] text-[#777d87]">{t("noLabels")}</p>
-          )}
-          <PropertyActions
-            pending={pending}
-            onCancel={() => setOpen(false)}
-            onSave={() => void saveDraft({ labelIds: ids }).then((ok) => ok && setOpen(false))}
-          />
-        </fieldset>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function PlanningEditor({
-  task,
-  editable,
-  pending,
-  onSave,
-}: {
-  task: CrewTaskDTO;
-  editable: boolean;
-  pending: boolean;
-  onSave: TaskPatch;
-}) {
-  const t = useTranslations("crewTasks");
-
-  const [startAt, setStartAt] = useState(toDateInput(task.startAt));
-  const [dueAt, setDueAt] = useState(toDateInput(task.dueAt));
-  const [estimate, setEstimate] = useState(
-    task.estimatePoints == null ? "" : String(task.estimatePoints)
-  );
-  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => {
-    setStartAt(toDateInput(task.startAt));
-    setDueAt(toDateInput(task.dueAt));
-    setEstimate(task.estimatePoints == null ? "" : String(task.estimatePoints));
-  });
-  const invalidRange = Boolean(startAt && dueAt && dueAt < startAt);
-  const invalidEstimate = !isNullableIntegerInputValid(estimate, 0, 1_000_000);
-  const summary = (
-    <div className="space-y-1 text-[11px]">
-      <span className="block">
-        {task.startAt ? new Date(task.startAt).toLocaleDateString() : t("none")}
-        <span className="mx-1.5 text-[#62646b]">→</span>
-        <span className={cn(isCrewTaskOverdue(task) && "text-red-300")}>
-          {task.dueAt ? new Date(task.dueAt).toLocaleDateString() : t("none")}
-        </span>
-      </span>
-      <span className="block text-[10px] text-[#777980]">
-        {t("estimate")}: {task.estimatePoints ?? t("none")}
-      </span>
-    </div>
-  );
-  if (!editable) return summary;
-
-  const save = async () => {
-    if (invalidRange || invalidEstimate) return;
-    const ok = await saveDraft({
-      startAt: dateStartIso(startAt),
-      dueAt: dateEndIso(dueAt),
-      estimatePoints: parseNullableInteger(estimate, 0, 1_000_000),
-    });
-    if (ok) setOpen(false);
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="w-full rounded-md px-1 py-1 text-left hover:bg-white/[0.045]"
-        >
-          {summary}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
-        <fieldset disabled={pending} className="contents">
-          <p className="text-[12px] font-semibold">{t("planning")}</p>
-          <div className="grid grid-cols-2 gap-2">
-            <PropertyInput label={t("startAt")}>
-              <Input
-                type="date"
-                value={startAt}
-                onChange={(event) => setStartAt(event.target.value)}
-              />
-            </PropertyInput>
-            <PropertyInput label={t("due")}>
-              <Input type="date" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
-            </PropertyInput>
-          </div>
-          <PropertyInput label={t("estimate")}>
-            <Input
-              type="number"
-              min={0}
-              max={1_000_000}
-              step={1}
-              value={estimate}
-              onChange={(event) => setEstimate(event.target.value)}
-            />
-          </PropertyInput>
-          {invalidRange ? (
-            <p className="text-[10px] text-red-300">{t("invalidDateRange")}</p>
-          ) : invalidEstimate ? (
-            <p className="text-[10px] text-red-300">{t("invalidNumber")}</p>
-          ) : null}
-          <PropertyActions
-            pending={pending}
-            disabled={invalidRange || invalidEstimate}
-            onCancel={() => setOpen(false)}
-            onSave={() => void save()}
-          />
-        </fieldset>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function TaskRelationshipsEditor({
-  task,
-  editable,
-  pending,
-  onSave,
-}: {
-  task: CrewTaskDTO;
-  editable: boolean;
-  pending: boolean;
-  onSave: TaskPatch;
-}) {
-  const t = useTranslations("crewTasks");
-
-  const [parentId, setParentId] = useState(task.parentId ?? "");
-  const [blockerIds, setBlockerIds] = useState(() => task.blockedBy.map((item) => item.id));
-  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => {
-    setParentId(task.parentId ?? "");
-    setBlockerIds(task.blockedBy.map((item) => item.id));
-  });
-  const options = useCrewTaskOptions(
-    task.crewId,
-    { excludeTaskId: task.id, limit: 100 },
-    editable && open
-  );
-  const summary = (
-    <div className="space-y-1.5">
-      <span className="block truncate text-[11px]">
-        {task.parent ? `TASK ${task.parent.number} · ${task.parent.title}` : t("noParentTask")}
-      </span>
-      {task.blockedBy.length ? (
-        <span className="block text-[10px] text-[#777980]">
-          {t("blockedByCount", { count: task.blockedBy.length })}
-        </span>
-      ) : null}
-    </div>
-  );
-  if (!editable) return summary;
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="w-full rounded-md px-1 py-1 text-left hover:bg-white/[0.045]"
-        >
-          {summary}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
-        <fieldset disabled={pending} className="contents">
-          {options.isError && (
-            <div role="alert" className="space-y-2 text-xs text-destructive">
-              <p>{options.error instanceof Error ? options.error.message : t("loadFailed")}</p>
-              <Button disabled={options.isFetching} onClick={() => void options.refetch()}>
-                {t("retry")}
-              </Button>
-            </div>
-          )}
-          <PropertyInput label={t("parentTask")}>
-            <TaskSelect
-              value={parentId}
-              onValueChange={setParentId}
-              ariaLabel={t("parentTask")}
-              className="h-9"
-              options={[
-                { value: "", label: t("noParentTask") },
-                ...options.data.map((option) => ({
-                  value: option.id,
-                  label: `TASK ${option.number} · ${option.title}`,
-                })),
-              ]}
-            />
-          </PropertyInput>
-          <div>
-            <p className="mb-1.5 text-[10px] text-[#858991]">{t("blockedBy")}</p>
-            <div className="max-h-44 space-y-1 overflow-y-auto">
-              {options.data.map((option) => (
-                <label
-                  key={option.id}
-                  className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
-                >
-                  <Checkbox
-                    checked={blockerIds.includes(option.id)}
-                    onCheckedChange={() =>
-                      setBlockerIds((current) =>
-                        current.includes(option.id)
-                          ? current.filter((id) => id !== option.id)
-                          : [...current, option.id]
-                      )
-                    }
-                  />
-                  <span className="font-mono text-[9px] text-[#777d87]">TASK {option.number}</span>
-                  <span className="min-w-0 flex-1 truncate text-[11px]">{option.title}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <PropertyActions
-            pending={pending}
-            onCancel={() => setOpen(false)}
-            onSave={() =>
-              void saveDraft({ parentId: parentId || null, blockedByTaskIds: blockerIds }).then(
-                (ok) => ok && setOpen(false)
-              )
-            }
-          />
-        </fieldset>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 function CustomFieldEditor({
   version,
@@ -2396,21 +1636,6 @@ function isNullableIntegerInputValid(value: string, min: number, max: number) {
   return Number.isInteger(parsed) && parsed >= min && parsed <= max;
 }
 
-function toDateInput(value: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-}
-
-function dateStartIso(value: string) {
-  return value ? new Date(`${value}T00:00:00`).toISOString() : null;
-}
-
-function dateEndIso(value: string) {
-  return value ? new Date(`${value}T23:59:59.999`).toISOString() : null;
-}
-
 function formatCustomFieldValue(
   field: CrewTaskFieldDTO,
   value: CrewTaskDTO["customFieldValues"][number]["value"] | undefined,
@@ -2468,45 +1693,6 @@ function RailRow({
       <span className={cn("text-[#777980]", align === "start" && "pt-0.5")}>{icon}</span>
       <div className="min-w-0">{children}</div>
     </div>
-  );
-}
-
-function InlinePropertySelect({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-}) {
-  return (
-    <TaskSelect
-      value={value}
-      onValueChange={onChange}
-      options={options}
-      className="h-7 w-full max-w-full border-0 bg-transparent px-0 text-[12px] text-[#c5c6cb] hover:bg-white/[0.04] focus-visible:bg-white/[0.04] dark:bg-transparent dark:hover:bg-white/[0.04]"
-    />
-  );
-}
-
-function TaskStatusPill({ task }: { task: Pick<CrewTaskDTO, "status" | "workflowState"> }) {
-  const t = useTranslations("crewTasks");
-  const status = task.status;
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-2 text-[12px] font-medium",
-        status === "approved" && "text-[#8c95ff]",
-        status === "submitted" && "text-amber-300",
-        status === "revision_requested" && "text-red-300",
-        (status === "open" || status === "in_progress") && "text-[#74a9ff]",
-        status === "cancelled" && "text-[#838994]"
-      )}
-    >
-      <span className="size-2.5 rounded-full border-2 border-current" />
-      {workflowStateLabel(task.workflowState, t)}
-    </span>
   );
 }
 
@@ -2647,12 +1833,6 @@ function formatRelative(value: string, t: ReturnType<typeof useTranslations>) {
 
 function formatReward(amountMinor: number, currency: CrewLedgerCurrency) {
   return formatCrewMoney(String(amountMinor), "en-US", currency);
-}
-function parseReward(value: string): number | null {
-  const parsed = parseCrewMoney(value);
-  if (parsed == null) return null;
-  const minor = BigInt(parsed);
-  return minor > 0n && minor <= 10_000_000_000n ? Number(minor) : null;
 }
 
 function formatBytes(bytes: number) {

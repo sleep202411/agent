@@ -120,6 +120,7 @@ function LinearTaskSession({
 }: LinearTaskWorkspaceProps) {
   const [inviteTask, setInviteTask] = useState<CrewTaskListItemDTO | null>(null);
   const t = useTranslations("crewTaskProject");
+  const commonT = useTranslations("common");
   const projectQuery = useCrewTaskProject(crewId);
   const summaryQuery = useCrewTaskSummary(crewId);
   const productionOverviewQuery = useCrewProductionOverview(crewId);
@@ -851,7 +852,17 @@ function LinearTaskSession({
             ["open", "in_progress", "revision_requested"].includes(taskQuery.data.status) ? (
             <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden p-6">
               <div className="shrink-0 space-y-6">
-                <h2 className="text-lg font-semibold">{taskQuery.data.title}</h2>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold">{taskQuery.data.title}</h2>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={commonT("close")}
+                    onClick={() => selectTask(null)}
+                  >
+                    <IconX className="size-4" />
+                  </Button>
+                </div>
                 <TaskDeliveryProgress status={taskQuery.data.status} />
               </div>
               <SubmitTaskDialog

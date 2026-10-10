@@ -545,22 +545,13 @@ it("waits for a timeline refresh before loading earlier comments", async () => {
   expect(state.nextPage).not.toHaveBeenCalled();
 });
 
-it.each(["assignees", "labels", "planning", "relationships", "limits"])(
+it.each(["limits"])(
   "preserves the open %s draft and its version during a refresh",
   async (kind) => {
     state.owner = true;
     state.patch.mockResolvedValue(undefined);
     await render();
-    const matches = (text: string) =>
-      kind === "assignees"
-        ? text === "unassigned"
-        : kind === "labels"
-          ? text === "none"
-          : kind === "planning"
-            ? text.includes("estimate")
-            : kind === "relationships"
-              ? text === "noParentTask"
-              : text.includes("revisionUnlimitedProgress");
+    const matches = (text: string) => text.includes("revisionUnlimitedProgress");
     const trigger = Array.from(container.querySelectorAll("button")).find((button) =>
       matches(button.textContent ?? "")
     )!;
@@ -786,30 +777,14 @@ it("restarts comment attachment discovery after an invalid cursor", async () => 
   expect(attachmentQuery.fetchNextPage).not.toHaveBeenCalled();
 });
 
-it.each([
-  ["123.45", 12345],
-  ["0.00", null],
-] as const)("uses agreed fee %s in the actual assignment payload", async (fee, minor) => {
+it("removes the planning sidebar while retaining task operations", async () => {
   state.owner = true;
-  state.quoteFee = fee;
-  state.patch.mockResolvedValue(undefined);
   await render();
-  await act(async () => textButton("unassigned").click());
-  const panel = document.querySelector('[data-slot="popover-content"]')!;
-  await act(async () => (panel.querySelector('[role="checkbox"]') as HTMLButtonElement).click());
-  await act(async () =>
-    [...panel.querySelectorAll("button")].find((b) => b.textContent === "Use agreed fee")!.click()
-  );
-  await act(async () =>
-    [...panel.querySelectorAll("button")].find((b) => b.textContent === "save")!.click()
-  );
-  expect(state.patch).toHaveBeenCalledWith(
-    expect.objectContaining({
-      input: expect.objectContaining({
-        assignees: [{ userId: "member", currency: "USD", rewardAmountMinor: minor }],
-      }),
-    })
-  );
+  expect(container.querySelector("aside")).toBeNull();
+  expect(container.textContent).not.toContain("properties");
+  expect(container.textContent).not.toContain("relationships");
+  expect(container.textContent).toContain("taskInfo");
+  expect(container.textContent).toContain("revisionUnlimitedProgress");
 });
 
 vi.mock("@/app/(site)/crews/_components/task-extension-panel", () => ({
