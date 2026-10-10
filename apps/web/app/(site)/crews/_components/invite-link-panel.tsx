@@ -31,7 +31,7 @@ import {
 import {
   crewInviteUrl,
   useCreateCrewInviteLink,
-  useCrewInviteLinks,
+  useCrewInviteLinkPages,
   useRevokeCrewInviteLink,
   type CrewInviteLinkDTO,
 } from "@/app/(site)/crews/_hooks/use-invite-links";
@@ -81,7 +81,7 @@ function InviteLinkSession({ crewId, canGrantPolicies, open, task }: InviteLinkP
   const [freshLink, setFreshLink] = useState<{ id: string; url: string } | null>(null);
   const freshUrl = freshLink?.url;
 
-  const links = useCrewInviteLinks(crewId, open);
+  const links = useCrewInviteLinkPages(crewId, open, task?.id);
   const { mutateAsync: createLink, isPending: creating } = useCreateCrewInviteLink(crewId);
   const { mutateAsync: revokeLink, isPending: revoking } = useRevokeCrewInviteLink(crewId);
 
@@ -300,6 +300,17 @@ function InviteLinkSession({ crewId, canGrantPolicies, open, task }: InviteLinkP
             </div>
           ))
         )}
+        {links.hasNextPage ? (
+          <Button
+            type="button"
+            variant="outline"
+            color="muted"
+            disabled={links.isFetching}
+            onClick={() => void links.fetchNextPage()}
+          >
+            {commonT("loadMore")}
+          </Button>
+        ) : null}
       </div>
     </FieldGroup>
   );
