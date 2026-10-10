@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { academyPayeesSql } from '../creator-withdrawals/academy-withdrawals';
 import { lockMediaAssetReferences } from '../media/media-asset-lifecycle-lock';
 import { LegacyCreatorsService } from '../legacy-creators/legacy-creators.service';
@@ -55,9 +56,12 @@ export function commerceFromJava(course: JavaCourse) {
     course.instructorShares == null
   )
     return null;
-  const price = BigInt(
-    String(course.priceCredits ?? 0).replace(/[^\d]/g, '') || '0',
-  );
+  const rawPrice = String(course.priceCredits ?? 0);
+  if (!/^(0|[1-9]\d{0,11})$/.test(rawPrice))
+    throw new ConflictException(
+      'Course price must be a nonnegative whole number of community points.',
+    );
+  const price = BigInt(rawPrice);
   const teacherId =
     instructorShares[0]?.teacherId ||
     (course.instructors?.[0] ? String(course.instructors[0].userId) : '');
@@ -70,6 +74,36 @@ export function commerceFromJava(course: JavaCourse) {
       course.enrollmentEnabled === true || course.enrollmentEnabled === 1,
     version: 1,
   };
+}
+
+/** An opaque safe-integer quote version; clients echo it unchanged on enrollment.
+ * Java does not expose an offering revision. Bind its actual terms instead of
+ * accepting the unrelated Nest offering version. Keep the DB revision separate.
+ */
+export function javaOfferingVersion(course: JavaCourse): number {
+  const terms = commerceFromJava(course);
+  if (!terms) throw new ConflictException('Course sale terms are unavailable.');
+  const canonical = JSON.stringify({
+    cell: CURRENT_CELL,
+    courseId: String(course.id),
+    published: course.published,
+    certificateId: course.certificateId ?? null,
+    price: terms.priceCredits.toString(),
+    enabled: terms.enabled,
+    teacherId: terms.teacherId,
+    shares: [...terms.instructorShares].sort((a, b) =>
+      a.teacherId.localeCompare(b.teacherId),
+    ),
+    instructors: (course.instructors ?? [])
+      .map((item) => String(item.userId))
+      .sort(),
+  });
+  return (
+    Number.parseInt(
+      createHash('sha256').update(canonical).digest('hex').slice(0, 13),
+      16,
+    ) + 1
+  );
 }
 
 export function javaCommerceLive(
@@ -147,10 +181,11 @@ export class AcademyLearningService {
 
   async playbackAccess(courseId: string, userId: string | null) {
     const [course, offer] = await Promise.all([
-      this.authority.course(courseId).catch(() => null),
+      this.authority.course(courseId),
       this.db.academyOffering.findUnique({ where: { courseId } }),
     ]);
-    const java = course && commerceFromJava(course);
+    if (!course.published) return { allowed: false };
+    const java = commerceFromJava(course);
     const configured = java ? javaCommerceLive(java) : Boolean(offer);
     // Unconfigured catalogue entries retain existing free playback behavior.
     if (!configured) return { allowed: true };
@@ -182,7 +217,7 @@ export class AcademyLearningService {
               teacherShareBps: java.teacherShareBps,
               instructorShares: java.instructorShares,
               enabled: java.enabled,
-              version: stored?.version ?? java.version,
+              version: javaOfferingVersion(course),
             }
           : null
         : stored
@@ -310,6 +345,7 @@ export class AcademyLearningService {
 
   async enroll(courseId: string, studentId: string, expectedVersion: number) {
     const course = await this.authority.course(courseId);
+    if (!course.published) throw new NotFoundException('Course not found.');
     const certificate = (await this.mappings.published(courseId)).certificate;
     if (!certificate)
       throw new ConflictException(
@@ -341,7 +377,10 @@ export class AcademyLearningService {
               version: stored.version,
             }
           : null;
-      if (!offer?.enabled || (!java && offer.version !== expectedVersion))
+      if (
+        !offer?.enabled ||
+        (java ? javaOfferingVersion(course) : offer.version) !== expectedVersion
+      )
         throw new ConflictException(
           'Course enrollment terms changed. Reload before purchasing.',
         );

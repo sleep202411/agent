@@ -29,6 +29,16 @@ vi.mock("./_components/PublicCourseDetailPanel", () => ({
 vi.mock("./_components/CourseVideoPlayer", () => ({
   CourseVideoPlayer: ({ videoUrl }: { videoUrl: string }) => <div data-player>{videoUrl}</div>,
 }));
+vi.mock("./_learning/course-enrollment", () => ({
+  useCourseLearning: () => ({
+    isPending: false,
+    isSuccess: true,
+    isError: false,
+    data: { offering: null, enrollment: null },
+  }),
+  courseRequiresEnrollment: () => false,
+  CourseEnrollGate: () => null,
+}));
 let root: Root;
 let node: HTMLDivElement;
 let client: QueryClient;

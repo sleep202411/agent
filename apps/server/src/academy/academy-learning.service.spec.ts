@@ -4,6 +4,7 @@ import {
   AcademyLearningService,
   commerceFromJava,
   javaCommerceLive,
+  javaOfferingVersion,
   teacherShare,
 } from './academy-learning.service';
 import { PrismaService } from '../infra/db/db.module';
@@ -171,7 +172,8 @@ it('prefers Java sale terms over a leftover Nest offering', async () => {
     priceCredits: 40,
     instructors: [{ userId: 200, shareBps: 5000 }],
   });
-  await f.service.enroll('14', '100', 99);
+  const quote = await f.service.offering('14');
+  await f.service.enroll('14', '100', quote.offering!.version);
   expect(f.wallet.postEntryTx).toHaveBeenCalledWith(
     f.db,
     expect.objectContaining({
@@ -217,7 +219,10 @@ it('scopes admin homework to the bound Web lecturer id', async () => {
   );
   expect(f.db.academyEnrollment.findMany).toHaveBeenCalledWith(
     expect.objectContaining({
-      where: expect.objectContaining({ teacherId: '200', status: 'submitted' }),
+      where: expect.objectContaining({
+        teacherId: '200',
+        status: 'submitted',
+      }) as Prisma.AcademyEnrollmentWhereInput,
     }),
   );
   expect(page.scope).toBe('lecturer');
@@ -296,9 +301,10 @@ it('rejects incomplete teacher assignment before debiting', async () => {
     priceCredits: 500,
     instructors: [],
   });
-  await expect(f.service.enroll('14', '100', 1)).rejects.toThrow(
-    'teacher assignment is incomplete',
-  );
+  const quote = await f.service.offering('14');
+  await expect(
+    f.service.enroll('14', '100', quote.offering!.version),
+  ).rejects.toThrow('teacher assignment is incomplete');
   expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
 });
 it('refuses a removed teacher before issuing income or badges', async () => {
@@ -491,4 +497,103 @@ it('preserves an unexpected enrollment database error', async () => {
     throw failure;
   });
   await expect(f.service.enroll('14', '100', 1)).rejects.toBe(failure);
+});
+
+it.each([
+  '10.5',
+  '-10',
+  '1e3',
+  '10 points',
+  '',
+  '1000000000000',
+  NaN,
+  Infinity,
+])('rejects malformed Java price %s before charging', (priceCredits) => {
+  expect(() =>
+    commerceFromJava({
+      id: 14,
+      published: true,
+      certificateId: 13,
+      enrollmentEnabled: true,
+      priceCredits,
+    }),
+  ).toThrow('whole number');
+});
+it('fails closed when the Java authority is unavailable, even without a local offering', async () => {
+  const f = fixture();
+  const error = new Error('Java unavailable');
+  f.authority.course.mockRejectedValue(error);
+  f.db.academyOffering.findUnique.mockResolvedValue(null);
+  await expect(f.service.playbackAccess('14', null)).rejects.toBe(error);
+  expect(f.enrollment.findUnique).not.toHaveBeenCalled();
+});
+it('denies unpublished course playback and enrollment', async () => {
+  const f = fixture();
+  f.authority.course.mockResolvedValue({ id: 14, published: false });
+  await expect(f.service.playbackAccess('14', '100')).resolves.toEqual({
+    allowed: false,
+  });
+  await expect(f.service.enroll('14', '100', 1)).rejects.toThrow(
+    'Course not found',
+  );
+  expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
+});
+it('rejects changed Java sale terms before debit and accepts a refreshed quote', async () => {
+  const f = fixture();
+  f.enrollment.findUnique.mockResolvedValue(null);
+  const course = {
+    id: 14,
+    published: true,
+    enrollmentEnabled: true,
+    priceCredits: 40,
+    instructors: [{ userId: 200, shareBps: 5000 }],
+  };
+  f.authority.course.mockResolvedValue(course);
+  const before = await f.service.offering('14');
+  f.authority.course.mockResolvedValue({ ...course, priceCredits: 900 });
+  await expect(
+    f.service.enroll('14', '100', before.offering!.version),
+  ).rejects.toThrow('terms changed');
+  expect(f.enrollment.create).not.toHaveBeenCalled();
+  expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
+  const refreshed = await f.service.offering('14');
+  expect(Number.isSafeInteger(refreshed.offering!.version)).toBe(true);
+  await f.service.enroll('14', '100', refreshed.offering!.version);
+  expect(f.wallet.postEntryTx).toHaveBeenCalledWith(
+    f.db,
+    expect.objectContaining({ amount: 900n, availableDelta: -900n }),
+  );
+});
+it('binds Java quotes to course identity, certificate and instructor shares', () => {
+  const course = {
+    id: 14,
+    published: true,
+    certificateId: 13,
+    enrollmentEnabled: true,
+    priceCredits: 40,
+    instructors: [{ userId: 200, shareBps: 5000 }],
+  };
+  const version = javaOfferingVersion(course);
+  for (const change of [
+    { id: 15 },
+    { certificateId: 14 },
+    { enrollmentEnabled: false },
+    { instructors: [{ userId: 200, shareBps: 6000 }] },
+  ]) {
+    expect(javaOfferingVersion({ ...course, ...change })).not.toBe(version);
+  }
+});
+it('returns existing enrollment on response-loss retry without another debit', async () => {
+  const f = fixture();
+  f.authority.course.mockResolvedValue({
+    id: 14,
+    published: true,
+    enrollmentEnabled: true,
+    priceCredits: 900,
+    instructors: [{ userId: 200, shareBps: 5000 }],
+  });
+  await expect(f.service.enroll('14', '100', 1)).resolves.toMatchObject({
+    id: 'enrollment',
+  });
+  expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
 });

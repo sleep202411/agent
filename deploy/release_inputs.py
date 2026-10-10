@@ -128,8 +128,11 @@ def inputs(root, revision, service, region):
         if path.startswith('apps/'):
             # npm ci consumes every workspace manifest even for a pruned build.
             if not ('/'.join(path.split('/')[:2]) in included or path.endswith('/package.json')):
-                # Web's regional env supplies build arguments for Studio too.
-                if not (service == 'studio' and path == f'apps/web/.env.production.{region}'):
+                # Studio imports Web's canonical subtitle catalogues at build time.
+                if not (service == 'studio' and (
+                    path == f'apps/web/.env.production.{region}'
+                    or path.startswith('apps/web/messages/')
+                )):
                     continue
             if path.startswith('apps/web/.env.production.') and path != f'apps/web/.env.production.{region}':
                 continue
