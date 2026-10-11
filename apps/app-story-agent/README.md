@@ -64,8 +64,8 @@ confirmed separately. This assistant does not publish the project.
 - Contracts: `packages/app-story-protocol`.
 - Admission, coordination and API: `apps/server/src/app-story-agent`.
 - Native App entry: `apps/mobile/src/app/agent/[projectId]/index.tsx`.
-  Its H5 container integration is a separate follow-up; this package does not
-  replace the existing native page by itself.
+  The H5 bridge below is implemented; connecting the native container and
+  replacing its existing Agent page remain App integration work.
 - App H5 conversation: `apps/app-story-agent/ui`, using official Harness Layout,
   Conversation, Input, Chat, Attachment, settings and right-panel plugins. The
   host opens the current project directly without a workspace sidebar. H5 is
@@ -81,6 +81,98 @@ confirmed separately. This assistant does not publish the project.
 Historical Agent OS text is read for continuity. The new production flow has no
 Agent OS runtime dependency. Existing Web, Studio and Game Agent flows keep
 their own admission and runtime; overlapping work on the same project is fenced.
+
+## Native H5 bridge
+
+Implementation: `ui/bridge.ts`; validated messages/types are exported by
+`@repo/app-story-protocol`. This does not change native App code or add a second
+business API. H5 owns conversation, uploads, quotes, media previews, choices and
+playback. App owns its WebView, login, navigation, system save and share.
+
+Host `dist/ui` on the **same regional HTTPS origin** as `/aurora/*`, under an
+App-owned static path such as `/app-story-agent/`. The worker's private port is
+not a static host. The production static route still needs release configuration;
+`localhost:8085` is for local validation. Allow navigation/messages only from
+that exact regional origin, block untrusted redirects and keep `.com` and `.cn`
+sessions separate. Inject the existing `satoken` cookie before loading, including
+subsequent H5 requests; do not put credentials in URLs or bridge messages.
+
+Use the [React Native WebView communication channel](https://github.com/react-native-webview/react-native-webview/blob/master/docs/Guide.md#communicating-between-js-and-native):
+H5 calls `window.ReactNativeWebView.postMessage(JSON.stringify(message))`; App
+receives it through `onMessage`. App responds through `injectJavaScript`:
+
+```ts
+const serialized = JSON.stringify(message);
+webViewRef.current?.injectJavaScript(
+  `window.FizzDragonStoryBridge?.receive(${JSON.stringify(serialized)}); true;`
+);
+```
+
+All messages have this envelope; `requestId` is a fresh UUID for each new
+command/event. Replies reuse the command's `requestId` and `bridgeId`.
+
+```ts
+{ protocol: "fizz.app-story.bridge.v1", bridgeId: "<page UUID>",
+  requestId: "<request UUID>", type: "init", payload: {
+    projectId: "<project UUID>", chapterId: "<chapter UUID>", locale: "zh-CN",
+    capabilities: ["saveResource", "shareResource"]
+  } }
+```
+
+Wait for H5 `ready`, copy its `bridgeId`, then send `init` immediately. H5 installs
+the receiver before sending `ready`, and starts loading the selected conversation
+only after valid initialization, without creating an extra empty conversation.
+`init` success acknowledges accepted context,
+not completed production. Missing initialization fails visibly after 20 seconds.
+Capabilities default to `[]`: advertise only implemented native actions, and
+H5 shows only those buttons. Ordinary browsers use their existing local/query
+context without a native handshake. No project picker or login page is added.
+
+| Type                            | Direction | Payload / behavior                                                                                                                                                   |
+| ------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ready`                         | H5 → App  | `{capabilities:["saveResource","shareResource"]}`; receiver is installed.                                                                                            |
+| `init`                          | App → H5  | Project, chapter, locale and supported capabilities as above. Reply: `result`.                                                                                       |
+| `back`                          | App → H5  | `{}`; closes fullscreen, the foreground Harness dialog/menu, then the preview panel. Reply includes `handled`.                                                       |
+| `close`                         | H5 → App  | `{}`; H5 Back reached the conversation root. App closes the container. No reply required.                                                                            |
+| `appState`                      | App → H5  | `{state:"background"}` or `{state:"active"}`; pauses polling/playback, then refreshes active queries on return. Reply: `result`.                                     |
+| `authExpired`                   | H5 → App  | `{}`; HTTP/business 401 or upload 401 requires native login. Sent once until recovery.                                                                               |
+| `contentChanged`                | H5 → App  | `{projectId,chapterId}`; persisted production phase/status/result or conversation metadata changed. Invalidate that native project/chapter cache; no reply required. |
+| `saveResource`, `shareResource` | H5 → App  | `{projectId,chapterId,resource:{id,kind:"image"\|"video",name,url}}`; ready media only. App replies after the system action finishes.                                |
+| `result`                        | Either    | `{status:"success"}`, `{status:"success",handled:true\|false}`, `{status:"cancelled"}`, or `{status:"error",code,message}`. No reply to a result.                    |
+
+For native Back, send `back` first and close the container only after
+`result.payload.handled === false`. A repeated request ID is acknowledged without
+repeating the navigation. H5 Back emits `close` at the root; avoid also popping
+the native page for the same press. Closing/backgrounding **does not cancel
+production**; only the H5 Stop action invokes cancellation. The server retains
+progress and already generated assets when WebView is destroyed or reloaded.
+
+On `authExpired`, renew the **same account's** native login and install its cookie, then send
+the **same `init` context with a new request ID**. H5 retains its conversation and
+unsent draft, refreshing reads without resending a message or approving a quote.
+Changing account, project, chapter, locale or capabilities requires a fresh
+WebView/page lifetime. On account switch, App must also isolate or clear this
+H5's persisted drafts; a reload alone retains Harness's local draft storage.
+Same-page project/chapter/locale/capability changes return `REOPEN_REQUIRED`; stale
+page IDs, wrong protocol versions and malformed messages are ignored.
+Map native `inactive` to `appState: {state:"background"}` as well.
+
+Native save/share downloads the supplied HTTPS URL, opens the system destination,
+then returns success, cancellation or the actual actionable error. Use response
+MIME/Content-Disposition to determine the extension, sanitize the suggested name,
+and never forward session cookies to external media hosts. Signed URLs may expire;
+report failure and let the user retry against refreshed H5 outputs. Do not log
+media URLs or initialize another provider. H5 correlates replies, disables repeat
+clicks while pending and treats cancellation normally. App must always return a
+result, including permissions denied, network failures and cancelled system UI.
+
+The existing Harness attachment picker uploads DOCX/TXT/Markdown and reference
+images directly through authenticated H5 requests (10 MiB per file). Enable the
+WebView file chooser and required platform permissions; no file bytes/base64 or
+extra upload confirmation travel through this bridge. Script preview and the
+interactive player stay inside H5; there is no invented script-export endpoint.
+Media spending remains one exact quote confirmation in H5; App must not add a
+second confirmation or automatically confirm after login/foregrounding.
 
 ## Configuration
 
