@@ -17,7 +17,11 @@ function requestBody(init?: RequestInit): string {
     throw new Error('Expected a JSON request body');
   return init.body;
 }
-function transport(output: unknown = proposal) {
+function transport(
+  output: unknown = proposal,
+  raw = false,
+  finishReason = 'stop',
+) {
   return jest
     .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
     .mockImplementation((_url, init) => {
@@ -48,8 +52,11 @@ function transport(output: unknown = proposal) {
             choices: [
               {
                 index: 0,
-                message: { role: 'assistant', content: JSON.stringify(output) },
-                finish_reason: 'stop',
+                message: {
+                  role: 'assistant',
+                  content: raw ? String(output) : JSON.stringify(output),
+                },
+                finish_reason: finishReason,
               },
             ],
             usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
@@ -138,4 +145,129 @@ it('does not retry rejected provider requests as evidence repairs', async () => 
   const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
   await expect(generateDocumentTasks(source, model)).rejects.toThrow();
   expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it.each(['{"tasks": [not-json', ''])(
+  'repairs malformed or empty provider JSON once (%s)',
+  async (raw) => {
+    const fetch = transport();
+    fetch.mockImplementationOnce(transport(raw, true));
+    const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+    await expect(generateDocumentTasks(source, model)).resolves.toEqual(
+      proposal,
+    );
+    expect(fetch).toHaveBeenCalledTimes(2);
+  },
+);
+it('stops after two malformed responses without returning partial tasks', async () => {
+  const fetch = transport('{"tasks": [not-json', true);
+  const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+  await expect(generateDocumentTasks(source, model)).rejects.toThrow();
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it('does not retry a provider content-filter response', async () => {
+  const fetch = transport('', true, 'content_filter');
+  const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+  await expect(generateDocumentTasks(source, model)).rejects.toThrow();
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('aborts a stalled request at four minutes and does not start a repair', async () => {
+  jest.useFakeTimers();
+  const timeout = jest
+    .spyOn(AbortSignal, 'timeout')
+    .mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(
+        () => controller.abort(new DOMException('Timed out', 'TimeoutError')),
+        ms,
+      );
+      return controller.signal;
+    });
+  const fetch = jest
+    .fn<
+      ReturnType<typeof globalThis.fetch>,
+      Parameters<typeof globalThis.fetch>
+    >()
+    .mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) throw new Error('Expected request cancellation signal');
+          if (signal.aborted) reject(signal.reason as Error);
+          else
+            signal.addEventListener(
+              'abort',
+              () => reject(signal.reason as Error),
+              {
+                once: true,
+              },
+            );
+        }),
+    );
+  try {
+    const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+    const result = generateDocumentTasks(source, model).catch(
+      (error: unknown) => error,
+    );
+    await jest.advanceTimersByTimeAsync(239_999);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(await result).toMatchObject({ name: 'TimeoutError' });
+    expect(timeout).toHaveBeenCalledWith(240_000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  } finally {
+    timeout.mockRestore();
+    jest.useRealTimers();
+  }
+});
+it('shares the four-minute deadline with the correction attempt', async () => {
+  jest.useFakeTimers();
+  const timeout = jest
+    .spyOn(AbortSignal, 'timeout')
+    .mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(
+        () => controller.abort(new DOMException('Timed out', 'TimeoutError')),
+        ms,
+      );
+      return controller.signal;
+    });
+  const fetch = transport();
+  fetch.mockImplementationOnce(async (...args) => {
+    await new Promise((resolve) => setTimeout(resolve, 150_000));
+    return transport({ tasks: [] })(...args);
+  });
+  fetch.mockImplementationOnce(
+    (_url, init) =>
+      new Promise((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) throw new Error('Expected cancellation signal');
+        if (signal.aborted) reject(signal.reason as Error);
+        else
+          signal.addEventListener(
+            'abort',
+            () => reject(signal.reason as Error),
+            {
+              once: true,
+            },
+          );
+      }),
+  );
+  try {
+    const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+    const result = generateDocumentTasks(source, model).catch(
+      (error: unknown) => error,
+    );
+    await jest.advanceTimersByTimeAsync(150_000);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    await jest.advanceTimersByTimeAsync(90_000);
+    expect(await result).toMatchObject({ name: 'TimeoutError' });
+    expect(timeout).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  } finally {
+    timeout.mockRestore();
+    jest.useRealTimers();
+  }
 });
