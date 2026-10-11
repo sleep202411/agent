@@ -8,7 +8,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { QueryObserver } from "@tanstack/react-query";
+import { focusManager, QueryObserver } from "@tanstack/react-query";
 import { Context } from "@deepseek-ai/cordis";
 import { createSnapshotStore } from "@deepseek-ai/dsh-client-store";
 import * as Renderer from "@deepseek-ai/dsh-client-ui-renderer/client";
@@ -19,7 +19,7 @@ import * as Commands from "@deepseek-ai/dsh-client-ui-commands/client";
 import * as Chat from "@deepseek-ai/dsh-client-ui-chat/client";
 import * as Locale from "@deepseek-ai/dsh-client-locale/client";
 import * as Theme from "@deepseek-ai/dsh-client-ui-theme/client";
-import { Button, Menu } from "@deepseek-ai/dsh-client-ui-primitives";
+import { Button, Menu, closeTopModal, modalSelector } from "@deepseek-ai/dsh-client-ui-primitives";
 import {
   IconArrowRight,
   IconBolt,
@@ -31,6 +31,9 @@ import {
   IconFileText,
   IconVideo,
   IconAlertCircle,
+  IconChevronLeft,
+  IconDownload,
+  IconShare,
 } from "@tabler/icons-react";
 
 import { projectHistory, storyMediaDefinition, videoProgress } from "./events";
@@ -55,6 +58,72 @@ import { StoryTransport, copy, isActive } from "./transport";
 import { createStorySession } from "./session";
 
 const StoryPlayer = lazy(() => import("./player"));
+
+function NativeResourceActions({
+  transport,
+  media,
+}: {
+  transport: StoryTransport;
+  media: StoryOutputs[number];
+}) {
+  const bridge = transport.bridge;
+  const t = copy(transport.context.locale).h5;
+  const [pending, setPending] = useState(false);
+  const busy = useRef(false);
+  const [error, setError] = useState<string>();
+  if (
+    !bridge ||
+    !media.url ||
+    media.status !== "ready" ||
+    !(bridge.supports("saveResource") || bridge.supports("shareResource"))
+  )
+    return null;
+  const act = async (action: "saveResource" | "shareResource") => {
+    if (busy.current) return;
+    busy.current = true;
+    setPending(true);
+    setError(undefined);
+    try {
+      await bridge.resource(action, {
+        projectId: transport.context.projectId!,
+        chapterId: transport.context.chapterId!,
+        resource: {
+          id: media.id,
+          kind: media.kind,
+          name: (media.title || t.mediaPanel).slice(0, 512),
+          url: media.url!,
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError"))
+        setError(error instanceof Error ? error.message : String(error));
+    } finally {
+      busy.current = false;
+      setPending(false);
+    }
+  };
+  return (
+    <div className="story-resource-actions" aria-busy={pending}>
+      {bridge.supports("saveResource") && (
+        <Button disabled={pending} onClick={() => void act("saveResource")}>
+          <IconDownload size={16} aria-hidden="true" />
+          {t.saveResource}
+        </Button>
+      )}
+      {bridge.supports("shareResource") && (
+        <Button disabled={pending} onClick={() => void act("shareResource")}>
+          <IconShare size={16} aria-hidden="true" />
+          {t.shareResource}
+        </Button>
+      )}
+      {error && (
+        <p role="alert" className="story-error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function VideoModelChoice({
   transport,
@@ -321,6 +390,7 @@ function MediaOutputs({
                 </div>
               )}
             </div>
+            <NativeResourceActions transport={transport} media={media} />
             {media.error && (
               <details className="story-media-error">
                 <summary>{t.mediaErrorDetails}</summary>
@@ -423,7 +493,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
     const t = copy(transport.context.locale);
     const preferences = storyPreferences(transport.context.projectId ?? "unconfigured");
     ctx.reflect.provide("configForms", preferences);
-    const { transportFor, initialId } = createStorySession(ctx, transport);
+    const { sessions, transportFor, initialId, activate } = createStorySession(ctx, transport);
     const remote = {
       session: {},
       directoryPicker: {},
@@ -589,6 +659,11 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
         function ProductHeader({ renderSlot }) {
           return (
             <div className="story-product-header">
+              {transport.bridge && (
+                <Button aria-label={t.h5.back} onClick={() => void transport.bridge!.back()}>
+                  <IconChevronLeft size={20} aria-hidden="true" />
+                </Button>
+              )}
               <strong>FizzDragon</strong>
               <span>{t.h5.title}</span>
               {renderSlot("sidebar.settings", { wide: false })}
@@ -611,7 +686,8 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
       )
     );
     await transport.conversations.refetch();
-    ctx.uiWorkspace.openSession(initialId);
+    if (initialId) ctx.uiWorkspace.openSession(initialId);
+    activate();
     await ctx.plugin(Attachment).await();
     await ctx.plugin(InputTrigger).await();
     await ctx.plugin(Conversation).await();
@@ -969,6 +1045,108 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
         },
       })
       .await();
+    if (transport.bridge) {
+      const bridge = transport.bridge;
+      ctx.effect(() => {
+        const unbind = bridge.bind({
+          async back() {
+            if (document.fullscreenElement) {
+              await document.exitFullscreen();
+              return true;
+            }
+            const modal = [...document.querySelectorAll(modalSelector)].at(-1);
+            if (modal) {
+              if (modal.getAttribute("role") === "menu")
+                modal.dispatchEvent(
+                  new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true })
+                );
+              else closeTopModal(document);
+              return true;
+            }
+            const sessionId = ctx.sidebarRight.mounted.getSnapshot();
+            const session = sessionId ? sessions.scope(sessionId) : undefined;
+            const trigger = session ? ctx.inputTriggers.sessionOf(session) : undefined;
+            if (trigger?.menu.getSnapshot().open) {
+              trigger.dismiss();
+              return true;
+            }
+            const focused = ctx.sidebarRight.focusedTarget();
+            if (focused?.host === "float" && ctx.sidebarRight.canCloseTarget(focused))
+              return ctx.sidebarRight.closeTarget(focused) === "closed";
+            if (ctx.sidebarRight.isExpanded()) {
+              ctx.sidebarRight.toggleExpanded();
+              return true;
+            }
+            if (ctx.layout.panelInfo.getSnapshot().activePanelId) {
+              ctx.layout.selectPanel(null);
+              return true;
+            }
+            return false;
+          },
+          pause(paused) {
+            focusManager.setFocused(!paused);
+            if (paused)
+              document
+                .querySelectorAll<HTMLMediaElement>("video,audio")
+                .forEach((media) => media.pause());
+          },
+          refresh() {
+            void transport.queries.invalidateQueries();
+          },
+        });
+        return () => {
+          unbind();
+          focusManager.setFocused(undefined);
+        };
+      });
+      // Read persisted business state; do not mirror production in a bridge store.
+      ctx.effect(() => {
+        const runStates = (
+          data: NonNullable<ReturnType<typeof transport.history.getCurrentResult>["data"]>
+        ) =>
+          new Map(
+            data.runs.map((run) => [
+              run.id,
+              JSON.stringify([run.phase, run.status, run.result?.title]),
+            ])
+          );
+        const chapterStates = (
+          data: NonNullable<ReturnType<typeof transport.conversations.getCurrentResult>["data"]>
+        ) =>
+          new Map(
+            data.map((chapter) => [chapter.id, JSON.stringify([chapter.title, chapter.archived])])
+          );
+        const initialHistory = transport.history.getCurrentResult().data;
+        const initialChapters = transport.conversations.getCurrentResult().data;
+        let runs = initialHistory ? runStates(initialHistory) : undefined;
+        let chapters = initialChapters ? chapterStates(initialChapters) : undefined;
+        const unhistory = transport.history.subscribe(({ data }) => {
+          if (!data) return;
+          const next = runStates(data);
+          if (runs)
+            for (const chapterId of new Set(
+              data.runs
+                .filter((run) => next.get(run.id) !== runs!.get(run.id))
+                .map((run) => run.chapterId)
+            ))
+              bridge.contentChanged(transport.context.projectId!, chapterId);
+          runs = next;
+        });
+        const unconversations = transport.conversations.subscribe(({ data }) => {
+          if (!data) return;
+          const next = chapterStates(data);
+          if (chapters)
+            for (const chapter of data)
+              if (next.get(chapter.id) !== chapters.get(chapter.id))
+                bridge.contentChanged(transport.context.projectId!, chapter.id);
+          chapters = next;
+        });
+        return () => {
+          unhistory();
+          unconversations();
+        };
+      });
+    }
     const unmount = ctx.uiRenderer.mount(container);
     container.removeAttribute("aria-busy");
     return async () => {

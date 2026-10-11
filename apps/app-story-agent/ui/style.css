@@ -483,3 +483,18 @@ html[data-windows-titlebar] #story-agent [data-sidebar-collapsed] > :nth-child(2
   color: var(--dsw-alias-label-secondary);
   font-size: 13px;
 }
+.story-resource-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.story-resource-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 14px;
+}
+.story-resource-actions .story-error {
+  flex-basis: 100%;
+}

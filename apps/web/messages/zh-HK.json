@@ -12138,7 +12138,7 @@
     },
     "h5": {
       "title": "影遊助手",
-      "sessionExpired": "FizzDragon 登入工作階段已結束，製作已停止。",
+      "sessionExpired": "登入已過期，請重新登入後繼續，已完成的成果會保留。",
       "sessionRequired": "請登入 FizzDragon 後繼續。",
       "welcomeTitle": "想製作甚麼故事？",
       "welcomeHint": "說出你的想法，Agent 會規劃故事並自動完成製作。",
@@ -12162,6 +12162,9 @@
       "resultPlayVideo": "播放影片",
       "resultViewScript": "查看劇本",
       "resultViewMedia": "查看素材",
+      "back": "返回",
+      "saveResource": "儲存",
+      "shareResource": "分享",
       "videoProduction": "影遊製作",
       "videoProgressSeconds": "影片分鏡已完成 {completed} / {total} 秒",
       "videoProgressClips": "影片分鏡已完成 {completed} / {total}",

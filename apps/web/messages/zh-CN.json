@@ -12138,7 +12138,7 @@
     },
     "h5": {
       "title": "影游助手",
-      "sessionExpired": "FizzDragon 登录会话已结束，制作已停止。",
+      "sessionExpired": "登录已过期，请重新登录后继续，已完成的成果会保留。",
       "sessionRequired": "请登录 FizzDragon 后继续。",
       "welcomeTitle": "想制作什么故事？",
       "welcomeHint": "说出你的想法，Agent 会规划故事并自动完成制作。",
@@ -12162,6 +12162,9 @@
       "resultPlayVideo": "播放视频",
       "resultViewScript": "查看剧本",
       "resultViewMedia": "查看素材",
+      "back": "返回",
+      "saveResource": "保存",
+      "shareResource": "分享",
       "videoProduction": "影游制作",
       "videoProgressSeconds": "视频分镜已完成 {completed} / {total} 秒",
       "videoProgressClips": "视频分镜已完成 {completed} / {total}",

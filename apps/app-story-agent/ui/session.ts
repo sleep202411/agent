@@ -181,11 +181,7 @@ function createBinding(ctx: Context, transport: StoryTransport) {
           .find((row) => row.hash === id);
         if (!attachment || !attachment.width || !attachment.height)
           throw new Error("Attachment not found.");
-        const response = await fetch(transport.attachmentUrl(attachment.id), {
-          credentials: "same-origin",
-          redirect: "error",
-        });
-        if (!response.ok) throw new Error("Attachment could not be read.");
+        const data = await transport.attachmentData(attachment.id);
         return {
           ok: true,
           value: {
@@ -197,7 +193,7 @@ function createBinding(ctx: Context, transport: StoryTransport) {
               height: attachment.height,
               name: attachment.name,
             },
-            data: new Uint8Array(await response.arrayBuffer()),
+            data,
           },
         };
       } catch (error) {
@@ -424,6 +420,8 @@ function createBinding(ctx: Context, transport: StoryTransport) {
 
 /** Chapter-backed sessions share one Query cache; official UI owns navigation, composer and retention. */
 export function createStorySession(ctx: Context, root: StoryTransport) {
+  // Hold Harness's automatic workspace restoration until the host chapter is selected.
+  let selectionReady = false;
   const bindings = new Map<SessionId, ReturnType<typeof createBinding>>();
   const transports = new Map<SessionId, StoryTransport>();
   const list = createSnapshotStore<SessionListState>({
@@ -452,7 +450,7 @@ export function createStorySession(ctx: Context, root: StoryTransport) {
     const history = root.history.getCurrentResult().data;
     list.set({
       ids: rows.map((row) => row.id as SessionId),
-      phase: root.conversations.getCurrentResult().data ? "ready" : "pending",
+      phase: selectionReady && root.conversations.getCurrentResult().data ? "ready" : "pending",
       projectionsBySession: {},
       byId: Object.fromEntries(
         rows.map((row) => {
@@ -651,6 +649,10 @@ export function createStorySession(ctx: Context, root: StoryTransport) {
   });
   return {
     sessions,
+    activate() {
+      selectionReady = true;
+      refresh();
+    },
     transportFor: (id: SessionId) => transports.get(id) ?? (get(id), transports.get(id)!),
     initialId: root.context.chapterId as SessionId,
   };

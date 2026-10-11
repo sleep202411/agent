@@ -12138,7 +12138,7 @@
     },
     "h5": {
       "title": "Story Agent",
-      "sessionExpired": "Production stopped because your FizzDragon session ended.",
+      "sessionExpired": "Your FizzDragon session ended. Sign in to continue; completed work is retained.",
       "sessionRequired": "Sign in to FizzDragon to continue.",
       "welcomeTitle": "What story would you like to make?",
       "welcomeHint": "Describe your idea. Your agent will plan the story and take it through production.",
@@ -12162,6 +12162,9 @@
       "resultPlayVideo": "Play video",
       "resultViewScript": "View script",
       "resultViewMedia": "View media",
+      "back": "Back",
+      "saveResource": "Save",
+      "shareResource": "Share",
       "videoProduction": "Producing your story",
       "videoProgressSeconds": "Video clips ready: {completed} / {total} seconds",
       "videoProgressClips": "Video clips ready: {completed} / {total}",

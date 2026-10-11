@@ -18,6 +18,7 @@ import type { StoryHistory, StoryRun } from "@repo/app-story-protocol";
 import en from "../../web/messages/en-US.json";
 import cn from "../../web/messages/zh-CN.json";
 import hk from "../../web/messages/zh-HK.json";
+import type { StoryBridge } from "./bridge";
 
 export const ContextSchema = z
   .object({
@@ -36,7 +37,8 @@ export const copy = (locale: StoryContext["locale"]) =>
 export const playerCopy = (locale: StoryContext["locale"]) =>
   ({ "en-US": en, "zh-CN": cn, "zh-HK": hk })[locale].experiencePlayer;
 
-export async function loadContext(): Promise<StoryContext> {
+export async function loadContext(bridge?: StoryBridge): Promise<StoryContext> {
+  if (bridge) return ContextSchema.parse({ ready: true, ...(await bridge.context) });
   const query = new URLSearchParams(location.search);
   if (location.pathname === "/")
     return ContextSchema.parse(await (await fetch("/api/context")).json());
@@ -70,7 +72,8 @@ export class StoryTransport {
   constructor(
     readonly context: StoryContext,
     queries?: QueryClient,
-    legacyChapterId = context.chapterId
+    legacyChapterId = context.chapterId,
+    readonly bridge?: StoryBridge
   ) {
     this.legacyChapterId = legacyChapterId;
     this.ownsQueries = !queries;
@@ -184,6 +187,8 @@ export class StoryTransport {
     body?: unknown,
     signal?: AbortSignal
   ): Promise<T> {
+    if (this.bridge?.authenticationRequired)
+      throw Object.assign(new Error(copy(this.context.locale).h5.sessionRequired), { status: 401 });
     const response = await fetch(`${this.path}${path}`, {
       method: body === undefined ? "GET" : "POST",
       credentials: "same-origin",
@@ -195,6 +200,7 @@ export class StoryTransport {
       redirect: "error",
     });
     const payload = await response.json().catch(() => null);
+    if (response.status === 401 || payload?.code === 401) this.bridge?.authenticationExpired();
     if (!payload || typeof payload !== "object")
       throw new Error(copy(this.context.locale).h5.backendInvalidResponse);
     const businessFailure = this.local
@@ -365,7 +371,12 @@ export class StoryTransport {
     );
   }
   forChapter(chapterId: string) {
-    return new StoryTransport({ ...this.context, chapterId }, this.queries, this.legacyChapterId);
+    return new StoryTransport(
+      { ...this.context, chapterId },
+      this.queries,
+      this.legacyChapterId,
+      this.bridge
+    );
   }
   async createConversation(input: ReturnType<typeof CreateStoryConversationSchema.parse>) {
     const row = await this.request(
@@ -391,12 +402,29 @@ export class StoryTransport {
   attachmentUrl(id: string) {
     return `${this.path}/chapters/${this.context.chapterId}/attachments/${id}`;
   }
+  async attachmentData(id: string) {
+    if (this.bridge?.authenticationRequired)
+      throw new Error(copy(this.context.locale).h5.sessionRequired);
+    const response = await fetch(this.attachmentUrl(id), {
+      credentials: "same-origin",
+      redirect: "error",
+      signal: AbortSignal.timeout(20000),
+    });
+    if (response.status === 401) this.bridge?.authenticationExpired();
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.msg || error?.message || copy(this.context.locale).app.requestFailed);
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
   async upload(
     file: Blob,
     name: string,
     signal?: AbortSignal,
     onProgress?: (progress: { loaded: number; total?: number }) => void
   ) {
+    if (this.bridge?.authenticationRequired)
+      throw new Error(copy(this.context.locale).h5.sessionRequired);
     if (file.size > 10 * 1024 * 1024)
       throw new Error(copy(this.context.locale).h5.attachmentTooLarge);
     const form = new FormData();
@@ -427,7 +455,13 @@ export class StoryTransport {
       xhr.onload = () => {
         cleanup();
         const value = xhr.response;
-        if (xhr.status < 200 || xhr.status >= 300 || (!this.local && value?.code !== 200))
+        if (xhr.status === 401 || value?.code === 401) this.bridge?.authenticationExpired();
+        if (
+          xhr.status < 200 ||
+          xhr.status >= 300 ||
+          (value?.code !== undefined && value.code !== 200) ||
+          (!this.local && value?.code !== 200)
+        )
           return reject(
             new Error(value?.msg || value?.message || copy(this.context.locale).app.requestFailed)
           );
