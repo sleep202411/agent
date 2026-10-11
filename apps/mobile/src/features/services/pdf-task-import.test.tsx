@@ -125,3 +125,16 @@ it("does not mutate after account changes", async () => {
   expect(h.apply).not.toHaveBeenCalled();
   expect(h.save).not.toHaveBeenCalled();
 });
+
+it("shows actionable analysis failure details instead of discarding the provider reason", async () => {
+  h.load.mockResolvedValue({ id });
+  h.get.mockResolvedValue({
+    ...preview,
+    status: "failed",
+    tasks: [],
+    failure: { code: "provider_limit", message: "AI provider quota exhausted. Contact support." },
+  });
+  await render();
+  expect(host.textContent).toContain("AI provider quota exhausted. Contact support.");
+  expect(host.textContent).toContain("mobileProduction.pdfAnalysisId");
+});

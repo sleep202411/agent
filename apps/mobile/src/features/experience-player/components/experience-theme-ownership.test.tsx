@@ -8,6 +8,7 @@ import type {
 import { ExperiencePlayer } from "./experience-player";
 import type { ExperienceThemeLoader } from "../lib/experience-theme-loader";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
+vi.mock("./experience-journey-map", () => ({ ExperienceJourneyMap: () => null }));
 vi.mock("react-native", () => ({
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,

@@ -19,6 +19,7 @@ vi.mock("expo-image", () => ({
 vi.mock("../lib/experience-media-cache", () => ({ resolvePlaybackUri: mock.resolve }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
+const seekHandle = vi.fn();
 const displayed = vi.fn(),
   completed = vi.fn(),
   error = vi.fn(),
@@ -37,6 +38,7 @@ async function render(uri = "one") {
         onHoldComplete: completed,
         onLoadError: error,
         onTimelineTimeMs: timeline,
+        onSeekHandle: seekHandle,
       })
     )
   );
@@ -85,4 +87,20 @@ it("ignores stale image events after replacement", async () => {
   await act(async () => mock.image.onLoad?.());
   await advance(1000);
   expect(completed).toHaveBeenCalledOnce();
+});
+
+it("registers readiness-aware seeking and clears the handle on unmount", async () => {
+  await render();
+  expect(seekHandle.mock.calls.at(-1)![0](500)).toBe(false);
+  await act(async () => mock.image.onLoad?.());
+  await advance(500);
+  await act(async () => {
+    expect(seekHandle.mock.calls.at(-1)![0](0)).toBe(true);
+  });
+  expect(timeline).toHaveBeenLastCalledWith(0);
+  await advance(500);
+  expect(completed).not.toHaveBeenCalled();
+  await act(async () => root.unmount());
+  expect(seekHandle).toHaveBeenLastCalledWith(null);
+  root = createRoot(document.createElement("div"));
 });
