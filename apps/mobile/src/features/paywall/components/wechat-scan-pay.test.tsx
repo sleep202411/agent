@@ -138,3 +138,60 @@ it("exposes a failed status read and retries the same order without reporting fa
   expect(host.textContent).not.toContain("Payment status temporarily unavailable");
   expect(mocks.paid).toHaveBeenCalledTimes(1);
 });
+
+async function renderOrder(orderId: string) {
+  await act(async () =>
+    root.render(
+      <WechatScanPay
+        orderId={orderId}
+        codeUrl="weixin://pay"
+        onClose={() => {}}
+        onPaid={mocks.paid}
+      />
+    )
+  );
+}
+
+it("starts a new order after the previous order was fulfilled", async () => {
+  mocks.get.mockResolvedValueOnce(order("fulfilled")).mockResolvedValue(order("pending"));
+  await renderOrder("first");
+  expect(mocks.paid).toHaveBeenCalledTimes(1);
+  await renderOrder("second");
+  expect(host.textContent).toContain("QR");
+  expect(host.textContent).not.toContain("paywall.wechat.success");
+  expect(mocks.get.mock.calls.map((call) => call[0])).toEqual([
+    "/billing/orders/first",
+    "/billing/orders/second",
+  ]);
+  expect(mocks.paid).toHaveBeenCalledTimes(1);
+});
+
+it("clears a previous order's error when another order opens", async () => {
+  mocks.get
+    .mockRejectedValueOnce(new Error("First order unavailable"))
+    .mockResolvedValue(order("pending"));
+  await renderOrder("first");
+  expect(host.textContent).toContain("First order unavailable");
+  await renderOrder("second");
+  expect(host.textContent).not.toContain("First order unavailable");
+  expect(host.textContent).toContain("QR");
+  expect(mocks.paid).not.toHaveBeenCalled();
+});
+
+it("ignores a previous order response after switching orders", async () => {
+  let finish!: (value: ReturnType<typeof order>) => void;
+  mocks.get
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    )
+    .mockResolvedValue(order("pending"));
+  await renderOrder("first");
+  await renderOrder("second");
+  await act(async () => finish(order("fulfilled")));
+  expect(mocks.paid).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("QR");
+  expect(vi.getTimerCount()).toBe(1);
+});

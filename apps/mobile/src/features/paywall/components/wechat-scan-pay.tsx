@@ -21,19 +21,25 @@ const QR_SIZE = 224;
  * In-app WeChat Native scan surface. Mirrors the web dialog: render the
  * `weixin://` code as a QR and poll the order (the server 查单-reconciles).
  */
-export function WechatScanPay({
-  orderId,
-  codeUrl,
-  amountLabel,
-  onClose,
-  onPaid,
-}: {
+type WechatScanPayProps = {
   orderId: string;
   codeUrl: string;
   amountLabel?: string;
   onClose: () => void;
   onPaid: () => void;
-}) {
+};
+
+export function WechatScanPay(props: WechatScanPayProps) {
+  return <WechatScanPayOrder key={props.orderId} {...props} />;
+}
+
+function WechatScanPayOrder({
+  orderId,
+  codeUrl,
+  amountLabel,
+  onClose,
+  onPaid,
+}: WechatScanPayProps) {
   const t = useTranslations();
   const [status, setStatus] = useState<ScanStatus>("pending");
   const [error, setError] = useState<string>();
