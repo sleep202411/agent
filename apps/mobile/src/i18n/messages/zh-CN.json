@@ -5946,6 +5946,8 @@
   "mobileProduction.pdfAnalyze": "分析文档",
   "mobileProduction.pdfCheck": "检查分析状态",
   "mobileProduction.pdfNewAnalysis": "重新分析",
+  "mobileProduction.pdfQueued": "排队中 · 已过 {seconds} 秒。状态会自动更新。",
+  "mobileProduction.pdfAnalyzing": "分析中 · 已过 {seconds} 秒。处理可能需要几分钟。",
   "mobileProduction.pdfPending": "分析正在进行，请稍后检查状态；重复同一请求不会再次调用 AI。",
   "mobileProduction.pdfAnalysisId": "分析 ID：{id}",
   "crewLinks.loadMore": "加载更多",

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { uuid } from "expo-modules-core";
+import { ApiRequestError } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -38,6 +39,7 @@ export function PdfTaskImport(props: Props) {
   const [selection, setSelection] = useState<number[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string>();
+  const [unavailable, setUnavailable] = useState(false);
   const [revision, setRevision] = useState(0);
   const abort = useRef(new AbortController());
   const polling = useRef(false);
@@ -66,6 +68,7 @@ export function PdfTaskImport(props: Props) {
   useEffect(() => {
     if (
       !recovery ||
+      unavailable ||
       op.busy ||
       preview?.status === "applied" ||
       preview?.status === "failed" ||
@@ -90,8 +93,10 @@ export function PdfTaskImport(props: Props) {
             setSelection(result.tasks.map((_, i) => i));
         }
       } catch (e) {
-        if (!controller.signal.aborted && props.generation === getAuthGeneration())
+        if (!controller.signal.aborted && props.generation === getAuthGeneration()) {
           setError(e instanceof Error ? e.message : String(e));
+          if (e instanceof ApiRequestError && [404, 410].includes(e.status)) setUnavailable(true);
+        }
       } finally {
         polling.current = false;
       }
@@ -102,7 +107,7 @@ export function PdfTaskImport(props: Props) {
       controller.abort();
       clearInterval(timer);
     };
-  }, [recovery, preview?.status, op.busy, props.crewId, props.generation, revision]);
+  }, [recovery, preview?.status, op.busy, props.crewId, props.generation, revision, unavailable]);
   function run<T>(work: () => Promise<T>, success: (value: T) => void) {
     if (!current()) return;
     setError(undefined);
@@ -149,6 +154,7 @@ export function PdfTaskImport(props: Props) {
                   );
                 },
                 (value) => {
+                  setUnavailable(false);
                   setPreview(value);
                   if (value.status === "ready") setSelection(value.tasks.map((_, i) => i));
                 }
@@ -186,6 +192,7 @@ export function PdfTaskImport(props: Props) {
                       abort.current.signal
                     ),
                   (value) => {
+                    setUnavailable(false);
                     setPreview(value);
                     if (value.status === "ready" && !frozen)
                       setSelection(value.tasks.map((_, i) => i));
@@ -196,15 +203,36 @@ export function PdfTaskImport(props: Props) {
           )}
         </>
       )}
-      {recovery && (!preview || ["queued", "analyzing"].includes(preview.status)) && (
-        <>
-          <ThemedText>{t("mobileProduction.pdfPending")}</ThemedText>
-          <Action
-            disabled={op.busy}
-            label={t("mobileProduction.pdfCheck")}
-            onPress={() => setRevision((v) => v + 1)}
-          />
-        </>
+      {recovery &&
+        !unavailable &&
+        (!preview || ["queued", "analyzing"].includes(preview.status)) && (
+          <>
+            <ActivityIndicator />
+            <ThemedText>
+              {preview
+                ? t(
+                    preview.status === "queued"
+                      ? "mobileProduction.pdfQueued"
+                      : "mobileProduction.pdfAnalyzing"
+                  ).replace(
+                    "{seconds}",
+                    String(Math.max(0, Math.floor((now - Date.parse(preview.createdAt)) / 1000)))
+                  )
+                : t("mobileProduction.pdfPending")}
+            </ThemedText>
+            <Action
+              disabled={op.busy}
+              label={t("mobileProduction.pdfCheck")}
+              onPress={() => setRevision((v) => v + 1)}
+            />
+          </>
+        )}
+      {unavailable && (
+        <Action
+          disabled={op.busy}
+          label={t("mobileProduction.pdfCheck")}
+          onPress={() => setUnavailable(false)}
+        />
       )}
       {preview?.status === "failed" && (
         <View>
@@ -293,7 +321,9 @@ export function PdfTaskImport(props: Props) {
         </>
       )}
       {recovery &&
-        (preview?.status === "applied" || preview?.status === "failed" || (expired && !frozen)) && (
+        (preview?.status === "applied" ||
+          preview?.status === "failed" ||
+          ((expired || unavailable) && !frozen)) && (
           <Action
             disabled={op.busy}
             label={t("mobileProduction.pdfNewAnalysis")}
@@ -301,6 +331,7 @@ export function PdfTaskImport(props: Props) {
               run(
                 () => savePdfRecovery(props.crewId, props.userId, null),
                 () => {
+                  setUnavailable(false);
                   setRecovery(null);
                   setPreview(null);
                   setFile(null);
