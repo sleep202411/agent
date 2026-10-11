@@ -1,7 +1,10 @@
 jest.mock('../tasks/task-delivery-folder', () => ({
   provisionTaskDeliveryFolderTx: jest.fn().mockResolvedValue('folder'),
 }));
-jest.mock('ai', () => ({ generateObject: jest.fn() }));
+jest.mock('ai', () => ({
+  ...jest.requireActual<typeof import('ai')>('ai'),
+  generateObject: jest.fn(),
+}));
 jest.mock('@ai-sdk/alibaba', () => ({
   createAlibaba: jest.fn(() => jest.fn()),
 }));
