@@ -490,6 +490,7 @@ server:
     # No code fallback by design: a default pointing at a canonical the region
     # never catalogued must fail the rollout, not the user's quote.
     AGENT_OS_MOBILE_IMAGE_MODEL: wan-image-2.7
+    AGENT_OS_MOBILE_CHAT_MODEL: qwen3.7-flash
     AGENT_OS_MOBILE_VIDEO_MODEL: minimax-h3
     # Region-owned banner bucket that holds crew logos (relative keys). The admin
     # DTOs resolve crew.logo to an absolute URL with this base.

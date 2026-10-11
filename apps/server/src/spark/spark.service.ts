@@ -7,13 +7,13 @@
  *      30-40K chars are enough for a name/description/tags pass).
  *   3. Hand off to Qwen via Vercel AI SDK's official `@ai-sdk/alibaba`
  *      provider with a Zod schema so the output is always shape-valid;
- *      SDK auto-retries on schema failure.
+ *      the response is validated locally before it is returned.
  *
  * Endpoint config:
  *   - ALIBABA_API_KEY     — DashScope API key. This project standardizes
  *                           on this env name across server + agent.
  *
- * Model is hard-coded to `qwen3-max`. Previously this was an `AI_MODEL`
+ * Model is hard-coded to `qwen-plus`. Previously this was an `AI_MODEL`
  * env var, but the name was misleadingly generic — ops set it to
  * `deepseek-chat` (a DeepSeek-native id DashScope rejects) and broke
  * /aurora/spark/analyze in prod. If we ever need a different model
@@ -199,17 +199,17 @@ export class SparkService {
     });
 
     const { object } = await generateObject({
-      model: alibaba('qwen3-max'),
-      schema: SparkDraftSchema,
-      schemaName: 'SparkDraft',
-      schemaDescription:
-        'Structured IP metadata derived from the supplied novel or screenplay text.',
+      model: alibaba('qwen-plus'),
+      output: 'no-schema',
+      providerOptions: { alibaba: { enableThinking: false } },
+      abortSignal: AbortSignal.timeout(120_000),
       maxRetries: 3,
       system: [
         'You analyze a novel, screenplay, or pitch document and propose',
         'metadata for a creator-platform IP entry. Be specific to the',
         'material — generic answers are useless. Return exactly the',
         'JSON object the schema requires; do not add commentary.',
+        JSON.stringify(z.toJSONSchema(SparkDraftSchema)),
         '',
         'Length budget (treat as soft caps; aim under, but never refuse):',
         `  - name:         up to ${NAME_MAX} characters, ideally 4-30.`,
@@ -239,7 +239,7 @@ export class SparkService {
     });
 
     return {
-      ...this.clamp(object),
+      ...this.clamp(SparkDraftSchema.parse(object)),
       textRef,
       sourceChars: trimmed.length,
       sourceExcerpt: trimmed.slice(0, 800),

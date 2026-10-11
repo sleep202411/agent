@@ -15,7 +15,14 @@ import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
-import { IconUpload, IconX, IconUsers, IconDotsVertical, IconChecks } from "@tabler/icons-react";
+import {
+  IconUpload,
+  IconX,
+  IconUsers,
+  IconDotsVertical,
+  IconChecks,
+  IconMinus,
+} from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
   DropdownMenu,
@@ -440,6 +447,7 @@ function TaskCreationSession({
               ready={progressReady}
               canInitialize={canManage}
               disabled={busy}
+              analysisStatus={analysisStatus}
               onInitialize={() => setPdfOpen(true)}
             />
             {canManage && (
@@ -454,8 +462,14 @@ function TaskCreationSession({
               >
                 <header className="flex items-center justify-between border-b border-border p-4">
                   <h2>{t("finalScript")}</h2>
-                  <Button variant="ghost" size="sm" onClick={() => setPdfOpen(false)}>
-                    {t("minimizeAnalysis")}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("minimizeAnalysis")}
+                    title={t("minimizeAnalysis")}
+                    onClick={() => setPdfOpen(false)}
+                  >
+                    <IconMinus className="size-4" aria-hidden="true" />
                   </Button>
                 </header>
                 <div className="overflow-y-auto p-4">
